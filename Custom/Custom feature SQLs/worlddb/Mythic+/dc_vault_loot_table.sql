@@ -461,7 +461,7 @@ INSERT INTO `dc_vault_loot_table` VALUES
 -- ROGUE Naxx 25
 INSERT INTO `dc_vault_loot_table` VALUES
 (40499, 239, 310, 8, NULL, 'Leather', 'Head', 4, 100, 'Naxx 25 - Bonescythe Helmet'),
-(40501, 239, 310, 8, NULL, 'Leather', 'Shoulder', 4, 100, 'Naxx 25 - Bonescythe Pauldrons'),
+(40502, 239, 310, 8, NULL, 'Leather', 'Shoulder', 4, 100, 'Naxx 25 - Bonescythe Pauldrons'),
 (40495, 239, 310, 8, NULL, 'Leather', 'Chest', 4, 100, 'Naxx 25 - Bonescythe Breastplate'),
 (40496, 239, 310, 8, NULL, 'Leather', 'Hands', 4, 100, 'Naxx 25 - Bonescythe Gauntlets'),
 (40500, 239, 310, 8, NULL, 'Leather', 'Legs', 4, 100, 'Naxx 25 - Bonescythe Legplates');

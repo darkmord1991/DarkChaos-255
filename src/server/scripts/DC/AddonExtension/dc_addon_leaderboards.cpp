@@ -199,6 +199,7 @@ namespace
 
     // Forward declarations
     uint32 GetCurrentSeasonId();
+    std::string GetDungeonNameForMap(uint16 mapId, uint32 seasonId = 0);
 
     // Use centralized utilities from LeaderboardUtils.h to avoid duplication
     using DarkChaos::Leaderboard::JsonEscape;
@@ -210,9 +211,83 @@ namespace
 
     // Get Mythic+ leaderboard
     // Note: dc_mplus_scores table has: character_guid, season_id, map_id, best_level, best_score, last_run_ts, total_runs
-    std::vector<LeaderboardEntry> GetMythicPlusLeaderboard(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    std::vector<LeaderboardEntry> GetMythicPlusLeaderboard(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset,
+        uint32 requesterGuid = 0, bool myRunsOnly = false)
     {
         std::vector<LeaderboardEntry> entries;
+
+        if (subcat == "mplus_history")
+        {
+            auto formatDuration = [](uint32 seconds) -> std::string
+            {
+                if (seconds == 0)
+                    return "--:--";
+
+                uint32 hours = seconds / 3600;
+                uint32 minutes = (seconds % 3600) / 60;
+                uint32 secs = seconds % 60;
+
+                char buffer[16];
+                if (hours > 0)
+                    std::snprintf(buffer, sizeof(buffer), "%u:%02u:%02u", hours, minutes, secs);
+                else
+                    std::snprintf(buffer, sizeof(buffer), "%02u:%02u", minutes, secs);
+
+                return std::string(buffer);
+            };
+
+            QueryResult result = nullptr;
+            if (myRunsOnly && requesterGuid > 0)
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
+                    "FROM dc_mplus_runs r "
+                    "JOIN characters c ON r.character_guid = c.guid "
+                    "WHERE r.season_id = {} AND r.character_guid = {} "
+                    "ORDER BY r.completed_at DESC, r.run_id DESC "
+                    "LIMIT {} OFFSET {}",
+                    seasonId, requesterGuid, limit, offset);
+            }
+            else
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
+                    "FROM dc_mplus_runs r "
+                    "JOIN characters c ON r.character_guid = c.guid "
+                    "WHERE r.season_id = {} "
+                    "ORDER BY r.completed_at DESC, r.run_id DESC "
+                    "LIMIT {} OFFSET {}",
+                    seasonId, limit, offset);
+            }
+
+            if (!result)
+                return entries;
+
+            uint32 rank = offset + 1;
+            do
+            {
+                Field* fields = result->Fetch();
+                LeaderboardEntry entry;
+                entry.rank = rank++;
+                entry.name = fields[0].Get<std::string>();
+                entry.className = GetClassNameFromId(fields[1].Get<uint8>());
+                entry.score = fields[2].Get<uint32>();
+
+                uint16 mapId = fields[3].Get<uint16>();
+                uint32 completionTime = fields[4].Get<uint32>();
+                bool success = fields[5].Get<uint8>() != 0;
+                std::string completedAt = fields[6].Get<std::string>();
+                std::string dungeonName = GetDungeonNameForMap(mapId, seasonId);
+
+                entry.mapId = mapId;
+                entry.extra = dungeonName + " | " + formatDuration(completionTime) + " | " +
+                    (success ? "Success" : "Failed") + " | " + completedAt;
+
+                entries.push_back(entry);
+            } while (result->NextRow());
+
+            return entries;
+        }
 
         // Use aggregate function aliases in ORDER BY for sql_mode=only_full_group_by compatibility
         std::string orderBy = "best_level DESC, total_score DESC";
@@ -272,7 +347,7 @@ namespace
     }
 
     // Get dungeon name from dc_mplus_featured_dungeons or fallback to map_id
-    std::string GetDungeonNameForMap(uint16 mapId, uint32 seasonId = 0)
+    std::string GetDungeonNameForMap(uint16 mapId, uint32 seasonId)
     {
         // Try to get from dc_mplus_featured_dungeons (world database)
         // This table has: season_id, map_id, sort_order, dungeon_name, notes
@@ -1080,7 +1155,8 @@ namespace
     }
 
     // Get total entry count for pagination
-    uint32 GetTotalEntryCount(const std::string& category, const std::string& subcat, uint32 seasonId)
+    uint32 GetTotalEntryCount(const std::string& category, const std::string& subcat, uint32 seasonId,
+        bool myRunsOnly = false, uint32 requesterGuid = 0)
     {
         QueryResult result = nullptr;
 
@@ -1090,8 +1166,25 @@ namespace
 
         if (category == "mplus")
         {
-            result = CharacterDatabase.Query(
-                "SELECT COUNT(DISTINCT character_guid) FROM dc_mplus_scores WHERE season_id = {}", seasonId);
+            if (subcat == "mplus_history")
+            {
+                if (myRunsOnly && requesterGuid > 0)
+                {
+                    result = CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM dc_mplus_runs WHERE season_id = {} AND character_guid = {}",
+                        seasonId, requesterGuid);
+                }
+                else
+                {
+                    result = CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM dc_mplus_runs WHERE season_id = {}", seasonId);
+                }
+            }
+            else
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT COUNT(DISTINCT character_guid) FROM dc_mplus_scores WHERE season_id = {}", seasonId);
+            }
         }
         else if (category == "seasons")
         {
@@ -1195,6 +1288,16 @@ namespace
         uint32 page = json["page"].IsNumber() ? json["page"].AsUInt32() : 1;
         uint32 limit = json["limit"].IsNumber() ? json["limit"].AsUInt32() : DEFAULT_ENTRIES_PER_PAGE;
         uint32 seasonId = json["seasonId"].IsNumber() ? json["seasonId"].AsUInt32() : 0;
+        bool myRunsOnly = false;
+        if (json.HasKey("myRunsOnly"))
+        {
+            if (json["myRunsOnly"].IsBool())
+                myRunsOnly = json["myRunsOnly"].AsBool();
+            else if (json["myRunsOnly"].IsNumber())
+                myRunsOnly = (json["myRunsOnly"].AsUInt32() != 0);
+            else if (json["myRunsOnly"].IsString())
+                myRunsOnly = (json["myRunsOnly"].AsString() == "1" || json["myRunsOnly"].AsString() == "true");
+        }
 
         // If seasonId is 0, get the current active season
         if (seasonId == 0)
@@ -1213,7 +1316,15 @@ namespace
         uint32 offset = (page - 1) * limit;
 
         // ===== CACHE CHECK =====
-        std::string cacheKey = MakeCacheKey(category, subcategory, seasonId, page, limit);
+        std::string cacheSubcategory = subcategory;
+        if (category == "mplus" && subcategory == "mplus_history")
+        {
+            cacheSubcategory += myRunsOnly ? "_self" : "_all";
+            if (myRunsOnly)
+                cacheSubcategory += "_" + std::to_string(player->GetGUID().GetCounter());
+        }
+
+        std::string cacheKey = MakeCacheKey(category, cacheSubcategory, seasonId, page, limit);
         bool useCache = false;
         std::vector<LeaderboardEntry> entries;
         uint32 totalEntries = 0;
@@ -1256,7 +1367,8 @@ namespace
             }
             else
             {
-                entries = GetMythicPlusLeaderboard(subcategory, seasonId, limit, offset);
+                entries = GetMythicPlusLeaderboard(subcategory, seasonId, limit, offset,
+                    player->GetGUID().GetCounter(), myRunsOnly);
             }
         }
         else if (category == "seasons")
@@ -1275,7 +1387,8 @@ namespace
             entries = GetAchievementLeaderboard(subcategory, limit, offset);
 
         // Get total count for pagination
-        totalEntries = GetTotalEntryCount(category, subcategory, seasonId);
+        totalEntries = GetTotalEntryCount(category, subcategory, seasonId,
+            myRunsOnly, player->GetGUID().GetCounter());
         totalPages = (totalEntries + limit - 1) / limit;
         if (totalPages < 1) totalPages = 1;
 

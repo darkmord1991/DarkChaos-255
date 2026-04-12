@@ -1512,6 +1512,7 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_entrances` (
   `entrance_y` float NOT NULL COMMENT 'Y coordinate of entrance',
   `entrance_z` float NOT NULL COMMENT 'Z coordinate of entrance',
   `entrance_o` float NOT NULL COMMENT 'Orientation at entrance',
+  `comment` varchar(120) DEFAULT NULL COMMENT 'Optional dungeon label for admin readability',
   PRIMARY KEY (`dungeon_map`),
   CONSTRAINT `dc_dungeon_entrances_ibfk_1` FOREIGN KEY (`dungeon_map`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dungeon entrance coordinates for portal teleportation';

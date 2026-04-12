@@ -91,6 +91,13 @@ local SLOT_WIDTH = 230
 local SLOT_HEIGHT = 120
 local PADDING_X = 5
 local PADDING_Y = 5
+local TRACK_INNER_X = 10
+local TRACK_INNER_TOP = -35
+local TRACK_WIDTH = 3 * SLOT_WIDTH + 2 * PADDING_X + 20
+local TRACK_HEIGHT = SLOT_HEIGHT + 45
+local TRACK_START_Y = -90
+local TRACK_GAP = 5
+local TRACK_EXPANDED_BOTTOM_MARGIN = 25
 
 local SECONDS_PER_WEEK = 7 * 24 * 60 * 60
 
@@ -112,6 +119,17 @@ local function FormatDateTime(ts)
         return "Unknown"
     end
     return date("%Y-%m-%d %H:%M", ts)
+end
+
+local function FormatRunDuration(seconds)
+    seconds = tonumber(seconds or 0) or 0
+    if seconds <= 0 then
+        return "--:--"
+    end
+
+    local mins = math.floor(seconds / 60)
+    local secs = seconds % 60
+    return string.format("%d:%02d", mins, secs)
 end
 
 function GV:CreateFrame()
@@ -170,17 +188,27 @@ function GV:CreateFrame()
     frame.viewButtons.progress:SetPoint("LEFT", frame.viewButtons.claim, "RIGHT", 8, 0)
     frame.viewButtons.progress:SetText("Progress (This Week)")
 
+    frame.viewButtons.next = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.viewButtons.next:SetSize(160, 22)
+    frame.viewButtons.next:SetPoint("LEFT", frame.viewButtons.progress, "RIGHT", 8, 0)
+    frame.viewButtons.next:SetText("Next Week (Forecast)")
+
+    frame.viewButtons.history = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.viewButtons.history:SetSize(160, 22)
+    frame.viewButtons.history:SetPoint("LEFT", frame.viewButtons.next, "RIGHT", 8, 0)
+    frame.viewButtons.history:SetText("Run History")
+
     frame.tracks = {}
     frame.slotByGlobalId = {}
 
     local trackTitles = { "Raid", "Mythic+", "PvP" }
     for trackIndex = 1, TRACK_COUNT do
         local track = CreateFrame("Frame", nil, frame)
-        track:SetSize(3 * SLOT_WIDTH + 2 * PADDING_X + 20, SLOT_HEIGHT + 45)
+        track:SetSize(TRACK_WIDTH, TRACK_HEIGHT)
         track:SetPoint(
             "TOPLEFT",
             10,
-            -90 - (trackIndex - 1) * (SLOT_HEIGHT + 50)
+            TRACK_START_Y - (trackIndex - 1) * (TRACK_HEIGHT + TRACK_GAP)
         )
 
         -- Track Background/Separator
@@ -203,7 +231,7 @@ function GV:CreateFrame()
         for row = 1, SLOTS_PER_TRACK do
             local slot = CreateFrame("Frame", nil, track)
             slot:SetSize(SLOT_WIDTH, SLOT_HEIGHT)
-            slot:SetPoint("TOPLEFT", 10 + (row - 1) * (SLOT_WIDTH + PADDING_X), -35)
+            slot:SetPoint("TOPLEFT", TRACK_INNER_X + (row - 1) * (SLOT_WIDTH + PADDING_X), TRACK_INNER_TOP)
 
             slot.bg = slot:CreateTexture(nil, "BACKGROUND")
             slot.bg:SetAllPoints()
@@ -313,12 +341,32 @@ function GV:GetActiveTracks(payload)
     if type(payload) ~= "table" then return nil end
     local view = self._view
 
+    if view == "history" and type(payload.historyTracks) == "table" then
+        return payload.historyTracks, "history"
+    end
+
+    if view == "next" and type(payload.nextWeekTracks) == "table" then
+        return payload.nextWeekTracks, "next"
+    end
+
     if view == "progress" and type(payload.progressTracks) == "table" then
         return payload.progressTracks, "progress"
     end
 
     if type(payload.tracks) == "table" then
         return payload.tracks, "claim"
+    end
+
+    if type(payload.progressTracks) == "table" then
+        return payload.progressTracks, "progress"
+    end
+
+    if type(payload.nextWeekTracks) == "table" then
+        return payload.nextWeekTracks, "next"
+    end
+
+    if type(payload.historyTracks) == "table" then
+        return payload.historyTracks, "history"
     end
 
     return nil
@@ -370,6 +418,51 @@ function GV:Toggle()
     end
 end
 
+function GV:ApplyTrackLayout(activeView, visibleTrackCount)
+    if not frame or not frame.tracks then return end
+
+    local expandSingleHistoryTrack = activeView == "history" and visibleTrackCount == 1
+    local expandedTrackHeight = TRACK_HEIGHT
+
+    if expandSingleHistoryTrack then
+        expandedTrackHeight = math.max(
+            TRACK_HEIGHT,
+            frame:GetHeight() + TRACK_START_Y - TRACK_EXPANDED_BOTTOM_MARGIN
+        )
+    end
+
+    for trackIndex = 1, TRACK_COUNT do
+        local trackFrame = frame.tracks[trackIndex]
+        if trackFrame then
+            local trackHeight = TRACK_HEIGHT
+            local trackY = TRACK_START_Y - (trackIndex - 1) * (TRACK_HEIGHT + TRACK_GAP)
+
+            if expandSingleHistoryTrack and trackIndex == 1 then
+                trackHeight = expandedTrackHeight
+                trackY = TRACK_START_Y
+            end
+
+            trackFrame:ClearAllPoints()
+            trackFrame:SetPoint("TOPLEFT", 10, trackY)
+            trackFrame:SetSize(TRACK_WIDTH, trackHeight)
+
+            local slotHeight = math.max(SLOT_HEIGHT, trackHeight - 45)
+            for row = 1, SLOTS_PER_TRACK do
+                local slot = trackFrame.slots and trackFrame.slots[row]
+                if slot then
+                    slot:ClearAllPoints()
+                    slot:SetPoint(
+                        "TOPLEFT",
+                        TRACK_INNER_X + (row - 1) * (SLOT_WIDTH + PADDING_X),
+                        TRACK_INNER_TOP
+                    )
+                    slot:SetSize(SLOT_WIDTH, slotHeight)
+                end
+            end
+        end
+    end
+end
+
 function GV:Update(data)
     if not frame then
         self:CreateFrame()
@@ -383,6 +476,12 @@ function GV:Update(data)
     if frame.viewButtons and frame.viewButtons.progress then
         frame.viewButtons.progress:SetScript("OnClick", function() GV:SetView("progress") end)
     end
+    if frame.viewButtons and frame.viewButtons.next then
+        frame.viewButtons.next:SetScript("OnClick", function() GV:SetView("next") end)
+    end
+    if frame.viewButtons and frame.viewButtons.history then
+        frame.viewButtons.history:SetScript("OnClick", function() GV:SetView("history") end)
+    end
 
     if data.open then
         frame:Show()
@@ -395,6 +494,20 @@ function GV:Update(data)
     local tracks, activeView = self:GetActiveTracks(data)
     if type(tracks) ~= "table" then return end
 
+    local visibleTrackCount = #tracks
+    self:ApplyTrackLayout(activeView, visibleTrackCount)
+
+    for trackIndex = 1, TRACK_COUNT do
+        local trackFrame = frame.tracks and frame.tracks[trackIndex]
+        if trackFrame then
+            if trackIndex <= visibleTrackCount then
+                trackFrame:Show()
+            else
+                trackFrame:Hide()
+            end
+        end
+    end
+
     if frame.weekText then
         local resetTs = tonumber(data.progressWeekStart or 0) or 0
         local nextResetTs = resetTs > 0 and (resetTs + SECONDS_PER_WEEK) or 0
@@ -404,6 +517,12 @@ function GV:Update(data)
             local range = FormatWeekRange(data.progressWeekStart)
             local nextReset = FormatDateTime(nextResetTs)
             frame.weekText:SetText("Progress week: " .. range .. " | Weekly reset: " .. resetLabel .. " | Next reset: " .. nextReset)
+        elseif activeView == "next" then
+            local range = FormatWeekRange(data.nextWeekStart)
+            local sourceRange = FormatWeekRange(data.progressWeekStart)
+            frame.weekText:SetText("Forecast week: " .. range .. " | Based on progress from: " .. sourceRange)
+        elseif activeView == "history" then
+            frame.weekText:SetText("Run history: your latest Mythic+ runs (newest first)")
         else
             local range = FormatWeekRange(data.claimWeekStart)
             local expiresAt = FormatDateTime(nextResetTs)
@@ -411,13 +530,27 @@ function GV:Update(data)
         end
     end
 
-    if frame.viewButtons and frame.viewButtons.claim and frame.viewButtons.progress then
+    if frame.viewButtons and frame.viewButtons.claim and frame.viewButtons.progress and frame.viewButtons.next and frame.viewButtons.history then
         if activeView == "progress" then
             frame.viewButtons.progress:Disable()
             frame.viewButtons.claim:Enable()
+            frame.viewButtons.next:Enable()
+            frame.viewButtons.history:Enable()
+        elseif activeView == "next" then
+            frame.viewButtons.next:Disable()
+            frame.viewButtons.claim:Enable()
+            frame.viewButtons.progress:Enable()
+            frame.viewButtons.history:Enable()
+        elseif activeView == "history" then
+            frame.viewButtons.history:Disable()
+            frame.viewButtons.claim:Enable()
+            frame.viewButtons.progress:Enable()
+            frame.viewButtons.next:Enable()
         else
             frame.viewButtons.claim:Disable()
             frame.viewButtons.progress:Enable()
+            frame.viewButtons.next:Enable()
+            frame.viewButtons.history:Enable()
         end
     end
 
@@ -427,6 +560,7 @@ function GV:Update(data)
     for trackIndex, trackData in ipairs(tracks) do
         local trackFrame = frame.tracks[trackIndex]
         if trackFrame and trackData.name then
+            trackFrame:Show()
             trackFrame.title:SetText(trackData.name)
         end
 
@@ -466,6 +600,55 @@ function GV:Update(data)
                     slotFrame.button:SetText("Claimed")
                     slotFrame.button:Disable()
                     slotFrame.req:SetText("Reward Claimed")
+                elseif status == "history" then
+                    local runMapName = tostring(slotData.mapName or "Unknown")
+                    local runKeyLevel = tonumber(slotData.keystoneLevel or 0) or 0
+                    local runTime = FormatRunDuration(slotData.completionTime)
+                    local runSuccess = slotData.success == true or slotData.success == 1 or slotData.success == "1"
+                    local completedAt = FormatDateTime(slotData.completedAt)
+
+                    slotFrame.title:SetText(runMapName)
+                    slotFrame.status:SetText("+" .. tostring(runKeyLevel) .. " | " .. runTime)
+                    if runSuccess then
+                        slotFrame.status:SetTextColor(0.2, 1.0, 0.3)
+                    else
+                        slotFrame.status:SetTextColor(1.0, 0.35, 0.35)
+                    end
+
+                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+                    slotFrame.icon:SetDesaturated(false)
+                    slotFrame.button:SetText("Logged")
+                    slotFrame.button:Disable()
+                    slotFrame.req:SetText((runSuccess and "Completed" or "Failed") .. " | " .. completedAt)
+                elseif status == "empty" then
+                    slotFrame.title:SetText("No Run")
+                    slotFrame.status:SetText("Empty")
+                    slotFrame.status:SetTextColor(0.7, 0.7, 0.7)
+                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                    slotFrame.icon:SetDesaturated(true)
+                    slotFrame.button:SetText("-")
+                    slotFrame.button:Disable()
+                    slotFrame.req:SetText("No data")
+                elseif status == "forecast" then
+                    local forecastIlvl = tonumber(slotData.forecastIlvl or 0) or 0
+                    local sourceKeyLevel = tonumber(slotData.sourceKeyLevel or 0) or 0
+
+                    if forecastIlvl > 0 then
+                        slotFrame.status:SetText("iLvl " .. tostring(forecastIlvl))
+                    else
+                        slotFrame.status:SetText("iLvl --")
+                    end
+                    slotFrame.status:SetTextColor(0.2, 0.85, 1.0)
+                    slotFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                    slotFrame.icon:SetDesaturated(false)
+                    slotFrame.button:SetText("Forecast")
+                    slotFrame.button:Disable()
+
+                    if trackData.id == "mplus" and sourceKeyLevel > 0 and forecastIlvl > 0 then
+                        slotFrame.req:SetText(string.format("Current best for slot: +%d", sourceKeyLevel))
+                    else
+                        slotFrame.req:SetText(string.format("Current progress: %s %d/%d", progressLabel, progress, threshold))
+                    end
                 elseif status == "unlocked" then
                     local rewards = slotData.rewards
                     if rewards and #rewards > 0 then

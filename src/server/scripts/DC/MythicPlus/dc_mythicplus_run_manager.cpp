@@ -50,6 +50,30 @@ constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
 constexpr std::string_view HUD_REASON_PERIODIC = "tick";
 constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
 
+uint32 GetConfiguredTokenItem()
+{
+    if (sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false))
+        return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", MythicPlusConstants::ITEM_UPGRADE_TOKEN);
+
+    return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", MythicPlusConstants::ITEM_UPGRADE_TOKEN);
+}
+
+uint32 ResolveValidTokenItem(uint32 configuredToken, uint32 mapId, std::string_view source)
+{
+    if (configuredToken && sObjectMgr->GetItemTemplate(configuredToken))
+        return configuredToken;
+
+    uint32 fallbackToken = GetConfiguredTokenItem();
+    if (fallbackToken && sObjectMgr->GetItemTemplate(fallbackToken))
+    {
+        LOG_WARN("mythic.run", "Invalid Mythic+ token {} from {} (map {}), using {}", configuredToken, source, mapId, fallbackToken);
+        return fallbackToken;
+    }
+
+    LOG_ERROR("mythic.run", "Invalid Mythic+ token {} from {} (map {}), fallback {} missing", configuredToken, source, mapId, fallbackToken);
+    return 0;
+}
+
 std::string EscapeJson(std::string_view input)
 {
     std::string escaped;
@@ -551,7 +575,8 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         static_cast<uint32>(state->bossOrder.size());
     uint32 killedBosses = state->bossOrder.empty() ?
         state->bossesKilled :
-        static_cast<uint32>(state->bossKillStamps.size());
+        std::max<uint32>(state->bossesKilled,
+            static_cast<uint32>(state->bossKillStamps.size()));
 
     if (totalBosses == 0)
         totalBosses = std::max<uint32>(killedBosses, state->bossesKilled);
@@ -724,7 +749,12 @@ bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
 
     // Award tokens (fallback if no reward pool available)
     uint32 tokenCount = GetVaultTokenReward(slot);
-    uint32 tokenEntry = 101000; // Default token item entry; use configured if required
+    uint32 tokenEntry = ResolveValidTokenItem(GetConfiguredTokenItem(), 0, "weekly_vault");
+    if (!tokenEntry)
+    {
+        SendVaultError(player, "Vault token reward is unavailable right now.");
+        return false;
+    }
 
     ItemPosCountVec dest;
     if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, tokenEntry, tokenCount) == EQUIP_ERR_OK)
@@ -1098,12 +1128,20 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         return;
 
     DungeonProfile* profile = sMythicScaling->GetDungeonProfile(state->mapId);
-    if (!profile || !profile->tokenReward)
+    if (!profile)
         return;
 
     Map* map = sMapMgr->FindMap(state->mapId, state->instanceId);
     if (!map)
         return;
+
+    uint32 tokenEntry = ResolveValidTokenItem(profile->tokenReward, state->mapId,
+        "dc_dungeon_mythic_profile.token_reward");
+    if (!tokenEntry)
+    {
+        state->tokensGranted = true;
+        return;
+    }
 
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
@@ -1139,7 +1177,6 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         tokenCount = std::max<uint32>(tokenCount, 1);
 
         ItemPosCountVec dest;
-        uint32 tokenEntry = profile->tokenReward;
         if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, tokenEntry, tokenCount) == EQUIP_ERR_OK)
         {
             if (Item* item = player->StoreNewItem(dest, tokenEntry, true))
@@ -1264,10 +1301,43 @@ void MythicPlusRunManager::SendGenericError(Player* player, std::string_view tex
 bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
 {
     auto itr = _mapFinalBossEntries.find(mapId);
-    if (itr == _mapFinalBossEntries.end())
-        return false;
+    if (itr != _mapFinalBossEntries.end() &&
+        itr->second.find(bossEntry) != itr->second.end())
+    {
+        return true;
+    }
 
-    return itr->second.find(bossEntry) != itr->second.end();
+    auto isFinalFromEncounterList = [&](Difficulty difficulty) -> bool
+    {
+        DungeonEncounterList const* encounters =
+            sObjectMgr->GetDungeonEncounterList(mapId, difficulty);
+        if (!encounters || encounters->empty())
+            return false;
+
+        uint32 lastCreatureEntry = 0;
+        for (DungeonEncounter const* encounter : *encounters)
+        {
+            if (!encounter ||
+                encounter->creditType != ENCOUNTER_CREDIT_KILL_CREATURE ||
+                !encounter->creditEntry)
+            {
+                continue;
+            }
+
+            lastCreatureEntry = encounter->creditEntry;
+            if (encounter->creditEntry == bossEntry &&
+                encounter->lastEncounterDungeon > 0)
+            {
+                return true;
+            }
+        }
+
+        return lastCreatureEntry != 0 && lastCreatureEntry == bossEntry;
+    };
+
+    return isFinalFromEncounterList(DUNGEON_DIFFICULTY_HEROIC) ||
+        isFinalFromEncounterList(DUNGEON_DIFFICULTY_NORMAL) ||
+        isFinalFromEncounterList(DUNGEON_DIFFICULTY_EPIC);
 }
 
 bool MythicPlusRunManager::IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const
@@ -1700,17 +1770,20 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
 
     // Combat statistics
     handler.SendSysMessage("|cffff8000Combat Statistics:|r");
-    handler.PSendSysMessage("|cffffffff  Bosses Killed:|r {}", state->bossesKilled);
-    handler.PSendSysMessage("|cffffffff  Enemies Killed:|r {}", state->npcsKilled);
-    handler.PSendSysMessage("|cffffffff  Total Deaths:|r {}",
-        static_cast<uint32>(state->deaths));
-    handler.PSendSysMessage("|cffffffff  Group Wipes:|r {}",
-        static_cast<uint32>(state->wipes));
+    handler.SendSysMessage(Acore::StringFormat(
+        "|cffffffffBosses Killed:|r {}", state->bossesKilled));
+    handler.SendSysMessage(Acore::StringFormat(
+        "|cffffffffEnemies Killed:|r {}", state->npcsKilled));
+    handler.SendSysMessage(Acore::StringFormat(
+        "|cffffffffTotal Deaths:|r {}", static_cast<uint32>(state->deaths)));
+    handler.SendSysMessage(Acore::StringFormat(
+        "|cffffffffGroup Wipes:|r {}", static_cast<uint32>(state->wipes)));
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
 
     // Rewards
     handler.SendSysMessage("|cffff8000Rewards:|r");
-    handler.PSendSysMessage("|cffffffff  Tokens Awarded:|r {}", state->tokensAwarded);
+    handler.SendSysMessage(Acore::StringFormat(
+        "|cffffffffTokens Awarded:|r {}", state->tokensAwarded));
 
     if (state->keystoneUpgraded)
     {
@@ -2244,16 +2317,52 @@ void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
         state->bossOrder.push_back(entry);
     };
 
-    if (DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(state->mapId, DUNGEON_DIFFICULTY_EPIC))
+    auto addEncounters = [&](Difficulty difficulty) -> bool
     {
+        DungeonEncounterList const* encounters =
+            sObjectMgr->GetDungeonEncounterList(state->mapId, difficulty);
+        if (!encounters || encounters->empty())
+            return false;
+
+        bool added = false;
         for (DungeonEncounter const* encounter : *encounters)
         {
-            if (encounter)
-                pushBoss(encounter->creditEntry);
+            if (!encounter ||
+                encounter->creditType != ENCOUNTER_CREDIT_KILL_CREATURE ||
+                !encounter->creditEntry)
+            {
+                continue;
+            }
+
+            size_t before = state->bossOrder.size();
+            pushBoss(encounter->creditEntry);
+            if (state->bossOrder.size() > before)
+                added = true;
         }
+
+        return added;
+    };
+
+    Difficulty preferredDifficulty = state->difficulty;
+    if (preferredDifficulty != DUNGEON_DIFFICULTY_NORMAL &&
+        preferredDifficulty != DUNGEON_DIFFICULTY_HEROIC)
+    {
+        preferredDifficulty = DUNGEON_DIFFICULTY_HEROIC;
     }
 
-    if (state->bossOrder.size() < MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
+    bool hasEncounterData = addEncounters(preferredDifficulty);
+
+    if (!hasEncounterData && preferredDifficulty != DUNGEON_DIFFICULTY_HEROIC)
+        hasEncounterData = addEncounters(DUNGEON_DIFFICULTY_HEROIC);
+
+    if (!hasEncounterData && preferredDifficulty != DUNGEON_DIFFICULTY_NORMAL)
+        hasEncounterData = addEncounters(DUNGEON_DIFFICULTY_NORMAL);
+
+    if (!hasEncounterData && preferredDifficulty != DUNGEON_DIFFICULTY_EPIC)
+        hasEncounterData = addEncounters(DUNGEON_DIFFICULTY_EPIC);
+
+    if (!hasEncounterData &&
+        state->bossOrder.size() < MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
     {
         if (auto itr = _mapBossEntries.find(state->mapId); itr != _mapBossEntries.end())
         {
@@ -2418,9 +2527,31 @@ void MythicPlusRunManager::MarkBossKilled(InstanceState* state, Map* map, uint32
         return;
 
     uint64 now = GameTime::GetGameTime().count();
-    state->bossKillStamps[bossEntry] = now;
-
     int32 idx = GetBossIndex(state, bossEntry);
+    uint32 stampedEntry = bossEntry;
+
+    if (idx < 0 && !state->bossOrder.empty())
+    {
+        for (size_t i = 0; i < state->bossOrder.size(); ++i)
+        {
+            uint32 trackedEntry = state->bossOrder[i];
+            if (state->bossKillStamps.find(trackedEntry) !=
+                state->bossKillStamps.end())
+            {
+                continue;
+            }
+
+            stampedEntry = trackedEntry;
+            idx = static_cast<int32>(i);
+            LOG_DEBUG("mythic.run",
+                "Mapped boss entry {} to tracked encounter entry {} for map {}",
+                bossEntry, trackedEntry, state->mapId);
+            break;
+        }
+    }
+
+    state->bossKillStamps[stampedEntry] = now;
+
     if (idx < 0)
         return;
 
@@ -2578,19 +2709,44 @@ uint32 MythicPlusRunManager::GetItemLevelForKeystoneLevel(uint8 keystoneLevel) c
 
 uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
 {
+    auto getEncounterCount = [&](Difficulty difficulty) -> uint32
+    {
+        DungeonEncounterList const* encounters =
+            sObjectMgr->GetDungeonEncounterList(mapId, difficulty);
+        if (!encounters || encounters->empty())
+            return 0;
+
+        uint32 count = 0;
+        for (DungeonEncounter const* encounter : *encounters)
+        {
+            if (!encounter ||
+                encounter->creditType != ENCOUNTER_CREDIT_KILL_CREATURE ||
+                !encounter->creditEntry)
+            {
+                continue;
+            }
+
+            ++count;
+        }
+
+        return count;
+    };
+
+    uint32 encounterCount = getEncounterCount(DUNGEON_DIFFICULTY_HEROIC);
+    if (encounterCount > 0)
+        return encounterCount;
+
+    encounterCount = getEncounterCount(DUNGEON_DIFFICULTY_NORMAL);
+    if (encounterCount > 0)
+        return encounterCount;
+
+    encounterCount = getEncounterCount(DUNGEON_DIFFICULTY_EPIC);
+    if (encounterCount > 0)
+        return encounterCount;
+
     auto cached = _mapBossEntries.find(mapId);
     if (cached != _mapBossEntries.end() && !cached->second.empty())
         return cached->second.size();
-
-    // Use ObjectMgr to get encounters from DBC data as fallback
-    // Try both normal and heroic difficulties
-    DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_NORMAL);
-    if (encounters && !encounters->empty())
-        return encounters->size();
-
-    encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_HEROIC);
-    if (encounters && !encounters->empty())
-        return encounters->size();
 
     // Fallback to hardcoded values if no DBC data
     switch (mapId)
@@ -2639,7 +2795,7 @@ uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
         case 608:  return 4;  // Violet Hold
         case 615:  return 5;  // The Obsidian Sanctum
         case 616:  return 2;  // The Eye of Eternity
-        case 619:  return 3;  // Ahn'kahet: The Old Kingdom
+        case 619:  return 4;  // Ahn'kahet: The Old Kingdom
         case 624:  return 3;  // Vault of Archavon
         case 631:  return 12; // Icecrown Citadel
         case 632:  return 4;  // The Forge of Souls
@@ -2677,16 +2833,22 @@ bool MythicPlusRunManager::AreCompletionObjectivesMet(InstanceState const* state
 
     if (!state->bossOrder.empty())
     {
+        uint32 trackedKilled = 0;
         for (uint32 bossEntry : state->bossOrder)
         {
-            if (state->bossKillStamps.find(bossEntry) ==
+            if (state->bossKillStamps.find(bossEntry) !=
                 state->bossKillStamps.end())
-            {
-                return false;
-            }
+                ++trackedKilled;
         }
 
-        return true;
+        if (trackedKilled >= state->bossOrder.size())
+            return true;
+
+        uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);
+        if (totalBosses > 0 && state->bossesKilled >= totalBosses)
+            return true;
+
+        return false;
     }
 
     uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);

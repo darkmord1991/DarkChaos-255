@@ -29,27 +29,51 @@ namespace
 struct DungeonTeleporterOption
 {
     uint32 entryId;
+    uint32 dungeonMapId;
     char const* label;
 };
 
 constexpr std::array<DungeonTeleporterOption, 11> kDungeonTeleporterOptions = {{
-    {151, "Halls of Lightning"},
-    {152, "Utgarde Tower"},
-    {153, "Halls of Stone"},
-    {155, "Violet Citadel"},
-    {157, "AhnKahet"},
-    {158, "Azjol Nerub"},
-    {160, "Utgarde Keep"},
-    {162, "Drak Tharon"},
-    {163, "Culling of Stratholme"},
-    {164, "Frozen Halls"},
-    {165, "Trial of the Champion"}
+    {151, 602, "Halls of Lightning"},
+    {152, 575, "Utgarde Tower"},
+    {153, 599, "Halls of Stone"},
+    {155, 576, "Violet Citadel"},
+    {157, 619, "AhnKahet"},
+    {158, 601, "Azjol Nerub"},
+    {160, 574, "Utgarde Keep"},
+    {162, 600, "Drak Tharon"},
+    {163, 595, "Culling of Stratholme"},
+    {164, 632, "Frozen Halls"},
+    {165, 650, "Trial of the Champion"}
 }};
+
+DungeonTeleporterOption const* GetDungeonTeleporterOption(uint32 entryId)
+{
+    auto it = std::find_if(kDungeonTeleporterOptions.begin(), kDungeonTeleporterOptions.end(),
+        [entryId](DungeonTeleporterOption const& option) { return option.entryId == entryId; });
+
+    return it != kDungeonTeleporterOptions.end() ? &(*it) : nullptr;
+}
 
 bool IsMythicDungeonTeleporter(uint32 entryId)
 {
-    return std::any_of(kDungeonTeleporterOptions.begin(), kDungeonTeleporterOptions.end(),
-        [entryId](DungeonTeleporterOption const& option) { return option.entryId == entryId; });
+    return GetDungeonTeleporterOption(entryId) != nullptr;
+}
+
+std::string GetDungeonNameByMapId(uint32 dungeonMapId)
+{
+    QueryResult result = WorldDatabase.Query(
+        "SELECT dungeon_name FROM dc_dungeon_setup WHERE map_id = {}",
+        dungeonMapId);
+
+    if (result)
+    {
+        std::string name = result->Fetch()[0].Get<std::string>();
+        if (!name.empty())
+            return name;
+    }
+
+    return Acore::StringFormat("Dungeon {}", dungeonMapId);
 }
 
 float GetDungeonZOffset(uint32 dungeonMapId)
@@ -168,7 +192,11 @@ static void TeleportToDungeonEntranceByDungeonMap(Player* player, uint32 dungeon
         return;
 
     QueryResult result = WorldDatabase.Query(
-        "SELECT entrance_map, entrance_x, entrance_y, entrance_z, entrance_o FROM dc_dungeon_entrances WHERE dungeon_map = {}",
+        "SELECT e.entrance_map, e.entrance_x, e.entrance_y, e.entrance_z, e.entrance_o, "
+        "COALESCE(NULLIF(s.dungeon_name, ''), CONCAT('Dungeon ', e.dungeon_map)) "
+        "FROM dc_dungeon_entrances e "
+        "LEFT JOIN dc_dungeon_setup s ON s.map_id = e.dungeon_map "
+        "WHERE e.dungeon_map = {}",
         dungeonMapId);
 
     if (!result)
@@ -185,13 +213,15 @@ static void TeleportToDungeonEntranceByDungeonMap(Player* player, uint32 dungeon
     float y = fields[2].Get<float>();
     float z = fields[3].Get<float>();
     float o = fields[4].Get<float>();
+    std::string dungeonName = fields[5].Get<std::string>();
 
     // Preserve small map-specific z fixes
     z += GetDungeonZOffset(dungeonMapId);
 
     if (player->TeleportTo(entranceMap, x, y, z, o))
     {
-        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Teleporting to dungeon entrance...|r");
+        ChatHandler(player->GetSession()).SendSysMessage(
+            Acore::StringFormat("|cff00ff00[Dungeon Portal]|r Teleporting to {} entrance...", dungeonName).c_str());
         LOG_INFO("mythic.portal", "Player {} teleported to seasonal dungeon {}", player->GetName(), dungeonMapId);
     }
     else
@@ -341,8 +371,10 @@ static void HandleSeasonalPortalTeleport(Player* player, DCAddon::ParsedMessage 
         return;
     }
 
+    std::string dungeonName = GetDungeonNameByMapId(dungeonMapId);
+
     ChatHandler(player->GetSession()).SendSysMessage(
-        Acore::StringFormat("|cff00ff00[Dungeon Portal]|r Teleporting to {} entrance...", difficultyLabel).c_str());
+        Acore::StringFormat("|cff00ff00[Dungeon Portal]|r Teleporting to {} ({}) entrance...", dungeonName, difficultyLabel).c_str());
 
     TeleportToDungeonEntranceByDungeonMap(player, dungeonMapId);
     SendSeasonalPortalResult(player, true, "Teleporting...");
@@ -440,48 +472,22 @@ DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficul
     return req;
 }
 
-// Teleport player to dungeon using teleporter entry from eluna_teleporter table
+// Teleport player to dungeon using teleporter entry mapping and dc_dungeon_entrances
 void TeleportToDungeonEntrance(Player* player, uint32 teleporterEntryId)
 {
     if (!player)
         return;
 
-    // Query teleporter coordinates from eluna_teleporter table
-    QueryResult result = WorldDatabase.Query(
-        "SELECT map, x, y, z, o FROM eluna_teleporter WHERE id = {}", teleporterEntryId);
-
-    if (!result)
+    DungeonTeleporterOption const* option = GetDungeonTeleporterOption(teleporterEntryId);
+    if (!option)
     {
         ChatHandler(player->GetSession()).SendSysMessage(
-            "Error: Teleporter coordinates not found in database.");
-        LOG_ERROR("mythic.portal", "No teleporter entry found for ID {}", teleporterEntryId);
+            "Error: Invalid dungeon teleporter option.");
+        LOG_ERROR("mythic.portal", "Unknown teleporter option ID {}", teleporterEntryId);
         return;
     }
 
-    Field* fields = result->Fetch();
-    uint32 mapId = fields[0].Get<uint32>();
-    float x = fields[1].Get<float>();
-    float y = fields[2].Get<float>();
-    float z = fields[3].Get<float>();
-    float o = fields[4].Get<float>();
-
-    z += GetDungeonZOffset(mapId);
-
-    // Teleport player to entrance
-    if (player->TeleportTo(mapId, x, y, z, o))
-    {
-        ChatHandler(player->GetSession()).SendSysMessage(
-            "|cff00ff00Teleporting to dungeon entrance...|r");
-        LOG_INFO("mythic.portal", "Player {} teleported via teleporter entry {}",
-            player->GetName(), teleporterEntryId);
-    }
-    else
-    {
-        ChatHandler(player->GetSession()).SendSysMessage(
-            "Error: Failed to teleport to dungeon entrance.");
-        LOG_ERROR("mythic.portal", "Failed to teleport player {} via entry {}",
-            player->GetName(), teleporterEntryId);
-    }
+    TeleportToDungeonEntranceByDungeonMap(player, option->dungeonMapId);
 }
 
 // Generic portal creature script for all dungeon entrances
@@ -532,7 +538,7 @@ public:
 
         ClearGossipMenuFor(player);
 
-        // Show dungeon selection menu - using teleporter entry IDs
+        // Show dungeon selection menu using configured teleporter option IDs
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
             "|cffff8000=== Select Mythic+ Dungeon ===|r",
             GOSSIP_SENDER_MAIN, 0);
@@ -544,7 +550,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff32c4ff[UI]|r Open Seasonal Dungeon Portal UI", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_OPEN_SEASONAL_UI);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
 
-        // WotLK Dungeons - use teleporter entry IDs from eluna_teleporter table
+        // WotLK Dungeons
         for (auto const& option : kDungeonTeleporterOptions)
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, option.label, GOSSIP_SENDER_MAIN, option.entryId);
 
@@ -638,7 +644,14 @@ public:
             return true;
         }
 
-        std::string message = "|cff00ff00[Dungeon Portal]|r Teleporting to " + std::string(difficultyLabel) + " entrance...";
+        std::string dungeonName = "Unknown Dungeon";
+        if (DungeonTeleporterOption const* option = GetDungeonTeleporterOption(teleporterEntryId))
+            dungeonName = option->label;
+
+        std::string message = Acore::StringFormat(
+            "|cff00ff00[Dungeon Portal]|r Teleporting to {} ({}) entrance...",
+            dungeonName,
+            difficultyLabel);
         ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
 
         // Teleport player after setting difficulty

@@ -108,6 +108,7 @@ LB.Categories = {
             { id = "mplus_runs", name = "Total Runs" },
             { id = "mplus_score", name = "Overall Score" },
             { id = "mplus_bestruns", name = "Best Runs (w/ Dungeon)" },  -- v1.3.0
+            { id = "mplus_history", name = "Run History (Recent)" },
         },
         hasDungeonFilter = true,  -- v1.3.0: Enables dungeon selector
     },
@@ -231,6 +232,7 @@ LB.DefaultSettings = {
     
     -- Testing/Debug settings
     selectedSeasonId = 0,  -- 0 = current season
+    mplusHistoryMyRunsOnly = true,
     
     -- UI position (saved when frame is dragged)
     framePosition = nil,
@@ -393,6 +395,18 @@ local function GetClassColor(class)
     return CLASS_COLORS[class] or "FFFFFF"
 end
 
+function LB:GetHistoryMyRunsOnly()
+    return self:GetSetting("mplusHistoryMyRunsOnly") ~= false
+end
+
+function LB:GetCacheKey(category, subcategory)
+    local key = (category or "unknown") .. "_" .. (subcategory or "unknown")
+    if category == "mplus" and subcategory == "mplus_history" then
+        key = key .. (self:GetHistoryMyRunsOnly() and "_self" or "_all")
+    end
+    return key
+end
+
 -- =====================================================================
 -- COMMUNICATION FUNCTIONS
 -- =====================================================================
@@ -414,6 +428,10 @@ function LB:RequestLeaderboard(category, subcategory, page, limit)
         limit = limit,
         seasonId = seasonId,
     }
+
+    if category == "mplus" and subcategory == "mplus_history" then
+        request.myRunsOnly = self:GetHistoryMyRunsOnly()
+    end
     
     -- For HLBG category, translate subcategory to leaderboard type
     if category == "hlbg" then
@@ -774,7 +792,7 @@ function LB:OnLeaderboardData(data)
     
     local category = data.category or "unknown"
     local subcategory = data.subcategory or "unknown"
-    local key = category .. "_" .. subcategory
+    local key = self:GetCacheKey(category, subcategory)
     
     -- Store in cache
     self.Cache.data[key] = data.entries or {}
@@ -819,7 +837,7 @@ function LB:OnMyRankData(data)
     
     local category = data.category or "unknown"
     local subcategory = data.subcategory or "unknown"
-    local key = category .. "_" .. subcategory
+    local key = self:GetCacheKey(category, subcategory)
     
     self.Cache.myRanks[key] = {
         rank = data.rank,
@@ -940,6 +958,9 @@ function LB:CreateMainFrame()
     
     -- v1.3.0: Create dungeon selector (bottom right, for M+ category)
     self:CreateDungeonSelector(frame)
+
+    -- M+ history selector (bottom right, shown for Run History subcategory)
+    self:CreateHistorySelector(frame)
     
     -- Create settings button
     local settingsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -1293,6 +1314,48 @@ function LB:CreateDungeonSelector(parent)
     self.Frames.dungeonDropdown = dropdown
 end
 
+function LB:CreateHistorySelector(parent)
+    local historyFrame = CreateFrame("Frame", nil, parent)
+    historyFrame:SetSize(180, 60)
+    historyFrame:SetPoint("BOTTOMRIGHT", -15, 15)
+    historyFrame:Hide()
+    self.Frames.historySelector = historyFrame
+
+    local bg = historyFrame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(0.1, 0.1, 0.1, 0.7)
+
+    local label = historyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOPLEFT", 5, -5)
+    label:SetText("|cffff8000M+ History:|r")
+
+    local toggle = CreateFrame("CheckButton", "DCLeaderboardsMyRunsOnly", historyFrame, "InterfaceOptionsCheckButtonTemplate")
+    toggle:SetPoint("TOPLEFT", label, "BOTTOMLEFT", -2, -4)
+    toggle:SetChecked(self:GetHistoryMyRunsOnly())
+
+    local toggleText = _G[toggle:GetName() .. "Text"]
+    if toggleText then
+        toggleText:SetText("|cff00ff96My Runs Only|r")
+    end
+
+    toggle:SetScript("OnClick", function(btn)
+        LB:SetSetting("mplusHistoryMyRunsOnly", btn:GetChecked() and true or false)
+
+        -- Clear history cache for both filter states to avoid stale list swaps.
+        LB.Cache.data["mplus_mplus_history_self"] = nil
+        LB.Cache.timestamps["mplus_mplus_history_self"] = nil
+        LB.Cache.data["mplus_mplus_history_all"] = nil
+        LB.Cache.timestamps["mplus_mplus_history_all"] = nil
+
+        if LB.currentCategory == "mplus" and LB.currentSubCategory == "mplus_history" then
+            LB:RequestLeaderboard("mplus", "mplus_history", 1)
+            LB:RequestMyRank("mplus", "mplus_history")
+        end
+    end)
+
+    self.Frames.historyMyRunsOnly = toggle
+end
+
 function LB:ToggleDungeonDropdown()
     local dropdown = self.Frames.dungeonDropdown
     if not dropdown then return end
@@ -1414,7 +1477,20 @@ function LB:UpdateDungeonSelectorVisibility()
         end
     end
     
-    if category and category.hasDungeonFilter then
+    local isMplusHistory = (self.currentCategory == "mplus" and self.currentSubCategory == "mplus_history")
+
+    if self.Frames.historySelector then
+        if isMplusHistory then
+            self.Frames.historySelector:Show()
+            if self.Frames.historyMyRunsOnly then
+                self.Frames.historyMyRunsOnly:SetChecked(self:GetHistoryMyRunsOnly())
+            end
+        else
+            self.Frames.historySelector:Hide()
+        end
+    end
+
+    if category and category.hasDungeonFilter and not isMplusHistory then
         self.Frames.dungeonSelector:Show()
         -- Request dungeons if we don't have them yet
         if #self.MythicPlusDungeons == 0 then
@@ -1665,9 +1741,10 @@ function LB:SelectSubCategory(subcategoryId)
 
     -- Update header text
     self:UpdateHeaderText()
+    self:UpdateDungeonSelectorVisibility()
     
     -- Check cache
-    local key = self.currentCategory .. "_" .. subcategoryId
+    local key = self:GetCacheKey(self.currentCategory, subcategoryId)
     local cacheTime = self.Cache.timestamps[key]
     local cacheLifetime = self:GetSetting("cacheLifetime") or 30
     
@@ -1734,6 +1811,9 @@ function LB:UpdateHeaderText()
         -- v1.3.0: Best runs with dungeon names
         header:SetText("|cffffd700Key Level|r")
         extra:SetText("|cffffd700Dungeon|r")
+    elseif subcat == "mplus_history" then
+        header:SetText("|cffffd700Key Level|r")
+        extra:SetText("|cffffd700Run Details|r")
     elseif subcat:find("mplus_dungeon_") then
         -- v1.3.0: Per-dungeon view
         header:SetText("|cffffd700Key Level|r")
@@ -1834,7 +1914,7 @@ function LB:GetOrCreateEntry(index)
 end
 
 function LB:UpdateLeaderboardDisplay()
-    local key = (self.currentCategory or "mplus") .. "_" .. (self.currentSubCategory or "mplus_key")
+    local key = self:GetCacheKey(self.currentCategory or "mplus", self.currentSubCategory or "mplus_key")
     local data = self.Cache.data[key] or {}
     
     -- Debug output - always show what we're displaying
@@ -2069,7 +2149,7 @@ function LB:UpdatePaginationDisplay()
 end
 
 function LB:UpdatePlayerRankDisplay()
-    local key = (self.currentCategory or "mplus") .. "_" .. (self.currentSubCategory or "mplus_key")
+    local key = self:GetCacheKey(self.currentCategory or "mplus", self.currentSubCategory or "mplus_key")
     local myRankData = self.Cache.myRanks[key]
     
     if self.Frames.myRank then

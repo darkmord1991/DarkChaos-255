@@ -193,8 +193,27 @@ local function GetTrackableInstanceInfo()
         return nil
     end
 
-    local name, instanceType, difficultyID = GetInstanceInfo()
+    local name, instanceType, difficultyID, difficultyName = GetInstanceInfo()
     if instanceType ~= "party" and instanceType ~= "raid" then
+        return nil
+    end
+
+    local function IsMythicDifficulty(id, label)
+        id = tonumber(id) or 0
+        if id == 16 or id == 23 then
+            return true
+        end
+        if type(label) == "string" then
+            local lowered = string.lower(label)
+            if string.find(lowered, "mythic") then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Local timer is strictly for non-Mythic runs.
+    if IsMythicDifficulty(difficultyID, difficultyName) then
         return nil
     end
 
@@ -370,6 +389,18 @@ end
 
 local function Trim(str)
     return (str and str:match("^%s*(.-)%s*$")) or str
+end
+
+local function TruncateForHudTitle(text, maxChars)
+    text = tostring(text or "")
+    maxChars = tonumber(maxChars) or 30
+    if maxChars < 4 then
+        maxChars = 4
+    end
+    if string.len(text) <= maxChars then
+        return text
+    end
+    return string.sub(text, 1, maxChars - 3) .. "..."
 end
 
 -- 3.3.5a safety: wipe/CopyTable may not exist in some client builds
@@ -1428,6 +1459,7 @@ local function EnsureFrame()
 
     headerText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     headerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -10)
+    headerText:SetWidth(250)
     headerText:SetJustifyH("LEFT")
     headerText:SetFont("Fonts\\FRIZQT__.TTF", 22, "OUTLINE")
     headerText:SetText("Mythic+ HUD")
@@ -1499,47 +1531,20 @@ local function ApplySavedPosition()
 end
 
 local function IsInMythicOrMythicPlusInstance()
-    -- Ensure we are in an instance and check for mythic or mythic+ difficulty
+    -- Server-driven HUD should only show for active keystone runs.
     if not activeState or not IsRunInProgress(activeState) then
         return false
     end
-    -- If the state indicates a key level, it's a mythic+ run
+
     local keyLevel = tonumber(GetKeystoneFromState(activeState))
     if keyLevel and keyLevel > 0 then
-        -- Still ensure player is actually inside an instance
         if type(IsInInstance) == "function" then
             local inInstance = select(1, IsInInstance())
             if inInstance then return true end
         end
         return false
     end
-    -- Fallback: check instance difficulty (requires GetInstanceInfo)
-    if type(GetInstanceInfo) == "function" and type(IsInInstance) == "function" then
-        local inInstance = select(1, IsInInstance())
-        if not inInstance then return false end
-        local _, instanceType, difficultyID, difficultyName = GetInstanceInfo()
-        -- First, check difficultyName for 'mythic' (supports localized names)
-        if difficultyName and type(difficultyName) == "string" and string.find(string.lower(difficultyName), "mythic") then
-            return true
-        end
-        -- A broader set of difficulty IDs that have been used across expansions for mythic/mythic+ modes
-        local mythicDifficultyIds = {
-            [8] = true,  -- some expansions
-            [16] = true, -- mythic
-            [23] = true, -- mythic+ on certain patches
-            [15] = true, -- possible mythic mapping
-            [14] = true, -- possible mythic mapping
-            [6] = true,  -- trial / other
-            [24] = true, -- miscellaneous
-        }
-        if difficultyID and mythicDifficultyIds[difficultyID] then
-            return true
-        end
-        -- As a last resort, assume party-type instances are dungeons; if activeState indicates a run
-        if instanceType and instanceType == "party" and IsRunInProgress(activeState) then
-            return true
-        end
-    end
+
     return false
 end
 
@@ -1622,7 +1627,7 @@ local function UpdateFrameFromLocalRun()
     local f = EnsureFrame()
     ApplySavedPosition()
 
-    local name = localRun.instanceName or "Run Timer"
+    local name = TruncateForHudTitle(localRun.instanceName or "Run Timer", 24)
     headerText:SetText(string.format("%s |cffffaa33Run|r", name))
 
     local elapsed
@@ -2237,7 +2242,7 @@ local function UpdateFrameFromState(data)
         StopRunTracking(false, data and data.elapsed or nil)
     end
 
-    local mapName = data.mapName or MapNameForId(mapId)
+    local mapName = TruncateForHudTitle(data.mapName or MapNameForId(mapId), 22)
     local keystoneDisplay = tonumber(keystone) or 0
     headerText:SetText(string.format("%s |cffffaa33+%d|r", mapName, keystoneDisplay))
 

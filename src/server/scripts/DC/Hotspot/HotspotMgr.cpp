@@ -99,24 +99,6 @@ static bool IsFarEnoughFromExistingHotspots(uint32 mapId, float x, float y)
     return true;
 }
 
-static constexpr uint32 DUNGEON_GRANT_ID_MASK = 0x80000000u;
-
-static uint32 BuildHotspotGrantId(Hotspot const* hotspot, Player const* player, bool isDungeonHotspot)
-{
-    if (hotspot)
-        return hotspot->id;
-
-    if (isDungeonHotspot && player)
-        return DUNGEON_GRANT_ID_MASK | player->GetMapId();
-
-    return 0;
-}
-
-static bool IsDungeonGrantId(uint32 grantId)
-{
-    return (grantId & DUNGEON_GRANT_ID_MASK) != 0;
-}
-
 static uint32 GetPrimaryHotspotAuraSpell()
 {
     if (sHotspotsConfig.auraSpell)
@@ -202,10 +184,6 @@ void HotspotMgr::LoadConfig()
     sHotspotsConfig.sendAddonPackets = sConfigMgr->GetOption<bool>("Hotspots.SendAddonPackets", false);
     sHotspotsConfig.gmBypassLimit = sConfigMgr->GetOption<bool>("Hotspots.GMBypassLimit", true);
     sHotspotsConfig.allowWorldwideSpawn = sConfigMgr->GetOption<bool>("Hotspots.AllowWorldwideSpawn", true);
-
-    // Dungeon support
-    sHotspotsConfig.dungeonHotspotsEnabled = sConfigMgr->GetOption<bool>("Hotspots.Dungeons.Enable", false);
-    sHotspotsConfig.dungeonBonusMultiplier = sConfigMgr->GetOption<uint32>("Hotspots.Dungeons.BonusMultiplier", 50);
 
     // Objectives support
     sHotspotsConfig.objectivesEnabled = sConfigMgr->GetOption<bool>("Hotspots.Objectives.Enable", true);
@@ -597,7 +575,7 @@ void HotspotMgr::CleanupExpiredHotspots()
             auto& granted = playerIt->second;
             for (auto grantIt = granted.begin(); grantIt != granted.end(); )
             {
-                if (IsDungeonGrantId(*grantIt) || activeHotspotIds.find(*grantIt) != activeHotspotIds.end())
+                if (activeHotspotIds.find(*grantIt) != activeHotspotIds.end())
                     ++grantIt;
                 else
                     grantIt = granted.erase(grantIt);
@@ -624,8 +602,7 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
 
     ObjectGuid const playerGuid = player->GetGUID();
     Hotspot const* hotspot = GetPlayerHotspot(player);
-    bool isDungeonHotspot = sHotspotsConfig.dungeonHotspotsEnabled && player->GetMap() && player->GetMap()->IsDungeon();
-    bool isInHotspotContext = (hotspot != nullptr) || isDungeonHotspot;
+    bool isInHotspotContext = (hotspot != nullptr);
     bool hasHotspotAura = PlayerHasAnyHotspotAura(player);
 
     if (!hasHotspotAura)
@@ -658,14 +635,15 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
     if (!isInHotspotContext)
         return;
 
+    if (!hotspot)
+        return;
+
     RemoveSecondaryHotspotAuras(player);
 
     if (hasHotspotAura)
         return;
 
-    uint32 targetId = BuildHotspotGrantId(hotspot, player, isDungeonHotspot);
-    if (targetId == 0)
-        return;
+    uint32 targetId = hotspot->id;
 
     bool alreadyGranted = false;
     {
@@ -683,13 +661,11 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
         return;
 
     uint32 bonus = sHotspotsConfig.experienceBonus;
-    if (isDungeonHotspot)
-        bonus += sHotspotsConfig.dungeonBonusMultiplier;
 
     if (player->GetSession())
         ChatHandler(player->GetSession()).SendNotification("Hotspot joined: +{}% experience", bonus);
 
-    time_t expiryTime = hotspot ? hotspot->expireTime : GameTime::GetGameTime().count() + 3600;
+    time_t expiryTime = hotspot->expireTime;
     {
         std::lock_guard<std::mutex> lock(_playerDataLock);
         _playerExpiry[playerGuid] = expiryTime;
@@ -717,10 +693,7 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
     if (!isBuffed)
         return;
 
-    // Check dungeon bonus
     uint32 bonusPct = sHotspotsConfig.experienceBonus;
-    if (player->GetMap() && player->GetMap()->IsDungeon() && sHotspotsConfig.dungeonHotspotsEnabled)
-        bonusPct += sHotspotsConfig.dungeonBonusMultiplier;
 
     uint32 bonus = (amount * bonusPct) / 100;
     amount += bonus;
@@ -730,15 +703,12 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
     // Track objectives
     if (sHotspotsConfig.objectivesEnabled && victim) // victim might be null in some calls?
     {
-         // Check valid context: Grid Hotspot OR Dungeon
+         // Check valid context: Grid Hotspot
          Hotspot const* cur = GetPlayerHotspot(player);
-         bool isDungeon = sHotspotsConfig.dungeonHotspotsEnabled && player->GetMap() && player->GetMap()->IsDungeon();
 
-         if (cur || isDungeon)
+         if (cur)
          {
-             uint32 targetId = BuildHotspotGrantId(cur, player, isDungeon);
-             if (targetId == 0)
-                 return;
+             uint32 targetId = cur->id;
 
              uint32 killCount = 0;
              bool reportProgress = false;

@@ -53,13 +53,11 @@ public:
         if (!quest)
             return;
 
-        std::string questLabel = "Quest: " + label;
-
         QuestStatus status = player->GetQuestStatus(questId);
         if (status == QUEST_STATUS_COMPLETE)
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
-                MakeLargeGossipText("Interface\\Icons\\Achievement_Quests_Completed_08", questLabel + " |cFF00FF00(Complete)|r"),
+                MakeLargeGossipText("Interface\\Icons\\Achievement_Quests_Completed_08", label + " |cFF00FF00(Done)|r"),
                 HLBG_GOSSIP_SENDER_QUEST_REWARD, questId);
             return;
         }
@@ -67,7 +65,7 @@ public:
         if (status == QUEST_STATUS_INCOMPLETE)
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_2,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", questLabel + " |cFFFFFF00(In Progress)|r"),
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label + " |cFFFFFF00(Active)|r"),
                 GOSSIP_SENDER_MAIN, ACTION_QUEST_PROGRESS);
             return;
         }
@@ -75,7 +73,7 @@ public:
         if (status == QUEST_STATUS_NONE && player->CanTakeQuest(quest, false))
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", questLabel),
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label),
                 HLBG_GOSSIP_SENDER_QUEST_MANUAL, questId);
         }
     }
@@ -103,8 +101,8 @@ public:
                 MakeLargeGossipText("Interface\\Icons\\Ability_Whirlwind", "Join Hinterlands BG Queue"),
                 GOSSIP_SENDER_MAIN, ACTION_QUEUE_JOIN);
 
-        AddQuestOption(player, HLBG_QUEST_DAILY, "Hinterland Daily: Claim Victory");
-        AddQuestOption(player, HLBG_QUEST_WEEKLY, "Hinterland Weekly: Frontline Duty");
+        AddQuestOption(player, HLBG_QUEST_DAILY, "Daily Quest: Claim Victory");
+        AddQuestOption(player, HLBG_QUEST_WEEKLY, "Weekly Quest: Frontline Duty");
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
             MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "What is Hinterlands BG?"),

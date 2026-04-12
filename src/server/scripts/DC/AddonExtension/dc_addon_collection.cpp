@@ -1904,12 +1904,68 @@ namespace DCCollection
     // Mount Speed Bonus Management
     // =======================================================================
 
+    namespace
+    {
+        std::unordered_map<uint32, bool> sCollectionMountedState;
+        std::mutex sCollectionMountedStateMutex;
+    }
+
+    void CacheMountedState(Player* player)
+    {
+        if (!player)
+            return;
+
+        std::lock_guard<std::mutex> lock(sCollectionMountedStateMutex);
+        sCollectionMountedState[player->GetGUID().GetCounter()] = player->IsMounted();
+    }
+
+    bool HasMountedStateChanged(Player* player)
+    {
+        if (!player)
+            return false;
+
+        uint32 guid = player->GetGUID().GetCounter();
+        bool mountedNow = player->IsMounted();
+
+        std::lock_guard<std::mutex> lock(sCollectionMountedStateMutex);
+        auto it = sCollectionMountedState.find(guid);
+        if (it == sCollectionMountedState.end())
+        {
+            sCollectionMountedState[guid] = mountedNow;
+            return false;
+        }
+
+        if (it->second == mountedNow)
+            return false;
+
+        it->second = mountedNow;
+        return true;
+    }
+
+    void ClearMountedStateCache(Player* player)
+    {
+        if (!player)
+            return;
+
+        std::lock_guard<std::mutex> lock(sCollectionMountedStateMutex);
+        sCollectionMountedState.erase(player->GetGUID().GetCounter());
+    }
+
     void UpdateMountSpeedBonus(Player* player)
     {
         if (!player)
             return;
 
+        // Always remove tier auras first so bonus is never kept while unmounted.
+        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER1);
+        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER2);
+        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER3);
+        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER4);
+
         if (!sConfigMgr->GetOption<bool>(Config::MOUNT_BONUSES_ENABLED, true))
+            return;
+
+        if (!player->IsMounted())
             return;
 
         uint32 accountId = GetAccountId(player);
@@ -1919,12 +1975,6 @@ namespace DCCollection
         // Get mount count
         auto counts = LoadCollectionCounts(accountId);
         uint32 mountCount = counts[CollectionType::MOUNT];
-
-        // Remove all existing speed bonuses first
-        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER1);
-        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER2);
-        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER3);
-        player->RemoveAurasDueToSpell(SPELL_MOUNT_SPEED_TIER4);
 
         // Apply appropriate tier (only highest)
         if (mountCount >= MOUNT_THRESHOLD_TIER4)
@@ -5019,6 +5069,8 @@ namespace DCCollection
             if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
                 return;
 
+            CacheMountedState(player);
+
             // Seed account-wide collections from already-known mounts/pets/titles.
             ImportExistingCollections(player);
 
@@ -5095,6 +5147,18 @@ namespace DCCollection
             // Clear session notification cache on login
             uint32 guid = player->GetGUID().GetCounter();
             ClearSessionNotifiedAppearances(guid);
+        }
+
+        void OnPlayerUpdate(Player* player, uint32 /*p_time*/) override
+        {
+            if (!player)
+                return;
+
+            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+                return;
+
+            if (HasMountedStateChanged(player))
+                UpdateMountSpeedBonus(player);
         }
 
         void OnPlayerLearnSpell(Player* player, uint32 spellId) override
@@ -5350,6 +5414,8 @@ namespace DCCollection
         {
             if (!player)
                 return;
+
+            ClearMountedStateCache(player);
 
             // Drop per-account transmog unlock cache (rebuilt on next request/login).
             uint32 accountId = GetAccountId(player);

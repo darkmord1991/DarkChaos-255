@@ -16,7 +16,6 @@
 #include "Creature.h"
 #include "Item.h"
 #include "Chat.h"
-#include "Map.h"
 #include "Quests/QuestDef.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include <sstream>
@@ -25,64 +24,8 @@
 
 namespace
 {
-    constexpr uint32 LEGACY_QUEST_REWARD_BASE = 10;
-    constexpr float LEGACY_QUEST_SCALING_FACTOR = 0.5f;
-
-    constexpr uint32 LEGACY_DUNGEON_TRASH_REWARD = 5;
-    constexpr uint32 LEGACY_DUNGEON_BOSS_REWARD = 25;
-    constexpr uint32 LEGACY_DUNGEON_BOSS_ESSENCE = 5;
-    constexpr uint32 LEGACY_RAID_TRASH_REWARD = 10;
-    constexpr uint32 LEGACY_RAID_BOSS_REWARD = 50;
-    constexpr uint32 LEGACY_RAID_BOSS_ESSENCE = 10;
-    constexpr uint32 LEGACY_WORLD_BOSS_REWARD = 100;
-    constexpr uint32 LEGACY_WORLD_BOSS_ESSENCE = 20;
-
     std::unordered_set<uint32> sMissingAchievementTemplates;
     std::mutex sMissingAchievementTemplatesLock;
-
-    uint8 GetLegacyQuestDifficultyTier(uint32 questLevel, uint8 playerLevel)
-    {
-        if (playerLevel >= questLevel + 5)
-            return 0;
-        if (playerLevel >= questLevel + 3)
-            return 1;
-        if (playerLevel >= questLevel)
-            return 2;
-        if (playerLevel >= questLevel - 5)
-            return 3;
-        return 4;
-    }
-
-    uint32 CalculateLegacyQuestReward(uint32 questLevel, uint8 playerLevel)
-    {
-        uint8 difficulty = GetLegacyQuestDifficultyTier(questLevel, playerLevel);
-        if (difficulty == 0)
-            return 0;
-
-        return static_cast<uint32>(LEGACY_QUEST_REWARD_BASE *
-            (1.0f + (difficulty - 1) * LEGACY_QUEST_SCALING_FACTOR));
-    }
-
-    bool IsLegacyBossCreature(Creature const* creature)
-    {
-        if (!creature)
-            return false;
-
-        CreatureTemplate const* cTemplate = creature->GetCreatureTemplate();
-        if (!cTemplate)
-            return false;
-
-        return cTemplate->rank >= CREATURE_ELITE_RARE;
-    }
-
-    bool IsLegacyRaidCreature(Creature const* creature)
-    {
-        if (!creature)
-            return false;
-
-        Map const* map = creature->GetMap();
-        return map && map->IsRaid();
-    }
 }
 
 namespace DarkChaos
@@ -107,7 +50,6 @@ namespace DarkChaos
         {
             config_.enabled = sConfigMgr->GetOption<bool>("SeasonalRewards.Enable", true);
             config_.consolidateItemUpgradeHooks = sConfigMgr->GetOption<bool>("SeasonalRewards.ConsolidateItemUpgradeHooks", true);
-            config_.parityFallback = sConfigMgr->GetOption<bool>("SeasonalRewards.ParityFallback", true);
 
             // Try to get active season from generic seasonal system first
             if (Seasonal::GetSeasonalManager())
@@ -149,7 +91,6 @@ namespace DarkChaos
             LOG_INFO("module.dc", ">>   Active Season: {}", config_.activeSeason);
             LOG_INFO("module.dc", ">>   Token Item: {}, Essence Item: {}", config_.tokenItemId, config_.essenceItemId);
             LOG_INFO("module.dc", ">>   Consolidate ItemUpgrade Hooks: {}", config_.consolidateItemUpgradeHooks ? "enabled" : "disabled");
-            LOG_INFO("module.dc", ">>   Parity Fallback: {}", config_.parityFallback ? "enabled" : "disabled");
             LOG_INFO("module.dc", ">>   Weekly Caps: {} tokens, {} essence",
                 config_.weeklyTokenCap == 0 ? "unlimited" : std::to_string(config_.weeklyTokenCap),
                 config_.weeklyEssenceCap == 0 ? "unlimited" : std::to_string(config_.weeklyEssenceCap));
@@ -380,10 +321,6 @@ namespace DarkChaos
                 tokens = static_cast<uint32>(it->second.first * config_.questMultiplier);
                 essence = static_cast<uint32>(it->second.second * config_.questMultiplier);
             }
-            else if (config_.parityFallback)
-            {
-                tokens = CalculateLegacyQuestReward(quest->GetQuestLevel(), player->GetLevel());
-            }
 
             if (tokens == 0 && essence == 0)
                 return false;
@@ -430,45 +367,6 @@ namespace DarkChaos
 
                 tokens = static_cast<uint32>(it->second.first * multiplier);
                 essence = static_cast<uint32>(it->second.second * multiplier);
-            }
-            else if (config_.parityFallback)
-            {
-                if (creature->GetLevel() < 50)
-                    return false;
-
-                bool isBoss = IsLegacyBossCreature(creature);
-                bool isRaid = IsLegacyRaidCreature(creature);
-                bool isWorldBossLegacy = creature->isWorldBoss() && !isRaid;
-
-                if (isWorldBossLegacy)
-                {
-                    tokens = LEGACY_WORLD_BOSS_REWARD;
-                    essence = LEGACY_WORLD_BOSS_ESSENCE;
-                }
-                else if (isRaid)
-                {
-                    if (isBoss)
-                    {
-                        tokens = LEGACY_RAID_BOSS_REWARD;
-                        essence = LEGACY_RAID_BOSS_ESSENCE;
-                    }
-                    else
-                    {
-                        tokens = LEGACY_RAID_TRASH_REWARD;
-                    }
-                }
-                else
-                {
-                    if (isBoss)
-                    {
-                        tokens = LEGACY_DUNGEON_BOSS_REWARD;
-                        essence = LEGACY_DUNGEON_BOSS_ESSENCE;
-                    }
-                    else
-                    {
-                        tokens = LEGACY_DUNGEON_TRASH_REWARD;
-                    }
-                }
             }
 
             if (tokens == 0 && essence == 0)

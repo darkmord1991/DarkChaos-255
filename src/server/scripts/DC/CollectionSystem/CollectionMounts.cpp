@@ -43,6 +43,15 @@ namespace DCCollection
         if (!sConfigMgr->GetOption<bool>(Config::MOUNT_BONUSES_ENABLED, true))
             return;
 
+        // Always clear tier auras first so the bonus is not kept while unmounted.
+        player->RemoveAura(SPELL_MOUNT_SPEED_TIER1);
+        player->RemoveAura(SPELL_MOUNT_SPEED_TIER2);
+        player->RemoveAura(SPELL_MOUNT_SPEED_TIER3);
+        player->RemoveAura(SPELL_MOUNT_SPEED_TIER4);
+
+        if (!player->IsMounted())
+            return;
+
         // Count collected mounts from account
         uint32 accountId = player->GetSession() ? player->GetSession()->GetAccountId() : 0;
         if (!accountId)
@@ -56,12 +65,6 @@ namespace DCCollection
 
         if (r)
             mountCount = r->Fetch()[0].Get<uint32>();
-
-        // Remove all existing mount speed bonuses
-        player->RemoveAura(SPELL_MOUNT_SPEED_TIER1);
-        player->RemoveAura(SPELL_MOUNT_SPEED_TIER2);
-        player->RemoveAura(SPELL_MOUNT_SPEED_TIER3);
-        player->RemoveAura(SPELL_MOUNT_SPEED_TIER4);
 
         // Apply appropriate tier
         if (mountCount >= MOUNT_THRESHOLD_TIER4)

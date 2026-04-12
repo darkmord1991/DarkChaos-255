@@ -179,6 +179,7 @@ namespace MythicPlus
         // - show current-week progress separately
         uint32 progressWeekStart = sMythicRuns->GetWeekStartTimestamp();
         uint32 progressWeekEnd = progressWeekStart + SECONDS_PER_WEEK;
+        uint32 nextWeekStart = progressWeekEnd;
 
         uint32 claimWeekStart = progressWeekStart >= SECONDS_PER_WEEK ? (progressWeekStart - SECONDS_PER_WEEK) : 0;
         uint32 claimWeekEnd = claimWeekStart + SECONDS_PER_WEEK;
@@ -253,6 +254,48 @@ namespace MythicPlus
             return pvpWins;
         };
 
+        struct RecentRunEntry
+        {
+            uint16 mapId = 0;
+            uint8 keystoneLevel = 0;
+            uint32 completionTime = 0;
+            bool success = false;
+            uint32 completedAt = 0;
+            std::string mapName;
+        };
+
+        std::vector<RecentRunEntry> recentRuns;
+        if (QueryResult runHistoryResult = CharacterDatabase.Query(
+            "SELECT map_id, keystone_level, COALESCE(completion_time, 0), success, UNIX_TIMESTAMP(completed_at) "
+            "FROM dc_mplus_runs "
+            "WHERE character_guid = {} AND season_id = {} "
+            "ORDER BY completed_at DESC, run_id DESC "
+            "LIMIT 9",
+            guidLow, seasonId))
+        {
+            do
+            {
+                Field* fields = runHistoryResult->Fetch();
+                RecentRunEntry run;
+                run.mapId = fields[0].Get<uint16>();
+                run.keystoneLevel = fields[1].Get<uint8>();
+                run.completionTime = fields[2].Get<uint32>();
+                run.success = fields[3].Get<uint8>() != 0;
+                run.completedAt = fields[4].Get<uint32>();
+
+                std::string runMapName = "Map " + std::to_string(run.mapId);
+                if (MapEntry const* mapEntry = sMapStore.LookupEntry(run.mapId))
+                {
+                    char const* dbMapName = mapEntry->name[0];
+                    if (dbMapName && dbMapName[0] != '\0')
+                        runMapName = dbMapName;
+                }
+
+                run.mapName = runMapName;
+                recentRuns.push_back(run);
+            } while (runHistoryResult->NextRow());
+        }
+
         // Claim state applies to CLAIM WEEK.
         bool claimed = false;
         uint8 claimedSlot = 0;
@@ -276,6 +319,14 @@ namespace MythicPlus
         std::vector<uint8> mplusLevelsProgress = GetMPlusLevelsForWeek(progressWeekStart, progressWeekEnd);
         uint8 mplusRunsProgress = static_cast<uint8>(mplusLevelsProgress.size());
         uint8 mplusHighest = mplusRunsProgress > 0 ? mplusLevelsProgress[0] : 0;
+
+        uint8 mplusSlotLevelProgress[4] = { 0, 0, 0, 0 };
+        if (mplusLevelsProgress.size() >= 1)
+            mplusSlotLevelProgress[1] = mplusLevelsProgress[0];
+        if (mplusLevelsProgress.size() >= 4)
+            mplusSlotLevelProgress[2] = mplusLevelsProgress[3];
+        if (mplusLevelsProgress.size() >= 8)
+            mplusSlotLevelProgress[3] = mplusLevelsProgress[7];
 
         std::vector<uint8> mplusLevelsClaim = claimWeekStart != 0 ? GetMPlusLevelsForWeek(claimWeekStart, claimWeekEnd) : std::vector<uint8>();
         uint8 mplusRunsClaim = static_cast<uint8>(mplusLevelsClaim.size());
@@ -315,6 +366,19 @@ namespace MythicPlus
 
         auto pvpUnlockedProgress = [&](uint8 slotInTrack) -> bool { return pvpWinsProgress >= pvpThreshold(slotInTrack); };
         auto pvpUnlockedClaim = [&](uint8 slotInTrack) -> bool { return pvpWinsClaim >= pvpThreshold(slotInTrack); };
+
+        uint32 raidForecastIlvl = sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.ItemLevel", 264);
+        uint32 pvpForecastIlvl = sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.ItemLevel", 264);
+
+        auto mplusForecastIlvl = [&](uint8 slotInTrack) -> uint32
+        {
+            uint8 keyLevel = mplusSlotLevelProgress[slotInTrack];
+            if (keyLevel == 0)
+                return 0;
+
+            // Keep in sync with GreatVault reward generation logic.
+            return 200u + (static_cast<uint32>(keyLevel) * 3u);
+        };
 
         // Generate claim-week rewards lazily on open (idempotent generation).
         uint32 unlockedCountClaim = 0;
@@ -402,6 +466,54 @@ namespace MythicPlus
             return slotObj;
         };
 
+        auto MakeForecastSlotObj = [&](uint8 globalSlot, uint8 slotInTrack, uint32 threshold, uint32 progress, bool isUnlocked, uint32 forecastIlvl, uint32 sourceKeyLevel) -> JsonValue
+        {
+            JsonValue slotObj;
+            slotObj.SetObject();
+            slotObj.Set("id", slotInTrack);
+            slotObj.Set("globalId", globalSlot);
+            slotObj.Set("threshold", static_cast<int32>(threshold));
+            slotObj.Set("progress", static_cast<int32>(progress));
+
+            if (isUnlocked)
+            {
+                slotObj.Set("status", "forecast");
+                if (forecastIlvl > 0)
+                    slotObj.Set("forecastIlvl", static_cast<int32>(forecastIlvl));
+                if (sourceKeyLevel > 0)
+                    slotObj.Set("sourceKeyLevel", static_cast<int32>(sourceKeyLevel));
+            }
+            else
+            {
+                slotObj.Set("status", "locked");
+            }
+
+            return slotObj;
+        };
+
+        auto MakeHistorySlotObj = [&](uint8 globalSlot, uint8 slotInTrack, RecentRunEntry const* run) -> JsonValue
+        {
+            JsonValue slotObj;
+            slotObj.SetObject();
+            slotObj.Set("id", slotInTrack);
+            slotObj.Set("globalId", globalSlot);
+
+            if (!run)
+            {
+                slotObj.Set("status", "empty");
+                return slotObj;
+            }
+
+            slotObj.Set("status", "history");
+            slotObj.Set("mapId", static_cast<int32>(run->mapId));
+            slotObj.Set("mapName", run->mapName);
+            slotObj.Set("keystoneLevel", static_cast<int32>(run->keystoneLevel));
+            slotObj.Set("completionTime", static_cast<int32>(run->completionTime));
+            slotObj.Set("success", run->success);
+            slotObj.Set("completedAt", static_cast<int32>(run->completedAt));
+            return slotObj;
+        };
+
         auto BuildTracks = [&](bool claimWeek) -> JsonValue
         {
             JsonValue tracksArr;
@@ -479,8 +591,116 @@ namespace MythicPlus
             return tracksArr;
         };
 
+        auto BuildForecastTracks = [&]() -> JsonValue
+        {
+            JsonValue tracksArr;
+            tracksArr.SetArray();
+
+            // Raid track (global slots 1-3)
+            {
+                JsonValue trackObj;
+                trackObj.SetObject();
+                trackObj.Set("id", "raid");
+                trackObj.Set("name", "Raid");
+
+                JsonValue slotsArr;
+                slotsArr.SetArray();
+                for (uint8 i = 1; i <= 3; ++i)
+                {
+                    uint8 globalSlot = static_cast<uint8>(0 * 3 + i);
+                    uint32 threshold = raidThreshold(i);
+                    uint32 progress = raidBossesProgress;
+                    bool unlocked = raidUnlockedProgress(i);
+                    uint32 forecastIlvl = unlocked ? raidForecastIlvl : 0;
+                    slotsArr.Push(MakeForecastSlotObj(globalSlot, i, threshold, progress, unlocked, forecastIlvl, 0));
+                }
+
+                trackObj.Set("slots", slotsArr);
+                tracksArr.Push(trackObj);
+            }
+
+            // Mythic+ track (global slots 4-6)
+            {
+                JsonValue trackObj;
+                trackObj.SetObject();
+                trackObj.Set("id", "mplus");
+                trackObj.Set("name", "Mythic+");
+
+                JsonValue slotsArr;
+                slotsArr.SetArray();
+                for (uint8 i = 1; i <= 3; ++i)
+                {
+                    uint8 globalSlot = static_cast<uint8>(1 * 3 + i);
+                    uint32 threshold = mplusThreshold(i);
+                    uint32 progress = mplusRunsProgress;
+                    bool unlocked = mplusUnlockedProgress(i);
+                    uint32 sourceKeyLevel = mplusSlotLevelProgress[i];
+                    uint32 forecastIlvl = unlocked ? mplusForecastIlvl(i) : 0;
+                    slotsArr.Push(MakeForecastSlotObj(globalSlot, i, threshold, progress, unlocked, forecastIlvl, sourceKeyLevel));
+                }
+
+                trackObj.Set("slots", slotsArr);
+                tracksArr.Push(trackObj);
+            }
+
+            // PvP track (global slots 7-9)
+            {
+                JsonValue trackObj;
+                trackObj.SetObject();
+                trackObj.Set("id", "pvp");
+                trackObj.Set("name", "PvP");
+
+                JsonValue slotsArr;
+                slotsArr.SetArray();
+                for (uint8 i = 1; i <= 3; ++i)
+                {
+                    uint8 globalSlot = static_cast<uint8>(2 * 3 + i);
+                    uint32 threshold = pvpThreshold(i);
+                    uint32 progress = pvpWinsProgress;
+                    bool unlocked = pvpUnlockedProgress(i);
+                    uint32 forecastIlvl = unlocked ? pvpForecastIlvl : 0;
+                    slotsArr.Push(MakeForecastSlotObj(globalSlot, i, threshold, progress, unlocked, forecastIlvl, 0));
+                }
+
+                trackObj.Set("slots", slotsArr);
+                tracksArr.Push(trackObj);
+            }
+
+            return tracksArr;
+        };
+
+        auto BuildHistoryTracks = [&]() -> JsonValue
+        {
+            JsonValue tracksArr;
+            tracksArr.SetArray();
+
+            JsonValue trackObj;
+            trackObj.SetObject();
+            trackObj.Set("id", "history");
+            trackObj.Set("name", "Latest Runs");
+
+            JsonValue slotsArr;
+            slotsArr.SetArray();
+
+            for (uint8 slotInTrack = 1; slotInTrack <= 3; ++slotInTrack)
+            {
+                uint8 globalSlot = slotInTrack;
+                RecentRunEntry const* run = (slotInTrack - 1) < recentRuns.size()
+                    ? &recentRuns[slotInTrack - 1]
+                    : nullptr;
+                slotsArr.Push(MakeHistorySlotObj(globalSlot, slotInTrack, run));
+            }
+
+            trackObj.Set("slots", slotsArr);
+            tracksArr.Push(trackObj);
+
+            return tracksArr;
+        };
+
         JsonValue claimTracks = BuildTracks(true);
         JsonValue progressTracks = BuildTracks(false);
+        JsonValue nextWeekTracks = BuildForecastTracks();
+        JsonValue historyTracks = BuildHistoryTracks();
 
         bool claimAvailable = (unlockedCountClaim > 0) && (!claimed);
 
@@ -491,8 +711,11 @@ namespace MythicPlus
             .Set("highestLevel", static_cast<int32>(mplusHighest))
             .Set("tracks", claimTracks)
             .Set("progressTracks", progressTracks)
+            .Set("nextWeekTracks", nextWeekTracks)
+            .Set("historyTracks", historyTracks)
             .Set("claimWeekStart", static_cast<int32>(claimWeekStart))
             .Set("progressWeekStart", static_cast<int32>(progressWeekStart))
+            .Set("nextWeekStart", static_cast<int32>(nextWeekStart))
             .Set("defaultView", claimAvailable ? "claim" : "progress")
             .Set("open", openWindow)
             .Send(player);

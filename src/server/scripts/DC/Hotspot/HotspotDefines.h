@@ -42,10 +42,6 @@ struct HotspotsConfig
     bool gmBypassLimit = true;               // allow GM/manual spawns to bypass maxActive limit
     bool allowWorldwideSpawn = true;         // allow spawning hotspots across all enabled maps via command
 
-    // Dungeon hotspot support
-    bool dungeonHotspotsEnabled = false;     // Enable hotspots in dungeons/instances
-    uint32 dungeonBonusMultiplier = 50;      // Additional XP bonus % in dungeons
-
     // Hotspot Objectives system
     bool objectivesEnabled = true;           // Track and display objectives (kills, time survived)
     uint32 objectiveKillGoal = 50;           // Default kill target for "Kill X creatures" objective

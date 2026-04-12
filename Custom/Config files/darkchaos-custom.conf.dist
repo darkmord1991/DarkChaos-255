@@ -180,21 +180,6 @@ SeasonalRewards.LogTransactions = 1
 #
 SeasonalRewards.AchievementTracking = 1
 
-#
-#    SeasonalRewards.ConsolidateItemUpgradeHooks
-#        Description: Consolidate Item Upgrade hooks into the seasonal reward pipeline
-#        Default:     1 (Enabled)
-#
-SeasonalRewards.ConsolidateItemUpgradeHooks = 1
-
-#
-#    SeasonalRewards.ParityFallback
-#        Description: Use legacy reward fallback rules when explicit seasonal
-#                     reward table entries are missing for quests/creatures
-#        Default:     1 (Enabled)
-#
-SeasonalRewards.ParityFallback = 1
-
 # -----------------------------------------------------------------------------
 # Seasonal Reward Multipliers
 # -----------------------------------------------------------------------------
@@ -1080,24 +1065,6 @@ Hotspots.GMBypassLimit = 1
 Hotspots.AllowWorldwideSpawn = 1
 
 # -----------------------------------------------------------------------------
-# Dungeon Hotspots (Disabled by Default)
-# -----------------------------------------------------------------------------
-
-#
-#    Hotspots.Dungeons.Enable
-#        Description: Enable hotspots inside dungeons and instances
-#        Default:     0 (Disabled)
-#
-Hotspots.Dungeons.Enable = 0
-
-#
-#    Hotspots.Dungeons.BonusMultiplier
-#        Description: Additional XP bonus % in dungeons (stacks with base)
-#        Default:     50
-#
-Hotspots.Dungeons.BonusMultiplier = 50
-
-# -----------------------------------------------------------------------------
 # Hotspot Objectives
 # -----------------------------------------------------------------------------
 
@@ -1655,6 +1622,14 @@ MythicPlus.Keystone.Enabled = 1
 #        Default:     1 (Enabled)
 #
 MythicPlus.BossLoot.Enabled = 1
+
+#
+#    MythicPlus.RewardsAtRunEndOnly
+#        Description: Grant all Mythic+ loot at run completion only.
+#                     If disabled, loot is granted at each boss kill.
+#        Default:     1 (Enabled)
+#
+MythicPlus.RewardsAtRunEndOnly = 1
 
 #
 #    MythicPlus.BossItems

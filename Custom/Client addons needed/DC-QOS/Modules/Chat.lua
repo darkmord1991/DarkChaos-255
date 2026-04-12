@@ -29,6 +29,9 @@ local Chat = {
             detectURLs = true,
             -- Sticky Channels
             stickyChannels = true,
+            -- Retail-like loot/rewards split
+            separateLootRewardsChat = true,
+            lootRewardsTabName = "Loot",
             -- Copy Chat
             enableChatCopy = true,
             -- History
@@ -595,6 +598,101 @@ local function SetupStickyChannels()
 end
 
 -- ============================================================
+-- Loot/Rewards Dedicated Chat Tab (retail-like)
+-- ============================================================
+local LOOT_REWARD_MESSAGE_GROUPS = {
+    "LOOT",
+    "MONEY",
+    "CURRENCY",
+    "COMBAT_XP_GAIN",
+    "COMBAT_HONOR_GAIN",
+    "COMBAT_FACTION_CHANGE",
+}
+
+local lootRoutingWatcherRegistered = false
+
+local function GetLootRewardsTabName()
+    local settings = addon.settings and addon.settings.chat
+    local name = settings and settings.lootRewardsTabName
+    if type(name) ~= "string" or name == "" then
+        return "Loot"
+    end
+    return name
+end
+
+local function RestoreLootRewardsToDefaultChat()
+    if type(ChatFrame_AddMessageGroup) ~= "function" or type(ChatFrame_RemoveMessageGroup) ~= "function" then
+        return
+    end
+
+    local defaultFrame = DEFAULT_CHAT_FRAME or _G.ChatFrame1
+    if not defaultFrame then
+        return
+    end
+
+    local lootFrame = addon:GetChatFrameByWindowName(GetLootRewardsTabName())
+
+    for _, group in ipairs(LOOT_REWARD_MESSAGE_GROUPS) do
+        pcall(ChatFrame_AddMessageGroup, defaultFrame, group)
+        if lootFrame and lootFrame ~= defaultFrame then
+            pcall(ChatFrame_RemoveMessageGroup, lootFrame, group)
+        end
+    end
+end
+
+local function SetupLootRewardsChatRouting()
+    local settings = addon.settings and addon.settings.chat
+    if not settings then
+        return
+    end
+
+    if not settings.enabled then
+        RestoreLootRewardsToDefaultChat()
+        return
+    end
+
+    if type(ChatFrame_AddMessageGroup) ~= "function" or type(ChatFrame_RemoveMessageGroup) ~= "function" then
+        return
+    end
+
+    if not settings.separateLootRewardsChat then
+        RestoreLootRewardsToDefaultChat()
+        return
+    end
+
+    local defaultFrame = DEFAULT_CHAT_FRAME or _G.ChatFrame1
+    local lootFrame = addon:EnsureChatWindow(GetLootRewardsTabName())
+
+    if not defaultFrame or not lootFrame then
+        return
+    end
+
+    for _, group in ipairs(LOOT_REWARD_MESSAGE_GROUPS) do
+        pcall(ChatFrame_AddMessageGroup, lootFrame, group)
+        if defaultFrame ~= lootFrame then
+            pcall(ChatFrame_RemoveMessageGroup, defaultFrame, group)
+        end
+    end
+end
+
+local function SetupLootRewardsRoutingWatcher()
+    if lootRoutingWatcherRegistered then
+        return
+    end
+
+    lootRoutingWatcherRegistered = true
+    addon:RegisterEvent("SETTING_CHANGED", function(path)
+        if path == "chat.separateLootRewardsChat" or path == "chat.enabled" then
+            SetupLootRewardsChatRouting()
+        end
+    end)
+
+    addon:RegisterEvent("PLAYER_LOGIN", function()
+        SetupLootRewardsChatRouting()
+    end)
+end
+
+-- ============================================================
 -- Max Chat Lines
 -- ============================================================
 local function SetupChatLines()
@@ -817,6 +915,8 @@ function Chat.OnEnable()
     SetupClassCaching()
     SetupClassColorFilter()
     SetupStickyChannels()
+    SetupLootRewardsChatRouting()
+    SetupLootRewardsRoutingWatcher()
     SetupChatLines()
     SetupHideSocialButtons()
     SetupSimpleCopyBox()
@@ -825,6 +925,7 @@ end
 
 function Chat.OnDisable()
     addon:Debug("Chat module disabling")
+    RestoreLootRewardsToDefaultChat()
     -- Unregister all event frames to clean up
     for _, frame in ipairs(eventFrames) do
         if frame and frame.UnregisterAllEvents then
@@ -983,6 +1084,22 @@ function Chat.CreateSettings(parent)
     stickyInfo:SetPoint("TOPLEFT", stickyCb, "BOTTOMLEFT", 20, -2)
     stickyInfo:SetText("Remember the last used channel when typing")
     stickyInfo:SetTextColor(0.5, 0.5, 0.5)
+    yOffset = yOffset - 45
+
+    -- Dedicated loot/rewards chat tab
+    local lootTabCb = addon:CreateCheckbox(parent)
+    lootTabCb:SetPoint("TOPLEFT", 16, yOffset)
+    lootTabCb.Text:SetText("Route loot and rewards to a dedicated Loot tab")
+    lootTabCb:SetChecked(settings.separateLootRewardsChat)
+    lootTabCb:SetScript("OnClick", function(self)
+        addon:SetSetting("chat.separateLootRewardsChat", self:GetChecked())
+        SetupLootRewardsChatRouting()
+    end)
+
+    local lootTabInfo = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    lootTabInfo:SetPoint("TOPLEFT", lootTabCb, "BOTTOMLEFT", 20, -2)
+    lootTabInfo:SetText("Splits loot, money, XP, honor, and reputation gains from General chat")
+    lootTabInfo:SetTextColor(0.5, 0.5, 0.5)
     yOffset = yOffset - 45
 
     -- ============================================================

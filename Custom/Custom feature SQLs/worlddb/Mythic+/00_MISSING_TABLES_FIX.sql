@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_entrances` (
   `entrance_y` FLOAT NOT NULL COMMENT 'Y coordinate of entrance',
   `entrance_z` FLOAT NOT NULL COMMENT 'Z coordinate of entrance',
   `entrance_o` FLOAT NOT NULL COMMENT 'Orientation at entrance',
+  `comment` VARCHAR(120) NULL COMMENT 'Optional dungeon label for admin readability',
   PRIMARY KEY (`dungeon_map`),
   FOREIGN KEY (`dungeon_map`) REFERENCES `dc_dungeon_mythic_profile`(`map_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -88,10 +89,11 @@ INSERT INTO `dc_dungeon_entrances` (`dungeon_map`, `entrance_map`, `entrance_x`,
 (600, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Drak'Tharon Keep (using old coordinates - not in update)
 (601, 571, 3700.870, 2152.580, 36.044, 3.596), -- Azjol-Nerub
 (602, 571, 9105.720, -1319.860, 1058.390, 5.650), -- Halls of Lightning
-(604, 571, 3707.86, 2150.23, 36.76, 3.22), -- Gundrak (using old coordinates - not in update)
+(604, 571, 6717.092, -4646.1914, 450.00504, 3.9356427), -- Gundrak
 (608, 571, 1267.24, -4857.3, 215.76, 3.22), -- Violet Hold (using old coordinates - not in update)
 (619, 571, 3700.870, 2152.580, 36.044, 3.596), -- Ahn'kahet: The Old Kingdom
 (632, 571, 5663.56, 2008.66, 798.05, 4.60), -- Forge of Souls
+(650, 571, 8526.346, 735.109, 558.551, 3.476), -- Trial of the Champion
 (658, 571, 5663.56, 2008.66, 798.05, 4.60), -- Pit of Saron
 (668, 571, 5663.56, 2008.66, 798.05, 4.60)  -- Halls of Reflection
 ON DUPLICATE KEY UPDATE `entrance_map`=`entrance_map`;

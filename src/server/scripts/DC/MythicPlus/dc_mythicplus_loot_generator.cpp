@@ -85,18 +85,23 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
 
     for (const LootQueryStage& stage : stages)
     {
-        std::string sql = "SELECT item_id FROM dc_vault_loot_table WHERE 1=1";
+        std::string sql =
+            "SELECT v.item_id FROM dc_vault_loot_table v "
+            "INNER JOIN item_template it ON it.entry = v.item_id "
+            "WHERE it.Quality >= 2 AND it.name NOT LIKE 'NPC Equip %'";
 
         if (stage.filterClass)
-            sql += Acore::StringFormat(" AND ((class_mask & {}) OR class_mask = 1023)", classMask);
+            sql += Acore::StringFormat(" AND ((v.class_mask & {}) OR v.class_mask = 1023)", classMask);
         if (stage.filterSpec)
-            sql += Acore::StringFormat(" AND (spec_name = '{}' OR spec_name IS NULL)", spec);
+            sql += Acore::StringFormat(" AND (v.spec_name = '{}' OR v.spec_name IS NULL)", spec);
         if (stage.filterArmor)
-            sql += Acore::StringFormat(" AND (armor_type = '{}' OR armor_type = 'Misc')", armor);
+            sql += Acore::StringFormat(" AND (v.armor_type = '{}' OR v.armor_type = 'Misc')", armor);
         if (stage.filterRole)
-            sql += Acore::StringFormat(" AND ((role_mask & {}) OR role_mask = 7)", roleMask);
+            sql += Acore::StringFormat(" AND ((v.role_mask & {}) OR v.role_mask = 7)", roleMask);
 
-        sql += Acore::StringFormat(" AND item_level_min <= {} AND item_level_max >= {} ORDER BY RAND() LIMIT 1", targetItemLevel, targetItemLevel);
+        sql += Acore::StringFormat(
+            " AND v.item_level_min <= {} AND v.item_level_max >= {} ORDER BY RAND() LIMIT 1",
+            targetItemLevel, targetItemLevel);
 
         if (QueryResult result = WorldDatabase.Query(sql))
         {

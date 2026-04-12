@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_mythic_profile` (
   `death_budget` TINYINT UNSIGNED NOT NULL DEFAULT 10 COMMENT 'Max deaths allowed in Mythic',
   `wipe_budget` TINYINT UNSIGNED NOT NULL DEFAULT 3 COMMENT 'Max wipes allowed in Mythic',
   `loot_ilvl` INT UNSIGNED NOT NULL DEFAULT 219 COMMENT 'Base item level for Mythic loot',
-  `token_reward` INT UNSIGNED NOT NULL DEFAULT 101000 COMMENT 'Mythic token item ID',
+  `token_reward` INT UNSIGNED NOT NULL DEFAULT 300311 COMMENT 'Mythic token item ID',
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`map_id`),
   INDEX `idx_enabled` (`mythic_enabled`)
@@ -178,25 +178,25 @@ ON DUPLICATE KEY UPDATE `boss_entry` = VALUES(`boss_entry`);
 -- ========================================================================
 INSERT INTO `dc_dungeon_mythic_profile` (`map_id`, `name`, `heroic_enabled`, `mythic_enabled`, `base_health_mult`, `base_damage_mult`, `death_budget`, `wipe_budget`, `loot_ilvl`, `token_reward`) VALUES
 -- Eastern Kingdoms Vanilla Dungeons (Mythic: 3x HP, 2x Damage for level 80-82)
-(36, 'Deadmines', 1, 1, 3.0, 2.0, 10, 3, 200, 101000),
-(33, 'Shadowfang Keep', 1, 1, 3.0, 2.0, 10, 3, 202, 101000),
-(34, 'The Stockade', 1, 1, 3.0, 2.0, 10, 3, 198, 101000),
-(48, 'Blackfathom Deeps', 1, 1, 3.0, 2.0, 12, 3, 204, 101000),
-(43, 'Wailing Caverns', 1, 1, 3.0, 2.0, 12, 3, 202, 101000),
-(47, 'Razorfen Kraul', 1, 1, 3.0, 2.0, 12, 3, 206, 101000),
-(129, 'Razorfen Downs', 1, 1, 3.0, 2.0, 12, 3, 208, 101000),
-(90, 'Gnomeregan', 1, 1, 3.0, 2.0, 15, 3, 210, 101000),
-(109, 'Sunken Temple', 1, 1, 3.0, 2.0, 15, 3, 212, 101000),
-(70, 'Uldaman', 1, 1, 3.0, 2.0, 15, 3, 214, 101000),
-(189, 'Scarlet Monastery', 1, 1, 3.0, 2.0, 12, 3, 206, 101000),
-(209, 'Zul\'Farrak', 1, 1, 3.0, 2.0, 15, 3, 212, 101000),
-(349, 'Maraudon', 1, 1, 3.0, 2.0, 18, 4, 214, 101000),
+(36, 'Deadmines', 1, 1, 3.0, 2.0, 10, 3, 200, 300311),
+(33, 'Shadowfang Keep', 1, 1, 3.0, 2.0, 10, 3, 202, 300311),
+(34, 'The Stockade', 1, 1, 3.0, 2.0, 10, 3, 198, 300311),
+(48, 'Blackfathom Deeps', 1, 1, 3.0, 2.0, 12, 3, 204, 300311),
+(43, 'Wailing Caverns', 1, 1, 3.0, 2.0, 12, 3, 202, 300311),
+(47, 'Razorfen Kraul', 1, 1, 3.0, 2.0, 12, 3, 206, 300311),
+(129, 'Razorfen Downs', 1, 1, 3.0, 2.0, 12, 3, 208, 300311),
+(90, 'Gnomeregan', 1, 1, 3.0, 2.0, 15, 3, 210, 300311),
+(109, 'Sunken Temple', 1, 1, 3.0, 2.0, 15, 3, 212, 300311),
+(70, 'Uldaman', 1, 1, 3.0, 2.0, 15, 3, 214, 300311),
+(189, 'Scarlet Monastery', 1, 1, 3.0, 2.0, 12, 3, 206, 300311),
+(209, 'Zul\'Farrak', 1, 1, 3.0, 2.0, 15, 3, 212, 300311),
+(349, 'Maraudon', 1, 1, 3.0, 2.0, 18, 4, 214, 300311),
 -- High-level Vanilla Dungeons
-(230, 'Blackrock Depths', 1, 1, 3.0, 2.0, 20, 4, 219, 101000),
-(229, 'Lower Blackrock Spire', 1, 1, 3.0, 2.0, 18, 4, 219, 101000),
-(329, 'Stratholme', 1, 1, 3.0, 2.0, 20, 4, 219, 101000),
-(429, 'Dire Maul', 1, 1, 3.0, 2.0, 18, 4, 217, 101000),
-(289, 'Scholomance', 1, 1, 3.0, 2.0, 18, 4, 219, 101000)
+(230, 'Blackrock Depths', 1, 1, 3.0, 2.0, 20, 4, 219, 300311),
+(229, 'Lower Blackrock Spire', 1, 1, 3.0, 2.0, 18, 4, 219, 300311),
+(329, 'Stratholme', 1, 1, 3.0, 2.0, 20, 4, 219, 300311),
+(429, 'Dire Maul', 1, 1, 3.0, 2.0, 18, 4, 217, 300311),
+(289, 'Scholomance', 1, 1, 3.0, 2.0, 18, 4, 219, 300311)
 ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 
 -- ========================================================================
@@ -204,27 +204,27 @@ ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 -- ========================================================================
 INSERT INTO `dc_dungeon_mythic_profile` (`map_id`, `name`, `heroic_enabled`, `mythic_enabled`, `base_health_mult`, `base_damage_mult`, `death_budget`, `wipe_budget`, `loot_ilvl`, `token_reward`) VALUES
 -- Hellfire Citadel wing dungeons (Mythic: 3x HP, 2x Damage for level 80-82)
-(542, 'The Blood Furnace', 1, 1, 3.0, 2.0, 12, 3, 219, 101001),
-(543, 'Hellfire Ramparts', 1, 1, 3.0, 2.0, 12, 3, 219, 101001),
-(540, 'The Shattered Halls', 1, 1, 3.0, 2.0, 15, 3, 226, 101001),
+(542, 'The Blood Furnace', 1, 1, 3.0, 2.0, 12, 3, 219, 300311),
+(543, 'Hellfire Ramparts', 1, 1, 3.0, 2.0, 12, 3, 219, 300311),
+(540, 'The Shattered Halls', 1, 1, 3.0, 2.0, 15, 3, 226, 300311),
 -- Coilfang Reservoir
-(545, 'The Steamvault', 1, 1, 3.0, 2.0, 15, 3, 226, 101001),
-(546, 'The Underbog', 1, 1, 3.0, 2.0, 12, 3, 219, 101001),
-(547, 'The Slave Pens', 1, 1, 3.0, 2.0, 12, 3, 219, 101001),
+(545, 'The Steamvault', 1, 1, 3.0, 2.0, 15, 3, 226, 300311),
+(546, 'The Underbog', 1, 1, 3.0, 2.0, 12, 3, 219, 300311),
+(547, 'The Slave Pens', 1, 1, 3.0, 2.0, 12, 3, 219, 300311),
 -- Auchindoun
-(555, 'Shadow Labyrinth', 1, 1, 3.0, 2.0, 18, 4, 232, 101001),
-(556, 'Sethekk Halls', 1, 1, 3.0, 2.0, 15, 3, 226, 101001),
-(557, 'Mana-Tombs', 1, 1, 3.0, 2.0, 15, 3, 226, 101001),
-(558, 'Auchenai Crypts', 1, 1, 3.0, 2.0, 12, 3, 219, 101001),
+(555, 'Shadow Labyrinth', 1, 1, 3.0, 2.0, 18, 4, 232, 300311),
+(556, 'Sethekk Halls', 1, 1, 3.0, 2.0, 15, 3, 226, 300311),
+(557, 'Mana-Tombs', 1, 1, 3.0, 2.0, 15, 3, 226, 300311),
+(558, 'Auchenai Crypts', 1, 1, 3.0, 2.0, 12, 3, 219, 300311),
 -- Tempest Keep dungeons
-(553, 'The Botanica', 1, 1, 3.0, 2.0, 15, 3, 232, 101001),
-(554, 'The Mechanar', 1, 1, 3.0, 2.0, 15, 3, 232, 101001),
-(552, 'The Arcatraz', 1, 1, 3.0, 2.0, 18, 4, 232, 101001),
+(553, 'The Botanica', 1, 1, 3.0, 2.0, 15, 3, 232, 300311),
+(554, 'The Mechanar', 1, 1, 3.0, 2.0, 15, 3, 232, 300311),
+(552, 'The Arcatraz', 1, 1, 3.0, 2.0, 18, 4, 232, 300311),
 -- Caverns of Time
-(560, 'Old Hillsbrad Foothills', 1, 1, 3.0, 2.0, 15, 3, 226, 101001),
-(269, 'The Black Morass', 1, 1, 3.0, 2.0, 18, 4, 232, 101001),
+(560, 'Old Hillsbrad Foothills', 1, 1, 3.0, 2.0, 15, 3, 226, 300311),
+(269, 'The Black Morass', 1, 1, 3.0, 2.0, 18, 4, 232, 300311),
 -- Standalone TBC dungeons
-(585, 'Magisters\' Terrace', 1, 1, 3.0, 2.0, 15, 3, 239, 101001)
+(585, 'Magisters\' Terrace', 1, 1, 3.0, 2.0, 15, 3, 239, 300311)
 ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 
 -- ========================================================================
@@ -232,24 +232,24 @@ ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 -- ========================================================================
 INSERT INTO `dc_dungeon_mythic_profile` (`map_id`, `name`, `heroic_enabled`, `mythic_enabled`, `base_health_mult`, `base_damage_mult`, `death_budget`, `wipe_budget`, `loot_ilvl`, `token_reward`) VALUES
 -- WotLK 5-man dungeons (Mythic: 1.35x HP, 1.20x Damage - modest boost from Heroic)
-(574, 'Utgarde Keep', 1, 1, 1.35, 1.20, 12, 3, 200, 101002),
-(575, 'Utgarde Pinnacle', 1, 1, 1.35, 1.20, 15, 3, 219, 101002),
-(576, 'The Nexus', 1, 1, 1.35, 1.20, 12, 3, 200, 101002),
-(578, 'The Oculus', 1, 1, 1.35, 1.20, 18, 4, 200, 101002),
-(595, 'The Culling of Stratholme', 1, 1, 1.35, 1.20, 15, 3, 200, 101002),
-(599, 'Halls of Stone', 1, 1, 1.35, 1.20, 15, 3, 200, 101002),
-(600, 'Drak\'Tharon Keep', 1, 1, 1.35, 1.20, 15, 3, 200, 101002),
-(601, 'Azjol-Nerub', 1, 1, 1.35, 1.20, 12, 3, 200, 101002),
-(602, 'Halls of Lightning', 1, 1, 1.35, 1.20, 15, 3, 219, 101002),
-(604, 'Gundrak', 1, 1, 1.35, 1.20, 15, 3, 200, 101002),
-(608, 'Violet Hold', 1, 1, 1.35, 1.20, 12, 3, 200, 101002),
-(619, 'Ahn\'kahet: The Old Kingdom', 1, 1, 1.35, 1.20, 15, 3, 200, 101002),
+(574, 'Utgarde Keep', 1, 1, 1.35, 1.20, 12, 3, 200, 300311),
+(575, 'Utgarde Pinnacle', 1, 1, 1.35, 1.20, 15, 3, 219, 300311),
+(576, 'The Nexus', 1, 1, 1.35, 1.20, 12, 3, 200, 300311),
+(578, 'The Oculus', 1, 1, 1.35, 1.20, 18, 4, 200, 300311),
+(595, 'The Culling of Stratholme', 1, 1, 1.35, 1.20, 15, 3, 200, 300311),
+(599, 'Halls of Stone', 1, 1, 1.35, 1.20, 15, 3, 200, 300311),
+(600, 'Drak\'Tharon Keep', 1, 1, 1.35, 1.20, 15, 3, 200, 300311),
+(601, 'Azjol-Nerub', 1, 1, 1.35, 1.20, 12, 3, 200, 300311),
+(602, 'Halls of Lightning', 1, 1, 1.35, 1.20, 15, 3, 219, 300311),
+(604, 'Gundrak', 1, 1, 1.35, 1.20, 15, 3, 200, 300311),
+(608, 'Violet Hold', 1, 1, 1.35, 1.20, 12, 3, 200, 300311),
+(619, 'Ahn\'kahet: The Old Kingdom', 1, 1, 1.35, 1.20, 15, 3, 200, 300311),
 -- ICC 5-mans (higher tuning)
-(632, 'The Forge of Souls', 1, 1, 1.35, 1.20, 10, 3, 219, 101002),
-(658, 'Pit of Saron', 1, 1, 1.35, 1.20, 15, 3, 219, 101002),
-(668, 'Halls of Reflection', 1, 1, 1.35, 1.20, 18, 4, 219, 101002),
+(632, 'The Forge of Souls', 1, 1, 1.35, 1.20, 10, 3, 219, 300311),
+(658, 'Pit of Saron', 1, 1, 1.35, 1.20, 15, 3, 219, 300311),
+(668, 'Halls of Reflection', 1, 1, 1.35, 1.20, 18, 4, 219, 300311),
 -- Trial of the Champion
-(650, 'Trial of the Champion', 1, 1, 1.35, 1.20, 12, 3, 200, 101002)
+(650, 'Trial of the Champion', 1, 1, 1.35, 1.20, 12, 3, 200, 300311)
 ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 
 -- ========================================================================
