@@ -212,6 +212,8 @@ ScriptedAI::ScriptedAI(Creature* creature) : CreatureAI(creature),
 {
     _isHeroic = me->GetMap()->IsHeroic();
     _difficulty = Difficulty(me->GetMap()->GetSpawnMode());
+    if (me->GetMap()->IsDungeon() && !me->GetMap()->IsRaid() && _difficulty == DUNGEON_DIFFICULTY_EPIC)
+        _difficulty = DUNGEON_DIFFICULTY_HEROIC;
     _invincible = false;
     _canAutoAttack = true;
 }

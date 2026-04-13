@@ -294,6 +294,7 @@ namespace CrossSystem
                     difficulty = ContentDifficulty::Normal;
                     break;
                 case DUNGEON_DIFFICULTY_HEROIC:
+                case DUNGEON_DIFFICULTY_EPIC:
                     difficulty = ContentDifficulty::Heroic;
                     break;
                 default:

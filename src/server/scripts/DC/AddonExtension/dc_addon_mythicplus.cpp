@@ -815,6 +815,7 @@ namespace MythicPlus
         std::unordered_map<uint64, CacheEntry> m_cache;
         std::unordered_map<uint32, PlayerSnapshot> m_playerSnapshots;  // playerGuid -> snapshot
         std::unordered_map<uint64, time_t> m_missingKeys;  // backoff tracking
+        std::unordered_map<uint64, time_t> m_cacheValidation;  // cache key -> last DB validation
         uint64 m_lastSeenUpdate = 0;
         bool m_tableEnsured = false;
 
@@ -822,6 +823,7 @@ namespace MythicPlus
         static constexpr uint32 POLL_INTERVAL_MS = 1000;
         static constexpr uint64 INSTANCE_KEY_FACTOR = 4294967296ULL;  // 2^32
         static constexpr uint32 BACKOFF_SECONDS = 2;
+        static constexpr uint32 CACHE_REVALIDATE_SECONDS = 2;
 
         HudCacheMgr() = default;
 
@@ -922,15 +924,70 @@ namespace MythicPlus
             return false;
         }
 
-        CacheEntry* FetchSnapshot(uint64 instanceKey)
+        CacheEntry* FetchSnapshot(uint64 instanceKey, bool forceValidate = false)
         {
             if (instanceKey == 0)
                 return nullptr;
 
+            time_t now = time(nullptr);
+
             // Check cache first
             auto it = m_cache.find(instanceKey);
             if (it != m_cache.end())
+            {
+                bool shouldValidate = forceValidate;
+                if (!shouldValidate)
+                {
+                    auto validateIt = m_cacheValidation.find(instanceKey);
+                    if (validateIt == m_cacheValidation.end() ||
+                        (now - validateIt->second) >= CACHE_REVALIDATE_SECONDS)
+                    {
+                        shouldValidate = true;
+                    }
+                }
+
+                if (!shouldValidate)
+                    return &it->second;
+
+                m_cacheValidation[instanceKey] = now;
+                EnsureTable();
+
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT payload, updated_at FROM `{}` WHERE instance_key = {} LIMIT 1",
+                    HUD_CACHE_TABLE, instanceKey);
+
+                if (!result)
+                {
+                    m_cache.erase(it);
+                    m_missingKeys[instanceKey] = now;
+                    return nullptr;
+                }
+
+                Field* fields = result->Fetch();
+                std::string payload = fields[0].Get<std::string>();
+                uint64 updated = fields[1].Get<uint64>();
+
+                if (payload.empty())
+                {
+                    m_cache.erase(it);
+                    m_missingKeys[instanceKey] = now;
+                    return nullptr;
+                }
+
+                it = m_cache.find(instanceKey);
+                if (it == m_cache.end())
+                    return nullptr;
+
+                it->second.payload = payload;
+                it->second.updatedAt = updated;
+                it->second.instanceKey = instanceKey;
+
+                if (updated > m_lastSeenUpdate)
+                    m_lastSeenUpdate = updated;
+
+                m_missingKeys.erase(instanceKey);
                 return &it->second;
+            }
 
             // Check backoff
             if (CacheMissBackoff(instanceKey))
@@ -962,6 +1019,7 @@ namespace MythicPlus
             if (updated > m_lastSeenUpdate)
                 m_lastSeenUpdate = updated;
 
+            m_cacheValidation[instanceKey] = now;
             m_missingKeys.erase(instanceKey);
             return &entry;
         }
@@ -995,6 +1053,7 @@ namespace MythicPlus
                         m_lastSeenUpdate = updated;
 
                     m_missingKeys.erase(key);
+                    m_cacheValidation[key] = time(nullptr);
                 }
             } while (result->NextRow());
         }
@@ -1009,7 +1068,7 @@ namespace MythicPlus
                 return false;
             }
 
-            CacheEntry* record = FetchSnapshot(instanceKey);
+            CacheEntry* record = FetchSnapshot(instanceKey, force);
             if (!record)
             {
                 SendIdle(player, "no_snapshot");
@@ -1063,6 +1122,7 @@ namespace MythicPlus
         {
             m_cache.clear();
             m_missingKeys.clear();
+            m_cacheValidation.clear();
             LOG_INFO("dc.addon.mplus", "HudCacheMgr: Cache cleared");
         }
 

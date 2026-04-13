@@ -583,6 +583,20 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
                 }
             }
 
+            // Persist the final group GUID so completion rewards can verify
+            // this run was created through Group Finder.
+            if (Group* group = leader->GetGroup())
+            {
+                uint32 groupGuid = group->GetGUID().GetCounter();
+                if (groupGuid != listingIt->second.groupGuid)
+                {
+                    listingIt->second.groupGuid = groupGuid;
+                    CharacterDatabase.Execute(
+                        "UPDATE dc_group_finder_listings SET group_guid = {} WHERE id = {}",
+                        groupGuid, listingId);
+                }
+            }
+
             // Check if group is now complete
             if (CheckRoleRequirements(listingIt->second))
             {
@@ -1025,16 +1039,68 @@ void GroupFinderMgr::HandleDungeonCompletion(Player* player, uint32 dungeonId, u
 {
     if (!_rewardEnabled || !player)
         return;
-    (void)dungeonId; (void)difficulty;
 
-    // Check if player was in a group formed by GroupFinder
-    // For now, we check if they have any accepted application for this dungeon that is recent.
-    // This is a simplified check.
+    (void)difficulty;
+
+    Group* group = player->GetGroup();
+    if (!group)
+        return;
+
+    uint32 playerGuid = player->GetGUID().GetCounter();
+    uint32 groupGuid = group->GetGUID().GetCounter();
+    uint32 groupLeaderGuid = group->GetLeaderGUID().GetCounter();
+    bool eligibleGroupFinderRun = false;
+
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        for (auto const& [listingId, listing] : _listings)
+        {
+            if (listing.listingType != GF_LISTING_MYTHIC_PLUS)
+                continue;
+
+            if (listing.dungeonId > 0 && dungeonId > 0 && listing.dungeonId != dungeonId)
+                continue;
+
+            if (listing.groupGuid > 0)
+            {
+                if (listing.groupGuid != groupGuid)
+                    continue;
+            }
+            else if (listing.leaderGuid != groupLeaderGuid)
+                continue;
+
+            bool linkedPlayer = (listing.leaderGuid == playerGuid);
+            if (!linkedPlayer)
+            {
+                auto appsIt = _applications.find(listingId);
+                if (appsIt != _applications.end())
+                {
+                    for (GroupFinderApplication const& app : appsIt->second)
+                    {
+                        if (app.playerGuid == playerGuid &&
+                            app.status == GF_APP_ACCEPTED)
+                        {
+                            linkedPlayer = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!linkedPlayer)
+                continue;
+
+            eligibleGroupFinderRun = true;
+            break;
+        }
+    }
+
+    if (!eligibleGroupFinderRun)
+        return;
 
     if (CanReceiveReward(player))
-    {
         GiveReward(player);
-    }
 }
 
 bool GroupFinderMgr::CanReceiveReward(Player* player)
@@ -1084,7 +1150,11 @@ void GroupFinderMgr::GiveReward(Player* player)
     }
 
     // Log reward
-    CharacterDatabase.Execute("INSERT INTO dc_group_finder_rewards (player_guid, reward_type, dungeon_type) VALUES ({}, 0, 0)", player->GetGUID().GetCounter());
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_group_finder_rewards (player_guid, reward_type, dungeon_type) "
+        "VALUES ({}, 0, 0) "
+        "ON DUPLICATE KEY UPDATE claim_time = CURRENT_TIMESTAMP",
+        player->GetGUID().GetCounter());
 
     player->SendSystemMessage("You have received a reward for using the Group Finder!");
 }

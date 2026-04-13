@@ -651,7 +651,7 @@ public:
                         return;
                     pInstance->SetData(DATA_INSTANCE_PROGRESS, INSTANCE_PROGRESS_AFTER_WARN_2);
                     Talk(SAY_TYRANNUS_AMBUSH_2);
-                    killsLeft = (Difficulty(me->GetMap()->GetSpawnMode()) == DUNGEON_DIFFICULTY_HEROIC ? 12 : 6);
+                    killsLeft = (me->GetMap()->IsHeroic() ? 12 : 6);
                     events.ScheduleEvent(60, 0ms);
                     events.ScheduleEvent(5, 20s);
                     break;
@@ -789,7 +789,7 @@ public:
                                 s->GetMotionMaster()->MoveSplinePath(&path);
                             }
 
-                        if (Difficulty(me->GetMap()->GetSpawnMode()) == DUNGEON_DIFFICULTY_HEROIC)
+                        if (me->GetMap()->IsHeroic())
                         {
                             Position startPos[6] = { {925.485f, -65.67f, 592.5f, 1.4f}, {921.77f, -65.10f, 592.5f, 1.4f}, {929.19f, -66.24f, 592.5f, 1.4f}, {932.46f, -66.74f, 592.5f, 1.4f}, {924.66f, -71.03f, 592.5f, 1.4f}, {928.81f, -71.66f, 592.5f, 1.4f} };
                             Position middlePos = {928.43f, -29.31f, 589.0f, 1.4f};

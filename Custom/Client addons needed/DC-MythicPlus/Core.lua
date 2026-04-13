@@ -1885,6 +1885,11 @@ local function ShowIdleState()
     if centerCountdownText then
         centerCountdownText:Hide()
     end
+
+    -- Re-evaluate visibility when server reports no active Mythic+ snapshot.
+    -- This prevents stale run payloads from keeping the HUD visible/running.
+    UpdateLocalRunTrackingFromInstance()
+    SetFrameVisibility(false)
 end
 
 local function UpdateCountdown(data)

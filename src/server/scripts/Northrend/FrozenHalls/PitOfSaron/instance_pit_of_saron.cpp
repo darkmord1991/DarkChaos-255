@@ -251,7 +251,7 @@ public:
                     if (InstanceProgress < data)
                     {
                         InstanceProgress = data;
-                        if (InstanceProgress == INSTANCE_PROGRESS_TYRANNUS_INTRO && instance->GetDifficulty() == DUNGEON_DIFFICULTY_HEROIC && bAchievDontLookUp) // achiev Don't Look Up (4525)
+                        if (InstanceProgress == INSTANCE_PROGRESS_TYRANNUS_INTRO && instance->IsHeroic() && bAchievDontLookUp) // achiev Don't Look Up (4525)
                             DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, 72845);
                     }
                     break;
