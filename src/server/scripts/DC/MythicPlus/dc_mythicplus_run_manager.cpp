@@ -263,12 +263,22 @@ bool MythicPlusRunManager::IsBossCreature(const Creature* creature) const
 }
 
 bool MythicPlusRunManager::TryActivateKeystone(Player* player,
-    GameObject* font, uint8 forcedKeystoneLevel)
+    GameObject* font, uint8 forcedKeystoneLevel,
+    uint8 lockedInventoryLevel)
 {
+    if (forcedKeystoneLevel && lockedInventoryLevel)
+    {
+        SendGenericError(player, "Invalid activation request: forced and locked key levels cannot be combined.");
+        return false;
+    }
+
+    uint8 validationKeystoneLevel =
+        forcedKeystoneLevel ? forcedKeystoneLevel : lockedInventoryLevel;
+
     KeystoneDescriptor descriptor;
     std::string validationError;
     if (!CanActivateKeystone(player, font, descriptor, validationError,
-        forcedKeystoneLevel))
+        validationKeystoneLevel))
     {
         SendGenericError(player, validationError);
         return false;
@@ -345,8 +355,69 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
         }
     }
 
+    uint32 consumedKeystoneItemId = 0;
+    uint8 effectiveKeystoneLevel = descriptor.level;
+
     if (!forcedKeystoneLevel)
-        ConsumePlayerKeystone(player);
+    {
+        if (lockedInventoryLevel)
+        {
+            uint32 lockedItemId =
+                MythicPlusConstants::GetItemIdFromKeystoneLevel(lockedInventoryLevel);
+
+            if (!lockedItemId ||
+                !player->HasItemCount(lockedItemId, 1, false))
+            {
+                SendGenericError(player,
+                    Acore::StringFormat(
+                        "Ready-check keystone +{} is no longer in your inventory.",
+                        uint32(lockedInventoryLevel)));
+                ClearHudSnapshot(state);
+                _instanceStates.erase(state->instanceKey);
+                return false;
+            }
+
+            player->DestroyItemCount(lockedItemId, 1, true);
+            consumedKeystoneItemId = lockedItemId;
+            effectiveKeystoneLevel = lockedInventoryLevel;
+
+            LOG_INFO("mythic.run",
+                "Consumed locked ready-check keystone +{} (item {}) from player {}",
+                uint32(lockedInventoryLevel), consumedKeystoneItemId,
+                player->GetGUID().GetCounter());
+        }
+        else
+        {
+            ConsumePlayerKeystone(player, &consumedKeystoneItemId, &effectiveKeystoneLevel);
+            if (effectiveKeystoneLevel == 0)
+                effectiveKeystoneLevel = descriptor.level;
+        }
+
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cff66ccff[M+ Debug]|r consumed item: {}, effective key: +{}",
+            consumedKeystoneItemId,
+            uint32(effectiveKeystoneLevel));
+    }
+    else
+    {
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cff66ccff[M+ Debug]|r consumed item: 0 (forced), effective key: +{}",
+            uint32(effectiveKeystoneLevel));
+    }
+
+    // Keep all activation displays and runtime state aligned to the effective key.
+    state->keystoneLevel = effectiveKeystoneLevel;
+    descriptor.level = effectiveKeystoneLevel;
+    state->hudTimerDuration =
+        GetHudTimerDuration(state->mapId, state->keystoneLevel);
+
+    LOG_INFO("mythic.run",
+             "Activation audit: player {} map {} forced {} consumedItem {} effectiveKey +{}",
+             player->GetGUID().GetCounter(),
+             state->mapId,
+             forcedKeystoneLevel ? uint32(forcedKeystoneLevel) : 0,
+             consumedKeystoneItemId,
+             uint32(effectiveKeystoneLevel));
 
     // Teleport all players to entrance
     TeleportGroupToEntrance(player, map);
@@ -857,47 +928,79 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     if (!player)
         return false;
 
-    // Check player inventory for keystone items (300313-300331 for M+2-M+20)
-    for (uint8 i = 0; i < 19; ++i)
+    // If multiple keystones exist, select the highest level one so the run
+    // matches player intent and does not silently fall back to a lower key.
+    uint8 selectedLevel = 0;
+    uint32 selectedItemId = 0;
+
+    for (uint8 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL; level <= MythicPlusConstants::MAX_KEYSTONE_LEVEL; ++level)
     {
-        uint32 keystoneItemId = MythicPlusConstants::KEYSTONE_ITEM_IDS[i];
+        uint32 keystoneItemId = MythicPlusConstants::GetItemIdFromKeystoneLevel(level);
+        if (!keystoneItemId)
+            continue;
 
-        // Check if player has this keystone in inventory
-        if (player->HasItemCount(keystoneItemId, 1, false))
-        {
-            uint8 keystoneLevel = i + 2; // M+2 starts at index 0
+        if (!player->HasItemCount(keystoneItemId, 1, false))
+            continue;
 
-            // Fill descriptor
-            outDescriptor.mapId = expectedMap; // Keystone is valid for the current dungeon
-            outDescriptor.level = keystoneLevel;
-            outDescriptor.seasonId = GetCurrentSeasonId();
-            outDescriptor.expiresOn = 0; // No expiration for inventory keystones
-            outDescriptor.ownerGuid = player->GetGUID();
-
-            return true;
-        }
+        selectedLevel = level;
+        selectedItemId = keystoneItemId;
     }
 
-    return false;
+    if (!selectedLevel)
+        return false;
+
+    // Fill descriptor
+    outDescriptor.mapId = expectedMap; // Keystone is valid for the current dungeon
+    outDescriptor.level = selectedLevel;
+    outDescriptor.seasonId = GetCurrentSeasonId();
+    outDescriptor.expiresOn = 0; // No expiration for inventory keystones
+    outDescriptor.ownerGuid = player->GetGUID();
+
+    LOG_DEBUG("mythic.run", "Selected keystone +{} (item {}) for player {} on map {}",
+              uint32(selectedLevel), selectedItemId, player->GetGUID().GetCounter(), expectedMap);
+
+    return true;
 }
 
-void MythicPlusRunManager::ConsumePlayerKeystone(Player* player)
+void MythicPlusRunManager::ConsumePlayerKeystone(Player* player, uint32* consumedItemId, uint8* consumedLevel)
 {
     if (!player)
         return;
 
-    // Remove keystone item from player inventory (check all M+2-M+20 keystones)
-    for (uint8 i = 0; i < 19; ++i)
-    {
-        uint32 keystoneItemId = MythicPlusConstants::KEYSTONE_ITEM_IDS[i];
+    if (consumedItemId)
+        *consumedItemId = 0;
+    if (consumedLevel)
+        *consumedLevel = 0;
 
-        if (player->HasItemCount(keystoneItemId, 1, false))
-        {
-            player->DestroyItemCount(keystoneItemId, 1, true);
-            LOG_INFO("mythic.run", "Consumed keystone item {} from player {}", keystoneItemId, player->GetGUID().GetCounter());
-            return;
-        }
+    uint8 selectedLevel = 0;
+    uint32 selectedItemId = 0;
+
+    // Mirror LoadPlayerKeystone() behavior by consuming the highest available key.
+    for (uint8 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL; level <= MythicPlusConstants::MAX_KEYSTONE_LEVEL; ++level)
+    {
+        uint32 keystoneItemId = MythicPlusConstants::GetItemIdFromKeystoneLevel(level);
+        if (!keystoneItemId)
+            continue;
+
+        if (!player->HasItemCount(keystoneItemId, 1, false))
+            continue;
+
+        selectedLevel = level;
+        selectedItemId = keystoneItemId;
     }
+
+    if (!selectedItemId)
+        return;
+
+    player->DestroyItemCount(selectedItemId, 1, true);
+
+    if (consumedItemId)
+        *consumedItemId = selectedItemId;
+    if (consumedLevel)
+        *consumedLevel = selectedLevel;
+
+    LOG_INFO("mythic.run", "Consumed keystone +{} (item {}) from player {}",
+             uint32(selectedLevel), selectedItemId, player->GetGUID().GetCounter());
 }
 
 void MythicPlusRunManager::AnnounceToInstance(Map* map, std::string_view message) const

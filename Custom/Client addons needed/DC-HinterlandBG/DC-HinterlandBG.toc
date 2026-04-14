@@ -1,6 +1,6 @@
 ## Interface: 30300
 ## Title: |cffFFCC00DC|r Hinterland BG
-## Notes: Battleground addon with HUD, statistics, and match history
+## Notes: Battleground addon with HUD, info, and queue support
 ## Author: DC-255
 ## Version: 1.4.0
 ## SavedVariables: DCHLBGDB

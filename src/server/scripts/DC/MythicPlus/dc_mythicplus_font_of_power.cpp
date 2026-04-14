@@ -21,6 +21,7 @@
 #include "GameTime.h"
 #include "Group.h"
 #include "MapMgr.h"
+#include "ObjectAccessor.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
 #include "Player.h"
@@ -60,6 +61,61 @@ std::map<ObjectGuid, PendingKeystoneActivation> s_pendingActivations; // GroupGu
 constexpr int8 STATE_PENDING  = 0;
 constexpr int8 STATE_READY    = 1;
 constexpr int8 STATE_DECLINED = 2;
+
+void NotifyPendingCancellation(PendingKeystoneActivation const& pending,
+    std::string const& reason)
+{
+#ifdef HAS_AIO
+    for (auto const& [memberGuid, _] : pending.memberStates)
+    {
+        if (Player* member = ObjectAccessor::FindConnectedPlayer(memberGuid))
+        {
+            AIO().Handle(member, "MPLUS", "KEYSTONE_CANCEL", Acore::StringFormat(
+                "{\"reason\":\"%s\"}", reason.c_str()));
+        }
+    }
+#else
+    for (auto const& [memberGuid, _] : pending.memberStates)
+    {
+        if (Player* member = ObjectAccessor::FindConnectedPlayer(memberGuid))
+        {
+            ChatHandler(member->GetSession()).PSendSysMessage(
+                "|cffff0000[Mythic+ Cancelled]|r %s", reason.c_str());
+        }
+    }
+#endif
+}
+
+void CleanupExpiredPendingActivations()
+{
+    if (s_pendingActivations.empty())
+        return;
+
+    uint64 now = GameTime::GetGameTime().count();
+    std::vector<ObjectGuid> expiredGroups;
+    expiredGroups.reserve(s_pendingActivations.size());
+
+    for (auto const& [groupGuid, pending] : s_pendingActivations)
+    {
+        if (!pending.startTime)
+            continue;
+
+        if (now >= (pending.startTime + pending.timeout))
+            expiredGroups.push_back(groupGuid);
+    }
+
+    for (ObjectGuid const& groupGuid : expiredGroups)
+    {
+        auto it = s_pendingActivations.find(groupGuid);
+        if (it == s_pendingActivations.end())
+            continue;
+
+        NotifyPendingCancellation(it->second, "Keystone ready check timed out.");
+        s_pendingActivations.erase(it);
+
+        LOG_INFO("mythic.run", "Ready check timed out for group {}", groupGuid.ToString());
+    }
+}
 }
 
 class go_mythic_plus_font_of_power : public GameObjectScript
@@ -67,10 +123,17 @@ class go_mythic_plus_font_of_power : public GameObjectScript
 public:
     go_mythic_plus_font_of_power() : GameObjectScript("go_mythic_plus_font_of_power") { }
 
+    static void CleanupExpiredActivations()
+    {
+        CleanupExpiredPendingActivations();
+    }
+
     bool OnGossipHello(Player* player, GameObject* go) override
     {
         if (!player || !go)
             return false;
+
+        CleanupExpiredPendingActivations();
 
         KeystoneDescriptor descriptor;
         std::string error;
@@ -110,31 +173,40 @@ public:
         Group* group = player->GetGroup();
         bool hasGroup = group && group->GetMembersCount() > 1;
 
-        if (canActivate && hasGroup)
+        // GM guardrail: only expose forced-level actions so inventory keys are
+        // never consumed accidentally from the GM menu.
+        if (!isGameMaster)
         {
-            // Show group ready check option
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-                Acore::StringFormat("|cff00ff00[Group Ready Check]|r +{} {}", descriptor.level, dungeonName),
-                GOSSIP_SENDER_MAIN, ACTION_START_READY);
-
-            // Also show instant start for leader (bypasses ready check)
-            if (group->IsLeader(player->GetGUID()))
+            if (canActivate && hasGroup)
             {
+                // Show group ready check option
                 AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-                    Acore::StringFormat("Start Immediately (No Ready Check): +{} {}", descriptor.level, dungeonName),
+                    Acore::StringFormat("|cff00ff00[Group Ready Check]|r +{} {}", descriptor.level, dungeonName),
+                    GOSSIP_SENDER_MAIN, ACTION_START_READY);
+
+                // Also show instant start for leader (bypasses ready check)
+                if (group->IsLeader(player->GetGUID()))
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                        Acore::StringFormat("Start Immediately (No Ready Check): +{} {}", descriptor.level, dungeonName),
+                        GOSSIP_SENDER_MAIN, ACTION_START_RUN);
+                }
+            }
+            else if (canActivate)
+            {
+                // Solo player - direct start
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                    Acore::StringFormat("Start Mythic+ Run: +{} {}", descriptor.level, dungeonName),
                     GOSSIP_SENDER_MAIN, ACTION_START_RUN);
             }
-        }
-        else if (canActivate)
-        {
-            // Solo player - direct start
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-                Acore::StringFormat("Start Mythic+ Run: +{} {}", descriptor.level, dungeonName),
-                GOSSIP_SENDER_MAIN, ACTION_START_RUN);
         }
 
         if (isGameMaster && canActivateForced)
         {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|cffff00ffGM override active: forced key level, inventory key not consumed.|r",
+                GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+
             for (uint8 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL;
                  level <= MythicPlusConstants::MAX_KEYSTONE_LEVEL;
                  ++level)
@@ -179,6 +251,12 @@ public:
                 return true;
             }
 
+            LOG_INFO("mythic.run", "GM {} selected forced keystone level +{} at Font of Power",
+                     player->GetGUID().GetCounter(), uint32(level));
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cff66ccff[M+ Debug]|r GM forced key selected: +{} (inventory ignored)",
+                uint32(level));
+
             sMythicRuns->TryActivateKeystone(player, go, level);
             return true;
         }
@@ -204,6 +282,8 @@ private:
     {
         if (!player || !go)
             return;
+
+        CleanupExpiredPendingActivations();
 
         Group* group = player->GetGroup();
         if (!group)
@@ -364,6 +444,8 @@ public:
         if (!player)
             return;
 
+        CleanupExpiredPendingActivations();
+
         Group* group = player->GetGroup();
         if (!group)
             return;
@@ -379,7 +461,15 @@ public:
         PendingKeystoneActivation& pending = it->second;
 
         // Update player state
-        pending.memberStates[player->GetGUID()] = accepted ? STATE_READY : STATE_DECLINED;
+        auto memberIt = pending.memberStates.find(player->GetGUID());
+        if (memberIt == pending.memberStates.end())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "You are not part of this ready check.");
+            return;
+        }
+
+        memberIt->second = accepted ? STATE_READY : STATE_DECLINED;
 
         // Notify group of state change
 #ifdef HAS_AIO
@@ -505,14 +595,77 @@ public:
 
         if (player && go)
         {
-            sMythicRuns->TryActivateKeystone(player, go);
+            if (pending.keystone.level >= MythicPlusConstants::MIN_KEYSTONE_LEVEL)
+                sMythicRuns->TryActivateKeystone(player, go, 0, pending.keystone.level);
+            else
+                sMythicRuns->TryActivateKeystone(player, go);
         }
 
         s_pendingActivations.erase(it);
     }
 };
 
+using namespace Acore::ChatCommands;
+
+class mythic_plus_readycheck_commandscript : public CommandScript
+{
+public:
+    mythic_plus_readycheck_commandscript() : CommandScript("mythic_plus_readycheck_commandscript") { }
+
+    ChatCommandTable GetCommands() const override
+    {
+        static ChatCommandTable commandTable =
+        {
+            { "mplusaccept", HandleMPlusAcceptCommand, SEC_PLAYER, Console::No },
+            { "mplusdecline", HandleMPlusDeclineCommand, SEC_PLAYER, Console::No }
+        };
+
+        return commandTable;
+    }
+
+    static bool HandleMPlusAcceptCommand(ChatHandler* handler)
+    {
+        Player* player = handler ? handler->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        go_mythic_plus_font_of_power::HandlePlayerResponse(player, true);
+        return true;
+    }
+
+    static bool HandleMPlusDeclineCommand(ChatHandler* handler)
+    {
+        Player* player = handler ? handler->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        go_mythic_plus_font_of_power::HandlePlayerResponse(player, false);
+        return true;
+    }
+};
+
+class mythic_plus_readycheck_worldscript : public WorldScript
+{
+public:
+    mythic_plus_readycheck_worldscript() : WorldScript("mythic_plus_readycheck_worldscript") { }
+
+    void OnUpdate(uint32 diff) override
+    {
+        _timeoutSweepTimer += diff;
+        if (_timeoutSweepTimer < 1000)
+            return;
+
+        _timeoutSweepTimer = 0;
+        go_mythic_plus_font_of_power::CleanupExpiredActivations();
+    }
+
+private:
+    uint32 _timeoutSweepTimer = 0;
+};
+
 void AddSC_go_mythic_plus_font_of_power()
 {
     new go_mythic_plus_font_of_power();
+    new mythic_plus_readycheck_commandscript();
+    new mythic_plus_readycheck_worldscript();
 }

@@ -21,31 +21,113 @@ local function SetBarFrameSize(frame, columns, rows, size, spacing)
     frame:SetSize(width, height)
 end
 
+local ApplyActionBars
+
+local function QueueLayoutRefresh(delay)
+    if ActionBars._layoutRefreshQueued then return end
+    ActionBars._layoutRefreshQueued = true
+    addon:DelayedCall(delay or 0.05, function()
+        ActionBars._layoutRefreshQueued = nil
+        local s = GetSetting()
+        if s.enabled and type(ApplyActionBars) == "function" then
+            ApplyActionBars()
+        end
+    end)
+end
+
+local function HookAnchorFrameSetPoint(frame)
+    if not frame or frame._dcqosActionBarsPointHooked or not frame.SetPoint then
+        return
+    end
+    frame._dcqosActionBarsPointHooked = true
+    hooksecurefunc(frame, "SetPoint", function()
+        QueueLayoutRefresh(0.05)
+    end)
+end
+
+local function IsBarActive(bar)
+    if not bar or not bar.IsShown or not bar:IsShown() then
+        return false
+    end
+    if bar.GetAlpha and bar:GetAlpha() <= 0.05 then
+        return false
+    end
+    if bar.IsVisible and not bar:IsVisible() then
+        return false
+    end
+    return true
+end
+
+local function AnchorBarAbove(bar, stack, yOffset, leftAlign)
+    if not bar or not stack then
+        return false
+    end
+    bar:ClearAllPoints()
+    if leftAlign then
+        bar:SetPoint("BOTTOMLEFT", stack, "TOPLEFT", 0, yOffset)
+    else
+        bar:SetPoint("BOTTOM", stack, "TOP", 0, yOffset)
+    end
+    return IsBarActive(bar)
+end
+
+local function ShouldLeftAlignFormBar(bar)
+    return bar and bar == _G.StanceBarFrame
+end
+
 local function ReanchorAuxiliaryBars(anchorFrame, gap)
     if not anchorFrame then return end
 
-    local baseSpacing = math.max(8, gap or 0)
+    local baseSpacing = math.max(10, gap or 0)
     local stack = anchorFrame
+
+    local stance = _G.StanceBarFrame
+    local shapeshift = _G.ShapeshiftBarFrame
+    local primaryFormBar = stance or shapeshift
+
+    if stance and shapeshift and stance ~= shapeshift then
+        if IsBarActive(stance) then
+            primaryFormBar = stance
+        else
+            primaryFormBar = shapeshift
+        end
+    end
+
+    if primaryFormBar then
+        local leftAlignPrimary = ShouldLeftAlignFormBar(primaryFormBar)
+        local formActive = AnchorBarAbove(primaryFormBar, anchorFrame, baseSpacing + 6, leftAlignPrimary)
+        if formActive then
+            stack = primaryFormBar
+        end
+    end
+
     local seen = {}
+    if primaryFormBar then
+        seen[primaryFormBar] = true
+    end
+
     local bars = {
         _G.PossessBarFrame,
         _G.PetActionBarFrame,
-        _G.StanceBarFrame,
-        _G.ShapeshiftBarFrame,
         _G.BonusActionBarFrame,
     }
 
     for _, bar in ipairs(bars) do
-        if bar and not seen[bar] then
+        local leftAlign = (stack == primaryFormBar) and ShouldLeftAlignFormBar(primaryFormBar)
+        if bar and not seen[bar] and AnchorBarAbove(bar, stack, baseSpacing, leftAlign) then
             seen[bar] = true
-            local yOffset = baseSpacing
-            if bar == _G.StanceBarFrame or bar == _G.ShapeshiftBarFrame then
-                yOffset = yOffset + 4
-            end
-            bar:ClearAllPoints()
-            bar:SetPoint("BOTTOM", stack, "TOP", 0, yOffset)
-            if bar:IsShown() then
-                stack = bar
+            stack = bar
+        end
+    end
+
+    if stance and shapeshift and stance ~= shapeshift then
+        local secondaryFormBar = (primaryFormBar == stance) and shapeshift or stance
+        if secondaryFormBar then
+            secondaryFormBar:ClearAllPoints()
+            if ShouldLeftAlignFormBar(secondaryFormBar) then
+                secondaryFormBar:SetPoint("BOTTOMLEFT", anchorFrame, "TOPLEFT", 0, baseSpacing + 6)
+            else
+                secondaryFormBar:SetPoint("BOTTOM", anchorFrame, "TOP", 0, baseSpacing + 6)
             end
         end
     end
@@ -229,7 +311,7 @@ local function ApplyCustomMode()
     ReanchorAuxiliaryBars(auxAnchor, gap)
 end
 
-local function ApplyActionBars()
+ApplyActionBars = function()
     local s = GetSetting()
     if not s.enabled then return end
     if s.mode == "custom" then
@@ -246,6 +328,13 @@ end
 function ActionBars.OnEnable()
     addon:Debug("ActionBars module enabling")
     ApplyActionBars()
+
+    if not ActionBars.anchorPointHooksInstalled then
+        ActionBars.anchorPointHooksInstalled = true
+        HookAnchorFrameSetPoint(_G.MainMenuBar)
+        HookAnchorFrameSetPoint(_G.MultiBarBottomLeft)
+        HookAnchorFrameSetPoint(_G.MultiBarBottomRight)
+    end
 
     if not ActionBars.eventFrame then
         ActionBars.eventFrame = CreateFrame("Frame")
@@ -266,9 +355,13 @@ function ActionBars.OnEnable()
     ev:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
     ev:SetScript("OnEvent", function(_, event, unit)
         if unit and unit ~= "player" then return end
-        addon:DelayedCall(0.2, function()
-            ApplyActionBars()
-        end)
+        QueueLayoutRefresh(0.2)
+    end)
+
+    -- FrameMover applies saved bar positions about 1s after load.
+    QueueLayoutRefresh(1.25)
+    addon:DelayedCall(2.0, function()
+        QueueLayoutRefresh(0.01)
     end)
 end
 

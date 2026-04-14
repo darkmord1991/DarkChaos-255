@@ -100,7 +100,8 @@ public:
 
     // Keystone lifecycle
     bool TryActivateKeystone(Player* player, GameObject* font,
-        uint8 forcedKeystoneLevel = 0);
+        uint8 forcedKeystoneLevel = 0,
+        uint8 lockedInventoryLevel = 0);
     bool CanActivateKeystone(Player* player, GameObject* font,
         KeystoneDescriptor& outDescriptor, std::string& outErrorText,
         uint8 forcedKeystoneLevel = 0);
@@ -174,7 +175,7 @@ private:
     InstanceState const* GetState(Map* map) const;
     void RegisterGroupMembers(Player* activator, InstanceState* state);
     bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor);
-    void ConsumePlayerKeystone(Player* player);
+    void ConsumePlayerKeystone(Player* player, uint32* consumedItemId = nullptr, uint8* consumedLevel = nullptr);
     void AnnounceToInstance(Map* map, std::string_view message) const;
     void ApplyEntryBarrier(Map* map) const;
     void ApplyCountdownRoot(Map* map) const;

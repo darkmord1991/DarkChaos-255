@@ -214,7 +214,7 @@ INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_mplus_seasons', 0,
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_mplus_teleporter_npcs', 0, 'Mythic+');
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_mythic_plus_dungeons', 0, 'Mythic+');
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_mythic_plus_weekly_affixes', 0, 'Mythic+');
-INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_mythic_scaling_multipliers', 0, 'Mythic+');
+INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_mplus_scale_multipliers', 0, 'Mythic+');
 
 -- Mythic Spectator Config
 INSERT INTO dc_table_check_results VALUES ('acore_world', 'dc_mythic_spectator_npcs', 0, 'Mythic Spectator');

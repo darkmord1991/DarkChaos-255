@@ -295,8 +295,8 @@ function HLBG.UpdateSettings()
     table.insert(settings.Content.children, resetButton)
     -- Set content height
     settings.Content:SetHeight(math.abs(y) + 50)
-    -- Show the tab
-    settings:Show()
+    -- Do not auto-show settings in the main HLBG window.
+    -- Settings are managed from Interface -> AddOns.
 end
 -- Hook to load settings on init
 if HLBG.OnLoad then
@@ -318,11 +318,9 @@ SlashCmdList["HLBGCONFIG"] = function(msg)
     if panel then
         InterfaceOptionsFrame_OpenToCategory(panel)
         InterfaceOptionsFrame_OpenToCategory(panel)  -- Call twice for WoW bug
-    elseif HLBG and HLBG.UI and HLBG.UI.Settings then
-        HLBG.UI.Settings:Show()
     else
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[HLBG]|r Settings panel not available. Try /hlbgshow first.")
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[HLBG]|r Settings panel not available yet. Open Esc -> Interface -> AddOns -> DC HLBG Addon.")
         end
     end
 end

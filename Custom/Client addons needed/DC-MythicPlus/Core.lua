@@ -517,6 +517,71 @@ local function GetCurrentRunKey()
     return GetRunKey(mapId, keystone), mapId, keystone
 end
 
+-- Override the minimap instance difficulty badge text with +key during active Mythic+ runs.
+local function GetActiveMythicKeyForMinimapBadge()
+    if not IsRunInProgress(activeState) then
+        return nil
+    end
+
+    local keyLevel = tonumber(GetKeystoneFromState(activeState) or 0) or 0
+    if keyLevel <= 0 then
+        return nil
+    end
+
+    return keyLevel
+end
+
+local function RefreshBlizzardMinimapInstanceBadge()
+    local badge = _G.MiniMapInstanceDifficulty
+    local onEvent = _G.MiniMapInstanceDifficulty_OnEvent
+    if badge and type(onEvent) == "function" then
+        pcall(onEvent, badge, "PLAYER_DIFFICULTY_CHANGED")
+    end
+end
+
+local function UpdateMinimapMythicKeyBadge()
+    local badge = _G.MiniMapInstanceDifficulty
+    local text = _G.MiniMapInstanceDifficultyText
+    if not badge or not text or type(text.SetText) ~= "function" then
+        return
+    end
+
+    local keyLevel = GetActiveMythicKeyForMinimapBadge()
+    if keyLevel then
+        local display = "+" .. tostring(keyLevel)
+        if text:GetText() ~= display then
+            text:SetText(display)
+        end
+        badge:Show()
+        namespace._minimapMythicBadgeOverride = true
+        return
+    end
+
+    if namespace._minimapMythicBadgeOverride then
+        namespace._minimapMythicBadgeOverride = false
+        RefreshBlizzardMinimapInstanceBadge()
+    end
+end
+
+local function EnsureMinimapMythicKeyBadgeHook()
+    if namespace._minimapMythicBadgeHooked then
+        return
+    end
+
+    if type(hooksecurefunc) ~= "function" then
+        return
+    end
+
+    if type(_G.MiniMapInstanceDifficulty_OnEvent) ~= "function" then
+        return
+    end
+
+    hooksecurefunc("MiniMapInstanceDifficulty_OnEvent", function()
+        UpdateMinimapMythicKeyBadge()
+    end)
+    namespace._minimapMythicBadgeHooked = true
+end
+
 -- =====================================================================
 -- RUN TRACKING: per-player deaths + death locations, PB + goals
 -- =====================================================================
@@ -1886,6 +1951,8 @@ local function ShowIdleState()
         centerCountdownText:Hide()
     end
 
+    UpdateMinimapMythicKeyBadge()
+
     -- Re-evaluate visibility when server reports no active Mythic+ snapshot.
     -- This prevents stale run payloads from keeping the HUD visible/running.
     UpdateLocalRunTrackingFromInstance()
@@ -2281,6 +2348,7 @@ local function UpdateFrameFromState(data)
     lastPayload = data
     -- Update visibility based on current state (mythic or local)
     SetFrameVisibility(IsRunInProgress(data))
+    UpdateMinimapMythicKeyBadge()
 
     if IsFlagSet(data.completed) and runTracker.active and not runTracker.endLogged then
         ShowRunResultPopup(data, true)
@@ -2784,6 +2852,7 @@ loader:RegisterEvent("PLAYER_ENTERING_WORLD")
 loader:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 loader:SetScript("OnEvent", function(self, event)
     RefreshDCProtocol()
+    EnsureMinimapMythicKeyBadgeHook()
     Trace("loader event=" .. tostring(event) .. " useDC=" .. tostring(namespace.useDCProtocol))
 
     -- Clear any stale activeState on login
@@ -2794,6 +2863,7 @@ loader:SetScript("OnEvent", function(self, event)
             namespace._suppressHudThisSession = true
         end
         activeState = nil
+        UpdateMinimapMythicKeyBadge()
     end
     
     EnsureFrame()
@@ -2823,6 +2893,7 @@ loader:SetScript("OnEvent", function(self, event)
             SetFrameVisibility(false)
         end
     end
+    UpdateMinimapMythicKeyBadge()
 end)
 
 -- Lightweight ticker: keep local run timer text updated.

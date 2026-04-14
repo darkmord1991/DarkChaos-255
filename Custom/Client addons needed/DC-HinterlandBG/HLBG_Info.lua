@@ -38,162 +38,162 @@ function HLBG.ParseConfigInfo(message)
     end
 end
 
+local function BuildInfoText()
+    local cfg = HLBG.ServerConfig or {}
+    local lines = {}
+
+    local matchDuration = tonumber(cfg.MATCH_DURATION) or 0
+    local warmupDuration = tonumber(cfg.WARMUP_DURATION) or 0
+    local minLevel = tonumber(cfg.MIN_LEVEL) or 1
+    local resourcesAlliance = tonumber(cfg.RESOURCES_ALLIANCE) or 0
+    local resourcesHorde = tonumber(cfg.RESOURCES_HORDE) or 0
+    local season = tonumber(cfg.SEASON) or 1
+    local affixEnabled = tonumber(cfg.AFFIX_ENABLED) or 0
+    local rewardHonor = tonumber(cfg.REWARD_HONOR) or 0
+    local rewardHonorDepletion = tonumber(cfg.REWARD_HONOR_DEPLETION) or 0
+
+    table.insert(lines, "|cFFFFD700Hinterland Battleground|r")
+    table.insert(lines, "|cFFAAAAAAVersion 1.4.0|r")
+    table.insert(lines, "")
+    table.insert(lines, "|cFFFFD700Current Window Tabs|r")
+    table.insert(lines, "- |cFFFFFFFFInfo|r: battleground overview, config, commands")
+    table.insert(lines, "- |cFFFFFFFFQueue|r: join/leave queue and queue status")
+    table.insert(lines, "")
+    table.insert(lines, "|cFFFFD700Feature Locations|r")
+    table.insert(lines,
+        "- History and statistics: |cFFFFFFFFDC-Leaderboards|r (|cFFFFFFFF/leaderboard|r)")
+    table.insert(lines,
+        "- Addon settings: |cFFFFFFFF/hlbgconfig|r or Esc -> Interface -> AddOns -> DC HLBG Addon")
+    table.insert(lines,
+        "- Queue controls: Queue tab, |cFFFFFFFF/hlbg queue join|r, |cFFFFFFFF/hlbg queue leave|r")
+    table.insert(lines, "")
+
+    table.insert(lines, "|cFFFFD700Battleground Overview|r")
+    table.insert(lines,
+        "Hinterland BG is a 25v25 battleground with rotating affixes that can alter damage, " ..
+        "movement, and resource pressure each match.")
+    table.insert(lines,
+        "Teams compete for map control and resource advantage while adapting to the active affix.")
+    table.insert(lines, "")
+
+    table.insert(lines, "|cFFFFD700Server Configuration|r")
+    if next(cfg) then
+        local durationText = "Not provided"
+        if matchDuration > 0 then
+            durationText = string.format("%d minutes", math.floor(matchDuration / 60))
+        end
+
+        local warmupText = (warmupDuration > 0)
+            and string.format("%d seconds", warmupDuration)
+            or "Not provided"
+        local affixText = (affixEnabled == 1) and "Enabled" or "Disabled"
+
+        table.insert(lines,
+            string.format("- Match duration: |cFFFFFFFF%s|r", durationText))
+        table.insert(lines,
+            string.format("- Warmup duration: |cFFFFFFFF%s|r", warmupText))
+        table.insert(lines,
+            string.format("- Minimum level: |cFFFFFFFF%d|r", minLevel))
+        table.insert(lines,
+            string.format("- Starting resources: |cFFFFFFFFAlliance %d|r / |cFFFFFFFFHorde %d|r",
+                resourcesAlliance, resourcesHorde))
+        table.insert(lines,
+            string.format("- Current season: |cFFFFFFFF%d|r", season))
+        table.insert(lines,
+            string.format("- Affix system: |cFFFFFFFF%s|r", affixText))
+        table.insert(lines,
+            string.format("- Honor rewards: |cFFFFFFFFMatch %d|r / |cFFFFFFFFDepletion %d|r",
+                rewardHonor, rewardHonorDepletion))
+    else
+        table.insert(lines, "Waiting for server CONFIG_INFO payload...")
+    end
+    table.insert(lines, "")
+
+    table.insert(lines, "|cFFFFD700Slash Commands|r")
+    table.insert(lines, "- |cFFFFFFFF/hlbg|r: open main window")
+    table.insert(lines, "- |cFFFFFFFF/hlbgconfig|r: open HLBG addon settings")
+    table.insert(lines, "- |cFFFFFFFF/hlbg queue join|r: join queue")
+    table.insert(lines, "- |cFFFFFFFF/hlbg queue leave|r: leave queue")
+    table.insert(lines, "- |cFFFFFFFF/hlbg devmode on|off|r: toggle debug mode")
+    table.insert(lines,
+        "- |cFFFFFFFF/hlbg season <n>|r: set season filter (0 = all/current)")
+    table.insert(lines, "")
+
+    table.insert(lines, "|cFFAAAAAAIf queue APIs are unavailable on your realm, queue via Battlemaster NPC 900001.|r")
+
+    return table.concat(lines, "\n")
+end
+
 -- Update info panel with current version and features
 function HLBG.UpdateInfo()
     -- Make sure the UI is loaded
     if not HLBG._ensureUI('Info') then return end
     local info = HLBG.UI.Info
-    -- Clear existing content
+
+    if not info.Content then
+        return
+    end
+
+    -- Hide any previously generated static children from old layouts.
     if info.Content.children then
         for _, child in ipairs(info.Content.children) do
-            child:Hide()
+            if child and child.Hide then
+                child:Hide()
+            end
         end
-    else
-        info.Content.children = {}
+        info.Content.children = nil
     end
-    -- Create title
-    local title = info.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", info.Content, "TOP", 0, -10)
-    title:SetText("Hinterland Battleground")
-    table.insert(info.Content.children, title)
-    -- Create subtitle
-    local version = info.Content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    version:SetPoint("TOP", title, "BOTTOM", 0, -5)
-    version:SetText("Version 1.4.0")
-    table.insert(info.Content.children, version)
-    
-    local yOffset = -60
-    
-    -- Show server configuration if available
-    if next(HLBG.ServerConfig) then
-        local configTitle = info.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        configTitle:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 20, yOffset)
-        configTitle:SetText("Server Configuration")
-        table.insert(info.Content.children, configTitle)
-        yOffset = yOffset - 25
-        
-        -- Display configuration parameters
-        local configText = ""
-        local matchDuration = HLBG.ServerConfig.MATCH_DURATION or 0
-        local warmupDuration = HLBG.ServerConfig.WARMUP_DURATION or 0
-        local minLevel = HLBG.ServerConfig.MIN_LEVEL or 1
-        local resourcesAlliance = HLBG.ServerConfig.RESOURCES_ALLIANCE or 0
-        local resourcesHorde = HLBG.ServerConfig.RESOURCES_HORDE or 0
-        local season = HLBG.ServerConfig.SEASON or 1
-        local affixEnabled = HLBG.ServerConfig.AFFIX_ENABLED or 0
-        local rewardHonor = HLBG.ServerConfig.REWARD_HONOR or 0
-        local rewardHonorDepletion = HLBG.ServerConfig.REWARD_HONOR_DEPLETION or 0
-        
-        configText = string.format(
-            "Match Duration: %d minutes\n" ..
-            "Warmup Duration: %d seconds\n" ..
-            "Minimum Level: %d\n" ..
-            "Starting Resources: Alliance %d | Horde %d\n" ..
-            "Current Season: %d\n" ..
-            "Affix System: %s\n" ..
-            "Honor Rewards: Match %d | Depletion %d",
-            math.floor(matchDuration / 60),
-            warmupDuration,
-            minLevel,
-            resourcesAlliance,
-            resourcesHorde,
-            season,
-            affixEnabled == 1 and "Enabled" or "Disabled",
-            rewardHonor,
-            rewardHonorDepletion
-        )
-        
-        local configDisplay = info.Content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        configDisplay:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 30, yOffset)
-        configDisplay:SetPoint("RIGHT", info.Content, "RIGHT", -20, 0)
-        configDisplay:SetJustifyH("LEFT")
-        configDisplay:SetJustifyV("TOP")
-        configDisplay:SetText(configText)
-        table.insert(info.Content.children, configDisplay)
-        yOffset = yOffset - (configDisplay:GetStringHeight() + 20)
-    end
-    
-    -- Create description
-    local description = info.Content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    description:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 20, yOffset)
-    description:SetPoint("TOPRIGHT", info.Content, "TOPRIGHT", -20, yOffset)
-    description:SetJustifyH("LEFT")
-    description:SetJustifyV("TOP")
-    description:SetText(
-        "The Hinterland Battleground is a 25 vs 25 player PvP battleground featuring random affixes " ..
-        "that change the gameplay mechanics. Players compete to collect resources by controlling " ..
-        "capture points and defeating enemy players.\n\n" ..
-        "Each battleground match features a different affix that significantly changes the " ..
-        "gameplay mechanics. Some affixes boost damage, others change movement speed, " ..
-        "or provide unique buffs and debuffs to players."
-    )
-    table.insert(info.Content.children, description)
-    yOffset = yOffset - (description:GetStringHeight() + 20)
-    
-    -- Create sections title
-    local sectionsTitle = info.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    sectionsTitle:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 20, yOffset)
-    sectionsTitle:SetText("Battleground Features")
-    table.insert(info.Content.children, sectionsTitle)
-    yOffset = yOffset - 25
-    
-    -- Create sections with icons
-    local icons = {
-        {title = "History", text = "View past battleground results with details on winners, affixes, and durations"},
-        {title = "Statistics", text = "See overall win/loss statistics for each faction and affix"},
-        {title = "Affixes", text = "Browse all possible affixes and their effects"},
-        {title = "Queue", text = "Join the battleground queue and see estimated wait times"},
-        {title = "Live Battle", text = "Monitor resources and player counts during an active battle"},
-        {title = "Settings", text = "Configure HUD display options and addon behavior"}
-    }
-    
-    for i, icon in ipairs(icons) do
-        local frame = CreateFrame("Frame", nil, info.Content)
-        frame:SetSize(450, 40)
-        frame:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 20, yOffset)
-        local iconTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        iconTitle:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-        iconTitle:SetText(icon.title)
-        local text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        text:SetPoint("TOPLEFT", iconTitle, "BOTTOMLEFT", 10, -2)
-        text:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
-        text:SetJustifyH("LEFT")
-        text:SetJustifyV("TOP")
-        text:SetText(icon.text)
 
-        local frameHeight = math.max(40, 18 + text:GetStringHeight() + 6)
-        frame:SetHeight(frameHeight)
+    if not info.Scroll then
+        info.Scroll = CreateFrame("ScrollFrame", "HLBG_InfoScrollFrame", info.Content,
+            "UIPanelScrollFrameTemplate")
+        info.Scroll:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 16, -72)
+        info.Scroll:SetPoint("BOTTOMRIGHT", info.Content, "BOTTOMRIGHT", -36, 16)
+        info.Scroll:EnableMouseWheel(true)
+        info.Scroll:SetScript("OnMouseWheel", function(self, delta)
+            local current = self:GetVerticalScroll()
+            local maxScroll = self:GetVerticalScrollRange() or 0
+            local step = 36
 
-        table.insert(info.Content.children, frame)
-        yOffset = yOffset - (frameHeight + 8)
+            if delta < 0 then
+                self:SetVerticalScroll(math.min(maxScroll, current + step))
+            else
+                self:SetVerticalScroll(math.max(0, current - step))
+            end
+        end)
     end
-    
-    -- Create commands title
-    local commandsTitle = info.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    commandsTitle:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 20, yOffset)
-    commandsTitle:SetText("Slash Commands")
-    table.insert(info.Content.children, commandsTitle)
-    yOffset = yOffset - 25
-    
-    -- Create commands list
-    local commands = info.Content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    commands:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 30, yOffset)
-    commands:SetPoint("RIGHT", info.Content, "RIGHT", -20, 0)
-    commands:SetJustifyH("LEFT")
-    commands:SetJustifyV("TOP")
-    commands:SetText(
-        "/hlbg - Open main window\n" ..
-        "/hlbg queue join - Join battleground queue\n" ..
-        "/hlbg queue leave - Leave battleground queue\n" ..
-        "/hlbg devmode on|off - Enable/disable debug mode\n" ..
-        "/hlbg season <n> - Set season filter (0 = all/current)"
-    )
-    table.insert(info.Content.children, commands)
-    yOffset = yOffset - (commands:GetStringHeight() + 20)
-    
-    -- Set content height
-    info.Content:SetHeight(math.abs(yOffset) + 100)
-    -- Show the tab
+
+    if not info.ScrollChild then
+        info.ScrollChild = CreateFrame("Frame", nil, info.Scroll)
+        info.ScrollChild:SetPoint("TOPLEFT", info.Scroll, "TOPLEFT", 0, 0)
+        info.ScrollChild:SetSize(560, 1)
+        info.Scroll:SetScrollChild(info.ScrollChild)
+    end
+
+    if not info.InfoText then
+        info.InfoText = info.ScrollChild:CreateFontString(nil, "OVERLAY",
+            "GameFontHighlight")
+        info.InfoText:SetPoint("TOPLEFT", info.ScrollChild, "TOPLEFT", 0, 0)
+        info.InfoText:SetJustifyH("LEFT")
+        info.InfoText:SetJustifyV("TOP")
+    end
+
+    local width = info.Scroll:GetWidth() or 0
+    if width < 100 then
+        width = 560
+    end
+    width = math.max(380, width - 28)
+
+    info.ScrollChild:SetWidth(width)
+    info.InfoText:SetWidth(width)
+    info.InfoText:SetText(BuildInfoText())
+
+    local textHeight = info.InfoText:GetStringHeight() or 0
+    info.ScrollChild:SetHeight(math.max(1, textHeight + 18))
+    info.Scroll:SetVerticalScroll(0)
+
+    -- Keep legacy container height valid for compatibility hooks.
+    info.Content:SetHeight(math.max(info.Content:GetHeight() or 1, textHeight + 120))
     info:Show()
 end
 

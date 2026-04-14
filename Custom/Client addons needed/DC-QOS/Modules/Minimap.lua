@@ -10,6 +10,27 @@ local MinimapModule = {
     icon = "Interface\\Icons\\INV_Misc_Map_01",
 }
 
+local runtimeState = {
+    captured = false,
+    originalGetMinimapShape = nil,
+    originalMaskTexture = nil,
+    originalMouseWheelEnabled = nil,
+    originalOnMouseWheel = nil,
+    originalClusterPoints = nil,
+    originalClusterScale = nil,
+    originalTrackingShown = nil,
+    originalZoomInShown = nil,
+    originalZoomOutShown = nil,
+    originalClockShown = nil,
+    originalCalendarShown = nil,
+    originalWorldMapShown = nil,
+    originalWorldMapMouseEnabled = nil,
+    originalMinimapBorderShown = nil,
+    originalMinimapBorderTopShown = nil,
+    originalMinimapBackdropShown = nil,
+    originalRotateMinimap = nil,
+}
+
 local function RefreshLibDBIcons()
     if not LibStub then
         return
@@ -21,6 +42,252 @@ local function RefreshLibDBIcons()
     for name in pairs(iconLib.objects) do
         iconLib:Refresh(name)
     end
+end
+
+local function CapturePoints(frame)
+    if not frame or type(frame.GetNumPoints) ~= "function" then
+        return nil
+    end
+
+    local points = {}
+    local count = frame:GetNumPoints() or 0
+    for i = 1, count do
+        local point, relativeTo, relativePoint, x, y = frame:GetPoint(i)
+        points[i] = {
+            point = point,
+            relativeTo = relativeTo,
+            relativePoint = relativePoint,
+            x = x or 0,
+            y = y or 0,
+        }
+    end
+
+    return points
+end
+
+local function RestorePoints(frame, points)
+    if not frame then
+        return
+    end
+
+    if type(frame.ClearAllPoints) == "function" then
+        frame:ClearAllPoints()
+    end
+
+    if not points or #points == 0 or type(frame.SetPoint) ~= "function" then
+        return
+    end
+
+    for i = 1, #points do
+        local p = points[i]
+        frame:SetPoint(p.point, p.relativeTo, p.relativePoint, p.x or 0, p.y or 0)
+    end
+end
+
+local function CaptureOriginalState()
+    if runtimeState.captured then
+        return
+    end
+
+    runtimeState.captured = true
+    runtimeState.originalGetMinimapShape = _G.GetMinimapShape
+
+    if type(GetCVar) == "function" then
+        runtimeState.originalRotateMinimap = GetCVar("rotateMinimap")
+    end
+
+    if Minimap then
+        if type(Minimap.GetMaskTexture) == "function" then
+            runtimeState.originalMaskTexture = Minimap:GetMaskTexture()
+        end
+        if type(Minimap.IsMouseWheelEnabled) == "function" then
+            runtimeState.originalMouseWheelEnabled = Minimap:IsMouseWheelEnabled()
+        end
+        if type(Minimap.GetScript) == "function" then
+            runtimeState.originalOnMouseWheel = Minimap:GetScript("OnMouseWheel")
+        end
+    end
+
+    if MinimapCluster then
+        runtimeState.originalClusterPoints = CapturePoints(MinimapCluster)
+        if type(MinimapCluster.GetScale) == "function" then
+            runtimeState.originalClusterScale = MinimapCluster:GetScale()
+        end
+    end
+
+    if MiniMapTracking and type(MiniMapTracking.IsShown) == "function" then
+        runtimeState.originalTrackingShown = MiniMapTracking:IsShown()
+    end
+    if MinimapZoomIn and type(MinimapZoomIn.IsShown) == "function" then
+        runtimeState.originalZoomInShown = MinimapZoomIn:IsShown()
+    end
+    if MinimapZoomOut and type(MinimapZoomOut.IsShown) == "function" then
+        runtimeState.originalZoomOutShown = MinimapZoomOut:IsShown()
+    end
+    if TimeManagerClockButton
+        and type(TimeManagerClockButton.IsShown) == "function" then
+        runtimeState.originalClockShown = TimeManagerClockButton:IsShown()
+    end
+    if GameTimeFrame and type(GameTimeFrame.IsShown) == "function" then
+        runtimeState.originalCalendarShown = GameTimeFrame:IsShown()
+    end
+    if MiniMapWorldMapButton
+        and type(MiniMapWorldMapButton.IsShown) == "function" then
+        runtimeState.originalWorldMapShown = MiniMapWorldMapButton:IsShown()
+    end
+    if MiniMapWorldMapButton
+        and type(MiniMapWorldMapButton.IsMouseEnabled) == "function" then
+        runtimeState.originalWorldMapMouseEnabled = MiniMapWorldMapButton:IsMouseEnabled()
+    end
+    if MinimapBorder and type(MinimapBorder.IsShown) == "function" then
+        runtimeState.originalMinimapBorderShown = MinimapBorder:IsShown()
+    end
+    if MinimapBorderTop and type(MinimapBorderTop.IsShown) == "function" then
+        runtimeState.originalMinimapBorderTopShown = MinimapBorderTop:IsShown()
+    end
+    if MinimapBackdrop and type(MinimapBackdrop.IsShown) == "function" then
+        runtimeState.originalMinimapBackdropShown = MinimapBackdrop:IsShown()
+    end
+end
+
+local function RestoreOriginalState()
+    if not runtimeState.captured then
+        return
+    end
+
+    if Minimap then
+        local maskTexture = runtimeState.originalMaskTexture
+            or "Textures\\MinimapMask"
+        Minimap:SetMaskTexture(maskTexture)
+
+        if runtimeState.originalMouseWheelEnabled ~= nil
+            and type(Minimap.EnableMouseWheel) == "function" then
+            Minimap:EnableMouseWheel(runtimeState.originalMouseWheelEnabled)
+        end
+
+        if type(Minimap.SetScript) == "function" then
+            Minimap:SetScript("OnMouseWheel", runtimeState.originalOnMouseWheel)
+        end
+    end
+
+    if MinimapCluster then
+        RestorePoints(MinimapCluster, runtimeState.originalClusterPoints)
+        if runtimeState.originalClusterScale
+            and type(MinimapCluster.SetScale) == "function" then
+            MinimapCluster:SetScale(runtimeState.originalClusterScale)
+        end
+    end
+
+    if MiniMapTracking and runtimeState.originalTrackingShown ~= nil then
+        if runtimeState.originalTrackingShown then
+            MiniMapTracking:Show()
+        else
+            MiniMapTracking:Hide()
+        end
+    end
+
+    if MinimapZoomIn and runtimeState.originalZoomInShown ~= nil then
+        if runtimeState.originalZoomInShown then
+            MinimapZoomIn:Show()
+        else
+            MinimapZoomIn:Hide()
+        end
+    end
+
+    if MinimapZoomOut and runtimeState.originalZoomOutShown ~= nil then
+        if runtimeState.originalZoomOutShown then
+            MinimapZoomOut:Show()
+        else
+            MinimapZoomOut:Hide()
+        end
+    end
+
+    if TimeManagerClockButton and runtimeState.originalClockShown ~= nil then
+        if runtimeState.originalClockShown then
+            TimeManagerClockButton:Show()
+        else
+            TimeManagerClockButton:Hide()
+        end
+    end
+
+    if GameTimeFrame and runtimeState.originalCalendarShown ~= nil then
+        if runtimeState.originalCalendarShown then
+            GameTimeFrame:Show()
+        else
+            GameTimeFrame:Hide()
+        end
+    end
+
+    if MiniMapWorldMapButton then
+        if runtimeState.originalWorldMapMouseEnabled ~= nil
+            and type(MiniMapWorldMapButton.EnableMouse) == "function" then
+            MiniMapWorldMapButton:EnableMouse(
+                runtimeState.originalWorldMapMouseEnabled)
+        end
+        if runtimeState.originalWorldMapShown ~= nil then
+            if runtimeState.originalWorldMapShown then
+                MiniMapWorldMapButton:Show()
+            else
+                MiniMapWorldMapButton:Hide()
+            end
+        end
+    end
+
+    if MinimapBorder and runtimeState.originalMinimapBorderShown ~= nil then
+        if runtimeState.originalMinimapBorderShown then
+            MinimapBorder:Show()
+        else
+            MinimapBorder:Hide()
+        end
+    end
+
+    if MinimapBorderTop and runtimeState.originalMinimapBorderTopShown ~= nil then
+        if runtimeState.originalMinimapBorderTopShown then
+            MinimapBorderTop:Show()
+        else
+            MinimapBorderTop:Hide()
+        end
+    end
+
+    if MinimapBackdrop and runtimeState.originalMinimapBackdropShown ~= nil then
+        if runtimeState.originalMinimapBackdropShown then
+            MinimapBackdrop:Show()
+        else
+            MinimapBackdrop:Hide()
+        end
+    end
+
+    if Minimap.DCQOSFrame then
+        Minimap.DCQOSFrame:Hide()
+    end
+
+    _G.GetMinimapShape = runtimeState.originalGetMinimapShape
+
+    if runtimeState.originalRotateMinimap ~= nil
+        and type(SetCVar) == "function" then
+        pcall(SetCVar, "rotateMinimap", runtimeState.originalRotateMinimap)
+    end
+
+    RefreshLibDBIcons()
+
+    runtimeState.captured = false
+    runtimeState.originalGetMinimapShape = nil
+    runtimeState.originalMaskTexture = nil
+    runtimeState.originalMouseWheelEnabled = nil
+    runtimeState.originalOnMouseWheel = nil
+    runtimeState.originalClusterPoints = nil
+    runtimeState.originalClusterScale = nil
+    runtimeState.originalTrackingShown = nil
+    runtimeState.originalZoomInShown = nil
+    runtimeState.originalZoomOutShown = nil
+    runtimeState.originalClockShown = nil
+    runtimeState.originalCalendarShown = nil
+    runtimeState.originalWorldMapShown = nil
+    runtimeState.originalWorldMapMouseEnabled = nil
+    runtimeState.originalMinimapBorderShown = nil
+    runtimeState.originalMinimapBorderTopShown = nil
+    runtimeState.originalMinimapBackdropShown = nil
+    runtimeState.originalRotateMinimap = nil
 end
 
 local function EnsureDcMinimapFrame()
@@ -233,13 +500,21 @@ local function ApplyMinimapSkin()
     local s = addon.settings.minimap
     if not s.enabled then return end
 
+    CaptureOriginalState()
+
     local useDcFrame = (s.useDcFrame ~= false)
     local fillFrame = useDcFrame and (s.fillFrame ~= false)
     local disableRotate = (s.disableRotate ~= false)
 
     local size = s.size or 160
     local baseSize = Minimap:GetWidth() or 140
+    if baseSize <= 0 then
+        baseSize = 140
+    end
     local scale = size / baseSize
+    if not scale or scale ~= scale or scale <= 0 then
+        scale = 1
+    end
 
     if MinimapCluster then
         MinimapCluster:ClearAllPoints()
@@ -345,6 +620,11 @@ local function ApplyMinimapSkin()
 
     if s.hideTracking and MiniMapTracking then
         MiniMapTracking:Hide()
+        if addon.EnsureQuestMinimapTrackingEnabled then
+            addon:EnsureQuestMinimapTrackingEnabled()
+        end
+    elseif MiniMapTracking then
+        MiniMapTracking:Show()
     end
 
     if s.hideClock and TimeManagerClockButton then
@@ -372,6 +652,10 @@ local function ApplyMinimapSkin()
 
     -- Re-apply mask after sizing to avoid ring drift in some UIs
     addon:DelayedCall(0.05, function()
+        if not runtimeState.captured then
+            return
+        end
+
         if fillFrame or s.style == "square" then
             Minimap:SetMaskTexture("Interface\\ChatFrame\\ChatFrameBackground")
         else
@@ -387,14 +671,30 @@ local function ApplyMinimapSkin()
         end
 
         RefreshLibDBIcons()
+
+        if s.hideTracking then
+            if addon.EnsureQuestMinimapTrackingEnabled then
+                addon:EnsureQuestMinimapTrackingEnabled()
+            end
+        end
     end)
 
     -- Re-apply layout after other addons finish positioning their minimap buttons.
     addon:DelayedCall(1.0, function()
+        if not runtimeState.captured then
+            return
+        end
+
         if useDcFrame then
             local frame = EnsureDcMinimapFrame()
             frame:Show()
             LayoutLeftMinimapButtons(frame)
+        end
+
+        if s.hideTracking then
+            if addon.EnsureQuestMinimapTrackingEnabled then
+                addon:EnsureQuestMinimapTrackingEnabled()
+            end
         end
     end)
 end
@@ -410,6 +710,7 @@ end
 
 function MinimapModule.OnDisable()
     addon:Debug("Minimap module disabling")
+    RestoreOriginalState()
 end
 
 function MinimapModule.CreateSettings(parent)

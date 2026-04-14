@@ -1340,49 +1340,6 @@ local function EnsureQuestIsWatched(questLogIndex)
     return true
 end
 
-local function EnsureQuestMinimapTrackingEnabled()
-    if type(GetNumTrackingTypes) ~= "function"
-        or type(GetTrackingInfo) ~= "function"
-        or type(SetTracking) ~= "function" then
-        return false
-    end
-
-    local localizedTrackQuests = type(TRACK_QUESTS) == "string" and TRACK_QUESTS or nil
-    local numTracking = GetNumTrackingTypes() or 0
-
-    for i = 1, numTracking do
-        local name, texture, active = GetTrackingInfo(i)
-        local matches = false
-
-        if localizedTrackQuests and type(name) == "string" and name == localizedTrackQuests then
-            matches = true
-        end
-
-        if not matches and type(name) == "string" then
-            local lowerName = string.lower(name)
-            if lowerName:find("quest", 1, true) or lowerName:find("objective", 1, true) then
-                matches = true
-            end
-        end
-
-        if not matches and type(texture) == "string" then
-            local lowerTexture = string.lower(texture)
-            if lowerTexture:find("trackquest", 1, true) then
-                matches = true
-            end
-        end
-
-        if matches then
-            if not active then
-                pcall(SetTracking, i, true)
-            end
-            return true
-        end
-    end
-
-    return false
-end
-
 local function EnsureQuestSelectionFocused(questLogIndex)
     if type(questLogIndex) ~= "number" or questLogIndex <= 0 then
         return false
@@ -1475,7 +1432,10 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
         MaybeSyncCurrentZoneMap(true)
     end
 
-    local minimapTrackingSynced = EnsureQuestMinimapTrackingEnabled()
+    local minimapTrackingSynced = false
+    if addon.EnsureQuestMinimapTrackingEnabled then
+        minimapTrackingSynced = addon:EnsureQuestMinimapTrackingEnabled()
+    end
     if minimapTrackingSynced then
         MaybeSyncCurrentZoneMap(true)
     end

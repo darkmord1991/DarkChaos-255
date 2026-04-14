@@ -370,12 +370,43 @@ void MythicDifficultyScaling::CalculateMythicPlusMultipliers(uint32 keystoneLeve
         return;
     }
 
-    // Fallback: approximate scaling relative to M+15 baseline (2.96x) at ~10% per level delta
-    constexpr float M15_BASELINE = 2.96f;
-    int32 levelDelta = static_cast<int32>(keystoneLevel) - 15;
-    float fallback = M15_BASELINE * std::pow(1.10f, static_cast<float>(levelDelta));
-    hpMult = damageMult = fallback;
+    // Fallback defaults for common keystone levels when DB rows are missing.
+    switch (keystoneLevel)
+    {
+        case 2: hpMult = damageMult = 1.00f; break;
+        case 3: hpMult = damageMult = 1.14f; break;
+        case 4: hpMult = damageMult = 1.23f; break;
+        case 5: hpMult = damageMult = 1.31f; break;
+        case 6: hpMult = damageMult = 1.40f; break;
+        case 7: hpMult = damageMult = 1.50f; break;
+        case 8: hpMult = damageMult = 1.61f; break;
+        case 9: hpMult = damageMult = 1.72f; break;
+        case 10: hpMult = damageMult = 1.84f; break;
+        case 11: hpMult = damageMult = 2.02f; break;
+        case 12: hpMult = damageMult = 2.22f; break;
+        case 13: hpMult = damageMult = 2.45f; break;
+        case 14: hpMult = damageMult = 2.69f; break;
+        case 15: hpMult = damageMult = 2.96f; break;
+        case 16: hpMult = damageMult = 3.26f; break;
+        case 17: hpMult = damageMult = 3.58f; break;
+        case 18: hpMult = damageMult = 3.94f; break;
+        case 19: hpMult = damageMult = 4.33f; break;
+        case 20: hpMult = damageMult = 4.76f; break;
+        default:
+        {
+            // Continue growth beyond +20 at ~10% per level.
+            constexpr float M20_BASELINE = 4.76f;
+            int32 levelDelta = static_cast<int32>(keystoneLevel) - 20;
+            float fallback = M20_BASELINE * std::pow(1.10f, static_cast<float>(levelDelta));
+            if (fallback < 1.0f)
+                fallback = 1.0f;
+
+            hpMult = damageMult = fallback;
+            break;
+        }
+    }
+
     _scalingMultipliers[keystoneLevel] = { hpMult, damageMult };
     LOG_WARN("mythic.scaling", "Scaling multipliers missing for keystoneLevel {}. Using fallback {:.2f}x and caching result",
-             keystoneLevel, fallback);
+             keystoneLevel, hpMult);
 }

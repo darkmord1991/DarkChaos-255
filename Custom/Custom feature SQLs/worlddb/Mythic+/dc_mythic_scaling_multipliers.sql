@@ -5,9 +5,9 @@
 -- Allows for easy balancing without recompiling code
 -- ============================================================================
 
-DROP TABLE IF EXISTS `dc_mythic_scaling_multipliers`;
+DROP TABLE IF EXISTS `dc_mplus_scale_multipliers`;
 
-CREATE TABLE `dc_mythic_scaling_multipliers` (
+CREATE TABLE `dc_mplus_scale_multipliers` (
     `keystoneLevel` INT UNSIGNED NOT NULL PRIMARY KEY COMMENT 'Keystone difficulty level (0-30+)',
     `hpMultiplier` FLOAT NOT NULL DEFAULT '1.0' COMMENT 'Health multiplier for creatures',
     `damageMultiplier` FLOAT NOT NULL DEFAULT '1.0' COMMENT 'Damage multiplier for creatures',
@@ -21,7 +21,7 @@ COMMENT='Creature scaling multipliers for each Mythic+ keystone level';
 -- Source: https://www.wowhead.com/guide/mythic-plus-dungeons
 -- ============================================================================
 
-INSERT INTO `dc_mythic_scaling_multipliers` (`keystoneLevel`, `hpMultiplier`, `damageMultiplier`, `description`) VALUES
+INSERT INTO `dc_mplus_scale_multipliers` (`keystoneLevel`, `hpMultiplier`, `damageMultiplier`, `description`) VALUES
     (0,  1.00, 1.00, 'M+0/M+1 (Baseline)'),
     (1,  1.00, 1.00, 'M+1 (Baseline)'),
     (2,  1.00, 1.00, 'M+2 (0%)'),
