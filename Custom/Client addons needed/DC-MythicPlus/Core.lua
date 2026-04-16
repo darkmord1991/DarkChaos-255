@@ -101,6 +101,7 @@ DCMythicPlusHUDDB.position = DCMythicPlusHUDDB.position or { point = "CENTER", r
 DCMythicPlusHUDDB.locked = DCMythicPlusHUDDB.locked or false
 DCMythicPlusHUDDB.hidden = DCMythicPlusHUDDB.hidden or false
 DCMythicPlusHUDDB.firstLoginByChar = DCMythicPlusHUDDB.firstLoginByChar or {}
+namespace._vaultLoginNoticeShown = false
 
 -- Cache structure for static/weekly data
 DCMythicPlusHUDDB.cache = DCMythicPlusHUDDB.cache or {}
@@ -139,8 +140,13 @@ local centerCountdownText
 local lastCenterCountdownValue
 local lastPayload
 local lastResultPopupKey
+local vaultToastFrame
+local vaultToastTitleText
+local vaultToastBodyText
+local vaultToastVersion = 0
 local lastRequestTime = 0
 local REQUEST_COOLDOWN = 1.0
+local VAULT_TOAST_DURATION = 12
 
 local function GetCharacterKey()
     local name = (type(UnitName) == "function" and UnitName("player")) or "Unknown"
@@ -325,6 +331,89 @@ local function Print(msg)
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff32c4ffMythic+ HUD:|r " .. (msg or ""))
     end
+end
+
+local function FormatUnixTimestampLocal(ts)
+    ts = tonumber(ts or 0) or 0
+    if ts <= 0 then
+        return "Unknown"
+    end
+    return date("%Y-%m-%d %H:%M", ts)
+end
+
+local function EnsureVaultToastFrame()
+    if vaultToastFrame then
+        return vaultToastFrame
+    end
+
+    vaultToastFrame = CreateFrame("Frame", "DCMythicPlusVaultToastFrame", UIParent)
+    vaultToastFrame:SetSize(520, 112)
+    vaultToastFrame:SetPoint("TOP", UIParent, "TOP", 0, -155)
+    vaultToastFrame:SetFrameStrata("DIALOG")
+    vaultToastFrame:EnableMouse(false)
+
+    if vaultToastFrame.SetBackdrop then
+        vaultToastFrame:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        vaultToastFrame:SetBackdropColor(0.04, 0.06, 0.12, 0.96)
+        vaultToastFrame:SetBackdropBorderColor(0.28, 0.48, 0.90, 0.95)
+    end
+
+    local titleBar = vaultToastFrame:CreateTexture(nil, "ARTWORK")
+    titleBar:SetTexture("Interface\\Buttons\\WHITE8x8")
+    titleBar:SetVertexColor(0.13, 0.20, 0.34, 0.96)
+    titleBar:SetPoint("TOPLEFT", vaultToastFrame, "TOPLEFT", 4, -4)
+    titleBar:SetPoint("TOPRIGHT", vaultToastFrame, "TOPRIGHT", -4, -4)
+    titleBar:SetHeight(24)
+
+    local icon = vaultToastFrame:CreateTexture(nil, "OVERLAY")
+    icon:SetTexture("Interface\\Icons\\INV_Chest_Chain_15")
+    icon:SetSize(20, 20)
+    icon:SetPoint("TOPLEFT", vaultToastFrame, "TOPLEFT", 10, -8)
+
+    vaultToastTitleText = vaultToastFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    vaultToastTitleText:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+    vaultToastTitleText:SetJustifyH("LEFT")
+    vaultToastTitleText:SetTextColor(1.00, 0.87, 0.35, 1)
+
+    vaultToastBodyText = vaultToastFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    vaultToastBodyText:SetPoint("TOPLEFT", vaultToastFrame, "TOPLEFT", 12, -34)
+    vaultToastBodyText:SetWidth(496)
+    vaultToastBodyText:SetJustifyH("LEFT")
+    vaultToastBodyText:SetJustifyV("TOP")
+    vaultToastBodyText:SetTextColor(0.88, 0.93, 1.00, 1)
+
+    vaultToastFrame:Hide()
+    return vaultToastFrame
+end
+
+local function ShowVaultToast(title, body)
+    local f = EnsureVaultToastFrame()
+    if vaultToastTitleText then
+        vaultToastTitleText:SetText(title or "Great Vault")
+    end
+    if vaultToastBodyText then
+        vaultToastBodyText:SetText(body or "")
+    end
+
+    f:Show()
+    vaultToastVersion = (vaultToastVersion or 0) + 1
+    local thisToastVersion = vaultToastVersion
+
+    C_Timer.After(VAULT_TOAST_DURATION, function()
+        if vaultToastVersion ~= thisToastVersion then
+            return
+        end
+        if vaultToastFrame then
+            vaultToastFrame:Hide()
+        end
+    end)
 end
 
 -- Trace is intentionally runtime-only: always start disabled on load.
@@ -2862,6 +2951,7 @@ loader:SetScript("OnEvent", function(self, event)
             DCMythicPlusHUDDB.firstLoginByChar[key] = true
             namespace._suppressHudThisSession = true
         end
+        namespace._vaultLoginNoticeShown = false
         activeState = nil
         UpdateMinimapMythicKeyBadge()
     end
@@ -3207,6 +3297,79 @@ if DC then
                 Print("Failed to claim reward.")
             end
         end
+    end)
+
+    -- SMSG_VAULT_AVAILABLE (0x1A) - Login reminder for unclaimed rewards
+    DC:RegisterHandler("MPLUS", 0x1A, function(...)
+        local args = {...}
+        if type(args[1]) ~= "table" then
+            return
+        end
+
+        local data = args[1]
+        if not IsFlagSet(data.available) then
+            return
+        end
+
+        if namespace._vaultLoginNoticeShown then
+            return
+        end
+        namespace._vaultLoginNoticeShown = true
+
+        local unlockedCount = tonumber(data.unlockedCount or 0) or 0
+        local claimWindowStart = tonumber(data.claimWindowStart or data.claimWeekStart or 0) or 0
+        local claimWindowEnd = tonumber(data.claimWindowEnd or data.weeklyResetAt or 0) or 0
+        local weeklyResetAt = tonumber(data.weeklyResetAt or claimWindowEnd or 0) or 0
+        local nextWeeklyResetAt = tonumber(data.nextWeeklyResetAt or 0) or 0
+
+        local rewardLine
+        if unlockedCount > 1 then
+            rewardLine = string.format("Great Vault rewards available (%d choices)!", unlockedCount)
+        else
+            rewardLine = "Great Vault reward available!"
+        end
+
+        local claimLine = nil
+        if claimWindowStart > 0 and claimWindowEnd > 0 then
+            claimLine = string.format(
+                "Claim window: %s -> %s",
+                FormatUnixTimestampLocal(claimWindowStart),
+                FormatUnixTimestampLocal(claimWindowEnd)
+            )
+        end
+
+        local resetLine = nil
+        if weeklyResetAt > 0 then
+            resetLine = "Weekly reset: " .. FormatUnixTimestampLocal(weeklyResetAt)
+        end
+
+        local nextResetLine = nil
+        if nextWeeklyResetAt > 0 then
+            nextResetLine = "Next reset: " .. FormatUnixTimestampLocal(nextWeeklyResetAt)
+        end
+
+        Print(rewardLine .. " Use /dcm vault.")
+        if claimLine then
+            Print(claimLine)
+        end
+        if resetLine then
+            Print(resetLine)
+        end
+
+        local toastLines = {
+            "Use /dcm vault to open rewards.",
+        }
+        if claimLine then
+            table.insert(toastLines, claimLine)
+        end
+        if resetLine then
+            table.insert(toastLines, resetLine)
+        end
+        if nextResetLine then
+            table.insert(toastLines, nextResetLine)
+        end
+
+        ShowVaultToast(rewardLine, table.concat(toastLines, "\n"))
     end)
     
     -- =========================================================================

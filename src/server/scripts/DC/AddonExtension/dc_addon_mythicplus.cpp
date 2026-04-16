@@ -27,6 +27,171 @@ namespace DCAddon
 {
 namespace MythicPlus
 {
+    namespace
+    {
+        constexpr uint32 WEEK_SECONDS = 7u * 24u * 60u * 60u;
+
+        uint32 CountBits32(uint32 value)
+        {
+            uint32 count = 0;
+            while (value)
+            {
+                value &= (value - 1);
+                ++count;
+            }
+            return count;
+        }
+
+        uint32 GetRaidBossesForWeek(uint32 guidLow, uint32 weekStart, uint32 weekEnd)
+        {
+            uint32 raidBosses = 0;
+
+            if (QueryResult raidRes = CharacterDatabase.Query(
+                "SELECT i.map, i.completedEncounters "
+                "FROM character_instance ci "
+                "JOIN instance i ON i.id = ci.instance "
+                "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {}",
+                guidLow, weekStart, weekEnd))
+            {
+                do
+                {
+                    Field* fields = raidRes->Fetch();
+                    uint32 mapId = fields[0].Get<uint32>();
+                    uint32 completedEncounters = fields[1].Get<uint32>();
+
+                    MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+                    if (!mapEntry || !mapEntry->IsRaid())
+                        continue;
+
+                    raidBosses += CountBits32(completedEncounters);
+                } while (raidRes->NextRow());
+            }
+
+            return raidBosses;
+        }
+
+        uint32 GetMPlusRunsForWeek(uint32 guidLow, uint32 seasonId,
+            uint32 weekStart, uint32 weekEnd)
+        {
+            if (QueryResult runsRes = CharacterDatabase.Query(
+                "SELECT COUNT(*) FROM dc_mplus_runs "
+                "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                "AND completed_at >= FROM_UNIXTIME({}) "
+                "AND completed_at < FROM_UNIXTIME({})",
+                guidLow, seasonId, weekStart, weekEnd))
+            {
+                return (*runsRes)[0].Get<uint32>();
+            }
+
+            return 0;
+        }
+
+        uint32 GetPvpWinsForWeek(uint32 guidLow, uint32 weekStart, uint32 weekEnd)
+        {
+            if (QueryResult pvpRes = CharacterDatabase.Query(
+                "SELECT COUNT(*) FROM pvpstats_players p "
+                "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
+                "WHERE p.character_guid = {} AND p.winner = 1 "
+                "AND b.date >= FROM_UNIXTIME({}) "
+                "AND b.date < FROM_UNIXTIME({})",
+                guidLow, weekStart, weekEnd))
+            {
+                return (*pvpRes)[0].Get<uint32>();
+            }
+
+            return 0;
+        }
+
+        bool IsVaultRewardClaimed(uint32 guidLow, uint32 seasonId,
+            uint32 claimWeekStart)
+        {
+            if (QueryResult claimRes = CharacterDatabase.Query(
+                "SELECT reward_claimed FROM dc_weekly_vault "
+                "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+                guidLow, seasonId, claimWeekStart))
+            {
+                return (*claimRes)[0].Get<bool>();
+            }
+
+            return false;
+        }
+
+        void SendVaultAvailableNotification(Player* player)
+        {
+            if (!player)
+                return;
+
+            uint32 guidLow = player->GetGUID().GetCounter();
+            uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
+            uint32 currentWeekStart = sMythicRuns->GetWeekStartTimestamp();
+
+            if (currentWeekStart < WEEK_SECONDS)
+                return;
+
+            uint32 claimWeekStart = currentWeekStart - WEEK_SECONDS;
+            uint32 claimWeekEnd = claimWeekStart + WEEK_SECONDS;
+
+            if (IsVaultRewardClaimed(guidLow, seasonId, claimWeekStart))
+                return;
+
+            uint32 mplusRuns = GetMPlusRunsForWeek(
+                guidLow, seasonId, claimWeekStart, claimWeekEnd);
+            uint32 raidBosses = GetRaidBossesForWeek(
+                guidLow, claimWeekStart, claimWeekEnd);
+            uint32 pvpWins = GetPvpWinsForWeek(
+                guidLow, claimWeekStart, claimWeekEnd);
+
+            auto raidThreshold = [](uint8 slotInTrack) -> uint32
+            {
+                if (slotInTrack == 1)
+                    return sConfigMgr->GetOption<uint32>(
+                        "MythicPlus.Vault.Raid.Threshold1", 2);
+                if (slotInTrack == 2)
+                    return sConfigMgr->GetOption<uint32>(
+                        "MythicPlus.Vault.Raid.Threshold2", 4);
+                return sConfigMgr->GetOption<uint32>(
+                    "MythicPlus.Vault.Raid.Threshold3", 6);
+            };
+
+            auto pvpThreshold = [](uint8 slotInTrack) -> uint32
+            {
+                if (slotInTrack == 1)
+                    return sConfigMgr->GetOption<uint32>(
+                        "MythicPlus.Vault.PvP.Threshold1", 1);
+                if (slotInTrack == 2)
+                    return sConfigMgr->GetOption<uint32>(
+                        "MythicPlus.Vault.PvP.Threshold2", 4);
+                return sConfigMgr->GetOption<uint32>(
+                    "MythicPlus.Vault.PvP.Threshold3", 8);
+            };
+
+            uint32 unlockedCount = 0;
+            for (uint8 i = 1; i <= 3; ++i)
+            {
+                if (raidBosses >= raidThreshold(i))
+                    ++unlockedCount;
+                if (mplusRuns >= static_cast<uint32>(sMythicRuns->GetVaultThreshold(i)))
+                    ++unlockedCount;
+                if (pvpWins >= pvpThreshold(i))
+                    ++unlockedCount;
+            }
+
+            if (unlockedCount == 0)
+                return;
+
+            JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_VAULT_AVAILABLE)
+                .Set("available", true)
+                .Set("unlockedCount", static_cast<int32>(unlockedCount))
+                .Set("claimWeekStart", static_cast<int32>(claimWeekStart))
+                .Set("claimWindowStart", static_cast<int32>(claimWeekStart))
+                .Set("claimWindowEnd", static_cast<int32>(claimWeekEnd))
+                .Set("weeklyResetAt", static_cast<int32>(currentWeekStart))
+                .Set("nextWeeklyResetAt", static_cast<int32>(
+                    currentWeekStart + WEEK_SECONDS))
+                .Send(player);
+        }
+    }
+
     // Send current keystone info
     static void SendKeyInfo(Player* player)
     {
@@ -1145,6 +1310,12 @@ namespace MythicPlus
             reason = "client_request";
 
         HudCacheMgr::Instance().RequestHud(player, reason);
+
+        if (reason == "register" || reason == "PLAYER_LOGIN" ||
+            reason == "PLAYER_ENTERING_WORLD")
+        {
+            SendVaultAvailableNotification(player);
+        }
     }
 
     // ========================================================================

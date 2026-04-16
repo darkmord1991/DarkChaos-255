@@ -230,6 +230,7 @@ namespace DCAddon
             constexpr uint8 SMSG_KEYSTONE_LIST     = 0x17;  // Server -> Client: JSON list of keystone item IDs
             constexpr uint8 SMSG_VAULT_INFO        = 0x18;  // Great Vault info (JSON)
             constexpr uint8 SMSG_CLAIM_VAULT_RESULT = 0x19; // Claim result
+            constexpr uint8 SMSG_VAULT_AVAILABLE   = 0x1A;  // Login reminder: unclaimed Vault reward
 
             // =================================================================
             // Mythic+ Token Vendor UI (NPC-driven)
