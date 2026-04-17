@@ -30,6 +30,14 @@
 
 namespace
 {
+    constexpr uint32 UPGRADE_CLONE_ITEM_ID_MIN = 2000000;
+    constexpr uint32 UPGRADE_CLONE_ITEM_ID_MAX = 3000000;
+
+    bool IsUpgradeCloneItemId(uint32 itemId)
+    {
+        return itemId >= UPGRADE_CLONE_ITEM_ID_MIN && itemId <= UPGRADE_CLONE_ITEM_ID_MAX;
+    }
+
     // fmt uses braces as control characters; double them inside dynamic strings before formatting.
     void EscapeFmtBraces(std::string& text)
     {
@@ -883,6 +891,32 @@ namespace DarkChaos
                     return mappedTier;
                 }
 
+                // Clone entries are excluded from the in-memory map to reduce footprint.
+                // Resolve them on demand through the clone mapping table.
+                if (IsUpgradeCloneItemId(item_id))
+                {
+                    QueryResult cloneResult = WorldDatabase.Query(
+                        "SELECT base_item_id, tier_id FROM dc_item_upgrade_clones WHERE clone_item_id = {} LIMIT 1",
+                        item_id);
+
+                    if (cloneResult)
+                    {
+                        Field* fields = cloneResult->Fetch();
+                        uint32 baseItemId = fields[0].Get<uint32>();
+                        uint8 cloneTier = fields[1].Get<uint8>();
+
+                        if (cloneTier != TIER_INVALID)
+                            return cloneTier;
+
+                        auto baseIt = item_to_tier.find(baseItemId);
+                        if (baseIt != item_to_tier.end())
+                            return baseIt->second;
+
+                        if (ItemTemplate const* baseTemplate = sObjectMgr->GetItemTemplate(baseItemId))
+                            return resolveTierByIlvl(baseTemplate->ItemLevel);
+                    }
+                }
+
                 // Fallback: Get item template and determine tier by item level
                 if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id))
                     return resolveTierByIlvl(itemTemplate->ItemLevel);
@@ -1100,8 +1134,9 @@ namespace DarkChaos
 
                 // Load item to tier mappings
                 result = WorldDatabase.Query(
-                    "SELECT item_id, tier_id FROM dc_item_templates_upgrade WHERE season = {} AND is_active = 1",
-                    season);
+                    "SELECT item_id, tier_id FROM dc_item_templates_upgrade "
+                    "WHERE season = {} AND is_active = 1 AND item_id < {}",
+                    season, UPGRADE_CLONE_ITEM_ID_MIN);
                 if (result)
                 {
                     uint32 count = 0;
@@ -1115,7 +1150,7 @@ namespace DarkChaos
                         count++;
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} item-to-tier mappings", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} item-to-tier mappings (clone-range excluded)", count);
                 }
                 else
                 {

@@ -87,7 +87,13 @@ if not HLBG.UI.Frame then
     -- Close button
     local closeBtn = CreateFrame("Button", nil, HLBG.UI.Frame, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", HLBG.UI.Frame, "TOPRIGHT", -4, -4)
-    closeBtn:SetScript("OnClick", function() HLBG.UI.Frame:Hide() end)
+    closeBtn:SetScript("OnClick", function()
+        if type(HLBG.CloseMainWindow) == 'function' then
+            HLBG.CloseMainWindow()
+        else
+            HLBG.UI.Frame:Hide()
+        end
+    end)
     closeBtn:SetFrameLevel(HLBG.UI.Frame:GetFrameLevel() + 10)
     closeBtn:SetScale(1.1)
     closeBtn:SetScript("OnEnter", function(self)
@@ -123,6 +129,15 @@ if not HLBG.UI.Frame then
     end)
     refreshBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     HLBG.UI.Frame.RefreshBtn = refreshBtn
+
+    -- Re-apply the selected tab whenever the frame becomes visible.
+    HLBG.UI.Frame:SetScript("OnShow", function()
+        local showFn = HLBG and HLBG.ShowTab
+        if type(showFn) == 'function' then
+            local target = (DCHLBGDB and DCHLBGDB.lastInnerTab) or 1
+            pcall(showFn, target)
+        end
+    end)
 end
 -- Create tabs only once
 if not HLBG.UI.Tabs then
@@ -276,7 +291,7 @@ if DCHLBGDB then
 end
 
 -- Tab switching function (single instance)
-function ShowTab(i)
+local function HLBG_ShowTab(i)
     local tabCount = #(HLBG.UI.Tabs or {})
     if tabCount == 0 then
         return
@@ -329,16 +344,67 @@ function ShowTab(i)
         DCHLBGDB.lastInnerTab = i
     end
 end
+
+HLBG.ShowTab = HLBG_ShowTab
+_G.HLBG_ShowTab = HLBG_ShowTab
+
+-- Backward-compatible global used by legacy helpers.
+function ShowTab(i)
+    return HLBG_ShowTab(i)
+end
+
+function HLBG.OpenMainWindow(tabIndex)
+    if not (HLBG.UI and HLBG.UI.Frame) then
+        return false
+    end
+
+    HLBG.UI.Frame:Show()
+    if HLBG.UI.Frame.Raise then
+        HLBG.UI.Frame:Raise()
+    end
+
+    local target = tonumber(tabIndex)
+        or (DCHLBGDB and tonumber(DCHLBGDB.lastInnerTab))
+        or 1
+    HLBG_ShowTab(target)
+    return true
+end
+
+function HLBG.CloseMainWindow()
+    if HLBG.UI and HLBG.UI.Frame then
+        HLBG.UI.Frame:Hide()
+    end
+
+    -- Restore default PvP panes when closing HLBG while PvP is open.
+    local pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
+    if pvp and pvp.IsShown and pvp:IsShown() then
+        if PVPFrameLeft and PVPFrameLeft.Show then
+            PVPFrameLeft:Show()
+        end
+        if PVPFrameRight and PVPFrameRight.Show then
+            PVPFrameRight:Show()
+        end
+    end
+end
+
 -- Wire up tab clicks
 for idx, tab in ipairs(HLBG.UI.Tabs) do
     local tabIndex = idx
     tab:SetScript("OnClick", function()
-        ShowTab(tabIndex)
+        HLBG_ShowTab(tabIndex)
     end)
 end
--- Show first tab by default and make main frame visible
-ShowTab(1)
-HLBG.UI.Frame:Show()
+-- Initialize default selected tab without forcing the window visible at addon load.
+do
+    local tabCount = #(HLBG.UI.Tabs or {})
+    local lastTab = DCHLBGDB and tonumber(DCHLBGDB.lastInnerTab) or nil
+    if not lastTab or lastTab < 1 or lastTab > tabCount then
+        if DCHLBGDB then DCHLBGDB.lastInnerTab = 1 end
+    end
+    if HLBG.UI.Info then HLBG.UI.Info:Hide() end
+    if HLBG.UI.Queue then HLBG.UI.Queue:Hide() end
+end
+
 -- Ensure UI helper function
 function HLBG._ensureUI(name)
     if not (type(HLBG) == 'table' and type(HLBG.UI) == 'table') then return false end

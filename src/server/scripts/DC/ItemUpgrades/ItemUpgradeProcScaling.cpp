@@ -5,7 +5,8 @@
  * Implements "True Proc Scaling" by dynamically mapping spells to their source items.
  *
  * LOGIC:
- * 1. On startup, scans all ItemTemplates to build a `SpellID -> [ItemID]` map.
+ * 1. On startup, indexes only upgrade-eligible base ItemTemplates to build
+ *    a `SpellID -> [ItemID]` map.
  * 2. Hooks Unit::ModifySpellDamageTaken and Unit::ModifyHealReceived.
  * 3. When a registered proc spell is cast:
  *    a. Checks if the caster has the source item equipped.
@@ -23,6 +24,8 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Unit.h"
+#include "DatabaseEnv.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeProcScaling.h"
 #include "Log.h"
@@ -37,6 +40,11 @@ namespace DarkChaos
 {
 namespace ItemUpgrade
 {
+    namespace
+    {
+        constexpr uint32 UPGRADE_CLONE_ITEM_ID_MIN = 2000000;
+    }
+
     // =====================================================================
     // Proc Spell Registry
     // =====================================================================
@@ -57,15 +65,48 @@ namespace ItemUpgrade
 
             LOG_INFO("scripts.dc", "ItemUpgrade: Initializing Proc Spell Registry...");
             uint32 count = 0;
+            uint32 indexedItems = 0;
 
-            // Iterate over all item templates
+            uint32 season = GetCurrentSeasonId();
+            std::vector<uint32> eligibleEntries;
+            QueryResult eligibleResult = WorldDatabase.Query(
+                "SELECT item_id FROM dc_item_templates_upgrade "
+                "WHERE season = {} AND is_active = 1 AND item_id < {}",
+                season, UPGRADE_CLONE_ITEM_ID_MIN);
+
+            if (eligibleResult)
+            {
+                do
+                {
+                    Field* fields = eligibleResult->Fetch();
+                    eligibleEntries.push_back(fields[0].Get<uint32>());
+                } while (eligibleResult->NextRow());
+            }
+
+            if (eligibleEntries.empty())
+            {
+                _initialized = true;
+                LOG_WARN("scripts.dc", "ItemUpgrade: No upgrade-eligible base items found for season {}; proc registry remains empty.", season);
+                return;
+            }
+
+            // Index only the upgrade-eligible base item templates.
             ItemTemplateContainer const* items = sObjectMgr->GetItemTemplateStore();
             if (!items)
-                return;
-
-            for (auto const& pair : *items)
             {
-                ItemTemplate const& itemTemplate = pair.second;
+                _initialized = true;
+                LOG_WARN("scripts.dc", "ItemUpgrade: ItemTemplate store unavailable; proc registry remains empty.");
+                return;
+            }
+
+            for (uint32 itemId : eligibleEntries)
+            {
+                auto itemItr = items->find(itemId);
+                if (itemItr == items->end())
+                    continue;
+
+                ItemTemplate const& itemTemplate = itemItr->second;
+                indexedItems++;
 
                 // Check all 5 possible item spells
                 for (auto const& itemSpell : itemTemplate.Spells)
@@ -90,7 +131,7 @@ namespace ItemUpgrade
             }
 
             _initialized = true;
-            LOG_INFO("scripts.dc", "ItemUpgrade: Mapped {} proc associations.", count);
+            LOG_INFO("scripts.dc", "ItemUpgrade: Indexed {} upgrade-eligible base items and mapped {} proc associations.", indexedItems, count);
         }
 
         static const std::vector<uint32>* GetItemsForSpell(uint32 spellId)

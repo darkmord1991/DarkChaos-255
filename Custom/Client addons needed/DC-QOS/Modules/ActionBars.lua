@@ -82,8 +82,14 @@ local function ReanchorAuxiliaryBars(anchorFrame, gap, preferBottomLeftFormAncho
     local stack = anchorFrame
     local formAnchor = anchorFrame
 
-    if preferBottomLeftFormAnchor and _G.MultiBarBottomLeft and IsBarActive(_G.MultiBarBottomLeft) then
-        formAnchor = _G.MultiBarBottomLeft
+    if preferBottomLeftFormAnchor then
+        local bottomLeft = _G.MultiBarBottomLeft
+        local bottomRight = _G.MultiBarBottomRight
+        if bottomRight and IsBarActive(bottomRight) then
+            formAnchor = bottomRight
+        elseif bottomLeft and IsBarActive(bottomLeft) then
+            formAnchor = bottomLeft
+        end
     end
 
     local stance = _G.StanceBarFrame

@@ -220,6 +220,31 @@ HLBG.RequestHistory = HLBG.RequestHistory or function()
     end
     return false
 end
+
+local function OpenHLBGFromPVP()
+    if PVPFrameLeft then PVPFrameLeft:Hide() end
+    if PVPFrameRight then PVPFrameRight:Hide() end
+
+    local targetTab = DCHLBGDB and DCHLBGDB.lastInnerTab or 1
+    if type(HLBG.OpenMainWindow) == 'function' then
+        pcall(HLBG.OpenMainWindow, targetTab)
+    else
+        if HLBG.UI and HLBG.UI.Frame then
+            HLBG.UI.Frame:Show()
+        end
+        local showFn = HLBG.ShowTab or _G.HLBG_ShowTab or ShowTab
+        if type(showFn) == 'function' then
+            pcall(showFn, targetTab)
+        end
+    end
+
+    -- chat fallbacks (use raw dot to server)
+    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+    if type(sendDot) == 'function' then
+        sendDot('.hlbg live players')
+    end
+end
+
 -- Ensure PvP tab/button helpers (lazy creation)
 local function EnsurePvPTab()
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
@@ -254,15 +279,7 @@ local function EnsurePvPTab()
     end
     
     tab:SetScript("OnClick", function()
-        if PVPFrameLeft then PVPFrameLeft:Hide() end
-        if PVPFrameRight then PVPFrameRight:Hide() end
-        if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
-    if type(ShowTab) == 'function' then pcall(ShowTab, DCHLBGDB and DCHLBGDB.lastInnerTab or 1) end
-        -- chat fallbacks (use raw dot to server)
-        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-        if type(sendDot) == 'function' then
-            sendDot('.hlbg live players')
-        end
+            OpenHLBGFromPVP()
     end)
 end
 local function EnsurePvPHeaderButton()
@@ -273,16 +290,25 @@ local function EnsurePvPHeaderButton()
     btn:SetPoint("TOPRIGHT", _pvp, "TOPRIGHT", -40, -28)
     btn:SetText("HLBG")
     btn:SetScript("OnClick", function()
-        if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
-    if type(ShowTab) == 'function' then pcall(ShowTab, DCHLBGDB and DCHLBGDB.lastInnerTab or 1) end
-        local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-        if type(sendDot) == 'function' then
-            sendDot('.hlbg live players')
-        end
+        OpenHLBGFromPVP()
     end)
     _pvp:HookScript("OnHide", function()
-        if HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame:GetParent() == _pvp then HLBG.UI.Frame:Hide() end
+        if HLBG.UI and HLBG.UI.Frame then
+            HLBG.UI.Frame:Hide()
+        end
     end)
+
+    if not _pvp._hlbgAutoOpenHooked then
+        _pvp._hlbgAutoOpenHooked = true
+        _pvp:HookScript("OnShow", function()
+            local targetTab = DCHLBGDB and DCHLBGDB.lastInnerTab or 1
+            if type(HLBG.OpenMainWindow) == 'function' then
+                pcall(HLBG.OpenMainWindow, targetTab)
+            elseif HLBG.UI and HLBG.UI.Frame then
+                HLBG.UI.Frame:Show()
+            end
+        end)
+    end
 end
 -- pvp watcher: create PvP tab/header when frames are ready
 local pvpWatcher = CreateFrame("Frame")
