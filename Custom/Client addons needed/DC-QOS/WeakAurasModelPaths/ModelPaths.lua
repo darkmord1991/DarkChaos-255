@@ -39456,24 +39456,24 @@ WeakAuras.ModelPaths = {
 												["text"] = "Weapons",
 												["children"] = {
 													{
-														["value"] = "VR_BM_ Shield_01.m2",
-														["text"] = "VR_BM_ Shield_01.m2",
+														["value"] = "VR_BM_Shield_01.m2",
+														["text"] = "VR_BM_Shield_01.m2",
 													}, -- [1]
 													{
-														["value"] = "VR_BM_ Shield_02.m2",
-														["text"] = "VR_BM_ Shield_02.m2",
+														["value"] = "VR_BM_Shield_02.m2",
+														["text"] = "VR_BM_Shield_02.m2",
 													}, -- [2]
 													{
-														["value"] = "VR_BM_ Sword_01.m2",
-														["text"] = "VR_BM_ Sword_01.m2",
+														["value"] = "VR_BM_Sword_01.m2",
+														["text"] = "VR_BM_Sword_01.m2",
 													}, -- [3]
 													{
-														["value"] = "VR_BM_ Sword_02.m2",
-														["text"] = "VR_BM_ Sword_02.m2",
+														["value"] = "VR_BM_Sword_02.m2",
+														["text"] = "VR_BM_Sword_02.m2",
 													}, -- [4]
 													{
-														["value"] = "VR_BM_ Sword_03.m2",
-														["text"] = "VR_BM_ Sword_03.m2",
+														["value"] = "VR_BM_Sword_03.m2",
+														["text"] = "VR_BM_Sword_03.m2",
 													}, -- [5]
 													{
 														["value"] = "VR_CrestAxe_01.m2",

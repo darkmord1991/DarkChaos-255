@@ -87,7 +87,7 @@ public:
         }
     }
 
-    void OnPlayerResurrect(Player* player, float, bool) override
+    void OnPlayerResurrect(Player* player, float, bool&) override
     {
         if (sHotspotsConfig.enabled) sHotspotMgr->CheckPlayerHotspotStatus(player);
     }

@@ -71,15 +71,20 @@ local function AnchorBarAbove(bar, stack, yOffset, leftAlign)
     return IsBarActive(bar)
 end
 
-local function ShouldLeftAlignFormBar(bar)
-    return bar and bar == _G.StanceBarFrame
-end
-
-local function ReanchorAuxiliaryBars(anchorFrame, gap)
+local function ReanchorAuxiliaryBars(anchorFrame, gap, preferBottomLeftFormAnchor)
     if not anchorFrame then return end
 
     local baseSpacing = math.max(10, gap or 0)
+    local formYOffset = baseSpacing + 6
+    if preferBottomLeftFormAnchor then
+        formYOffset = formYOffset - 3
+    end
     local stack = anchorFrame
+    local formAnchor = anchorFrame
+
+    if preferBottomLeftFormAnchor and _G.MultiBarBottomLeft and IsBarActive(_G.MultiBarBottomLeft) then
+        formAnchor = _G.MultiBarBottomLeft
+    end
 
     local stance = _G.StanceBarFrame
     local shapeshift = _G.ShapeshiftBarFrame
@@ -94,8 +99,7 @@ local function ReanchorAuxiliaryBars(anchorFrame, gap)
     end
 
     if primaryFormBar then
-        local leftAlignPrimary = ShouldLeftAlignFormBar(primaryFormBar)
-        local formActive = AnchorBarAbove(primaryFormBar, anchorFrame, baseSpacing + 6, leftAlignPrimary)
+        local formActive = AnchorBarAbove(primaryFormBar, formAnchor, formYOffset, true)
         if formActive then
             stack = primaryFormBar
         end
@@ -113,8 +117,7 @@ local function ReanchorAuxiliaryBars(anchorFrame, gap)
     }
 
     for _, bar in ipairs(bars) do
-        local leftAlign = (stack == primaryFormBar) and ShouldLeftAlignFormBar(primaryFormBar)
-        if bar and not seen[bar] and AnchorBarAbove(bar, stack, baseSpacing, leftAlign) then
+        if bar and not seen[bar] and AnchorBarAbove(bar, stack, baseSpacing, false) then
             seen[bar] = true
             stack = bar
         end
@@ -124,11 +127,7 @@ local function ReanchorAuxiliaryBars(anchorFrame, gap)
         local secondaryFormBar = (primaryFormBar == stance) and shapeshift or stance
         if secondaryFormBar then
             secondaryFormBar:ClearAllPoints()
-            if ShouldLeftAlignFormBar(secondaryFormBar) then
-                secondaryFormBar:SetPoint("BOTTOMLEFT", anchorFrame, "TOPLEFT", 0, baseSpacing + 6)
-            else
-                secondaryFormBar:SetPoint("BOTTOM", anchorFrame, "TOP", 0, baseSpacing + 6)
-            end
+            secondaryFormBar:SetPoint("BOTTOMLEFT", formAnchor, "TOPLEFT", 0, formYOffset)
         end
     end
 end
@@ -205,7 +204,7 @@ local function ApplyBlizzardMode()
     local baseHeight = btn and btn:GetHeight() or 36
     local scaledHeight = baseHeight * scale
     local gap = math.floor(math.max(6, 6 + (scaledHeight - baseHeight)))
-    ReanchorAuxiliaryBars(auxAnchor, gap)
+    ReanchorAuxiliaryBars(auxAnchor, gap, true)
 end
 
 local function ApplyCustomMode()
@@ -308,7 +307,7 @@ local function ApplyCustomMode()
     end
 
     local gap = math.max(8, spacing + math.floor(size * 0.2))
-    ReanchorAuxiliaryBars(auxAnchor, gap)
+    ReanchorAuxiliaryBars(auxAnchor, gap, false)
 end
 
 ApplyActionBars = function()
