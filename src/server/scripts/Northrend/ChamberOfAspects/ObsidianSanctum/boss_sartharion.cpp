@@ -411,6 +411,11 @@ struct boss_sartharion : public BossAI
     {
         _JustDied();
         Talk(SAY_SARTHARION_DEATH);
+
+        // Despawn remaining drakes
+        for (uint32 i : dragons)
+            if (Creature* boss = instance->GetCreature(i))
+                boss->DespawnOrUnsummon();
     }
 
     void SetData(uint32 type, uint32 data) override
@@ -840,7 +845,10 @@ struct boss_sartharion_dragonAI : public BossAI
         }
 
         if (!isCalledBySartharion)
+        {
             ClearInstance();
+            me->GetMap()->ToInstanceMap()->PermBindAllPlayers();
+        }
         else
         {
             if (Creature* sartharion = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_SARTHARION)))
