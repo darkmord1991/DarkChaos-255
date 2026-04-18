@@ -30,14 +30,16 @@ local function GetCurrencyBalances()
     local tokens, essence
     local central = rawget(_G, "DCAddonProtocol")
     if central then
+        local tokenItemId = tonumber(central.TOKEN_ITEM_ID) or 0
+        local essenceItemId = tonumber(central.ESSENCE_ITEM_ID) or 0
         local getter = central.GetServerCurrencyBalance or central.GetCurrencyBalance or central.GetCurrencyBalances
         if type(getter) == "function" then
             local ok, a, b = pcall(getter, central)
             if ok then
                 if type(a) == "table" then
                     local byItem = a.byItemId or a.by_item_id
-                    tokens = a.tokens or a.token or (byItem and byItem[central.TOKEN_ITEM_ID or 300311])
-                    essence = a.emblems or a.essence or (byItem and byItem[central.ESSENCE_ITEM_ID or 300312])
+                    tokens = a.tokens or a.token or (tokenItemId > 0 and byItem and byItem[tokenItemId])
+                    essence = a.emblems or a.essence or (essenceItemId > 0 and byItem and byItem[essenceItemId])
                 else
                     tokens = a
                     essence = b

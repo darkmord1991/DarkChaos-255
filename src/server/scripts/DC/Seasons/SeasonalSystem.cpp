@@ -9,6 +9,7 @@
  */
 
 #include "SeasonalSystem.h"
+#include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"
@@ -139,7 +140,13 @@ namespace DarkChaos
 
             SeasonDefinition* GetActiveSeason() override
             {
-                return GetSeason(active_season_id_);
+                EnsureInitialized();
+
+                if (!active_season_id_)
+                    return nullptr;
+
+                auto it = seasons_.find(active_season_id_);
+                return (it != seasons_.end()) ? &it->second : nullptr;
             }
 
             std::vector<SeasonDefinition*> GetAllSeasons() override
@@ -159,14 +166,32 @@ namespace DarkChaos
                 if (!season)
                     return false;
 
-                // Update database
-                std::ostringstream oss;
-                oss << "UPDATE dc_seasons SET season_state = " << (int)SEASON_STATE_ACTIVE
-                    << " WHERE season_id = " << season_id;
+                if (active_season_id_ == season_id && season->season_state == SEASON_STATE_ACTIVE)
+                    return true;
 
-                CharacterDatabase.Execute(oss.str().c_str());
+                // Keep dc_seasons state in sync and ensure only one active season.
+                SQLTransaction trans = WorldDatabase.BeginTransaction();
 
-                season->season_state = SEASON_STATE_ACTIVE;
+                try
+                {
+                    trans->Append("UPDATE dc_seasons SET season_state = {}, is_active = 0 "
+                                "WHERE season_state = {} OR is_active = 1",
+                                (int)SEASON_STATE_INACTIVE, (int)SEASON_STATE_ACTIVE);
+
+                    trans->Append("UPDATE dc_seasons SET season_state = {}, is_active = 1 WHERE season_id = {}",
+                                (int)SEASON_STATE_ACTIVE, season_id);
+
+                    WorldDatabase.CommitTransaction(trans);
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("seasonal", "StartSeason: Transaction failed: {}", e.what());
+                    return false;
+                }
+
+                for (auto& pair : seasons_)
+                    pair.second.season_state = (pair.first == season_id) ? SEASON_STATE_ACTIVE : SEASON_STATE_INACTIVE;
+
                 active_season_id_ = season_id;
 
                 // Fire season start event
@@ -182,14 +207,16 @@ namespace DarkChaos
                 if (!season)
                     return false;
 
-                // Update database
                 std::ostringstream oss;
                 oss << "UPDATE dc_seasons SET season_state = " << (int)SEASON_STATE_INACTIVE
-                    << " WHERE season_id = " << season_id;
+                    << ", is_active = 0 WHERE season_id = " << season_id;
 
-                CharacterDatabase.Execute(oss.str().c_str());
+                WorldDatabase.Execute(oss.str().c_str());
 
                 season->season_state = SEASON_STATE_INACTIVE;
+
+                if (active_season_id_ == season_id)
+                    active_season_id_ = 0;
 
                 // Fire season end event
                 FireSeasonEvent(season_id, SEASON_EVENT_END);
@@ -200,6 +227,9 @@ namespace DarkChaos
 
             bool TransitionSeason(uint32 from_season_id, uint32 to_season_id) override
             {
+                if (from_season_id == to_season_id)
+                    return true;
+
                 auto from_season = GetSeason(from_season_id);
                 auto to_season = GetSeason(to_season_id);
 
@@ -210,21 +240,26 @@ namespace DarkChaos
                     return false;
                 }
 
-                // Use SQLTransaction for atomicity - both operations succeed or both fail
-                SQLTransaction trans = CharacterDatabase.BeginTransaction();
+                // Use SQLTransaction for atomicity - both operations succeed or both fail.
+                SQLTransaction trans = WorldDatabase.BeginTransaction();
 
                 try
                 {
                     // End the old season
-                    trans->Append("UPDATE dc_seasons SET season_state = {} WHERE season_id = {}",
+                    trans->Append("UPDATE dc_seasons SET season_state = {}, is_active = 0 WHERE season_id = {}",
                                  (int)SEASON_STATE_INACTIVE, from_season_id);
 
+                    // Clear stale active flags on every other season except the target.
+                    trans->Append("UPDATE dc_seasons SET season_state = {}, is_active = 0 "
+                                 "WHERE season_id <> {} AND (season_state = {} OR is_active = 1)",
+                                 (int)SEASON_STATE_INACTIVE, to_season_id, (int)SEASON_STATE_ACTIVE);
+
                     // Start the new season
-                    trans->Append("UPDATE dc_seasons SET season_state = {} WHERE season_id = {}",
+                    trans->Append("UPDATE dc_seasons SET season_state = {}, is_active = 1 WHERE season_id = {}",
                                  (int)SEASON_STATE_ACTIVE, to_season_id);
 
                     // Commit the transaction - both updates happen atomically
-                    CharacterDatabase.CommitTransaction(trans);
+                    WorldDatabase.CommitTransaction(trans);
                 }
                 catch (const std::exception& e)
                 {
@@ -234,8 +269,9 @@ namespace DarkChaos
                 }
 
                 // Update in-memory state only after successful DB commit
-                from_season->season_state = SEASON_STATE_INACTIVE;
-                to_season->season_state = SEASON_STATE_ACTIVE;
+                for (auto& pair : seasons_)
+                    pair.second.season_state = (pair.first == to_season_id) ? SEASON_STATE_ACTIVE : SEASON_STATE_INACTIVE;
+
                 active_season_id_ = to_season_id;
 
                 // Fire events after successful transition
@@ -547,12 +583,40 @@ namespace DarkChaos
 
             void LoadActiveSeason()
             {
+                active_season_id_ = 0;
+
                 QueryResult result = WorldDatabase.Query(
                     "SELECT season_id FROM dc_seasons WHERE season_state = {} ORDER BY season_id DESC LIMIT 1",
                     (int)SEASON_STATE_ACTIVE);
 
+                if (!result)
+                {
+                    result = WorldDatabase.Query(
+                        "SELECT season_id FROM dc_seasons WHERE is_active = 1 ORDER BY season_id DESC LIMIT 1");
+                }
+
                 if (result)
+                {
                     active_season_id_ = result->Fetch()[0].Get<uint32>();
+                    return;
+                }
+
+                uint32 configuredSeason = sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 0);
+                if (configuredSeason > 0 && seasons_.find(configuredSeason) != seasons_.end())
+                {
+                    active_season_id_ = configuredSeason;
+                    LOG_INFO("seasonal", "No active season row found, using DarkChaos.ActiveSeasonID={}", active_season_id_);
+                    return;
+                }
+
+                if (!seasons_.empty())
+                {
+                    active_season_id_ = seasons_.rbegin()->first;
+                    LOG_WARN("seasonal", "No active season found in DB/config, falling back to latest season {}", active_season_id_);
+                    return;
+                }
+
+                LOG_WARN("seasonal", "No seasons loaded; active season remains unset");
             }
         };
 

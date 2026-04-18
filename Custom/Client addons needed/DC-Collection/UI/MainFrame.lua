@@ -572,15 +572,16 @@ function DC:CreateMainFrame()
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
 
-    -- Portrait (fit inside circular border)
+    -- Portrait (crop tracking border to its ring area so icon fits correctly)
     local portraitFrame = frame:CreateTexture(nil, "OVERLAY")
-    portraitFrame:SetSize(80, 80)
-    portraitFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
+    portraitFrame:SetSize(52, 52)
+    portraitFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
     portraitFrame:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    portraitFrame:SetTexCoord(0, 0.50, 0, 0.50)
 
     local portrait = frame:CreateTexture(nil, "ARTWORK")
-    portrait:SetSize(52, 52)
-    portrait:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
+    portrait:SetSize(34, 34)
+    portrait:SetPoint("CENTER", portraitFrame, "CENTER", 0, -1)
     portrait:SetTexture(ICON_COLLECTION)
     portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     
@@ -661,7 +662,7 @@ function DC:CreateHeader(parent)
     
     -- Stats display
     header.statsText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    header.statsText:SetPoint("TOPLEFT", header, "TOPLEFT", 5, -2)
+    header.statsText:SetPoint("TOPLEFT", header, "TOPLEFT", 64, -2)
     header.statsText:SetJustifyH("LEFT")
 
     header.totalStatsText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2203,9 +2204,10 @@ function DC:SelectTab(tabKey)
     -- Toggle Frames based on tab
     local content = self.MainFrame.Content
 
-    -- Adjust content height when the footer is hidden (wardrobe embeds and uses the extra space).
+    -- Adjust content height when the footer is hidden.
+    -- Wardrobe embeds and uses the extra space; shop has its own pager controls.
     local footer = self.MainFrame.Footer
-    if tabKey == "wardrobe" then
+    if tabKey == "wardrobe" or tabKey == "shop" then
         if footer then footer:Hide() end
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", self.MainFrame.FilterBar, "BOTTOMLEFT", 0, 0)
@@ -2366,6 +2368,10 @@ function DC:RefreshCurrentTab()
     elseif self.activeTab == "pets" then
         if DC.PetJournal then
             DC.PetJournal:RefreshList()
+        end
+    elseif self.activeTab == "shop" then
+        if type(self.UpdateShopUI) == "function" then
+            self:UpdateShopUI()
         end
     else
         self:PopulateGrid()
@@ -3613,6 +3619,17 @@ function DC:ShowShopContent()
         self.ShopModule:RefreshCurrency()
     elseif type(self.RequestCurrency) == "function" then
         self:RequestCurrency()
+    end
+
+    -- Shop mount cards often rely on mount definitions for itemId/display fallback.
+    -- Refresh these occasionally so icons/previews resolve without opening Mounts first.
+    do
+        local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+        local last = tonumber(self._lastShopMountDefsRefreshAt or 0) or 0
+        if type(self.RequestDefinitions) == "function" and (now <= 0 or (now - last) >= 20) then
+            self._lastShopMountDefsRefreshAt = now
+            self:RequestDefinitions("mounts", 0)
+        end
     end
 
     if type(self.UpdateShopUI) == "function" then

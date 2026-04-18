@@ -85,9 +85,9 @@ end
 -- Make it accessible globally
 DC.AddItemIDToTooltip = DC_AddItemIDToTooltip;
 
--- Item IDs for currency icons (set these to your actual item IDs)
-DC.TOKEN_ITEM_ID = nil; -- Set to your Token Item ID (e.g. 49426)
-DC.ESSENCE_ITEM_ID = nil; -- Set to your Essence Item ID (e.g. 43102)
+-- Item IDs for currency icons (resolved at runtime from server payloads)
+DC.TOKEN_ITEM_ID = nil;
+DC.ESSENCE_ITEM_ID = nil;
 
 -- Debug function
 function DC.Debug(msg)
@@ -1587,14 +1587,14 @@ DC.queryInFlight = DC.queryInFlight or nil;
 DC.itemUpgradeCache = DC.itemUpgradeCache or {};
 DC.itemLocationCache = DC.itemLocationCache or {};
 
--- Currency item IDs: Initialize from DCAddonProtocol if available, otherwise use defaults
+-- Currency item IDs: Initialize from DCAddonProtocol if available
 local DCProtocol = rawget(_G, "DCAddonProtocol");
 if DCProtocol then
-    DC.TOKEN_ITEM_ID = DCProtocol.TOKEN_ITEM_ID;
-    DC.ESSENCE_ITEM_ID = DCProtocol.ESSENCE_ITEM_ID;
+	DC.TOKEN_ITEM_ID = tonumber(DCProtocol.TOKEN_ITEM_ID) or tonumber(DC.TOKEN_ITEM_ID) or 0;
+	DC.ESSENCE_ITEM_ID = tonumber(DCProtocol.ESSENCE_ITEM_ID) or tonumber(DC.ESSENCE_ITEM_ID) or 0;
 else
-    DC.TOKEN_ITEM_ID = DC.TOKEN_ITEM_ID or 300311;   -- Upgrade Token
-    DC.ESSENCE_ITEM_ID = DC.ESSENCE_ITEM_ID or 300312; -- Upgrade Essence
+	DC.TOKEN_ITEM_ID = tonumber(DC.TOKEN_ITEM_ID) or 0;
+	DC.ESSENCE_ITEM_ID = tonumber(DC.ESSENCE_ITEM_ID) or 0;
 end
 
 local INVENTORY_SLOT_ITEM_START = _G.INVENTORY_SLOT_ITEM_START or 23;
@@ -4382,20 +4382,18 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			DC.Debug("Received playerEssence: " .. tostring(DC.playerEssence));
 		end
 		
-		-- Use server-provided IDs if available, otherwise use hardcoded defaults
+		-- Use server-provided IDs if available, otherwise keep current runtime IDs.
 		if tokenID then
-			DC.TOKEN_ITEM_ID = tonumber(tokenID);
+			DC.TOKEN_ITEM_ID = tonumber(tokenID) or tonumber(DC.TOKEN_ITEM_ID) or 0;
 		else
-			-- Fallback to configured item IDs
-			DC.TOKEN_ITEM_ID = DC.TOKEN_ITEM_ID or 300311;
+			DC.TOKEN_ITEM_ID = tonumber(DC.TOKEN_ITEM_ID) or 0;
 		end
 		DC.Debug("TOKEN_ITEM_ID: " .. tostring(DC.TOKEN_ITEM_ID));
 		
 		if essenceID then
-			DC.ESSENCE_ITEM_ID = tonumber(essenceID);
+			DC.ESSENCE_ITEM_ID = tonumber(essenceID) or tonumber(DC.ESSENCE_ITEM_ID) or 0;
 		else
-			-- Fallback to configured item IDs
-			DC.ESSENCE_ITEM_ID = DC.ESSENCE_ITEM_ID or 300312;
+			DC.ESSENCE_ITEM_ID = tonumber(DC.ESSENCE_ITEM_ID) or 0;
 		end
 		DC.Debug("ESSENCE_ITEM_ID: " .. tostring(DC.ESSENCE_ITEM_ID));
 		

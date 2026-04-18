@@ -18,27 +18,62 @@ local function InstallDCCentral(DC)
     DC._dccentralInstalled = true
 
     -- Token and Essence Information (Seasonal Currency)
-    DC.TOKEN_ITEM_ID = 300311
-    DC.ESSENCE_ITEM_ID = 300312
+    DC.TOKEN_ITEM_ID = tonumber(DC.TOKEN_ITEM_ID) or 0
+    DC.ESSENCE_ITEM_ID = tonumber(DC.ESSENCE_ITEM_ID) or 0
 
-    DC.TokenInfo = {
-        [300311] = {
-            id = 300311,
-            name = "Upgrade Token",
-            icon = "Interface\\Icons\\INV_Misc_Token_ArgentCrusade",
-            rarity = 2,
-            type = "upgrade_token",
-            description = "Used to upgrade regular items",
-        },
-        [300312] = {
-            id = 300312,
-            name = "Upgrade Essence",
-            icon = "Interface\\Icons\\INV_Misc_Herb_Draenethisle",
-            rarity = 3,
-            type = "upgrade_essence",
-            description = "Used to upgrade heirloom items",
-        },
+    local DEFAULT_TOKEN_INFO = {
+        name = "Upgrade Token",
+        icon = "Interface\\Icons\\INV_Misc_Token_ArgentCrusade",
+        rarity = 2,
+        type = "upgrade_token",
+        description = "Used to upgrade regular items",
     }
+
+    local DEFAULT_ESSENCE_INFO = {
+        name = "Upgrade Essence",
+        icon = "Interface\\Icons\\INV_Misc_Herb_Draenethisle",
+        rarity = 3,
+        type = "upgrade_essence",
+        description = "Used to upgrade heirloom items",
+    }
+
+    DC.TokenInfo = DC.TokenInfo or {}
+
+    local function CloneInfoTemplate(template, itemId)
+        local info = { id = itemId }
+        for key, value in pairs(template) do
+            info[key] = value
+        end
+        return info
+    end
+
+    local function EnsureCurrencyInfoEntry(self, itemId, template)
+        if not itemId or itemId <= 0 then
+            return
+        end
+
+        if not self.TokenInfo[itemId] then
+            self.TokenInfo[itemId] = CloneInfoTemplate(template, itemId)
+        end
+    end
+
+    local function GetSafeItemCount(itemId)
+        if not itemId or itemId <= 0 then
+            return 0
+        end
+
+        if type(_G.GetItemCount) == "function" then
+            local ok, count = pcall(_G.GetItemCount, itemId, true)
+            if ok and type(count) == "number" then
+                return count
+            end
+        end
+
+        return 0
+    end
+
+    EnsureCurrencyInfoEntry(DC, DC.TOKEN_ITEM_ID, DEFAULT_TOKEN_INFO)
+    EnsureCurrencyInfoEntry(DC, DC.ESSENCE_ITEM_ID, DEFAULT_ESSENCE_INFO)
 
     -- Keystone item IDs (M+2 through M+20): mirror server constants
     DC.KEYSTONE_ITEM_IDS = {
@@ -60,6 +95,11 @@ local function InstallDCCentral(DC)
         tokens = tonumber(tokens) or 0
         emblems = tonumber(emblems) or 0
 
+        EnsureCurrencyInfoEntry(self, self.TOKEN_ITEM_ID, DEFAULT_TOKEN_INFO)
+        EnsureCurrencyInfoEntry(self, self.ESSENCE_ITEM_ID, DEFAULT_ESSENCE_INFO)
+
+        self.ServerCurrencyBalance.byItemId = self.ServerCurrencyBalance.byItemId or {}
+
         self.ServerCurrencyBalance.tokens = tokens
         self.ServerCurrencyBalance.emblems = emblems
         self.ServerCurrencyBalance.byItemId[self.TOKEN_ITEM_ID] = tokens
@@ -68,25 +108,46 @@ local function InstallDCCentral(DC)
     end
 
     function DC:GetServerCurrencyBalance()
-        -- AzerothCore Standard: Use GetItemCount directly (inventory items ARE the currency)
-        local tokens = GetItemCount(self.TOKEN_ITEM_ID) or 0
-        local emblems = GetItemCount(self.ESSENCE_ITEM_ID) or 0
+        local cache = self.ServerCurrencyBalance or {}
+        local byItemId = cache.byItemId or {}
+        local hasServerSnapshot = cache.updatedAt ~= nil
+
+        local tokens = hasServerSnapshot and (tonumber(cache.tokens) or 0) or GetSafeItemCount(self.TOKEN_ITEM_ID)
+        local emblems = hasServerSnapshot and (tonumber(cache.emblems) or 0) or GetSafeItemCount(self.ESSENCE_ITEM_ID)
+
+        if not hasServerSnapshot then
+            self:SetServerCurrencyBalance(tokens, emblems)
+            cache = self.ServerCurrencyBalance
+            byItemId = cache.byItemId or {}
+        else
+            byItemId[self.TOKEN_ITEM_ID] = tokens
+            byItemId[self.ESSENCE_ITEM_ID] = emblems
+        end
+
         return {
             tokens = tokens,
             emblems = emblems,
-            byItemId = {
-                [self.TOKEN_ITEM_ID] = tokens,
-                [self.ESSENCE_ITEM_ID] = emblems
-            }
+            byItemId = byItemId,
+            updatedAt = cache.updatedAt,
         }
     end
 
     function DC:GetTokenInfo(itemID)
+        if not itemID then
+            return nil
+        end
+
+        if itemID == self.TOKEN_ITEM_ID then
+            EnsureCurrencyInfoEntry(self, itemID, DEFAULT_TOKEN_INFO)
+        elseif itemID == self.ESSENCE_ITEM_ID then
+            EnsureCurrencyInfoEntry(self, itemID, DEFAULT_ESSENCE_INFO)
+        end
+
         return self.TokenInfo[itemID] or nil
     end
 
     function DC:IsTokenItem(itemID)
-        return self.TokenInfo[itemID] ~= nil
+        return self:GetTokenInfo(itemID) ~= nil
     end
 
     function DC:GetTokenName(itemID)
@@ -108,14 +169,13 @@ local function InstallDCCentral(DC)
     end
 
     function DC:GetPlayerTokenCount(itemID)
-        -- AzerothCore Standard: Use GetItemCount directly (inventory items ARE the currency)
         if itemID then
-            return GetItemCount(itemID) or 0
+            return GetSafeItemCount(itemID)
         end
 
         local total = 0
         for id in pairs(self.TokenInfo) do
-            total = total + (GetItemCount(id) or 0)
+            total = total + GetSafeItemCount(id)
         end
         return total
     end

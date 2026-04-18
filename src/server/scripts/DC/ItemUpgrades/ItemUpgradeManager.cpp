@@ -111,16 +111,26 @@ namespace DarkChaos
 
         uint32 GetUpgradeTokenItemId()
         {
+            uint32 seasonalToken = sConfigMgr->GetOption<uint32>(
+                "DarkChaos.Seasonal.TokenItemID",
+                sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 0));
+
             if (sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false))
-                return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 300311);
-            return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 300311);
+                return seasonalToken;
+
+            return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", seasonalToken);
         }
 
         uint32 GetArtifactEssenceItemId()
         {
+            uint32 seasonalEssence = sConfigMgr->GetOption<uint32>(
+                "DarkChaos.Seasonal.EssenceItemID",
+                sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 0));
+
             if (sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false))
-                return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.EssenceItemID", 300312);
-            return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
+                return seasonalEssence;
+
+            return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", seasonalEssence);
         }
 
         // Unified currency access - returns DB-backed balances (single source of truth)

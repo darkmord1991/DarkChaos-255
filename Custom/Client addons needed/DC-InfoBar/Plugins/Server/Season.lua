@@ -8,10 +8,57 @@
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
--- Seasonal currency items (client-side inventory totals)
--- Keep in sync with DC-InfoBar/Plugins/Character/Gold.lua
-local SEASONAL_TOKEN_ID = 300311
-local SEASONAL_ESSENCE_ID = 300312
+local function GetSeasonCurrencyItemIds()
+    local tokenId = 0
+    local essenceId = 0
+    local central = rawget(_G, "DCAddonProtocol")
+    local seasonData = DCInfoBar.serverData and DCInfoBar.serverData.season or nil
+
+    if seasonData then
+        tokenId = tonumber(seasonData.tokenId) or tokenId
+        essenceId = tonumber(seasonData.essenceId) or essenceId
+    end
+
+    if central then
+        tokenId = tonumber(central.TOKEN_ITEM_ID) or tokenId
+        essenceId = tonumber(central.ESSENCE_ITEM_ID) or essenceId
+    end
+
+    return tokenId, essenceId
+end
+
+local function SyncCurrencyIdsFromPayload(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local tokenId = tonumber(data.tokenId or data.tokenID)
+    local essenceId = tonumber(data.essenceId or data.essenceID)
+
+    if not tokenId and not essenceId then
+        return
+    end
+
+    DCInfoBar.serverData = DCInfoBar.serverData or {}
+    DCInfoBar.serverData.season = DCInfoBar.serverData.season or {}
+
+    if tokenId then
+        DCInfoBar.serverData.season.tokenId = tokenId
+    end
+    if essenceId then
+        DCInfoBar.serverData.season.essenceId = essenceId
+    end
+
+    local central = rawget(_G, "DCAddonProtocol")
+    if central then
+        if tokenId then
+            central.TOKEN_ITEM_ID = tokenId
+        end
+        if essenceId then
+            central.ESSENCE_ITEM_ID = essenceId
+        end
+    end
+end
 
 local function GetItemCountSafe(itemId)
     if type(_G.GetItemCount) == "function" then
@@ -71,8 +118,9 @@ function SeasonPlugin:OnActivate()
         end
         
         -- Fallback: use GetItemCountSafe only if DCAddonProtocol not available
-        season.totalTokens = GetItemCountSafe(SEASONAL_TOKEN_ID)
-        season.totalEssence = GetItemCountSafe(SEASONAL_ESSENCE_ID)
+        local tokenId, essenceId = GetSeasonCurrencyItemIds()
+        season.totalTokens = GetItemCountSafe(tokenId)
+        season.totalEssence = GetItemCountSafe(essenceId)
     end
 
     local function ThrottledSeasonRefresh(reason)
@@ -115,6 +163,7 @@ function SeasonPlugin:OnActivate()
         -- Register handler for season response (SMSG_CURRENT = 0x10)
         DC:RegisterHandler("SEAS", 0x10, function(data)
             if data then
+                SyncCurrencyIdsFromPayload(data)
                 DCInfoBar:HandleSeasonData(data)
                 SeasonPlugin._dataReceived = true
                 SeasonPlugin._elapsed = 999  -- Force update
@@ -134,9 +183,17 @@ function SeasonPlugin:OnActivate()
         -- Also register for progress response (SMSG_PROGRESS = 0x12)
         DC:RegisterHandler("SEAS", 0x12, function(data)
             if data then
+                SyncCurrencyIdsFromPayload(data)
                 DCInfoBar:HandleSeasonProgressData(data)
                 SeasonPlugin._dataReceived = true
                 SeasonPlugin._elapsed = 999  -- Force update
+
+                local central = rawget(_G, "DCAddonProtocol")
+                if central and type(central.SetServerCurrencyBalance) == "function" then
+                    local totalTokens = tonumber(data.tokens or data.totalTokens) or 0
+                    local totalEssence = tonumber(data.essence or data.totalEssence) or 0
+                    central:SetServerCurrencyBalance(totalTokens, totalEssence)
+                end
                 
                 -- Also update DC-Welcome Seasons if loaded
                 if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.Data then

@@ -1295,12 +1295,31 @@ DCCollection.Enable = 1
 DCCollection.Debug = 0
 
 #
+#    DCCollection.Accountwide.Enable
+#        Description: Master toggle for account-wide collection data paths
+#                     (shared unlock ownership across characters).
+#        Default:     1 (Enabled)
+#
+DCCollection.Accountwide.Enable = 1
+
+#
 #    DCCollection.TitleDebug.Enable
 #        Description: Enable verbose title flow diagnostics for DC-Collection
 #                     (useful for troubleshooting title ownership/apply issues)
 #        Default:     0 (Disabled)
 #
 DCCollection.TitleDebug.Enable = 0
+
+#
+#    DCCollection.Definitions.CacheTtlSeconds
+#        Description: TTL (seconds) for the server-side curated-definitions
+#                     cache used by SMSG_DEFINITIONS responses (mounts, pets,
+#                     heirlooms, titles, transmog). Lower = fresher data after
+#                     GM edits; higher = fewer DB queries on handshake/sync.
+#                     Set to 0 to disable caching entirely.
+#        Default:     600 (10 minutes)
+#
+DCCollection.Definitions.CacheTtlSeconds = 600
 
 # -----------------------------------------------------------------------------
 # Module Toggles
@@ -1312,6 +1331,13 @@ DCCollection.TitleDebug.Enable = 0
 #        Default:     1 (Enabled)
 #
 DCCollection.Transmog.Enable = 1
+
+#
+#    DCCollection.Transmog.Appearances.Enable
+#        Description: Enable transmog appearance definitions/features.
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.Appearances.Enable = 1
 
 #
 #    DCCollection.Transmog.Debug.ApplyPreview
@@ -1465,6 +1491,14 @@ DCCollection.Transmog.SkipCompatCheck = 1
 #        Default:     0 (Disabled)
 #
 DCCollection.Transmog.Definitions.IncludeSources = 0
+
+#
+#    DCCollection.Transmog.VirtualSets.Enabled
+#        Description: Enable synthetic/virtual transmog set grouping in
+#                     wardrobe responses.
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.VirtualSets.Enabled = 1
 
 # Transmog Unlock Triggers
 DCCollection.Transmog.UnlockOnEquip = 1

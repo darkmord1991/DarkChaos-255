@@ -24,8 +24,9 @@ namespace DarkChaos
         {
             if (DarkChaos::Seasonal::SeasonalManager* mgr = DarkChaos::Seasonal::GetSeasonalManager())
             {
-                if (auto* activeSeason = mgr->GetActiveSeason())
-                    return activeSeason->season_id;
+                uint32 seasonId = mgr->GetCurrentSeasonId();
+                if (seasonId > 0)
+                    return seasonId;
             }
 
             return sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);

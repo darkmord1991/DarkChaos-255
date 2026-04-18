@@ -22,6 +22,7 @@
         CMSG_GET_SHOP            = 0x10  -- Request shop items
         CMSG_BUY_ITEM            = 0x11  -- Purchase from shop
         CMSG_GET_CURRENCIES      = 0x12  -- Request currency balances
+        CMSG_GET_SHOP_HISTORY    = 0x13  -- Request purchase history
         
         CMSG_GET_WISHLIST        = 0x20  -- Request wishlist
         CMSG_ADD_WISHLIST        = 0x21  -- Add to wishlist
@@ -42,6 +43,7 @@
         SMSG_SHOP_DATA           = 0x50  -- Shop items (JSON)
         SMSG_PURCHASE_RESULT     = 0x51  -- Purchase result
         SMSG_CURRENCIES          = 0x52  -- Currency balances
+        SMSG_SHOP_HISTORY        = 0x5B  -- Purchase history (JSON)
         
         SMSG_WISHLIST_DATA       = 0x60  -- Wishlist items (JSON)
         SMSG_WISHLIST_AVAILABLE  = 0x61  -- Item on wishlist now available
@@ -84,6 +86,7 @@ DC.Opcodes = {
     CMSG_GET_SHOP            = 0x10,
     CMSG_BUY_ITEM            = 0x11,
     CMSG_GET_CURRENCIES      = 0x12,
+    CMSG_GET_SHOP_HISTORY    = 0x13,
     
     -- Client -> Server: Wishlist
     CMSG_GET_WISHLIST        = 0x20,
@@ -145,6 +148,7 @@ DC.Opcodes = {
     SMSG_SHOP_DATA           = 0x50,
     SMSG_PURCHASE_RESULT     = 0x51,
     SMSG_CURRENCIES          = 0x52,
+    SMSG_SHOP_HISTORY        = 0x5B,
     
     -- Server -> Client: Wishlist
     SMSG_WISHLIST_DATA       = 0x60,
@@ -295,6 +299,7 @@ function DC:InitializeProtocol()
     registerOpcode(self.Opcodes.SMSG_SHOP_DATA)
     registerOpcode(self.Opcodes.SMSG_PURCHASE_RESULT)
     registerOpcode(self.Opcodes.SMSG_CURRENCIES)
+    registerOpcode(self.Opcodes.SMSG_SHOP_HISTORY)
     registerOpcode(self.Opcodes.SMSG_WISHLIST_DATA)
     registerOpcode(self.Opcodes.SMSG_WISHLIST_AVAILABLE)
     registerOpcode(self.Opcodes.SMSG_WISHLIST_UPDATED)
@@ -980,6 +985,41 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
         if self:_IsInflight(reqKey) then
             return
         end
+
+        -- Short-circuit: if the server already told us its syncVersion via the
+        -- handshake ACK AND our local version matches AND we already have
+        -- cached definitions for this type, skip the request entirely.
+        if type(self._serverSyncVersions) == "table" then
+            local serverVer
+            if normalizedType == "mounts" or serverType == "mount" then
+                serverVer = tonumber(self._serverSyncVersions.mounts or self._serverSyncVersions.mount)
+            elseif normalizedType == "pets" or serverType == "pet" then
+                serverVer = tonumber(self._serverSyncVersions.pets or self._serverSyncVersions.pet)
+            elseif normalizedType == "heirlooms" or serverType == "heirloom" then
+                serverVer = tonumber(self._serverSyncVersions.heirlooms or self._serverSyncVersions.heirloom)
+            elseif normalizedType == "titles" or serverType == "title" then
+                serverVer = tonumber(self._serverSyncVersions.titles or self._serverSyncVersions.title)
+            end
+
+            if serverVer and serverVer > 0 then
+                local localVer = tonumber(self:GetSyncVersion(serverType)) or 0
+                local hasCached = false
+                if type(self.definitions) == "table" then
+                    local bucket = self.definitions[normalizedType] or self.definitions[serverType]
+                    if type(bucket) == "table" and next(bucket) ~= nil then
+                        hasCached = true
+                    end
+                end
+                if localVer == serverVer and hasCached then
+                    if type(self._syncProgress) == "table" then
+                        self:CompleteSyncProgressStep(progressKey, progressLabel .. " (cached)")
+                    end
+                    self:Debug(string.format("RequestDefinitions(%s): up-to-date (v=%d), skipping", tostring(serverType), serverVer))
+                    return
+                end
+            end
+        end
+
         if type(self._syncProgress) == "table" then
             self:StartSyncProgressStep(progressKey, progressLabel)
         end
@@ -1197,6 +1237,39 @@ function DC:RequestShopItems(category)
             end
         end
     end)
+    return true
+end
+
+-- Request purchase history
+function DC:RequestShopHistory(limit, offset)
+    limit = tonumber(limit) or 50
+    offset = tonumber(offset) or 0
+
+    if limit < 1 then limit = 1 end
+    if limit > 200 then limit = 200 end
+    if offset < 0 then offset = 0 end
+
+    local reqKey = "req:shopHistory"
+    if self:_IsInflight(reqKey) then
+        return false
+    end
+
+    self:_DebounceRequest(reqKey, 0.15, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+
+        self:_MarkInflight(reqKey, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_SHOP_HISTORY, {
+            limit = limit,
+            offset = offset,
+        })
+
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+        end
+    end)
+
     return true
 end
 
@@ -1837,6 +1910,7 @@ end
 -- Legacy function names for backwards compatibility
 DC.RequestCurrency = DC.RequestCurrencies
 DC.RequestShopPurchase = function(self, shopId) return self:RequestBuyItem(shopId) end
+DC.RequestShopHistoryData = function(self, limit, offset) return self:RequestShopHistory(limit, offset) end
 
 -- ============================================================================
 -- MESSAGE HANDLER
@@ -1914,6 +1988,8 @@ function DC.OnProtocolMessage(payload)
         self:HandlePurchaseResult(data)
     elseif opcode == self.Opcodes.SMSG_CURRENCIES then
         self:HandleCurrencies(data)
+    elseif opcode == self.Opcodes.SMSG_SHOP_HISTORY then
+        self:HandleShopHistory(data)
     elseif opcode == self.Opcodes.SMSG_WISHLIST_DATA then
         self:HandleWishlistData(data)
     elseif opcode == self.Opcodes.SMSG_WISHLIST_AVAILABLE then
@@ -2218,6 +2294,30 @@ function DC:HandleHandshakeAck(data)
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("handshake", "handshake")
     end
+
+    -- Store per-type server syncVersions so RequestInitialData / RequestDefinitions
+    -- can short-circuit when the local cache is already up to date.
+    if type(data.syncVersions) == "table" then
+        self._serverSyncVersions = {}
+        for k, v in pairs(data.syncVersions) do
+            local num = tonumber(v)
+            if num then
+                self._serverSyncVersions[k] = num
+                -- If our local syncVersion already matches the server's, we can
+                -- safely bump/confirm the locally stored version too. If it
+                -- differs, RequestDefinitions will send the old value and the
+                -- server will respond with either a fresh payload or an
+                -- upToDate ack.
+                if type(self.GetSyncVersion) == "function" and type(self.SetSyncVersion) == "function" then
+                    local local_v = tonumber(self:GetSyncVersion(k)) or 0
+                    if local_v == 0 and num > 0 then
+                        -- Intentionally don't set here: we haven't validated local cache
+                        -- matches that version. Let the normal request roundtrip confirm.
+                    end
+                end
+            end
+        end
+    end
     
     if data.needsSync then
         self:Debug("Server indicates full sync needed")
@@ -2244,6 +2344,20 @@ end
 -- Handle full collection data
 function DC:HandleFullCollection(data)
     self:Debug("Received full collection data")
+
+    -- Server can ack with an empty payload when the client's local hash
+    -- already matches (CMSG_SYNC_COLLECTION short-circuit). Bail early.
+    if data and (data.upToDate == true or data.up_to_date == true) and
+       (data.collections == nil or (type(data.collections) == "table" and next(data.collections) == nil)) then
+        self._fullCollectionReceivedAt = (type(GetTime) == "function" and GetTime()) or time()
+        if data.hash then
+            self.collectionHash = data.hash
+        end
+        if self.callbacks.onCollectionReceived then
+            self.callbacks.onCollectionReceived(data)
+        end
+        return
+    end
     
     -- Store collections
     if data.collections then
@@ -2271,6 +2385,10 @@ function DC:HandleFullCollection(data)
     if data.hash then
         self.collectionHash = data.hash
     end
+
+    -- Timestamp so `RequestInitialData` can skip a duplicate RequestCollections()
+    -- that would otherwise re-fetch the same 5 per-type payloads the server just sent.
+    self._fullCollectionReceivedAt = (type(GetTime) == "function" and GetTime()) or time()
     
     -- Fire callback
     if self.callbacks.onCollectionReceived then
@@ -2474,11 +2592,113 @@ function DC:HandleShopData(data)
     local rawItems = data.items or {}
     local mapped = {}
 
+    local function ResolveShopTypeName(rawType)
+        local typeName = self:GetTypeNameFromId(rawType)
+        if type(typeName) == "string" then
+            typeName = string.lower(typeName)
+        end
+
+        if (not typeName or typeName == "") and type(rawType) == "string" then
+            typeName = string.lower(rawType)
+        end
+
+        -- Canonicalize singular forms.
+        if typeName == "mount" then return "mounts" end
+        if typeName == "pet" then return "pets" end
+        if typeName == "heirloom" then return "heirlooms" end
+        if typeName == "title" then return "titles" end
+        if typeName == "appearance" or typeName == "appearances" then return "transmog" end
+
+        if typeName and typeName ~= "" then
+            return typeName
+        end
+
+        -- Server may send numeric type IDs.
+        local n = tonumber(rawType)
+        if n == 1 then return "mounts" end
+        if n == 2 then return "pets" end
+        if n == 3 then return "bonus" end
+        if n == 4 then return "heirlooms" end
+        if n == 5 then return "titles" end
+        if n == 6 then return "transmog" end
+        if n == 7 then return "item_sets" end
+
+        return nil
+    end
+
+    local function ResolveLegacyShopItemType(typeName, rawType)
+        -- Shop UI expects these legacy values for badges/filters.
+        if typeName == "bonus" then
+            return 1
+        elseif typeName == "mounts" then
+            return 2
+        elseif typeName == "pets" then
+            return 3
+        elseif typeName == "heirlooms" then
+            return 5
+        elseif typeName == "transmog" then
+            return 6
+        elseif typeName == "item_sets" then
+            return 6
+        end
+
+        local n = tonumber(rawType)
+        if n then
+            return n
+        end
+        return 1
+    end
+
+    local function IsNumericIconValue(value)
+        if type(value) ~= "string" then
+            return false
+        end
+
+        local trimmed = string.match(value, "^%s*(.-)%s*$")
+        if not trimmed or trimmed == "" then
+            return false
+        end
+
+        return tonumber(trimmed) ~= nil
+    end
+
+    local function IsNumericIconPath(texturePath)
+        if type(texturePath) ~= "string" then
+            return false
+        end
+
+        local normalized = string.gsub(texturePath, "/", "\\")
+        local lowerPath = string.lower(normalized)
+        return string.match(lowerPath, "^interface\\icons\\%d+$") ~= nil
+    end
+
+    local function NormalizeShopIcon(textureValue)
+        if IsNumericIconValue(textureValue) then
+            return nil
+        end
+
+        local normalized = self:NormalizeTexturePath(textureValue, nil)
+        if IsNumericIconPath(normalized) then
+            return nil
+        end
+
+        return normalized
+    end
+
+    local needsMountDefinitions = false
+
     for _, it in ipairs(rawItems) do
         local collTypeId = it.type
-        local typeName = self:GetTypeNameFromId(collTypeId)
+        local typeName = ResolveShopTypeName(collTypeId)
+        local legacyItemType = ResolveLegacyShopItemType(typeName, collTypeId)
 
         local shopId = it.shopId or it.id or it.shop_id
+        local entryId = it.entryId or it.entry_id or it.entry
+        local definition = nil
+
+        if typeName and entryId and type(self.GetDefinition) == "function" then
+            definition = self:GetDefinition(typeName, entryId)
+        end
 
         local card = {
             -- Common (used by MainFrame cards)
@@ -2486,10 +2706,11 @@ function DC:HandleShopData(data)
             shopId = shopId,
             collectionTypeId = collTypeId,
             collectionTypeName = typeName,
-            entryId = it.entryId or it.entry_id or it.entry,
+            entryId = entryId,
             appearanceId = it.appearanceId or it.appearance_id,
             itemId = it.itemId or it.itemID or it.item_id,
             spellId = it.spellId or it.spellID or it.spell,
+            definition = definition,
             priceTokens = it.priceTokens or it.costTokens or it.price_tokens or 0,
             priceEmblems = it.priceEmblems or it.costEmblems or it.price_emblems or 0,
             discount = it.discount or 0,
@@ -2504,7 +2725,7 @@ function DC:HandleShopData(data)
 
             -- ShopModule/ShopUI expected schema
             id = shopId,
-            itemType = collTypeId,
+            itemType = legacyItemType,
             costTokens = it.costTokens or it.priceTokens or it.cost_tokens or it.price_tokens or 0,
             costEmblems = it.costEmblems or it.priceEmblems or it.cost_emblems or it.price_emblems or 0,
             isFeatured = (it.isFeatured ~= nil and it.isFeatured) or (it.featured ~= nil and it.featured) or false,
@@ -2514,14 +2735,33 @@ function DC:HandleShopData(data)
             description = it.description,
         }
 
+        -- Fill missing identifiers from definitions when available.
+        if definition then
+            card.itemId = card.itemId or definition.itemId or definition.itemID or definition.item_id
+            card.spellId = card.spellId or definition.spellId or definition.spellID or definition.spell_id
+            card.displayId = card.displayId or definition.displayId or definition.display_id or definition.creatureDisplayId
+            if (not card.name or card.name == "") and definition.name then
+                card.name = definition.name
+            end
+            if (not card.rarity or card.rarity <= 0) and definition.rarity then
+                card.rarity = definition.rarity
+            end
+            if definition.icon then
+                local defIcon = NormalizeShopIcon(definition.icon)
+                if defIcon then
+                    card.icon = defIcon
+                end
+            end
+        end
+
         -- Server may send an icon name (e.g. "INV_...") or a full texture path.
         local serverIcon = it.icon
-        local normalizedServerIcon = self:NormalizeTexturePath(serverIcon, nil)
+        local normalizedServerIcon = NormalizeShopIcon(serverIcon)
         
         -- Resolve icon from server data or game API
         if typeName == "mounts" then
             -- Prefer spellId for mounts (some servers send spellId separately)
-            local spellId = it.spellId or it.spellID or it.entryId
+            local spellId = card.spellId or card.entryId
             if spellId and GetSpellTexture then
                 local tex = GetSpellTexture(spellId)
                 if tex then card.icon = tex end
@@ -2533,7 +2773,7 @@ function DC:HandleShopData(data)
             end
 
             -- If this mount is represented by an item template, try item icon/name.
-            local itemIdToUse = (it.itemId or it.itemID or it.item_id) or (it.entryId or it.entry_id or it.entry)
+            local itemIdToUse = card.itemId or card.entryId
             if (not card.icon or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark") and itemIdToUse and GetItemInfo then
                 local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
                 if texture then card.icon = texture end
@@ -2542,7 +2782,7 @@ function DC:HandleShopData(data)
             end
         elseif typeName == "pets" or typeName == "heirlooms" or typeName == "transmog" then
             -- Use GetItemInfo for items (returns texture as 10th value)
-            local itemIdToUse = (it.itemId or it.itemID or it.item_id) or (it.entryId or it.entry_id or it.entry)
+            local itemIdToUse = card.itemId or card.entryId
             if itemIdToUse and GetItemInfo then
                 local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
                 if texture then card.icon = texture end
@@ -2552,7 +2792,7 @@ function DC:HandleShopData(data)
 
             -- Pets can also be represented via spells.
             if (not card.icon or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark") then
-                local spellId = it.spellId or it.spellID
+                local spellId = card.spellId or card.entryId
                 if spellId and GetSpellTexture then
                     local tex = GetSpellTexture(spellId)
                     if tex then card.icon = tex end
@@ -2575,8 +2815,12 @@ function DC:HandleShopData(data)
         end
 
         -- Final fallbacks
-        card.icon = self:NormalizeTexturePath(card.icon, "Interface\\Icons\\INV_Misc_QuestionMark")
+        card.icon = NormalizeShopIcon(card.icon) or "Interface\\Icons\\INV_Misc_QuestionMark"
         card.name = card.name or "Shop Item"
+
+        if typeName == "mounts" and ((not card.itemId) or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark") then
+            needsMountDefinitions = true
+        end
 
         -- Keep cost mirrors in sync (some UIs use price*, ShopUI uses cost*).
         if (not card.priceTokens or card.priceTokens == 0) and card.costTokens then
@@ -2587,6 +2831,15 @@ function DC:HandleShopData(data)
         end
 
         table.insert(mapped, card)
+    end
+
+    if needsMountDefinitions and type(self.RequestDefinitions) == "function" then
+        local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+        local last = tonumber(self._lastShopMountDefsRequestAt or 0) or 0
+        if now <= 0 or (now - last) >= 10 then
+            self._lastShopMountDefsRequestAt = now
+            self:RequestDefinitions("mounts", 0)
+        end
     end
 
     self.shopItems = mapped
@@ -2608,6 +2861,11 @@ function DC:HandleShopData(data)
         self.callbacks.onShopDataReceived(data)
     end
 
+    -- If Shop UI is currently visible, repaint immediately.
+    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() and type(self.UpdateShopUI) == "function" then
+        self:UpdateShopUI()
+    end
+
     -- Refresh MainFrame if open
     if self.MainFrame and self.MainFrame:IsShown() then
         if type(self.RequestRefreshCurrentTab) == "function" then
@@ -2621,25 +2879,105 @@ end
 -- Refresh shop icons after cache warming
 function DC:RefreshShopIcons()
     if not self.shopItems then return end
+
+    local function IsNumericIconPath(texturePath)
+        if type(texturePath) ~= "string" then
+            return false
+        end
+
+        local normalized = string.gsub(texturePath, "/", "\\")
+        local lowerPath = string.lower(normalized)
+        return string.match(lowerPath, "^interface\\icons\\%d+$") ~= nil
+    end
+
+    local function NormalizeCandidateIcon(textureValue)
+        local normalized = self:NormalizeTexturePath(textureValue, nil)
+        if IsNumericIconPath(normalized) then
+            return nil
+        end
+        return normalized
+    end
+
+    local function CardNeedsShopRefresh(card)
+        if not card then
+            return false
+        end
+
+        if not card.name or card.name == "" or card.name == "Shop Item" then
+            return true
+        end
+
+        if not card.icon or card.icon == "" or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" then
+            return true
+        end
+
+        if IsNumericIconPath(card.icon) then
+            return true
+        end
+
+        return false
+    end
     
     local needsRefresh = false
     local unresolved = 0
     for _, card in ipairs(self.shopItems) do
-        if card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" or card.name == "Shop Item" then
+        if CardNeedsShopRefresh(card) then
             local typeName = card.collectionTypeName
             local itemIdToUse = card.itemId or card.entryId
+            local definition = card.definition
+
+            if (not definition) and typeName and card.entryId and type(self.GetDefinition) == "function" then
+                definition = self:GetDefinition(typeName, card.entryId)
+                if definition then
+                    card.definition = definition
+                end
+            end
+
+            if definition then
+                card.itemId = card.itemId or definition.itemId or definition.itemID or definition.item_id
+                card.spellId = card.spellId or definition.spellId or definition.spellID or definition.spell_id
+                itemIdToUse = card.itemId or itemIdToUse
+
+                if (card.name == "Shop Item" or card.name == "") and definition.name then
+                    card.name = definition.name
+                    needsRefresh = true
+                end
+
+                if CardNeedsShopRefresh(card) and definition.icon then
+                    local defIcon = NormalizeCandidateIcon(definition.icon)
+                    if defIcon then
+                        card.icon = defIcon
+                        needsRefresh = true
+                    end
+                end
+            end
             
-            if typeName == "mounts" and card.entryId and GetSpellTexture then
-                local tex = GetSpellTexture(card.entryId)
+            if typeName == "mounts" then
+                local spellId = card.spellId or card.entryId
+                local tex = spellId and GetSpellTexture and GetSpellTexture(spellId)
                 if tex then 
                     card.icon = tex
                     needsRefresh = true
                 end
                 if GetSpellInfo then
-                    local name = GetSpellInfo(card.entryId)
+                    local name = spellId and GetSpellInfo(spellId)
                     if name and card.name == "Shop Item" then 
                         card.name = name
                         needsRefresh = true
+                    end
+                end
+                if CardNeedsShopRefresh(card) and itemIdToUse and GetItemInfo then
+                    local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
+                    if texture then
+                        card.icon = texture
+                        needsRefresh = true
+                    end
+                    if name and card.name == "Shop Item" then
+                        card.name = name
+                        needsRefresh = true
+                    end
+                    if quality then
+                        card.rarity = quality
                     end
                 end
             elseif (typeName == "pets" or typeName == "heirlooms" or typeName == "transmog") and itemIdToUse and GetItemInfo then
@@ -2656,7 +2994,7 @@ function DC:RefreshShopIcons()
             end
         end
 
-        if card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" or card.name == "Shop Item" then
+        if CardNeedsShopRefresh(card) then
             unresolved = unresolved + 1
         end
     end
@@ -2674,11 +3012,17 @@ function DC:RefreshShopIcons()
         self._shopIconRefreshAttempts = nil
     end
     
-    if needsRefresh and self.MainFrame and self.MainFrame:IsShown() and self.activeTab == "shop" then
-        if type(self.RequestRefreshCurrentTab) == "function" then
-            self:RequestRefreshCurrentTab()
-        else
-            self:RefreshCurrentTab()
+    if needsRefresh then
+        if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() and type(self.UpdateShopUI) == "function" then
+            self:UpdateShopUI()
+        end
+
+        if self.MainFrame and self.MainFrame:IsShown() and self.activeTab == "shop" then
+            if type(self.RequestRefreshCurrentTab) == "function" then
+                self:RequestRefreshCurrentTab()
+            else
+                self:RefreshCurrentTab()
+            end
         end
     end
 end
@@ -2701,6 +3045,62 @@ function DC:HandlePurchaseResult(data)
         local central = rawget(_G, "DCAddonProtocol")
         if central and type(central.SetServerCurrencyBalance) == "function" then
             central:SetServerCurrencyBalance(self.currency.tokens, self.currency.emblems)
+        end
+
+        -- Optimistically mark purchased cards so state updates immediately.
+        local function CanonicalShopTypeName(rawType)
+            local t = self:GetTypeNameFromId(rawType)
+            if type(t) == "string" then
+                t = string.lower(t)
+            end
+
+            if (not t or t == "") and type(rawType) == "string" then
+                t = string.lower(rawType)
+            end
+
+            if t == "mount" then return "mounts" end
+            if t == "pet" then return "pets" end
+            if t == "heirloom" then return "heirlooms" end
+            if t == "title" then return "titles" end
+            if t == "appearance" or t == "appearances" then return "transmog" end
+            return t
+        end
+
+        local purchasedType = CanonicalShopTypeName(data.type)
+        local purchasedEntryId = tonumber(data.entryId or data.entry_id)
+        if purchasedType and purchasedEntryId and type(self.shopItems) == "table" then
+            for _, card in ipairs(self.shopItems) do
+                local cardType = CanonicalShopTypeName(card.collectionTypeName or card.collectionTypeId or card.itemType)
+                local cardEntryId = tonumber(card.entryId or card.entry_id or card.entry)
+                if cardType == purchasedType and cardEntryId == purchasedEntryId then
+                    card.purchased = true
+                    card.owned = true
+                    card.collected = true
+                end
+            end
+        end
+
+        if type(self.RequestShopHistory) == "function" then
+            self:RequestShopHistory()
+        end
+
+        if type(self.RequestShopItems) == "function" then
+            self:RequestShopItems()
+        end
+
+        if type(self.RefreshShopIcons) == "function" then
+            self._shopIconRefreshAttempts = nil
+            if self.After and type(self.After) == "function" then
+                self.After(0.10, function()
+                    self:RefreshShopIcons()
+                end)
+            else
+                self:RefreshShopIcons()
+            end
+        end
+
+        if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() and type(self.UpdateShopUI) == "function" then
+            self:UpdateShopUI()
         end
     else
         self:Print("|cffff0000Purchase failed:|r " .. (data.error or "Unknown error"))
@@ -2748,6 +3148,34 @@ function DC:HandleCurrencies(data)
     -- Fire callback
     if self.callbacks.onCurrenciesReceived then
         self.callbacks.onCurrenciesReceived(self.currency)
+    end
+end
+
+-- Handle shop purchase history
+function DC:HandleShopHistory(data)
+    self:Debug("Received shop purchase history")
+
+    self:_MarkInflight("req:shopHistory", nil)
+
+    local items = data.items or data.entries or {}
+    if type(items) ~= "table" then
+        items = {}
+    end
+
+    self.purchaseHistory = items
+    self.purchaseHistoryMeta = {
+        count = tonumber(data.count) or #items,
+        total = tonumber(data.total) or #items,
+        limit = tonumber(data.limit) or #items,
+        offset = tonumber(data.offset) or 0,
+    }
+
+    if self.callbacks.onShopHistoryReceived then
+        self.callbacks.onShopHistoryReceived(data)
+    end
+
+    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() and type(self.UpdateShopUI) == "function" then
+        self:UpdateShopUI()
     end
 end
 
@@ -4099,6 +4527,7 @@ function DC:FullSync()
         { key = "coll:heirlooms", label = "collection: heirlooms" },
         { key = "coll:transmog", label = "collection: transmog" },
         { key = "coll:titles", label = "collection: titles" },
+        { key = "shop", label = "shop data" },
         { key = "currency", label = "currency" },
         { key = "stats", label = "stats" },
         { key = "wishlist", label = "wishlist" },
@@ -4111,6 +4540,7 @@ function DC:FullSync()
     end
     
     -- Request additional data
+    self:RequestShopItems()
     self:RequestCurrency()
     self:RequestStats()
     self:RequestWishlist()
@@ -4131,6 +4561,7 @@ function DC:DeltaSync()
         { key = "coll:heirlooms", label = "collection: heirlooms" },
         { key = "coll:transmog", label = "collection: transmog" },
         { key = "coll:titles", label = "collection: titles" },
+        { key = "shop", label = "shop data" },
         { key = "currency", label = "currency" },
         { key = "stats", label = "stats" },
     })
@@ -4150,6 +4581,7 @@ function DC:DeltaSync()
         self:RequestCollection(collType)
     end
     
+    self:RequestShopItems()
     self:RequestCurrency()
     self:RequestStats()
 end

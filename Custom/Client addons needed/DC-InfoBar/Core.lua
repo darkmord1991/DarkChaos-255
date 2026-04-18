@@ -1152,6 +1152,12 @@ function DCInfoBar:HandleSeasonProgressData(data)
     if data.seasonId or data.id then
         season.id = data.seasonId or data.id
     end
+    if data.tokenId or data.tokenID then
+        season.tokenId = tonumber(data.tokenId or data.tokenID) or season.tokenId
+    end
+    if data.essenceId or data.essenceID then
+        season.essenceId = tonumber(data.essenceId or data.essenceID) or season.essenceId
+    end
     -- Prefer explicit weeklyTokens when provided
     if data.weeklyTokens then
         season.weeklyTokens = data.weeklyTokens
@@ -1173,6 +1179,19 @@ function DCInfoBar:HandleSeasonProgressData(data)
     end
     if data.essence then
         season.totalEssence = data.essence
+    end
+
+    local central = rawget(_G, "DCAddonProtocol")
+    if central then
+        if season.tokenId then
+            central.TOKEN_ITEM_ID = season.tokenId
+        end
+        if season.essenceId then
+            central.ESSENCE_ITEM_ID = season.essenceId
+        end
+        if type(central.SetServerCurrencyBalance) == "function" then
+            central:SetServerCurrencyBalance(season.totalTokens or 0, season.totalEssence or 0)
+        end
     end
 
     
@@ -1204,14 +1223,31 @@ function DCInfoBar:HandleSeasonData(data)
     self.serverData.season = {
         id = data.seasonId or data.id or 0,
         name = data.seasonName or data.name or "Unknown",
+        tokenId = tonumber(data.tokenId or data.tokenID) or 0,
+        essenceId = tonumber(data.essenceId or data.essenceID) or 0,
         weeklyTokens = data.weeklyTokens or 0,
         weeklyCap = data.weeklyCap or data.tokenCap or 1000,
         weeklyEssence = data.weeklyEssence or 0,
         essenceCap = data.essenceCap or 1000,
         totalTokens = data.tokens or data.totalTokens or 0,
+        totalEssence = data.essence or data.totalEssence or 0,
         endsIn = data.endsIn or 0,
         weeklyReset = data.weeklyReset or 0,
     }
+
+    local central = rawget(_G, "DCAddonProtocol")
+    if central then
+        if self.serverData.season.tokenId and self.serverData.season.tokenId > 0 then
+            central.TOKEN_ITEM_ID = self.serverData.season.tokenId
+        end
+        if self.serverData.season.essenceId and self.serverData.season.essenceId > 0 then
+            central.ESSENCE_ITEM_ID = self.serverData.season.essenceId
+        end
+        if type(central.SetServerCurrencyBalance) == "function" then
+            central:SetServerCurrencyBalance(self.serverData.season.totalTokens or 0,
+                self.serverData.season.totalEssence or 0)
+        end
+    end
     
     -- If name is still Unknown, check DCWelcome
     if (self.serverData.season.name == "Unknown" or self.serverData.season.name == "Unknown Season") then

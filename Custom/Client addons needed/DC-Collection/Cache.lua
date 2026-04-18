@@ -812,10 +812,17 @@ local TYPE_NAME_TO_ID = {
 -- Reverse lookup for ID to name
 local TYPE_ID_TO_NAME = {
     [DC.CollectionType.MOUNT] = "mounts",
+    [1] = "mounts",
     [DC.CollectionType.PET] = "pets",
+    [2] = "pets",
+    [3] = "bonus",
     [DC.CollectionType.HEIRLOOM] = "heirlooms",
+    [4] = "heirlooms",
     [DC.CollectionType.TITLE] = "titles",
+    [5] = "titles",
     [DC.CollectionType.TRANSMOG] = "transmog",
+    [6] = "transmog",
+    [7] = "item_sets",
 }
 
 -- Convert type name string to type ID

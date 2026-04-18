@@ -19,6 +19,7 @@
 #include "Log.h"
 #include "Config.h"
 #include "GameTime.h"
+#include "Timer.h"
 #include "DatabaseEnv.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "DC/CrossSystem/EventBus.h"
@@ -32,9 +33,10 @@
 
 // Forward declaration for S2C logging (defined later in file)
 static bool g_S2CLoggingEnabled = false;
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview);
+static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs = 0);
 static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message);
 static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
+static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& requestId);
 static std::string EscapeSQLString(std::string s);
 
 static std::string NormalizeHandshakeVersionString(const DCAddon::ParsedMessage& msg)
@@ -145,7 +147,8 @@ namespace DCAddon
         if (g_S2CLoggingEnabled)
         {
             std::string preview = fullMessage.length() > 255 ? fullMessage.substr(0, 255) : fullMessage;
-            LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length(), effectiveRequestId.empty(), preview);
+            uint32 processingTimeMs = effectiveRequestId.empty() ? 0 : PeekPendingRequestElapsedMs(player, effectiveRequestId);
+            LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length(), effectiveRequestId.empty(), preview, processingTimeMs);
         }
 
         // Check if chunking is needed
@@ -268,7 +271,11 @@ struct PendingAddonRequest
     std::string module;
     uint8 opcode = 0;
     uint32 guid = 0;
-    uint64 startTimeMs = 0;
+    // Real-time (steady clock) millisecond stamp at request registration.
+    // NOTE: must NOT use GameTime::GetGameTimeMS() -- that only advances
+    // once per world tick, so any request answered inside the same tick
+    // records a zero elapsed time and processing_time_ms gets dropped.
+    uint32 startTimeMs = 0;
 };
 
 static std::unordered_map<uint32, std::unordered_map<std::string, PendingAddonRequest>> s_PendingRequests;
@@ -308,7 +315,7 @@ static void RegisterPendingRequest(Player* player, const DCAddon::ParsedMessage&
     pending.module = msg.GetModule();
     pending.opcode = msg.GetOpcode();
     pending.guid = player->GetGUID().GetCounter();
-    pending.startTimeMs = GameTime::GetGameTimeMS().count();
+    pending.startTimeMs = getMSTime();
 
     uint32 accountId = player->GetSession()->GetAccountId();
     std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
@@ -321,7 +328,7 @@ static void CleanupExpiredRequests(Player* player)
         return;
 
     uint32 accountId = player->GetSession()->GetAccountId();
-    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    uint32 nowMs = getMSTime();
 
     std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
     auto it = s_PendingRequests.find(accountId);
@@ -331,7 +338,7 @@ static void CleanupExpiredRequests(Player* player)
     auto& pendingMap = it->second;
     for (auto reqIt = pendingMap.begin(); reqIt != pendingMap.end(); )
     {
-        if (nowMs - reqIt->second.startTimeMs > s_AddonConfig.RequestTimeoutMs)
+        if (getMSTimeDiff(reqIt->second.startTimeMs, nowMs) > s_AddonConfig.RequestTimeoutMs)
         {
             std::string payload = reqIt->second.module + DCAddon::DELIMITER + std::to_string(reqIt->second.opcode) +
                 DCAddon::DELIMITER + "RID:" + reqIt->second.requestId;
@@ -350,6 +357,33 @@ static void CleanupExpiredRequests(Player* player)
         s_PendingRequests.erase(it);
 }
 
+static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& requestId)
+{
+    if (!player || !player->GetSession() || requestId.empty())
+        return 0;
+
+    uint32 accountId = player->GetSession()->GetAccountId();
+    uint32 nowMs = getMSTime();
+
+    std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
+    auto accountIt = s_PendingRequests.find(accountId);
+    if (accountIt == s_PendingRequests.end())
+        return 0;
+
+    auto const& pendingMap = accountIt->second;
+    auto reqIt = pendingMap.find(requestId);
+    if (reqIt == pendingMap.end())
+        return 0;
+
+    // Use wrap-safe diff (getMSTime() is a uint32 that wraps every ~49 days).
+    // Guarantee at least 1 ms so log rows stamp a non-zero processing_time_ms
+    // for instant in-tick replies (otherwise the logger drops the column).
+    uint32 delta = getMSTimeDiff(reqIt->second.startTimeMs, nowMs);
+    if (delta == 0)
+        delta = 1;
+    return delta;
+}
+
 namespace DCAddon
 {
     void NotifyResponseSent(Player* player, const std::string& requestId)
@@ -358,7 +392,7 @@ namespace DCAddon
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint32 nowMs = getMSTime();
 
         std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
         auto accountIt = s_PendingRequests.find(accountId);
@@ -370,7 +404,10 @@ namespace DCAddon
         if (reqIt == pendingMap.end())
             return;
 
-        uint32 responseTimeMs = static_cast<uint32>(nowMs - reqIt->second.startTimeMs);
+        // Wrap-safe real-time delta (matches PeekPendingRequestElapsedMs).
+        uint32 responseTimeMs = getMSTimeDiff(reqIt->second.startTimeMs, nowMs);
+        if (responseTimeMs == 0)
+            responseTimeMs = 1;
         UpdateProtocolStats(player, reqIt->second.module, false, false, false, responseTimeMs);
         pendingMap.erase(reqIt);
 
@@ -719,7 +756,7 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
     );
 }
 
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview)
+static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs)
 {
     if (!player || !player->GetSession()) return;
 
@@ -731,22 +768,42 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
 
     std::string preview = payloadPreview.length() > 255 ? payloadPreview.substr(0, 255) : payloadPreview;
 
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_addon_protocol_log "
-        "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status) "
-        "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed')",
-        player->GetGUID().GetCounter(),
-        player->GetSession()->GetAccountId(),
-        EscapeSQLString(player->GetName()),
-        requestType,
-        safeModule,
-        opcode,
-        dataSize,
-        EscapeSQLString(preview)
-    );
+    if (processingTimeMs > 0)
+    {
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_addon_protocol_log "
+            "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status, processing_time_ms) "
+            "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed', {})",
+            player->GetGUID().GetCounter(),
+            player->GetSession()->GetAccountId(),
+            EscapeSQLString(player->GetName()),
+            requestType,
+            safeModule,
+            opcode,
+            dataSize,
+            EscapeSQLString(preview),
+            processingTimeMs
+        );
+    }
+    else
+    {
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_addon_protocol_log "
+            "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status) "
+            "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed')",
+            player->GetGUID().GetCounter(),
+            player->GetSession()->GetAccountId(),
+            EscapeSQLString(player->GetName()),
+            requestType,
+            safeModule,
+            opcode,
+            dataSize,
+            EscapeSQLString(preview)
+        );
+    }
 
     if (updateStats)
-        UpdateProtocolStats(player, safeModule, false, false, false, 0); // isResponse=true implicit
+        UpdateProtocolStats(player, safeModule, false, false, false, processingTimeMs); // isResponse=true implicit
 }
 
 // ============================================================================

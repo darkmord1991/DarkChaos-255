@@ -176,10 +176,35 @@ end
 -- ============================================================================
 
 function ShopModule:GetItemTypeString(itemType)
+    local collectionTypeName = nil
+    if type(itemType) == "table" then
+        collectionTypeName = itemType.collectionTypeName or itemType.collectionType
+        itemType = itemType.itemType or itemType.type
+    end
+
+    if type(collectionTypeName) == "string" then
+        local t = string.lower(collectionTypeName)
+        if t == "mount" or t == "mounts" then
+            return L["SHOP_TYPE_MOUNT"] or "Mount"
+        elseif t == "pet" or t == "pets" then
+            return L["SHOP_TYPE_PET"] or "Pet"
+        elseif t == "bonus" then
+            return L["SHOP_TYPE_BONUS"] or "Bonus"
+        elseif t == "heirloom" or t == "heirlooms" then
+            return L["SHOP_TYPE_HEIRLOOM"] or "Heirloom"
+        elseif t == "title" or t == "titles" then
+            return L["SHOP_TYPE_TITLE"] or "Title"
+        elseif t == "transmog" or t == "appearance" or t == "appearances" then
+            return L["SHOP_TYPE_TRANSMOG"] or "Transmog"
+        end
+    end
+
+    itemType = tonumber(itemType) or itemType
     local typeStrings = {
         [1] = L["SHOP_TYPE_BONUS"] or "Bonus",
         [2] = L["SHOP_TYPE_MOUNT"] or "Mount",
         [3] = L["SHOP_TYPE_PET"] or "Pet",
+        [4] = L["SHOP_TYPE_TITLE"] or "Title",
         [5] = L["SHOP_TYPE_HEIRLOOM"] or "Heirloom",
         [6] = L["SHOP_TYPE_BUNDLE"] or "Bundle",
         [7] = L["SHOP_TYPE_CONSUMABLE"] or "Consumable",
@@ -241,4 +266,12 @@ end
 
 function ShopModule:GetPurchaseHistory()
     return DC.purchaseHistory or {}
+end
+
+function ShopModule:RefreshPurchaseHistory(limit, offset)
+    if type(DC.RequestShopHistory) == "function" then
+        return DC:RequestShopHistory(limit, offset)
+    end
+
+    return false
 end

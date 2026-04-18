@@ -95,16 +95,37 @@ namespace Seasons
         return cap > 0 ? cap : 1000;
     }
 
+    static void ResolveSeasonCurrencyItemIds(uint32& tokenItemId, uint32& essenceItemId)
+    {
+        tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+        essenceItemId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+
+        if (sSeasonalRewards)
+        {
+            auto const& config = sSeasonalRewards->GetConfig();
+            if (config.tokenItemId > 0)
+                tokenItemId = config.tokenItemId;
+            if (config.essenceItemId > 0)
+                essenceItemId = config.essenceItemId;
+        }
+    }
+
     // Send current season information
     void SendSeasonInfo(Player* player, uint32 seasonId, const std::string& seasonName,
                         uint32 startTime, uint32 endTime, uint32 daysRemaining)
     {
+        uint32 tokenItemId = 0;
+        uint32 essenceItemId = 0;
+        ResolveSeasonCurrencyItemIds(tokenItemId, essenceItemId);
+
         JsonMessage msg(Module::SEASONAL, Opcode::Season::SMSG_CURRENT_SEASON);
         msg.Set("seasonId", JsonValue(seasonId));
         msg.Set("name", JsonValue(seasonName));
         msg.Set("startTime", JsonValue(startTime));
         msg.Set("endTime", JsonValue(endTime));
         msg.Set("daysRemaining", JsonValue(daysRemaining));
+        msg.Set("tokenId", JsonValue(tokenItemId));
+        msg.Set("essenceId", JsonValue(essenceItemId));
         msg.Set("tokenCap", JsonValue(GetWeeklyTokenCap()));
         msg.Set("essenceCap", JsonValue(GetWeeklyEssenceCap()));
         msg.Send(player);
@@ -218,17 +239,9 @@ namespace Seasons
     {
         uint32 seasonId = GetSeasonIdFromMsg(msg);
 
-        uint32 tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
-        uint32 essenceItemId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
-
-        if (sSeasonalRewards)
-        {
-            auto const& config = sSeasonalRewards->GetConfig();
-            if (config.tokenItemId > 0)
-                tokenItemId = config.tokenItemId;
-            if (config.essenceItemId > 0)
-                essenceItemId = config.essenceItemId;
-        }
+        uint32 tokenItemId = 0;
+        uint32 essenceItemId = 0;
+        ResolveSeasonCurrencyItemIds(tokenItemId, essenceItemId);
 
         uint32 currentTokens = player->GetItemCount(tokenItemId);
         uint32 currentEssence = player->GetItemCount(essenceItemId);
@@ -260,6 +273,8 @@ namespace Seasons
 
         DCAddon::JsonMessage response(Module::SEASONAL, Opcode::Season::SMSG_PROGRESS);
         response.Set("seasonId", static_cast<int32>(seasonId));
+        response.Set("tokenId", static_cast<int32>(tokenItemId));
+        response.Set("essenceId", static_cast<int32>(essenceItemId));
         response.Set("tokens", static_cast<int32>(currentTokens));
         response.Set("essence", static_cast<int32>(currentEssence));
         response.Set("tokenCap", static_cast<int32>(weeklyTokenCap));

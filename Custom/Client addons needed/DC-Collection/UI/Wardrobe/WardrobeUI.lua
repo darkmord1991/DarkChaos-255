@@ -152,13 +152,13 @@ function Wardrobe:CreateFrame()
     frame.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 
     frame.portrait = frame:CreateTexture(nil, "ARTWORK")
-    frame.portrait:SetSize(60, 60)
-    frame.portrait:SetPoint("TOPLEFT", -5, 7)
+    frame.portrait:SetSize(38, 38)
+    frame.portrait:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
     frame.portrait:SetTexture("Interface\\Icons\\INV_Chest_Cloth_17")
 
     frame.portraitBorder = frame:CreateTexture(nil, "OVERLAY")
-    frame.portraitBorder:SetSize(80, 80)
-    frame.portraitBorder:SetPoint("TOPLEFT", -14, 14)
+    frame.portraitBorder:SetSize(52, 52)
+    frame.portraitBorder:SetPoint("CENTER", frame.portrait, "CENTER", 0, 0)
     frame.portraitBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -1415,6 +1415,9 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
     local container = CreateFrame("Frame", nil, rightPanel)
     container:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 0, -25)  -- Adjusted per feedback (offset -25)
     container:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", 0, 40) -- Leave space for pages/bottom bar
+    if container.SetClipsChildren then
+        container:SetClipsChildren(true)
+    end
     container:Hide()
 
     -- Store on the main frame (root) to match how the rest of the Wardrobe code accesses widgets.
@@ -1459,33 +1462,65 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
 
     local function LayoutOutfitButtons()
         local w = container:GetWidth()
+        local h = container:GetHeight()
         if not w or w <= 1 then
             w = rightPanel:GetWidth()
+        end
+        if not h or h <= 1 then
+            h = rightPanel:GetHeight()
         end
         if not w or w <= 1 then
             w = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)
         end
-
-        -- In embedded mode the right panel can be narrow; reduce columns to keep
-        -- all cards inside the container instead of clipping past the right edge.
-        local fitCols = OUTFIT_COLS
-        while fitCols > 1 do
-            local neededWidth = (fitCols * OUTFIT_WIDTH) + ((fitCols - 1) * GAP_X)
-            if neededWidth <= w then
-                break
-            end
-            fitCols = fitCols - 1
+        if not h or h <= 1 then
+            h = (OUTFIT_ROWS * OUTFIT_HEIGHT) + ((OUTFIT_ROWS - 1) * GAP_Y) + 40
         end
 
-        local layoutWidth = (fitCols * OUTFIT_WIDTH) + ((fitCols - 1) * GAP_X)
-        local startX = (w - layoutWidth) / 2
-        if startX < 0 then startX = 0 end
+        -- Reserve space for the dedicated outfits pager at the bottom.
+        local pagerReserve = 40
+        local usableWidth = math.max(1, w - 2)
+        local usableHeight = math.max(1, h - pagerReserve)
+
+        local baseLayoutWidth = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)
+        local baseLayoutHeight = (OUTFIT_ROWS * OUTFIT_HEIGHT) + ((OUTFIT_ROWS - 1) * GAP_Y)
+
+        local scaleW = usableWidth / baseLayoutWidth
+        local scaleH = usableHeight / baseLayoutHeight
+        local scale = math.min(1, scaleW, scaleH)
+
+        local cardWidth = math.max(72, math.floor((OUTFIT_WIDTH * scale) + 0.5))
+        local cardHeight = math.max(84, math.floor((OUTFIT_HEIGHT * scale) + 0.5))
+        local gapX = math.max(2, math.floor((GAP_X * scale) + 0.5))
+        local gapY = math.max(2, math.floor((GAP_Y * scale) + 0.5))
+
+        local layoutWidth = (OUTFIT_COLS * cardWidth) + ((OUTFIT_COLS - 1) * gapX)
+        local layoutHeight = (OUTFIT_ROWS * cardHeight) + ((OUTFIT_ROWS - 1) * gapY)
+
+        local startX = math.max(0, math.floor(((w - layoutWidth) / 2) + 0.5))
+        local topAreaHeight = math.max(1, h - pagerReserve)
+        local startY = 2 + math.max(0, math.floor(((topAreaHeight - layoutHeight) / 2) + 0.5))
+
+        local inset = math.max(3, math.floor((8 * scale) + 0.5))
+        local titleTop = math.max(3, math.floor((8 * scale) + 0.5))
+        local titleHeight = math.max(12, math.floor((20 * scale) + 0.5))
+        local modelTopOffset = titleTop + titleHeight + math.max(2, math.floor((2 * scale) + 0.5))
 
         for i, btn in ipairs(root.outfitButtons) do
-            local row = math.floor((i - 1) / fitCols)
-            local col = (i - 1) % fitCols
+            local row = math.floor((i - 1) / OUTFIT_COLS)
+            local col = (i - 1) % OUTFIT_COLS
+
             btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (OUTFIT_WIDTH + GAP_X)), -2 - (row * (OUTFIT_HEIGHT + GAP_Y)))
+            btn:SetSize(cardWidth, cardHeight)
+            btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (cardWidth + gapX)), -startY - (row * (cardHeight + gapY)))
+
+            btn.name:ClearAllPoints()
+            btn.name:SetPoint("TOPLEFT", inset, -titleTop)
+            btn.name:SetPoint("TOPRIGHT", -inset, -titleTop)
+            btn.name:SetHeight(titleHeight)
+
+            btn.model:ClearAllPoints()
+            btn.model:SetPoint("TOPLEFT", inset, -modelTopOffset)
+            btn.model:SetPoint("BOTTOMRIGHT", -inset, inset)
         end
     end
 

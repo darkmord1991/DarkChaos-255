@@ -13,8 +13,7 @@
 // Chat cosmetics: clickable item link prefix for BG notifications
 std::string OutdoorPvPHL::GetBgChatPrefix() const
 {
-    // Blue-quality color for visibility; item ID 47241 (Emblem of Triumph) used as a neutral link host
-    return "|cff0070dd|Hitem:47241:0:0:0:0:0:0:0:0|h[Hinterland Defence]|h|r ";
+    return "|cff0070dd[Hinterland Defence]|r ";
 }
 
 void OutdoorPvPHL::HandleWinMessage(const char* message)

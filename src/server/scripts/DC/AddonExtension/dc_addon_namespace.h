@@ -471,6 +471,7 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_SHOP            = 0x10;  // Request shop items
             constexpr uint8 CMSG_BUY_ITEM            = 0x11;  // Purchase from shop
             constexpr uint8 CMSG_GET_CURRENCIES      = 0x12;  // Request currency balances
+            constexpr uint8 CMSG_GET_SHOP_HISTORY    = 0x13;  // Request shop purchase history
 
             // Client -> Server: Wishlist
             constexpr uint8 CMSG_GET_WISHLIST        = 0x20;  // Request wishlist
@@ -520,6 +521,7 @@ namespace DCAddon
             constexpr uint8 SMSG_SHOP_DATA           = 0x50;  // Shop items (JSON)
             constexpr uint8 SMSG_PURCHASE_RESULT     = 0x51;  // Purchase result
             constexpr uint8 SMSG_CURRENCIES          = 0x52;  // Currency balances
+            constexpr uint8 SMSG_SHOP_HISTORY        = 0x5B;  // Shop purchase history (JSON)
 
             // Community Outfits (Platform) - NOTE: Use 0x53+ range to avoid collision with Outfit opcodes
             constexpr uint8 CMSG_COMMUNITY_GET_LIST   = 0x53; // Get list of community outfits

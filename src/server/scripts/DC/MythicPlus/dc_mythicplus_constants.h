@@ -39,7 +39,7 @@ namespace MythicPlusConstants
     constexpr uint32 GO_KEYSTONE_PEDESTAL = 700001;
 
     // Token items
-    constexpr uint32 ITEM_UPGRADE_TOKEN = 300311;
+    constexpr uint32 ITEM_UPGRADE_TOKEN = 0; // resolved from config at runtime
     constexpr uint32 ITEM_MYTHIC_TOKEN = ITEM_UPGRADE_TOKEN; // legacy alias
 
     /**

@@ -247,7 +247,7 @@ namespace DarkChaos
         }
 
         // NOTE: Weekly cap tracking removed - dc_player_upgrade_tokens table deprecated
-        // Item-based currency (items 300311/300312) doesn't support weekly tracking
+        // Item-based currency doesn't support weekly tracking in this path.
         // Weekly caps can be re-implemented via addon tracking if needed
         [[maybe_unused]] static bool IsAtWeeklyTokenCap([[maybe_unused]] uint32 player_guid, [[maybe_unused]] uint32 season = 1)
         {

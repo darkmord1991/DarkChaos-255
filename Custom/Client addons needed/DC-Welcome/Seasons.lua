@@ -59,6 +59,8 @@ local Frames = {
 local Data = {
     seasonNumber = nil,
     seasonName = nil,
+    tokenItemId = 0,
+    essenceItemId = 0,
     tokens = 0,
     essence = 0,
     weeklyTokens = 0,
@@ -80,19 +82,38 @@ DCWelcome.Seasons.SetSetting = SetSetting
 -- Get token and essence info from DCAddonProtocol if available
 local function GetTokenInfo()
     local DCProtocol = rawget(_G, "DCAddonProtocol")
+    local tokenID = 0
+    local essenceID = 0
+
+    if DCProtocol then
+        tokenID = tonumber(DCProtocol.TOKEN_ITEM_ID) or 0
+        essenceID = tonumber(DCProtocol.ESSENCE_ITEM_ID) or 0
+    end
+
+    tokenID = tonumber(Data.tokenItemId) or tokenID
+    essenceID = tonumber(Data.essenceItemId) or essenceID
+
     if DCProtocol then
         return {
-            tokenID = DCProtocol.TOKEN_ITEM_ID,
-            essenceID = DCProtocol.ESSENCE_ITEM_ID,
-            getTokenIcon = function() return DCProtocol:GetTokenIcon(DCProtocol.TOKEN_ITEM_ID) end,
-            getEssenceIcon = function() return DCProtocol:GetTokenIcon(DCProtocol.ESSENCE_ITEM_ID) end,
-            formatToken = function(count) return DCProtocol:FormatTokenDisplay(DCProtocol.TOKEN_ITEM_ID, count) end,
-            formatEssence = function(count) return DCProtocol:FormatTokenDisplay(DCProtocol.ESSENCE_ITEM_ID, count) end,
+            tokenID = tokenID,
+            essenceID = essenceID,
+            getTokenIcon = function()
+                return DCProtocol:GetTokenIcon(tokenID) or "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"
+            end,
+            getEssenceIcon = function()
+                return DCProtocol:GetTokenIcon(essenceID) or "Interface\\Icons\\INV_Misc_Herb_Draenethisle"
+            end,
+            formatToken = function(count)
+                return DCProtocol:FormatTokenDisplay(tokenID, count) or ("|cffffd700" .. count .. " Tokens|r")
+            end,
+            formatEssence = function(count)
+                return DCProtocol:FormatTokenDisplay(essenceID, count) or ("|cff0070dd" .. count .. " Essence|r")
+            end,
         }
     else
         return {
-            tokenID = 300311,
-            essenceID = 300312,
+            tokenID = tokenID,
+            essenceID = essenceID,
             getTokenIcon = function() return "Interface\\Icons\\INV_Misc_Token_ArgentCrusade" end,
             getEssenceIcon = function() return "Interface\\Icons\\INV_Misc_Herb_Draenethisle" end,
             formatToken = function(count) return "|cffffd700" .. count .. " Tokens|r" end,
@@ -482,11 +503,23 @@ local function RegisterHandlers()
         if type(data) == "table" then
             Data.seasonNumber = data.seasonId or data.id or 1
             Data.seasonName = data.name or data.seasonName or "Unknown Season"
+            Data.tokenItemId = tonumber(data.tokenId or data.tokenID) or Data.tokenItemId
+            Data.essenceItemId = tonumber(data.essenceId or data.essenceID) or Data.essenceItemId
             Data.startTime = data.startTime
             Data.endTime = data.endTime
             Data.daysRemaining = data.daysRemaining
             if data.tokenCap then Data.weeklyTokenCap = data.tokenCap end
             if data.essenceCap then Data.weeklyEssenceCap = data.essenceCap end
+
+            local central = rawget(_G, "DCAddonProtocol")
+            if central then
+                if Data.tokenItemId and Data.tokenItemId > 0 then
+                    central.TOKEN_ITEM_ID = Data.tokenItemId
+                end
+                if Data.essenceItemId and Data.essenceItemId > 0 then
+                    central.ESSENCE_ITEM_ID = Data.essenceItemId
+                end
+            end
         end
         Data._loaded = true
         DCWelcome.Seasons:UpdateProgressTracker()
@@ -497,6 +530,8 @@ local function RegisterHandlers()
         if type(data) == "table" then
             Data.seasonNumber = data.seasonId or Data.seasonNumber or 1
             Data.seasonLevel = data.level or data.seasonLevel or 1
+            Data.tokenItemId = tonumber(data.tokenId or data.tokenID) or Data.tokenItemId
+            Data.essenceItemId = tonumber(data.essenceId or data.essenceID) or Data.essenceItemId
             
             -- Current token/essence counts (actual inventory items)
             Data.tokens = data.tokens or 0
@@ -515,6 +550,19 @@ local function RegisterHandlers()
             Data.quests = data.quests or 0
             Data.worldBosses = data.worldBosses or 0
             Data.dungeonBosses = data.dungeonBosses or data.bosses or 0
+
+            local central = rawget(_G, "DCAddonProtocol")
+            if central then
+                if Data.tokenItemId and Data.tokenItemId > 0 then
+                    central.TOKEN_ITEM_ID = Data.tokenItemId
+                end
+                if Data.essenceItemId and Data.essenceItemId > 0 then
+                    central.ESSENCE_ITEM_ID = Data.essenceItemId
+                end
+                if type(central.SetServerCurrencyBalance) == "function" then
+                    central:SetServerCurrencyBalance(Data.tokens or 0, Data.essence or 0)
+                end
+            end
         end
         Data._loaded = true
         DCWelcome.Seasons:UpdateProgressTracker()

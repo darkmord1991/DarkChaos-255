@@ -757,7 +757,9 @@ end
 -- ============================================================================
 
 function MountJournal:SelectMount(mountData)
-    if not mountData then return end
+    if type(mountData) ~= "table" then return end
+    if not self.frame or not self.frame.modelFrame then return end
+    if not self.frame.modelFrame.infoFrame or not self.frame.modelFrame.model then return end
 
     self.selectedMount = mountData
 
@@ -777,11 +779,22 @@ function MountJournal:SelectMount(mountData)
     local mountType = mountData.definition and mountData.definition.mountType or 0
     infoFrame.typeIcon:SetTexture(MOUNT_TYPE_ICONS[mountType] or MOUNT_TYPE_ICONS[0])
 
-    -- Update favorite button
-    if mountData.is_favorite then
-        infoFrame.favBtn:GetNormalTexture():SetVertexColor(1, 0.8, 0)
-    else
-        infoFrame.favBtn:GetNormalTexture():SetVertexColor(0.5, 0.5, 0.5)
+    -- Update favorite button (guard against missing texture objects on some clients).
+    local favBtn = infoFrame.favBtn
+    if favBtn then
+        local normalTexture = favBtn.GetNormalTexture and favBtn:GetNormalTexture() or nil
+        if (not normalTexture) and favBtn.SetNormalTexture then
+            favBtn:SetNormalTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
+            normalTexture = favBtn.GetNormalTexture and favBtn:GetNormalTexture() or nil
+        end
+
+        if normalTexture and normalTexture.SetVertexColor then
+            if mountData.is_favorite then
+                normalTexture:SetVertexColor(1, 0.8, 0)
+            else
+                normalTexture:SetVertexColor(0.5, 0.5, 0.5)
+            end
+        end
     end
 
     -- Display 3D model

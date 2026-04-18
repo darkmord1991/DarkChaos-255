@@ -168,6 +168,9 @@ end
 -- Tracks time spent in any party/raid instance, even without Mythic+.
 -- =====================================================================
 
+-- Keep disabled so the HUD only appears for active Mythic+ runs.
+local ENABLE_LOCAL_RUN_HUD_FALLBACK = false
+
 local localRun = {
     active = false,
     finished = false,
@@ -1732,27 +1735,33 @@ local function SetFrameVisibility(shouldShow)
         return
     end
 
-    -- Local run timer HUD (non-Mythic)
-    -- Only show if strictly inside a trackable instance (party/raid)
-    local trackable = GetTrackableInstanceInfo()
-    if (localRun.active or localRun.finished) and trackable then
-        TraceVisibility("local_timer", true)
-        frame:Show()
-        return
+    -- Optional local timer fallback. Disabled by default so the HUD does
+    -- not appear from plain dungeon entry without an active Mythic+ run.
+    if ENABLE_LOCAL_RUN_HUD_FALLBACK then
+        local trackable = GetTrackableInstanceInfo()
+        if (localRun.active or localRun.finished) and trackable then
+            TraceVisibility("local_timer", true)
+            frame:Show()
+            return
+        end
+
+        if shouldShow then
+            TraceVisibility("fallback", true)
+            frame:Show()
+            return
+        end
     end
 
-    -- Fallback
-    if shouldShow then
-        TraceVisibility("fallback", true)
-        frame:Show()
-    else
-        TraceVisibility("fallback", false)
-        frame:Hide()
-    end
+    TraceVisibility("inactive", false)
+    frame:Hide()
 end
 
 local function UpdateFrameFromLocalRun()
     if not frame then
+        return
+    end
+
+    if not ENABLE_LOCAL_RUN_HUD_FALLBACK then
         return
     end
 
@@ -2679,7 +2688,11 @@ local function ToggleVisibility()
         Print("HUD hidden. Use /dcm to show again.")
     else
         ClearFirstLoginSuppression()
-        Print("HUD shown.")
+        if IsRunInProgress(activeState) then
+            Print("HUD shown.")
+        else
+            Print("HUD enabled. It will appear when a Mythic+ run is active.")
+        end
         if not activeState then
             ShowIdleState()
         end
@@ -2723,10 +2736,10 @@ SlashCmdList.DCM = function(msg)
         ClearFirstLoginSuppression()
         UpdateLocalRunTrackingFromInstance()
         SetFrameVisibility(true)
-        if IsRunInProgress(activeState) or localRun.active or localRun.finished then
+        if IsRunInProgress(activeState) then
             Print("HUD shown")
         else
-            Print("HUD will show when you enter a dungeon/raid (or when a Mythic+ run starts)")
+            Print("HUD will show when a Mythic+ run is active")
         end
         RequestServerSnapshot("slash")
     elseif cmd == "hide" then

@@ -51,6 +51,8 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include <chrono>
 #include <mutex>
 #include <cstdlib>
+#include <array>
+#include <atomic>
 
 namespace DCCollection
 {
@@ -903,6 +905,137 @@ namespace DCCollection
 
         if (cached.empty())
             LOG_ERROR("server.loading", "DC-Collection: Character DB table 'dc_collection_wishlist' missing 'entry_id'/'entry'/'item_id' column (schema mismatch).");
+
+        return cached;
+    }
+
+    std::string const& GetShopPurchaseIdColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_shop_purchases", "purchase_id"))
+            cached = "purchase_id";
+        else if (CharacterColumnExists("dc_collection_shop_purchases", "id"))
+            cached = "id";
+
+        return cached;
+    }
+
+    std::string const& GetShopPurchaseShopColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_shop_purchases", "shop_id"))
+            cached = "shop_id";
+        else if (CharacterColumnExists("dc_collection_shop_purchases", "shop_item_id"))
+            cached = "shop_item_id";
+
+        return cached;
+    }
+
+    std::string const& GetShopPurchaseCharacterIdColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_shop_purchases", "character_id"))
+            cached = "character_id";
+        else if (CharacterColumnExists("dc_collection_shop_purchases", "character_guid"))
+            cached = "character_guid";
+
+        return cached;
+    }
+
+    std::string const& GetShopPurchaseCharacterNameColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_shop_purchases", "character_name"))
+            cached = "character_name";
+
+        return cached;
+    }
+
+    std::string const& GetShopPurchaseTokensColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_shop_purchases", "cost_tokens"))
+            cached = "cost_tokens";
+        else if (CharacterColumnExists("dc_collection_shop_purchases", "price_tokens"))
+            cached = "price_tokens";
+
+        return cached;
+    }
+
+    std::string const& GetShopPurchaseEmblemsColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_shop_purchases", "cost_emblems"))
+            cached = "cost_emblems";
+        else if (CharacterColumnExists("dc_collection_shop_purchases", "price_emblems"))
+            cached = "price_emblems";
+
+        return cached;
+    }
+
+    std::string const& GetShopPurchaseGoldColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_shop_purchases", "cost_gold"))
+            cached = "cost_gold";
+        else if (CharacterColumnExists("dc_collection_shop_purchases", "price_gold"))
+            cached = "price_gold";
 
         return cached;
     }
@@ -2016,6 +2149,85 @@ namespace DCCollection
     }
 
     // =======================================================================
+    // Curated (non-transmog) Definitions Cache
+    //
+    // Mount/Pet/Heirloom/Title definitions are server-global and do not
+    // depend on per-player state. Rebuilding them on every request is
+    // expensive (large SQL queries + spell chain scans + correlated
+    // subqueries). Cache the built JsonValue and a monotonically increasing
+    // syncVersion so clients can short-circuit when they already have the
+    // latest copy.
+    //
+    // TTL-based refresh; manual invalidation is exposed so other subsystems
+    // can force a rebuild when underlying DBC/world data changes.
+    // =======================================================================
+    struct CuratedDefinitionsCache
+    {
+        DCAddon::JsonValue defs;     // object of id -> def (curated only; owned-fallback is per-player)
+        uint32 syncVersion = 0;       // 0 == never built
+        uint32 builtAtMs = 0;
+        std::mutex mutex;
+    };
+
+    static std::array<CuratedDefinitionsCache, 8>& GetCuratedDefinitionsCacheArray()
+    {
+        // Indexed by CollectionType (MOUNT=1..ITEM_SET=7). TRANSMOG has its own cache.
+        static std::array<CuratedDefinitionsCache, 8> cache;
+        return cache;
+    }
+
+    static std::atomic<uint32>& GetCuratedDefinitionsVersionCounter()
+    {
+        static std::atomic<uint32> counter{0};
+        return counter;
+    }
+
+    static uint32 GetCuratedDefinitionsCacheTtlMs()
+    {
+        uint32 s = sConfigMgr->GetOption<uint32>("DCCollection.Definitions.CacheTtlSeconds", 600);
+        // Clamp to reasonable bounds.
+        if (s < 30) s = 30;
+        if (s > 86400) s = 86400;
+        return s * 1000u;
+    }
+
+    // Returns current cached syncVersion (0 if never built or invalidated).
+    uint32 GetCuratedDefinitionsSyncVersion(CollectionType ct)
+    {
+        uint8 idx = static_cast<uint8>(ct);
+        if (idx == 0 || idx >= GetCuratedDefinitionsCacheArray().size())
+            return 0;
+        auto& entry = GetCuratedDefinitionsCacheArray()[idx];
+        std::lock_guard<std::mutex> lk(entry.mutex);
+        return entry.syncVersion;
+    }
+
+    // Invalidate cache for a specific type (or all types when ct == 0).
+    void InvalidateCuratedDefinitionsCache(CollectionType ct)
+    {
+        auto& arr = GetCuratedDefinitionsCacheArray();
+        if (static_cast<uint8>(ct) == 0)
+        {
+            for (auto& entry : arr)
+            {
+                std::lock_guard<std::mutex> lk(entry.mutex);
+                entry.syncVersion = 0;
+                entry.builtAtMs = 0;
+                entry.defs = DCAddon::JsonValue();
+            }
+            return;
+        }
+        uint8 idx = static_cast<uint8>(ct);
+        if (idx >= arr.size())
+            return;
+        auto& entry = arr[idx];
+        std::lock_guard<std::mutex> lk(entry.mutex);
+        entry.syncVersion = 0;
+        entry.builtAtMs = 0;
+        entry.defs = DCAddon::JsonValue();
+    }
+
+    // =======================================================================
     // Handler Functions - Send Data
     // =======================================================================
 
@@ -2044,6 +2256,18 @@ namespace DCCollection
         msg.Set("needsSync", needsSync);
         msg.Set("totalItems", static_cast<uint32>(allItems.size()));
 
+        // Publish per-type curated definitions syncVersions so the client can
+        // skip CMSG_GET_DEFINITIONS entirely for types where its cached copy
+        // already matches the server. Transmog uses its own dedicated cache.
+        DCAddon::JsonValue syncVersions;
+        syncVersions.SetObject();
+        syncVersions.Set("transmog", GetTransmogDefinitionsSyncVersionCached());
+        syncVersions.Set("mounts", GetCuratedDefinitionsSyncVersion(CollectionType::MOUNT));
+        syncVersions.Set("pets", GetCuratedDefinitionsSyncVersion(CollectionType::PET));
+        syncVersions.Set("heirlooms", GetCuratedDefinitionsSyncVersion(CollectionType::HEIRLOOM));
+        syncVersions.Set("titles", GetCuratedDefinitionsSyncVersion(CollectionType::TITLE));
+        msg.Set("syncVersions", syncVersions);
+
         msg.Send(player);
     }
 
@@ -2061,11 +2285,17 @@ namespace DCCollection
         // Load each collection type
         const char* typeNames[] = { "", "mounts", "pets", "toys", "heirlooms", "titles", "transmog" };
 
+        // Cache per-type loads so we only hit CharacterDatabase once per type.
+        // Previous code re-ran LoadPlayerCollection a second time below to
+        // compute the hash, doubling the number of DB queries per full sync.
+        std::map<CollectionType, std::vector<uint32>> loaded;
+
         for (int t = 1; t <= 6; ++t)
         {
             if (t == static_cast<int>(CollectionType::TOY))
                 continue; // Toys are disabled
-            auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
+            CollectionType ct = static_cast<CollectionType>(t);
+            auto items = LoadPlayerCollection(accountId, ct);
 
             DCAddon::JsonValue arr;
             arr.SetArray();
@@ -2074,6 +2304,7 @@ namespace DCCollection
                 arr.Push(DCAddon::JsonValue(id));
             }
             collections.Set(typeNames[t], arr);
+            loaded.emplace(ct, std::move(items));
         }
 
         // Load counts and totals for percentages
@@ -2107,15 +2338,10 @@ namespace DCCollection
         bonuses.Set("mountsToNext", GetNextMountThreshold(mountCount) > 0 ?
             static_cast<int32>(GetNextMountThreshold(mountCount) - mountCount) : 0);
 
-        // Compute hash
+        // Compute hash from the already-loaded vectors (avoid a second DB pass).
         std::vector<uint32> allItems;
-        for (int t = 1; t <= 6; ++t)
-        {
-            if (t == static_cast<int>(CollectionType::TOY))
-                continue; // Toys are disabled
-            auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
-            allItems.insert(allItems.end(), items.begin(), items.end());
-        }
+        for (auto const& kv : loaded)
+            allItems.insert(allItems.end(), kv.second.begin(), kv.second.end());
         uint32 serverHash = GenerateCollectionHash(allItems);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
@@ -2327,7 +2553,33 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
-        std::string const& shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+        bool useCharacterShop = CharacterTableExists("dc_collection_shop") &&
+            CharacterColumnExists("dc_collection_shop", "id") &&
+            CharacterColumnExists("dc_collection_shop", "collection_type") &&
+            CharacterColumnExists("dc_collection_shop", "price_tokens") &&
+            CharacterColumnExists("dc_collection_shop", "price_emblems") &&
+            CharacterColumnExists("dc_collection_shop", "discount_percent") &&
+            CharacterColumnExists("dc_collection_shop", "available_from") &&
+            CharacterColumnExists("dc_collection_shop", "available_until") &&
+            CharacterColumnExists("dc_collection_shop", "stock_remaining") &&
+            CharacterColumnExists("dc_collection_shop", "featured") &&
+            CharacterColumnExists("dc_collection_shop", "enabled");
+
+        std::string shopEntryCol;
+        if (useCharacterShop)
+        {
+            if (CharacterColumnExists("dc_collection_shop", "entry_id"))
+                shopEntryCol = "entry_id";
+            else if (CharacterColumnExists("dc_collection_shop", "entry"))
+                shopEntryCol = "entry";
+
+            if (shopEntryCol.empty())
+                useCharacterShop = false;
+        }
+
+        if (!useCharacterShop)
+            shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+
         if (shopEntryCol.empty())
         {
             DCAddon::SendError(player, MODULE, "Shop table schema mismatch",
@@ -2359,7 +2611,8 @@ namespace DCCollection
 
         query += " ORDER BY featured DESC, id ASC LIMIT 100";
 
-        QueryResult result = WorldDatabase.Query(query);
+        QueryResult result = useCharacterShop ? CharacterDatabase.Query(query) :
+            WorldDatabase.Query(query);
 
         DCAddon::JsonValue items;
         items.SetArray();
@@ -2522,6 +2775,261 @@ namespace DCCollection
         msg.Send(player);
     }
 
+    void SendShopHistory(Player* player, uint32 limit = 50, uint32 offset = 0)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!CharacterTableExists("dc_collection_shop_purchases"))
+        {
+            DCAddon::JsonValue items;
+            items.SetArray();
+
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY);
+            msg.Set("items", items);
+            msg.Set("count", static_cast<uint32>(0));
+            msg.Set("total", static_cast<uint32>(0));
+            msg.Set("limit", static_cast<uint32>(0));
+            msg.Set("offset", static_cast<uint32>(0));
+            msg.Send(player);
+            return;
+        }
+
+        std::string const& purchaseIdCol = GetShopPurchaseIdColumn();
+        std::string const& purchaseShopCol = GetShopPurchaseShopColumn();
+        std::string const& purchaseTokensCol = GetShopPurchaseTokensColumn();
+        std::string const& purchaseEmblemsCol = GetShopPurchaseEmblemsColumn();
+
+        if (purchaseIdCol.empty() || purchaseShopCol.empty() ||
+            purchaseTokensCol.empty() || purchaseEmblemsCol.empty())
+        {
+            DCAddon::SendError(player, MODULE, "Shop history table schema mismatch",
+                DCAddon::ErrorCode::BAD_FORMAT,
+                DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        if (limit == 0)
+            limit = 50;
+        if (limit > 200)
+            limit = 200;
+
+        uint32 accountId = GetAccountId(player);
+
+        std::string const& characterIdCol = GetShopPurchaseCharacterIdColumn();
+        std::string const& characterNameCol = GetShopPurchaseCharacterNameColumn();
+        std::string const& purchaseGoldCol = GetShopPurchaseGoldColumn();
+
+        bool canJoinCharacterShop = CharacterTableExists("dc_collection_shop") &&
+            CharacterColumnExists("dc_collection_shop", "id") &&
+            CharacterColumnExists("dc_collection_shop", "collection_type");
+
+        std::string characterShopEntryCol;
+        if (canJoinCharacterShop)
+        {
+            if (CharacterColumnExists("dc_collection_shop", "entry_id"))
+                characterShopEntryCol = "entry_id";
+            else if (CharacterColumnExists("dc_collection_shop", "entry"))
+                characterShopEntryCol = "entry";
+
+            if (characterShopEntryCol.empty())
+                canJoinCharacterShop = false;
+        }
+
+        bool canResolveWorldShopMetadata = false;
+        std::string worldShopEntryCol;
+        if (!canJoinCharacterShop && WorldTableExists("dc_collection_shop"))
+        {
+            worldShopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+            canResolveWorldShopMetadata = !worldShopEntryCol.empty();
+        }
+
+        std::string characterIdExpr = characterIdCol.empty() ?
+            "0" : ("p." + characterIdCol);
+        std::string characterNameExpr = characterNameCol.empty() ?
+            "''" : ("COALESCE(p." + characterNameCol + ", '')");
+        std::string goldExpr = purchaseGoldCol.empty() ?
+            "0" : ("p." + purchaseGoldCol);
+
+        QueryResult totalResult = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM dc_collection_shop_purchases WHERE account_id = {}",
+            accountId);
+
+        uint32 total = 0;
+        if (totalResult)
+            total = totalResult->Fetch()[0].Get<uint32>();
+
+        std::string query =
+            "SELECT p." + purchaseIdCol + ", p." + purchaseShopCol +
+            ", p." + purchaseTokensCol + ", p." + purchaseEmblemsCol +
+            ", " + characterIdExpr + ", " + characterNameExpr +
+            ", " + goldExpr + ", UNIX_TIMESTAMP(p.purchase_date)";
+
+        if (canJoinCharacterShop)
+            query += ", COALESCE(s.collection_type, 0), COALESCE(s." +
+                characterShopEntryCol + ", 0)";
+
+        query += " FROM dc_collection_shop_purchases p ";
+
+        if (canJoinCharacterShop)
+            query += "LEFT JOIN dc_collection_shop s ON s.id = p." +
+                purchaseShopCol + " ";
+
+        query += "WHERE p.account_id = " + std::to_string(accountId) + " ";
+        query += "ORDER BY p.purchase_date DESC, p." + purchaseIdCol + " DESC ";
+        query += "LIMIT " + std::to_string(limit) + " OFFSET " +
+            std::to_string(offset);
+
+        QueryResult result = CharacterDatabase.Query(query);
+
+        DCAddon::JsonValue items;
+        items.SetArray();
+        uint32 count = 0;
+
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+
+                uint32 purchaseId = fields[0].Get<uint32>();
+                uint32 shopId = fields[1].Get<uint32>();
+                uint32 costTokens = fields[2].Get<uint32>();
+                uint32 costEmblems = fields[3].Get<uint32>();
+                uint32 characterId = fields[4].Get<uint32>();
+                std::string characterName = fields[5].Get<std::string>();
+                uint32 costGold = fields[6].Get<uint32>();
+                uint32 purchaseDate = fields[7].Get<uint32>();
+                uint8 collType = 0;
+                uint32 entryId = 0;
+
+                if (canJoinCharacterShop)
+                {
+                    collType = fields[8].Get<uint8>();
+                    entryId = fields[9].Get<uint32>();
+                }
+                else if (canResolveWorldShopMetadata)
+                {
+                    std::string shopQuery =
+                        "SELECT collection_type, " + worldShopEntryCol +
+                        " FROM dc_collection_shop WHERE id = " +
+                        std::to_string(shopId) + " LIMIT 1";
+                    QueryResult shopResult = WorldDatabase.Query(shopQuery);
+
+                    if (shopResult)
+                    {
+                        Field* shopFields = shopResult->Fetch();
+                        collType = shopFields[0].Get<uint8>();
+                        entryId = shopFields[1].Get<uint32>();
+                    }
+                }
+
+                std::string itemName;
+                std::string itemIcon;
+                uint32 itemRarity = 2;
+                uint32 itemId = 0;
+                uint32 spellId = 0;
+
+                switch (static_cast<CollectionType>(collType))
+                {
+                    case CollectionType::MOUNT:
+                    {
+                        spellId = entryId;
+                        if (SpellInfo const* spell = sSpellMgr->GetSpellInfo(entryId))
+                        {
+                            itemName = spell->SpellName[0];
+                            itemIcon = std::to_string(spell->SpellIconID);
+                        }
+                        break;
+                    }
+                    case CollectionType::PET:
+                    {
+                        itemId = entryId;
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        {
+                            itemName = proto->Name1;
+                            itemIcon = std::to_string(proto->DisplayInfoID);
+                            itemRarity = proto->Quality;
+                        }
+                        break;
+                    }
+                    case CollectionType::HEIRLOOM:
+                    {
+                        itemId = entryId;
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        {
+                            itemName = proto->Name1;
+                            itemIcon = std::to_string(proto->DisplayInfoID);
+                            itemRarity = proto->Quality;
+                        }
+                        break;
+                    }
+                    case CollectionType::TITLE:
+                    {
+                        if (CharTitlesEntry const* title = ResolveTitleEntryByAnyKey(entryId))
+                            itemName = title->nameMale[0];
+                        break;
+                    }
+                    case CollectionType::TRANSMOG:
+                    {
+                        uint32 lookupItemId = entryId;
+                        if (!sObjectMgr->GetItemTemplate(lookupItemId))
+                        {
+                            if (TransmogAppearanceVariant const* v = FindAnyVariant(entryId))
+                                lookupItemId = v->canonicalItemId;
+                        }
+
+                        itemId = lookupItemId;
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(lookupItemId))
+                        {
+                            itemName = proto->Name1;
+                            itemIcon = std::to_string(proto->DisplayInfoID);
+                            itemRarity = proto->Quality;
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+
+                if (itemName.empty())
+                    itemName = "Shop Item #" + std::to_string(shopId);
+
+                DCAddon::JsonValue item;
+                item.SetObject();
+                item.Set("purchaseId", purchaseId);
+                item.Set("shopId", shopId);
+                item.Set("type", collType);
+                item.Set("entryId", entryId);
+                item.Set("name", itemName);
+                item.Set("icon", itemIcon);
+                item.Set("rarity", itemRarity);
+                item.Set("costTokens", costTokens);
+                item.Set("costEmblems", costEmblems);
+                item.Set("costGold", costGold);
+                item.Set("characterId", characterId);
+                item.Set("characterName", characterName);
+                item.Set("purchaseDate", purchaseDate);
+
+                if (itemId)
+                    item.Set("itemId", itemId);
+                if (spellId)
+                    item.Set("spellId", spellId);
+
+                items.Push(item);
+                ++count;
+            } while (result->NextRow());
+        }
+
+        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY);
+        msg.Set("items", items);
+        msg.Set("count", count);
+        msg.Set("total", total);
+        msg.Set("limit", limit);
+        msg.Set("offset", offset);
+        msg.Send(player);
+    }
+
     void SendWishlistData(Player* player)
     {
         if (!player || !player->GetSession())
@@ -2631,7 +3139,29 @@ namespace DCCollection
             return;
         }
 
-        std::string const& shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+        bool useCharacterShop = CharacterTableExists("dc_collection_shop") &&
+            CharacterColumnExists("dc_collection_shop", "id") &&
+            CharacterColumnExists("dc_collection_shop", "collection_type") &&
+            CharacterColumnExists("dc_collection_shop", "price_tokens") &&
+            CharacterColumnExists("dc_collection_shop", "price_emblems") &&
+            CharacterColumnExists("dc_collection_shop", "stock_remaining") &&
+            CharacterColumnExists("dc_collection_shop", "enabled");
+
+        std::string shopEntryCol;
+        if (useCharacterShop)
+        {
+            if (CharacterColumnExists("dc_collection_shop", "entry_id"))
+                shopEntryCol = "entry_id";
+            else if (CharacterColumnExists("dc_collection_shop", "entry"))
+                shopEntryCol = "entry";
+
+            if (shopEntryCol.empty())
+                useCharacterShop = false;
+        }
+
+        if (!useCharacterShop)
+            shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+
         if (shopEntryCol.empty())
         {
             DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
@@ -2642,10 +3172,15 @@ namespace DCCollection
         }
 
         // Get shop item details
-        QueryResult result = WorldDatabase.Query(
-            "SELECT collection_type, {}, price_tokens, price_emblems, stock_remaining "
-            "FROM dc_collection_shop WHERE id = {} AND enabled = 1",
-            shopEntryCol, shopId);
+        QueryResult result = useCharacterShop ?
+            CharacterDatabase.Query(
+                "SELECT collection_type, {}, price_tokens, price_emblems, stock_remaining "
+                "FROM dc_collection_shop WHERE id = {} AND enabled = 1",
+                shopEntryCol, shopId) :
+            WorldDatabase.Query(
+                "SELECT collection_type, {}, price_tokens, price_emblems, stock_remaining "
+                "FROM dc_collection_shop WHERE id = {} AND enabled = 1",
+                shopEntryCol, shopId);
 
         if (!result)
         {
@@ -2785,9 +3320,18 @@ namespace DCCollection
         // Update stock if limited
         if (stock > 0)
         {
-            WorldDatabase.Execute(
-                "UPDATE dc_collection_shop SET stock_remaining = stock_remaining - 1 WHERE id = {}",
-                shopId);
+            if (useCharacterShop)
+            {
+                CharacterDatabase.Execute(
+                    "UPDATE dc_collection_shop SET stock_remaining = stock_remaining - 1 WHERE id = {}",
+                    shopId);
+            }
+            else
+            {
+                WorldDatabase.Execute(
+                    "UPDATE dc_collection_shop SET stock_remaining = stock_remaining - 1 WHERE id = {}",
+                    shopId);
+            }
         }
 
         CharacterDatabase.CommitTransaction(trans);
@@ -3433,10 +3977,52 @@ namespace DCCollection
         SendFullCollection(player);
     }
 
-    void HandleSyncCollection(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleSyncCollection(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        // For delta sync, we just send the full collection for now
-        // Future: Implement proper delta sync based on client's last known state
+        if (!player || !player->GetSession())
+            return;
+
+        // Client sends a hash of its locally cached collection. If it matches
+        // the server hash we can skip sending the full payload entirely and
+        // just reply with an empty SMSG_FULL_COLLECTION carrying the hash.
+        uint32 clientHash = 0;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+            if (json.HasKey("hash"))
+                clientHash = json["hash"].AsUInt32();
+        }
+
+        if (clientHash != 0)
+        {
+            uint32 accountId = GetAccountId(player);
+            std::vector<uint32> allItems;
+            for (int t = 1; t <= 6; ++t)
+            {
+                if (t == static_cast<int>(CollectionType::TOY))
+                    continue;
+                auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
+                allItems.insert(allItems.end(), items.begin(), items.end());
+            }
+            uint32 serverHash = GenerateCollectionHash(allItems);
+
+            if (serverHash == clientHash)
+            {
+                // Up to date -- avoid the (expensive) full payload rebuild.
+                DCAddon::JsonValue emptyCollections;
+                emptyCollections.SetObject();
+
+                DCAddon::JsonMessage ack(MODULE, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
+                ack.Set("collections", emptyCollections);
+                ack.Set("hash", serverHash);
+                ack.Set("upToDate", true);
+                ack.Set("timestamp", static_cast<uint32>(std::time(nullptr)));
+                ack.Send(player);
+                return;
+            }
+        }
+
+        // Hash mismatch (or not provided): fall back to full payload.
         SendFullCollection(player);
     }
 
@@ -3492,6 +4078,23 @@ namespace DCCollection
     void HandleGetCurrencies(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         SendCurrencies(player);
+    }
+
+    void HandleGetShopHistory(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        uint32 limit = 50;
+        uint32 offset = 0;
+
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+            if (json.HasKey("limit"))
+                limit = json["limit"].AsUInt32();
+            if (json.HasKey("offset"))
+                offset = json["offset"].AsUInt32();
+        }
+
+        SendShopHistory(player, limit, offset);
     }
 
     void HandleGetWishlist(Player* player, const DCAddon::ParsedMessage& /*msg*/)
@@ -3903,6 +4506,45 @@ namespace DCCollection
             return info;
         };
 
+        // Try to serve curated definitions from the module cache. Rebuilding
+        // curated (non-transmog) definitions is expensive (correlated SQL +
+        // spell chain scans), and the result is identical for every player.
+        uint32 cachedSyncVersion = 0;
+        bool servedFromCuratedCache = false;
+        {
+            uint8 cacheIdx = static_cast<uint8>(ct);
+            auto& cacheArr = GetCuratedDefinitionsCacheArray();
+            if (cacheIdx != 0 && cacheIdx < cacheArr.size())
+            {
+                auto& entry = cacheArr[cacheIdx];
+                std::lock_guard<std::mutex> lk(entry.mutex);
+                uint32 nowMs = getMSTime();
+                uint32 ttlMs = GetCuratedDefinitionsCacheTtlMs();
+                if (entry.syncVersion != 0 && (nowMs - entry.builtAtMs) < ttlMs)
+                {
+                    // Copy cached definitions into local defs (JsonValue is deep-copyable).
+                    defs = entry.defs;
+                    cachedSyncVersion = entry.syncVersion;
+                    servedFromCuratedCache = true;
+
+                    // Reconstruct sentIds from the cached keys so owned-fallback
+                    // and downstream logic skip duplicates correctly.
+                    for (auto const& kv : defs.AsObject())
+                    {
+                        try
+                        {
+                            uint32 id = static_cast<uint32>(std::stoul(kv.first));
+                            if (id)
+                                sentIds.insert(id);
+                        }
+                        catch (...) { /* non-numeric key -- ignore */ }
+                    }
+                    loadedAny = !defs.AsObject().empty();
+                }
+            }
+        }
+
+        if (!servedFromCuratedCache) {
         if (ct == CollectionType::MOUNT && WorldTableExists("dc_mount_definitions"))
         {
             QueryResult r = WorldDatabase.Query(
@@ -4331,6 +4973,26 @@ namespace DCCollection
                 } while (r->NextRow());
             }
         }
+        } // end if (!servedFromCuratedCache)
+
+        // Persist freshly-built curated definitions into the module cache so
+        // subsequent requests from any player can short-circuit rebuilding.
+        // Only cache when we actually loaded data -- otherwise we'd pin an
+        // empty cache entry and prevent retries when the DB becomes ready.
+        if (!servedFromCuratedCache && loadedAny && ct != CollectionType::TRANSMOG)
+        {
+            uint8 cacheIdx = static_cast<uint8>(ct);
+            auto& cacheArr = GetCuratedDefinitionsCacheArray();
+            if (cacheIdx != 0 && cacheIdx < cacheArr.size())
+            {
+                auto& entry = cacheArr[cacheIdx];
+                std::lock_guard<std::mutex> lk(entry.mutex);
+                entry.defs = defs;   // snapshot before per-player owned-fallback augments defs
+                entry.syncVersion = GetCuratedDefinitionsVersionCounter().fetch_add(1, std::memory_order_relaxed) + 1;
+                entry.builtAtMs = getMSTime();
+                cachedSyncVersion = entry.syncVersion;
+            }
+        }
 
         // Always ensure owned items have definitions, even if the DB table was incomplete.
         {
@@ -4547,7 +5209,7 @@ namespace DCCollection
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
         msg.Set("type", typeName);
         msg.Set("definitions", defs);
-        msg.Set("syncVersion", 1);
+        msg.Set("syncVersion", cachedSyncVersion ? cachedSyncVersion : 1);
         msg.Send(player);
     }
 
@@ -4775,6 +5437,46 @@ namespace DCCollection
             {
                 LOG_WARN("module.dc", "[DCCollection] Transmog definitions requested but server index is empty. "
                     "Check if item_template query succeeded at startup.");
+            }
+        }
+
+        // Non-transmog short-circuit: if the client already has the
+        // latest curated syncVersion, reply with an empty upToDate ACK.
+        // This avoids running the expensive SQL + spell-scan rebuild,
+        // and avoids re-serialising an identical payload over and over
+        // whenever a player logs in or manually refreshes.
+        if (clientSyncVersion != 0 && offset == 0 &&
+            (type == static_cast<uint8>(CollectionType::MOUNT) ||
+             type == static_cast<uint8>(CollectionType::PET) ||
+             type == static_cast<uint8>(CollectionType::HEIRLOOM) ||
+             type == static_cast<uint8>(CollectionType::TITLE)))
+        {
+            uint32 serverSyncVersion = GetCuratedDefinitionsSyncVersion(static_cast<CollectionType>(type));
+            if (serverSyncVersion != 0 && serverSyncVersion == clientSyncVersion)
+            {
+                const char* typeName = "";
+                switch (static_cast<CollectionType>(type))
+                {
+                    case CollectionType::MOUNT:    typeName = "mounts"; break;
+                    case CollectionType::PET:      typeName = "pets"; break;
+                    case CollectionType::HEIRLOOM: typeName = "heirlooms"; break;
+                    case CollectionType::TITLE:    typeName = "titles"; break;
+                    default: break;
+                }
+
+                DCAddon::JsonValue empty;
+                empty.SetObject();
+
+                DCAddon::JsonMessage ack(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
+                ack.Set("type", typeName);
+                ack.Set("definitions", empty);
+                ack.Set("syncVersion", serverSyncVersion);
+                ack.Set("upToDate", true);
+                ack.Set("offset", 0);
+                ack.Set("limit", limit ? limit : 0);
+                ack.Set("more", false);
+                ack.Send(player);
+                return;
             }
         }
 
@@ -5518,6 +6220,7 @@ void AddSC_dc_addon_collection()
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_GET_SHOP, HandleGetShop);
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_BUY_ITEM, HandleBuyItemMessage);
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_GET_CURRENCIES, HandleGetCurrencies);
+    DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_GET_SHOP_HISTORY, HandleGetShopHistory);
 
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_GET_WISHLIST, HandleGetWishlist);
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_ADD_WISHLIST, HandleAddWishlistMessage);

@@ -18,7 +18,7 @@
 #include <unordered_set>
 
 // Universal token that players can exchange for class/spec-appropriate items
-// Default: 300311
+// Resolved from ItemUpgrade/CrossSystem config helpers.
 // uint32 GetMythicVaultTokenId() - Removed, using shared function
 
 namespace

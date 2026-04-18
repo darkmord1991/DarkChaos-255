@@ -1742,6 +1742,7 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
                 { key = "currency", label = "currency" },
                 { key = "stats", label = "stats" },
                 { key = "coll:titles", label = "collection: titles" },
+                { key = "shop", label = "shop data" },
             })
         end
 
@@ -1753,6 +1754,11 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
         -- Always refresh title ownership from server even on fresh cache loads.
         if type(self.RequestCollection) == "function" then
             self:RequestCollection("title")
+        end
+
+        -- Shop inventory/prices can change independently from cache freshness.
+        if type(self.RequestShopData) == "function" then
+            self:RequestShopData()
         end
         return
     end
@@ -1773,20 +1779,30 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
     end
 
     if type(self.BeginSyncProgress) == "function" then
-        self:BeginSyncProgress("initial-full", {
+        local plan = {
             { key = "currency", label = "currency" },
             { key = "stats", label = "stats" },
             { key = "defs:mounts", label = "definitions: mounts" },
             { key = "defs:pets", label = "definitions: pets" },
             { key = "defs:heirlooms", label = "definitions: heirlooms" },
             { key = "defs:titles", label = "definitions: titles" },
-            { key = "coll:mounts", label = "collection: mounts" },
-            { key = "coll:pets", label = "collection: pets" },
-            { key = "coll:heirlooms", label = "collection: heirlooms" },
-            { key = "coll:titles", label = "collection: titles" },
-            { key = "coll:transmog", label = "collection: transmog" },
-            { key = "shop", label = "shop data" },
-        })
+        }
+        local skipColl = false
+        do
+            local nowT = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+            if self._fullCollectionReceivedAt and nowT > 0 and (nowT - self._fullCollectionReceivedAt) < 5.0 then
+                skipColl = true
+            end
+        end
+        if not skipColl then
+            table.insert(plan, { key = "coll:mounts", label = "collection: mounts" })
+            table.insert(plan, { key = "coll:pets", label = "collection: pets" })
+            table.insert(plan, { key = "coll:heirlooms", label = "collection: heirlooms" })
+            table.insert(plan, { key = "coll:titles", label = "collection: titles" })
+            table.insert(plan, { key = "coll:transmog", label = "collection: transmog" })
+        end
+        table.insert(plan, { key = "shop", label = "shop data" })
+        self:BeginSyncProgress("initial-full", plan)
     end
     
     -- Request currency first
@@ -1799,7 +1815,16 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
     self:RequestDefinitions()
     
     -- Request player collections
-    self:RequestCollections()
+    -- Skip if a SMSG_FULL_COLLECTION was received within the last ~5s
+    -- (handshake ack with needsSync=true path) -- it already carried every
+    -- per-type collection payload, so firing 5x CMSG_GET_COLLECTION here
+    -- would just duplicate the server round-trip.
+    local nowT = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+    if self._fullCollectionReceivedAt and nowT > 0 and (nowT - self._fullCollectionReceivedAt) < 5.0 then
+        self:Debug("Skipping RequestCollections() -- full collection already received")
+    else
+        self:RequestCollections()
+    end
     
     -- Request shop data
     self:RequestShopData()

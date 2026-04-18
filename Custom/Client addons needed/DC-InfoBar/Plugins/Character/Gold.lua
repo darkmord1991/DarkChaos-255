@@ -8,18 +8,53 @@
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
--- DC Currency Item IDs (from DarkChaos.Seasonal.TokenItemID/EssenceItemID)
-local SEASONAL_TOKEN_ID = 300311
-local SEASONAL_ESSENCE_ID = 300312
+local function GetRarityColor(rarity)
+    if ITEM_QUALITY_COLORS and rarity and ITEM_QUALITY_COLORS[rarity] then
+        local q = ITEM_QUALITY_COLORS[rarity]
+        return { q.r or 1, q.g or 1, q.b or 1 }
+    end
+    return { 1, 1, 1 }
+end
 
--- Additional currency item IDs (common custom currencies)
-local CURRENCY_ITEMS = {
-    { id = 300311, name = "Upgrade Tokens", icon = "Interface\\Icons\\INV_Misc_Token_ScarletCrusade", color = {1, 0.82, 0} },
-    { id = 300312, name = "Seasonal Essence", icon = "Interface\\Icons\\Spell_Arcane_Arcane04", color = {0.64, 0.21, 0.93} },
-    { id = 300313, name = "Prestige Points", icon = "Interface\\Icons\\Achievement_Level_80", color = {0.5, 1, 0.5} },
-    { id = 300314, name = "PvP Tokens", icon = "Interface\\Icons\\INV_Jewelry_FrostwolfTrinket_05", color = {1, 0.3, 0.3} },
-    { id = 300315, name = "Dungeon Tokens", icon = "Interface\\Icons\\INV_Misc_Token_ArgentDawn", color = {0.3, 0.7, 1} },
-}
+local function GetCurrencyItems()
+    local items = {}
+    local central = rawget(_G, "DCAddonProtocol")
+
+    if not central or type(central.GetTokenItemIDs) ~= "function" then
+        return items
+    end
+
+    local ids = central:GetTokenItemIDs()
+    if type(ids) ~= "table" then
+        return items
+    end
+
+    table.sort(ids, function(a, b)
+        return (tonumber(a) or 0) < (tonumber(b) or 0)
+    end)
+
+    for _, rawId in ipairs(ids) do
+        local itemId = tonumber(rawId) or 0
+        if itemId > 0 then
+            local info = nil
+            if type(central.GetTokenInfo) == "function" then
+                info = central:GetTokenInfo(itemId)
+            end
+
+            local name = (info and info.name) or ("Currency " .. tostring(itemId))
+            local icon = (info and info.icon) or "Interface\\Icons\\INV_Misc_Coin_01"
+            local color = GetRarityColor(info and info.rarity)
+            table.insert(items, {
+                id = itemId,
+                name = name,
+                icon = icon,
+                color = color,
+            })
+        end
+    end
+
+    return items
+end
 
 local GoldPlugin = {
     id = "DCInfoBar_Gold",
@@ -44,6 +79,42 @@ local GoldPlugin = {
 
 -- Helper: Count items in bags, bank, and reagent bank
 local function GetItemCount(itemId)
+    local apiCount = nil
+    if type(_G.GetItemCount) == "function" then
+        local ok, count = pcall(_G.GetItemCount, itemId, true)
+        if ok and type(count) == "number" then
+            apiCount = count
+        end
+    end
+
+    local centralCount = nil
+    local central = rawget(_G, "DCAddonProtocol")
+    if central and type(central.GetServerCurrencyBalance) == "function" then
+        local balance = central:GetServerCurrencyBalance()
+        if balance and type(balance.byItemId) == "table" then
+            local value = balance.byItemId[itemId]
+            if type(value) == "number" then
+                centralCount = value
+            end
+        end
+    end
+
+    if type(apiCount) == "number" and apiCount > 0 then
+        return apiCount
+    end
+
+    if type(centralCount) == "number" and centralCount > 0 then
+        return centralCount
+    end
+
+    if type(apiCount) == "number" then
+        return apiCount
+    end
+
+    if type(centralCount) == "number" then
+        return centralCount
+    end
+
     local count = 0
     -- Check player bags (0-4)
     for bag = 0, 4 do
@@ -179,7 +250,7 @@ function GoldPlugin:OnTooltip(tooltip)
     tooltip:AddLine("|cff32c4ffCurrencies|r")
     
     local foundAny = false
-    for _, currency in ipairs(CURRENCY_ITEMS) do
+    for _, currency in ipairs(GetCurrencyItems()) do
         local count = GetItemCount(currency.id)
         if count > 0 then
             foundAny = true

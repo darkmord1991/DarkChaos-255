@@ -50,7 +50,9 @@ void GroupFinderMgr::LoadConfig()
 
     // Rewards
     _rewardEnabled = sConfigMgr->GetOption<bool>("DC.GroupFinder.Reward.Enable", true);
-    _rewardItemId = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.ItemID", 49426);
+    _rewardItemId = sConfigMgr->GetOption<uint32>(
+        "DC.GroupFinder.Reward.ItemID",
+        DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
     _rewardItemCount = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.ItemCount", 2);
     _rewardCurrencyId = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.CurrencyID", 0);
     _rewardCurrencyCount = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.CurrencyCount", 0);

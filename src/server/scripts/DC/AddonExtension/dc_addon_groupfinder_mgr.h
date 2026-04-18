@@ -170,7 +170,7 @@ namespace DCAddon
 
         // Reward Config
         bool _rewardEnabled = true;
-        uint32 _rewardItemId = 49426;
+        uint32 _rewardItemId = 0;
         uint32 _rewardItemCount = 2;
         uint32 _rewardCurrencyId = 0;
         uint32 _rewardCurrencyCount = 0;

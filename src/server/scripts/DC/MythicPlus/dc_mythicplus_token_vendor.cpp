@@ -27,7 +27,7 @@
 #include "Config.h"
 
 // Token item ID (DC Item Upgrade Token)
-// Default: 300311
+// Resolved from ItemUpgrade/CrossSystem config helpers.
 // uint32 GetMythicTokenId() - Removed, using shared function
 
 constexpr uint32 ESSENCE_PER_TOKEN = 500; // 1 Token = 500 Essence

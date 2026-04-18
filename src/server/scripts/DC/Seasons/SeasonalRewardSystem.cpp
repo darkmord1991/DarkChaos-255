@@ -53,10 +53,10 @@ namespace DarkChaos
             // Try to get active season from generic seasonal system first
             if (Seasonal::GetSeasonalManager())
             {
-                auto* activeSeason = Seasonal::GetSeasonalManager()->GetActiveSeason();
-                if (activeSeason)
+                uint32 managerSeason = Seasonal::GetSeasonalManager()->GetCurrentSeasonId();
+                if (managerSeason > 0)
                 {
-                    config_.activeSeason = activeSeason->season_id;
+                    config_.activeSeason = managerSeason;
                     LOG_INFO("module.dc", ">> [SeasonalRewards] Using season {} from SeasonalManager", config_.activeSeason);
                 }
                 else

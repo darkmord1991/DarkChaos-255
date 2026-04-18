@@ -38,6 +38,177 @@ local SHOP_FRAME_WIDTH = 680
 local SHOP_FRAME_HEIGHT = 450
 local ITEM_HEIGHT = 70
 local ITEMS_PER_PAGE = 5
+local HISTORY_ROW_HEIGHT = 42
+local HISTORY_ITEMS_PER_PAGE = 8
+
+local function IsNumericIconPath(texturePath)
+    if type(texturePath) ~= "string" then
+        return false
+    end
+
+    local normalized = string.gsub(texturePath, "/", "\\")
+    local lowerPath = string.lower(normalized)
+    return string.match(lowerPath, "^interface\\icons\\%d+$") ~= nil
+end
+
+local function FormatShopHistoryDate(ts)
+    local n = tonumber(ts)
+    if not n or n <= 0 then
+        return "-"
+    end
+
+    return date("%Y-%m-%d %H:%M", n)
+end
+
+local function NormalizeShopPreviewType(item)
+    if type(item) ~= "table" then
+        return nil
+    end
+
+    local typeName = item.collectionTypeName or item.collectionType or item.typeName
+    if type(typeName) == "string" then
+        local t = string.lower(typeName)
+        if t == "mount" or t == "mounts" then return "mount" end
+        if t == "pet" or t == "pets" then return "pet" end
+        if t == "heirloom" or t == "heirlooms" then return "heirloom" end
+        if t == "transmog" or t == "appearance" or t == "appearances" then return "transmog" end
+        if t == "title" or t == "titles" then return "title" end
+        if t == "bonus" then return "bonus" end
+    end
+
+    local collectionTypeId = tonumber(item.collectionTypeId or item.type)
+    if collectionTypeId == 1 then return "mount" end
+    if collectionTypeId == 2 then return "pet" end
+    if collectionTypeId == 3 then return "bonus" end
+    if collectionTypeId == 4 then return "heirloom" end
+    if collectionTypeId == 5 then return "title" end
+    if collectionTypeId == 6 then return "transmog" end
+
+    local itemType = tonumber(item.itemType)
+    local types = DC.SHOP_ITEM_TYPES or {}
+    if itemType == tonumber(types.MOUNT or 2) then return "mount" end
+    if itemType == tonumber(types.PET or 3) then return "pet" end
+    if itemType == tonumber(types.HEIRLOOM or 5) then return "heirloom" end
+    if itemType == tonumber(types.BONUS or 1) then return "bonus" end
+
+    return nil
+end
+
+local function ResolveShopItemIcon(item, rawIcon)
+    if type(item) ~= "table" then
+        return "Interface\\Icons\\INV_Misc_QuestionMark"
+    end
+
+    local icon = DC:NormalizeTexturePath(rawIcon, nil)
+    if IsNumericIconPath(icon) then
+        icon = nil
+    end
+
+    local previewType = NormalizeShopPreviewType(item)
+    local definition = item.definition
+
+    if (not definition) and type(DC.GetDefinition) == "function" then
+        local entryId = tonumber(item.entryId or item.entry or item.spellId or item.spell)
+        if entryId then
+            if previewType == "mount" then
+                definition = DC:GetDefinition("mounts", entryId)
+            elseif previewType == "pet" then
+                definition = DC:GetDefinition("pets", entryId)
+            elseif previewType == "heirloom" then
+                definition = DC:GetDefinition("heirlooms", entryId)
+            elseif previewType == "transmog" then
+                definition = DC:GetDefinition("transmog", entryId)
+            end
+
+            if definition then
+                item.definition = definition
+            end
+        end
+    end
+
+    local spellId = tonumber(item.spellId or item.spellID or item.spell_id)
+    local itemId = tonumber(item.itemId or item.itemID or item.item_id)
+
+    if definition then
+        if not spellId then
+            spellId = tonumber(definition.spellId or definition.spellID or definition.spell_id)
+        end
+        if not itemId then
+            itemId = tonumber(definition.itemId or definition.itemID or definition.item_id)
+        end
+
+        if (not icon or icon == "") and definition.icon then
+            icon = DC:NormalizeTexturePath(definition.icon, nil)
+            if IsNumericIconPath(icon) then
+                icon = nil
+            end
+        end
+    end
+
+    if (not spellId) then
+        spellId = tonumber(item.entryId or item.entry_id or item.entry)
+    end
+    if (not itemId) then
+        itemId = tonumber(item.entryId or item.entry_id or item.entry)
+    end
+
+    if (previewType == "mount" or previewType == "pet") and (not icon or icon == "") then
+        if spellId and type(GetSpellTexture) == "function" then
+            icon = GetSpellTexture(spellId)
+        end
+    end
+
+    if (not icon or icon == "") and itemId then
+        if type(GetItemIcon) == "function" then
+            icon = GetItemIcon(itemId)
+        end
+        if (not icon or icon == "") and type(GetItemInfo) == "function" then
+            icon = select(10, GetItemInfo(itemId))
+        end
+    end
+
+    if (not icon or icon == "") and previewType == "title" then
+        icon = "Interface\\Icons\\INV_Scroll_11"
+    end
+
+    local finalIcon = DC:NormalizeTexturePath(icon, nil)
+    if IsNumericIconPath(finalIcon) then
+        finalIcon = nil
+    end
+
+    return finalIcon or "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
+local function TryDressUpItemId(itemId)
+    local resolvedId = tonumber(itemId)
+    if not resolvedId or resolvedId <= 0 then
+        return false
+    end
+
+    local link = "item:" .. tostring(resolvedId)
+
+    if DressUpModel and DressUpModel.TryOn then
+        if DressUpFrame and DressUpFrame.Show then
+            DressUpFrame:Show()
+        end
+        if DressUpModel.Undress then
+            pcall(DressUpModel.Undress, DressUpModel)
+        end
+        local ok = pcall(DressUpModel.TryOn, DressUpModel, link)
+        if ok then
+            return true
+        end
+    end
+
+    if DressUpItemLink then
+        local ok = pcall(DressUpItemLink, link)
+        if ok then
+            return true
+        end
+    end
+
+    return false
+end
 
 -- ============================================================================
 -- SHOP UI CREATION
@@ -101,10 +272,24 @@ function DC:CreateShopUI()
     emblemsValue:SetText("0")
     frame.emblemsValue = emblemsValue
     
-    -- Filter buttons
+    -- View buttons
+    local viewFrame = CreateFrame("Frame", nil, header)
+    viewFrame:SetPoint("LEFT", header, "LEFT", 5, 0)
+    viewFrame:SetSize(80, 30)
+
+    local storeBtn = CreateFrame("Button", nil, viewFrame, "UIPanelButtonTemplate")
+    storeBtn:SetSize(72, 22)
+    storeBtn:SetPoint("LEFT", viewFrame, "LEFT", 0, 0)
+    storeBtn:SetText(L["SHOP_TAB_STORE"] or "Store")
+    storeBtn:SetScript("OnClick", function()
+        DC:SetShopView("shop")
+    end)
+
+    -- Filter buttons (shop view)
     local filterFrame = CreateFrame("Frame", nil, header)
-    filterFrame:SetPoint("LEFT", header, "LEFT", 5, 0)
+    filterFrame:SetPoint("LEFT", viewFrame, "RIGHT", 8, 0)
     filterFrame:SetSize(300, 30)
+    frame.filterFrame = filterFrame
     
     local filterButtons = {
         { key = "all",    text = L["FILTER_ALL"] or "All" },
@@ -129,13 +314,38 @@ function DC:CreateShopUI()
         frame.filterButtons[filterInfo.key] = btn
         xOffset = xOffset + 70
     end
+
+    -- Keep history to the right so it doesn't look like a normal item filter.
+    local historyBtn = CreateFrame("Button", nil, header, "UIPanelButtonTemplate")
+    historyBtn:SetSize(72, 22)
+    historyBtn:SetPoint("LEFT", filterFrame, "LEFT", xOffset + 6, 0)
+    historyBtn:SetText(L["SHOP_TAB_HISTORY"] or "History")
+    historyBtn:SetNormalFontObject("GameFontHighlight")
+    historyBtn:SetHighlightFontObject("GameFontHighlight")
+    historyBtn:SetDisabledFontObject("GameFontDisable")
+    if historyBtn.GetFontString then
+        local fs = historyBtn:GetFontString()
+        if fs then
+            fs:SetTextColor(0.95, 0.72, 0.25)
+        end
+    end
+    historyBtn:SetScript("OnClick", function()
+        DC:SetShopView("history")
+    end)
+
+    frame.viewButtons = {
+        shop = storeBtn,
+        history = historyBtn,
+    }
+    frame.activeView = "shop"
     
     frame.currentFilter = "all"
     
-    -- Item list scroll frame
+    -- Item list scroll frame (store view)
     local listFrame = CreateFrame("Frame", nil, frame)
     listFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -5)
     listFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -5, 35)
+    frame.listFrame = listFrame
     
     local scrollFrame = CreateFrame("ScrollFrame", "DCShopScrollFrame", listFrame, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 5, -5)
@@ -153,6 +363,41 @@ function DC:CreateShopUI()
     for i = 1, 10 do
         frame.itemFrames[i] = self:CreateShopItemFrame(scrollChild, i)
     end
+
+    -- History list scroll frame (history view)
+    local historyListFrame = CreateFrame("Frame", nil, frame)
+    historyListFrame:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -5)
+    historyListFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -5, 35)
+    historyListFrame:Hide()
+    frame.historyListFrame = historyListFrame
+
+    local historyScrollFrame = CreateFrame(
+        "ScrollFrame",
+        "DCShopHistoryScrollFrame",
+        historyListFrame,
+        "UIPanelScrollFrameTemplate"
+    )
+    historyScrollFrame:SetPoint("TOPLEFT", historyListFrame, "TOPLEFT", 5, -5)
+    historyScrollFrame:SetPoint("BOTTOMRIGHT", historyListFrame, "BOTTOMRIGHT", -25, 5)
+
+    local historyScrollChild = CreateFrame("Frame", nil, historyScrollFrame)
+    historyScrollChild:SetSize(historyScrollFrame:GetWidth(), 1)
+    historyScrollFrame:SetScrollChild(historyScrollChild)
+
+    frame.historyScrollFrame = historyScrollFrame
+    frame.historyScrollChild = historyScrollChild
+    frame.historyRows = {}
+
+    for i = 1, HISTORY_ITEMS_PER_PAGE do
+        frame.historyRows[i] = self:CreateShopHistoryRow(historyScrollChild, i)
+    end
+
+    local historyEmptyText = historyListFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    historyEmptyText:SetPoint("CENTER", historyListFrame, "CENTER", 0, 0)
+    historyEmptyText:SetText(L["SHOP_HISTORY_EMPTY"] or "No purchases yet.")
+    historyEmptyText:SetTextColor(0.75, 0.75, 0.75)
+    historyEmptyText:Hide()
+    frame.historyEmptyText = historyEmptyText
     
     -- Page navigation
     local navFrame = CreateFrame("Frame", nil, frame)
@@ -189,17 +434,30 @@ function DC:CreateShopUI()
     refreshBtn:SetPoint("RIGHT", nextBtn, "LEFT", -10, 0)
     refreshBtn:SetText(L["REFRESH"] or "Refresh")
     refreshBtn:SetScript("OnClick", function()
-        DC.ShopModule:RefreshShopItems()
+        if frame.activeView == "history" then
+            if DC.ShopModule and type(DC.ShopModule.RefreshPurchaseHistory) == "function" then
+                DC.ShopModule:RefreshPurchaseHistory()
+            elseif type(DC.RequestShopHistory) == "function" then
+                DC:RequestShopHistory()
+            end
+        else
+            DC.ShopModule:RefreshShopItems()
+        end
+
         DC.ShopModule:RefreshCurrency()
     end)
+    frame.refreshBtn = refreshBtn
     
     self.ShopUI = frame
     frame.currentPage = 1
+    frame.historyPage = 1
 
     -- Compatibility: Protocol may call ShopUI:UpdateCurrencyDisplay()
     function frame:UpdateCurrencyDisplay()
         DC:UpdateShopCurrencyDisplay()
     end
+
+    self:UpdateShopViewState()
     
     return frame
 end
@@ -260,7 +518,7 @@ function DC:CreateShopItemFrame(parent, index)
     
     frame.costFrame = CreateFrame("Frame", nil, frame)
     frame.costFrame:SetSize(120, 40)
-    frame.costFrame:SetPoint("RIGHT", frame, "RIGHT", -90, 0)
+    frame.costFrame:SetPoint("RIGHT", frame, "RIGHT", -170, 0)
     
     frame.costTokensIcon = frame.costFrame:CreateTexture(nil, "ARTWORK")
     frame.costTokensIcon:SetSize(16, 16)
@@ -290,6 +548,20 @@ function DC:CreateShopItemFrame(parent, index)
             DC.ShopModule:Purchase(frame.itemData.id)
         end
     end)
+
+    -- Preview button
+    frame.previewBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.previewBtn:SetSize(70, 24)
+    frame.previewBtn:SetPoint("RIGHT", frame.buyBtn, "LEFT", -6, 0)
+    frame.previewBtn:SetText(L["PREVIEW"] or "Preview")
+    frame.previewBtn:SetScript("OnClick", function()
+        if frame.itemData then
+            DC:PreviewShopItem(frame.itemData)
+        end
+    end)
+
+    frame.costFrame:ClearAllPoints()
+    frame.costFrame:SetPoint("RIGHT", frame.previewBtn, "LEFT", -10, 0)
     
     -- Purchased indicator
     frame.purchasedText = frame:CreateFontString(nil, "OVERLAY", "GameFontGreen")
@@ -301,6 +573,47 @@ function DC:CreateShopItemFrame(parent, index)
     return frame
 end
 
+function DC:CreateShopHistoryRow(parent, index)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetSize(parent:GetWidth() - 10, HISTORY_ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, -((index - 1) * (HISTORY_ROW_HEIGHT + 4)))
+
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    if (index % 2) == 0 then
+        row.bg:SetTexture(0.12, 0.12, 0.12, 0.70)
+    else
+        row.bg:SetTexture(0.09, 0.09, 0.09, 0.70)
+    end
+
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(24, 24)
+    row.icon:SetPoint("LEFT", row, "LEFT", 8, 0)
+    row.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+
+    row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, -5)
+    row.name:SetWidth(330)
+    row.name:SetJustifyH("LEFT")
+    row.name:SetText("-")
+
+    row.meta = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.meta:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -4)
+    row.meta:SetWidth(360)
+    row.meta:SetJustifyH("LEFT")
+    row.meta:SetTextColor(0.75, 0.75, 0.75)
+    row.meta:SetText("-")
+
+    row.date = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.date:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    row.date:SetJustifyH("RIGHT")
+    row.date:SetTextColor(0.85, 0.85, 0.85)
+    row.date:SetText("-")
+
+    row:Hide()
+    return row
+end
+
 -- ============================================================================
 -- UI UPDATES
 -- ============================================================================
@@ -309,9 +622,82 @@ function DC:UpdateShopUI()
     if not self.ShopUI or not self.ShopUI:IsShown() then
         return
     end
-    
+
     self:UpdateShopCurrencyDisplay()
-    self:PopulateShopItems()
+    self:UpdateShopViewState()
+
+    if self.ShopUI.activeView == "history" then
+        self:PopulateShopHistory()
+    else
+        self:PopulateShopItems()
+    end
+end
+
+function DC:UpdateShopViewState()
+    if not self.ShopUI then
+        return
+    end
+
+    local frame = self.ShopUI
+    local showHistory = frame.activeView == "history"
+
+    if frame.listFrame then
+        if showHistory then
+            frame.listFrame:Hide()
+        else
+            frame.listFrame:Show()
+        end
+    end
+
+    if frame.historyListFrame then
+        if showHistory then
+            frame.historyListFrame:Show()
+        else
+            frame.historyListFrame:Hide()
+        end
+    end
+
+    if frame.filterFrame then
+        if showHistory then
+            frame.filterFrame:Hide()
+        else
+            frame.filterFrame:Show()
+        end
+    end
+
+    if frame.viewButtons then
+        for key, btn in pairs(frame.viewButtons) do
+            if key == frame.activeView then
+                btn:SetButtonState("PUSHED", true)
+            else
+                btn:SetButtonState("NORMAL", false)
+            end
+        end
+
+        local shopBtn = frame.viewButtons.shop
+        if shopBtn and shopBtn.GetFontString then
+            local shopFs = shopBtn:GetFontString()
+            if shopFs then
+                if frame.activeView == "shop" then
+                    shopFs:SetTextColor(1.0, 1.0, 1.0)
+                else
+                    shopFs:SetTextColor(0.82, 0.82, 0.82)
+                end
+            end
+        end
+
+        local historyBtn = frame.viewButtons.history
+        if historyBtn and historyBtn.GetFontString then
+            local historyFs = historyBtn:GetFontString()
+            if historyFs then
+                if frame.activeView == "history" then
+                    historyFs:SetTextColor(1.0, 0.90, 0.35)
+                else
+                    historyFs:SetTextColor(0.95, 0.72, 0.25)
+                end
+            end
+        end
+    end
 end
 
 function DC:UpdateShopCurrencyDisplay()
@@ -325,21 +711,166 @@ function DC:UpdateShopCurrencyDisplay()
         self.ShopUI.emblemsValue:SetText(essence)
 end
 
+function DC:CanPreviewShopItem(item)
+    if type(item) ~= "table" then
+        return false
+    end
+
+    local previewType = NormalizeShopPreviewType(item)
+    local definition = item.definition
+
+    if (not definition) and type(self.GetDefinition) == "function" then
+        local entryId = tonumber(item.entryId or item.entry or item.spellId or item.spell)
+        if entryId then
+            if previewType == "mount" then
+                definition = self:GetDefinition("mounts", entryId)
+            elseif previewType == "pet" then
+                definition = self:GetDefinition("pets", entryId)
+            elseif previewType == "heirloom" then
+                definition = self:GetDefinition("heirlooms", entryId)
+            elseif previewType == "transmog" then
+                definition = self:GetDefinition("transmog", entryId)
+            end
+        end
+    end
+
+    if previewType == "mount" then
+        local spellId = tonumber(item.spellId or item.entryId or item.entry or (definition and (definition.spellId or definition.spell_id)))
+        local displayId = definition and (definition.displayId or definition.display_id or definition.creatureDisplayId)
+        local creatureId = definition and (definition.creatureId or definition.creature_id)
+        return (spellId and spellId > 0) or (tonumber(displayId) or 0) > 0 or (tonumber(creatureId) or 0) > 0
+    elseif previewType == "pet" then
+        local petId = tonumber(item.entryId or item.spellId or item.itemId or (definition and (definition.spellId or definition.spell_id)))
+        local displayId = definition and (definition.displayId or definition.display_id or definition.creatureDisplayId)
+        return (petId and petId > 0) or (tonumber(displayId) or 0) > 0
+    elseif previewType == "transmog" then
+        local appearanceId = tonumber(item.appearanceId or item.appearance_id)
+        local itemId = tonumber(item.itemId or item.itemID or item.item_id)
+        return (appearanceId and appearanceId > 0) or (itemId and itemId > 0)
+    elseif previewType == "heirloom" then
+        local itemId = tonumber(item.itemId or item.itemID or item.item_id or item.entryId)
+        return (itemId and itemId > 0) and true or false
+    end
+
+    local fallbackItemId = tonumber(item.itemId or item.itemID or item.item_id)
+    return (fallbackItemId and fallbackItemId > 0) and true or false
+end
+
+function DC:PreviewShopItem(item)
+    if type(item) ~= "table" then
+        return
+    end
+
+    local previewType = NormalizeShopPreviewType(item)
+    local definition = item.definition
+
+    if (not definition) and type(self.GetDefinition) == "function" then
+        local entryId = tonumber(item.entryId or item.entry or item.spellId or item.spell)
+        if entryId then
+            if previewType == "mount" then
+                definition = self:GetDefinition("mounts", entryId)
+            elseif previewType == "pet" then
+                definition = self:GetDefinition("pets", entryId)
+            elseif previewType == "heirloom" then
+                definition = self:GetDefinition("heirlooms", entryId)
+            elseif previewType == "transmog" then
+                definition = self:GetDefinition("transmog", entryId)
+            end
+        end
+        if definition then
+            item.definition = definition
+        end
+    end
+
+    if previewType == "mount" then
+        local spellId = tonumber(item.spellId or item.entryId or item.entry or (definition and (definition.spellId or definition.spell_id)))
+        if self.MountJournal and type(self.MountJournal.Show) == "function" and type(self.MountJournal.SelectMount) == "function" and spellId and spellId > 0 then
+            local mountData = {
+                id = spellId,
+                spellId = spellId,
+                entryId = spellId,
+                name = item.name,
+                icon = item.icon,
+                rarity = item.rarity,
+                source = item.source or "Shop",
+                collected = item.collected and true or false,
+                definition = definition,
+            }
+            self.MountJournal:Show()
+            self.MountJournal:SelectMount(mountData)
+            return
+        end
+
+        if TryDressUpItemId(item.itemId or (definition and definition.itemId)) then
+            return
+        end
+    elseif previewType == "pet" then
+        local petId = tonumber(item.entryId or item.spellId or item.itemId or (definition and (definition.spellId or definition.spell_id)))
+        if self.PetJournal and type(self.PetJournal.Show) == "function" and type(self.PetJournal.SelectPet) == "function" and petId and petId > 0 then
+            local petData = {
+                id = petId,
+                entryId = petId,
+                spellId = tonumber(item.spellId) or (definition and tonumber(definition.spellId or definition.spell_id)),
+                name = item.name,
+                icon = item.icon,
+                rarity = item.rarity,
+                source = item.source or "Shop",
+                collected = item.collected and true or false,
+                definition = definition,
+            }
+            self.PetJournal:Show()
+            self.PetJournal:SelectPet(petData)
+            return
+        end
+
+        if TryDressUpItemId(item.itemId or (definition and definition.itemId)) then
+            return
+        end
+    elseif previewType == "transmog" then
+        if type(self.PreviewShopTransmogItem) == "function" then
+            self:PreviewShopTransmogItem(item)
+            return
+        end
+
+        if TryDressUpItemId(item.itemId or (definition and definition.itemId)) then
+            return
+        end
+    elseif previewType == "heirloom" then
+        if TryDressUpItemId(item.itemId or (definition and definition.itemId) or item.entryId) then
+            return
+        end
+    else
+        if TryDressUpItemId(item.itemId) then
+            return
+        end
+    end
+
+    self:Print(L["PREVIEW_NOT_AVAILABLE"] or "Preview is not available for this item.")
+end
+
 -- Compatibility: Protocol.lua may call ShopUI:UpdateCurrencyDisplay()
 -- when currency updates arrive.
 function DC:PopulateShopItems()
     if not self.ShopUI then return end
     
     local frame = self.ShopUI
+    if frame.activeView == "history" then
+        return
+    end
+
+    if frame.historyEmptyText then
+        frame.historyEmptyText:Hide()
+    end
+
     local filter = frame.currentFilter
     
     -- Get filtered items
     local filters = {}
     if filter ~= "all" then
         local typeMap = {
-            bonus = 1,
-            mount = 2,
-            pet = 3,
+            bonus = (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.BONUS) or 1,
+            mount = (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.MOUNT) or 2,
+            pet = (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.PET) or 3,
         }
         filters.itemType = typeMap[filter]
     end
@@ -389,37 +920,105 @@ function DC:PopulateShopItems()
     end
 end
 
-function DC:UpdateShopItemFrame(frame, item)
-    frame.itemData = item
-    
-    -- Icon
-    local icon = DC:NormalizeTexturePath(item.icon, nil)
-    if not icon or icon == "" then
-        local anyId = item.itemId or item.itemID or item.item_id or item.entryId or item.entry_id or item.entry or item.spellId or item.spellID
-        if type(anyId) == "string" then anyId = tonumber(anyId) end
+function DC:PopulateShopHistory()
+    if not self.ShopUI then return end
 
-        -- Mounts and pets often use a spell ID
-        if (item.itemType == (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.MOUNT) or item.itemType == 2
-            or item.itemType == (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.PET) or item.itemType == 3)
-            and anyId and type(GetSpellTexture) == "function" then
-            icon = GetSpellTexture(anyId)
-            if (not item.name or item.name == "" or item.name == "Unknown") and type(GetSpellInfo) == "function" then
-                local n = GetSpellInfo(anyId)
-                if n then item.name = n end
-            end
-        end
+    local frame = self.ShopUI
+    if frame.activeView ~= "history" then
+        return
+    end
 
-        -- Items/pets/heirlooms/transmog often use an item template ID
-        if (not icon) and anyId then
-            if type(GetItemIcon) == "function" then
-                icon = GetItemIcon(anyId)
-            end
-            if (not icon) and type(GetItemInfo) == "function" then
-                icon = select(10, GetItemInfo(anyId))
-            end
+    local history = (self.ShopModule and self.ShopModule.GetPurchaseHistory and self.ShopModule:GetPurchaseHistory()) or {}
+    if type(history) ~= "table" then
+        history = {}
+    end
+
+    local totalPages = math.max(1, math.ceil(#history / HISTORY_ITEMS_PER_PAGE))
+    frame.historyPage = math.min(frame.historyPage or 1, totalPages)
+
+    local startIdx = (frame.historyPage - 1) * HISTORY_ITEMS_PER_PAGE + 1
+    local endIdx = math.min(startIdx + HISTORY_ITEMS_PER_PAGE - 1, #history)
+
+    for _, row in ipairs(frame.historyRows or {}) do
+        row:Hide()
+    end
+
+    local rowIndex = 1
+    for i = startIdx, endIdx do
+        local entry = history[i]
+        local row = frame.historyRows and frame.historyRows[rowIndex]
+        if row and entry then
+            self:UpdateShopHistoryRow(row, entry)
+            row:Show()
+            rowIndex = rowIndex + 1
         end
     end
-    frame.icon:SetTexture(DC:NormalizeTexturePath(icon, "Interface\\Icons\\INV_Misc_QuestionMark"))
+
+    if frame.historyScrollChild then
+        local visibleRows = endIdx >= startIdx and (endIdx - startIdx + 1) or 0
+        frame.historyScrollChild:SetHeight(math.max(1, visibleRows * (HISTORY_ROW_HEIGHT + 4)))
+    end
+
+    local totalKnown = tonumber(self.purchaseHistoryMeta and self.purchaseHistoryMeta.total) or #history
+    if #history == 0 then
+        frame.pageText:SetText(L["SHOP_HISTORY_EMPTY"] or "No purchases yet.")
+        if frame.historyEmptyText then
+            frame.historyEmptyText:Show()
+        end
+    else
+        frame.pageText:SetText(string.format("Page %d of %d (%d total)", frame.historyPage, totalPages, totalKnown))
+        if frame.historyEmptyText then
+            frame.historyEmptyText:Hide()
+        end
+    end
+
+    SetWidgetEnabled(frame.prevBtn, frame.historyPage > 1)
+    SetWidgetEnabled(frame.nextBtn, frame.historyPage < totalPages)
+end
+
+function DC:UpdateShopHistoryRow(row, entry)
+    if not row or type(entry) ~= "table" then
+        return
+    end
+
+    row.icon:SetTexture(ResolveShopItemIcon(entry, entry.icon) or "Interface\\Icons\\INV_Misc_Note_01")
+
+    local rarityColors = DC.RarityColors or {}
+    local rarity = tonumber(entry.rarity) or 2
+    local rarityData = rarityColors[rarity] or { r = 1, g = 1, b = 1 }
+    row.name:SetText(entry.name or ("Shop Item #" .. tostring(entry.shopId or "?")))
+    row.name:SetTextColor(rarityData.r or 1, rarityData.g or 1, rarityData.b or 1)
+
+    local typeText = (self.ShopModule and self.ShopModule.GetItemTypeString and self.ShopModule:GetItemTypeString(entry)) or "Unknown"
+    local costParts = {}
+    local costTokens = tonumber(entry.costTokens or entry.priceTokens) or 0
+    local costEmblems = tonumber(entry.costEmblems or entry.priceEmblems) or 0
+    if costTokens > 0 then
+        table.insert(costParts, tostring(costTokens) .. " " .. (L["TOKENS"] or "Tokens"))
+    end
+    if costEmblems > 0 then
+        table.insert(costParts, tostring(costEmblems) .. " " .. (L["EMBLEMS"] or "Emblems"))
+    end
+    if #costParts == 0 then
+        table.insert(costParts, L["FREE"] or "Free")
+    end
+
+    local who = entry.characterName
+    if type(who) ~= "string" then
+        who = ""
+    end
+    if who ~= "" then
+        who = " - " .. who
+    end
+
+    row.meta:SetText("[" .. typeText .. "] " .. table.concat(costParts, " + ") .. who)
+    row.date:SetText(FormatShopHistoryDate(entry.purchaseDate or entry.purchaseTs))
+end
+
+function DC:UpdateShopItemFrame(frame, item)
+    frame.itemData = item
+
+    frame.icon:SetTexture(ResolveShopItemIcon(item, item.icon))
     
     -- Name with rarity color
     local rarityColors = DC.RarityColors or {}
@@ -432,7 +1031,7 @@ function DC:UpdateShopItemFrame(frame, item)
     frame.desc:SetText(item.description or "")
     
     -- Type badge
-    local typeStr = self.ShopModule:GetItemTypeString(item.itemType)
+    local typeStr = self.ShopModule:GetItemTypeString(item)
     frame.typeBadge:SetText("[" .. typeStr .. "]")
     
     -- Cost
@@ -483,32 +1082,84 @@ function DC:UpdateShopItemFrame(frame, item)
             frame.costEmblemsText:SetTextColor(1, 0.3, 0.3)
         end
     end
+
+    if frame.previewBtn then
+        local canPreview = self:CanPreviewShopItem(item)
+        if canPreview then
+            frame.previewBtn:Show()
+            if frame.previewBtn.SetEnabled then
+                frame.previewBtn:SetEnabled(true)
+            else
+                frame.previewBtn:Enable()
+            end
+        else
+            frame.previewBtn:Hide()
+        end
+    end
 end
 
 -- ============================================================================
 -- SHOP NAVIGATION
 -- ============================================================================
 
+function DC:SetShopView(view)
+    if not self.ShopUI then return end
+
+    local frame = self.ShopUI
+    local normalized = (view == "history") and "history" or "shop"
+    frame.activeView = normalized
+
+    if normalized == "history" then
+        frame.historyPage = frame.historyPage or 1
+
+        local history = (self.ShopModule and self.ShopModule.GetPurchaseHistory and self.ShopModule:GetPurchaseHistory()) or {}
+        if (#history == 0) and self.ShopModule and type(self.ShopModule.RefreshPurchaseHistory) == "function" then
+            self.ShopModule:RefreshPurchaseHistory()
+        elseif (#history == 0) and type(self.RequestShopHistory) == "function" then
+            self:RequestShopHistory()
+        end
+    else
+        frame.currentPage = frame.currentPage or 1
+    end
+
+    if frame:IsShown() then
+        self:UpdateShopUI()
+    else
+        self:UpdateShopViewState()
+    end
+end
+
 function DC:SetShopFilter(filter)
     if not self.ShopUI then return end
-    
+
+    self.ShopUI.activeView = "shop"
     self.ShopUI.currentFilter = filter
     self.ShopUI.currentPage = 1
-    self:PopulateShopItems()
+    self:UpdateShopUI()
 end
 
 function DC:ShopNextPage()
     if not self.ShopUI then return end
-    
-    self.ShopUI.currentPage = self.ShopUI.currentPage + 1
-    self:PopulateShopItems()
+
+    if self.ShopUI.activeView == "history" then
+        self.ShopUI.historyPage = (self.ShopUI.historyPage or 1) + 1
+        self:PopulateShopHistory()
+    else
+        self.ShopUI.currentPage = (self.ShopUI.currentPage or 1) + 1
+        self:PopulateShopItems()
+    end
 end
 
 function DC:ShopPrevPage()
     if not self.ShopUI then return end
-    
-    self.ShopUI.currentPage = math.max(1, self.ShopUI.currentPage - 1)
-    self:PopulateShopItems()
+
+    if self.ShopUI.activeView == "history" then
+        self.ShopUI.historyPage = math.max(1, (self.ShopUI.historyPage or 1) - 1)
+        self:PopulateShopHistory()
+    else
+        self.ShopUI.currentPage = math.max(1, (self.ShopUI.currentPage or 1) - 1)
+        self:PopulateShopItems()
+    end
 end
 
 -- ============================================================================
@@ -553,6 +1204,19 @@ function DC:ShowShopContent()
 
     -- Ensure data is requested when arriving via the MainFrame tab switch.
     if self.ShopModule then
+        local activeView = self.ShopUI and self.ShopUI.activeView or "shop"
+
+        if activeView == "history" then
+            local history = self.ShopModule:GetPurchaseHistory()
+            if (not history) or (#history == 0) then
+                if type(self.ShopModule.RefreshPurchaseHistory) == "function" then
+                    self.ShopModule:RefreshPurchaseHistory()
+                elseif type(self.RequestShopHistory) == "function" then
+                    self:RequestShopHistory()
+                end
+            end
+        end
+
         -- Shop items
         if (not self.shopItems) or (#self.shopItems == 0) then
             if type(self.ShopModule.RefreshShopItems) == "function" then
