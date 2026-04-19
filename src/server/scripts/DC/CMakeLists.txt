@@ -41,7 +41,6 @@ set(SCRIPTS_DC_HyjalFrontier
     HyjalFrontier/hyjal_frontier_zone.cpp
     HyjalFrontier/hyjal_frontier_flightmaster.cpp
     HyjalFrontier/hyjal_frontier_guards.cpp
-    HyjalFrontier/hyjal_frontier_innkeeper.cpp
     HyjalFrontier/hyjal_frontier_currency.cpp
 )
 

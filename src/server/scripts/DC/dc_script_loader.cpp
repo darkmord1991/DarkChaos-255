@@ -43,7 +43,6 @@ void AddSC_hyjal_frontier_zone();             // HyjalFrontier/hyjal_frontier_zo
 void AddSC_npc_hyjal_flightmaster();          // HyjalFrontier/hyjal_frontier_flightmaster.cpp
 void AddSC_npc_hyjal_guard_alliance();        // HyjalFrontier/hyjal_frontier_guards.cpp
 void AddSC_npc_hyjal_guard_horde();           // HyjalFrontier/hyjal_frontier_guards.cpp
-void AddSC_npc_hyjal_innkeeper();             // HyjalFrontier/hyjal_frontier_innkeeper.cpp
 void AddSC_npc_hyjal_emberwood_vendor();      // HyjalFrontier/hyjal_frontier_currency.cpp
 
 // --- Giant Isles zone ---
@@ -257,7 +256,6 @@ void AddDCScripts()
     DC_LOAD(AddSC_npc_hyjal_flightmaster);
     DC_LOAD(AddSC_npc_hyjal_guard_alliance);
     DC_LOAD(AddSC_npc_hyjal_guard_horde);
-    DC_LOAD(AddSC_npc_hyjal_innkeeper);
     DC_LOAD(AddSC_npc_hyjal_emberwood_vendor);
 
     LogSection("Giant Isles Zone");
