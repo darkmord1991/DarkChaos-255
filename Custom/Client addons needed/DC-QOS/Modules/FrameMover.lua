@@ -94,6 +94,7 @@ local pendingPositions = {}
 local isUnlocked = false
 local editorOverlay
 local gridOverlay
+local frameMoverContextMenu
 
 -- ============================================================
 -- Utility Functions
@@ -340,9 +341,15 @@ local function CreateAnchorFrame(frameInfo)
             self.isDragging = true
             self:StartMoving()
         elseif button == "RightButton" then
+            if not frameMoverContextMenu then
+                frameMoverContextMenu = CreateFrame("Frame", "DCQoS_FrameMoverContextMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+
+            local menuTitle = frameInfo.displayName or frameInfo.name or "Frame"
+
             -- Right-click for context menu (reset)
             local menu = {
-                { text = frameInfo.displayName, isTitle = true },
+                { text = menuTitle, isTitle = true },
                 { text = "Reset Position", func = function()
                     local origPos = originalPositions[frameInfo.name]
                     if origPos then
@@ -369,7 +376,7 @@ local function CreateAnchorFrame(frameInfo)
                     UpdateAnchor()
                 end },
             }
-            EasyMenu(menu, CreateFrame("Frame", nil, UIParent, "UIDropDownMenuTemplate"), "cursor", 0, 0, "MENU")
+            EasyMenu(menu, frameMoverContextMenu, "cursor", 0, 0, "MENU")
         end
     end)
     

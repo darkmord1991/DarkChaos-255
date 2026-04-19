@@ -275,3 +275,8 @@ SELECT 'Example creature rewards: 12' AS creature_reward_count;
 SELECT 'Example chest rewards: 7' AS chest_reward_count;
 SELECT 'Example multipliers: 4' AS multiplier_count;
 SELECT '========================================' AS divider;
+
+-- Keep seasonal currencies on dedicated display row used by custom DBC icon mapping.
+UPDATE item_template
+SET displayid = 70000
+WHERE entry IN (47241, 49426, 300005, 300006, 300311, 300312);

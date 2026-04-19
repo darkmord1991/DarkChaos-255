@@ -36,6 +36,15 @@ set(SCRIPTS_DC_Jadeforest
     Jadeforest/jadeforest_training_grounds.cpp
 )
 
+# Hyjal Frontier Zone scripts (level 80-130 open-world leveling on map 1410)
+set(SCRIPTS_DC_HyjalFrontier
+    HyjalFrontier/hyjal_frontier_zone.cpp
+    HyjalFrontier/hyjal_frontier_flightmaster.cpp
+    HyjalFrontier/hyjal_frontier_guards.cpp
+    HyjalFrontier/hyjal_frontier_innkeeper.cpp
+    HyjalFrontier/hyjal_frontier_currency.cpp
+)
+
 # Giant Isles Zone scripts (Ported from MoP Isle of Giants)
 set(SCRIPTS_DC_GiantIsles
     GiantIsles/dc_giant_isles_zone.cpp
@@ -324,6 +333,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_GreatVault}
     ${SCRIPTS_DC_Jadeforest}
+    ${SCRIPTS_DC_HyjalFrontier}
     ${SCRIPTS_DC_GiantIsles}
     ${SCRIPTS_DC_AddonExtension}
     ${SCRIPTS_DC_CollectionSystem}

@@ -38,6 +38,14 @@ void AddSC_jadeforest_flightmaster();         // Jadeforest/jadeforest_flightmas
 void AddSC_jadeforest_guards();               // Jadeforest/jadeforest_guards.cpp
 void AddSC_jadeforest_training_grounds();     // Jadeforest/jadeforest_training_grounds.cpp
 
+// --- Hyjal Frontier zone (map 1410, levels 80-130) ---
+void AddSC_hyjal_frontier_zone();             // HyjalFrontier/hyjal_frontier_zone.cpp
+void AddSC_npc_hyjal_flightmaster();          // HyjalFrontier/hyjal_frontier_flightmaster.cpp
+void AddSC_npc_hyjal_guard_alliance();        // HyjalFrontier/hyjal_frontier_guards.cpp
+void AddSC_npc_hyjal_guard_horde();           // HyjalFrontier/hyjal_frontier_guards.cpp
+void AddSC_npc_hyjal_innkeeper();             // HyjalFrontier/hyjal_frontier_innkeeper.cpp
+void AddSC_npc_hyjal_emberwood_vendor();      // HyjalFrontier/hyjal_frontier_currency.cpp
+
 // --- Giant Isles zone ---
 void AddSC_giant_isles_zone();                // GiantIsles/dc_giant_isles_zone.cpp
 void AddSC_giant_isles_cannon_quest();        // GiantIsles/dc_giant_isles_cannon_quest.cpp
@@ -243,6 +251,14 @@ void AddDCScripts()
     DC_LOAD(AddSC_jadeforest_flightmaster);
     DC_LOAD(AddSC_jadeforest_guards);
     DC_LOAD(AddSC_jadeforest_training_grounds);
+
+    LogSection("Hyjal Frontier Zone Scripts");
+    DC_LOAD(AddSC_hyjal_frontier_zone);
+    DC_LOAD(AddSC_npc_hyjal_flightmaster);
+    DC_LOAD(AddSC_npc_hyjal_guard_alliance);
+    DC_LOAD(AddSC_npc_hyjal_guard_horde);
+    DC_LOAD(AddSC_npc_hyjal_innkeeper);
+    DC_LOAD(AddSC_npc_hyjal_emberwood_vendor);
 
     LogSection("Giant Isles Zone");
     DC_LOAD(AddSC_giant_isles_zone);

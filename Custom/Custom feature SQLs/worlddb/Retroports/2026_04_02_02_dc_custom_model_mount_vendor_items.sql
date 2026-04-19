@@ -128,9 +128,9 @@ WHERE `spell_id` IN (300700,300701,300702,300703,300704,300705,300706,300707,300
 INSERT INTO `dc_mount_definitions`
 (`spell_id`,`name`,`mount_type`,`source`,`faction`,`rarity`,`speed`,`display_id`)
 VALUES
-(300700,'Dreamowl Firemount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500001),
+(300700,'Dreamowl Firemount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500001),
 (300701,'Felblaze Infernal',0,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,100,500004),
-(300702,'Netherwing Mount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500005),
+(300702,'Netherwing Mount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500005),
 (300703,'Coldflame Infernal',0,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,100,500009),
 (300704,'Flarecore Infernal',0,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,100,500010),
 (300705,'Frostshard Infernal',0,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,100,500011),

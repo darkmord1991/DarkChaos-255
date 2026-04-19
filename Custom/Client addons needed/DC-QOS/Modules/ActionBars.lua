@@ -119,7 +119,9 @@ local function ReanchorAuxiliaryBars(anchorFrame, gap, preferBottomLeftFormAncho
     local bars = {
         _G.PossessBarFrame,
         _G.PetActionBarFrame,
-        _G.BonusActionBarFrame,
+        -- Keep the bonus/stance bar on Blizzard's default overlay anchor.
+        -- Reanchoring it into the auxiliary stack causes a duplicate-looking
+        -- action bar for classes like warriors.
     }
 
     for _, bar in ipairs(bars) do

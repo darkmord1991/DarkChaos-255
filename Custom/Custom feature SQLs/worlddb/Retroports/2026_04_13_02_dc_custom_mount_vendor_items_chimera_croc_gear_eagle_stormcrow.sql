@@ -48,14 +48,14 @@ WHERE `SourceTypeOrReferenceId` = 23
 INSERT INTO `dc_mount_definitions`
 (`spell_id`,`name`,`mount_type`,`source`,`faction`,`rarity`,`speed`,`display_id`)
 VALUES
-(300727,'Chimera Firemount Yellow',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500181),
-(300728,'Chimera Firemount Blue',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500182),
-(300729,'Chimera Firemount Green',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500183),
-(300730,'Chimera Firemount Red',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500184),
+(300727,'Chimera Firemount Yellow',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500181),
+(300728,'Chimera Firemount Blue',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500182),
+(300729,'Chimera Firemount Green',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500183),
+(300730,'Chimera Firemount Red',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500184),
 (300731,'Crocsun Mount',0,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,100,500185),
 (300732,'Geargrinder Mount',0,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,100,500186),
-(300733,'Giant Eagle Hexmount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500187),
-(300734,'Fel Stormcrow Mount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,280,500188)
+(300733,'Giant Eagle Hexmount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500187),
+(300734,'Fel Stormcrow Mount',1,'{"type":"vendor","npc":"Skeletal Stablemaster","npcEntry":3461020}',0,4,310,500188)
 ON DUPLICATE KEY UPDATE
 `name` = VALUES(`name`),
 `mount_type` = VALUES(`mount_type`),
