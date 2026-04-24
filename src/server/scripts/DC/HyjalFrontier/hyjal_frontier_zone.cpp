@@ -59,6 +59,7 @@ public:
 
         switch (newZone)
         {
+            case Hyjal::ZONE_HYJAL_FRONTIER:
             case Hyjal::ZONE_FOOTHILLS:
             case Hyjal::ZONE_SCORCHED:
             case Hyjal::ZONE_SUMMIT:
