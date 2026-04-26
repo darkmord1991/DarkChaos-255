@@ -18,9 +18,11 @@
  *
  * Opcodes:
  * - CMSG: 0x01 (SYNC_SETTINGS), 0x02 (UPDATE_SETTING), 0x03 (GET_ITEM_INFO),
- *         0x04 (GET_NPC_INFO), 0x05 (GET_SPELL_INFO), 0x06 (REQUEST_FEATURE)
+ *         0x04 (GET_NPC_INFO), 0x05 (GET_SPELL_INFO), 0x06 (REQUEST_FEATURE),
+ *         0x08 (REQUEST_SPELL_TOOLTIP_ENRICHMENT)
  * - SMSG: 0x10 (SETTINGS_SYNC), 0x11 (SETTING_UPDATED), 0x12 (ITEM_INFO),
- *         0x13 (NPC_INFO), 0x14 (SPELL_INFO), 0x15 (FEATURE_DATA), 0x16 (NOTIFICATION)
+ *         0x13 (NPC_INFO), 0x14 (SPELL_INFO), 0x15 (FEATURE_DATA), 0x16 (NOTIFICATION),
+ *         0x17 (SPELL_TOOLTIP_ENRICHMENT)
  *
  * Copyright (C) 2025 Dark Chaos Development Team
  */
@@ -33,7 +35,6 @@
 #include "DatabaseEnv.h"
 #include "dc_addon_namespace.h"
 #include "Config.h"
-#include "Log.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
@@ -41,7 +42,6 @@
 #include "SpellInfo.h"
 #include "ItemTemplate.h"
 #include "Group.h"
-#include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 #include <string>
 #include <sstream>
 #include <algorithm>
@@ -64,6 +64,7 @@ namespace DCQoS
         constexpr uint8 CMSG_GET_SPELL_INFO     = 0x05;  // Request custom spell info
         constexpr uint8 CMSG_REQUEST_FEATURE    = 0x06;  // Request specific feature data
         constexpr uint8 CMSG_COLLECT_ALL_MAIL   = 0x07;  // Request to collect all mail
+        constexpr uint8 CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 0x08;  // Request server-enriched spell tooltip line
 
         // Server -> Client
         constexpr uint8 SMSG_SETTINGS_SYNC      = 0x10;  // Full settings sync
@@ -73,6 +74,15 @@ namespace DCQoS
         constexpr uint8 SMSG_SPELL_INFO         = 0x14;  // Custom spell information
         constexpr uint8 SMSG_FEATURE_DATA       = 0x15;  // Feature-specific data
         constexpr uint8 SMSG_NOTIFICATION       = 0x16;  // Server notification
+        constexpr uint8 SMSG_SPELL_TOOLTIP_ENRICHMENT = 0x17;  // requestId|spellId|contextHash|status|line
+    }
+
+    // Bridge reference to the custom client packet opcodes used by WotLK-Extensions.
+    // AddonProtocol transport stays MODULE+uint8 opcode based, but payload fields are aligned.
+    namespace BridgeOpcode
+    {
+        constexpr uint16 CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 1313;
+        constexpr uint16 SMSG_SPELL_TOOLTIP_ENRICHMENT = 1314;
     }
 
     // Configuration keys
@@ -132,170 +142,69 @@ namespace DCQoS
         return sConfigMgr->GetOption<bool>(Config::ENABLED, true);
     }
 
-    static std::string ToUpper(std::string value)
+    static std::string NormalizeRelayDistribution(std::string distribution, bool isRaidGroup)
     {
-        std::transform(value.begin(), value.end(), value.begin(),
-            [](unsigned char c)
-            {
-                return static_cast<char>(std::toupper(c));
-            });
+        std::transform(distribution.begin(), distribution.end(), distribution.begin(),
+            [](unsigned char c) { return std::toupper(c); });
 
-        return value;
+        if (distribution == "RAID")
+            return isRaidGroup ? "RAID" : "PARTY";
+
+        if (distribution == "PARTY")
+            return "PARTY";
+
+        // AUTO / GROUP / unknown fallback follows client logic:
+        // raid if in raid, otherwise party.
+        return isRaidGroup ? "RAID" : "PARTY";
     }
 
-    static std::string ToLower(std::string value)
+    static bool CollectRelayRecipients(Player* sender,
+                                       const std::string& requestedDistribution,
+                                       std::string& resolvedDistribution,
+                                       std::vector<Player*>& recipients,
+                                       std::string& error)
     {
-        std::transform(value.begin(), value.end(), value.begin(),
-            [](unsigned char c)
-            {
-                return static_cast<char>(std::tolower(c));
-            });
-
-        return value;
-    }
-
-    static bool IsPingFeature(std::string feature)
-    {
-        feature = ToLower(feature);
-
-        return feature == "ping"
-            || feature == "screen_ping"
-            || feature == "display_ping"
-            || feature == "danger_ping"
-            || feature == "combat_ping";
-    }
-
-    static Group* ResolveRelayGroup(Player* player)
-    {
-        if (!player)
-            return nullptr;
-
-        Group* group = player->GetGroup();
-        if (group && (group->isBGGroup() || group->isBFGroup()))
-            group = player->GetOriginalGroup();
-
-        return group;
-    }
-
-    static std::string NormalizeRelayDistribution(std::string distribution)
-    {
-        distribution = ToUpper(distribution);
-
-        if (distribution == "PARTY" || distribution == "RAID")
-            return distribution;
-
-        return "AUTO";
-    }
-
-    static bool HandlePingRelayFeature(Player* player,
-        std::string const& feature,
-        DCAddon::JsonValue const& json,
-        DCAddon::JsonMessage& response)
-    {
-        std::string action = json.HasKey("action") ? json["action"].AsString() : "";
-        if (action != "relay")
+        if (!sender)
         {
-            response.Set("error", "Unsupported ping feature action");
-            LOG_WARN("module.dc",
-                "[DCQoS] Ping relay rejected for player {} (feature={}): "
-                "unsupported action '{}'",
-                player->GetName(), feature, action);
+            error = "Invalid relay sender.";
             return false;
         }
 
-        std::string encodedPayload;
-        if (json.HasKey("payload"))
-            encodedPayload = json["payload"].AsString();
-
-        if (encodedPayload.empty() && json.HasKey("syncPayload"))
-            encodedPayload = json["syncPayload"].AsString();
-
-        if (encodedPayload.empty())
-        {
-            response.Set("error", "Missing ping relay payload");
-            LOG_WARN("module.dc",
-                "[DCQoS] Ping relay rejected for player {} (feature={}): "
-                "missing payload",
-                player->GetName(), feature);
-            return false;
-        }
-
-        Group* group = ResolveRelayGroup(player);
+        Group* group = sender->GetGroup();
         if (!group)
         {
-            response.Set("error", "Ping relay requires party or raid");
-            LOG_WARN("module.dc",
-                "[DCQoS] Ping relay rejected for player {} (feature={}): "
-                "requires party or raid",
-                player->GetName(), feature);
+            error = "You are not in a party or raid.";
             return false;
         }
 
-        std::string requestedDistribution =
-            NormalizeRelayDistribution(json.HasKey("distribution")
-                ? json["distribution"].AsString()
-                : "");
+        bool isRaidGroup = group->isRaidGroup();
+        resolvedDistribution = NormalizeRelayDistribution(requestedDistribution, isRaidGroup);
+        bool sameSubGroupOnly = isRaidGroup && resolvedDistribution == "PARTY";
+        uint8 senderSubGroup = group->GetMemberGroup(sender->GetGUID());
 
-        std::string effectiveDistribution = requestedDistribution;
-        if (effectiveDistribution == "AUTO")
-            effectiveDistribution = group->isRaidGroup() ? "RAID" : "PARTY";
-
-        if (effectiveDistribution == "PARTY" && group->isRaidGroup())
-            effectiveDistribution = "RAID";
-
-        LOG_INFO("module.dc",
-            "[DCQoS] Ping relay distribution resolved for player {} "
-            "(feature={}): requested={}, effective={}, groupType={}",
-            player->GetName(), feature, requestedDistribution,
-            effectiveDistribution, group->isRaidGroup() ? "RAID" : "PARTY");
-
-        uint32 relayedCount = 0;
-        for (GroupReference* itr = group->GetFirstMember(); itr;
-            itr = itr->next())
+        for (GroupReference* ref = group->GetFirstMember(); ref != nullptr; ref = ref->next())
         {
-            Player* member = itr->GetSource();
-            if (!member || !member->IsInWorld() || member == player)
+            Player* member = ref->GetSource();
+            if (!member || !member->GetSession() || !member->IsInWorld())
                 continue;
 
-            DCAddon::JsonMessage relay(MODULE, Opcode::SMSG_FEATURE_DATA);
-            relay.Set("feature", feature);
-            relay.Set("action", "relay");
-            relay.Set("distribution", effectiveDistribution);
-            relay.Set("payload", encodedPayload);
-            relay.Set("syncPayload", encodedPayload);
-            relay.Set("source", player->GetName());
+            if (member->GetGUID() == sender->GetGUID())
+                continue;
 
-            if (json.HasKey("text"))
-                relay.Set("text", json["text"].AsString());
+            if (sameSubGroupOnly && group->GetMemberGroup(member->GetGUID()) != senderSubGroup)
+                continue;
 
-            if (json.HasKey("targetName"))
-                relay.Set("targetName", json["targetName"].AsString());
-
-            if (json.HasKey("targetGuid"))
-                relay.Set("targetGuid", json["targetGuid"].AsString());
-
-            if (json.HasKey("targetType"))
-                relay.Set("targetType", json["targetType"].AsString());
-
-            if (json.HasKey("worldX"))
-                relay.Set("worldX", json["worldX"].AsNumber());
-
-            if (json.HasKey("worldY"))
-                relay.Set("worldY", json["worldY"].AsNumber());
-
-            if (json.HasKey("worldZ"))
-                relay.Set("worldZ", json["worldZ"].AsNumber());
-
-            relay.Send(member);
-
-            ++relayedCount;
+            recipients.push_back(member);
         }
 
-        response.Set("action", "relay_ack");
-        response.Set("distribution", effectiveDistribution);
-        response.Set("sender", player->GetName());
-        response.Set("relayedCount", static_cast<int32>(relayedCount));
-        response.Set("success", true);
+        if (recipients.empty())
+        {
+            error = (resolvedDistribution == "RAID")
+                ? "No other raid members available for relay."
+                : "No other party members available for relay.";
+            return false;
+        }
+
         return true;
     }
 
@@ -475,53 +384,14 @@ namespace DCQoS
             return;
 
         ObjectGuid itemGuid = item->GetGUID();
-        uint32 currentEntry = item->GetEntry();
-        uint32 baseEntry = currentEntry;
+        uint32 baseEntry = item->GetEntry();
         const ItemTemplate* itemTemplate = item->GetTemplate();
-
-        // Resolve base entry for cloned upgraded items.
-        QueryResult baseEntryResult = WorldDatabase.Query(
-            "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {} LIMIT 1",
-            currentEntry
-        );
-        if (baseEntryResult)
-        {
-            baseEntry = (*baseEntryResult)[0].Get<uint32>();
-        }
-
-        uint32 procSpellCount = 0;
-        DCAddon::JsonValue procSpellIds;
-        procSpellIds.SetArray();
-
-        if (itemTemplate)
-        {
-            for (auto const& itemSpell : itemTemplate->Spells)
-            {
-                if (itemSpell.SpellId <= 0)
-                    continue;
-
-                if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
-                    continue;
-
-                ++procSpellCount;
-                procSpellIds.Push(DCAddon::JsonValue(static_cast<uint32>(itemSpell.SpellId)));
-            }
-        }
-
-        bool hasProc = procSpellCount > 0;
-        float statMultiplier = 1.0f;
 
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_ITEM_INFO);
         msg.Set("bag", static_cast<int32>(bag));
         msg.Set("slot", static_cast<int32>(slot));
-        msg.Set("itemId", static_cast<int32>(currentEntry));
+        msg.Set("itemId", static_cast<int32>(baseEntry));
         msg.Set("guid", itemGuid.GetCounter());
-        msg.Set("baseEntry", static_cast<int32>(baseEntry));
-        msg.Set("currentEntry", static_cast<int32>(currentEntry));
-        msg.Set("hasProc", hasProc);
-        msg.Set("procSpellCount", static_cast<int32>(procSpellCount));
-        if (hasProc)
-            msg.Set("procSpellIds", procSpellIds);
 
         // Query upgrade data from dc_item_upgrades table
         QueryResult upgradeResult = CharacterDatabase.Query(
@@ -553,19 +423,19 @@ namespace DCQoS
                 msg.Set("maxUpgrade", static_cast<int32>(maxLevel));
 
                 // Calculate stat multiplier: 1.0 + (upgradeLevel * (statMultiplierMax - 1.0) / maxLevel)
+                float statMultiplier = 1.0f;
                 if (maxLevel > 0)
                 {
                     statMultiplier = 1.0f + (static_cast<float>(upgradeLevel) * (statMultiplierMax - 1.0f) / static_cast<float>(maxLevel));
                 }
+                msg.Set("statMultiplier", statMultiplier);
             }
             else
             {
                 // Default tier values
                 msg.Set("maxUpgrade", 15);
-                statMultiplier = 1.0f + (static_cast<float>(upgradeLevel) * 0.02f);
+                msg.Set("statMultiplier", 1.0f + (static_cast<float>(upgradeLevel) * 0.02f));
             }
-
-            msg.Set("statMultiplier", static_cast<double>(statMultiplier));
 
             // Calculate effective item level
             if (itemTemplate)
@@ -574,6 +444,14 @@ namespace DCQoS
                 uint32 upgradedIlvl = baseIlvl + (upgradeLevel * 5);  // +5 ilvl per upgrade
                 msg.Set("baseIlvl", static_cast<int32>(baseIlvl));
                 msg.Set("upgradedIlvl", static_cast<int32>(upgradedIlvl));
+            }
+
+            // Check if item entry was changed (cloned for upgrade)
+            uint32 currentEntry = item->GetEntry();
+            if (currentEntry != baseEntry)
+            {
+                msg.Set("currentEntry", static_cast<int32>(currentEntry));
+                msg.Set("baseEntry", static_cast<int32>(baseEntry));
             }
         }
         else
@@ -592,20 +470,15 @@ namespace DCQoS
                 if (canUpgrade)
                 {
                     msg.Set("maxUpgrade", 15);  // Default max upgrade
-                    statMultiplier = 1.0f;
+                    msg.Set("statMultiplier", 1.0f);
                 }
                 else
                 {
                     msg.Set("maxUpgrade", 0);
-                    statMultiplier = 1.0f;
+                    msg.Set("statMultiplier", 1.0f);
                 }
             }
-
-            msg.Set("statMultiplier", static_cast<double>(statMultiplier));
         }
-
-        float procBonusPercent = (hasProc && statMultiplier > 1.0f) ? (statMultiplier - 1.0f) * 100.0f : 0.0f;
-        msg.Set("procBonusPercent", static_cast<double>(procBonusPercent));
 
         msg.Send(player);
     }
@@ -745,6 +618,54 @@ namespace DCQoS
         msg.Send(player);
     }
 
+    // AddonProtocol skeleton for the mixed tooltip architecture:
+    // request payload order: requestId, spellId, contextHash
+    // response payload order: requestId, spellId, contextHash, status, line
+    void SendSpellTooltipEnrichment(Player* player,
+                                    uint32 requestId,
+                                    uint32 spellId,
+                                    uint32 contextHash,
+                                    uint8 status,
+                                    std::string const& line,
+                                    std::string const& protocolRequestId)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        DCAddon::Message msg(MODULE, Opcode::SMSG_SPELL_TOOLTIP_ENRICHMENT);
+        if (!protocolRequestId.empty())
+            msg.SetRequestId(protocolRequestId);
+
+        msg.Add(requestId);
+        msg.Add(spellId);
+        msg.Add(contextHash);
+        msg.Add(static_cast<uint32>(status));
+        msg.Add(line);
+        msg.Send(player);
+    }
+
+    std::string BuildSpellTooltipEnrichmentLine(Player* player, uint32 spellId, uint32 contextHash, SpellInfo const* spellInfo)
+    {
+        if (!player || !spellInfo)
+            return "";
+
+        std::ostringstream line;
+        line << "server-v1";
+        line << " spell=" << spellId;
+        line << " ctx=" << contextHash;
+
+        uint32 castTime = spellInfo->CastTimeEntry ? static_cast<uint32>(std::max<int32>(0, spellInfo->CastTimeEntry->CastTime)) : 0u;
+        if (castTime > 0)
+            line << " cast=" << castTime << "ms";
+
+        if (spellInfo->RecoveryTime > 0)
+            line << " cd=" << spellInfo->RecoveryTime << "ms";
+
+        // TODO: extend with dynamic player-context values (auras/spec/rating snapshots)
+        // and custom DB overlays once server-side calculators are finalized.
+        return line.str();
+    }
+
     void SendNotification(Player* player, const std::string& type, const std::string& message)
     {
         if (!player || !player->GetSession())
@@ -812,35 +733,8 @@ namespace DCQoS
         // Check if this is an upgrade info request (has bag/slot)
         if (!json.IsNull() && json.HasKey("bag") && json.HasKey("slot"))
         {
-            int32 extBag = json["bag"].AsInt32();
-            int32 extSlot = json["slot"].AsInt32();
-
-            uint8 bag = 0;
-            uint8 slot = 0;
-            bool translated = false;
-
-            // Legacy DC-QOS used -2 to denote equipment slots.
-            if (extBag == -2 && extSlot >= 1 && extSlot <= 255)
-            {
-                bag = INVENTORY_SLOT_BAG_0;
-                slot = static_cast<uint8>(extSlot - 1);
-                translated = true;
-            }
-            else if (extBag >= 0 && extSlot >= 0)
-            {
-                translated = DarkChaos::ItemUpgrade::UI::TranslateAddonBagSlot(
-                    static_cast<uint32>(extBag), static_cast<uint32>(extSlot), bag, slot);
-            }
-
-            if (!translated)
-            {
-                DCAddon::JsonMessage response(MODULE, Opcode::SMSG_ITEM_INFO);
-                response.Set("bag", extBag);
-                response.Set("slot", extSlot);
-                response.Set("error", "Invalid item location");
-                response.Send(player);
-                return;
-            }
+            uint8 bag = static_cast<uint8>(json["bag"].AsNumber());
+            uint8 slot = static_cast<uint8>(json["slot"].AsNumber());
 
             // Get item from player's inventory
             Item* item = player->GetItemByPos(bag, slot);
@@ -923,6 +817,58 @@ namespace DCQoS
         }
     }
 
+    void HandleRequestSpellTooltipEnrichment(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player)
+            return;
+
+        uint32 requestId = 0;
+        uint32 spellId = 0;
+        uint32 contextHash = 0;
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        if (!json.IsNull() && json.HasKey("requestId") && json.HasKey("spellId") && json.HasKey("contextHash"))
+        {
+            requestId = static_cast<uint32>(json["requestId"].AsNumber());
+            spellId = static_cast<uint32>(json["spellId"].AsNumber());
+            contextHash = static_cast<uint32>(json["contextHash"].AsNumber());
+        }
+        else if (msg.GetDataCount() >= 3)
+        {
+            // Simple format: QOS|0x08|requestId|spellId|contextHash
+            requestId = msg.GetUInt32(0);
+            spellId = msg.GetUInt32(1);
+            contextHash = msg.GetUInt32(2);
+        }
+
+        // Status map (matches client expectations):
+        // 0 = success (line present)
+        // 1 = spell not found
+        // 2 = invalid request payload
+        // 3 = no enrichment data available
+        if (requestId == 0 || spellId == 0 || contextHash == 0)
+        {
+            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 2, "invalid-request", msg.GetRequestId());
+            return;
+        }
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!spellInfo)
+        {
+            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 1, "spell-not-found", msg.GetRequestId());
+            return;
+        }
+
+        std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, contextHash, spellInfo);
+        if (line.empty())
+        {
+            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 3, "no-enrichment-data", msg.GetRequestId());
+            return;
+        }
+
+        SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 0, line, msg.GetRequestId());
+    }
+
     void HandleRequestFeature(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player)
@@ -934,16 +880,79 @@ namespace DCQoS
 
         std::string feature = json["feature"].AsString();
 
+        if (feature == "ping")
+        {
+            std::string action = json.HasKey("action") ? json["action"].AsString() : "";
+
+            DCAddon::JsonMessage ack(MODULE, Opcode::SMSG_FEATURE_DATA);
+            ack.Set("feature", "ping_relay_ack");
+
+            if (action != "relay")
+            {
+                ack.Set("action", "relay_ack");
+                ack.Set("ok", false);
+                ack.Set("error", "Unsupported ping feature action.");
+                ack.Send(player);
+                return;
+            }
+
+            std::string payload = json.HasKey("payload") ? json["payload"].AsString() : "";
+            if (payload.empty() && json.HasKey("syncPayload"))
+                payload = json["syncPayload"].AsString();
+
+            if (payload.empty())
+            {
+                ack.Set("action", "relay_ack");
+                ack.Set("ok", false);
+                ack.Set("error", "Missing ping relay payload.");
+                ack.Send(player);
+                return;
+            }
+
+            std::string requestedDistribution = json.HasKey("distribution") ? json["distribution"].AsString() : "AUTO";
+            std::string resolvedDistribution;
+            std::vector<Player*> recipients;
+            std::string relayError;
+
+            if (!CollectRelayRecipients(player, requestedDistribution, resolvedDistribution, recipients, relayError))
+            {
+                ack.Set("action", "relay_ack");
+                ack.Set("ok", false);
+                ack.Set("error", relayError);
+                ack.Send(player);
+                return;
+            }
+
+            DCAddon::JsonMessage relay(MODULE, Opcode::SMSG_FEATURE_DATA);
+            relay.Set("feature", "ping");
+            relay.Set("action", "relay");
+            relay.Set("distribution", resolvedDistribution);
+            relay.Set("payload", payload);
+            relay.Set("syncPayload", payload);
+            relay.Set("source", player->GetName());
+            relay.Set("sourceGuid", static_cast<uint32>(player->GetGUID().GetCounter()));
+            relay.Set("timestamp", static_cast<uint32>(time(nullptr)));
+            for (Player* recipient : recipients)
+            {
+                if (!recipient || !recipient->GetSession())
+                    continue;
+
+                relay.Send(recipient);
+            }
+
+            ack.Set("action", "relay_ack");
+            ack.Set("ok", true);
+            ack.Set("distribution", resolvedDistribution);
+            ack.Set("recipients", static_cast<uint32>(recipients.size()));
+            ack.Send(player);
+            return;
+        }
+
         // Handle specific feature requests
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_FEATURE_DATA);
         response.Set("feature", feature);
 
-        if (IsPingFeature(feature))
-        {
-            if (!HandlePingRelayFeature(player, feature, json, response))
-                response.Set("success", false);
-        }
-        else if (feature == "server_time")
+        if (feature == "server_time")
         {
             response.Set("serverTime", static_cast<int32>(time(nullptr)));
         }
@@ -1078,6 +1087,7 @@ namespace DCAddon
         DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_GET_SPELL_INFO, HandleGetSpellInfo);
         DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_REQUEST_FEATURE, HandleRequestFeature);
         DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_COLLECT_ALL_MAIL, HandleCollectAllMail);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT, HandleRequestSpellTooltipEnrichment);
     }
 }
 

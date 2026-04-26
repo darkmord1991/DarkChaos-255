@@ -30,6 +30,7 @@ protocol.Opcodes = {
     CMSG_GET_SPELL_INFO     = 0x05,  -- Request custom spell info
     CMSG_REQUEST_FEATURE    = 0x06,  -- Request specific feature data
     CMSG_COLLECT_ALL_MAIL   = 0x07,  -- Request to collect all mail
+    CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 0x08,  -- Request enriched spell tooltip line
     
     -- Server -> Client (0x10-0x1F)
     SMSG_SETTINGS_SYNC      = 0x10,  -- Full settings sync from server
@@ -39,6 +40,7 @@ protocol.Opcodes = {
     SMSG_SPELL_INFO         = 0x14,  -- Custom spell information
     SMSG_FEATURE_DATA       = 0x15,  -- Feature-specific data
     SMSG_NOTIFICATION       = 0x16,  -- Server notification/message
+    SMSG_SPELL_TOOLTIP_ENRICHMENT = 0x17,  -- requestId|spellId|contextHash|status|line
 }
 
 -- ============================================================
@@ -91,6 +93,11 @@ function protocol:RegisterHandlers()
     -- Handle custom spell info response
     DC:RegisterHandler(self.MODULE_ID, Ops.SMSG_SPELL_INFO, function(...)
         self:HandleSpellInfo(...)
+    end)
+
+    -- Handle spell tooltip enrichment response
+    DC:RegisterHandler(self.MODULE_ID, Ops.SMSG_SPELL_TOOLTIP_ENRICHMENT, function(...)
+        self:HandleSpellTooltipEnrichment(...)
     end)
     
     -- Handle server notifications
@@ -164,6 +171,30 @@ function protocol:RequestSpellInfo(spellId)
     return self:Send(self.Opcodes.CMSG_GET_SPELL_INFO, spellId)
 end
 
+-- Request server-enriched spell tooltip line
+-- Payload order must remain aligned with server:
+-- requestId, spellId, contextHash
+function protocol:RequestSpellTooltipEnrichment(requestId, spellId, contextHash, useJson)
+    local reqId = tonumber(requestId) or 0
+    local sId = tonumber(spellId) or 0
+    local ctxHash = tonumber(contextHash) or 0
+
+    if reqId <= 0 or sId <= 0 or ctxHash <= 0 then
+        addon:Debug("RequestSpellTooltipEnrichment rejected (invalid requestId/spellId/contextHash)")
+        return false
+    end
+
+    if useJson then
+        return self:SendJson(self.Opcodes.CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT, {
+            requestId = reqId,
+            spellId = sId,
+            contextHash = ctxHash,
+        })
+    end
+
+    return self:Send(self.Opcodes.CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT, reqId, sId, ctxHash)
+end
+
 -- Request item upgrade info from server (tier, upgrade level, etc.)
 function protocol:RequestItemUpgradeInfo(bag, slot)
     return self:SendJson(self.Opcodes.CMSG_GET_ITEM_INFO, {
@@ -222,15 +253,12 @@ function protocol:HandleItemInfo(...)
     if type(args[1]) == "table" then
         local itemData = args[1]
         addon:FireEvent("ITEM_INFO_RECEIVED", itemData)
-
-        -- Treat any response with bag/slot as an upgrade-location response so
-        -- pending tooltip requests are always released, including error replies.
-        if itemData.bag ~= nil and itemData.slot ~= nil then
-            addon:FireEvent("ITEM_UPGRADE_INFO_RECEIVED", itemData)
-        elseif itemData.upgradeLevel ~= nil or itemData.tier ~= nil then
+        
+        -- Check if this is upgrade info (has upgradeLevel or tier)
+        if itemData.upgradeLevel ~= nil or itemData.tier ~= nil then
             addon:FireEvent("ITEM_UPGRADE_INFO_RECEIVED", itemData)
         end
-
+        
         -- Cache for tooltip display
         if itemData.itemId and addon.tooltipCache then
             addon.tooltipCache.items[itemData.itemId] = itemData
@@ -268,6 +296,53 @@ function protocol:HandleSpellInfo(...)
     end
 end
 
+-- Handle spell tooltip enrichment response
+-- Response field order:
+-- requestId, spellId, contextHash, status, line
+-- Status codes:
+-- 0 = success, 1 = spell-not-found, 2 = invalid-request, 3 = no-enrichment-data
+function protocol:HandleSpellTooltipEnrichment(...)
+    local args = {...}
+    local data
+
+    if type(args[1]) == "table" then
+        -- JSON format fallback support
+        data = args[1]
+    else
+        data = {
+            requestId = tonumber(args[1]) or 0,
+            spellId = tonumber(args[2]) or 0,
+            contextHash = tonumber(args[3]) or 0,
+            status = tonumber(args[4]) or 0,
+            line = args[5] or "",
+        }
+    end
+
+    local requestId = tonumber(data.requestId) or 0
+    local spellId = tonumber(data.spellId) or 0
+    local contextHash = tonumber(data.contextHash) or 0
+    local status = tonumber(data.status) or 0
+    local line = tostring(data.line or "")
+
+    local enrichment = {
+        requestId = requestId,
+        spellId = spellId,
+        contextHash = contextHash,
+        status = status,
+        line = line,
+        receivedAt = GetTime(),
+    }
+
+    -- Cache by spell/context for tooltip consumers.
+    if addon.tooltipCache then
+        addon.tooltipCache.spellEnrichment = addon.tooltipCache.spellEnrichment or {}
+        addon.tooltipCache.spellEnrichment[spellId] = addon.tooltipCache.spellEnrichment[spellId] or {}
+        addon.tooltipCache.spellEnrichment[spellId][contextHash] = enrichment
+    end
+
+    addon:FireEvent("SPELL_TOOLTIP_ENRICHMENT_RECEIVED", enrichment)
+end
+
 -- Handle server notification
 function protocol:HandleNotification(...)
     local args = {...}
@@ -276,17 +351,8 @@ function protocol:HandleNotification(...)
         local notification = args[1]
         local msgType = notification.type or "info"
         local message = notification.message or ""
-
-        if addon.Notify then
-            local title = "Server Notice"
-            if msgType == "error" then
-                title = "Server Error"
-            elseif msgType == "warning" then
-                title = "Server Warning"
-            end
-
-            addon:Notify(message, msgType, { title = title, chatFallback = true })
-        elseif msgType == "error" then
+        
+        if msgType == "error" then
             addon:Print("|cffff0000Error:|r " .. message, true)
         elseif msgType == "warning" then
             addon:Print("|cffffd700Warning:|r " .. message, true)
@@ -305,6 +371,7 @@ addon.tooltipCache = {
     items = {},
     npcs = {},
     spells = {},
+    spellEnrichment = {},
 }
 
 -- ============================================================
@@ -366,4 +433,21 @@ end
 
 function addon:RequestSpellInfo(spellId)
     return protocol:RequestSpellInfo(spellId)
+end
+
+function addon:RequestSpellTooltipEnrichment(requestId, spellId, contextHash, useJson)
+    return protocol:RequestSpellTooltipEnrichment(requestId, spellId, contextHash, useJson)
+end
+
+function addon:GetSpellTooltipEnrichment(spellId, contextHash)
+    if not addon.tooltipCache or not addon.tooltipCache.spellEnrichment then
+        return nil
+    end
+
+    local spellBucket = addon.tooltipCache.spellEnrichment[tonumber(spellId) or 0]
+    if not spellBucket then
+        return nil
+    end
+
+    return spellBucket[tonumber(contextHash) or 0]
 end

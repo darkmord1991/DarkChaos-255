@@ -63,11 +63,6 @@ local lastTooltipUpdate = 0
 local TOOLTIP_UPDATE_THROTTLE = 0.05  -- 50ms between updates
 local itemInfoCache = {}  -- Cache GetItemInfo results
 local ITEM_INFO_CACHE_DURATION = 60  -- 1 minute
-local itemTooltipHooksInstalled = false
-local unitTooltipHooksInstalled = false
-local spellTooltipHooksInstalled = false
-local healthBarHideHookInstalled = false
-local tooltipSettingsChangedRegistered = false
 
 -- ============================================================
 -- Item Upgrade/Tier Info Cache
@@ -76,10 +71,6 @@ local tooltipSettingsChangedRegistered = false
 local itemUpgradeCache = {}
 local pendingUpgradeRequests = {}
 local UPGRADE_CACHE_DURATION = 300  -- 5 minutes
-local UPGRADE_ERROR_CACHE_DURATION = 5  -- short backoff for failed location lookups
-
-local BAG_EQUIPPED = _G.INVENTORY_SLOT_BAG_0 or 255
-local BAG_BANK = _G.BANK_CONTAINER or -1
 
 -- Tier color definitions (matches DC-ItemUpgrade)
 local TIER_COLORS = {
@@ -99,32 +90,19 @@ end
 -- Convert client bag to server bag ID
 local function GetServerBagFromClient(bag)
     -- Backpack is 0, other bags are 1-4 for regular, -1 for bank, 5-11 for bank bags
-    if bag == BAG_EQUIPPED or bag == -2 then return BAG_EQUIPPED end -- Equipment slots
-    if bag == 0 then return BAG_EQUIPPED end  -- Backpack container
+    if bag == 0 then return 255 end  -- INVENTORY_SLOT_BAG_0
     if bag >= 1 and bag <= 4 then return 18 + bag end  -- Regular bags (19-22)
-    if bag == BAG_BANK then return BAG_EQUIPPED end  -- Bank main slots are in bag 255
-    if bag >= 5 and bag <= 11 then return 67 + (bag - 5) end  -- Bank bags (67-73)
+    if bag == -1 then return 255 end  -- Bank main
+    if bag >= 5 and bag <= 11 then return 62 + (bag - 5) end  -- Bank bags
     return bag
 end
 
 -- Convert client slot to server slot ID  
 local function GetServerSlotFromClient(bag, slot)
-    local normalized = math.max(0, (slot or 1) - 1)
-
-    if bag == BAG_EQUIPPED or bag == -2 then
-        -- Equipped slots are 1-indexed in API, 0-indexed in server lookup.
-        return normalized
-    end
-
     if bag == 0 then
         return 22 + slot  -- Backpack slots start at 23
     end
-
-    if bag == BAG_BANK and _G.BANK_SLOT_ITEM_START then
-        return _G.BANK_SLOT_ITEM_START + normalized
-    end
-
-    return normalized  -- Other bags are 0-indexed on server
+    return slot - 1  -- Other bags are 0-indexed on server
 end
 
 -- Cached GetItemInfo to reduce API calls
@@ -182,15 +160,6 @@ local function RequestUpgradeInfo(bag, slot, itemLink)
     
     -- Check cache
     local cached = itemUpgradeCache[locationKey]
-    if cached and cached.error and (now - cached.timestamp) < UPGRADE_ERROR_CACHE_DURATION then
-        return
-    end
-
-    if cached and cached.error then
-        itemUpgradeCache[locationKey] = nil
-        cached = nil
-    end
-
     if cached and (now - cached.timestamp) < UPGRADE_CACHE_DURATION then
         return
     end
@@ -205,25 +174,10 @@ end
 -- Handle upgrade info from server
 local function OnUpgradeInfoReceived(data)
     if not data then return end
-
-    local bag = tonumber(data.bag)
-    local slot = tonumber(data.slot)
-    if bag == nil or slot == nil then
-        return
-    end
-
-    local locationKey = BuildLocationKey(bag, slot)
+    
+    local locationKey = BuildLocationKey(data.bag, data.slot)
     pendingUpgradeRequests[locationKey] = nil
-
-    -- Cache short-lived errors to avoid immediate request spam while hovering.
-    if data.error then
-        itemUpgradeCache[locationKey] = {
-            timestamp = GetTime(),
-            error = data.error,
-        }
-        return
-    end
-
+    
     itemUpgradeCache[locationKey] = {
         timestamp = GetTime(),
         upgradeLevel = data.upgradeLevel or 0,
@@ -234,10 +188,6 @@ local function OnUpgradeInfoReceived(data)
         currentEntry = data.currentEntry,
         baseIlvl = data.baseIlvl,
         upgradedIlvl = data.upgradedIlvl,
-        hasProc = data.hasProc,
-        procSpellCount = data.procSpellCount,
-        procBonusPercent = data.procBonusPercent,
-        procSpellIds = data.procSpellIds,
     }
     
     -- Don't force refresh to avoid lag cascade
@@ -249,7 +199,6 @@ addon:RegisterEvent("ITEM_UPGRADE_INFO_RECEIVED", OnUpgradeInfoReceived)
 
 -- Add upgrade/tier info to tooltip
 local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
-    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showUpgradeInfo then return end
     if not itemLink then return end
     
@@ -278,15 +227,6 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
     local cached = itemUpgradeCache[locationKey]
     if not cached then
         -- Request from server
-        RequestUpgradeInfo(bag, slot, itemLink)
-        return
-    end
-
-    -- Request failed recently for this location; wait for short backoff to expire.
-    if cached.error and (GetTime() - cached.timestamp) < UPGRADE_ERROR_CACHE_DURATION then
-        return
-    elseif cached.error then
-        itemUpgradeCache[locationKey] = nil
         RequestUpgradeInfo(bag, slot, itemLink)
         return
     end
@@ -324,17 +264,6 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
     -- Show stat bonus if upgraded
     if totalBonus > 0 then
         tooltip:AddLine(string.format("|cff00ff00+%.1f%% All Stats|r", totalBonus))
-    end
-
-    -- Proc scaling: show explicit proc bonus when this item has proc spells.
-    if cached.hasProc and (cached.procBonusPercent or 0) > 0 then
-        tooltip:AddLine(string.format("|cff33ff99Proc Effects: +%.1f%%|r", cached.procBonusPercent))
-
-        local procCount = tonumber(cached.procSpellCount) or 0
-        if procCount > 0 then
-            local suffix = (procCount == 1) and "" or "s"
-            tooltip:AddLine(string.format("|cff666666Affects %d proc spell%s|r", procCount, suffix))
-        end
     end
     
     -- Show item level difference if available
@@ -454,13 +383,7 @@ end
 -- ============================================================
 local function SetTooltipScale()
     local settings = addon.settings.tooltips
-    local accessibility = addon.settings.accessibility or {}
-    local readabilityScale = 1.0
-    if accessibility.enabled ~= false then
-        readabilityScale = tonumber(accessibility.tooltipScale) or tonumber(accessibility.fontScale) or 1.0
-    end
-
-    local scale = (settings.scale or 1.0) * readabilityScale
+    local scale = settings.scale or 1.0
     
     -- Apply scale to various tooltip frames
     local tooltipFrames = {
@@ -486,43 +409,10 @@ local function SetTooltipScale()
     end
 end
 
-local function ApplyTooltipReadability()
-    local accessibility = addon.settings.accessibility or {}
-    local cleaner = accessibility.enabled ~= false and accessibility.cleanerTooltips ~= false
-    local highContrast = accessibility.enabled ~= false and accessibility.highContrast == true
-
-    local tooltipFrames = {
-        GameTooltip,
-        ItemRefTooltip,
-        ShoppingTooltip1,
-        ShoppingTooltip2,
-        ItemRefShoppingTooltip1,
-        ItemRefShoppingTooltip2,
-    }
-
-    for _, frame in ipairs(tooltipFrames) do
-        if frame then
-            if (cleaner or highContrast) and frame.SetBackdropColor then
-                local alpha = highContrast and 0.96 or 0.88
-                frame:SetBackdropColor(0.03, 0.03, 0.03, alpha)
-            end
-
-            if (cleaner or highContrast) and frame.SetBackdropBorderColor then
-                if highContrast then
-                    frame:SetBackdropBorderColor(0.96, 0.84, 0.28, 1)
-                else
-                    frame:SetBackdropBorderColor(0.45, 0.45, 0.45, 1)
-                end
-            end
-        end
-    end
-end
-
 -- ============================================================
 -- Item ID in Tooltips
 -- ============================================================
 local function AddItemId(tooltip, itemLink)
-    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showItemId then return end
     if not itemLink then return end
     
@@ -538,7 +428,6 @@ end
 -- Item Level in Tooltips
 -- ============================================================
 local function AddItemLevel(tooltip, itemLink)
-    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showItemLevel then return end
     if not itemLink then return end
 
@@ -569,7 +458,6 @@ end
 -- Spell ID in Tooltips
 -- ============================================================
 local function AddSpellId(tooltip, spellId)
-    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showSpellId then return end
     if not spellId then return end
 
@@ -583,6 +471,149 @@ local function AddSpellId(tooltip, spellId)
     
     tooltip:AddLine(" ")
     tooltip:AddDoubleLine("Spell ID:", "|cffffffff" .. sid .. "|r", 0.5, 0.5, 0.5)
+end
+
+local SPELL_TOOLTIP_CONTEXT_SEED = 2166136261
+local SPELL_TOOLTIP_CONTEXT_PRIME = 16777619
+local SPELL_TOOLTIP_HASH_MOD = 4294967296
+local SPELL_TOOLTIP_ENRICHMENT_OK_TTL = 20
+local SPELL_TOOLTIP_ENRICHMENT_ERR_TTL = 6
+local SPELL_TOOLTIP_ENRICHMENT_PENDING_TTL = 1.5
+
+local spellEnrichmentRequestCounter = 0
+local pendingSpellEnrichment = {}
+
+local function BuildSpellEnrichmentKey(spellId, contextHash)
+    return tostring(tonumber(spellId) or 0) .. ":" .. tostring(tonumber(contextHash) or 0)
+end
+
+local function MixSpellTooltipContext(hash, value)
+    hash = (hash + (tonumber(value) or 0)) % SPELL_TOOLTIP_HASH_MOD
+    hash = (hash * SPELL_TOOLTIP_CONTEXT_PRIME) % SPELL_TOOLTIP_HASH_MOD
+    return hash
+end
+
+local function BuildSpellTooltipContextHash(spellId)
+    local hash = SPELL_TOOLTIP_CONTEXT_SEED
+    local _, _, classId = UnitClass("player")
+
+    hash = MixSpellTooltipContext(hash, spellId)
+    hash = MixSpellTooltipContext(hash, UnitLevel("player") or 0)
+    hash = MixSpellTooltipContext(hash, classId or 0)
+    hash = MixSpellTooltipContext(hash, (GetShapeshiftForm and GetShapeshiftForm()) or 0)
+    hash = MixSpellTooltipContext(hash, (GetActiveTalentGroup and GetActiveTalentGroup()) or 0)
+
+    if hash == 0 then
+        hash = 1
+    end
+
+    return hash
+end
+
+local function NextSpellEnrichmentRequestId()
+    spellEnrichmentRequestCounter = spellEnrichmentRequestCounter + 1
+    if spellEnrichmentRequestCounter > 2147483000 then
+        spellEnrichmentRequestCounter = 1
+    end
+    return spellEnrichmentRequestCounter
+end
+
+local function AddSpellTooltipEnrichment(tooltip, spellId)
+    if not tooltip or not spellId then return end
+    if not addon.settings or not addon.settings.tooltips or not addon.settings.tooltips.enabled then return end
+    if not addon.settings.communication or not addon.settings.communication.enabled then return end
+    if not addon.protocol or not addon.protocol.connected then return end
+
+    local sid = tonumber(spellId)
+    if not sid or sid <= 0 then return end
+
+    local contextHash = BuildSpellTooltipContextHash(sid)
+    local key = BuildSpellEnrichmentKey(sid, contextHash)
+    local now = GetTime()
+
+    tooltip._dcqosActiveSpellKey = key
+
+    if tooltip._dcqosSpellEnrichmentShownKey == key then
+        return
+    end
+
+    local cached = addon.GetSpellTooltipEnrichment and addon:GetSpellTooltipEnrichment(sid, contextHash) or nil
+    local cachedAge = cached and (now - (tonumber(cached.receivedAt) or now)) or nil
+
+    local lineText = nil
+    local lineColor = "|cff9bd0ff"
+
+    if cached and cached.status == 0 and cached.line and cached.line ~= "" and cachedAge and cachedAge <= SPELL_TOOLTIP_ENRICHMENT_OK_TTL then
+        lineText = cached.line
+    elseif cached and cached.status and cached.status ~= 0 and cachedAge and cachedAge <= SPELL_TOOLTIP_ENRICHMENT_ERR_TTL then
+        lineColor = "|cff888888"
+        if cached.status == 1 then
+            lineText = "Spell enrichment unavailable"
+        elseif cached.status == 2 then
+            lineText = "Spell enrichment request invalid"
+        elseif cached.status == 3 then
+            lineText = "No additional server details"
+        else
+            lineText = "Spell enrichment unavailable"
+        end
+    end
+
+    if not lineText then
+        local pending = pendingSpellEnrichment[key]
+        if pending and (now - (pending.sentAt or 0)) > SPELL_TOOLTIP_ENRICHMENT_PENDING_TTL then
+            pendingSpellEnrichment[key] = nil
+            pending = nil
+        end
+
+        if not pending then
+            local requestId = NextSpellEnrichmentRequestId()
+            pendingSpellEnrichment[key] = {
+                requestId = requestId,
+                sentAt = now,
+            }
+
+            local ok = addon:RequestSpellTooltipEnrichment(requestId, sid, contextHash, false)
+            if not ok then
+                pendingSpellEnrichment[key] = nil
+            end
+        end
+        return
+    end
+
+    tooltip:AddLine(" ")
+    tooltip:AddDoubleLine("Server:", lineColor .. lineText .. "|r", 0.5, 0.7, 1.0)
+    tooltip._dcqosSpellEnrichmentShownKey = key
+end
+
+local function OnSpellTooltipEnrichmentReceived(data)
+    if type(data) ~= "table" then return end
+
+    local sid = tonumber(data.spellId) or 0
+    local contextHash = tonumber(data.contextHash) or 0
+    if sid <= 0 or contextHash <= 0 then return end
+
+    local key = BuildSpellEnrichmentKey(sid, contextHash)
+    local pending = pendingSpellEnrichment[key]
+    if pending then
+        local responseReqId = tonumber(data.requestId) or 0
+        if responseReqId > 0 and responseReqId ~= pending.requestId then
+            return
+        end
+        pendingSpellEnrichment[key] = nil
+    end
+
+    if GameTooltip and GameTooltip:IsShown() and GameTooltip._dcqosActiveSpellKey == key then
+        GameTooltip._dcqosSpellEnrichmentShownKey = nil
+        AddSpellTooltipEnrichment(GameTooltip, sid)
+        GameTooltip:Show()
+    end
+end
+
+addon:RegisterEvent("SPELL_TOOLTIP_ENRICHMENT_RECEIVED", OnSpellTooltipEnrichmentReceived)
+
+local function EnhanceSpellTooltip(tooltip, spellId)
+    AddSpellId(tooltip, spellId)
+    AddSpellTooltipEnrichment(tooltip, spellId)
 end
 
 -- ============================================================
@@ -817,7 +848,6 @@ end
 addon:RegisterEvent("NPC_INFO_RECEIVED", OnNpcInfoReceived)
 
 local function AddNpcId(tooltip, unit)
-    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showNpcId then return end
     if not unit then return end
     if UnitIsPlayer(unit) then return end
@@ -873,7 +903,6 @@ local function AddNpcId(tooltip, unit)
 end
 
 local function AddNpcKillCount(tooltip, unit)
-    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showNpcKillCount then return end
     if not unit then return end
     if UnitIsPlayer(unit) then return end
@@ -970,9 +999,6 @@ end
 -- Item Tooltip Hooks
 -- ============================================================
 local function HookItemTooltips()
-    if itemTooltipHooksInstalled then return end
-    itemTooltipHooksInstalled = true
-
     -- Hook SetBagItem
     local origSetBagItem = GameTooltip.SetBagItem
     GameTooltip.SetBagItem = function(self, bag, slot, ...)
@@ -1014,7 +1040,7 @@ local function HookItemTooltips()
             self:Show()
         elseif link and link:find("spell:") then
             local spellId = link:match("spell:(%d+)")
-            AddSpellId(self, spellId)
+            EnhanceSpellTooltip(self, spellId)
             self:Show()
         end
         return result
@@ -1123,9 +1149,6 @@ end
 -- Unit Tooltip Hooks
 -- ============================================================
 local function HookUnitTooltips()
-    if unitTooltipHooksInstalled then return end
-    unitTooltipHooksInstalled = true
-
     -- Hook OnTooltipSetUnit
     GameTooltip:HookScript("OnTooltipSetUnit", function(self)
         local _, unit = self:GetUnit()
@@ -1158,6 +1181,8 @@ local function HookUnitTooltips()
         self._dcqosNpcGuid = nil
         self._dcqosUpgradeShown = nil
         self._dcqosSpellIdShown = nil
+        self._dcqosActiveSpellKey = nil
+        self._dcqosSpellEnrichmentShownKey = nil
         self._dcqosNpcKillShown = nil
     end)
     
@@ -1168,9 +1193,6 @@ end
 -- Spell Tooltip Hooks
 -- ============================================================
 local function HookSpellTooltips()
-    if spellTooltipHooksInstalled then return end
-    spellTooltipHooksInstalled = true
-
     -- Most spell tooltips (action buttons, racials, etc.) fire this script.
     -- This is the most reliable way to capture spell IDs in 3.3.5a.
     if not GameTooltip._dcqosHookedOnTooltipSetSpell then
@@ -1181,7 +1203,7 @@ local function HookSpellTooltips()
                 -- WotLK fallback: resolve by name.
                 spellId = select(7, GetSpellInfo(name))
             end
-            AddSpellId(self, spellId)
+            EnhanceSpellTooltip(self, spellId)
             self:Show()
         end)
     end
@@ -1204,7 +1226,7 @@ local function HookSpellTooltips()
                 local name, _, id = self:GetSpell()
                 spellId = id or (name and select(7, GetSpellInfo(name)))
             end
-            AddSpellId(self, spellId)
+            EnhanceSpellTooltip(self, spellId)
             self:Show()
             return result
         end
@@ -1220,7 +1242,7 @@ local function HookSpellTooltips()
             if not spellId and name then
                 spellId = select(7, GetSpellInfo(name))
             end
-            AddSpellId(self, spellId)
+            EnhanceSpellTooltip(self, spellId)
             self:Show()
             return result
         end
@@ -1236,7 +1258,7 @@ local function HookSpellTooltips()
             if not spellId and name then
                 spellId = select(7, GetSpellInfo(name))
             end
-            AddSpellId(self, spellId)
+            EnhanceSpellTooltip(self, spellId)
             self:Show()
             return result
         end
@@ -1249,34 +1271,12 @@ end
 -- Health Bar Hiding
 -- ============================================================
 local function SetupHealthBarHiding()
-    if not healthBarHideHookInstalled then
-        healthBarHideHookInstalled = true
+    if addon.settings.tooltips.hideHealthBar then
+        local tipHide = GameTooltip.Hide
         GameTooltipStatusBar:HookScript("OnShow", function()
-            local settings = addon.settings and addon.settings.tooltips
-            if not settings or not settings.enabled or not settings.hideHealthBar then
-                return
-            end
             GameTooltipStatusBar:Hide()
         end)
-    end
-
-    if addon.settings.tooltips.enabled and addon.settings.tooltips.hideHealthBar then
         GameTooltipStatusBar:Hide()
-    end
-end
-
-local function OnTooltipSettingChanged(path)
-    if path == "tooltips.scale"
-        or path == "accessibility.tooltipScale"
-        or path == "accessibility.fontScale"
-        or path == "accessibility.enabled" then
-        SetTooltipScale()
-    end
-
-    if path == "accessibility.cleanerTooltips"
-        or path == "accessibility.highContrast"
-        or path == "accessibility.enabled" then
-        ApplyTooltipReadability()
     end
 end
 
@@ -1291,14 +1291,6 @@ function Tooltips.OnInitialize()
     
     -- Set initial scale
     SetTooltipScale()
-    ApplyTooltipReadability()
-
-    if addon.RegisterScalableFrame then
-        addon:RegisterScalableFrame(GameTooltip)
-        addon:RegisterScalableFrame(ItemRefTooltip)
-        addon:RegisterScalableFrame(ShoppingTooltip1)
-        addon:RegisterScalableFrame(ShoppingTooltip2)
-    end
 end
 
 function Tooltips.OnEnable()
@@ -1318,8 +1310,6 @@ function Tooltips.OnEnable()
     
     -- Setup health bar hiding
     SetupHealthBarHiding()
-    SetTooltipScale()
-    ApplyTooltipReadability()
 
     -- Kill tracker (NPC tooltips)
     if not killTrackerFrame then
@@ -1333,10 +1323,11 @@ function Tooltips.OnEnable()
     killTrackerFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     
     -- Listen for scale changes
-    if not tooltipSettingsChangedRegistered then
-        tooltipSettingsChangedRegistered = true
-        addon:RegisterEvent("SETTING_CHANGED", OnTooltipSettingChanged)
-    end
+    addon:RegisterEvent("SETTING_CHANGED", function(path, value)
+        if path == "tooltips.scale" then
+            SetTooltipScale()
+        end
+    end)
 end
 
 function Tooltips.OnDisable()
