@@ -33,15 +33,19 @@
 #include "DatabaseEnv.h"
 #include "dc_addon_namespace.h"
 #include "Config.h"
+#include "Log.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
 #include "SpellMgr.h"
 #include "SpellInfo.h"
 #include "ItemTemplate.h"
+#include "Group.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 #include <string>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
 #include "Mail.h"
 
 namespace DCQoS
@@ -126,6 +130,173 @@ namespace DCQoS
     static bool IsEnabled()
     {
         return sConfigMgr->GetOption<bool>(Config::ENABLED, true);
+    }
+
+    static std::string ToUpper(std::string value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(),
+            [](unsigned char c)
+            {
+                return static_cast<char>(std::toupper(c));
+            });
+
+        return value;
+    }
+
+    static std::string ToLower(std::string value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(),
+            [](unsigned char c)
+            {
+                return static_cast<char>(std::tolower(c));
+            });
+
+        return value;
+    }
+
+    static bool IsPingFeature(std::string feature)
+    {
+        feature = ToLower(feature);
+
+        return feature == "ping"
+            || feature == "screen_ping"
+            || feature == "display_ping"
+            || feature == "danger_ping"
+            || feature == "combat_ping";
+    }
+
+    static Group* ResolveRelayGroup(Player* player)
+    {
+        if (!player)
+            return nullptr;
+
+        Group* group = player->GetGroup();
+        if (group && (group->isBGGroup() || group->isBFGroup()))
+            group = player->GetOriginalGroup();
+
+        return group;
+    }
+
+    static std::string NormalizeRelayDistribution(std::string distribution)
+    {
+        distribution = ToUpper(distribution);
+
+        if (distribution == "PARTY" || distribution == "RAID")
+            return distribution;
+
+        return "AUTO";
+    }
+
+    static bool HandlePingRelayFeature(Player* player,
+        std::string const& feature,
+        DCAddon::JsonValue const& json,
+        DCAddon::JsonMessage& response)
+    {
+        std::string action = json.HasKey("action") ? json["action"].AsString() : "";
+        if (action != "relay")
+        {
+            response.Set("error", "Unsupported ping feature action");
+            LOG_WARN("module.dc",
+                "[DCQoS] Ping relay rejected for player {} (feature={}): "
+                "unsupported action '{}'",
+                player->GetName(), feature, action);
+            return false;
+        }
+
+        std::string encodedPayload;
+        if (json.HasKey("payload"))
+            encodedPayload = json["payload"].AsString();
+
+        if (encodedPayload.empty() && json.HasKey("syncPayload"))
+            encodedPayload = json["syncPayload"].AsString();
+
+        if (encodedPayload.empty())
+        {
+            response.Set("error", "Missing ping relay payload");
+            LOG_WARN("module.dc",
+                "[DCQoS] Ping relay rejected for player {} (feature={}): "
+                "missing payload",
+                player->GetName(), feature);
+            return false;
+        }
+
+        Group* group = ResolveRelayGroup(player);
+        if (!group)
+        {
+            response.Set("error", "Ping relay requires party or raid");
+            LOG_WARN("module.dc",
+                "[DCQoS] Ping relay rejected for player {} (feature={}): "
+                "requires party or raid",
+                player->GetName(), feature);
+            return false;
+        }
+
+        std::string requestedDistribution =
+            NormalizeRelayDistribution(json.HasKey("distribution")
+                ? json["distribution"].AsString()
+                : "");
+
+        std::string effectiveDistribution = requestedDistribution;
+        if (effectiveDistribution == "AUTO")
+            effectiveDistribution = group->isRaidGroup() ? "RAID" : "PARTY";
+
+        if (effectiveDistribution == "PARTY" && group->isRaidGroup())
+            effectiveDistribution = "RAID";
+
+        LOG_INFO("module.dc",
+            "[DCQoS] Ping relay distribution resolved for player {} "
+            "(feature={}): requested={}, effective={}, groupType={}",
+            player->GetName(), feature, requestedDistribution,
+            effectiveDistribution, group->isRaidGroup() ? "RAID" : "PARTY");
+
+        uint32 relayedCount = 0;
+        for (GroupReference* itr = group->GetFirstMember(); itr;
+            itr = itr->next())
+        {
+            Player* member = itr->GetSource();
+            if (!member || !member->IsInWorld() || member == player)
+                continue;
+
+            DCAddon::JsonMessage relay(MODULE, Opcode::SMSG_FEATURE_DATA);
+            relay.Set("feature", feature);
+            relay.Set("action", "relay");
+            relay.Set("distribution", effectiveDistribution);
+            relay.Set("payload", encodedPayload);
+            relay.Set("syncPayload", encodedPayload);
+            relay.Set("source", player->GetName());
+
+            if (json.HasKey("text"))
+                relay.Set("text", json["text"].AsString());
+
+            if (json.HasKey("targetName"))
+                relay.Set("targetName", json["targetName"].AsString());
+
+            if (json.HasKey("targetGuid"))
+                relay.Set("targetGuid", json["targetGuid"].AsString());
+
+            if (json.HasKey("targetType"))
+                relay.Set("targetType", json["targetType"].AsString());
+
+            if (json.HasKey("worldX"))
+                relay.Set("worldX", json["worldX"].AsNumber());
+
+            if (json.HasKey("worldY"))
+                relay.Set("worldY", json["worldY"].AsNumber());
+
+            if (json.HasKey("worldZ"))
+                relay.Set("worldZ", json["worldZ"].AsNumber());
+
+            relay.Send(member);
+
+            ++relayedCount;
+        }
+
+        response.Set("action", "relay_ack");
+        response.Set("distribution", effectiveDistribution);
+        response.Set("sender", player->GetName());
+        response.Set("relayedCount", static_cast<int32>(relayedCount));
+        response.Set("success", true);
+        return true;
     }
 
     // =======================================================================
@@ -767,7 +938,12 @@ namespace DCQoS
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_FEATURE_DATA);
         response.Set("feature", feature);
 
-        if (feature == "server_time")
+        if (IsPingFeature(feature))
+        {
+            if (!HandlePingRelayFeature(player, feature, json, response))
+                response.Set("success", false);
+        }
+        else if (feature == "server_time")
         {
             response.Set("serverTime", static_cast<int32>(time(nullptr)));
         }

@@ -47,6 +47,7 @@ local DEFAULT_KEYWORDS = {
     Experience = { "settings", "search", "widgets", "toast", "notifications", "accessibility", "edit mode", "toolbar" },
     Automation = { "auto repair", "auto sell", "loot", "cinematics", "quests", "gossip" },
     Interface = { "camera", "world map", "gryphons", "buff frame", "quest levels" },
+    QuestFrames = { "quest", "quest frame", "retail quest", "greeting frame", "follow quest", "quest rewards" },
     Chat = { "chat", "timestamps", "urls", "channels", "copy", "class colors" },
     Tooltips = { "tooltip", "item id", "npc id", "spell id", "item level", "upgrade info" },
     DruidFix = { "druid", "fix", "icons", "stats" },

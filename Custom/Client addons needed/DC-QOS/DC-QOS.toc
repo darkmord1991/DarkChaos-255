@@ -267,6 +267,7 @@ WeakAurasModelPaths\ModelPaths.lua
 # DC-QOS CORE FRAMEWORK
 # ============================================================
 Core.lua
+Bindings.xml
 Protocol.lua
 UI\SharedShell.lua
 
@@ -279,6 +280,7 @@ Modules\Tooltips.lua
 Modules\Automation.lua
 Modules\Chat.lua
 Modules\Interface.lua
+Modules\QuestFrames.lua
 Modules\DruidFix.lua
 Modules\ExtendedStats\ExtendedStats.lua
 Modules\GTFO.lua
@@ -291,6 +293,7 @@ Modules\Mail.lua
 Modules\ActionBars.lua
 Modules\Minimap.lua
 Modules\Navigation.lua
+Modules\PingSystem.lua
 Modules\Keybinds.lua
 Modules\Profiles.lua
 

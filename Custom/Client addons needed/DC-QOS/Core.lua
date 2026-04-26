@@ -17,6 +17,18 @@ addon.version = "1.0.0"
 addon.author = "DarkChaos Team"
 addon.description = "Quality of Life improvements for DarkChaos-255"
 
+-- Ping keybinding labels are declared in Core so they're available before Bindings.xml is loaded.
+BINDING_HEADER_DCQOS_PING = "DC-QoS Ping"
+BINDING_NAME_DCQOS_PING_TEST = "Ping: Test"
+BINDING_NAME_DCQOS_PING_CLEAR = "Ping: Clear Active Pings"
+BINDING_NAME_DCQOS_PING_WARNING = "Ping: Warning"
+BINDING_NAME_DCQOS_PING_ATTACK = "Ping: Attack"
+BINDING_NAME_DCQOS_PING_ASSIST = "Ping: Assist"
+BINDING_NAME_DCQOS_PING_ONMYWAY = "Ping: On My Way"
+BINDING_NAME_DCQOS_PING_DANGER = "Ping: Danger"
+BINDING_NAME_DCQOS_PING_INFO = "Ping: Info"
+BINDING_NAME_DCQOS_PING_MENU = "Ping: Radial Menu"
+
 -- ============================================================
 -- Shared Class Colors (3.3.5a)
 -- ============================================================
@@ -164,7 +176,7 @@ addon.defaults = {
         questLevelText = true,
         hideGryphons = false,
         hideWorldMap = false,
-        largerWorldMap = false,
+        largerWorldMap = true,
         extendedCameraZoom = true,
         maxZoomFactor = 4,
         buffFrameMove = false,
@@ -1085,6 +1097,13 @@ SlashCmdList["DCQOS"] = function(msg)
         else
             addon:Print("Navigation module is not loaded.", true)
         end
+    elseif msg:find("^ping") then
+        local pingMsg = strtrim(msg:gsub("^ping", "", 1))
+        if SlashCmdList["DCQOSPING"] then
+            SlashCmdList["DCQOSPING"](pingMsg)
+        else
+            addon:Print("Ping System module is not loaded.", true)
+        end
     elseif msg == "help" then
         addon:Print("Commands:", true)
         print("  |cffffd700/dcqos|r - Open settings panel")
@@ -1095,6 +1114,9 @@ SlashCmdList["DCQOS"] = function(msg)
         print("  |cffffd700/dcqos nav <x> <y>|r - Set manual navigation waypoint")
         print("  |cffffd700/dcqos nav follow [questLogIndex]|r - Follow selected/indexed quest")
         print("  |cffffd700/dcqos nav clear|r - Clear manual waypoint and followed quest")
+        print("  |cffffd700/dcqos ping ...|r - Forward to Ping System (/dcping)")
+        print("  |cffffd700/dcping test|r - Show a local on-screen test ping")
+        print("  |cffffd700/dcping menu|r - Open ping radial menu (release key/click to confirm)")
         print("  |cffffd700/dcqos profile ...|r - Manage profiles")
         print("  |cffffd700/dcqos reload|r - Reload UI")
         print("  |cffffd700/dcqos help|r - Show this help message")

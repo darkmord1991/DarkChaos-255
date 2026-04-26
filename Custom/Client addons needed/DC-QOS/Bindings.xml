@@ -1,0 +1,37 @@
+<Bindings>
+    <Binding name="DCQOS_PING_MENU" header="DCQOS_PING" default="G" runOnUp="true">
+        DCQOS_PING_MENU(keystate);
+    </Binding>
+
+    <Binding name="DCQOS_PING_TEST" header="DCQOS_PING">
+        DCQOS_PING_TEST();
+    </Binding>
+
+    <Binding name="DCQOS_PING_CLEAR" header="DCQOS_PING">
+        DCQOS_PING_CLEAR();
+    </Binding>
+
+    <Binding name="DCQOS_PING_WARNING" header="DCQOS_PING">
+        DCQOS_PING_WARNING();
+    </Binding>
+
+    <Binding name="DCQOS_PING_ATTACK" header="DCQOS_PING">
+        DCQOS_PING_ATTACK();
+    </Binding>
+
+    <Binding name="DCQOS_PING_ASSIST" header="DCQOS_PING">
+        DCQOS_PING_ASSIST();
+    </Binding>
+
+    <Binding name="DCQOS_PING_ONMYWAY" header="DCQOS_PING">
+        DCQOS_PING_ONMYWAY();
+    </Binding>
+
+    <Binding name="DCQOS_PING_DANGER" header="DCQOS_PING">
+        DCQOS_PING_DANGER();
+    </Binding>
+
+    <Binding name="DCQOS_PING_INFO" header="DCQOS_PING">
+        DCQOS_PING_INFO();
+    </Binding>
+</Bindings>

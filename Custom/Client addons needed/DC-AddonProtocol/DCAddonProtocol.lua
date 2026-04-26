@@ -472,6 +472,7 @@ DC.ModuleNames = {
     EVNT = "Events",
     WRLD = "World",
     COLL = "Collection",
+    QOS = "Quality of Service",
 }
 
 -- Shared Keystone item IDs mapping for client addons (faster inventory detection)
@@ -1311,6 +1312,7 @@ DC.Module = {
     EVENTS = "EVNT",
     WORLD = "WRLD",
     COLLECTION = "COLL",
+    QOS = "QOS",
 }
 
 -- Opcode definitions for each module (must match server-side DCAddonNamespace.h)
@@ -1568,6 +1570,22 @@ DC.Opcode = {
         SMSG_WISHLIST_UPDATED = 0x62,
         SMSG_OPEN_UI = 0x70,
         SMSG_ERROR = 0x7F,
+    },
+    QOS = {
+        CMSG_SYNC_SETTINGS = 0x01,
+        CMSG_UPDATE_SETTING = 0x02,
+        CMSG_GET_ITEM_INFO = 0x03,
+        CMSG_GET_NPC_INFO = 0x04,
+        CMSG_GET_SPELL_INFO = 0x05,
+        CMSG_REQUEST_FEATURE = 0x06,
+        CMSG_COLLECT_ALL_MAIL = 0x07,
+        SMSG_SETTINGS_SYNC = 0x10,
+        SMSG_SETTING_UPDATED = 0x11,
+        SMSG_ITEM_INFO = 0x12,
+        SMSG_NPC_INFO = 0x13,
+        SMSG_SPELL_INFO = 0x14,
+        SMSG_FEATURE_DATA = 0x15,
+        SMSG_NOTIFICATION = 0x16,
     },
 }
 

@@ -33,7 +33,7 @@ local moduleCategories = {
     },
     {
         name = "UI Customization",
-        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Navigation", "Keybinds", "WeakAuras" }
+        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Navigation", "PingSystem", "Keybinds", "WeakAuras" }
     },
     {
         name = "Character",
@@ -66,6 +66,7 @@ local moduleDisplayNames = {
     ["ActionBars"] = "Action Bars",
     ["Minimap"] = "Minimap",
     ["Navigation"] = "Navigation",
+    ["PingSystem"] = "Ping System",
     ["Keybinds"] = "Keybinds",
     ["SocialEnhancements"] = "Social",
     ["Mail"] = "Mail",
@@ -95,6 +96,7 @@ local moduleIcons = {
     ["ActionBars"] = "Interface\\Icons\\Ability_Warrior_BattleShout",
     ["Minimap"] = "Interface\\Icons\\INV_Misc_Map_01",
     ["Navigation"] = "Interface\\Icons\\INV_Misc_Map_01",
+    ["PingSystem"] = "Interface\\Icons\\Ability_Hunter_MasterMarksman",
     ["Keybinds"] = "Interface\\Icons\\INV_Misc_Key_14",
     ["SocialEnhancements"] = "Interface\\Icons\\Spell_Holy_Stoicism",
     ["Mail"] = "Interface\\Icons\\Inv_Letter_02",
