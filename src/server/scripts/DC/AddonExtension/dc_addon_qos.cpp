@@ -35,6 +35,7 @@
 #include "DatabaseEnv.h"
 #include "dc_addon_namespace.h"
 #include "Config.h"
+#include "Log.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
@@ -44,8 +45,11 @@
 #include "Group.h"
 #include <string>
 #include <sstream>
+#include <iomanip>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <set>
 #include "Mail.h"
 
 namespace DCQoS
@@ -81,8 +85,11 @@ namespace DCQoS
     // AddonProtocol transport stays MODULE+uint8 opcode based, but payload fields are aligned.
     namespace BridgeOpcode
     {
-        constexpr uint16 CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 1313;
-        constexpr uint16 SMSG_SPELL_TOOLTIP_ENRICHMENT = 1314;
+        enum : uint16
+        {
+            CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 1313,
+            SMSG_SPELL_TOOLTIP_ENRICHMENT = 1314,
+        };
     }
 
     // Configuration keys
@@ -104,6 +111,7 @@ namespace DCQoS
         bool showItemLevel = true;
         bool showNpcId = true;
         bool showSpellId = true;
+        bool showSpellFamilyMetadata = false;
         bool showGuildRank = true;
         bool showTarget = true;
         bool hideHealthBar = false;
@@ -238,6 +246,7 @@ namespace DCQoS
                 else if (key == "tooltips.showItemLevel") settings.showItemLevel = (value == "1");
                 else if (key == "tooltips.showNpcId") settings.showNpcId = (value == "1");
                 else if (key == "tooltips.showSpellId") settings.showSpellId = (value == "1");
+                else if (key == "tooltips.showSpellFamilyMetadata") settings.showSpellFamilyMetadata = (value == "1");
                 else if (key == "tooltips.showGuildRank") settings.showGuildRank = (value == "1");
                 else if (key == "tooltips.showTarget") settings.showTarget = (value == "1");
                 else if (key == "tooltips.hideHealthBar") settings.hideHealthBar = (value == "1");
@@ -300,6 +309,7 @@ namespace DCQoS
         msg.Set("showItemLevel", settings.showItemLevel);
         msg.Set("showNpcId", settings.showNpcId);
         msg.Set("showSpellId", settings.showSpellId);
+        msg.Set("showSpellFamilyMetadata", settings.showSpellFamilyMetadata);
         msg.Set("showGuildRank", settings.showGuildRank);
         msg.Set("showTarget", settings.showTarget);
         msg.Set("hideHealthBar", settings.hideHealthBar);
@@ -618,29 +628,501 @@ namespace DCQoS
         msg.Send(player);
     }
 
+    static std::string FormatSpellSeconds(uint32 milliseconds)
+    {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision((milliseconds % 1000) != 0 ? 1 : 0)
+            << (static_cast<double>(milliseconds) / 1000.0)
+            << " sec";
+        return out.str();
+    }
+
+    static std::string GetPowerTypeLabel(uint32 powerType)
+    {
+        switch (powerType)
+        {
+            case POWER_MANA: return "Mana";
+            case POWER_RAGE: return "Rage";
+            case POWER_FOCUS: return "Focus";
+            case POWER_ENERGY: return "Energy";
+            case POWER_HAPPINESS: return "Happiness";
+            case POWER_RUNE: return "Rune";
+            case POWER_RUNIC_POWER: return "Runic Power";
+            case POWER_HEALTH: return "Health";
+            default: return "Power";
+        }
+    }
+
+    static void PushTooltipLine(DCAddon::JsonValue& lines,
+                                std::string const& left,
+                                std::string const& right = "",
+                                double r = 0.8,
+                                double g = 0.8,
+                                double b = 0.8,
+                                std::string const& kind = "")
+    {
+        DCAddon::JsonValue entry;
+        entry.SetObject();
+        entry.Set("left", left);
+        if (!right.empty())
+            entry.Set("right", right);
+        entry.Set("r", r);
+        entry.Set("g", g);
+        entry.Set("b", b);
+        if (!kind.empty())
+            entry.Set("kind", kind);
+        lines.Push(entry);
+    }
+
+    static std::vector<std::string> WrapTooltipText(std::string const& text, std::size_t maxWidth)
+    {
+        std::vector<std::string> wrapped;
+        if (text.empty() || maxWidth < 8)
+        {
+            wrapped.push_back(text);
+            return wrapped;
+        }
+
+        std::string remaining = text;
+        while (remaining.size() > maxWidth)
+        {
+            std::size_t split = remaining.rfind(' ', maxWidth);
+            if (split == std::string::npos || split < maxWidth / 2)
+                split = maxWidth;
+
+            wrapped.push_back(remaining.substr(0, split));
+
+            if (split < remaining.size() && remaining[split] == ' ')
+                ++split;
+            remaining.erase(0, split);
+        }
+
+        if (!remaining.empty())
+            wrapped.push_back(remaining);
+
+        if (wrapped.empty())
+            wrapped.push_back(text);
+
+        return wrapped;
+    }
+
+    static void PushWrappedTooltipLine(DCAddon::JsonValue& lines,
+                                       std::string const& left,
+                                       double r,
+                                       double g,
+                                       double b,
+                                       std::string const& kind,
+                                       std::size_t maxWidth = 92)
+    {
+        for (std::string const& chunk : WrapTooltipText(left, maxWidth))
+            PushTooltipLine(lines, chunk, "", r, g, b, kind);
+    }
+
+    static std::string GetSpellFamilyLabel(uint32 family)
+    {
+        switch (family)
+        {
+            case SPELLFAMILY_GENERIC: return "Generic";
+            case SPELLFAMILY_UNK1: return "Event/Holiday";
+            case SPELLFAMILY_MAGE: return "Mage";
+            case SPELLFAMILY_WARRIOR: return "Warrior";
+            case SPELLFAMILY_WARLOCK: return "Warlock";
+            case SPELLFAMILY_PRIEST: return "Priest";
+            case SPELLFAMILY_DRUID: return "Druid";
+            case SPELLFAMILY_ROGUE: return "Rogue";
+            case SPELLFAMILY_HUNTER: return "Hunter";
+            case SPELLFAMILY_PALADIN: return "Paladin";
+            case SPELLFAMILY_SHAMAN: return "Shaman";
+            case SPELLFAMILY_UNK2: return "Unknown-12";
+            case SPELLFAMILY_POTION: return "Potion";
+            case SPELLFAMILY_DEATHKNIGHT: return "Death Knight";
+            case SPELLFAMILY_PET: return "Pet";
+            default: return "Unknown";
+        }
+    }
+
+    static std::string FormatSpellFamilyInfo(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return "";
+
+        std::ostringstream out;
+        out << "Spell Family: " << GetSpellFamilyLabel(spellInfo->SpellFamilyName)
+            << " (" << spellInfo->SpellFamilyName << ")"
+            << " | Flags "
+            << "0x" << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << spellInfo->SpellFamilyFlags[0]
+            << ":0x" << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << spellInfo->SpellFamilyFlags[1]
+            << ":0x" << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << spellInfo->SpellFamilyFlags[2];
+        return out.str();
+    }
+
+    struct TooltipAmountRange
+    {
+        int32 Min = 0;
+        int32 Max = 0;
+
+        bool IsValid() const
+        {
+            return Min != 0 || Max != 0;
+        }
+    };
+
+    static int32 GetTooltipBasePoints(Player* player,
+                                      SpellInfo const* spellInfo,
+                                      SpellEffectInfo const& effect)
+    {
+        if (!spellInfo)
+            return effect.BasePoints;
+
+        int32 basePoints = effect.BasePoints;
+
+        if (player && effect.RealPointsPerLevel != 0.0f)
+        {
+            int32 level = int32(player->GetLevel());
+            if (level > int32(spellInfo->MaxLevel) && spellInfo->MaxLevel > 0)
+                level = int32(spellInfo->MaxLevel);
+            else if (level < int32(spellInfo->BaseLevel))
+                level = int32(spellInfo->BaseLevel);
+
+            level -= int32(std::max(spellInfo->BaseLevel, spellInfo->SpellLevel));
+            basePoints += int32(level * effect.RealPointsPerLevel);
+        }
+
+        return basePoints;
+    }
+
+    static TooltipAmountRange GetTooltipAmountRange(Player* player,
+                                                    SpellInfo const* spellInfo,
+                                                    SpellEffectInfo const& effect)
+    {
+        TooltipAmountRange range;
+        int32 basePoints = GetTooltipBasePoints(player, spellInfo, effect);
+        int32 dieSides = effect.DieSides;
+
+        range.Min = basePoints;
+        range.Max = basePoints;
+
+        if (dieSides == 1)
+        {
+            range.Min += 1;
+            range.Max += 1;
+        }
+        else if (dieSides > 1)
+        {
+            range.Min += 1;
+            range.Max += dieSides;
+        }
+        else if (dieSides < 0)
+        {
+            range.Min += dieSides;
+            range.Max += 1;
+        }
+
+        if (range.Min > range.Max)
+            std::swap(range.Min, range.Max);
+
+        return range;
+    }
+
+    static std::string FormatSignedAmountRange(TooltipAmountRange const& range, bool absolute = false)
+    {
+        int32 minValue = absolute ? std::abs(range.Min) : range.Min;
+        int32 maxValue = absolute ? std::abs(range.Max) : range.Max;
+
+        if (minValue > maxValue)
+            std::swap(minValue, maxValue);
+
+        std::ostringstream out;
+        if (minValue == maxValue)
+            out << minValue;
+        else
+            out << minValue << " to " << maxValue;
+        return out.str();
+    }
+
+    static uint32 GetTooltipTickCount(SpellInfo const* spellInfo, SpellEffectInfo const& effect)
+    {
+        if (!spellInfo || effect.Amplitude == 0)
+            return 0;
+
+        int32 durationMs = spellInfo->GetMaxDuration();
+        if (durationMs <= 0)
+            return 0;
+
+        return std::max<uint32>(1u, static_cast<uint32>(durationMs / int32(effect.Amplitude)));
+    }
+
+    static std::string FormatPeriodicTotalLine(Player* player,
+                                               SpellInfo const* spellInfo,
+                                               SpellEffectInfo const& effect,
+                                               char const* singularVerb,
+                                               char const* totalNoun)
+    {
+        TooltipAmountRange perTick = GetTooltipAmountRange(player, spellInfo, effect);
+        uint32 tickCount = GetTooltipTickCount(spellInfo, effect);
+        if (!perTick.IsValid() || tickCount == 0)
+            return "";
+
+        TooltipAmountRange total;
+        total.Min = perTick.Min * int32(tickCount);
+        total.Max = perTick.Max * int32(tickCount);
+
+        std::ostringstream line;
+        line << singularVerb << " " << FormatSignedAmountRange(total, true)
+             << " " << totalNoun << " over "
+             << FormatSpellSeconds(static_cast<uint32>(spellInfo->GetMaxDuration()));
+        return line.str();
+    }
+
+    static std::string BuildSpellEffectTooltipLine(Player* player,
+                                                   SpellInfo const* spellInfo,
+                                                   SpellEffectInfo const& effect)
+    {
+        TooltipAmountRange amount = GetTooltipAmountRange(player, spellInfo, effect);
+
+        if (effect.Effect == SPELL_EFFECT_WEAPON_DAMAGE
+            || effect.Effect == SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL
+            || effect.Effect == SPELL_EFFECT_NORMALIZED_WEAPON_DMG)
+        {
+            if (amount.IsValid())
+                return "Weapon damage plus " + FormatSignedAmountRange(amount, true) + ".";
+            return "Deals weapon damage.";
+        }
+
+        if (effect.Effect == SPELL_EFFECT_WEAPON_PERCENT_DAMAGE)
+        {
+            if (amount.IsValid())
+                return "Deals " + FormatSignedAmountRange(amount, true) + "% weapon damage.";
+            return "Deals weapon damage based on a percentage modifier.";
+        }
+
+        if ((effect.Effect == SPELL_EFFECT_TRIGGER_SPELL
+            || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL_2
+            || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL_WITH_VALUE
+            || effect.Effect == SPELL_EFFECT_TRIGGER_MISSILE
+            || effect.Effect == SPELL_EFFECT_TRIGGER_MISSILE_SPELL_WITH_VALUE)
+            && effect.TriggerSpell > 0)
+        {
+            SpellInfo const* triggered = sSpellMgr->GetSpellInfo(effect.TriggerSpell);
+            if (triggered && triggered->SpellName[0] && *triggered->SpellName[0])
+            {
+                std::ostringstream out;
+                out << "Triggers " << triggered->SpellName[0]
+                    << " (Spell " << effect.TriggerSpell << ")";
+                if (triggered->Rank[0] && *triggered->Rank[0])
+                    out << ", " << triggered->Rank[0];
+                out << ".";
+                return out.str();
+            }
+
+            return "Triggers Spell " + std::to_string(effect.TriggerSpell) + ".";
+        }
+
+        switch (effect.Effect)
+        {
+            case SPELL_EFFECT_SCHOOL_DAMAGE:
+            case SPELL_EFFECT_HEALTH_LEECH:
+                if (amount.IsValid())
+                    return "Causes " + FormatSignedAmountRange(amount, true) + " damage.";
+                break;
+            case SPELL_EFFECT_HEAL:
+            case SPELL_EFFECT_HEAL_MECHANICAL:
+                if (amount.IsValid())
+                    return "Heals a friendly target for " + FormatSignedAmountRange(amount, true) + ".";
+                break;
+            case SPELL_EFFECT_ENERGIZE:
+                if (amount.IsValid())
+                    return "Restores " + FormatSignedAmountRange(amount, true) + " " + GetPowerTypeLabel(spellInfo->PowerType) + ".";
+                break;
+            default:
+                break;
+        }
+
+        if (!effect.IsAura())
+            return "";
+
+        switch (effect.ApplyAuraName)
+        {
+            case SPELL_AURA_PERIODIC_DAMAGE:
+            case SPELL_AURA_PERIODIC_LEECH:
+            case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
+                return FormatPeriodicTotalLine(player, spellInfo, effect, "Causes", "damage");
+            case SPELL_AURA_PERIODIC_HEAL:
+            case SPELL_AURA_PERIODIC_HEALTH_FUNNEL:
+                return FormatPeriodicTotalLine(player, spellInfo, effect, "Heals", "health");
+            case SPELL_AURA_PERIODIC_TRIGGER_SPELL:
+                if (effect.TriggerSpell > 0)
+                {
+                    SpellInfo const* triggered = sSpellMgr->GetSpellInfo(effect.TriggerSpell);
+                    if (triggered && triggered->SpellName[0] && *triggered->SpellName[0])
+                    {
+                        std::ostringstream out;
+                        out << "Periodically triggers " << triggered->SpellName[0]
+                            << " (Spell " << effect.TriggerSpell << ").";
+                        return out.str();
+                    }
+                    return "Periodically triggers Spell " + std::to_string(effect.TriggerSpell) + ".";
+                }
+                break;
+            case SPELL_AURA_SCHOOL_ABSORB:
+            case SPELL_AURA_MANA_SHIELD:
+                if (amount.IsValid())
+                    return "Absorbs " + FormatSignedAmountRange(amount, true) + " damage.";
+                break;
+            case SPELL_AURA_MOD_STUN:
+                return "Stuns the target.";
+            case SPELL_AURA_MOD_ROOT:
+                return "Roots the target in place.";
+            case SPELL_AURA_MOD_FEAR:
+                return "Causes the target to flee in fear.";
+            case SPELL_AURA_MOD_CONFUSE:
+                return "Disorients the target.";
+            case SPELL_AURA_MOD_SILENCE:
+                return "Silences the target.";
+            case SPELL_AURA_MOD_INCREASE_SPEED:
+                if (amount.IsValid())
+                    return "Increases movement speed by " + FormatSignedAmountRange(amount, true) + "%.";
+                break;
+            case SPELL_AURA_MOD_DECREASE_SPEED:
+                if (amount.IsValid())
+                    return "Reduces movement speed by " + FormatSignedAmountRange(amount, true) + "%.";
+                break;
+            case SPELL_AURA_MOD_DAMAGE_DONE:
+            case SPELL_AURA_MOD_DAMAGE_PERCENT_DONE:
+                if (amount.IsValid())
+                    return "Increases damage done by " + FormatSignedAmountRange(amount, true) + ".";
+                break;
+            case SPELL_AURA_MOD_HEALING:
+                if (amount.IsValid())
+                    return "Increases healing done by " + FormatSignedAmountRange(amount, true) + ".";
+                break;
+            case SPELL_AURA_MOD_STAT:
+            case SPELL_AURA_MOD_PERCENT_STAT:
+                if (amount.IsValid())
+                    return "Modifies stats by " + FormatSignedAmountRange(amount, true) + ".";
+                break;
+            default:
+                break;
+        }
+
+        return "";
+    }
+
+    static void AppendSpellDescriptionLines(Player* player,
+                                            SpellInfo const* spellInfo,
+                                            DCAddon::JsonValue& lines,
+                                            bool includeFamilyMetadata)
+    {
+        if (!spellInfo)
+            return;
+
+        std::set<std::string> seen;
+
+        std::string familyInfo = includeFamilyMetadata ? FormatSpellFamilyInfo(spellInfo) : "";
+        if (!familyInfo.empty())
+            PushWrappedTooltipLine(lines, familyInfo, 0.70, 0.92, 1.00, "meta");
+
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            if (!effect.IsEffect())
+                continue;
+
+            std::string description = BuildSpellEffectTooltipLine(player, spellInfo, effect);
+            if (description.empty() || !seen.insert(description).second)
+                continue;
+
+            PushWrappedTooltipLine(lines, description, 0.95, 0.82, 0.55, "body");
+        }
+    }
+
+    static DCAddon::JsonValue BuildSpellTooltipEnrichmentLines(Player* player,
+                                                               uint32 /*spellId*/,
+                                                               uint32 /*contextHash*/,
+                                                               SpellInfo const* spellInfo,
+                                                               std::string const& /*line*/,
+                                                               bool includeFamilyMetadata)
+    {
+        DCAddon::JsonValue lines;
+        lines.SetArray();
+
+        if (!spellInfo)
+            return lines;
+
+        if (spellInfo->Rank[0] && *spellInfo->Rank[0])
+            PushTooltipLine(lines, spellInfo->Rank[0]);
+
+        uint32 castTimeMs = spellInfo->CalcCastTime(player);
+        if (castTimeMs == 0)
+            PushTooltipLine(lines, "Instant cast");
+        else
+            PushTooltipLine(lines, FormatSpellSeconds(castTimeMs) + " cast");
+
+        float minRange = spellInfo->GetMinRange(false);
+        float maxRange = spellInfo->GetMaxRange(false, player);
+        if (maxRange > 0.0f)
+        {
+            std::ostringstream rangeLine;
+            rangeLine << std::fixed << std::setprecision(0);
+            if (minRange > 0.0f)
+                rangeLine << minRange << "-" << maxRange << " yd range";
+            else
+                rangeLine << maxRange << " yd range";
+            PushTooltipLine(lines, rangeLine.str());
+        }
+
+        int32 powerCost = player ? spellInfo->CalcPowerCost(player, spellInfo->GetSchoolMask()) : 0;
+        if (powerCost > 0)
+        {
+            std::ostringstream costLine;
+            costLine << powerCost << " " << GetPowerTypeLabel(spellInfo->PowerType);
+            PushTooltipLine(lines, costLine.str());
+        }
+
+        uint32 cooldownMs = spellInfo->GetRecoveryTime();
+        if (cooldownMs > 0)
+            PushTooltipLine(lines, "Cooldown", FormatSpellSeconds(cooldownMs));
+
+        int32 durationMs = spellInfo->GetMaxDuration();
+        if (durationMs > 0)
+            PushTooltipLine(lines, "Duration", FormatSpellSeconds(static_cast<uint32>(durationMs)));
+
+        AppendSpellDescriptionLines(player, spellInfo, lines, includeFamilyMetadata);
+
+        return lines;
+    }
+
     // AddonProtocol skeleton for the mixed tooltip architecture:
     // request payload order: requestId, spellId, contextHash
-    // response payload order: requestId, spellId, contextHash, status, line
+    // JSON response fields: requestId, spellId, contextHash, status, line, lines[]
     void SendSpellTooltipEnrichment(Player* player,
                                     uint32 requestId,
                                     uint32 spellId,
                                     uint32 contextHash,
                                     uint8 status,
                                     std::string const& line,
-                                    std::string const& protocolRequestId)
+                                    std::string const& protocolRequestId,
+                                    SpellInfo const* spellInfo = nullptr,
+                                    bool includeFamilyMetadata = false)
     {
         if (!player || !player->GetSession())
             return;
 
-        DCAddon::Message msg(MODULE, Opcode::SMSG_SPELL_TOOLTIP_ENRICHMENT);
+        DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SPELL_TOOLTIP_ENRICHMENT);
         if (!protocolRequestId.empty())
             msg.SetRequestId(protocolRequestId);
 
-        msg.Add(requestId);
-        msg.Add(spellId);
-        msg.Add(contextHash);
-        msg.Add(static_cast<uint32>(status));
-        msg.Add(line);
+        msg.Set("requestId", requestId);
+        msg.Set("spellId", spellId);
+        msg.Set("contextHash", contextHash);
+        msg.Set("status", static_cast<uint32>(status));
+        msg.Set("line", line);
+
+        if (status == 0 && spellInfo)
+        {
+            msg.Set("source", "server-v2");
+            msg.Set("lines", BuildSpellTooltipEnrichmentLines(player, spellId, contextHash, spellInfo, line, includeFamilyMetadata));
+        }
+
         msg.Send(player);
     }
 
@@ -866,7 +1348,10 @@ namespace DCQoS
             return;
         }
 
-        SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 0, line, msg.GetRequestId());
+        QoSSettings settings = LoadPlayerSettings(player);
+        bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
+
+        SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 0, line, msg.GetRequestId(), spellInfo, includeFamilyMetadata);
     }
 
     void HandleRequestFeature(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1049,11 +1534,97 @@ namespace DCQoS
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Login spell enrichment pre-push helpers
+    // -----------------------------------------------------------------------
+
+    // Mirrors the Lua FNV-1a-style hash used by BuildSpellTooltipContextHash.
+    // Keep in sync with DC-QOS/Modules/Tooltips.lua constants:
+    //   SEED  = 2166136261, PRIME = 16777619, MOD = 4294967296
+    static uint32 MixSpellTooltipContext(uint32 hash, uint32 value)
+    {
+        uint64 h = (static_cast<uint64>(hash) + value) % 4294967296ULL;
+        h = (h * 16777619ULL) % 4294967296ULL;
+        return static_cast<uint32>(h);
+    }
+
+    // Replicates client-side BuildSpellTooltipContextHash(spellId) at login.
+    // shapeshiftForm = 0 on login (no active form yet).
+    // activeTalentGroup is 1-indexed on the client (GetActiveTalentGroup returns 1 or 2).
+    static uint32 BuildSpellTooltipContextHashForPlayer(uint32 spellId, uint8 level, uint8 classId, uint8 activeTalentGroup)
+    {
+        uint32 hash = 2166136261U;
+        hash = MixSpellTooltipContext(hash, spellId);
+        hash = MixSpellTooltipContext(hash, level);
+        hash = MixSpellTooltipContext(hash, classId);
+        hash = MixSpellTooltipContext(hash, 0u); // shapeshiftForm = 0 at login
+        hash = MixSpellTooltipContext(hash, activeTalentGroup);
+        if (hash == 0) hash = 1;
+        return hash;
+    }
+
+    // Push enrichment data for every active, non-passive spell the player knows.
+    // Uses requestId=0 as the server-push sentinel (no pending client request to resolve).
+    static void PushAllSpellEnrichments(Player* player)
+    {
+        if (!player || !player->IsInWorld())
+            return;
+
+        QoSSettings settings = LoadPlayerSettings(player);
+        bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
+
+        uint8 level            = static_cast<uint8>(player->GetLevel());
+        uint8 classId          = static_cast<uint8>(player->getClass());
+        // Client GetActiveTalentGroup() is 1-indexed; server GetActiveSpec() is 0-indexed.
+        uint8 activeTalentGroup = static_cast<uint8>(player->GetActiveSpec() + 1);
+
+        uint32 pushed = 0;
+        for (auto const& [spellId, spellState] : player->GetSpellMap())
+        {
+            if (!spellState || spellState->State == PLAYERSPELL_REMOVED || !spellState->Active)
+                continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo || spellInfo->IsPassive())
+                continue;
+
+            uint32 contextHash = BuildSpellTooltipContextHashForPlayer(spellId, level, classId, activeTalentGroup);
+
+            std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, contextHash, spellInfo);
+            if (line.empty())
+                continue;
+
+            // requestId=0 → server-initiated push; client caches without requiring a pending entry.
+            SendSpellTooltipEnrichment(player, 0, spellId, contextHash, 0, line, "", spellInfo, includeFamilyMetadata);
+            ++pushed;
+        }
+
+        LOG_DEBUG("module.dc", "DCQoS: Pre-pushed {} spell enrichments to player '{}'", pushed, player->GetName());
+    }
+
 }  // namespace DCQoS
 
 // ============================================================================
 // REGISTER HANDLERS
 // ============================================================================
+
+// Delayed event: fires 3 s after login to give the DC-QOS addon time to
+// connect and register its protocol handlers before we flood it with data.
+class DCQoS_SpellEnrichmentPushEvent : public BasicEvent
+{
+public:
+    explicit DCQoS_SpellEnrichmentPushEvent(ObjectGuid guid) : _guid(guid) {}
+
+    bool Execute(uint64 /*e_time*/, uint32 /*p_time*/) override
+    {
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(_guid))
+            DCQoS::PushAllSpellEnrichments(player);
+        return true; // consumed – do not repeat
+    }
+
+private:
+    ObjectGuid _guid;
+};
 
 class DCQoSPlayerScript : public PlayerScript
 {
@@ -1065,9 +1636,11 @@ public:
         if (!DCQoS::IsEnabled() || !player)
             return;
 
-        // Send initial settings sync on login (delayed to let addon initialize)
+        // Pre-push spell enrichment data so first-hover tooltips are instant.
+        // Delayed 3 s to let the addon initialize and open its protocol channel.
         player->m_Events.AddEvent(
-            new BasicEvent(), player->m_Events.CalculateTime(2000)
+            new DCQoS_SpellEnrichmentPushEvent(player->GetGUID()),
+            player->m_Events.CalculateTime(3000)
         );
     }
 };
@@ -1094,5 +1667,26 @@ namespace DCAddon
 void AddDCQoSScripts()
 {
     DCAddon::RegisterQoSHandlers();
+
+    auto& router = DCAddon::MessageRouter::Instance();
+    bool hasTooltipHandler = router.HasHandler(DCQoS::MODULE, DCQoS::Opcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT);
+
+    if (hasTooltipHandler)
+    {
+        LOG_INFO(
+            "module.dc",
+            "DCQoS handler registration verified (module={}, opcode=0x{:02X})",
+            DCQoS::MODULE,
+            DCQoS::Opcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT);
+    }
+    else
+    {
+        LOG_ERROR(
+            "module.dc",
+            "DCQoS handler registration missing (module={}, opcode=0x{:02X})",
+            DCQoS::MODULE,
+            DCQoS::Opcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT);
+    }
+
     new DCQoSPlayerScript();
 }

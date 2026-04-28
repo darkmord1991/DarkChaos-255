@@ -5,6 +5,7 @@
 
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
+_G.DCInfoBar = DCInfoBar
 
 -- Extended tooltip with better formatting
 function DCInfoBar:CreateTooltipLine(text, r, g, b)

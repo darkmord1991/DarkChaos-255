@@ -280,6 +280,7 @@ Modules\Tooltips.lua
 Modules\Automation.lua
 Modules\Chat.lua
 Modules\Interface.lua
+Modules\QuestTrackerMarkers.lua
 Modules\QuestFrames.lua
 Modules\DruidFix.lua
 Modules\ExtendedStats\ExtendedStats.lua

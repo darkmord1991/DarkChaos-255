@@ -71,71 +71,25 @@ local function AnchorBarAbove(bar, stack, yOffset, leftAlign)
     return IsBarActive(bar)
 end
 
-local function ReanchorAuxiliaryBars(anchorFrame, gap, preferBottomLeftFormAnchor)
+local function ReanchorAuxiliaryBars(anchorFrame, gap)
     if not anchorFrame then return end
 
     local baseSpacing = math.max(10, gap or 0)
-    local formYOffset = baseSpacing + 6
-    if preferBottomLeftFormAnchor then
-        formYOffset = formYOffset - 3
-    end
     local stack = anchorFrame
-    local formAnchor = anchorFrame
-
-    if preferBottomLeftFormAnchor then
-        local bottomLeft = _G.MultiBarBottomLeft
-        local bottomRight = _G.MultiBarBottomRight
-        if bottomRight and IsBarActive(bottomRight) then
-            formAnchor = bottomRight
-        elseif bottomLeft and IsBarActive(bottomLeft) then
-            formAnchor = bottomLeft
-        end
-    end
-
-    local stance = _G.StanceBarFrame
-    local shapeshift = _G.ShapeshiftBarFrame
-    local primaryFormBar = stance or shapeshift
-
-    if stance and shapeshift and stance ~= shapeshift then
-        if IsBarActive(stance) then
-            primaryFormBar = stance
-        else
-            primaryFormBar = shapeshift
-        end
-    end
-
-    if primaryFormBar then
-        local formActive = AnchorBarAbove(primaryFormBar, formAnchor, formYOffset, true)
-        if formActive then
-            stack = primaryFormBar
-        end
-    end
-
     local seen = {}
-    if primaryFormBar then
-        seen[primaryFormBar] = true
-    end
 
     local bars = {
         _G.PossessBarFrame,
         _G.PetActionBarFrame,
-        -- Keep the bonus/stance bar on Blizzard's default overlay anchor.
-        -- Reanchoring it into the auxiliary stack causes a duplicate-looking
-        -- action bar for classes like warriors.
+        -- Keep stance/presence bars on Blizzard's default overlay anchor.
+        -- Reanchoring these frames moves warrior stances and DK presences
+        -- away from their expected blizzlike position.
     }
 
     for _, bar in ipairs(bars) do
         if bar and not seen[bar] and AnchorBarAbove(bar, stack, baseSpacing, false) then
             seen[bar] = true
             stack = bar
-        end
-    end
-
-    if stance and shapeshift and stance ~= shapeshift then
-        local secondaryFormBar = (primaryFormBar == stance) and shapeshift or stance
-        if secondaryFormBar then
-            secondaryFormBar:ClearAllPoints()
-            secondaryFormBar:SetPoint("BOTTOMLEFT", formAnchor, "TOPLEFT", 0, formYOffset)
         end
     end
 end
@@ -212,7 +166,7 @@ local function ApplyBlizzardMode()
     local baseHeight = btn and btn:GetHeight() or 36
     local scaledHeight = baseHeight * scale
     local gap = math.floor(math.max(6, 6 + (scaledHeight - baseHeight)))
-    ReanchorAuxiliaryBars(auxAnchor, gap, true)
+    ReanchorAuxiliaryBars(auxAnchor, gap)
 end
 
 local function ApplyCustomMode()
@@ -315,7 +269,7 @@ local function ApplyCustomMode()
     end
 
     local gap = math.max(8, spacing + math.floor(size * 0.2))
-    ReanchorAuxiliaryBars(auxAnchor, gap, false)
+    ReanchorAuxiliaryBars(auxAnchor, gap)
 end
 
 ApplyActionBars = function()

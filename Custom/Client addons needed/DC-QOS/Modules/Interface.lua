@@ -82,6 +82,10 @@ local function GetManagedEventFrame(key)
     return eventFrames[key]
 end
 
+local function IsInRestrictedCombat()
+    return type(InCombatLockdown) == "function" and InCombatLockdown()
+end
+
 -- Forward declaration: map update hooks can run before this function is assigned.
 local ApplyStandaloneWorldMapWindowState
 
@@ -757,10 +761,17 @@ local function InstallStandaloneWorldMapHeaderHooks()
     end
 
     local function RequestUpdate()
-        if worldMapState.active then
-            ApplyStandaloneWorldMapWindowState()
-            UpdateStandaloneWorldMapHeader()
+        if not worldMapState.active then
+            return
         end
+
+        -- Avoid protected frame reparent/reanchor work while in combat.
+        if IsInRestrictedCombat() then
+            return
+        end
+
+        ApplyStandaloneWorldMapWindowState()
+        UpdateStandaloneWorldMapHeader()
     end
 
     local hookNames = {
@@ -1370,6 +1381,10 @@ ApplyStandaloneWorldMapWindowState = function()
         return
     end
 
+    if IsInRestrictedCombat() then
+        return
+    end
+
     if UIPanelWindows then
         UIPanelWindows["WorldMapFrame"] = nil
     end
@@ -1814,6 +1829,10 @@ local function EnsureStandaloneWorldMapShell()
         return
     end
 
+    if IsInRestrictedCombat() then
+        return
+    end
+
     local wasShown = WorldMapFrame.IsShown and WorldMapFrame:IsShown() or false
     if wasShown and type(HideUIPanel) == "function" then
         HideUIPanel(WorldMapFrame)
@@ -1847,6 +1866,10 @@ local function InstallMapsterLayoutHooks()
 
     local function ReapplyLayout()
         if not worldMapState.active then
+            return
+        end
+
+        if IsInRestrictedCombat() then
             return
         end
 
@@ -1901,6 +1924,11 @@ local function InstallMapsterSelectionHooks()
 
     local function SuppressQuestLogPanelOnShow(frame)
         if not frame or not ShouldSuppressStandaloneQuestLogPanels() then
+            return
+        end
+
+        -- In combat the map cannot be closed, so allow the quest log to open.
+        if InCombatLockdown() then
             return
         end
 

@@ -39,6 +39,55 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
 static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& requestId);
 static std::string EscapeSQLString(std::string s);
 
+namespace
+{
+    // Resiliency fallback for tooltip enrichment requests.
+    constexpr uint8 QOS_CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 0x08;
+    constexpr uint8 QOS_SMSG_SPELL_TOOLTIP_ENRICHMENT = 0x17;
+    constexpr uint32 QOS_ENRICHMENT_STATUS_NO_DATA = 3;
+
+    bool TrySendQoSTooltipFallback(Player* player, const DCAddon::ParsedMessage& parsed)
+    {
+        if (!player || !player->GetSession())
+            return false;
+
+        if (parsed.GetModule() != DCAddon::Module::QOS || parsed.GetOpcode() != QOS_CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT)
+            return false;
+
+        // Expected payload: requestId|spellId|contextHash.
+        if (parsed.GetDataCount() < 3)
+            return false;
+
+        uint32 requestId = parsed.GetUInt32(0);
+        uint32 spellId = parsed.GetUInt32(1);
+        uint32 contextHash = parsed.GetUInt32(2);
+
+        DCAddon::Message fallback(DCAddon::Module::QOS, QOS_SMSG_SPELL_TOOLTIP_ENRICHMENT);
+        if (parsed.HasRequestId())
+            fallback.SetRequestId(parsed.GetRequestId());
+
+        fallback
+            .Add(requestId)
+            .Add(spellId)
+            .Add(contextHash)
+            .Add(QOS_ENRICHMENT_STATUS_NO_DATA)
+            .Add(std::string(""));
+        fallback.Send(player);
+
+        LOG_ERROR(
+            "module.dc",
+            "QoS tooltip fallback responded for missing handler (module={}, opcode=0x{:02X}, rid={}, requestId={}, spellId={}, contextHash={})",
+            parsed.GetModule(),
+            parsed.GetOpcode(),
+            parsed.GetRequestId(),
+            requestId,
+            spellId,
+            contextHash);
+
+        return true;
+    }
+}
+
 static std::string NormalizeHandshakeVersionString(const DCAddon::ParsedMessage& msg)
 {
     std::string version = msg.GetString(0);
@@ -1678,6 +1727,12 @@ public:
                 DCAddon::ErrorCode::UNKNOWN,
                 DCAddon::Opcode::Core::SMSG_ERROR);
         }
+
+        // Temporary safety net: if the QoS tooltip endpoint is requested while the
+        // handler table is stale/missing, emit a protocol-compatible response instead
+        // of allowing request timeout churn.
+        if (!handled && !handlerException && moduleEnabled && !hadRegisteredHandler)
+            handled = TrySendQoSTooltipFallback(player, parsed);
 
         // Fallback completion path for handled requests:
         // if the handler consumed the request but did not emit a response packet

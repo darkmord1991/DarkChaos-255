@@ -330,6 +330,9 @@ function protocol:HandleSpellTooltipEnrichment(...)
         contextHash = contextHash,
         status = status,
         line = line,
+        lines = type(data.lines) == "table" and data.lines or nil,
+        title = data.title,
+        source = data.source,
         receivedAt = GetTime(),
     }
 

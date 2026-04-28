@@ -124,6 +124,7 @@ addon.defaults = {
         showNpcId = true,
         showNpcKillCount = true,
         showSpellId = true,
+        showSpellFamilyMetadata = false,
         showGuildRank = true,
         showTarget = true,
         hideHealthBar = false,
@@ -515,6 +516,120 @@ function addon:Debug(msg)
 
         print(line)
     end
+end
+
+function addon:GetMapUtils()
+    if self._mapUtils then
+        return self._mapUtils
+    end
+
+    local mapDataLib
+    local mapUtils = {}
+
+    function mapUtils.NormalizeCoord(value)
+        if value == nil then
+            return nil
+        end
+
+        local n = tonumber(value)
+        if not n then
+            return nil
+        end
+
+        if n > 1 then
+            n = n / 100
+        end
+
+        if n < 0 or n > 1 then
+            return nil
+        end
+
+        return n
+    end
+
+    function mapUtils.GetMapDataLib()
+        if mapDataLib ~= nil then
+            return mapDataLib or nil
+        end
+
+        if type(LibStub) == "function" then
+            mapDataLib = LibStub("LibMapData-1.0", true)
+        else
+            mapDataLib = false
+        end
+
+        return mapDataLib or nil
+    end
+
+    function mapUtils.SafeSetMapToCurrentZone()
+        if type(SetMapToCurrentZone) ~= "function" then
+            return
+        end
+
+        local worldMapShown =
+            WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
+        if not worldMapShown then
+            pcall(SetMapToCurrentZone)
+        end
+    end
+
+    function mapUtils.GetPlayerMapPositionSafe()
+        local mapId
+
+        if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+            mapId = C_Map.GetBestMapForUnit("player")
+            if mapId then
+                local pos = C_Map.GetPlayerMapPosition(mapId, "player")
+                if pos and pos.x and pos.y and pos.x > 0 and pos.y > 0 then
+                    return pos.x, pos.y, mapId
+                end
+            end
+        end
+
+        if type(GetPlayerMapPosition) == "function" then
+            local x, y = GetPlayerMapPosition("player")
+            if (not x or not y or x <= 0 or y <= 0) then
+                mapUtils.SafeSetMapToCurrentZone()
+                x, y = GetPlayerMapPosition("player")
+            end
+
+            if x and y and x > 0 and y > 0 then
+                mapId =
+                    (type(GetCurrentMapAreaID) == "function")
+                    and GetCurrentMapAreaID()
+                    or nil
+                return x, y, mapId
+            end
+        end
+
+        return nil, nil, nil
+    end
+
+    function mapUtils.GetMapAreaYards(mapId)
+        local mapLib = mapUtils.GetMapDataLib()
+        if mapLib and mapId and mapLib.MapArea then
+            local floor =
+                (type(GetCurrentMapDungeonLevel) == "function")
+                and GetCurrentMapDungeonLevel()
+                or 0
+            local ok, width, height = pcall(mapLib.MapArea, mapLib, mapId, floor)
+            if ok and width and height and width > 0 and height > 0 then
+                return width, height
+            end
+        end
+
+        return 10000, 10000
+    end
+
+    function mapUtils.ComputeDistanceYards(mapId, x1, y1, x2, y2)
+        local width, height = mapUtils.GetMapAreaYards(mapId)
+        local dx = (x2 - x1) * width
+        local dy = (y2 - y1) * height
+        return math.sqrt((dx * dx) + (dy * dy)), dx, dy
+    end
+
+    self._mapUtils = mapUtils
+    return mapUtils
 end
 
 -- 3.3.5a compatible delayed call

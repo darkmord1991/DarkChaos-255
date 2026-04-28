@@ -30,6 +30,10 @@ local PingSystem = {
             radialMenuDeadzone = 28,
             radialHoldDelay = 0.15,
             centerYOffset = -96,
+            entityTrackRefreshSec = 0.10,
+            entityUnitWorldZOffset = 2.25,
+            entityGameObjectWorldZOffset = 1.25,
+            entityObjectWorldZOffset = 1.75,
             maxActivePings = 6,
             throttleMs = 120,
         },
@@ -52,9 +56,49 @@ local state = {
     menuEntries = nil,
     menuSelectionType = nil,
     menuHoldTimer = nil,
+    retailApiShimInstalled = false,
+    securePingCallbacks = {},
+    nextSecurePingFrameId = 1,
+    securePingBridgeInstalled = false,
+    pingListenerEnabled = true,
+    recentRemotePings = {},
+    recentLocalRelaySequences = {},
 }
 
-local mapDataLib = nil
+local SECURE_PING_EVENT_RADIAL_CREATED = "radialCreated"
+local SECURE_PING_EVENT_PENDING_OFFSCREEN = "pendingOffscreen"
+local SECURE_PING_EVENT_TOGGLE_LISTENER = "toggleListener"
+local SECURE_PING_EVENT_COOLDOWN_STARTED = "cooldownStarted"
+local SECURE_PING_EVENT_PIN_ADDED = "pinFrameAdded"
+local SECURE_PING_EVENT_PIN_REMOVED = "pinFrameRemoved"
+local SECURE_PING_EVENT_PIN_CLAMP_UPDATED = "pinFrameClampStateUpdated"
+local SECURE_PING_EVENT_SEND_MACRO = "sendMacro"
+
+local PING_SECURE_EXPECTED_METHODS = {
+    "CreateFrame",
+    "DisplayError",
+    "ClearPendingPingInfo",
+    "GetTargetWorldPing",
+    "GetTargetWorldPingAndSend",
+    "SendPing",
+    "GetTargetPingReceiver",
+    "SetPingRadialWheelCreatedCallback",
+    "SetPendingPingOffScreenCallback",
+    "SetTogglePingListenerCallback",
+    "SetPingCooldownStartedCallback",
+    "SetPingPinFrameAddedCallback",
+    "SetPingPinFrameRemovedCallback",
+    "SetPingPinFrameScreenClampStateUpdatedCallback",
+    "SetSendMacroPingCallback",
+    "GetCallbackState",
+}
+
+local mapUtils = addon:GetMapUtils()
+local NormalizeCoord = mapUtils.NormalizeCoord
+local SafeSetMapToCurrentZone = mapUtils.SafeSetMapToCurrentZone
+local GetPlayerMapPositionSafe = mapUtils.GetPlayerMapPositionSafe
+local ComputeDistanceYards = mapUtils.ComputeDistanceYards
+local GetMapAreaYards = mapUtils.GetMapAreaYards
 
 local math_abs = math.abs
 local math_atan2 = math.atan2
@@ -68,25 +112,117 @@ local math_rad = math.rad
 local math_sin = math.sin
 local math_sqrt = math.sqrt
 
-local PING_TEXTURE_ROOT = "Interface\\AddOns\\DC-QOS\\Textures\\PingSystem\\Atlas"
+local RAID_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
+local PING_ATLAS_TEXTURE_SHEET = "Interface\\AddOns\\DC-QOS\\Textures\\PingSystem\\Blizzard\\RadialWheel\\uipingsystem.blp"
+
+local function BuildRaidIconAtlas(iconIndex)
+    iconIndex = tonumber(iconIndex) or 1
+    if iconIndex < 1 then
+        iconIndex = 1
+    elseif iconIndex > 8 then
+        iconIndex = 8
+    end
+
+    local col = (iconIndex - 1) % 4
+    local row = math_floor((iconIndex - 1) / 4)
+    local left = col * 0.25
+    local right = left + 0.25
+    local top = row * 0.25
+    local bottom = top + 0.25
+
+    return {
+        texture = RAID_ICON_TEXTURE,
+        left = left,
+        right = right,
+        top = top,
+        bottom = bottom,
+    }
+end
+
+local function PingAtlas(l, r, t, b)
+    return {
+        texture = PING_ATLAS_TEXTURE_SHEET,
+        left = l,
+        right = r,
+        top = t,
+        bottom = b,
+    }
+end
 
 local PING_ATLASES = {
-    ["Ping_Marker_Icon_Attack"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Marker_Icon_Attack" },
-    ["Ping_Marker_Icon_Warning"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Marker_Icon_Warning" },
-    ["Ping_Marker_Icon_Assist"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Marker_Icon_Assist" },
-    ["Ping_Marker_Icon_OnMyWay"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Marker_Icon_OnMyWay" },
-    ["Ping_Marker_Icon_Danger"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Marker_Icon_Danger" },
-    ["Ping_Marker_Icon_Info"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Marker_Icon_Info" },
-    ["Ping_Marker_Flipbook_Default"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Marker_Flipbook_Default" },
-    ["Ping_GroundMarker_BG_Default"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_GroundMarker_BG_Default" },
-    ["Ping_GroundMarker_Pin_Default"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_GroundMarker_Pin_Default" },
-    ["Ping_GroundMarker_Stroke_Default"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_GroundMarker_Stroke_Default" },
-    ["Ping_UnitMarker_BG_Default"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_UnitMarker_BG_Default" },
-    ["Ping_OVMarker_Pointer_Default"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_OVMarker_Pointer_Default" },
-    ["Ping_OVMarker_Pointer_BG"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_OVMarker_Pointer_BG" },
-    ["Ping_SpotGlw_Default_In"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_SpotGlw_Default_In" },
-    ["Ping_SpotGlw_Default_Out"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_SpotGlw_Default_Out" },
-    ["Ping_Wheel_Icon_Default"] = { texture = PING_TEXTURE_ROOT .. "\\Ping_Wheel_Icon_Default" },
+    ["Ping_Marker_Icon_Assist"] = PingAtlas(0.668945, 0.703125, 0.446289, 0.480469),
+    ["Ping_Marker_Icon_Attack"] = PingAtlas(0.744141, 0.778320, 0.446289, 0.480469),
+    ["Ping_Marker_Icon_NonThreat"] = PingAtlas(0.289062, 0.323242, 0.867188, 0.901367),
+    ["Ping_Marker_Icon_OnMyWay"] = PingAtlas(0.325195, 0.359375, 0.903320, 0.937500),
+    ["Ping_Marker_Icon_Threat"] = PingAtlas(0.325195, 0.359375, 0.939453, 0.973633),
+    ["Ping_Marker_Icon_Warning"] = PingAtlas(0.363281, 0.397461, 0.752930, 0.787109),
+    ["Ping_Marker_FlipBook_Assist"] = PingAtlas(0.000977, 0.475586, 0.295898, 0.483398),
+    ["Ping_Marker_FlipBook_Attack"] = PingAtlas(0.000977, 0.323242, 0.485352, 0.758789),
+    ["Ping_Marker_FlipBook_NonThreat"] = PingAtlas(0.000977, 0.381836, 0.000977, 0.293945),
+    ["Ping_Marker_FlipBook_OnMyWay"] = PingAtlas(0.325195, 0.618164, 0.485352, 0.750977),
+    ["Ping_Marker_FlipBook_Threat"] = PingAtlas(0.383789, 0.764648, 0.000977, 0.293945),
+    ["Ping_Marker_FlipBook_Warning"] = PingAtlas(0.620117, 0.807617, 0.485352, 0.799805),
+    ["Ping_GroundMarker_BG_Assist"] = PingAtlas(0.766602, 0.823242, 0.229492, 0.286133),
+    ["Ping_GroundMarker_BG_Attack"] = PingAtlas(0.842773, 0.899414, 0.229492, 0.286133),
+    ["Ping_GroundMarker_BG_NonThreat"] = PingAtlas(0.918945, 0.975586, 0.229492, 0.286133),
+    ["Ping_GroundMarker_BG_OnMyWay"] = PingAtlas(0.780273, 0.836914, 0.371094, 0.427734),
+    ["Ping_GroundMarker_BG_Threat"] = PingAtlas(0.059570, 0.116211, 0.936523, 0.993164),
+    ["Ping_GroundMarker_BG_Warning"] = PingAtlas(0.855469, 0.912109, 0.295898, 0.352539),
+    ["Ping_GroundMarker_Pin_Assist"] = PingAtlas(0.399414, 0.403320, 0.752930, 0.864258),
+    ["Ping_GroundMarker_Pin_Attack"] = PingAtlas(0.399414, 0.403320, 0.866211, 0.977539),
+    ["Ping_GroundMarker_Pin_NonThreat"] = PingAtlas(0.405273, 0.409180, 0.752930, 0.864258),
+    ["Ping_GroundMarker_Pin_OnMyWay"] = PingAtlas(0.405273, 0.409180, 0.866211, 0.977539),
+    ["Ping_GroundMarker_Pin_Threat"] = PingAtlas(0.411133, 0.415039, 0.866211, 0.977539),
+    ["Ping_GroundMarker_Pin_Warning"] = PingAtlas(0.411133, 0.415039, 0.752930, 0.864258),
+    ["Ping_GroundMarker_Stroke_Assist"] = PingAtlas(0.914062, 0.970703, 0.295898, 0.352539),
+    ["Ping_GroundMarker_Stroke_Attack"] = PingAtlas(0.855469, 0.912109, 0.354492, 0.411133),
+    ["Ping_GroundMarker_Stroke_NonThreat"] = PingAtlas(0.855469, 0.912109, 0.413086, 0.469727),
+    ["Ping_GroundMarker_Stroke_OnMyWay"] = PingAtlas(0.914062, 0.970703, 0.354492, 0.411133),
+    ["Ping_GroundMarker_Stroke_Threat"] = PingAtlas(0.118164, 0.174805, 0.760742, 0.817383),
+    ["Ping_GroundMarker_Stroke_Warning"] = PingAtlas(0.914062, 0.970703, 0.413086, 0.469727),
+    ["Ping_OVMarker_Pointer_Assist"] = PingAtlas(0.553711, 0.626953, 0.372070, 0.445312),
+    ["Ping_OVMarker_Pointer_Attack"] = PingAtlas(0.629883, 0.703125, 0.295898, 0.369141),
+    ["Ping_OVMarker_Pointer_NonThreat"] = PingAtlas(0.629883, 0.703125, 0.371094, 0.444336),
+    ["Ping_OVMarker_Pointer_OnMyWay"] = PingAtlas(0.705078, 0.778320, 0.295898, 0.369141),
+    ["Ping_OVMarker_Pointer_Threat"] = PingAtlas(0.705078, 0.778320, 0.371094, 0.444336),
+    ["Ping_OVMarker_Pointer_Warning"] = PingAtlas(0.780273, 0.853516, 0.295898, 0.369141),
+    ["Ping_OVMarker_Pointer_BG"] = PingAtlas(0.171875, 0.217773, 0.819336, 0.865234),
+    ["Ping_SpotGlw_Assist_In"] = PingAtlas(0.553711, 0.589844, 0.447266, 0.483398),
+    ["Ping_SpotGlw_Attack_In"] = PingAtlas(0.591797, 0.627930, 0.447266, 0.483398),
+    ["Ping_SpotGlw_NonThreat_In"] = PingAtlas(0.250000, 0.286133, 0.906250, 0.942383),
+    ["Ping_SpotGlw_OnMyWay_In"] = PingAtlas(0.250000, 0.286133, 0.944336, 0.980469),
+    ["Ping_SpotGlw_Threat_In"] = PingAtlas(0.325195, 0.361328, 0.752930, 0.789062),
+    ["Ping_SpotGlw_Warning_In"] = PingAtlas(0.325195, 0.361328, 0.791016, 0.827148),
+    ["Ping_SpotGlw_Assist_Out"] = PingAtlas(0.780273, 0.832031, 0.429688, 0.481445),
+    ["Ping_SpotGlw_Attack_Out"] = PingAtlas(0.176758, 0.228516, 0.760742, 0.812500),
+    ["Ping_SpotGlw_NonThreat_Out"] = PingAtlas(0.230469, 0.282227, 0.760742, 0.812500),
+    ["Ping_SpotGlw_OnMyWay_Out"] = PingAtlas(0.118164, 0.169922, 0.819336, 0.871094),
+    ["Ping_SpotGlw_Threat_Out"] = PingAtlas(0.118164, 0.169922, 0.873047, 0.924805),
+    ["Ping_SpotGlw_Warning_Out"] = PingAtlas(0.118164, 0.169922, 0.926758, 0.978516),
+    ["Ping_UnitMarker_BG_Assist"] = PingAtlas(0.000977, 0.057617, 0.819336, 0.875977),
+    ["Ping_UnitMarker_BG_Attack"] = PingAtlas(0.000977, 0.057617, 0.877930, 0.934570),
+    ["Ping_UnitMarker_BG_NonThreat"] = PingAtlas(0.000977, 0.057617, 0.936523, 0.993164),
+    ["Ping_UnitMarker_BG_OnMyWay"] = PingAtlas(0.059570, 0.116211, 0.760742, 0.817383),
+    ["Ping_UnitMarker_BG_Threat"] = PingAtlas(0.059570, 0.116211, 0.819336, 0.875977),
+    ["Ping_UnitMarker_BG_Warning"] = PingAtlas(0.059570, 0.116211, 0.877930, 0.934570),
+    ["Ping_Wheel_Icon_Assist"] = PingAtlas(0.766602, 0.840820, 0.000977, 0.075195),
+    ["Ping_Wheel_Icon_Attack"] = PingAtlas(0.766602, 0.840820, 0.077148, 0.151367),
+    ["Ping_Wheel_Icon_OnMyWay"] = PingAtlas(0.918945, 0.993164, 0.077148, 0.151367),
+    ["Ping_Wheel_Icon_Warning"] = PingAtlas(0.477539, 0.551758, 0.295898, 0.370117),
+
+    -- Backward-compatible aliases used elsewhere in this module.
+    ["Ping_Marker_Icon_Danger"] = PingAtlas(0.325195, 0.359375, 0.939453, 0.973633),
+    ["Ping_Marker_Icon_Info"] = PingAtlas(0.289062, 0.323242, 0.867188, 0.901367),
+    ["Ping_Marker_Flipbook_Default"] = PingAtlas(0.000977, 0.381836, 0.000977, 0.293945),
+    ["Ping_GroundMarker_BG_Default"] = PingAtlas(0.918945, 0.975586, 0.229492, 0.286133),
+    ["Ping_GroundMarker_Pin_Default"] = PingAtlas(0.405273, 0.409180, 0.752930, 0.864258),
+    ["Ping_GroundMarker_Stroke_Default"] = PingAtlas(0.855469, 0.912109, 0.413086, 0.469727),
+    ["Ping_UnitMarker_BG_Default"] = PingAtlas(0.000977, 0.057617, 0.936523, 0.993164),
+    ["Ping_OVMarker_Pointer_Default"] = PingAtlas(0.629883, 0.703125, 0.371094, 0.444336),
+    ["Ping_SpotGlw_Default_In"] = PingAtlas(0.250000, 0.286133, 0.906250, 0.942383),
+    ["Ping_SpotGlw_Default_Out"] = PingAtlas(0.230469, 0.282227, 0.760742, 0.812500),
+    ["Ping_Wheel_Icon_Default"] = PingAtlas(0.477539, 0.551758, 0.295898, 0.370117),
+    ["Ping_Wheel_Backdrop_Default"] = { texture = "Interface\\Buttons\\WHITE8x8" },
 }
 
 local PING_STYLES = {
@@ -127,7 +263,7 @@ local PING_STYLES = {
         r = 1.00,
         g = 0.20,
         b = 0.20,
-        iconAtlas = "Ping_Marker_Icon_Danger",
+        iconAtlas = "Ping_Marker_Icon_Threat",
         sound = "RaidWarning",
     },
     info = {
@@ -135,17 +271,53 @@ local PING_STYLES = {
         r = 1.00,
         g = 1.00,
         b = 1.00,
-        iconAtlas = "Ping_Marker_Icon_Info",
+        iconAtlas = "Ping_Marker_Icon_NonThreat",
         sound = "MapPing",
     },
 }
 
 local RADIAL_MENU_OPTIONS = {
-    { type = "assist", angle = 90, offsetX = 0, offsetY = 74, label = "Assist" },
-    { type = "danger", angle = 35, offsetX = 62, offsetY = 48, label = "Danger" },
-    { type = "attack", angle = 0, offsetX = 76, offsetY = 0, label = "Attack" },
-    { type = "warning", angle = -90, offsetX = 0, offsetY = -78, label = "Warning" },
-    { type = "onmyway", angle = 180, offsetX = -76, offsetY = 0, label = "On My Way" },
+    { type = "assist", angle = 90, label = "Assist" },
+    { type = "danger", angle = 18, label = "Danger" },
+    { type = "attack", angle = -54, label = "Attack" },
+    { type = "warning", angle = -126, label = "Warning" },
+    { type = "onmyway", angle = 162, label = "On My Way" },
+}
+
+local DEFAULT_PING_ORDER = {
+    "assist",
+    "danger",
+    "attack",
+    "warning",
+    "onmyway",
+    "info",
+}
+
+local PING_TEXTURE_KIT_BY_TYPE = {
+    attack = "Attack",
+    warning = "Warning",
+    assist = "Assist",
+    onmyway = "OnMyWay",
+    danger = "Threat",
+    info = "NonThreat",
+}
+
+local PING_TYPE_BY_SUBJECT_ENUM_KEY = {
+    Assist = "assist",
+    Attack = "attack",
+    OnMyWay = "onmyway",
+    Warning = "warning",
+    Threat = "danger",
+    NonThreat = "info",
+}
+
+local PING_TYPE_BY_SUBJECT_ENUM_VALUE = {
+    [1] = "assist",
+    [2] = "attack",
+    [3] = "onmyway",
+    [4] = "warning",
+    [5] = "danger",
+    [6] = "info",
 }
 
 local function ApplyAtlasTexture(texture, atlasName)
@@ -170,12 +342,56 @@ local function TrimWhitespace(text)
     return text
 end
 
+local function IsLikelyInvalidGuid(guid)
+    local value = TrimWhitespace(guid):upper()
+    if value == "" then
+        return true
+    end
+
+    if value == "0" or value == "0X0" then
+        return true
+    end
+
+    if value == "0XFFFFFFFFFFFFFFFF" or value == "0XFFFFFFFFFFFFFFFE" then
+        return true
+    end
+
+    if value:match("^0XF+$") then
+        return true
+    end
+
+    return false
+end
+
 local function GetSettings()
     if addon and addon.settings and addon.settings.pingSystem then
         return addon.settings.pingSystem
     end
 
     return PingSystem.defaults.pingSystem
+end
+
+local function ResolveNamespacedFn(aliasName)
+    if type(aliasName) ~= "string" then
+        return nil
+    end
+
+    local namespaceName, functionName = aliasName:match("^(C_[%w]+)_(.+)$")
+    if not namespaceName or not functionName then
+        return nil
+    end
+
+    local namespaceTable = rawget(_G, namespaceName)
+    if type(namespaceTable) ~= "table" then
+        return nil
+    end
+
+    local fn = namespaceTable[functionName]
+    if type(fn) == "function" then
+        return fn
+    end
+
+    return nil
 end
 
 local function ExecuteBoundPingAction(action, pingType)
@@ -198,7 +414,9 @@ local function ExecuteBoundPingAction(action, pingType)
         return
     end
 
-    addon.PingSystem:PushQuickPing(pingType or "warning")
+    addon.PingSystem:PushQuickPing(pingType or "warning", {
+        allowScreenFallback = true,
+    })
 end
 
 _G.DCQOS_PING_TEST = function()
@@ -277,6 +495,7 @@ _G.DCQOS_PING_MENU = function(keyState)
         if CancelMenuHoldTimer() then
             addon.PingSystem:PushQuickPing(DetermineContextualQuickPingType(), {
                 ignoreThrottle = false,
+                allowScreenFallback = true,
             })
             return
         end
@@ -350,65 +569,23 @@ local function Atan2(y, x)
     return 0
 end
 
-local function NormalizeCoord(value)
-    if value == nil then
-        return nil
+local function GetUiParentCenter()
+    if not UIParent then
+        return nil, nil
     end
 
-    local n = tonumber(value)
-    if not n then
-        return nil
+    local centerX, centerY = UIParent:GetCenter()
+    if centerX and centerY then
+        return centerX, centerY
     end
 
-    if n > 1 then
-        n = n / 100
+    local width = UIParent:GetWidth()
+    local height = UIParent:GetHeight()
+    if width and height and width > 0 and height > 0 then
+        return width * 0.5, height * 0.5
     end
 
-    if n < 0 or n > 1 then
-        return nil
-    end
-
-    return n
-end
-
-local function SafeSetMapToCurrentZone()
-    if type(SetMapToCurrentZone) ~= "function" then
-        return
-    end
-
-    local worldMapShown = WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
-    if not worldMapShown then
-        pcall(SetMapToCurrentZone)
-    end
-end
-
-local function GetPlayerMapPositionSafe()
-    local mapId
-
-    if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
-        mapId = C_Map.GetBestMapForUnit("player")
-        if mapId then
-            local pos = C_Map.GetPlayerMapPosition(mapId, "player")
-            if pos and pos.x and pos.y and pos.x > 0 and pos.y > 0 then
-                return pos.x, pos.y, mapId
-            end
-        end
-    end
-
-    if type(GetPlayerMapPosition) == "function" then
-        local x, y = GetPlayerMapPosition("player")
-        if (not x or not y or x <= 0 or y <= 0) then
-            SafeSetMapToCurrentZone()
-            x, y = GetPlayerMapPosition("player")
-        end
-
-        if x and y and x > 0 and y > 0 then
-            mapId = (type(GetCurrentMapAreaID) == "function") and GetCurrentMapAreaID() or nil
-            return x, y, mapId
-        end
-    end
-
-    return nil, nil, nil
+    return nil, nil
 end
 
 local function GetCursorScreenOffsets()
@@ -429,58 +606,40 @@ local function GetCursorScreenOffsets()
     cursorX = cursorX / scale
     cursorY = cursorY / scale
 
-    local centerX, centerY = UIParent:GetCenter()
+    local centerX, centerY = GetUiParentCenter()
     if not centerX or not centerY then
-        centerX = (UIParent:GetWidth() or 0) * 0.5
-        centerY = (UIParent:GetHeight() or 0) * 0.5
+        return nil, nil
     end
 
     return cursorX - centerX, cursorY - centerY
 end
 
-local function GetMapDataLib()
-    if mapDataLib ~= nil then
-        return mapDataLib or nil
+local function ClampScreenOffsetsToViewport(offsetX, offsetY, margin)
+    if type(offsetX) ~= "number" or type(offsetY) ~= "number" or not UIParent then
+        return offsetX, offsetY
     end
 
-    if type(LibStub) == "function" then
-        mapDataLib = LibStub("LibMapData-1.0", true)
-    else
-        mapDataLib = false
+    local width = UIParent:GetWidth()
+    local height = UIParent:GetHeight()
+    if type(width) ~= "number" or type(height) ~= "number" or width <= 0 or height <= 0 then
+        return offsetX, offsetY
     end
 
-    return mapDataLib or nil
-end
-
-local function ComputeDistanceYards(mapId, x1, y1, x2, y2)
-    local mapLib = GetMapDataLib()
-    if mapLib and mapId and mapLib.MapArea then
-        local floor = (type(GetCurrentMapDungeonLevel) == "function") and GetCurrentMapDungeonLevel() or 0
-        local ok, width, height = pcall(mapLib.MapArea, mapLib, mapId, floor)
-        if ok and width and height and width > 0 and height > 0 then
-            local dx = (x2 - x1) * width
-            local dy = (y2 - y1) * height
-            return math_sqrt((dx * dx) + (dy * dy)), dx, dy
-        end
+    margin = tonumber(margin) or 48
+    if margin < 0 then
+        margin = 0
     end
 
-    -- Fallback approximation when map yard data is unavailable.
-    local dx = (x2 - x1) * 10000
-    local dy = (y2 - y1) * 10000
-    return math_sqrt((dx * dx) + (dy * dy)), dx, dy
-end
-
-local function GetMapAreaYards(mapId)
-    local mapLib = GetMapDataLib()
-    if mapLib and mapId and mapLib.MapArea then
-        local floor = (type(GetCurrentMapDungeonLevel) == "function") and GetCurrentMapDungeonLevel() or 0
-        local ok, width, height = pcall(mapLib.MapArea, mapLib, mapId, floor)
-        if ok and width and height and width > 0 and height > 0 then
-            return width, height
-        end
+    local maxX = (width * 0.5) - margin
+    local maxY = (height * 0.5) - margin
+    if maxX < 0 then
+        maxX = 0
+    end
+    if maxY < 0 then
+        maxY = 0
     end
 
-    return 10000, 10000
+    return Clamp(offsetX, -maxX, maxX), Clamp(offsetY, -maxY, maxY)
 end
 
 local function ComputeRelativeHeading(facing, playerX, playerY, targetX, targetY, dxYards, dyYards)
@@ -492,7 +651,9 @@ local function ComputeRelativeHeading(facing, playerX, playerY, targetX, targetY
         dy = (targetY or 0) - (playerY or 0)
     end
 
-    local direction = Atan2(-dx, dy)
+    -- Map Y increases toward south in WoW map-space, so invert dy to keep
+    -- heading aligned with on-screen POI direction.
+    local direction = Atan2(-dx, -dy)
     if direction > 0 then
         direction = (2 * math_pi) - direction
     else
@@ -514,7 +675,60 @@ local function ApplyStyleIcon(texture, pingType)
     end
 end
 
-local function NormalizePingType(value)
+local NormalizePingType
+
+local function GetPingTextureSuffix(pingType)
+    local normalized = NormalizePingType(pingType)
+    if normalized == "assist" then
+        return "Assist"
+    end
+    if normalized == "attack" then
+        return "Attack"
+    end
+    if normalized == "onmyway" then
+        return "OnMyWay"
+    end
+    if normalized == "warning" then
+        return "Warning"
+    end
+    if normalized == "danger" then
+        return "Threat"
+    end
+    return "NonThreat"
+end
+
+local PIN_FLIP_BOOK_INFO = {
+    ["Assist"] = { sizeX = 81, sizeY = 48, anchorX = -17.5, anchorY = 4 },
+    ["Attack"] = { sizeX = 55, sizeY = 70, anchorX = -12.2, anchorY = -14 },
+    ["OnMyWay"] = { sizeX = 50, sizeY = 68, anchorX = 0, anchorY = 10.5 },
+    ["Warning"] = { sizeX = 32, sizeY = 80.5, anchorX = 0, anchorY = 1.5 },
+    ["NonThreat"] = { sizeX = 65, sizeY = 75, anchorX = 0.3, anchorY = 0.9 },
+    ["Threat"] = { sizeX = 65, sizeY = 75, anchorX = 0.5, anchorY = 0.9 },
+}
+
+local function GetPinFlipBookInfo(uiTextureKit)
+    return PIN_FLIP_BOOK_INFO[uiTextureKit]
+end
+
+local function ResolveTypeAtlasName(prefix, pingType, fallbackName)
+    local suffix = GetPingTextureSuffix(pingType)
+    local candidate = prefix .. suffix
+    if PING_ATLASES[candidate] then
+        return candidate
+    end
+    return fallbackName
+end
+
+local function ResolveTypeAtlasNameWithVariant(prefix, pingType, variant, fallbackName)
+    local suffix = GetPingTextureSuffix(pingType)
+    local candidate = prefix .. suffix .. variant
+    if PING_ATLASES[candidate] then
+        return candidate
+    end
+    return fallbackName
+end
+
+NormalizePingType = function(value)
     local normalized = TrimWhitespace(value):lower()
     normalized = normalized:gsub("[%s_%-%./]", "")
 
@@ -538,6 +752,118 @@ local function NormalizePingType(value)
     end
 
     return "info"
+end
+
+local function EnsurePingEnums()
+    if type(_G.Enum) ~= "table" then
+        _G.Enum = {}
+    end
+
+    if type(_G.Enum.PingSubjectType) ~= "table" then
+        _G.Enum.PingSubjectType = {
+            Assist = 1,
+            Attack = 2,
+            OnMyWay = 3,
+            Warning = 4,
+            Threat = 5,
+            NonThreat = 6,
+        }
+    end
+
+    if type(_G.Enum.PingMode) ~= "table" then
+        _G.Enum.PingMode = {
+            PressAndDrag = 0,
+            KeyDown = 1,
+        }
+    end
+end
+
+local function ResolvePingTypeFromApiValue(value)
+    if type(value) == "number" then
+        local subjects = _G.Enum and _G.Enum.PingSubjectType
+        if type(subjects) == "table" then
+            for enumKey, enumValue in pairs(subjects) do
+                if enumValue == value then
+                    return NormalizePingType(PING_TYPE_BY_SUBJECT_ENUM_KEY[enumKey] or enumKey)
+                end
+            end
+        end
+
+        return NormalizePingType(PING_TYPE_BY_SUBJECT_ENUM_VALUE[value] or "info")
+    end
+
+    return NormalizePingType(value)
+end
+
+local function PingTypeToSubjectEnum(pingType)
+    pingType = NormalizePingType(pingType)
+    local subjects = _G.Enum and _G.Enum.PingSubjectType
+    if type(subjects) ~= "table" then
+        return pingType
+    end
+
+    if pingType == "assist" then
+        return subjects.Assist
+    end
+    if pingType == "attack" then
+        return subjects.Attack
+    end
+    if pingType == "onmyway" then
+        return subjects.OnMyWay
+    end
+    if pingType == "warning" then
+        return subjects.Warning
+    end
+    if pingType == "danger" then
+        return subjects.Threat or subjects.Warning
+    end
+    if pingType == "info" then
+        return subjects.NonThreat or subjects.Warning
+    end
+
+    return subjects.Warning
+end
+
+local function BuildDefaultPingOptions()
+    EnsurePingEnums()
+
+    local options = {}
+    for index = 1, #DEFAULT_PING_ORDER do
+        local pingType = DEFAULT_PING_ORDER[index]
+        options[#options + 1] = {
+            type = PingTypeToSubjectEnum(pingType),
+            orderIndex = index,
+            uiTextureKitID = PING_TEXTURE_KIT_BY_TYPE[pingType] or "NonThreat",
+        }
+    end
+
+    return options
+end
+
+local function BuildPingCooldownInfo()
+    local settings = GetSettings()
+    local throttleMs = tonumber(settings.throttleMs) or 0
+    if throttleMs <= 0 then
+        return nil
+    end
+
+    local startTimeMs = math_floor(((tonumber(state.lastPingAt) or 0) * 1000) + 0.5)
+    if startTimeMs <= 0 then
+        return nil
+    end
+
+    local endTimeMs = startTimeMs + throttleMs
+    local nowMs = math_floor(((GetTime() or 0) * 1000) + 0.5)
+    if nowMs >= endTimeMs then
+        return nil
+    end
+
+    return {
+        startTimeMs = startTimeMs,
+        endTimeMs = endTimeMs,
+        durationMs = throttleMs,
+        remainingMs = endTimeMs - nowMs,
+    }
 end
 
 local function NormalizePayload(payload)
@@ -578,28 +904,28 @@ local function NormalizePayload(payload)
     return normalized
 end
 
-local function ResolveCursorWorldPingTarget()
-    local resolver = nil
-
-    if type(GetCursorWorldPingTarget) == "function" then
-        resolver = GetCursorWorldPingTarget
-    elseif type(C_Ping_GetCursorWorldTarget) == "function" then
-        resolver = C_Ping_GetCursorWorldTarget
-    elseif type(C_Ping_GetTargetWorldPing) == "function" then
-        resolver = C_Ping_GetTargetWorldPing
+local function ResolvePingFn(primaryName, aliasName)
+    local fn = primaryName and _G[primaryName] or nil
+    if type(fn) == "function" then
+        return fn
     end
 
-    if not resolver then
-        return nil
+    fn = aliasName and _G[aliasName] or nil
+    if type(fn) == "function" then
+        return fn
     end
 
-    local ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ = pcall(resolver)
-    if not ok then
-        return nil
+    fn = ResolveNamespacedFn(aliasName)
+    if type(fn) == "function" then
+        return fn
     end
 
+    return nil
+end
+
+local function BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
     local cleanedGuid = TrimWhitespace(guid)
-    if cleanedGuid == "" then
+    if IsLikelyInvalidGuid(cleanedGuid) then
         cleanedGuid = nil
     end
 
@@ -608,9 +934,15 @@ local function ResolveCursorWorldPingTarget()
         cleanedType = cleanedGuid and "object" or "ground"
     end
 
+    local cleanedName = TrimWhitespace(targetName)
+    if cleanedName == "" then
+        cleanedName = nil
+    end
+
     local resolved = {
         targetGuid = cleanedGuid,
         targetType = cleanedType,
+        targetName = cleanedName,
         mapId = tonumber(mapId),
         x = NormalizeCoord(mapX),
         y = NormalizeCoord(mapY),
@@ -626,44 +958,1118 @@ local function ResolveCursorWorldPingTarget()
     return resolved
 end
 
-local function ResolveMouseoverPingTarget()
-    local resolver = nil
-    if type(GetMouseoverPingTarget) == "function" then
-        resolver = GetMouseoverPingTarget
-    elseif type(C_Ping_GetMouseoverTarget) == "function" then
-        resolver = C_Ping_GetMouseoverTarget
+local function ResolveWorldScreenOffsets(worldX, worldY, worldZ, worldZOffset)
+    worldX = tonumber(worldX)
+    worldY = tonumber(worldY)
+    worldZ = tonumber(worldZ)
+    if not worldX or not worldY or not worldZ then
+        return nil, nil
+    end
+
+    worldZ = worldZ + (tonumber(worldZOffset) or 0)
+
+    local convertFn = ResolvePingFn("ConvertCoordsToScreenSpace", "C_Ping_ConvertCoordsToScreenSpace")
+    if not convertFn then
+        return nil, nil
+    end
+
+    local ok, screenX, screenY = pcall(convertFn, worldX, worldY, worldZ)
+    if not ok or type(screenX) ~= "number" or type(screenY) ~= "number" then
+        return nil, nil
+    end
+
+    if UIParent then
+        local scale = UIParent:GetEffectiveScale()
+        if scale and scale ~= 0 then
+            screenX = screenX / scale
+            screenY = screenY / scale
+        end
+    end
+
+    local centerX, centerY = GetUiParentCenter()
+    if not centerX or not centerY then
+        return nil, nil
+    end
+
+    return screenX - centerX, screenY - centerY
+end
+
+local function GetEntityWorldZOffset(payload, settings)
+    local targetType = TrimWhitespace(payload and payload.targetType):lower()
+
+    if targetType == "unit" then
+        return tonumber(settings.entityUnitWorldZOffset) or 2.25
+    end
+    if targetType == "gameobject" then
+        return tonumber(settings.entityGameObjectWorldZOffset) or 1.25
+    end
+    if targetType == "object" then
+        return tonumber(settings.entityObjectWorldZOffset) or 1.75
+    end
+
+    return 0
+end
+
+local function IsValidPingEntityTargetType(targetType)
+    local lowered = TrimWhitespace(targetType):lower()
+    return lowered == "unit"
+        or lowered == "object"
+        or lowered == "gameobject"
+end
+
+-- Forward declaration so early helpers can call this before its body is defined.
+local DebugQuickPing
+
+-- Returns the cursor position as viewport-normalised [0,1] coordinates with (0,0) at the
+-- top-left of the screen (Win32/D3D9 convention).  This is the format that
+-- CGWorldFrame::HitTestPoint (sWorldFrameHitTestPoint) expects — it is the same format as
+-- CSimpleTopView::mousePosition which is populated from WM_MOUSEMOVE pixel coords (y from top)
+-- divided by the window dimensions.
+--
+-- GetCursorPosition() in WoW Lua delivers physical screen pixels with Y=0 at the BOTTOM of the
+-- window.  We normalise and flip Y to match the D3D viewport convention.
+local function GetViewportCursorCoords()
+    if type(GetCursorPosition) ~= "function"
+        or type(GetScreenWidth) ~= "function"
+        or type(GetScreenHeight) ~= "function" then
+        return nil, nil
+    end
+
+    local cx, cy = GetCursorPosition()
+    if type(cx) ~= "number" or type(cy) ~= "number" then
+        return nil, nil
+    end
+
+    local sw = GetScreenWidth()
+    local sh = GetScreenHeight()
+    if type(sw) ~= "number" or type(sh) ~= "number" or sw <= 0 or sh <= 0 then
+        return nil, nil
+    end
+
+    -- normX: [0,1] from left  (identical in WoW Lua and Win32 conventions)
+    -- normY: [0,1] from TOP   (flip WoW's bottom-origin Y to D3D's top-origin)
+    return cx / sw, (sh - cy) / sh
+end
+
+local function ResolveCursorWorldPingTarget()
+    local resolver = ResolvePingFn("GetCursorWorldPingTarget", "C_Ping_GetCursorWorldTarget")
+    if not resolver then
+        resolver = ResolvePingFn(nil, "C_Ping_GetTargetWorldPing")
     end
 
     if not resolver then
         return nil
     end
 
-    local ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ = pcall(resolver)
-    if not ok or not guid then
+    -- Pass viewport-normalised [0,1] cursor coordinates (x from left, y from top / D3D9
+    -- convention) as optional args so the C++ side can retry the world hit-test with the
+    -- explicit cursor position if the WorldFrame's internal simpleTop tracker is unavailable
+    -- (happens on keybind pings when no mouse event has set simpleTop->mousePosition).
+    local normX, normY = GetViewportCursorCoords()
+
+    DebugQuickPing(string.format(
+        "cursor hit-test coords hitX=%s hitY=%s",
+        normX and string.format("%.1f", normX) or "nil",
+        normY and string.format("%.1f", normY) or "nil"
+    ))
+
+    local ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName
+    if normX and normY then
+        ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName = pcall(resolver, normX, normY)
+    else
+        ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName = pcall(resolver)
+    end
+
+    if not ok then
         return nil
     end
 
-    guid = TrimWhitespace(guid)
-    if guid == "" then
+    return BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
+end
+
+local function ResolveMouseoverPingTarget()
+    local resolver = ResolvePingFn("GetMouseoverPingTarget", "C_Ping_GetMouseoverTarget")
+
+    if not resolver then
         return nil
     end
 
-    local resolved = {
-        targetGuid = guid,
-        targetType = TrimWhitespace(targetType):lower(),
-        mapId = tonumber(mapId),
-        x = NormalizeCoord(mapX),
-        y = NormalizeCoord(mapY),
-        worldX = tonumber(worldX),
-        worldY = tonumber(worldY),
-        worldZ = tonumber(worldZ),
-    }
+    local ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName = pcall(resolver)
+    if not ok then
+        return nil
+    end
 
-    if resolved.targetType == "" then
+    local resolved = BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
+    if not resolved or not resolved.targetGuid then
+        return nil
+    end
+
+    if resolved.targetType == "ground" then
         resolved.targetType = "object"
     end
 
     return resolved
+end
+
+local function ResolveTargetPingReceiver()
+    local resolver = ResolvePingFn("GetTargetPingReceiver", "C_Ping_GetTargetPingReceiver")
+    if not resolver then
+        return nil
+    end
+
+    local ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName = pcall(resolver)
+    if not ok then
+        return nil
+    end
+
+    local resolved = BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
+    if not resolved or not resolved.targetGuid then
+        return nil
+    end
+
+    if resolved.targetType == "ground" then
+        resolved.targetType = "object"
+    end
+
+    return resolved
+end
+
+local function ResolveEntityPositionByGuid(targetGuid)
+    targetGuid = TrimWhitespace(targetGuid)
+    if targetGuid == "" then
+        return nil
+    end
+
+    local resolver = ResolvePingFn("ResolveEntityPositionByGUID", "C_Ping_ResolveEntityPositionByGUID")
+    if not resolver then
+        return nil
+    end
+
+    local ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName = pcall(resolver, targetGuid)
+    if not ok then
+        return nil
+    end
+
+    local resolved = BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
+    if not resolved then
+        return nil
+    end
+
+    if not resolved.targetGuid then
+        resolved.targetGuid = targetGuid
+    end
+
+    if resolved.targetType == "ground" then
+        resolved.targetType = "unit"
+    end
+
+    return resolved
+end
+
+local function HasTargetMapCoordinates(target)
+    if type(target) ~= "table" then
+        return false
+    end
+
+    local mapId = tonumber(target.mapId)
+    if not mapId or mapId <= 0 then
+        return false
+    end
+
+    return target.x ~= nil and target.y ~= nil
+end
+
+local function HasTargetWorldCoordinates(target)
+    if type(target) ~= "table" then
+        return false
+    end
+
+    return target.worldX ~= nil
+        and target.worldY ~= nil
+        and target.worldZ ~= nil
+end
+
+local function FormatPingTargetDebug(target)
+    if type(target) ~= "table" then
+        return "nil"
+    end
+
+    local guid = TrimWhitespace(target.targetGuid)
+    if guid == "" then
+        guid = "nil"
+    end
+
+    local targetType = TrimWhitespace(target.targetType):lower()
+    if targetType == "" then
+        targetType = "nil"
+    end
+
+    local mapId = tonumber(target.mapId)
+    local mapX = tonumber(target.x)
+    local mapY = tonumber(target.y)
+    local worldX = tonumber(target.worldX)
+    local worldY = tonumber(target.worldY)
+    local worldZ = tonumber(target.worldZ)
+
+    return string.format(
+        "type=%s guid=%s map=%s x=%s y=%s wx=%s wy=%s wz=%s",
+        tostring(targetType),
+        tostring(guid),
+        tostring(mapId or "nil"),
+        mapX and string.format("%.4f", mapX) or "nil",
+        mapY and string.format("%.4f", mapY) or "nil",
+        worldX and string.format("%.2f", worldX) or "nil",
+        worldY and string.format("%.2f", worldY) or "nil",
+        worldZ and string.format("%.2f", worldZ) or "nil"
+    )
+end
+
+DebugQuickPing = function(message)
+    if type(message) ~= "string" or message == "" then
+        return
+    end
+
+    if not addon then
+        return
+    end
+
+    local line = "Ping quick: " .. message
+    local comm = addon.settings and addon.settings.communication
+
+    if comm and comm.debugMode == true and type(addon.Debug) == "function" then
+        addon:Debug(line)
+        return
+    end
+
+    if type(addon.Print) == "function" then
+        addon:Print("|cff888888[DC-QoS Debug]|r " .. line, true)
+    end
+end
+
+local function CopyTargetIdentity(payload, target)
+    if type(payload) ~= "table" or type(target) ~= "table" then
+        return
+    end
+
+    local guid = TrimWhitespace(target.targetGuid)
+    if guid ~= "" then
+        payload.targetGuid = guid
+    end
+
+    local targetType = TrimWhitespace(target.targetType):lower()
+    if targetType ~= "" then
+        payload.targetType = targetType
+    end
+
+    if target.targetName and target.targetName ~= "" then
+        payload.targetName = target.targetName
+    end
+end
+
+local function CopyTargetLocation(payload, target)
+    if type(payload) ~= "table" or type(target) ~= "table" then
+        return
+    end
+
+    local mapId = tonumber(target.mapId)
+    local mapX = NormalizeCoord(target.x)
+    local mapY = NormalizeCoord(target.y)
+    if mapId and mapId > 0 and mapX ~= nil and mapY ~= nil then
+        payload.mapId = mapId
+        payload.x = mapX
+        payload.y = mapY
+    end
+
+    local worldX = tonumber(target.worldX)
+    local worldY = tonumber(target.worldY)
+    local worldZ = tonumber(target.worldZ)
+    if worldX ~= nil and worldY ~= nil and worldZ ~= nil then
+        payload.worldX = worldX
+        payload.worldY = worldY
+        payload.worldZ = worldZ
+    end
+end
+
+local function ResolveUnitTokenFallbackTarget(unitToken)
+    if type(unitToken) ~= "string" or type(UnitExists) ~= "function" or not UnitExists(unitToken) then
+        return nil
+    end
+
+    local target = {
+        targetType = "unit",
+    }
+
+    if type(UnitGUID) == "function" then
+        local guid = TrimWhitespace(UnitGUID(unitToken))
+        if guid ~= "" then
+            target.targetGuid = guid
+        end
+    end
+
+    if type(UnitName) == "function" then
+        target.targetName = UnitName(unitToken)
+    end
+
+    if type(GetPlayerMapPosition) == "function" then
+        local function ResolveTokenMapPosition()
+            local ok, nx, ny = pcall(GetPlayerMapPosition, unitToken)
+            if not ok then
+                return nil, nil
+            end
+
+            nx = NormalizeCoord(nx)
+            ny = NormalizeCoord(ny)
+            if not nx or not ny then
+                return nil, nil
+            end
+
+            if unitToken ~= "player" and nx == 0 and ny == 0 then
+                return nil, nil
+            end
+
+            return nx, ny
+        end
+
+        local nx, ny = ResolveTokenMapPosition()
+        if not nx and not ny and type(SafeSetMapToCurrentZone) == "function" then
+            SafeSetMapToCurrentZone()
+            nx, ny = ResolveTokenMapPosition()
+        end
+
+        if nx and ny then
+            local mapId = (type(GetCurrentMapAreaID) == "function") and tonumber(GetCurrentMapAreaID()) or nil
+            if (not mapId or mapId <= 0) and type(GetPlayerMapPositionSafe) == "function" then
+                local _, _, playerMapId = GetPlayerMapPositionSafe()
+                mapId = tonumber(playerMapId)
+            end
+
+            if mapId and mapId > 0 then
+                target.mapId = mapId
+                target.x = nx
+                target.y = ny
+            end
+        end
+    end
+
+    if not target.targetGuid and not target.mapId then
+        return nil
+    end
+
+    return target
+end
+
+local function ResolveAnyUnitTokenFallback()
+    local mouseoverTarget = ResolveUnitTokenFallbackTarget("mouseover")
+    if mouseoverTarget then
+        return mouseoverTarget
+    end
+
+    local targetTarget = ResolveUnitTokenFallbackTarget("target")
+    if targetTarget then
+        return targetTarget
+    end
+
+    return ResolveUnitTokenFallbackTarget("focus")
+end
+
+local function NormalizeUnitNameForMatch(name)
+    name = TrimWhitespace(name)
+    if name == "" then
+        return nil
+    end
+
+    name = name:gsub("%-.*$", "")
+    name = name:lower()
+    if name == "" then
+        return nil
+    end
+
+    return name
+end
+
+local function AddUniqueUnitTokenCandidate(candidates, seen, token)
+    token = TrimWhitespace(token)
+    if token == "" or seen[token] then
+        return
+    end
+
+    seen[token] = true
+    candidates[#candidates + 1] = token
+end
+
+local function BuildStrictEntityRecoveryTokenList()
+    local candidates = {}
+    local seen = {}
+
+    AddUniqueUnitTokenCandidate(candidates, seen, "mouseover")
+    AddUniqueUnitTokenCandidate(candidates, seen, "target")
+    AddUniqueUnitTokenCandidate(candidates, seen, "focus")
+    AddUniqueUnitTokenCandidate(candidates, seen, "targettarget")
+    AddUniqueUnitTokenCandidate(candidates, seen, "focustarget")
+    AddUniqueUnitTokenCandidate(candidates, seen, "mouseovertarget")
+
+    local partyCount = (type(GetNumPartyMembers) == "function") and (tonumber(GetNumPartyMembers()) or 0) or 0
+    partyCount = math_max(0, math_min(4, partyCount))
+    for i = 1, partyCount do
+        AddUniqueUnitTokenCandidate(candidates, seen, "party" .. i)
+        AddUniqueUnitTokenCandidate(candidates, seen, "party" .. i .. "target")
+        AddUniqueUnitTokenCandidate(candidates, seen, "party" .. i .. "pet")
+    end
+
+    local raidCount = (type(GetNumRaidMembers) == "function") and (tonumber(GetNumRaidMembers()) or 0) or 0
+    raidCount = math_max(0, math_min(40, raidCount))
+    for i = 1, raidCount do
+        AddUniqueUnitTokenCandidate(candidates, seen, "raid" .. i)
+        AddUniqueUnitTokenCandidate(candidates, seen, "raid" .. i .. "target")
+        AddUniqueUnitTokenCandidate(candidates, seen, "raid" .. i .. "pet")
+    end
+
+    return candidates
+end
+
+local function DoesUnitTokenMatchEntityIdentity(unitToken, targetGuid, targetNameNormalized)
+    if type(unitToken) ~= "string" or type(UnitExists) ~= "function" or not UnitExists(unitToken) then
+        return false, nil
+    end
+
+    if targetGuid and targetGuid ~= "" and type(UnitGUID) == "function" then
+        local tokenGuid = TrimWhitespace(UnitGUID(unitToken))
+        if tokenGuid ~= "" and tokenGuid == targetGuid then
+            return true, "guid"
+        end
+    end
+
+    if targetNameNormalized and type(UnitName) == "function" then
+        local tokenName = NormalizeUnitNameForMatch(UnitName(unitToken))
+        if tokenName and tokenName == targetNameNormalized then
+            return true, "name"
+        end
+    end
+
+    return false, nil
+end
+
+local function TryRecoverEntityTargetLocation(targetGuid, targetName)
+    targetGuid = TrimWhitespace(targetGuid)
+    if targetGuid == "" then
+        targetGuid = nil
+    end
+
+    local targetNameNormalized = NormalizeUnitNameForMatch(targetName)
+    if not targetGuid and not targetNameNormalized then
+        return nil, nil, nil
+    end
+
+    if targetGuid then
+        local recoveredByGuid = ResolveEntityPositionByGuid(targetGuid)
+        if recoveredByGuid and (HasTargetMapCoordinates(recoveredByGuid) or HasTargetWorldCoordinates(recoveredByGuid)) then
+            return recoveredByGuid, "guid-export", "guid"
+        end
+    end
+
+    local candidates = BuildStrictEntityRecoveryTokenList()
+    for i = 1, #candidates do
+        local token = candidates[i]
+        local matched, matchKind = DoesUnitTokenMatchEntityIdentity(token, targetGuid, targetNameNormalized)
+        if matched then
+            local recoveredTarget = ResolveUnitTokenFallbackTarget(token)
+            if recoveredTarget and (HasTargetMapCoordinates(recoveredTarget) or HasTargetWorldCoordinates(recoveredTarget)) then
+                return recoveredTarget, token, matchKind
+            end
+        end
+    end
+
+    return nil, nil, nil
+end
+
+local function ResolveContextualPingTypeForUnit(unitToken)
+    if type(unitToken) == "string" and type(UnitExists) == "function" and UnitExists(unitToken) then
+        if type(UnitIsUnit) == "function" and UnitIsUnit(unitToken, "player") then
+            return "onmyway"
+        end
+
+        if type(UnitCanAttack) == "function" and UnitCanAttack("player", unitToken) then
+            return "attack"
+        end
+
+        if type(UnitIsFriend) == "function" and UnitIsFriend("player", unitToken) then
+            return "assist"
+        end
+    end
+
+    return "warning"
+end
+
+local FindPingFrameBySecureId
+local ApplyFramePinTargetStyle
+local ApplyFrameClampVisual
+local DispatchSecurePingEvent
+local AllocateSecurePingFrameId
+
+local function EnsureRetailPingApiShims()
+    if not state.retailApiShimInstalled then
+        state.retailApiShimInstalled = true
+    end
+
+    EnsurePingEnums()
+
+    local pingApi = rawget(_G, "C_Ping")
+    if type(pingApi) ~= "table" then
+        pingApi = {}
+        _G.C_Ping = pingApi
+    end
+
+    local mapApi = rawget(_G, "C_Map")
+    if type(mapApi) ~= "table" then
+        mapApi = {}
+        _G.C_Map = mapApi
+    end
+
+    local function InstallPingPassthrough(methodName, globalName)
+        if type(pingApi[methodName]) ~= "function" and type(_G[globalName]) == "function" then
+            pingApi[methodName] = _G[globalName]
+        end
+    end
+
+    InstallPingPassthrough("ConvertCoordsToScreenSpace", "ConvertCoordsToScreenSpace")
+    InstallPingPassthrough("GetSyncDistribution", "GetPingSyncDistribution")
+    InstallPingPassthrough("EncodeProtocolPayload", "EncodePingSyncProtocolPayload")
+    InstallPingPassthrough("DecodeProtocolPayload", "DecodePingSyncProtocolPayload")
+    InstallPingPassthrough("EncodeSyncPayload", "EncodePingSyncPayload")
+    InstallPingPassthrough("DecodeSyncPayload", "DecodePingSyncPayload")
+    InstallPingPassthrough("GetCursorWorldTarget", "GetCursorWorldPingTarget")
+    InstallPingPassthrough("GetMouseoverTarget", "GetMouseoverPingTarget")
+    InstallPingPassthrough("GetTargetPingReceiver", "GetTargetPingReceiver")
+    InstallPingPassthrough("ResolveEntityPositionByGUID", "ResolveEntityPositionByGUID")
+
+    InstallPingPassthrough("GetSyncDistribution", "C_Ping_GetSyncDistribution")
+    InstallPingPassthrough("EncodeProtocolPayload", "C_Ping_EncodeProtocolPayload")
+    InstallPingPassthrough("DecodeProtocolPayload", "C_Ping_DecodeProtocolPayload")
+    InstallPingPassthrough("EncodeSyncPayload", "C_Ping_EncodeSyncPayload")
+    InstallPingPassthrough("DecodeSyncPayload", "C_Ping_DecodeSyncPayload")
+    InstallPingPassthrough("ConvertCoordsToScreenSpace", "C_Ping_ConvertCoordsToScreenSpace")
+    InstallPingPassthrough("GetCursorWorldTarget", "C_Ping_GetCursorWorldTarget")
+    InstallPingPassthrough("GetCursorWorldTarget", "C_Ping_GetTargetWorldPing")
+    InstallPingPassthrough("GetMouseoverTarget", "C_Ping_GetMouseoverTarget")
+    InstallPingPassthrough("GetTargetPingReceiver", "C_Ping_GetTargetPingReceiver")
+    InstallPingPassthrough("ResolveEntityPositionByGUID", "C_Ping_ResolveEntityPositionByGUID")
+
+    if type(mapApi.TranslateToMapCoords) ~= "function" and type(_G.TranslateToMapCoords) == "function" then
+        mapApi.TranslateToMapCoords = _G.TranslateToMapCoords
+    end
+
+    if type(mapApi.TranslateToMapCoords) ~= "function" and type(_G.C_Map_TranslateToMapCoords) == "function" then
+        mapApi.TranslateToMapCoords = _G.C_Map_TranslateToMapCoords
+    end
+
+    if type(pingApi.GetTextureKitForType) ~= "function" then
+        pingApi.GetTextureKitForType = function(pingType)
+            local normalized = ResolvePingTypeFromApiValue(pingType)
+            return PING_TEXTURE_KIT_BY_TYPE[normalized] or "NonThreat"
+        end
+    end
+
+    if type(pingApi.GetDefaultPingOptions) ~= "function" then
+        pingApi.GetDefaultPingOptions = function()
+            return BuildDefaultPingOptions()
+        end
+    end
+
+    if type(pingApi.GetCooldownInfo) ~= "function" then
+        pingApi.GetCooldownInfo = function()
+            return BuildPingCooldownInfo()
+        end
+    end
+
+    if type(pingApi.GetContextualPingTypeForUnit) ~= "function" then
+        pingApi.GetContextualPingTypeForUnit = function(unitToken)
+            return PingTypeToSubjectEnum(ResolveContextualPingTypeForUnit(unitToken))
+        end
+    end
+
+    if type(pingApi.TogglePingListener) ~= "function" then
+        pingApi.TogglePingListener = function(enabled)
+            state.pingListenerEnabled = (enabled == true)
+            DispatchSecurePingEvent(SECURE_PING_EVENT_TOGGLE_LISTENER, state.pingListenerEnabled)
+            return state.pingListenerEnabled
+        end
+    end
+
+    if type(pingApi.SendMacroPing) ~= "function" then
+        pingApi.SendMacroPing = function(pingType, targetUnitToken)
+            local resolvedType = ResolvePingTypeFromApiValue(pingType)
+            DispatchSecurePingEvent(SECURE_PING_EVENT_SEND_MACRO, resolvedType, targetUnitToken)
+            if type(targetUnitToken) == "string" and type(UnitExists) == "function" and UnitExists(targetUnitToken) then
+                local payload = {
+                    type = resolvedType,
+                    targetType = "unit",
+                    ignoreThrottle = false,
+                }
+
+                if type(UnitGUID) == "function" then
+                    payload.targetGuid = TrimWhitespace(UnitGUID(targetUnitToken))
+                    if payload.targetGuid == "" then
+                        payload.targetGuid = nil
+                    end
+                end
+
+                if type(UnitName) == "function" then
+                    payload.targetName = UnitName(targetUnitToken)
+                    payload.text = payload.targetName
+                end
+
+                return PingSystem:Push(payload)
+            end
+
+            if resolvedType == "info" then
+                resolvedType = ResolveContextualPingTypeForUnit("target")
+            end
+
+            return PingSystem:PushQuickPing(resolvedType, {
+                ignoreThrottle = false,
+                allowScreenFallback = true,
+            })
+        end
+    end
+
+    if type(_G.GetPingMode) ~= "function" then
+        _G.GetPingMode = function()
+            local pingMode = (type(GetCVar) == "function") and tonumber(GetCVar("pingMode")) or nil
+            if pingMode ~= nil then
+                return pingMode
+            end
+
+            local enumMode = _G.Enum and _G.Enum.PingMode
+            if type(enumMode) == "table" then
+                return enumMode.KeyDown or enumMode.PressAndDrag or 1
+            end
+
+            return 1
+        end
+    end
+
+    if type(_G.IsPingModeAvailable) ~= "function" then
+        _G.IsPingModeAvailable = function()
+            return true
+        end
+    end
+
+    if type(_G.IsPingingMinimap) ~= "function" then
+        _G.IsPingingMinimap = function()
+            return false
+        end
+    end
+
+    if type(_G.IsPingingWorld) ~= "function" then
+        _G.IsPingingWorld = function()
+            local settings = GetSettings()
+            return settings.enabled ~= false
+        end
+    end
+
+    local function BuildCurrentPingTargetSnapshot()
+        local target = ResolveCursorWorldPingTarget() or ResolveMouseoverPingTarget()
+        if type(target) ~= "table" then
+            return nil
+        end
+
+        return {
+            targetGuid = target.targetGuid,
+            targetType = target.targetType,
+            mapId = target.mapId,
+            x = target.x,
+            y = target.y,
+            worldX = target.worldX,
+            worldY = target.worldY,
+            worldZ = target.worldZ,
+        }
+    end
+
+    if type(_G.GetPingType) ~= "function" then
+        _G.GetPingType = function(value)
+            return ResolvePingTypeFromApiValue(value)
+        end
+    end
+
+    if type(_G.GetPingSubjectType) ~= "function" then
+        _G.GetPingSubjectType = function(value)
+            return PingTypeToSubjectEnum(ResolvePingTypeFromApiValue(value))
+        end
+    end
+
+    if type(_G.GetPingTarget) ~= "function" then
+        _G.GetPingTarget = function()
+            local target = BuildCurrentPingTargetSnapshot()
+            if not target then
+                return nil
+            end
+
+            return target.targetGuid, target.targetType, target.mapId, target.x, target.y, target.worldX, target.worldY, target.worldZ, target
+        end
+    end
+
+    if type(_G.GetPingInfo) ~= "function" then
+        _G.GetPingInfo = function()
+            return {
+                mode = _G.GetPingMode and _G.GetPingMode() or nil,
+                cooldown = pingApi.GetCooldownInfo and pingApi.GetCooldownInfo() or nil,
+                target = BuildCurrentPingTargetSnapshot(),
+                listenerEnabled = (state.pingListenerEnabled == true),
+            }
+        end
+    end
+
+    if type(_G.GetPingCooldownInfo) ~= "function" then
+        _G.GetPingCooldownInfo = function()
+            return pingApi.GetCooldownInfo and pingApi.GetCooldownInfo() or nil
+        end
+    end
+
+    if type(_G.GetPingTextures) ~= "function" then
+        _G.GetPingTextures = function()
+            local options = pingApi.GetDefaultPingOptions and pingApi.GetDefaultPingOptions() or {}
+            local textures = {}
+            for i = 1, #options do
+                local option = options[i]
+                textures[i] = option and option.uiTextureKitID or "NonThreat"
+            end
+            return textures
+        end
+    end
+
+    if type(_G.GetPingCategories) ~= "function" then
+        _G.GetPingCategories = function()
+            return {
+                {
+                    categoryID = 1,
+                    title = "Default",
+                },
+            }
+        end
+    end
+
+    if type(_G.GetPingCategoryInfo) ~= "function" then
+        _G.GetPingCategoryInfo = function(categoryId)
+            categoryId = tonumber(categoryId) or 1
+            return {
+                categoryID = categoryId,
+                title = "Default",
+                options = pingApi.GetDefaultPingOptions and pingApi.GetDefaultPingOptions() or {},
+            }
+        end
+    end
+
+    if type(_G.TriggerPing) ~= "function" then
+        _G.TriggerPing = function(pingType, targetUnitToken)
+            if pingApi.SendMacroPing then
+                return pingApi.SendMacroPing(pingType, targetUnitToken)
+            end
+            return PingSystem:PushQuickPing(ResolvePingTypeFromApiValue(pingType), {
+                ignoreThrottle = false,
+                allowScreenFallback = true,
+            })
+        end
+    end
+
+    if type(_G.RemovePings) ~= "function" then
+        _G.RemovePings = function()
+            PingSystem:Clear()
+            return true
+        end
+    end
+
+    local pingSecureApi = rawget(_G, "C_PingSecure")
+    if type(pingSecureApi) ~= "table" then
+        pingSecureApi = {}
+        _G.C_PingSecure = pingSecureApi
+    end
+
+    local function InstallSecurePassthrough(methodName, globalName)
+        if type(pingSecureApi[methodName]) ~= "function" and type(_G[globalName]) == "function" then
+            pingSecureApi[methodName] = _G[globalName]
+        end
+    end
+
+    InstallSecurePassthrough("CreateFrame", "C_PingSecure_CreateFrame")
+    InstallSecurePassthrough("DisplayError", "C_PingSecure_DisplayError")
+    InstallSecurePassthrough("ClearPendingPingInfo", "C_PingSecure_ClearPendingPingInfo")
+    InstallSecurePassthrough("GetTargetPingReceiver", "C_PingSecure_GetTargetPingReceiver")
+
+    local function BindSecureCallback(methodName, globalName, eventName)
+        if type(pingSecureApi[methodName]) ~= "function" then
+            pingSecureApi[methodName] = function(callback)
+                if type(callback) == "function" then
+                    state.securePingCallbacks[eventName] = callback
+                else
+                    state.securePingCallbacks[eventName] = nil
+                end
+
+                if type(_G[globalName]) == "function" then
+                    return _G[globalName](callback)
+                end
+
+                return true
+            end
+        end
+    end
+
+    BindSecureCallback("SetPingRadialWheelCreatedCallback", "C_PingSecure_SetPingRadialWheelCreatedCallback", SECURE_PING_EVENT_RADIAL_CREATED)
+    BindSecureCallback("SetPendingPingOffScreenCallback", "C_PingSecure_SetPendingPingOffScreenCallback", SECURE_PING_EVENT_PENDING_OFFSCREEN)
+    BindSecureCallback("SetTogglePingListenerCallback", "C_PingSecure_SetTogglePingListenerCallback", SECURE_PING_EVENT_TOGGLE_LISTENER)
+    BindSecureCallback("SetPingCooldownStartedCallback", "C_PingSecure_SetPingCooldownStartedCallback", SECURE_PING_EVENT_COOLDOWN_STARTED)
+    BindSecureCallback("SetPingPinFrameAddedCallback", "C_PingSecure_SetPingPinFrameAddedCallback", SECURE_PING_EVENT_PIN_ADDED)
+    BindSecureCallback("SetPingPinFrameRemovedCallback", "C_PingSecure_SetPingPinFrameRemovedCallback", SECURE_PING_EVENT_PIN_REMOVED)
+    BindSecureCallback("SetPingPinFrameScreenClampStateUpdatedCallback", "C_PingSecure_SetPingPinFrameScreenClampStateUpdatedCallback", SECURE_PING_EVENT_PIN_CLAMP_UPDATED)
+    BindSecureCallback("SetSendMacroPingCallback", "C_PingSecure_SetSendMacroPingCallback", SECURE_PING_EVENT_SEND_MACRO)
+
+    if type(pingSecureApi.CreateFrame) ~= "function" then
+        pingSecureApi.CreateFrame = function()
+            return true
+        end
+    end
+
+    if type(pingSecureApi.DisplayError) ~= "function" then
+        pingSecureApi.DisplayError = function(message)
+            if type(UIErrorsFrame) == "table" and type(UIErrorsFrame.AddMessage) == "function" then
+                UIErrorsFrame:AddMessage(tostring(message or "PING_FAILED_GENERIC"), 1, 0.1, 0.1)
+            elseif type(addon.Print) == "function" then
+                addon:Print(tostring(message or "PING_FAILED_GENERIC"), true)
+            end
+            return true
+        end
+    end
+
+    if type(pingSecureApi.ClearPendingPingInfo) ~= "function" then
+        pingSecureApi.ClearPendingPingInfo = function()
+            return true
+        end
+    end
+
+    if type(pingSecureApi.GetTargetWorldPing) ~= "function" then
+        pingSecureApi.GetTargetWorldPing = function(...)
+            local native = rawget(_G, "C_PingSecure_GetTargetWorldPing")
+            if type(native) == "function" then
+                local ok, found, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName = pcall(native, ...)
+                if ok then
+                    if found == true then
+                        return true, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName
+                    end
+
+                    if type(found) == "string" or type(found) == "number" then
+                        return true, found, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ
+                    end
+                end
+            end
+
+            local target = ResolveCursorWorldPingTarget()
+            if not target then
+                return false
+            end
+
+            return true,
+                target.targetGuid,
+                target.targetType,
+                target.mapId,
+                target.x,
+                target.y,
+                target.worldX,
+                target.worldY,
+                target.worldZ,
+                target.targetName
+        end
+    end
+
+    if type(pingSecureApi.GetTargetPingReceiver) ~= "function" then
+        pingSecureApi.GetTargetPingReceiver = function()
+            local target = ResolveTargetPingReceiver()
+            if not target then
+                return nil
+            end
+
+            return target.targetGuid,
+                target.targetType,
+                target.mapId,
+                target.x,
+                target.y,
+                target.worldX,
+                target.worldY,
+                target.worldZ,
+                target.targetName
+        end
+    end
+
+    if type(pingSecureApi.SendPing) ~= "function" then
+        pingSecureApi.SendPing = function(pingType, overrideTargetGUID)
+            local native = rawget(_G, "C_PingSecure_SendPing")
+            if type(native) == "function" then
+                local ok, result = pcall(native, pingType, overrideTargetGUID)
+                if ok and type(result) == "number" then
+                    return result
+                end
+            end
+
+            local resolvedType = ResolvePingTypeFromApiValue(pingType)
+            local payload = {
+                type = resolvedType,
+                ignoreThrottle = false,
+            }
+
+            local targetGuid = TrimWhitespace(overrideTargetGUID)
+            if targetGuid ~= "" then
+                payload.targetGuid = targetGuid
+                local resolved = ResolveEntityPositionByGuid(targetGuid)
+                if resolved then
+                    CopyTargetIdentity(payload, resolved)
+                    CopyTargetLocation(payload, resolved)
+                end
+            else
+                local target = ResolveCursorWorldPingTarget() or ResolveMouseoverPingTarget() or ResolveTargetPingReceiver()
+                if target then
+                    CopyTargetIdentity(payload, target)
+                    CopyTargetLocation(payload, target)
+                end
+            end
+
+            local ok = PingSystem:Push(payload)
+            return ok and 0 or 1
+        end
+    end
+
+    if type(pingSecureApi.GetTargetWorldPingAndSend) ~= "function" then
+        pingSecureApi.GetTargetWorldPingAndSend = function()
+            local native = rawget(_G, "C_PingSecure_GetTargetWorldPingAndSend")
+            if type(native) == "function" then
+                local ok, result = pcall(native)
+                if ok then
+                    if type(result) == "table" then
+                        return result
+                    end
+
+                    return {
+                        result = tonumber(result) or 1,
+                    }
+                end
+            end
+
+            local target = ResolveCursorWorldPingTarget()
+            if not target then
+                return {
+                    result = 1,
+                }
+            end
+
+            local ok = PingSystem:Push({
+                type = "warning",
+                ignoreThrottle = false,
+                targetGuid = target.targetGuid,
+                targetType = target.targetType,
+                targetName = target.targetName,
+                mapId = target.mapId,
+                x = target.x,
+                y = target.y,
+                worldX = target.worldX,
+                worldY = target.worldY,
+                worldZ = target.worldZ,
+            })
+
+            return {
+                result = ok and 0 or 1,
+                targetGuid = target.targetGuid,
+                targetType = target.targetType,
+                mapId = target.mapId,
+                x = target.x,
+                y = target.y,
+                worldX = target.worldX,
+                worldY = target.worldY,
+                worldZ = target.worldZ,
+            }
+        end
+    end
+
+    if type(pingSecureApi.GetCallbackState) ~= "function" and type(_G.C_PingSecure_GetCallbackState) == "function" then
+        pingSecureApi.GetCallbackState = _G.C_PingSecure_GetCallbackState
+    end
+
+    if state.securePingBridgeInstalled ~= true then
+        state.securePingBridgeInstalled = true
+
+        if type(pingSecureApi.SetPingPinFrameAddedCallback) == "function" then
+            pingSecureApi.SetPingPinFrameAddedCallback(function(frameId, uiTextureKit, isWorldPoint)
+                local frame = FindPingFrameBySecureId(frameId)
+                if not frame then
+                    return
+                end
+
+                frame.__dcqosUiTextureKit = uiTextureKit
+                ApplyFramePinTargetStyle(frame, isWorldPoint == true)
+
+                -- WotLK client path does not have retail flipbook playback here.
+                -- Showing the atlas directly can render several frames at once,
+                -- so keep the static icon visible only.
+                if frame.Icon then
+                    frame.Icon:Show()
+                end
+                if frame.IconFlipbook then
+                    frame.IconFlipbook:Hide()
+                end
+            end)
+        end
+
+        if type(pingSecureApi.SetPingPinFrameRemovedCallback) == "function" then
+            pingSecureApi.SetPingPinFrameRemovedCallback(function(frameId)
+                local frame = FindPingFrameBySecureId(frameId)
+                if frame and frame.IconFlipbook then
+                    frame.IconFlipbook:Hide()
+                    if frame.Icon then
+                        frame.Icon:Show()
+                    end
+                end
+            end)
+        end
+
+        if type(pingSecureApi.SetPingPinFrameScreenClampStateUpdatedCallback) == "function" then
+            pingSecureApi.SetPingPinFrameScreenClampStateUpdatedCallback(function(frameId, isClamped)
+                local frame = FindPingFrameBySecureId(frameId)
+                if not frame then
+                    return
+                end
+
+                ApplyFrameClampVisual(frame, isClamped == true)
+            end)
+        end
+    end
+end
+
+local function RunPingSecureRuntimeSelfTest()
+    local secureApi = rawget(_G, "C_PingSecure")
+    if type(secureApi) ~= "table" then
+        addon:Debug("Ping Secure self-test: C_PingSecure table missing")
+        return
+    end
+
+    local present = {}
+    local missing = {}
+
+    for i = 1, #PING_SECURE_EXPECTED_METHODS do
+        local methodName = PING_SECURE_EXPECTED_METHODS[i]
+        if type(secureApi[methodName]) == "function" then
+            present[#present + 1] = methodName
+        else
+            missing[#missing + 1] = methodName
+        end
+    end
+
+    addon:Debug(string.format(
+        "Ping Secure self-test: %d/%d methods available",
+        #present,
+        #PING_SECURE_EXPECTED_METHODS
+    ))
+
+    if #missing > 0 then
+        addon:Debug("Ping Secure self-test missing: " .. table.concat(missing, ", "))
+    else
+        addon:Debug("Ping Secure self-test all methods available")
+    end
 end
 
 local function ResolveRadialSelectionType(dx, dy)
@@ -690,7 +2096,7 @@ local function ResolveRadialSelectionType(dx, dy)
         end
     end
 
-    if bestDiff and bestDiff <= 72 then
+    if bestDiff and bestDiff <= 62 then
         return bestType
     end
 
@@ -702,27 +2108,75 @@ local function UpdateRadialMenuVisuals()
         return
     end
 
+    local selectedStyle = state.menuSelectionType and PING_STYLES[state.menuSelectionType] or nil
+
     for i = 1, #state.menuEntries do
         local entry = state.menuEntries[i]
         local style = PING_STYLES[entry.pingType] or PING_STYLES.info
         local selected = (entry.pingType == state.menuSelectionType)
 
-        if entry.Ring then
-            entry.Ring:SetVertexColor(style.r, style.g, style.b, selected and 0.60 or 0.25)
+        if entry.Background then
+            entry.Background:SetVertexColor(
+                (style.r * 0.34) + 0.10,
+                (style.g * 0.34) + 0.10,
+                (style.b * 0.34) + 0.10,
+                selected and 0.34 or 0.14
+            )
         end
+
+        if entry.Ring then
+            entry.Ring:SetVertexColor(style.r, style.g, style.b, selected and 0.68 or 0.32)
+        end
+
+        if entry.Highlight then
+            entry.Highlight:SetAlpha(1)
+            entry.Highlight:SetVertexColor(style.r, style.g, style.b, selected and 0.24 or 0.0)
+        end
+
+        if entry.IconPlate then
+            entry.IconPlate:SetVertexColor(
+                (style.r * 0.14) + 0.08,
+                (style.g * 0.14) + 0.08,
+                (style.b * 0.14) + 0.08,
+                selected and 0.34 or 0.18
+            )
+        end
+
         if entry.Icon then
             ApplyStyleIcon(entry.Icon, entry.pingType)
-            entry.Icon:SetVertexColor(style.r, style.g, style.b, selected and 1.0 or 0.85)
+            if selected then
+                entry.Icon:SetVertexColor(1.0, 1.0, 1.0, 1.0)
+            else
+                entry.Icon:SetVertexColor(style.r, style.g, style.b, 0.92)
+            end
         end
+
         if entry.Label then
             if selected then
                 entry.Label:SetTextColor(1.0, 1.0, 1.0)
             else
-                entry.Label:SetTextColor(0.80, 0.82, 0.85)
+                entry.Label:SetTextColor(0.86, 0.89, 0.94)
             end
         end
 
-        entry:SetScale(selected and 1.15 or 1.0)
+        entry:SetScale(selected and 1.08 or 1.0)
+    end
+
+    if state.menuWheel and state.menuWheel.CenterRing then
+        if selectedStyle then
+            state.menuWheel.CenterRing:SetVertexColor(
+                (selectedStyle.r * 0.48) + 0.30,
+                (selectedStyle.g * 0.48) + 0.30,
+                (selectedStyle.b * 0.48) + 0.30,
+                0.72
+            )
+        else
+            state.menuWheel.CenterRing:SetVertexColor(0.30, 0.34, 0.40, 0.66)
+        end
+    end
+
+    if state.menuWheel and state.menuWheel.CancelIcon then
+        state.menuWheel.CancelIcon:SetAlpha(state.menuSelectionType and 0.68 or 0.95)
     end
 
     if state.menuWheel and state.menuWheel.Instruction then
@@ -777,52 +2231,108 @@ local function EnsureRadialMenuFrame()
 
     frame.Dim = frame:CreateTexture(nil, "BACKGROUND")
     frame.Dim:SetAllPoints(frame)
-    frame.Dim:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-    frame.Dim:SetVertexColor(0, 0, 0, 0.16)
+    if not ApplyAtlasTexture(frame.Dim, "Ping_Wheel_Backdrop_Default") then
+        frame.Dim:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+    end
+    frame.Dim:SetVertexColor(0, 0, 0, 0.04)
 
     local wheel = CreateFrame("Frame", nil, frame)
     wheel:SetSize(220, 220)
     wheel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 
-    wheel.OuterRing = wheel:CreateTexture(nil, "ARTWORK")
-    wheel.OuterRing:SetAllPoints()
-    if not ApplyAtlasTexture(wheel.OuterRing, "Ping_Wheel_Icon_Default") then
-        wheel.OuterRing:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    wheel.Backing = wheel:CreateTexture(nil, "ARTWORK")
+    wheel.Backing:SetAllPoints()
+    if not ApplyAtlasTexture(wheel.Backing, "Ping_Wheel_Icon_Default") then
+        wheel.Backing:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
     end
-    wheel.OuterRing:SetVertexColor(0.08, 0.08, 0.08, 0.95)
+    wheel.Backing:SetVertexColor(0.18, 0.22, 0.28, 0.32)
+
+    wheel.OuterRing = wheel:CreateTexture(nil, "OVERLAY")
+    wheel.OuterRing:SetAllPoints()
+    if not ApplyAtlasTexture(wheel.OuterRing, "Ping_SpotGlw_Default_Out") then
+        wheel.OuterRing:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Rotate")
+    end
+    wheel.OuterRing:SetBlendMode("ADD")
+    wheel.OuterRing:SetVertexColor(0.70, 0.76, 0.86, 0.24)
+
+    wheel.InnerRing = wheel:CreateTexture(nil, "OVERLAY")
+    wheel.InnerRing:SetSize(136, 136)
+    wheel.InnerRing:SetPoint("CENTER", wheel, "CENTER", 0, 0)
+    if not ApplyAtlasTexture(wheel.InnerRing, "Ping_SpotGlw_Default_In") then
+        wheel.InnerRing:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+    end
+    wheel.InnerRing:SetVertexColor(0.56, 0.64, 0.80, 0.16)
 
     wheel.CenterRing = wheel:CreateTexture(nil, "OVERLAY")
-    wheel.CenterRing:SetSize(56, 56)
+    wheel.CenterRing:SetSize(64, 64)
     wheel.CenterRing:SetPoint("CENTER", wheel, "CENTER", 0, 0)
-    wheel.CenterRing:SetTexture("Interface\\Buttons\\UI-Quickslot")
-    wheel.CenterRing:SetVertexColor(0.60, 0.60, 0.60, 0.90)
+    if not ApplyAtlasTexture(wheel.CenterRing, "Ping_Wheel_Icon_Default") then
+        wheel.CenterRing:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+    end
+    wheel.CenterRing:SetVertexColor(0.30, 0.34, 0.40, 0.66)
+
+    wheel.CenterGlow = wheel:CreateTexture(nil, "OVERLAY")
+    wheel.CenterGlow:SetSize(44, 44)
+    wheel.CenterGlow:SetPoint("CENTER", wheel, "CENTER", 0, 0)
+    if not ApplyAtlasTexture(wheel.CenterGlow, "Ping_SpotGlw_Default_In") then
+        wheel.CenterGlow:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+    end
+    wheel.CenterGlow:SetBlendMode("ADD")
+    wheel.CenterGlow:SetVertexColor(0.86, 0.90, 0.96, 0.16)
 
     wheel.CancelIcon = wheel:CreateTexture(nil, "OVERLAY")
-    wheel.CancelIcon:SetSize(18, 18)
+    wheel.CancelIcon:SetSize(16, 16)
     wheel.CancelIcon:SetPoint("CENTER", wheel, "CENTER", 0, 0)
     wheel.CancelIcon:SetTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
     wheel.CancelIcon:SetVertexColor(0.95, 0.95, 0.95, 0.95)
 
     wheel.Instruction = wheel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     wheel.Instruction:SetPoint("TOP", wheel, "BOTTOM", 0, -8)
+    wheel.Instruction:SetTextColor(0.82, 0.86, 0.92)
     wheel.Instruction:SetText("Move cursor to choose a ping. Release key to confirm.")
 
     local menuEntries = {}
     for i = 1, #RADIAL_MENU_OPTIONS do
         local option = RADIAL_MENU_OPTIONS[i]
         local entry = CreateFrame("Frame", nil, wheel)
-        entry:SetSize(44, 44)
-        entry:SetPoint("CENTER", wheel, "CENTER", option.offsetX, option.offsetY)
+        entry:SetSize(50, 50)
+        entry:SetPoint("CENTER", wheel, "CENTER", 0, 0)
         entry.pingType = option.type
-        entry.offsetX = option.offsetX
-        entry.offsetY = option.offsetY
+        entry.baseAngle = option.angle
+        entry.baseRadiusScale = option.radiusScale or 0.42
+
+        entry.Background = entry:CreateTexture(nil, "ARTWORK")
+        entry.Background:SetAllPoints()
+        if not ApplyAtlasTexture(entry.Background, "Ping_SpotGlw_Default_Out") then
+            entry.Background:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Rotate")
+        end
+        entry.Background:SetBlendMode("ADD")
 
         entry.Ring = entry:CreateTexture(nil, "ARTWORK")
         entry.Ring:SetAllPoints()
-        entry.Ring:SetTexture("Interface\\Buttons\\UI-Quickslot")
+        if not ApplyAtlasTexture(entry.Ring, "Ping_SpotGlw_Default_In") then
+            entry.Ring:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+        end
+        entry.Ring:SetBlendMode("ADD")
+
+        entry.Highlight = entry:CreateTexture(nil, "OVERLAY")
+        entry.Highlight:SetAllPoints()
+        if not ApplyAtlasTexture(entry.Highlight, "Ping_SpotGlw_Default_In") then
+            entry.Highlight:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+        end
+        entry.Highlight:SetBlendMode("ADD")
+        entry.Highlight:SetAlpha(1)
+
+        entry.IconPlate = entry:CreateTexture(nil, "OVERLAY")
+        entry.IconPlate:SetSize(30, 30)
+        entry.IconPlate:SetPoint("CENTER", entry, "CENTER", 0, 0)
+        if not ApplyAtlasTexture(entry.IconPlate, "Ping_SpotGlw_Default_In") then
+            entry.IconPlate:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+        end
+        entry.IconPlate:SetVertexColor(0.12, 0.14, 0.18, 0.20)
 
         entry.Icon = entry:CreateTexture(nil, "OVERLAY")
-        entry.Icon:SetSize(26, 26)
+        entry.Icon:SetSize(22, 22)
         entry.Icon:SetPoint("CENTER", entry, "CENTER", 0, 0)
         ApplyStyleIcon(entry.Icon, option.type)
 
@@ -874,11 +2384,15 @@ local function OpenRadialMenuInternal()
     size = Clamp(size, 140, 360)
     state.menuWheel:SetSize(size, size)
 
-    local iconDistanceScale = size / 220
     for i = 1, #state.menuEntries do
         local entry = state.menuEntries[i]
+        local angle = math_rad(entry.baseAngle or 0)
+        local radius = size * (entry.baseRadiusScale or 0.42)
+        local offsetX = math_cos(angle) * radius
+        local offsetY = math_sin(angle) * radius
+
         entry:ClearAllPoints()
-        entry:SetPoint("CENTER", state.menuWheel, "CENTER", entry.offsetX * iconDistanceScale, entry.offsetY * iconDistanceScale)
+        entry:SetPoint("CENTER", state.menuWheel, "CENTER", offsetX, offsetY)
     end
 
     local cursorX, cursorY = GetCursorPosition()
@@ -895,6 +2409,13 @@ local function OpenRadialMenuInternal()
     state.menuWheel:ClearAllPoints()
     state.menuWheel:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cursorX, cursorY)
 
+    -- Capture the world target NOW, while the cursor is still over the terrain / WorldFrame.
+    -- By the time CloseRadialMenu fires the cursor will be over the radial UI, so
+    -- m_actionHitTest will be stale and ResolveCursorWorldPingTarget() would return the
+    -- wrong position.  We store the resolved target and pass it through to PushQuickPing.
+    state.capturedRadialTarget = ResolveCursorWorldPingTarget()
+    state.capturedRadialScreenX, state.capturedRadialScreenY = GetCursorScreenOffsets()
+
     state.menuSelectionType = nil
     UpdateRadialMenuVisuals()
 
@@ -903,6 +2424,7 @@ local function OpenRadialMenuInternal()
     end)
 
     menu:Show()
+    DispatchSecurePingEvent(SECURE_PING_EVENT_RADIAL_CREATED)
 end
 
 local function EnsureRootFrame()
@@ -924,83 +2446,79 @@ end
 local function CreatePingFrame()
     local root = EnsureRootFrame()
     local frame = CreateFrame("Frame", nil, root)
-    frame:SetSize(56, 56)
+    frame:SetSize(200, 200)
     frame:Hide()
 
-    frame.Ring = frame:CreateTexture(nil, "BACKGROUND")
-    frame.Ring:SetAllPoints()
-    if not ApplyAtlasTexture(frame.Ring, "Ping_GroundMarker_BG_Default") then
-        frame.Ring:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-    end
-    frame.Ring:SetVertexColor(0.1, 0.1, 0.1, 0.75)
+    frame.GroundPin = CreateFrame("Frame", nil, frame)
+    frame.GroundPin:SetSize(200, 200)
+    frame.GroundPin:SetPoint("CENTER")
 
-    frame.Stem = frame:CreateTexture(nil, "BORDER")
-    frame.Stem:SetAllPoints()
-    if not ApplyAtlasTexture(frame.Stem, "Ping_GroundMarker_Pin_Default") then
-        frame.Stem:SetTexture("Interface\\Buttons\\UI-Quickslot")
-    end
-    frame.Stem:SetVertexColor(0.12, 0.12, 0.12, 0.82)
+    frame.Stem = frame.GroundPin:CreateTexture(nil, "BACKGROUND", nil, 1)
+    frame.Stem:SetSize(4, 114)
+    frame.Stem:SetPoint("BOTTOM", frame.GroundPin, "CENTER", 0, 0)
 
-    frame.Stroke = frame:CreateTexture(nil, "BORDER")
-    frame.Stroke:SetAllPoints()
-    if not ApplyAtlasTexture(frame.Stroke, "Ping_GroundMarker_Stroke_Default") then
-        frame.Stroke:SetTexture("Interface\\Buttons\\UI-Quickslot")
-    end
-    frame.Stroke:SetVertexColor(0.8, 0.8, 0.8, 0.55)
+    frame.GroundBackground = frame.GroundPin:CreateTexture(nil, "BACKGROUND", nil, 2)
+    frame.GroundBackground:SetSize(58, 58)
+    frame.GroundBackground:SetPoint("BOTTOM", frame.Stem, "TOP", 0, -8)
 
-    frame.PointerBG = frame:CreateTexture(nil, "ARTWORK")
-    frame.PointerBG:SetAllPoints()
+    frame.GroundHighlight = frame.GroundPin:CreateTexture(nil, "BACKGROUND", nil, 3)
+    frame.GroundHighlight:SetSize(58, 58)
+    frame.GroundHighlight:SetPoint("BOTTOM", frame.Stem, "TOP", 0, -8)
+    frame.GroundHighlight:SetAlpha(0)
+
+    frame.GroundMarker = frame.GroundPin:CreateTexture(nil, "BACKGROUND", nil, 3)
+    frame.GroundMarker:SetSize(58, 58)
+    frame.GroundMarker:SetPoint("BOTTOM", frame.Stem, "TOP", 0, -8)
+    frame.GroundMarker:SetAlpha(0)
+
+    frame.Stroke = frame.GroundPin:CreateTexture(nil, "BACKGROUND", nil, 4)
+    frame.Stroke:SetSize(58, 58)
+    frame.Stroke:SetPoint("BOTTOM", frame.Stem, "TOP", 0, -8)
+    frame.Stroke:SetAlpha(0)
+
+    frame.UnitPin = CreateFrame("Frame", nil, frame)
+    frame.UnitPin:SetSize(200, 200)
+    frame.UnitPin:SetPoint("CENTER")
+    frame.UnitBackground = frame.UnitPin:CreateTexture(nil, "BACKGROUND")
+    frame.UnitBackground:SetSize(58, 58)
+    frame.UnitBackground:SetPoint("BOTTOM", frame.UnitPin, "CENTER", 0, 0)
+
+    frame.ClampedPin = CreateFrame("Frame", nil, frame)
+    frame.ClampedPin:SetSize(200, 200)
+    frame.ClampedPin:SetPoint("CENTER")
+    frame.__dcqosIsWorldPoint = (isWorldPoint == true)
+    frame.__dcqosUiTextureKit = uiTextureKit
+    frame.ClampedPin:Hide()
+
+    frame.PointerBG = frame.ClampedPin:CreateTexture(nil, "BACKGROUND")
+    frame.PointerBG:SetSize(47, 47)
+    frame.PointerBG:SetPoint("CENTER")
     if not ApplyAtlasTexture(frame.PointerBG, "Ping_OVMarker_Pointer_BG") then
-        frame.PointerBG:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        frame.PointerBG:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Rotate")
     end
-    frame.PointerBG:SetVertexColor(0.08, 0.08, 0.08, 0.45)
 
-    frame.Pointer = frame:CreateTexture(nil, "ARTWORK")
-    frame.Pointer:SetAllPoints()
-    if not ApplyAtlasTexture(frame.Pointer, "Ping_OVMarker_Pointer_Default") then
-        frame.Pointer:SetTexture("Interface\\Buttons\\UI-Quickslot")
-    end
-    frame.Pointer:SetVertexColor(0.8, 0.8, 0.8, 0.7)
+    frame.Pointer = frame.ClampedPin:CreateTexture(nil, "OVERLAY")
+    frame.Pointer:SetSize(75, 75)
+    frame.Pointer:SetPoint("CENTER")
 
-    frame.Icon = frame:CreateTexture(nil, "ARTWORK")
-    frame.Icon:SetSize(30, 30)
-    frame.Icon:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    ApplyStyleIcon(frame.Icon, "info")
+    frame.Icon = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+    frame.Icon:SetSize(35, 35)
+    frame.Icon:SetPoint("CENTER", frame.GroundBackground, "CENTER", 0, 0)
 
-    frame.IconFlipbook = frame:CreateTexture(nil, "OVERLAY")
-    frame.IconFlipbook:SetSize(34, 34)
-    frame.IconFlipbook:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    if not ApplyAtlasTexture(frame.IconFlipbook, "Ping_Marker_Flipbook_Default") then
-        frame.IconFlipbook:SetTexture("Interface\\Buttons\\UI-QuickslotRed")
-    end
-    frame.IconFlipbook:SetBlendMode("ADD")
-    frame.IconFlipbook:SetAlpha(0.18)
-
-    frame.GlowIn = frame:CreateTexture(nil, "OVERLAY")
-    frame.GlowIn:SetAllPoints()
-    if not ApplyAtlasTexture(frame.GlowIn, "Ping_SpotGlw_Default_In") then
-        frame.GlowIn:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
-    end
-    frame.GlowIn:SetBlendMode("ADD")
-    frame.GlowIn:SetAlpha(0.30)
-
-    frame.GlowOut = frame:CreateTexture(nil, "OVERLAY")
-    frame.GlowOut:SetAllPoints()
-    if not ApplyAtlasTexture(frame.GlowOut, "Ping_SpotGlw_Default_Out") then
-        frame.GlowOut:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Rotate")
-    end
-    frame.GlowOut:SetBlendMode("ADD")
-    frame.GlowOut:SetAlpha(0.22)
+    frame.IconFlipbook = frame:CreateTexture(nil, "ARTWORK", nil, 2)
+    frame.IconFlipbook:Hide()
 
     frame.DistanceText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.DistanceText:SetPoint("BOTTOM", frame, "TOP", 0, 1)
+    frame.DistanceText:SetPoint("BOTTOM", frame, "TOP", 0, -26)
     frame.DistanceText:SetText("")
 
     frame.CaptionText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    frame.CaptionText:SetPoint("TOP", frame, "BOTTOM", 0, -1)
+    frame.CaptionText:SetPoint("TOP", frame, "BOTTOM", 0, 28)
     frame.CaptionText:SetWidth(220)
     frame.CaptionText:SetJustifyH("CENTER")
     frame.CaptionText:SetText("")
+
+    frame.Ring = frame.GroundBackground
 
     return frame
 end
@@ -1022,6 +2540,9 @@ local function ReleasePingAtIndex(index)
     table.remove(state.active, index)
 
     local frame = entry.frame
+    local frameId = AllocateSecurePingFrameId(frame)
+    DispatchSecurePingEvent(SECURE_PING_EVENT_PIN_REMOVED, frameId)
+
     frame:Hide()
     frame:ClearAllPoints()
     frame:SetScale(1)
@@ -1058,15 +2579,18 @@ local function ResolveProjection(payload)
     local settings = GetSettings()
     local centerYOffset = settings.centerYOffset or -96
 
-    local screenX = 0
-    local screenY = centerYOffset
+    local screenX = nil
+    local screenY = nil
     local relative = nil
     local distance = payload.distance
     local targetMapId = payload.mapId
     local mapMismatch = false
+    local hasScreenOffset = type(payload.screenX) == "number" and type(payload.screenY) == "number"
+    local isEntityTarget = IsValidPingEntityTargetType(payload.targetType)
 
-    if type(payload.screenX) == "number" and type(payload.screenY) == "number" and not (payload.x and payload.y) then
-        return payload.screenX, payload.screenY, distance, false, targetMapId
+    if hasScreenOffset and not (payload.x and payload.y) and not (payload.worldX and payload.worldY and payload.worldZ) then
+        local clampedX, clampedY = ClampScreenOffsetsToViewport(payload.screenX, payload.screenY, 52)
+        return clampedX, clampedY, distance, false, targetMapId
     end
 
     if payload.relativeRadians then
@@ -1078,6 +2602,21 @@ local function ResolveProjection(payload)
     if not relative and payload.bearingDegrees then
         local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
         relative = NormalizeRadians(math_rad(payload.bearingDegrees) - facing)
+    end
+
+    -- Prefer world-space projection whenever world coordinates are available.
+    -- This keeps ground pings anchored to the world instead of player-relative
+    -- ring math when both map and world data are present.
+    if payload.worldX and payload.worldY and payload.worldZ then
+        local worldOffsetX, worldOffsetY = ResolveWorldScreenOffsets(
+            payload.worldX,
+            payload.worldY,
+            payload.worldZ,
+            isEntityTarget and GetEntityWorldZOffset(payload, settings) or 0
+        )
+        if worldOffsetX and worldOffsetY then
+            return worldOffsetX, worldOffsetY, distance, mapMismatch, targetMapId
+        end
     end
 
     if not relative and payload.x and payload.y then
@@ -1094,6 +2633,11 @@ local function ResolveProjection(payload)
         end
     end
 
+    if not relative and hasScreenOffset then
+        local clampedX, clampedY = ClampScreenOffsetsToViewport(payload.screenX, payload.screenY, 52)
+        return clampedX, clampedY, distance, mapMismatch, targetMapId
+    end
+
     if relative then
         local radius = settings.ringRadius or 210
 
@@ -1107,7 +2651,11 @@ local function ResolveProjection(payload)
         screenY = -math_cos(relative) * radius + centerYOffset
     end
 
-    return screenX, screenY, distance, mapMismatch, targetMapId
+    if type(screenX) == "number" and type(screenY) == "number" then
+        return screenX, screenY, distance, mapMismatch, targetMapId
+    end
+
+    return nil, nil, distance, mapMismatch, targetMapId
 end
 
 local function PlayPingSound(payload, style)
@@ -1126,8 +2674,162 @@ local function PlayPingSound(payload, style)
     end
 end
 
+DispatchSecurePingEvent = function(eventName, ...)
+    local cb = state.securePingCallbacks and state.securePingCallbacks[eventName]
+    if type(cb) ~= "function" then
+        return
+    end
+
+    local ok, err = pcall(cb, ...)
+    if not ok and type(addon.Debug) == "function" then
+        addon:Debug("Ping secure callback error [" .. tostring(eventName) .. "]: " .. tostring(err))
+    end
+end
+
+local function IsProjectedPointClamped(offsetX, offsetY, margin)
+    if type(offsetX) ~= "number" or type(offsetY) ~= "number" or not UIParent then
+        return false
+    end
+
+    local width = UIParent:GetWidth()
+    local height = UIParent:GetHeight()
+    if type(width) ~= "number" or type(height) ~= "number" or width <= 0 or height <= 0 then
+        return false
+    end
+
+    margin = tonumber(margin) or 48
+    if margin < 0 then
+        margin = 0
+    end
+
+    local maxX = (width * 0.5) - margin
+    local maxY = (height * 0.5) - margin
+    if maxX < 0 then
+        maxX = 0
+    end
+    if maxY < 0 then
+        maxY = 0
+    end
+
+    return math_abs(offsetX) >= maxX or math_abs(offsetY) >= maxY
+end
+
+AllocateSecurePingFrameId = function(frame)
+    if type(frame) ~= "table" then
+        return nil
+    end
+
+    if frame.__dcqosSecurePingFrameId then
+        return frame.__dcqosSecurePingFrameId
+    end
+
+    local nextId = tonumber(state.nextSecurePingFrameId) or 1
+    frame.__dcqosSecurePingFrameId = nextId
+    state.nextSecurePingFrameId = nextId + 1
+    return frame.__dcqosSecurePingFrameId
+end
+
+local function UpdateSecureClampState(entry, isClamped)
+    if type(entry) ~= "table" or type(entry.frame) ~= "table" then
+        return
+    end
+
+    if entry.lastClampState == isClamped then
+        return
+    end
+
+    entry.lastClampState = isClamped
+    local frameId = AllocateSecurePingFrameId(entry.frame)
+    DispatchSecurePingEvent(SECURE_PING_EVENT_PIN_CLAMP_UPDATED, frameId, isClamped and true or false)
+end
+
+FindPingFrameBySecureId = function(frameId)
+    frameId = tonumber(frameId)
+    if not frameId then
+        return nil
+    end
+
+    for i = 1, #state.active do
+        local entry = state.active[i]
+        if entry and entry.frame and entry.frame.__dcqosSecurePingFrameId == frameId then
+            return entry.frame
+        end
+    end
+
+    for i = 1, #state.pool do
+        local frame = state.pool[i]
+        if frame and frame.__dcqosSecurePingFrameId == frameId then
+            return frame
+        end
+    end
+
+    return nil
+end
+
+ApplyFramePinTargetStyle = function(frame, isWorldPoint)
+    if type(frame) ~= "table" then
+        return
+    end
+
+    frame.__dcqosIsWorldPoint = (isWorldPoint == true)
+    if frame.__dcqosIsWorldPoint then
+        if frame.Icon and frame.GroundBackground then
+            frame.Icon:ClearAllPoints()
+            frame.Icon:SetPoint("CENTER", frame.GroundBackground, "CENTER", 0, 0)
+        end
+        if frame.GroundPin then
+            frame.GroundPin:Show()
+        end
+        if frame.UnitPin then
+            frame.UnitPin:Hide()
+        end
+    else
+        if frame.Icon and frame.UnitBackground then
+            frame.Icon:ClearAllPoints()
+            frame.Icon:SetPoint("CENTER", frame.UnitBackground, "CENTER", 0, 3)
+        end
+        if frame.GroundPin then
+            frame.GroundPin:Hide()
+        end
+        if frame.UnitPin then
+            frame.UnitPin:Show()
+        end
+    end
+end
+
+ApplyFrameClampVisual = function(frame, isClamped)
+    if type(frame) ~= "table" then
+        return
+    end
+
+    if frame.ClampedPin then
+        frame.ClampedPin:SetShown(isClamped == true)
+    end
+
+    if isClamped == true then
+        if frame.GroundPin then
+            frame.GroundPin:Hide()
+        end
+        if frame.UnitPin then
+            frame.UnitPin:Hide()
+        end
+        if frame.Icon and frame.PointerBG then
+            frame.Icon:ClearAllPoints()
+            frame.Icon:SetPoint("CENTER", frame.PointerBG, "CENTER", 0, 0)
+        end
+    else
+        ApplyFramePinTargetStyle(frame, frame.__dcqosIsWorldPoint == true)
+    end
+end
 local function UpdateActivePings(_, elapsed)
     local now = GetTime() or 0
+    local settings = GetSettings()
+    local refreshSec = tonumber(settings.entityTrackRefreshSec) or 0.10
+    if refreshSec < 0.03 then
+        refreshSec = 0.03
+    elseif refreshSec > 0.50 then
+        refreshSec = 0.50
+    end
 
     for i = #state.active, 1, -1 do
         local entry = state.active[i]
@@ -1136,9 +2838,77 @@ local function UpdateActivePings(_, elapsed)
         if entry.remaining <= 0 then
             ReleasePingAtIndex(i)
         else
+            if type(entry.projectionPayload) == "table" then
+                local x, y, distance, mapMismatch, targetMapId = ResolveProjection(entry.projectionPayload)
+                if type(x) == "number" and type(y) == "number" then
+                    entry.frame:ClearAllPoints()
+                    entry.frame:SetPoint("CENTER", EnsureRootFrame(), "CENTER", x, y)
+
+                    local isClamped = IsProjectedPointClamped(x, y, 52)
+                    UpdateSecureClampState(entry, isClamped)
+
+                    if settings.showDistance and entry.frame.DistanceText then
+                        if distance and distance > 0 then
+                            entry.frame.DistanceText:SetText(string.format("%d yd", math_floor(distance + 0.5)))
+                        elseif mapMismatch and targetMapId then
+                            entry.frame.DistanceText:SetText("Map " .. tostring(targetMapId))
+                        else
+                            entry.frame.DistanceText:SetText("")
+                        end
+                    end
+                end
+            end
+
+            if type(entry.targetGuid) == "string"
+                and entry.targetGuid ~= ""
+                and IsValidPingEntityTargetType(entry.targetType)
+                and now >= (entry.nextTrackRefreshAt or 0) then
+                local resolved = ResolveEntityPositionByGuid(entry.targetGuid)
+                if resolved then
+                    if not resolved.targetType or resolved.targetType == "ground" then
+                        resolved.targetType = entry.targetType
+                    end
+
+                    local x, y, distance, mapMismatch, targetMapId = ResolveProjection(resolved)
+                    if type(x) == "number" and type(y) == "number" then
+                        entry.projectionPayload = {
+                            mapId = resolved.mapId,
+                            x = resolved.x,
+                            y = resolved.y,
+                            worldX = resolved.worldX,
+                            worldY = resolved.worldY,
+                            worldZ = resolved.worldZ,
+                            screenX = resolved.screenX,
+                            screenY = resolved.screenY,
+                            relativeRadians = resolved.relativeRadians,
+                            relativeDegrees = resolved.relativeDegrees,
+                            bearingDegrees = resolved.bearingDegrees,
+                            distance = distance,
+                            targetType = resolved.targetType,
+                        }
+
+                        entry.frame:ClearAllPoints()
+                        entry.frame:SetPoint("CENTER", EnsureRootFrame(), "CENTER", x, y)
+                        local isClamped = IsProjectedPointClamped(x, y, 52)
+                        UpdateSecureClampState(entry, isClamped)
+
+                        if settings.showDistance and entry.frame.DistanceText then
+                            if distance and distance > 0 then
+                                entry.frame.DistanceText:SetText(string.format("%d yd", math_floor(distance + 0.5)))
+                            elseif mapMismatch and targetMapId then
+                                entry.frame.DistanceText:SetText("Map " .. tostring(targetMapId))
+                            else
+                                entry.frame.DistanceText:SetText("")
+                            end
+                        end
+                    end
+                end
+
+                entry.nextTrackRefreshAt = now + refreshSec
+            end
+
             local progress = entry.remaining / entry.duration
-            local pulse = 1 + (0.08 * math_abs(math_sin((now * 10) + entry.phase)))
-            entry.frame:SetScale(entry.baseScale * pulse)
+            entry.frame:SetScale(entry.baseScale)
             entry.frame:SetAlpha(Clamp(0.2 + (0.8 * progress), 0.2, 1.0))
         end
     end
@@ -1169,13 +2939,17 @@ local function NormalizeRelayDistribution(value)
 end
 
 local function ResolveRelayDistribution(normalized)
-    if type(GetPingSyncDistribution) == "function" then
-        local resolved = NormalizeRelayDistribution(GetPingSyncDistribution())
-        if resolved == "AUTO" then
-            return nil
-        end
+    local distributionFn = ResolvePingFn("GetPingSyncDistribution", "C_Ping_GetSyncDistribution")
+    if distributionFn then
+        local ok, distribution = pcall(distributionFn)
+        if ok then
+            local resolved = NormalizeRelayDistribution(distribution)
+            if resolved == "AUTO" then
+                return nil
+            end
 
-        return resolved
+            return resolved
+        end
     end
 
     if normalized and normalized.distribution then
@@ -1199,6 +2973,54 @@ local function ResolveRelayMapPosition(normalized)
         mapId = playerMapId
     end
 
+    if (not mapX or not mapY)
+        and type(normalized.worldX) == "number"
+        and type(normalized.worldY) == "number"
+        and type(normalized.worldZ) == "number" then
+        local translateFn = ResolvePingFn("TranslateToMapCoords", "C_Map_TranslateToMapCoords")
+        local sourceMapId = mapId or playerMapId
+
+        local function TryTranslateToMap(targetMapId)
+            if not translateFn or not targetMapId or targetMapId <= 0 then
+                return nil, nil
+            end
+
+            local ok, translatedX, translatedY = pcall(
+                translateFn,
+                targetMapId,
+                normalized.worldX,
+                normalized.worldY,
+                normalized.worldZ
+            )
+
+            translatedX = NormalizeCoord(translatedX)
+            translatedY = NormalizeCoord(translatedY)
+            if ok and translatedX and translatedY then
+                return translatedX, translatedY
+            end
+
+            return nil, nil
+        end
+
+        if translateFn and sourceMapId and sourceMapId > 0 then
+            local translatedX, translatedY = TryTranslateToMap(sourceMapId)
+            if (not translatedX or not translatedY) and playerMapId and playerMapId ~= sourceMapId then
+                local playerTranslatedX, playerTranslatedY = TryTranslateToMap(playerMapId)
+                if playerTranslatedX and playerTranslatedY then
+                    sourceMapId = playerMapId
+                    translatedX = playerTranslatedX
+                    translatedY = playerTranslatedY
+                end
+            end
+
+            if translatedX and translatedY then
+                mapId = sourceMapId
+                mapX = translatedX
+                mapY = translatedY
+            end
+        end
+    end
+
     if mapId and mapX and mapY then
         return mapId, Clamp(mapX, 0, 1), Clamp(mapY, 0, 1)
     end
@@ -1207,8 +3029,8 @@ local function ResolveRelayMapPosition(normalized)
         return nil, nil, nil
     end
 
-    if playerMapId and mapId ~= playerMapId then
-        return nil, nil, nil
+    if playerMapId and mapId and mapId ~= playerMapId then
+        mapId = playerMapId
     end
 
     local relative = normalized.relativeRadians
@@ -1253,13 +3075,32 @@ local function ResolveRelayMapPosition(normalized)
 end
 
 local function BuildRelayRequest(normalized)
-    if type(EncodePingSyncProtocolPayload) ~= "function" then
-        return nil, "EncodePingSyncProtocolPayload unavailable."
+    local encodeProtocolFn = ResolvePingFn("EncodePingSyncProtocolPayload", "C_Ping_EncodeProtocolPayload")
+    local encodeSyncFn = ResolvePingFn("EncodePingSyncPayload", "C_Ping_EncodeSyncPayload")
+    if not encodeProtocolFn and not encodeSyncFn then
+        return nil, "Ping payload encoder unavailable."
     end
 
     local distribution = ResolveRelayDistribution(normalized)
     if not distribution then
         return nil, "Not in party or raid."
+    end
+
+    local targetType = TrimWhitespace(normalized.targetType):lower()
+    if targetType == "ground"
+        and not (type(normalized.worldX) == "number" and type(normalized.worldY) == "number" and type(normalized.worldZ) == "number") then
+        local cursorTarget = ResolveCursorWorldPingTarget()
+        if cursorTarget and HasTargetWorldCoordinates(cursorTarget) then
+            normalized.worldX = cursorTarget.worldX
+            normalized.worldY = cursorTarget.worldY
+            normalized.worldZ = cursorTarget.worldZ
+
+            if not HasTargetMapCoordinates(normalized) and HasTargetMapCoordinates(cursorTarget) then
+                normalized.mapId = cursorTarget.mapId
+                normalized.x = cursorTarget.x
+                normalized.y = cursorTarget.y
+            end
+        end
     end
 
     local mapId, mapX, mapY = ResolveRelayMapPosition(normalized)
@@ -1274,16 +3115,55 @@ local function BuildRelayRequest(normalized)
         sequence = now and math_floor((now * 1000) + 0.5) or 0
     end
 
-    local ok, encodedPayload = pcall(
-        EncodePingSyncProtocolPayload,
-        normalized.type or "info",
-        mapId,
-        mapX,
-        mapY,
-        flags,
-        sequence,
-        distribution
-    )
+    local ok
+    local encodedPayload
+    if encodeProtocolFn then
+        ok, encodedPayload = pcall(
+            encodeProtocolFn,
+            normalized.type or "info",
+            mapId,
+            mapX,
+            mapY,
+            flags,
+            sequence
+        )
+
+        if (not ok or type(encodedPayload) ~= "string" or encodedPayload == "") and distribution then
+            ok, encodedPayload = pcall(
+                encodeProtocolFn,
+                normalized.type or "info",
+                mapId,
+                mapX,
+                mapY,
+                flags,
+                sequence,
+                distribution
+            )
+        end
+
+        if (not ok or type(encodedPayload) ~= "string" or encodedPayload == "") and distribution then
+            ok, encodedPayload = pcall(
+                encodeProtocolFn,
+                distribution,
+                normalized.type or "info",
+                mapId,
+                mapX,
+                mapY,
+                flags,
+                sequence
+            )
+        end
+    else
+        ok, encodedPayload = pcall(
+            encodeSyncFn,
+            normalized.type or "info",
+            mapId,
+            mapX,
+            mapY,
+            flags,
+            sequence
+        )
+    end
 
     if not ok or type(encodedPayload) ~= "string" or encodedPayload == "" then
         return nil, "Failed to encode relay payload."
@@ -1293,6 +3173,11 @@ local function BuildRelayRequest(normalized)
         feature = "ping",
         action = "relay",
         distribution = distribution,
+        sequence = sequence,
+        type = normalized.type,
+        mapId = mapId,
+        x = mapX,
+        y = mapY,
         payload = encodedPayload,
         syncPayload = encodedPayload,
         text = normalized.text,
@@ -1305,38 +3190,98 @@ local function BuildRelayRequest(normalized)
     }
 end
 
+local function SendRelayRequestDirect(moduleId, opcode, request)
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not DC then
+        return false, "DCAddonProtocol unavailable."
+    end
+
+    if type(DC.EnsureConnected) == "function" then
+        pcall(DC.EnsureConnected, DC)
+    end
+
+    if type(DC.SendJSON) == "function" then
+        local ok, sent = pcall(DC.SendJSON, DC, moduleId, opcode, request)
+        if ok and sent ~= false then
+            return true
+        end
+    end
+
+    if type(DC.SendJson) == "function" then
+        local ok, sent = pcall(DC.SendJson, DC, moduleId, opcode, request)
+        if ok and sent ~= false then
+            return true
+        end
+    end
+
+    if type(DC.Request) == "function" then
+        local ok, sent = pcall(DC.Request, DC, moduleId, opcode, request)
+        if ok and sent ~= false then
+            return true
+        end
+    end
+
+    return false, "DCAddonProtocol send failed."
+end
+
+local function RememberLocalRelaySequence(sequence, request)
+    sequence = tonumber(sequence)
+    if not sequence then
+        return
+    end
+
+    local now = GetTime() or 0
+    for key, record in pairs(state.recentLocalRelaySequences) do
+        local timestamp = type(record) == "table" and tonumber(record.at) or tonumber(record)
+        if not timestamp or (now - timestamp) > 2.0 then
+            state.recentLocalRelaySequences[key] = nil
+        end
+    end
+
+    state.recentLocalRelaySequences[tostring(sequence)] = {
+        at = now,
+        type = request and request.type,
+        mapId = request and request.mapId,
+        x = request and request.x,
+        y = request and request.y,
+    }
+end
+
 local function SendLocalPingRelay(normalized)
-    local protocol = addon and addon.protocol
-    if type(protocol) ~= "table" or type(protocol.SendJson) ~= "function" then
-        return false, "Protocol sender unavailable."
-    end
-
-    local opcodes = protocol.Opcodes
-    local requestOpcode = opcodes and opcodes.CMSG_REQUEST_FEATURE
-    if not requestOpcode then
-        return false, "Missing CMSG_REQUEST_FEATURE opcode."
-    end
-
-    if not protocol.connected and type(protocol.Initialize) == "function" then
-        pcall(function()
-            protocol:Initialize()
-        end)
-    end
-
-    if not protocol.connected then
-        return false, "Protocol not connected."
-    end
-
     local request, err = BuildRelayRequest(normalized)
     if not request then
         return false, err
     end
 
-    if protocol:SendJson(requestOpcode, request) then
+    local protocol = addon and addon.protocol
+    local opcodes = (type(protocol) == "table" and protocol.Opcodes) or nil
+    local requestOpcode = (opcodes and opcodes.CMSG_REQUEST_FEATURE) or 0x06
+    if not requestOpcode then
+        return false, "Missing CMSG_REQUEST_FEATURE opcode."
+    end
+
+    local moduleId = (type(protocol) == "table" and protocol.MODULE_ID) or "QOS"
+
+    if type(protocol) == "table" and type(protocol.SendJson) == "function" then
+        if not protocol.connected and type(protocol.Initialize) == "function" then
+            pcall(function()
+                protocol:Initialize()
+            end)
+        end
+
+        if protocol:SendJson(requestOpcode, request) then
+            RememberLocalRelaySequence(request.sequence, request)
+            return true
+        end
+    end
+
+    local directOk, directErr = SendRelayRequestDirect(moduleId, requestOpcode, request)
+    if directOk then
+        RememberLocalRelaySequence(request.sequence, request)
         return true
     end
 
-    return false, "Ping relay request failed."
+    return false, directErr or "Ping relay request failed."
 end
 
 local function DecodeRelayEnvelopePayload(payload)
@@ -1349,13 +3294,65 @@ local function DecodeRelayEnvelopePayload(payload)
         return payload
     end
 
-    if type(DecodePingSyncProtocolPayload) ~= "function" then
+    local decodeProtocolFn = ResolvePingFn("DecodePingSyncProtocolPayload", "C_Ping_DecodeProtocolPayload")
+    local decodeSyncFn = ResolvePingFn("DecodePingSyncPayload", "C_Ping_DecodeSyncPayload")
+    if not decodeProtocolFn and not decodeSyncFn then
         return payload
     end
 
-    local ok, distribution, pingType, mapId, mapX, mapY, relayFlags, sequence = pcall(DecodePingSyncProtocolPayload, encoded)
-    if not ok or not pingType then
-        return payload
+    local ok
+    local distribution
+    local pingType
+    local mapId
+    local mapX
+    local mapY
+    local relayFlags
+    local sequence
+
+    if decodeProtocolFn then
+        local r1
+        local r2
+        local r3
+        local r4
+        local r5
+        local r6
+        local r7
+
+        ok, r1, r2, r3, r4, r5, r6, r7 = pcall(decodeProtocolFn, encoded)
+        if not ok then
+            return payload
+        end
+
+        local maybeDistribution = NormalizeRelayDistribution(r1)
+        local firstToken = TrimWhitespace(r1):upper()
+
+        if (firstToken == "AUTO" or maybeDistribution ~= "AUTO") and type(r2) == "string" then
+            distribution = maybeDistribution
+            pingType = r2
+            mapId = r3
+            mapX = r4
+            mapY = r5
+            relayFlags = r6
+            sequence = r7
+        else
+            distribution = NormalizeRelayDistribution(payload.distribution)
+            pingType = r1
+            mapId = r2
+            mapX = r3
+            mapY = r4
+            relayFlags = r5
+            sequence = r6
+        end
+
+        if not pingType then
+            return payload
+        end
+    else
+        ok, pingType, mapId, mapX, mapY, relayFlags, sequence = pcall(decodeSyncFn, encoded)
+        if not ok or not pingType then
+            return payload
+        end
+        distribution = "AUTO"
     end
 
     return {
@@ -1391,9 +3388,116 @@ local function IsRenderablePingPayload(payload)
         or payload.relativeDegrees ~= nil
 end
 
+local function BuildInboundPingDedupKey(payload)
+    if type(payload) ~= "table" then
+        return nil
+    end
+
+    local source = TrimWhitespace(payload.source):lower()
+    local pingType = NormalizePingType(payload.type)
+    local mapId = tonumber(payload.mapId or payload.mapID or payload.uiMapID) or 0
+    local x = NormalizeCoord(payload.x or payload.mapX)
+    local y = NormalizeCoord(payload.y or payload.mapY)
+    local quantizedX
+    local quantizedY
+    if x and y then
+        quantizedX = math_floor((x * 10000) + 0.5)
+        quantizedY = math_floor((y * 10000) + 0.5)
+    end
+
+    local sequence = tonumber(payload.sequence)
+    if sequence then
+        if quantizedX and quantizedY then
+            return string.format("seq:%s:%d:%s:%d:%d:%d", source, sequence, pingType, mapId, quantizedX, quantizedY)
+        end
+        return string.format("seq:%s:%d:%s", source, sequence, pingType)
+    end
+
+    if x and y then
+        return string.format("coord:%s:%s:%d:%d:%d", source, pingType, mapId, quantizedX, quantizedY)
+    end
+
+    local text = TrimWhitespace(payload.text):lower()
+    if text ~= "" then
+        return string.format("text:%s:%s:%s", source, pingType, text)
+    end
+
+    return nil
+end
+
+local function ShouldSuppressInboundPing(payload)
+    if type(payload) ~= "table" then
+        return true
+    end
+
+    local now = GetTime() or 0
+
+    for key, record in pairs(state.recentLocalRelaySequences) do
+        local timestamp = type(record) == "table" and tonumber(record.at) or tonumber(record)
+        if not timestamp or (now - timestamp) > 2.0 then
+            state.recentLocalRelaySequences[key] = nil
+        end
+    end
+
+    for key, timestamp in pairs(state.recentRemotePings) do
+        if (now - timestamp) > 1.0 then
+            state.recentRemotePings[key] = nil
+        end
+    end
+
+    local sequence = tonumber(payload.sequence)
+    if sequence then
+        local localRecord = state.recentLocalRelaySequences[tostring(sequence)]
+        local localTimestamp = type(localRecord) == "table" and tonumber(localRecord.at) or tonumber(localRecord)
+        if localTimestamp and (now - localTimestamp) <= 1.0 then
+            local source = TrimWhitespace(payload.source):lower()
+            local playerName = (type(UnitName) == "function") and TrimWhitespace(UnitName("player")):lower() or ""
+            local sourceMatchesPlayer = (source ~= "" and playerName ~= "" and source == playerName)
+
+            local payloadType = NormalizePingType(payload.type)
+            local payloadMapId = tonumber(payload.mapId or payload.mapID or payload.uiMapID)
+            local payloadX = NormalizeCoord(payload.x or payload.mapX)
+            local payloadY = NormalizeCoord(payload.y or payload.mapY)
+
+            local localType = NormalizePingType(type(localRecord) == "table" and localRecord.type or nil)
+            local localMapId = tonumber(type(localRecord) == "table" and localRecord.mapId or nil)
+            local localX = NormalizeCoord(type(localRecord) == "table" and localRecord.x or nil)
+            local localY = NormalizeCoord(type(localRecord) == "table" and localRecord.y or nil)
+
+            local sameType = (payloadType == localType)
+            local sameMap = (payloadMapId and localMapId and payloadMapId == localMapId)
+            local closeCoords = false
+            if payloadX and payloadY and localX and localY then
+                closeCoords = math_abs(payloadX - localX) <= 0.0025 and math_abs(payloadY - localY) <= 0.0025
+            end
+
+            if sourceMatchesPlayer or (sameType and sameMap and closeCoords) then
+                return true
+            end
+        end
+    end
+
+    local dedupKey = BuildInboundPingDedupKey(payload)
+    if not dedupKey then
+        return false
+    end
+
+    local seenAt = state.recentRemotePings[dedupKey]
+    if seenAt and (now - seenAt) <= 0.35 then
+        return true
+    end
+
+    state.recentRemotePings[dedupKey] = now
+    return false
+end
+
 local function HandleProtocolFeatureData(rawPayload)
     local settings = GetSettings()
     if not settings.allowProtocolPings then
+        return
+    end
+
+    if state.pingListenerEnabled == false then
         return
     end
 
@@ -1422,6 +3526,10 @@ local function HandleProtocolFeatureData(rawPayload)
 
     payload = DecodeRelayEnvelopePayload(payload)
     if not IsRenderablePingPayload(payload) then
+        return
+    end
+
+    if ShouldSuppressInboundPing(payload) then
         return
     end
 
@@ -1493,8 +3601,7 @@ local function EnsureFeatureEventBridge()
             payload.feature = feature
         end
 
-        payload.__dcqosRemote = true
-        PingSystem:Push(payload)
+        HandleProtocolFeatureData(payload)
     end)
 
     state.featureEventBridgeInstalled = true
@@ -1640,6 +3747,24 @@ function PingSystem:Push(payload)
     local duration = tonumber(normalized.duration) or tonumber(settings.lifetimeSeconds) or 3.0
     duration = Clamp(duration, 0.5, 12.0)
 
+    local hasEntityTargetForRecovery = IsValidPingEntityTargetType(normalized.targetType)
+        and type(normalized.targetGuid) == "string"
+        and TrimWhitespace(normalized.targetGuid) ~= ""
+    if hasEntityTargetForRecovery and not HasTargetMapCoordinates(normalized) and not HasTargetWorldCoordinates(normalized) then
+        local recoveredTarget, recoveredToken, recoveredMatch = TryRecoverEntityTargetLocation(normalized.targetGuid, normalized.targetName)
+        if recoveredTarget then
+            CopyTargetLocation(normalized, recoveredTarget)
+            DebugQuickPing(
+                string.format(
+                    "push entity recovery token=%s match=%s %s",
+                    tostring(recoveredToken or "nil"),
+                    tostring(recoveredMatch or "nil"),
+                    FormatPingTargetDebug(recoveredTarget)
+                )
+            )
+        end
+    end
+
     while #state.active >= (settings.maxActivePings or 6) do
         ReleasePingAtIndex(1)
     end
@@ -1647,49 +3772,138 @@ function PingSystem:Push(payload)
     local frame = AcquirePingFrame()
     local x, y, distance, mapMismatch, targetMapId = ResolveProjection(normalized)
 
+    local hasEntityOnlyTargetWithoutPosition = IsValidPingEntityTargetType(normalized.targetType)
+        and type(normalized.targetGuid) == "string"
+        and normalized.targetGuid ~= ""
+        and not (type(normalized.mapId) == "number"
+            and normalized.mapId > 0
+            and type(normalized.x) == "number"
+            and type(normalized.y) == "number")
+        and not (type(normalized.worldX) == "number"
+            and type(normalized.worldY) == "number"
+            and type(normalized.worldZ) == "number")
+        and not (type(normalized.screenX) == "number"
+            and type(normalized.screenY) == "number")
+
+    if type(x) ~= "number" or type(y) ~= "number" then
+        if hasEntityOnlyTargetWithoutPosition then
+            DebugQuickPing(string.format(
+                "projection unavailable for entity-only ping guid=%s type=%s; skipping local marker render",
+                tostring(normalized.targetGuid),
+                tostring(normalized.targetType)
+            ))
+            PlayPingSound(normalized, style)
+            addon:FireEvent("PING_SYSTEM_PING_ADDED", normalized)
+            return true
+        end
+
+        DebugQuickPing("reject: invalid projection coordinates x=" .. tostring(x) .. " y=" .. tostring(y))
+        return false, "Unable to project ping marker to screen."
+    end
+
+    DebugQuickPing(
+        string.format(
+            "projected x=%.1f y=%.1f map=%s nx=%s ny=%s sx=%s sy=%s",
+            x,
+            y,
+            tostring(normalized.mapId or "nil"),
+            normalized.x and string.format("%.4f", normalized.x) or "nil",
+            normalized.y and string.format("%.4f", normalized.y) or "nil",
+            normalized.screenX and string.format("%.1f", normalized.screenX) or "nil",
+            normalized.screenY and string.format("%.1f", normalized.screenY) or "nil"
+        )
+    )
+
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", EnsureRootFrame(), "CENTER", x, y)
 
-    if normalized.targetType == "unit" then
-        if not ApplyAtlasTexture(frame.Ring, "Ping_UnitMarker_BG_Default") then
-            frame.Ring:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-        end
+        local normalizedTargetType = TrimWhitespace(normalized.targetType):lower()
+    local isWorldPoint = not (
+        normalizedTargetType == "unit"
+        or normalizedTargetType == "gameobject"
+        or normalizedTargetType == "object"
+    )
+
+    local uiTextureKit = GetPingTextureSuffix(normalized.type)
+
+    local iconAtlas = "Ping_Marker_Icon_" .. uiTextureKit
+    if not ApplyAtlasTexture(frame.Icon, iconAtlas) then
+        ApplyAtlasTexture(frame.Icon, "Ping_Marker_Icon_Info")
+    end
+    frame.Icon:SetSize(35, 35)
+    frame.Icon:SetVertexColor(1, 1, 1, 1)
+
+    local flipbookAtlas = "Ping_Marker_FlipBook_" .. uiTextureKit
+    if not ApplyAtlasTexture(frame.IconFlipbook, flipbookAtlas) then
+        ApplyAtlasTexture(frame.IconFlipbook, "Ping_Marker_Flipbook_Default")
+    end
+
+    local flipBookInfo = GetPinFlipBookInfo(uiTextureKit)
+    if flipBookInfo then
+        frame.IconFlipbook:ClearAllPoints()
+        frame.IconFlipbook:SetSize(flipBookInfo.sizeX, flipBookInfo.sizeY)
+        frame.IconFlipbook:SetPoint("CENTER", frame.Icon, "CENTER", flipBookInfo.anchorX, flipBookInfo.anchorY)
     else
-        if not ApplyAtlasTexture(frame.Ring, "Ping_GroundMarker_BG_Default") then
-            frame.Ring:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-        end
+        frame.IconFlipbook:SetSize(1, 1)
+        frame.IconFlipbook:SetPoint("CENTER", frame.Icon, "CENTER", 0, 0)
     end
+    frame.IconFlipbook:Hide()
 
-    if not ApplyAtlasTexture(frame.Stem, "Ping_GroundMarker_Pin_Default") then
-        frame.Stem:SetTexture("Interface\\Buttons\\UI-Quickslot")
-    end
-    if not ApplyAtlasTexture(frame.Stroke, "Ping_GroundMarker_Stroke_Default") then
-        frame.Stroke:SetTexture("Interface\\Buttons\\UI-Quickslot")
-    end
     if not ApplyAtlasTexture(frame.PointerBG, "Ping_OVMarker_Pointer_BG") then
-        frame.PointerBG:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-    end
-    if not ApplyAtlasTexture(frame.Pointer, "Ping_OVMarker_Pointer_Default") then
-        frame.Pointer:SetTexture("Interface\\Buttons\\UI-Quickslot")
+        frame.PointerBG:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Rotate")
     end
 
-    ApplyStyleIcon(frame.Icon, normalized.type)
-    if not ApplyAtlasTexture(frame.IconFlipbook, "Ping_Marker_Flipbook_Default") then
-        frame.IconFlipbook:SetTexture("Interface\\Buttons\\UI-QuickslotRed")
-    end
-    if not ApplyAtlasTexture(frame.GlowIn, "Ping_SpotGlw_Default_In") then
-        frame.GlowIn:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
-    end
-    if not ApplyAtlasTexture(frame.GlowOut, "Ping_SpotGlw_Default_Out") then
-        frame.GlowOut:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Rotate")
+    local pointerAtlas = "Ping_OVMarker_Pointer_" .. uiTextureKit
+    if not ApplyAtlasTexture(frame.Pointer, pointerAtlas) then
+        ApplyAtlasTexture(frame.Pointer, "Ping_OVMarker_Pointer_Default")
     end
 
-    frame.Icon:SetVertexColor(style.r, style.g, style.b, 1.0)
-    frame.IconFlipbook:SetVertexColor(style.r, style.g, style.b, 0.25)
-    frame.Stroke:SetVertexColor(style.r, style.g, style.b, 0.55)
-    frame.Pointer:SetVertexColor(style.r, style.g, style.b, 0.70)
-    frame.GlowIn:SetVertexColor(style.r, style.g, style.b, 0.30)
-    frame.GlowOut:SetVertexColor(style.r, style.g, style.b, 0.24)
+    if isWorldPoint then
+        local bgAtlas = "Ping_GroundMarker_BG_" .. uiTextureKit
+        local stemAtlas = "Ping_GroundMarker_Pin_" .. uiTextureKit
+        local strokeAtlas = "Ping_GroundMarker_Stroke_" .. uiTextureKit
+
+        if not ApplyAtlasTexture(frame.GroundBackground, bgAtlas) then
+            ApplyAtlasTexture(frame.GroundBackground, "Ping_GroundMarker_BG_Default")
+        end
+        if not ApplyAtlasTexture(frame.GroundHighlight, bgAtlas) then
+            ApplyAtlasTexture(frame.GroundHighlight, "Ping_GroundMarker_BG_Default")
+        end
+        if not ApplyAtlasTexture(frame.Stem, stemAtlas) then
+            ApplyAtlasTexture(frame.Stem, "Ping_GroundMarker_Pin_Default")
+        end
+        if not ApplyAtlasTexture(frame.Stroke, strokeAtlas) then
+            ApplyAtlasTexture(frame.Stroke, "Ping_GroundMarker_Stroke_Default")
+        end
+
+        frame.Icon:ClearAllPoints()
+        frame.Icon:SetPoint("CENTER", frame.GroundBackground, "CENTER", 0, 0)
+        frame.GroundPin:Show()
+        frame.UnitPin:Hide()
+    else
+        local unitAtlas = "Ping_UnitMarker_BG_" .. uiTextureKit
+        if not ApplyAtlasTexture(frame.UnitBackground, unitAtlas) then
+            ApplyAtlasTexture(frame.UnitBackground, "Ping_UnitMarker_BG_Default")
+        end
+
+        frame.Icon:ClearAllPoints()
+        frame.Icon:SetPoint("CENTER", frame.UnitBackground, "CENTER", 0, 3)
+        frame.GroundPin:Hide()
+        frame.UnitPin:Show()
+    end
+
+    frame.__dcqosIsWorldPoint = (isWorldPoint == true)
+    frame.__dcqosUiTextureKit = uiTextureKit
+    frame.ClampedPin:Hide()
+
+    frame.GroundBackground:SetVertexColor(1, 1, 1, 1)
+    frame.GroundHighlight:SetVertexColor(1, 1, 1, 1)
+    frame.GroundMarker:SetVertexColor(1, 1, 1, 1)
+    frame.Stem:SetVertexColor(1, 1, 1, 1)
+    frame.Stroke:SetVertexColor(1, 1, 1, 1)
+    frame.UnitBackground:SetVertexColor(1, 1, 1, 1)
+    frame.PointerBG:SetVertexColor(1, 1, 1, 1)
+    frame.Pointer:SetVertexColor(1, 1, 1, 1)
 
     frame.CaptionText:SetText(BuildCaption(normalized, style))
 
@@ -1715,7 +3929,31 @@ function PingSystem:Push(payload)
         remaining = duration,
         baseScale = settings.markerScale or 1.0,
         phase = now * 3.0,
+        targetGuid = normalized.targetGuid,
+        targetType = normalized.targetType,
+        nextTrackRefreshAt = now,
+        projectionPayload = {
+            mapId = normalized.mapId,
+            x = normalized.x,
+            y = normalized.y,
+            worldX = normalized.worldX,
+            worldY = normalized.worldY,
+            worldZ = normalized.worldZ,
+            screenX = normalized.screenX,
+            screenY = normalized.screenY,
+            relativeRadians = normalized.relativeRadians,
+            relativeDegrees = normalized.relativeDegrees,
+            bearingDegrees = normalized.bearingDegrees,
+            distance = distance,
+            targetType = normalized.targetType,
+        },
+        lastClampState = IsProjectedPointClamped(x, y, 52),
     })
+
+    local frameId = AllocateSecurePingFrameId(frame)
+    DispatchSecurePingEvent(SECURE_PING_EVENT_PIN_ADDED, frameId, uiTextureKit, isWorldPoint and true or false)
+    DispatchSecurePingEvent(SECURE_PING_EVENT_PIN_CLAMP_UPDATED, frameId, IsProjectedPointClamped(x, y, 52) and true or false)
+    DispatchSecurePingEvent(SECURE_PING_EVENT_COOLDOWN_STARTED, BuildPingCooldownInfo())
 
     local root = EnsureRootFrame()
     root:Show()
@@ -1739,66 +3977,189 @@ end
 function PingSystem:PushQuickPing(pingType, options)
     options = options or {}
 
-    local settings = GetSettings()
     local ignoreThrottle = (options.ignoreThrottle ~= false)
+    local allowScreenFallback = (options.allowScreenFallback ~= false)
 
     local payload = {
         type = pingType or "warning",
         ignoreThrottle = ignoreThrottle,
     }
 
-    local cursorTarget = ResolveCursorWorldPingTarget()
-    if cursorTarget then
-        payload.targetGuid = cursorTarget.targetGuid
-        payload.targetType = cursorTarget.targetType
-        payload.worldX = cursorTarget.worldX
-        payload.worldY = cursorTarget.worldY
-        payload.worldZ = cursorTarget.worldZ
+    DebugQuickPing(
+        string.format(
+            "resolvers cursorFn=%s mouseoverFn=%s secureFn=%s guidFn=%s",
+            tostring(
+                type(GetCursorWorldPingTarget) == "function"
+                    or type(C_Ping_GetCursorWorldTarget) == "function"
+                    or type(C_Ping_GetTargetWorldPing) == "function"
+            ),
+            tostring(
+                type(GetMouseoverPingTarget) == "function"
+                    or type(C_Ping_GetMouseoverTarget) == "function"
+            ),
+            tostring(
+                type(GetTargetPingReceiver) == "function"
+                    or type(C_Ping_GetTargetPingReceiver) == "function"
+                    or (type(C_Ping) == "table" and type(C_Ping.GetTargetPingReceiver) == "function")
+            ),
+            tostring(
+                type(ResolveEntityPositionByGUID) == "function"
+                    or type(C_Ping_ResolveEntityPositionByGUID) == "function"
+                    or (type(C_Ping) == "table" and type(C_Ping.ResolveEntityPositionByGUID) == "function")
+            )
+        )
+    )
 
-        if cursorTarget.mapId and cursorTarget.x and cursorTarget.y then
-            payload.mapId = cursorTarget.mapId
-            payload.x = cursorTarget.x
-            payload.y = cursorTarget.y
-        end
-    end
-
+    local cursorTarget = options.preResolvedCursorTarget or ResolveCursorWorldPingTarget()
     local mouseoverTarget = ResolveMouseoverPingTarget()
-    if mouseoverTarget then
-        if (not payload.targetGuid) or (mouseoverTarget.targetGuid and mouseoverTarget.targetGuid == payload.targetGuid) then
-            payload.targetGuid = mouseoverTarget.targetGuid or payload.targetGuid
-            payload.targetType = mouseoverTarget.targetType or payload.targetType
-        end
+    local secureReceiverTarget = ResolveTargetPingReceiver()
+    local unitTokenTarget = ResolveAnyUnitTokenFallback()
+    DebugQuickPing("start type=" .. tostring(payload.type))
+    DebugQuickPing("cursor " .. FormatPingTargetDebug(cursorTarget))
+    DebugQuickPing("mouseover " .. FormatPingTargetDebug(mouseoverTarget))
+    DebugQuickPing("secure " .. FormatPingTargetDebug(secureReceiverTarget))
 
-        if not payload.worldX and mouseoverTarget.worldX then
-            payload.worldX = mouseoverTarget.worldX
-            payload.worldY = mouseoverTarget.worldY
-            payload.worldZ = mouseoverTarget.worldZ
-        end
+    local entityTarget = nil
+    local entityTargetSource = nil
+    if mouseoverTarget and IsValidPingEntityTargetType(mouseoverTarget.targetType) then
+        entityTarget = mouseoverTarget
+        entityTargetSource = "mouseover"
+    elseif cursorTarget and IsValidPingEntityTargetType(cursorTarget.targetType) then
+        entityTarget = cursorTarget
+        entityTargetSource = "cursor"
+    elseif secureReceiverTarget and IsValidPingEntityTargetType(secureReceiverTarget.targetType) then
+        entityTarget = secureReceiverTarget
+        entityTargetSource = "secure-receiver"
+    elseif unitTokenTarget and IsValidPingEntityTargetType(unitTokenTarget.targetType) then
+        entityTarget = unitTokenTarget
+        entityTargetSource = "unit-token"
+    end
 
-        if (not payload.mapId or payload.x == nil or payload.y == nil) and mouseoverTarget.mapId and mouseoverTarget.x and mouseoverTarget.y then
-            payload.mapId = mouseoverTarget.mapId
-            payload.x = mouseoverTarget.x
-            payload.y = mouseoverTarget.y
-        end
+    local locationTarget = nil
+    local locationTargetSource = nil
+    if cursorTarget and (HasTargetMapCoordinates(cursorTarget) or HasTargetWorldCoordinates(cursorTarget)) then
+        locationTarget = cursorTarget
+        locationTargetSource = "cursor"
+    elseif mouseoverTarget and (HasTargetMapCoordinates(mouseoverTarget) or HasTargetWorldCoordinates(mouseoverTarget)) then
+        locationTarget = mouseoverTarget
+        locationTargetSource = "mouseover"
+    elseif secureReceiverTarget and (HasTargetMapCoordinates(secureReceiverTarget) or HasTargetWorldCoordinates(secureReceiverTarget)) then
+        locationTarget = secureReceiverTarget
+        locationTargetSource = "secure-receiver"
+    elseif unitTokenTarget and HasTargetMapCoordinates(unitTokenTarget) then
+        locationTarget = unitTokenTarget
+        locationTargetSource = "unit-token"
+    end
 
-        if type(UnitName) == "function" and type(UnitExists) == "function" and UnitExists("mouseover") then
-            payload.targetName = UnitName("mouseover")
-            if payload.targetName and payload.targetName ~= "" then
-                payload.text = payload.targetName
-            end
+    if locationTarget then
+        CopyTargetLocation(payload, locationTarget)
+
+        local locationType = TrimWhitespace(locationTarget.targetType):lower()
+        if payload.targetType == nil and locationType ~= "" then
+            payload.targetType = locationType
         end
     end
 
-    if not (payload.x and payload.y) then
-        local screenX, screenY = GetCursorScreenOffsets()
-        if screenX and screenY then
-            payload.screenX = screenX
-            payload.screenY = screenY
+    if entityTarget then
+        CopyTargetIdentity(payload, entityTarget)
+    end
+
+    DebugQuickPing("selected entity=" .. tostring(entityTargetSource or "none") .. " location=" .. tostring(locationTargetSource or "none"))
+
+    if type(UnitName) == "function" and type(UnitExists) == "function" and UnitExists("mouseover") then
+        payload.targetName = UnitName("mouseover")
+    elseif entityTarget and entityTarget.targetName and entityTarget.targetName ~= "" then
+        payload.targetName = entityTarget.targetName
+    end
+
+    if payload.targetName and payload.targetName ~= "" then
+        payload.text = payload.targetName
+    end
+
+    local hasMapCoords = HasTargetMapCoordinates(payload)
+    local hasWorldCoords = HasTargetWorldCoordinates(payload)
+    local hasEntityTarget = type(payload.targetGuid) == "string"
+        and payload.targetGuid ~= ""
+        and IsValidPingEntityTargetType(payload.targetType)
+
+    if hasEntityTarget and not hasMapCoords and not hasWorldCoords then
+        local recoveredTarget, recoveredToken, recoveredMatch = TryRecoverEntityTargetLocation(payload.targetGuid, payload.targetName)
+        if recoveredTarget then
+            CopyTargetLocation(payload, recoveredTarget)
+            hasMapCoords = HasTargetMapCoordinates(payload)
+            hasWorldCoords = HasTargetWorldCoordinates(payload)
+            DebugQuickPing(
+                string.format(
+                    "entity recovery token=%s match=%s %s",
+                    tostring(recoveredToken or "nil"),
+                    tostring(recoveredMatch or "nil"),
+                    FormatPingTargetDebug(recoveredTarget)
+                )
+            )
         else
-            payload.distance = tonumber(settings.quickPingDistance) or 700
-            payload.relativeDegrees = 0
+            DebugQuickPing("entity recovery: no coordinates from strict unit-token matching")
         end
     end
+
+    if not hasMapCoords and not hasWorldCoords then
+        if hasEntityTarget then
+            payload.noRelay = true
+            DebugQuickPing("entity-only: no location coordinates resolved; keeping entity target metadata and disabling relay")
+        elseif allowScreenFallback then
+            local screenX = tonumber(options.preResolvedScreenX)
+            local screenY = tonumber(options.preResolvedScreenY)
+            local usedCapturedScreen = (type(screenX) == "number" and type(screenY) == "number")
+
+            if not usedCapturedScreen then
+                screenX, screenY = GetCursorScreenOffsets()
+            end
+
+            if screenX and screenY then
+                local clampedX, clampedY = ClampScreenOffsetsToViewport(screenX, screenY, 52)
+                payload.screenX = clampedX
+                payload.screenY = clampedY
+                payload.targetType = "ground"
+                DebugQuickPing(
+                    string.format(
+                        "fallback: %s screen offsets raw=(%.1f, %.1f) clamped=(%.1f, %.1f)",
+                        usedCapturedScreen and "captured" or "cursor",
+                        screenX,
+                        screenY,
+                        clampedX,
+                        clampedY
+                    )
+                )
+            else
+                DebugQuickPing("reject: no resolved ground coordinates and no cursor screen position")
+                return false, "No ground location resolved for ping."
+            end
+        else
+            DebugQuickPing("reject: no resolved target or ground coordinates")
+            return false, "No target or ground location resolved for ping."
+        end
+    end
+
+    if payload.targetType and payload.targetType ~= "ground" and not hasEntityTarget then
+        DebugQuickPing("downgrade: invalid entity target metadata type=" .. tostring(payload.targetType) .. ", forcing ground")
+        payload.targetType = "ground"
+    end
+
+    DebugQuickPing(
+        string.format(
+            "push type=%s targetType=%s map=%s x=%s y=%s wx=%s wy=%s wz=%s sx=%s sy=%s guid=%s",
+            tostring(payload.type),
+            tostring(payload.targetType or "nil"),
+            tostring(payload.mapId or "nil"),
+            payload.x and string.format("%.4f", payload.x) or "nil",
+            payload.y and string.format("%.4f", payload.y) or "nil",
+            payload.worldX and string.format("%.2f", payload.worldX) or "nil",
+            payload.worldY and string.format("%.2f", payload.worldY) or "nil",
+            payload.worldZ and string.format("%.2f", payload.worldZ) or "nil",
+            payload.screenX and string.format("%.1f", payload.screenX) or "nil",
+            payload.screenY and string.format("%.1f", payload.screenY) or "nil",
+            tostring(payload.targetGuid or "nil")
+        )
+    )
 
     return self:Push(payload)
 end
@@ -1834,9 +4195,23 @@ function PingSystem:CloseRadialMenu(commitSelection)
     state.menuFrame:Hide()
 
     if commitSelection and selectedType then
+        local captured = state.capturedRadialTarget
+        local capturedScreenX = state.capturedRadialScreenX
+        local capturedScreenY = state.capturedRadialScreenY
+        state.capturedRadialTarget = nil
+        state.capturedRadialScreenX = nil
+        state.capturedRadialScreenY = nil
         self:PushQuickPing(selectedType, {
             ignoreThrottle = false,
+            allowScreenFallback = true,
+            preResolvedCursorTarget = captured,
+            preResolvedScreenX = capturedScreenX,
+            preResolvedScreenY = capturedScreenY,
         })
+    else
+        state.capturedRadialTarget = nil
+        state.capturedRadialScreenX = nil
+        state.capturedRadialScreenY = nil
     end
 
     return true
@@ -1876,6 +4251,8 @@ end
 
 function PingSystem.OnInitialize()
     addon:Debug("Ping System module initializing")
+    EnsureRetailPingApiShims()
+    RunPingSecureRuntimeSelfTest()
     EnsureRootFrame()
     EnsureSlashCommand()
     EnsureFeatureEventBridge()
@@ -1889,6 +4266,7 @@ end
 function PingSystem.OnEnable()
     addon:Debug("Ping System module enabling")
 
+    EnsureRetailPingApiShims()
     EnsureRootFrame()
     EnsureSlashCommand()
     EnsureFeatureEventBridge()

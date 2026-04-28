@@ -18,6 +18,8 @@ local Navigation = {
             useQuestWatch = true,
             useQuestLogFallback = true,
             followQuestFromTracker = true,
+            enableReloadMapRefresh = false,
+            reloadMapRefreshMinInterval = 2.0,
             autoSuperTrackWhenIdle = true,
             preferNearestQuest = true,
             showDistance = true,
@@ -30,7 +32,7 @@ local Navigation = {
             ringRadius = 240,
             distanceScreenScale = 0.45,
             frontArcDegrees = 40,
-            inFrontYOffset = -120,
+            inFrontYOffset = 0,
             arrivalDistanceYards = 8,
             autoClearManualOnReach = true,
             clearManualOnQuestSelect = true,
@@ -57,6 +59,9 @@ local state = {
     questContextMenuFrame = nil,
     reachedMessageAt = 0,
     lastMapSyncAt = 0,
+    lastReloadMapAt = 0,
+    lastQuestVisualRefreshAt = 0,
+    questVisualRefreshScheduled = false,
     lastContextMenuQuestLogIndex = nil,
     lastContextMenuAt = 0,
     lastFollowClickQuestLogIndex = nil,
@@ -70,6 +75,7 @@ local state = {
     selectionHooksInstalled = false,
     watchFrameHooksInstalled = false,
     poiDisplayHookInstalled = false,
+    lastPoiButtonGlobalScanAt = 0,
     questPoiButtons = {},
     questPoiCache = {},
     questPoiLocks = {},
@@ -89,6 +95,13 @@ local state = {
     speedYardsPerSec = nil,
     etaSeconds = nil,
     arrivalAlertedAt = nil,
+    lastProjectionDebugAt = 0,
+    lastProjectionDebugKey = nil,
+    retailApiShimInstalled = false,
+    retailSuperTrackedContentType = nil,
+    retailSuperTrackedContentID = nil,
+    retailSuperTrackedMapPin = nil,
+    retailSuperTrackedVignette = nil,
 }
 
 local NAVIGATION_TRACKED_ICON_ATLAS = "Navigation-Tracked-Icon"
@@ -102,6 +115,8 @@ local ARROW_WIDTH = 22
 local ARROW_HEIGHT = 18
 local ARROW_ANCHOR_Y = 60
 local RUN_TRAVEL_SPEED_YARDS_PER_SEC = 7.0
+local QUEST_POI_LOCK_MAX_AGE_SEC = 1.25
+local QUEST_POI_LOCK_MAX_DRIFT_YARDS = 120
 
 local NAV_STATE_INVALID = 0
 local NAV_STATE_OCCLUDED = 1
@@ -151,16 +166,61 @@ local function Atan2(y, x)
     return 0
 end
 
-local mapDataLib
-local NormalizeCoord
+local mapUtils = addon:GetMapUtils()
+local NormalizeCoord = mapUtils.NormalizeCoord
+local SafeSetMapToCurrentZone = mapUtils.SafeSetMapToCurrentZone
+local GetPlayerMapPositionSafe = mapUtils.GetPlayerMapPositionSafe
+local ComputeDistanceYards = mapUtils.ComputeDistanceYards
 
-local function ResolveSuperTrackFn(primaryName, aliasName)
-    local fn = _G[primaryName]
+local function ResolveNamespacedFn(aliasName)
+    if type(aliasName) ~= "string" then
+        return nil
+    end
+
+    local namespaceName, functionName = aliasName:match("^(C_[%w]+)_(.+)$")
+    if not namespaceName or not functionName then
+        return nil
+    end
+
+    local namespaceTable = rawget(_G, namespaceName)
+    if type(namespaceTable) ~= "table" then
+        return nil
+    end
+
+    local fn = namespaceTable[functionName]
     if type(fn) == "function" then
         return fn
     end
 
-    fn = _G[aliasName]
+    return nil
+end
+
+local function ResolveSuperTrackFn(primaryName, aliasName)
+    local fn = primaryName and _G[primaryName] or nil
+    if type(fn) == "function" then
+        return fn
+    end
+
+    fn = aliasName and _G[aliasName] or nil
+    if type(fn) == "function" then
+        return fn
+    end
+
+    fn = ResolveNamespacedFn(aliasName)
+    if type(fn) == "function" then
+        return fn
+    end
+
+    return nil
+end
+
+local function ResolveNavigationNativeFn(primaryName, aliasName)
+    local fn = primaryName and _G[primaryName] or nil
+    if type(fn) == "function" then
+        return fn
+    end
+
+    fn = aliasName and _G[aliasName] or nil
     if type(fn) == "function" then
         return fn
     end
@@ -173,11 +233,23 @@ local superTrackShim = {
     getQuestId = nil,
     setWaypoint = nil,
     getWaypoint = nil,
+    getNextWaypoint = nil,
     clearWaypoint = nil,
     clearAll = nil,
     isTrackingAnything = nil,
+    setUserWaypointTracked = nil,
+    isUserWaypointTracked = nil,
     getItemName = nil,
     setQuestName = nil,
+}
+
+local mapWaypointShim = {
+    canSetWaypointOnMap = nil,
+    setUserWaypoint = nil,
+    getUserWaypoint = nil,
+    getUserWaypointForMap = nil,
+    hasUserWaypoint = nil,
+    clearUserWaypoint = nil,
 }
 
 local function ResolveSuperTrackShim()
@@ -185,11 +257,137 @@ local function ResolveSuperTrackShim()
     superTrackShim.getQuestId = ResolveSuperTrackFn("GetSuperTrackedQuestID", "C_SuperTrack_GetSuperTrackedQuestID")
     superTrackShim.setWaypoint = ResolveSuperTrackFn("SetSuperTrackedQuestWaypointForMap", "C_SuperTrack_SetSuperTrackedQuestWaypointForMap")
     superTrackShim.getWaypoint = ResolveSuperTrackFn("GetSuperTrackedQuestWaypointForMap", "C_SuperTrack_GetSuperTrackedQuestWaypointForMap")
+    superTrackShim.getNextWaypoint = ResolveSuperTrackFn("GetNextWaypointForMap", "C_SuperTrack_GetNextWaypointForMap")
     superTrackShim.clearWaypoint = ResolveSuperTrackFn("ClearSuperTrackedQuestWaypoint", "C_SuperTrack_ClearSuperTrackedQuestWaypoint")
     superTrackShim.clearAll = ResolveSuperTrackFn("ClearAllSuperTracked", "C_SuperTrack_ClearAllSuperTracked")
     superTrackShim.isTrackingAnything = ResolveSuperTrackFn("IsSuperTrackingAnything", "C_SuperTrack_IsSuperTrackingAnything")
+    superTrackShim.setUserWaypointTracked = ResolveSuperTrackFn("SetSuperTrackedUserWaypoint", "C_SuperTrack_SetSuperTrackedUserWaypoint")
+    superTrackShim.isUserWaypointTracked = ResolveSuperTrackFn("IsSuperTrackingUserWaypoint", "C_SuperTrack_IsSuperTrackingUserWaypoint")
     superTrackShim.getItemName = ResolveSuperTrackFn("GetSuperTrackedItemName", "C_SuperTrack_GetSuperTrackedItemName")
     superTrackShim.setQuestName = ResolveSuperTrackFn("SetSuperTrackedQuestName", "C_SuperTrack_SetSuperTrackedQuestName")
+end
+
+local function ResolveMapWaypointShim()
+    mapWaypointShim.canSetWaypointOnMap = ResolveSuperTrackFn("CanSetUserWaypointOnMap", "C_Map_CanSetUserWaypointOnMap")
+    mapWaypointShim.setUserWaypoint = ResolveSuperTrackFn("SetUserWaypoint", "C_Map_SetUserWaypoint")
+    mapWaypointShim.getUserWaypoint = ResolveSuperTrackFn("GetUserWaypoint", "C_Map_GetUserWaypoint")
+    mapWaypointShim.getUserWaypointForMap = ResolveSuperTrackFn("GetUserWaypointPositionForMap", "C_Map_GetUserWaypointPositionForMap")
+    mapWaypointShim.hasUserWaypoint = ResolveSuperTrackFn("HasUserWaypoint", "C_Map_HasUserWaypoint")
+    mapWaypointShim.clearUserWaypoint = ResolveSuperTrackFn("ClearUserWaypoint", "C_Map_ClearUserWaypoint")
+end
+
+local function ShimCanSetUserWaypointOnMap(mapId)
+    ResolveMapWaypointShim()
+
+    mapId = tonumber(mapId)
+    if not mapId or mapId <= 0 then
+        return false
+    end
+
+    if mapWaypointShim.canSetWaypointOnMap then
+        local ok, canSet = pcall(mapWaypointShim.canSetWaypointOnMap, mapId)
+        if ok then
+            return canSet == true
+        end
+    end
+
+    return true
+end
+
+local function ShimSetUserWaypoint(mapId, x, y)
+    ResolveMapWaypointShim()
+
+    if not mapWaypointShim.setUserWaypoint then
+        return false
+    end
+
+    mapId = tonumber(mapId)
+    x = NormalizeCoord(x)
+    y = NormalizeCoord(y)
+    if not mapId or mapId <= 0 or not x or not y then
+        return false
+    end
+
+    if not ShimCanSetUserWaypointOnMap(mapId) then
+        return false
+    end
+
+    local ok = pcall(mapWaypointShim.setUserWaypoint, mapId, x, y)
+    return ok == true
+end
+
+local function ShimGetUserWaypoint()
+    ResolveMapWaypointShim()
+
+    if not mapWaypointShim.getUserWaypoint then
+        return nil, nil, nil
+    end
+
+    local ok, mapId, x, y = pcall(mapWaypointShim.getUserWaypoint)
+    if not ok then
+        return nil, nil, nil
+    end
+
+    mapId = tonumber(mapId)
+    x = NormalizeCoord(x)
+    y = NormalizeCoord(y)
+    if not mapId or mapId <= 0 or not x or not y then
+        return nil, nil, nil
+    end
+
+    return mapId, x, y
+end
+
+local function ShimGetUserWaypointPositionForMap(mapId)
+    ResolveMapWaypointShim()
+
+    mapId = tonumber(mapId)
+    if not mapId or mapId <= 0 then
+        return nil, nil
+    end
+
+    if mapWaypointShim.getUserWaypointForMap then
+        local ok, x, y = pcall(mapWaypointShim.getUserWaypointForMap, mapId)
+        if ok then
+            x = NormalizeCoord(x)
+            y = NormalizeCoord(y)
+            if x and y then
+                return x, y
+            end
+        end
+    end
+
+    local storedMapId, storedX, storedY = ShimGetUserWaypoint()
+    if storedMapId and storedMapId == mapId then
+        return storedX, storedY
+    end
+
+    return nil, nil
+end
+
+local function ShimHasUserWaypoint()
+    ResolveMapWaypointShim()
+
+    if mapWaypointShim.hasUserWaypoint then
+        local ok, hasWaypoint = pcall(mapWaypointShim.hasUserWaypoint)
+        if ok then
+            return hasWaypoint == true
+        end
+    end
+
+    local mapId, x, y = ShimGetUserWaypoint()
+    return mapId ~= nil and x ~= nil and y ~= nil
+end
+
+local function ShimClearUserWaypoint()
+    ResolveMapWaypointShim()
+
+    if not mapWaypointShim.clearUserWaypoint then
+        return false
+    end
+
+    local ok = pcall(mapWaypointShim.clearUserWaypoint)
+    return ok == true
 end
 
 local function ShimGetSuperTrackedQuestID()
@@ -272,6 +470,32 @@ local function ShimClearAllSuperTracked()
     return anyCleared
 end
 
+local function ShimSetSuperTrackedUserWaypoint(enabled)
+    ResolveSuperTrackShim()
+
+    if not superTrackShim.setUserWaypointTracked then
+        return false
+    end
+
+    local ok = pcall(superTrackShim.setUserWaypointTracked, enabled == true)
+    return ok == true
+end
+
+local function ShimIsSuperTrackingUserWaypoint()
+    ResolveSuperTrackShim()
+
+    if not superTrackShim.isUserWaypointTracked then
+        return false
+    end
+
+    local ok, tracked = pcall(superTrackShim.isUserWaypointTracked)
+    if not ok then
+        return false
+    end
+
+    return tracked == true
+end
+
 local function ShimIsSuperTrackingAnything()
     ResolveSuperTrackShim()
 
@@ -286,12 +510,8 @@ local function ShimIsSuperTrackingAnything()
         return true
     end
 
-    local isUserTrackedFn = ResolveSuperTrackFn("IsSuperTrackingUserWaypoint", "C_SuperTrack_IsSuperTrackingUserWaypoint")
-    if isUserTrackedFn then
-        local ok, tracked = pcall(isUserTrackedFn)
-        if ok and tracked then
-            return true
-        end
+    if ShimIsSuperTrackingUserWaypoint() then
+        return true
     end
 
     return false
@@ -360,31 +580,85 @@ local function ShimGetSuperTrackedQuestWaypointForMap(mapId)
     return x, y
 end
 
-local function GetMapDataLib()
-    if mapDataLib ~= nil then
-        return mapDataLib
+local function ShimGetNextWaypointForMap(mapId)
+    ResolveSuperTrackShim()
+
+    if not superTrackShim.getNextWaypoint then
+        return nil, nil, nil
     end
 
-    if LibStub then
-        mapDataLib = LibStub("LibMapData-1.0", true)
-    else
-        mapDataLib = false
+    mapId = tonumber(mapId)
+    if not mapId or mapId <= 0 then
+        return nil, nil, nil
     end
 
-    return mapDataLib or nil
+    local ok, x, y, text = pcall(superTrackShim.getNextWaypoint, mapId)
+    if not ok then
+        return nil, nil, nil
+    end
+
+    x = NormalizeCoord(x)
+    y = NormalizeCoord(y)
+    if not x or not y then
+        return nil, nil, nil
+    end
+
+    if type(text) ~= "string" or text == "" then
+        text = nil
+    end
+
+    return x, y, text
 end
 
-NormalizeCoord = function(v)
-    if not v then return nil end
-    local n = tonumber(v)
-    if not n then return nil end
-    if n > 1 then
-        n = n / 100
-    end
-    if n < 0 or n > 1 then
+local function ShimGetQuestUiMapID(questId)
+    if type(GetQuestUiMapID) ~= "function" then
         return nil
     end
-    return n
+
+    questId = tonumber(questId)
+    if not questId or questId <= 0 then
+        return nil
+    end
+
+    local ok, mapId = pcall(GetQuestUiMapID, questId)
+    mapId = tonumber(mapId)
+    if ok and mapId and mapId > 0 then
+        return mapId
+    end
+
+    return nil
+end
+
+local function ShimGetQuestsOnMap(mapId)
+    mapId = tonumber(mapId)
+    if not mapId or mapId <= 0 then
+        return nil
+    end
+
+    if C_QuestLog and type(C_QuestLog.GetQuestsOnMap) == "function" then
+        local ok, quests = pcall(C_QuestLog.GetQuestsOnMap, mapId)
+        if ok and type(quests) == "table" then
+            return quests
+        end
+    end
+
+    if type(GetQuestsOnMap) == "function" then
+        local ok, questId, x, y = pcall(GetQuestsOnMap, mapId)
+        questId = tonumber(questId)
+        x = NormalizeCoord(x)
+        y = NormalizeCoord(y)
+        if ok and questId and questId > 0 and x and y then
+            return {
+                {
+                    questID = questId,
+                    x = x,
+                    y = y,
+                }
+            }
+        end
+    end
+
+    return nil
 end
 
 local function NormalizeRadians(a)
@@ -514,6 +788,36 @@ local function GetNavStateName(navState)
     return tostring(navState or "n/a")
 end
 
+local function DebugNavigationProjection(message, force, dedupeKey)
+    if not addon then
+        return
+    end
+
+    local now = GetTime() or 0
+    if not force and dedupeKey and dedupeKey == state.lastProjectionDebugKey and (now - (state.lastProjectionDebugAt or 0)) < 1.0 then
+        return
+    end
+
+    if not force and (now - (state.lastProjectionDebugAt or 0)) < 0.35 then
+        return
+    end
+
+    state.lastProjectionDebugAt = now
+    state.lastProjectionDebugKey = dedupeKey
+
+    local line = "Navigation projection: " .. tostring(message)
+    local comm = addon.settings and addon.settings.communication
+
+    if comm and comm.debugMode == true and type(addon.Debug) == "function" then
+        addon:Debug(line)
+        return
+    end
+
+    if type(addon.Print) == "function" then
+        addon:Print("|cff888888[DC-QoS Debug]|r " .. line, true)
+    end
+end
+
 local function BuildTargetKey(target)
     if not target then
         return nil
@@ -601,26 +905,6 @@ local function TrySetTrackedArrowAtlas(texture)
     return ok == true
 end
 
-local function GetWrongDirectionClampRadius(defaultRadius)
-    local radius = defaultRadius or 240
-
-    if radius < 500 then
-        radius = 500
-    end
-
-    if UIParent and type(UIParent.GetWidth) == "function" and type(UIParent.GetHeight) == "function" then
-        local uiWidth = UIParent:GetWidth() or 0
-        local uiHeight = UIParent:GetHeight() or 0
-
-        if uiWidth > 0 and uiHeight > 0 then
-            local safeRadius = math_min((uiWidth * 0.5) - 56, (uiHeight * 0.5) - 56)
-            radius = math_min(radius, math_max(120, safeRadius))
-        end
-    end
-
-    return radius
-end
-
 local function ComputeRelativeHeading(facing, playerX, playerY, targetX, targetY, dxYards, dyYards)
     local dx = dxYards
     local dy = dyYards
@@ -631,8 +915,9 @@ local function ComputeRelativeHeading(facing, playerX, playerY, targetX, targetY
         dy = (targetY or 0) - (playerY or 0)
     end
 
-    -- Invert map deltas for heading so marker guidance matches travel direction.
-    local direction = Atan2(-dx, dy)
+    -- Map Y increases toward south in WoW map-space, so invert dy to keep
+    -- heading aligned with on-screen POI direction.
+    local direction = Atan2(-dx, -dy)
     if direction > 0 then
         direction = (2 * math_pi) - direction
     else
@@ -640,24 +925,43 @@ local function ComputeRelativeHeading(facing, playerX, playerY, targetX, targetY
     end
 
     local relative = NormalizeRadians(direction - (facing or 0))
-    local dist = math_sqrt((dx * dx) + (dy * dy))
-
-    -- Local screen-space axes used by projection code below.
-    local rightYards = -math_sin(relative) * dist
-    local forwardYards = -math_cos(relative) * dist
-
-    return direction, relative, rightYards, forwardYards
+    return direction, relative
 end
 
-local function SafeSetMapToCurrentZone()
-    if type(SetMapToCurrentZone) ~= "function" then
-        return
+local function MaybeReloadMapForNavigation(force)
+    local settings = addon.settings and addon.settings.navigation
+    if not settings or not settings.enableReloadMapRefresh then
+        return false
+    end
+    if type(ReloadMap) ~= "function" then
+        return false
+    end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        return false
     end
 
-    local worldMapShown = WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
-    if not worldMapShown then
-        pcall(SetMapToCurrentZone)
+    local minInterval = tonumber(settings.reloadMapRefreshMinInterval) or 2.0
+    if minInterval < 0.25 then
+        minInterval = 0.25
     end
+
+    local requiredInterval = minInterval
+    if force then
+        requiredInterval = math_min(minInterval, 0.5)
+    end
+
+    local now = GetTime() or 0
+    if (now - (state.lastReloadMapAt or 0)) < requiredInterval then
+        return false
+    end
+
+    local ok = pcall(ReloadMap)
+    if not ok then
+        return false
+    end
+
+    state.lastReloadMapAt = now
+    return true
 end
 
 local function MaybeSyncCurrentZoneMap(force)
@@ -667,54 +971,10 @@ local function MaybeSyncCurrentZoneMap(force)
     end
 
     SafeSetMapToCurrentZone()
+    if force then
+        MaybeReloadMapForNavigation(true)
+    end
     state.lastMapSyncAt = now
-end
-
-local function GetPlayerMapPositionSafe()
-    local mapId
-
-    if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
-        mapId = C_Map.GetBestMapForUnit("player")
-        if mapId then
-            local pos = C_Map.GetPlayerMapPosition(mapId, "player")
-            if pos and pos.x and pos.y and pos.x > 0 and pos.y > 0 then
-                return pos.x, pos.y, mapId
-            end
-        end
-    end
-
-    if type(GetPlayerMapPosition) == "function" then
-        local x, y = GetPlayerMapPosition("player")
-        if (not x or not y or x <= 0 or y <= 0) then
-            SafeSetMapToCurrentZone()
-            x, y = GetPlayerMapPosition("player")
-        end
-
-        if x and y and x > 0 and y > 0 then
-            mapId = (type(GetCurrentMapAreaID) == "function") and GetCurrentMapAreaID() or nil
-            return x, y, mapId
-        end
-    end
-
-    return nil, nil, nil
-end
-
-local function ComputeDistanceYards(mapId, x1, y1, x2, y2)
-    local mapLib = GetMapDataLib()
-    if mapLib and mapId and mapLib.MapArea then
-        local floor = (type(GetCurrentMapDungeonLevel) == "function") and GetCurrentMapDungeonLevel() or 0
-        local ok, width, height = pcall(mapLib.MapArea, mapLib, mapId, floor)
-        if ok and width and height and width > 0 and height > 0 then
-            local dx = (x2 - x1) * width
-            local dy = (y2 - y1) * height
-            return math_sqrt((dx * dx) + (dy * dy)), dx, dy
-        end
-    end
-
-    -- Fallback approximation when map yard data is unavailable.
-    local dx = (x2 - x1) * 10000
-    local dy = (y2 - y1) * 10000
-    return math_sqrt((dx * dx) + (dy * dy)), dx, dy
 end
 
 local function GetQuestIdFromLogIndex(questLogIndex)
@@ -831,19 +1091,17 @@ local function EnsureQuestPoiCompatibilityShim()
         end
 
         local completed = nil
-        if type(C_QuestLog.IsComplete) == "function" then
+        if C_QuestLog and type(C_QuestLog.IsComplete) == "function" then
             completed = C_QuestLog.IsComplete(questId)
         end
 
-        if C_QuestLog and type(C_QuestLog.GetQuestsOnMap) == "function" and type(GetQuestUiMapID) == "function" then
-            local mapId = GetQuestUiMapID(questId)
-            if mapId and mapId > 0 then
-                local quests = C_QuestLog.GetQuestsOnMap(mapId)
-                if quests then
-                    for _, info in pairs(quests) do
-                        if info and info.questID == questId then
-                            return completed, info.x, info.y
-                        end
+        local mapId = ShimGetQuestUiMapID(questId)
+        if mapId and mapId > 0 then
+            local quests = ShimGetQuestsOnMap(mapId)
+            if quests then
+                for _, info in pairs(quests) do
+                    if info and info.questID == questId then
+                        return completed, info.x, info.y
                     end
                 end
             end
@@ -900,6 +1158,967 @@ local function EnsureQuestWatchCompatibilityShim()
     end
 end
 
+local function BuildUiMapPoint(mapId, x, y)
+    mapId = tonumber(mapId)
+    x = NormalizeCoord(x)
+    y = NormalizeCoord(y)
+    if not mapId or mapId <= 0 or not x or not y then
+        return nil
+    end
+
+    return {
+        uiMapID = mapId,
+        mapID = mapId,
+        mapId = mapId,
+        x = x,
+        y = y,
+    }
+end
+
+local function NormalizeUiMapPointArgs(mapIdOrPoint, x, y)
+    local mapId = mapIdOrPoint
+    if type(mapIdOrPoint) == "table" then
+        mapId = mapIdOrPoint.uiMapID or mapIdOrPoint.mapID or mapIdOrPoint.mapId
+        x = x or mapIdOrPoint.x or mapIdOrPoint.normalizedX
+        y = y or mapIdOrPoint.y or mapIdOrPoint.normalizedY
+
+        if (x == nil or y == nil) and type(mapIdOrPoint.GetPosition) == "function" then
+            local ok, posX, posY = pcall(mapIdOrPoint.GetPosition, mapIdOrPoint)
+            if ok then
+                x = x or posX
+                y = y or posY
+            end
+        end
+
+        if (not mapId or tonumber(mapId) == 0) and type(mapIdOrPoint.GetMapID) == "function" then
+            local ok, resolvedMapId = pcall(mapIdOrPoint.GetMapID, mapIdOrPoint)
+            if ok then
+                mapId = resolvedMapId
+            end
+        end
+    end
+
+    return BuildUiMapPoint(mapId, x, y)
+end
+
+local function BuildUserWaypointHyperlink(point)
+    point = type(point) == "table" and point or nil
+    if not point then
+        return nil
+    end
+
+    local mapId = tonumber(point.uiMapID or point.mapID or point.mapId)
+    local x = NormalizeCoord(point.x or point.normalizedX)
+    local y = NormalizeCoord(point.y or point.normalizedY)
+    if not mapId or mapId <= 0 or not x or not y then
+        return nil
+    end
+
+    local label = (type(_G.WORLD_MAP) == "string" and _G.WORLD_MAP ~= "") and _G.WORLD_MAP or "Waypoint"
+    return string.format("|Hworldmap:%d:%.6f:%.6f|h[%s]|h", mapId, x, y, label)
+end
+
+local function ParseUserWaypointHyperlink(hyperlink)
+    if type(hyperlink) ~= "string" or hyperlink == "" then
+        return nil
+    end
+
+    local mapId, x, y = hyperlink:match("worldmap:(%-?%d+):([%-%d%.]+):([%-%d%.]+)")
+    if not mapId then
+        return nil
+    end
+
+    return BuildUiMapPoint(tonumber(mapId), tonumber(x), tonumber(y))
+end
+
+local function NormalizeSuperTrackedContentType(contentType)
+    local normalized = tostring(contentType or "")
+    normalized = normalized:gsub("[%s_%-]", "")
+    normalized = normalized:lower()
+
+    if normalized == "" then
+        return nil
+    end
+    if normalized == "quest" then
+        return "quest"
+    end
+    if normalized == "userwaypoint" or normalized == "waypoint" then
+        return "userWaypoint"
+    end
+    if normalized == "mappin" or normalized == "pin" then
+        return "mapPin"
+    end
+    if normalized == "vignette" then
+        return "vignette"
+    end
+    if normalized == "content" then
+        return "content"
+    end
+
+    return normalized
+end
+
+local function SuperTrackingTypeToEnum(typeToken)
+    typeToken = NormalizeSuperTrackedContentType(typeToken)
+    if not typeToken then
+        return nil
+    end
+
+    local enumTable = _G.Enum and _G.Enum.SuperTrackingType
+    if type(enumTable) ~= "table" then
+        return typeToken
+    end
+
+    if typeToken == "quest" and enumTable.Quest ~= nil then
+        return enumTable.Quest
+    end
+    if typeToken == "userWaypoint" and enumTable.UserWaypoint ~= nil then
+        return enumTable.UserWaypoint
+    end
+    if typeToken == "mapPin" and enumTable.MapPin ~= nil then
+        return enumTable.MapPin
+    end
+    if typeToken == "vignette" and enumTable.Vignette ~= nil then
+        return enumTable.Vignette
+    end
+    if typeToken == "content" and enumTable.Content ~= nil then
+        return enumTable.Content
+    end
+
+    return typeToken
+end
+
+local function ResolveHighestPrioritySuperTrackingTypeToken()
+    local contentType = NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType)
+    if contentType then
+        return contentType
+    end
+
+    if state.retailSuperTrackedMapPin then
+        return "mapPin"
+    end
+
+    if state.retailSuperTrackedVignette then
+        return "vignette"
+    end
+
+    if ShimGetSuperTrackedQuestID() then
+        return "quest"
+    end
+
+    if ShimIsSuperTrackingUserWaypoint() then
+        return "userWaypoint"
+    end
+
+    return nil
+end
+
+local function EnsureRetailNavigationApiShims()
+    if not state.retailApiShimInstalled then
+        state.retailApiShimInstalled = true
+    end
+
+    local superTrackApi = rawget(_G, "C_SuperTrack")
+    if type(superTrackApi) ~= "table" then
+        superTrackApi = {}
+        _G.C_SuperTrack = superTrackApi
+    end
+
+    local mapApi = rawget(_G, "C_Map")
+    if type(mapApi) ~= "table" then
+        mapApi = {}
+        _G.C_Map = mapApi
+    end
+
+    local navigationApi = rawget(_G, "C_Navigation")
+    if type(navigationApi) ~= "table" then
+        navigationApi = {}
+        _G.C_Navigation = navigationApi
+    end
+
+    local questLogApi = rawget(_G, "C_QuestLog")
+    if type(questLogApi) ~= "table" then
+        questLogApi = {}
+        _G.C_QuestLog = questLogApi
+    end
+
+    local setSuperTrackedQuestId = type(_G.SetSuperTrackedQuestID) == "function" and _G.SetSuperTrackedQuestID or nil
+    local getSuperTrackedQuestId = type(_G.GetSuperTrackedQuestID) == "function" and _G.GetSuperTrackedQuestID or nil
+    local setSuperTrackedWaypoint = type(_G.SetSuperTrackedQuestWaypointForMap) == "function" and _G.SetSuperTrackedQuestWaypointForMap or nil
+    local getSuperTrackedWaypoint = type(_G.GetSuperTrackedQuestWaypointForMap) == "function" and _G.GetSuperTrackedQuestWaypointForMap or nil
+    local getNextWaypoint = type(_G.GetNextWaypointForMap) == "function" and _G.GetNextWaypointForMap or nil
+    local clearSuperTrackedWaypoint = type(_G.ClearSuperTrackedQuestWaypoint) == "function" and _G.ClearSuperTrackedQuestWaypoint or nil
+    local clearAllSuperTracked = type(_G.ClearAllSuperTracked) == "function" and _G.ClearAllSuperTracked or nil
+    local isSuperTrackingAnything = type(_G.IsSuperTrackingAnything) == "function" and _G.IsSuperTrackingAnything or nil
+    local setSuperTrackedUserWaypoint = type(_G.SetSuperTrackedUserWaypoint) == "function" and _G.SetSuperTrackedUserWaypoint or nil
+    local isSuperTrackingUserWaypoint = type(_G.IsSuperTrackingUserWaypoint) == "function" and _G.IsSuperTrackingUserWaypoint or nil
+    local getSuperTrackedItemName = type(_G.GetSuperTrackedItemName) == "function" and _G.GetSuperTrackedItemName or nil
+    local setSuperTrackedQuestName = type(_G.SetSuperTrackedQuestName) == "function" and _G.SetSuperTrackedQuestName or nil
+    local getNavigationFrame = ResolveNavigationNativeFn("GetNavigationFrame", "C_Navigation_GetFrame")
+    local getNavigationFrameState = ResolveNavigationNativeFn("GetNavigationFrameState", "C_Navigation_GetFrameState")
+    local setNavigationPlayerState = ResolveNavigationNativeFn("SetNavigationPlayerState", "C_Navigation_SetPlayerState")
+    local hasNavigationValidScreenPosition = ResolveNavigationNativeFn("HasNavigationValidScreenPosition", "C_Navigation_HasValidScreenPosition")
+    local wasNavigationFrameClampedToScreen = ResolveNavigationNativeFn("WasNavigationFrameClampedToScreen", "C_Navigation_WasClampedToScreen")
+
+    -- Cache resolved native function handles so projection updates can call the
+    -- exact export even when only shimmed namespaces are present globally.
+    state.nativeNavigationGetFrameState = getNavigationFrameState
+    state.nativeNavigationSetPlayerState = setNavigationPlayerState
+    state.nativeNavigationHasValidScreenPosition = hasNavigationValidScreenPosition
+    state.nativeNavigationWasClampedToScreen = wasNavigationFrameClampedToScreen
+    state.nativeSetSuperTrackedQuestID = setSuperTrackedQuestId
+    state.nativeSetSuperTrackedQuestName = setSuperTrackedQuestName
+    state.nativeSetSuperTrackedQuestWaypointForMap = setSuperTrackedWaypoint
+
+    local function CallNativeNavigationFrameState()
+        if not getNavigationFrameState then
+            return nil, nil, nil, nil
+        end
+
+        local ok, screenX, screenY, navState, clamped = pcall(getNavigationFrameState)
+        if not ok then
+            return nil, nil, nil, nil
+        end
+
+        screenX = tonumber(screenX)
+        screenY = tonumber(screenY)
+        navState = tonumber(navState)
+        if type(clamped) ~= "boolean" then
+            clamped = nil
+        end
+
+        return screenX, screenY, navState, clamped
+    end
+
+    if type(superTrackApi.SetSuperTrackedQuestID) ~= "function" then
+        superTrackApi.SetSuperTrackedQuestID = function(questId)
+            if not setSuperTrackedQuestId then
+                return false
+            end
+            local ok, result = pcall(setSuperTrackedQuestId, questId)
+            if not ok then
+                return false
+            end
+
+            if tonumber(questId) and tonumber(questId) > 0 then
+                state.retailSuperTrackedContentType = "quest"
+                state.retailSuperTrackedContentID = tonumber(questId)
+                state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedVignette = nil
+            elseif state.retailSuperTrackedContentType == "quest" then
+                state.retailSuperTrackedContentType = nil
+                state.retailSuperTrackedContentID = nil
+            end
+
+            return result ~= false
+        end
+    end
+
+    if type(superTrackApi.GetSuperTrackedQuestID) ~= "function" then
+        superTrackApi.GetSuperTrackedQuestID = function()
+            if not getSuperTrackedQuestId then
+                return nil
+            end
+            local ok, questId = pcall(getSuperTrackedQuestId)
+            if not ok then
+                return nil
+            end
+            return questId
+        end
+    end
+
+    if type(superTrackApi.SetSuperTrackedQuestWaypointForMap) ~= "function" then
+        superTrackApi.SetSuperTrackedQuestWaypointForMap = function(mapId, x, y)
+            if not setSuperTrackedWaypoint then
+                return false
+            end
+            local ok, result = pcall(setSuperTrackedWaypoint, mapId, x, y)
+            if not ok then
+                return false
+            end
+            return result ~= false
+        end
+    end
+
+    if type(superTrackApi.GetSuperTrackedQuestWaypointForMap) ~= "function" then
+        superTrackApi.GetSuperTrackedQuestWaypointForMap = function(mapId)
+            if not getSuperTrackedWaypoint then
+                return nil, nil
+            end
+            local ok, x, y = pcall(getSuperTrackedWaypoint, mapId)
+            if not ok then
+                return nil, nil
+            end
+            return x, y
+        end
+    end
+
+    if type(superTrackApi.GetNextWaypointForMap) ~= "function" then
+        superTrackApi.GetNextWaypointForMap = function(mapId)
+            if not getNextWaypoint then
+                return nil, nil, nil
+            end
+            local ok, x, y, text = pcall(getNextWaypoint, mapId)
+            if not ok then
+                return nil, nil, nil
+            end
+            return x, y, text
+        end
+    end
+
+    if type(superTrackApi.ClearSuperTrackedQuestWaypoint) ~= "function" then
+        superTrackApi.ClearSuperTrackedQuestWaypoint = function()
+            if not clearSuperTrackedWaypoint then
+                return false
+            end
+            local ok, result = pcall(clearSuperTrackedWaypoint)
+            if not ok then
+                return false
+            end
+            return result ~= false
+        end
+    end
+
+    if type(superTrackApi.ClearAllSuperTracked) ~= "function" then
+        superTrackApi.ClearAllSuperTracked = function()
+            state.retailSuperTrackedContentType = nil
+            state.retailSuperTrackedContentID = nil
+            state.retailSuperTrackedMapPin = nil
+            state.retailSuperTrackedVignette = nil
+
+            if not clearAllSuperTracked then
+                return true
+            end
+
+            local ok, result = pcall(clearAllSuperTracked)
+            if not ok then
+                return false
+            end
+
+            return result ~= false
+        end
+    end
+
+    if type(superTrackApi.IsSuperTrackingAnything) ~= "function" then
+        superTrackApi.IsSuperTrackingAnything = function()
+            if not isSuperTrackingAnything then
+                return false
+            end
+            local ok, tracked = pcall(isSuperTrackingAnything)
+            if not ok then
+                return false
+            end
+            return tracked == true
+        end
+    end
+
+    if type(superTrackApi.SetSuperTrackedUserWaypoint) ~= "function" then
+        superTrackApi.SetSuperTrackedUserWaypoint = function(enabled)
+            if not setSuperTrackedUserWaypoint then
+                return false
+            end
+            local ok, result = pcall(setSuperTrackedUserWaypoint, enabled)
+            if not ok then
+                return false
+            end
+
+            if enabled == true then
+                state.retailSuperTrackedContentType = "userWaypoint"
+                state.retailSuperTrackedContentID = nil
+                state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedVignette = nil
+            elseif state.retailSuperTrackedContentType == "userWaypoint" then
+                state.retailSuperTrackedContentType = nil
+                state.retailSuperTrackedContentID = nil
+            end
+
+            return result ~= false
+        end
+    end
+
+    if type(superTrackApi.IsSuperTrackingUserWaypoint) ~= "function" then
+        superTrackApi.IsSuperTrackingUserWaypoint = function()
+            if not isSuperTrackingUserWaypoint then
+                return false
+            end
+            local ok, tracked = pcall(isSuperTrackingUserWaypoint)
+            if not ok then
+                return false
+            end
+            return tracked == true
+        end
+    end
+
+    if type(superTrackApi.GetSuperTrackedItemName) ~= "function" then
+        superTrackApi.GetSuperTrackedItemName = function()
+            if not getSuperTrackedItemName then
+                return nil, nil
+            end
+            local ok, name, description = pcall(getSuperTrackedItemName)
+            if not ok then
+                return nil, nil
+            end
+            return name, description
+        end
+    end
+
+    if type(superTrackApi.SetSuperTrackedQuestName) ~= "function" then
+        superTrackApi.SetSuperTrackedQuestName = function(name)
+            if not setSuperTrackedQuestName then
+                return false
+            end
+            local ok, result = pcall(setSuperTrackedQuestName, name)
+            if not ok then
+                return false
+            end
+
+            if type(name) == "string" and name ~= "" then
+                state.retailSuperTrackedContentType = "quest"
+                state.retailSuperTrackedContentID = name
+                state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedVignette = nil
+            end
+
+            return result ~= false
+        end
+    end
+
+    if type(superTrackApi.GetHighestPrioritySuperTrackingType) ~= "function" then
+        superTrackApi.GetHighestPrioritySuperTrackingType = function()
+            local typeToken = ResolveHighestPrioritySuperTrackingTypeToken()
+            return SuperTrackingTypeToEnum(typeToken)
+        end
+    end
+
+    if type(superTrackApi.GetSuperTrackedContent) ~= "function" then
+        superTrackApi.GetSuperTrackedContent = function()
+            local contentType = NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType)
+            if contentType then
+                if contentType == "mapPin" then
+                    return SuperTrackingTypeToEnum(contentType), state.retailSuperTrackedMapPin
+                end
+                if contentType == "vignette" then
+                    return SuperTrackingTypeToEnum(contentType), state.retailSuperTrackedVignette
+                end
+                return SuperTrackingTypeToEnum(contentType), state.retailSuperTrackedContentID
+            end
+
+            local trackedQuestId = superTrackApi.GetSuperTrackedQuestID and superTrackApi.GetSuperTrackedQuestID() or nil
+            if trackedQuestId then
+                return SuperTrackingTypeToEnum("quest"), trackedQuestId
+            end
+
+            if superTrackApi.IsSuperTrackingUserWaypoint and superTrackApi.IsSuperTrackingUserWaypoint() then
+                return SuperTrackingTypeToEnum("userWaypoint"), true
+            end
+
+            return nil, nil
+        end
+    end
+
+    if type(superTrackApi.SetSuperTrackedContent) ~= "function" then
+        superTrackApi.SetSuperTrackedContent = function(contentType, contentID)
+            local normalizedType = NormalizeSuperTrackedContentType(contentType)
+            if not normalizedType then
+                state.retailSuperTrackedContentType = nil
+                state.retailSuperTrackedContentID = nil
+                state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedVignette = nil
+                if superTrackApi.ClearAllSuperTracked then
+                    return superTrackApi.ClearAllSuperTracked()
+                end
+                return true
+            end
+
+            if normalizedType == "quest" then
+                local questId = tonumber(contentID) or 0
+                if superTrackApi.SetSuperTrackedQuestID then
+                    return superTrackApi.SetSuperTrackedQuestID(questId)
+                end
+                return false
+            end
+
+            if normalizedType == "userWaypoint" then
+                if superTrackApi.SetSuperTrackedUserWaypoint then
+                    return superTrackApi.SetSuperTrackedUserWaypoint(contentID ~= false)
+                end
+                return false
+            end
+
+            if normalizedType == "mapPin" then
+                if superTrackApi.SetSuperTrackedMapPin then
+                    return superTrackApi.SetSuperTrackedMapPin(contentID)
+                end
+                return false
+            end
+
+            if normalizedType == "vignette" then
+                if superTrackApi.SetSuperTrackedVignette then
+                    return superTrackApi.SetSuperTrackedVignette(contentID)
+                end
+                return false
+            end
+
+            state.retailSuperTrackedContentType = normalizedType
+            state.retailSuperTrackedContentID = contentID
+            state.retailSuperTrackedMapPin = nil
+            state.retailSuperTrackedVignette = nil
+            return true
+        end
+    end
+
+    if type(superTrackApi.SetSuperTrackedMapPin) ~= "function" then
+        superTrackApi.SetSuperTrackedMapPin = function(mapPinOrMapId, x, y)
+            if mapPinOrMapId == nil then
+                state.retailSuperTrackedMapPin = nil
+                if state.retailSuperTrackedContentType == "mapPin" then
+                    state.retailSuperTrackedContentType = nil
+                    state.retailSuperTrackedContentID = nil
+                end
+                return true
+            end
+
+            local point = NormalizeUiMapPointArgs(mapPinOrMapId, x, y)
+            if not point then
+                return false
+            end
+
+            state.retailSuperTrackedMapPin = point
+            state.retailSuperTrackedContentType = "mapPin"
+            state.retailSuperTrackedContentID = point
+            state.retailSuperTrackedVignette = nil
+
+            if superTrackApi.SetSuperTrackedQuestWaypointForMap then
+                pcall(superTrackApi.SetSuperTrackedQuestWaypointForMap, point.uiMapID, point.x, point.y)
+            end
+
+            return true
+        end
+    end
+
+    if type(superTrackApi.GetSuperTrackedMapPin) ~= "function" then
+        superTrackApi.GetSuperTrackedMapPin = function()
+            return state.retailSuperTrackedMapPin
+        end
+    end
+
+    if type(superTrackApi.ClearSuperTrackedMapPin) ~= "function" then
+        superTrackApi.ClearSuperTrackedMapPin = function()
+            state.retailSuperTrackedMapPin = nil
+            if state.retailSuperTrackedContentType == "mapPin" then
+                state.retailSuperTrackedContentType = nil
+                state.retailSuperTrackedContentID = nil
+            end
+            return true
+        end
+    end
+
+    if type(superTrackApi.SetSuperTrackedVignette) ~= "function" then
+        superTrackApi.SetSuperTrackedVignette = function(vignetteGUID)
+            if vignetteGUID == nil or vignetteGUID == "" then
+                state.retailSuperTrackedVignette = nil
+                if state.retailSuperTrackedContentType == "vignette" then
+                    state.retailSuperTrackedContentType = nil
+                    state.retailSuperTrackedContentID = nil
+                end
+                return true
+            end
+
+            state.retailSuperTrackedVignette = vignetteGUID
+            state.retailSuperTrackedContentType = "vignette"
+            state.retailSuperTrackedContentID = vignetteGUID
+            state.retailSuperTrackedMapPin = nil
+            return true
+        end
+    end
+
+    if type(superTrackApi.GetSuperTrackedVignette) ~= "function" then
+        superTrackApi.GetSuperTrackedVignette = function()
+            return state.retailSuperTrackedVignette
+        end
+    end
+
+    local canSetUserWaypointOnMap = type(_G.CanSetUserWaypointOnMap) == "function" and _G.CanSetUserWaypointOnMap or nil
+    local setUserWaypoint = type(_G.SetUserWaypoint) == "function" and _G.SetUserWaypoint or nil
+    local getUserWaypoint = type(_G.GetUserWaypoint) == "function" and _G.GetUserWaypoint or nil
+    local getUserWaypointForMap = type(_G.GetUserWaypointPositionForMap) == "function" and _G.GetUserWaypointPositionForMap or nil
+    local hasUserWaypoint = type(_G.HasUserWaypoint) == "function" and _G.HasUserWaypoint or nil
+    local clearUserWaypoint = type(_G.ClearUserWaypoint) == "function" and _G.ClearUserWaypoint or nil
+
+    if type(mapApi.CanSetUserWaypointOnMap) ~= "function" then
+        mapApi.CanSetUserWaypointOnMap = function(mapId)
+            if canSetUserWaypointOnMap then
+                local ok, canSet = pcall(canSetUserWaypointOnMap, mapId)
+                if ok then
+                    return canSet == true
+                end
+            end
+
+            return true
+        end
+    end
+
+    if type(mapApi.SetUserWaypoint) ~= "function" then
+        mapApi.SetUserWaypoint = function(mapIdOrPoint, x, y)
+            if not setUserWaypoint then
+                return false
+            end
+
+            local point = NormalizeUiMapPointArgs(mapIdOrPoint, x, y)
+            if not point then
+                return false
+            end
+
+            local ok, result = pcall(setUserWaypoint, point.uiMapID, point.x, point.y)
+            if not ok then
+                return false
+            end
+            return result ~= false
+        end
+    end
+
+    if type(mapApi.GetUserWaypoint) ~= "function" then
+        mapApi.GetUserWaypoint = function()
+            if not getUserWaypoint then
+                return nil
+            end
+
+            local ok, mapId, x, y = pcall(getUserWaypoint)
+            if not ok then
+                return nil
+            end
+
+            if type(mapId) == "table" then
+                x = mapId.x or mapId.normalizedX
+                y = mapId.y or mapId.normalizedY
+                mapId = mapId.uiMapID or mapId.mapID or mapId.mapId
+            end
+
+            return BuildUiMapPoint(mapId, x, y)
+        end
+    end
+
+    if type(mapApi.GetUserWaypointHyperlink) ~= "function" then
+        mapApi.GetUserWaypointHyperlink = function()
+            local point = mapApi.GetUserWaypoint and mapApi.GetUserWaypoint() or nil
+            return BuildUserWaypointHyperlink(point)
+        end
+    end
+
+    if type(mapApi.GetUserWaypointFromHyperlink) ~= "function" then
+        mapApi.GetUserWaypointFromHyperlink = function(hyperlink)
+            return ParseUserWaypointHyperlink(hyperlink)
+        end
+    end
+
+    if type(mapApi.GetUserWaypointPositionForMap) ~= "function" then
+        mapApi.GetUserWaypointPositionForMap = function(mapId)
+            mapId = tonumber(mapId)
+            if not mapId or mapId <= 0 then
+                return nil, nil
+            end
+
+            if getUserWaypointForMap then
+                local ok, x, y = pcall(getUserWaypointForMap, mapId)
+                if ok then
+                    if type(x) == "table" then
+                        y = x.y or x.normalizedY
+                        x = x.x or x.normalizedX
+                    end
+
+                    x = NormalizeCoord(x)
+                    y = NormalizeCoord(y)
+                    if x and y then
+                        return x, y
+                    end
+                end
+            end
+
+            local point = mapApi.GetUserWaypoint and mapApi.GetUserWaypoint() or nil
+            if type(point) == "table" and tonumber(point.uiMapID) == mapId then
+                local x = NormalizeCoord(point.x)
+                local y = NormalizeCoord(point.y)
+                if x and y then
+                    return x, y
+                end
+            end
+
+            return nil, nil
+        end
+    end
+
+    if type(mapApi.HasUserWaypoint) ~= "function" then
+        mapApi.HasUserWaypoint = function()
+            if hasUserWaypoint then
+                local ok, hasWaypoint = pcall(hasUserWaypoint)
+                if ok then
+                    return hasWaypoint == true
+                end
+            end
+
+            local point = mapApi.GetUserWaypoint and mapApi.GetUserWaypoint() or nil
+            return type(point) == "table" and point.x ~= nil and point.y ~= nil
+        end
+    end
+
+    if type(mapApi.ClearUserWaypoint) ~= "function" then
+        mapApi.ClearUserWaypoint = function()
+            if not clearUserWaypoint then
+                return false
+            end
+            local ok, result = pcall(clearUserWaypoint)
+            if not ok then
+                return false
+            end
+
+            if state.retailSuperTrackedContentType == "userWaypoint" then
+                state.retailSuperTrackedContentType = nil
+                state.retailSuperTrackedContentID = nil
+            end
+
+            return result ~= false
+        end
+    end
+
+    if type(navigationApi.GetDistance) ~= "function" then
+        navigationApi.GetDistance = function(mapIdOrPoint, x, y)
+            local point = NormalizeUiMapPointArgs(mapIdOrPoint, x, y)
+            if not point then
+                return nil
+            end
+
+            local playerX, playerY, playerMapId = GetPlayerMapPositionSafe()
+            if not playerX or not playerY or playerMapId ~= point.uiMapID then
+                return nil
+            end
+
+            local distance = ComputeDistanceYards(point.uiMapID, playerX, playerY, point.x, point.y)
+            return distance
+        end
+    end
+
+    if type(navigationApi.GetDistanceSquared) ~= "function" then
+        navigationApi.GetDistanceSquared = function(mapIdOrPoint, x, y)
+            local distance = navigationApi.GetDistance(mapIdOrPoint, x, y)
+            if not distance then
+                return nil
+            end
+            return distance * distance
+        end
+    end
+
+    if type(navigationApi.GetFrame) ~= "function" then
+        navigationApi.GetFrame = function()
+            if getNavigationFrame then
+                local ok, frame = pcall(getNavigationFrame)
+                if ok and frame then
+                    return frame
+                end
+            end
+
+            return EnsureFrame()
+        end
+    end
+
+    if type(navigationApi.GetFrameState) ~= "function" then
+        navigationApi.GetFrameState = function()
+            local screenX, screenY, navState, clamped = CallNativeNavigationFrameState()
+            if screenX and screenY then
+                return screenX, screenY, navState or NAV_STATE_DISABLED, clamped == true
+            end
+
+            local frame = EnsureFrame()
+            local frameX, frameY = frame:GetCenter()
+            if type(frameX) ~= "number" or type(frameY) ~= "number" then
+                return nil, nil, state.lastNavState or NAV_STATE_DISABLED, state.lastClamped == true
+            end
+
+            return frameX, frameY, state.lastNavState or NAV_STATE_DISABLED, state.lastClamped == true
+        end
+    end
+
+    if type(navigationApi.GetTargetState) ~= "function" then
+        navigationApi.GetTargetState = function()
+            if not state.target then
+                return NAV_STATE_DISABLED
+            end
+            return state.lastNavState or NAV_STATE_DISABLED
+        end
+    end
+
+    if type(navigationApi.HasValidScreenPosition) ~= "function" then
+        navigationApi.HasValidScreenPosition = function()
+            if hasNavigationValidScreenPosition then
+                local ok, hasValid = pcall(hasNavigationValidScreenPosition)
+                if ok and hasValid ~= nil then
+                    return hasValid == true
+                end
+            end
+
+            local _, _, nativeState = CallNativeNavigationFrameState()
+            if nativeState ~= nil then
+                return nativeState ~= NAV_STATE_INVALID and nativeState ~= NAV_STATE_DISABLED
+            end
+
+            if not state.target then
+                return false
+            end
+            local navState = state.lastNavState or NAV_STATE_DISABLED
+            return navState ~= NAV_STATE_INVALID and navState ~= NAV_STATE_DISABLED
+        end
+    end
+
+    if type(navigationApi.WasClampedToScreen) ~= "function" then
+        navigationApi.WasClampedToScreen = function()
+            if wasNavigationFrameClampedToScreen then
+                local ok, clamped = pcall(wasNavigationFrameClampedToScreen)
+                if ok and clamped ~= nil then
+                    return clamped == true
+                end
+            end
+
+            local _, _, _, nativeClamped = CallNativeNavigationFrameState()
+            if nativeClamped ~= nil then
+                return nativeClamped == true
+            end
+
+            return state.lastClamped == true
+        end
+    end
+
+    if type(navigationApi.GetNearestPartyMemberToken) ~= "function" then
+        navigationApi.GetNearestPartyMemberToken = function()
+            local target = state.target
+            if type(target) ~= "table" then
+                return nil
+            end
+
+            local point = NormalizeUiMapPointArgs(target.mapId, target.x, target.y)
+            if not point then
+                return nil
+            end
+
+            if type(GetPlayerMapPosition) ~= "function" or type(UnitExists) ~= "function" then
+                return nil
+            end
+
+            local function SampleUnitPosition(unitToken)
+                if not UnitExists(unitToken) then
+                    return nil, nil
+                end
+
+                local ok, unitX, unitY = pcall(GetPlayerMapPosition, unitToken)
+                if not ok then
+                    return nil, nil
+                end
+
+                unitX = NormalizeCoord(unitX)
+                unitY = NormalizeCoord(unitY)
+                if not unitX or not unitY then
+                    return nil, nil
+                end
+
+                if unitToken ~= "player" and unitX == 0 and unitY == 0 then
+                    return nil, nil
+                end
+
+                return unitX, unitY
+            end
+
+            local bestToken = nil
+            local bestDistanceSq = nil
+
+            local function EvaluateToken(unitToken)
+                if type(UnitIsUnit) == "function" and UnitIsUnit(unitToken, "player") then
+                    return
+                end
+
+                if type(UnitIsDeadOrGhost) == "function" and UnitIsDeadOrGhost(unitToken) then
+                    return
+                end
+
+                local unitX, unitY = SampleUnitPosition(unitToken)
+                if not unitX or not unitY then
+                    return
+                end
+
+                local dx = point.x - unitX
+                local dy = point.y - unitY
+                local distanceSq = (dx * dx) + (dy * dy)
+
+                if not bestDistanceSq or distanceSq < bestDistanceSq then
+                    bestDistanceSq = distanceSq
+                    bestToken = unitToken
+                end
+            end
+
+            local raidCount = (type(GetNumRaidMembers) == "function") and tonumber(GetNumRaidMembers()) or 0
+            if raidCount and raidCount > 0 then
+                for index = 1, raidCount do
+                    EvaluateToken("raid" .. tostring(index))
+                end
+                return bestToken
+            end
+
+            local partyCount = (type(GetNumPartyMembers) == "function") and tonumber(GetNumPartyMembers()) or 0
+            if not partyCount or partyCount <= 0 then
+                return nil
+            end
+
+            for index = 1, partyCount do
+                EvaluateToken("party" .. tostring(index))
+            end
+
+            return bestToken
+        end
+    end
+
+    -- C_QuestLog namespace: wire native flat-global exports into the table so that
+    -- code using dot-notation (C_QuestLog.IsComplete etc.) works on WotLK.
+    local nativeQuestLogIsComplete = type(_G.C_QuestLog_IsComplete) == "function" and _G.C_QuestLog_IsComplete or nil
+    local nativeQuestLogGetQuestsOnMap = type(_G.C_QuestLog_GetQuestsOnMap) == "function" and _G.C_QuestLog_GetQuestsOnMap or nil
+    local nativeQuestLogGetQuestIDForWatchIndex = type(_G.C_QuestLog_GetQuestIDForQuestWatchIndex) == "function" and _G.C_QuestLog_GetQuestIDForQuestWatchIndex or nil
+
+    if type(questLogApi.IsComplete) ~= "function" then
+        questLogApi.IsComplete = function(questId)
+            if not nativeQuestLogIsComplete then
+                return nil
+            end
+            local ok, result = pcall(nativeQuestLogIsComplete, questId)
+            if not ok then
+                return nil
+            end
+            return result
+        end
+    end
+
+    if type(questLogApi.GetQuestsOnMap) ~= "function" then
+        questLogApi.GetQuestsOnMap = function(mapId)
+            if not nativeQuestLogGetQuestsOnMap then
+                return nil
+            end
+            local ok, result = pcall(nativeQuestLogGetQuestsOnMap, mapId)
+            if not ok then
+                return nil
+            end
+            return result
+        end
+    end
+
+    if type(questLogApi.GetQuestIDForQuestWatchIndex) ~= "function" then
+        questLogApi.GetQuestIDForQuestWatchIndex = function(watchIndex)
+            if not nativeQuestLogGetQuestIDForWatchIndex then
+                return nil
+            end
+            local ok, result = pcall(nativeQuestLogGetQuestIDForWatchIndex, watchIndex)
+            if not ok then
+                return nil
+            end
+            return result
+        end
+    end
+end
+
 local function ClearQuestPoiCache()
     state.questPoiCache = {}
     state.questPoiLocks = {}
@@ -935,7 +2154,7 @@ local function ClearQuestPoiCacheForQuestKeepLock(questId)
     end
 end
 
-local function SetQuestPoiLock(questId, x, y, mapId, source)
+local function SetQuestPoiLock(questId, x, y, mapId, source, playerX, playerY)
     questId = tonumber(questId)
     if not questId or questId <= 0 then
         return
@@ -957,10 +2176,12 @@ local function SetQuestPoiLock(questId, x, y, mapId, source)
         mapId = mapId,
         source = source,
         updatedAt = GetTime() or 0,
+        playerX = NormalizeCoord(playerX),
+        playerY = NormalizeCoord(playerY),
     }
 end
 
-local function GetQuestPoiLock(questId, mapId)
+local function GetQuestPoiLock(questId, mapId, playerX, playerY)
     questId = tonumber(questId)
     if not questId or questId <= 0 then
         return nil, nil, nil
@@ -973,6 +2194,25 @@ local function GetQuestPoiLock(questId, mapId)
 
     if mapId and lock.mapId and lock.mapId ~= mapId then
         return nil, nil, nil
+    end
+
+    local now = GetTime() or 0
+    if (now - (lock.updatedAt or 0)) > QUEST_POI_LOCK_MAX_AGE_SEC then
+        state.questPoiLocks[questId] = nil
+        return nil, nil, nil
+    end
+
+    if mapId
+        and lock.mapId == mapId
+        and type(lock.playerX) == "number"
+        and type(lock.playerY) == "number"
+        and type(playerX) == "number"
+        and type(playerY) == "number" then
+        local movedYards = ComputeDistanceYards(mapId, lock.playerX, lock.playerY, playerX, playerY)
+        if movedYards and movedYards > QUEST_POI_LOCK_MAX_DRIFT_YARDS then
+            state.questPoiLocks[questId] = nil
+            return nil, nil, nil
+        end
     end
 
     return lock.x, lock.y, lock.source
@@ -1172,7 +2412,7 @@ local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, ma
     end
 
     if not bypassLock then
-        local lockX, lockY = GetQuestPoiLock(questId, activeMapId)
+        local lockX, lockY = GetQuestPoiLock(questId, activeMapId, playerX, playerY)
         if lockX and lockY then
             return lockX, lockY, questId, "poi-lock"
         end
@@ -1181,7 +2421,7 @@ local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, ma
     if not bypassCache then
         local cachedX, cachedY, cachedCount = GetCachedQuestPoiCoords(questId, playerX, playerY, mapId)
         if cachedX and cachedY then
-            SetQuestPoiLock(questId, cachedX, cachedY, activeMapId, "cache")
+            SetQuestPoiLock(questId, cachedX, cachedY, activeMapId, "cache", playerX, playerY)
             if cachedCount and cachedCount > 1 then
                 return cachedX, cachedY, questId, "poi-cache-multi"
             end
@@ -1194,7 +2434,7 @@ local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, ma
         local qx, qy = ParseQuestPoiCoords(QuestPOIGetIconInfo(questLogIndex))
         if qx and qy then
             AddQuestPoiCachePoint(questId, qx, qy, activeMapId, "log-index")
-            SetQuestPoiLock(questId, qx, qy, activeMapId, "log-index")
+            SetQuestPoiLock(questId, qx, qy, activeMapId, "log-index", playerX, playerY)
             return qx, qy, questId, "log-index"
         end
 
@@ -1202,7 +2442,7 @@ local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, ma
             qx, qy = ParseQuestPoiCoords(QuestPOIGetIconInfo(questId))
             if qx and qy then
                 AddQuestPoiCachePoint(questId, qx, qy, activeMapId, "quest-id")
-                SetQuestPoiLock(questId, qx, qy, activeMapId, "quest-id")
+                SetQuestPoiLock(questId, qx, qy, activeMapId, "quest-id", playerX, playerY)
                 return qx, qy, questId, "quest-id"
             end
         end
@@ -1364,10 +2604,56 @@ local function SyncFollowStateFromShim()
     state.followedQuestTitle = "Quest " .. tostring(shimQuestId)
 end
 
+local function IsLikelyUserWaypointText(text)
+    if type(text) ~= "string" then
+        return false
+    end
+
+    local normalized = text:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    return normalized == "user waypoint" or normalized == "waypoint"
+end
+
+local function IsLikelyUserWaypoint(mapId, x, y, waypointText)
+    if IsLikelyUserWaypointText(waypointText) then
+        return true
+    end
+
+    if not mapId or not x or not y then
+        return false
+    end
+
+    if not ShimHasUserWaypoint() then
+        return false
+    end
+
+    local userX, userY = ShimGetUserWaypointPositionForMap(mapId)
+    if not userX or not userY then
+        return false
+    end
+
+    local dx = math_abs(x - userX)
+    local dy = math_abs(y - userY)
+    return dx <= 0.0015 and dy <= 0.0015
+end
+
+local function EnsureFollowedQuestPriorityOverUserWaypoint()
+    if not state.followedQuestId or state.followedQuestId <= 0 then
+        return false
+    end
+
+    if not ShimIsSuperTrackingUserWaypoint() then
+        return false
+    end
+
+    return ShimSetSuperTrackedUserWaypoint(false)
+end
+
 local function GetFollowedQuestTarget(playerX, playerY, mapId)
     if not addon.settings.navigation.followQuestFromTracker then
         return nil
     end
+
+    EnsureFollowedQuestPriorityOverUserWaypoint()
 
     ResolveSuperTrackShim()
 
@@ -1438,6 +2724,19 @@ local function GetFollowedQuestTarget(playerX, playerY, mapId)
         end
     end
 
+    if (not qx or not qy) and mapId and state.followedQuestId and state.followedQuestId > 0 then
+        local nextX, nextY, nextText = ShimGetNextWaypointForMap(mapId)
+        if nextX and nextY and not IsLikelyUserWaypoint(mapId, nextX, nextY, nextText) then
+            qx = nextX
+            qy = nextY
+            questId = state.followedQuestId
+            poiSource = "shim-next-waypoint"
+            if (not title or title == "") and nextText then
+                title = nextText
+            end
+        end
+    end
+
     if not qx or not qy then
         return nil
     end
@@ -1476,7 +2775,21 @@ local function GetFocusedQuestTarget(playerX, playerY, mapId)
         return nil
     end
 
-    local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
+    -- Focused quest should track the current UI POI immediately. Query live data
+    -- first, then fall back to cached/locked coordinates when API data is absent.
+    local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(
+        questLogIndex,
+        playerX,
+        playerY,
+        mapId,
+        {
+            bypassLock = true,
+            bypassCache = true,
+        }
+    )
+    if not qx or not qy then
+        qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
+    end
     if not qx or not qy then
         return nil
     end
@@ -1649,6 +2962,8 @@ local function TryAutoSuperTrackQuestTarget(target, mapId)
         return false
     end
 
+    ShimSetSuperTrackedUserWaypoint(false)
+
     if target.title then
         ShimSetSuperTrackedQuestName(target.title)
     end
@@ -1740,6 +3055,24 @@ local function EnsureFrame()
     end
     frame.Icon:SetPoint("CENTER", frame, "CENTER", 0, 0)
 
+    frame.IconShadow = frame:CreateTexture(nil, "BACKGROUND")
+    if TrySetTrackedIconAtlas(frame.IconShadow) then
+        frame.IconShadow:SetSize(frame.iconBaseWidth or ICON_WIDTH, frame.iconBaseHeight or ICON_HEIGHT)
+    else
+        frame.IconShadow:SetTexture(TEXTURE_ATLAS)
+        frame.IconShadow:SetTexCoord(unpack(ICON_TEXCOORD))
+        frame.IconShadow:SetSize(frame.iconBaseWidth or ICON_WIDTH, frame.iconBaseHeight or ICON_HEIGHT)
+    end
+    frame.IconShadow:SetPoint("CENTER", frame.Icon, "CENTER", 1, -1)
+    frame.IconShadow:SetVertexColor(0, 0, 0, 0.45)
+
+    frame.IconGlow = frame:CreateTexture(nil, "OVERLAY")
+    frame.IconGlow:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+    frame.IconGlow:SetBlendMode("ADD")
+    frame.IconGlow:SetSize((frame.iconBaseWidth or ICON_WIDTH) * 2.1, (frame.iconBaseHeight or ICON_HEIGHT) * 1.85)
+    frame.IconGlow:SetPoint("CENTER", frame.Icon, "CENTER", 0, 0)
+    frame.IconGlow:SetVertexColor(1.0, 0.88, 0.30, 0.16)
+
     frame.Arrow = frame:CreateTexture(nil, "OVERLAY")
     if TrySetTrackedArrowAtlas(frame.Arrow) then
         frame.arrowBaseWidth = frame.Arrow:GetWidth()
@@ -1786,7 +3119,15 @@ local function ClearMarker()
     frame:Hide()
     frame:SetAlpha(1)
     frame.Icon:SetSize(frame.iconBaseWidth or ICON_WIDTH, frame.iconBaseHeight or ICON_HEIGHT)
-    frame.Icon:SetVertexColor(1, 1, 1)
+    frame.Icon:SetVertexColor(1.0, 0.88, 0.32)
+    if frame.IconShadow then
+        frame.IconShadow:SetSize((frame.iconBaseWidth or ICON_WIDTH) + 2, (frame.iconBaseHeight or ICON_HEIGHT) + 2)
+        frame.IconShadow:SetVertexColor(0, 0, 0, 0.45)
+    end
+    if frame.IconGlow then
+        frame.IconGlow:SetSize((frame.iconBaseWidth or ICON_WIDTH) * 2.1, (frame.iconBaseHeight or ICON_HEIGHT) * 1.85)
+        frame.IconGlow:SetVertexColor(1.0, 0.88, 0.32, 0.16)
+    end
     frame.Arrow:SetSize(frame.arrowBaseWidth or ARROW_WIDTH, frame.arrowBaseHeight or ARROW_HEIGHT)
     frame.Arrow:SetVertexColor(1, 1, 1)
     frame.Arrow:ClearAllPoints()
@@ -1850,12 +3191,9 @@ local function GetTargetWaypointText(target, mapId)
 
     local text = nil
 
-    if type(GetNextWaypointForMap) == "function" and mapId then
-        local ok, wx, wy, waypointText = pcall(GetNextWaypointForMap, mapId)
-        wx = NormalizeCoord(wx)
-        wy = NormalizeCoord(wy)
-
-        if ok and type(waypointText) == "string" and waypointText ~= "" then
+    if mapId then
+        local wx, wy, waypointText = ShimGetNextWaypointForMap(mapId)
+        if waypointText then
             if target.x and target.y and wx and wy then
                 local dx = math_abs(target.x - wx)
                 local dy = math_abs(target.y - wy)
@@ -1922,10 +3260,40 @@ local function UpdateMarker()
     local targetKey = BuildTargetKey(target)
     UpdateTravelMetrics(distanceYards, targetKey)
 
+    -- Keep native supertrack state aligned with the currently focused quest POI
+    -- so native navigation frame projection can resolve active target geometry.
+    if target and type(target.x) == "number" and type(target.y) == "number" and tonumber(mapId) then
+        local nativeSyncKey = string.format(
+            "%d:%.5f:%.5f:%s",
+            tonumber(mapId) or 0,
+            tonumber(target.x) or 0,
+            tonumber(target.y) or 0,
+            tostring(target.questId or "")
+        )
+
+        if nativeSyncKey ~= state.lastNativeNavigationSyncKey then
+            state.lastNativeNavigationSyncKey = nativeSyncKey
+
+            local qid = tonumber(target.questId)
+            if qid and qid > 0 and type(state.nativeSetSuperTrackedQuestID) == "function" then
+                pcall(state.nativeSetSuperTrackedQuestID, qid)
+            end
+
+            if type(target.title) == "string" and target.title ~= ""
+                and type(state.nativeSetSuperTrackedQuestName) == "function" then
+                pcall(state.nativeSetSuperTrackedQuestName, target.title)
+            end
+
+            if type(state.nativeSetSuperTrackedQuestWaypointForMap) == "function" then
+                pcall(state.nativeSetSuperTrackedQuestWaypointForMap, tonumber(mapId), target.x, target.y)
+            end
+        end
+    end
+
     MaybeClearManualOnArrival(target, distanceYards)
 
     local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
-    local direction, relative, rightYards, forwardYards = ComputeRelativeHeading(
+    local direction, relative = ComputeRelativeHeading(
         facing,
         playerX,
         playerY,
@@ -1945,27 +3313,36 @@ local function UpdateMarker()
     state.lastDirection = direction
     state.lastRelative = relative
 
+    if type(state.nativeNavigationSetPlayerState) == "function" then
+        pcall(state.nativeNavigationSetPlayerState, tonumber(mapId), tonumber(playerX), tonumber(playerY), tonumber(facing or 0))
+    end
+
     local arrivalDistance = settings.arrivalDistanceYards or 8
     local arrived = distanceYards and distanceYards <= arrivalDistance
     local now = GetTime() or 0
-    local frontArc = math_rad(settings.frontArcDegrees or 40)
-    local inFront = math_abs(relative) <= frontArc
 
     local iconBaseWidth = frame.iconBaseWidth or ICON_WIDTH
     local iconBaseHeight = frame.iconBaseHeight or ICON_HEIGHT
     local arrowBaseWidth = frame.arrowBaseWidth or ARROW_WIDTH
     local arrowBaseHeight = frame.arrowBaseHeight or ARROW_HEIGHT
 
-    frame.Icon:SetSize(iconBaseWidth, iconBaseHeight)
-    frame.Icon:SetVertexColor(1, 1, 1)
-    frame.Arrow:SetSize(arrowBaseWidth, arrowBaseHeight)
-    frame.Arrow:SetVertexColor(1, 1, 1)
+    local iconR, iconG, iconB = 1.0, 0.88, 0.32
+    if settings.colorizeArrow and not arrived then
+        local headingR, headingG, headingB = GetHeadingColor(relative)
+        iconR = (iconR * 0.62) + (headingR * 0.38)
+        iconG = (iconG * 0.62) + (headingG * 0.38)
+        iconB = (iconB * 0.62) + (headingB * 0.38)
+    end
+
+    local iconWidth = iconBaseWidth * 1.10
+    local iconHeight = iconBaseHeight * 1.10
 
     if arrived then
-        frame.Icon:SetVertexColor(0.15, 1.0, 0.25)
+        iconR, iconG, iconB = 0.20, 1.0, 0.35
         if settings.pulseOnArrival then
             local pulse = 1 + (0.12 * math_abs(math_sin(now * 7.5)))
-            frame.Icon:SetSize(iconBaseWidth * pulse, iconBaseHeight * pulse)
+            iconWidth = iconWidth * pulse
+            iconHeight = iconHeight * pulse
         end
         if settings.playArrivalSound
             and type(PlaySound) == "function"
@@ -1977,6 +3354,31 @@ local function UpdateMarker()
         state.arrivalAlertedAt = nil
     end
 
+    frame.Icon:SetSize(iconWidth, iconHeight)
+    frame.Icon:SetVertexColor(iconR, iconG, iconB)
+    frame.Arrow:SetSize(arrowBaseWidth, arrowBaseHeight)
+    frame.Arrow:SetVertexColor(1, 1, 1)
+
+    if frame.IconShadow then
+        frame.IconShadow:SetSize(iconWidth + 2, iconHeight + 2)
+        frame.IconShadow:SetVertexColor(0, 0, 0, arrived and 0.30 or 0.42)
+    end
+
+    if frame.IconGlow then
+        local glowAlpha
+        if arrived then
+            glowAlpha = 0.30
+            if settings.pulseOnArrival then
+                glowAlpha = glowAlpha + (0.08 * math_abs(math_sin(now * 7.5)))
+            end
+        else
+            glowAlpha = 0.18
+        end
+
+        frame.IconGlow:SetSize(iconWidth * 2.05, iconHeight * 1.85)
+        frame.IconGlow:SetVertexColor(iconR, iconG, iconB, glowAlpha)
+    end
+
     local projectionScale = settings.distanceScreenScale or 0.45
     if projectionScale < 0.05 then
         projectionScale = 0.05
@@ -1984,10 +3386,8 @@ local function UpdateMarker()
 
     local configuredYOffset = settings.inFrontYOffset
     local anchorYOffset
-    if configuredYOffset == nil then
-        anchorYOffset = -120
-    elseif configuredYOffset == 130 then
-        -- Migrate legacy default so the marker does not stick to top-of-screen.
+    if configuredYOffset == nil or configuredYOffset == -120 or configuredYOffset == 130 then
+        -- Migrate legacy defaults so the marker follows POI-relative placement.
         anchorYOffset = 0
     else
         anchorYOffset = configuredYOffset
@@ -2001,33 +3401,127 @@ local function UpdateMarker()
     local ellipseMajorAxis, ellipseMinorAxis = GetBlizzlikeEllipseRadii(settings)
     local projectedX
     local projectedY
-    local clampedToEllipse
+    local clampedToEllipse = false
+    local usingNativeProjection = false
+    local nativeNavState = nil
+    local fallbackRadius = nil
 
-    if inFront then
-        -- Keep the icon on a stable "horizon" row for forward headings to avoid orbiting.
-        local normalizedHeading = 0
-        if frontArc > 0 then
-            normalizedHeading = relative / frontArc
-        end
-        if normalizedHeading < -1 then
-            normalizedHeading = -1
-        elseif normalizedHeading > 1 then
-            normalizedHeading = 1
-        end
+    -- Native-first path (Blizzard-like): when a native projection export exists,
+    -- use it as authoritative frame position/state and only fall back to Lua math.
+    local getNativeNavigationFrameState = nil
+    if type(state.nativeNavigationGetFrameState) == "function" then
+        getNativeNavigationFrameState = state.nativeNavigationGetFrameState
+    elseif type(_G.GetNavigationFrameState) == "function" then
+        getNativeNavigationFrameState = _G.GetNavigationFrameState
+    elseif type(_G.C_Navigation_GetFrameState) == "function" then
+        getNativeNavigationFrameState = _G.C_Navigation_GetFrameState
+    end
 
-        local horizontalRadius = ellipseMajorAxis * math_max(0.25, math_min(1.0, projectionScale * 2.0))
-        projectedX = normalizedHeading * horizontalRadius
-        projectedY = anchorYOffset - (ellipseMinorAxis * 0.6)
-        clampedToEllipse = false
-    else
-        -- For off-screen directions, project by heading and clamp to the nav ellipse.
-        local rawX = -math_sin(relative) * ellipseMajorAxis * 2
-        local rawY = (-math_cos(relative) * ellipseMinorAxis * 2) + anchorYOffset
-        projectedX, projectedY, clampedToEllipse = ClampPointToEllipse(rawX, rawY, ellipseMajorAxis, ellipseMinorAxis)
-        if not clampedToEllipse then
-            clampedToEllipse = true
+    local rawX
+    local rawY
+    local useNativeProjection = getNativeNavigationFrameState
+
+    if useNativeProjection then
+        local ok, nativeX, nativeY, stateValue, clampedValue = pcall(getNativeNavigationFrameState)
+        if ok and type(nativeX) == "number" and type(nativeY) == "number" then
+            projectedX = nativeX
+            projectedY = nativeY
+            rawX = nativeX
+            rawY = nativeY
+            nativeNavState = tonumber(stateValue)
+
+            -- Guard against inconsistent native clamped flags by deriving clamp
+            -- from current UI ellipse geometry and reconciling nav state to it.
+            local clampedX, clampedY, geometryClamped = ClampPointToEllipse(nativeX, nativeY, ellipseMajorAxis, ellipseMinorAxis)
+            projectedX = clampedX
+            projectedY = clampedY
+            clampedToEllipse = geometryClamped == true
+
+            if nativeNavState == NAV_STATE_IN_RANGE and clampedToEllipse then
+                nativeNavState = NAV_STATE_OCCLUDED
+            elseif nativeNavState == NAV_STATE_OCCLUDED and not clampedToEllipse then
+                nativeNavState = NAV_STATE_IN_RANGE
+            end
+
+            if nativeNavState == nil and clampedValue ~= nil then
+                nativeNavState = (clampedToEllipse and NAV_STATE_OCCLUDED or NAV_STATE_IN_RANGE)
+            end
+
+            usingNativeProjection = true
+        elseif ok then
+            local nowStamp = GetTime() or 0
+            if (nowStamp - (state.lastNativeProjectionNilAt or 0)) > 2.0 then
+                state.lastNativeProjectionNilAt = nowStamp
+                DebugNavigationProjection("native-frame-state unavailable (function returned nil); falling back to Lua projection", true)
+            end
         end
     end
+
+    if not usingNativeProjection then
+        if type(dxYards) ~= "number" or type(dyYards) ~= "number" then
+            DebugNavigationProjection("reject: missing map delta for target " .. tostring(targetKey), true)
+            ClearMarker()
+            return
+        end
+
+        -- POI-locked fallback: use POI deltas for distance, then rotate by
+        -- facing-relative heading so screen placement follows world direction.
+        fallbackRadius = math_sqrt((dxYards * dxYards) + (dyYards * dyYards)) * projectionScale
+        rawX = math_sin(relative) * fallbackRadius
+        rawY = (math_cos(relative) * fallbackRadius) + anchorYOffset
+
+        projectedX, projectedY, clampedToEllipse = ClampPointToEllipse(rawX, rawY, ellipseMajorAxis, ellipseMinorAxis)
+
+        -- Keep markers edge-clamped when the target is outside the forward camera
+        -- hemisphere so outside-view targets always show as edge indicators.
+        if not clampedToEllipse and math_cos(relative or 0) <= 0 then
+            local majorSquared = ellipseMajorAxis * ellipseMajorAxis
+            local minorSquared = ellipseMinorAxis * ellipseMinorAxis
+            local denominator = math_sqrt((majorSquared * rawY * rawY) + (minorSquared * rawX * rawX))
+            if denominator and denominator > 0 then
+                local ratio = (ellipseMajorAxis * ellipseMinorAxis) / denominator
+                projectedX = rawX * ratio
+                projectedY = rawY * ratio
+                clampedToEllipse = true
+            end
+        end
+    end
+
+    local projectionDebugKey = string.format(
+        "%s:%d:%d:%s",
+        tostring(targetKey or "n/a"),
+        math_floor((projectedX or 0) / 8),
+        math_floor((projectedY or 0) / 8),
+        clampedToEllipse and "1" or "0"
+    )
+
+    local dxDebug = tonumber(dxYards) or 0
+    local dyDebug = tonumber(dyYards) or 0
+    local projectionState = nativeNavState
+    if projectionState == nil then
+        projectionState = clampedToEllipse and NAV_STATE_OCCLUDED or NAV_STATE_IN_RANGE
+    end
+
+    DebugNavigationProjection(
+        string.format(
+            "target=%s src=%s dist=%s dx=%.2f dy=%.2f rel=%.1f radius=%s rawX=%.2f rawY=%.2f px=%.2f py=%.2f clamp=%s state=%s",
+            tostring(targetKey or "n/a"),
+            tostring(usingNativeProjection and "native-frame" or (target.poiSource or target.source or "n/a")),
+            distanceYards and string.format("%.1f", distanceYards) or "nil",
+            dxDebug,
+            dyDebug,
+            math_deg(relative or 0),
+            fallbackRadius and string.format("%.2f", fallbackRadius) or "n/a",
+            rawX or 0,
+            rawY or 0,
+            projectedX or 0,
+            projectedY or 0,
+            tostring(clampedToEllipse == true),
+            GetNavStateName(projectionState)
+        ),
+        false,
+        projectionDebugKey
+    )
 
     local projectedRadius = math_sqrt((projectedX * projectedX) + (projectedY * projectedY))
 
@@ -2035,19 +3529,25 @@ local function UpdateMarker()
     state.lastProjectedRadius = projectedRadius
     state.lastClamped = clampedToEllipse
 
+    if frame.IconGlow and clampedToEllipse and not arrived then
+        frame.IconGlow:SetVertexColor(iconR, iconG, iconB, 0.10)
+    end
+
     if state.lastVisualTargetKey ~= targetKey then
         state.lastVisualTargetKey = targetKey
         state.transparentUntil = now + 0.2
         frame:SetAlpha(0)
     end
 
-    local navState
-    if not distanceYards then
-        navState = NAV_STATE_INVALID
-    elseif clampedToEllipse then
-        navState = NAV_STATE_OCCLUDED
-    else
-        navState = NAV_STATE_IN_RANGE
+    local navState = nativeNavState
+    if navState == nil then
+        if not distanceYards then
+            navState = NAV_STATE_INVALID
+        elseif clampedToEllipse then
+            navState = NAV_STATE_OCCLUDED
+        else
+            navState = NAV_STATE_IN_RANGE
+        end
     end
 
     local alpha = GetEmulatedNavigationAlpha(frame, navState, clampedToEllipse, now)
@@ -2167,6 +3667,16 @@ function Navigation:SetManualWaypoint(x, y, mapId, label)
     manual.y = y
     manual.label = (label and label ~= "") and tostring(label) or "Waypoint"
 
+    -- Keep the extension waypoint cache in sync so compatibility shims stay coherent.
+    if ShimSetUserWaypoint(mapId, x, y) and ShimHasUserWaypoint() then
+        local syncedX, syncedY = ShimGetUserWaypointPositionForMap(mapId)
+        if syncedX and syncedY then
+            manual.x = syncedX
+            manual.y = syncedY
+        end
+    end
+    ShimSetSuperTrackedUserWaypoint(false)
+
     addon:SaveSettings()
     state.dirty = true
 
@@ -2185,6 +3695,8 @@ function Navigation:ClearManualWaypoint()
     end
 
     manual.active = false
+    ShimClearUserWaypoint()
+    ShimSetSuperTrackedUserWaypoint(false)
     addon:SaveSettings()
     state.dirty = true
 end
@@ -2287,6 +3799,8 @@ local function GetWorldMapObjectiveQuestLogIndex()
 end
 
 local function RefreshQuestTrackingVisuals()
+    MaybeReloadMapForNavigation(false)
+
     if type(QuestLog_Update) == "function" then
         pcall(QuestLog_Update)
     end
@@ -2315,6 +3829,38 @@ local function RefreshQuestTrackingVisuals()
             pcall(QuestMapUpdateAllQuests)
         end
     end
+end
+
+local function RequestQuestTrackingVisualRefresh()
+    local now = GetTime() or 0
+    if (now - (state.lastQuestVisualRefreshAt or 0)) < 0.03 then
+        return
+    end
+
+    state.lastQuestVisualRefreshAt = now
+    RefreshQuestTrackingVisuals()
+end
+
+local function RequestQuestTrackingVisualRefreshSettled(delay)
+    if state.questVisualRefreshScheduled then
+        return
+    end
+
+    local waitTime = tonumber(delay) or 0.05
+    if waitTime < 0.01 then
+        waitTime = 0.01
+    end
+
+    if addon and addon.DelayedCall then
+        state.questVisualRefreshScheduled = true
+        addon:DelayedCall(waitTime, function()
+            state.questVisualRefreshScheduled = false
+            RequestQuestTrackingVisualRefresh()
+        end)
+        return
+    end
+
+    RequestQuestTrackingVisualRefresh()
 end
 
 function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
@@ -2346,6 +3892,7 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
 
     if questId and questId > 0 then
         ShimSetSuperTrackedQuestID(questId)
+        ShimSetSuperTrackedUserWaypoint(false)
         ShimSetSuperTrackedQuestName(state.followedQuestTitle)
         if hasPoiOnCurrentMap and mapId and qx and qy then
             ShimSetSuperTrackedQuestWaypointForMap(mapId, qx, qy)
@@ -2375,12 +3922,8 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
         end
     end
 
-    RefreshQuestTrackingVisuals()
-    if addon and addon.DelayedCall then
-        addon:DelayedCall(0, RefreshQuestTrackingVisuals)
-        addon:DelayedCall(0.05, RefreshQuestTrackingVisuals)
-        addon:DelayedCall(0.15, RefreshQuestTrackingVisuals)
-    end
+    RequestQuestTrackingVisualRefresh()
+    RequestQuestTrackingVisualRefreshSettled(0.05)
 
     if not hasPoiOnCurrentMap then
         MaybeSyncCurrentZoneMap(true)
@@ -2476,10 +4019,21 @@ local function ScheduleFollowFromQuestLogSelection()
     end
 end
 
-local function PrimeQuestPoiButtonCacheFromVisibleButtons()
+local function PrimeQuestPoiButtonCacheFromVisibleButtons(force)
     if not _G then
         return
     end
+
+    local now = GetTime() or 0
+    if not force then
+        local hasCache = state.questPoiButtons and next(state.questPoiButtons) ~= nil
+        local minInterval = hasCache and 1.0 or 0.15
+        if (now - (state.lastPoiButtonGlobalScanAt or 0)) < minInterval then
+            return
+        end
+    end
+
+    state.lastPoiButtonGlobalScanAt = now
 
     if not state.questPoiButtons then
         state.questPoiButtons = {}
@@ -2810,7 +4364,7 @@ local function ShowQuestContextMenu(questLogIndex, frame)
                 else
                     Navigation:SetFollowQuestByLogIndex(questLogIndex, true)
                 end
-                RefreshQuestTrackingVisuals()
+                RequestQuestTrackingVisualRefresh()
                 state.dirty = true
             end,
         },
@@ -2842,7 +4396,7 @@ local function ShowQuestContextMenu(questLogIndex, frame)
                 if canStopTracking then
                     pcall(RemoveQuestWatch, questLogIndex)
                     -- Keep follow/supertrack state independent from watch-list toggles.
-                    RefreshQuestTrackingVisuals()
+                    RequestQuestTrackingVisualRefresh()
                     state.dirty = true
                 end
             end,
@@ -2864,7 +4418,7 @@ local function ShowQuestContextMenu(questLogIndex, frame)
                     if questId and state.followedQuestId == questId then
                         Navigation:ClearFollowQuest(true)
                     end
-                    RefreshQuestTrackingVisuals()
+                    RequestQuestTrackingVisualRefresh()
                     state.dirty = true
                 end
             end,
@@ -3293,6 +4847,7 @@ function Navigation.OnInitialize()
 
     EnsureQuestPoiCompatibilityShim()
     EnsureQuestWatchCompatibilityShim()
+    EnsureRetailNavigationApiShims()
     ResolveSuperTrackShim()
     SyncFollowStateFromShim()
 
@@ -3310,6 +4865,7 @@ function Navigation.OnEnable()
 
     EnsureQuestPoiCompatibilityShim()
     EnsureQuestWatchCompatibilityShim()
+    EnsureRetailNavigationApiShims()
     ResolveSuperTrackShim()
     SyncFollowStateFromShim()
 
@@ -3365,10 +4921,8 @@ function Navigation.OnEnable()
             if event == "QUEST_LOG_UPDATE"
                 or event == "QUEST_WATCH_UPDATE"
                 or event == "QUEST_POI_UPDATE" then
-                RefreshQuestTrackingVisuals()
-                if addon and addon.DelayedCall then
-                    addon:DelayedCall(0.05, RefreshQuestTrackingVisuals)
-                end
+                RequestQuestTrackingVisualRefresh()
+                RequestQuestTrackingVisualRefreshSettled(0.05)
             end
 
             state.dirty = true
@@ -3465,6 +5019,17 @@ function Navigation.CreateSettings(parent)
     followTrackerCb:SetChecked(settings.followQuestFromTracker)
     followTrackerCb:SetScript("OnClick", function(self)
         addon:SetSetting("navigation.followQuestFromTracker", self:GetChecked())
+        state.dirty = true
+    end)
+    yOffset = yOffset - 25
+
+    local reloadMapCb = addon:CreateCheckbox(parent)
+    reloadMapCb:SetPoint("TOPLEFT", 16, yOffset)
+    reloadMapCb.Text:SetText("Use ReloadMap() for navigation refreshes (opt-in, throttled)")
+    reloadMapCb:SetChecked(settings.enableReloadMapRefresh)
+    reloadMapCb:SetScript("OnClick", function(self)
+        addon:SetSetting("navigation.enableReloadMapRefresh", self:GetChecked())
+        state.lastReloadMapAt = 0
         state.dirty = true
     end)
     yOffset = yOffset - 25
@@ -3630,8 +5195,8 @@ function Navigation.CreateSettings(parent)
     frontOffsetSlider:SetWidth(220)
     frontOffsetSlider:SetMinMaxValues(-260, 120)
     frontOffsetSlider:SetValueStep(2)
-    frontOffsetSlider:SetValue(settings.inFrontYOffset or -120)
-    frontOffsetSlider.Text:SetText("Screen Anchor Y Offset: " .. tostring(settings.inFrontYOffset or -120))
+    frontOffsetSlider:SetValue(settings.inFrontYOffset or 0)
+    frontOffsetSlider.Text:SetText("Screen Anchor Y Offset: " .. tostring(settings.inFrontYOffset or 0))
     frontOffsetSlider.Low:SetText("-260")
     frontOffsetSlider.High:SetText("120")
     frontOffsetSlider:SetScript("OnValueChanged", function(self, value)

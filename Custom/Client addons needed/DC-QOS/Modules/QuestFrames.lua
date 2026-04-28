@@ -49,10 +49,6 @@ local QUEST_ITEM_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questitemhighlight"
 local QUEST_ITEM_NAMEFRAME_TEXTURE = ASSET_ROOT .. "ui-questitemnameframe"
 local QUEST_LOG_TITLE_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questlogtitlehighlight"
 local QUEST_TITLE_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questtitlehighlight"
-local QUEST_TRACK_BOX_TEXTURE = "Interface\\Buttons\\UI-CheckBox-Up"
-local QUEST_TRACK_CHECK_TEXTURE = "Interface\\Buttons\\UI-CheckBox-Check"
-local QUEST_TRACK_PULSE_TEXTURE = "Interface\\Buttons\\UI-CheckBox-Highlight"
-local QUEST_POI_GLOW_TEXTURE = "Interface\\Buttons\\UI-CheckBox-Highlight"
 
 local HEADER_LAYOUT = {
     QuestFrame = { left = 80, right = -54, top = -18 },
@@ -407,19 +403,9 @@ local function FindQuestLogIndexByQuestId(questId)
 end
 
 local function GetSuperTrackedQuestId()
-    local getter = _G.GetSuperTrackedQuestID or _G.C_SuperTrack_GetSuperTrackedQuestID
-    if type(getter) ~= "function" then
-        return nil
-    end
-
-    local ok, questId = pcall(getter)
-    if not ok then
-        return nil
-    end
-
-    questId = tonumber(questId)
-    if questId and questId > 0 then
-        return questId
+    local markers = addon and addon.QuestTrackerMarkers or nil
+    if markers and type(markers.GetSuperTrackedQuestId) == "function" then
+        return markers.GetSuperTrackedQuestId()
     end
 
     return nil
@@ -2370,289 +2356,53 @@ local function UpdateQuestRowButton(button)
 end
 
 local function EnsureWorldMapQuestRowChrome(button)
-    if not button then
+    local markers = addon and addon.QuestTrackerMarkers or nil
+    if not markers or type(markers.EnsureWorldMapQuestRowChrome) ~= "function" then
         return nil
     end
 
-    if button.__dcqosWorldQuestRowChrome then
-        return button.__dcqosWorldQuestRowChrome
-    end
-
-    local chrome = CreateFrame("Frame", nil, button)
-    chrome:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -1)
-    chrome:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4, 1)
-    chrome:SetFrameStrata(button:GetFrameStrata())
-    chrome:SetFrameLevel(math.max((button.GetFrameLevel and button:GetFrameLevel() or 1) - 1, 0))
-    chrome:EnableMouse(false)
-    chrome:SetBackdrop({
-        bgFile = DC_ADDON_BACKGROUND_TEXTURE,
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        tile = true,
-        tileSize = 32,
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    return markers.EnsureWorldMapQuestRowChrome(button, {
+        getTitleFontString = GetButtonFontString,
+        setHoverQuestId = SetWorldMapHoverQuestId,
+        getHoverQuestId = function()
+            return state.worldMapHoverQuestId
+        end,
+        queueRefresh = QueueRefresh,
     })
-    chrome:SetBackdropColor(0.05, 0.04, 0.02, 0.58)
-    chrome:SetBackdropBorderColor(0.28, 0.20, 0.10, 0.22)
-
-    local tint = chrome:CreateTexture(nil, "BACKGROUND")
-    tint:SetAllPoints(chrome)
-    tint:SetTexture("Interface\\Buttons\\WHITE8x8")
-    tint:SetVertexColor(0.50, 0.32, 0.06, 0.08)
-    chrome.tint = tint
-
-    local glow = chrome:CreateTexture(nil, "ARTWORK")
-    glow:SetAllPoints(chrome)
-    glow:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight2")
-    glow:SetBlendMode("ADD")
-    glow:SetAlpha(0)
-    chrome.glow = glow
-
-    local accent = chrome:CreateTexture(nil, "ARTWORK")
-    accent:SetPoint("TOPLEFT", chrome, "TOPLEFT", 0, 0)
-    accent:SetPoint("BOTTOMLEFT", chrome, "BOTTOMLEFT", 0, 0)
-    accent:SetWidth(2)
-    accent:SetTexture("Interface\\Buttons\\WHITE8x8")
-    accent:SetVertexColor(0.94, 0.76, 0.24, 1)
-    accent:SetAlpha(0.12)
-    chrome.accent = accent
-
-    local titleFont = GetButtonFontString(button)
-
-    local trackBox = button:CreateTexture(nil, "ARTWORK")
-    trackBox:SetSize(18, 18)
-    trackBox:SetTexture(QUEST_TRACK_BOX_TEXTURE)
-    trackBox:SetTexCoord(0.05, 0.95, 0.05, 0.95)
-    if titleFont then
-        trackBox:SetPoint("RIGHT", titleFont, "LEFT", -8, 0)
-    else
-        trackBox:SetPoint("LEFT", button, "LEFT", 12, 0)
-    end
-    chrome.trackBox = trackBox
-
-    local trackPulse = button:CreateTexture(nil, "OVERLAY")
-    trackPulse:SetSize(18, 18)
-    trackPulse:SetPoint("CENTER", trackBox, "CENTER", 0, 0)
-    trackPulse:SetTexture(QUEST_TRACK_PULSE_TEXTURE)
-    trackPulse:SetBlendMode("ADD")
-    trackPulse:SetAlpha(0)
-    chrome.trackPulse = trackPulse
-
-    local trackCheck = button:CreateTexture(nil, "OVERLAY")
-    trackCheck:SetSize(15, 15)
-    trackCheck:SetPoint("CENTER", trackBox, "CENTER", 0, 0)
-    trackCheck:SetTexture(QUEST_TRACK_CHECK_TEXTURE)
-    trackCheck:SetAlpha(0)
-    chrome.trackCheck = trackCheck
-
-    local completeDot = button:CreateTexture(nil, "OVERLAY")
-    completeDot:SetSize(6, 6)
-    completeDot:SetPoint("CENTER", trackBox, "CENTER", 0, 0)
-    completeDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    completeDot:SetVertexColor(0.58, 0.84, 0.42, 1)
-    completeDot:SetAlpha(0)
-    chrome.completeDot = completeDot
-
-    if type(button.HookScript) == "function" then
-        button:HookScript("OnEnter", function(self)
-            SetWorldMapHoverQuestId(self.questId or self.questID)
-        end)
-        button:HookScript("OnLeave", function(self)
-            local questId = tonumber(self.questId or self.questID)
-            if not questId or state.worldMapHoverQuestId == questId then
-                SetWorldMapHoverQuestId(nil)
-            end
-        end)
-        button:HookScript("OnShow", function()
-            QueueRefresh(0)
-        end)
-        button:HookScript("OnHide", function(self)
-            local questId = tonumber(self.questId or self.questID)
-            if questId and state.worldMapHoverQuestId == questId then
-                SetWorldMapHoverQuestId(nil)
-            end
-        end)
-    end
-
-    button.__dcqosWorldQuestRowChrome = chrome
-    return chrome
 end
 
 local function EnsureWorldMapQuestPoiChrome(button)
-    local poiIcon = button and button.poiIcon or nil
-    if not poiIcon then
+    local markers = addon and addon.QuestTrackerMarkers or nil
+    if not markers or type(markers.EnsureWorldMapQuestPoiChrome) ~= "function" then
         return nil
     end
 
-    if button.__dcqosWorldQuestPoiChrome then
-        return button.__dcqosWorldQuestPoiChrome
-    end
-
-    local parent = poiIcon.GetParent and poiIcon:GetParent() or button
-    local chrome = CreateFrame("Frame", nil, parent)
-    chrome:SetFrameStrata((poiIcon.GetFrameStrata and poiIcon:GetFrameStrata()) or button:GetFrameStrata())
-    chrome:SetFrameLevel(math.max((poiIcon.GetFrameLevel and poiIcon:GetFrameLevel() or (button.GetFrameLevel and button:GetFrameLevel() or 1)) - 1, 0))
-    chrome:EnableMouse(false)
-    chrome:SetBackdrop({
-        bgFile = DC_ADDON_BACKGROUND_TEXTURE,
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
+    return markers.EnsureWorldMapQuestPoiChrome(button, {
+        setHoverQuestId = SetWorldMapHoverQuestId,
+        getHoverQuestId = function()
+            return state.worldMapHoverQuestId
+        end,
     })
-    chrome:SetBackdropColor(0.05, 0.04, 0.02, 0.76)
-    chrome:SetBackdropBorderColor(0.28, 0.20, 0.10, 0.36)
-
-    local glow = chrome:CreateTexture(nil, "ARTWORK")
-    glow:SetAllPoints(chrome)
-    glow:SetTexture(QUEST_POI_GLOW_TEXTURE)
-    glow:SetBlendMode("ADD")
-    glow:SetAlpha(0)
-    chrome.glow = glow
-
-    local pulse = chrome:CreateTexture(nil, "OVERLAY")
-    pulse:SetAllPoints(chrome)
-    pulse:SetTexture(QUEST_POI_GLOW_TEXTURE)
-    pulse:SetBlendMode("ADD")
-    pulse:SetAlpha(0)
-    chrome.pulse = pulse
-
-    local badge = chrome:CreateTexture(nil, "OVERLAY")
-    badge:SetSize(10, 10)
-    badge:SetPoint("BOTTOMRIGHT", chrome, "BOTTOMRIGHT", 2, -2)
-    badge:SetTexture(QUEST_TRACK_CHECK_TEXTURE)
-    badge:SetAlpha(0)
-    chrome.badge = badge
-
-    local completeDot = chrome:CreateTexture(nil, "OVERLAY")
-    completeDot:SetSize(6, 6)
-    completeDot:SetPoint("CENTER", chrome, "CENTER", 0, 0)
-    completeDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-    completeDot:SetVertexColor(0.58, 0.84, 0.42, 1)
-    completeDot:SetAlpha(0)
-    chrome.completeDot = completeDot
-
-    if not button.__dcqosWorldQuestPoiHooks and type(poiIcon.HookScript) == "function" then
-        button.__dcqosWorldQuestPoiHooks = true
-        poiIcon:HookScript("OnEnter", function()
-            SetWorldMapHoverQuestId(button.questId or button.questID)
-        end)
-        poiIcon:HookScript("OnLeave", function()
-            local questId = tonumber(button.questId or button.questID)
-            if not questId or state.worldMapHoverQuestId == questId then
-                SetWorldMapHoverQuestId(nil)
-            end
-        end)
-        poiIcon:HookScript("OnHide", function()
-            local questId = tonumber(button.questId or button.questID)
-            if questId and state.worldMapHoverQuestId == questId then
-                SetWorldMapHoverQuestId(nil)
-            end
-        end)
-    end
-
-    button.__dcqosWorldQuestPoiChrome = chrome
-    return chrome
 end
 
 local function UpdateWorldMapQuestPoi(button, isTracked, isSelected, isWatched, isComplete, isHover)
-    local poiIcon = button and button.poiIcon or nil
-    if not poiIcon then
+    local markers = addon and addon.QuestTrackerMarkers or nil
+    if not markers or type(markers.UpdateWorldMapQuestPoi) ~= "function" then
         return
     end
 
-    local chrome = EnsureWorldMapQuestPoiChrome(button)
-    if not chrome then
-        return
-    end
-
-    local shown = poiIcon.IsShown == nil or poiIcon:IsShown()
-    if not shown then
-        chrome:Hide()
-        return
-    end
-
-    local size = math.max((poiIcon.GetWidth and poiIcon:GetWidth() or 14), (poiIcon.GetHeight and poiIcon:GetHeight() or 14)) + 10
-    chrome:ClearAllPoints()
-    chrome:SetPoint("CENTER", poiIcon, "CENTER", 0, 0)
-    chrome:SetWidth(size)
-    chrome:SetHeight(size)
-    chrome:Show()
-
-    local iconRegion = ResolveTextureRegion(poiIcon) or (type(poiIcon.GetNormalTexture) == "function" and poiIcon:GetNormalTexture() or nil)
-    local borderR, borderG, borderB, borderA = 0.28, 0.20, 0.10, 0.36
-    local bgAlpha = 0.76
-    local glowAlpha = 0.06
-    local pulseAlpha = 0
-    local badgeAlpha = 0
-    local dotAlpha = 0
-    local iconR, iconG, iconB = 0.88, 0.78, 0.52
-    local iconScale = 1.0
-
-    if isTracked then
-        borderR, borderG, borderB, borderA = 0.95, 0.78, 0.26, 0.84
-        bgAlpha = 0.84
-        glowAlpha = 0.52
-        pulseAlpha = 0.82
-        badgeAlpha = 1
-        iconR, iconG, iconB = 1.0, 0.88, 0.36
-        iconScale = 1.16
-    elseif isSelected then
-        borderR, borderG, borderB, borderA = 0.90, 0.72, 0.28, 0.68
-        bgAlpha = 0.82
-        glowAlpha = 0.28
-        pulseAlpha = 0.32
-        badgeAlpha = isWatched and 0.88 or 0
-        iconR, iconG, iconB = 0.98, 0.84, 0.42
-        iconScale = 1.10
-    elseif isWatched then
-        borderR, borderG, borderB, borderA = 0.74, 0.62, 0.32, 0.52
-        bgAlpha = 0.80
-        glowAlpha = 0.20
-        badgeAlpha = 0.80
-        iconR, iconG, iconB = 0.92, 0.80, 0.42
-        iconScale = 1.06
-    elseif isComplete then
-        borderR, borderG, borderB, borderA = 0.44, 0.62, 0.30, 0.58
-        bgAlpha = 0.78
-        glowAlpha = 0.18
-        dotAlpha = 1
-        iconR, iconG, iconB = 0.66, 0.86, 0.54
-        iconScale = 1.04
-    end
-
-    if isHover then
-        if not isTracked and not isSelected and not isWatched and not isComplete then
-            borderR, borderG, borderB, borderA = 0.84, 0.68, 0.26, 0.54
-            bgAlpha = 0.82
-            iconR, iconG, iconB = 0.96, 0.84, 0.44
-            iconScale = 1.10
-        end
-        glowAlpha = math.max(glowAlpha, 0.24)
-        pulseAlpha = math.max(pulseAlpha, 0.18)
-    end
-
-    chrome:SetBackdropColor(0.05, 0.04, 0.02, 0)
-    chrome:SetBackdropBorderColor(borderR, borderG, borderB, 0)
-    chrome.glow:SetVertexColor(borderR, borderG, borderB, 1)
-    chrome.glow:SetAlpha(glowAlpha)
-    chrome.pulse:SetVertexColor(borderR, borderG, borderB, 1)
-    chrome.pulse:SetAlpha(pulseAlpha)
-    chrome.badge:SetVertexColor(borderR, borderG, borderB, 1)
-    chrome.badge:SetAlpha(badgeAlpha)
-    chrome.completeDot:SetAlpha(dotAlpha)
-
-    if poiIcon.SetScale then
-        poiIcon:SetScale(iconScale)
-    end
-    if poiIcon.SetAlpha then
-        poiIcon:SetAlpha(1)
-    end
-
-    if iconRegion and iconRegion.SetVertexColor then
-        iconRegion:SetVertexColor(iconR, iconG, iconB)
-    end
+    markers.UpdateWorldMapQuestPoi(button, {
+        isTracked = isTracked,
+        isSelected = isSelected,
+        isWatched = isWatched,
+        isComplete = isComplete,
+        isHover = isHover,
+        setHoverQuestId = SetWorldMapHoverQuestId,
+        getHoverQuestId = function()
+            return state.worldMapHoverQuestId
+        end,
+        resolveTextureRegion = ResolveTextureRegion,
+    })
 end
 
 local function UpdateWorldMapQuestBlobState(selectedQuestId, hoveredQuestId, trackedQuestId)
@@ -2673,14 +2423,18 @@ local function UpdateWorldMapQuestBlobState(selectedQuestId, hoveredQuestId, tra
     end
 
     if selectedQuestId and selectedQuestId > 0 and selectedQuestId ~= primaryQuestId then
-        pcall(WorldMapBlobFrame.DrawQuestBlob, WorldMapBlobFrame, selectedQuestId, false)
+        pcall(WorldMapBlobFrame.DrawQuestBlob, WorldMapBlobFrame, selectedQuestId, true)
     end
 
     if trackedQuestId and trackedQuestId > 0 and trackedQuestId ~= primaryQuestId and trackedQuestId ~= selectedQuestId then
-        pcall(WorldMapBlobFrame.DrawQuestBlob, WorldMapBlobFrame, trackedQuestId, false)
+        pcall(WorldMapBlobFrame.DrawQuestBlob, WorldMapBlobFrame, trackedQuestId, true)
     end
 
-    pcall(WorldMapBlobFrame.DrawQuestBlob, WorldMapBlobFrame, primaryQuestId, hoveredQuestId == primaryQuestId)
+    local emphasizePrimary = (hoveredQuestId == primaryQuestId)
+        or (selectedQuestId == primaryQuestId)
+        or (trackedQuestId == primaryQuestId)
+
+    pcall(WorldMapBlobFrame.DrawQuestBlob, WorldMapBlobFrame, primaryQuestId, emphasizePrimary)
 end
 
 local function IsWorldMapQuestSectionHeaderText(text)
@@ -2816,6 +2570,7 @@ local function StyleWorldMapQuestRows()
             local accentR, accentG, accentB, accentA = 0.72, 0.58, 0.28, 0.18
             local boxR, boxG, boxB, boxA = 0.72, 0.66, 0.50, 0.92
             local checkR, checkG, checkB, checkA = 0.90, 0.82, 0.48, 0
+            local iconR, iconG, iconB, iconA = 0.92, 0.82, 0.46, 0.36
             local dotAlpha = 0
             local glowAlpha = 0
             local pulseAlpha = 0
@@ -2826,6 +2581,7 @@ local function StyleWorldMapQuestRows()
                 accentR, accentG, accentB, accentA = 0.95, 0.78, 0.26, 1
                 boxR, boxG, boxB, boxA = 0.98, 0.84, 0.36, 1
                 checkR, checkG, checkB, checkA = 0.98, 0.88, 0.36, 1
+                iconR, iconG, iconB, iconA = 0.98, 0.88, 0.36, 1
                 glowAlpha = 0.46
                 pulseAlpha = 0.84
             elseif isSelected then
@@ -2834,6 +2590,7 @@ local function StyleWorldMapQuestRows()
                 accentR, accentG, accentB, accentA = 0.92, 0.76, 0.30, 0.84
                 boxR, boxG, boxB, boxA = 0.92, 0.78, 0.38, 1
                 checkR, checkG, checkB, checkA = 0.94, 0.84, 0.46, isWatched and 1 or 0
+                iconR, iconG, iconB, iconA = 0.96, 0.86, 0.48, 0.9
                 glowAlpha = 0.28
                 pulseAlpha = 0.42
             elseif isWatched then
@@ -2842,16 +2599,19 @@ local function StyleWorldMapQuestRows()
                 accentR, accentG, accentB, accentA = 0.86, 0.72, 0.34, 0.70
                 boxR, boxG, boxB, boxA = 0.88, 0.76, 0.40, 1
                 checkR, checkG, checkB, checkA = 0.90, 0.78, 0.40, 1
+                iconR, iconG, iconB, iconA = 0.92, 0.80, 0.44, 0.8
             elseif isComplete then
                 borderR, borderG, borderB, borderA = 0.44, 0.62, 0.30, 0.52
                 bgAlpha = 0.62
                 accentR, accentG, accentB, accentA = 0.56, 0.82, 0.40, 0.62
                 boxR, boxG, boxB, boxA = 0.58, 0.76, 0.42, 0.92
+                iconR, iconG, iconB, iconA = 0.76, 0.92, 0.64, 0.72
                 dotAlpha = 0.96
             elseif isHover then
                 borderR, borderG, borderB, borderA = 0.54, 0.42, 0.20, 0.40
                 bgAlpha = 0.64
                 accentR, accentG, accentB, accentA = 0.82, 0.68, 0.30, 0.42
+                iconR, iconG, iconB, iconA = 0.96, 0.86, 0.48, 0.54
                 glowAlpha = 0.16
             end
 
@@ -2861,6 +2621,9 @@ local function StyleWorldMapQuestRows()
             rowChrome.accent:SetAlpha(accentA)
             rowChrome.glow:SetAlpha(glowAlpha)
             rowChrome.trackBox:SetVertexColor(boxR, boxG, boxB, boxA)
+            if rowChrome.trackIcon then
+                rowChrome.trackIcon:SetVertexColor(iconR, iconG, iconB, iconA)
+            end
             rowChrome.trackCheck:SetVertexColor(checkR, checkG, checkB, 1)
             rowChrome.trackCheck:SetAlpha(checkA)
             rowChrome.trackPulse:SetAlpha(pulseAlpha)
