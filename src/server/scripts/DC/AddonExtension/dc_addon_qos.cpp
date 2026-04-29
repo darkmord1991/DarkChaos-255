@@ -41,6 +41,7 @@
 #include "ObjectMgr.h"
 #include "SpellMgr.h"
 #include "SpellInfo.h"
+#include "DBCStores.h"
 #include "ItemTemplate.h"
 #include "Group.h"
 #include <string>
@@ -50,6 +51,8 @@
 #include <cctype>
 #include <cmath>
 #include <set>
+#include <unordered_map>
+#include <vector>
 #include "Mail.h"
 
 namespace DCQoS
@@ -756,6 +759,29 @@ namespace DCQoS
         return out.str();
     }
 
+    static std::unordered_map<uint32, std::string> sSpellTemplateCache;
+
+    static std::string GetSpellDescriptionTemplate(uint32 spellId)
+    {
+        auto itr = sSpellTemplateCache.find(spellId);
+        if (itr != sSpellTemplateCache.end())
+            return itr->second;
+
+        std::string description;
+        SpellEntry const* spellEntry = sSpellStore.LookupEntry(spellId);
+        if (spellEntry)
+        {
+            if (spellEntry->Description[0] && *spellEntry->Description[0])
+                description = spellEntry->Description[0];
+
+            if (description.empty() && spellEntry->ToolTip[0] && *spellEntry->ToolTip[0])
+                description = spellEntry->ToolTip[0];
+        }
+
+        sSpellTemplateCache[spellId] = description;
+        return description;
+    }
+
     struct TooltipAmountRange
     {
         int32 Min = 0;
@@ -766,6 +792,8 @@ namespace DCQoS
             return Min != 0 || Max != 0;
         }
     };
+
+    static uint32 GetTooltipTickCount(SpellInfo const* spellInfo, SpellEffectInfo const& effect);
 
     static int32 GetTooltipBasePoints(Player* player,
                                       SpellInfo const* spellInfo,
@@ -824,6 +852,62 @@ namespace DCQoS
         return range;
     }
 
+    static TooltipAmountRange ApplyDamageBonusToRange(Player* player,
+                                                      SpellInfo const* spellInfo,
+                                                      SpellEffectInfo const& effect,
+                                                      TooltipAmountRange range,
+                                                      DamageEffectType damageType)
+    {
+        if (!player || !spellInfo || !range.IsValid())
+            return range;
+
+        auto applySingle = [player, spellInfo, &effect, damageType](int32 value) -> int32
+        {
+            if (value <= 0)
+                return value;
+
+            return int32(player->SpellDamageBonusDone(player,
+                spellInfo,
+                uint32(value),
+                damageType,
+                effect.EffectIndex));
+        };
+
+        range.Min = applySingle(range.Min);
+        range.Max = applySingle(range.Max);
+        if (range.Min > range.Max)
+            std::swap(range.Min, range.Max);
+        return range;
+    }
+
+    static TooltipAmountRange ApplyHealingBonusToRange(Player* player,
+                                                       SpellInfo const* spellInfo,
+                                                       SpellEffectInfo const& effect,
+                                                       TooltipAmountRange range,
+                                                       DamageEffectType damageType)
+    {
+        if (!player || !spellInfo || !range.IsValid())
+            return range;
+
+        auto applySingle = [player, spellInfo, &effect, damageType](int32 value) -> int32
+        {
+            if (value <= 0)
+                return value;
+
+            return int32(player->SpellHealingBonusDone(player,
+                spellInfo,
+                uint32(value),
+                damageType,
+                effect.EffectIndex));
+        };
+
+        range.Min = applySingle(range.Min);
+        range.Max = applySingle(range.Max);
+        if (range.Min > range.Max)
+            std::swap(range.Min, range.Max);
+        return range;
+    }
+
     static std::string FormatSignedAmountRange(TooltipAmountRange const& range, bool absolute = false)
     {
         int32 minValue = absolute ? std::abs(range.Min) : range.Min;
@@ -838,6 +922,662 @@ namespace DCQoS
         else
             out << minValue << " to " << maxValue;
         return out.str();
+    }
+
+    static std::string FormatDurationTemplate(uint32 milliseconds)
+    {
+        if (milliseconds == 0)
+            return "0 sec";
+
+        if (milliseconds % 60000 == 0)
+        {
+            uint32 minutes = milliseconds / 60000;
+            return std::to_string(minutes) + " min";
+        }
+
+        if (milliseconds % 1000 == 0)
+        {
+            uint32 seconds = milliseconds / 1000;
+            return std::to_string(seconds) + " sec";
+        }
+
+        return FormatSpellSeconds(milliseconds);
+    }
+
+    static TooltipAmountRange GetTemplateScaledAmountRange(Player* player,
+                                                           SpellInfo const* spellInfo,
+                                                           SpellEffectInfo const& effect)
+    {
+        TooltipAmountRange amount = GetTooltipAmountRange(player, spellInfo, effect);
+
+        switch (effect.Effect)
+        {
+            case SPELL_EFFECT_SCHOOL_DAMAGE:
+            case SPELL_EFFECT_HEALTH_LEECH:
+                return ApplyDamageBonusToRange(player, spellInfo, effect, amount, SPELL_DIRECT_DAMAGE);
+            case SPELL_EFFECT_HEAL:
+            case SPELL_EFFECT_HEAL_MECHANICAL:
+                return ApplyHealingBonusToRange(player, spellInfo, effect, amount, HEAL);
+            default:
+                break;
+        }
+
+        if (effect.IsAura())
+        {
+            switch (effect.ApplyAuraName)
+            {
+                case SPELL_AURA_PERIODIC_DAMAGE:
+                case SPELL_AURA_PERIODIC_LEECH:
+                case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
+                    return ApplyDamageBonusToRange(player, spellInfo, effect, amount, DOT);
+                case SPELL_AURA_PERIODIC_HEAL:
+                case SPELL_AURA_PERIODIC_HEALTH_FUNNEL:
+                    return ApplyHealingBonusToRange(player, spellInfo, effect, amount, DOT);
+                default:
+                    break;
+            }
+        }
+
+        return amount;
+    }
+
+    static bool GetTemplateEffect(SpellInfo const* spellInfo, uint32 effectNumber, SpellEffectInfo const*& effect)
+    {
+        if (!spellInfo || effectNumber == 0 || effectNumber > MAX_SPELL_EFFECTS)
+            return false;
+
+        SpellEffectInfo const& candidate = spellInfo->Effects[effectNumber - 1];
+        if (!candidate.IsEffect())
+            return false;
+
+        effect = &candidate;
+        return true;
+    }
+
+    static std::string ReplaceNamedSpellTemplateToken(Player* player,
+                                                      SpellInfo const* spellInfo,
+                                                      std::string const& tokenName)
+    {
+        if (!player || !spellInfo)
+            return "";
+
+        if (tokenName == "AP")
+        {
+            int32 ap = player->GetTotalAttackPowerValue(BASE_ATTACK);
+            return std::to_string(std::max<int32>(0, ap));
+        }
+
+        if (tokenName == "SP")
+        {
+            int32 sp = player->SpellBaseDamageBonusDone(spellInfo->GetSchoolMask());
+            return std::to_string(std::max<int32>(0, sp));
+        }
+
+        return "";
+    }
+
+    static std::string ReplaceSpellTemplateToken(Player* player,
+                                                 SpellInfo const* spellInfo,
+                                                 char token,
+                                                 uint32 effectNumber)
+    {
+        if (!spellInfo)
+            return "";
+
+        if (token == 'n')
+        {
+            if (spellInfo->SpellName[0] && *spellInfo->SpellName[0])
+                return spellInfo->SpellName[0];
+            return "";
+        }
+
+        if (token == 'r')
+        {
+            float maxRange = spellInfo->GetMaxRange(false, player);
+            if (maxRange <= 0.0f)
+                return "0";
+
+            std::ostringstream out;
+            out << std::fixed << std::setprecision(0) << maxRange;
+            return out.str();
+        }
+
+        if (token == 'd')
+        {
+            int32 durationMs = spellInfo->GetMaxDuration();
+            if (durationMs <= 0)
+                return "0 sec";
+            return FormatDurationTemplate(static_cast<uint32>(durationMs));
+        }
+
+        if (effectNumber == 0)
+            effectNumber = 1;
+
+        SpellEffectInfo const* effect = nullptr;
+        if (!GetTemplateEffect(spellInfo, effectNumber, effect))
+            return "";
+
+        TooltipAmountRange amount = GetTemplateScaledAmountRange(player, spellInfo, *effect);
+        if (!amount.IsValid())
+            return "0";
+
+        TooltipAmountRange baseAmount = GetTooltipAmountRange(player, spellInfo, *effect);
+
+        switch (token)
+        {
+            case 's':
+                return FormatSignedAmountRange(amount, true);
+            case 'm':
+                return std::to_string(std::abs(amount.Min));
+            case 'M':
+                return std::to_string(std::abs(amount.Max));
+            case 'b':
+                return baseAmount.IsValid() ? FormatSignedAmountRange(baseAmount, true) : std::string("0");
+            case 'o':
+            {
+                uint32 ticks = GetTooltipTickCount(spellInfo, *effect);
+                if (ticks == 0)
+                    return FormatSignedAmountRange(amount, true);
+
+                TooltipAmountRange total;
+                total.Min = amount.Min * int32(ticks);
+                total.Max = amount.Max * int32(ticks);
+                return FormatSignedAmountRange(total, true);
+            }
+            case 't':
+            {
+                if (effect->Amplitude == 0)
+                    return "0 sec";
+                return FormatDurationTemplate(effect->Amplitude);
+            }
+            case 'a':
+            {
+                float radius = effect->CalcRadius(player);
+                if (radius <= 0.0f)
+                    return "0";
+
+                std::ostringstream out;
+                out << std::fixed << std::setprecision(0) << radius;
+                return out.str();
+            }
+            case 'u':
+            {
+                float combo = effect->PointsPerComboPoint;
+                if (combo == 0.0f)
+                    return "0";
+
+                std::ostringstream out;
+                out << std::fixed << std::setprecision(0) << std::abs(combo);
+                return out.str();
+            }
+            default:
+                break;
+        }
+
+        return "";
+    }
+
+    static std::string TrimTemplateText(std::string value)
+    {
+        auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
+
+        while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
+            value.erase(value.begin());
+        while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
+            value.pop_back();
+
+        return value;
+    }
+
+    static bool TryParseStrictDouble(std::string const& text, double& out)
+    {
+        std::string trimmed = TrimTemplateText(text);
+        if (trimmed.empty())
+            return false;
+
+        try
+        {
+            std::size_t index = 0;
+            out = std::stod(trimmed, &index);
+            return index == trimmed.size();
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    static bool TryParseLeadingDouble(std::string const& text, double& out)
+    {
+        std::string trimmed = TrimTemplateText(text);
+        if (trimmed.empty())
+            return false;
+
+        try
+        {
+            std::size_t index = 0;
+            out = std::stod(trimmed, &index);
+            return index > 0;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    static std::string FormatTemplateNumericValue(double value)
+    {
+        double rounded = std::round(value);
+        if (std::fabs(value - rounded) < 0.0001)
+            return std::to_string(static_cast<int64>(rounded));
+
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(2) << value;
+
+        std::string text = out.str();
+        while (!text.empty() && text.back() == '0')
+            text.pop_back();
+        if (!text.empty() && text.back() == '.')
+            text.pop_back();
+
+        return text.empty() ? "0" : text;
+    }
+
+    static bool TryEvaluateTemplateOperand(Player* player,
+                                           SpellInfo const* spellInfo,
+                                           std::string const& operand,
+                                           double& out)
+    {
+        std::string trimmed = TrimTemplateText(operand);
+        if (trimmed.empty())
+            return false;
+
+        if (trimmed.front() != '$')
+            return TryParseStrictDouble(trimmed, out);
+
+        if (trimmed.size() >= 3
+            && std::isalpha(static_cast<unsigned char>(trimmed[1]))
+            && std::isalpha(static_cast<unsigned char>(trimmed[2])))
+        {
+            std::string namedToken;
+            namedToken.push_back(trimmed[1]);
+            namedToken.push_back(trimmed[2]);
+
+            std::string replacement =
+                ReplaceNamedSpellTemplateToken(player, spellInfo, namedToken);
+            return TryParseLeadingDouble(replacement, out);
+        }
+
+        char token = trimmed.size() > 1 ? trimmed[1] : '\0';
+        uint32 effectNumber = 0;
+
+        if (std::isdigit(static_cast<unsigned char>(token)))
+        {
+            token = 's';
+            std::size_t indexEnd = 1;
+            while (indexEnd < trimmed.size()
+                && std::isdigit(static_cast<unsigned char>(trimmed[indexEnd])))
+            {
+                ++indexEnd;
+            }
+
+            effectNumber =
+                static_cast<uint32>(std::stoul(trimmed.substr(1, indexEnd - 1)));
+        }
+        else if (trimmed.size() > 2)
+        {
+            std::size_t indexEnd = 2;
+            while (indexEnd < trimmed.size()
+                && std::isdigit(static_cast<unsigned char>(trimmed[indexEnd])))
+            {
+                ++indexEnd;
+            }
+
+            if (indexEnd > 2)
+            {
+                effectNumber = static_cast<uint32>(
+                    std::stoul(trimmed.substr(2, indexEnd - 2)));
+            }
+        }
+
+        std::string replacement =
+            ReplaceSpellTemplateToken(player, spellInfo, token, effectNumber);
+        return TryParseLeadingDouble(replacement, out);
+    }
+
+    static bool TryEvaluateSimpleTemplateExpression(Player* player,
+                                                    SpellInfo const* spellInfo,
+                                                    std::string const& expression,
+                                                    std::string& out)
+    {
+        std::string expr = TrimTemplateText(expression);
+        if (expr.empty())
+            return false;
+
+        std::vector<std::string> operands;
+        std::vector<char> operators;
+
+        std::size_t tokenStart = 0;
+        for (std::size_t j = 0; j < expr.size(); ++j)
+        {
+            char c = expr[j];
+            bool isOperator = (c == '*' || c == '/' || c == '+' || c == '-');
+
+            if (!isOperator)
+                continue;
+
+            if (j == 0)
+                continue;
+
+            operands.push_back(expr.substr(tokenStart, j - tokenStart));
+            operators.push_back(c);
+            tokenStart = j + 1;
+        }
+
+        operands.push_back(expr.substr(tokenStart));
+        if (operands.empty())
+            return false;
+
+        std::vector<double> values;
+        values.reserve(operands.size());
+        for (std::string const& operandText : operands)
+        {
+            double value = 0.0;
+            if (!TryEvaluateTemplateOperand(player, spellInfo, operandText, value))
+                return false;
+
+            values.push_back(value);
+        }
+
+        if (values.empty())
+            return false;
+
+        // First pass: */ with precedence.
+        std::vector<double> reducedValues;
+        std::vector<char> reducedOperators;
+        reducedValues.push_back(values[0]);
+
+        for (std::size_t opIndex = 0; opIndex < operators.size(); ++opIndex)
+        {
+            char op = operators[opIndex];
+            double rhs = values[opIndex + 1];
+
+            if (op == '*' || op == '/')
+            {
+                double lhs = reducedValues.back();
+                if (op == '/')
+                {
+                    if (std::fabs(rhs) < 0.000001)
+                        return false;
+                    reducedValues.back() = lhs / rhs;
+                }
+                else
+                {
+                    reducedValues.back() = lhs * rhs;
+                }
+            }
+            else
+            {
+                reducedOperators.push_back(op);
+                reducedValues.push_back(rhs);
+            }
+        }
+
+        // Second pass: +- left-to-right.
+        double result = reducedValues[0];
+        for (std::size_t opIndex = 0; opIndex < reducedOperators.size(); ++opIndex)
+        {
+            char op = reducedOperators[opIndex];
+            double rhs = reducedValues[opIndex + 1];
+            if (op == '+')
+                result += rhs;
+            else if (op == '-')
+                result -= rhs;
+            else
+                return false;
+        }
+
+        out = FormatTemplateNumericValue(result);
+        return true;
+    }
+
+    static double ExtractLastTemplateQuantity(std::string const& renderedText)
+    {
+        for (std::size_t pos = renderedText.size(); pos > 0; --pos)
+        {
+            if (!std::isdigit(static_cast<unsigned char>(renderedText[pos - 1])))
+                continue;
+
+            std::size_t end = pos;
+            std::size_t start = pos - 1;
+            while (start > 0)
+            {
+                char c = renderedText[start - 1];
+                if (std::isdigit(static_cast<unsigned char>(c))
+                    || c == '.' || c == '-' || c == '+')
+                {
+                    --start;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            double value = 0.0;
+            if (TryParseStrictDouble(renderedText.substr(start, end - start),
+                                     value))
+            {
+                return value;
+            }
+        }
+
+        return 2.0;
+    }
+
+    static std::string RenderSpellDescriptionTemplate(Player* player,
+                                                      SpellInfo const* spellInfo,
+                                                      std::string const& sourceTemplate)
+    {
+        if (!spellInfo || sourceTemplate.empty())
+            return "";
+
+        std::string rendered;
+        rendered.reserve(sourceTemplate.size() + 32);
+
+        std::size_t i = 0;
+        while (i < sourceTemplate.size())
+        {
+            char ch = sourceTemplate[i];
+            if (ch != '$')
+            {
+                rendered.push_back(ch);
+                ++i;
+                continue;
+            }
+
+            if (i + 1 >= sourceTemplate.size())
+            {
+                rendered.push_back(ch);
+                ++i;
+                continue;
+            }
+
+            char token = sourceTemplate[i + 1];
+            if (token == '$')
+            {
+                rendered.push_back('$');
+                i += 2;
+                continue;
+            }
+
+            if (token == '{')
+            {
+                std::size_t closeBrace = sourceTemplate.find('}', i + 2);
+                if (closeBrace != std::string::npos)
+                {
+                    std::string expression =
+                        sourceTemplate.substr(i + 2, closeBrace - (i + 2));
+
+                    std::string expressionValue;
+                    if (TryEvaluateSimpleTemplateExpression(player,
+                                                            spellInfo,
+                                                            expression,
+                                                            expressionValue))
+                    {
+                        rendered += expressionValue;
+                    }
+                    else
+                    {
+                        rendered.append(sourceTemplate, i, closeBrace - i + 1);
+                    }
+
+                    i = closeBrace + 1;
+                    continue;
+                }
+
+                rendered.push_back('$');
+                ++i;
+                continue;
+            }
+
+            if (token == 'l')
+            {
+                std::size_t variantStart = i + 2;
+                std::size_t colonPos = sourceTemplate.find(':', variantStart);
+                std::size_t semiPos = sourceTemplate.find(';', variantStart);
+                if (colonPos != std::string::npos
+                    && semiPos != std::string::npos
+                    && colonPos < semiPos)
+                {
+                    std::string singular = sourceTemplate.substr(variantStart,
+                                                                 colonPos - variantStart);
+                    std::string plural = sourceTemplate.substr(colonPos + 1,
+                                                               semiPos - (colonPos + 1));
+
+                    double quantity = ExtractLastTemplateQuantity(rendered);
+                    rendered += (std::fabs(quantity - 1.0) < 0.0001)
+                        ? singular
+                        : plural;
+
+                    i = semiPos + 1;
+                    continue;
+                }
+            }
+
+            if (std::isdigit(static_cast<unsigned char>(token)))
+            {
+                std::size_t indexEnd = i + 1;
+                while (indexEnd < sourceTemplate.size()
+                    && std::isdigit(static_cast<unsigned char>(sourceTemplate[indexEnd])))
+                {
+                    ++indexEnd;
+                }
+
+                uint32 effectNumber = static_cast<uint32>(
+                    std::stoul(sourceTemplate.substr(i + 1,
+                                                     indexEnd - (i + 1))));
+
+                std::string replacement = ReplaceSpellTemplateToken(player,
+                                                                    spellInfo,
+                                                                    's',
+                                                                    effectNumber);
+                if (!replacement.empty())
+                {
+                    rendered += replacement;
+                    i = indexEnd;
+                    continue;
+                }
+            }
+
+            if (std::isalpha(static_cast<unsigned char>(token))
+                && i + 2 < sourceTemplate.size()
+                && std::isalpha(static_cast<unsigned char>(sourceTemplate[i + 2])))
+            {
+                std::string namedToken;
+                namedToken.push_back(token);
+                namedToken.push_back(sourceTemplate[i + 2]);
+
+                std::string namedReplacement = ReplaceNamedSpellTemplateToken(player, spellInfo, namedToken);
+                if (!namedReplacement.empty())
+                {
+                    rendered += namedReplacement;
+                    i += 3;
+                    continue;
+                }
+            }
+
+            std::size_t indexStart = i + 2;
+            std::size_t indexEnd = indexStart;
+            while (indexEnd < sourceTemplate.size() && std::isdigit(static_cast<unsigned char>(sourceTemplate[indexEnd])))
+                ++indexEnd;
+
+            uint32 effectNumber = 0;
+            if (indexEnd > indexStart)
+                effectNumber = static_cast<uint32>(std::stoul(sourceTemplate.substr(indexStart, indexEnd - indexStart)));
+
+            bool tokenSupported = (token == 'd') || (token == 'n') || (token == 'r')
+                || (token == 's') || (token == 'm') || (token == 'M')
+                || (token == 'b') || (token == 'o') || (token == 't')
+                || (token == 'a') || (token == 'u');
+            if (!tokenSupported)
+            {
+                rendered.push_back('$');
+                ++i;
+                continue;
+            }
+
+            std::string replacement = ReplaceSpellTemplateToken(player, spellInfo, token, effectNumber);
+            if (replacement.empty())
+            {
+                rendered.append(sourceTemplate, i, indexEnd - i);
+            }
+            else
+            {
+                rendered += replacement;
+            }
+
+            i = indexEnd;
+        }
+
+        return rendered;
+    }
+
+    static bool HasUnresolvedTemplateTokens(std::string const& text)
+    {
+        for (std::size_t i = 0; i + 1 < text.size(); ++i)
+        {
+            if (text[i] != '$')
+                continue;
+
+            char token = text[i + 1];
+            if (token == '$')
+            {
+                ++i;
+                continue;
+            }
+
+            if (token == '{' || token == 'l'
+                || std::isdigit(static_cast<unsigned char>(token)))
+            {
+                return true;
+            }
+
+            if (std::isalpha(static_cast<unsigned char>(token)))
+            {
+                if (i + 2 < text.size())
+                {
+                    char next = text[i + 2];
+                    if (std::isalpha(static_cast<unsigned char>(next))
+                        || std::isdigit(static_cast<unsigned char>(next)))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     static uint32 GetTooltipTickCount(SpellInfo const* spellInfo, SpellEffectInfo const& effect)
@@ -856,9 +1596,15 @@ namespace DCQoS
                                                SpellInfo const* spellInfo,
                                                SpellEffectInfo const& effect,
                                                char const* singularVerb,
-                                               char const* totalNoun)
+                                               char const* totalNoun,
+                                               bool healing)
     {
         TooltipAmountRange perTick = GetTooltipAmountRange(player, spellInfo, effect);
+        if (healing)
+            perTick = ApplyHealingBonusToRange(player, spellInfo, effect, perTick, DOT);
+        else
+            perTick = ApplyDamageBonusToRange(player, spellInfo, effect, perTick, DOT);
+
         uint32 tickCount = GetTooltipTickCount(spellInfo, effect);
         if (!perTick.IsValid() || tickCount == 0)
             return "";
@@ -922,11 +1668,13 @@ namespace DCQoS
         {
             case SPELL_EFFECT_SCHOOL_DAMAGE:
             case SPELL_EFFECT_HEALTH_LEECH:
+                amount = ApplyDamageBonusToRange(player, spellInfo, effect, amount, SPELL_DIRECT_DAMAGE);
                 if (amount.IsValid())
                     return "Causes " + FormatSignedAmountRange(amount, true) + " damage.";
                 break;
             case SPELL_EFFECT_HEAL:
             case SPELL_EFFECT_HEAL_MECHANICAL:
+                amount = ApplyHealingBonusToRange(player, spellInfo, effect, amount, HEAL);
                 if (amount.IsValid())
                     return "Heals a friendly target for " + FormatSignedAmountRange(amount, true) + ".";
                 break;
@@ -946,10 +1694,10 @@ namespace DCQoS
             case SPELL_AURA_PERIODIC_DAMAGE:
             case SPELL_AURA_PERIODIC_LEECH:
             case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
-                return FormatPeriodicTotalLine(player, spellInfo, effect, "Causes", "damage");
+                return FormatPeriodicTotalLine(player, spellInfo, effect, "Causes", "damage", false);
             case SPELL_AURA_PERIODIC_HEAL:
             case SPELL_AURA_PERIODIC_HEALTH_FUNNEL:
-                return FormatPeriodicTotalLine(player, spellInfo, effect, "Heals", "health");
+                return FormatPeriodicTotalLine(player, spellInfo, effect, "Heals", "health", true);
             case SPELL_AURA_PERIODIC_TRIGGER_SPELL:
                 if (effect.TriggerSpell > 0)
                 {
@@ -1022,6 +1770,15 @@ namespace DCQoS
         if (!familyInfo.empty())
             PushWrappedTooltipLine(lines, familyInfo, 0.70, 0.92, 1.00, "meta");
 
+        std::string descriptionTemplate = GetSpellDescriptionTemplate(spellInfo->Id);
+        std::string renderedDescription = RenderSpellDescriptionTemplate(player, spellInfo, descriptionTemplate);
+        if (!renderedDescription.empty()
+            && !HasUnresolvedTemplateTokens(renderedDescription))
+        {
+            PushWrappedTooltipLine(lines, renderedDescription, 0.95, 0.82, 0.55, "body");
+            return;
+        }
+
         for (SpellEffectInfo const& effect : spellInfo->Effects)
         {
             if (!effect.IsEffect())
@@ -1033,6 +1790,64 @@ namespace DCQoS
 
             PushWrappedTooltipLine(lines, description, 0.95, 0.82, 0.55, "body");
         }
+    }
+
+    static void AppendMountMetadataLines(Player* player,
+                                         SpellInfo const* spellInfo,
+                                         DCAddon::JsonValue& lines)
+    {
+        if (!spellInfo)
+            return;
+
+        bool hasGroundMount = false;
+        bool hasFlyingMount = false;
+        int32 bestGroundSpeed = 0;
+        int32 bestFlyingSpeed = 0;
+
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            if (!effect.IsEffect() || !effect.IsAura())
+                continue;
+
+            int32 value = effect.CalcValue(player);
+            if (value < 0)
+                value = -value;
+
+            switch (effect.ApplyAuraName)
+            {
+                case SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED:
+                case SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS:
+                case SPELL_AURA_MOD_MOUNTED_SPEED_NOT_STACK:
+                    hasGroundMount = true;
+                    if (value > bestGroundSpeed)
+                        bestGroundSpeed = value;
+                    break;
+                case SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED:
+                case SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS:
+                    hasFlyingMount = true;
+                    if (value > bestFlyingSpeed)
+                        bestFlyingSpeed = value;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (!hasGroundMount && !hasFlyingMount)
+            return;
+
+        if (hasGroundMount && hasFlyingMount)
+            PushTooltipLine(lines, "Mount Type", "Ground & Flying", 0.75, 0.92, 1.0, "meta");
+        else if (hasFlyingMount)
+            PushTooltipLine(lines, "Mount Type", "Flying", 0.75, 0.92, 1.0, "meta");
+        else
+            PushTooltipLine(lines, "Mount Type", "Ground", 0.75, 0.92, 1.0, "meta");
+
+        if (bestGroundSpeed > 0)
+            PushTooltipLine(lines, "Ground Speed", "+" + std::to_string(bestGroundSpeed) + "%", 0.75, 0.92, 1.0, "meta");
+
+        if (bestFlyingSpeed > 0)
+            PushTooltipLine(lines, "Flight Speed", "+" + std::to_string(bestFlyingSpeed) + "%", 0.75, 0.92, 1.0, "meta");
     }
 
     static DCAddon::JsonValue BuildSpellTooltipEnrichmentLines(Player* player,
@@ -1051,14 +1866,19 @@ namespace DCQoS
         if (spellInfo->Rank[0] && *spellInfo->Rank[0])
             PushTooltipLine(lines, spellInfo->Rank[0]);
 
-        uint32 castTimeMs = spellInfo->CalcCastTime(player);
-        if (castTimeMs == 0)
-            PushTooltipLine(lines, "Instant cast");
-        else
-            PushTooltipLine(lines, FormatSpellSeconds(castTimeMs) + " cast");
+        // Row: Cost (left) | Range (right) — matches Blizzard tooltip layout
+        int32 powerCost = player ? spellInfo->CalcPowerCost(player, spellInfo->GetSchoolMask()) : 0;
+        std::string costStr;
+        if (powerCost > 0)
+        {
+            std::ostringstream costLine;
+            costLine << powerCost << " " << GetPowerTypeLabel(spellInfo->PowerType);
+            costStr = costLine.str();
+        }
 
         float minRange = spellInfo->GetMinRange(false);
         float maxRange = spellInfo->GetMaxRange(false, player);
+        std::string rangeStr;
         if (maxRange > 0.0f)
         {
             std::ostringstream rangeLine;
@@ -1067,24 +1887,28 @@ namespace DCQoS
                 rangeLine << minRange << "-" << maxRange << " yd range";
             else
                 rangeLine << maxRange << " yd range";
-            PushTooltipLine(lines, rangeLine.str());
+            rangeStr = rangeLine.str();
         }
 
-        int32 powerCost = player ? spellInfo->CalcPowerCost(player, spellInfo->GetSchoolMask()) : 0;
-        if (powerCost > 0)
-        {
-            std::ostringstream costLine;
-            costLine << powerCost << " " << GetPowerTypeLabel(spellInfo->PowerType);
-            PushTooltipLine(lines, costLine.str());
-        }
+        if (!costStr.empty() || !rangeStr.empty())
+            PushTooltipLine(lines, costStr, rangeStr);
+
+        // Row: Cast time (left) | Cooldown (right) — matches Blizzard tooltip layout
+        uint32 castTimeMs = spellInfo->CalcCastTime(player);
+        std::string castStr = (castTimeMs == 0) ? "Instant cast" : (FormatSpellSeconds(castTimeMs) + " cast");
 
         uint32 cooldownMs = spellInfo->GetRecoveryTime();
+        std::string cooldownStr;
         if (cooldownMs > 0)
-            PushTooltipLine(lines, "Cooldown", FormatSpellSeconds(cooldownMs));
+            cooldownStr = FormatSpellSeconds(cooldownMs) + " cooldown";
+
+        PushTooltipLine(lines, castStr, cooldownStr);
 
         int32 durationMs = spellInfo->GetMaxDuration();
         if (durationMs > 0)
             PushTooltipLine(lines, "Duration", FormatSpellSeconds(static_cast<uint32>(durationMs)));
+
+        AppendMountMetadataLines(player, spellInfo, lines);
 
         AppendSpellDescriptionLines(player, spellInfo, lines, includeFamilyMetadata);
 
@@ -1307,6 +2131,7 @@ namespace DCQoS
         uint32 requestId = 0;
         uint32 spellId = 0;
         uint32 contextHash = 0;
+        std::string protocolRequestId = msg.GetRequestId();
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (!json.IsNull() && json.HasKey("requestId") && json.HasKey("spellId") && json.HasKey("contextHash"))
@@ -1318,9 +2143,23 @@ namespace DCQoS
         else if (msg.GetDataCount() >= 3)
         {
             // Simple format: QOS|0x08|requestId|spellId|contextHash
-            requestId = msg.GetUInt32(0);
-            spellId = msg.GetUInt32(1);
-            contextHash = msg.GetUInt32(2);
+            // Some clients include a protocol request id prefix in payload:
+            // QOS|0x08|RID:...|requestId|spellId|contextHash
+            uint8 dataIndex = 0;
+            if (msg.GetDataCount() >= 4)
+            {
+                std::string firstField = msg.GetString(0);
+                if (!firstField.empty() && firstField.rfind("RID:", 0) == 0)
+                {
+                    dataIndex = 1;
+                    if (protocolRequestId.empty())
+                        protocolRequestId = firstField;
+                }
+            }
+
+            requestId = msg.GetUInt32(dataIndex + 0);
+            spellId = msg.GetUInt32(dataIndex + 1);
+            contextHash = msg.GetUInt32(dataIndex + 2);
         }
 
         // Status map (matches client expectations):
@@ -1330,28 +2169,28 @@ namespace DCQoS
         // 3 = no enrichment data available
         if (requestId == 0 || spellId == 0 || contextHash == 0)
         {
-            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 2, "invalid-request", msg.GetRequestId());
+            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 2, "invalid-request", protocolRequestId);
             return;
         }
 
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
         if (!spellInfo)
         {
-            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 1, "spell-not-found", msg.GetRequestId());
+            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 1, "spell-not-found", protocolRequestId);
             return;
         }
 
         std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, contextHash, spellInfo);
         if (line.empty())
         {
-            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 3, "no-enrichment-data", msg.GetRequestId());
+            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 3, "no-enrichment-data", protocolRequestId);
             return;
         }
 
         QoSSettings settings = LoadPlayerSettings(player);
         bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
 
-        SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 0, line, msg.GetRequestId(), spellInfo, includeFamilyMetadata);
+        SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 0, line, protocolRequestId, spellInfo, includeFamilyMetadata);
     }
 
     void HandleRequestFeature(Player* player, const DCAddon::ParsedMessage& msg)

@@ -167,10 +167,30 @@ namespace DCAddon
     // Forward declaration
     static void SendRaw(Player* player, const std::string& msg);
 
+    bool IsS2CProtocolLoggingEnabled()
+    {
+        return g_S2CLoggingEnabled;
+    }
+
+    uint32 GetPendingRequestElapsedMs(Player* player, const std::string& requestId)
+    {
+        return requestId.empty() ? 0 : PeekPendingRequestElapsedMs(player, requestId);
+    }
+
+    void LogS2CMessage(Player* player, const std::string& module, uint8 opcode,
+        size_t dataSize, bool updateStats, const std::string& payloadPreview,
+        uint32 processingTimeMs)
+    {
+        LogS2CMessageGlobal(player, module, opcode, dataSize, updateStats,
+            payloadPreview, processingTimeMs);
+    }
+
     void Message::Send(Player* player) const
     {
         if (!player || !player->GetSession())
             return;
+
+        uint32 sendStartMs = getMSTime();
 
         std::string effectiveRequestId = _requestId;
         if (effectiveRequestId.empty())
@@ -197,6 +217,12 @@ namespace DCAddon
         {
             std::string preview = fullMessage.length() > 255 ? fullMessage.substr(0, 255) : fullMessage;
             uint32 processingTimeMs = effectiveRequestId.empty() ? 0 : PeekPendingRequestElapsedMs(player, effectiveRequestId);
+            if (processingTimeMs == 0)
+            {
+                processingTimeMs = getMSTimeDiff(sendStartMs, getMSTime());
+                if (processingTimeMs == 0)
+                    processingTimeMs = 1;
+            }
             LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length(), effectiveRequestId.empty(), preview, processingTimeMs);
         }
 
@@ -817,39 +843,23 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
 
     std::string preview = payloadPreview.length() > 255 ? payloadPreview.substr(0, 255) : payloadPreview;
 
-    if (processingTimeMs > 0)
-    {
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_addon_protocol_log "
-            "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status, processing_time_ms) "
-            "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed', {})",
-            player->GetGUID().GetCounter(),
-            player->GetSession()->GetAccountId(),
-            EscapeSQLString(player->GetName()),
-            requestType,
-            safeModule,
-            opcode,
-            dataSize,
-            EscapeSQLString(preview),
-            processingTimeMs
-        );
-    }
-    else
-    {
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_addon_protocol_log "
-            "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status) "
-            "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed')",
-            player->GetGUID().GetCounter(),
-            player->GetSession()->GetAccountId(),
-            EscapeSQLString(player->GetName()),
-            requestType,
-            safeModule,
-            opcode,
-            dataSize,
-            EscapeSQLString(preview)
-        );
-    }
+    if (processingTimeMs == 0)
+        processingTimeMs = 1;
+
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_addon_protocol_log "
+        "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status, processing_time_ms) "
+        "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed', {})",
+        player->GetGUID().GetCounter(),
+        player->GetSession()->GetAccountId(),
+        EscapeSQLString(player->GetName()),
+        requestType,
+        safeModule,
+        opcode,
+        dataSize,
+        EscapeSQLString(preview),
+        processingTimeMs
+    );
 
     if (updateStats)
         UpdateProtocolStats(player, safeModule, false, false, false, processingTimeMs); // isResponse=true implicit

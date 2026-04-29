@@ -86,6 +86,60 @@ local function IsInRestrictedCombat()
     return type(InCombatLockdown) == "function" and InCombatLockdown()
 end
 
+local function EnsureSharedWorldMapRefreshDebounce()
+    if type(addon.QueueWorldMapRefreshCycle) == "function" then
+        return
+    end
+
+    function addon:QueueWorldMapRefreshCycle(callback)
+        local bucket = self.__dcqosWorldMapRefreshCycle
+        if type(bucket) ~= "table" then
+            bucket = {
+                pending = false,
+                callbacks = {},
+            }
+            self.__dcqosWorldMapRefreshCycle = bucket
+        end
+
+        if type(callback) == "function" then
+            table.insert(bucket.callbacks, callback)
+        end
+
+        if bucket.pending then
+            return
+        end
+
+        bucket.pending = true
+
+        local function Flush()
+            bucket.pending = false
+
+            local callbacks = bucket.callbacks
+            bucket.callbacks = {}
+
+            for i = 1, #callbacks do
+                pcall(callbacks[i])
+            end
+        end
+
+        if type(self.DelayedCall) == "function" then
+            self:DelayedCall(0, Flush)
+        else
+            Flush()
+        end
+    end
+end
+
+local function QueueSharedWorldMapRefreshCycle(callback)
+    EnsureSharedWorldMapRefreshDebounce()
+
+    if type(addon.QueueWorldMapRefreshCycle) == "function" then
+        addon:QueueWorldMapRefreshCycle(callback)
+    elseif type(callback) == "function" then
+        callback()
+    end
+end
+
 -- Forward declaration: map update hooks can run before this function is assigned.
 local ApplyStandaloneWorldMapWindowState
 
@@ -770,8 +824,18 @@ local function InstallStandaloneWorldMapHeaderHooks()
             return
         end
 
-        ApplyStandaloneWorldMapWindowState()
-        UpdateStandaloneWorldMapHeader()
+        QueueSharedWorldMapRefreshCycle(function()
+            if not worldMapState.active then
+                return
+            end
+
+            if IsInRestrictedCombat() then
+                return
+            end
+
+            ApplyStandaloneWorldMapWindowState()
+            UpdateStandaloneWorldMapHeader()
+        end)
     end
 
     local hookNames = {

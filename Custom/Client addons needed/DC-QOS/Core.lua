@@ -13,7 +13,8 @@ local addon = DCQOS
 -- Addon Metadata
 -- ============================================================
 addon.name = "DC-QOS"
-addon.version = "1.0.0"
+addon.version = "1.2.2-rankfix"
+addon.version = "1.3.1-blizzardmounts"
 addon.author = "DarkChaos Team"
 addon.description = "Quality of Life improvements for DarkChaos-255"
 

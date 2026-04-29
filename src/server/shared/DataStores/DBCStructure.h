@@ -1720,9 +1720,9 @@ struct SpellEntry
     //uint32    SpellNameFlag;                                      // 152 not used
     std::array<char const*, 16> Rank;                               // 153-168  m_nameSubtext_lang
     //uint32    RankFlags;                                          // 169 not used
-    //char const*     Description[16];                              // 170-185  m_description_lang not used
+    std::array<char const*, 16> Description;                        // 170-185  m_description_lang
     //uint32    DescriptionFlags;                                   // 186 not used
-    //char const*     ToolTip[16];                                  // 187-202  m_auraDescription_lang not used
+    std::array<char const*, 16> ToolTip;                            // 187-202  m_auraDescription_lang
     //uint32    ToolTipFlags;                                       // 203 not used
     uint32    ManaCostPercentage;                                   // 204      m_manaCostPct
     uint32    StartRecoveryCategory;                                // 205      m_startRecoveryCategory

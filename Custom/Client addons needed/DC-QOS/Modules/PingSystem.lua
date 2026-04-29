@@ -891,6 +891,8 @@ local function NormalizePayload(payload)
     normalized.worldX = tonumber(payload.worldX)
     normalized.worldY = tonumber(payload.worldY)
     normalized.worldZ = tonumber(payload.worldZ)
+    normalized.cursorHitX = tonumber(payload.cursorHitX)
+    normalized.cursorHitY = tonumber(payload.cursorHitY)
     normalized.sound = payload.sound
 
     if normalized.targetGuid == "" then
@@ -921,6 +923,26 @@ local function ResolvePingFn(primaryName, aliasName)
     end
 
     return nil
+end
+
+local function TranslateWorldPositionToCurrentMap(worldX, worldY, worldZ)
+    local translateFn = ResolvePingFn(
+        "TranslateWorldPositionToCurrentMap",
+        "C_Ping_TranslateWorldPositionToCurrentMap"
+    )
+    if not translateFn then
+        return nil, nil, nil
+    end
+
+    local ok, mapId, mapX, mapY = pcall(translateFn, worldX, worldY, worldZ)
+    mapId = tonumber(mapId)
+    mapX = NormalizeCoord(mapX)
+    mapY = NormalizeCoord(mapY)
+    if ok and mapId and mapId > 0 and mapX and mapY then
+        return mapId, mapX, mapY
+    end
+
+    return nil, nil, nil
 end
 
 local function BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
@@ -1029,9 +1051,7 @@ local DebugQuickPing
 -- GetCursorPosition() in WoW Lua delivers physical screen pixels with Y=0 at the BOTTOM of the
 -- window.  We normalise and flip Y to match the D3D viewport convention.
 local function GetViewportCursorCoords()
-    if type(GetCursorPosition) ~= "function"
-        or type(GetScreenWidth) ~= "function"
-        or type(GetScreenHeight) ~= "function" then
+    if type(GetCursorPosition) ~= "function" or not UIParent then
         return nil, nil
     end
 
@@ -1040,8 +1060,16 @@ local function GetViewportCursorCoords()
         return nil, nil
     end
 
-    local sw = GetScreenWidth()
-    local sh = GetScreenHeight()
+    local scale = UIParent:GetEffectiveScale()
+    if type(scale) ~= "number" or scale <= 0 then
+        return nil, nil
+    end
+
+    cx = cx / scale
+    cy = cy / scale
+
+    local sw = UIParent:GetWidth()
+    local sh = UIParent:GetHeight()
     if type(sw) ~= "number" or type(sh) ~= "number" or sw <= 0 or sh <= 0 then
         return nil, nil
     end
@@ -1051,7 +1079,7 @@ local function GetViewportCursorCoords()
     return cx / sw, (sh - cy) / sh
 end
 
-local function ResolveCursorWorldPingTarget()
+local function ResolveCursorWorldPingTarget(preNormX, preNormY)
     local resolver = ResolvePingFn("GetCursorWorldPingTarget", "C_Ping_GetCursorWorldTarget")
     if not resolver then
         resolver = ResolvePingFn(nil, "C_Ping_GetTargetWorldPing")
@@ -1065,12 +1093,16 @@ local function ResolveCursorWorldPingTarget()
     -- convention) as optional args so the C++ side can retry the world hit-test with the
     -- explicit cursor position if the WorldFrame's internal simpleTop tracker is unavailable
     -- (happens on keybind pings when no mouse event has set simpleTop->mousePosition).
-    local normX, normY = GetViewportCursorCoords()
+    local normX = tonumber(preNormX)
+    local normY = tonumber(preNormY)
+    if type(normX) ~= "number" or type(normY) ~= "number" then
+        normX, normY = GetViewportCursorCoords()
+    end
 
     DebugQuickPing(string.format(
         "cursor hit-test coords hitX=%s hitY=%s",
-        normX and string.format("%.1f", normX) or "nil",
-        normY and string.format("%.1f", normY) or "nil"
+        normX and string.format("%.3f", normX) or "nil",
+        normY and string.format("%.3f", normY) or "nil"
     ))
 
     local ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName
@@ -1080,11 +1112,39 @@ local function ResolveCursorWorldPingTarget()
         ok, guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName = pcall(resolver)
     end
 
-    if not ok then
-        return nil
+    if ok then
+        local resolved = BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
+        if resolved then
+            return resolved
+        end
     end
 
-    return BuildResolvedPingTargetFromValues(guid, targetType, mapId, mapX, mapY, worldX, worldY, worldZ, targetName)
+    -- Extra fallback path: use last tracked mouse world position when direct resolver fails.
+    local mouseWorldFn = rawget(_G, "GetMouseWorldPosition")
+    if type(mouseWorldFn) == "function" then
+        local okMouse, mx, my, mz
+        if normX and normY then
+            okMouse, mx, my, mz = pcall(mouseWorldFn, normX, normY)
+        else
+            okMouse, mx, my, mz = pcall(mouseWorldFn)
+        end
+        if okMouse and type(mx) == "number" and type(my) == "number" and type(mz) == "number" then
+            local hasWorldValue = (math_abs(mx) + math_abs(my) + math_abs(mz)) > 0.001
+            if hasWorldValue then
+                local mapIdFallback, mapXFallback, mapYFallback = TranslateWorldPositionToCurrentMap(mx, my, mz)
+
+                DebugQuickPing(string.format(
+                    "cursor fallback: using GetMouseWorldPosition map=%s x=%s y=%s",
+                    tostring(mapIdFallback or "nil"),
+                    mapXFallback and string.format("%.4f", mapXFallback) or "nil",
+                    mapYFallback and string.format("%.4f", mapYFallback) or "nil"
+                ))
+                return BuildResolvedPingTargetFromValues(nil, "ground", mapIdFallback, mapXFallback, mapYFallback, mx, my, mz, nil)
+            end
+        end
+    end
+
+    return nil
 end
 
 local function ResolveMouseoverPingTarget()
@@ -2413,7 +2473,10 @@ local function OpenRadialMenuInternal()
     -- By the time CloseRadialMenu fires the cursor will be over the radial UI, so
     -- m_actionHitTest will be stale and ResolveCursorWorldPingTarget() would return the
     -- wrong position.  We store the resolved target and pass it through to PushQuickPing.
-    state.capturedRadialTarget = ResolveCursorWorldPingTarget()
+    local capturedHitX, capturedHitY = GetViewportCursorCoords()
+    state.capturedRadialHitX = capturedHitX
+    state.capturedRadialHitY = capturedHitY
+    state.capturedRadialTarget = ResolveCursorWorldPingTarget(capturedHitX, capturedHitY)
     state.capturedRadialScreenX, state.capturedRadialScreenY = GetCursorScreenOffsets()
 
     state.menuSelectionType = nil
@@ -2969,16 +3032,13 @@ local function ResolveRelayMapPosition(normalized)
     end
 
     local playerX, playerY, playerMapId = GetPlayerMapPositionSafe()
-    if not mapId then
-        mapId = playerMapId
-    end
 
     if (not mapX or not mapY)
         and type(normalized.worldX) == "number"
         and type(normalized.worldY) == "number"
         and type(normalized.worldZ) == "number" then
         local translateFn = ResolvePingFn("TranslateToMapCoords", "C_Map_TranslateToMapCoords")
-        local sourceMapId = mapId or playerMapId
+        local sourceMapId = mapId
 
         local function TryTranslateToMap(targetMapId)
             if not translateFn or not targetMapId or targetMapId <= 0 then
@@ -3002,7 +3062,21 @@ local function ResolveRelayMapPosition(normalized)
             return nil, nil
         end
 
-        if translateFn and sourceMapId and sourceMapId > 0 then
+        if not sourceMapId then
+            local translatedMapId, translatedX, translatedY = TranslateWorldPositionToCurrentMap(
+                normalized.worldX,
+                normalized.worldY,
+                normalized.worldZ
+            )
+            if translatedMapId and translatedX and translatedY then
+                sourceMapId = translatedMapId
+                mapId = translatedMapId
+                mapX = translatedX
+                mapY = translatedY
+            end
+        end
+
+        if translateFn and sourceMapId and sourceMapId > 0 and (not mapX or not mapY) then
             local translatedX, translatedY = TryTranslateToMap(sourceMapId)
             if (not translatedX or not translatedY) and playerMapId and playerMapId ~= sourceMapId then
                 local playerTranslatedX, playerTranslatedY = TryTranslateToMap(playerMapId)
@@ -3089,7 +3163,12 @@ local function BuildRelayRequest(normalized)
     local targetType = TrimWhitespace(normalized.targetType):lower()
     if targetType == "ground"
         and not (type(normalized.worldX) == "number" and type(normalized.worldY) == "number" and type(normalized.worldZ) == "number") then
-        local cursorTarget = ResolveCursorWorldPingTarget()
+        local cursorTarget = nil
+        if type(normalized.cursorHitX) == "number" and type(normalized.cursorHitY) == "number" then
+            cursorTarget = ResolveCursorWorldPingTarget(normalized.cursorHitX, normalized.cursorHitY)
+        else
+            cursorTarget = ResolveCursorWorldPingTarget()
+        end
         if cursorTarget and HasTargetWorldCoordinates(cursorTarget) then
             normalized.worldX = cursorTarget.worldX
             normalized.worldY = cursorTarget.worldY
@@ -3978,7 +4057,8 @@ function PingSystem:PushQuickPing(pingType, options)
     options = options or {}
 
     local ignoreThrottle = (options.ignoreThrottle ~= false)
-    local allowScreenFallback = (options.allowScreenFallback ~= false)
+    local allowScreenFallback = (options.allowScreenFallback == true)
+    local allowUnitTokenFallback = (options.allowUnitTokenFallback == true)
 
     local payload = {
         type = pingType or "warning",
@@ -4010,10 +4090,22 @@ function PingSystem:PushQuickPing(pingType, options)
         )
     )
 
-    local cursorTarget = options.preResolvedCursorTarget or ResolveCursorWorldPingTarget()
+    local capturedHitX = tonumber(options.preResolvedHitX)
+    local capturedHitY = tonumber(options.preResolvedHitY)
+    local usePreResolvedCursor = (options.forcePreResolvedCursorTarget == true)
+
+    local cursorTarget = nil
+    if usePreResolvedCursor then
+        cursorTarget = options.preResolvedCursorTarget
+        if not cursorTarget and capturedHitX and capturedHitY then
+            cursorTarget = ResolveCursorWorldPingTarget(capturedHitX, capturedHitY)
+        end
+    else
+        cursorTarget = options.preResolvedCursorTarget or ResolveCursorWorldPingTarget(capturedHitX, capturedHitY)
+    end
     local mouseoverTarget = ResolveMouseoverPingTarget()
     local secureReceiverTarget = ResolveTargetPingReceiver()
-    local unitTokenTarget = ResolveAnyUnitTokenFallback()
+    local unitTokenTarget = allowUnitTokenFallback and ResolveAnyUnitTokenFallback() or nil
     DebugQuickPing("start type=" .. tostring(payload.type))
     DebugQuickPing("cursor " .. FormatPingTargetDebug(cursorTarget))
     DebugQuickPing("mouseover " .. FormatPingTargetDebug(mouseoverTarget))
@@ -4051,6 +4143,34 @@ function PingSystem:PushQuickPing(pingType, options)
         locationTargetSource = "unit-token"
     end
 
+    -- If cursor and secure both resolve entity targets but disagree on GUID, trust secure.
+    -- Cursor hits can be stale/misdirected during fast keybind pings without recent mouse click.
+    if cursorTarget
+        and secureReceiverTarget
+        and IsValidPingEntityTargetType(cursorTarget.targetType)
+        and IsValidPingEntityTargetType(secureReceiverTarget.targetType)
+        and type(cursorTarget.targetGuid) == "string"
+        and type(secureReceiverTarget.targetGuid) == "string"
+        and cursorTarget.targetGuid ~= ""
+        and secureReceiverTarget.targetGuid ~= ""
+        and cursorTarget.targetGuid ~= secureReceiverTarget.targetGuid
+    then
+        entityTarget = secureReceiverTarget
+        entityTargetSource = "secure-receiver"
+
+        if HasTargetMapCoordinates(secureReceiverTarget) or HasTargetWorldCoordinates(secureReceiverTarget) then
+            locationTarget = secureReceiverTarget
+            locationTargetSource = "secure-receiver"
+        end
+
+        DebugQuickPing(
+            "entity arbitration: secure override on guid mismatch cursor="
+                .. tostring(cursorTarget.targetGuid)
+                .. " secure="
+                .. tostring(secureReceiverTarget.targetGuid)
+        )
+    end
+
     if locationTarget then
         CopyTargetLocation(payload, locationTarget)
 
@@ -4061,7 +4181,21 @@ function PingSystem:PushQuickPing(pingType, options)
     end
 
     if entityTarget then
-        CopyTargetIdentity(payload, entityTarget)
+        local applyEntityIdentity = false
+
+        if not locationTarget then
+            applyEntityIdentity = true
+        elseif locationTargetSource == "cursor" or locationTargetSource == "mouseover" then
+            applyEntityIdentity = IsValidPingEntityTargetType(locationTarget.targetType)
+        else
+            applyEntityIdentity = true
+        end
+
+        if applyEntityIdentity then
+            CopyTargetIdentity(payload, entityTarget)
+        else
+            DebugQuickPing("identity skip: preserving cursor-ground location over non-cursor entity fallback")
+        end
     end
 
     DebugQuickPing("selected entity=" .. tostring(entityTargetSource or "none") .. " location=" .. tostring(locationTargetSource or "none"))
@@ -4139,10 +4273,25 @@ function PingSystem:PushQuickPing(pingType, options)
         end
     end
 
+    if capturedHitX and capturedHitY then
+        payload.cursorHitX = capturedHitX
+        payload.cursorHitY = capturedHitY
+    end
+
     if payload.targetType and payload.targetType ~= "ground" and not hasEntityTarget then
         DebugQuickPing("downgrade: invalid entity target metadata type=" .. tostring(payload.targetType) .. ", forcing ground")
         payload.targetType = "ground"
     end
+
+    local finalSource = locationTargetSource or entityTargetSource or "none"
+    if finalSource == "cursor" and not IsValidPingEntityTargetType(payload.targetType) then
+        finalSource = "cursor-ground"
+    elseif finalSource == "secure-receiver" then
+        finalSource = "secure"
+    elseif finalSource ~= "unit-token" and finalSource ~= "cursor-ground" and finalSource ~= "secure" then
+        finalSource = tostring(finalSource)
+    end
+    DebugQuickPing("selection winner=" .. finalSource)
 
     DebugQuickPing(
         string.format(
@@ -4198,20 +4347,29 @@ function PingSystem:CloseRadialMenu(commitSelection)
         local captured = state.capturedRadialTarget
         local capturedScreenX = state.capturedRadialScreenX
         local capturedScreenY = state.capturedRadialScreenY
+        local capturedHitX = state.capturedRadialHitX
+        local capturedHitY = state.capturedRadialHitY
         state.capturedRadialTarget = nil
         state.capturedRadialScreenX = nil
         state.capturedRadialScreenY = nil
+        state.capturedRadialHitX = nil
+        state.capturedRadialHitY = nil
         self:PushQuickPing(selectedType, {
             ignoreThrottle = false,
             allowScreenFallback = true,
+            forcePreResolvedCursorTarget = true,
             preResolvedCursorTarget = captured,
             preResolvedScreenX = capturedScreenX,
             preResolvedScreenY = capturedScreenY,
+            preResolvedHitX = capturedHitX,
+            preResolvedHitY = capturedHitY,
         })
     else
         state.capturedRadialTarget = nil
         state.capturedRadialScreenX = nil
         state.capturedRadialScreenY = nil
+        state.capturedRadialHitX = nil
+        state.capturedRadialHitY = nil
     end
 
     return true

@@ -1030,6 +1030,11 @@ namespace DCAddon
     void ClearCurrentRequestContext();
     const std::string& GetCurrentRequestId();
     void NotifyResponseSent(Player* player, const std::string& requestId);
+    bool IsS2CProtocolLoggingEnabled();
+    uint32 GetPendingRequestElapsedMs(Player* player, const std::string& requestId);
+    void LogS2CMessage(Player* player, const std::string& module, uint8 opcode,
+        size_t dataSize, bool updateStats, const std::string& payloadPreview,
+        uint32 processingTimeMs);
 
     // Quick permission helper: ensure module enabled and player has minimum security
     // (Moved below MessageRouter declaration to avoid forward-declare/ordering issues)
@@ -1638,6 +1643,8 @@ namespace DCAddon
             if (!player || !player->GetSession())
                 return;
 
+            uint32 sendStartMs = getMSTime();
+
             std::string effectiveRequestId = _requestId;
             if (effectiveRequestId.empty())
             {
@@ -1663,6 +1670,19 @@ namespace DCAddon
             else
             {
                 payload = Build();
+            }
+
+            if (IsS2CProtocolLoggingEnabled())
+            {
+                std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
+                uint32 processingTimeMs = effectiveRequestId.empty() ? 0 : GetPendingRequestElapsedMs(player, effectiveRequestId);
+                if (processingTimeMs == 0)
+                {
+                    processingTimeMs = getMSTimeDiff(sendStartMs, getMSTime());
+                    if (processingTimeMs == 0)
+                        processingTimeMs = 1;
+                }
+                LogS2CMessage(player, _module, _opcode, payload.length(), effectiveRequestId.empty(), preview, processingTimeMs);
             }
 
             // If the payload is large, split it into chunk frames.

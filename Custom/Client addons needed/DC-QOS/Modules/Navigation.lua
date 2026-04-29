@@ -1357,6 +1357,9 @@ local function EnsureRetailNavigationApiShims()
     local getNavigationFrame = ResolveNavigationNativeFn("GetNavigationFrame", "C_Navigation_GetFrame")
     local getNavigationFrameState = ResolveNavigationNativeFn("GetNavigationFrameState", "C_Navigation_GetFrameState")
     local setNavigationPlayerState = ResolveNavigationNativeFn("SetNavigationPlayerState", "C_Navigation_SetPlayerState")
+    local getNavigationTargetState = ResolveNavigationNativeFn("GetNavigationTargetState", "C_Navigation_GetTargetState")
+    local getNavigationDistance = ResolveNavigationNativeFn("GetNavigationDistance", "C_Navigation_GetDistance")
+    local getNavigationDistanceSquared = ResolveNavigationNativeFn("GetNavigationDistanceSquared", "C_Navigation_GetDistanceSquared")
     local hasNavigationValidScreenPosition = ResolveNavigationNativeFn("HasNavigationValidScreenPosition", "C_Navigation_HasValidScreenPosition")
     local wasNavigationFrameClampedToScreen = ResolveNavigationNativeFn("WasNavigationFrameClampedToScreen", "C_Navigation_WasClampedToScreen")
 
@@ -1882,6 +1885,14 @@ local function EnsureRetailNavigationApiShims()
 
     if type(navigationApi.GetDistance) ~= "function" then
         navigationApi.GetDistance = function(mapIdOrPoint, x, y)
+            if getNavigationDistance then
+                local ok, nativeDistance = pcall(getNavigationDistance, mapIdOrPoint, x, y)
+                nativeDistance = tonumber(nativeDistance)
+                if ok and nativeDistance and nativeDistance >= 0 then
+                    return nativeDistance
+                end
+            end
+
             local point = NormalizeUiMapPointArgs(mapIdOrPoint, x, y)
             if not point then
                 return nil
@@ -1899,6 +1910,14 @@ local function EnsureRetailNavigationApiShims()
 
     if type(navigationApi.GetDistanceSquared) ~= "function" then
         navigationApi.GetDistanceSquared = function(mapIdOrPoint, x, y)
+            if getNavigationDistanceSquared then
+                local ok, nativeDistanceSquared = pcall(getNavigationDistanceSquared, mapIdOrPoint, x, y)
+                nativeDistanceSquared = tonumber(nativeDistanceSquared)
+                if ok and nativeDistanceSquared and nativeDistanceSquared >= 0 then
+                    return nativeDistanceSquared
+                end
+            end
+
             local distance = navigationApi.GetDistance(mapIdOrPoint, x, y)
             if not distance then
                 return nil
@@ -1939,6 +1958,14 @@ local function EnsureRetailNavigationApiShims()
 
     if type(navigationApi.GetTargetState) ~= "function" then
         navigationApi.GetTargetState = function()
+            if getNavigationTargetState then
+                local ok, navState = pcall(getNavigationTargetState)
+                navState = tonumber(navState)
+                if ok and navState ~= nil then
+                    return navState
+                end
+            end
+
             if not state.target then
                 return NAV_STATE_DISABLED
             end
@@ -2670,33 +2697,6 @@ local function GetFollowedQuestTarget(playerX, playerY, mapId)
         state.followedQuestLogIndex = questLogIndex
     end
 
-    if state.followedQuestId and mapId then
-        local shimX, shimY = ShimGetSuperTrackedQuestWaypointForMap(mapId)
-        if shimX and shimY then
-            local title = state.followedQuestTitle
-            if questLogIndex and questLogIndex > 0 then
-                local selectedTitle, isHeader = GetQuestTitleFromLogIndex(questLogIndex)
-                if selectedTitle and not isHeader then
-                    title = selectedTitle
-                end
-            end
-
-            if not title then
-                title = select(1, ShimGetSuperTrackedItemName())
-            end
-
-            return {
-                source = "quest-selected",
-                questId = state.followedQuestId,
-                poiSource = "shim-waypoint",
-                title = title or ("Quest " .. tostring(state.followedQuestId)),
-                x = shimX,
-                y = shimY,
-                metric = ScoreQuestTarget(playerX, playerY, shimX, shimY, questLogIndex),
-            }
-        end
-    end
-
     if not questLogIndex or questLogIndex <= 0 then
         return nil
     end
@@ -2710,7 +2710,17 @@ local function GetFollowedQuestTarget(playerX, playerY, mapId)
     local isCompleted = IsQuestLogIndexCompleted(questLogIndex)
     local poiOptions = isCompleted and { bypassCache = true, clearQuestCache = true } or nil
 
-    local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
+    local livePoiOptions = {
+        bypassLock = true,
+        bypassCache = true,
+        clearQuestCache = isCompleted == true,
+    }
+
+    local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, livePoiOptions)
+    if not qx or not qy then
+        qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
+    end
+
     if (not qx or not qy) and state.followedQuestId then
         local byIdIndex = FindQuestLogIndexByQuestId(state.followedQuestId)
         if byIdIndex and byIdIndex ~= questLogIndex then
@@ -2719,8 +2729,27 @@ local function GetFollowedQuestTarget(playerX, playerY, mapId)
             if not isHeader then
                 isCompleted = IsQuestLogIndexCompleted(questLogIndex)
                 poiOptions = isCompleted and { bypassCache = true, clearQuestCache = true } or nil
-                qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
+                livePoiOptions = {
+                    bypassLock = true,
+                    bypassCache = true,
+                    clearQuestCache = isCompleted == true,
+                }
+
+                qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, livePoiOptions)
+                if not qx or not qy then
+                    qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
+                end
             end
+        end
+    end
+
+    if (not qx or not qy) and mapId and state.followedQuestId then
+        local shimX, shimY = ShimGetSuperTrackedQuestWaypointForMap(mapId)
+        if shimX and shimY then
+            qx = shimX
+            qy = shimY
+            questId = state.followedQuestId
+            poiSource = "shim-waypoint"
         end
     end
 
@@ -3420,9 +3449,10 @@ local function UpdateMarker()
     local rawX
     local rawY
     local useNativeProjection = getNativeNavigationFrameState
+    local nativeUsedWorldProjection = nil
 
     if useNativeProjection then
-        local ok, nativeX, nativeY, stateValue, clampedValue = pcall(getNativeNavigationFrameState)
+        local ok, nativeX, nativeY, stateValue, clampedValue, worldProjectionValue = pcall(getNativeNavigationFrameState)
         if ok and type(nativeX) == "number" and type(nativeY) == "number" then
             projectedX = nativeX
             projectedY = nativeY
@@ -3430,20 +3460,21 @@ local function UpdateMarker()
             rawY = nativeY
             nativeNavState = tonumber(stateValue)
 
-            -- Guard against inconsistent native clamped flags by deriving clamp
-            -- from current UI ellipse geometry and reconciling nav state to it.
-            local clampedX, clampedY, geometryClamped = ClampPointToEllipse(nativeX, nativeY, ellipseMajorAxis, ellipseMinorAxis)
-            projectedX = clampedX
-            projectedY = clampedY
-            clampedToEllipse = geometryClamped == true
-
-            if nativeNavState == NAV_STATE_IN_RANGE and clampedToEllipse then
-                nativeNavState = NAV_STATE_OCCLUDED
-            elseif nativeNavState == NAV_STATE_OCCLUDED and not clampedToEllipse then
-                nativeNavState = NAV_STATE_IN_RANGE
+            if type(worldProjectionValue) == "boolean" then
+                nativeUsedWorldProjection = worldProjectionValue
             end
 
-            if nativeNavState == nil and clampedValue ~= nil then
+            clampedToEllipse = (clampedValue == true) or (nativeNavState == NAV_STATE_OCCLUDED)
+
+            -- Retail behavior: only clamp to edge indicator when nav reports
+            -- occluded/clamped. Unclamped native positions should be used as-is.
+            if clampedToEllipse then
+                local clampedX, clampedY = ClampPointToEllipse(nativeX, nativeY, ellipseMajorAxis, ellipseMinorAxis)
+                projectedX = clampedX
+                projectedY = clampedY
+            end
+
+            if nativeNavState == nil then
                 nativeNavState = (clampedToEllipse and NAV_STATE_OCCLUDED or NAV_STATE_IN_RANGE)
             end
 
@@ -3506,7 +3537,7 @@ local function UpdateMarker()
         string.format(
             "target=%s src=%s dist=%s dx=%.2f dy=%.2f rel=%.1f radius=%s rawX=%.2f rawY=%.2f px=%.2f py=%.2f clamp=%s state=%s",
             tostring(targetKey or "n/a"),
-            tostring(usingNativeProjection and "native-frame" or (target.poiSource or target.source or "n/a")),
+            tostring(usingNativeProjection and ((nativeUsedWorldProjection == true and "native-world") or "native-fallback") or (target.poiSource or target.source or "n/a")),
             distanceYards and string.format("%.1f", distanceYards) or "nil",
             dxDebug,
             dyDebug,
@@ -4896,12 +4927,9 @@ function Navigation.OnEnable()
             end
 
             if event == "QUEST_POI_UPDATE" then
-                if state.followedQuestId then
-                    -- Keep the current POI lock to avoid target hopping between POIs.
-                    ClearQuestPoiCacheForQuestKeepLock(state.followedQuestId)
-                else
-                    ClearQuestPoiCacheKeepLocks()
-                end
+                -- POI updates indicate objective movement/advancement; clear both
+                -- cache and lock state so followed quests do not remain static.
+                ClearQuestPoiCache()
             end
 
             if event == "QUEST_LOG_UPDATE" and state.followedQuestId then
@@ -4914,7 +4942,7 @@ function Navigation.OnEnable()
                     state.followedQuestLogIndex = nil
                     state.followedQuestTitle = nil
                 else
-                    ClearQuestPoiCacheForQuestKeepLock(state.followedQuestId)
+                    ClearQuestPoiCacheForQuest(state.followedQuestId)
                 end
             end
 

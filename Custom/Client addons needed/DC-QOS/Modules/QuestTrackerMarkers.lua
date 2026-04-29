@@ -218,6 +218,13 @@ function Markers.EnsureWorldMapQuestRowChrome(button, options)
         end)
         button:HookScript("OnLeave", function(self)
             if type(setHoverQuestId) == "function" then
+                if type(self.IsMouseOver) == "function" and self:IsMouseOver() then
+                    return
+                end
+                local poiIcon = self.poiIcon
+                if poiIcon and type(poiIcon.IsMouseOver) == "function" and poiIcon:IsMouseOver() then
+                    return
+                end
                 local questId = tonumber(self.questId or self.questID)
                 local hoveredQuestId = type(getHoverQuestId) == "function" and tonumber(getHoverQuestId()) or nil
                 if not questId or hoveredQuestId == questId then
@@ -318,6 +325,11 @@ function Markers.EnsureWorldMapQuestPoiChrome(button, options)
     if not button.__dcqosWorldQuestPoiHooks then
         button.__dcqosWorldQuestPoiHooks = true
 
+        local function IsStillHoveringQuestPoi()
+            return (type(button.IsMouseOver) == "function" and button:IsMouseOver())
+                or (type(poiIcon.IsMouseOver) == "function" and poiIcon:IsMouseOver())
+        end
+
         local function HandleEnter()
             if type(setHoverQuestId) == "function" then
                 setHoverQuestId(button.questId or button.questID)
@@ -326,6 +338,9 @@ function Markers.EnsureWorldMapQuestPoiChrome(button, options)
 
         local function HandleLeave()
             if type(setHoverQuestId) == "function" then
+                if IsStillHoveringQuestPoi() then
+                    return
+                end
                 local questId = tonumber(button.questId or button.questID)
                 local hoveredQuestId = type(getHoverQuestId) == "function" and tonumber(getHoverQuestId()) or nil
                 if not questId or hoveredQuestId == questId then

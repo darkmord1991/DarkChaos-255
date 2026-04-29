@@ -176,6 +176,60 @@ local state = {
 local ApplyFontStyle
 local GetSelectedWorldMapQuestFrame
 
+local function EnsureSharedWorldMapRefreshDebounce()
+    if type(addon.QueueWorldMapRefreshCycle) == "function" then
+        return
+    end
+
+    function addon:QueueWorldMapRefreshCycle(callback)
+        local bucket = self.__dcqosWorldMapRefreshCycle
+        if type(bucket) ~= "table" then
+            bucket = {
+                pending = false,
+                callbacks = {},
+            }
+            self.__dcqosWorldMapRefreshCycle = bucket
+        end
+
+        if type(callback) == "function" then
+            table.insert(bucket.callbacks, callback)
+        end
+
+        if bucket.pending then
+            return
+        end
+
+        bucket.pending = true
+
+        local function Flush()
+            bucket.pending = false
+
+            local callbacks = bucket.callbacks
+            bucket.callbacks = {}
+
+            for i = 1, #callbacks do
+                pcall(callbacks[i])
+            end
+        end
+
+        if type(self.DelayedCall) == "function" then
+            self:DelayedCall(0, Flush)
+        else
+            Flush()
+        end
+    end
+end
+
+local function QueueSharedWorldMapRefreshCycle(callback)
+    EnsureSharedWorldMapRefreshDebounce()
+
+    if type(addon.QueueWorldMapRefreshCycle) == "function" then
+        addon:QueueWorldMapRefreshCycle(callback)
+    elseif type(callback) == "function" then
+        callback()
+    end
+end
+
 local function GetSettings()
     return addon.settings and addon.settings.questFrames or addon.defaults.questFrames
 end
@@ -2144,8 +2198,10 @@ local function InstallWorldMapHooks()
         end
 
         state.lastWorldMapRefreshRequestAt = now
-        QueueRefresh(0.02)
-        QueueRefresh(0.08)
+        QueueSharedWorldMapRefreshCycle(function()
+            QueueRefresh(0.02)
+            QueueRefresh(0.08)
+        end)
     end
 
     local hookNames = {
@@ -2261,13 +2317,13 @@ local function EnsureQuestRowButton(button, highlightTexture, kind)
 
         if type(button.HookScript) == "function" then
             button:HookScript("OnEnter", function(self)
-                QuestFrames:Refresh()
+                QueueRefresh(0)
             end)
             button:HookScript("OnLeave", function(self)
-                QuestFrames:Refresh()
+                QueueRefresh(0)
             end)
             button:HookScript("OnShow", function(self)
-                QuestFrames:Refresh()
+                QueueRefresh(0)
             end)
         end
     end
