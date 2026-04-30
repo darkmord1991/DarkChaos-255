@@ -105,29 +105,38 @@ namespace Seasons
         EnsureStateTableExists();
 
         uint32 currentWeekStart = GetCurrentWeekStart();
-        uint32 storedWeekStart = 0;
 
-        QueryResult state = CharacterDatabase.Query(
-            "SELECT week_start FROM `dc_weekly_reset_state` WHERE `system` = '{}'",
-            WEEKLY_STATE_KEY);
+        // Use a static cache to avoid a synchronous DB query every minute.
+        // storedWeekStart is loaded from DB once; after that we only re-query if the
+        // in-memory value is zero (first call) or after a reset was just performed.
+        static uint32 s_cachedWeekStart = 0;
 
-        if (state)
-            storedWeekStart = state->Fetch()[0].Get<uint32>();
+        if (s_cachedWeekStart == 0)
+        {
+            QueryResult state = CharacterDatabase.Query(
+                "SELECT week_start FROM `dc_weekly_reset_state` WHERE `system` = '{}'",
+                WEEKLY_STATE_KEY);
 
-        if (storedWeekStart == currentWeekStart)
+            if (state)
+                s_cachedWeekStart = state->Fetch()[0].Get<uint32>();
+        }
+
+        if (s_cachedWeekStart == currentWeekStart)
             return;
 
-        LOG_INFO("module.dc", "[WeeklyReset] Week boundary detected (stored={}, current={})", storedWeekStart, currentWeekStart);
+        LOG_INFO("module.dc", "[WeeklyReset] Week boundary detected (stored={}, current={})", s_cachedWeekStart, currentWeekStart);
 
         // Run the cross-system weekly reset tasks.
         CleanupGreatVaultTables(currentWeekStart);
         ResetItemUpgradeWeeklyEarned();
 
-        // Persist new week start.
+        // Persist new week start and update in-memory cache.
         CharacterDatabase.Execute(
             "INSERT INTO `dc_weekly_reset_state` (`system`, week_start) VALUES ('{}', {}) "
             "ON DUPLICATE KEY UPDATE week_start = {}",
             WEEKLY_STATE_KEY, currentWeekStart, currentWeekStart);
+
+        s_cachedWeekStart = currentWeekStart;
     }
 
 } // namespace Seasons

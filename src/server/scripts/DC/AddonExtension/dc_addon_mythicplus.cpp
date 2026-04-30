@@ -21,6 +21,7 @@
 #include "../MythicPlus/dc_mythicplus_constants.h"
 #include "dc_addon_mythicplus.h"
 
+#include <optional>
 #include <unordered_map>
 
 namespace DCAddon
@@ -983,6 +984,8 @@ namespace MythicPlus
         std::unordered_map<uint64, time_t> m_cacheValidation;  // cache key -> last DB validation
         uint64 m_lastSeenUpdate = 0;
         bool m_tableEnsured = false;
+        bool m_queryInFlight = false;
+        std::optional<QueryCallback> m_pendingQuery;
 
         static constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
         static constexpr uint32 POLL_INTERVAL_MS = 1000;
@@ -1189,13 +1192,9 @@ namespace MythicPlus
             return &entry;
         }
 
-        void PullCacheUpdates()
+        void ApplyCacheQueryResult(QueryResult result)
         {
-            EnsureTable();
-
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT instance_key, payload, updated_at FROM `{}` WHERE updated_at > {} ORDER BY updated_at",
-                HUD_CACHE_TABLE, m_lastSeenUpdate);
+            m_queryInFlight = false;
 
             if (!result)
                 return;
@@ -1221,6 +1220,30 @@ namespace MythicPlus
                     m_cacheValidation[key] = time(nullptr);
                 }
             } while (result->NextRow());
+        }
+
+        void PullCacheUpdates()
+        {
+            EnsureTable();
+
+            if (m_queryInFlight)
+                return;
+
+            m_queryInFlight = true;
+            m_pendingQuery.emplace(
+                CharacterDatabase.AsyncQuery(
+                    "SELECT instance_key, payload, updated_at FROM `{}` WHERE updated_at > {} ORDER BY updated_at",
+                    HUD_CACHE_TABLE, m_lastSeenUpdate)
+                .WithCallback([this](QueryResult result)
+                {
+                    ApplyCacheQueryResult(std::move(result));
+                }));
+        }
+
+        void ProcessPendingQuery()
+        {
+            if (m_pendingQuery && m_pendingQuery->InvokeIfReady())
+                m_pendingQuery.reset();
         }
 
         bool DeliverSnapshot(Player* player, bool force = false, const std::string& reason = "")
@@ -1259,6 +1282,7 @@ namespace MythicPlus
         // Main update loop (called periodically)
         void Update()
         {
+            ProcessPendingQuery();
             PullCacheUpdates();
 
             // Iterate all online players
