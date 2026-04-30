@@ -1230,10 +1230,11 @@ namespace MythicPlus
                 return;
 
             m_queryInFlight = true;
+            std::string sql = Acore::StringFormat(
+                "SELECT instance_key, payload, updated_at FROM `{}` WHERE updated_at > {} ORDER BY updated_at",
+                HUD_CACHE_TABLE, m_lastSeenUpdate);
             m_pendingQuery.emplace(
-                CharacterDatabase.AsyncQuery(
-                    "SELECT instance_key, payload, updated_at FROM `{}` WHERE updated_at > {} ORDER BY updated_at",
-                    HUD_CACHE_TABLE, m_lastSeenUpdate)
+                CharacterDatabase.AsyncQuery(sql)
                 .WithCallback([this](QueryResult result)
                 {
                     ApplyCacheQueryResult(std::move(result));
