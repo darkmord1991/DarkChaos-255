@@ -620,20 +620,22 @@ static bool ShouldBypassRateLimit(const std::string& payload)
 
 static std::string DetectRequestType(const std::string& payload)
 {
-    if (payload.empty()) return "STANDARD";
+    if (payload.empty())
+        return "STANDARD";
 
-    std::string moduleCode = ExtractModuleCode(payload);
-    if (moduleCode == "SPOT" || moduleCode == "SEAS" || moduleCode == "MHUD")
+    // Explicit AIO markers in payload preview.
+    if (payload.rfind("AIO", 0) == 0 || payload.find("AIO|") != std::string::npos)
         return "AIO";
 
-    // Check for DC Native format (pipe)
+    // Pipe-based protocol payloads are DC wire format.
     if (payload.find('|') != std::string::npos)
     {
-        // Simple heuristic: if it has pipes, it's likely DC protocol
-        return "DC_PLAIN"; // Can't easily distinguish JSON without parsing more, but that's fine
+        if (payload.find("|J|") != std::string::npos || payload.find("|JSON|") != std::string::npos)
+            return "DC_JSON";
+        return "DC_PLAIN";
     }
 
-    // Check for DC JSON/Legacy format (colon)
+    // Colon payloads are legacy; treat JSON-ish content as DC_JSON.
     if (payload.find(':') != std::string::npos)
     {
         if (payload.find('{') != std::string::npos || payload.find('[') != std::string::npos)
@@ -839,9 +841,8 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
     safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(), [](char c) { return !isalnum(c) && c != '_'; }), safeModule.end());
     if (safeModule.length() > 16) safeModule = safeModule.substr(0, 16);
 
-    std::string requestType = (safeModule == "SPOT" || safeModule == "SEAS" || safeModule == "MHUD") ? "AIO" : (safeModule == "LBRD" ? "JSON" : "STANDARD");
-
     std::string preview = payloadPreview.length() > 255 ? payloadPreview.substr(0, 255) : payloadPreview;
+    std::string requestType = DetectRequestType(preview);
 
     if (processingTimeMs == 0)
         processingTimeMs = 1;

@@ -17,6 +17,14 @@ Core.useDCProtocol = (DC ~= nil)
 Core.useAIO = (AIO ~= nil)
 Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
 
+local function RefreshProtocolMode()
+    DC = rawget(_G, "DCAddonProtocol")
+    AIO = rawget(_G, "AIO")
+    Core.useDCProtocol = (DC ~= nil)
+    Core.useAIO = (AIO ~= nil)
+    Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
+end
+
 local state = {
     addonName = addonName,
     hotspots = {},
@@ -1514,6 +1522,7 @@ end
 
 -- Request hotspot list from server using protocol fallback chain (JSON standard)
 function Core:RequestHotspotList(reason)
+    RefreshProtocolMode()
     self.lastHotspotRequest = GetTime()
     DebugPrint("Requesting hotspot list from server via", Core.protocolMode, "(JSON)", reason and ("reason=" .. tostring(reason)) or "")
 
@@ -1554,6 +1563,7 @@ end
 
 -- Request teleport to a hotspot using protocol fallback chain (JSON standard)
 function Core:RequestTeleport(hotspotId)
+    RefreshProtocolMode()
     DebugPrint("Requesting teleport to hotspot", hotspotId, "via", Core.protocolMode, "(JSON)")
     
     if Core.useDCProtocol and DC then
@@ -1567,6 +1577,7 @@ end
 
 -- Request info for a specific hotspot (JSON standard)
 function Core:RequestHotspotInfo(hotspotId)
+    RefreshProtocolMode()
     DebugPrint("Requesting info for hotspot", hotspotId, "(JSON)")
     
     if Core.useDCProtocol and DC then
