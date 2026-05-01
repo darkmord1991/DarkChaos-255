@@ -2067,8 +2067,93 @@ local function SetFallbackShapeshiftTooltip(button)
     GameTooltip:Show()
 end
 
+local function SafeShapeshiftButtonOnEnter(self)
+    EnsureGameTooltipActionMethods()
+
+    local button = self
+    if type(button) ~= "table" then
+        button = this
+    end
+
+    if type(button) ~= "table" then
+        return
+    end
+
+    local formIndex
+    if type(button.GetID) == "function" then
+        formIndex = button:GetID()
+    end
+
+    if not formIndex or formIndex <= 0 then
+        return
+    end
+
+    local blizzardOnEnter = addon._dcqosOriginalShapeshiftButtonOnEnter
+        or ShapeshiftButton_OnEnter
+
+    if type(blizzardOnEnter) == "function" and blizzardOnEnter ~= SafeShapeshiftButtonOnEnter then
+        local ok, result = pcall(function()
+            return blizzardOnEnter(button)
+        end)
+
+        if ok then
+            button.UpdateTooltip = SafeShapeshiftButtonOnEnter
+            return result
+        end
+
+        addon:Debug("Blizzard shapeshift tooltip failed; using fallback: " .. tostring(result))
+    end
+
+    button.UpdateTooltip = nil
+    SetFallbackShapeshiftTooltip(button)
+end
+
+local function InstallShapeshiftOnEnterGuards()
+    local maxButtons = tonumber(NUM_SHAPESHIFT_SLOTS) or 10
+    for i = 1, maxButtons do
+        local button = _G["ShapeshiftButton" .. i]
+        if button then
+            local onEnter = type(button.GetScript) == "function"
+                and button:GetScript("OnEnter") or nil
+
+            if onEnter ~= SafeShapeshiftButtonOnEnter then
+                button:SetScript("OnEnter", SafeShapeshiftButtonOnEnter)
+            end
+
+            if button.UpdateTooltip ~= SafeShapeshiftButtonOnEnter then
+                button.UpdateTooltip = SafeShapeshiftButtonOnEnter
+            end
+
+            button._dcqosSafeOnEnterInstalled = true
+        end
+    end
+end
+
 local function HookSpellTooltips()
     EnsureGameTooltipActionMethods()
+    InstallShapeshiftOnEnterGuards()
+
+    if not addon._dcqosShapeshiftGuardRefreshFrame then
+        local refreshFrame = CreateFrame("Frame")
+        addon._dcqosShapeshiftGuardRefreshFrame = refreshFrame
+        refreshFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        refreshFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
+        refreshFrame:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+        refreshFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
+        refreshFrame:SetScript("OnEvent", function()
+            EnsureGameTooltipActionMethods()
+            InstallShapeshiftOnEnterGuards()
+        end)
+    end
+
+    if not addon._dcqosHookedShapeshiftBarUpdate and hooksecurefunc
+        and type(ShapeshiftBar_Update) == "function" then
+        addon._dcqosHookedShapeshiftBarUpdate = true
+        hooksecurefunc("ShapeshiftBar_Update", function()
+            EnsureGameTooltipActionMethods()
+            InstallShapeshiftOnEnterGuards()
+        end)
+    end
 
     -- Revalidate critical methods before Blizzard's OnEnter handlers call SetAction/SetShapeshift.
     if not GameTooltip._dcqosHookedSetOwner and hooksecurefunc and GameTooltip.SetOwner then
@@ -2118,6 +2203,7 @@ local function HookSpellTooltips()
     if type(ShapeshiftButton_OnEnter) == "function" and not addon._dcqosWrappedShapeshiftButtonOnEnter then
         addon._dcqosWrappedShapeshiftButtonOnEnter = true
         local originalShapeshiftButtonOnEnter = ShapeshiftButton_OnEnter
+        addon._dcqosOriginalShapeshiftButtonOnEnter = originalShapeshiftButtonOnEnter
         ShapeshiftButton_OnEnter = function(...)
             EnsureGameTooltipActionMethods()
             local ok, result = pcall(originalShapeshiftButtonOnEnter, ...)

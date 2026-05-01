@@ -123,6 +123,55 @@ local function HideMainMenuArt()
     end
 end
 
+local function CaptureBlizzardFormBarAnchors()
+    if ActionBars._blizzardFormBarAnchors then
+        return
+    end
+
+    local anchors = {}
+    for _, frameName in ipairs({"StanceBarFrame", "ShapeshiftBarFrame"}) do
+        local frame = _G[frameName]
+        if frame and frame.GetPoint then
+            local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint(1)
+            if point and relativePoint then
+                anchors[frameName] = {
+                    point = point,
+                    relativeTo = relativeTo,
+                    relativePoint = relativePoint,
+                    xOfs = xOfs or 0,
+                    yOfs = yOfs or 0,
+                }
+            end
+        end
+    end
+
+    if next(anchors) then
+        ActionBars._blizzardFormBarAnchors = anchors
+    end
+end
+
+local function RestoreBlizzardFormBarAnchors()
+    local anchors = ActionBars._blizzardFormBarAnchors
+    if not anchors then
+        return
+    end
+
+    for frameName, anchor in pairs(anchors) do
+        local frame = _G[frameName]
+        if frame and frame.ClearAllPoints and frame.SetPoint then
+            frame:ClearAllPoints()
+            frame:SetPoint(anchor.point, anchor.relativeTo, anchor.relativePoint, anchor.xOfs, anchor.yOfs)
+        end
+    end
+
+    if type(StanceBar_Update) == "function" then
+        StanceBar_Update()
+    end
+    if type(ShapeshiftBar_Update) == "function" then
+        ShapeshiftBar_Update()
+    end
+end
+
 local function ApplyBlizzardMode()
     local s = GetSetting()
     if not s.enabled then return end
@@ -167,6 +216,7 @@ local function ApplyBlizzardMode()
     local scaledHeight = baseHeight * scale
     local gap = math.floor(math.max(6, 6 + (scaledHeight - baseHeight)))
     ReanchorAuxiliaryBars(auxAnchor, gap)
+    RestoreBlizzardFormBarAnchors()
 end
 
 local function ApplyCustomMode()
@@ -288,6 +338,7 @@ end
 
 function ActionBars.OnEnable()
     addon:Debug("ActionBars module enabling")
+    CaptureBlizzardFormBarAnchors()
     ApplyActionBars()
 
     if not ActionBars.anchorPointHooksInstalled then

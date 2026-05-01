@@ -648,13 +648,44 @@ static std::string DetectRequestType(const std::string& payload)
 
 static std::string EscapeSQLString(std::string s)
 {
-    size_t pos = 0;
-    while ((pos = s.find("'", pos)) != std::string::npos)
+    std::string escaped;
+    escaped.reserve(s.size() * 2);
+
+    for (unsigned char c : s)
     {
-        s.replace(pos, 1, "''");
-        pos += 2;
+        switch (c)
+        {
+            case '\0':
+                escaped += "\\0";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '\'':
+                escaped += "\\'";
+                break;
+            case '"':
+                escaped += "\\\"";
+                break;
+            case '\x1A':
+                escaped += "\\Z";
+                break;
+            default:
+                escaped.push_back(static_cast<char>(c));
+                break;
+        }
     }
-    return s;
+
+    return escaped;
 }
 
 // Buffered Stats System to reduce DB IO
@@ -823,12 +854,12 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
         player->GetGUID().GetCounter(),
         player->GetSession()->GetAccountId(),
         EscapeSQLString(player->GetName()),
-        requestType,
+        EscapeSQLString(requestType),
         moduleCode,
         opcode,
         payload.length(),
         EscapeSQLString(preview),
-        status,
+        EscapeSQLString(status),
         EscapeSQLString(errorMsg)
     );
 }
@@ -854,7 +885,7 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
         player->GetGUID().GetCounter(),
         player->GetSession()->GetAccountId(),
         EscapeSQLString(player->GetName()),
-        requestType,
+        EscapeSQLString(requestType),
         safeModule,
         opcode,
         dataSize,
