@@ -20,7 +20,7 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
         return;
 
     // Only process players in the Hinterland BG area, not the entire Hinterlands zone.
-    if (player->GetAreaId() != OutdoorPvPHLBattleAreaId)
+    if (!IsPlayerInOutdoorPvPHLArea(player))
         return;
 
     // Track player in zone set for optimized iteration

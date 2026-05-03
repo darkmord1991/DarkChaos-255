@@ -97,11 +97,26 @@ local state = {
     arrivalAlertedAt = nil,
     lastProjectionDebugAt = 0,
     lastProjectionDebugKey = nil,
+    lastNativeProjectionStatsAt = 0,
+    lastNativeProjectionStatsSig = nil,
     retailApiShimInstalled = false,
     retailSuperTrackedContentType = nil,
     retailSuperTrackedContentID = nil,
+    retailSuperTrackedTrackableType = nil,
     retailSuperTrackedMapPin = nil,
+    retailSuperTrackedMapPinType = nil,
+    retailSuperTrackedMapPinTypeID = nil,
+    retailSuperTrackedMapPinPoint = nil,
     retailSuperTrackedVignette = nil,
+    retailSuperTrackedQuestName = nil,
+    lastNavigationPlayerStateMapId = nil,
+    lastNavigationPlayerStateX = nil,
+    lastNavigationPlayerStateY = nil,
+    lastNavigationPlayerStateFacing = nil,
+    minimapPinContainer = nil,
+    minimapPins = {},
+    lastMinimapPinSig = nil,
+    lastMinimapPinCount = 0,
 }
 
 local NAVIGATION_TRACKED_ICON_ATLAS = "Navigation-Tracked-Icon"
@@ -115,6 +130,29 @@ local ARROW_WIDTH = 22
 local ARROW_HEIGHT = 18
 local ARROW_ANCHOR_Y = 60
 local RUN_TRAVEL_SPEED_YARDS_PER_SEC = 7.0
+local MINIMAP_DIAMETER_YARDS = {
+    indoor = {
+        [0] = 300,
+        [1] = 240,
+        [2] = 180,
+        [3] = 120,
+        [4] = 80,
+        [5] = 50,
+    },
+    outdoor = {
+        [0] = 466 + (2 / 3),
+        [1] = 400,
+        [2] = 333 + (1 / 3),
+        [3] = 266 + (2 / 3),
+        [4] = 200,
+        [5] = 133 + (1 / 3),
+    },
+}
+local MINIMAP_PIN_BUCKET_SIZE = 18
+local MINIMAP_PIN_EDGE_PADDING = 10
+local MINIMAP_PIN_MAX_COUNT = 6
+local MINIMAP_WAYPOINT_SCALE = 0.55
+local MINIMAP_QUEST_SCALE = 0.42
 local QUEST_POI_LOCK_MAX_AGE_SEC = 1.25
 local QUEST_POI_LOCK_MAX_DRIFT_YARDS = 120
 
@@ -818,6 +856,87 @@ local function DebugNavigationProjection(message, force, dedupeKey)
     end
 end
 
+local function DebugNativeProjectionStats()
+    if type(state.nativeNavigationGetProjectionDebugStats) ~= "function" then
+        return
+    end
+
+    local comm = addon and addon.settings and addon.settings.communication
+    if not comm or comm.debugMode ~= true then
+        return
+    end
+
+    local now = GetTime() or 0
+    if (now - (state.lastNativeProjectionStatsAt or 0)) < 2.0 then
+        return
+    end
+
+    local ok,
+        callCount,
+        attempts,
+        success,
+        fallback,
+        failNoEffectiveMap,
+        failNoTarget,
+        failNoPlayerMovement,
+        failPlayerMapTranslate,
+        failMapToWorld,
+        failWorldToScreen = pcall(state.nativeNavigationGetProjectionDebugStats)
+
+    if not ok then
+        return
+    end
+
+    callCount = tonumber(callCount) or 0
+    attempts = tonumber(attempts) or 0
+    success = tonumber(success) or 0
+    fallback = tonumber(fallback) or 0
+    failNoEffectiveMap = tonumber(failNoEffectiveMap) or 0
+    failNoTarget = tonumber(failNoTarget) or 0
+    failNoPlayerMovement = tonumber(failNoPlayerMovement) or 0
+    failPlayerMapTranslate = tonumber(failPlayerMapTranslate) or 0
+    failMapToWorld = tonumber(failMapToWorld) or 0
+    failWorldToScreen = tonumber(failWorldToScreen) or 0
+
+    local sig = table.concat({
+        callCount,
+        attempts,
+        success,
+        fallback,
+        failNoEffectiveMap,
+        failNoTarget,
+        failNoPlayerMovement,
+        failPlayerMapTranslate,
+        failMapToWorld,
+        failWorldToScreen,
+    }, ":")
+
+    if sig == state.lastNativeProjectionStatsSig then
+        return
+    end
+
+    state.lastNativeProjectionStatsSig = sig
+    state.lastNativeProjectionStatsAt = now
+
+    DebugNavigationProjection(
+        string.format(
+            "native-stats calls=%d attempts=%d success=%d fallback=%d fail={noMap:%d noTarget:%d noPlayer:%d playerMap:%d mapToWorld:%d worldToScreen:%d}",
+            callCount,
+            attempts,
+            success,
+            fallback,
+            failNoEffectiveMap,
+            failNoTarget,
+            failNoPlayerMovement,
+            failPlayerMapTranslate,
+            failMapToWorld,
+            failWorldToScreen
+        ),
+        true,
+        "native-stats"
+    )
+end
+
 local function BuildTargetKey(target)
     if not target then
         return nil
@@ -978,6 +1097,18 @@ local function MaybeSyncCurrentZoneMap(force)
 end
 
 local function GetQuestIdFromLogIndex(questLogIndex)
+    questLogIndex = tonumber(questLogIndex)
+    if not questLogIndex or questLogIndex <= 0 then
+        return nil
+    end
+
+    if type(C_QuestLog_GetQuestIDForQuestLogIndex) == "function" then
+        local questId = tonumber(C_QuestLog_GetQuestIDForQuestLogIndex(questLogIndex))
+        if questId and questId > 0 then
+            return questId
+        end
+    end
+
     if type(GetQuestLink) == "function" then
         local questLink = GetQuestLink(questLogIndex)
         if type(questLink) == "string" then
@@ -1004,6 +1135,20 @@ local function GetQuestIdFromLogIndex(questLogIndex)
     end
 
     return questLogIndex
+end
+
+local function GetRecurringQuestType(questId, title)
+    local lookup = addon and addon.QuestRecurringLookup or nil
+    if not lookup or type(lookup.Resolve) ~= "function" then
+        return nil
+    end
+
+    local recurrenceType = lookup.Resolve(questId, title)
+    if recurrenceType == "daily" or recurrenceType == "weekly" then
+        return recurrenceType
+    end
+
+    return nil
 end
 
 local function ParseQuestPoiCoords(...)
@@ -1046,6 +1191,95 @@ local function ParseQuestPoiCoords(...)
     end
 
     return nil, nil
+end
+
+local QUEST_POI_BOUNDARY_CONTAINER_KEYS = {
+    "points",
+    "boundary",
+    "boundaryPoints",
+    "polygon",
+    "polygonPoints",
+    "vertices",
+    "vertexes",
+    "areaPoints",
+    "questPoiPoints",
+    "poiPoints",
+}
+
+local function ParseQuestPoiBoundaryPoints(...)
+    local collected = {}
+    local keys = {}
+
+    local function AddPoint(xRaw, yRaw, mapIdRaw, source)
+        local x = NormalizeCoord(xRaw)
+        local y = NormalizeCoord(yRaw)
+        if not x or not y then
+            return
+        end
+
+        local mapId = tonumber(mapIdRaw)
+        if mapId and mapId <= 0 then
+            mapId = nil
+        end
+
+        local key = string.format("%s:%.4f:%.4f", tostring(mapId or "n/a"), x, y)
+        if keys[key] then
+            return
+        end
+
+        keys[key] = true
+        table.insert(collected, {
+            x = x,
+            y = y,
+            mapId = mapId,
+            source = source,
+        })
+    end
+
+    local function ParseValue(value, depth, inheritedMapId, source)
+        if depth > 4 or type(value) ~= "table" then
+            return
+        end
+
+        local mapId = tonumber(value.mapId or value.mapID or value.uiMapID or inheritedMapId)
+        if mapId and mapId <= 0 then
+            mapId = nil
+        end
+
+        if type(value.x) == "number" and type(value.y) == "number" then
+            AddPoint(value.x, value.y, mapId, source)
+        elseif type(value[1]) == "number" and type(value[2]) == "number" then
+            AddPoint(value[1], value[2], mapId, source)
+        end
+
+        for i = 1, #QUEST_POI_BOUNDARY_CONTAINER_KEYS do
+            local key = QUEST_POI_BOUNDARY_CONTAINER_KEYS[i]
+            local nested = value[key]
+            if type(nested) == "table" then
+                ParseValue(nested, depth + 1, mapId, key)
+            end
+        end
+
+        for index, nested in pairs(value) do
+            if type(index) == "number" and type(nested) == "table" then
+                ParseValue(nested, depth + 1, mapId, source)
+            end
+        end
+    end
+
+    local argc = select("#", ...)
+    for i = 1, argc do
+        local value = select(i, ...)
+        if type(value) == "table" then
+            ParseValue(value, 0, nil, "vararg")
+        end
+    end
+
+    if #collected >= 3 then
+        return collected
+    end
+
+    return nil
 end
 
 local function EnsureQuestPoiCompatibilityShim()
@@ -1288,6 +1522,52 @@ local function SuperTrackingTypeToEnum(typeToken)
     return typeToken
 end
 
+local function SuperTrackingMapPinTypeToEnum(pinType)
+    if pinType == nil then
+        return nil
+    end
+
+    local enumTable = _G.Enum and _G.Enum.SuperTrackingMapPinType
+    if type(pinType) == "number" then
+        return pinType
+    end
+
+    local normalized = tostring(pinType):gsub("[%s_%-]", ""):lower()
+    if normalized == "" then
+        return nil
+    end
+
+    if type(enumTable) == "table" then
+        if normalized == "areapoi" and enumTable.AreaPOI ~= nil then
+            return enumTable.AreaPOI
+        end
+        if normalized == "questoffer" and enumTable.QuestOffer ~= nil then
+            return enumTable.QuestOffer
+        end
+        if normalized == "taxinode" and enumTable.TaxiNode ~= nil then
+            return enumTable.TaxiNode
+        end
+        if normalized == "digsite" and enumTable.DigSite ~= nil then
+            return enumTable.DigSite
+        end
+    end
+
+    if normalized == "areapoi" then
+        return 0
+    end
+    if normalized == "questoffer" then
+        return 1
+    end
+    if normalized == "taxinode" then
+        return 2
+    end
+    if normalized == "digsite" then
+        return 3
+    end
+
+    return nil
+end
+
 local function ResolveHighestPrioritySuperTrackingTypeToken()
     local contentType = NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType)
     if contentType then
@@ -1354,6 +1634,7 @@ local function EnsureRetailNavigationApiShims()
     local isSuperTrackingUserWaypoint = type(_G.IsSuperTrackingUserWaypoint) == "function" and _G.IsSuperTrackingUserWaypoint or nil
     local getSuperTrackedItemName = type(_G.GetSuperTrackedItemName) == "function" and _G.GetSuperTrackedItemName or nil
     local setSuperTrackedQuestName = type(_G.SetSuperTrackedQuestName) == "function" and _G.SetSuperTrackedQuestName or nil
+    local getSuperTrackedQuestName = type(_G.GetSuperTrackedQuestName) == "function" and _G.GetSuperTrackedQuestName or nil
     local getNavigationFrame = ResolveNavigationNativeFn("GetNavigationFrame", "C_Navigation_GetFrame")
     local getNavigationFrameState = ResolveNavigationNativeFn("GetNavigationFrameState", "C_Navigation_GetFrameState")
     local setNavigationPlayerState = ResolveNavigationNativeFn("SetNavigationPlayerState", "C_Navigation_SetPlayerState")
@@ -1362,6 +1643,7 @@ local function EnsureRetailNavigationApiShims()
     local getNavigationDistanceSquared = ResolveNavigationNativeFn("GetNavigationDistanceSquared", "C_Navigation_GetDistanceSquared")
     local hasNavigationValidScreenPosition = ResolveNavigationNativeFn("HasNavigationValidScreenPosition", "C_Navigation_HasValidScreenPosition")
     local wasNavigationFrameClampedToScreen = ResolveNavigationNativeFn("WasNavigationFrameClampedToScreen", "C_Navigation_WasClampedToScreen")
+    local getNavigationProjectionDebugStats = ResolveNavigationNativeFn("GetNavigationProjectionDebugStats", "C_Navigation_GetProjectionDebugStats")
 
     -- Cache resolved native function handles so projection updates can call the
     -- exact export even when only shimmed namespaces are present globally.
@@ -1369,6 +1651,7 @@ local function EnsureRetailNavigationApiShims()
     state.nativeNavigationSetPlayerState = setNavigationPlayerState
     state.nativeNavigationHasValidScreenPosition = hasNavigationValidScreenPosition
     state.nativeNavigationWasClampedToScreen = wasNavigationFrameClampedToScreen
+    state.nativeNavigationGetProjectionDebugStats = getNavigationProjectionDebugStats
     state.nativeSetSuperTrackedQuestID = setSuperTrackedQuestId
     state.nativeSetSuperTrackedQuestName = setSuperTrackedQuestName
     state.nativeSetSuperTrackedQuestWaypointForMap = setSuperTrackedWaypoint
@@ -1406,11 +1689,18 @@ local function EnsureRetailNavigationApiShims()
             if tonumber(questId) and tonumber(questId) > 0 then
                 state.retailSuperTrackedContentType = "quest"
                 state.retailSuperTrackedContentID = tonumber(questId)
+                state.retailSuperTrackedTrackableType = nil
                 state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedMapPinType = nil
+                state.retailSuperTrackedMapPinTypeID = nil
+                state.retailSuperTrackedMapPinPoint = nil
                 state.retailSuperTrackedVignette = nil
+                state.retailSuperTrackedQuestName = nil
             elseif state.retailSuperTrackedContentType == "quest" then
                 state.retailSuperTrackedContentType = nil
                 state.retailSuperTrackedContentID = nil
+                state.retailSuperTrackedTrackableType = nil
+                state.retailSuperTrackedQuestName = nil
             end
 
             return result ~= false
@@ -1486,8 +1776,13 @@ local function EnsureRetailNavigationApiShims()
         superTrackApi.ClearAllSuperTracked = function()
             state.retailSuperTrackedContentType = nil
             state.retailSuperTrackedContentID = nil
+            state.retailSuperTrackedTrackableType = nil
             state.retailSuperTrackedMapPin = nil
+            state.retailSuperTrackedMapPinType = nil
+            state.retailSuperTrackedMapPinTypeID = nil
+            state.retailSuperTrackedMapPinPoint = nil
             state.retailSuperTrackedVignette = nil
+            state.retailSuperTrackedQuestName = nil
 
             if not clearAllSuperTracked then
                 return true
@@ -1528,11 +1823,16 @@ local function EnsureRetailNavigationApiShims()
             if enabled == true then
                 state.retailSuperTrackedContentType = "userWaypoint"
                 state.retailSuperTrackedContentID = nil
+                state.retailSuperTrackedTrackableType = nil
                 state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedMapPinType = nil
+                state.retailSuperTrackedMapPinTypeID = nil
+                state.retailSuperTrackedMapPinPoint = nil
                 state.retailSuperTrackedVignette = nil
             elseif state.retailSuperTrackedContentType == "userWaypoint" then
                 state.retailSuperTrackedContentType = nil
                 state.retailSuperTrackedContentID = nil
+                state.retailSuperTrackedTrackableType = nil
             end
 
             return result ~= false
@@ -1578,11 +1878,37 @@ local function EnsureRetailNavigationApiShims()
             if type(name) == "string" and name ~= "" then
                 state.retailSuperTrackedContentType = "quest"
                 state.retailSuperTrackedContentID = name
+                state.retailSuperTrackedTrackableType = nil
                 state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedMapPinType = nil
+                state.retailSuperTrackedMapPinTypeID = nil
+                state.retailSuperTrackedMapPinPoint = nil
                 state.retailSuperTrackedVignette = nil
+                state.retailSuperTrackedQuestName = name
             end
 
             return result ~= false
+        end
+    end
+
+    if type(superTrackApi.GetSuperTrackedQuestName) ~= "function" then
+        superTrackApi.GetSuperTrackedQuestName = function()
+            if getSuperTrackedQuestName then
+                local ok, name = pcall(getSuperTrackedQuestName)
+                if ok and type(name) == "string" and name ~= "" then
+                    return name
+                end
+            end
+
+            if type(state.retailSuperTrackedQuestName) == "string" and state.retailSuperTrackedQuestName ~= "" then
+                return state.retailSuperTrackedQuestName
+            end
+
+            if type(state.followedQuestTitle) == "string" and state.followedQuestTitle ~= "" then
+                return state.followedQuestTitle
+            end
+
+            return nil
         end
     end
 
@@ -1596,25 +1922,9 @@ local function EnsureRetailNavigationApiShims()
     if type(superTrackApi.GetSuperTrackedContent) ~= "function" then
         superTrackApi.GetSuperTrackedContent = function()
             local contentType = NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType)
-            if contentType then
-                if contentType == "mapPin" then
-                    return SuperTrackingTypeToEnum(contentType), state.retailSuperTrackedMapPin
-                end
-                if contentType == "vignette" then
-                    return SuperTrackingTypeToEnum(contentType), state.retailSuperTrackedVignette
-                end
-                return SuperTrackingTypeToEnum(contentType), state.retailSuperTrackedContentID
+            if contentType == "content" then
+                return state.retailSuperTrackedTrackableType, state.retailSuperTrackedContentID
             end
-
-            local trackedQuestId = superTrackApi.GetSuperTrackedQuestID and superTrackApi.GetSuperTrackedQuestID() or nil
-            if trackedQuestId then
-                return SuperTrackingTypeToEnum("quest"), trackedQuestId
-            end
-
-            if superTrackApi.IsSuperTrackingUserWaypoint and superTrackApi.IsSuperTrackingUserWaypoint() then
-                return SuperTrackingTypeToEnum("userWaypoint"), true
-            end
-
             return nil, nil
         end
     end
@@ -1625,7 +1935,11 @@ local function EnsureRetailNavigationApiShims()
             if not normalizedType then
                 state.retailSuperTrackedContentType = nil
                 state.retailSuperTrackedContentID = nil
+                state.retailSuperTrackedTrackableType = nil
                 state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedMapPinType = nil
+                state.retailSuperTrackedMapPinTypeID = nil
+                state.retailSuperTrackedMapPinPoint = nil
                 state.retailSuperTrackedVignette = nil
                 if superTrackApi.ClearAllSuperTracked then
                     return superTrackApi.ClearAllSuperTracked()
@@ -1650,7 +1964,10 @@ local function EnsureRetailNavigationApiShims()
 
             if normalizedType == "mapPin" then
                 if superTrackApi.SetSuperTrackedMapPin then
-                    return superTrackApi.SetSuperTrackedMapPin(contentID)
+                    if type(contentID) == "table" then
+                        return superTrackApi.SetSuperTrackedMapPin(contentID.type, contentID.typeID)
+                    end
+                    return superTrackApi.SetSuperTrackedMapPin(contentID, 0)
                 end
                 return false
             end
@@ -1662,18 +1979,25 @@ local function EnsureRetailNavigationApiShims()
                 return false
             end
 
-            state.retailSuperTrackedContentType = normalizedType
+            state.retailSuperTrackedContentType = "content"
             state.retailSuperTrackedContentID = contentID
+            state.retailSuperTrackedTrackableType = contentType
             state.retailSuperTrackedMapPin = nil
+            state.retailSuperTrackedMapPinType = nil
+            state.retailSuperTrackedMapPinTypeID = nil
+            state.retailSuperTrackedMapPinPoint = nil
             state.retailSuperTrackedVignette = nil
             return true
         end
     end
 
     if type(superTrackApi.SetSuperTrackedMapPin) ~= "function" then
-        superTrackApi.SetSuperTrackedMapPin = function(mapPinOrMapId, x, y)
-            if mapPinOrMapId == nil then
+        superTrackApi.SetSuperTrackedMapPin = function(mapPinType, typeID)
+            if mapPinType == nil then
                 state.retailSuperTrackedMapPin = nil
+                state.retailSuperTrackedMapPinType = nil
+                state.retailSuperTrackedMapPinTypeID = nil
+                state.retailSuperTrackedMapPinPoint = nil
                 if state.retailSuperTrackedContentType == "mapPin" then
                     state.retailSuperTrackedContentType = nil
                     state.retailSuperTrackedContentID = nil
@@ -1681,17 +2005,35 @@ local function EnsureRetailNavigationApiShims()
                 return true
             end
 
-            local point = NormalizeUiMapPointArgs(mapPinOrMapId, x, y)
-            if not point then
-                return false
+            local point = NormalizeUiMapPointArgs(mapPinType, typeID, nil)
+            if point then
+                state.retailSuperTrackedMapPinPoint = point
+                state.retailSuperTrackedMapPinType = SuperTrackingMapPinTypeToEnum("AreaPOI")
+                state.retailSuperTrackedMapPinTypeID = tonumber(typeID) or 0
+            else
+                local normalizedPinType = SuperTrackingMapPinTypeToEnum(mapPinType)
+                local normalizedTypeID = tonumber(typeID)
+                if normalizedPinType == nil or normalizedTypeID == nil then
+                    return false
+                end
+
+                state.retailSuperTrackedMapPinType = normalizedPinType
+                state.retailSuperTrackedMapPinTypeID = normalizedTypeID
+                state.retailSuperTrackedMapPinPoint = nil
             end
 
-            state.retailSuperTrackedMapPin = point
+            state.retailSuperTrackedMapPin = {
+                type = state.retailSuperTrackedMapPinType,
+                typeID = state.retailSuperTrackedMapPinTypeID,
+                point = state.retailSuperTrackedMapPinPoint,
+            }
             state.retailSuperTrackedContentType = "mapPin"
-            state.retailSuperTrackedContentID = point
+            state.retailSuperTrackedContentID = state.retailSuperTrackedMapPinTypeID
+            state.retailSuperTrackedTrackableType = nil
             state.retailSuperTrackedVignette = nil
 
-            if superTrackApi.SetSuperTrackedQuestWaypointForMap then
+            if state.retailSuperTrackedMapPinPoint and superTrackApi.SetSuperTrackedQuestWaypointForMap then
+                local point = state.retailSuperTrackedMapPinPoint
                 pcall(superTrackApi.SetSuperTrackedQuestWaypointForMap, point.uiMapID, point.x, point.y)
             end
 
@@ -1701,18 +2043,59 @@ local function EnsureRetailNavigationApiShims()
 
     if type(superTrackApi.GetSuperTrackedMapPin) ~= "function" then
         superTrackApi.GetSuperTrackedMapPin = function()
-            return state.retailSuperTrackedMapPin
+            if state.retailSuperTrackedMapPinType == nil then
+                return nil, nil
+            end
+            return state.retailSuperTrackedMapPinType, state.retailSuperTrackedMapPinTypeID
         end
     end
 
     if type(superTrackApi.ClearSuperTrackedMapPin) ~= "function" then
         superTrackApi.ClearSuperTrackedMapPin = function()
             state.retailSuperTrackedMapPin = nil
+            state.retailSuperTrackedMapPinType = nil
+            state.retailSuperTrackedMapPinTypeID = nil
+            state.retailSuperTrackedMapPinPoint = nil
             if state.retailSuperTrackedContentType == "mapPin" then
                 state.retailSuperTrackedContentType = nil
                 state.retailSuperTrackedContentID = nil
             end
             return true
+        end
+    end
+
+    if type(superTrackApi.ClearSuperTrackedContent) ~= "function" then
+        superTrackApi.ClearSuperTrackedContent = function()
+            if state.retailSuperTrackedContentType == "content" then
+                state.retailSuperTrackedContentType = nil
+                state.retailSuperTrackedContentID = nil
+                state.retailSuperTrackedTrackableType = nil
+            end
+            return true
+        end
+    end
+
+    if type(superTrackApi.IsSuperTrackingContent) ~= "function" then
+        superTrackApi.IsSuperTrackingContent = function()
+            return NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType) == "content"
+        end
+    end
+
+    if type(superTrackApi.IsSuperTrackingMapPin) ~= "function" then
+        superTrackApi.IsSuperTrackingMapPin = function()
+            return NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType) == "mapPin"
+        end
+    end
+
+    if type(superTrackApi.IsSuperTrackingQuest) ~= "function" then
+        superTrackApi.IsSuperTrackingQuest = function()
+            return (superTrackApi.GetSuperTrackedQuestID and superTrackApi.GetSuperTrackedQuestID() ~= nil) or false
+        end
+    end
+
+    if type(superTrackApi.IsSuperTrackingCorpse) ~= "function" then
+        superTrackApi.IsSuperTrackingCorpse = function()
+            return false
         end
     end
 
@@ -1730,7 +2113,11 @@ local function EnsureRetailNavigationApiShims()
             state.retailSuperTrackedVignette = vignetteGUID
             state.retailSuperTrackedContentType = "vignette"
             state.retailSuperTrackedContentID = vignetteGUID
+            state.retailSuperTrackedTrackableType = nil
             state.retailSuperTrackedMapPin = nil
+            state.retailSuperTrackedMapPinType = nil
+            state.retailSuperTrackedMapPinTypeID = nil
+            state.retailSuperTrackedMapPinPoint = nil
             return true
         end
     end
@@ -1738,6 +2125,36 @@ local function EnsureRetailNavigationApiShims()
     if type(superTrackApi.GetSuperTrackedVignette) ~= "function" then
         superTrackApi.GetSuperTrackedVignette = function()
             return state.retailSuperTrackedVignette
+        end
+    end
+
+    if type(_G.QuestSuperTracking_GetSuperTrackedQuestID) ~= "function" then
+        _G.QuestSuperTracking_GetSuperTrackedQuestID = function()
+            return superTrackApi.GetSuperTrackedQuestID and superTrackApi.GetSuperTrackedQuestID() or nil
+        end
+    end
+
+    if type(_G.QuestSuperTracking_GetSuperTrackedQuestName) ~= "function" then
+        _G.QuestSuperTracking_GetSuperTrackedQuestName = function()
+            return superTrackApi.GetSuperTrackedQuestName and superTrackApi.GetSuperTrackedQuestName() or nil
+        end
+    end
+
+    if type(_G.QuestSuperTracking_GetSuperTrackedContent) ~= "function" then
+        _G.QuestSuperTracking_GetSuperTrackedContent = function()
+            return superTrackApi.GetSuperTrackedContent and superTrackApi.GetSuperTrackedContent() or nil, nil
+        end
+    end
+
+    if type(_G.QuestSuperTracking_GetSuperTrackedMapPin) ~= "function" then
+        _G.QuestSuperTracking_GetSuperTrackedMapPin = function()
+            return superTrackApi.GetSuperTrackedMapPin and superTrackApi.GetSuperTrackedMapPin() or nil, nil
+        end
+    end
+
+    if type(_G.QuestSuperTracking_GetSuperTrackedVignette) ~= "function" then
+        _G.QuestSuperTracking_GetSuperTrackedVignette = function()
+            return superTrackApi.GetSuperTrackedVignette and superTrackApi.GetSuperTrackedVignette() or nil
         end
     end
 
@@ -1908,6 +2325,45 @@ local function EnsureRetailNavigationApiShims()
         end
     end
 
+    if type(navigationApi.SetPlayerState) ~= "function" then
+        navigationApi.SetPlayerState = function(mapId, x, y, facing)
+            mapId = tonumber(mapId)
+            x = NormalizeCoord(x)
+            y = NormalizeCoord(y)
+            facing = tonumber(facing) or 0
+
+            if not mapId or mapId <= 0 or not x or not y then
+                return false
+            end
+
+            state.lastNavigationPlayerStateMapId = mapId
+            state.lastNavigationPlayerStateX = x
+            state.lastNavigationPlayerStateY = y
+            state.lastNavigationPlayerStateFacing = facing
+
+            if setNavigationPlayerState then
+                local ok, result = pcall(setNavigationPlayerState, mapId, x, y, facing)
+                if not ok then
+                    return false
+                end
+                if result ~= nil then
+                    return result ~= false
+                end
+            end
+
+            return true
+        end
+    end
+
+    if type(navigationApi.GetPlayerState) ~= "function" then
+        navigationApi.GetPlayerState = function()
+            return state.lastNavigationPlayerStateMapId,
+                state.lastNavigationPlayerStateX,
+                state.lastNavigationPlayerStateY,
+                state.lastNavigationPlayerStateFacing
+        end
+    end
+
     if type(navigationApi.GetDistanceSquared) ~= "function" then
         navigationApi.GetDistanceSquared = function(mapIdOrPoint, x, y)
             if getNavigationDistanceSquared then
@@ -2013,6 +2469,43 @@ local function EnsureRetailNavigationApiShims()
         end
     end
 
+    if type(navigationApi.GetProjectionDebugStats) ~= "function" then
+        navigationApi.GetProjectionDebugStats = function()
+            if not getNavigationProjectionDebugStats then
+                return nil
+            end
+
+            local ok,
+                callCount,
+                attempts,
+                success,
+                fallback,
+                failNoEffectiveMap,
+                failNoTarget,
+                failNoPlayerMovement,
+                failPlayerMapTranslate,
+                failMapToWorld,
+                failWorldToScreen = pcall(getNavigationProjectionDebugStats)
+
+            if not ok then
+                return nil
+            end
+
+            return {
+                callCount = tonumber(callCount) or 0,
+                worldProjectionAttempts = tonumber(attempts) or 0,
+                worldProjectionSuccess = tonumber(success) or 0,
+                fallbackCount = tonumber(fallback) or 0,
+                failNoEffectiveMap = tonumber(failNoEffectiveMap) or 0,
+                failNoTarget = tonumber(failNoTarget) or 0,
+                failNoPlayerMovement = tonumber(failNoPlayerMovement) or 0,
+                failPlayerMapTranslate = tonumber(failPlayerMapTranslate) or 0,
+                failMapToWorld = tonumber(failMapToWorld) or 0,
+                failWorldToScreen = tonumber(failWorldToScreen) or 0,
+            }
+        end
+    end
+
     if type(navigationApi.GetNearestPartyMemberToken) ~= "function" then
         navigationApi.GetNearestPartyMemberToken = function()
             local target = state.target
@@ -2100,11 +2593,87 @@ local function EnsureRetailNavigationApiShims()
         end
     end
 
+    local function EnsureFlatNamespaceAliases(namespaceTable, aliasPairs)
+        if type(namespaceTable) ~= "table" or type(aliasPairs) ~= "table" then
+            return
+        end
+
+        for i = 1, #aliasPairs do
+            local pair = aliasPairs[i]
+            local globalName = pair and pair[1]
+            local methodName = pair and pair[2]
+            if type(globalName) == "string"
+                and type(methodName) == "string"
+                and type(_G[globalName]) ~= "function"
+                and type(namespaceTable[methodName]) == "function" then
+                _G[globalName] = function(...)
+                    return namespaceTable[methodName](...)
+                end
+            end
+        end
+    end
+
+    EnsureFlatNamespaceAliases(superTrackApi, {
+        { "C_SuperTrack_SetSuperTrackedQuestID", "SetSuperTrackedQuestID" },
+        { "C_SuperTrack_GetSuperTrackedQuestID", "GetSuperTrackedQuestID" },
+        { "C_SuperTrack_SetSuperTrackedQuestWaypointForMap", "SetSuperTrackedQuestWaypointForMap" },
+        { "C_SuperTrack_GetSuperTrackedQuestWaypointForMap", "GetSuperTrackedQuestWaypointForMap" },
+        { "C_SuperTrack_GetNextWaypointForMap", "GetNextWaypointForMap" },
+        { "C_SuperTrack_ClearSuperTrackedQuestWaypoint", "ClearSuperTrackedQuestWaypoint" },
+        { "C_SuperTrack_ClearAllSuperTracked", "ClearAllSuperTracked" },
+        { "C_SuperTrack_IsSuperTrackingAnything", "IsSuperTrackingAnything" },
+        { "C_SuperTrack_SetSuperTrackedUserWaypoint", "SetSuperTrackedUserWaypoint" },
+        { "C_SuperTrack_IsSuperTrackingUserWaypoint", "IsSuperTrackingUserWaypoint" },
+        { "C_SuperTrack_GetSuperTrackedItemName", "GetSuperTrackedItemName" },
+        { "C_SuperTrack_SetSuperTrackedQuestName", "SetSuperTrackedQuestName" },
+        { "C_SuperTrack_GetSuperTrackedQuestName", "GetSuperTrackedQuestName" },
+        { "C_SuperTrack_GetHighestPrioritySuperTrackingType", "GetHighestPrioritySuperTrackingType" },
+        { "C_SuperTrack_GetSuperTrackedContent", "GetSuperTrackedContent" },
+        { "C_SuperTrack_SetSuperTrackedContent", "SetSuperTrackedContent" },
+        { "C_SuperTrack_SetSuperTrackedMapPin", "SetSuperTrackedMapPin" },
+        { "C_SuperTrack_GetSuperTrackedMapPin", "GetSuperTrackedMapPin" },
+        { "C_SuperTrack_ClearSuperTrackedMapPin", "ClearSuperTrackedMapPin" },
+        { "C_SuperTrack_ClearSuperTrackedContent", "ClearSuperTrackedContent" },
+        { "C_SuperTrack_IsSuperTrackingContent", "IsSuperTrackingContent" },
+        { "C_SuperTrack_IsSuperTrackingMapPin", "IsSuperTrackingMapPin" },
+        { "C_SuperTrack_IsSuperTrackingQuest", "IsSuperTrackingQuest" },
+        { "C_SuperTrack_IsSuperTrackingCorpse", "IsSuperTrackingCorpse" },
+        { "C_SuperTrack_SetSuperTrackedVignette", "SetSuperTrackedVignette" },
+        { "C_SuperTrack_GetSuperTrackedVignette", "GetSuperTrackedVignette" },
+    })
+
+    EnsureFlatNamespaceAliases(mapApi, {
+        { "C_Map_CanSetUserWaypointOnMap", "CanSetUserWaypointOnMap" },
+        { "C_Map_SetUserWaypoint", "SetUserWaypoint" },
+        { "C_Map_GetUserWaypoint", "GetUserWaypoint" },
+        { "C_Map_GetUserWaypointHyperlink", "GetUserWaypointHyperlink" },
+        { "C_Map_GetUserWaypointFromHyperlink", "GetUserWaypointFromHyperlink" },
+        { "C_Map_GetUserWaypointPositionForMap", "GetUserWaypointPositionForMap" },
+        { "C_Map_HasUserWaypoint", "HasUserWaypoint" },
+        { "C_Map_ClearUserWaypoint", "ClearUserWaypoint" },
+    })
+
+    EnsureFlatNamespaceAliases(navigationApi, {
+        { "C_Navigation_GetDistance", "GetDistance" },
+        { "C_Navigation_GetDistanceSquared", "GetDistanceSquared" },
+        { "C_Navigation_GetFrame", "GetFrame" },
+        { "C_Navigation_GetFrameState", "GetFrameState" },
+        { "C_Navigation_GetTargetState", "GetTargetState" },
+        { "C_Navigation_HasValidScreenPosition", "HasValidScreenPosition" },
+        { "C_Navigation_WasClampedToScreen", "WasClampedToScreen" },
+        { "C_Navigation_GetProjectionDebugStats", "GetProjectionDebugStats" },
+        { "C_Navigation_SetPlayerState", "SetPlayerState" },
+        { "C_Navigation_GetPlayerState", "GetPlayerState" },
+        { "C_Navigation_GetNearestPartyMemberToken", "GetNearestPartyMemberToken" },
+    })
+
     -- C_QuestLog namespace: wire native flat-global exports into the table so that
     -- code using dot-notation (C_QuestLog.IsComplete etc.) works on WotLK.
     local nativeQuestLogIsComplete = type(_G.C_QuestLog_IsComplete) == "function" and _G.C_QuestLog_IsComplete or nil
     local nativeQuestLogGetQuestsOnMap = type(_G.C_QuestLog_GetQuestsOnMap) == "function" and _G.C_QuestLog_GetQuestsOnMap or nil
     local nativeQuestLogGetQuestIDForWatchIndex = type(_G.C_QuestLog_GetQuestIDForQuestWatchIndex) == "function" and _G.C_QuestLog_GetQuestIDForQuestWatchIndex or nil
+    local nativeQuestLogReadyForTurnIn = type(_G.C_QuestLog_ReadyForTurnIn) == "function" and _G.C_QuestLog_ReadyForTurnIn or nil
+    local nativeQuestLogGetQuestAdditionalHighlights = type(_G.C_QuestLog_GetQuestAdditionalHighlights) == "function" and _G.C_QuestLog_GetQuestAdditionalHighlights or nil
 
     if type(questLogApi.IsComplete) ~= "function" then
         questLogApi.IsComplete = function(questId)
@@ -2144,6 +2713,45 @@ local function EnsureRetailNavigationApiShims()
             return result
         end
     end
+
+    if type(questLogApi.ReadyForTurnIn) ~= "function" then
+        questLogApi.ReadyForTurnIn = function(questId)
+            if nativeQuestLogReadyForTurnIn then
+                local ok, result = pcall(nativeQuestLogReadyForTurnIn, questId)
+                if ok then
+                    return result == true
+                end
+            end
+
+            if questLogApi.IsComplete then
+                local complete = questLogApi.IsComplete(questId)
+                return complete == 1 or complete == true
+            end
+
+            return false
+        end
+    end
+
+    if type(questLogApi.GetQuestAdditionalHighlights) ~= "function" then
+        questLogApi.GetQuestAdditionalHighlights = function(questId)
+            if nativeQuestLogGetQuestAdditionalHighlights then
+                local ok, uiMapID, worldQuests, worldQuestsElite, dungeons, treasures = pcall(nativeQuestLogGetQuestAdditionalHighlights, questId)
+                if ok then
+                    return uiMapID, worldQuests, worldQuestsElite, dungeons, treasures
+                end
+            end
+
+            return nil, false, false, false, false
+        end
+    end
+
+    EnsureFlatNamespaceAliases(questLogApi, {
+        { "C_QuestLog_IsComplete", "IsComplete" },
+        { "C_QuestLog_GetQuestsOnMap", "GetQuestsOnMap" },
+        { "C_QuestLog_GetQuestIDForQuestWatchIndex", "GetQuestIDForQuestWatchIndex" },
+        { "C_QuestLog_ReadyForTurnIn", "ReadyForTurnIn" },
+        { "C_QuestLog_GetQuestAdditionalHighlights", "GetQuestAdditionalHighlights" },
+    })
 end
 
 local function ClearQuestPoiCache()
@@ -2266,6 +2874,8 @@ local function AddQuestPoiCachePoint(questId, x, y, mapId, source)
         bucket = {
             points = {},
             keys = {},
+            boundaryPoints = {},
+            boundaryKeys = {},
             updatedAt = 0,
         }
         state.questPoiCache[questId] = bucket
@@ -2284,6 +2894,106 @@ local function AddQuestPoiCachePoint(questId, x, y, mapId, source)
         source = source,
     })
     bucket.updatedAt = GetTime() or 0
+end
+
+local function AddQuestPoiBoundaryPoints(questId, points, mapId, source)
+    questId = tonumber(questId)
+    if not questId or questId <= 0 or type(points) ~= "table" then
+        return
+    end
+
+    if not state.questPoiCache then
+        state.questPoiCache = {}
+    end
+
+    local bucket = state.questPoiCache[questId]
+    if not bucket then
+        bucket = {
+            points = {},
+            keys = {},
+            boundaryPoints = {},
+            boundaryKeys = {},
+            updatedAt = 0,
+        }
+        state.questPoiCache[questId] = bucket
+    end
+
+    bucket.boundaryPoints = bucket.boundaryPoints or {}
+    bucket.boundaryKeys = bucket.boundaryKeys or {}
+
+    local inserted = 0
+    for i = 1, #points do
+        local point = points[i]
+        local x = point and NormalizeCoord(point.x)
+        local y = point and NormalizeCoord(point.y)
+        if x and y then
+            local pointMapId = tonumber((point and point.mapId) or mapId)
+            if pointMapId and pointMapId <= 0 then
+                pointMapId = nil
+            end
+            local key = string.format("%s:%.4f:%.4f", tostring(pointMapId or "n/a"), x, y)
+            if not bucket.boundaryKeys[key] then
+                bucket.boundaryKeys[key] = true
+                table.insert(bucket.boundaryPoints, {
+                    x = x,
+                    y = y,
+                    mapId = pointMapId,
+                    source = source or point.source,
+                })
+                inserted = inserted + 1
+            end
+        end
+    end
+
+    if inserted > 0 then
+        bucket.updatedAt = GetTime() or 0
+    end
+end
+
+local function GetCachedQuestPoiBoundaryPoints(questId, mapId)
+    questId = tonumber(questId)
+    if not questId or questId <= 0 then
+        return nil
+    end
+
+    local bucket = state.questPoiCache and state.questPoiCache[questId]
+    if not bucket or not bucket.boundaryPoints or #bucket.boundaryPoints < 3 then
+        return nil
+    end
+
+    local currentMapId = mapId
+    if not currentMapId and type(GetCurrentMapAreaID) == "function" then
+        currentMapId = GetCurrentMapAreaID()
+    end
+
+    local selected = {}
+    for i = 1, #bucket.boundaryPoints do
+        local point = bucket.boundaryPoints[i]
+        if not currentMapId or not point.mapId or point.mapId == currentMapId then
+            table.insert(selected, {
+                x = point.x,
+                y = point.y,
+            })
+        end
+    end
+
+    if #selected < 3 then
+        return nil
+    end
+
+    local cx, cy = 0, 0
+    for i = 1, #selected do
+        cx = cx + selected[i].x
+        cy = cy + selected[i].y
+    end
+    cx = cx / #selected
+    cy = cy / #selected
+
+    table.sort(selected, function(a, b)
+        return Atan2(a.y - cy, a.x - cx) < Atan2(b.y - cy, b.x - cx)
+    end)
+
+    return selected
 end
 
 local function GetPoiCoordsFromButtonAnchor(button)
@@ -2329,9 +3039,14 @@ local function CacheQuestPoiDisplayEntry(parentName, buttonType, buttonIndex, qu
     local mapId = (type(GetCurrentMapAreaID) == "function") and GetCurrentMapAreaID() or nil
 
     if type(QuestPOIGetIconInfo) == "function" then
-        local x, y = ParseQuestPoiCoords(QuestPOIGetIconInfo(buttonIndex))
+        local iconInfo = { QuestPOIGetIconInfo(buttonIndex) }
+        local x, y = ParseQuestPoiCoords(unpack(iconInfo))
         if x and y then
             AddQuestPoiCachePoint(qid, x, y, mapId, "display-index")
+        end
+        local boundaryPoints = ParseQuestPoiBoundaryPoints(unpack(iconInfo))
+        if boundaryPoints then
+            AddQuestPoiBoundaryPoints(qid, boundaryPoints, mapId, "display-index")
         end
     end
 
@@ -2456,9 +3171,35 @@ local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, ma
         end
     end
 
+    if activeMapId then
+        local mapQuests = ShimGetQuestsOnMap(activeMapId)
+        if type(mapQuests) == "table" then
+            for _, info in pairs(mapQuests) do
+                if info and tonumber(info.questID) == questId then
+                    local mapBoundary = ParseQuestPoiBoundaryPoints(info)
+                    if mapBoundary then
+                        AddQuestPoiBoundaryPoints(questId, mapBoundary, activeMapId, "quests-on-map")
+                    end
+
+                    local mapX = NormalizeCoord(info.x)
+                    local mapY = NormalizeCoord(info.y)
+                    if mapX and mapY then
+                        AddQuestPoiCachePoint(questId, mapX, mapY, activeMapId, "quests-on-map")
+                    end
+                    break
+                end
+            end
+        end
+    end
+
     if type(QuestPOIGetIconInfo) == "function" then
         -- Prefer quest-log-index lookup first for 3.3.5 tracker-selected quests.
-        local qx, qy = ParseQuestPoiCoords(QuestPOIGetIconInfo(questLogIndex))
+        local logIndexInfo = { QuestPOIGetIconInfo(questLogIndex) }
+        local qx, qy = ParseQuestPoiCoords(unpack(logIndexInfo))
+        local logIndexBoundary = ParseQuestPoiBoundaryPoints(unpack(logIndexInfo))
+        if logIndexBoundary then
+            AddQuestPoiBoundaryPoints(questId, logIndexBoundary, activeMapId, "log-index")
+        end
         if qx and qy then
             AddQuestPoiCachePoint(questId, qx, qy, activeMapId, "log-index")
             SetQuestPoiLock(questId, qx, qy, activeMapId, "log-index", playerX, playerY)
@@ -2466,7 +3207,12 @@ local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, ma
         end
 
         if questId ~= questLogIndex then
-            qx, qy = ParseQuestPoiCoords(QuestPOIGetIconInfo(questId))
+            local questIdInfo = { QuestPOIGetIconInfo(questId) }
+            qx, qy = ParseQuestPoiCoords(unpack(questIdInfo))
+            local questIdBoundary = ParseQuestPoiBoundaryPoints(unpack(questIdInfo))
+            if questIdBoundary then
+                AddQuestPoiBoundaryPoints(questId, questIdBoundary, activeMapId, "quest-id")
+            end
             if qx and qy then
                 AddQuestPoiCachePoint(questId, qx, qy, activeMapId, "quest-id")
                 SetQuestPoiLock(questId, qx, qy, activeMapId, "quest-id", playerX, playerY)
@@ -2599,6 +3345,770 @@ FindQuestLogIndexByQuestId = function(questId)
     return nil
 end
 
+local function GetQuestLogInfo(questLogIndex)
+    questLogIndex = tonumber(questLogIndex)
+    if not questLogIndex or questLogIndex <= 0
+        or type(GetQuestLogTitle) ~= "function" then
+        return nil
+    end
+
+    local title, level, tag, suggestedGroup, isHeader, _, isComplete, frequency, questIdFromApi = GetQuestLogTitle(questLogIndex)
+    if not title or isHeader then
+        return nil
+    end
+
+    local questId = tonumber(questIdFromApi)
+    if not questId or questId <= 0 then
+        questId = GetQuestIdFromLogIndex(questLogIndex)
+    end
+
+    local stockIsDaily = (frequency == true or frequency == 1)
+    local recurrenceType = GetRecurringQuestType(questId, title)
+    if not recurrenceType and stockIsDaily then
+        recurrenceType = "daily"
+    end
+
+    local isWeekly = recurrenceType == "weekly"
+    local isRecurring = recurrenceType == "daily" or isWeekly
+
+    return {
+        questLogIndex = questLogIndex,
+        questId = questId,
+        title = title,
+        level = tonumber(level),
+        tag = tag,
+        suggestedGroup = tonumber(suggestedGroup),
+        isComplete = (isComplete == true or isComplete == 1),
+        isDaily = stockIsDaily or isRecurring,
+        isWeekly = isWeekly,
+        isRecurring = isRecurring,
+        recurrenceType = recurrenceType,
+    }
+end
+
+local function EstimateQuestPoiBoundaryRadius(questLogIndex, centerX, centerY)
+    if not questLogIndex or questLogIndex <= 0 then
+        return 50
+    end
+
+    local info = GetQuestLogInfo(questLogIndex)
+    if not info then
+        return 50
+    end
+
+    local baseRadius = 50
+    if info.level then
+        baseRadius = 30 + math_min(info.level * 2, 80)
+    end
+
+    local frequency = (info.isDaily and 1.2) or 1.0
+    local completeness = (info.isComplete and 0.8) or 1.0
+
+    return math_max(baseRadius * frequency * completeness, 20)
+end
+
+local function EstimateQuestPoiBoundaryRadiusFromPolygon(mapId, centerX, centerY, boundaryPoints)
+    if not centerX or not centerY or type(boundaryPoints) ~= "table" or #boundaryPoints < 3 then
+        return nil
+    end
+
+    local maxRadius = 0
+    for i = 1, #boundaryPoints do
+        local point = boundaryPoints[i]
+        local distanceYards = ComputeDistanceYards(mapId, centerX, centerY, point.x, point.y)
+        if distanceYards and distanceYards > maxRadius then
+            maxRadius = distanceYards
+        end
+    end
+
+    if maxRadius > 0 then
+        return maxRadius
+    end
+
+    return nil
+end
+
+local function IsPointInsidePolygon(px, py, polygon)
+    if not px or not py or type(polygon) ~= "table" or #polygon < 3 then
+        return false
+    end
+
+    local inside = false
+    local j = #polygon
+    for i = 1, #polygon do
+        local xi = polygon[i].x
+        local yi = polygon[i].y
+        local xj = polygon[j].x
+        local yj = polygon[j].y
+
+        local intersects = ((yi > py) ~= (yj > py))
+            and (px < ((xj - xi) * (py - yi) / ((yj - yi) + 1e-9)) + xi)
+        if intersects then
+            inside = not inside
+        end
+        j = i
+    end
+
+    return inside
+end
+
+local function ResolveQuestPoiBoundary(questLogIndex, questId, mapId, centerX, centerY)
+    local boundaryPoints = GetCachedQuestPoiBoundaryPoints(questId, mapId)
+    if boundaryPoints and #boundaryPoints >= 3 then
+        local radiusFromPolygon = EstimateQuestPoiBoundaryRadiusFromPolygon(mapId, centerX, centerY, boundaryPoints)
+        if radiusFromPolygon and radiusFromPolygon > 0 then
+            return radiusFromPolygon, boundaryPoints
+        end
+    end
+
+    return EstimateQuestPoiBoundaryRadius(questLogIndex, centerX, centerY), nil
+end
+
+local function CalculateNearestBoundaryPoint(playerX, playerY, centerX, centerY, radiusYards, dxYards, dyYards, boundaryPoints)
+    if not playerX or not playerY or not centerX or not centerY or not radiusYards or radiusYards <= 0 then
+        return centerX, centerY, radiusYards
+    end
+
+    if boundaryPoints and #boundaryPoints >= 2 then
+        if IsPointInsidePolygon(playerX, playerY, boundaryPoints) then
+            return centerX, centerY, radiusYards
+        end
+
+        local bestX, bestY, bestDistSq
+        for i = 1, #boundaryPoints do
+            local a = boundaryPoints[i]
+            local b = boundaryPoints[(i % #boundaryPoints) + 1]
+            if a and b and a.x and a.y and b.x and b.y then
+                local vx = b.x - a.x
+                local vy = b.y - a.y
+                local denom = (vx * vx) + (vy * vy)
+                local t = 0
+                if denom > 0 then
+                    t = ((playerX - a.x) * vx + (playerY - a.y) * vy) / denom
+                    if t < 0 then
+                        t = 0
+                    elseif t > 1 then
+                        t = 1
+                    end
+                end
+
+                local projectedX = a.x + (vx * t)
+                local projectedY = a.y + (vy * t)
+                local pdx = projectedX - playerX
+                local pdy = projectedY - playerY
+                local distSq = (pdx * pdx) + (pdy * pdy)
+                if not bestDistSq or distSq < bestDistSq then
+                    bestDistSq = distSq
+                    bestX = projectedX
+                    bestY = projectedY
+                end
+            end
+        end
+
+        if bestX and bestY then
+            return bestX, bestY, radiusYards
+        end
+    end
+
+    if not dxYards or not dyYards then
+        dxYards = centerX - playerX
+        dyYards = centerY - playerY
+    end
+
+    local distToCenter = math_sqrt((dxYards * dxYards) + (dyYards * dyYards))
+    if distToCenter <= 0 then
+        return centerX + radiusYards, centerY, radiusYards
+    end
+
+    if distToCenter <= radiusYards then
+        return centerX, centerY, radiusYards
+    end
+
+    local normalizedX = dxYards / distToCenter
+    local normalizedY = dyYards / distToCenter
+
+    local boundaryX = centerX + (normalizedX * radiusYards)
+    local boundaryY = centerY + (normalizedY * radiusYards)
+
+    return boundaryX, boundaryY, radiusYards
+end
+
+local function ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target)
+    if not target or not target.x or not target.y then
+        return nil, nil, nil
+    end
+
+    if not target.questId or target.questId <= 0 then
+        return target.x, target.y, nil
+    end
+
+    local questLogIndex = target.questLogIndex
+    if not questLogIndex or questLogIndex <= 0 then
+        questLogIndex = FindQuestLogIndexByQuestId(target.questId)
+    end
+    if not questLogIndex or questLogIndex <= 0 then
+        return target.x, target.y, nil
+    end
+
+    local radiusYards, boundaryPoints = ResolveQuestPoiBoundary(
+        questLogIndex,
+        target.questId,
+        mapId,
+        target.x,
+        target.y
+    )
+    if not radiusYards or radiusYards <= 0 then
+        return target.x, target.y, nil
+    end
+
+    local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, target.x, target.y)
+    if not distanceYards then
+        return target.x, target.y, radiusYards
+    end
+
+    local navX, navY = CalculateNearestBoundaryPoint(
+        playerX,
+        playerY,
+        target.x,
+        target.y,
+        radiusYards,
+        dxYards,
+        dyYards,
+        boundaryPoints
+    )
+
+    return navX or target.x, navY or target.y, radiusYards
+end
+
+local function GetQuestPinStyle(info, pinKind)
+    if pinKind == "manual" then
+        return "manual"
+    end
+    if info and info.isComplete then
+        return "complete"
+    end
+    if info and info.isDaily then
+        return "daily"
+    end
+    if pinKind == "waypoint" then
+        return "waypoint"
+    end
+    return "normal"
+end
+
+local function GetQuestPinPalette(style)
+    if style == "manual" then
+        return 0.80, 0.94, 1.0, 0.30
+    end
+    if style == "complete" then
+        return 0.24, 1.0, 0.38, 0.24
+    end
+    if style == "daily" then
+        return 0.30, 0.70, 1.0, 0.22
+    end
+    if style == "waypoint" then
+        return 1.0, 0.85, 0.22, 0.28
+    end
+    return 0.42, 0.80, 1.0, 0.18
+end
+
+local function IsMinimapRotating()
+    return type(GetCVar) == "function" and GetCVar("rotateMinimap") == "1"
+end
+
+local function IsMinimapIndoors()
+    if type(GetCVar) ~= "function" then
+        return false
+    end
+
+    local outsideZoom = tostring(GetCVar("minimapZoom") or "")
+    local insideZoom = tostring(GetCVar("minimapInsideZoom") or "")
+    return outsideZoom == insideZoom
+end
+
+local function GetMinimapDiameterYards()
+    if not Minimap or type(Minimap.GetZoom) ~= "function" then
+        return MINIMAP_DIAMETER_YARDS.outdoor[1]
+    end
+
+    local zoom = tonumber(Minimap:GetZoom()) or 1
+    local zoomTable = IsMinimapIndoors()
+        and MINIMAP_DIAMETER_YARDS.indoor
+        or MINIMAP_DIAMETER_YARDS.outdoor
+
+    return zoomTable[zoom] or zoomTable[1] or MINIMAP_DIAMETER_YARDS.outdoor[1]
+end
+
+local function EnsureMinimapPinContainer()
+    if state.minimapPinContainer then
+        return state.minimapPinContainer
+    end
+    if not Minimap then
+        return nil
+    end
+
+    local container = CreateFrame("Frame", nil, Minimap)
+    container:SetAllPoints(Minimap)
+    container:SetFrameStrata(Minimap:GetFrameStrata() or "MEDIUM")
+    container:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 12)
+    container:EnableMouse(false)
+    state.minimapPinContainer = container
+    return container
+end
+
+local function AcquireMinimapPin(index)
+    local existing = state.minimapPins[index]
+    if existing then
+        return existing
+    end
+
+    local container = EnsureMinimapPinContainer()
+    if not container then
+        return nil
+    end
+
+    local frame = CreateFrame("Frame", nil, container)
+    frame:SetSize(18, 18)
+    frame:EnableMouse(false)
+    frame:SetFrameLevel(container:GetFrameLevel() + 1)
+
+    frame.Glow = frame:CreateTexture(nil, "BACKGROUND")
+    frame.Glow:SetTexture("Interface\\Minimap\\UI-Minimap-Ping")
+    frame.Glow:SetBlendMode("ADD")
+    frame.Glow:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.Glow:SetSize(24, 24)
+
+    frame.Icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.Icon:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    if not TrySetTrackedIconAtlas(frame.Icon) then
+        frame.Icon:SetTexture(TEXTURE_ATLAS)
+        frame.Icon:SetTexCoord(unpack(ICON_TEXCOORD))
+    end
+
+    frame.Highlight = frame:CreateTexture(nil, "OVERLAY")
+    frame.Highlight:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+    frame.Highlight:SetBlendMode("ADD")
+    frame.Highlight:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.Highlight:SetSize(26, 26)
+
+    state.minimapPins[index] = frame
+    return frame
+end
+
+local function ClearMinimapQuestPins()
+    state.lastMinimapPinSig = nil
+    state.lastMinimapPinCount = 0
+    for i = 1, #state.minimapPins do
+        state.minimapPins[i]:Hide()
+    end
+end
+
+local function AddQuestPinCandidate(pins, seenQuestIds, playerX, playerY, mapId, questLogIndex, pinKind, pinSource)
+    local info = GetQuestLogInfo(questLogIndex)
+    if not info or not info.questId or seenQuestIds[info.questId] then
+        return
+    end
+
+    local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(
+        questLogIndex,
+        playerX,
+        playerY,
+        mapId,
+        { bypassLock = true, bypassCache = true }
+    )
+    if not qx or not qy then
+        qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(
+            questLogIndex,
+            playerX,
+            playerY,
+            mapId
+        )
+    end
+    if not qx or not qy then
+        return
+    end
+
+    local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, qx, qy)
+    if not distanceYards then
+        return
+    end
+
+    local superTrackedQuestId = Navigation:GetSuperTrackedQuestID()
+    local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+    local direction, relative = ComputeRelativeHeading(facing, playerX, playerY, qx, qy, dxYards, dyYards)
+
+    seenQuestIds[info.questId] = true
+
+    local radiusYards, boundaryPoints = ResolveQuestPoiBoundary(questLogIndex, questId, mapId, qx, qy)
+    local boundaryX, boundaryY, _ = CalculateNearestBoundaryPoint(
+        playerX,
+        playerY,
+        qx,
+        qy,
+        radiusYards,
+        dxYards,
+        dyYards,
+        boundaryPoints
+    )
+    local boundaryDistanceYards, boundaryDxYards, boundaryDyYards = ComputeDistanceYards(mapId, playerX, playerY, boundaryX, boundaryY)
+    local boundaryDirection, boundaryRelative = ComputeRelativeHeading(
+        facing,
+        playerX,
+        playerY,
+        boundaryX,
+        boundaryY,
+        boundaryDxYards or dxYards,
+        boundaryDyYards or dyYards
+    )
+
+    table.insert(pins, {
+        questId = questId,
+        questLogIndex = questLogIndex,
+        title = info.title,
+        pinKind = pinKind,
+        pinSource = pinSource,
+        poiSource = poiSource,
+        style = GetQuestPinStyle(info, pinKind),
+        isDaily = info.isDaily,
+        isComplete = info.isComplete,
+        isFocused = pinKind == "focused",
+        isSuperTracked = superTrackedQuestId and superTrackedQuestId == questId,
+        centerX = qx,
+        centerY = qy,
+        radiusYards = radiusYards,
+        boundaryX = boundaryX,
+        boundaryY = boundaryY,
+        distanceYards = boundaryDistanceYards or distanceYards,
+        direction = boundaryDirection or direction,
+        relative = boundaryRelative or relative,
+    })
+end
+
+local function BuildMinimapQuestPins(playerX, playerY, mapId, target)
+    local pins = {}
+    local seenQuestIds = {}
+
+    if target and target.x and target.y then
+        local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, target.x, target.y)
+        if distanceYards then
+            local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+            local direction, relative = ComputeRelativeHeading(
+                facing,
+                playerX,
+                playerY,
+                target.x,
+                target.y,
+                dxYards,
+                dyYards
+            )
+            local questLogIndex = target.questId and FindQuestLogIndexByQuestId(target.questId) or nil
+            local info = questLogIndex and GetQuestLogInfo(questLogIndex) or nil
+            local pinKind = target.questId and "quest" or "manual"
+
+            local radiusYards, boundaryPoints = 0, nil
+            if questLogIndex then
+                radiusYards, boundaryPoints = ResolveQuestPoiBoundary(questLogIndex, target.questId, mapId, target.x, target.y)
+            end
+            local boundaryX, boundaryY, _ = CalculateNearestBoundaryPoint(
+                playerX,
+                playerY,
+                target.x,
+                target.y,
+                radiusYards,
+                dxYards,
+                dyYards,
+                boundaryPoints
+            )
+            local boundaryDistanceYards, boundaryDxYards, boundaryDyYards = ComputeDistanceYards(mapId, playerX, playerY, boundaryX, boundaryY)
+            local boundaryDirection, boundaryRelative = ComputeRelativeHeading(
+                facing,
+                playerX,
+                playerY,
+                boundaryX,
+                boundaryY,
+                boundaryDxYards or dxYards,
+                boundaryDyYards or dyYards
+            )
+
+            table.insert(pins, {
+                questId = target.questId,
+                questLogIndex = questLogIndex,
+                title = target.title,
+                pinKind = pinKind,
+                pinSource = target.source,
+                poiSource = target.poiSource,
+                style = GetQuestPinStyle(info, pinKind),
+                isDaily = info and info.isDaily or false,
+                isComplete = info and info.isComplete or false,
+                isFocused = target.source == "quest-focused",
+                isSuperTracked = target.questId and Navigation:GetSuperTrackedQuestID() == target.questId,
+                centerX = target.x,
+                centerY = target.y,
+                radiusYards = radiusYards,
+                boundaryX = boundaryX,
+                boundaryY = boundaryY,
+                distanceYards = boundaryDistanceYards or distanceYards,
+                direction = boundaryDirection or direction,
+                relative = boundaryRelative or relative,
+            })
+
+            if target.questId then
+                seenQuestIds[target.questId] = true
+            end
+        end
+    end
+
+    if type(GetQuestLogSelection) == "function" then
+        local focusedQuestLogIndex = GetQuestLogSelection()
+        if focusedQuestLogIndex and focusedQuestLogIndex > 0 then
+            AddQuestPinCandidate(pins, seenQuestIds, playerX, playerY, mapId, focusedQuestLogIndex, "focused", "focused")
+        end
+    end
+
+    if type(GetNumQuestWatches) == "function" and type(GetQuestWatchInfo) == "function" then
+        local watchCount = GetNumQuestWatches() or 0
+        for watchIndex = 1, watchCount do
+            local questLogIndex = ResolveQuestLogIndexFromWatchIndex(watchIndex)
+            if questLogIndex and questLogIndex > 0 then
+                AddQuestPinCandidate(pins, seenQuestIds, playerX, playerY, mapId, questLogIndex, "quest", "watch")
+            end
+        end
+    end
+
+    return pins
+end
+
+local function GetMinimapPinPriority(pin)
+    local priority = 0
+    if pin.pinKind == "waypoint" or pin.pinKind == "manual" then
+        priority = priority + 100
+    end
+    if pin.isFocused then
+        priority = priority + 35
+    end
+    if pin.isSuperTracked then
+        priority = priority + 25
+    end
+    if pin.isDaily then
+        priority = priority + 10
+    end
+    if pin.isComplete then
+        priority = priority + 8
+    end
+
+    return priority - ((pin.distanceYards or 0) * 0.001)
+end
+
+local function ApplyMinimapPinStyle(pinFrame, pin, now, radiusPx, diameterYards)
+    local isWaypoint = pin.pinKind == "manual"
+    local showQuestZone = pin.questId and pin.radiusYards and pin.radiusYards > 0
+    -- Quest POIs should render as area boundaries only (retail-like), not as
+    -- moving minimap icon diamonds.
+    local showIcon = isWaypoint
+    local colorR, colorG, colorB, glowAlpha = GetQuestPinPalette(pin.style)
+    local baseWidth = ICON_WIDTH * (isWaypoint and MINIMAP_WAYPOINT_SCALE or MINIMAP_QUEST_SCALE)
+    local baseHeight = ICON_HEIGHT * (isWaypoint and MINIMAP_WAYPOINT_SCALE or MINIMAP_QUEST_SCALE)
+
+    if isWaypoint and not pin.isComplete then
+        local pulse = 1 + (0.05 * math_abs(math_sin((now or 0) * 6.0)))
+        baseWidth = baseWidth * pulse
+        baseHeight = baseHeight * pulse
+        glowAlpha = glowAlpha + 0.04
+    end
+
+    if not pinFrame.Icon then
+        return
+    end
+
+    if showIcon then
+        pinFrame.Icon:SetSize(baseWidth, baseHeight)
+        pinFrame.Icon:SetVertexColor(colorR, colorG, colorB)
+        pinFrame.Icon:Show()
+    else
+        pinFrame.Icon:Hide()
+    end
+
+    if pinFrame.Glow then
+        if showIcon then
+            pinFrame.Glow:SetSize(baseWidth * 1.75, baseHeight * 1.4)
+            pinFrame.Glow:SetVertexColor(colorR, colorG, colorB, glowAlpha)
+            pinFrame.Glow:Show()
+        else
+            pinFrame.Glow:Hide()
+        end
+    end
+
+    if pinFrame.Highlight then
+        if showIcon then
+            pinFrame.Highlight:SetSize(baseWidth * 2.0, baseHeight * 1.75)
+            pinFrame.Highlight:SetVertexColor(
+                colorR,
+                colorG,
+                colorB,
+                (pin.isFocused or pin.isSuperTracked or isWaypoint) and 0.20 or 0.0
+            )
+            pinFrame.Highlight:Show()
+        else
+            pinFrame.Highlight:Hide()
+        end
+    end
+
+    if showQuestZone and radiusPx and radiusPx > 0 and diameterYards and diameterYards > 0 then
+        if not pinFrame.ZoneFill then
+            pinFrame.ZoneFill = pinFrame:CreateTexture(nil, "BORDER")
+            pinFrame.ZoneFill:SetTexture("Interface\\Minimap\\UI-Minimap-Ping")
+            pinFrame.ZoneFill:SetBlendMode("ADD")
+        end
+        if not pinFrame.BoundaryOutline then
+            pinFrame.BoundaryOutline = pinFrame:CreateTexture(nil, "OVERLAY")
+            pinFrame.BoundaryOutline:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+            pinFrame.BoundaryOutline:SetBlendMode("ADD")
+        end
+
+        local boundaryPixelRadius = (pin.radiusYards / (diameterYards * 0.5)) * radiusPx
+        if boundaryPixelRadius > 2 then
+            local zoneDiameter = boundaryPixelRadius * 2
+            pinFrame.ZoneFill:SetSize(zoneDiameter, zoneDiameter)
+            pinFrame.ZoneFill:SetPoint("CENTER", pinFrame, "CENTER", 0, 0)
+            pinFrame.ZoneFill:SetVertexColor(0.26, 0.70, 1.0, 0.16)
+            pinFrame.ZoneFill:Show()
+
+            pinFrame.BoundaryOutline:SetSize(boundaryPixelRadius * 2, boundaryPixelRadius * 2)
+            pinFrame.BoundaryOutline:SetPoint("CENTER", pinFrame, "CENTER", 0, 0)
+            pinFrame.BoundaryOutline:SetVertexColor(0.48, 0.86, 1.0, 0.24)
+            pinFrame.BoundaryOutline:Show()
+        else
+            pinFrame.ZoneFill:Hide()
+            pinFrame.BoundaryOutline:Hide()
+        end
+    else
+        if pinFrame.ZoneFill then
+            pinFrame.ZoneFill:Hide()
+        end
+        if pinFrame.BoundaryOutline then
+            pinFrame.BoundaryOutline:Hide()
+        end
+    end
+end
+
+local function UpdateMinimapQuestPins(playerX, playerY, mapId, target)
+    local container = EnsureMinimapPinContainer()
+    if not container or not Minimap or not addon.settings.navigation.enabled then
+        ClearMinimapQuestPins()
+        return
+    end
+
+    local candidates = BuildMinimapQuestPins(playerX, playerY, mapId, target)
+    if #candidates == 0 then
+        ClearMinimapQuestPins()
+        return
+    end
+
+    local radiusPx = (math_min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5) - MINIMAP_PIN_EDGE_PADDING
+    if radiusPx <= 0 then
+        ClearMinimapQuestPins()
+        return
+    end
+
+    local diameterYards = GetMinimapDiameterYards()
+    local rotateMinimap = IsMinimapRotating()
+    local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+    local quantized = {}
+
+    for i = 1, #candidates do
+        local pin = candidates[i]
+        local heading = rotateMinimap and pin.relative or pin.direction
+        local projectionDistance = (pin.distanceYards or 0)
+        local isWaypointPin = pin.pinKind == "waypoint" or pin.pinKind == "manual"
+
+        if (not isWaypointPin) and pin.centerX and pin.centerY and pin.radiusYards and pin.radiusYards > 0 then
+            local centerDistance, centerDxYards, centerDyYards = ComputeDistanceYards(
+                mapId,
+                playerX,
+                playerY,
+                pin.centerX,
+                pin.centerY
+            )
+            if centerDistance then
+                projectionDistance = centerDistance
+                local centerDirection, centerRelative = ComputeRelativeHeading(
+                    facing,
+                    playerX,
+                    playerY,
+                    pin.centerX,
+                    pin.centerY,
+                    centerDxYards,
+                    centerDyYards
+                )
+                heading = rotateMinimap and centerRelative or centerDirection
+            end
+        end
+
+        local projectedRadius = 0
+        if diameterYards > 0 then
+            projectedRadius = (projectionDistance / (diameterYards * 0.5)) * radiusPx
+        end
+        if projectedRadius > radiusPx then
+            projectedRadius = radiusPx
+        end
+
+        local x = math_sin(heading or 0) * projectedRadius
+        local y = math_cos(heading or 0) * projectedRadius
+        pin.pixelX = x
+        pin.pixelY = y
+        pin.priority = GetMinimapPinPriority(pin)
+
+        local bucketX = math_floor((x + radiusPx) / MINIMAP_PIN_BUCKET_SIZE)
+        local bucketY = math_floor((y + radiusPx) / MINIMAP_PIN_BUCKET_SIZE)
+        local bucketKey = tostring(bucketX) .. ":" .. tostring(bucketY)
+        local existing = quantized[bucketKey]
+        if not existing or pin.priority > existing.priority then
+            quantized[bucketKey] = pin
+        end
+    end
+
+    local visiblePins = {}
+    for _, pin in pairs(quantized) do
+        table.insert(visiblePins, pin)
+    end
+
+    table.sort(visiblePins, function(a, b)
+        if a.priority == b.priority then
+            return (a.distanceYards or 0) < (b.distanceYards or 0)
+        end
+        return a.priority > b.priority
+    end)
+
+    local signatureParts = {}
+    local now = GetTime() or 0
+    local renderCount = math_min(#visiblePins, MINIMAP_PIN_MAX_COUNT)
+
+    for index = 1, renderCount do
+        local pin = visiblePins[index]
+        local pinFrame = AcquireMinimapPin(index)
+        if pinFrame then
+            pinFrame:ClearAllPoints()
+            pinFrame:SetPoint("CENTER", container, "CENTER", pin.pixelX, pin.pixelY)
+            ApplyMinimapPinStyle(pinFrame, pin, now, radiusPx, diameterYards)
+            pinFrame:Show()
+            signatureParts[index] = string.format(
+                "%s:%s:%d:%d",
+                tostring(pin.questId or pin.pinKind or "n/a"),
+                tostring(pin.style or "normal"),
+                math_floor(pin.pixelX or 0),
+                math_floor(pin.pixelY or 0)
+            )
+        end
+    end
+
+    for index = renderCount + 1, #state.minimapPins do
+        state.minimapPins[index]:Hide()
+    end
+
+    state.lastMinimapPinCount = renderCount
+    state.lastMinimapPinSig = table.concat(signatureParts, "|")
+end
+
 local function SyncFollowStateFromShim()
     ResolveSuperTrackShim()
 
@@ -2679,8 +4189,6 @@ local function GetFollowedQuestTarget(playerX, playerY, mapId)
     if not addon.settings.navigation.followQuestFromTracker then
         return nil
     end
-
-    EnsureFollowedQuestPriorityOverUserWaypoint()
 
     ResolveSuperTrackShim()
 
@@ -2853,10 +4361,10 @@ local function GetWatchedQuestTarget(playerX, playerY, mapId)
 
     for i = 1, numWatches do
         local questLogIndex = ResolveQuestLogIndexFromWatchIndex(i)
+
         if questLogIndex and questLogIndex > 0 then
             local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
             local title = (type(GetQuestLogTitle) == "function") and GetQuestLogTitle(questLogIndex) or ("Quest " .. tostring(questId))
-
             if qx and qy then
                 local metric = ScoreQuestTarget(playerX, playerY, qx, qy, i)
 
@@ -2952,6 +4460,81 @@ local function GetManualTarget(mapId)
     }
 end
 
+local function BuildSuperTrackedWaypointTarget(mapId, source, title)
+    if not mapId then
+        return nil
+    end
+
+    local x, y, waypointText = ShimGetNextWaypointForMap(mapId)
+    if not x or not y then
+        return nil
+    end
+
+    local targetTitle = title
+    if not targetTitle or targetTitle == "" then
+        targetTitle = waypointText
+    end
+    if not targetTitle or targetTitle == "" then
+        targetTitle = "Waypoint"
+    end
+
+    return {
+        source = source or "supertracked-waypoint",
+        title = targetTitle,
+        x = x,
+        y = y,
+    }
+end
+
+local function GetSuperTrackedNonQuestTarget(mapId)
+    local superTrackApi = _G.C_SuperTrack
+    if type(superTrackApi) ~= "table" then
+        return nil
+    end
+
+    local highType = type(superTrackApi.GetHighestPrioritySuperTrackingType) == "function" and superTrackApi.GetHighestPrioritySuperTrackingType() or nil
+    local enumTable = _G.Enum and _G.Enum.SuperTrackingType
+    local enumUserWaypoint = type(enumTable) == "table" and enumTable.UserWaypoint or nil
+    local enumMapPin = type(enumTable) == "table" and enumTable.MapPin or nil
+    local enumVignette = type(enumTable) == "table" and enumTable.Vignette or nil
+    local enumContent = type(enumTable) == "table" and enumTable.Content or nil
+
+    if highType == enumUserWaypoint or (enumUserWaypoint == nil and ShimIsSuperTrackingUserWaypoint()) then
+        local x, y = ShimGetUserWaypointPositionForMap(mapId)
+        if x and y then
+            return {
+                source = "supertracked-user-waypoint",
+                title = "Waypoint",
+                x = x,
+                y = y,
+            }
+        end
+    end
+
+    if highType == enumMapPin or (enumMapPin == nil and NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType) == "mapPin") then
+        local point = state.retailSuperTrackedMapPinPoint
+        if point and point.uiMapID == mapId and point.x and point.y then
+            return {
+                source = "supertracked-map-pin",
+                title = "Map Pin",
+                x = point.x,
+                y = point.y,
+            }
+        end
+        return BuildSuperTrackedWaypointTarget(mapId, "supertracked-map-pin", "Map Pin")
+    end
+
+    if highType == enumVignette or (enumVignette == nil and NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType) == "vignette") then
+        return BuildSuperTrackedWaypointTarget(mapId, "supertracked-vignette", "Vignette")
+    end
+
+    if highType == enumContent or (enumContent == nil and NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType) == "content") then
+        return BuildSuperTrackedWaypointTarget(mapId, "supertracked-content", "Content")
+    end
+
+    return nil
+end
+
 local function TryAutoSuperTrackQuestTarget(target, mapId)
     if not target or not target.questId or target.questId <= 0 then
         return false
@@ -3010,14 +4593,19 @@ local function TryAutoSuperTrackQuestTarget(target, mapId)
 end
 
 local function SelectTarget(playerX, playerY, mapId)
-    local followedTarget = GetFollowedQuestTarget(playerX, playerY, mapId)
-    if followedTarget then
-        return followedTarget
-    end
-
     local manualTarget = GetManualTarget(mapId)
     if manualTarget then
         return manualTarget
+    end
+
+    local superTrackedNonQuestTarget = GetSuperTrackedNonQuestTarget(mapId)
+    if superTrackedNonQuestTarget then
+        return superTrackedNonQuestTarget
+    end
+
+    local followedTarget = GetFollowedQuestTarget(playerX, playerY, mapId)
+    if followedTarget then
+        return followedTarget
     end
 
     local focusedTarget = GetFocusedQuestTarget(playerX, playerY, mapId)
@@ -3184,6 +4772,7 @@ local function ClearMarker()
     state.lastNavState = nil
     state.lastAlpha = nil
     ResetTravelMetrics()
+    ClearMinimapQuestPins()
 end
 
 local function MaybeClearManualOnArrival(target, distanceYards)
@@ -3279,10 +4868,20 @@ local function UpdateMarker()
         return
     end
 
+    UpdateMinimapQuestPins(playerX, playerY, mapId, target)
+
     local frame = EnsureFrame()
     frame:SetScale(settings.markerScale or 1.0)
 
-    local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, target.x, target.y)
+    local navX, navY, navRadiusYards = ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target)
+    navX = navX or target.x
+    navY = navY or target.y
+
+    target.navX = navX
+    target.navY = navY
+    target.radiusYards = navRadiusYards
+
+    local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, navX, navY)
     state.target = target
     state.lastDistance = distanceYards
 
@@ -3295,8 +4894,8 @@ local function UpdateMarker()
         local nativeSyncKey = string.format(
             "%d:%.5f:%.5f:%s",
             tonumber(mapId) or 0,
-            tonumber(target.x) or 0,
-            tonumber(target.y) or 0,
+            tonumber(navX) or 0,
+            tonumber(navY) or 0,
             tostring(target.questId or "")
         )
 
@@ -3314,7 +4913,7 @@ local function UpdateMarker()
             end
 
             if type(state.nativeSetSuperTrackedQuestWaypointForMap) == "function" then
-                pcall(state.nativeSetSuperTrackedQuestWaypointForMap, tonumber(mapId), target.x, target.y)
+                pcall(state.nativeSetSuperTrackedQuestWaypointForMap, tonumber(mapId), navX, navY)
             end
         end
     end
@@ -3326,8 +4925,8 @@ local function UpdateMarker()
         facing,
         playerX,
         playerY,
-        target.x,
-        target.y,
+        navX,
+        navY,
         dxYards,
         dyYards
     )
@@ -3553,6 +5152,8 @@ local function UpdateMarker()
         false,
         projectionDebugKey
     )
+
+    DebugNativeProjectionStats()
 
     local projectedRadius = math_sqrt((projectedX * projectedX) + (projectedY * projectedY))
 
@@ -4007,6 +5608,20 @@ function Navigation:ClearFollowQuest(silent)
             addon:Print("Navigation: followed quest cleared.", true)
         end
     end
+end
+
+function Navigation:GetSuperTrackedQuestID()
+    local questId = ShimGetSuperTrackedQuestID()
+    if questId and questId > 0 then
+        return questId
+    end
+
+    questId = tonumber(state.followedQuestId)
+    if questId and questId > 0 then
+        return questId
+    end
+
+    return nil
 end
 
 local function TrySetFollowFromQuestLogSelection(bypassSetting)
@@ -4826,6 +6441,62 @@ local function EnsureSlashCommand()
             return
         end
 
+        if text == "minimap" or text == "debug minimap" then
+            local playerX, playerY, mapId = GetPlayerMapPositionSafe()
+            local followedQuestId = tonumber(state.followedQuestId)
+            local followedQuestIndex = tonumber(state.followedQuestLogIndex)
+            local idxX, idxY, idxQuestId, idxSource = nil, nil, nil, nil
+            local cacheX, cacheY, cacheCount = nil, nil, nil
+            local trackedQuestId = Navigation:GetSuperTrackedQuestID()
+            local numTracking = type(GetNumTrackingTypes) == "function" and (GetNumTrackingTypes() or 0) or 0
+            local trackingSummary = {}
+
+            if followedQuestIndex and followedQuestIndex > 0 then
+                idxX, idxY, idxQuestId, idxSource = GetQuestPoiCoordsFromLogIndex(followedQuestIndex, playerX, playerY, mapId, { bypassLock = true })
+            end
+
+            if followedQuestId and followedQuestId > 0 then
+                cacheX, cacheY, cacheCount = GetCachedQuestPoiCoords(followedQuestId, playerX, playerY, mapId)
+            end
+
+            if type(GetTrackingInfo) == "function" then
+                for i = 1, numTracking do
+                    local name, texture, active = GetTrackingInfo(i)
+                    if type(name) == "string" and name ~= "" then
+                        local lowerName = string.lower(name)
+                        if lowerName:find("quest", 1, true) or lowerName:find("objective", 1, true) then
+                            table.insert(trackingSummary, string.format("%d:%s=%s", i, name, tostring(active == true)))
+                        end
+                    elseif type(texture) == "string" then
+                        local lowerTexture = string.lower(texture)
+                        if lowerTexture:find("trackquest", 1, true) then
+                            table.insert(trackingSummary, string.format("%d:%s=%s", i, texture, tostring(active == true)))
+                        end
+                    end
+                end
+            end
+
+            addon:Print(string.format(
+                "Navigation minimap: map=%s followedIndex=%s followedQuestId=%s trackedQuestId=%s questPOI=%s tracking=[%s] poi=%s,%s poiQuestId=%s poiSrc=%s cache=%s,%s cacheCount=%s fallbackPins=%s fallbackSig=%s",
+                tostring(mapId or "n/a"),
+                tostring(followedQuestIndex or "none"),
+                tostring(followedQuestId or "none"),
+                tostring(trackedQuestId or "none"),
+                tostring(type(GetCVar) == "function" and GetCVar("questPOI") or "n/a"),
+                (#trackingSummary > 0) and table.concat(trackingSummary, " | ") or "none",
+                idxX and string.format("%.3f", idxX) or "nil",
+                idxY and string.format("%.3f", idxY) or "nil",
+                tostring(idxQuestId or "none"),
+                tostring(idxSource or "none"),
+                cacheX and string.format("%.3f", cacheX) or "nil",
+                cacheY and string.format("%.3f", cacheY) or "nil",
+                tostring(cacheCount or 0),
+                tostring(state.lastMinimapPinCount or 0),
+                tostring(state.lastMinimapPinSig or "none")
+            ), true)
+            return
+        end
+
         local followIndex = text:match("^follow%s+(%d+)$")
         if followIndex then
             local ok, err = Navigation:SetFollowQuestByLogIndex(tonumber(followIndex), false)
@@ -4904,6 +6575,10 @@ function Navigation.OnEnable()
     EnsurePoiDisplayHook()
     EnsureWatchFrameHooks()
 
+    if addon.EnsureQuestMinimapTrackingEnabled then
+        addon:EnsureQuestMinimapTrackingEnabled("Navigation.OnEnable")
+    end
+
     if not state.eventFrame then
         state.eventFrame = CreateFrame("Frame")
         state.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -4913,9 +6588,16 @@ function Navigation.OnEnable()
         state.eventFrame:RegisterEvent("QUEST_LOG_UPDATE")
         state.eventFrame:RegisterEvent("QUEST_WATCH_UPDATE")
         if type(state.eventFrame.RegisterEvent) == "function" then
+            pcall(state.eventFrame.RegisterEvent, state.eventFrame, "QUEST_ACCEPTED")
+            pcall(state.eventFrame.RegisterEvent, state.eventFrame, "QUEST_TURNED_IN")
+            pcall(state.eventFrame.RegisterEvent, state.eventFrame, "QUEST_WATCH_LIST_CHANGED")
+            pcall(state.eventFrame.RegisterEvent, state.eventFrame, "SUPER_TRACKING_CHANGED")
+            pcall(state.eventFrame.RegisterEvent, state.eventFrame, "SUPER_TRACKING_PATH_UPDATED")
+        end
+        if type(state.eventFrame.RegisterEvent) == "function" then
             pcall(state.eventFrame.RegisterEvent, state.eventFrame, "QUEST_POI_UPDATE")
         end
-        state.eventFrame:SetScript("OnEvent", function(_, event)
+        state.eventFrame:SetScript("OnEvent", function(_, event, ...)
             EnsureWatchFrameHooks()
             EnsurePoiDisplayHook()
             AnnotateWatchFrameQuestIndices()
@@ -4924,12 +6606,50 @@ function Navigation.OnEnable()
                 or event == "ZONE_CHANGED_INDOORS"
                 or event == "ZONE_CHANGED_NEW_AREA" then
                 ClearQuestPoiCache()
+                if addon.EnsureQuestMinimapTrackingEnabled then
+                    addon:EnsureQuestMinimapTrackingEnabled(event)
+                end
             end
 
             if event == "QUEST_POI_UPDATE" then
                 -- POI updates indicate objective movement/advancement; clear both
                 -- cache and lock state so followed quests do not remain static.
                 ClearQuestPoiCache()
+            end
+
+            if event == "QUEST_ACCEPTED" then
+                local questId = tonumber((...))
+                if questId and questId > 0 then
+                    ClearQuestPoiCacheForQuest(questId)
+                end
+            end
+
+            if event == "QUEST_TURNED_IN" then
+                local questId = tonumber((...))
+                if questId and questId > 0 then
+                    ClearQuestPoiCacheForQuest(questId)
+                    if state.followedQuestId == questId then
+                        state.followedQuestId = nil
+                        state.followedQuestLogIndex = nil
+                        state.followedQuestTitle = nil
+                    end
+                end
+            end
+
+            if event == "QUEST_WATCH_LIST_CHANGED" then
+                local questId, tracked = ...
+                if tracked == false then
+                    local normalizedQuestId = tonumber(questId)
+                    if normalizedQuestId and normalizedQuestId > 0 and state.followedQuestId == normalizedQuestId then
+                        state.followedQuestId = nil
+                        state.followedQuestLogIndex = nil
+                        state.followedQuestTitle = nil
+                    end
+                end
+            end
+
+            if event == "SUPER_TRACKING_CHANGED" or event == "SUPER_TRACKING_PATH_UPDATED" then
+                SyncFollowStateFromShim()
             end
 
             if event == "QUEST_LOG_UPDATE" and state.followedQuestId then
@@ -4948,7 +6668,15 @@ function Navigation.OnEnable()
 
             if event == "QUEST_LOG_UPDATE"
                 or event == "QUEST_WATCH_UPDATE"
-                or event == "QUEST_POI_UPDATE" then
+                or event == "QUEST_POI_UPDATE"
+                or event == "SUPER_TRACKING_CHANGED"
+                or event == "SUPER_TRACKING_PATH_UPDATED"
+                or event == "QUEST_ACCEPTED"
+                or event == "QUEST_TURNED_IN"
+                or event == "QUEST_WATCH_LIST_CHANGED" then
+                if addon.EnsureQuestMinimapTrackingEnabled then
+                    addon:EnsureQuestMinimapTrackingEnabled(event)
+                end
                 RequestQuestTrackingVisualRefresh()
                 RequestQuestTrackingVisualRefreshSettled(0.05)
             end

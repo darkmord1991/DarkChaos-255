@@ -90,7 +90,7 @@ void OutdoorPvPHL::HandleReset()
             for (ObjectGuid const& guid : collector.creatureGuids)
             {
                 Creature* c = map->GetCreature(guid);
-                if (!c || !c->IsInWorld() || c->GetAreaId() != collector.areaId)
+                if (!c || !c->IsInWorld() || c->GetMapId() != OutdoorPvPHLMapId || c->GetAreaId() != collector.areaId)
                     continue;
 
                 c->CombatStop(true);
@@ -108,7 +108,7 @@ void OutdoorPvPHL::HandleReset()
             for (ObjectGuid const& guid : collector.gameObjectGuids)
             {
                 GameObject* go = map->GetGameObject(guid);
-                if (!go || !go->IsInWorld() || go->GetAreaId() != collector.areaId)
+                if (!go || !go->IsInWorld() || go->GetMapId() != OutdoorPvPHLMapId || go->GetAreaId() != collector.areaId)
                     continue;
 
                 go->Respawn();
@@ -207,7 +207,7 @@ void OutdoorPvPHL::TeleportPlayersToStart()
         if (!p || !p->IsInWorld())
             continue;
 
-        if (p->GetAreaId() != OutdoorPvPHLBattleAreaId)
+        if (!IsPlayerInOutdoorPvPHLArea(p))
             continue;
 
         ++candidates;

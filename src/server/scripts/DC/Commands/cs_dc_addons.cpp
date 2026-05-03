@@ -26,12 +26,14 @@
  */
 #include "CommandScript.h"
 #include "Chat.h"
+#include "Config.h"
 #include "Player.h"
 #include "ObjectAccessor.h"
 #include "ScriptMgr.h"
 #include "Map.h"
 #include "Group.h"
 #include "DC/MythicPlus/dc_mythicplus_difficulty_scaling.h"
+#include "../Progression/FirstStart/dc_firststart_learnspells.h"
 
 // forward declaration of helpers implemented in DC_AddonHelpers.cpp
 void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
@@ -59,7 +61,7 @@ public:
     {
         if (args.empty())
         {
-            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic");
+            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload mythic");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -463,6 +465,38 @@ public:
             return true;
         }
 
+        if (subNorm == "relearnspells" || subNorm == "relearn" || subNorm == "learnspells")
+        {
+            ++it;
+
+            Player* target = nullptr;
+            if (it == args.end() || *it == "self")
+                target = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            else
+            {
+                std::string playerName((*it).data(), (*it).size());
+                target = ObjectAccessor::FindPlayerByName(playerName, false);
+            }
+
+            if (!target)
+            {
+                handler->PSendSysMessage("Player not found.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            bool debug = sConfigMgr->GetOption<bool>("DCFirstStart.Debug", false);
+            DCFirstStart::LearnSpells::GrantClassSpells(target, debug);
+
+            handler->PSendSysMessage("Relearned configured class spells for {} (level {}, class {}).",
+                target->GetName(), target->GetLevel(), target->getClass());
+
+            if (target->GetSession() && target != (handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr))
+                ChatHandler(target->GetSession()).PSendSysMessage("A GM retriggered your automatic class spell learning.");
+
+            return true;
+        }
+
         if (subNorm == "reload")
         {
             ++it;
@@ -492,7 +526,7 @@ public:
             return false;
         }
 
-        handler->PSendSysMessage("Unknown subcommand. Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic");
+        handler->PSendSysMessage("Unknown subcommand. Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload mythic");
         handler->SetSentErrorMessage(true);
         return false;
     }

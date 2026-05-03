@@ -18,6 +18,155 @@ addon.protocol = {
 
 local protocol = addon.protocol
 
+local SPELL_ENRICH_CACHE_TTL = 180
+local SPELL_ENRICH_CACHE_MAX_SPELLS = 1200
+local SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL = 8
+local SPELL_ENRICH_CACHE_PRUNE_INTERVAL = 20
+local lastSpellEnrichCachePruneAt = 0
+
+local SERVER_SETTINGS_PATH_MAP = {
+    tooltipsEnabled = "tooltips.enabled",
+    showItemId = "tooltips.showItemId",
+    showItemLevel = "tooltips.showItemLevel",
+    showNpcId = "tooltips.showNpcId",
+    showSpellId = "tooltips.showSpellId",
+    showSpellFamilyMetadata = "tooltips.showSpellFamilyMetadata",
+    showGuildRank = "tooltips.showGuildRank",
+    showTarget = "tooltips.showTarget",
+    hideHealthBar = "tooltips.hideHealthBar",
+    hideInCombat = "tooltips.hideInCombat",
+    tooltipScale = "tooltips.scale",
+
+    automationEnabled = "automation.enabled",
+    autoRepair = "automation.autoRepair",
+    autoRepairGuild = "automation.autoRepairGuild",
+    autoSellJunk = "automation.autoSellJunk",
+    autoDismount = "automation.autoDismount",
+    autoAcceptSummon = "automation.autoAcceptSummon",
+    autoAcceptResurrect = "automation.autoAcceptResurrect",
+    autoDeclineDuels = "automation.autoDeclineDuels",
+    autoAcceptQuests = "automation.autoAcceptQuests",
+    autoTurnInQuests = "automation.autoTurnInQuests",
+
+    chatEnabled = "chat.enabled",
+    hideChannelNames = "chat.hideChannelNames",
+    stickyChannels = "chat.stickyChannels",
+
+    interfaceEnabled = "interface.enabled",
+    combatPlates = "interface.combatPlates",
+    questLevelText = "interface.questLevelText",
+}
+
+local function ApplySettingByPath(path, value)
+    if type(path) ~= "string" or path == "" then
+        return
+    end
+
+    local current = addon.settings
+    if type(current) ~= "table" then
+        return
+    end
+
+    local parts = {}
+    for part in string.gmatch(path, "[^%.]+") do
+        parts[#parts + 1] = part
+    end
+
+    if #parts == 0 then
+        return
+    end
+
+    for i = 1, #parts - 1 do
+        local part = parts[i]
+        if type(current[part]) ~= "table" then
+            current[part] = {}
+        end
+        current = current[part]
+    end
+
+    current[parts[#parts]] = value
+end
+
+local function PruneSpellEnrichmentCache(now)
+    if not addon.tooltipCache or type(addon.tooltipCache.spellEnrichment) ~= "table" then
+        return
+    end
+
+    now = tonumber(now) or 0
+    if now <= 0 then
+        return
+    end
+
+    if lastSpellEnrichCachePruneAt > 0
+        and (now - lastSpellEnrichCachePruneAt) < SPELL_ENRICH_CACHE_PRUNE_INTERVAL then
+        return
+    end
+
+    local buckets = addon.tooltipCache.spellEnrichment
+    local spellCount = 0
+    local spellIds = {}
+
+    for spellId, contextBucket in pairs(buckets) do
+        if type(contextBucket) ~= "table" then
+            buckets[spellId] = nil
+        else
+            spellCount = spellCount + 1
+            spellIds[#spellIds + 1] = spellId
+
+            local contextEntries = {}
+            for contextHash, enrichment in pairs(contextBucket) do
+                local receivedAt = enrichment and tonumber(enrichment.receivedAt) or 0
+                local age = (receivedAt > 0) and (now - receivedAt) or (SPELL_ENRICH_CACHE_TTL + 1)
+                if age > SPELL_ENRICH_CACHE_TTL then
+                    contextBucket[contextHash] = nil
+                else
+                    contextEntries[#contextEntries + 1] = {
+                        contextHash = contextHash,
+                        receivedAt = receivedAt,
+                    }
+                end
+            end
+
+            if #contextEntries == 0 then
+                buckets[spellId] = nil
+                spellCount = spellCount - 1
+            elseif #contextEntries > SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL then
+                table.sort(contextEntries, function(a, b)
+                    return (a.receivedAt or 0) > (b.receivedAt or 0)
+                end)
+
+                for i = SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL + 1, #contextEntries do
+                    contextBucket[contextEntries[i].contextHash] = nil
+                end
+            end
+        end
+    end
+
+    if spellCount > SPELL_ENRICH_CACHE_MAX_SPELLS then
+        local keep = {}
+        for _, spellId in ipairs(spellIds) do
+            local bucket = buckets[spellId]
+            if type(bucket) == "table" then
+                local newest = 0
+                for _, enrichment in pairs(bucket) do
+                    newest = math.max(newest, tonumber(enrichment and enrichment.receivedAt) or 0)
+                end
+                keep[#keep + 1] = { spellId = spellId, newest = newest }
+            end
+        end
+
+        table.sort(keep, function(a, b)
+            return (a.newest or 0) > (b.newest or 0)
+        end)
+
+        for i = SPELL_ENRICH_CACHE_MAX_SPELLS + 1, #keep do
+            buckets[keep[i].spellId] = nil
+        end
+    end
+
+    lastSpellEnrichCachePruneAt = now
+end
+
 -- ============================================================
 -- Opcodes (must match server-side dc_addon_qos.cpp)
 -- ============================================================
@@ -58,6 +207,7 @@ function protocol:Initialize()
     self.DC = DC
     self:RegisterHandlers()
     self.connected = true
+    addon:FireEvent("PROTOCOL_CONNECTED", self.MODULE_ID)
     
     addon:Debug("Protocol initialized - Module: " .. self.MODULE_ID)
     return true
@@ -220,16 +370,24 @@ function protocol:HandleSettingsSync(...)
     if type(args[1]) == "table" then
         -- JSON format - merge server settings
         local serverSettings = args[1]
-        
-        for category, settings in pairs(serverSettings) do
-            if type(settings) == "table" and addon.settings[category] then
-                for key, value in pairs(settings) do
-                    addon.settings[category][key] = value
+        local applied = false
+
+        for key, value in pairs(serverSettings) do
+            if type(value) == "table" and type(addon.settings[key]) == "table" then
+                for subKey, subValue in pairs(value) do
+                    addon.settings[key][subKey] = subValue
+                    applied = true
                 end
+            else
+                local path = SERVER_SETTINGS_PATH_MAP[key] or key
+                ApplySettingByPath(path, value)
+                applied = true
             end
         end
-        
-        addon:SaveSettings()
+
+        if applied then
+            addon:SaveSettings()
+        end
         addon:FireEvent("SETTINGS_SYNCED", serverSettings)
         addon:Debug("Settings synced from server")
     end
@@ -254,8 +412,9 @@ function protocol:HandleItemInfo(...)
         local itemData = args[1]
         addon:FireEvent("ITEM_INFO_RECEIVED", itemData)
         
-        -- Check if this is upgrade info (has upgradeLevel or tier)
-        if itemData.upgradeLevel ~= nil or itemData.tier ~= nil then
+        -- Check if this is upgrade info or an upgrade lookup error (bag/slot scoped)
+        if itemData.upgradeLevel ~= nil or itemData.tier ~= nil
+            or (itemData.bag ~= nil and itemData.slot ~= nil) then
             addon:FireEvent("ITEM_UPGRADE_INFO_RECEIVED", itemData)
         end
         
@@ -274,8 +433,8 @@ function protocol:HandleNpcInfo(...)
         local npcData = args[1]
         addon:FireEvent("NPC_INFO_RECEIVED", npcData)
         
-        -- Cache for tooltip display
-        if npcData.guid and addon.tooltipCache then
+        -- Cache for tooltip display (skip explicit error payloads)
+        if npcData.guid and not npcData.error and addon.tooltipCache then
             addon.tooltipCache.npcs[npcData.guid] = npcData
         end
     end
@@ -336,8 +495,19 @@ function protocol:HandleSpellTooltipEnrichment(...)
         receivedAt = GetTime(),
     }
 
+    -- Compatibility bridge: some transports deliver only the legacy `line`
+    -- field (no structured `lines[]` payload). Convert it so tooltip rendering
+    -- paths still show body text.
+    if status == 0 and (type(enrichment.lines) ~= "table" or #enrichment.lines == 0)
+        and line ~= "" then
+        enrichment.lines = {
+            { left = line, kind = "body" }
+        }
+    end
+
     -- Cache by spell/context for tooltip consumers.
-    if addon.tooltipCache then
+    if addon.tooltipCache and spellId > 0 and contextHash > 0 then
+        PruneSpellEnrichmentCache(GetTime())
         addon.tooltipCache.spellEnrichment = addon.tooltipCache.spellEnrichment or {}
         addon.tooltipCache.spellEnrichment[spellId] = addon.tooltipCache.spellEnrichment[spellId] or {}
         addon.tooltipCache.spellEnrichment[spellId][contextHash] = enrichment

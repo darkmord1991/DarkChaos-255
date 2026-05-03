@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige` (
   `guid` INT UNSIGNED NOT NULL COMMENT 'Character GUID',
   `prestige_level` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Current prestige level (0-10)',
   `total_prestiges` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Total number of times prestiged',
+  `prestige_points` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Total prestige points earned',
   `last_prestige_time` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Unix timestamp of last prestige',
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='DarkChaos: Tracks player prestige levels';
@@ -31,6 +32,9 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_log` (
   `prestige_time` INT UNSIGNED NOT NULL COMMENT 'Unix timestamp',
   `from_level` TINYINT UNSIGNED NOT NULL COMMENT 'Level before prestige',
   `kept_gear` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Whether gear was kept',
+  `awarded_points` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Prestige points granted for this prestige',
+  `awarded_tokens` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Upgrade tokens granted for this prestige',
+  `awarded_essence` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Artifact essence granted for this prestige',
   PRIMARY KEY (`id`),
   KEY `idx_guid` (`guid`),
   KEY `idx_time` (`prestige_time`)

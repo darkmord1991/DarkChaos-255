@@ -49,6 +49,11 @@ local QUEST_ITEM_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questitemhighlight"
 local QUEST_ITEM_NAMEFRAME_TEXTURE = ASSET_ROOT .. "ui-questitemnameframe"
 local QUEST_LOG_TITLE_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questlogtitlehighlight"
 local QUEST_TITLE_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questtitlehighlight"
+local QUEST_AVAILABLE_ICON_TEXTURE = ASSET_ROOT .. "availablequesticon"
+local QUEST_ACTIVE_ICON_TEXTURE = ASSET_ROOT .. "activequesticon"
+local QUEST_DAILY_ICON_TEXTURE = ASSET_ROOT .. "dailyquesticon"
+local QUEST_DAILY_ACTIVE_ICON_TEXTURE = ASSET_ROOT .. "dailyactivequesticon"
+local QUEST_INCOMPLETE_ICON_TEXTURE = ASSET_ROOT .. "incompletequesticon"
 
 local HEADER_LAYOUT = {
     QuestFrame = { left = 80, right = -54, top = -18 },
@@ -234,6 +239,56 @@ local function GetSettings()
     return addon.settings and addon.settings.questFrames or addon.defaults.questFrames
 end
 
+local function UseModernQuestWindowCompatibility()
+    return type(addon.IsModernQuestWindowActive) == "function"
+        and addon:IsModernQuestWindowActive()
+end
+
+local function IsShownWithText(region)
+    if not region or type(region.IsShown) ~= "function" or not region:IsShown() then
+        return false
+    end
+
+    local text = type(region.GetText) == "function" and region:GetText() or nil
+    return type(text) == "string" and text ~= ""
+end
+
+local function IsShownFrame(frame)
+    return frame and type(frame.IsShown) == "function" and frame:IsShown()
+end
+
+local function ShouldPreferStockQuestChrome(frame)
+    if not frame then
+        return false
+    end
+
+    local frameName = frame.GetName and frame:GetName() or nil
+    if frameName == "QuestFrame" then
+        if IsShownFrame(QuestFrameGreetingPanel) then
+            return IsShownWithText(GreetingText)
+        end
+
+        if IsShownFrame(QuestFrameDetailPanel)
+            or IsShownFrame(QuestFrameProgressPanel)
+            or IsShownFrame(QuestFrameRewardPanel) then
+            return IsShownWithText(QuestInfoTitleHeader)
+                or IsShownWithText(QuestProgressTitleText)
+        end
+
+        return false
+    end
+
+    if frameName == "GreetingFrame" then
+        return IsShownWithText(GreetingText)
+    end
+
+    if frameName == "QuestLogDetailFrame" then
+        return IsShownWithText(QuestInfoTitleHeader)
+    end
+
+    return false
+end
+
 local function SetFrameShown(frame, shown)
     if not frame then
         return
@@ -350,9 +405,47 @@ local function BuildQuestDisplayTitle(title, level)
     return title
 end
 
+local function GetRecurringQuestType(questId, title)
+    local lookup = addon and addon.QuestRecurringLookup or nil
+    if not lookup or type(lookup.Resolve) ~= "function" then
+        return nil
+    end
+
+    local recurrenceType = lookup.Resolve(questId, title)
+    if recurrenceType == "daily" or recurrenceType == "weekly" then
+        return recurrenceType
+    end
+
+    return nil
+end
+
+local function GetRecurringQuestFlags(questId, title, stockIsDaily)
+    local recurrenceType = GetRecurringQuestType(questId, title)
+    if not recurrenceType and stockIsDaily then
+        recurrenceType = "daily"
+    end
+
+    local isWeekly = recurrenceType == "weekly"
+    local isRecurring = recurrenceType == "daily" or isWeekly
+    local isDaily = stockIsDaily or isRecurring
+
+    return recurrenceType, isRecurring, isDaily, isWeekly
+end
+
 local function GetQuestIdFromLogIndex(questLogIndex)
     questLogIndex = tonumber(questLogIndex)
-    if not questLogIndex or questLogIndex <= 0 or type(GetQuestLink) ~= "function" then
+    if not questLogIndex or questLogIndex <= 0 then
+        return nil
+    end
+
+    if type(C_QuestLog_GetQuestIDForQuestLogIndex) == "function" then
+        local questId = tonumber(C_QuestLog_GetQuestIDForQuestLogIndex(questLogIndex))
+        if questId and questId > 0 then
+            return questId
+        end
+    end
+
+    if type(GetQuestLink) ~= "function" then
         return nil
     end
 
@@ -424,6 +517,9 @@ local function GetQuestLogInfo(questLogIndex)
 
     local regionInfo = GetQuestRegionInfo(questLogIndex)
 
+    local stockIsDaily = (frequency == true or frequency == 1)
+    local recurrenceType, isRecurring, isDaily, isWeekly = GetRecurringQuestFlags(questId, title, stockIsDaily)
+
     return {
         questLogIndex = questLogIndex,
         title = title,
@@ -431,7 +527,10 @@ local function GetQuestLogInfo(questLogIndex)
         tag = tag,
         suggestedGroup = tonumber(suggestedGroup),
         isComplete = (isComplete == true or isComplete == 1),
-        isDaily = (frequency == true or frequency == 1),
+        isDaily = isDaily,
+        isWeekly = isWeekly,
+        isRecurring = isRecurring,
+        recurrenceType = recurrenceType,
         questId = questId,
         regionName = regionInfo and regionInfo.regionName or nil,
         regionOrder = regionInfo and regionInfo.regionOrder or questLogIndex,
@@ -449,6 +548,23 @@ local function FindQuestLogIndexByQuestId(questId)
     for questLogIndex = 1, numEntries do
         local info = GetQuestLogInfo(questLogIndex)
         if info and info.questId == questId then
+            return questLogIndex, info
+        end
+    end
+
+    return nil
+end
+
+local function FindQuestLogInfoByTitle(title)
+    title = StripQuestLevelPrefix(title)
+    if type(title) ~= "string" or title == "" or type(GetNumQuestLogEntries) ~= "function" then
+        return nil
+    end
+
+    local numEntries = GetNumQuestLogEntries() or 0
+    for questLogIndex = 1, numEntries do
+        local info = GetQuestLogInfo(questLogIndex)
+        if info and StripQuestLevelPrefix(info.title) == title then
             return questLogIndex, info
         end
     end
@@ -538,6 +654,11 @@ local function GetQuestFrameContext(ownerFrame)
         end
     end
 
+    local recurrenceType = info and info.recurrenceType or GetRecurringQuestType(questId, title)
+    local isWeekly = info and info.isWeekly or recurrenceType == "weekly"
+    local isRecurring = info and info.isRecurring or recurrenceType == "daily" or isWeekly
+    local isDaily = info and info.isDaily or isRecurring
+
     return {
         ownerFrame = ownerFrame,
         title = title,
@@ -546,7 +667,10 @@ local function GetQuestFrameContext(ownerFrame)
         level = info and info.level or nil,
         tag = info and info.tag or nil,
         suggestedGroup = info and info.suggestedGroup or nil,
-        isDaily = info and info.isDaily or false,
+        isDaily = isDaily,
+        isWeekly = isWeekly,
+        isRecurring = isRecurring,
+        recurrenceType = recurrenceType,
         isComplete = info and info.isComplete or false,
         showFollow = questLogIndex and questLogIndex > 0,
     }
@@ -573,6 +697,9 @@ local function GetQuestLogDetailContext(ownerFrame)
         tag = info.tag,
         suggestedGroup = info.suggestedGroup,
         isDaily = info.isDaily,
+        isWeekly = info.isWeekly,
+        isRecurring = info.isRecurring,
+        recurrenceType = info.recurrenceType,
         isComplete = info.isComplete,
         showFollow = true,
     }
@@ -636,7 +763,11 @@ local function BuildQuestMeta(context)
         table.insert(parts, context.tag)
     end
 
-    if context.isDaily then
+    if context.recurrenceType == "daily" then
+        table.insert(parts, DAILY or "Daily")
+    elseif context.recurrenceType == "weekly" then
+        table.insert(parts, WEEKLY or "Weekly")
+    elseif context.isDaily then
         table.insert(parts, DAILY or "Daily")
     end
 
@@ -904,8 +1035,10 @@ local function EnsurePortraitAccent()
         ring:SetTexture(QUEST_PORTRAIT_TEXTURE)
         ring:SetAlpha(0.90)
         QuestFramePortrait.__dcqosPortraitAccent = ring
+    end
 
-        QuestFramePortrait:SetTexCoord(0.12, 0.88, 0.12, 0.88)
+    if QuestFramePortrait.SetTexCoord then
+        QuestFramePortrait:SetTexCoord(0, 1, 0, 1)
     end
 
     local size = math.max(QuestFramePortrait:GetWidth() or 0, QuestFramePortrait:GetHeight() or 0) + 26
@@ -1371,6 +1504,9 @@ local function EnsureMovableFrame(frame)
     end
 
     if frame.__dcqosQuestMoveHandle then
+        if frame.__dcqosQuestMoveHandle.SetHighlightTexture then
+            frame.__dcqosQuestMoveHandle:SetHighlightTexture(nil)
+        end
         return frame.__dcqosQuestMoveHandle
     end
 
@@ -1387,11 +1523,13 @@ local function EnsureMovableFrame(frame)
     handle:SetHeight(layout.height)
     handle:RegisterForDrag("LeftButton")
     handle:SetFrameStrata(frame:GetFrameStrata())
-    handle:SetFrameLevel(frame:GetFrameLevel())
-    handle:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
-    local highlight = handle:GetHighlightTexture()
-    if highlight then
-        highlight:SetVertexColor(1.0, 0.82, 0.18, 0.08)
+    handle:SetFrameLevel((frame.GetFrameLevel and frame:GetFrameLevel() or 0) + 20)
+    handle:EnableMouse(true)
+    if handle.SetHighlightTexture then
+        handle:SetHighlightTexture(nil)
+    end
+    if handle.SetHitRectInsets then
+        handle:SetHitRectInsets(0, 0, 0, 0)
     end
     handle:SetScript("OnDragStart", function(self)
         local parent = self:GetParent()
@@ -1408,6 +1546,36 @@ local function EnsureMovableFrame(frame)
         if not parent then
             return
         end
+        parent:StopMovingOrSizing()
+        if parent.SetUserPlaced then
+            parent:SetUserPlaced(true)
+        end
+    end)
+    handle:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" then
+            return
+        end
+
+        local parent = self:GetParent()
+        if not parent then
+            return
+        end
+        if InCombatLockdown and InCombatLockdown() then
+            return
+        end
+
+        parent:StartMoving()
+    end)
+    handle:SetScript("OnMouseUp", function(self, button)
+        if button ~= "LeftButton" then
+            return
+        end
+
+        local parent = self:GetParent()
+        if not parent then
+            return
+        end
+
         parent:StopMovingOrSizing()
         if parent.SetUserPlaced then
             parent:SetUserPlaced(true)
@@ -2279,6 +2447,64 @@ local function UpdateMovableFrames()
     end
 end
 
+local function GetQuestRowIconRegion(button)
+    if not button or not button.__dcqosQuestRow then
+        return nil
+    end
+
+    local kind = button.__dcqosQuestRow.kind
+    local buttonName = button.GetName and button:GetName() or nil
+    if kind == "greeting" then
+        return button.QuestIcon or (buttonName and _G[buttonName .. "QuestIcon"]) or nil
+    end
+
+    return button.check or (buttonName and _G[buttonName .. "Check"]) or nil
+end
+
+local function GetGreetingQuestButtonInfo(button)
+    if not button then
+        return nil
+    end
+
+    local questIndex = tonumber(button:GetID())
+    if not questIndex or questIndex <= 0 then
+        return nil
+    end
+
+    local isActive = button.isActive == 1
+    local title
+    if isActive and type(GetActiveTitle) == "function" then
+        title = GetActiveTitle(questIndex)
+    elseif not isActive and type(GetAvailableTitle) == "function" then
+        title = GetAvailableTitle(questIndex)
+    end
+
+    if not title or title == "" then
+        local fontString = GetButtonFontString(button)
+        title = fontString and fontString.GetText and fontString:GetText() or nil
+        title = StripQuestLevelPrefix(title)
+    end
+
+    if not title or title == "" then
+        return nil
+    end
+
+    local questLogIndex, info = FindQuestLogInfoByTitle(title)
+    local recurrenceType = info and info.recurrenceType or GetRecurringQuestType(nil, title)
+    local isWeekly = info and info.isWeekly or recurrenceType == "weekly"
+    local isRecurring = info and info.isRecurring or recurrenceType == "daily" or isWeekly
+
+    return {
+        title = title,
+        isActive = isActive,
+        isComplete = info and info.isComplete or false,
+        isRecurring = isRecurring,
+        recurrenceType = recurrenceType,
+        questLogIndex = questLogIndex,
+        questId = info and info.questId or nil,
+    }
+end
+
 local function EnsureQuestRowButton(button, highlightTexture, kind)
     if not button then
         return
@@ -2346,8 +2572,10 @@ local function UpdateQuestRowButton(button)
     local completed = false
     local isHeader = false
     local level
+    local recurrenceType
     local titleText
     local textVisible = fontString and fontString.GetText and fontString:GetText()
+    local greetingInfo
 
     if kind == "log" then
         local questLogIndex = tonumber(button:GetID())
@@ -2361,12 +2589,19 @@ local function UpdateQuestRowButton(button)
             if not isHeader then
                 local info = GetQuestLogInfo(questLogIndex)
                 tracked = info and IsQuestTracked(info) or false
+                recurrenceType = info and info.recurrenceType or nil
             end
             if not textVisible or textVisible == "" then
                 textVisible = title
             end
         end
     else
+        greetingInfo = GetGreetingQuestButtonInfo(button)
+        if greetingInfo then
+            titleText = greetingInfo.title or titleText
+            completed = greetingInfo.isComplete
+            recurrenceType = greetingInfo.recurrenceType
+        end
         tracked = false
     end
 
@@ -2386,6 +2621,49 @@ local function UpdateQuestRowButton(button)
 
     if accent then
         accent:SetAlpha((selected or tracked) and 1 or 0)
+    end
+
+    local icon = GetQuestRowIconRegion(button)
+    if icon and icon.SetTexture then
+        local texturePath
+        if kind == "log" then
+            if not isHeader and textVisible and textVisible ~= "" then
+                if recurrenceType then
+                    texturePath = QUEST_DAILY_ACTIVE_ICON_TEXTURE
+                elseif completed then
+                    texturePath = QUEST_ACTIVE_ICON_TEXTURE
+                else
+                    texturePath = QUEST_INCOMPLETE_ICON_TEXTURE
+                end
+            end
+        elseif greetingInfo then
+            if greetingInfo.isActive then
+                if greetingInfo.isRecurring then
+                    texturePath = QUEST_DAILY_ACTIVE_ICON_TEXTURE
+                elseif greetingInfo.isComplete then
+                    texturePath = QUEST_ACTIVE_ICON_TEXTURE
+                else
+                    texturePath = QUEST_INCOMPLETE_ICON_TEXTURE
+                end
+            else
+                texturePath = greetingInfo.isRecurring and QUEST_DAILY_ICON_TEXTURE or QUEST_AVAILABLE_ICON_TEXTURE
+            end
+        end
+
+        if texturePath then
+            icon:SetTexture(texturePath)
+            if icon.SetTexCoord then
+                icon:SetTexCoord(0, 1, 0, 1)
+            end
+            if icon.SetVertexColor then
+                icon:SetVertexColor(1, 1, 1, 1)
+            end
+            if icon.Show then
+                icon:Show()
+            end
+        elseif icon.Hide then
+            icon:Hide()
+        end
     end
 
     if fontString then
@@ -2441,7 +2719,7 @@ local function EnsureWorldMapQuestPoiChrome(button)
     })
 end
 
-local function UpdateWorldMapQuestPoi(button, isTracked, isSelected, isWatched, isComplete, isHover)
+local function UpdateWorldMapQuestPoi(button, isTracked, isSelected, isWatched, isComplete, isHover, isDaily)
     local markers = addon and addon.QuestTrackerMarkers or nil
     if not markers or type(markers.UpdateWorldMapQuestPoi) ~= "function" then
         return
@@ -2453,6 +2731,7 @@ local function UpdateWorldMapQuestPoi(button, isTracked, isSelected, isWatched, 
         isWatched = isWatched,
         isComplete = isComplete,
         isHover = isHover,
+        isDaily = isDaily,
         setHoverQuestId = SetWorldMapHoverQuestId,
         getHoverQuestId = function()
             return state.worldMapHoverQuestId
@@ -2599,6 +2878,7 @@ local function StyleWorldMapQuestRows()
         local info = entry.info
         local title = entry.title
         local level = entry.level
+        local isDaily = info and info.isDaily or false
         local isComplete = info and info.isComplete or false
         local isWatched = info and IsQuestTracked(info) or false
         local isTracked = trackedQuestId and trackedQuestId == questId or false
@@ -2631,31 +2911,63 @@ local function StyleWorldMapQuestRows()
             local glowAlpha = 0
             local pulseAlpha = 0
 
+            if isDaily then
+                borderR, borderG, borderB, borderA = 0.28, 0.52, 0.86, 0.38
+                accentR, accentG, accentB, accentA = 0.34, 0.68, 1.0, 0.32
+                boxR, boxG, boxB, boxA = 0.42, 0.72, 1.0, 0.90
+                checkR, checkG, checkB, checkA = 0.58, 0.84, 1.0, 0
+                iconR, iconG, iconB, iconA = 0.54, 0.80, 1.0, 0.58
+            end
+
             if isTracked then
-                borderR, borderG, borderB, borderA = 0.95, 0.78, 0.26, 0.82
+                if isDaily then
+                    borderR, borderG, borderB, borderA = 0.36, 0.70, 1.0, 0.88
+                    accentR, accentG, accentB, accentA = 0.42, 0.76, 1.0, 1
+                    boxR, boxG, boxB, boxA = 0.50, 0.80, 1.0, 1
+                    checkR, checkG, checkB, checkA = 0.70, 0.90, 1.0, 1
+                    iconR, iconG, iconB, iconA = 0.70, 0.90, 1.0, 1
+                else
+                    borderR, borderG, borderB, borderA = 0.95, 0.78, 0.26, 0.82
+                    accentR, accentG, accentB, accentA = 0.95, 0.78, 0.26, 1
+                    boxR, boxG, boxB, boxA = 0.98, 0.84, 0.36, 1
+                    checkR, checkG, checkB, checkA = 0.98, 0.88, 0.36, 1
+                    iconR, iconG, iconB, iconA = 0.98, 0.88, 0.36, 1
+                end
                 bgAlpha = 0.74
-                accentR, accentG, accentB, accentA = 0.95, 0.78, 0.26, 1
-                boxR, boxG, boxB, boxA = 0.98, 0.84, 0.36, 1
-                checkR, checkG, checkB, checkA = 0.98, 0.88, 0.36, 1
-                iconR, iconG, iconB, iconA = 0.98, 0.88, 0.36, 1
                 glowAlpha = 0.46
                 pulseAlpha = 0.84
             elseif isSelected then
-                borderR, borderG, borderB, borderA = 0.90, 0.72, 0.28, 0.64
+                if isDaily then
+                    borderR, borderG, borderB, borderA = 0.34, 0.66, 0.96, 0.72
+                    accentR, accentG, accentB, accentA = 0.42, 0.72, 1.0, 0.84
+                    boxR, boxG, boxB, boxA = 0.48, 0.78, 1.0, 1
+                    checkR, checkG, checkB, checkA = 0.66, 0.88, 1.0, isWatched and 1 or 0
+                    iconR, iconG, iconB, iconA = 0.66, 0.88, 1.0, 0.92
+                else
+                    borderR, borderG, borderB, borderA = 0.90, 0.72, 0.28, 0.64
+                    accentR, accentG, accentB, accentA = 0.92, 0.76, 0.30, 0.84
+                    boxR, boxG, boxB, boxA = 0.92, 0.78, 0.38, 1
+                    checkR, checkG, checkB, checkA = 0.94, 0.84, 0.46, isWatched and 1 or 0
+                    iconR, iconG, iconB, iconA = 0.96, 0.86, 0.48, 0.9
+                end
                 bgAlpha = 0.70
-                accentR, accentG, accentB, accentA = 0.92, 0.76, 0.30, 0.84
-                boxR, boxG, boxB, boxA = 0.92, 0.78, 0.38, 1
-                checkR, checkG, checkB, checkA = 0.94, 0.84, 0.46, isWatched and 1 or 0
-                iconR, iconG, iconB, iconA = 0.96, 0.86, 0.48, 0.9
                 glowAlpha = 0.28
                 pulseAlpha = 0.42
             elseif isWatched then
-                borderR, borderG, borderB, borderA = 0.74, 0.62, 0.32, 0.48
+                if isDaily then
+                    borderR, borderG, borderB, borderA = 0.32, 0.62, 0.92, 0.56
+                    accentR, accentG, accentB, accentA = 0.40, 0.70, 1.0, 0.70
+                    boxR, boxG, boxB, boxA = 0.46, 0.78, 1.0, 1
+                    checkR, checkG, checkB, checkA = 0.62, 0.86, 1.0, 1
+                    iconR, iconG, iconB, iconA = 0.62, 0.84, 1.0, 0.84
+                else
+                    borderR, borderG, borderB, borderA = 0.74, 0.62, 0.32, 0.48
+                    accentR, accentG, accentB, accentA = 0.86, 0.72, 0.34, 0.70
+                    boxR, boxG, boxB, boxA = 0.88, 0.76, 0.40, 1
+                    checkR, checkG, checkB, checkA = 0.90, 0.78, 0.40, 1
+                    iconR, iconG, iconB, iconA = 0.92, 0.80, 0.44, 0.8
+                end
                 bgAlpha = 0.66
-                accentR, accentG, accentB, accentA = 0.86, 0.72, 0.34, 0.70
-                boxR, boxG, boxB, boxA = 0.88, 0.76, 0.40, 1
-                checkR, checkG, checkB, checkA = 0.90, 0.78, 0.40, 1
-                iconR, iconG, iconB, iconA = 0.92, 0.80, 0.44, 0.8
             elseif isComplete then
                 borderR, borderG, borderB, borderA = 0.44, 0.62, 0.30, 0.52
                 bgAlpha = 0.62
@@ -2686,7 +2998,7 @@ local function StyleWorldMapQuestRows()
             rowChrome.completeDot:SetAlpha(dotAlpha)
         end
 
-        UpdateWorldMapQuestPoi(child, isTracked, isSelected, isWatched, isComplete, isHover)
+        UpdateWorldMapQuestPoi(child, isTracked, isSelected, isWatched, isComplete, isHover, isDaily)
 
         for j = 1, #fontStrings do
             local fontString = fontStrings[j]
@@ -2698,13 +3010,27 @@ local function StyleWorldMapQuestRows()
                         fontString:SetText(displayTitle)
                     end
                     if isTracked then
-                        ApplyFontStyle(fontString, 11, 1, 1.0, 0.90, 0.42)
+                        if isDaily then
+                            ApplyFontStyle(fontString, 11, 1, 0.70, 0.90, 1.0)
+                        else
+                            ApplyFontStyle(fontString, 11, 1, 1.0, 0.90, 0.42)
+                        end
                     elseif isSelected then
-                        ApplyFontStyle(fontString, 11, 1, 0.99, 0.90, 0.52)
+                        if isDaily then
+                            ApplyFontStyle(fontString, 11, 1, 0.68, 0.88, 1.0)
+                        else
+                            ApplyFontStyle(fontString, 11, 1, 0.99, 0.90, 0.52)
+                        end
                     elseif isWatched then
-                        ApplyFontStyle(fontString, 11, 1, 0.96, 0.90, 0.68)
+                        if isDaily then
+                            ApplyFontStyle(fontString, 11, 1, 0.66, 0.86, 1.0)
+                        else
+                            ApplyFontStyle(fontString, 11, 1, 0.96, 0.90, 0.68)
+                        end
                     elseif isComplete then
                         ApplyFontStyle(fontString, 11, 1, 0.74, 0.88, 0.60)
+                    elseif isDaily then
+                        ApplyFontStyle(fontString, 11, 1, 0.62, 0.84, 1.0)
                     else
                         ApplyFontStyle(fontString, 11, 1, 0.96, 0.88, 0.64)
                     end
@@ -2851,21 +3177,24 @@ end
 
 local function StyleQuestText()
     local tracked = IsQuestTracked(ResolveQuestContext(QuestFrame))
+    local preferStockChrome = UseModernQuestWindowCompatibility()
+        or ShouldPreferStockQuestChrome(QuestFrame)
+        or ShouldPreferStockQuestChrome(QuestLogDetailFrame)
     local titleR, titleG, titleB = 1.0, 0.82, 0.08
     if GetSettings().accentTrackedQuest and tracked then
         titleR, titleG, titleB = 1.0, 0.90, 0.34
     end
 
     for _, name in ipairs(TITLE_TEXT_NAMES) do
-        ApplyFontStyle(_G[name], 13, 2, titleR, titleG, titleB)
+        ApplyFontStyle(_G[name], 13, preferStockChrome and 0 or 2, titleR, titleG, titleB)
     end
 
     for _, name in ipairs(BODY_TEXT_NAMES) do
-        ApplyFontStyle(_G[name], 12, 1, 0.98, 0.92, 0.78)
+        ApplyFontStyle(_G[name], 12, preferStockChrome and 0 or 1, 0.98, 0.92, 0.78)
     end
 
     for _, name in ipairs(SECTION_TEXT_NAMES) do
-        ApplyFontStyle(_G[name], 11, 1, 0.94, 0.80, 0.32)
+        ApplyFontStyle(_G[name], 11, preferStockChrome and 0 or 1, 0.94, 0.80, 0.32)
     end
 
     UpdateQuestInfoTitles()
@@ -3061,22 +3390,27 @@ local function UpdateFrameHeader(frame)
     end
 
     local settings = GetSettings()
+    local preferStockChrome = UseModernQuestWindowCompatibility()
+        or ShouldPreferStockQuestChrome(frame)
     local skin = EnsureFrameSkin(frame)
     local header = EnsureHeader(frame)
     local isShown = frame.IsShown and frame:IsShown()
 
     if skin then
-        SetFrameShown(skin, settings.retailSkin and isShown)
-        UpdateFrameShell(frame, skin)
+        local showSkin = settings.retailSkin and isShown and not preferStockChrome
+        SetFrameShown(skin, showSkin)
+        if showSkin then
+            UpdateFrameShell(frame, skin)
+        end
         if skin.border then
-            skin.border:SetVertexColor(0.24, 0.18, 0.08, settings.retailSkin and 0.62 or 0.92)
+            skin.border:SetVertexColor(0.24, 0.18, 0.08, showSkin and 0.62 or 0.92)
         end
         if skin.topTint then
-            skin.topTint:SetAlpha(settings.retailSkin and 0.08 or 0.16)
+            skin.topTint:SetAlpha(showSkin and 0.08 or 0.16)
         end
     end
 
-    if not isShown then
+    if not isShown or preferStockChrome then
         header:Hide()
         return
     end
@@ -3107,6 +3441,10 @@ local function UpdateFrameHeader(frame)
 end
 
 local function RefreshAllFrames()
+    local preferStockChrome = UseModernQuestWindowCompatibility()
+        or ShouldPreferStockQuestChrome(QuestFrame)
+        or ShouldPreferStockQuestChrome(QuestLogDetailFrame)
+
     for _, name in ipairs(ROOT_FRAME_NAMES) do
         local frame = _G[name]
         if frame then
@@ -3118,7 +3456,11 @@ local function RefreshAllFrames()
     UpdateMovableFrames()
     EnsurePortraitAccent()
     if QuestFramePortrait and QuestFramePortrait.__dcqosPortraitAccent then
-        local showPortrait = GetSettings().retailSkin and QuestFrame and QuestFrame.IsShown and QuestFrame:IsShown()
+        local showPortrait = GetSettings().retailSkin
+            and not preferStockChrome
+            and QuestFrame
+            and QuestFrame.IsShown
+            and QuestFrame:IsShown()
         SetFrameShown(QuestFramePortrait.__dcqosPortraitAccent, showPortrait and true or false)
     end
 end

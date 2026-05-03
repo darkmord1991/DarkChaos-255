@@ -15,6 +15,7 @@ local QUEST_TRACKER_TEXTURE_ROOT = "Interface\\AddOns\\DC-QOS\\Textures\\QuestTr
 local QUEST_TRACKER_BUTTONS_TEXTURE = QUEST_TRACKER_TEXTURE_ROOT .. "questtrackerbuttons"
 local QUEST_TRACKER_MAP_BUTTON_TEXTURE = QUEST_TRACKER_TEXTURE_ROOT .. "ui-questtracker-mapbutton"
 local QUEST_TRACKER_ARROW_TEXTURE = QUEST_TRACKER_TEXTURE_ROOT .. "supertrackerarrow"
+local QUEST_DAILY_POI_TEXTURE = QUEST_TRACKER_TEXTURE_ROOT .. "ui-worldmap-questicon-daily"
 local QUEST_TRACK_BOX_TEXTURE = QUEST_TRACKER_MAP_BUTTON_TEXTURE
 local QUEST_TRACK_CHECK_TEXTURE = QUEST_TRACKER_ARROW_TEXTURE
 local QUEST_TRACK_PULSE_TEXTURE = QUEST_TRACKER_BUTTONS_TEXTURE
@@ -271,16 +272,6 @@ function Markers.EnsureWorldMapQuestPoiChrome(button, options)
     chrome:SetFrameStrata((poiIcon.GetFrameStrata and poiIcon:GetFrameStrata()) or button:GetFrameStrata())
     chrome:SetFrameLevel(math.max((poiIcon.GetFrameLevel and poiIcon:GetFrameLevel() or (button.GetFrameLevel and button:GetFrameLevel() or 1)) - 1, 0))
     chrome:EnableMouse(false)
-    chrome:SetBackdrop({
-        bgFile = DC_ADDON_BACKGROUND_TEXTURE,
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    chrome:SetBackdropColor(0.05, 0.04, 0.02, 0.76)
-    chrome:SetBackdropBorderColor(0.28, 0.20, 0.10, 0.36)
 
     local glow = chrome:CreateTexture(nil, "ARTWORK")
     glow:SetAllPoints(chrome)
@@ -297,22 +288,6 @@ function Markers.EnsureWorldMapQuestPoiChrome(button, options)
     pulse:SetBlendMode("ADD")
     pulse:SetAlpha(0)
     chrome.pulse = pulse
-
-    local ring = chrome:CreateTexture(nil, "BORDER")
-    ring:SetPoint("CENTER", chrome, "CENTER", 0, 0)
-    ring:SetSize(22, 22)
-    ring:SetTexture(QUEST_TRACK_BOX_TEXTURE)
-    ring:SetTexCoord(0, 1, 0, 1)
-    ring:SetAlpha(0.9)
-    chrome.ring = ring
-
-    local badge = chrome:CreateTexture(nil, "OVERLAY")
-    badge:SetSize(13, 17)
-    badge:SetPoint("CENTER", chrome, "CENTER", 0, 0)
-    badge:SetTexture(QUEST_TRACK_CHECK_TEXTURE)
-    badge:SetTexCoord(0, 1, 0, 1)
-    badge:SetAlpha(0)
-    chrome.badge = badge
 
     local completeDot = chrome:CreateTexture(nil, "OVERLAY")
     completeDot:SetSize(6, 6)
@@ -392,6 +367,9 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
 
     local shown = poiIcon.IsShown == nil or poiIcon:IsShown()
     if not shown then
+        if poiIcon.SetScale then
+            poiIcon:SetScale(1)
+        end
         chrome:Hide()
         return
     end
@@ -401,6 +379,7 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
     local isWatched = opts.isWatched == true
     local isComplete = opts.isComplete == true
     local isHover = opts.isHover == true
+    local isDaily = opts.isDaily == true
 
     local size = math.max((poiIcon.GetWidth and poiIcon:GetWidth() or 14), (poiIcon.GetHeight and poiIcon:GetHeight() or 14)) + 10
     chrome:ClearAllPoints()
@@ -411,38 +390,63 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
 
     local resolveTextureRegion = type(opts.resolveTextureRegion) == "function" and opts.resolveTextureRegion or ResolveTextureRegion
     local iconRegion = resolveTextureRegion(poiIcon)
+    if iconRegion and not iconRegion.__dcqosOriginalTextureCaptured then
+        iconRegion.__dcqosOriginalTextureCaptured = true
+        iconRegion.__dcqosOriginalTexture = iconRegion.GetTexture and iconRegion:GetTexture() or nil
+        if iconRegion.GetTexCoord then
+            local left, right, top, bottom = iconRegion:GetTexCoord()
+            iconRegion.__dcqosOriginalTexCoord = { left, right, top, bottom }
+        end
+    end
 
     local borderR, borderG, borderB, borderA = 0.28, 0.20, 0.10, 0.36
     local fillAlpha = 0
     local glowAlpha = 0.06
     local pulseAlpha = 0
-    local badgeAlpha = 0
     local dotAlpha = 0
     local iconR, iconG, iconB = 0.88, 0.78, 0.52
     local iconScale = 1.0
 
+    if isDaily and not isComplete then
+        borderR, borderG, borderB, borderA = 0.28, 0.56, 0.92, 0.42
+        glowAlpha = 0.12
+        iconR, iconG, iconB = 0.56, 0.82, 1.0
+    end
+
     if isTracked then
-        borderR, borderG, borderB, borderA = 0.95, 0.78, 0.26, 0.84
+        if isDaily then
+            borderR, borderG, borderB, borderA = 0.38, 0.72, 1.0, 0.88
+            iconR, iconG, iconB = 0.72, 0.92, 1.0
+        else
+            borderR, borderG, borderB, borderA = 0.95, 0.78, 0.26, 0.84
+            iconR, iconG, iconB = 1.0, 0.88, 0.36
+        end
         fillAlpha = 0
         glowAlpha = 0.52
         pulseAlpha = 0.82
-        badgeAlpha = 1
-        iconR, iconG, iconB = 1.0, 0.88, 0.36
         iconScale = 1.16
     elseif isSelected then
-        borderR, borderG, borderB, borderA = 0.90, 0.72, 0.28, 0.68
+        if isDaily then
+            borderR, borderG, borderB, borderA = 0.34, 0.66, 0.96, 0.72
+            iconR, iconG, iconB = 0.68, 0.90, 1.0
+        else
+            borderR, borderG, borderB, borderA = 0.90, 0.72, 0.28, 0.68
+            iconR, iconG, iconB = 0.98, 0.84, 0.42
+        end
         fillAlpha = 0
         glowAlpha = 0.28
         pulseAlpha = 0.32
-        badgeAlpha = isWatched and 0.88 or 0
-        iconR, iconG, iconB = 0.98, 0.84, 0.42
         iconScale = 1.10
     elseif isWatched then
-        borderR, borderG, borderB, borderA = 0.74, 0.62, 0.32, 0.52
+        if isDaily then
+            borderR, borderG, borderB, borderA = 0.32, 0.62, 0.92, 0.56
+            iconR, iconG, iconB = 0.64, 0.86, 1.0
+        else
+            borderR, borderG, borderB, borderA = 0.74, 0.62, 0.32, 0.52
+            iconR, iconG, iconB = 0.92, 0.80, 0.42
+        end
         fillAlpha = 0
         glowAlpha = 0.20
-        badgeAlpha = 0.80
-        iconR, iconG, iconB = 0.92, 0.80, 0.42
         iconScale = 1.06
     elseif isComplete then
         borderR, borderG, borderB, borderA = 0.44, 0.62, 0.30, 0.58
@@ -464,23 +468,32 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
         pulseAlpha = math.max(pulseAlpha, 0.18)
     end
 
-    chrome:SetBackdropColor(0.05, 0.04, 0.02, fillAlpha)
-    chrome:SetBackdropBorderColor(borderR, borderG, borderB, 0)
     chrome.glow:SetVertexColor(borderR, borderG, borderB, 1)
     chrome.glow:SetAlpha(glowAlpha)
     chrome.pulse:SetVertexColor(borderR, borderG, borderB, 1)
     chrome.pulse:SetAlpha(pulseAlpha)
-    if chrome.ring then
-        chrome.ring:SetVertexColor(borderR, borderG, borderB, 1)
-        chrome.ring:SetAlpha(0.9)
-        chrome.ring:SetSize(size * iconScale, size * iconScale)
-    end
-    chrome.badge:SetVertexColor(borderR, borderG, borderB, 1)
-    chrome.badge:SetAlpha(badgeAlpha)
     chrome.completeDot:SetAlpha(dotAlpha)
 
     if poiIcon.SetAlpha then
         poiIcon:SetAlpha(1)
+    end
+
+    if poiIcon.SetScale then
+        poiIcon:SetScale(iconScale)
+    end
+
+    if iconRegion and iconRegion.SetTexture then
+        if isDaily and not isComplete then
+            iconRegion:SetTexture(QUEST_DAILY_POI_TEXTURE)
+            if iconRegion.SetTexCoord then
+                iconRegion:SetTexCoord(0, 1, 0, 1)
+            end
+        elseif iconRegion.__dcqosOriginalTexture then
+            iconRegion:SetTexture(iconRegion.__dcqosOriginalTexture)
+            if iconRegion.SetTexCoord and iconRegion.__dcqosOriginalTexCoord then
+                iconRegion:SetTexCoord(unpack(iconRegion.__dcqosOriginalTexCoord))
+            end
+        end
     end
 
     if iconRegion and iconRegion.SetVertexColor then

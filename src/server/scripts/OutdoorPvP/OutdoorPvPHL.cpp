@@ -129,8 +129,8 @@
         _initialResourcesAlliance = HL_RESOURCES_A;
         _initialResourcesHorde = HL_RESOURCES_H;
         // Default base coordinates
-        _baseAlliance = { /*map*/0u, /*x*/62.083f, /*y*/-4714.99f, /*z*/11.7937f, /*o*/2.50765f };
-    _baseHorde    = { /*map*/0u, /*x*/-628.484f, /*y*/-4684.51f, /*z*/5.14442f, /*o*/1.12528f };
+        _baseAlliance = { /*map*/OutdoorPvPHLMapId, /*x*/62.083f, /*y*/-4714.99f, /*z*/11.7937f, /*o*/2.50765f };
+    _baseHorde    = { /*map*/OutdoorPvPHLMapId, /*x*/-628.484f, /*y*/-4684.51f, /*z*/5.14442f, /*o*/1.12528f };
         _rewardMatchHonor = 1500;
         _rewardMatchHonorDepletion = 1500;
         _rewardMatchHonorTiebreaker = 750;
@@ -269,12 +269,14 @@
 
     OutdoorPvPHL::~OutdoorPvPHL() = default;
 
-    // Basic OutdoorPvP setup: register managed zones and derive the map id from the zone
+    // Basic OutdoorPvP setup: register managed zones and bind the controller
+    // to the custom HLBG map instead of the parent world map behind zone 47.
     bool OutdoorPvPHL::SetupOutdoorPvP()
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             RegisterZone(OutdoorPvPHLBuffZones[i]);
-        SetMapFromZone(OutdoorPvPHLBuffZones[0]);
+        _map = sMapMgr->CreateBaseMap(OutdoorPvPHLMapId);
+        ASSERT(_map && !_map->Instanceable());
         // Re-load configuration on setup and restore persisted state if enabled
         LoadConfig();
     if (_persistenceEnabled)
@@ -414,7 +416,7 @@
     {
         if (!plr)
             return false;
-        if (plr->GetZoneId() != OutdoorPvPHLBuffZones[0])
+        if (!IsPlayerInOutdoorPvPHLArea(plr))
             return false;
         // If player already in a raid group, nothing to do
         if (Group* g = plr->GetGroup())
@@ -621,7 +623,7 @@
             if (!p || !p->IsInWorld())
                 continue;
 
-            if (p->GetAreaId() == OutdoorPvPHLBattleAreaId)
+            if (IsPlayerInOutdoorPvPHLArea(p))
                 ++livePlayersInBattleArea;
         }
 
@@ -1237,14 +1239,13 @@
 
     void OutdoorPvPHL::ForEachPlayerInZone(std::function<void(Player*)> f) const
     {
-        uint32 const zoneId = OutdoorPvPHLBuffZones[0];
         // Fast path: locally tracked players.
         uint32 emitted = 0;
         for (ObjectGuid const& guid : _playersInHinterlands)
         {
             if (Player* p = ObjectAccessor::FindPlayer(guid))
             {
-                if (p->GetZoneId() == zoneId && p->IsInWorld())
+                if (p->IsInWorld() && IsPlayerInOutdoorPvPHLArea(p))
                 {
                     f(p);
                     ++emitted;
@@ -1267,7 +1268,7 @@
             if (!p || !p->IsInWorld())
                 continue;
 
-            if (p->GetAreaId() == OutdoorPvPHLBattleAreaId)
+            if (IsPlayerInOutdoorPvPHLArea(p))
                 f(p);
         }
     }

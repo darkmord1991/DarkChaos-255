@@ -42,6 +42,50 @@ function HLBG.safeGetRealZoneText()
     if not ok or not res then return "" end
     return tostring(res)
 end
+HLBG.MAP_ID = HLBG.MAP_ID or 1411
+HLBG.STATUS_NONE = HLBG.STATUS_NONE or 0
+HLBG.STATUS_QUEUED = HLBG.STATUS_QUEUED or 1
+HLBG.STATUS_WARMUP = HLBG.STATUS_WARMUP or 2
+HLBG.STATUS_ACTIVE = HLBG.STATUS_ACTIVE or 3
+HLBG.STATUS_FINISHED = HLBG.STATUS_FINISHED or 4
+
+function HLBG.TrackStatusSignal(statusValue, mapId)
+    local statusNum = tonumber(statusValue)
+    if statusNum ~= nil then
+        HLBG._lastStatusCode = statusNum
+    end
+
+    local mapNum = tonumber(mapId)
+    if mapNum ~= nil then
+        HLBG._lastStatusMapId = mapNum
+    end
+end
+
+function HLBG.HasRecentPresenceStatus(maxAgeSeconds)
+    local lastStatusTime = tonumber(HLBG._lastStatusTime)
+    if not lastStatusTime then
+        return false
+    end
+
+    local ttl = tonumber(maxAgeSeconds) or 60
+    if type(GetTime) == 'function' and (GetTime() - lastStatusTime) >= ttl then
+        return false
+    end
+
+    local mapId = tonumber(HLBG._lastStatusMapId)
+    if mapId ~= nil and mapId ~= HLBG.MAP_ID then
+        return false
+    end
+
+    local statusNum = tonumber(HLBG._lastStatusCode)
+    if statusNum == nil then
+        return mapId == HLBG.MAP_ID
+    end
+
+    return statusNum == HLBG.STATUS_WARMUP or
+        statusNum == HLBG.STATUS_ACTIVE or
+        statusNum == HLBG.STATUS_FINISHED
+end
 -- Safe wrappers for WorldState APIs
 function HLBG.safeGetNumWorldStateUI()
     local ok, n = pcall(function() return (type(GetNumWorldStateUI) == 'function') and GetNumWorldStateUI() or 0 end)

@@ -58,7 +58,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     // teleport immediately to the faction base and don't persist them in the queue.
     if (_bgState == BG_STATE_WARMUP)
     {
-        if (player->GetAreaId() != OutdoorPvPHLBattleAreaId)
+        if (!IsPlayerInOutdoorPvPHLArea(player))
         {
             TeleportToTeamBase(player);
         }
@@ -143,7 +143,7 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
         RemoveQueueEntryAtIndex(indexIt->second);
         ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Shadow_Teleport:16|t |cff00ccff[HLBG Queue]|r |cffff8080You left the queue.|r");
         SendQueueStatusAIO(player);
-        DCAddon::HLBG::HLBGStatus statusAfterLeave = (player->GetZoneId() == OutdoorPvPHLBuffZones[0])
+        DCAddon::HLBG::HLBGStatus statusAfterLeave = IsPlayerInOutdoorPvPHLArea(player)
             ? DCAddon::HLBG::STATUS_ACTIVE
             : DCAddon::HLBG::STATUS_NONE;
         DCAddon::HLBG::SendStatus(player, statusAfterLeave, player->GetMapId(), GetTimeRemainingSeconds());
@@ -153,7 +153,7 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
     {
         ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffffff00You are not in the queue.|r");
         SendQueueStatusAIO(player);
-        DCAddon::HLBG::HLBGStatus statusWhenNotQueued = (player->GetZoneId() == OutdoorPvPHLBuffZones[0])
+        DCAddon::HLBG::HLBGStatus statusWhenNotQueued = IsPlayerInOutdoorPvPHLArea(player)
             ? DCAddon::HLBG::STATUS_ACTIVE
             : DCAddon::HLBG::STATUS_NONE;
         DCAddon::HLBG::SendStatus(player, statusWhenNotQueued, player->GetMapId(), GetTimeRemainingSeconds());
@@ -239,7 +239,7 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
     SendQueueStatusAIO(player);
     DCAddon::HLBG::HLBGStatus snapshotStatus = IsPlayerInQueue(player)
         ? DCAddon::HLBG::STATUS_QUEUED
-        : (player->GetZoneId() == OutdoorPvPHLBuffZones[0] ? DCAddon::HLBG::STATUS_ACTIVE : DCAddon::HLBG::STATUS_NONE);
+        : (IsPlayerInOutdoorPvPHLArea(player) ? DCAddon::HLBG::STATUS_ACTIVE : DCAddon::HLBG::STATUS_NONE);
     DCAddon::HLBG::SendStatus(player, snapshotStatus, player->GetMapId(), GetTimeRemainingSeconds());
 }
 
@@ -334,7 +334,7 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
     const HLBase* spawnLoc = (entry.teamId == TEAM_ALLIANCE) ? &_baseAlliance : &_baseHorde;
 
         // Only teleport if player is not already in the zone
-        if (player->GetAreaId() != OutdoorPvPHLBattleAreaId)
+        if (!IsPlayerInOutdoorPvPHLArea(player))
         {
             if (player->TeleportTo(spawnLoc->map, spawnLoc->x, spawnLoc->y, spawnLoc->z, spawnLoc->o))
             {

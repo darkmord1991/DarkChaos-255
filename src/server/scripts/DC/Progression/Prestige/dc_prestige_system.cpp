@@ -28,6 +28,7 @@
 #include "AchievementMgr.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "dc_prestige_api.h"
 #include "../../AddonExtension/dc_addon_prestige_notify.h"
 #include <sstream>
@@ -85,6 +86,9 @@ public:
         keepGold = sConfigMgr->GetOption<bool>("Prestige.KeepGold", true);
         grantStarterGear = sConfigMgr->GetOption<bool>("Prestige.GrantStarterGear", false);
         announcePrestige = sConfigMgr->GetOption<bool>("Prestige.AnnounceWorld", true);
+        pointsPerPrestige = sConfigMgr->GetOption<uint32>("Prestige.PointsPerPrestige", 1);
+        tokenRewardPerPrestige = sConfigMgr->GetOption<uint32>("Prestige.TokenRewardPerPrestige", 0);
+        essenceRewardPerPrestige = sConfigMgr->GetOption<uint32>("Prestige.EssenceRewardPerPrestige", 0);
 
         // Config validation with error logging
         bool configValid = true;
@@ -117,6 +121,20 @@ public:
         {
             LOG_WARN("scripts.dc", "Prestige: StatBonusPercent ({}) is outside recommended range 1-100. Proceeding anyway.",
                 statBonusPercent);
+        }
+
+        if (tokenRewardPerPrestige > 0 && DarkChaos::ItemUpgrade::GetUpgradeTokenItemId() == 0)
+        {
+            LOG_ERROR("scripts.dc", "Prestige: TokenRewardPerPrestige is set but ItemUpgrade token item id resolves to 0. Disabling token rewards.");
+            tokenRewardPerPrestige = 0;
+            configValid = false;
+        }
+
+        if (essenceRewardPerPrestige > 0 && DarkChaos::ItemUpgrade::GetArtifactEssenceItemId() == 0)
+        {
+            LOG_ERROR("scripts.dc", "Prestige: EssenceRewardPerPrestige is set but ItemUpgrade essence item id resolves to 0. Disabling essence rewards.");
+            essenceRewardPerPrestige = 0;
+            configValid = false;
         }
 
         if (configValid)
@@ -173,12 +191,39 @@ public:
         if (!player)
             return;
 
+        uint32 currentPoints = GetPrestigePoints(player);
+        SetPrestigeProgress(player, level, currentPoints);
+    }
+
+    uint32 GetPrestigePoints(Player* player)
+    {
+        if (!player)
+            return 0;
+
+        uint32 guid = player->GetGUID().GetCounter();
+        std::string sql = Acore::StringFormat("SELECT prestige_points FROM dc_character_prestige WHERE guid = {}", guid);
+        QueryResult result = CharacterDatabase.Query(sql.c_str());
+        if (!result)
+            return 0;
+
+        Field* fields = result->Fetch();
+        return fields[0].Get<uint32>();
+    }
+
+    void SetPrestigeProgress(Player* player, uint32 level, uint32 points)
+    {
+        if (!player)
+            return;
+
         uint32 guid = player->GetGUID().GetCounter();
 
         // All parameters are uint32 so SQL injection is not possible with StringFormat
         std::string sql = Acore::StringFormat(
-            "REPLACE INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time) VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
-            guid, level, level);
+            "INSERT INTO dc_character_prestige (guid, prestige_level, total_prestiges, last_prestige_time, prestige_points) "
+            "VALUES ({}, {}, {}, UNIX_TIMESTAMP(), {}) "
+            "ON DUPLICATE KEY UPDATE prestige_level = VALUES(prestige_level), total_prestiges = VALUES(total_prestiges), "
+            "last_prestige_time = VALUES(last_prestige_time), prestige_points = VALUES(prestige_points)",
+            guid, level, level, points);
         CharacterDatabase.Execute(sql.c_str());
 
         std::lock_guard<std::mutex> lock(cacheMutex);
@@ -217,10 +262,21 @@ public:
 
         uint32 currentPrestige = GetPrestigeLevel(player);
         uint32 newPrestige = currentPrestige + 1;
+        uint32 tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+        uint32 essenceItemId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+        uint32 awardedPoints = pointsPerPrestige;
+        uint32 awardedTokens = 0;
+        uint32 awardedEssence = 0;
 
         uint32 requiredStacks = CountRequiredRewardStacks(newPrestige);
         if (!keepGear && grantStarterGear)
             requiredStacks += CountRequiredStarterGearStacks(player);
+
+        if (tokenRewardPerPrestige > 0 && tokenItemId > 0)
+            requiredStacks += CountStacksForItem(tokenItemId, tokenRewardPerPrestige);
+
+        if (essenceRewardPerPrestige > 0 && essenceItemId > 0)
+            requiredStacks += CountStacksForItem(essenceItemId, essenceRewardPerPrestige);
 
         if (requiredStacks)
         {
@@ -284,14 +340,37 @@ public:
         if (!keepProfessions)
             ResetProfessions(player);
 
+        // Update prestige points and level
+        uint32 currentPoints = GetPrestigePoints(player);
+        uint32 newTotalPoints = currentPoints + awardedPoints;
+
         // Update prestige level
-        SetPrestigeLevel(player, newPrestige);
+        SetPrestigeProgress(player, newPrestige, newTotalPoints);
 
         // Grant title
         GrantPrestigeTitle(player, newPrestige);
 
         // Grant prestige rewards
         GrantPrestigeRewards(player, newPrestige);
+
+        // Grant item upgrade currencies for future prestige systems
+        if (tokenRewardPerPrestige > 0 && tokenItemId > 0)
+        {
+            if (player->AddItem(tokenItemId, tokenRewardPerPrestige))
+                awardedTokens = tokenRewardPerPrestige;
+            else
+                LOG_WARN("scripts.dc", "Prestige: Failed to add token reward item {} x{} to player {}",
+                    tokenItemId, tokenRewardPerPrestige, player->GetName());
+        }
+
+        if (essenceRewardPerPrestige > 0 && essenceItemId > 0)
+        {
+            if (player->AddItem(essenceItemId, essenceRewardPerPrestige))
+                awardedEssence = essenceRewardPerPrestige;
+            else
+                LOG_WARN("scripts.dc", "Prestige: Failed to add essence reward item {} x{} to player {}",
+                    essenceItemId, essenceRewardPerPrestige, player->GetName());
+        }
 
         // Update achievements/statistics
         UpdatePrestigeAchievements(player, newPrestige);
@@ -325,6 +404,12 @@ public:
         // Notify player
         ChatHandler(player->GetSession()).PSendSysMessage("Congratulations! You have reached Prestige Level {}!", newPrestige);
         ChatHandler(player->GetSession()).PSendSysMessage("You now have {}% bonus to all stats!", newPrestige * statBonusPercent);
+        if (awardedPoints > 0)
+            ChatHandler(player->GetSession()).PSendSysMessage("You gained {} prestige points (total: {}).", awardedPoints, newTotalPoints);
+        if (awardedTokens > 0)
+            ChatHandler(player->GetSession()).PSendSysMessage("You gained {} upgrade tokens.", awardedTokens);
+        if (awardedEssence > 0)
+            ChatHandler(player->GetSession()).PSendSysMessage("You gained {} artifact essence.", awardedEssence);
 
         // Notify client addon (if installed/enabled) so UI can refresh immediately
         DCPrestigeAddon::NotifyPrestigeLevelUp(player, newPrestige, newPrestige * statBonusPercent);
@@ -333,8 +418,9 @@ public:
         try
         {
             std::string sql = Acore::StringFormat(
-                "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear) VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {})",
-                player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0
+                "INSERT INTO dc_character_prestige_log (guid, prestige_level, prestige_time, from_level, kept_gear, awarded_points, awarded_tokens, awarded_essence) "
+                "VALUES ({}, {}, UNIX_TIMESTAMP(), {}, {}, {}, {}, {})",
+                player->GetGUID().GetCounter(), newPrestige, oldLevel, keepGear ? 1 : 0, awardedPoints, awardedTokens, awardedEssence
             );
             CharacterDatabase.Execute(sql.c_str());
         }
@@ -550,6 +636,9 @@ private:
     bool keepGold;
     bool grantStarterGear;
     bool announcePrestige;
+    uint32 pointsPerPrestige;
+    uint32 tokenRewardPerPrestige;
+    uint32 essenceRewardPerPrestige;
     std::unordered_map<uint32, std::vector<PrestigeReward>> prestigeRewards;
     std::mutex cacheMutex;
     std::unordered_map<uint32, uint32> prestigeCache;

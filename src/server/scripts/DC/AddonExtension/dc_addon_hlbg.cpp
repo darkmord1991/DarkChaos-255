@@ -532,14 +532,13 @@ namespace HLBG
         if (!player) return;
 
         OutdoorPvPHL* hl = GetHL();
-        uint32 zoneId = player->GetZoneId();
         uint32 mapId = player->GetMapId();
         uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
 
         HLBGStatus status = STATUS_NONE;
         if (hl)
         {
-            if (zoneId == OutdoorPvPHLBuffZones[0])
+            if (IsPlayerInOutdoorPvPHLArea(player))
                 status = STATUS_ACTIVE;
             else if (hl->IsPlayerQueued(player))
                 status = STATUS_QUEUED;

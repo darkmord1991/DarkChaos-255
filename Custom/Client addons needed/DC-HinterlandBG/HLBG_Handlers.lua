@@ -156,11 +156,10 @@ local function InHinterlands()
         return true
     end
 
-    -- Fallback: if the server is actively sending STATUS messages recently,
-    -- the player is in the BG.
-    if type(HLBG) == 'table' and HLBG._lastStatusTime then
-        local elapsed = GetTime() - HLBG._lastStatusTime
-        if elapsed < 60 then
+    -- Fallback: trust recent active HLBG status only when it points at the
+    -- custom battleground map, not merely because some status packet arrived.
+    if type(HLBG) == 'table' and type(HLBG.HasRecentPresenceStatus) == 'function' then
+        if HLBG.HasRecentPresenceStatus(60) then
             return true
         end
     end
@@ -417,6 +416,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         HLBG._lastStatus.hordeResources = H
         HLBG._lastStatus.timeLeft = ENDt
         HLBG._lastStatus.END = ENDt  -- Store END time for HUD visibility check
+        if type(HLBG.TrackStatusSignal) == 'function' then
+            HLBG.TrackStatusSignal(HLBG.STATUS_ACTIVE, HLBG.MAP_ID)
+        end
         HLBG._lastStatusTime = GetTime()  -- Track when we last received a STATUS message
         -- EXTENSIVE DEBUG: Confirm storage
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
@@ -1582,6 +1584,8 @@ if DC then
 
         if type(args[1]) == "table" then
             local payload = args[1]
+            local statusValue = payload.status or payload.hlbgStatus or payload.state or payload[1]
+            local mapId = payload.mapId or payload.map or payload[2]
 
             RES = RES or {}
             RES.A = tonumber(payload.alliance or payload.A or RES.A or 0) or 0
@@ -1595,9 +1599,14 @@ if DC then
             HLBG._lastStatus.allianceResources = RES.A
             HLBG._lastStatus.hordeResources = RES.H
             HLBG._lastStatus.DURATION = RES.END
+            HLBG._lastStatus.status = tonumber(statusValue) or statusValue
+            HLBG._lastStatus.mapId = tonumber(mapId) or mapId
+            if type(HLBG.TrackStatusSignal) == 'function' then
+                HLBG.TrackStatusSignal(statusValue, mapId)
+            end
             HLBG._lastStatusTime = GetTime()
 
-            SyncQueueFromHLBGStatus(payload.status or payload.hlbgStatus or payload.state or payload[1])
+            SyncQueueFromHLBGStatus(statusValue)
 
             if type(HLBG.UpdateHUDVisibility) == 'function' then
                 pcall(HLBG.UpdateHUDVisibility)
@@ -1618,6 +1627,8 @@ if DC then
         if IsJSONMessage(...) then
             local json = DecodeJSON(args[2])
             if json then
+                local statusValue = json.status or json.hlbgStatus or json.state
+                local mapId = json.mapId or json.map
                 RES = RES or {}
                 RES.A = json.alliance or json.A or 0
                 RES.H = json.horde or json.H or 0
@@ -1634,9 +1645,14 @@ if DC then
                 HLBG._lastStatus.hordeBases = json.hordeBases or 0
                 HLBG._lastStatus.affix = json.affix
                 HLBG._lastStatus.season = json.season
+                HLBG._lastStatus.status = tonumber(statusValue) or statusValue
+                HLBG._lastStatus.mapId = tonumber(mapId) or mapId
+                if type(HLBG.TrackStatusSignal) == 'function' then
+                    HLBG.TrackStatusSignal(statusValue, mapId)
+                end
                 HLBG._lastStatusTime = GetTime()
 
-                SyncQueueFromHLBGStatus(json.status or json.hlbgStatus or json.state)
+                SyncQueueFromHLBGStatus(statusValue)
                 
                 if json.affix then
                     HLBG._affixText = json.affix
@@ -1660,7 +1676,18 @@ if DC then
             local status, mapId, timeRemaining = args[1], args[2], args[3]
             RES = RES or {}
             RES.END = tonumber(timeRemaining) or 0
+            HLBG._lastStatus = HLBG._lastStatus or {}
+            HLBG._lastStatus.DURATION = RES.END
+            HLBG._lastStatus.status = tonumber(status) or status
+            HLBG._lastStatus.mapId = tonumber(mapId) or mapId
+            if type(HLBG.TrackStatusSignal) == 'function' then
+                HLBG.TrackStatusSignal(status, mapId)
+            end
+            HLBG._lastStatusTime = GetTime()
             SyncQueueFromHLBGStatus(status)
+            if type(HLBG.UpdateHUDVisibility) == 'function' then
+                pcall(HLBG.UpdateHUDVisibility)
+            end
             if type(HLBG.UpdateHUD) == 'function' then
                 pcall(HLBG.UpdateHUD)
             end

@@ -30,6 +30,7 @@
 #include "ChatCommand.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
+#include "../QOL/dc_questgiver_status_override.h"
 #include <mutex>
 #include <algorithm>
 
@@ -267,6 +268,11 @@ class npc_universal_quest_master : public CreatureScript
 {
 public:
     npc_universal_quest_master() : CreatureScript("npc_universal_quest_master") { }
+
+    uint32 GetDialogStatus(Player* player, Creature* creature) override
+    {
+        return DCQuestgiverStatusOverride::GetDialogStatus(player, creature);
+    }
 
     static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
     {

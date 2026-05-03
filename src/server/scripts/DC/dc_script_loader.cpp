@@ -62,6 +62,7 @@ void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.
 void AddSC_dc_aoeloot_unified();              // QOL/dc_aoeloot_unified.cpp
 
 // --- QOL scripts ---
+void AddSC_dc_questgiver_status_override_qol(); // QOL/dc_questgiver_status_override.cpp
 void AddSC_dc_looter_pet_qol();               // QOL/dc_looter_pet.cpp
 
 // --- Hotspots system ---
@@ -275,6 +276,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_aoeloot_unified);
 
     LogSection("QOL Scripts");
+    DC_LOAD(AddSC_dc_questgiver_status_override_qol);
     DC_LOAD(AddSC_dc_looter_pet_qol);
 
     LogSection("Hotspots System");

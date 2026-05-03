@@ -105,6 +105,7 @@
 
     const uint8 OutdoorPvPHLBuffZonesNum = 1;
     const uint32 OutdoorPvPHLBuffZones[OutdoorPvPHLBuffZonesNum] = { 47 };
+    const uint32 OutdoorPvPHLMapId = 1411;
 
     const uint8 WinBuffsNum                 = 4;
     const uint8 LoseBuffsNum                = 2;
@@ -112,6 +113,13 @@
     const uint32 LoseBuffs[LoseBuffsNum]    = { 23948, 40079}; // Whoever loses, gets this buff.
 
     const uint32 OutdoorPvPHLBattleAreaId = 6738;
+
+    inline bool IsPlayerInOutdoorPvPHLArea(Player const* player)
+    {
+        return player &&
+            player->GetMapId() == OutdoorPvPHLMapId &&
+            player->GetAreaId() == OutdoorPvPHLBattleAreaId;
+    }
     const uint32 HL_RESOURCES_A         = 450;
     const uint32 HL_RESOURCES_H         = 450;
     // Default match duration used for the status timer (in seconds)

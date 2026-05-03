@@ -119,7 +119,7 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
 
         for (Player* player : zonePlayers)
         {
-            if (!player || !player->IsInWorld() || player->GetAreaId() != OutdoorPvPHLBattleAreaId)
+            if (!player || !player->IsInWorld() || !IsPlayerInOutdoorPvPHLArea(player))
                 continue;
 
             // 300/200/100 threshold chatter

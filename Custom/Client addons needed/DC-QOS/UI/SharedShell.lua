@@ -43,6 +43,42 @@ addon:MergeModuleDefaults({
     },
 })
 
+local function GetTrackedQuestFontSize(fontString)
+    if not fontString then
+        return 0
+    end
+
+    local original = fontString.__dcqosQuestOriginalFont or fontString.__dcqosQuestFont
+    local size = original and tonumber(original.size) or nil
+    if size and size > 0 then
+        return size
+    end
+
+    if type(fontString.GetFont) ~= "function" then
+        return 0
+    end
+
+    local _, currentSize = fontString:GetFont()
+    return tonumber(currentSize) or 0
+end
+
+function addon:IsModernQuestWindowActive()
+    local titleSize = GetTrackedQuestFontSize(_G.QuestInfoTitleHeader)
+    if titleSize <= 0 then
+        return false
+    end
+
+    local bodySize = math.max(
+        GetTrackedQuestFontSize(_G.QuestInfoDescriptionText),
+        GetTrackedQuestFontSize(_G.QuestProgressText),
+        GetTrackedQuestFontSize(_G.GreetingText)
+    )
+
+    -- The Dragonflight-style quest backport ships a much larger stock title
+    -- treatment than Wrath. Defer addon-side upsizing when that is active.
+    return titleSize >= 20 and titleSize >= (bodySize + 4)
+end
+
 local DEFAULT_KEYWORDS = {
     Experience = { "settings", "search", "widgets", "toast", "notifications", "accessibility", "edit mode", "toolbar" },
     Automation = { "auto repair", "auto sell", "loot", "cinematics", "quests", "gossip" },
@@ -193,6 +229,11 @@ local function ApplyQuestReadability()
     local baseScale = tonumber(accessibility.fontScale) or 1.0
     local textScale = largerText and (baseScale * 1.10) or baseScale
 
+    if type(addon.IsModernQuestWindowActive) == "function"
+        and addon:IsModernQuestWindowActive() then
+        textScale = math.min(textScale, 1.0)
+    end
+
     for _, name in ipairs(questReadabilityPanels) do
         local panel = _G[name]
         if panel then
@@ -203,7 +244,10 @@ local function ApplyQuestReadability()
                 panel.__dcqosQuestShade = shade
             end
 
-            panel.__dcqosQuestShade:SetTexture(0, 0, 0, enableContrast and 0.24 or 0.01)
+            -- Keep stock/backported quest textures visible; only reserve this
+            -- layer as a near-transparent readability hook instead of a dark
+            -- panel fill behind the parchment.
+            panel.__dcqosQuestShade:SetTexture(0, 0, 0, 0.01)
         end
     end
 

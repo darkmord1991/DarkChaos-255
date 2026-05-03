@@ -13,9 +13,11 @@
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "Chat.h"
 #include "ObjectMgr.h"
+#include "../QOL/dc_questgiver_status_override.h"
 
 namespace
 {
+    constexpr uint32 HLBG_BATTLEMASTER_ENTRY = 900001;
     constexpr uint32 HLBG_QUEST_DAILY = 920100;
     constexpr uint32 HLBG_QUEST_WEEKLY = 920101;
     constexpr uint32 HLBG_GOSSIP_SENDER_QUEST_MANUAL = 50001;
@@ -41,6 +43,14 @@ class npc_hinterlands_battlemaster : public CreatureScript
 {
 public:
     npc_hinterlands_battlemaster() : CreatureScript("npc_hinterlands_battlemaster") { }
+
+    uint32 GetDialogStatus(Player* player, Creature* creature) override
+    {
+        if (!creature || creature->GetEntry() != HLBG_BATTLEMASTER_ENTRY)
+            return DIALOG_STATUS_SCRIPTED_NO_STATUS;
+
+        return DCQuestgiverStatusOverride::GetDialogStatus(player, creature);
+    }
 
     static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
     {

@@ -71,6 +71,46 @@ local ITEM_INFO_CACHE_DURATION = 60  -- 1 minute
 local itemUpgradeCache = {}
 local pendingUpgradeRequests = {}
 local UPGRADE_CACHE_DURATION = 300  -- 5 minutes
+local UPGRADE_PENDING_TIMEOUT = 4.0
+
+local telemetry = {
+    startedAt = GetTime and GetTime() or 0,
+    spell = {
+        requestsSent = 0,
+        requestSendFailures = 0,
+        clientDescriptionMissingExport = 0,
+        clientDescriptionCallError = 0,
+        clientDescriptionNilReturn = 0,
+        clientDescriptionEmptyBody = 0,
+        clientDescriptionPlaceholderRejected = 0,
+        responsesReceived = 0,
+        responsesSuccess = 0,
+        responsesError = 0,
+        responsesWithoutPending = 0,
+        responsesRemappedByRequestId = 0,
+        responseRequestIdMismatch = 0,
+        pendingTimeoutRecoveries = 0,
+        skippedRenderModeDisabled = 0,
+        prefetchRuns = 0,
+        prefetchRequestsSent = 0,
+    },
+    upgrade = {
+        requestsSent = 0,
+        responsesReceived = 0,
+        pendingTimeoutRecoveries = 0,
+    },
+    npc = {
+        requestsSent = 0,
+        responsesReceived = 0,
+        pendingTimeoutRecoveries = 0,
+    },
+}
+
+local function TelemetryInc(bucket, key, amount)
+    if type(telemetry[bucket]) ~= "table" then return end
+    local delta = tonumber(amount) or 1
+    telemetry[bucket][key] = (tonumber(telemetry[bucket][key]) or 0) + delta
+end
 
 -- Tier color definitions (matches DC-ItemUpgrade)
 local TIER_COLORS = {
@@ -91,6 +131,7 @@ end
 local function GetServerBagFromClient(bag)
     -- Backpack is 0, other bags are 1-4 for regular, -1 for bank, 5-11 for bank bags
     if bag == 0 then return 255 end  -- INVENTORY_SLOT_BAG_0
+    if bag == -2 then return 255 end  -- Equipped item slots on player paperdoll
     if bag >= 1 and bag <= 4 then return 18 + bag end  -- Regular bags (19-22)
     if bag == -1 then return 255 end  -- Bank main
     if bag >= 5 and bag <= 11 then return 62 + (bag - 5) end  -- Bank bags
@@ -153,9 +194,14 @@ local function RequestUpgradeInfo(bag, slot, itemLink)
     local serverSlot = GetServerSlotFromClient(bag, slot)
     local locationKey = BuildLocationKey(serverBag, serverSlot)
     
-    -- Don't re-request if pending
-    if pendingUpgradeRequests[locationKey] then
+    -- Don't re-request if already pending, unless stale.
+    local pendingAt = tonumber(pendingUpgradeRequests[locationKey]) or 0
+    if pendingAt > 0 and (now - pendingAt) < UPGRADE_PENDING_TIMEOUT then
         return
+    end
+    if pendingAt > 0 and (now - pendingAt) >= UPGRADE_PENDING_TIMEOUT then
+        pendingUpgradeRequests[locationKey] = nil
+        TelemetryInc("upgrade", "pendingTimeoutRecoveries")
     end
     
     -- Check cache
@@ -164,8 +210,9 @@ local function RequestUpgradeInfo(bag, slot, itemLink)
         return
     end
     
-    pendingUpgradeRequests[locationKey] = true
+    pendingUpgradeRequests[locationKey] = now
     lastUpgradeRequest = now
+    TelemetryInc("upgrade", "requestsSent")
     
     -- Request via protocol
     addon.protocol:RequestItemUpgradeInfo(serverBag, serverSlot)
@@ -174,9 +221,15 @@ end
 -- Handle upgrade info from server
 local function OnUpgradeInfoReceived(data)
     if not data then return end
+    TelemetryInc("upgrade", "responsesReceived")
     
     local locationKey = BuildLocationKey(data.bag, data.slot)
     pendingUpgradeRequests[locationKey] = nil
+
+    if data.error then
+        itemUpgradeCache[locationKey] = nil
+        return
+    end
     
     itemUpgradeCache[locationKey] = {
         timestamp = GetTime(),
@@ -225,6 +278,10 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
     
     -- Check cache
     local cached = itemUpgradeCache[locationKey]
+    if cached and (GetTime() - (tonumber(cached.timestamp) or 0)) >= UPGRADE_CACHE_DURATION then
+        itemUpgradeCache[locationKey] = nil
+        cached = nil
+    end
     if not cached then
         -- Request from server
         RequestUpgradeInfo(bag, slot, itemLink)
@@ -497,6 +554,7 @@ local SPELL_TOOLTIP_TRACKING_STALE_TTL = 120
 
 local spellEnrichmentRequestCounter = 0
 local pendingSpellEnrichment = {}
+local pendingSpellEnrichmentByRequestId = {}
 local lastSpellEnrichmentAttemptAt = {}
 local lastSpellEnrichmentSendAt = 0
 local lastSpellEnrichmentPruneAt = 0
@@ -592,12 +650,244 @@ local function IsRawServerMetadataLine(text)
     return false
 end
 
-local function GetSpellTooltipRenderMode(tooltip)
+local function HasUnresolvedSpellPlaceholder(text)
+    if type(text) ~= "string" or text == "" then
+        return false
+    end
+
+    -- Common unresolved transport/template tokens from server descriptions.
+    -- Examples: "$<percent>", "$s1", "$m2".
+    if text:find("%$<[^>]+>") then return true end
+    if text:find("%$[a-zA-Z]+%d+") then return true end
+    return false
+end
+
+local function GetClientSpellDescription(spellId)
+    local sid = tonumber(spellId)
+    if not sid or sid <= 0 then
+        return nil
+    end
+
+    if type(GetSpellDescription) ~= "function" then
+        TelemetryInc("spell", "clientDescriptionMissingExport")
+        return nil
+    end
+
+    local ok, description = pcall(function()
+        return GetSpellDescription(sid)
+    end)
+    if not ok then
+        TelemetryInc("spell", "clientDescriptionCallError")
+        return nil
+    end
+
+    if description == nil then
+        TelemetryInc("spell", "clientDescriptionNilReturn")
+        return nil
+    end
+
+    if type(description) ~= "string" then
+        TelemetryInc("spell", "clientDescriptionCallError")
+        return nil
+    end
+
+    description = description:gsub("\r\n", "\n"):gsub("\r", "\n")
+    description = description:gsub("^%s+", ""):gsub("%s+$", "")
+    if description == "" then
+        TelemetryInc("spell", "clientDescriptionEmptyBody")
+        return nil
+    end
+
+    if HasUnresolvedSpellPlaceholder(description) then
+        TelemetryInc("spell", "clientDescriptionPlaceholderRejected")
+        return nil
+    end
+
+    return description
+end
+
+local function AddClientSpellDescriptionLines(tooltip, description)
+    if not tooltip or type(description) ~= "string" or description == ""
+        or type(tooltip.AddLine) ~= "function" then
+        return false
+    end
+
+    local existing = BuildExistingTooltipTextSet(tooltip)
+    local addedAny = false
+
+    for line in string.gmatch(description, "([^\n]+)") do
+        local text = tostring(line or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        local normalized = NormalizeTooltipTextValue(text)
+        if normalized ~= "" and not existing[normalized] then
+            if not addedAny then
+                tooltip:AddLine(" ")
+            end
+
+            tooltip:AddLine(text, 1.0, 0.82, 0.0, true)
+            existing[normalized] = true
+            addedAny = true
+        end
+    end
+
+    return addedAny
+end
+
+local function EnrichmentHasUnresolvedBodyPlaceholders(enrichment)
+    if type(enrichment) ~= "table" or type(enrichment.lines) ~= "table" then
+        return false
+    end
+
+    for _, rawEntry in ipairs(enrichment.lines) do
+        local entry = rawEntry
+        if type(entry) ~= "table" then
+            entry = { left = tostring(rawEntry or "") }
+        end
+
+        local kind = entry.kind
+        if kind == nil or kind == "body" then
+            local left = tostring(entry.left or "")
+            local right = entry.right ~= nil and tostring(entry.right) or ""
+            if HasUnresolvedSpellPlaceholder(left) or HasUnresolvedSpellPlaceholder(right) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function HasRenderableEnrichmentLines(enrichment, renderMode)
+    if type(enrichment) ~= "table" or type(enrichment.lines) ~= "table" then
+        return false
+    end
+
+    for _, rawEntry in ipairs(enrichment.lines) do
+        local entry = rawEntry
+        if type(entry) ~= "table" then
+            entry = { left = tostring(rawEntry or "") }
+        end
+
+        local left = tostring(entry.left or "")
+        local right = entry.right ~= nil and tostring(entry.right) or nil
+        local kind = entry.kind
+
+        if not (renderMode == "replace-native-description" and kind ~= "body")
+            and not (renderMode == "append-nonbody" and kind == "body")
+            and not IsRawServerMetadataLine(left)
+            and not IsRawServerMetadataLine(right or "")
+            and not HasUnresolvedSpellPlaceholder(left)
+            and not HasUnresolvedSpellPlaceholder(right or "") then
+            local leftNorm = NormalizeTooltipTextValue(left)
+            if leftNorm ~= "" then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local SPELL_TOOLTIP_SOURCE_TAG_MAX_AGE = 0.75
+
+local function MarkSpellTooltipSource(tooltip, source)
+    if not tooltip then return end
+    tooltip._dcqosSpellSource = source
+    tooltip._dcqosSpellSourceAt = GetTime and GetTime() or 0
+end
+
+local function IsActionTooltipOwner(owner)
+    if type(owner) ~= "table" then
+        return false
+    end
+
+    if owner.action ~= nil then
+        return true
+    end
+
+    local ownerName = owner.GetName and owner:GetName() or ""
+    if ownerName == "" then
+        return false
+    end
+
+    if ownerName:find("^ActionButton%d+$")
+        or ownerName:find("^MultiBar.+Button%d+$")
+        or ownerName:find("^BonusActionButton%d+$")
+        or ownerName:find("^PetActionButton%d+$")
+        or ownerName:find("^ShapeshiftButton%d+$")
+        or ownerName:find("^VehicleMenuBarActionButton%d+$")
+        or ownerName:find("^PossessButton%d+$") then
+        return true
+    end
+
+    return false
+end
+
+local function IsSpellbookTooltipOwner(owner)
+    if type(owner) ~= "table" then
+        return false
+    end
+
+    local ownerName = owner.GetName and owner:GetName() or ""
+    if ownerName == "" then
+        return false
+    end
+
+    if ownerName:find("SpellBook")
+        or ownerName:find("^SpellButton%d+$")
+        or ownerName:find("^PetSpellButton%d+$") then
+        return true
+    end
+
+    return false
+end
+
+local function InferSpellTooltipSource(tooltip)
+    if not tooltip or type(tooltip.GetOwner) ~= "function" then
+        return "blizzlike"
+    end
+
+    local owner = tooltip:GetOwner()
+    if IsSpellbookTooltipOwner(owner) then
+        return "spellbook"
+    end
+    if IsActionTooltipOwner(owner) then
+        return "action"
+    end
+
+    return "blizzlike"
+end
+
+local function ResolveSpellTooltipSource(tooltip)
+    if not tooltip then
+        return "blizzlike"
+    end
+
+    local source = tooltip._dcqosSpellSource
+    local sourceAt = tonumber(tooltip._dcqosSpellSourceAt) or 0
+    local now = GetTime and GetTime() or 0
+    if (source == "action" or source == "spellbook" or source == "blizzlike")
+        and sourceAt > 0
+        and (now - sourceAt) <= SPELL_TOOLTIP_SOURCE_TAG_MAX_AGE then
+        return source
+    end
+
+    source = InferSpellTooltipSource(tooltip)
+    MarkSpellTooltipSource(tooltip, source)
+    return source
+end
+
+local function GetSpellTooltipRenderMode(tooltip, clientDescription)
     local source = tooltip and tooltip._dcqosSpellSource or nil
     if source == "action" then
+        if type(clientDescription) == "string" and clientDescription ~= "" then
+            return "append-nonbody"
+        end
         return "full"
     end
     if source == "spellbook" then
+        if type(clientDescription) == "string" and clientDescription ~= "" then
+            return "append-nonbody"
+        end
         return "replace-native-description"
     end
     return "disabled"
@@ -642,7 +932,17 @@ local function PruneSpellEnrichmentTracking(now)
     for key, pending in pairs(pendingSpellEnrichment) do
         local sentAt = pending and tonumber(pending.sentAt) or 0
         if sentAt <= 0 or (now - sentAt) > SPELL_TOOLTIP_TRACKING_STALE_TTL then
+            local reqId = pending and tonumber(pending.requestId) or 0
+            if reqId > 0 and pendingSpellEnrichmentByRequestId[reqId] == key then
+                pendingSpellEnrichmentByRequestId[reqId] = nil
+            end
             pendingSpellEnrichment[key] = nil
+        end
+    end
+
+    for reqId, mappedKey in pairs(pendingSpellEnrichmentByRequestId) do
+        if not pendingSpellEnrichment[mappedKey] then
+            pendingSpellEnrichmentByRequestId[reqId] = nil
         end
     end
 
@@ -667,7 +967,6 @@ local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
 
     local existing = BuildExistingTooltipTextSet(tooltip)
     local addedAny = false
-
     for _, rawEntry in ipairs(lines) do
         local entry = rawEntry
         if type(entry) ~= "table" then
@@ -679,8 +978,11 @@ local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
         local kind = entry.kind
 
         if not (renderMode == "replace-native-description" and kind ~= "body")
+            and not (renderMode == "append-nonbody" and kind == "body")
             and not IsRawServerMetadataLine(left)
-            and not IsRawServerMetadataLine(right or "") then
+            and not IsRawServerMetadataLine(right or "")
+            and not HasUnresolvedSpellPlaceholder(left)
+            and not HasUnresolvedSpellPlaceholder(right or "") then
             local leftNorm = NormalizeTooltipTextValue(left)
             local rightNorm = NormalizeTooltipTextValue(right or "")
             local key = leftNorm .. "||" .. rightNorm
@@ -731,15 +1033,30 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
     local contextHash = BuildSpellTooltipContextHash(sid)
     local key = BuildSpellEnrichmentKey(sid, contextHash)
     local now = GetTime()
-    local renderMode = GetSpellTooltipRenderMode(tooltip)
+    local clientDescription = nil
+    local renderMode = GetSpellTooltipRenderMode(tooltip, nil)
+
+    if renderMode ~= "disabled" then
+        clientDescription = GetClientSpellDescription(sid)
+        renderMode = GetSpellTooltipRenderMode(tooltip, clientDescription)
+    end
 
     if renderMode == "disabled" then
+        TelemetryInc("spell", "skippedRenderModeDisabled")
         return false
     end
 
     PruneSpellEnrichmentTracking(now)
 
     tooltip._dcqosActiveSpellKey = key
+
+    if renderMode == "append-nonbody"
+        and type(clientDescription) == "string"
+        and clientDescription ~= ""
+        and tooltip._dcqosClientDescriptionShownKey ~= key then
+        AddClientSpellDescriptionLines(tooltip, clientDescription)
+        tooltip._dcqosClientDescriptionShownKey = key
+    end
 
     if tooltip._dcqosSpellEnrichmentShownKey == key then
         return true  -- already shown from a previous render this session
@@ -748,16 +1065,18 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
     local cached = addon.GetSpellTooltipEnrichment and addon:GetSpellTooltipEnrichment(sid, contextHash) or nil
     local cachedAge = cached and (now - (tonumber(cached.receivedAt) or now)) or nil
 
-    if renderMode == "replace-native-description"
-        and tooltip._dcqosNativeDescriptionStrippedKey ~= key then
-        StripNativeSpellDescriptionLines(tooltip)
-        tooltip._dcqosNativeDescriptionStrippedKey = key
-    end
-
     local renderedFromCache = false
     if cached and cached.status == 0 and cachedAge and cachedAge <= SPELL_TOOLTIP_ENRICHMENT_OK_TTL then
+        if renderMode == "replace-native-description"
+            and tooltip._dcqosNativeDescriptionStrippedKey ~= key
+            and HasRenderableEnrichmentLines(cached, renderMode) then
+            StripNativeSpellDescriptionLines(tooltip)
+            tooltip._dcqosNativeDescriptionStrippedKey = key
+        end
+
         renderedFromCache = RenderSpellEnrichmentLines(tooltip, cached, renderMode)
-        if renderedFromCache then
+        if renderedFromCache or (renderMode == "append-nonbody"
+            and not HasRenderableEnrichmentLines(cached, renderMode)) then
             tooltip._dcqosSpellEnrichmentShownKey = key
             return true  -- rendered synchronously from cache
         end
@@ -769,7 +1088,12 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
     if not renderedFromCache then
         local pending = pendingSpellEnrichment[key]
         if pending and (now - (pending.sentAt or 0)) > SPELL_TOOLTIP_ENRICHMENT_PENDING_TTL then
+            local reqId = pending and tonumber(pending.requestId) or 0
+            if reqId > 0 and pendingSpellEnrichmentByRequestId[reqId] == key then
+                pendingSpellEnrichmentByRequestId[reqId] = nil
+            end
             pendingSpellEnrichment[key] = nil
+            TelemetryInc("spell", "pendingTimeoutRecoveries")
             pending = nil
         end
 
@@ -795,12 +1119,16 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
             requestId = requestId,
             sentAt = now,
         }
+        pendingSpellEnrichmentByRequestId[requestId] = key
         lastSpellEnrichmentAttemptAt[key] = now
         lastSpellEnrichmentSendAt = now
+        TelemetryInc("spell", "requestsSent")
 
         local ok = addon:RequestSpellTooltipEnrichment(requestId, sid, contextHash, false)
         if not ok then
             pendingSpellEnrichment[key] = nil
+            pendingSpellEnrichmentByRequestId[requestId] = nil
+            TelemetryInc("spell", "requestSendFailures")
             return false  -- request failed, no callback expected
         end
         return nil  -- request sent; callback will deliver lines and Spell ID
@@ -809,6 +1137,7 @@ end
 
 local function OnSpellTooltipEnrichmentReceived(data)
     if type(data) ~= "table" then return end
+    TelemetryInc("spell", "responsesReceived")
 
     local sid = tonumber(data.spellId) or 0
     local contextHash = tonumber(data.contextHash) or 0
@@ -816,21 +1145,59 @@ local function OnSpellTooltipEnrichmentReceived(data)
 
     local key = BuildSpellEnrichmentKey(sid, contextHash)
     local pending = pendingSpellEnrichment[key]
-    if pending then
-        local responseReqId = tonumber(data.requestId) or 0
-        if responseReqId > 0 and responseReqId ~= pending.requestId then
-            return
+    local responseReqId = tonumber(data.requestId) or 0
+
+    if not pending and responseReqId > 0 then
+        local mappedKey = pendingSpellEnrichmentByRequestId[responseReqId]
+        if mappedKey then
+            pending = pendingSpellEnrichment[mappedKey]
+            if pending then
+                key = mappedKey
+                TelemetryInc("spell", "responsesRemappedByRequestId")
+
+                local _, mappedContext = string.match(mappedKey, "^(%d+):(%d+)$")
+                local mappedCtxNum = tonumber(mappedContext)
+                if mappedCtxNum and mappedCtxNum > 0 then
+                    contextHash = mappedCtxNum
+                    data.contextHash = mappedCtxNum
+                end
+            end
         end
-        pendingSpellEnrichment[key] = nil
+    end
+
+    if not pending and responseReqId > 0 then
+        TelemetryInc("spell", "responsesWithoutPending")
+    end
+
+    if pending then
+        if responseReqId > 0 then
+            if responseReqId ~= pending.requestId then
+                TelemetryInc("spell", "responseRequestIdMismatch")
+                return
+            end
+            pendingSpellEnrichmentByRequestId[responseReqId] = nil
+            pendingSpellEnrichment[key] = nil
+        end
+    end
+
+    local status = tonumber(data.status) or 0
+    if status == 0 then
+        TelemetryInc("spell", "responsesSuccess")
+    else
+        TelemetryInc("spell", "responsesError")
     end
 
     -- Clear retry backoff on any response so immediate re-render stays snappy.
     lastSpellEnrichmentAttemptAt[key] = nil
 
     if GameTooltip and GameTooltip:IsShown() and GameTooltip._dcqosActiveSpellKey == key then
-        local status = tonumber(data.status) or 0
         if status == 0 then
-            GameTooltip._dcqosSpellEnrichmentShownKey = nil
+            -- Avoid duplicate redraw churn if repeated responses arrive
+            -- for the same active tooltip key.
+            if GameTooltip._dcqosSpellEnrichmentShownKey == key then
+                return
+            end
+
             AddSpellTooltipEnrichment(GameTooltip, sid)
             -- If Spell ID was deferred for this spell (cold-cache path), add it at the bottom now.
             local pendingSid = tonumber(GameTooltip._dcqosPendingSpellIdForBottom)
@@ -860,8 +1227,21 @@ addon:RegisterEvent("SPELL_TOOLTIP_ENRICHMENT_RECEIVED", OnSpellTooltipEnrichmen
 -- Spell Enrichment Prefetch (warms cache at login / zone-in)
 -- ============================================================
 local spellPrefetchFrame = nil
+local lastSpellPrefetchQueuedAt = 0
+local StartSpellEnrichmentPrefetch
 
-local function StartSpellEnrichmentPrefetch()
+local function QueueSpellEnrichmentPrefetch(delay)
+    local now = GetTime and GetTime() or 0
+    if now > 0 and lastSpellPrefetchQueuedAt > 0 and (now - lastSpellPrefetchQueuedAt) < 2.0 then
+        return
+    end
+    lastSpellPrefetchQueuedAt = now
+    if type(StartSpellEnrichmentPrefetch) == "function" then
+        addon:DelayedCall(delay or 1, StartSpellEnrichmentPrefetch)
+    end
+end
+
+StartSpellEnrichmentPrefetch = function()
     if not addon.settings or not addon.settings.tooltips or not addon.settings.tooltips.enabled then return end
     if not addon.settings.communication or not addon.settings.communication.enabled then return end
     if type(GetNumSpellTabs) ~= "function" or type(GetSpellTabInfo) ~= "function"
@@ -887,6 +1267,8 @@ local function StartSpellEnrichmentPrefetch()
     end
 
     if #queue == 0 then return end
+
+    TelemetryInc("spell", "prefetchRuns")
 
     if not spellPrefetchFrame then
         spellPrefetchFrame = CreateFrame("Frame")
@@ -932,6 +1314,7 @@ local function StartSpellEnrichmentPrefetch()
                 pendingSpellEnrichment[key] = { requestId = requestId, sentAt = now }
                 lastSpellEnrichmentAttemptAt[key] = now
                 lastSpellEnrichmentSendAt = now
+                TelemetryInc("spell", "prefetchRequestsSent")
                 addon:RequestSpellTooltipEnrichment(requestId, sid, contextHash, false)
                 return  -- one per tick
             end
@@ -972,6 +1355,8 @@ end
 -- ============================================================
 local npcInfoCache = {}       -- Cache server-provided NPC info
 local pendingNpcRequests = {} -- Track pending requests
+local NPC_INFO_CACHE_DURATION = 300
+local NPC_INFO_PENDING_TIMEOUT = 5.0
 local npcKillCountsByEntry = nil
 local npcKillCountsByName = nil
 local killTrackerFrame = nil
@@ -1163,10 +1548,27 @@ end
 -- Request NPC info from server
 local function RequestNpcInfo(guid)
     if not guid then return end
-    if pendingNpcRequests[guid] then return end
-    if npcInfoCache[guid] then return end
+    local now = GetTime()
+
+    local pendingAt = tonumber(pendingNpcRequests[guid]) or 0
+    if pendingAt > 0 and (now - pendingAt) < NPC_INFO_PENDING_TIMEOUT then
+        return
+    end
+    if pendingAt > 0 and (now - pendingAt) >= NPC_INFO_PENDING_TIMEOUT then
+        pendingNpcRequests[guid] = nil
+        TelemetryInc("npc", "pendingTimeoutRecoveries")
+    end
+
+    local cached = npcInfoCache[guid]
+    if cached and (now - (tonumber(cached.timestamp) or 0)) < NPC_INFO_CACHE_DURATION then
+        return
+    end
+    if cached then
+        npcInfoCache[guid] = nil
+    end
     
-    pendingNpcRequests[guid] = true
+    pendingNpcRequests[guid] = now
+    TelemetryInc("npc", "requestsSent")
     
     -- Use DC-QoS protocol to request NPC info
     if addon.protocol and addon.protocol.connected then
@@ -1177,6 +1579,7 @@ end
 -- Handle NPC info received from server
 local function OnNpcInfoReceived(npcData)
     if not npcData or not npcData.guid then return end
+    TelemetryInc("npc", "responsesReceived")
     
     local guid = npcData.guid
     -- Normalize GUID to match UnitGUID format (0x prefix)
@@ -1185,10 +1588,17 @@ local function OnNpcInfoReceived(npcData)
     end
     
     pendingNpcRequests[guid] = nil
+
+    if npcData.error then
+        npcInfoCache[guid] = nil
+        return
+    end
+
     npcInfoCache[guid] = {
+        timestamp = GetTime(),
         spawnId = npcData.spawnId,
         entry = npcData.entry,
-        dbGuid = npcData.dbGuid,
+        dbGuid = npcData.dbGuid or npcData.spawnGuid,
     }
     
     -- Don't force refresh to avoid lag
@@ -1441,6 +1851,23 @@ local function HookUnitTooltips()
         return
     end
 
+    local function ResetTooltipTransientState(self)
+        self._dcqosNpcGuid = nil
+        self._dcqosUpgradeShown = nil
+        self._dcqosResolvedSpellId = nil
+        self._dcqosSpellSource = nil
+        self._dcqosSpellSourceAt = nil
+        self._dcqosSpellIdShown = nil
+        self._dcqosLastEnhancedSpellId = nil
+        self._dcqosLastEnhancedSpellAt = nil
+        self._dcqosActiveSpellKey = nil
+        self._dcqosClientDescriptionShownKey = nil
+        self._dcqosSpellEnrichmentShownKey = nil
+        self._dcqosNativeDescriptionStrippedKey = nil
+        self._dcqosPendingSpellIdForBottom = nil
+        self._dcqosNpcKillShown = nil
+    end
+
     -- Hook OnTooltipSetUnit
     if not GameTooltip._dcqosHookedOnTooltipSetUnit then
         GameTooltip._dcqosHookedOnTooltipSetUnit = true
@@ -1475,17 +1902,14 @@ local function HookUnitTooltips()
     if not GameTooltip._dcqosHookedOnTooltipCleared then
         GameTooltip._dcqosHookedOnTooltipCleared = true
         GameTooltip:HookScript("OnTooltipCleared", function(self)
-            self._dcqosNpcGuid = nil
-            self._dcqosUpgradeShown = nil
-            self._dcqosResolvedSpellId = nil
-            self._dcqosSpellSource = nil
-            self._dcqosSpellIdShown = nil
-            self._dcqosLastEnhancedSpellId = nil
-            self._dcqosLastEnhancedSpellAt = nil
-            self._dcqosActiveSpellKey = nil
-            self._dcqosSpellEnrichmentShownKey = nil
-            self._dcqosNativeDescriptionStrippedKey = nil
-            self._dcqosNpcKillShown = nil
+            ResetTooltipTransientState(self)
+        end)
+    end
+
+    if not GameTooltip._dcqosHookedOnHide then
+        GameTooltip._dcqosHookedOnHide = true
+        GameTooltip:HookScript("OnHide", function(self)
+            ResetTooltipTransientState(self)
         end)
     end
     
@@ -1723,6 +2147,70 @@ local function FindCurrentRankSpellIdByName(spellName)
     return nil, nil
 end
 
+local function ResolveSpellIdFromTooltipName(tooltip, fallbackName)
+    local spellName = fallbackName
+
+    if (not spellName or spellName == "") and tooltip and type(tooltip.GetName) == "function" then
+        local tipName = tooltip:GetName()
+        if tipName and tipName ~= "" then
+            local header = _G[tipName .. "TextLeft1"]
+            if header and header.GetText then
+                spellName = header:GetText()
+            end
+        end
+    end
+
+    if type(spellName) ~= "string" or spellName == "" then
+        return nil
+    end
+
+    local sid = FindCurrentRankSpellIdByName(spellName)
+    sid = tonumber(sid)
+    if sid and sid > 0 then
+        return sid
+    end
+
+    return nil
+end
+
+local function ResolveShapeshiftSpellId(formIndex)
+    local idx = tonumber(formIndex)
+    if not idx or idx <= 0 or type(GetShapeshiftFormInfo) ~= "function" then
+        return nil
+    end
+
+    local _, formName = GetShapeshiftFormInfo(idx)
+    local sid = ResolveSpellIdFromTooltipName(nil, formName)
+    sid = tonumber(sid)
+    if sid and sid > 0 then
+        return sid
+    end
+
+    if type(GetNumSpellTabs) ~= "function" or type(GetSpellTabInfo) ~= "function"
+        or type(GetSpellBookItemName) ~= "function" then
+        return nil
+    end
+
+    local tabCount = tonumber(GetNumSpellTabs()) or 0
+    for tabIndex = 1, tabCount do
+        local _, _, offset, numSlots = GetSpellTabInfo(tabIndex)
+        offset = tonumber(offset) or 0
+        numSlots = tonumber(numSlots) or 0
+        for slot = offset + 1, offset + numSlots do
+            local name = GetSpellBookItemName(slot, BOOKTYPE_SPELL)
+            if name and formName and name == formName then
+                local bookSid = GetSpellIdFromBookSlot(slot, BOOKTYPE_SPELL)
+                bookSid = tonumber(bookSid)
+                if bookSid and bookSid > 0 then
+                    return bookSid
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
 local function ResolveSpellFromBookSlot(slot, bookType)
     local index = tonumber(slot)
     if not index or index <= 0 or type(bookType) ~= "string" then
@@ -1900,6 +2388,13 @@ local function TrySetTooltipHyperlink(tooltip, hyperlink)
         return false
     end
 
+    -- This client fork can throw C-side nil errors on SetHyperlink for
+    -- spell links (similar to SetAction/SetSpell instability). Keep
+    -- item hyperlink support, but never issue spell hyperlinks here.
+    if string.find(hyperlink, "^spell:") then
+        return false
+    end
+
     if type(tooltip.SetHyperlink) ~= "function" then
         return false
     end
@@ -1952,15 +2447,21 @@ local function SetFallbackActionTooltip(button)
     end
 
     if not wroteText and actionType == "spell" and id then
-        GameTooltip._dcqosSpellSource = "action"
+        MarkSpellTooltipSource(GameTooltip, "action")
         local sid, _, _, spellName = ResolveActionSpellData(action, id, actionSubType)
         local resolvedId = tonumber(sid) or tonumber(id)
 
-        if (not spellName or spellName == "") and resolvedId and type(GetSpellInfo) == "function" then
+        if not wroteText and resolvedId and resolvedId > 0 then
+            -- Safe native spell body fallback: avoids SetAction/SetSpell while
+            -- still allowing client-side tooltip description rendering.
+            wroteText = TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(resolvedId))
+        end
+
+        if not wroteText and (not spellName or spellName == "") and resolvedId and type(GetSpellInfo) == "function" then
             spellName = GetSpellInfo(resolvedId)
         end
 
-        if spellName and spellName ~= "" then
+        if not wroteText and spellName and spellName ~= "" then
             GameTooltip:SetText(spellName)
             if resolvedId and type(GetSpellInfo) == "function" then
                 local _, spellRank = GetSpellInfo(resolvedId)
@@ -1973,13 +2474,24 @@ local function SetFallbackActionTooltip(button)
             wroteText = true
         end
     elseif not wroteText and actionType == "companion" and id and type(GetCompanionInfo) == "function" then
-        GameTooltip._dcqosSpellSource = "action"
+        MarkSpellTooltipSource(GameTooltip, "action")
 
-        local _, companionName, companionSpellId = GetCompanionInfo("MOUNT", id)
-        if (not companionName or companionName == "") then
-            local _, critterName, critterSpellId = GetCompanionInfo("CRITTER", id)
-            companionName = critterName
-            companionSpellId = critterSpellId
+        local companionKind = tostring(actionSubType or "")
+        companionKind = string.upper(companionKind)
+
+        local _, companionName, companionSpellId
+        if companionKind == "MOUNT" then
+            _, companionName, companionSpellId = GetCompanionInfo("MOUNT", id)
+        elseif companionKind == "CRITTER" then
+            _, companionName, companionSpellId = GetCompanionInfo("CRITTER", id)
+        else
+            -- Unknown subtype on this client/fork: probe both pools.
+            _, companionName, companionSpellId = GetCompanionInfo("MOUNT", id)
+            if (not companionName or companionName == "") then
+                local _, critterName, critterSpellId = GetCompanionInfo("CRITTER", id)
+                companionName = critterName
+                companionSpellId = critterSpellId
+            end
         end
 
         local resolvedId = tonumber(companionSpellId)
@@ -1992,21 +2504,21 @@ local function SetFallbackActionTooltip(button)
             wroteText = true
         end
     elseif not wroteText and actionType == "item" and id then
-        GameTooltip._dcqosSpellSource = nil
+        MarkSpellTooltipSource(GameTooltip, nil)
         if TrySetTooltipHyperlink(GameTooltip, "item:" .. tostring(id)) then
             wroteText = true
         end
     end
 
     if not wroteText and actionType == "item" and id and type(GetItemInfo) == "function" then
-        GameTooltip._dcqosSpellSource = nil
+        MarkSpellTooltipSource(GameTooltip, nil)
         local itemName = GetItemInfo(id)
         if itemName and itemName ~= "" then
             GameTooltip:SetText(itemName)
             wroteText = true
         end
     elseif not wroteText and actionType == "macro" and id and type(GetMacroInfo) == "function" then
-        GameTooltip._dcqosSpellSource = nil
+        MarkSpellTooltipSource(GameTooltip, nil)
         local macroName = GetMacroInfo(id)
         if macroName and macroName ~= "" then
             GameTooltip:SetText(macroName)
@@ -2015,7 +2527,7 @@ local function SetFallbackActionTooltip(button)
     end
 
     if not wroteText and type(GetActionText) == "function" then
-        GameTooltip._dcqosSpellSource = nil
+        MarkSpellTooltipSource(GameTooltip, nil)
         local actionText = GetActionText(action)
         if actionText and actionText ~= "" then
             GameTooltip:SetText(actionText)
@@ -2023,8 +2535,20 @@ local function SetFallbackActionTooltip(button)
         end
     end
 
+    -- Some stance/presence/form paths can present a spell-name tooltip without
+    -- exposing a direct spell action id. Recover via tooltip header text.
+    if wroteText then
+        local recoveredSid = ResolveSpellIdFromTooltipName(GameTooltip)
+        recoveredSid = tonumber(recoveredSid)
+        if recoveredSid and recoveredSid > 0 then
+            MarkSpellTooltipSource(GameTooltip, "action")
+            GameTooltip._dcqosResolvedSpellId = recoveredSid
+            EnhanceSpellTooltip(GameTooltip, recoveredSid)
+        end
+    end
+
     if not wroteText then
-        GameTooltip._dcqosSpellSource = nil
+        MarkSpellTooltipSource(GameTooltip, nil)
         GameTooltip:SetText(ACTIONBAR_LABEL or "Action")
     end
 
@@ -2064,7 +2588,62 @@ local function SetFallbackShapeshiftTooltip(button)
 
     SafeFallbackSetShapeshift(GameTooltip, formIndex)
 
+    MarkSpellTooltipSource(GameTooltip, "action")
+    local spellId = ResolveShapeshiftSpellId(formIndex)
+    if (not spellId or spellId <= 0) and type(GameTooltip.GetSpell) == "function" then
+        local _, _, directSpellId = GameTooltip:GetSpell()
+        spellId = tonumber(directSpellId)
+    end
+    if (not spellId or spellId <= 0) then
+        spellId = ResolveSpellIdFromTooltipName(GameTooltip)
+    end
+    if spellId and spellId > 0 then
+        TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(spellId))
+        GameTooltip._dcqosResolvedSpellId = spellId
+        EnhanceSpellTooltip(GameTooltip, spellId)
+    end
+
     GameTooltip:Show()
+end
+
+local function SetFallbackCompanionTooltip(button)
+    if not GameTooltip or type(button) ~= "table" then
+        return
+    end
+
+    local spellId = tonumber(button.spellID)
+    if not spellId or spellId <= 0 then
+        return
+    end
+
+    if type(GameTooltip.SetOwner) == "function" then
+        if GameTooltip_SetDefaultAnchor and GetCVar and GetCVar("UberTooltips") == "1" then
+            GameTooltip_SetDefaultAnchor(GameTooltip, button)
+        else
+            GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+        end
+    end
+
+    local spellName, spellRank = type(GetSpellInfo) == "function" and GetSpellInfo(spellId) or nil, nil
+    if type(GetSpellInfo) == "function" then
+        _, spellRank = GetSpellInfo(spellId)
+    end
+
+    if spellName and spellName ~= "" then
+        GameTooltip:SetText(spellName)
+        if spellRank and spellRank ~= "" then
+            GameTooltip:AddLine(spellRank, 0.8, 0.8, 0.8)
+        end
+        GameTooltip._dcqosResolvedSpellId = spellId
+        MarkSpellTooltipSource(GameTooltip, "action")
+        EnhanceSpellTooltip(GameTooltip, spellId)
+        GameTooltip:Show()
+        return
+    end
+
+    if GameTooltip.Hide then
+        GameTooltip:Hide()
+    end
 end
 
 local function SafeShapeshiftButtonOnEnter(self)
@@ -2097,6 +2676,20 @@ local function SafeShapeshiftButtonOnEnter(self)
         end)
 
         if ok then
+            MarkSpellTooltipSource(GameTooltip, "action")
+            local spellId = ResolveShapeshiftSpellId(formIndex)
+            if (not spellId or spellId <= 0) and GameTooltip and type(GameTooltip.GetSpell) == "function" then
+                local _, _, directSpellId = GameTooltip:GetSpell()
+                spellId = tonumber(directSpellId)
+            end
+            if (not spellId or spellId <= 0) then
+                spellId = ResolveSpellIdFromTooltipName(GameTooltip)
+            end
+            if spellId and spellId > 0 then
+                TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(spellId))
+                GameTooltip._dcqosResolvedSpellId = spellId
+                EnhanceSpellTooltip(GameTooltip, spellId)
+            end
             button.UpdateTooltip = SafeShapeshiftButtonOnEnter
             return result
         end
@@ -2162,6 +2755,11 @@ local function HookSpellTooltips()
             if self == GameTooltip then
                 EnsureGameTooltipActionMethods()
                 PrimeTooltipActionSpellId(self, owner)
+                if IsActionTooltipOwner(owner) then
+                    MarkSpellTooltipSource(self, "action")
+                elseif IsSpellbookTooltipOwner(owner) then
+                    MarkSpellTooltipSource(self, "spellbook")
+                end
             end
         end)
     end
@@ -2186,6 +2784,45 @@ local function HookSpellTooltips()
             end
 
             self._dcqosResolvedSpellId = sid
+            MarkSpellTooltipSource(self, "action")
+        end)
+    end
+
+    if not GameTooltip._dcqosHookedSetShapeshift and hooksecurefunc and GameTooltip.SetShapeshift then
+        GameTooltip._dcqosHookedSetShapeshift = true
+        hooksecurefunc(GameTooltip, "SetShapeshift", function(self, index, ...)
+            MarkSpellTooltipSource(self, "action")
+            local spellId = ResolveShapeshiftSpellId(index)
+            if (not spellId or spellId <= 0) and type(self.GetSpell) == "function" then
+                local _, _, directSpellId = self:GetSpell()
+                spellId = tonumber(directSpellId)
+            end
+            if (not spellId or spellId <= 0) then
+                spellId = ResolveSpellIdFromTooltipName(self)
+            end
+            if spellId and spellId > 0 then
+                TrySetTooltipHyperlink(self, "spell:" .. tostring(spellId))
+                self._dcqosResolvedSpellId = spellId
+                EnhanceSpellTooltip(self, spellId)
+            end
+        end)
+    end
+
+    if not GameTooltip._dcqosHookedSetPetAction and hooksecurefunc and GameTooltip.SetPetAction then
+        GameTooltip._dcqosHookedSetPetAction = true
+        hooksecurefunc(GameTooltip, "SetPetAction", function(self, ...)
+            MarkSpellTooltipSource(self, "action")
+            if type(self.GetSpell) == "function" then
+                local _, _, spellId = self:GetSpell()
+                spellId = tonumber(spellId)
+                if (not spellId or spellId <= 0) then
+                    spellId = ResolveSpellIdFromTooltipName(self)
+                end
+                if spellId and spellId > 0 then
+                    self._dcqosResolvedSpellId = spellId
+                    EnhanceSpellTooltip(self, spellId)
+                end
+            end
         end)
     end
 
@@ -2220,15 +2857,33 @@ local function HookSpellTooltips()
         end
     end
 
+    if type(CompanionButton_OnEnter) == "function" and not addon._dcqosWrappedCompanionButtonOnEnter then
+        addon._dcqosWrappedCompanionButtonOnEnter = true
+        local originalCompanionButtonOnEnter = CompanionButton_OnEnter
+        addon._dcqosOriginalCompanionButtonOnEnter = originalCompanionButtonOnEnter
+        CompanionButton_OnEnter = function(...)
+            EnsureGameTooltipActionMethods()
+            local button = select(1, ...)
+            if type(button) ~= "table" then
+                button = this
+            end
+
+            -- Native companion tooltip path uses SetHyperlink in
+            -- PetPaperDollFrame and can hard-error on some client forks.
+            -- Use stable fallback rendering for mount/pet companion buttons.
+            if button then
+                button.UpdateTooltip = CompanionButton_OnEnter
+            end
+            SetFallbackCompanionTooltip(button)
+        end
+    end
+
     -- Most spell tooltips (action buttons, racials, etc.) fire this script.
     -- This is the most reliable way to capture spell IDs in 3.3.5a.
     if not GameTooltip._dcqosHookedOnTooltipSetSpell then
         GameTooltip._dcqosHookedOnTooltipSetSpell = true
         GameTooltip:HookScript("OnTooltipSetSpell", function(self)
-            local source = self._dcqosSpellSource
-            if source ~= "action" and source ~= "spellbook" then
-                return
-            end
+            local source = ResolveSpellTooltipSource(self)
             local name, rank, spellId = self:GetSpell()
             spellId = tonumber(spellId)
             -- Primary: find the player's highest-learned rank via the spellbook
@@ -2247,6 +2902,13 @@ local function HookSpellTooltips()
                     spellId = resolvedSpellId
                 end
             end
+
+            -- Keep unsupported/unknown tooltip contexts blizzlike and only
+            -- append lightweight info (Spell ID) without body replacement.
+            if source ~= "action" and source ~= "spellbook" then
+                MarkSpellTooltipSource(self, "blizzlike")
+            end
+
             EnhanceSpellTooltip(self, spellId)
             self:Show()
         end)
@@ -2261,7 +2923,7 @@ local function HookSpellTooltips()
                 return
             end
 
-            self._dcqosSpellSource = "spellbook"
+            MarkSpellTooltipSource(self, "spellbook")
 
             local spellId
 
@@ -2334,8 +2996,14 @@ function Tooltips.OnEnable()
 
         -- Invalidate the spell-name→max-rank cache whenever the player learns a new
         -- spell rank or changes talents (cache is rebuilt lazily on next tooltip).
-        addon:RegisterEvent("SPELLS_CHANGED", InvalidateSpellNameCache)
-        addon:RegisterEvent("PLAYER_TALENT_UPDATE", InvalidateSpellNameCache)
+        addon:RegisterEvent("SPELLS_CHANGED", function()
+            InvalidateSpellNameCache()
+            QueueSpellEnrichmentPrefetch(1.5)
+        end)
+        addon:RegisterEvent("PLAYER_TALENT_UPDATE", function()
+            InvalidateSpellNameCache()
+            QueueSpellEnrichmentPrefetch(1.5)
+        end)
     
     -- Hook item tooltips
     HookItemTooltips()
@@ -2348,6 +3016,10 @@ function Tooltips.OnEnable()
     
     -- Setup health bar hiding
     SetupHealthBarHiding()
+
+    -- Ensure one early background warmup run even if zone-in event timing is
+    -- missed due module load order.
+    QueueSpellEnrichmentPrefetch(2)
 
     -- Kill tracker (NPC tooltips)
     if not killTrackerFrame then
@@ -2370,7 +3042,14 @@ function Tooltips.OnEnable()
     -- Pre-warm spell enrichment cache after zone-in so first hovers are instant.
     -- Delay 5 s to allow the server addon-protocol connection to establish.
     addon:RegisterEvent("PLAYER_ENTERING_WORLD", function()
-        addon:DelayedCall(5, StartSpellEnrichmentPrefetch)
+        QueueSpellEnrichmentPrefetch(5)
+    end)
+
+    -- Also prefetch as soon as the protocol connects (no hover needed).
+    addon:RegisterEvent("PROTOCOL_CONNECTED", function(moduleId)
+        if moduleId == "QOS" then
+            QueueSpellEnrichmentPrefetch(1)
+        end
     end)
 end
 
@@ -2380,6 +3059,29 @@ function Tooltips.OnDisable()
     if killTrackerFrame then
         killTrackerFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     end
+end
+
+function Tooltips.GetTelemetrySnapshot()
+    local now = GetTime and GetTime() or 0
+    local uptime = 0
+    if telemetry.startedAt and now and now > telemetry.startedAt then
+        uptime = now - telemetry.startedAt
+    end
+
+    local function copyTable(src)
+        local out = {}
+        for k, v in pairs(src or {}) do
+            out[k] = tonumber(v) or v
+        end
+        return out
+    end
+
+    return {
+        uptime = uptime,
+        spell = copyTable(telemetry.spell),
+        upgrade = copyTable(telemetry.upgrade),
+        npc = copyTable(telemetry.npc),
+    }
 end
 
 -- ============================================================

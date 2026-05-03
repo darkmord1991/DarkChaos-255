@@ -60,6 +60,7 @@ set(SCRIPTS_DC_AoELoot
 
 # Quality of Life scripts
 set(SCRIPTS_DC_QOL
+    QOL/dc_questgiver_status_override.cpp
     QOL/dc_looter_pet.cpp
 )
 

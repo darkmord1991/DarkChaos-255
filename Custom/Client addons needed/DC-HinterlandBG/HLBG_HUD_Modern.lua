@@ -41,11 +41,10 @@ local function IsInHLBGZone()
         return true
     end
 
-    -- Fallback: if the server is actively sending STATUS messages (within last 60s),
-    -- the player is in the BG regardless of zone text detection.
-    if HLBG and HLBG._lastStatusTime then
-        local elapsed = GetTime() - HLBG._lastStatusTime
-        if elapsed < 60 then
+    -- Fallback: trust recent active HLBG status only when it points at the
+    -- custom battleground map, not merely because some status packet arrived.
+    if HLBG and type(HLBG.HasRecentPresenceStatus) == "function" then
+        if HLBG.HasRecentPresenceStatus(60) then
             return true
         end
     end

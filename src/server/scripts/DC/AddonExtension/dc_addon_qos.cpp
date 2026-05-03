@@ -282,14 +282,19 @@ namespace DCQoS
         if (!player)
             return;
 
+        std::string escapedKey = key;
+        std::string escapedValue = value;
+        CharacterDatabase.EscapeString(escapedKey);
+        CharacterDatabase.EscapeString(escapedValue);
+
         CharacterDatabase.Execute(
             "INSERT INTO dc_player_qos_settings (guid, setting_key, setting_value) "
             "VALUES ({}, '{}', '{}') "
             "ON DUPLICATE KEY UPDATE setting_value = '{}'",
             player->GetGUID().GetCounter(),
-            key,
-            value,
-            value
+            escapedKey,
+            escapedValue,
+            escapedValue
         );
     }
 
@@ -579,6 +584,7 @@ namespace DCQoS
         if (spawnResult)
         {
             Field* fields = spawnResult->Fetch();
+            msg.Set("dbGuid", static_cast<int32>(fields[0].Get<uint32>()));
             msg.Set("spawnGuid", static_cast<int32>(fields[0].Get<uint32>()));
             msg.Set("mapId", static_cast<int32>(fields[1].Get<uint16>()));
             msg.Set("spawnX", fields[2].Get<float>());
@@ -1756,15 +1762,20 @@ namespace DCQoS
         return "";
     }
 
-    static void AppendSpellDescriptionLines(Player* player,
+    static std::string BuildSpellTooltipEnrichmentLine(Player* player,
+                                                       uint32 spellId,
+                                                       SpellInfo const* spellInfo);
+
+    static bool AppendSpellDescriptionLines(Player* player,
                                             SpellInfo const* spellInfo,
                                             DCAddon::JsonValue& lines,
                                             bool includeFamilyMetadata)
     {
         if (!spellInfo)
-            return;
+            return false;
 
         std::set<std::string> seen;
+        bool addedBody = false;
 
         std::string familyInfo = includeFamilyMetadata ? FormatSpellFamilyInfo(spellInfo) : "";
         if (!familyInfo.empty())
@@ -1776,7 +1787,7 @@ namespace DCQoS
             && !HasUnresolvedTemplateTokens(renderedDescription))
         {
             PushWrappedTooltipLine(lines, renderedDescription, 0.95, 0.82, 0.55, "body");
-            return;
+            return true;
         }
 
         for (SpellEffectInfo const& effect : spellInfo->Effects)
@@ -1789,7 +1800,10 @@ namespace DCQoS
                 continue;
 
             PushWrappedTooltipLine(lines, description, 0.95, 0.82, 0.55, "body");
+            addedBody = true;
         }
+
+        return addedBody;
     }
 
     static void AppendMountMetadataLines(Player* player,
@@ -1910,7 +1924,18 @@ namespace DCQoS
 
         AppendMountMetadataLines(player, spellInfo, lines);
 
-        AppendSpellDescriptionLines(player, spellInfo, lines, includeFamilyMetadata);
+        bool hasBodyLines = AppendSpellDescriptionLines(player,
+                                                        spellInfo,
+                                                        lines,
+                                                        includeFamilyMetadata);
+        if (!hasBodyLines)
+        {
+            std::string fallbackBody = BuildSpellTooltipEnrichmentLine(player,
+                                                                        spellInfo->Id,
+                                                                        spellInfo);
+            if (!fallbackBody.empty())
+                PushWrappedTooltipLine(lines, fallbackBody, 0.95, 0.82, 0.55, "body");
+        }
 
         return lines;
     }
@@ -1950,26 +1975,49 @@ namespace DCQoS
         msg.Send(player);
     }
 
-    std::string BuildSpellTooltipEnrichmentLine(Player* player, uint32 spellId, uint32 contextHash, SpellInfo const* spellInfo)
+    static std::string BuildSpellTooltipEnrichmentLine(Player* player,
+                                                       uint32 spellId,
+                                                       SpellInfo const* spellInfo)
     {
         if (!player || !spellInfo)
             return "";
 
-        std::ostringstream line;
-        line << "server-v1";
-        line << " spell=" << spellId;
-        line << " ctx=" << contextHash;
+        // Legacy transport compatibility: older clients/transports may only
+        // consume the single `line` field and ignore structured `lines[]`.
+        // Return one human-readable body line instead of protocol metadata.
+        std::string descriptionTemplate = GetSpellDescriptionTemplate(spellId);
+        std::string renderedDescription = RenderSpellDescriptionTemplate(player,
+                                                                         spellInfo,
+                                                                         descriptionTemplate);
+        if (!renderedDescription.empty()
+            && !HasUnresolvedTemplateTokens(renderedDescription))
+        {
+            return renderedDescription;
+        }
 
-        uint32 castTime = spellInfo->CastTimeEntry ? static_cast<uint32>(std::max<int32>(0, spellInfo->CastTimeEntry->CastTime)) : 0u;
-        if (castTime > 0)
-            line << " cast=" << castTime << "ms";
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            if (!effect.IsEffect())
+                continue;
 
-        if (spellInfo->RecoveryTime > 0)
-            line << " cd=" << spellInfo->RecoveryTime << "ms";
+            std::string effectLine = BuildSpellEffectTooltipLine(player,
+                                                                 spellInfo,
+                                                                 effect);
+            if (!effectLine.empty())
+                return effectLine;
+        }
 
-        // TODO: extend with dynamic player-context values (auras/spec/rating snapshots)
-        // and custom DB overlays once server-side calculators are finalized.
-        return line.str();
+        // Ensure request handler can still return success for spells whose
+        // effect patterns are not covered by BuildSpellEffectTooltipLine.
+        // This keeps structured lines[] delivery active for modern clients
+        // and avoids status=3 for valid spells.
+        uint32 castTimeMs = spellInfo->CalcCastTime(player);
+        if (castTimeMs == 0)
+            return "Instant cast.";
+
+        return "Cast time: " + FormatSpellSeconds(castTimeMs) + ".";
+
+        return "";
     }
 
     void SendNotification(Player* player, const std::string& type, const std::string& message)
@@ -2039,8 +2087,26 @@ namespace DCQoS
         // Check if this is an upgrade info request (has bag/slot)
         if (!json.IsNull() && json.HasKey("bag") && json.HasKey("slot"))
         {
-            uint8 bag = static_cast<uint8>(json["bag"].AsNumber());
-            uint8 slot = static_cast<uint8>(json["slot"].AsNumber());
+            int32 rawBag = static_cast<int32>(json["bag"].AsNumber());
+            int32 rawSlot = static_cast<int32>(json["slot"].AsNumber());
+
+            // Backward-compat: older clients sent equipment pseudo-bag as -2,
+            // which can arrive as uint8 254 after transport coercion.
+            if (rawBag == -2 || rawBag == 254)
+                rawBag = INVENTORY_SLOT_BAG_0;
+
+            if (rawBag < 0 || rawBag > 255 || rawSlot < 0 || rawSlot > 255)
+            {
+                DCAddon::JsonMessage response(MODULE, Opcode::SMSG_ITEM_INFO);
+                response.Set("bag", rawBag);
+                response.Set("slot", rawSlot);
+                response.Set("error", "Invalid bag/slot in request");
+                response.Send(player);
+                return;
+            }
+
+            uint8 bag = static_cast<uint8>(rawBag);
+            uint8 slot = static_cast<uint8>(rawSlot);
 
             // Get item from player's inventory
             Item* item = player->GetItemByPos(bag, slot);
@@ -2180,7 +2246,7 @@ namespace DCQoS
             return;
         }
 
-        std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, contextHash, spellInfo);
+        std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, spellInfo);
         if (line.empty())
         {
             SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 3, "no-enrichment-data", protocolRequestId);
@@ -2429,7 +2495,7 @@ namespace DCQoS
 
             uint32 contextHash = BuildSpellTooltipContextHashForPlayer(spellId, level, classId, activeTalentGroup);
 
-            std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, contextHash, spellInfo);
+            std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, spellInfo);
             if (line.empty())
                 continue;
 

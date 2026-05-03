@@ -2704,6 +2704,29 @@ Prestige.StarterGear.11 = ""
 Prestige.Rewards = ""
 
 #
+#    Prestige.PointsPerPrestige
+#        Description: Prestige points granted each time a player prestiges
+#        Default:     1
+#
+Prestige.PointsPerPrestige = 1
+
+#
+#    Prestige.TokenRewardPerPrestige
+#        Description: Upgrade tokens granted per prestige
+#                     Uses ItemUpgrade currency item IDs
+#        Default:     0
+#
+Prestige.TokenRewardPerPrestige = 0
+
+#
+#    Prestige.EssenceRewardPerPrestige
+#        Description: Artifact essence granted per prestige
+#                     Uses ItemUpgrade currency item IDs
+#        Default:     0
+#
+Prestige.EssenceRewardPerPrestige = 0
+
+#
 #    Prestige.AnnounceWorld
 #        Description: Announce prestige achievements server-wide
 #        Default:     1 (Enabled)

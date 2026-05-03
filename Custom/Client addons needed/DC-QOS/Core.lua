@@ -635,6 +635,16 @@ end
 
 -- 3.3.5a compatible delayed call
 function addon:DelayedCall(delay, func)
+    if type(func) ~= "function" then
+        self:Debug("DelayedCall ignored: callback is not a function")
+        return
+    end
+
+    delay = tonumber(delay) or 0
+    if delay < 0 then
+        delay = 0
+    end
+
     local frame = CreateFrame("Frame")
     local elapsed = 0
     frame:SetScript("OnUpdate", function(self, delta)
@@ -802,11 +812,104 @@ function addon:GetClassColorCode(classToken)
 end
 
 -- Ensure quest tracking remains active even when minimap tracking UI is hidden.
-function addon:EnsureQuestMinimapTrackingEnabled()
+function addon:EnsureQuestMinimapTrackingEnabled(reason)
+    local ensured = false
+    local questTrackingFound = false
+    local questTrackingActive = false
+    local reasonText = reason and tostring(reason) or "unspecified"
+
+    local function RefreshQuestPoiDisplays()
+        if type(SetMapToCurrentZone) == "function" then
+            local worldMapShown = WorldMapFrame
+                and type(WorldMapFrame.IsShown) == "function"
+                and WorldMapFrame:IsShown()
+            if not worldMapShown then
+                pcall(SetMapToCurrentZone)
+            end
+        end
+
+        if type(QuestWatch_Update) == "function" then
+            pcall(QuestWatch_Update)
+        end
+        if type(WatchFrame_Update) == "function" then
+            pcall(WatchFrame_Update)
+        end
+        if type(QuestPOIUpdateIcons) == "function" then
+            pcall(QuestPOIUpdateIcons)
+        end
+        if type(MiniMapTracking_Update) == "function" then
+            pcall(MiniMapTracking_Update)
+        end
+        if type(MiniMapTrackingButton_Update) == "function" then
+            pcall(MiniMapTrackingButton_Update)
+        end
+        if type(MiniMapWorldMapButton_Update) == "function" then
+            pcall(MiniMapWorldMapButton_Update)
+        end
+    end
+
+    -- Keep quest objective systems enabled globally so both world map and
+    -- minimap POI layers can render.
+    if type(SetCVar) == "function" then
+        pcall(SetCVar, "questPOI", "1")
+        ensured = true
+    end
+    if _G and _G.SHOW_QUEST_OBJECTIVES_ON_MAP ~= "1" then
+        _G.SHOW_QUEST_OBJECTIVES_ON_MAP = "1"
+        ensured = true
+    end
+    if WatchFrame then
+        WatchFrame.showObjectives = true
+        ensured = true
+    end
+
+    -- Retail-style clients can gate minimap POIs behind C_Minimap tracking
+    -- filters. Enable them when available.
+    if type(C_Minimap) == "table"
+        and type(Enum) == "table"
+        and type(Enum.MinimapTrackingFilter) == "table"
+        and type(C_Minimap.SetTrackingFilter) == "function" then
+        local filters = {
+            Enum.MinimapTrackingFilter.QuestPOIs,
+            Enum.MinimapTrackingFilter.POI,
+        }
+
+        for i = 1, #filters do
+            local filter = filters[i]
+            if filter ~= nil then
+                if type(C_Minimap.GetTrackingFilter) == "function" then
+                    local ok, active = pcall(C_Minimap.GetTrackingFilter, filter)
+                    if ok and active ~= true then
+                        pcall(C_Minimap.SetTrackingFilter, filter, true)
+                        ensured = true
+                    elseif ok and active == true then
+                        ensured = true
+                    end
+                else
+                    pcall(C_Minimap.SetTrackingFilter, filter, true)
+                    ensured = true
+                end
+            end
+        end
+    end
+
     if type(GetNumTrackingTypes) ~= "function"
         or type(GetTrackingInfo) ~= "function"
         or type(SetTracking) ~= "function" then
-        return false
+        RefreshQuestPoiDisplays()
+
+        if self.settings.communication and self.settings.communication.debugMode then
+            self:Debug(string.format(
+                "Quest minimap ensure[%s]: legacy tracking API unavailable; ensured=%s questPOI=%s trackingShown=%s worldMapButtonShown=%s",
+                reasonText,
+                tostring(ensured),
+                tostring(type(GetCVar) == "function" and GetCVar("questPOI") or "n/a"),
+                tostring(MiniMapTracking and MiniMapTracking.IsShown and MiniMapTracking:IsShown() or "n/a"),
+                tostring(MiniMapWorldMapButton and MiniMapWorldMapButton.IsShown and MiniMapWorldMapButton:IsShown() or "n/a")
+            ))
+        end
+
+        return ensured
     end
 
     local localizedTrackQuests = type(TRACK_QUESTS) == "string"
@@ -838,14 +941,58 @@ function addon:EnsureQuestMinimapTrackingEnabled()
         end
 
         if matches then
+            questTrackingFound = true
             if not active then
                 pcall(SetTracking, i, true)
+                ensured = true
             end
-            return true
+            questTrackingActive = true
         end
     end
 
-    return false
+    RefreshQuestPoiDisplays()
+
+    local queue = self.__dcqosQuestMinimapEnsureQueue
+    if type(queue) ~= "table" then
+        queue = { pending = false }
+        self.__dcqosQuestMinimapEnsureQueue = queue
+    end
+
+    queue.lastReason = reasonText
+    if type(self.DelayedCall) == "function" and not queue.pending then
+        queue.pending = true
+        self:DelayedCall(0.15, function()
+            queue.pending = false
+            RefreshQuestPoiDisplays()
+
+            if self.settings.communication and self.settings.communication.debugMode then
+                self:Debug(string.format(
+                    "Quest minimap ensure[%s]: delayed refresh map=%s questTrackingFound=%s questTrackingActive=%s questPOI=%s",
+                    tostring(queue.lastReason or "delayed"),
+                    tostring(type(GetCurrentMapAreaID) == "function" and GetCurrentMapAreaID() or "n/a"),
+                    tostring(questTrackingFound),
+                    tostring(questTrackingActive),
+                    tostring(type(GetCVar) == "function" and GetCVar("questPOI") or "n/a")
+                ))
+            end
+        end)
+    end
+
+    if self.settings.communication and self.settings.communication.debugMode then
+        self:Debug(string.format(
+            "Quest minimap ensure[%s]: map=%s found=%s active=%s ensured=%s questPOI=%s trackingShown=%s worldMapButtonShown=%s",
+            reasonText,
+            tostring(type(GetCurrentMapAreaID) == "function" and GetCurrentMapAreaID() or "n/a"),
+            tostring(questTrackingFound),
+            tostring(questTrackingActive),
+            tostring(ensured),
+            tostring(type(GetCVar) == "function" and GetCVar("questPOI") or "n/a"),
+            tostring(MiniMapTracking and MiniMapTracking.IsShown and MiniMapTracking:IsShown() or "n/a"),
+            tostring(MiniMapWorldMapButton and MiniMapWorldMapButton.IsShown and MiniMapWorldMapButton:IsShown() or "n/a")
+        ))
+    end
+
+    return ensured
 end
 
 -- Get a registered module
@@ -1220,6 +1367,53 @@ SlashCmdList["DCQOS"] = function(msg)
         else
             addon:Print("Ping System module is not loaded.", true)
         end
+    elseif msg == "telemetry" or msg == "diag" or msg == "diagnostics" then
+        local tooltipsModule = addon.modules and addon.modules["Tooltips"]
+        local snapshot = tooltipsModule and tooltipsModule.GetTelemetrySnapshot and tooltipsModule.GetTelemetrySnapshot()
+        if not snapshot then
+            addon:Print("Tooltip telemetry is not available.", true)
+            return
+        end
+
+        addon:Print(string.format("Tooltip telemetry (uptime %.0fs)", snapshot.uptime or 0), true)
+        local spell = snapshot.spell or {}
+        local upgrade = snapshot.upgrade or {}
+        local npc = snapshot.npc or {}
+
+        local spellLine =
+            "Spell: sent=" .. tostring(tonumber(spell.requestsSent) or 0)
+            .. " fail=" .. tostring(tonumber(spell.requestSendFailures) or 0)
+            .. " recv=" .. tostring(tonumber(spell.responsesReceived) or 0)
+            .. " ok=" .. tostring(tonumber(spell.responsesSuccess) or 0)
+            .. " err=" .. tostring(tonumber(spell.responsesError) or 0)
+            .. " noPending=" .. tostring(tonumber(spell.responsesWithoutPending) or 0)
+            .. " remapByReq=" .. tostring(tonumber(spell.responsesRemappedByRequestId) or 0)
+            .. " ridMismatch=" .. tostring(tonumber(spell.responseRequestIdMismatch) or 0)
+            .. " pendingRecoveries=" .. tostring(tonumber(spell.pendingTimeoutRecoveries) or 0)
+            .. " renderDisabled=" .. tostring(tonumber(spell.skippedRenderModeDisabled) or 0)
+            .. " prefetchRuns=" .. tostring(tonumber(spell.prefetchRuns) or 0)
+            .. " prefetchSent=" .. tostring(tonumber(spell.prefetchRequestsSent) or 0)
+        addon:Print(spellLine, true)
+
+        local spellClientDescriptionLine =
+            "Spell clientDesc: missingExport=" .. tostring(tonumber(spell.clientDescriptionMissingExport) or 0)
+            .. " callError=" .. tostring(tonumber(spell.clientDescriptionCallError) or 0)
+            .. " nil=" .. tostring(tonumber(spell.clientDescriptionNilReturn) or 0)
+            .. " empty=" .. tostring(tonumber(spell.clientDescriptionEmptyBody) or 0)
+            .. " placeholderReject=" .. tostring(tonumber(spell.clientDescriptionPlaceholderRejected) or 0)
+        addon:Print(spellClientDescriptionLine, true)
+
+        local upgradeLine =
+            "Upgrade: sent=" .. tostring(tonumber(upgrade.requestsSent) or 0)
+            .. " recv=" .. tostring(tonumber(upgrade.responsesReceived) or 0)
+            .. " pendingRecoveries=" .. tostring(tonumber(upgrade.pendingTimeoutRecoveries) or 0)
+        addon:Print(upgradeLine, true)
+
+        local npcLine =
+            "NPC: sent=" .. tostring(tonumber(npc.requestsSent) or 0)
+            .. " recv=" .. tostring(tonumber(npc.responsesReceived) or 0)
+            .. " pendingRecoveries=" .. tostring(tonumber(npc.pendingTimeoutRecoveries) or 0)
+        addon:Print(npcLine, true)
     elseif msg == "help" then
         addon:Print("Commands:", true)
         print("  |cffffd700/dcqos|r - Open settings panel")
@@ -1233,6 +1427,7 @@ SlashCmdList["DCQOS"] = function(msg)
         print("  |cffffd700/dcqos ping ...|r - Forward to Ping System (/dcping)")
         print("  |cffffd700/dcping test|r - Show a local on-screen test ping")
         print("  |cffffd700/dcping menu|r - Open ping radial menu (release key/click to confirm)")
+        print("  |cffffd700/dcqos telemetry|r - Print tooltip protocol diagnostics")
         print("  |cffffd700/dcqos profile ...|r - Manage profiles")
         print("  |cffffd700/dcqos reload|r - Reload UI")
         print("  |cffffd700/dcqos help|r - Show this help message")

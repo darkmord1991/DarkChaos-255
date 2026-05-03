@@ -284,7 +284,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             if (_rewardKillItemId && _rewardKillItemCount)
                 plr->AddItem(_rewardKillItemId, _rewardKillItemCount);
             // Add scoreboard points if member is in zone
-            if (plr->GetAreaId() == OutdoorPvPHLBattleAreaId)
+            if (IsPlayerInOutdoorPvPHLArea(plr))
             {
                 AddPlayerScore(plr->GetGUID(), scorePoints);
                 // Record resources captured for leaderboards
@@ -303,7 +303,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                 if (!mate->IsAtGroupRewardDistance(killed) && player != mate)
                     continue;
                 // Only count if active in HL zone
-                if (mate->IsOutdoorPvPActive() && mate->GetAreaId() == OutdoorPvPHLBattleAreaId)
+                if (mate->IsOutdoorPvPActive() && IsPlayerInOutdoorPvPHLArea(mate))
                     rewardToMember(mate);
             }
         }

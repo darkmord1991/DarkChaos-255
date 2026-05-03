@@ -43,7 +43,7 @@ void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
             {
                 if (Player* player = ObjectAccessor::FindConnectedPlayer(playerGuid))
                 {
-                    if (player->IsInWorld() && player->GetAreaId() == OutdoorPvPHLBattleAreaId)
+                    if (player->IsInWorld() && IsPlayerInOutdoorPvPHLArea(player))
                     {
                         s_zonePlayerCache.playerGuids.push_back(playerGuid);
                     }
@@ -62,7 +62,7 @@ void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
     {
         if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
         {
-            if (player->IsInWorld() && player->GetAreaId() == OutdoorPvPHLBattleAreaId)
+            if (player->IsInWorld() && IsPlayerInOutdoorPvPHLArea(player))
             {
                 players.push_back(player);
             }
@@ -184,6 +184,7 @@ void OutdoorPvPHL::_applyAffixEffectsOptimized()
             for (Creature* creature : nearbyCreatures)
             {
                 if (creature && creature->IsAlive() && !creature->HasAura(npcSpell) &&
+                    creature->GetMapId() == OutdoorPvPHLMapId &&
                     creature->GetAreaId() == OutdoorPvPHLBattleAreaId)
                 {
                     creature->CastSpell(creature, npcSpell, true);
