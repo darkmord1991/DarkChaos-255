@@ -240,7 +240,7 @@ SelectedInfoPanel:SetBackdrop({
 do
     local bg = SelectedInfoPanel:CreateTexture(nil, "BACKGROUND", nil, 0)
     bg:SetAllPoints()
-    bg:SetTexture("Interface\\AddOns\\DC-GM\\Textures\\Backgrounds\\FelLeather_512.tga")
+    bg:SetTexture(ROOT_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga")
     if bg.SetHorizTile then bg:SetHorizTile(false) end
     if bg.SetVertTile then bg:SetVertTile(false) end
 

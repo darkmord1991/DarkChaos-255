@@ -3,7 +3,7 @@
 -- MangAdmin Version 1.0
 --
 -- Copyright (C) 2018 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -20,18 +20,22 @@
 local MAJOR_VERSION = "FrameLib-1.0"
 local MINOR_VERSION = "$Revision: 1 $"
 
-if not AceLibrary then error(MAJOR_VERSION .. " requires AceLibrary.") end
-if not AceLibrary:IsNewVersion(MAJOR_VERSION, MINOR_VERSION) then return end
+local MAJOR, MINOR = "FrameLib-1.0", 1
+local FrameLib = LibStub:NewLibrary(MAJOR, MINOR)
+if not FrameLib then return end
+local tinsert = table.insert
+local CreateFrame = CreateFrame
+local UIParent = UIParent
+local pairs = pairs
+local type = type
+local error = error
 
-local FrameLib = { group = {} }
+FrameLib.group = FrameLib.group or {}
 
 --[[ADD FRAME TO GROUP]]
 function FrameLib:AddGroupFrame(group, frame)
-  if not group then
-    return
-  end
   if type(self.group[group]) ~= "table" then
-    self.group[group] = {}
+      self.group[group] = {}
   end
   tinsert(self.group[group], frame)	
 end
@@ -40,7 +44,7 @@ end
 function FrameLib:HandleGroup(group, func)
   if group then
     if type(self.group[group]) ~= "table" then
-      self:error("No frame group with the name '"..group.."' is available!")
+      error("No frame group with the name '"..group.."' is available!")
       return
     else
       for k, v in pairs(self.group[group]) do
@@ -48,7 +52,7 @@ function FrameLib:HandleGroup(group, func)
       end
     end
   else
-    self:error("Argument 'group' not given!")
+    error("Argument 'group' not given!")
     return
   end
 end
@@ -333,28 +337,20 @@ end
 function FrameLib:BuildEditBox(def)	
   local editbox = CreateFrame("EditBox", def.name, def.parent, "InputBoxTemplate")
   self:AddGroupFrame(def.group, editbox)
-  -- InputBoxTemplate provides visuals; ensure API calls are valid even when options are omitted.
-  editbox:SetAutoFocus(def.autofocus == true)
-  if def.maxLetters ~= nil then
-    editbox:SetMaxLetters(def.maxLetters)
-  end
-  if def.multiline ~= nil then
-    editbox:SetMultiLine(def.multiline)
-  end
+  editbox:SetAutoFocus(def.autofocus or false)
+  editbox:SetMaxLetters(def.maxLetters)
+  editbox:SetMultiLine(def.multiline)
   local t = def.size
   if t then
     editbox:SetWidth(t.width or 100)
     editbox:SetHeight(t.height or 100)
   end
   editbox:SetPoint(def.setpoint.pos or "CENTER", def.setpoint.relTo or editbox:GetParent() or UIParent, def.setpoint.relPos or def.setpoint.pos or "CENTER", def.setpoint.offX or 0, def.setpoint.offY or 0)
-  if def.fontString then
-    editbox:SetFontObject(def.fontString)
-  end
+  editbox:CreateFontString(nil, "ARTWORK", def.fontString or "GameFontNormal")
   t = def.text
   if t then	editbox:SetText(t) end
   return editbox
 end
 
 -- register this lib
-AceLibrary:Register(FrameLib, MAJOR_VERSION, MINOR_VERSION, activate)
-FrameLib = nil
+-- register this lib (Handled by LibStub NewLibrary)

@@ -3,8 +3,8 @@
 -- AzerothAdmin Version 3.x
 -- AzerothAdmin is a derivative of TrinityAdmin/MangAdmin.
 --
--- Copyright (C) 2024 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- Copyright (C) 2007 Free Software Foundation, Inc.
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -16,33 +16,76 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
-function Announce(value)
+AzerothAdminCommands = AzerothAdminCommands or {}
+
+function AzerothAdminCommands.Announce(value)
   AzerothAdmin:ChatMsg(".announce "..value)
-  AzerothAdmin:LogAction("Announced message: "..value)
 end
 
-function Shutdown(value)
+function AzerothAdminCommands.Restart(value)
   if value == "" then
-    AzerothAdmin:ChatMsg(".server shutdown 0")
-    AzerothAdmin:LogAction("Shut down server instantly.")
-  else
-    AzerothAdmin:ChatMsg(".server shutdown "..value)
-    AzerothAdmin:LogAction("Shut down server in "..value.." seconds.")
+    AzerothAdmin:Print(Locale["msg_restart_time_required"])
+    return
   end
+
+  local confirmMsg = string.format(Locale["msg_restart_confirm"], value)
+
+  AzerothAdmin:ShowConfirmDialog(confirmMsg, function()
+    AzerothAdminCommands.Restart_Confirmed(value)
+  end)
 end
 
-function ReloadTable(tablename)
+function AzerothAdminCommands.Restart_Confirmed(value)
+  AzerothAdmin:ChatMsg(".server restart "..value)
+  ma_restartbutton:Disable()
+  ma_shutdownbutton:Disable()
+  ma_shutdowneditbox:ClearFocus()
+  ma_shutdowneditbox:EnableMouse(false)
+  ma_shutdowneditbox:EnableKeyboard(false)
+  ma_cancelshutdownbutton:Show()
+  AzerothAdmin.db.char.serverRestartState = "restart"
+end
+
+function AzerothAdminCommands.Shutdown(value)
+  if value == "" then
+    AzerothAdmin:Print(Locale["msg_shutdown_time_required"])
+    return
+  end
+
+  local confirmMsg = string.format(Locale["msg_shutdown_confirm"], value)
+
+  AzerothAdmin:ShowConfirmDialog(confirmMsg, function()
+    AzerothAdminCommands.Shutdown_Confirmed(value)
+  end)
+end
+
+function AzerothAdminCommands.Shutdown_Confirmed(value)
+  AzerothAdmin:ChatMsg(".server shutdown "..value)
+  ma_restartbutton:Disable()
+  ma_shutdownbutton:Disable()
+  ma_shutdowneditbox:ClearFocus()
+  ma_shutdowneditbox:EnableMouse(false)
+  ma_shutdowneditbox:EnableKeyboard(false)
+  ma_cancelshutdownbutton:Show()
+  AzerothAdmin.db.char.serverRestartState = "shutdown"
+end
+
+function AzerothAdminCommands.CancelShutdown()
+  AzerothAdmin:ChatMsg(".server shutdown cancel")
+  ma_cancelshutdownbutton:Hide()
+  ma_restartbutton:Enable()
+  ma_shutdownbutton:Enable()
+  ma_shutdowneditbox:EnableMouse(true)
+  ma_shutdowneditbox:EnableKeyboard(true)
+  AzerothAdmin.db.char.serverRestartState = nil
+end
+
+function AzerothAdminCommands.ReloadTable(tablename)
   if tablename ~= "" then
     AzerothAdmin:ChatMsg(".reload "..tablename)
-    if tablename == "all" then
-      AzerothAdmin:LogAction("Reloaded all reloadable AzerothCore database tables.")
-    else
-      AzerothAdmin:LogAction("Reloaded the table "..tablename..".")
-    end
   end
 end
 
-function ReloadScripts()
+function AzerothAdminCommands.ReloadScripts()
   AzerothAdmin:ChatMsg(".reload smart_scripts")
-  AzerothAdmin:LogAction("Reload Smart Scripts.")
 end

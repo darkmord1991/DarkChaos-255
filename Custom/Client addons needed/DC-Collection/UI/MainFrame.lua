@@ -15,7 +15,7 @@ local addonNameGlobal = ...
 local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
 local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
 local ICON_COLLECTION = ADDON_PATH .. "Textures\\Icons\\Collection_64.tga"
-local BG_TINT_ALPHA = 0.60
+local BG_TINT_ALPHA = 0.78
 
 local function SetWidgetEnabled(widget, enabled)
     if not widget then
@@ -737,17 +737,17 @@ function DC:CreateTabButton(parent, tabInfo, width, index)
     -- Background
     tab.bg = tab:CreateTexture(nil, "BACKGROUND")
     tab.bg:SetAllPoints()
-    tab.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
+    tab.bg:SetTexture(0.08, 0.10, 0.13, 0.92)
     
     -- Highlight
     tab.highlight = tab:CreateTexture(nil, "HIGHLIGHT")
     tab.highlight:SetAllPoints()
-    tab.highlight:SetTexture(0.4, 0.4, 0.4, 0.5)
+    tab.highlight:SetTexture(0.16, 0.22, 0.30, 0.45)
     
     -- Checked texture
     tab.checked = tab:CreateTexture(nil, "BACKGROUND")
     tab.checked:SetAllPoints()
-    tab.checked:SetTexture(0.3, 0.3, 0.6, 0.8)
+    tab.checked:SetTexture(0.20, 0.33, 0.48, 0.88)
     tab:SetCheckedTexture(tab.checked)
     
     -- Icon
@@ -782,7 +782,7 @@ function DC:CreateFilterBar(parent)
     -- Background
     local filterBg = filterBar:CreateTexture(nil, "BACKGROUND")
     filterBg:SetAllPoints()
-    filterBg:SetTexture(0, 0, 0, 0.2)
+    filterBg:SetTexture(0.03, 0.04, 0.06, 0.45)
     
     -- Search box
     local searchBox = CreateFrame("EditBox", "DCCollectionSearchBox", filterBar, "InputBoxTemplate")

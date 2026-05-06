@@ -3,8 +3,8 @@
 -- AzerothAdmin Version 3.x
 -- AzerothAdmin is a derivative of TrinityAdmin/MangAdmin.
 --
--- Copyright (C) 2024 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- Copyright (C) 2007 Free Software Foundation, Inc.
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -16,37 +16,49 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
+
 local genv = getfenv(0)
 local Mang = genv.Mang
-cWorking = 0
-cMap = 0
-cX = 0
-cY = 0
-cZ = 0
-incX = 0
-incY = 0
-incZ = 0
-fID = 0
-gettingGOBinfo=0
-gettingGOBinfoinfo=0
+local ADDON_NAME = ...
 
-MAJOR_VERSION = "AzerothAdmin-3.3.5"
-MINOR_VERSION = tonumber(GetAddOnMetadata("DC-GM", "Version")) or 0
-ROOT_PATH     = "Interface\\AddOns\\DC-GM\\"
+if type(ADDON_NAME) ~= "string" or ADDON_NAME == "" then
+  ADDON_NAME = "DC-GM"
+end
+
+local gettingGOBinfo=0
+local gettingGOBinfoinfo=0
+
+MAJOR_VERSION = "|cFF00FF00AzerothAdmin-3.3.5|r"
+MINOR_VERSION = tonumber(GetAddOnMetadata(ADDON_NAME, "Version"))
+  or tonumber(GetAddOnMetadata("DC-GM", "Version"))
+  or 0
+ROOT_PATH     = "Interface\\AddOns\\" .. ADDON_NAME .. "\\"
 local cont = ""
-if not AceLibrary then error(MAJOR_VERSION .. " requires AceLibrary") end
-if not AceLibrary:IsNewVersion(MAJOR_VERSION, MINOR_VERSION) then return end
+-- Ace3 Initialization
+AzerothAdmin = LibStub("AceAddon-3.0"):NewAddon("AzerothAdmin", "AceConsole-3.0", "AceEvent-3.0", "AceHook-3.0")
+local L = LibStub("AceLocale-3.0"):GetLocale("AzerothAdmin", true)
+Locale = L
+Strings = LibStub("AceLocale-3.0"):GetLocale("AzerothAdmin-Strings", true)
 
-AzerothAdmin    = AceLibrary("AceAddon-2.0"):new("AceConsole-2.0", "AceDB-2.0", "AceHook-2.1", "AceDebug-2.0", "AceEvent-2.0")
-Locale       = AceLibrary("AceLocale-2.2"):new("AzerothAdmin")
-Strings      = AceLibrary("AceLocale-2.2"):new("TEST")
-FrameLib     = AceLibrary("FrameLib-1.0")
-Graph        = AceLibrary("Graph-1.0")
-Tablet       = AceLibrary("Tablet-2.0")
+-- FrameLib and other legacy libs (TODO: Port or Replace)
+FrameLib     = LibStub("FrameLib-1.0")
+Graph        = LibStub("Graph-1.0")
+-- Tablet       = AceLibrary("Tablet-2.0")
 
-AzerothAdmin:RegisterDB("AzerothAdminDb", "AzerothAdminDbPerChar")
-AzerothAdmin:RegisterDefaults("char",
-  {
+
+AzerothAdmin.cWorking = 0
+AzerothAdmin.cMap = 0
+AzerothAdmin.cX = 0
+AzerothAdmin.cY = 0
+AzerothAdmin.cZ = 0
+AzerothAdmin.incX = 0
+AzerothAdmin.incY = 0
+AzerothAdmin.incZ = 0
+AzerothAdmin.fID = 0
+
+local defaults = {
+  char = {
+    -- Was "char" defaults
     functionQueue = {},
     requests = {
       tpinfo = false,
@@ -68,17 +80,13 @@ AzerothAdmin:RegisterDefaults("char",
     newTicketQueue = {},
     instantKillMode = false,
     msgDeltaTime = time(),
-
-    waypoints = {
-      selection = {}
-    },
-
-  }
-)
-AzerothAdmin:RegisterDefaults("account",
-  {
+    serverRestartState = nil,
+  },
+  profile = {
+    -- Was "account" defaults
     language = nil,
     localesearchstring = true,
+    instantTeleport = false,
     favorites = {
       items = {},
       itemsets = {},
@@ -87,8 +95,7 @@ AzerothAdmin:RegisterDefaults("account",
       quests = {},
       creatures = {},
       objects = {},
-      teles = {},
-      waypoints = {}
+      teles = {}
     },
     buffer = {
       tickets = {},
@@ -110,11 +117,11 @@ AzerothAdmin:RegisterDefaults("account",
       loading = false
     },
     style = {
-      updatedelay = "100000", -- Set to approx. 10 Minutes
+      delayparam = "50000", -- Default delay for diff graph updates (approx. 5 minutes)
       showtooltips = true,
-      showchat = true,
+      showchat = false,
       showminimenu = true,
-      framestrata = "MEDIUM", -- Frame strata level: BACKGROUND, LOW, MEDIUM, HIGH, DIALOG, FULLSCREEN, FULLSCREEN_DIALOG (TOOLTIP not recommended)
+      framestrata = "MEDIUM",
       transparency = {
         buttons = 1.0,
         frames = 0.7,
@@ -145,51 +152,10 @@ AzerothAdmin:RegisterDefaults("account",
       }
     }
   }
-)
+} -- End defaults
 
--- Register Translations
-Locale:EnableDynamicLocales(true)
---Locale:EnableDebugging()
-Locale:RegisterTranslations("enUS", function() return Return_enUS() end)
---Locale:RegisterTranslations("frFR", function() return Return_frFR() end)
---Locale:RegisterTranslations("svSV", function() return Return_svSV() end)
---Locale:RegisterTranslations("deDE", function() return Return_deDE() end)
---Locale:RegisterTranslations("ptBR", function() return Return_ptBR() end)
---Locale:RegisterTranslations("itIT", function() return Return_itIT() end)
---Locale:RegisterTranslations("fiFI", function() return Return_fiFI() end)
---Locale:RegisterTranslations("plPL", function() return Return_plPL() end)
---Locale:RegisterTranslations("liLI", function() return Return_liLI() end)
---Locale:RegisterTranslations("roRO", function() return Return_roRO() end)
---Locale:RegisterTranslations("csCZ", function() return Return_csCZ() end)
---Locale:RegisterTranslations("huHU", function() return Return_huHU() end)
---Locale:RegisterTranslations("esES", function() return Return_esES() end)
---Locale:RegisterTranslations("zhCN", function() return Return_zhCN() end)
---Locale:RegisterTranslations("ptPT", function() return Return_ptPT() end)
---Locale:RegisterTranslations("ruRU", function() return Return_ruRU() end)
---Locale:RegisterTranslations("nlNL", function() return Return_nlNL() end)
---Locale:RegisterTranslations("buBU", function() return Return_buBU() end)
--- Register String Traslations
-Strings:EnableDynamicLocales(true)
-Strings:RegisterTranslations("enUS", function() return ReturnStrings_enUS() end)
---Strings:RegisterTranslations("frFR", function() return ReturnStrings_frFR() end)
---Strings:RegisterTranslations("svSV", function() return ReturnStrings_svSV() end)
---Strings:RegisterTranslations("deDE", function() return ReturnStrings_deDE() end)
---Strings:RegisterTranslations("ptBR", function() return ReturnStrings_ptBR() end)
---Strings:RegisterTranslations("itIT", function() return ReturnStrings_itIT() end)
---Strings:RegisterTranslations("fiFI", function() return ReturnStrings_fiFI() end)
---Strings:RegisterTranslations("plPL", function() return ReturnStrings_plPL() end)
---Strings:RegisterTranslations("liLI", function() return ReturnStrings_liLI() end)
---Strings:RegisterTranslations("roRO", function() return ReturnStrings_roRO() end)
---Strings:RegisterTranslations("csCZ", function() return ReturnStrings_csCZ() end)
---Strings:RegisterTranslations("huHU", function() return ReturnStrings_huHU() end)
---Strings:RegisterTranslations("esES", function() return ReturnStrings_esES() end)
---Strings:RegisterTranslations("zhCN", function() return ReturnStrings_zhCN() end)
---Strings:RegisterTranslations("ptPT", function() return ReturnStrings_ptPT() end)
---Strings:RegisterTranslations("ruRU", function() return ReturnStrings_ruRU() end)
---Strings:RegisterTranslations("nlNL", function() return ReturnStrings_nlNL() end)
---Strings:RegisterTranslations("buBU", function() return ReturnStrings_buBU() end)
---Locale:Debug()
---Locale:SetLocale("enUS")
+-- Register Translations (Managed by AceLocale-3.0 internally)
+-- Use LibStub("AceLocale-3.0"):NewLocale in locale files.
 
 AzerothAdmin.consoleOpts = {
   type = 'group',
@@ -217,19 +183,36 @@ AzerothAdmin.consoleOpts = {
       desc = "Toggle the toolbar/minimenu",
       type = 'execute',
       func = function() AzerothAdmin:ToggleMinimenu() end
+    },
+    minimap = {
+      name = "minimap",
+      desc = "Toggle the minimap button visibility",
+      type = 'execute',
+      func = function() AzerothAdmin:ToggleMinimapButton() end
     }
   }
 }
 
 function AzerothAdmin:OnInitialize()
   -- initializing AzerothAdmin
+  self.db = LibStub("AceDB-3.0"):New("AzerothAdminDb", defaults, true)
+  -- Keep legacy DarkChaos custom panels working while the fork still reads profile data through db.account.
+  self.db.account = self.db.profile
+
   self:SetLanguage()
   self:CreateFrames()
-  self:RegisterChatCommand(Locale["slashcmds"], self.consoleOpts) -- this registers the chat commands
+  
+  -- Register Chat Commands (Ace3)
+  self:RegisterChatCommand("aa", "OnClick")
+  self:RegisterChatCommand("azerothadmin", "OnClick")
+  
+  -- Register options with AceConfig-3.0
+  LibStub("AceConfig-3.0"):RegisterOptionsTable("AzerothAdmin", self.consoleOpts)
+
+
   self:InitButtons()  -- this prepares the actions and tooltips of nearly all AzerothAdmin buttons
   InitControls()
   self:SearchReset()
-  AzerothAdmin.db.account.buffer.who = {}
 
   -- make AzerothAdmin frames closable with escape key
   tinsert(UISpecialFrames,"ma_bgframe")
@@ -238,7 +221,7 @@ function AzerothAdmin:OnInitialize()
   -- They will be redirected to AzerothAdmin:AddMessage(...)
   for i=1,NUM_CHAT_WINDOWS do
     local cf = _G["ChatFrame"..i]
-    self:Hook(cf, "AddMessage", true)
+    self:RawHook(cf, "AddMessage", "AddMessage", true)
   end
   -- initializing Frames, like DropDowns, Sliders, aso
   self:InitDropDowns()
@@ -249,24 +232,36 @@ function AzerothAdmin:OnInitialize()
   ma_gobmovedistforwardback:SetText("1")
   ma_gobmovedistleftright:SetText("1")
   ma_gobmovedistupdown:SetText("1")
-  AzerothAdmin.db.account.buffer.who = {}
   --clear color buffer
-  self.db.account.style.color.buffer = {}
+  self.db.profile.style.color.buffer = {}
   --altering the function setitemref, to make it possible to click links
   MangLinkifier_SetItemRef_Original = SetItemRef
   SetItemRef = MangLinkifier_SetItemRef
+  -- Hook shift-click item links to populate search box when item search popup is open
+  local orig_ChatEdit_InsertLink = ChatEdit_InsertLink
+  ChatEdit_InsertLink = function(text)
+    if ma_popupframe and ma_popupframe:IsVisible()
+      and ma_popupframe.popupMode == "search"
+      and ma_popupframe.searchType == "item"
+    then
+      local itemName = text and text:match("%[(.-)%]")
+      if itemName then
+        ma_searcheditbox:SetText(itemName)
+        ma_searcheditbox:SetFocus()
+        return true
+      end
+    end
+    return orig_ChatEdit_InsertLink(text)
+  end
   self.db.char.msgDeltaTime = time()
   -- hide minimenu if not enabled
-  if not self.db.account.style.showminimenu then
+  if not self.db.profile.style.showminimenu then
     FrameLib:HandleGroup("minimenu", function(frame) frame:Hide() end)
   end
-
-  -- Keep DC->Waypoints info header in sync with the current target
-  self:RegisterEvent("PLAYER_TARGET_CHANGED", "UpdateWaypointInfo")
 end
 
 function AzerothAdmin:OnEnable()
-  self:SetDebugging(true) -- to have debugging through the whole app
+  -- self:SetDebugging(true) -- Deprecated in Ace3
   ma_toptext:SetText(Locale["char"].." "..Locale["guid"]..tonumber(UnitGUID("player"),16))
   ma_top2text:SetText(Locale["realm"])
   self:SearchReset()
@@ -282,21 +277,22 @@ function AzerothAdmin:OnEnable()
   self:PLAYER_TARGET_CHANGED() --init
   --ma_mm_revivebutton:Show()
 
-  -- Hide Who buttons for FIX #11. Admin level 4 not possible ingame?
-  ma_tabbutton_who:Hide()
-  ma_mm_whobutton:Hide()
-
-  -- Dissable unusable options in GM(main) tab WIP: FIX #10
-  ma_hoveronbutton:Disable()
-  ma_hoveroffbutton:Disable()
-  ma_acctcreatebutton:Disable()
-  ma_acctdeletebutton:Disable()
+  -- Restore server restart/shutdown button state
+  if self.db.char.serverRestartState then
+    ma_restartbutton:Disable()
+    ma_shutdownbutton:Disable()
+    ma_shutdowneditbox:EnableMouse(false)
+    ma_shutdowneditbox:EnableKeyboard(false)
+    ma_cancelshutdownbutton:Show()
+  else
+    ma_restartbutton:Enable()
+    ma_shutdownbutton:Enable()
+    ma_shutdowneditbox:EnableMouse(true)
+    ma_shutdowneditbox:EnableKeyboard(true)
+    ma_cancelshutdownbutton:Hide()
+  end
 
   -- Dissable unusable options in Char tab WIP: FIX #9
-  ma_mapsonbutton:Disable()
-  ma_mapsoffbutton:Disable()
-  ma_showmapsbutton:Disable()
-  ma_hidemapsbutton:Disable()
 end
 
 --events
@@ -320,13 +316,22 @@ function AzerothAdmin:ZONE_CHANGED()
 end
 
 function AzerothAdmin:UNIT_MODEL_CHANGED()
-  ModelChanged()
+  if AzerothAdminCommands.ModelChanged then
+    AzerothAdminCommands.ModelChanged()
+  end
 end
 
 function AzerothAdmin:PLAYER_TARGET_CHANGED()
-  ModelChanged()
-  NpcModelChanged()
+  if AzerothAdminCommands.ModelChanged then
+    AzerothAdminCommands.ModelChanged()
+  end
+  if AzerothAdminCommands.NpcModelChanged then
+    AzerothAdminCommands.NpcModelChanged()
+  end
   if UnitIsPlayer("target") then
+    if not ma_charactertarget:HasFocus() then
+      ma_charactertarget:SetText(UnitName("target"))
+    end
     ma_savebutton:Enable()
     if UnitIsDead("target") then
       ma_revivebutton:Enable()
@@ -357,7 +362,7 @@ function AzerothAdmin:PLAYER_TARGET_CHANGED()
     else
       if self.db.char.instantKillMode then
         if not UnitIsFriend("player", "target") then
-          KillSomething()
+          AzerothAdminCommands.KillSomething()
         end
       end
       --ma_respawnbutton:Disable()
@@ -369,6 +374,9 @@ end
 function AzerothAdmin:OnDisable()
   -- called when the addon is disabled
   self:SearchReset()
+  if self.UnhookAll then
+    self:UnhookAll()
+  end
 end
 
 function AzerothAdmin:OnClick()
@@ -383,12 +391,55 @@ function AzerothAdmin:OnClick()
   elseif not ma_bgframe:IsVisible() and ma_popupframe:IsVisible() then
     FrameLib:HandleGroup("bg", function(frame) frame:Show() end)
   else
-    -- Opening from the minimap/main toggle should land in DC (Waypoints) by default.
-    AzerothAdmin:InstantGroupToggle("dc")
+    FrameLib:HandleGroup("bg", function(frame) frame:Show() end)
+  end
+end
+
+function AzerothAdmin:ToggleTransparency()
+  -- Toggle transparency for frames
+  local currentAlpha = self.db.profile.style.transparency.frames
+  if currentAlpha >= 0.9 then
+    self.db.profile.style.transparency.frames = 0.5
+    self.db.profile.style.transparency.backgrounds = 0.3
+  else
+    self.db.profile.style.transparency.frames = 1.0
+    self.db.profile.style.transparency.backgrounds = 0.7
+  end
+  -- Apply transparency to all frames
+  FrameLib:HandleGroup("bg", function(frame)
+    if frame.SetAlpha then
+      frame:SetAlpha(self.db.profile.style.transparency.frames)
+    end
+  end)
+  self:Print("Transparency toggled")
+end
+
+function AzerothAdmin:ToggleTooltips()
+  -- Toggle tooltip display
+  self.db.profile.style.showtooltips = not self.db.profile.style.showtooltips
+  if self.db.profile.style.showtooltips then
+    self:Print("Tooltips enabled")
+  else
+    self:Print("Tooltips disabled")
+  end
+end
+
+function AzerothAdmin:ToggleMinimenu()
+  -- Toggle minimenu visibility
+  self.db.profile.style.showminimenu = not self.db.profile.style.showminimenu
+  if self.db.profile.style.showminimenu then
+    FrameLib:HandleGroup("minimenu", function(frame) frame:Show() end)
+    self:Print("Minimenu shown")
+  else
+    FrameLib:HandleGroup("minimenu", function(frame) frame:Hide() end)
+    self:Print("Minimenu hidden")
   end
 end
 
 function AzerothAdmin:OnTooltipUpdate()
+  -- TODO: Port to LibQTip or GameTooltip
+  -- Tablet logic disabled for Ace3 migration
+  --[[
   local tickets = self.db.char.newTicketQueue
   local ticketCount = 0
   for _ in pairs(tickets) do ticketCount = ticketCount + 1 end
@@ -428,7 +479,7 @@ function AzerothAdmin:OnTooltipUpdate()
     end
     AzerothAdmin:SetIcon(ROOT_PATH.."Textures\\icon2")
   end
-  Tablet:SetHint(Locale["ma_IconHint"])
+  ]]
 end
 
 function AzerothAdmin:ToggleTabButton(group)
@@ -446,24 +497,28 @@ end
 function AzerothAdmin:ToggleContentGroup(group)
   --AzerothAdmin:LogAction("Toggled navigation point '"..group.."'.")
   self:HideAllGroups()
-  FrameLib:HandleGroup(group, function(frame) frame:Show() end)
+  FrameLib:HandleGroup(group, function(frame)
+    if frame and frame.Show then
+      local status, err = pcall(frame.Show, frame)
+      if not status then
+        local name = frame.GetName and frame:GetName() or "<unnamed>"
+        AzerothAdmin:Print("Error showing frame "..name..": "..tostring(err))
+      end
+    end
+  end)
+  -- Restore cancel button visibility when switching to Server tab
+  if group == "server" and self.db.char.serverRestartState then
+    ma_cancelshutdownbutton:Show()
+  end
 end
 
 function AzerothAdmin:InstantGroupToggle(group)
   if group == "ticket" then
     self.db.char.requests.ticket = false
   end
-  if group== "who" then
-    AzerothAdmin:ChatMsg(".account onlinelist")
-    ResetWho()
-  end
   FrameLib:HandleGroup("bg", function(frame) frame:Show() end)
   AzerothAdmin:ToggleTabButton(group)
   AzerothAdmin:ToggleContentGroup(group)
-
-  if group == "dc" and AzerothAdmin.UpdateWaypointInfo and _G["ma_dcwaypoints_window"] then
-    AzerothAdmin:UpdateWaypointInfo()
-  end
 end
 
 function AzerothAdmin:TogglePopup(value, param)
@@ -473,10 +528,26 @@ function AzerothAdmin:TogglePopup(value, param)
   else]]
   if value == "search" then
     FrameLib:HandleGroup("popup", function(frame) frame:Show() end)
+    ma_popupframe.popupMode = "search"
+    ma_popupframe.searchType = param.type
     _G["ma_ptabbutton_1_texture"]:SetGradientAlpha("vertical", 102, 102, 102, 1, 102, 102, 102, 0.7)
     _G["ma_ptabbutton_2_texture"]:SetGradientAlpha("vertical", 102, 102, 102, 0, 102, 102, 102, 0.7)
+
+    -- Hide mail-specific elements
+    ma_ptabbutton_3:Hide()
     ma_mailscrollframe:Hide()
     ma_maileditbox:Hide()
+    for i = 1, 12 do
+      _G["ma_mailitemslot"..i]:Hide()
+    end
+    ma_mailmoneytext:Hide()
+    ma_mailgoldeditbox:Hide()
+    ma_mailgoldicon:Hide()
+    ma_mailsilvereditbox:Hide()
+    ma_mailsilvericon:Hide()
+    ma_mailcoppereditbox:Hide()
+    ma_mailcoppericon:Hide()
+
     ma_var1editbox:Hide()
     ma_var2editbox:Hide()
     ma_var1text:Hide()
@@ -489,12 +560,19 @@ function AzerothAdmin:TogglePopup(value, param)
     ma_resetsearchbutton:Enable()
     ma_ptabbutton_1:SetScript("OnClick", function() AzerothAdmin:TogglePopup("search", {type = param.type}) end)
     ma_ptabbutton_2:SetScript("OnClick", function() AzerothAdmin:TogglePopup("favorites", {type = param.type}) end)
+    ma_ptabbutton_2:SetText("Favorites")
     ma_ptabbutton_2:Show()
     ma_selectallbutton:SetScript("OnClick", function() self:Favorites("select", param.type) end)
     ma_deselectallbutton:SetScript("OnClick", function() self:Favorites("deselect", param.type) end)
     ma_modfavsbutton:SetScript("OnClick", function() self:Favorites("add", param.type) end)
     ma_modfavsbutton:SetText(Locale["ma_FavAdd"])
     ma_modfavsbutton:Enable()
+    -- Hide quest action buttons by default (shown only for quest searches)
+    ma_questaddbutton:Hide()
+    ma_questcompletebutton:Hide()
+    ma_questremovebutton:Hide()
+    ma_questrewardbutton:Hide()
+    ma_queststatusbutton:Hide()
     self:SearchReset()
     self.db.char.requests.toggle = true
     if param.type == "item" then
@@ -516,6 +594,22 @@ function AzerothAdmin:TogglePopup(value, param)
       ma_var2text:SetText(Locale["ma_SkillVar2Button"])
     elseif param.type == "quest" then
       ma_ptabbutton_1:SetText(Locale["ma_QuestButton"])
+      -- Hide favorites tab for quest searches
+      ma_ptabbutton_2:Hide()
+      -- Hide select/deselect/add buttons for quests
+      ma_selectallbutton:Hide()
+      ma_deselectallbutton:Hide()
+      ma_modfavsbutton:Hide()
+      -- Show quest action buttons
+      ma_questaddbutton:Show()
+      ma_questcompletebutton:Show()
+      ma_questremovebutton:Show()
+      ma_questrewardbutton:Show()
+      ma_queststatusbutton:Show()
+      -- Initialize quest selection
+      self.selectedQuest = nil
+      -- Setup quest action button handlers
+      self:SetupQuestActionButtons()
     elseif param.type == "creature" then
       ma_ptabbutton_1:SetText(Locale["ma_CreatureButton"])
     elseif param.type == "object" then
@@ -538,17 +632,35 @@ function AzerothAdmin:TogglePopup(value, param)
       ma_searchbutton:SetText(Locale["ma_Reload"])
       ma_searchbutton:SetScript("OnClick", function() self:LoadTickets() end)
       ma_resetsearchbutton:SetText(Locale["ma_LoadMore"])
-      ma_resetsearchbutton:SetScript("OnClick", function() AzerothAdmin.db.account.tickets.loading = true; self:LoadTickets(AzerothAdmin.db.account.tickets.count) end)]]--
+      ma_resetsearchbutton:SetScript("OnClick", function() AzerothAdmin.db.profile.tickets.loading = true; self:LoadTickets(AzerothAdmin.db.profile.tickets.count) end)]]--
     end
   elseif value == "favorites" then
+    ma_popupframe.popupMode = "favorites"
     self:SearchReset()
     _G["ma_ptabbutton_2_texture"]:SetGradientAlpha("vertical", 102, 102, 102, 1, 102, 102, 102, 0.7)
     _G["ma_ptabbutton_1_texture"]:SetGradientAlpha("vertical", 102, 102, 102, 0, 102, 102, 102, 0.7)
+
+    -- Hide mail-specific elements
+    ma_ptabbutton_3:Hide()
+    ma_mailscrollframe:Hide()
+    ma_maileditbox:Hide()
+    for i = 1, 12 do
+      _G["ma_mailitemslot"..i]:Hide()
+    end
+    ma_mailmoneytext:Hide()
+    ma_mailgoldeditbox:Hide()
+    ma_mailgoldicon:Hide()
+    ma_mailsilvereditbox:Hide()
+    ma_mailsilvericon:Hide()
+    ma_mailcoppereditbox:Hide()
+    ma_mailcoppericon:Hide()
+
     ma_modfavsbutton:SetScript("OnClick", function() self:Favorites("remove", param.type) end)
     ma_modfavsbutton:SetText(Locale["ma_FavRemove"])
     ma_modfavsbutton:Enable()
     self:Favorites("show", param.type)
   elseif value == "mail" then
+    ma_popupframe.popupMode = "mail"
     self:SetupMailPopup(param)
   end
 end
@@ -561,9 +673,8 @@ function AzerothAdmin:HideAllGroups()
   FrameLib:HandleGroup("tele", function(frame) frame:Hide() end)
   FrameLib:HandleGroup("ticket", function(frame) frame:Hide() end)
   FrameLib:HandleGroup("server", function(frame) frame:Hide() end)
+  FrameLib:HandleGroup("server_special", function(frame) frame:Hide() end)
   FrameLib:HandleGroup("misc", function(frame) frame:Hide() end)
-  FrameLib:HandleGroup("log", function(frame) frame:Hide() end)
-  FrameLib:HandleGroup("who", function(frame) frame:Hide() end)
   FrameLib:HandleGroup("dc", function(frame) frame:Hide() end)
 end
 
@@ -582,7 +693,6 @@ function AzerothAdmin:TicketHackTimer()
       self:RequestTickets()
     else
       self.db.char.msgDeltaTime = time()
-      self:LogAction("TicketHackTimer: Please be patient...")
       WaitLoop(1)
       self:TicketHackTimer()
     end
@@ -591,191 +701,29 @@ end]]
 
 function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
   -- frame is the object that was hooked (one of the ChatFrames)
+  local originalAddMessage = self.hooks and self.hooks[frame] and self.hooks[frame].AddMessage
+  local profile = self.db and self.db.profile
+  local charDb = self.db and self.db.char
+  local style = profile and profile.style
+
+  if not originalAddMessage then
+    return
+  end
+
+  -- Logout can still produce chat output while AceDB state is already being
+  -- torn down. In that case bypass AzerothAdmin parsing and forward the text.
+  if not (charDb and style) then
+    text = MangLinkifier_Decompose(text)
+    originalAddMessage(frame, text, r, g, b, id)
+    return
+  end
+
   local catchedSth = false
-  local output = AzerothAdmin.db.account.style.showchat
-
-  -- Server info response parsing
-  -- NOTE: Do not rely on `id == 1` here. Some chat frame implementations vary the numeric message id.
-  local serverInfoMatched = false
-  if type(text) == "string" then
-    local revisionPattern = Strings and Strings["ma_GmatchRevision"]
-    if revisionPattern then
-      local revision = string.match(text, revisionPattern)
-      if revision then
-        ma_inforevisiontext:SetText(Locale["info_revision"] .. revision)
-        serverInfoMatched = true
-      end
-    end
-
-    local onlinePattern = Strings and Strings["ma_GmatchOnlinePlayers"]
-    if onlinePattern then
-      local users = string.match(text, onlinePattern)
-      if not users then
-        local u = string.match(text, "Connected players: (%d+)")
-        users = u
-      end
-      if users then
-        ma_infoonlinetext:SetText(Locale["info_online"] .. users)
-        serverInfoMatched = true
-      end
-    end
-
-    local maxPattern = Strings and Strings["ma_GmatchMaxConnections"]
-    if maxPattern then
-      local maxConnections = string.match(text, maxPattern)
-      if maxConnections then
-        ma_infomaxonlinetext:SetText(Locale["info_maxonline"] .. maxConnections)
-        serverInfoMatched = true
-      end
-    end
-
-    local uptimePattern = Strings and Strings["ma_GmatchUptime"]
-    if uptimePattern then
-      local uptime = string.match(text, uptimePattern)
-      if uptime then
-        ma_infouptimetext:SetText(Locale["info_uptime"] .. uptime)
-        serverInfoMatched = true
-      end
-    end
-
-    local activePattern = Strings and Strings["ma_GmatchActiveConnections"]
-    if activePattern and string.match(text, activePattern) then
-      serverInfoMatched = true
-    end
-  end
-
-  if serverInfoMatched then
-    catchedSth = true
-  end
-
-  -- DC waypoints info response parsing
-  -- NOTE: Do not rely on `id == 1` here. `.wp info` uses server system messages
-  -- and the numeric message id varies depending on the chat frame implementation.
-  if self._dcWpInfoPending and type(text) == "string" then
-    local entry, spawn, path, count = string.match(text, "WPINFO entry=(%d+) spawn=(%d+) path=(%d+) count=(%d+)")
-    if not (entry and spawn and path and count) then
-      entry = entry or string.match(text, "entry=(%d+)")
-      spawn = spawn or string.match(text, "spawn=(%d+)")
-      path = path or string.match(text, "path=(%d+)")
-      count = count or string.match(text, "count=(%d+)")
-    end
-
-    local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
-    if entry and spawn and count and targetTextFrame then
-      local wanderText = "?"
-      if self._dcWpLastSpawnDist ~= nil then
-        if (tonumber(self._dcWpLastSpawnDist) or 0) > 0 then
-          wanderText = "ON (" .. tostring(self._dcWpLastSpawnDist) .. ")"
-        else
-          wanderText = "OFF"
-        end
-      end
-
-      targetTextFrame:SetText("Entry: " .. entry .. "\nSpawn: " .. spawn .. "\nWPs: " .. count .. "\nWander: " .. wanderText)
-      self._dcWpLastWpInfo = {
-        entry = tonumber(entry) or 0,
-        spawn = tonumber(spawn) or 0,
-        path = tonumber(path) or 0,
-        count = tonumber(count) or 0,
-      }
-      self._dcWpInfoPending = false
-
-      if self._dcWpAddAfterInfo then
-        self._dcWpAddAfterInfo = false
-        local pathId = tonumber(self._dcWpLastWpInfo.path) or 0
-        local wpCount = tonumber(self._dcWpLastWpInfo.count) or 0
-        if pathId > 0 then
-          if wpCount <= 0 then
-            -- Broken state: creature has a path_id but no waypoint_data rows.
-            -- Wipe to detach/reset, then start a new path.
-            self:ChatMsg(".wp wipe")
-            self:ChatMsg(".wp start")
-          else
-            self:ChatMsg(".wp load " .. pathId)
-            self:ChatMsg(".wp add")
-          end
-        else
-          self:ChatMsg(".wp start")
-        end
-      end
-
-      if self._dcWpStartOrAddAfterInfo then
-        self._dcWpStartOrAddAfterInfo = false
-        local pathId = tonumber(self._dcWpLastWpInfo.path) or 0
-        local wpCount = tonumber(self._dcWpLastWpInfo.count) or 0
-        if pathId > 0 then
-          if wpCount <= 0 then
-            self:ChatMsg(".wp wipe")
-            self:ChatMsg(".wp start")
-          else
-            self:ChatMsg(".wp load " .. pathId)
-            self:ChatMsg(".wp add")
-          end
-        else
-          self:ChatMsg(".wp start")
-        end
-      end
-
-      if self._dcWpRunAfterInfo then
-        self._dcWpRunAfterInfo = false
-        local pathId = tonumber(self._dcWpLastWpInfo.path) or 0
-        local wpCount = tonumber(self._dcWpLastWpInfo.count) or 0
-        if pathId > 0 then
-          if wpCount <= 0 then
-            -- Avoid loading an empty path; reset and create a fresh one.
-            self:ChatMsg(".wp wipe")
-            self:ChatMsg(".wp start")
-          else
-            -- Force-load the path and then re-init movetype to actually start moving.
-            self:ChatMsg(".wp load " .. pathId)
-            self:ChatMsg(".npc set movetype way NODEL")
-          end
-        end
-      end
-    elseif string.find(text, "WPINFO") or string.find(text, "You must select") or string.find(text, "select a creature") then
-      -- Clear the pending flag on WP-related failures to avoid a stuck state.
-      self._dcWpInfoPending = false
-      self._dcWpRunAfterInfo = false
-      self._dcWpAddAfterInfo = false
-      self._dcWpStartOrAddAfterInfo = false
-    end
-  end
-
-  -- DC waypoint wander-distance (spawndist) parsing
-  -- Triggered by the DC Waypoints UI calling `.npc info` to detect random wandering.
-  if self._dcWpSpawnDistPending and type(text) == "string" then
-    if self._dcWpSpawnDistPendingUntil and GetTime and (GetTime() > self._dcWpSpawnDistPendingUntil) then
-      self._dcWpSpawnDistPending = false
-      self._dcWpSpawnDistPendingUntil = nil
-    else
-      local lower = string.lower(text)
-      local dist = string.match(lower, "spawndist[:%s]+([%d%.]+)")
-        or string.match(lower, "spawn%s+distance[:%s]+([%d%.]+)")
-        or string.match(lower, "wanderdistance[:%s]+([%d%.]+)")
-        or string.match(lower, "wander%s+distance[:%s]+([%d%.]+)")
-
-      if dist then
-        self._dcWpLastSpawnDist = tonumber(dist) or 0
-        self._dcWpSpawnDistPending = false
-        self._dcWpSpawnDistPendingUntil = nil
-
-        local targetTextFrame = _G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]
-        if targetTextFrame and self._dcWpLastWpInfo and self._dcWpLastWpInfo.entry and self._dcWpLastWpInfo.spawn and self._dcWpLastWpInfo.count then
-          local wanderText = (self._dcWpLastSpawnDist > 0) and ("ON (" .. tostring(self._dcWpLastSpawnDist) .. ")") or "OFF"
-          targetTextFrame:SetText(
-            "Entry: " .. tostring(self._dcWpLastWpInfo.entry)
-            .. "\nSpawn: " .. tostring(self._dcWpLastWpInfo.spawn)
-            .. "\nWPs: " .. tostring(self._dcWpLastWpInfo.count)
-            .. "\nWander: " .. wanderText)
-        end
-      end
-    end
-  end
-
-  if id == 1 or serverInfoMatched then --make sure that the message comes from the server, message id = 1
+  local output = style.showchat
+  if id == 1 then --make sure that the message comes from the server, message id = 1
     --Catches if Toggle is still on for some reason, but search frame is not up, and disables it so messages arent caught
-    if self.db.char.requests.toggle and not ma_popupframe:IsVisible() then
-      self.db.char.requests.toggle = false
+    if charDb.requests.toggle and not ma_popupframe:IsVisible() then
+      charDb.requests.toggle = false
     end
     if gettingGOBinfoinfo > 0 then
         if gettingGOBinfoinfo == 1 then
@@ -802,11 +750,11 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
             gettingGOBinfoinfo=1
         end
     end
-    if cWorking == 1 then
+    if AzerothAdmin.cWorking == 1 then
         local WorkString = string.gsub(text, '(|.........)', '') -- This removes any color formating
         --SendChatMessage("Workstring:"..WorkString)
-        for cMap in string.gmatch(WorkString,'Map: %d')do
-            --SendChatMessage("Mapo: "..cMap)
+        for mapID in string.gmatch(WorkString,'Map: %d')do
+            --SendChatMessage("Mapo: "..mapID)
         end
         local t = {}
         local cnt = 1
@@ -824,76 +772,102 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
         --SendChatMessage(cY)
         --SendChatMessage(cZ)
         --SendChatMessage(cO)
-        nX = cX + (math.cos(cO) * incX)
-        nY = cY + (math.sin(cO) * incX)
+        local nX = cX + (math.cos(cO) * AzerothAdmin.incX)
+        local nY = cY + (math.sin(cO) * AzerothAdmin.incX)
         --rotate the O so we can do some math
-        tD = math.deg(cO) + 90
+        local tD = math.deg(cO) + 90
         if tD > 360 then tD = tD - 360 end
-        nO = math.rad(tD)
+        local nO = math.rad(tD)
         --Calulate the new x y bassed on incX
-        nX = nX + (math.cos(nO) * incY)
-        nY = nY + (math.sin(nO) * incY)
+        nX = nX + (math.cos(nO) * AzerothAdmin.incY)
+        nY = nY + (math.sin(nO) * AzerothAdmin.incY)
         --Send the port
-        SendChatMessage('.go xyz '..' '..nX..' '..nY..' '..(cZ+incZ))
+        SendChatMessage('.go xyz '..' '..nX..' '..nY..' '..(cZ+AzerothAdmin.incZ))
         --console reloadui
-        incX = 0
-        incY = 0
-        incZ = 0
+        AzerothAdmin.incX = 0
+        AzerothAdmin.incY = 0
+        AzerothAdmin.incZ = 0
         local isChecked = ma_spawnonmovecheck:GetChecked()
         local isChecked2 = ma_moveonmovecheck:GetChecked()
         if isChecked == 1 then  --AddonMove
             local ObjectN = ma_Obj_idbutton:GetText()
-            SendChatMessage('.gobject add '..ObjectN)
+            SendChatMessage('.gob add '..ObjectN)
         elseif isChecked2 == 1 then --MoveonMove
-            SendChatMessage('.gobject delete '..ma_Obj_guidbutton:GetText())
+            SendChatMessage('.gob del '..ma_Obj_guidbutton:GetText())
             local ObjectN = ma_Obj_idbutton:GetText()
-            SendChatMessage('.gobject add '..ObjectN)
+            SendChatMessage('.gob add '..ObjectN)
         else -- Just move player
         end
-        cWorking = 0
+        AzerothAdmin.cWorking = 0
+        AzerothAdminCommands.OBJTarget()
         end
-        OBJTarget()
     end
     -- hook .gps for gridnavigation
     for x, y in string.gmatch(text, Strings["ma_GmatchGPS"]) do
       for k,v in pairs(self.db.char.functionQueue) do
         if v == "GridNavigate" then
-          GridNavigate(string.format("%.1f", x), string.format("%.1f", y), nil)
+          AzerothAdminCommands.GridNavigate(string.format("%.1f", x), string.format("%.1f", y), nil)
           table.remove(self.db.char.functionQueue, k)
           break
         end
       end
     end
+    if self._dcWpInfoPending then
+      local entry, spawn, path, count, wander = string.match(text, "WPINFO entry=(%d+) spawn=(%d+) path=(%d+) count=(%d+) wander=([%-%d%.]+)")
+      if entry and spawn and path and count and wander then
+        self._dcWpInfoPending = false
+        self._dcWpLastEntry = entry
+        self._dcWpLastSpawn = spawn
+        self._dcWpLastCount = count
+        self._dcWpLastSpawnDist = wander
+        if self.UpdateDCWaypointInfoDisplay then
+          self:UpdateDCWaypointInfoDisplay(entry, spawn, count, wander)
+        end
+        catchedSth = true
+        output = AzerothAdmin.db.profile.style.showchat
+      else
+        local loweredText = string.lower(text or "")
+        if string.find(loweredText, "select a creature", 1, true)
+          or string.find(loweredText, "visual waypoint", 1, true) then
+          self._dcWpInfoPending = false
+          if self.UpdateDCWaypointInfoDisplay then
+            self:UpdateDCWaypointInfoDisplay("-", "-", "-", "n/a")
+          end
+          catchedSth = true
+          output = AzerothAdmin.db.profile.style.showchat
+        end
+      end
+    end
     if AzerothAdmin:ID_Setting_Start_Read() then
-      local npc_guid_capture = string.match(text, "GUID: (%d+)%.?")
-      if npc_guid_capture then
-        AzerothAdmin:ID_Setting_Start_Write(0) -- Reset listening state after capturing GUID
-        AzerothAdmin:ID_Setting_Write(0, npc_guid_capture)
-        ma_NPC_guidbutton:SetText(npc_guid_capture)
-        self:LogAction("NPC_GUID_Get id "..npc_guid_capture..".")
-      end
+        -- Match DB GUID from "DB GUID: 85217,"
+        local npc_guid_capture = string.match(text, "DB GUID: (%d+)")
+        if npc_guid_capture then
+            AzerothAdmin:ID_Setting_Write(0, npc_guid_capture)
+            ma_NPC_guidbutton:SetText(npc_guid_capture)
+        end
 
-      local npc_entry_capture = string.match(text, "Entry: (%d+)%.?")
-      if npc_entry_capture then
-        AzerothAdmin:ID_Setting_Start_Write(0)
-        AzerothAdmin:ID_Setting_Write(1, npc_entry_capture)
-        ma_NPC_idbutton:SetText(npc_entry_capture)
-        self:LogAction("NPC_EntryID_Get id "..npc_entry_capture..".")
-      end
+        -- Match Entry ID from "Current Entry: 2470" or "Entry: 2470"
+        local npc_entry_capture = string.match(text, "Entry: (%d+)")
+        if npc_entry_capture then
+            AzerothAdmin:ID_Setting_Write(1, npc_entry_capture)
+            ma_NPC_idbutton:SetText(npc_entry_capture)
+        end
 
-      local npc_displayid_capture = string.match(text, "DisplayID: (%d+)")
-      if npc_displayid_capture then
-        AzerothAdmin:ID_Setting_Start_Write(0)
-        ma_npcdisplayid:SetText(npc_displayid_capture)
-        self:LogAction("NPC_DisplayID_Get id "..npc_displayid_capture..".")
-      end
+        -- Match DisplayID from "DisplayID: 9232."
+        local npc_displayid_capture = string.match(text, "DisplayID: (%d+)")
+        if npc_displayid_capture then
+            ma_npcdisplayid:SetText(npc_displayid_capture)
+        end
 
-      local npc_distance_capture = string.match(text, "%(Exact 3D%) ([%d%.]+)")
-      if npc_distance_capture and ma_npc_distance_box then
-        AzerothAdmin:ID_Setting_Start_Write(0)
-        ma_npc_distance_box:SetText(npc_distance_capture)
-        self:LogAction("NPC_Distance_Get distance "..npc_distance_capture..".")
-      end
+        local npc_distance_capture = string.match(text, "%(Exact 3D%) ([%d%.]+)")
+        if npc_distance_capture then
+            ma_npc_distance_box:SetText(npc_distance_capture)
+        end
+
+        -- Reset listening state after processing all NPC info fields
+        if npc_guid_capture or npc_entry_capture or npc_displayid_capture then
+            AzerothAdmin:ID_Setting_Start_Write(0)
+        end
     end
 
     if AzerothAdmin:OID_Setting_Start_Read() then
@@ -902,36 +876,31 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
             AzerothAdmin:OID_Setting_Start_Write(0) -- Reset listening state after capturing GUID
             AzerothAdmin:OID_Setting_Write(0, obj_guid_capture)
             ma_Obj_guidbutton:SetText(obj_guid_capture)
-            self:LogAction("OBJECT_GUID_Get id "..obj_guid_capture..".")
         end
 
         local obj_entry_capture = string.match(text, " ID: (%d+)")
         if obj_entry_capture then
             ma_Obj_idbutton:SetText(obj_entry_capture)
-            self:LogAction("OBJECT_EntryID_Get id "..obj_entry_capture..".")
         end
 
         local obj_displayid_capture = string.match(text, "DisplayID: (%d+)")
         if obj_displayid_capture then
             ma_gobdisplayid:SetText(obj_displayid_capture)
-            self:LogAction("OBJECT DisplayID"..obj_displayid_capture..".")
         end
 
         local obj_phasemask_capture = string.match(text, "Phasemask (%d+)")
         if obj_phasemask_capture then
-          ma_gobsetphaseinput:SetText(obj_phasemask_capture)
-          self:LogAction("OBJECT Phasemask "..obj_phasemask_capture..".")
+            ma_gobsetphaseinput:SetText(obj_phasemask_capture)
         end
     end
 
     if AzerothAdmin:Way_Point_Add_Start_Read() then
-        b1,e1,pattern = string.find(text, "Waypoint (%d+)")
+        local b1,e1,pattern = string.find(text, "Waypoint (%d+)")
         if b1 then
             AzerothAdmin:Way_Point_Add_Start_Write(0)
 
             local wnpc =	ma_NPC_guidbutton:GetText()
             self:ChatMsg(".wp show on "..wnpc)
-            self:LogAction("Waypoint set OK")
         else
         end
     end
@@ -939,7 +908,7 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
       if self.db.char.requests.item then
         -- hook all item lookups
         for id, name in string.gmatch(text, Strings["ma_GmatchItem"]) do
-            table.insert(self.db.account.buffer.items, {itId = id, itName = name, checked = false})
+            table.insert(self.db.profile.buffer.items, {itId = id, itName = name, checked = false})
             -- for item info in cache
             local itemName, itemLink, itemQuality, _, _, _, _, _, _ = GetItemInfo(id);
             if not itemName then
@@ -949,104 +918,150 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
             end
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            output = AzerothAdmin.db.profile.style.showchat
         end
       elseif self.db.char.requests.itemset then
         -- hook all itemset lookups
         for id, name in string.gmatch(text, Strings["ma_GmatchItemSet"]) do
-            table.insert(self.db.account.buffer.itemsets, {isId = id, isName = name, checked = false})
+            table.insert(self.db.profile.buffer.itemsets, {isId = id, isName = name, checked = false})
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            output = AzerothAdmin.db.profile.style.showchat
         end
       elseif self.db.char.requests.spell then
         -- hook all spell lookups
         for id, name in string.gmatch(text, Strings["ma_GmatchSpell"]) do
-            table.insert(self.db.account.buffer.spells, {spId = id, spName = name, checked = false})
+            table.insert(self.db.profile.buffer.spells, {spId = id, spName = name, checked = false})
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            output = AzerothAdmin.db.profile.style.showchat
         end
       elseif self.db.char.requests.skill then
         -- hook all skill lookups
         for id, name in string.gmatch(text, Strings["ma_GmatchSkill"]) do
-            table.insert(self.db.account.buffer.skills, {skId = id, skName = name, checked = false})
+            table.insert(self.db.profile.buffer.skills, {skId = id, skName = name, checked = false})
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            output = AzerothAdmin.db.profile.style.showchat
         end
       elseif self.db.char.requests.creature then
         -- hook all creature lookups
         for id, name in string.gmatch(text, Strings["ma_GmatchCreature"]) do
-            table.insert(self.db.account.buffer.creatures, {crId = id, crName = name, checked = false})
+            table.insert(self.db.profile.buffer.creatures, {crId = id, crName = name, checked = false})
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            output = AzerothAdmin.db.profile.style.showchat
         end
       elseif self.db.char.requests.object then
         -- hook all object lookups
         for id, name in string.gmatch(text, Strings["ma_GmatchGameObject"]) do
-            table.insert(self.db.account.buffer.objects, {objId = id, objName = name, checked = false})
+            table.insert(self.db.profile.buffer.objects, {objId = id, objName = name, checked = false})
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            output = AzerothAdmin.db.profile.style.showchat
         end
       elseif self.db.char.requests.quest then
         -- hook all quest lookups
+        local foundQuest = false
+        -- Try primary pattern (hyperlink format)
         for id, name in string.gmatch(text, Strings["ma_GmatchQuest"]) do
-            table.insert(self.db.account.buffer.quests, {qsId = id, qsName = name, checked = false})
+            table.insert(self.db.profile.buffer.quests, {qsId = id, qsName = name, checked = false})
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            foundQuest = true
+            output = AzerothAdmin.db.profile.style.showchat
+        end
+        -- Fallback 1: Server format with status flags
+        -- Matches: "1167 - [Quest Name]  [rewarded]" or "970 - [Quest Name]  [active]"
+        if not foundQuest then
+          for id, name, status in string.gmatch(text, "(%d+)%s*%-%s*%[(.-)%]%s*%[(.-)%]") do
+            table.insert(self.db.profile.buffer.quests, {qsId = id, qsName = name, qsStatus = status, checked = false})
+            PopupScrollUpdate()
+            catchedSth = true
+            foundQuest = true
+            output = AzerothAdmin.db.profile.style.showchat
+          end
+        end
+        -- Fallback 1b: Server format without status flags
+        -- Matches: "11579 - [Quest Name]" (no status)
+        if not foundQuest then
+          for id, name in string.gmatch(text, "(%d+)%s*%-%s*%[(.-)%]") do
+            table.insert(self.db.profile.buffer.quests, {qsId = id, qsName = name, qsStatus = nil, checked = false})
+            PopupScrollUpdate()
+            catchedSth = true
+            foundQuest = true
+            output = AzerothAdmin.db.profile.style.showchat
+          end
+        end
+        -- Fallback 2: Plain text format "Quest 123: Quest Name"
+        if not foundQuest then
+          for id, name in string.gmatch(text, "Quest (%d+): (.+)") do
+            table.insert(self.db.profile.buffer.quests, {qsId = id, qsName = name, checked = false})
+            PopupScrollUpdate()
+            catchedSth = true
+            foundQuest = true
+            output = AzerothAdmin.db.profile.style.showchat
+          end
+        end
+        -- Fallback 3: Simple "ID - Name" format without brackets
+        if not foundQuest then
+          for id, name in string.gmatch(text, "^(%d+)%s*%-%s*(.+)$") do
+            table.insert(self.db.profile.buffer.quests, {qsId = id, qsName = name, checked = false})
+            PopupScrollUpdate()
+            catchedSth = true
+            foundQuest = true
+            output = AzerothAdmin.db.profile.style.showchat
+          end
+        end
+        -- Handle "No quests found!" message from server
+        if not foundQuest and (string.find(text, "No quest") or string.find(text, "not found")) then
+          PopupScrollUpdate()
+          catchedSth = true
+          output = AzerothAdmin.db.profile.style.showchat
         end
       elseif self.db.char.requests.tele then
         -- hook all tele lookups
         for id, name in string.gmatch(text, Strings["ma_GmatchTele"]) do
-            table.insert(self.db.account.buffer.teles, {tName = name, checked = false})
+            table.insert(self.db.profile.buffer.teles, {tName = name, checked = false})
             PopupScrollUpdate()
             catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
+            output = AzerothAdmin.db.profile.style.showchat
         end
         --this is to hide the message shown before the teles
         if string.find(text, Strings["ma_GmatchTeleFound"]) then
           catchedSth = true
-          output = AzerothAdmin.db.account.style.showchat
+          output = AzerothAdmin.db.profile.style.showchat
         end
       end
     end
---     for diff in string.gmatch(text, Strings["ma_GmatchUpdateDiff"]) do
---         ma_difftext:SetText(diff)
---         catchedSth = true
---         output     = AzerothAdmin.db.account.style.showchat
---     end
+
     for difftime in string.gmatch(text, Strings["ma_GmatchUpdateDiffTime"]) do --We just want the Diff time number value
-      ma_difftext:SetText(difftime)
+      ma_difftext:SetText(difftime .. "ms")
       catchedSth = true
-      output = AzerothAdmin.db.account.style.showchat
+      output = AzerothAdmin.db.profile.style.showchat
     end
 
     -- hook Last 500 diff info from .server info
     for mean in string.gmatch(text, Strings["ma_GmatchMean"]) do
-      ma_meantextoutput:SetText(mean .. " ms")
+      ma_meantextoutput:SetText(mean .. "ms")
       catchedSth = true
-      output = AzerothAdmin.db.account.style.showchat
+      output = AzerothAdmin.db.profile.style.showchat
     end
     for median in string.gmatch(text, Strings["ma_GmatchMedian"]) do
-      ma_mediantextoutput:SetText(median .. " ms")
+      ma_mediantextoutput:SetText(median .. "ms")
       catchedSth = true
-      output = AzerothAdmin.db.account.style.showchat
+      output = AzerothAdmin.db.profile.style.showchat
     end
     for p95, p99, pmax in string.gmatch(text, Strings["ma_GmatchPercentiles"]) do
       --print("Matched percentiles:", p95, p99, pmax) -- Debug print
       --ma_percentilestextoutput:SetText("95th: " .. p95 .. "ms, 99th: " .. p99 .. "ms, Max: " .. pmax .. "ms")
-      ma_percentilestextoutput:SetText("".. p95 .. " ms, " .. p99 .. " ms, " .. pmax .. " ms") -- simple output
+      ma_percentilestextoutput:SetText("".. p95 .. "ms, " .. p99 .. "ms, " .. pmax .. "ms") -- simple output
       catchedSth = true
     end
 
     -- hook all new tickets
     for name in string.gmatch(text, Strings["ma_GmatchNewTicket"]) do
       PlaySoundFile(ROOT_PATH.."Sound\\mail.wav")
-      self:LogAction("Got new ticket from: "..name)
     end
     -- hook player account info
     for status, char, guid, account, id, level, ip, login, latency in string.gmatch(text, Strings["ma_GmatchAccountInfo"]) do
@@ -1056,10 +1071,10 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
         else
           status = Locale["ma_Offline"]
         end
-        --table.insert(self.db.account.buffer.tpinfo, {char = {pStatus = status, pGuid = guid, pAcc = account, pId = id, pLevel = level, pIp = ip}})
+        --table.insert(self.db.profile.buffer.tpinfo, {char = {pStatus = status, pGuid = guid, pAcc = account, pId = id, pLevel = level, pIp = ip}})
         ma_tpinfo_text:SetText(ma_tpinfo_text:GetText()..Locale["ma_TicketsInfoPlayer"]..char.." ("..guid..")\n"..Locale["ma_TicketsInfoStatus"]..status.."\n"..Locale["ma_TicketsInfoAccount"]..account.." ("..id..")\n"..Locale["ma_TicketsInfoAccLevel"]..level.."\n"..Locale["ma_TicketsInfoLastIP"]..ip.."\n"..Locale["ma_TicketsInfoLatency"]..latency)
         catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
       end
     end
     -- hook player account info
@@ -1067,7 +1082,7 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
       if self.db.char.requests.tpinfo then
         ma_tpinfo_text:SetText(ma_tpinfo_text:GetText().."\n"..Locale["ma_TicketsInfoPlayedTime"]..played.."\n"..Locale["ma_TicketsInfoLevel"]..level.."\n"..Locale["ma_TicketsInfoMoney"]..money)
         catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
         self.db.char.requests.tpinfo = false
       end
     end
@@ -1076,121 +1091,147 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
       ma_inforevisiontext:SetText(Locale["info_revision"]..revision)
       --ma_infoplatformtext:SetText(Locale["info_platform"]..platform)
         catchedSth = true
---        output = AzerothAdmin.db.account.style.showchat
-        output = AzerothAdmin.db.account.style.showchat
+--        output = AzerothAdmin.db.profile.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
     end
-    for users, charsInWorld in string.gmatch(text, Strings["ma_GmatchOnlinePlayers"]) do
+    for users in string.gmatch(text, Strings["ma_GmatchOnlinePlayers"]) do
       ma_infoonlinetext:SetText(Locale["info_online"]..users)
         catchedSth = true
---        output = AzerothAdmin.db.account.style.showchat
-        output = AzerothAdmin.db.account.style.showchat
+--        output = AzerothAdmin.db.profile.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
     end
     for maxConnections in string.gmatch(text, Strings ["ma_GmatchMaxConnections"]) do
       ma_infomaxonlinetext:SetText(Locale["info_maxonline"]..maxConnections)
         catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
     end
     for uptime in string.gmatch(text, Strings["ma_GmatchUptime"]) do
       ma_infouptimetext:SetText(Locale["info_uptime"]..uptime)
         catchedSth = true
---        output = AzerothAdmin.db.account.style.showchat
-        output = AzerothAdmin.db.account.style.showchat
+--        output = AzerothAdmin.db.profile.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
     end
     for match in string.gmatch(text, Strings["ma_GmatchActiveConnections"]) do
         catchedSth = true
---        output = AzerothAdmin.db.account.style.showchat
-        output = AzerothAdmin.db.account.style.showchat
+--        output = AzerothAdmin.db.profile.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
     end
     -- get results of ticket list. In Trinity, everything will be constructed off the list
+    local foundTickets = false
     for id, char, create, update in string.gmatch(text, Strings["ma_GmatchTickets"]) do
-        table.insert(AzerothAdmin.db.account.buffer.tickets, {tNumber = id, tChar = char, tLCreate = create, tLUpdate = update, tMsg = ""})
+        -- Clean up the ticket ID by removing non-numeric characters
+        id = string.match(id, "%d+") or id
+        -- Check if this ticket already exists to prevent duplicates
+        local isDuplicate = false
+        for _, ticket in ipairs(self.db.profile.buffer.tickets) do
+            if ticket.tNumber == id then
+                isDuplicate = true
+                break
+            end
+        end
+        if not isDuplicate then
+            table.insert(AzerothAdmin.db.profile.buffer.tickets, {tNumber = id, tChar = char, tLCreate = create, tLUpdate = update, tMsg = ""})
+            foundTickets = true
+        end
         local ticketCount = 0
-        for _ in pairs(AzerothAdmin.db.account.buffer.tickets) do ticketCount = ticketCount + 1 end
+        for _ in pairs(AzerothAdmin.db.profile.buffer.tickets) do ticketCount = ticketCount + 1 end
         ticketCount = 0
         catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
         self.db.char.requests.ticketbody = id
         self.db.char.msgDeltaTime = time()
     end
-    for msg in string.gmatch(text, Strings["ma_GmatchTicketMessage"]) do
-        if self.db.char.requests.ticketbody and self.db.char.requests.ticketbody ~= 0 then
-            self:LogAction("Ticket msg for ID " .. tostring(self.db.char.requests.ticketbody) .. ": " .. msg)
+    -- Update the display after parsing all tickets in this message
+    if foundTickets and AzerothAdminCommands and AzerothAdminCommands.InlineScrollUpdate then
+        AzerothAdminCommands.InlineScrollUpdate()
+    end
+    -- Match ticket message - handle messages that may span multiple chat lines
+    if string.find(text, "Ticket Message") then
+        -- Check if it's a complete single-line message first
+        local singleLineMsg = string.match(text, "Ticket Message.-:%s*%[(.*)%]")
+        if singleLineMsg then
+            ma_ticketdetail.originalText = "|cffffff00"..singleLineMsg
+            ma_ticketdetail:SetText("|cffffff00"..singleLineMsg)
+            ma_ticketdetail:SetCursorPosition(0)
+            ma_ticketdetail:ClearFocus()
+            ma_ticketdetailscrollframe:SetVerticalScroll(0)
+            catchedSth = true
+            output = AzerothAdmin.db.profile.style.showchat
         else
-            self:LogAction("Ticket msg (no specific ID context): " .. msg)
+            -- This is the start of a multiline ticket message, extract the beginning
+            local ticketMsgStart = string.match(text, "Ticket Message.-:%s*%[(.*)$")
+            if ticketMsgStart then
+                -- Initialize the buffer with the first part
+                if not AzerothAdmin.db.profile.buffer.ticketMessageBuffer then
+                    AzerothAdmin.db.profile.buffer.ticketMessageBuffer = ""
+                end
+                AzerothAdmin.db.profile.buffer.ticketMessageBuffer = ticketMsgStart
+                catchedSth = true
+                output = AzerothAdmin.db.profile.style.showchat
+            end
         end
-        ma_ticketdetail:SetText("|cffffff00"..msg)  -- Change to yellow to match formatting
-        catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
+    elseif AzerothAdmin.db.profile.buffer.ticketMessageBuffer then
+        -- We're collecting a multi-line ticket message
+        -- Check if this line ends the message (contains the closing bracket)
+        -- Pattern stops at ] to handle WoW color codes like |r that may follow
+        local endMatch = string.match(text, "^(.*)%]")
+        if endMatch then
+            -- This is the last line, append it and display the complete message
+            local fullMessage = AzerothAdmin.db.profile.buffer.ticketMessageBuffer .. "\n" .. endMatch
+            print("Server response - Setting ticket message:", fullMessage, "Length:", string.len(fullMessage))
+            ma_ticketdetail.originalText = "|cffffff00"..fullMessage
+            ma_ticketdetail:SetText("|cffffff00"..fullMessage)
+            ma_ticketdetail:SetCursorPosition(0)
+            ma_ticketdetail:ClearFocus()
+            ma_ticketdetailscrollframe:SetVerticalScroll(0)
+            print("EditBox text after server set:", ma_ticketdetail:GetText())
+            -- Store the message in the tickets buffer
+            local currentTicketId = ma_ticketid:GetText()
+            if currentTicketId and currentTicketId ~= "" then
+                for k, v in ipairs(AzerothAdmin.db.profile.buffer.tickets) do
+                    if v.tNumber == currentTicketId then
+                        AzerothAdmin.db.profile.buffer.tickets[k].tMsg = fullMessage
+                        break
+                    end
+                end
+            end
+            -- Clear the buffer
+            AzerothAdmin.db.profile.buffer.ticketMessageBuffer = nil
+            catchedSth = true
+            output = AzerothAdmin.db.profile.style.showchat
+        else
+            -- This is a middle line, append it to the buffer
+            AzerothAdmin.db.profile.buffer.ticketMessageBuffer = AzerothAdmin.db.profile.buffer.ticketMessageBuffer .. "\n" .. text
+            catchedSth = true
+            output = AzerothAdmin.db.profile.style.showchat
+        end
     end
     for eraseme in string.gmatch(text, "Showing list of open tickets") do
         catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
+        output = AzerothAdmin.db.profile.style.showchat
+        -- Don't call InlineScrollUpdate here - it's called after each ticket is parsed
+        -- This message appears BEFORE the ticket data, so calling it here would show 0 tickets
     end
 
-    for acc, char, ip, map, zone, exp, gmlevel in string.gmatch(text, Strings["ma_GmatchWho"]) do
-    	acc= string.gsub(acc, " ", "")
-    	char= string.gsub(char, " ", "")
-    	ip= string.gsub(ip, " ", "")
-        map=string.gsub(map, " ", "")
-        zone=string.gsub(zone, " ", "")
-    	exp= string.gsub(exp, " ", "")
-    	gmlevel= string.gsub(gmlevel, " ", "")
-        gmlevel=strtrim(gmlevel, "]-")
-        --self:ChatMsg("Matched Who")
-        if acc == "Account" then
-        else
-            table.insert(AzerothAdmin.db.account.buffer.who, {tAcc = acc, tChar = char, tIP = ip, tMap = map, tZone = zone, tExp = exp, tGMLevel = gmlevel})
-        end
-            catchedSth = true
-            output = AzerothAdmin.db.account.style.showchat
-            WhoUpdate()
-    end
---    ["ma_GmatchAccountInfo"] = "Player(.*) %(guid: (%d+)%) Account: (.*) %(id: (%d+)%) Email: (.*) GMLevel: (%d+) Last IP: (.*) Last login: (.*) Latency: (%d+)ms",
---    ["ma_GmatchAccountInfo2"] = "Race: (.*) Class: (.*) Played time: (.*) Level: (%d+) Money: (.*)",
-    for charname, charguid, account, accountid, email, gmlvl, lastip, lastlogin, latency in string.gmatch(text, Strings["ma_GmatchAccountInfo"]) do
-       ma_whodetail:SetText("|c00ff00ffCharacter:|r"..charname.." |cffffffff("..charguid..")|r\n".."|c00ff0000Acct:|r|cffffffff"..account.." ("..accountid..")|r\n".."|c00ff0000IP:|r|cffffffff"..lastip.."|r\n".."|c00ff0000Login:|r|cffffffff"..lastlogin.."|r\n".."|c00ff0000Latency:|r|cffffffff"..latency.."ms|r\n")
-       catchedSth = true
-       output = AzerothAdmin.db.account.style.showchat
-    end
-
-    for race, class, playedtime, level, money in string.gmatch(text, Strings["ma_GmatchAccountInfo2"]) do
-        --self:ChatMsg("Matched Who")
-       ma_whodetail2:SetText("|c00ff0000Race:|r|cffffffff"..race.."|r\n".."|c00ff0000Class|r|cffffffff"..class.."|r\n".."|c00ff0000Level:|r|cffffffff"..level.."|r\n".."|c00ff0000Money:|r|cffffffff"..money.."|r\n".."|c00ff0000Played Time:|r|cffffffff"..playedtime.."|r\n")
-       catchedSth = true
-       output = AzerothAdmin.db.account.style.showchat
-    end
-    for mymatch in string.gmatch(text, "=====") do
-        catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
-    end
-    for mymatch in string.gmatch(text, "Characters Online:") do
-        catchedSth = true
-        output = AzerothAdmin.db.account.style.showchat
-    end
  --[[
     -- get ticket content
     if self.db.char.requests.ticket then
       local delta = time() - self.db.char.msgDeltaTime
-      --self:LogAction("Delta: "..delta)
       if self.db.char.requests.ticketbody > 0 then
         if delta <= 300 then
           if not catchedSth then
-            --self:LogAction(text)
             local ticketCount = 0
-            for _ in pairs(AzerothAdmin.db.account.buffer.tickets) do ticketCount = ticketCount + 1 end
-            --self:LogAction("Prepare to add text to DB ticket: "..ticketCount)
-            for k,v in ipairs(self.db.account.buffer.tickets) do
+            for _ in pairs(AzerothAdmin.db.profile.buffer.tickets) do ticketCount = ticketCount + 1 end
+            for k,v in ipairs(self.db.profile.buffer.tickets) do
               if k == ticketCount then
                 local oldmsg = v.tMsg
-                self.db.account.buffer.tickets[k].tMsg = oldmsg..text.."\n"
-                --self:LogAction("Added text to ticket in DB: "..k.." Ticket id:"..self.db.account.buffer.tickets[k].tNumber)
+                self.db.profile.buffer.tickets[k].tMsg = oldmsg..text.."\n"
               end
             end
             catchedSth = true
             output = false
           end
         else
-          --self:LogAction("Time passed. Getting next ticket...")
           --self:RequestTickets()
         end
       end
@@ -1236,12 +1277,8 @@ end
   end
 end ]]
 
-function AzerothAdmin:LogAction(msg)
-  ma_logframe:AddMessage("|cFF00FF00["..date("%H:%M:%S").."]|r "..msg, 1.0, 1.0, 0.0)
-end
-
 function AzerothAdmin:ChatMsg(msg, msgt, recipient)
-  if not msgt then local msgt = "say" end
+  if not msgt then msgt = "say" end
   if msgt == "addon" then
     if recipient then
       SendAddonMessage("", msg, "WHISPER", recipient)
@@ -1284,21 +1321,20 @@ end
   --AzerothAdmin Commands functions--
 --================================--
 function AzerothAdmin:SetLanguage()
-    if self.db.account.language then
-    Locale:SetLocale(self.db.account.language)
-    if self.db.account.localesearchstring then
-      Strings:SetLocale(self.db.account.language)
-    else
-      Strings:SetLocale("enUS")
-    end
-  else
-    self.db.account.language = Locale:GetLocale()
+  -- In Ace3, locale is automatically determined by client language
+  -- We can store the preference but can't dynamically change it
+  if not self.db.profile.language then
+    -- Get the current client locale
+    local clientLocale = GetLocale()
+    self.db.profile.language = clientLocale
   end
+  -- Note: Locale and Strings are already set to the correct language
+  -- via LibStub("AceLocale-3.0"):GetLocale() at addon load time
 end
 
 function AzerothAdmin:ChangeLanguage(locale)
-  self.db.account.localesearchstring = ma_checklocalsearchstringsbutton:GetChecked()
-  self.db.account.language = locale
+  self.db.profile.localesearchstring = ma_checklocalsearchstringsbutton:GetChecked()
+  self.db.profile.language = locale
   ReloadUI()
 end
 
@@ -1316,7 +1352,6 @@ function AzerothAdmin:SetSkill(value, skill_arg, maxskill_arg) -- Renamed skill,
     else
         skill_val = tonumber(skill_text)
         if not skill_val then
-            self:LogAction("Error: Invalid skill value '"..skill_text.."' for SetSkill. Must be a number.")
             return
         end
     end
@@ -1327,7 +1362,6 @@ function AzerothAdmin:SetSkill(value, skill_arg, maxskill_arg) -- Renamed skill,
     else
         maxskill_val = tonumber(maxskill_text)
         if not maxskill_val then
-            self:LogAction("Error: Invalid maxskill value '"..maxskill_text.."' for SetSkill. Must be a number.")
             return
         end
     end
@@ -1335,11 +1369,9 @@ function AzerothAdmin:SetSkill(value, skill_arg, maxskill_arg) -- Renamed skill,
     -- value here is the skill ID or table of skill IDs
     if type(value) == "string" then
       self:ChatMsg(".setskill "..value.." "..skill_val.." "..maxskill_val)
-      self:LogAction("Set skill "..value.." of "..player.." to "..skill_val.." with a maximum of "..maxskill_val..".")
     elseif type(value) == "table" then
       for k,v_id in pairs(value) do -- Renamed 'v' to 'v_id'
         self:ChatMsg(".setskill "..v_id.." "..skill_val.." "..maxskill_val)
-        self:LogAction("Set skill "..v_id.." of "..player.." to "..skill_val.." with a maximum of "..maxskill_val..".")
       end
     end
   else
@@ -1361,19 +1393,151 @@ function AzerothAdmin:Quest(value, state)
     end
     if type(value) == "string" then
       self:ChatMsg(command.." "..value)
-      self:LogAction(logcmd.." quest with id "..value.." "..logcmd2.." "..player..".")
     elseif type(value) == "table" then
       for k,v in pairs(value) do
         self:ChatMsg(command.." "..v)
-        self:LogAction(logcmd.." quest with id "..value.." "..logcmd2.." "..player..".")
       end
     elseif type(value) == "number" then
       self:ChatMsg(command.." "..value)
-      self:LogAction(logcmd.." quest with id "..value.." "..logcmd2.." "..player..".")
     end
   else
     self:Print(Locale["selectionerror1"])
   end
+end
+
+-- Setup quest action button handlers
+function AzerothAdmin:SetupQuestActionButtons()
+  -- Disable all buttons initially (until quest is selected)
+  ma_questaddbutton:Disable()
+  ma_questcompletebutton:Disable()
+  ma_questremovebutton:Disable()
+  ma_questrewardbutton:Disable()
+  ma_queststatusbutton:Disable()
+
+  -- Add Quest button
+  ma_questaddbutton:SetScript("OnClick", function()
+    if self.selectedQuest then
+      self:QuestActionWithConfirm("add", self.selectedQuest)
+    else
+      self:Print(Locale["ma_QuestSelectFirst"])
+    end
+  end)
+
+  -- Complete Quest button
+  ma_questcompletebutton:SetScript("OnClick", function()
+    if self.selectedQuest then
+      self:QuestActionWithConfirm("complete", self.selectedQuest)
+    else
+      self:Print(Locale["ma_QuestSelectFirst"])
+    end
+  end)
+
+  -- Abandon/Remove Quest button
+  ma_questremovebutton:SetScript("OnClick", function()
+    if self.selectedQuest then
+      self:QuestActionWithConfirm("remove", self.selectedQuest)
+    else
+      self:Print(Locale["ma_QuestSelectFirst"])
+    end
+  end)
+
+  -- Reward Quest button
+  ma_questrewardbutton:SetScript("OnClick", function()
+    if self.selectedQuest then
+      self:QuestActionWithConfirm("reward", self.selectedQuest)
+    else
+      self:Print(Locale["ma_QuestSelectFirst"])
+    end
+  end)
+
+  -- Quest Status button
+  ma_queststatusbutton:SetScript("OnClick", function()
+    if self.selectedQuest then
+      self:QuestActionWithConfirm("status", self.selectedQuest)
+    else
+      self:Print(Locale["ma_QuestSelectFirst"])
+    end
+  end)
+end
+
+-- Quest action with confirmation dialog
+function AzerothAdmin:QuestActionWithConfirm(action, questData)
+  if not self:Selection("player") and not self:Selection("self") and not self:Selection("none") then
+    self:Print(Locale["selectionerror1"])
+    return
+  end
+
+  local player = UnitName("target") or UnitName("player")
+  local questId = questData.qsId
+  local questName = questData.qsName
+  local confirmMsg = ""
+
+  -- Build confirmation message based on action
+  if action == "add" then
+    confirmMsg = string.format(Locale["ma_QuestConfirmAdd"], questName, player)
+  elseif action == "complete" then
+    confirmMsg = string.format(Locale["ma_QuestConfirmComplete"], questName, player)
+  elseif action == "remove" then
+    confirmMsg = string.format(Locale["ma_QuestConfirmRemove"], questName, player)
+  elseif action == "reward" then
+    confirmMsg = string.format(Locale["ma_QuestConfirmReward"], questName, player)
+  elseif action == "status" then
+    confirmMsg = string.format(Locale["ma_QuestConfirmStatus"], questName, player)
+  end
+
+  -- Show confirmation dialog
+  StaticPopupDialogs["AZEROTH_ADMIN_QUEST_CONFIRM"] = {
+    text = confirmMsg,
+    button1 = "Yes",
+    button2 = "No",
+    OnAccept = function()
+      AzerothAdmin:ExecuteQuestAction(action, questId)
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+  }
+  StaticPopup_Show("AZEROTH_ADMIN_QUEST_CONFIRM")
+end
+
+-- Execute quest action after confirmation
+function AzerothAdmin:ExecuteQuestAction(action, questId)
+  local command = ""
+
+  if action == "add" then
+    command = ".quest add "..questId
+  elseif action == "complete" then
+    command = ".quest complete "..questId
+  elseif action == "remove" then
+    command = ".quest remove "..questId
+  elseif action == "reward" then
+    command = ".quest reward "..questId
+  elseif action == "status" then
+    command = ".quest status "..questId
+  end
+
+  if command ~= "" then
+    self:ChatMsg(command)
+  end
+end
+
+-- Select a quest and enable action buttons
+function AzerothAdmin:SelectQuest(questData)
+  self.selectedQuest = questData
+
+  -- Enable all quest action buttons
+  ma_questaddbutton:Enable()
+  ma_questcompletebutton:Enable()
+  ma_questremovebutton:Enable()
+  ma_questrewardbutton:Enable()
+  ma_queststatusbutton:Enable()
+
+  -- Update the display to show the selected quest with highlighting
+  PopupScrollUpdate()
+
+  -- Update status text to show selected quest
+  ma_lookupresulttext:SetText("Selected: "..questData.qsName)
 end
 
 function AzerothAdmin:Creature(value, state)
@@ -1385,15 +1549,12 @@ function AzerothAdmin:Creature(value, state)
     end
     if type(value) == "string" then
       self:ChatMsg(command.." "..value)
-      self:LogAction(logcmd.." creature with id "..value..".")
     elseif type(value) == "table" then
       for k,v in pairs(value) do
         self:ChatMsg(command.." "..v)
-        self:LogAction(logcmd.." creature with id "..value..".")
       end
     elseif type(value) == "number" then
       self:ChatMsg(command.." "..value)
-      self:LogAction(logcmd.." creature with id "..value..".")
     end
 end
 
@@ -1404,35 +1565,28 @@ function AzerothAdmin:AddItem(value, state)
     if state == "RightButton" then
       if amount == "" then
         self:ChatMsg(".additem "..value.." -1")
-        self:LogAction("Removed item with id "..value.." from "..player..".")
       else
         local amt_num = tonumber(amount)
         if not amt_num then
-          self:LogAction("Error: Invalid amount '"..amount.."' for AddItem (remove). Must be a number.")
           return
         end
         if amt_num > 0 then
            amt_num = amt_num * -1
         end
         self:ChatMsg(".additem "..value.." "..tostring(amt_num))
-        self:LogAction("Removed "..tostring(amt_num).." items with id "..value.." from "..player..".")
       end
     else
       if amount == "" then
         self:ChatMsg(".additem "..value)
-        self:LogAction("Added item with id "..value.." to "..player..".")
       else
         local amt_num = tonumber(amount)
         if not amt_num then
-          self:LogAction("Error: Invalid amount '"..amount.."' for AddItem (add). Must be a number.")
           return
         end
         if amt_num <= 0 then
-           self:LogAction("Error: Amount must be positive for AddItem (add). Got: "..amount)
            return
         end
         self:ChatMsg(".additem "..value.." "..tostring(amt_num))
-        self:LogAction("Added "..tostring(amt_num).." items with id "..value.." to "..player..".")
       end
     end
   else
@@ -1444,7 +1598,6 @@ function AzerothAdmin:AddItemSet(value)
   if self:Selection("player") or self:Selection("self") or self:Selection("none") then
     local player = UnitName("target") or UnitName("player")
     self:ChatMsg(".additem set "..value)
-    self:LogAction("Added itemset with id "..value.." to "..player..".")
   else
     self:Print(Locale["selectionerror1"])
   end
@@ -1455,17 +1608,13 @@ function AzerothAdmin:AddObject(value, state)
   local _time = ma_var2editbox:GetText()
   if state == "RightButton" then
     self:ChatMsg(".gobject add "..value.." "..value)
-    self:LogAction("Added object id "..value.." with loot template.")
   else
     if loot ~= "" and _time == "" then
       self:ChatMsg(".gobject add "..value.. " "..loot)
-      self:LogAction("Added object id "..value.." with loot "..loot..".")
     elseif loot ~= "" and _time ~= "" then
       self:ChatMsg(".gobject add "..value.. " "..loot.." ".._time)
-      self:LogAction("Added object id "..value.." with loot "..loot.." and spawntime ".._time..".")
     else
       self:ChatMsg(".gobject add "..value)
-      self:LogAction("Added object id "..value..".")
     end
   end
 end
@@ -1473,10 +1622,8 @@ end
 function AzerothAdmin:TelePlayer(value, player)
   if value == "gochar" then
     self:ChatMsg(".appear "..player)
-    self:LogAction("Teleported to player "..player..".")
   elseif value == "getchar" then
     self:ChatMsg(".summon "..player)
-    self:LogAction("Summoned player "..player..".")
   end
 end
 
@@ -1562,13 +1709,11 @@ function AzerothAdmin:NPCAdd_Way_o()
     local npc =	ma_NPC_guidbutton:GetText()
     self:ChatMsg(".wp add "..npc)
     self:ChatMsg(".wp show on "..npc)
-    self:LogAction("WayPoint Add for player "..player..".")
 end
 
 function AzerothAdmin:WayModify()
     local player = UnitName("target") or UnitName("player")
     self:ChatMsg(".npc info")
-    self:LogAction("Got NPC info for player "..player..".")
 end
 
 function AzerothAdmin:NPC_GUID_Get_org()
@@ -1584,16 +1729,13 @@ function AzerothAdmin:NPC_GUID_Get_org()
 
     local str1 = ID_Setting_Read(0)
     ma_NPC_guidbutton:SetText(str1)
-    self:LogAction("NPC_GUID_Get for val "..str1..".")
 
     local str2 = ID_Setting_Read(1)
     ma_NPC_idbutton:SetText(str2)
-    self:LogAction("NPC_EntryID_Get for val "..str2..".")
 end
 
 function AzerothAdmin:CreateGuild(leader, name)
   self:ChatMsg(".guild create "..leader.." "..name)
-  self:LogAction("Created guild '"..name.."' with leader "..leader..".")
 end
 
 function AzerothAdmin:SendMail(recipient, subject, body)  --[TODO]:Mail-Update this to allow sending with items(mail) command
@@ -1603,7 +1745,6 @@ function AzerothAdmin:SendMail(recipient, subject, body)  --[TODO]:Mail-Update t
   subject = '"'..subject..'"'
   body = '"'..body..'"'
   self:ChatMsg(".send mail "..recipient.." "..subject.." "..body)
-  self:LogAction("Sent a mail to "..recipient..". Subject was: "..subject)
 end
 
 function AzerothAdmin:UpdateMailBytesLeft()
@@ -1615,77 +1756,261 @@ function AzerothAdmin:UpdateMailBytesLeft()
   end
 end
 
+-- Initialize mail item slots storage
+if not AzerothAdmin.mailItemSlots then
+  AzerothAdmin.mailItemSlots = {}
+end
+
+-- Handle dragging items into mail slots
+function AzerothAdmin:MailItemSlotReceiveDrag(slotNum)
+  local cursorType, itemId, itemLink = GetCursorInfo()
+
+  if cursorType == "item" then
+    -- Extract item ID from item link (format: |cffffffff|Hitem:12345:0:0:0:0:0:0:0|h[Item Name]|h|r)
+    local extractedItemId = itemLink and itemLink:match("item:(%d+):")
+
+    if extractedItemId then
+      extractedItemId = tonumber(extractedItemId)
+
+      -- For items on cursor, we treat them as count 1
+      -- (WoW's GetCursorInfo doesn't return stack count for items)
+      local count = 1
+
+      -- Check if adding this item would exceed 12 total items
+      local currentTotal = self:GetTotalMailItems()
+      if currentTotal - (self.mailItemSlots[slotNum] and self.mailItemSlots[slotNum].count or 0) + count > 12 then
+        self:Print("Cannot add item: Maximum 12 total items allowed!")
+        ClearCursor()
+        return
+      end
+
+      -- Get item info
+      local itemName, _, _, _, _, _, _, _, _, texture = GetItemInfo(extractedItemId)
+
+      if itemName and texture then
+        -- Store item info with count
+        self.mailItemSlots[slotNum] = {
+          itemId = extractedItemId,
+          itemLink = itemLink,
+          itemName = itemName,
+          texture = texture,
+          count = count
+        }
+
+        -- Update slot icon texture
+        local slot = _G["ma_mailitemslot"..slotNum]
+        if slot then
+          -- Create or reuse icon texture
+          if not slot.iconTexture then
+            slot.iconTexture = slot:CreateTexture(nil, "ARTWORK")
+            slot.iconTexture:SetAllPoints(slot)
+          end
+          slot.iconTexture:SetTexture(texture)
+          slot.iconTexture:SetTexCoord(0.07, 0.93, 0.07, 0.93)  -- Crop borders for clean display
+
+          -- Create or reuse count text
+          if not slot.countText then
+            slot.countText = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+            slot.countText:SetPoint("BOTTOMRIGHT", -2, 2)
+          end
+
+          if count and count > 1 then
+            slot.countText:SetText(count)
+            slot.countText:Show()
+          else
+            slot.countText:SetText("")
+            slot.countText:Hide()
+          end
+        end
+
+        ClearCursor()
+
+        -- Update send button state
+        self:UpdateMailItemsSendButton()
+      end
+    end
+  end
+end
+
+-- Clear a mail item slot
+function AzerothAdmin:MailItemSlotClear(slotNum)
+  self.mailItemSlots[slotNum] = nil
+  local slot = _G["ma_mailitemslot"..slotNum]
+  if slot then
+    -- Clear icon texture
+    if slot.iconTexture then
+      slot.iconTexture:SetTexture(nil)
+    end
+
+    -- Clear count display
+    if slot.countText then
+      slot.countText:SetText("")
+      slot.countText:Hide()
+    end
+  end
+
+  -- Update send button state
+  self:UpdateMailItemsSendButton()
+end
+
+-- Get total item count (including stacks)
+function AzerothAdmin:GetTotalMailItems()
+  local total = 0
+  for i = 1, 12 do
+    if self.mailItemSlots[i] and self.mailItemSlots[i].count then
+      total = total + self.mailItemSlots[i].count
+    end
+  end
+  return total
+end
+
+-- Update send button state based on item count (only for tab 2)
+function AzerothAdmin:UpdateMailItemsSendButton()
+  -- Only update if we're on the Items tab
+  if not self.currentMailTab or self.currentMailTab ~= 2 then
+    return
+  end
+
+  local total = self:GetTotalMailItems()
+  if total > 12 then
+    ma_searchbutton:Disable()
+    ma_lookupresulttext:SetText("Too many items! ("..total.."/12) - Right-click to remove")
+  elseif total == 0 then
+    ma_searchbutton:Disable()
+    ma_lookupresulttext:SetText("Drop items into slots (0/12)")
+  else
+    if not ma_searchbutton.cooldownActive then
+      ma_searchbutton:Enable()
+    end
+    ma_lookupresulttext:SetText("Items ready to send ("..total.."/12)")
+  end
+end
+
+-- Send mail with items
+function AzerothAdmin:SendMailWithItems(recipient, subject, body)
+  recipient = string.gsub(recipient, " ", "")
+  subject = string.gsub(subject, " ", "")
+  body = string.gsub(body, "\n", " ")
+  subject = '"'..subject..'"'
+  body = '"'..body..'"'
+
+  -- Collect item IDs with counts from slots
+  local itemEntries = {}
+  for i = 1, 12 do
+    if self.mailItemSlots[i] and self.mailItemSlots[i].itemId then
+      local itemId = self.mailItemSlots[i].itemId
+      local count = self.mailItemSlots[i].count or 1
+      -- Format: itemid:count
+      table.insert(itemEntries, itemId..":"..count)
+    end
+  end
+
+  if #itemEntries == 0 then
+    self:Print("No items selected to send!")
+    return
+  end
+
+  -- Build item list with space separation
+  local itemList = table.concat(itemEntries, " ")
+
+  -- Send mail with items using .send items command
+  self:ChatMsg(".send items "..recipient.." "..subject.." "..body.." "..itemList)
+
+  -- Clear item slots
+  for i = 1, 12 do
+    self:MailItemSlotClear(i)
+  end
+end
+
+-- Send mail with money
+function AzerothAdmin:SendMailWithMoney(recipient, subject, gold, silver, copper, body)
+  recipient = string.gsub(recipient, " ", "")
+  subject = string.gsub(subject, " ", "")
+  body = string.gsub(body, "\n", " ")
+  subject = '"'..subject..'"'
+  body = '"'..body..'"'
+
+  -- Convert to total copper
+  local totalCopper = (gold * 10000) + (silver * 100) + copper
+
+  if totalCopper <= 0 then
+    self:Print("No money amount specified!")
+    return
+  end
+
+  -- Send mail with money using .send money command
+  self:ChatMsg(".send money "..recipient.." "..subject.." "..body.." "..totalCopper)
+end
+
 function AzerothAdmin:Favorites(value, searchtype)
   if value == "add" then
     if searchtype == "item" then
-      for k,v in pairs(self.db.account.buffer.items) do if v["checked"] then table.insert(self.db.account.favorites.items, {itId = v["itId"], itName = v["itName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.items) do if v["checked"] then table.insert(self.db.profile.favorites.items, {itId = v["itId"], itName = v["itName"], checked = false}) end end
     elseif searchtype == "itemset" then
-      for k,v in pairs(self.db.account.buffer.itemsets) do if v["checked"] then table.insert(self.db.account.favorites.itemsets, {isId = v["isId"], isName = v["isName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.itemsets) do if v["checked"] then table.insert(self.db.profile.favorites.itemsets, {isId = v["isId"], isName = v["isName"], checked = false}) end end
     elseif searchtype == "spell" then
-      for k,v in pairs(self.db.account.buffer.spells) do if v["checked"] then table.insert(self.db.account.favorites.spells, {spId = v["spId"], spName = v["spName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.spells) do if v["checked"] then table.insert(self.db.profile.favorites.spells, {spId = v["spId"], spName = v["spName"], checked = false}) end end
     elseif searchtype == "skill" then
-      for k,v in pairs(self.db.account.buffer.skills) do if v["checked"] then table.insert(self.db.account.favorites.skills, {skId = v["skId"], skName = v["skName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.skills) do if v["checked"] then table.insert(self.db.profile.favorites.skills, {skId = v["skId"], skName = v["skName"], checked = false}) end end
     elseif searchtype == "quest" then
-      for k,v in pairs(self.db.account.buffer.quests) do if v["checked"] then table.insert(self.db.account.favorites.quests, {qsId = v["qsId"], qsName = v["qsName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.quests) do if v["checked"] then table.insert(self.db.profile.favorites.quests, {qsId = v["qsId"], qsName = v["qsName"], checked = false}) end end
     elseif searchtype == "creature" then
-      for k,v in pairs(self.db.account.buffer.creatures) do if v["checked"] then table.insert(self.db.account.favorites.creatures, {crId = v["crId"], crName = v["crName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.creatures) do if v["checked"] then table.insert(self.db.profile.favorites.creatures, {crId = v["crId"], crName = v["crName"], checked = false}) end end
     elseif searchtype == "object" then
-      for k,v in pairs(self.db.account.buffer.objects) do if v["checked"] then table.insert(self.db.account.favorites.objects, {objId = v["objId"], objName = v["objName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.objects) do if v["checked"] then table.insert(self.db.profile.favorites.objects, {objId = v["objId"], objName = v["objName"], checked = false}) end end
     elseif searchtype == "tele" then
-      for k,v in pairs(self.db.account.buffer.teles) do if v["checked"] then table.insert(self.db.account.favorites.teles, {tName = v["tName"], checked = false}) end end
+      for k,v in pairs(self.db.profile.buffer.teles) do if v["checked"] then table.insert(self.db.profile.favorites.teles, {tName = v["tName"], checked = false}) end end
     end
-    self:LogAction("Added some "..searchtype.."s to the favorites.")
   elseif value == "remove" then
     if searchtype == "item" then
-      for i = #self.db.account.favorites.items, 1, -1 do
-        if self.db.account.favorites.items[i]["checked"] then
-          table.remove(self.db.account.favorites.items, i)
+      for i = #self.db.profile.favorites.items, 1, -1 do
+        if self.db.profile.favorites.items[i]["checked"] then
+          table.remove(self.db.profile.favorites.items, i)
         end
       end
     elseif searchtype == "itemset" then
-      for i = #self.db.account.favorites.itemsets, 1, -1 do
-        if self.db.account.favorites.itemsets[i]["checked"] then
-          table.remove(self.db.account.favorites.itemsets, i)
+      for i = #self.db.profile.favorites.itemsets, 1, -1 do
+        if self.db.profile.favorites.itemsets[i]["checked"] then
+          table.remove(self.db.profile.favorites.itemsets, i)
         end
       end
     elseif searchtype == "spell" then
-      for i = #self.db.account.favorites.spells, 1, -1 do
-        if self.db.account.favorites.spells[i]["checked"] then
-          table.remove(self.db.account.favorites.spells, i)
+      for i = #self.db.profile.favorites.spells, 1, -1 do
+        if self.db.profile.favorites.spells[i]["checked"] then
+          table.remove(self.db.profile.favorites.spells, i)
         end
       end
     elseif searchtype == "skill" then
-      for i = #self.db.account.favorites.skills, 1, -1 do
-        if self.db.account.favorites.skills[i]["checked"] then
-          table.remove(self.db.account.favorites.skills, i)
+      for i = #self.db.profile.favorites.skills, 1, -1 do
+        if self.db.profile.favorites.skills[i]["checked"] then
+          table.remove(self.db.profile.favorites.skills, i)
         end
       end
     elseif searchtype == "quest" then
-      for i = #self.db.account.favorites.quests, 1, -1 do
-        if self.db.account.favorites.quests[i]["checked"] then
-          table.remove(self.db.account.favorites.quests, i)
+      for i = #self.db.profile.favorites.quests, 1, -1 do
+        if self.db.profile.favorites.quests[i]["checked"] then
+          table.remove(self.db.profile.favorites.quests, i)
         end
       end
     elseif searchtype == "creature" then
-      for i = #self.db.account.favorites.creatures, 1, -1 do
-        if self.db.account.favorites.creatures[i]["checked"] then
-          table.remove(self.db.account.favorites.creatures, i)
+      for i = #self.db.profile.favorites.creatures, 1, -1 do
+        if self.db.profile.favorites.creatures[i]["checked"] then
+          table.remove(self.db.profile.favorites.creatures, i)
         end
       end
     elseif searchtype == "object" then
-      for i = #self.db.account.favorites.objects, 1, -1 do
-        if self.db.account.favorites.objects[i]["checked"] then
-          table.remove(self.db.account.favorites.objects, i)
+      for i = #self.db.profile.favorites.objects, 1, -1 do
+        if self.db.profile.favorites.objects[i]["checked"] then
+          table.remove(self.db.profile.favorites.objects, i)
         end
       end
     elseif searchtype == "tele" then
-      for i = #self.db.account.favorites.teles, 1, -1 do
-        if self.db.account.favorites.teles[i]["checked"] then
-          table.remove(self.db.account.favorites.teles, i)
+      for i = #self.db.profile.favorites.teles, 1, -1 do
+        if self.db.profile.favorites.teles[i]["checked"] then
+          table.remove(self.db.profile.favorites.teles, i)
         end
       end
     end
-    self:LogAction("Removed some favorited "..searchtype.."s from the list.")
     PopupScrollUpdate()
   elseif value == "show" then
     if searchtype == "item" then
@@ -1713,51 +2038,51 @@ function AzerothAdmin:Favorites(value, searchtype)
     end
     if searchtype == "item" then
       if AzerothAdmin.db.char.requests.item then
-        for k,v in pairs(self.db.account.buffer.items) do self.db.account.buffer.items[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.items) do self.db.profile.buffer.items[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favitem then
-        for k,v in pairs(self.db.account.favorites.items) do self.db.account.favorites.items[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.items) do self.db.profile.favorites.items[k].checked = selected end
       end
     elseif searchtype == "itemset" then
       if AzerothAdmin.db.char.requests.itemset then
-        for k,v in pairs(self.db.account.buffer.itemsets) do self.db.account.buffer.itemsets[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.itemsets) do self.db.profile.buffer.itemsets[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favitemset then
-        for k,v in pairs(self.db.account.favorites.itemsets) do self.db.account.favorites.itemsets[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.itemsets) do self.db.profile.favorites.itemsets[k].checked = selected end
       end
     elseif searchtype == "spell" then
       if AzerothAdmin.db.char.requests.spell then
-        for k,v in pairs(self.db.account.buffer.spells) do self.db.account.buffer.spells[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.spells) do self.db.profile.buffer.spells[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favspell then
-        for k,v in pairs(self.db.account.favorites.spells) do self.db.account.favorites.spells[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.spells) do self.db.profile.favorites.spells[k].checked = selected end
       end
     elseif searchtype == "skill" then
       if AzerothAdmin.db.char.requests.skill then
-        for k,v in pairs(self.db.account.buffer.skills) do self.db.account.buffer.skills[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.skills) do self.db.profile.buffer.skills[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favskill then
-        for k,v in pairs(self.db.account.favorites.skills) do self.db.account.favorites.skills[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.skills) do self.db.profile.favorites.skills[k].checked = selected end
       end
     elseif searchtype == "quest" then
       if AzerothAdmin.db.char.requests.quest then
-        for k,v in pairs(self.db.account.buffer.quests) do self.db.account.buffer.quests[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.quests) do self.db.profile.buffer.quests[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favquest then
-        for k,v in pairs(self.db.account.favorites.quests) do self.db.account.favorites.quests[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.quests) do self.db.profile.favorites.quests[k].checked = selected end
       end
     elseif searchtype == "creature" then
       if AzerothAdmin.db.char.requests.creature then
-        for k,v in pairs(self.db.account.buffer.creatures) do self.db.account.buffer.creatures[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.creatures) do self.db.profile.buffer.creatures[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favcreature then
-        for k,v in pairs(self.db.account.favorites.creatures) do self.db.account.favorites.creatures[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.creatures) do self.db.profile.favorites.creatures[k].checked = selected end
       end
     elseif searchtype == "object" then
       if AzerothAdmin.db.char.requests.object then
-        for k,v in pairs(self.db.account.buffer.objects) do self.db.account.buffer.objects[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.objects) do self.db.profile.buffer.objects[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favobject then
-        for k,v in pairs(self.db.account.favorites.objects) do self.db.account.favorites.objects[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.objects) do self.db.profile.favorites.objects[k].checked = selected end
       end
     elseif searchtype == "tele" then
       if AzerothAdmin.db.char.requests.tele then
-        for k,v in pairs(self.db.account.buffer.teles) do self.db.account.buffer.teles[k].checked = selected end
+        for k,v in pairs(self.db.profile.buffer.teles) do self.db.profile.buffer.teles[k].checked = selected end
       elseif AzerothAdmin.db.char.requests.favtele then
-        for k,v in pairs(self.db.account.favorites.teles) do self.db.account.favorites.teles[k].checked = selected end
+        for k,v in pairs(self.db.profile.favorites.teles) do self.db.profile.favorites.teles[k].checked = selected end
       end
     end
     PopupScrollUpdate()
@@ -1768,39 +2093,38 @@ function AzerothAdmin:SearchStart(var, value)
   self.db.char.requests.toggle = true
   if var == "item" then
     self.db.char.requests.item = true
-    self.db.account.buffer.items = {}
+    self.db.profile.buffer.items = {}
     self:ChatMsg(".lookup item "..value)
   elseif var == "itemset" then
     self.db.char.requests.itemset = true
-    self.db.account.buffer.itemsets = {}
+    self.db.profile.buffer.itemsets = {}
     self:ChatMsg(".lookup item set "..value)
   elseif var == "spell" then
     self.db.char.requests.spell = true
-    self.db.account.buffer.spells = {}
+    self.db.profile.buffer.spells = {}
     self:ChatMsg(".lookup spell "..value)
   elseif var == "skill" then
     self.db.char.requests.skill = true
-    self.db.account.buffer.skills = {}
+    self.db.profile.buffer.skills = {}
     self:ChatMsg(".lookup skill "..value)
   elseif var == "quest" then
     self.db.char.requests.quest = true
-    self.db.account.buffer.quests = {}
+    self.db.profile.buffer.quests = {}
     self:ChatMsg(".lookup quest "..value)
   elseif var == "creature" then
     self.db.char.requests.creature = true
-    self.db.account.buffer.creatures = {}
+    self.db.profile.buffer.creatures = {}
     self:ChatMsg(".lookup creature "..value)
   elseif var == "object" then
     self.db.char.requests.object = true
-    self.db.account.buffer.objects = {}
+    self.db.profile.buffer.objects = {}
     self:ChatMsg(".lookup object "..value)
   elseif var == "tele" then
     self.db.char.requests.tele = true
-    self.db.account.buffer.teles = {}
+    self.db.profile.buffer.teles = {}
     self:ChatMsg(".lookup tele "..value)
   end
-  self.db.account.buffer.counter = 0
-  self:LogAction("Searching for "..var.."s with the keyword '"..value.."'.")
+  self.db.profile.buffer.counter = 0
 end
 
 function AzerothAdmin:SearchReset()
@@ -1827,35 +2151,34 @@ function AzerothAdmin:SearchReset()
   self.db.char.requests.tele = false
   self.db.char.requests.favtele = false
   self.db.char.requests.toggle = false
-  self.db.account.buffer.items = {}
-  self.db.account.buffer.itemsets = {}
-  self.db.account.buffer.spells = {}
-  self.db.account.buffer.skills = {}
-  self.db.account.buffer.quests = {}
-  self.db.account.buffer.creatures = {}
-  self.db.account.buffer.objects = {}
-  self.db.account.buffer.teles = {}
-  self.db.account.buffer.counter = 0
+  self.db.profile.buffer.items = {}
+  self.db.profile.buffer.itemsets = {}
+  self.db.profile.buffer.spells = {}
+  self.db.profile.buffer.skills = {}
+  self.db.profile.buffer.quests = {}
+  self.db.profile.buffer.creatures = {}
+  self.db.profile.buffer.objects = {}
+  self.db.profile.buffer.teles = {}
+  self.db.profile.buffer.counter = 0
   PopupScrollUpdate()
 end
 
 function AzerothAdmin:PrepareScript(object, text, script)
-  if not object then
-    return
-  end
+  if object then
     if text then
-      if self.db.account.style.showtooltips then
-        object:SetScript("OnEnter", function() GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:SetText(text); GameTooltip:Show() end)
-        object:SetScript("OnLeave", function() GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:Hide() end)
+      if self.db.profile.style.showtooltips then
+        object:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText(text); GameTooltip:Show() end)
+        object:SetScript("OnLeave", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:Hide() end)
       end
     end
     if type(script) == "function" then
-      object:SetScript("OnClick", script) --Creates A Bug
+      object:SetScript("OnClick", script)
     elseif type(script) == "table" then
       for k,v in pairs(script) do
         object:SetScript(unpack(v))
       end
     end
+  end
 end
 
 --[[INITIALIZION FUNCTIONS]]
@@ -1868,9 +2191,9 @@ function AzerothAdmin:InitButtons()
   self:PrepareScript(ma_tabbutton_tele       , Locale["tt_TeleButton"]         , function() AzerothAdmin:InstantGroupToggle("tele"); end)
   self:PrepareScript(ma_tabbutton_misc       , Locale["tt_MiscButton"]         , function() AzerothAdmin:InstantGroupToggle("misc") end)
   self:PrepareScript(ma_tabbutton_server     , Locale["tt_ServerButton"]       , function() AzerothAdmin:InstantGroupToggle("server") end)
-  self:PrepareScript(ma_tabbutton_log        , Locale["tt_LogButton"]          , function() AzerothAdmin:InstantGroupToggle("log") end)
-  self:PrepareScript(ma_tabbutton_who        , Locale["tt_whotabmenubutton"]   , function() AzerothAdmin:InstantGroupToggle("who") end)
-  self:PrepareScript(ma_tabbutton_dc         , "DarkChaos"                     , function() AzerothAdmin:InstantGroupToggle("dc") end)
+  if ma_tabbutton_dc then
+    self:PrepareScript(ma_tabbutton_dc       , "DarkChaos"                     , function() AzerothAdmin:InstantGroupToggle("dc") end)
+  end
   --end tab buttons
   -- start mini buttons
   self:PrepareScript(ma_mm_logoframe         , nil                             , function() AzerothAdmin:OnClick() end)
@@ -1879,11 +2202,9 @@ function AzerothAdmin:InitButtons()
   self:PrepareScript(ma_mm_npcbutton         , Locale["tt_NpcButton"]          , function() AzerothAdmin:InstantGroupToggle("npc") end)
   self:PrepareScript(ma_mm_gobutton          , Locale["tt_GOButton"]           , function() AzerothAdmin:InstantGroupToggle("go") end)
   self:PrepareScript(ma_mm_telebutton        , Locale["tt_TeleButton"]         , function() AzerothAdmin:InstantGroupToggle("tele") end)
-  self:PrepareScript(ma_mm_ticketbutton      , Locale["tt_TicketButton"]       , function() ShowTicketTab() end)
+  self:PrepareScript(ma_mm_ticketbutton      , Locale["tt_TicketButton"]       , function() AzerothAdminCommands.ShowTicketTab() end)
   self:PrepareScript(ma_mm_miscbutton        , Locale["tt_MiscButton"]         , function() AzerothAdmin:InstantGroupToggle("misc") end)
   self:PrepareScript(ma_mm_serverbutton      , Locale["tt_ServerButton"]       , function() AzerothAdmin:InstantGroupToggle("server") end)
-  self:PrepareScript(ma_mm_logbutton         , Locale["tt_LogButton"]          , function() AzerothAdmin:InstantGroupToggle("log") end)
-  self:PrepareScript(ma_mm_whobutton         , Locale["tt_whotabmenubutton"]   , function() AzerothAdmin:InstantGroupToggle("who") end)
   --end mini buttons
   self:PrepareScript(ma_languagebutton       , Locale["tt_LanguageButton"]     , function() AzerothAdmin:ChangeLanguage(UIDropDownMenu_GetSelectedValue(ma_languagedropdown)) end)
   self:PrepareScript(ma_itembutton           , Locale["tt_ItemButton"]         , function() AzerothAdmin:TogglePopup("search", {type = "item"}) end)
@@ -1893,19 +2214,14 @@ function AzerothAdmin:InitButtons()
   self:PrepareScript(ma_questbutton          , Locale["tt_QuestButton"]        , function() AzerothAdmin:TogglePopup("search", {type = "quest"}) end)
   self:PrepareScript(ma_creaturebutton       , Locale["tt_CreatureButton"]     , function() AzerothAdmin:TogglePopup("search", {type = "creature"}) end)
   self:PrepareScript(ma_objectbutton         , Locale["tt_ObjectButton"]       , function() AzerothAdmin:TogglePopup("search", {type = "object"}) end)
-  self:PrepareScript(ma_telesearchbutton     , Locale["ma_TeleSearchButton"]   , function() AzerothAdmin:TogglePopup("search", {type = "tele"}) end)
-  self:PrepareScript(ma_sendmailbutton       , Locale["ma_Mail"]               , function() AzerothAdmin:TogglePopup("mail", {}) end)
-  --self:PrepareScript(ma_learnallbutton       , nil                             , function() AzerothAdmin:LearnSpell("all") end)
-  --self:PrepareScript(ma_learncraftsbutton    , nil                             , function() AzerothAdmin:LearnSpell("all_crafts") end)
-  --self:PrepareScript(ma_learngmbutton        , nil                             , function() AzerothAdmin:LearnSpell("all_gm") end)
-  --self:PrepareScript(ma_learnlangbutton      , nil                             , function() AzerothAdmin:LearnSpell("all_lang") end)
-  --self:PrepareScript(ma_learnclassbutton     , nil                             , function() AzerothAdmin:LearnSpell("all_myclass") end)
+  self:PrepareScript(ma_telesearchbutton     , Locale["tt_TeleSearchButton"]   , function() AzerothAdmin:TogglePopup("search", {type = "tele"}) end)
+  self:PrepareScript(ma_sendmailbutton       , Locale["tt_SendMail"]           , function() AzerothAdmin:TogglePopup("mail", {}) end)
   self:PrepareScript(ma_searchbutton         , nil                             , function() AzerothAdmin:SearchStart("item", ma_searcheditbox:GetText()) end)
   self:PrepareScript(ma_resetsearchbutton    , nil                             , function() AzerothAdmin:SearchReset() end)
   self:PrepareScript(ma_closebutton          , Locale["tt_CloseWindow"]        , function() AzerothAdmin:CloseButton("bg") end)
   self:PrepareScript(ma_popupclosebutton     , Locale["tt_CloseWindow"]        , function() AzerothAdmin:CloseButton("popup") end)
   self:PrepareScript(ma_popup2closebutton    , Locale["tt_CloseWindow"]        , function() AzerothAdmin:CloseButton("popup2") end)
-  self:PrepareScript(ma_inforefreshbutton    , nil                             , function() AzerothAdmin:ChatMsg(".server info") end)
+  self:PrepareScript(ma_inforefreshbutton    , Locale["tt_RefreshButton"]      , function() AzerothAdmin:ChatMsg(".server info") end)
   self:PrepareScript(ma_frmtrslider          , Locale["tt_FrmTrSlider"]        , {{"OnMouseUp", function() AzerothAdmin:ChangeTransparency("frames") end},{"OnValueChanged", function() ma_frmtrsliderText:SetText(string.format("%.2f", ma_frmtrslider:GetValue())) end}})
   self:PrepareScript(ma_btntrslider          , Locale["tt_BtnTrSlider"]        , {{"OnMouseUp", function() AzerothAdmin:ChangeTransparency("buttons") end},{"OnValueChanged", function() ma_btntrsliderText:SetText(string.format("%.2f", ma_btntrslider:GetValue())) end}})
   self:PrepareScript(ma_mm_revivebutton      , nil                             , function() SendChatMessage(".revive", "GUILD", nil, nil) end)
@@ -1926,6 +2242,7 @@ function AzerothAdmin:InitDropDowns()
       {"All_quest","all quest"},
       {"All scripts","all scripts"},
       {"All spell","all spell"},
+      {"acore_string","acore_string"},
       {"areatrigger_tavern","areatrigger_tavern"},
       {"areatrigger_teleport","areatrigger_teleport"},
       {"autobroadcast","autobroadcast"},
@@ -1937,32 +2254,30 @@ function AzerothAdmin:InitDropDowns()
       {"creature_template","creature_template"},
       {"creature_text","creature_text"},
       {"disables","disables"},
-      {"game_graveyard_zone","game_graveyard_zone"},
+      {"game_graveyard","game_graveyard"},
       {"game_tele","game_tele"},
-      {"gm_tickets","gm_tickets"},
+      {"graveyard_zone","graveyard_zone"},
       {"item_set_names","item_set_names"},
-      {"lfg_dungeon_encounters","lfg_dungeon_encounters"},
       {"lfg_dungeon_rewards","lfg_dungeon_rewards"},
       {"reserved_name","reserved_name"},
       {"skill_discovery_template","skill_discovery_template"},
       {"skill_extra_item_template","skill_extra_item_template"},
       {"skill_fishing_base_level","skill_fishing_base_level"},
-      {"trinity_string","trinity_string"},
     }
     for k,v in pairs(buttons) do
       info.text = v[1]
       info.value = v[2]
-      info.checked = nil
-      info.func = function() UIDropDownMenu_SetSelectedValue(ma_reloadtabledropdown, this.value) end
+      info.checked = (UIDropDownMenu_GetSelectedValue(ma_reloadtabledropdown) == v[2])
+      info.func = function(self) UIDropDownMenu_SetSelectedValue(ma_reloadtabledropdown, self.value) end
       info.icon = nil
       info.keepShownOnClick = nil
       UIDropDownMenu_AddButton(info, level)
     end
-    UIDropDownMenu_SetSelectedValue(ma_reloadtabledropdown, "all")
   end
   UIDropDownMenu_Initialize(ma_reloadtabledropdown, ReloadTableDropDownInitialize)
   UIDropDownMenu_SetWidth(ma_reloadtabledropdown, 70)
   UIDropDownMenu_SetButtonWidth(ma_reloadtabledropdown, 20)
+  UIDropDownMenu_SetSelectedValue(ma_reloadtabledropdown, "all")
 
   -- WEATHER
   local function WeatherDropDownInitialize()
@@ -1978,18 +2293,18 @@ function AzerothAdmin:InitDropDowns()
     for k,v in pairs(buttons) do
       info.text = v[1]
       info.value = v[2]
-      info.func = function() UIDropDownMenu_SetSelectedValue(ma_weatherdropdown, this.value) end
-      info.checked = nil
+      info.func = function(self) UIDropDownMenu_SetSelectedValue(ma_weatherdropdown, self.value) end
+      info.checked = (UIDropDownMenu_GetSelectedValue(ma_weatherdropdown) == v[2])
       --info.notCheckable = true
       info.icon = nil
       info.keepShownOnClick = nil
       UIDropDownMenu_AddButton(info, level)
     end
-    UIDropDownMenu_SetSelectedValue(ma_weatherdropdown, "0 0")
   end
   UIDropDownMenu_Initialize(ma_weatherdropdown, WeatherDropDownInitialize)
   UIDropDownMenu_SetWidth(ma_weatherdropdown, 70)
   UIDropDownMenu_SetButtonWidth(ma_weatherdropdown, 20)
+  UIDropDownMenu_SetSelectedValue(ma_weatherdropdown, "0 0")
 
   --NPC EMOTE
   local function NpcEmoteDropDownInitialize()
@@ -2033,18 +2348,18 @@ function AzerothAdmin:InitDropDowns()
     for k,v in pairs(buttons) do
       info.text = v[1]
       info.value = v[2]
-      info.func = function() UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown, this.value) end
-      info.checked = nil
+      info.func = function(self) UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown, self.value) end
+      info.checked = (UIDropDownMenu_GetSelectedValue(ma_npcemotedropdown) == v[2])
       --info.notCheckable = true
       info.icon = nil
       info.keepShownOnClick = nil
       UIDropDownMenu_AddButton(info, level)
     end
-    UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown, "0")
   end
   UIDropDownMenu_Initialize(ma_npcemotedropdown, NpcEmoteDropDownInitialize)
   UIDropDownMenu_SetWidth(ma_npcemotedropdown, 85)
   UIDropDownMenu_SetButtonWidth(ma_npcemotedropdown, 20)
+  UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown, "0")
 
   --NPC EMOTE
   local function NpcEmoteDropDownInitialize()
@@ -2088,70 +2403,78 @@ function AzerothAdmin:InitDropDowns()
     for k,v in pairs(buttons) do
       info.text = v[1]
       info.value = v[2]
-      info.func = function() UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown_a, this.value) end
-      info.checked = nil
+      info.func = function(self) UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown_a, self.value) end
+      info.checked = (UIDropDownMenu_GetSelectedValue(ma_npcemotedropdown_a) == v[2])
       --info.notCheckable = true
       info.icon = nil
       info.keepShownOnClick = nil
       UIDropDownMenu_AddButton(info, level)
     end
-    UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown_a, "0")
   end
   UIDropDownMenu_Initialize(ma_npcemotedropdown_a, NpcEmoteDropDownInitialize)
   UIDropDownMenu_SetWidth(ma_npcemotedropdown_a, 85)
   UIDropDownMenu_SetButtonWidth(ma_npcemotedropdown_a, 20)
+  UIDropDownMenu_SetSelectedValue(ma_npcemotedropdown_a, "0")
 
   --LANGUAGE
   local function LangDropDownInitialize()
     local level = 1
     local info = UIDropDownMenu_CreateInfo()
     local buttons = {
---      {"Ceský","csCZ"},
---      {"Deutsch","deDE"},
---      {"Dutch","nlNL"},
+      {"Deutsch","deDE"},
       {"English","enUS"},
---      {"Spanish","esES"},
---      {"Finnish","fiFI"},
---      {"Français","frFR"},
---      {"Magyar","huHU"},
---      {"Italiano","itIT"},
---      {"Lithuanian","liLI"},
---      {"Polski","plPL"},
---      {"Portuguese","ptPT"},
---      {"Romanian","roRO"},
---      {"Russkiy","ruRU"},
---      {"Svenska","svSV"},
---      {"Chinese","zhCN"},
---      {"Bulgarian", "buBU"}
+      {"Español","esES"},
+      {"Español (México)","esMX"},
+      {"Français","frFR"},
+      {"Italiano","itIT"},
+      {"Português (Brasil)","ptBR"},
+      {"Português","ptPT"},
+      {"Russian","ruRU"},               -- instead of "Русский"
+      {"Korean","koKR"},                -- instead of "한국어"
+      {"Chinese (Simplified)","zhCN"},  -- instead of "简体中文"
+      {"Chinese (Traditional)","zhTW"}  -- instead of "繁體中文"
     }
     for k,v in pairs(buttons) do
       info.text = v[1]
       info.value = v[2]
-      info.func = function() UIDropDownMenu_SetSelectedValue(ma_languagedropdown, this.value) end
-      info.checked = nil
+      info.func = function(self) UIDropDownMenu_SetSelectedValue(ma_languagedropdown, self.value) end
+      info.checked = (UIDropDownMenu_GetSelectedValue(ma_languagedropdown) == v[2])
       --info.notCheckable = true
       info.icon = nil
       info.keepShownOnClick = nil
       UIDropDownMenu_AddButton(info, level)
     end
-    UIDropDownMenu_SetSelectedValue(ma_languagedropdown, Locale:GetLocale())
   end
   UIDropDownMenu_Initialize(ma_languagedropdown, LangDropDownInitialize)
   UIDropDownMenu_SetWidth(ma_languagedropdown, 70)
   UIDropDownMenu_SetButtonWidth(ma_languagedropdown, 20)
+  UIDropDownMenu_SetSelectedValue(ma_languagedropdown, GetLocale())
+
+  -- Add tooltip to language dropdown
+  if self.db.profile.style.showtooltips then
+    ma_languagedropdown:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Language Locale future update planned")
+      GameTooltip:Show()
+    end)
+    ma_languagedropdown:SetScript("OnLeave", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:Hide()
+    end)
+  end
 
   -- FRAME STRATA DROPDOWN
   local function FrameStrataDropDownInitialize()
     local level = 1
     local info = {}
     local strataLevels = {
-      {value = "BACKGROUND", text = "Background"},
-      {value = "LOW", text = "Low"},
-      {value = "MEDIUM", text = "Medium (Default)"},
-      {value = "HIGH", text = "High"},
-      {value = "DIALOG", text = "Dialog"},
-      {value = "FULLSCREEN", text = "Fullscreen"},
-      {value = "FULLSCREEN_DIALOG", text = "Fullscreen Dialog"}
+      {value = "BACKGROUND", text = Locale["ma_FrameStrataBackground"]},
+      {value = "LOW", text = Locale["ma_FrameStrataLow"]},
+      {value = "MEDIUM", text = Locale["ma_FrameStrataMedium"]},
+      {value = "HIGH", text = Locale["ma_FrameStrataHigh"]},
+      {value = "DIALOG", text = Locale["ma_FrameStrataDialog"]},
+      {value = "FULLSCREEN", text = Locale["ma_FrameStrataFullscreen"]},
+      {value = "FULLSCREEN_DIALOG", text = Locale["ma_FrameStrataFullscreenDialog"]}
     }
     for _, strata in ipairs(strataLevels) do
       info.text = strata.text
@@ -2160,32 +2483,52 @@ function AzerothAdmin:InitDropDowns()
         AzerothAdmin:ChangeFrameStrata(strata.value)
         UIDropDownMenu_SetSelectedValue(ma_framestratadropdown, strata.value)
       end
-      info.checked = (AzerothAdmin.db.account.style.framestrata == strata.value)
+      info.checked = (AzerothAdmin.db.profile.style.framestrata == strata.value)
       info.icon = nil
       info.keepShownOnClick = nil
       UIDropDownMenu_AddButton(info, level)
     end
-    UIDropDownMenu_SetSelectedValue(ma_framestratadropdown, AzerothAdmin.db.account.style.framestrata)
   end
   UIDropDownMenu_Initialize(ma_framestratadropdown, FrameStrataDropDownInitialize)
   UIDropDownMenu_SetWidth(ma_framestratadropdown, 100)
   UIDropDownMenu_SetButtonWidth(ma_framestratadropdown, 20)
+  UIDropDownMenu_SetSelectedValue(ma_framestratadropdown, AzerothAdmin.db.profile.style.framestrata)
 
 end
 
 function AzerothAdmin:InitSliders()
   -- Frame Transparency Slider
   ma_frmtrslider:SetOrientation("HORIZONTAL")
-  ma_frmtrslider:SetMinMaxValues(0.1, 1.0)
-  ma_frmtrslider:SetValueStep(0.05)
-  ma_frmtrslider:SetValue(AzerothAdmin.db.account.style.transparency.frames)
-  ma_frmtrsliderText:SetText(string.format("%.2f", AzerothAdmin.db.account.style.transparency.frames))
+  ma_frmtrslider:SetMinMaxValues(0, 1.0)
+  ma_frmtrslider:SetValue(AzerothAdmin.db.profile.style.transparency.frames)
+  ma_frmtrsliderText:SetText(string.format("%.2f", AzerothAdmin.db.profile.style.transparency.frames))
+  ma_frmtrslider:EnableMouseWheel(true)
+  ma_frmtrslider:SetScript("OnMouseWheel", function(self, delta)
+    local min, max = self:GetMinMaxValues()
+    local step = 0.05
+    local curVal = self:GetValue()
+    local newVal = math.floor((curVal + (delta * step)) / step + 0.5) * step
+    if newVal < min then newVal = min end
+    if newVal > max then newVal = max end
+    self:SetValue(newVal)
+    AzerothAdmin:ChangeTransparency("frames")
+  end)
   -- Button Transparency Slider
   ma_btntrslider:SetOrientation("HORIZONTAL")
-  ma_btntrslider:SetMinMaxValues(0.1, 1.0)
-  ma_btntrslider:SetValueStep(0.05)
-  ma_btntrslider:SetValue(AzerothAdmin.db.account.style.transparency.buttons)
-  ma_btntrsliderText:SetText(string.format("%.2f", AzerothAdmin.db.account.style.transparency.buttons))
+  ma_btntrslider:SetMinMaxValues(0, 1.0)
+  ma_btntrslider:SetValue(AzerothAdmin.db.profile.style.transparency.buttons)
+  ma_btntrsliderText:SetText(string.format("%.2f", AzerothAdmin.db.profile.style.transparency.buttons))
+  ma_btntrslider:EnableMouseWheel(true)
+  ma_btntrslider:SetScript("OnMouseWheel", function(self, delta)
+    local min, max = self:GetMinMaxValues()
+    local step = 0.05
+    local curVal = self:GetValue()
+    local newVal = math.floor((curVal + (delta * step)) / step + 0.5) * step
+    if newVal < min then newVal = min end
+    if newVal > max then newVal = max end
+    self:SetValue(newVal)
+    AzerothAdmin:ChangeTransparency("buttons")
+  end)
 end
 
 function AzerothAdmin:InitScrollFrames()
@@ -2193,16 +2536,14 @@ function AzerothAdmin:InitScrollFrames()
   ma_PopupScrollBar:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset, 30, PopupScrollUpdate) end)
   ma_PopupScrollBar:SetScript("OnShow", function() PopupScrollUpdate() end)
   --local zoneupdate = function() Mang:TeleScrollUpdate() end
-  ma_ZoneScrollBar:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset, 16, TeleScrollUpdate) end)
-  ma_ZoneScrollBar:SetScript("OnShow", function() TeleScrollUpdate() end)
-  ma_SubzoneScrollBar:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset, 16, SubzoneScrollUpdate) end)
-  ma_SubzoneScrollBar:SetScript("OnShow", function() SubzoneScrollUpdate() end)
+  ma_ZoneScrollBar:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset, 16, AzerothAdminCommands.TeleScrollUpdate) end)
+  ma_ZoneScrollBar:SetScript("OnShow", function() AzerothAdminCommands.TeleScrollUpdate() end)
+  ma_SubzoneScrollBar:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset, 16, AzerothAdminCommands.SubzoneScrollUpdate) end)
+  ma_SubzoneScrollBar:SetScript("OnShow", function() AzerothAdminCommands.SubzoneScrollUpdate() end)
   --ma_ticketscrollframe:SetScrollChild(ma_ticketeditbox)
   --ma_ticketscrollframe1:SetText("No Data")
 --  ma_ticketscrollframe:SetScript("OnVerticalScroll", InlineScrollUpdate("onlinelist"), function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset-1, 16, InlineScrollUpdate("onlinelist")) end)
 --  ma_ticketscrollframe:SetScript("OnShow", function() InlineScrollUpdate("onlinelist") end)
-  ma_whoscrollframe:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset-1, 16, WhoUpdate) end)
-  ma_whoscrollframe:SetScript("OnShow", function() WhoUpdate() end)
 
   --ma_ticketeditbox:SetScript("OnTextChanged", function() ScrollingEdit_OnTextChanged(self, ma_ticketeditbox) end)
   --ma_ticketeditbox:SetScript("OnCursorChanged", function() ScrollingEdit_OnCursorChanged(self, x, y, w, h) end)
@@ -2218,22 +2559,11 @@ function AzerothAdmin:InitScrollFrames()
     {"OnCursorChanged", function() ScrollingEdit_OnCursorChanged(self, x, y, w, h) end},
     {"OnUpdate", function() ScrollingEdit_OnUpdate(self, 0, ma_maileditbox) end}})
 ]]
-  ma_logframe:SetScript("OnUpdate", function() AzerothAdminLogOnUpdate(self, 0, ma_logframe) end)
-end
-
-function AzerothAdminLogOnUpdate(elapsedTime)
-  if ( ma_logscrollupbutton:GetButtonState() == "PUSHED" ) then
-    ma_logframe:ScrollUp()
-  end
-  if ( ma_logscrolldownbutton:GetButtonState() == "PUSHED" ) then
-    ma_logframe:ScrollDown()
-  end
 end
 
 function AzerothAdmin:NoResults(var)
   if var == "ticket" then
     -- Reset list and make an entry "No Tickets"
-    self:LogAction(Locale["ma_TicketsNoTickets"])
     --ma_ticketeditbox:SetText(Locale["ma_TicketsNoTickets"])
     FauxScrollFrame_Update(ma_ZoneScrollBar,12,12,30);
     for line = 1,12 do
@@ -2306,9 +2636,9 @@ function PopupScrollUpdate()
   if AzerothAdmin.db.char.requests.item or AzerothAdmin.db.char.requests.favitem then --get items
     local count = 0
     if AzerothAdmin.db.char.requests.item then
-      for _ in pairs(AzerothAdmin.db.account.buffer.items) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.items) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favitem then
-      for _ in pairs(AzerothAdmin.db.account.favorites.items) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.items) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2318,35 +2648,35 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local item
           if AzerothAdmin.db.char.requests.item then
-            item = AzerothAdmin.db.account.buffer.items[lineplusoffset]
+            item = AzerothAdmin.db.profile.buffer.items[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favitem then
-            item = AzerothAdmin.db.account.favorites.items[lineplusoffset]
+            item = AzerothAdmin.db.profile.favorites.items[lineplusoffset]
           end
           local key = lineplusoffset
           --item icons
           _G["ma_PopupScrollBarEntryIcon"..line.."IconTexture"]:SetTexture(GetItemIcon(item["itId"]))
-          _G["ma_PopupScrollBarEntryIcon"..line]:SetScript("OnEnter", function() GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:SetHyperlink("item:"..item["itId"]); GameTooltip:Show() end)
-          _G["ma_PopupScrollBarEntryIcon"..line]:SetScript("OnLeave", function() GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:Hide() end)
-          _G["ma_PopupScrollBarEntryIcon"..line]:SetScript("OnClick", function() AzerothAdmin:AddItem(item["itId"], arg1) end)
+          _G["ma_PopupScrollBarEntryIcon"..line]:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetHyperlink("item:"..item["itId"]); GameTooltip:Show() end)
+          _G["ma_PopupScrollBarEntryIcon"..line]:SetScript("OnLeave", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:Hide() end)
+          _G["ma_PopupScrollBarEntryIcon"..line]:SetScript("OnClick", function(self, button) AzerothAdmin:AddItem(item["itId"], button) end)
           _G["ma_PopupScrollBarEntryIcon"..line]:Show()
           --item description
           _G["ma_PopupScrollBarEntry"..line]:SetText("Id: |cffffffff"..item["itId"].."|r Name: |cffffffff"..item["itName"].."|r")
-          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function() AzerothAdmin:AddItem(item["itId"], arg1) end)
-          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnEnter", function() GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:SetHyperlink("item:"..item["itId"]); GameTooltip:Show() end)
-          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnLeave", function() GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:Hide() end)
+          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function(self, button) AzerothAdmin:AddItem(item["itId"], button) end)
+          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetHyperlink("item:"..item["itId"]); GameTooltip:Show() end)
+          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnLeave", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:Hide() end)
           _G["ma_PopupScrollBarEntry"..line]:Enable()
           _G["ma_PopupScrollBarEntry"..line]:Show()
           if AzerothAdmin.db.char.requests.item then
             if item["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.items[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.items[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.items[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.items[key]["checked"] = true; PopupScrollUpdate() end)
             end
           elseif AzerothAdmin.db.char.requests.favitem then
             if item["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.items[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.items[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.items[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.items[key]["checked"] = true; PopupScrollUpdate() end)
             end
           end
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(item["checked"])
@@ -2369,9 +2699,9 @@ function PopupScrollUpdate()
   elseif AzerothAdmin.db.char.requests.itemset or AzerothAdmin.db.char.requests.favitemset then --get itemsets
     local count = 0
     if AzerothAdmin.db.char.requests.itemset then
-      for _ in pairs(AzerothAdmin.db.account.buffer.itemsets) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.itemsets) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favitemset then
-      for _ in pairs(AzerothAdmin.db.account.favorites.itemsets) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.itemsets) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2382,9 +2712,9 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local itemset
           if AzerothAdmin.db.char.requests.itemset then
-            itemset = AzerothAdmin.db.account.buffer.itemsets[lineplusoffset]
+            itemset = AzerothAdmin.db.profile.buffer.itemsets[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favitemset then
-            itemset = AzerothAdmin.db.account.favorites.itemsets[lineplusoffset]
+            itemset = AzerothAdmin.db.profile.favorites.itemsets[lineplusoffset]
           end
           local key = lineplusoffset
           _G["ma_PopupScrollBarEntry"..line]:SetText("Id: |cffffffff"..itemset["isId"].."|r Name: |cffffffff"..itemset["isName"].."|r")
@@ -2395,15 +2725,15 @@ function PopupScrollUpdate()
           _G["ma_PopupScrollBarEntry"..line]:Show()
           if AzerothAdmin.db.char.requests.itemset then
             if itemset["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.itemsets[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.itemsets[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.itemsets[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.itemsets[key]["checked"] = true; PopupScrollUpdate() end)
             end
           elseif AzerothAdmin.db.char.requests.favitemset then
             if itemset["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.itemsets[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.itemsets[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.itemsets[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.itemsets[key]["checked"] = true; PopupScrollUpdate() end)
             end
           end
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(itemset["checked"])
@@ -2425,9 +2755,9 @@ function PopupScrollUpdate()
   elseif AzerothAdmin.db.char.requests.quest or AzerothAdmin.db.char.requests.favquest then --get quests
     local count = 0
     if AzerothAdmin.db.char.requests.quest then
-      for _ in pairs(AzerothAdmin.db.account.buffer.quests) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.quests) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favquest then
-      for _ in pairs(AzerothAdmin.db.account.favorites.quests) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.quests) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2438,33 +2768,42 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local quest
           if AzerothAdmin.db.char.requests.quest then
-            quest = AzerothAdmin.db.account.buffer.quests[lineplusoffset]
+            quest = AzerothAdmin.db.profile.buffer.quests[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favquest then
-            quest = AzerothAdmin.db.account.favorites.quests[lineplusoffset]
+            quest = AzerothAdmin.db.profile.favorites.quests[lineplusoffset]
           end
           local key = lineplusoffset
-          _G["ma_PopupScrollBarEntry"..line]:SetText("Id: |cffffffff"..quest["qsId"].."|r Name: |cffffffff"..quest["qsName"].."|r")
-          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function() AzerothAdmin:Quest(quest["qsId"], arg1) end)
+          -- Build display text with status flags
+          local displayText = "Id: |cffffffff"..quest["qsId"].."|r Name: |cffffffff"..quest["qsName"].."|r"
+
+          -- Add status flag with color coding
+          if quest["qsStatus"] then
+            if quest["qsStatus"] == "rewarded" then
+              displayText = displayText .. " |cff808080[rewarded]|r"  -- Gray for rewarded quests
+            elseif quest["qsStatus"] == "active" then
+              displayText = displayText .. " |cffffff00[active]|r"  -- Yellow for active quests
+            elseif quest["qsStatus"] == "complete" then
+              displayText = displayText .. " |cff00ff00[complete]|r"  -- Green for completed quests (ready to turn in)
+            else
+              displayText = displayText .. " |cffaaaaaa["..quest["qsStatus"].."]|r"  -- Light gray for other statuses
+            end
+          end
+
+          -- Highlight selected quest
+          if AzerothAdmin.selectedQuest and AzerothAdmin.selectedQuest.qsId == quest["qsId"] then
+            displayText = "|cff00ff00> " .. displayText .. " <|r"  -- Green highlight for selected quest
+          end
+          _G["ma_PopupScrollBarEntry"..line]:SetText(displayText)
+          -- Click to select quest (no longer auto-adds)
+          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function(self, button)
+            AzerothAdmin:SelectQuest(quest)
+          end)
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnEnter", function() --[[Do nothing]] end)
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnLeave", function() --[[Do nothing]] end)
           _G["ma_PopupScrollBarEntry"..line]:Enable()
           _G["ma_PopupScrollBarEntry"..line]:Show()
-          if AzerothAdmin.db.char.requests.quest then
-            if quest["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.quests[key]["checked"] = false; PopupScrollUpdate() end)
-            else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.quests[key]["checked"] = true; PopupScrollUpdate() end)
-            end
-          elseif AzerothAdmin.db.char.requests.favquest then
-            if quest["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.quests[key]["checked"] = false; PopupScrollUpdate() end)
-            else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.quests[key]["checked"] = true; PopupScrollUpdate() end)
-            end
-          end
-          _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(quest["checked"])
-          _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:Enable()
-          _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:Show()
+          -- Hide checkboxes for quest searches (no favorites system)
+          _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:Hide()
         else
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:Hide()
           _G["ma_PopupScrollBarEntry"..line]:Hide()
@@ -2481,9 +2820,9 @@ function PopupScrollUpdate()
   elseif AzerothAdmin.db.char.requests.creature or AzerothAdmin.db.char.requests.favcreature then --get creatures
     local count = 0
     if AzerothAdmin.db.char.requests.creature then
-      for _ in pairs(AzerothAdmin.db.account.buffer.creatures) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.creatures) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favcreature then
-      for _ in pairs(AzerothAdmin.db.account.favorites.creatures) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.creatures) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2494,28 +2833,28 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local creature
           if AzerothAdmin.db.char.requests.creature then
-            creature = AzerothAdmin.db.account.buffer.creatures[lineplusoffset]
+            creature = AzerothAdmin.db.profile.buffer.creatures[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favcreature then
-            creature = AzerothAdmin.db.account.favorites.creatures[lineplusoffset]
+            creature = AzerothAdmin.db.profile.favorites.creatures[lineplusoffset]
           end
           local key = lineplusoffset
           _G["ma_PopupScrollBarEntry"..line]:SetText("Id: |cffffffff"..creature["crId"].."|r Name: |cffffffff"..creature["crName"].."|r")
-          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function() AzerothAdmin:Creature(creature["crId"], arg1) end)
+          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function(self, button) AzerothAdmin:Creature(creature["crId"], button) end)
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnEnter", function() --[[Do nothing]] end)
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnLeave", function() --[[Do nothing]] end)
           _G["ma_PopupScrollBarEntry"..line]:Enable()
           _G["ma_PopupScrollBarEntry"..line]:Show()
           if AzerothAdmin.db.char.requests.creature then
             if creature["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.creatures[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.creatures[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.creatures[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.creatures[key]["checked"] = true; PopupScrollUpdate() end)
             end
           elseif AzerothAdmin.db.char.requests.favcreature then
             if creature["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.creatures[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.creatures[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.creatures[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.creatures[key]["checked"] = true; PopupScrollUpdate() end)
             end
           end
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(creature["checked"])
@@ -2537,9 +2876,9 @@ function PopupScrollUpdate()
   elseif AzerothAdmin.db.char.requests.spell or AzerothAdmin.db.char.requests.favspell then --get spells
     local count = 0
     if AzerothAdmin.db.char.requests.spell then
-      for _ in pairs(AzerothAdmin.db.account.buffer.spells) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.spells) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favspell then
-      for _ in pairs(AzerothAdmin.db.account.favorites.spells) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.spells) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2550,9 +2889,9 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local spell
           if AzerothAdmin.db.char.requests.spell then
-            spell = AzerothAdmin.db.account.buffer.spells[lineplusoffset]
+            spell = AzerothAdmin.db.profile.buffer.spells[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favspell then
-            spell = AzerothAdmin.db.account.favorites.spells[lineplusoffset]
+            spell = AzerothAdmin.db.profile.favorites.spells[lineplusoffset]
           end
           local key = lineplusoffset
           --spell icon
@@ -2561,20 +2900,20 @@ function PopupScrollUpdate()
           _G["ma_PopupScrollBarEntry"..line]:SetText("Id: |cffffffff"..spell["spId"].."|r Name: |cffffffff"..spell["spName"].."|r")
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnEnter", function() --[[Do nothing]] end)
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnLeave", function() --[[Do nothing]] end)
-          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function() LearnSpell(spell["spId"], arg1) end)
+          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function(self, button) AzerothAdminCommands.LearnSpell(spell["spId"], button) end)
           _G["ma_PopupScrollBarEntry"..line]:Enable()
           _G["ma_PopupScrollBarEntry"..line]:Show()
           if AzerothAdmin.db.char.requests.spell then
             if spell["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.spells[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.spells[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.spells[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.spells[key]["checked"] = true; PopupScrollUpdate() end)
             end
           elseif AzerothAdmin.db.char.requests.favspell then
             if spell["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.spells[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.spells[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.spells[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.spells[key]["checked"] = true; PopupScrollUpdate() end)
             end
           end
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(spell["checked"])
@@ -2596,9 +2935,9 @@ function PopupScrollUpdate()
   elseif AzerothAdmin.db.char.requests.skill or AzerothAdmin.db.char.requests.favskill then --get skills
     local count = 0
     if AzerothAdmin.db.char.requests.skill then
-      for _ in pairs(AzerothAdmin.db.account.buffer.skills) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.skills) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favskill then
-      for _ in pairs(AzerothAdmin.db.account.favorites.skills) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.skills) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2609,9 +2948,9 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local skill
           if AzerothAdmin.db.char.requests.skill then
-            skill = AzerothAdmin.db.account.buffer.skills[lineplusoffset]
+            skill = AzerothAdmin.db.profile.buffer.skills[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favskill then
-            skill = AzerothAdmin.db.account.favorites.skills[lineplusoffset]
+            skill = AzerothAdmin.db.profile.favorites.skills[lineplusoffset]
           end
           local key = lineplusoffset
           _G["ma_PopupScrollBarEntry"..line]:SetText("Id: |cffffffff"..skill["skId"].."|r Name: |cffffffff"..skill["skName"].."|r")
@@ -2622,15 +2961,15 @@ function PopupScrollUpdate()
           _G["ma_PopupScrollBarEntry"..line]:Show()
           if AzerothAdmin.db.char.requests.skill then
             if skill["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.skills[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.skills[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.skills[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.skills[key]["checked"] = true; PopupScrollUpdate() end)
             end
           elseif AzerothAdmin.db.char.requests.favskill then
             if skill["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.skills[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.skills[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.skills[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.skills[key]["checked"] = true; PopupScrollUpdate() end)
             end
           end
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(skill["checked"])
@@ -2652,9 +2991,9 @@ function PopupScrollUpdate()
   elseif AzerothAdmin.db.char.requests.object or AzerothAdmin.db.char.requests.favobject then --get objects
     local count = 0
     if AzerothAdmin.db.char.requests.object then
-      for _ in pairs(AzerothAdmin.db.account.buffer.objects) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.objects) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favobject then
-      for _ in pairs(AzerothAdmin.db.account.favorites.objects) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.objects) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2665,28 +3004,28 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local object
           if AzerothAdmin.db.char.requests.object then
-            object = AzerothAdmin.db.account.buffer.objects[lineplusoffset]
+            object = AzerothAdmin.db.profile.buffer.objects[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favobject then
-            object = AzerothAdmin.db.account.favorites.objects[lineplusoffset]
+            object = AzerothAdmin.db.profile.favorites.objects[lineplusoffset]
           end
           local key = lineplusoffset
           _G["ma_PopupScrollBarEntry"..line]:SetText("Id: |cffffffff"..object["objId"].."|r Name: |cffffffff"..object["objName"].."|r")
-          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function() AzerothAdmin:AddObject(object["objId"], arg1) end)
+          _G["ma_PopupScrollBarEntry"..line]:SetScript("OnClick", function(self, button) AzerothAdmin:AddObject(object["objId"], button) end)
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnEnter", function() --[[Do nothing]] end)
           _G["ma_PopupScrollBarEntry"..line]:SetScript("OnLeave", function() --[[Do nothing]] end)
           _G["ma_PopupScrollBarEntry"..line]:Enable()
           _G["ma_PopupScrollBarEntry"..line]:Show()
           if AzerothAdmin.db.char.requests.object then
             if object["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.objects[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.objects[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.objects[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.objects[key]["checked"] = true; PopupScrollUpdate() end)
             end
           elseif AzerothAdmin.db.char.requests.favobject then
             if object["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.objects[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.objects[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.objects[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.objects[key]["checked"] = true; PopupScrollUpdate() end)
             end
           end
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(object["checked"])
@@ -2708,9 +3047,9 @@ function PopupScrollUpdate()
   elseif AzerothAdmin.db.char.requests.tele or AzerothAdmin.db.char.requests.favtele then --get teles
     local count = 0
     if AzerothAdmin.db.char.requests.tele then
-      for _ in pairs(AzerothAdmin.db.account.buffer.teles) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.buffer.teles) do count = count + 1 end
     elseif AzerothAdmin.db.char.requests.favtele then
-      for _ in pairs(AzerothAdmin.db.account.favorites.teles) do count = count + 1 end
+      for _ in pairs(AzerothAdmin.db.profile.favorites.teles) do count = count + 1 end
     end
     if count > 0 then
       ma_lookupresulttext:SetText(Locale["searchResults"]..count)
@@ -2721,9 +3060,9 @@ function PopupScrollUpdate()
         if lineplusoffset <= count then
           local tele
           if AzerothAdmin.db.char.requests.tele then
-            tele = AzerothAdmin.db.account.buffer.teles[lineplusoffset]
+            tele = AzerothAdmin.db.profile.buffer.teles[lineplusoffset]
           elseif AzerothAdmin.db.char.requests.favtele then
-            tele = AzerothAdmin.db.account.favorites.teles[lineplusoffset]
+            tele = AzerothAdmin.db.profile.favorites.teles[lineplusoffset]
           end
           local key = lineplusoffset
           _G["ma_PopupScrollBarEntry"..line]:SetText("Name: |cffffffff"..tele["tName"].."|r")
@@ -2734,15 +3073,15 @@ function PopupScrollUpdate()
           _G["ma_PopupScrollBarEntry"..line]:Show()
           if AzerothAdmin.db.char.requests.tele then
             if tele["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.teles[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.teles[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.buffer.teles[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.buffer.teles[key]["checked"] = true; PopupScrollUpdate() end)
             end
           elseif AzerothAdmin.db.char.requests.favtele then
             if tele["checked"] then
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.teles[key]["checked"] = false; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.teles[key]["checked"] = false; PopupScrollUpdate() end)
             else
-              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.account.favorites.teles[key]["checked"] = true; PopupScrollUpdate() end)
+              _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetScript("OnClick", function() AzerothAdmin.db.profile.favorites.teles[key]["checked"] = true; PopupScrollUpdate() end)
             end
           end
           _G["ma_PopupScrollBarEntry"..line.."ChkBtn"]:SetChecked(tele["checked"])
@@ -2770,7 +3109,7 @@ function AzerothAdmin:InlineScrollUpdate_temp()
     ma_ticketscrollframe:Hide()
     AzerothAdmin:ChatMsg(".ticket list")
     local ticketCount = 0
-    for _ in pairs(AzerothAdmin.db.account.buffer.tickets) do ticketCount = ticketCount + 1 end
+    for _ in pairs(AzerothAdmin.db.profile.buffer.tickets) do ticketCount = ticketCount + 1 end
     if ticketCount > 0 then
         AzerothAdmin:ChatMsg("TickCount"..ticketCount)
         ma_ticketscrollframe1:SetText("Loading")
@@ -2782,7 +3121,7 @@ function AzerothAdmin:InlineScrollUpdate_temp()
 end
 
 function pairsByKeys(t, f)
-  if t == Nil then
+  if t == nil then
   else
     local a = {}
     for n in pairs(t) do table.insert(a, n) end
@@ -2800,43 +3139,43 @@ end
 
 -- STYLE FUNCTIONS
 function AzerothAdmin:ToggleTransparency()
-  if self.db.account.style.transparency.backgrounds < 1.0 then
-    self.db.account.style.transparency.backgrounds = 1.0
+  if self.db.profile.style.transparency.backgrounds < 1.0 then
+    self.db.profile.style.transparency.backgrounds = 1.0
   else
-    self.db.account.style.transparency.backgrounds = 0.5
+    self.db.profile.style.transparency.backgrounds = 0.5
   end
   ReloadUI()
 end
 
 function AzerothAdmin:ChangeTransparency(element)
   if element == "frames" then
-    AzerothAdmin.db.account.style.transparency.frames = string.format("%.2f", ma_frmtrslider:GetValue())
+    AzerothAdmin.db.profile.style.transparency.frames = string.format("%.2f", ma_frmtrslider:GetValue())
   elseif element == "buttons" then
-    AzerothAdmin.db.account.style.transparency.buttons = string.format("%.2f", ma_btntrslider:GetValue())
+    AzerothAdmin.db.profile.style.transparency.buttons = string.format("%.2f", ma_btntrslider:GetValue())
   end
 end
 
 function AzerothAdmin:ToggleTooltips()
-  if self.db.account.style.showtooltips then
-    self.db.account.style.showtooltips = false
+  if self.db.profile.style.showtooltips then
+    self.db.profile.style.showtooltips = false
   else
-    self.db.account.style.showtooltips = true
+    self.db.profile.style.showtooltips = true
   end
   ReloadUI()
 end
 
 function AzerothAdmin:ToggleMinimenu()
-  if self.db.account.style.showminimenu then
-    self.db.account.style.showminimenu = false
+  if self.db.profile.style.showminimenu then
+    self.db.profile.style.showminimenu = false
   else
-    self.db.account.style.showminimenu = true
+    self.db.profile.style.showminimenu = true
   end
   ReloadUI()
 end
 
 function AzerothAdmin:ChangeFrameStrata(strata)
   -- Save the new frame strata setting
-  self.db.account.style.framestrata = strata
+  self.db.profile.style.framestrata = strata
   -- Apply it immediately to the main frame
   if ma_bgframe then
     ma_bgframe:SetFrameStrata(strata)
@@ -2883,18 +3222,25 @@ function AzerothAdmin:ShowSection(section)
 end
 
 function AzerothAdmin:InitCheckButtons()
-  if self.db.account.style.transparency.backgrounds < 1.0 then
+  if self.db.profile.style.transparency.backgrounds < 1.0 then
     ma_checktransparencybutton:SetChecked(true)
   else
     ma_checktransparencybutton:SetChecked(false)
   end
   ma_instantkillbutton:SetChecked(self.db.char.instantKillMode)
-  ma_checklocalsearchstringsbutton:SetChecked(self.db.account.localesearchstring)
-  ma_showminimenubutton:SetChecked(self.db.account.style.showminimenu)
-  ma_showtooltipsbutton:SetChecked(self.db.account.style.showtooltips)
-  ma_showchatoutputbutton:SetChecked(self.db.account.style.showchat)
-  local dp = AzerothAdmin.db.account.style.delayparam
-  if dp == Nil or dp == "" then dp = "10000" end --10k is close 1 minute of in-game time FIX #13
+  ma_checklocalsearchstringsbutton:SetChecked(self.db.profile.localesearchstring)
+  ma_showminimenubutton:SetChecked(self.db.profile.style.showminimenu)
+  ma_showtooltipsbutton:SetChecked(self.db.profile.style.showtooltips)
+  ma_showchatoutputbutton:SetChecked(self.db.profile.style.showchat)
+  ma_instantteleportbutton:SetChecked(self.db.profile.instantTeleport)
+  -- Set minimap button checkbox state (inverted: hide=false means show=true)
+  if AzerothAdminDb.minimap then
+    ma_showminimapbutton:SetChecked(not AzerothAdminDb.minimap.hide)
+  else
+    ma_showminimapbutton:SetChecked(true) -- Default to shown
+  end
+  local dp = AzerothAdmin.db.profile.style.delayparam
+  if dp == nil or dp == "" then dp = "50000" end --50k is approx 5 minutes of in-game time
   ma_delayparam:SetText(dp)
 end
 
@@ -2932,11 +3278,6 @@ end
 
 -- Delay minimap button creation until PLAYER_LOGIN to ensure all libraries are loaded
 local function CreateMinimapButton()
-  -- If a minimap button already exists (from LibDBIcon or previous init), don't create another.
-  if _G["AzerothAdminMinimapButton"] or _G["LibDBIcon10_AzerothAdmin"] then
-    return
-  end
-
     -- Try to use LibDBIcon if available (provided by other addons like ElvUI or our own libraries)
     local ldb = LibStub and LibStub("LibDataBroker-1.1", true)
     local icon = LibStub and LibStub("LibDBIcon-1.0", true)
@@ -2951,7 +3292,7 @@ local function CreateMinimapButton()
     local AzerothAdminLDB = ldb:NewDataObject("AzerothAdmin", {
         type = "launcher",
         text = "AzerothAdmin",
-        icon = "Interface\\AddOns\\DC-GM\\Textures\\MinimapIcon",
+        icon = "Interface\\AddOns\\AzerothAdmin\\Textures\\MinimapIcon",
         OnClick = function(self, button)
             if button == "LeftButton" then
                 if IsShiftKeyDown() then
@@ -2974,9 +3315,10 @@ local function CreateMinimapButton()
 
     -- Register with LibDBIcon
     icon:Register("AzerothAdmin", AzerothAdminLDB, AzerothAdminDb.minimap)
-    local ldbButton = _G["LibDBIcon10_AzerothAdmin"]
-    if ldbButton and ldbButton.RegisterForDrag then
-      ldbButton:RegisterForDrag("LeftButton", "RightButton")
+
+    -- Respect the hide setting
+    if AzerothAdminDb.minimap.hide then
+        icon:Hide("AzerothAdmin")
     end
 else
     -- Fallback: Create manual minimap button
@@ -2986,37 +3328,15 @@ else
     minimapButton:SetFrameLevel(8)
     minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-  minimapButton:RegisterForDrag("RightButton")
-  minimapButton:SetMovable(true)
-  minimapButton:EnableMouse(true)
-  minimapButton:SetClampedToScreen(true)
 
     -- Set the minimap button icon
     local buttonIcon = minimapButton:CreateTexture(nil, "BACKGROUND")
-    buttonIcon:SetTexture("Interface\\AddOns\\DC-GM\\Textures\\MinimapIcon")
+    buttonIcon:SetTexture("Interface\\AddOns\\AzerothAdmin\\Textures\\MinimapIcon")
     buttonIcon:SetSize(20, 20)
     buttonIcon:SetPoint("CENTER")
 
-    -- Add GM text overlay
-    local buttonText = minimapButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    buttonText:SetPoint("CENTER", 0, 0)
-    buttonText:SetText("GM")
-    buttonText:SetTextColor(1, 0.82, 0) -- Gold color
-
-    -- Set the minimap button position (persisted)
-    local defaultPos = {
-      point = "TOPLEFT",
-      relPoint = "TOPLEFT",
-      x = 52 - (80 * cos(45)),
-      y = (80 * sin(45)) - 52
-    }
-
-    local pos = AzerothAdminDb and AzerothAdminDb.minimapButtonPos
-    if type(pos) == "table" and pos.point and pos.relPoint and pos.x and pos.y then
-      minimapButton:SetPoint(pos.point, Minimap, pos.relPoint, pos.x, pos.y)
-    else
-      minimapButton:SetPoint(defaultPos.point, Minimap, defaultPos.relPoint, defaultPos.x, defaultPos.y)
-    end
+    -- Set the minimap button position (fixed)
+    minimapButton:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 52 - (80 * cos(45)), (80 * sin(45)) - 52)
 
     -- Add event handlers for the minimap button
     minimapButton:SetScript("OnClick", function(self, button)
@@ -3031,24 +3351,6 @@ else
         end
     end)
 
-    minimapButton:SetScript("OnDragStart", function(self)
-      self:StartMoving()
-    end)
-
-    minimapButton:SetScript("OnDragStop", function(self)
-      self:StopMovingOrSizing()
-      local point, _, relPoint, x, y = self:GetPoint(1)
-      if not AzerothAdminDb then
-        AzerothAdminDb = {}
-      end
-      AzerothAdminDb.minimapButtonPos = {
-        point = point,
-        relPoint = relPoint,
-        x = x,
-        y = y
-      }
-    end)
-
     minimapButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:SetText("AzerothAdmin", 1, 1, 1)
@@ -3061,6 +3363,51 @@ else
     minimapButton:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
     end)
+
+    -- Respect the hide setting for fallback button
+    if AzerothAdminDb.minimap and AzerothAdminDb.minimap.hide then
+        minimapButton:Hide()
+    end
+    end
+end
+
+-- Function to toggle minimap button visibility
+function AzerothAdmin:ToggleMinimapButton()
+    local icon = LibStub and LibStub("LibDBIcon-1.0", true)
+
+    if icon and icon:IsRegistered("AzerothAdmin") then
+        -- Using LibDBIcon
+        if AzerothAdminDb.minimap.hide then
+            icon:Show("AzerothAdmin")
+            AzerothAdminDb.minimap.hide = false
+            self:Print("Minimap button shown")
+        else
+            icon:Hide("AzerothAdmin")
+            AzerothAdminDb.minimap.hide = true
+            self:Print("Minimap button hidden")
+        end
+    else
+        -- Fallback for manual minimap button
+        local minimapButton = _G["AzerothAdminMinimapButton"]
+        if minimapButton then
+            if minimapButton:IsShown() then
+                minimapButton:Hide()
+                if not AzerothAdminDb.minimap then
+                    AzerothAdminDb.minimap = {}
+                end
+                AzerothAdminDb.minimap.hide = true
+                self:Print("Minimap button hidden")
+            else
+                minimapButton:Show()
+                if not AzerothAdminDb.minimap then
+                    AzerothAdminDb.minimap = {}
+                end
+                AzerothAdminDb.minimap.hide = false
+                self:Print("Minimap button shown")
+            end
+        else
+            self:Print("Minimap button not found")
+        end
     end
 end
 
@@ -3070,4 +3417,3 @@ minimapFrame:RegisterEvent("PLAYER_LOGIN")
 minimapFrame:SetScript("OnEvent", function()
     CreateMinimapButton()
 end)
-

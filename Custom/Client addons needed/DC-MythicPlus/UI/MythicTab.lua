@@ -10,7 +10,7 @@ if not GF then return end
 
 -- Match DC-Leaderboards UI style across DC addons
 local BG_FELLEATHER = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga"
-local BG_TINT_ALPHA = 0.60
+local BG_TINT_ALPHA = 0.78
 
 local function ApplyLeaderboardsStyle(frame)
     if not frame or frame.__dcLeaderboardsStyle then return end

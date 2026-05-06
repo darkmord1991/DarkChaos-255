@@ -1,10 +1,10 @@
-﻿-------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------
 --
 -- AzerothAdmin Version 3.x
 -- AzerothAdmin is a derivative of TrinityAdmin/MangAdmin.
 --
--- Copyright (C) 2024 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- Copyright (C) 2007 Free Software Foundation, Inc.
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -16,66 +16,46 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
-function ShowTicketTab()
-  wipe(AzerothAdmin.db.account.buffer.tickets)
+AzerothAdminCommands = AzerothAdminCommands or {}
+
+function AzerothAdminCommands.ShowTicketTab()
   ma_goticketbutton:Disable()
   ma_deleteticketbutton:Disable()
   ma_answerticketbutton:Disable()
   ma_getcharticketbutton:Disable()
   ma_gocharticketbutton:Disable()
   ma_whisperticketbutton:Disable()
-  ma_resetticketsbutton:Disable()
-  ma_showbutton:Disable()
+  ma_resetticketsbutton:Enable()
   AzerothAdmin:InstantGroupToggle("ticket")
-  ResetTickets()
+  AzerothAdminCommands.ResetTickets()
 end
 
-function RefreshOnlineTickets()
-    ma_ticketscrollframe:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset-1, 16, 16) InlineScrollUpdate() end)
-    ma_ticketscrollframe:SetScript("OnShow", function() InlineScrollUpdate() end)
-    AzerothAdmin.db.char.requests.ticket = true
-    AzerothAdmin:LogAction("Getting tickets.")
-    AzerothAdmin:ChatMsg(".ticket onlinelist")
-    for i=1,12 do
-       _G["ma_ticketscrollframe"..i]:Hide()
-    end
-    ma_loadonlineticketsbutton:Disable()
-    ma_loadallticktsbutton:Hide()
-    ma_showbutton:Enable()
-end
+function AzerothAdminCommands.RefreshTickets()
+    -- Clear existing tickets to prevent duplicates
+    wipe(AzerothAdmin.db.profile.buffer.tickets)
+    AzerothAdmin.db.profile.buffer.tickets = {}
 
-function RefreshTickets()
-
-    ma_ticketscrollframe:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset-1, 16, 16) InlineScrollUpdate() end)
-    ma_ticketscrollframe:SetScript("OnShow", function() InlineScrollUpdate() end)
+    ma_ticketscrollframe:SetScript("OnVerticalScroll", function(self, offset) FauxScrollFrame_OnVerticalScroll(self, offset-1, 16, 16) AzerothAdminCommands.InlineScrollUpdate() end)
+    ma_ticketscrollframe:SetScript("OnShow", function() AzerothAdminCommands.InlineScrollUpdate() end)
     AzerothAdmin.db.char.requests.ticket = true
-    AzerothAdmin:LogAction("Getting tickets.")
     AzerothAdmin:ChatMsg(".ticket list")
     for i=1,12 do
        _G["ma_ticketscrollframe"..i]:Hide()
     end
-    ma_loadallticktsbutton:Disable()
-    ma_loadonlineticketsbutton:Hide()
-    ma_showbutton:Enable()
+    -- Don't call InlineScrollUpdate here - it will be called when server responds
 end
 
-function ResetTickets()
-    wipe(AzerothAdmin.db.account.buffer.tickets)
-    AzerothAdmin.db.account.buffer.tickets = {}
+function AzerothAdminCommands.ResetTickets()
+    wipe(AzerothAdmin.db.profile.buffer.tickets)
+    AzerothAdmin.db.profile.buffer.tickets = {}
     AzerothAdmin.db.char.requests.ticket = true
     for i=1,12 do
        _G["ma_ticketscrollframe"..i]:Hide()
     end
-    ma_loadallticktsbutton:Enable()
-    ma_loadonlineticketsbutton:Enable()
-    ma_loadallticktsbutton:Show()
-    ma_loadonlineticketsbutton:Show()
     ma_ticketdetail:Hide();
     ma_ticketid:SetText(nil)
     ma_ticketcreatedby:SetText(nil)
     ma_tickettimecreated:SetText(nil)
-    ma_ticketlastchange:SetText(nil)
-    AzerothAdmin:LogAction("Reset/Cleared tickets.")
     ma_goticketbutton:Disable()
     ma_deleteticketbutton:Disable()
     ma_answerticketbutton:Disable()
@@ -84,20 +64,14 @@ function ResetTickets()
     ma_whisperticketbutton:Disable()
 end
 
-function ShowTickets()
-  ma_resetticketsbutton:Enable()
-  ma_showbutton:Disable()
- InlineScrollUpdate()
-end
 
 --[[function AzerothAdmin:LoadTickets(number)
   self.db.char.newTicketQueue = {}
-  --self.db.account.tickets.requested = 0
+  --self.db.profile.tickets.requested = 0
   if number then
     if tonumber(number) > 0 then
-      self.db.account.tickets.count = tonumber(number)
+      self.db.profile.tickets.count = tonumber(number)
       if self.db.char.requests.ticket then
-        self:LogAction("Load of tickets requested. Found "..number.." tickets!")
         self:RequestTickets()
         self:SetIcon(ROOT_PATH.."Textures\\icon.tga")
         --ma_resetsearchbutton:Enable()
@@ -108,10 +82,9 @@ end
     end
   else
     self.db.char.requests.ticket = true
-    self.db.account.tickets.count = 0
-    self.db.account.buffer.tickets = {}
+    self.db.profile.tickets.count = 0
+    self.db.profile.buffer.tickets = {}
     --self:ChatMsg(".ticket list")
-    --self:LogAction("Requesting ticket numberz!")
   end
   InlineScrollUpdate()
 end]]
@@ -119,32 +92,27 @@ end]]
 --[[function AzerothAdmin:RequestTickets()
   self.db.char.requests.ticket = true
   local ticketCount = 0
-  for _ in pairs(self.db.account.buffer.tickets) do ticketCount = ticketCount + 1 end
+  for _ in pairs(self.db.profile.buffer.tickets) do ticketCount = ticketCount + 1 end
   --ma_lookupresulttext:SetText(Locale["ma_TicketCount"]..count)
-  ma_top2text:SetText(Locale["realm"].." "..Locale["tickets"]..self.db.account.tickets.count)
-  local tnumber = self.db.account.tickets.count - ticketCount
-  --self:LogAction("tNumber = "..tnumber..", Tc = "..ticketCount)
+  ma_top2text:SetText(Locale["realm"].." "..Locale["tickets"]..self.db.profile.tickets.count)
+  local tnumber = self.db.profile.tickets.count - ticketCount
   if tnumber > 0 then
     self:ChatMsg(".ticket "..tnumber)
-    --self:LogAction(".ticket "..tnumber)
-    self:LogAction("Loading ticket "..tnumber.."...")
   else
-    self:LogAction("Loaded all available tickets! No more to load...")
     ma_resetsearchbutton:Disable()
   end
 end]]
 
-function Ticket(value)
-  local ticket = AzerothAdmin.db.account.tickets.selected
+function AzerothAdminCommands.Ticket(value)
+  local ticket = AzerothAdmin.db.profile.tickets.selected
   if value == "delete" then
     AzerothAdmin:ChatMsg(".ticket close "..ma_ticketid:GetText())
-    AzerothAdmin:LogAction("Closed ticket with number: "..ma_ticketid:GetText())
-    wipe(AzerothAdmin.db.account.buffer.tickets)
-    AzerothAdmin.db.account.buffer.tickets={}
+    wipe(AzerothAdmin.db.profile.buffer.tickets)
+    AzerothAdmin.db.profile.buffer.tickets={}
 --    AzerothAdmin:ChatMsg(".ticket delete"..ma_ticketid:GetText())
 --    AzerothAdmin:LogAction("Deleted ticket with number: "..ma_ticketid:GetText())
-    ShowTicketTab()
-    ResetTickets()
+    AzerothAdminCommands.ShowTicketTab()
+    AzerothAdminCommands.ResetTickets()
     --InlineScrollUpdate()
   elseif value == "gochar" then
     AzerothAdmin:ChatMsg(".appear "..ma_ticketcreatedby:GetText())
@@ -175,14 +143,12 @@ end
 
 --[[function AzerothAdmin:ToggleTickets(value)
   AzerothAdmin:ChatMsg(".ticket "..value)
-  AzerothAdmin:LogAction("Turned receiving new tickets "..value..".")
 end]]
 
 
-function InlineScrollUpdate()
-    AzerothAdmin:LogAction("Showing tickets.")
+function AzerothAdminCommands.InlineScrollUpdate()
     local ticketCount = 0
-    for _ in pairs(AzerothAdmin.db.account.buffer.tickets) do ticketCount = ticketCount + 1 end
+    for _ in pairs(AzerothAdmin.db.profile.buffer.tickets) do ticketCount = ticketCount + 1 end
     if ticketCount > 0 then
       ma_ticketscrollframe1:SetText("Loading")
       local lineplusoffset
@@ -192,13 +158,13 @@ function InlineScrollUpdate()
       for line = 1,12 do
         lineplusoffset = line + FauxScrollFrame_GetOffset(ma_ticketscrollframe)
         if lineplusoffset <= ticketCount then
-          local object = AzerothAdmin.db.account.buffer.tickets[lineplusoffset]
+          local object = AzerothAdmin.db.profile.buffer.tickets[lineplusoffset]
           if object then
-            _G["ma_ticketscrollframe"..line]:SetText("Ticket:|cffffffff"..object["tNumber"].."|r Created by: |cffffffff"..object["tChar"].."|r Last change:|cffffffff"..object["tLUpdate"].."|r")
-            AzerothAdmin.db.account.tickets.selected = object
+            _G["ma_ticketscrollframe"..line]:SetText("|cff00ff00Ticket:|r |cffffff00"..object["tNumber"].."|r  |cff00ff00Created by:|r |cffffff00"..object["tChar"].."|r")
+            AzerothAdmin.db.profile.tickets.selected = object
             _G["ma_ticketscrollframe"..line]:SetScript("OnEnter", function() --[[Do nothing]] end)
             _G["ma_ticketscrollframe"..line]:SetScript("OnLeave", function() --[[Do nothing]] end)
-            _G["ma_ticketscrollframe"..line]:SetScript("OnClick", function() ReadTicket(object["tNumber"], object["tChar"]) end)
+            _G["ma_ticketscrollframe"..line]:SetScript("OnClick", function() AzerothAdminCommands.ReadTicket(object["tNumber"], object["tChar"], object["tLCreate"], object["tLUpdate"], object["tMsg"]) end)
             _G["ma_ticketscrollframe"..line]:Enable()
             _G["ma_ticketscrollframe"..line]:Show()
           end
@@ -211,11 +177,11 @@ function InlineScrollUpdate()
     end
 --  else
 --  end
---AzerothAdmin.db.account.buffer.tickets = {}
+--AzerothAdmin.db.profile.buffer.tickets = {}
 --AzerothAdmin.db.char.requests.ticket = false
 end
 
-function ReadTicket(tNumber, tChar, tLCreate, tLUpdate)
+function AzerothAdminCommands.ReadTicket(tNumber, tChar, tLCreate, tLUpdate, tMsg)
     AzerothAdmin.db.char.requests.ticket = false
     ma_goticketbutton:Enable()
     ma_deleteticketbutton:Enable()
@@ -228,17 +194,19 @@ function ReadTicket(tNumber, tChar, tLCreate, tLUpdate)
     ma_ticketid:SetText(tNumber)
     ma_ticketcreatedby:SetText(tChar)
     ma_tickettimecreated:SetText(tLCreate)
-    ma_ticketlastchange:SetText(tLUpdate)
-    AzerothAdmin:LogAction("Displaying ticket number "..tNumber.." from player "..tChar)
-    local ticketdetail = AzerothAdmin.db.account.buffer.ticketsfull
-    ma_ticketdetail:Show();
-    --AzerothAdmin:ChatMsg("???")
-    --ma_ticketdetail:SetText("Hello")
-    --AzerothAdmin:ChatMsg(AzerothAdmin.db.account.buffer.ticketsfull["tMsg"])
-    --ma_ticketdetail:SetText(ticketdetail["tMsg"])
-    --_G["ma_ticketdetail"]:SetText("Id: |cffffffff"..tNumber.."|r Who: |cffffffff"..tChar.."|r Msg: |cffffffff"..ticketdetail["tMsg"].."|r")
-    --ma_ticketdetail:SetText("Id: |cffffffff"..tNumber.."|r Who: |cffffffff"..tChar.."|r Msg: |cffffffff"..ticketdetail["tMsg"].."|r")
-    --ma_ticketdetail:SetText(ticketdetail["tMsg"].."|r")
-    --ma_ticketdetail:SetText("Hello")
+    -- Set the ticket message if available, otherwise it will be set when the server responds
+    if tMsg and tMsg ~= "" then
+        ma_ticketdetail.originalText = tMsg
+        ma_ticketdetail:SetText(tMsg)
+        ma_ticketdetail:SetCursorPosition(0)
+    else
+        ma_ticketdetail.originalText = ""
+        ma_ticketdetail:SetText("")
+        ma_ticketdetail:SetCursorPosition(0)
+    end
+    ma_ticketdetail:ClearFocus()
+    -- Scroll to top of the scroll frame
+    ma_ticketdetailscrollframe:SetVerticalScroll(0)
+    ma_ticketdetail:Show()
 end
  

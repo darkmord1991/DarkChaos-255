@@ -1,39 +1,30 @@
 ## Interface: 30300
 ## Title: |cffFFCC00DC|r GM
-## Notes: Combined Admin Addon for DarkChaos (AzerothAdmin + GOMove)
+## Notes: DarkChaos GM addon based on AzerothAdmin v23 + GOMove
 ## Author: SuperStyro Dev team + Manground Dev Team + Rochet2
-## Version: 3.3.5
+## Version: 23
 ## Name: AzerothAdmin
 ## License: GPLv3
-## SavedVariables: AzerothAdminDb, GOMoveSV
-## SavedVariablesPerCharacter: AzerothAdminDbPerChar
-## OptionalDeps: AceLibrary,AceEvent-2.0,AceHook-2.1,AceDebug-2.0,AceLocale-2.2,AceConsole-2.0,AceAddon-2.0,DC-AddonProtocol
+## OptionalDeps: Ace3,DC-AddonProtocol,AzerothAdmin_Models
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
+## SavedVariables: AzerothAdminDb, GOMoveSV
+## SavedVariablesPerCharacter: AzerothAdminDbPerChar
 
-Libraries\AceLibrary\AceLibrary.lua
-Libraries\AceOO-2.0\AceOO-2.0.lua
-Libraries\AceEvent-2.0\AceEvent-2.0.lua
-Libraries\AceHook-2.1\AceHook-2.1.lua
-Libraries\AceDB-2.0\AceDB-2.0.lua
-Libraries\AceDebug-2.0\AceDebug-2.0.lua
-Libraries\AceLocale-2.2\AceLocale-2.2.lua
-Libraries\AceConsole-2.0\AceConsole-2.0.lua
-Libraries\AceAddon-2.0\AceAddon-2.0.lua
-Libraries\Tablet-2.0\Tablet-2.0.lua
-Libraries\DewDrop-2.0\DewDrop-2.0.lua
+Libraries\LibStub\LibStub.lua
+Libraries\CallbackHandler-1.0\CallbackHandler-1.0.xml
+Libraries\AceAddon-3.0\AceAddon-3.0.xml
+Libraries\AceEvent-3.0\AceEvent-3.0.xml
+Libraries\AceDB-3.0\AceDB-3.0.xml
+Libraries\AceLocale-3.0\AceLocale-3.0.xml
+Libraries\AceConsole-3.0\AceConsole-3.0.xml
+Libraries\AceHook-3.0\AceHook-3.0.xml
+Libraries\AceGUI-3.0\AceGUI-3.0.xml
+Libraries\AceConfig-3.0\AceConfig-3.0.xml
 Libraries\FrameLib-1.0\FrameLib-1.0.lua
 Libraries\Graph-1.0\Graph-1.0.lua
-Libraries\LibStub\LibStub.lua
-Locales\enUS.lua
-Locales\strings.lua
-Core\AzerothAdmin.lua
-Core\Init.lua
-Core\DropDownStyle.lua
-Data\Models.lua
-Data\DBC.lua
-Data\TeleportTable.lua
-Data\DCTeleports.lua
+Locales\enUS\enUS.lua
+Locales\enUS\strings_enUS.lua
 Commands\Main.lua
 Commands\Tele.lua
 Commands\Char.lua
@@ -42,30 +33,32 @@ Commands\Misc.lua
 Commands\Server.lua
 Commands\NPC.lua
 Commands\GO.lua
-Commands\Who.lua
+Data\DBC.lua
+Data\TeleportTable.lua
+Data\DCTeleports.lua
+Core\Init.lua
+Core\AzerothAdmin.lua
 Commands\DC.lua
+Commands\Confirmation.lua
+Core\DropDownStyle.lua
 Modules\Linkifier.lua
-Frames\MangFrames_Start.lua
-Frames\MangFrames_Tabs.lua
-
+Frames\Frames_Start.lua
+Frames\Frames_Tabs.lua
 GOMove\GOMoveFunctions.lua
 GOMove\GOMoveScripts.lua
 GOMove\NPCMoveScripts.lua
 GOMove\MapButton.xml
-
-Frames\MangFrames_MiniMenu.lua
-Frames\MangFrames_LookupButtons.lua
-Frames\MangFrames_PopupFrames.lua
-Frames\MangFrames_SmallPopupFrames.lua
-Frames\MangFrames_SectionMain.lua
-Frames\MangFrames_SectionTele.lua
-Frames\MangFrames_SectionLog.lua
-Frames\MangFrames_SectionChar.lua
-Frames\MangFrames_SectionTicket.lua
-Frames\MangFrames_SectionMisc.lua
-Frames\MangFrames_SectionServer.lua
-Frames\MangFrames_SectionNpc.lua
-Frames\MangFrames_SectionGO.lua
-Frames\MangFrames_SectionWho.lua
+Frames\Frames_MiniMenu.lua
+Frames\Frames_LookupButtons.lua
+Frames\Frames_PopupFrames.lua
+Frames\Frames_SmallPopupFrames.lua
+Frames\Frames_SectionMain.lua
+Frames\Frames_SectionTele.lua
+Frames\Frames_SectionChar.lua
+Frames\Frames_SectionTicket.lua
+Frames\Frames_SectionMisc.lua
+Frames\Frames_SectionServer.lua
+Frames\Frames_SectionNpc.lua
+Frames\Frames_SectionGO.lua
 Frames\MangFrames_SectionDCTele.lua
-Frames\MangFrames.lua
+Frames\Frames.lua

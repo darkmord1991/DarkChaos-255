@@ -1,10 +1,10 @@
-﻿-------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------
 --
 -- AzerothAdmin Version 3.x
 -- AzerothAdmin is a derivative of TrinityAdmin/MangAdmin.
 --
--- Copyright (C) 2024 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- Copyright (C) 2007 Free Software Foundation, Inc.
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -85,7 +85,7 @@ function MangLinkifier_Decompose(chatstring)
 end
 
 function MangLinkifier_Link(orgtxt, id, type)
-  local color = AzerothAdmin.db.account.style.color.linkifier
+  local color = AzerothAdmin.db.profile.style.color.linkifier
   local urlcolor = RGBPercToHex(color.r,color.g,color.b)
   --local urlcolor = (string.rep("0",6-string.len((string.upper(string.format("%x", dec)))))..(string.upper(string.format("%x", dec))))
   ----------====~~GO Target Command Replace Text ~~====----------

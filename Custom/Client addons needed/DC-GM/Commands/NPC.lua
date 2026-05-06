@@ -1,10 +1,10 @@
-﻿-------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------
 --
 -- AzerothAdmin Version 3.x
 -- AzerothAdmin is a derivative of TrinityAdmin/MangAdmin.
 --
--- Copyright (C) 2024 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- Copyright (C) 2007 Free Software Foundation, Inc.
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -16,444 +16,333 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
-function InitModelFrameNPC()
-  ma_npcmodelframe:SetScript("OnUpdate", function() AzerothAdminNpcModelOnUpdate(arg1) end)
+AzerothAdminCommands = AzerothAdminCommands or {}
+
+function AzerothAdminCommands.InitModelFrameNPC()
+  ma_npcmodelframe:SetScript("OnUpdate", function(self, elapsed) AzerothAdminCommands.AzerothAdminNpcModelOnUpdate(self, elapsed) end)
   ma_npcmodelframe.rotation = 0.61;
   ma_npcmodelframe:SetRotation(ma_npcmodelframe.rotation)
   ma_npcmodelframe:SetUnit("player")
 
 end
 
-function NpcModelRotateLeft()
+function AzerothAdminCommands.NpcModelRotateLeft()
   ma_npcmodelframe.rotation = ma_npcmodelframe.rotation - 0.03
   ma_npcmodelframe:SetRotation(ma_npcmodelframe.rotation)
   PlaySound("igInventoryRotateCharacter")
 end
 
-function NpcModelRotateRight()
+function AzerothAdminCommands.NpcModelRotateRight()
   ma_npcmodelframe.rotation = ma_npcmodelframe.rotation + 0.03
   ma_npcmodelframe:SetRotation(ma_npcmodelframe.rotation)
   PlaySound("igInventoryRotateCharacter")
 end
 
-function AzerothAdminNpcModelOnUpdate(elapsedTime)
+function AzerothAdminCommands.AzerothAdminNpcModelOnUpdate(frame, elapsedTime)
   if ( ma_npcmodelrotatelbutton:GetButtonState() == "PUSHED" ) then
-    this.rotation = this.rotation + (elapsedTime * 2 * PI * ROTATIONS_PER_SECOND)
-    if ( this.rotation < 0 ) then
-      this.rotation = this.rotation + (2 * PI)
-    end
-    this:SetRotation(this.rotation);
+  frame.rotation = frame.rotation + (elapsedTime * 2 * PI * ROTATIONS_PER_SECOND)
+  if ( frame.rotation < 0 ) then
+    frame.rotation = frame.rotation + (2 * PI)
+  end
+  frame:SetRotation(frame.rotation);
   end
   if ( ma_npcmodelrotaterbutton:GetButtonState() == "PUSHED" ) then
-    this.rotation = this.rotation - (elapsedTime * 2 * PI * ROTATIONS_PER_SECOND)
-    if ( this.rotation > (2 * PI) ) then
-      this.rotation = this.rotation - (2 * PI)
-    end
-    this:SetRotation(this.rotation);
+  frame.rotation = frame.rotation - (elapsedTime * 2 * PI * ROTATIONS_PER_SECOND)
+  if ( frame.rotation > (2 * PI) ) then
+    frame.rotation = frame.rotation - (2 * PI)
+  end
+  frame:SetRotation(frame.rotation);
   end
 end
 
-function NpcModelChanged()
+function AzerothAdminCommands.NpcModelChanged()
+  if not ma_npcmodelframe then
+  return -- Frame not created yet
+  end
   if not AzerothAdmin:Selection("none") then
-    ma_npcmodelframe:SetUnit("target")
+  ma_npcmodelframe:SetUnit("target")
   else
-    ma_npcmodelframe:SetUnit("player")
+  ma_npcmodelframe:SetUnit("player")
   end
   ma_npcmodelframe:RefreshUnit()
 end
 
-function NPCKillSomething()
-  local target = UnitName("target") or UnitName("player")
+function AzerothAdminCommands.NPCKillSomething()
+  local target = UnitName("target")
   AzerothAdmin:ChatMsg(".die")
-  AzerothAdmin:LogAction("Killed "..target..".")
 end
 
-function Respawn()
+function AzerothAdminCommands.Respawn()
   AzerothAdmin:ChatMsg(".respawn")
-  AzerothAdmin:LogAction("Respawned creatures near you.")
 end
 
-function NPCDistance()
-    -- Check if a target exists
-    if UnitExists("target") then
-        AzerothAdmin:ID_Setting_Start_Write(1)
-        local player = UnitName("target") or UnitName("player")
-        AzerothAdmin:ChatMsg(".distance")
-        AzerothAdmin:LogAction("Got distance to player "..player..".")
-    else
-        AzerothAdmin:LogAction("Target NPC to use distance command")
-        print("Target NPC to use distance command")
-    end
+function AzerothAdminCommands.NPCDistance()
+  -- Check if a target exists
+  if UnitExists("target") then
+    AzerothAdmin:ID_Setting_Start_Write(1)
+    local NPC_target = UnitName("target")
+    AzerothAdmin:ChatMsg(".distance")
+  else
+    print("Target NPC to use distance command")
+  end
 end
 
-function NPCShowGUID()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".guid")
-    AzerothAdmin:LogAction("Got GUID for player "..player..".")
+function AzerothAdminCommands.NPCShowGUID()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".guid")
 end
 
-function NPCInfo()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc info")
-    AzerothAdmin:LogAction("Got NPC info for player "..player..".")
+function AzerothAdminCommands.NPCInfo()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc info")
 end
 
-function NPCDemorph()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".demorph")
-    AzerothAdmin:LogAction("Demorphed player "..player..".")
+function AzerothAdminCommands.NPCDemorph()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".demorph")
 end
 
 
-function NPCMove()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc move")
-    AzerothAdmin:LogAction("Set NPC move for player "..player..".")
+function AzerothAdminCommands.NPCMove()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc move")
 end
 
 
 
-function NPCDel()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc del")
-    AzerothAdmin:LogAction("Set NPC deleted for player "..player..".")
+function AzerothAdminCommands.NPCDel()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc del")
 end
 
-function NPC_GUID_Get()
+function AzerothAdminCommands.NPC_GUID_Get()
 	AzerothAdmin:ID_Setting_Start_Write(1)
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc info")
-    AzerothAdmin:LogAction("Got NPC_GUID_Get for player "..player..".")
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc info")
 end
 
-function NPC_Add()
-    local player = UnitName("target") or UnitName("player")
-    local npc = ma_NPC_idbutton:GetText()
-    AzerothAdmin:ChatMsg(".npc add "..npc)
-    AzerothAdmin:LogAction("NPC Spawn mob "..npc..".")
+function AzerothAdminCommands.NPC_Add()
+  local NPC_target = UnitName("target")
+  local npc = ma_NPC_idbutton:GetText()
+  AzerothAdmin:ChatMsg(".npc add "..npc)
 end
 
-function NPCGo()
-    local player = UnitName("target") or UnitName("player")
-    local npc =	ma_NPC_guidbutton:GetText()
-    AzerothAdmin:ChatMsg(".go creature "..npc)
-    AzerothAdmin:LogAction("Go NPC for player "..player..".")
+function AzerothAdminCommands.NPC_AddID()
+  local idbox = ma_NPC_idbutton:GetText()
+  local params = ma_npccharactertarget:GetText()
+  local creatureid = (idbox ~= "" and idbox) or params
+  AzerothAdmin:ChatMsg(".npc add "..creatureid)
 end
 
-function NPCMorph()
+function AzerothAdminCommands.NPCGo()
+  local NPC_target = UnitName("target")
+  local npc =	ma_NPC_guidbutton:GetText()
+  AzerothAdmin:ChatMsg(".go creature "..npc)
+end
+
+function AzerothAdminCommands.NPCMorph()
   local cname = ma_charactertarget:GetText()
   local npccname = ma_npccharactertarget:GetText()
   AzerothAdmin:ChatMsg(".modify morph "..npccname)
-  AzerothAdmin:LogAction(".modify morph "..npccname..".")
 end
 
-function NPCSay()
+function AzerothAdminCommands.NPCSay()
   local cname = ma_charactertarget:GetText()
   local npccname = ma_npccharactertarget:GetText()
   AzerothAdmin:ChatMsg(".npc say "..npccname)
-  AzerothAdmin:LogAction(".npc say "..npccname..".")
 end
 
-function NPCYell()
+function AzerothAdminCommands.NPCYell()
   local cname = ma_charactertarget:GetText()
   local npccname = ma_npccharactertarget:GetText()
   AzerothAdmin:ChatMsg(".npc yell "..npccname)
-  AzerothAdmin:LogAction(".npc yell "..npccname..".")
 end
 
-function NPCAura()
+function AzerothAdminCommands.NPCAura()
   local cname = ma_charactertarget:GetText()
   local npccname = ma_npccharactertarget:GetText()
   AzerothAdmin:ChatMsg(".aura "..npccname)
-  AzerothAdmin:LogAction(".aura "..npccname..".")
 end
 
-function NPCUnaura()
+function AzerothAdminCommands.NPCUnaura()
   local cname = ma_charactertarget:GetText()
   local npccname = ma_npccharactertarget:GetText()
   AzerothAdmin:ChatMsg(".unaura "..npccname)
-  AzerothAdmin:LogAction(".unaura "..npccname..".")
 end
 
-function NpcEmote(emote)
-    AzerothAdmin:ChatMsg(".npc playemote "..emote)
-    AzerothAdmin:LogAction("Played emote ("..emote..").")
+function AzerothAdminCommands.NpcEmote(emote)
+  AzerothAdmin:ChatMsg(".npc playemote "..emote)
 end
 
-function NPCBindSight()
-    local npccname = ma_npccharactertarget:GetText()
-    AzerothAdmin:ChatMsg(".bindsight")
-    AzerothAdmin:LogAction("Sight bound to "..npccname)
+function AzerothAdminCommands.NPCBindSight()
+  local npccname = ma_npccharactertarget:GetText()
+  AzerothAdmin:ChatMsg(".bindsight")
 end
 
-function NPCUnBindSight()
-    local npccname = ma_npccharactertarget:GetText()
-    AzerothAdmin:ChatMsg(".unbindsight")
-    AzerothAdmin:LogAction("Sight unbound to "..npccname)
+function AzerothAdminCommands.NPCUnBindSight()
+  local npccname = ma_npccharactertarget:GetText()
+  AzerothAdmin:ChatMsg(".unbindsight")
 end
 
-function NPCComeToMe()
-    local npccname = ma_npccharactertarget:GetText()
-    AzerothAdmin:ChatMsg(".cometome 1")
-    AzerothAdmin:LogAction("Forced "..npccname.." using ComeToMe")
+function AzerothAdminCommands.NPCComeToMe()
+  local npccname = ma_npccharactertarget:GetText()
+  AzerothAdmin:ChatMsg(".cometome 1")
 
 end
 
-function DisplayUP()
-    -- Check if display ID exists
-    local guid = ma_NPC_guidbutton:GetText()
-    local displayid = ma_npcdisplayid:GetText()
+function AzerothAdminCommands.DisplayUP()
+  -- Check if display ID exists
+  local guid = ma_NPC_guidbutton:GetText()
+  local displayid = ma_npcdisplayid:GetText()
 
-    if UnitExists("target") and guid ~= "" and displayid ~= "" then
-        local currentid = ma_npcdisplayid:GetText()
-        currentid = currentid + 1
-        ma_npcdisplayid:SetText(currentid)
-        AzerothAdmin:ChatMsg(".npc set model "..currentid)
-    else
-        AzerothAdmin:LogAction("Target NPC and use 'Get GUID' first")
-        print("Target NPC and use 'Get GUID' first")
-    end
+  if UnitExists("target") and guid ~= "" and displayid ~= "" then
+    local currentid = ma_npcdisplayid:GetText()
+    currentid = currentid + 1
+    ma_npcdisplayid:SetText(currentid)
+    AzerothAdmin:ChatMsg(".npc set model "..currentid)
+  else
+    print("Target NPC and use 'Get GUID' first")
+  end
 end
 
-function DisplayDown()
-    -- Check if display ID exists
-    local guid = ma_NPC_guidbutton:GetText()
-    local displayid = ma_npcdisplayid:GetText()
+function AzerothAdminCommands.DisplayDown()
+  -- Check if display ID exists
+  local guid = ma_NPC_guidbutton:GetText()
+  local displayid = ma_npcdisplayid:GetText()
 
-    if UnitExists("target") and guid ~= "" and displayid ~= "" then
-        local currentid = ma_npcdisplayid:GetText()
-        currentid = currentid - 1
-        ma_npcdisplayid:SetText(currentid)
-        AzerothAdmin:ChatMsg(".npc set model "..currentid)
-    else
-        AzerothAdmin:LogAction("Target NPC and use 'Get GUID' first")
-        print("Target NPC and use 'Get GUID' first")
-    end
+  if UnitExists("target") and guid ~= "" and displayid ~= "" then
+    local currentid = ma_npcdisplayid:GetText()
+    currentid = currentid - 1
+    ma_npcdisplayid:SetText(currentid)
+    AzerothAdmin:ChatMsg(".npc set model "..currentid)
+  else
+    print("Target NPC and use 'Get GUID' first")
+  end
 end
 
-function ID_UP()
-    -- Check if ID exists
-    local guid = ma_NPC_guidbutton:GetText()
-    local npcid = ma_NPC_idbutton:GetText()
+function AzerothAdminCommands.ID_UP()
+  -- Check if ID exists
+  local guid = ma_NPC_guidbutton:GetText()
+  local npcid = ma_NPC_idbutton:GetText()
 
-    if UnitExists("target") and guid ~= "" and npcid ~= "" then
-        local currentid = ma_NPC_idbutton:GetText()
-        currentid = currentid + 1
-        ma_NPC_idbutton:SetText(currentid)
-    else
-        AzerothAdmin:LogAction("Target NPC and use 'Get GUID' first")
-        print("Target NPC and use 'Get GUID' first")
-    end
+  if UnitExists("target") and guid ~= "" and npcid ~= "" then
+    local currentid = ma_NPC_idbutton:GetText()
+    currentid = currentid + 1
+    ma_NPC_idbutton:SetText(currentid)
+  else
+    print("Target NPC and use 'Get GUID' first")
+  end
 end
 
-function ID_DOWN()
-    -- Check if ID exists
-    local guid = ma_NPC_guidbutton:GetText()
-    local npcid = ma_NPC_idbutton:GetText()
+function AzerothAdminCommands.ID_DOWN()
+  -- Check if ID exists
+  local guid = ma_NPC_guidbutton:GetText()
+  local npcid = ma_NPC_idbutton:GetText()
 
-    if UnitExists("target") and guid ~= "" and npcid ~= "" then
-        local currentid = ma_NPC_idbutton:GetText()
-        currentid = currentid - 1
-        ma_NPC_idbutton:SetText(currentid)
-    else
-        AzerothAdmin:LogAction("Target NPC and use 'Get GUID' first")
-        print("Target NPC and use 'Get GUID' first")
-    end
+  if UnitExists("target") and guid ~= "" and npcid ~= "" then
+    local currentid = ma_NPC_idbutton:GetText()
+    currentid = currentid - 1
+    ma_NPC_idbutton:SetText(currentid)
+  else
+    print("Target NPC and use 'Get GUID' first")
+  end
 end
 
-function NPCClear()
-    -- Clear all NPC info text boxes
-    ma_NPC_guidbutton:SetText("")
-    ma_NPC_idbutton:SetText("")
-    ma_npcdisplayid:SetText("")
-    ma_npc_distance_box:SetText("")
-    AzerothAdmin:LogAction("Cleared all NPC info fields")
+function AzerothAdminCommands.NPCClear()
+  -- Clear all NPC info text boxes
+  ma_NPC_guidbutton:SetText("")
+  ma_NPC_idbutton:SetText("")
+  ma_npcdisplayid:SetText("")
+  ma_npc_distance_box:SetText("")
 end
 
-function NPCModelZoomIn()
-    ma_npcmodelframe:SetCamera(0)
---    ma_modelframe:SetModelScale(ma_modelframe:GetModelScale() + .1)
-    --ma_modelframe:SetPosition(1,ma_modelframe:GetModelScale()*3,0)
-    --ma_modelframe:RefreshUnit()
+function AzerothAdminCommands.NPCModelZoomIn()
+  ma_npcmodelframe:SetCamera(0)
+--  ma_modelframe:SetModelScale(ma_modelframe:GetModelScale() + .1)
+  --ma_modelframe:SetPosition(1,ma_modelframe:GetModelScale()*3,0)
+  --ma_modelframe:RefreshUnit()
 end
 
-function NPCModelZoomOut()
-    ma_npcmodelframe:SetCamera(1)
-    ma_npcmodelframe:RefreshUnit()
+function AzerothAdminCommands.NPCModelZoomOut()
+  ma_npcmodelframe:SetCamera(1)
+  ma_npcmodelframe:RefreshUnit()
 
    -- ma_modelframe:SetCamera(2)
-    --ma_modelframe:SetModelScale(ma_modelframe:GetModelScale() * .5)
-    --ma_modelframe:SetPosition(0,0,0)
-    --ma_modelframe:RefreshUnit()
+  --ma_modelframe:SetModelScale(ma_modelframe:GetModelScale() * .5)
+  --ma_modelframe:SetPosition(0,0,0)
+  --ma_modelframe:RefreshUnit()
 
 end
 
-function NPCPossess()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".possess")
-    AzerothAdmin:LogAction("Possessed "..player)
+function AzerothAdminCommands.NPCPossess()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".possess")
 
 end
-function NPCUnPossess()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".unpossess")
-    AzerothAdmin:LogAction("UnPossessed "..player)
+function AzerothAdminCommands.NPCUnPossess()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".unpossess")
 
 end
 
-function NPCFreeze()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc set movetype stay NODEL")
-    AzerothAdmin:LogAction("Set NPC movement to STAY for player "..player..".")
+function AzerothAdminCommands.NPCFreeze()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc set movetype stay NODEL")
 end
 
-function NPCFreezeDEL()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc set movetype stay")
-    AzerothAdmin:LogAction("Set NPC movement to STAY for player "..player..".")
+function AzerothAdminCommands.NPCFreezeDEL()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc set movetype stay")
 end
 
-function WayEndAdd()
-    local player = UnitName("target") or UnitName("player")
-    -- Make adding robust: if the target has a path assigned but not loaded,
-    -- `.wp add` can silently create an unattached path. Ask the server for WPINFO
-    -- and then load the path before adding.
-    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
-        AzerothAdmin._dcWpAddAfterInfo = true
-        AzerothAdmin:UpdateWaypointInfo()
-        AzerothAdmin:LogAction("Waypoint add requested for player "..player..".")
-    else
-        AzerothAdmin:ChatMsg(".wp add")
-        AzerothAdmin:LogAction("WayPoint Add (fallback) for player "..player..".")
-    end
+function AzerothAdminCommands.WayEndAdd()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp add")
 end
 
--- Start waypoint movement for the selected creature.
--- Some UI buttons call this legacy helper; keep it defined to avoid nil errors.
-function WayStart()
-    local player = UnitName("target") or UnitName("player")
-    -- UI label is "WayAdd" in some places. Make it do the intuitive thing:
-    -- if the target already has a path, add a waypoint; otherwise start a new path.
-    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
-        AzerothAdmin._dcWpStartOrAddAfterInfo = true
-        AzerothAdmin:UpdateWaypointInfo()
-        AzerothAdmin:LogAction("Waypoint start/add requested for player "..player..".")
-    else
-        AzerothAdmin:ChatMsg(".wp start")
-        AzerothAdmin:LogAction("Waypoint path started (fallback) for player "..player..".")
-    end
+function AzerothAdminCommands.NPCAdd_Way()
+  local NPC_target = UnitName("target")
+  local npc =	ma_NPC_guidbutton:GetText()
+  AzerothAdmin:ChatMsg(".wp add "..npc)
+  --AzerothAdmin:Way_Point_Add_Start_Write(1)
 end
 
-function NPCAdd_Way()
-    local player = UnitName("target") or UnitName("player")
-    local npc =	ma_NPC_guidbutton:GetText()
-    AzerothAdmin:ChatMsg(".wp add "..npc)
-    --AzerothAdmin:Way_Point_Add_Start_Write(1)
-    AzerothAdmin:ChatMsg(".wp show on "..npc)
-    AzerothAdmin:LogAction("WayPoint Add for player "..player..".")
+function AzerothAdminCommands.WayModifyAdd()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp modify add")
 end
 
-function WayModifyAdd()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".wp modify add")
-    AzerothAdmin:LogAction("WayPoint(Modify) Add for player "..player..".")
+function AzerothAdminCommands.WayModifyDel()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp modify del")
 end
 
-function WayModifyDel()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".wp modify del")
-    AzerothAdmin:LogAction("WayPoint(Modify) Del for player "..player..".")
+function AzerothAdminCommands.NPCAdd_WayShowOn()
+  local NPC_target = UnitName("target")
+  local npc =	ma_NPC_guidbutton:GetText()
+  AzerothAdmin:ChatMsg(".wp show on "..npc)
 end
 
-function WayModifyMove()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".wp modify move")
-    AzerothAdmin:LogAction("WayPoint(Modify) Move for player "..player..".")
+function AzerothAdminCommands.WayShowOn()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp show on")
 end
 
-function NPCAdd_WayShowOn()
-    local player = UnitName("target") or UnitName("player")
-    local npc =	ma_NPC_guidbutton:GetText()
-    AzerothAdmin:ChatMsg(".wp show on "..npc)
-    AzerothAdmin:LogAction("WayPoint Show On for player "..player..".")
+function AzerothAdminCommands.WayShowOff()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp show off")
 end
 
-function WayShowOn()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".wp show on")
-    AzerothAdmin:LogAction("WayPoint Show On for player "..player..".")
+function AzerothAdminCommands.NPCUnFreeze_Way()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
 end
 
-function WayShowOff()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".wp show off")
-    AzerothAdmin:LogAction("WayPoint Show Off for player "..player..".")
+function AzerothAdminCommands.ShowMove()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".movegens")
 end
 
-function WayWipe()
-    local player = UnitName("target") or UnitName("player")
-    -- AzerothCore supports `.wp wipe` which deletes all waypoints for the selected
-    -- creature's loaded path and detaches it.
-    AzerothAdmin:ChatMsg(".wp wipe")
-    AzerothAdmin:LogAction("Waypoint path wiped for player "..player..".")
-end
-
-function WayRun()
-    local player = UnitName("target") or UnitName("player")
-    -- This project parses `.wp info` and (optionally) auto-runs `.wp load <path>`
-    -- + `.npc set movetype way NODEL` when `_dcWpRunAfterInfo` is true.
-    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
-        AzerothAdmin._dcWpRunAfterInfo = true
-        AzerothAdmin:UpdateWaypointInfo()
-        AzerothAdmin:LogAction("Run waypoint path requested for player "..player..".")
-    else
-        -- Fallback: try to re-init movement on current target.
-        AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
-        AzerothAdmin:LogAction("Run waypoint path (fallback) for player "..player..".")
-    end
-end
-
--- DC Waypoints helpers: control random wander distance for the selected spawn.
--- Uses AzerothCore command: `.npc set wanderdistance <yards>`.
-local function WaySetSpawnDist(dist)
-    local player = UnitName("target") or UnitName("player")
-    dist = tonumber(dist) or 0
-    if dist < 0 then dist = 0 end
-    dist = math.floor(dist)
-    AzerothAdmin:ChatMsg(".npc set wanderdistance " .. tostring(dist))
-    AzerothAdmin:LogAction("Set NPC wanderdistance " .. tostring(dist) .. " for player " .. player .. ".")
-    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
-        AzerothAdmin:UpdateWaypointInfo()
-    end
-end
-
-function WayWander30()
-    WaySetSpawnDist(30)
-    AzerothAdmin:ChatMsg(".npc set movetype random")
-    AzerothAdmin:LogAction("Set NPC movement type to RANDOM.")
-    AzerothAdmin:ChatMsg(".respawn")
-end
-
-function WayWanderOff()
-    WaySetSpawnDist(0)
-end
-
-function NPCUnFreeze_Way()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
-    AzerothAdmin:LogAction("Set NPC movement type to WAYPOINT for player "..player..".")
-end
-
-function NPCUnFreeze_Random()
-    WaySetSpawnDist(10)
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".npc set movetype random")
-    AzerothAdmin:LogAction("Set NPC movement type to RANDOM for player "..player..".")
-    AzerothAdmin:ChatMsg(".respawn")
-end
-
-function ShowMove()
-    local player = UnitName("target") or UnitName("player")
-    AzerothAdmin:ChatMsg(".movegens")
-    AzerothAdmin:LogAction("Got Movement Stack for player "..player..".")
+function AzerothAdminCommands.NpcClearParams()
+  ma_npccharactertarget:SetText("")
 end

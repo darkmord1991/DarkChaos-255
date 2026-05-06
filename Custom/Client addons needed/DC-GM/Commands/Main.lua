@@ -1,10 +1,10 @@
-﻿-------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------
 --
 -- AzerothAdmin Version 3.x
 -- AzerothAdmin is a derivative of TrinityAdmin/MangAdmin.
 --
--- Copyright (C) 2024 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- Copyright (C) 2007 Free Software Foundation, Inc.
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -16,145 +16,121 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
-function DisplayAccountLevel()
+AzerothAdminCommands = AzerothAdminCommands or {}
+
+function AzerothAdminCommands.DisplayAccountLevel()
   AzerothAdmin:ChatMsg(".account")
 end
 
-function ToggleGMMode(value)
+function AzerothAdminCommands.ToggleGMMode(value)
   AzerothAdmin:ChatMsg(".gm "..value)
-  AzerothAdmin:LogAction("Turned GM-mode to "..value..".")
   AzerothAdmin:ChatMsg(".gm chat "..value)
-  AzerothAdmin:LogAction("Turned Gm-Chat to "..value..".")
 end
 
-function ToggleFlyMode(value)
+function AzerothAdminCommands.ToggleFlyMode(value)
   local player = UnitName("target") or UnitName("player")
   AzerothAdmin:ChatMsg(".gm fly "..value)
-  AzerothAdmin:LogAction("Turned Fly-mode "..value.." for "..player..".")
 end
 
-function ToggleHoverMode(value)
-  AzerothAdmin:ChatMsg("hover command not used "..value) --TODO: Change to another function.
-  local status
-  if value == 1 then
-    status = "on"
-  else
-    status = "off"
-  end
-  AzerothAdmin:LogAction("Hover mode not an option "..status..".")
+function AzerothAdminCommands.ToggleSpectatorMode(value)
+  AzerothAdmin:ChatMsg(".gm spectator "..value)
 end
 
-function ToggleWhisper(value)
+function AzerothAdminCommands.ToggleWhisper(value)
   AzerothAdmin:ChatMsg(".whispers "..value)
-  AzerothAdmin:LogAction("Turned accepting whispers to "..value..".")
 end
 
-function ToggleVisible(value)
+function AzerothAdminCommands.ToggleVisible(value)
   AzerothAdmin:ChatMsg(".gm visible "..value)
   if value == "on" then
-    AzerothAdmin:LogAction("Turned you visible.")
   else
-    AzerothAdmin:LogAction("Turned you invisible.")
   end
 end
 
-function ToggleCheatTaxi(value)
+function AzerothAdminCommands.ToggleCheatTaxi(value)
   if AzerothAdmin:Selection("player") or AzerothAdmin:Selection("self") or AzerothAdmin:Selection("none") then
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".cheat taxi "..value) -- FIX 10
     if value == 1 then
-      AzerothAdmin:LogAction("Activated cheat taxi to "..player..".")
     else
-      AzerothAdmin:LogAction("Disabled cheat taxi to "..player..".")
     end
   else
     AzerothAdmin:Print(Locale["selectionerror1"])
   end
 end
 
-function ToggleMaps(value) --TODO: Add confirm diaglog when attempting to perform action
-  AzerothAdmin:ChatMsg(".explorecheat "..value)
-  if value == 1 then
-    AzerothAdmin:LogAction("Revealed all maps for selected player.")
-  else
-    AzerothAdmin:LogAction("Hide all unexplored maps for selected player.")
-  end
-end
-
-function KillSomething()
+function AzerothAdminCommands.KillSomething()
   local target = UnitName("target") or UnitName("player")
   AzerothAdmin:ChatMsg(".die")
-  AzerothAdmin:LogAction("Killed "..target..".")
 end
 
-function InstantKill()
+function AzerothAdminCommands.InstantKill()
   AzerothAdmin.db.char.instantKillMode = ma_instantkillbutton:GetChecked()
 end
 
-function SetSpeed()
+function AzerothAdminCommands.ToggleInstantTeleport()
+  AzerothAdmin.db.profile.instantTeleport = ma_instantteleportbutton:GetChecked()
+end
+
+function AzerothAdminCommands.SetSpeed()
   local value = string.format("%.1f", ma_speedslider:GetValue())
   if AzerothAdmin:Selection("player") or AzerothAdmin:Selection("self") or AzerothAdmin:Selection("none") then
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".mod speed all "..value)
-    AzerothAdmin:LogAction("Set all speed of "..player.." to "..value..".")
   else
     AzerothAdmin:Print(Locale["selectionerror1"])
     ma_speedslider:SetValue(1)
   end
 end
 
-function SetScale()
+function AzerothAdminCommands.SetScale()
   local value = string.format("%.1f", ma_scaleslider:GetValue())
   if AzerothAdmin:Selection("player") or AzerothAdmin:Selection("self") or AzerothAdmin:Selection("none") then
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".modify scale "..value)
-    AzerothAdmin:LogAction("Set scale of "..player.." to "..value..".")
   else
     AzerothAdmin:Print(Locale["selectionerror1"])
     ma_scaleslider:SetValue(1)
   end
 end
 
-function Screenie()
+function AzerothAdminCommands.Screenie()
   UIParent:Hide()
   Screenshot()
   UIParent:Show()
 end
 
-function ShowBank()
+function AzerothAdminCommands.ShowBank()
   AzerothAdmin:ChatMsg(".character check bank") -- FIX 10 Broken Bank button
 end
 
-function DismountPlayer()
+function AzerothAdminCommands.DismountPlayer()
   if AzerothAdmin:Selection("player") or AzerothAdmin:Selection("self") or AzerothAdmin:Selection("none") then
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".dismount")
-    AzerothAdmin:LogAction("Dismounted player "..player..".")
   else
     AzerothAdmin:Print(Locale["selectionerror1"])
   end
 end
 
-function SetJail_A()
+function AzerothAdminCommands.SetJail_A()
     AzerothAdmin:ChatMsg(".tele del ma_AllianceJail")
     AzerothAdmin:ChatMsg(".tele add ma_AllianceJail")
-    AzerothAdmin:LogAction("Set location of Alliance Jail")
 end
 
-function SetJail_H()
+function AzerothAdminCommands.SetJail_H()
     AzerothAdmin:ChatMsg(".tele del ma_HordeJail")
     AzerothAdmin:ChatMsg(".tele add ma_HordeJail")
-    AzerothAdmin:LogAction("Set location of Horde Jail")
 end
 
-function GridNavigate(x, y)
+function AzerothAdminCommands.GridNavigate(x, y)
   local way = AzerothAdmin.db.char.nextGridWay
   if not x and not y then
     table.insert(AzerothAdmin.db.char.functionQueue, "GridNavigate")
     AzerothAdmin:ChatMsg(".gps")
   else
-    if pcall(function() return ma_gridnavieditbox:GetText() + 10 end) then
-      local step = ma_gridnavieditbox:GetText()
+    local step = tonumber(ma_gridnavieditbox:GetText())
+    if step then
       local newy
       local newx
       if way == "east" then  --East
@@ -171,245 +147,243 @@ function GridNavigate(x, y)
         newx = x
       end
       AzerothAdmin:ChatMsg(".go xy "..newx.." "..newy)
-      AzerothAdmin:LogAction("Teleported to grid position: X: "..newx.." Y: "..newy)
     else
       AzerothAdmin:Print(Locale["numbererror"])
     end
   end
 end
 
-function ToggleChat(value)
+function AzerothAdminCommands.ToggleChat(value)
   AzerothAdmin:ChatMsg(".gm chat "..value)
-  AzerothAdmin:LogAction("Turned GM-Chat to "..value..".")
 end
 
-function ToggleWaterwalk(value)
+function AzerothAdminCommands.ToggleWaterwalk(value)
   AzerothAdmin:ChatMsg(".cheat waterwalk "..value)
-  AzerothAdmin:LogAction("Turned Waterwalk to "..value..".")
 end
 
-function ToggleAccountlock(value) --TODO: Add confirm diaglog when attempting to perform action
-  AzerothAdmin:ChatMsg(".account lock "..value)
-  AzerothAdmin:LogAction("Turned GM account lock to "..value..".")
+function AzerothAdminCommands.ToggleCheatCastTime(value)
+  AzerothAdmin:ChatMsg(".cheat casttime "..value)
 end
 
-function GMInGame()
+function AzerothAdminCommands.ToggleCheatCooldown(value)
+  AzerothAdmin:ChatMsg(".cheat cooldown "..value)
+end
+
+function AzerothAdminCommands.ToggleCheatGod(value)
+  AzerothAdmin:ChatMsg(".cheat god "..value)
+end
+
+function AzerothAdminCommands.ToggleCheatPower(value)
+  AzerothAdmin:ChatMsg(".cheat power "..value)
+end
+
+function AzerothAdminCommands.CheatStatus()
+  AzerothAdmin:ChatMsg(".cheat status")
+end
+
+function AzerothAdminCommands.ToggleAccountlock(value)
+  local state = (value == "on") and "lock" or "unlock"
+  local confirmMsg = string.format(Locale["msg_account_lock_confirm"] or "Are you sure you want to %s this account?", state)
+  AzerothAdmin:ShowConfirmDialog(confirmMsg, function()
+    AzerothAdminCommands.ToggleAccountlock_Confirmed(value)
+  end)
+end
+
+function AzerothAdminCommands.GMInGame()
   AzerothAdmin:ChatMsg(".gm ingame")
-  AzerothAdmin:LogAction("Listed GMs in-game.")
 end
 
-function GMList()
+function AzerothAdminCommands.GMList()
   AzerothAdmin:ChatMsg(".gm list")
-  AzerothAdmin:LogAction("Listed GM accounts.")
 end
 
-function PetCreate()
+function AzerothAdminCommands.PetCreate()
   AzerothAdmin:ChatMsg(".pet create")
-  AzerothAdmin:LogAction("Created a pet.")
 end
 
-function PetLearn()
+function AzerothAdminCommands.PetLearn()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".pet learn "..param)
-  AzerothAdmin:LogAction("Taught pet spell "..param)
 end
 
-function PetUnLearn()
+function AzerothAdminCommands.PetUnLearn()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".pet unlearn "..param)
-  AzerothAdmin:LogAction("Un-taught pet spell "..param)
 end
 
-function PetTP()
+function AzerothAdminCommands.PetTP()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".pet tp "..param)
-  AzerothAdmin:LogAction("Modified pet training points by "..param)
 end
 
-function LookupTaxi()
+function AzerothAdminCommands.LookupTaxi()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".lookup taxi "..param)
-  AzerothAdmin:LogAction("Looked up Taxinode "..param)
 end
 
-function GoTaxiNode()
+function AzerothAdminCommands.GoTaxiNode()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".go taxinode "..param)
-  AzerothAdmin:LogAction("Teleported to TaxiNode "..param)
 end
 
-function GoTrigger()
+function AzerothAdminCommands.GoTrigger()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".go trigger "..param)
-  AzerothAdmin:LogAction("Teleported to Trigger "..param)
 end
 
-function GoXY()
+function AzerothAdminCommands.GoXY()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".go xy "..param)
-  AzerothAdmin:LogAction("Teleported to XY "..param)
 end
 
-function GoXYZ()
+function AzerothAdminCommands.GoXYZ()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".go xyz "..param)
-  AzerothAdmin:LogAction("Teleported to XYZ "..param)
 end
 
-function GoZoneXY()
+function AzerothAdminCommands.GoZoneXY()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".go zonexy "..param)
-  AzerothAdmin:LogAction("Teleported to ZoneXY "..param)
 end
 
-function LookupZone()
+function AzerothAdminCommands.LookupZone()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".lookup area "..param)
-  AzerothAdmin:LogAction("Looked up Zone "..param)
 end
 
-function Cast()
+function AzerothAdminCommands.Cast()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".cast "..param)
-  AzerothAdmin:LogAction("Cast spell "..param)
 end
 
-function CastBack()
+function AzerothAdminCommands.CastBack()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".cast back "..param)
-  AzerothAdmin:LogAction("Cast Back spell "..param)
 end
 
-function CastDist()
+function AzerothAdminCommands.CastDist()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".cast dist "..param)
-  AzerothAdmin:LogAction("Cast Dist spell "..param)
 end
 
-function CastSelf()
+function AzerothAdminCommands.CastSelf()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".cast self "..param)
-  AzerothAdmin:LogAction("Cast Self spell "..param)
 end
 
-function CastTarget()
+function AzerothAdminCommands.CastTarget()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".cast target "..param)
-  AzerothAdmin:LogAction("Cast Target spell "..param)
 end
 
-function ListItem()
+function AzerothAdminCommands.ListItem()
   local param = ma_parameter:GetText()
   AzerothAdmin:ChatMsg(".list item "..param)
-  AzerothAdmin:LogAction("Listed Item "..param)
 end
 
-function GmClear()
+function AzerothAdminCommands.GmClear()
   ma_parameter:SetText("")
 end
 
-function AcctCreate() --TODO: Add confirm diaglog when attempting to perform action
+function AzerothAdminCommands.AcctCreate()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
-  AzerothAdmin:ChatMsg(".account create "..param)
-  AzerothAdmin:LogAction("Created account: "..param)
+  local confirmMsg = string.format(Locale["msg_acct_create_confirm"] or "Are you sure you want to create account '%s'?", param)
+  AzerothAdmin:ShowConfirmDialog(confirmMsg, function()
+    AzerothAdminCommands.AcctCreate_Confirmed()
+  end)
 end
 
-function AcctDelete() --TODO: Add confirm diaglog when attempting to perform action
-  local param = ma_parameter:GetText()
-  if param == "" then
-    AzerothAdmin:Print("Error: Parameter cannot be empty")
-    return
-  end
-  AzerothAdmin:ChatMsg(".account delete "..param)
-  AzerothAdmin:LogAction("Deleted account: "..param)
-end
-
-function AcctAddon()
+function AzerothAdminCommands.AcctAddon()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".account set addon "..param)
-  AzerothAdmin:LogAction("Set account addon: "..param)
 end
 
-function AcctGMLvl()
+function AzerothAdminCommands.AcctGMLvl()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".account set gmlevel "..param)
-  AzerothAdmin:LogAction("Set account gmlevel: "..param)
 end
 
-function AcctPasswd()
+function AzerothAdminCommands.AcctPasswd()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".account set password "..param)
-  AzerothAdmin:LogAction("Set account password: "..param)
 end
 
-function GMNotify()
+function AzerothAdminCommands.AcctChange()
+  local param = ma_parameter:GetText()
+  if param == "" then
+    AzerothAdmin:Print("Error: Parameter cannot be empty")
+    return
+  end
+  AzerothAdmin:ChatMsg(".character changeaccount "..param)
+end
+
+function AzerothAdminCommands.GMNotify()
   local param = ma_parameter:GetText()
   if param == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".gmnotify "..param)
-  AzerothAdmin:LogAction("GM Notify: "..param)
 end
 
-function TeleAddButton()
+function AzerothAdminCommands.TeleAddButton()
   local cname = ma_parameter:GetText()
   if cname == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
   AzerothAdmin:ChatMsg(".tele add "..cname)
-  AzerothAdmin:LogAction("Added .tele location: "..cname..".")
 
 end
 
-function TeleDelButton() --TODO: Add confirm diaglog when attempting to perform action
+function AzerothAdminCommands.TeleDelButton()
   local cname = ma_parameter:GetText()
   if cname == "" then
     AzerothAdmin:Print("Error: Parameter cannot be empty")
     return
   end
-  AzerothAdmin:ChatMsg(".tele del "..cname)
-  AzerothAdmin:LogAction("Deleted .tele location: "..cname..".")
-
+  local confirmMsg = string.format(Locale["msg_tele_del_confirm"] or "Are you sure you want to delete teleport location '%s'?", cname)
+  AzerothAdmin:ShowConfirmDialog(confirmMsg, function()
+    AzerothAdminCommands.TeleDelButton_Confirmed()
+  end)
 end
 
-function ResetSpeed()
+function AzerothAdminCommands.ResetSpeed()
     ma_speedslider:SetValue(1)
     ma_speedsliderText:SetText("Speed: 1.0")
     AzerothAdmin:ChatMsg(".mod speed all 1")
 
 end
 
-function ResetScale()
+function AzerothAdminCommands.ResetScale()
   ma_scaleslider:SetValue(1)
   ma_scalesliderText:SetText("Scale: 1.0")
   AzerothAdmin:ChatMsg(".mod scale 1")

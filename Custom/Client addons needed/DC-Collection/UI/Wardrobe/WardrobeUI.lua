@@ -12,7 +12,7 @@ DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
 local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
-local BG_TINT_ALPHA = 0.60
+local BG_TINT_ALPHA = 0.78
 
 local function GetLeftPanelWidth(modelWidth, slotSize)
     local slotColumnWidth = slotSize + 10
@@ -133,7 +133,7 @@ function Wardrobe:CreateFrame()
     frame:Hide()
 
     local BG_FELLEATHER = "Interface\\AddOns\\DC-Leaderboards\\Textures\\Backgrounds\\FelLeather_512.tga"
-    local BG_TINT_ALPHA = 0.60
+    local BG_TINT_ALPHA = 0.78
 
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",

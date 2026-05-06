@@ -1,5 +1,335 @@
 # AzerothAdmin Changelog
 
+## -=[ Version 23 - 03/22/2026]=-
+
+- ADD Server Restart button to Server tab using the same seconds field as shutdown
+- CHANGE Cancel Shutdown button renamed to "Cancel Shutdown/Restart" and now appears below both Restart and Shutdown buttons only when a restart or shutdown has been initiated
+- CHANGE Restart and Shutdown buttons are disabled (instead of hidden) when a restart/shutdown is active, and re-enabled when cancelled
+- ADD Button state (restart/shutdown pending) persists across addon window close/reopen via AceDB
+- CHANGE Countdown seconds editbox styled with custom 2px dark gray border replacing default InputBoxTemplate
+- FIX Countdown seconds editbox now clears focus on Escape key press
+- CHANGE Countdown seconds editbox is disabled while a restart or shutdown is active, preventing edits mid-countdown
+- FIX Countdown seconds editbox cursor no longer lingers after being disabled
+- CHANGE Restart, Shutdown, editbox, and Cancel button positions adjusted on Server tab
+- CHANGE All three Server tab editboxes (announce, delay, countdown) now use consistent custom dark style with 2px gray border
+- FIX Update diff graph delay no longer updates live on text change — now only applies when the Update button is pressed
+- CHANGE Main tab parameter and grid navigation editboxes now use consistent custom dark style with 2px gray border, replacing InputBoxTemplate
+- CHANGE Char tab modify value and parameter editboxes now use consistent custom dark style with 2px gray border, replacing InputBoxTemplate
+- CHANGE NPC tab all five editboxes (display ID, NPC ID, GUID, distance, parameter) now use consistent custom dark style with 2px gray border, replacing InputBoxTemplate
+- CHANGE GO tab all eight editboxes now use consistent custom dark style with 2px gray border, replacing InputBoxTemplate
+- CHANGE All checkboxes (Main, Misc, GO tabs) now use consistent custom style — hidden box border/glow, dark gray 18x18 background for contrast
+- CHANGE All sliders (Main, Misc tabs) now use consistent custom style — backdrop removed, replaced with a 4px dark gray track line
+- FIX Addon no longer errors on load if PLAYER_TARGET_CHANGED fires before Char tab frames are built
+
+## -=[ Version 22 - 03/21/2026]=-
+
+- CHANGE Ace3 does not allow for easy locale manual selection. Locale dropdown menu hidden so it is not confusing
+  - Commented out other locales from .toc file so only enUS is loaded as the local.
+  - Uncomment line of locale taht matches your WoW client. This has to match the client due to Ace3 Locale
+- CHANGE Button tooltips updated for consistency
+- FIX Get GUID button on NPC tab now correctly captures DB GUID instead of the Low value from the GUID field
+- FIX NPC ID box on NPC tab is now editable so a creature ID can be typed in manually
+- FIX NPC Add ID button now uses the NPC ID box value instead of the params box
+- FIX NPC Add ID button is disabled until a value is entered in the NPC ID box or params box
+
+## -=[ Version 21 - 02/25/2026]=-
+
+- ADD shift-click item link support in item search popup — shift-clicking an item now populates the search box with the item name
+- FIX hyperlink pattern matching across all locales to match any item quality color instead of only white, fixing silent failures for uncommon/rare/epic/etc links. Authored by AzDeltaQQ
+
+- ADD NPC Add ID button to NPC tab to spawn a creature by template ID from the params box
+- ADD Cheat CastTime, Cooldown, God Mode, and Power On/Off buttons to GM tab left sidebar
+- ADD Cheat Status button to GM tab
+- CHANGE moved Parameter label, editbox, and Clear Params button right to avoid overlap with new sidebar buttons
+- FIX GO tab movement buttons (FWD, BACK, LEFT, RIGHT, UP, DOWN, HERE) failing due to undefined variables
+- ADD mouse wheel support for Speed and Scale sliders on Main tab
+- ADD mouse wheel support for Transparency sliders on Misc tab
+- FIX Show/Unload button states on GO tab to reflect model database status
+  - Show button displays "Load" when models are not loaded, switches to "Show" after loading
+  - Unload button starts disabled and enables only after models are loaded
+  - Unload now shows a confirmation dialog and reloads the UI to fully free memory
+- CHANGE moved Obj Info button under Obj Target on GO tab
+- ADD Clear Info button on GO tab to clear GUID, EntryID, Range, DisplayID and Phase fields
+- ADD confirmation dialog when deleting a game object on GO tab
+- CHANGE swapped Obj Add and Obj Del button positions on GO tab
+- CHANGE moved ComeToMe button below Mov Random on NPC tab
+
+- REPLACE Hover-mode with Spectator mode on Main tab
+  - Replaced non-functional Hover-mode buttons with Spectator mode (.gm spectator on/off)
+  - Added tooltip explaining usage and zone reload requirement
+
+- REMOVE non-functional buttons from Main tab
+  - Removed Acct Create, Acct Delete, and Acct Passwd buttons
+  - Removed View All Maps, Show/Hide Maps, and Account Lock buttons
+  - Reorganized remaining buttons to fill gaps
+
+- ADD Acct Change button to Main tab
+  - New button for .character changeaccount command
+
+- ADD Clear Params button to Char and NPC tabs
+  - Added Clear Params button inline with the Parameters input box on Char and NPC tabs
+  - Repositioned existing Clear Params button on Main tab to match
+
+- ADD Check Bags and Check Profession buttons to Char tab
+
+- ADD Ban type dropdown to Char tab
+  - Moved Ban, BanInfo, BanList, and UnBan buttons to their own column
+
+- REORGANIZE Char tab layout
+  - Moved Bank from Main tab to Char tab
+  - Moved TeleName and TeleGroup buttons from Char tab to Tele tab
+  - Removed Quest and Honor buttons
+  - Removed Dismount button
+  - Swapped Summon/Appear button positions for better flow
+  - General column and row cleanup for a cleaner layout
+
+- REORGANIZE Main tab layout
+  - Swapped GM List and GM Notify button positions
+  - Moved GMs InGame, GM List, TeleAdd, and TeleDel buttons into better positions
+
+- FIX GridNavigate nil global error in grid navigation buttons
+
+- FIX target change overwriting parameter box while typing
+  - PLAYER_TARGET_CHANGED no longer overwrites the parameter input if the user is actively typing
+
+- REMOVE Docs folder (no longer needed)
+
+## -=[ Version 20 - 01/20/2026]=-
+
+**NOTE:** Ace3 localization system automatically detects and uses your WoW client's language setting. No manual configuration needed - your language is set automatically in version 20 and newer.
+
+- MIGRATE Complete Ace2 to Ace3 library migration
+  - Removed deprecated Ace2 libraries from codebase
+  - Added Ace3 libraries (Release r960) for modern WoW addon development
+  - Migrated all core files to use Ace3 framework (Init.lua, AzerothAdmin.lua)
+  - Migrated all command modules to Ace3 (Main.lua, Tele.lua, Char.lua, Ticket.lua, Misc.lua, Server.lua, NPC.lua, GO.lua)
+  - Migrated all frame modules to Ace3 architecture
+  - Migrated localization system to use AceLocale-3.0
+  - Updated TOC file with Ace3 dependencies and new library structure
+  - Ensures compatibility with modern addon ecosystem and better performance
+
+- FIX Deprecated function usage for WoW 3.3.5 compatibility
+  - Replaced deprecated 'this' references with proper self parameters in frame scripts
+  - Replaced deprecated 'arg1' references with proper function parameters
+  - Improved code quality and eliminated deprecation warnings
+  - Affects multiple frame and command files
+
+- FIX Killsomething function
+  - Corrected function implementation to work properly with server commands
+  - Fixed bugs preventing proper execution
+
+- IMPROVE Ticket system UI and functionality
+  - Enhanced ticket interface with better layout and organization
+  - Improved ticket message display and handling
+  - Better user experience for ticket management
+
+- ADD Enhanced quest search functionality
+  - Added new quest search window with improved interface
+  - Added confirmation dialogs for quest operations to prevent accidental actions
+  - Added new action buttons for better quest management workflow
+  - Provides safer and more user-friendly quest search experience
+
+- ADD Teleport confirmation and warnings
+  - Added dialog warning system for teleport operations
+  - Added confirmation option before executing teleports
+  - Prevents accidental teleportation and improves safety
+
+- ADD Server diff graph update controls
+  - Added setting to control diff graph update frequency on Server tab
+  - Added manual update button for on-demand diff graph refresh
+  - Gives users control over performance vs real-time data trade-off
+  - Settings properly organized on Server tab
+
+- FIX Spell search learning functionality
+  - Fixed spell learning from search window after Ace3 migration
+  - Corrected LearnSpell function call to use proper AzerothAdminCommands namespace
+  - Spell search results now properly execute learn commands when clicked
+
+- FIX Character target name not populating on player select
+  - Fixed PLAYER_TARGET_CHANGED handler not setting ma_charactertarget text field
+  - Buttons relying on character name (Summon, Appear, Recall, etc.) now work correctly when a player is targeted
+  - Commands were sending empty player name, causing server to return syntax help instead of executing
+
+- IMPROVE Minimap button settings organization
+  - Moved minimap button settings from Misc tab to appropriate location
+  - Moved frame strata settings to Misc tab for better organization
+  - Corrected minimap setting text in locale files
+  - Improved overall settings layout and discoverability
+
+## -=[ Version 19 - 12/28/2025]=-
+
+- ADD Multi-language support system
+  - Added comprehensive localization framework for all UI text
+  - Created locale file structure in Locales/ directory with 11 language files
+  - All hardcoded UI text now uses Locale["..."] reference system
+  - Enables full translation of addon interface to multiple languages
+
+- ADD Support for 10 additional languages
+  - Spanish (Spain) - esES.lua
+  - Spanish (Mexico) - esMX.lua
+  - French - frFR.lua
+  - German - deDE.lua
+  - Italian - itIT.lua
+  - Portuguese (Portugal) - ptPT.lua
+  - Portuguese (Brazil) - ptBR.lua
+  - Russian - ruRU.lua
+  - Korean - koKR.lua
+  - Chinese (Simplified) - zhCN.lua
+  - Chinese (Traditional) - zhTW.lua
+  - All languages ready for community translation contributions
+
+- IMPROVE Locale system documentation
+  - Added comprehensive README in Locales/ directory
+  - Documented translation guidelines and special cases
+  - Provided instructions for finding chat output strings in addon
+  - Clarified which strings should and shouldn't be translated
+
+- FIX Dynamic UI positioning for multi-language support
+  - Updated fontstring positions to dynamically adjust for different locale text lengths
+  - Fixed ticket tab text location and positioning for better locale compatibility
+  - Improved alignment and spacing to accommodate varying text widths across languages
+
+- IMPROVE Locale file maintenance
+  - Removed unused ticket message string from all locale files
+  - Cleaned up misleading comments from locale files
+  - Removed extraneous lines and special case comments for cleaner code
+  - Added missing local assignment for frame strata settings dropdown on MISC tab
+
+- FIX Ticket multi-line message display
+  - Improved ticket message text handling for proper multi-line display
+  - Better formatting for long ticket messages
+
+## -=[ Version 18 - 12/26/2025]=-
+
+- REMOVE Log Tab feature
+  - Purged entire Log Tab functionality from addon (deprecated/non-functional feature)
+  - Removed LogAction tracking and storage across all command files
+  - Cleaned up Commands files: removed LogAction() calls from Char.lua, Server.lua, Ticket.lua, NPC.lua, GO.lua, Tele.lua, Misc.lua, Main.lua, and Confirmation.lua
+  - Removed Frames/Frames_SectionLog.lua and all log-related UI code
+  - Removed log tab button and references from frame initialization
+  - Space savings: Significantly reduced addon complexity and unused data storage
+
+- REMOVE Who Tab feature
+  - Removed entire Who Tab functionality including UI, buttons, and all associated functions
+  - Deleted Commands/Who.lua (137 lines) and Frames/MangFrames_SectionWho.lua (729 lines)
+  - Removed 33 locale strings and all who-related tooltips from enUS.lua
+  - Removed who tab and mini menu buttons from UI
+  - Cleaned up message parsing code for who-related server responses
+  - Reduces addon size and complexity by removing unused/non-functional feature
+  - Space savings: ~860+ lines of code removed
+
+- ADD Server shutdown notification and cancel feature
+  - Added shutdown status monitoring with countdown display
+  - Shows real-time shutdown timer with time remaining
+  - Added "Cancel Shutdown" button to abort scheduled shutdowns
+  - Automatic status updates every second when shutdown is active
+  - Provides clear visual feedback for shutdown state
+
+- FIX Dropdown menus closing unexpectedly during server updates
+  - Fixed race condition where OnUpdate handlers would close dropdown menus during periodic server information updates
+  - Added dual-check for dropdown state (UIDROPDOWNMENU_OPEN_MENU and DropDownList1:IsShown())
+  - Protected latency graph and server info/diff graph OnUpdate handlers from updating while dropdown is open
+  - Fixes issue where first click would close dropdown, requiring second click to actually open it
+
+- FIX Modify dropdown command syntax errors
+  - Changed "modify tp" to "modify talentpoints" to match correct server command syntax
+  - Fixed speed-related commands to use proper "modify speed" syntax:
+    - All Speeds: "modify aspeed" → "modify speed all"
+    - BackWalk: "modify bwalk" → "modify speed backwalk"
+    - Fly Speed: "modify fly" → "modify speed fly"
+    - Walk Speed: "modify speed" → "modify speed walk"
+    - Swim Speed: "modify swim" → "modify speed swim"
+
+- FIX Reload Table dropdown with invalid AzerothCore commands
+  - Changed "trinity_string" to "acore_string" (correct AzerothCore command)
+  - Split "game_graveyard_zone" into "game_graveyard" and "graveyard_zone" (separate commands)
+  - Removed "gm_tickets" (not a valid reload command)
+  - Removed "lfg_dungeon_encounters" (invalid, lfg_dungeon_rewards already exists)
+  - All commands now match valid AzerothCore cs_reload.cpp commands
+
+- CHANGE Modify and Reset dropdown default selections
+  - Modify dropdown now defaults to "All Speeds" instead of "Level Up"
+  - Reset dropdown now defaults to "Honor" instead of "Talents"
+  - More logical defaults for common use cases
+
+- ADD Comprehensive localization system for all UI text
+  - Added 80+ new locale entries to enUS.lua organized by tab/section
+  - Replaced all hardcoded display text with Locale["..."] references across 10 frame files
+  - Covered all tabs: Misc, Tele, NPC, GameObject, Tickets, Server, Char, MiniMenu, and Popup frames
+  - Preserved debug text and internal strings (not user-facing)
+  - Enables easy multi-language support for future translations
+  - Migrated additional hardcoded UI text to locale entries for chat output messages
+  - Modified files: MangFrames_SectionMisc.lua, MangFrames_SectionTele.lua, MangFrames_SectionNpc.lua, MangFrames_SectionGO.lua, MangFrames_SectionTicket.lua, MangFrames_SectionServer.lua, MangFrames_SectionChar.lua, MangFrames_MiniMenu.lua, MangFrames_PopupFrames.lua
+
+- ADD Localization for buttons without locale entries
+  - Added locale entry for "Refresh" button with tooltip "Refresh server information"
+  - Added locale entry for "Apply Weather" button
+  - Ensures all user-facing buttons use consistent localization system
+
+- IMPROVE UI text formatting and positioning
+  - Updated string color schemes for better visibility
+  - Corrected difftime format display (added missing 'ms' suffix)
+  - Adjusted text positions for better alignment
+  - Improved overall visual consistency
+  - Added space to left side of GM tab to match other tabs
+
+- IMPROVE Documentation
+  - Enhanced README installation instructions
+  - Updated GNU General Public License information and links
+  - Fixed markdown formatting issues throughout documentation
+  - Corrected addon derivation timeline for historical accuracy
+  - Fixed various typos and improved layout
+
+## -=[ Version 17 - 12/22/2025]=-
+
+- FIX [[#51](https://github.com/superstyro/AzerothAdmin/issues/51)] Reset command not working on Char tab
+  - Added player name parameter to reset command for proper targeting
+  - Removed unused reset options (all spells, all talents, achievements) from dropdown menu
+  - Reset functionality now works correctly with proper command syntax
+
+- ADD [[#45](https://github.com/superstyro/AzerothAdmin/issues/45)] Expanded learn command options
+  - Added new learn commands: All Crafts, All Default, All My Class, All My Pet Talents, All My Spells, All My Talents
+  - Added individual profession recipe options (Alchemy, Blacksmithing, Cooking, Enchanting, Engineering, First Aid, Inscription, Jewelcrafting, Leatherworking, Tailoring)
+  - Removed right-click unlearn functionality from Learn button
+  - Changed default selection from "All GM Spells" to "All Crafts"
+  - All dropdown entries are now in alphabetical order
+
+- ADD [[#46](https://github.com/superstyro/AzerothAdmin/issues/46)] All GM Spells learning option
+  - Added "All GM Spells" option to learn dropdown
+  - Updated command from `.learn all_gm` to `.learn all gm` (correct syntax)
+  - Renamed LearnLangDropDownInitialize to LearnDropDownInitialize
+  - Removed individual language options, keeping only "All Languages"
+  - Updated tooltip from "Learn selected langauge(s)" to "Learn selected spells" (fixed typo)
+
+- FIX Dropdown menu selection and checkmark behavior
+  - Fixed dropdown menus resetting to default values when clicked
+  - Fixed checkmarks not updating to reflect current selection
+  - Moved default value initialization out of initialize functions to prevent reset on dropdown open
+  - Applied fix to all dropdowns: Learn, Modify, Reset, ReloadTable, Weather, NpcEmote, Language, and FrameStrata
+  - Dropdown selections now persist across interactions
+
+## -=[ Version 16 - 12/20/2025]=-
+
+- IMPROVE Mail system with expanded slots and bug fixes
+  - Expanded mail item slots from 7 to 12 in a 2x6 grid layout
+  - Reduced slot size from 37x37 to 30x30 pixels for better fit
+  - Centered item grid horizontally in bottom frame
+  - Fixed bug where adding a single item incorrectly showed "Maximum 12 items" error
+  - Corrected item count logic (WoW API doesn't provide stack count from cursor, defaults to 1)
+  - Added 3-tab interface: "Send Mail", "Send Items", "Send Money"
+  - Added ESC key support to remove focus from message editbox
+  - Fixed UI element visibility to prevent mail-specific tabs showing in other popup types (Item/Spell/etc. searches)
+  - Ensured "Favorites" tab text displays correctly for non-mail search popups
+
+- FIX Language learning system
+  - Reverted complex language learning implementation from PR #44
+  - Fixed broken command: Changed `.learn all_lang` to `.learn all lang` (space instead of underscore)
+  - Restored simple "All Languages" dropdown approach
+  - Removed individual language entries from dropdown
+  - Removed toggle-based Learn/Unlearn button logic
+  - Removed language spell ID lookup table and detection code
+  - Now uses correct server command syntax: `.learn all lang`
+
 ## -=[ Version 15 - 12/16/2025]=-
 
 - IMPROVE NPC section UI and functionality

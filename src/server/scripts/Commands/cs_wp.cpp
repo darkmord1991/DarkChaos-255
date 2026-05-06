@@ -139,7 +139,8 @@ public:
         return true;
     }                                                           // HandleWpAddCommand
 
-    // Returns entry/spawn/path/waypoint-count for the currently selected creature.
+    // Returns entry/spawn/path/waypoint-count/wander distance for the currently
+    // selected creature.
     // Output is intended for parsing by the DC-GM addon.
     static bool HandleWpInfoCommand(ChatHandler* handler, char const* /*args*/)
     {
@@ -170,7 +171,9 @@ public:
                 count = (*result)[0].Get<uint32>();
         }
 
-        handler->PSendSysMessage("WPINFO entry={} spawn={} path={} count={}", entry, spawn, pathid, count);
+        handler->PSendSysMessage(
+            "WPINFO entry={} spawn={} path={} count={} wander={:.2f}",
+            entry, spawn, pathid, count, target->GetWanderDistance());
         return true;
     }
 

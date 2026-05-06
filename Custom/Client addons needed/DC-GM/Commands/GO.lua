@@ -1,10 +1,10 @@
-﻿-------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------
 --
 -- AzerothAdmin Version 3.x
 -- AzerothAdmin is a derivative of TrinityAdmin/MangAdmin.
 --
--- Copyright (C) 2024 Free Software Foundation, Inc.
--- License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+-- Copyright (C) 2007 Free Software Foundation, Inc.
+-- License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.en.html>
 -- This is free software: you are free to change and redistribute it.
 -- There is NO WARRANTY, to the extent permitted by law.
 --
@@ -16,82 +16,86 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
-function OBJGo()
+AzerothAdminCommands = AzerothAdminCommands or {}
+
+function AzerothAdminCommands.OBJGo()
     local player = UnitName("target") or UnitName("player")
     local obj = ma_Obj_guidbutton:GetText()
     AzerothAdmin:ChatMsg(".go gameobject "..obj)
-    AzerothAdmin:LogAction("Go Object for player "..player..".")
 end
 
-function OBJAdd()
+function AzerothAdminCommands.OBJAdd()
     local player = UnitName("target") or UnitName("player")
     local obj = ma_Obj_idbutton:GetText()
     AzerothAdmin:ChatMsg(".gobject add "..obj)
-    AzerothAdmin:LogAction("Object Add for player "..player..".")
 end
 
-function OBJMove()
+function AzerothAdminCommands.OBJMove()
     local player = UnitName("target") or UnitName("player")
     local obj = ma_Obj_guidbutton:GetText()
     AzerothAdmin:ChatMsg(".gobject move "..obj)
-    AzerothAdmin:LogAction("Object Move for player "..player..".")
 end
 
-function OBJTurn()
+function AzerothAdminCommands.OBJTurn()
     local player = UnitName("target") or UnitName("player")
     local obj = ma_Obj_guidbutton:GetText()
     AzerothAdmin:ChatMsg(".gobject turn "..obj)
-    AzerothAdmin:LogAction("Object Turn for player "..player..".")
 end
 
-function OBJDel()
-    local player = UnitName("target") or UnitName("player")
+function AzerothAdminCommands.OBJDel()
     local obj = ma_Obj_guidbutton:GetText()
-    AzerothAdmin:ChatMsg(".gobject delete "..obj)
-    AzerothAdmin:LogAction("Object Delete for player "..player..".")
+    if obj == "" then
+        AzerothAdmin:Print("Error: GUID cannot be empty")
+        return
+    end
+    AzerothAdmin:ShowConfirmDialog("Delete game object with GUID "..obj.."?", function()
+        AzerothAdmin:ChatMsg(".gobject delete "..obj)
+    end)
 end
 
-function OBJNear()
+function AzerothAdminCommands.OBJNear()
     local player = UnitName("target") or UnitName("player")
     local objguid = ma_Obj_guidbutton:GetText()
     local objid = ma_Obj_idbutton:GetText()
     local range = ma_gobnearrange:GetText()
     AzerothAdmin:ChatMsg(".gobject near "..range)
-    AzerothAdmin:LogAction("Object Near for player "..player..".")
 end
 
-function OBJTarget()
+function AzerothAdminCommands.OBJTarget()
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".gobject target")
-    AzerothAdmin:LogAction("Object Near for player "..player..".")
 end
 
-function OBJActivate()
+function AzerothAdminCommands.OBJActivate()
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".gobject activate "..ma_Obj_guidbutton:GetText())
-    AzerothAdmin:LogAction("Object "..ma_Obj_guidbutton:GetText().." activated for player "..player..".")
 end
 
-function OBJAddTemp()
+function AzerothAdminCommands.OBJAddTemp()
     local player = UnitName("target") or UnitName("player")
     local obj = ma_Obj_idbutton:GetText()
     AzerothAdmin:ChatMsg(".gobject add temp "..obj)
-    AzerothAdmin:LogAction("Object Add(Temp) for player "..player..".")
 end
 
-function OBJInfo()
+function AzerothAdminCommands.OBJInfo()
     local player = UnitName("target") or UnitName("player")
     local obj = ma_Obj_idbutton:GetText()
     AzerothAdmin:ChatMsg(".gobject info "..obj)
-    AzerothAdmin:LogAction("Object "..ma_Obj_idbutton:GetText().." info obtained for player "..player..".")
 end
 
-function OBJSetPhase()
+function AzerothAdminCommands.OBJClearInfo()
+    ma_Obj_guidbutton:SetText("")
+    ma_Obj_idbutton:SetText("")
+    ma_gobnearrange:SetText("")
+    ma_gobdisplayid:SetText("")
+    ma_gobsetphaseinput:SetText("")
+end
+
+function AzerothAdminCommands.OBJSetPhase()
     local player = UnitName("target") or UnitName("player")
     local obj = ma_Obj_guidbutton:GetText()
     local phase = ma_gobsetphaseinput:GetText()
     AzerothAdmin:ChatMsg(".gobject set phase "..obj.." "..phase)
-    AzerothAdmin:LogAction("Object "..obj.." phase set to "..phase.." for player "..player..".")
 end
 
 -- MEMORY OPTIMIZATION: Load Models addon on-demand (saves ~5.6 MB!)
@@ -100,6 +104,7 @@ local function EnsureModelsLoaded()
         local loaded, reason = LoadAddOn("AzerothAdmin_Models")
         if loaded then
             AzerothAdmin:Print("Loaded model database")
+            return true
         else
             local reasons = {
                 [0] = "Unknown error",
@@ -110,25 +115,56 @@ local function EnsureModelsLoaded()
                 [5] = "Addon insecure"
             }
             AzerothAdmin:Print("ERROR: Could not load Models addon - " .. (reasons[reason] or "Unknown"))
+            return false
         end
+    end
+    return true
+end
+
+-- Helper to set button state based on whether models are loaded
+local function SetModelButtonStates(loaded)
+    if loaded then
+        ma_gobshowmodel:SetText(Locale["ma_GOShowButton"])
+        ma_gobshowmodel:SetScript("OnClick", function() AzerothAdminCommands.ShowGobModel() end)
+        ma_gobunloadmodel:Enable()
+    else
+        ma_gobshowmodel:SetText(Locale["ma_GOLoadButton"])
+        ma_gobshowmodel:SetScript("OnClick", function() AzerothAdminCommands.LoadAndShowGobModel() end)
+        ma_gobunloadmodel:Disable()
     end
 end
 
-function UnloadModels()
-    if IsAddOnLoaded("AzerothAdmin_Models") then
-        -- Clear the global ModelA table to free memory
-        ModelA = nil
-        -- Force garbage collection
-        collectgarbage("collect")
-        AzerothAdmin:Print("Model database unloaded. Use /reload to fully free memory")
+function AzerothAdminCommands.InitGobButtonStates()
+    local loaded = IsAddOnLoaded("AzerothAdmin_Models") and ModelA ~= nil
+    SetModelButtonStates(loaded)
+end
+
+function AzerothAdminCommands.UnloadModels()
+    if ModelA ~= nil then
+        AzerothAdmin:ShowConfirmDialog(
+            "Unloading the Model database requires a UI reload. Proceed?",
+            function()
+                ModelA = nil
+                collectgarbage("collect")
+                ReloadUI()
+            end
+        )
     else
         AzerothAdmin:Print("Model database is not currently loaded")
     end
 end
 
-function ShowGobModel()
-    -- Load models database if not already loaded
-    EnsureModelsLoaded()
+function AzerothAdminCommands.LoadAndShowGobModel()
+    if not EnsureModelsLoaded() then return end
+    SetModelButtonStates(true)
+    AzerothAdminCommands.ShowGobModel()
+end
+
+function AzerothAdminCommands.ShowGobModel()
+    if ModelA == nil then
+        AzerothAdmin:Print("Model database not loaded. Click Load first.")
+        return
+    end
 
     local Scale = UIParent:GetEffectiveScale();
     local Hypotenuse = ( ( GetScreenWidth() * Scale ) ^ 2 + ( GetScreenHeight() * Scale ) ^ 2 ) ^ 0.5;
@@ -150,13 +186,13 @@ function ShowGobModel()
     end
 end
 
-function GobModelRotateLeft()
+function AzerothAdminCommands.GobModelRotateLeft()
   ma_gobjectmodel.rotation = ma_gobjectmodel.rotation - 0.3
   ma_gobjectmodel:SetRotation(ma_gobjectmodel.rotation)
   PlaySound("igInventoryRotateCharacter")
 end
 
-function GobModelRotateRight()
+function AzerothAdminCommands.GobModelRotateRight()
   ma_gobjectmodel.rotation = ma_gobjectmodel.rotation + 0.3
   ma_gobjectmodel:SetRotation(ma_gobjectmodel.rotation)
   PlaySound("igInventoryRotateCharacter")
@@ -164,22 +200,22 @@ end
 
 --ma_gobjectmodel:SetRotation((RotValSlider:GetValue() * Radian))
 
-function InitGobModelFrame()
-  ma_gobjectmodel:SetScript("OnUpdate", function() AzerothAdminModelOnUpdate(arg1) end)
+function AzerothAdminCommands.InitGobModelFrame()
+  ma_gobjectmodel:SetScript("OnUpdate", function(self, elapsed) AzerothAdminCommands.AzerothAdminModelOnUpdate(self, elapsed) end)
   ma_gobjectmodel.rotation = 0.61
   ma_gobjectmodel:SetRotation(0.61)
   --ma_gobjectmodel:SetUnit("player")
 
 end
 
-function GobModelZoomIn()
+function AzerothAdminCommands.GobModelZoomIn()
     --ma_gobjectmodel:SetCamera(0)
     ma_gobjectmodel:SetModelScale(ma_gobjectmodel:GetModelScale() + .1)
     --ma_modelframe:SetPosition(1,ma_modelframe:GetModelScale()*3,0)
     --ma_modelframe:RefreshUnit()
 end
 
-function GobModelZoomOut()
+function AzerothAdminCommands.GobModelZoomOut()
     --ma_gobjectmodel:SetCamera(1)
     --ma_gobjectmodel:RefreshUnit()
    -- ma_modelframe:SetCamera(2)
@@ -188,7 +224,7 @@ function GobModelZoomOut()
     --ma_modelframe:RefreshUnit()
 end
 
-function CheckToggle(action)
+function AzerothAdminCommands.CheckToggle(action)
     if action == "spawn" then
         ma_moveonmovecheck:SetChecked(false)
     elseif action == "move" then
@@ -196,46 +232,46 @@ function CheckToggle(action)
     end
 end
 
-function DMUP()
-    if cWorking == 0 then
-        cWorking = 1
-        incZ = ma_gobmovedistupdown:GetText()
-        SendChatMessage(GPS)
+function AzerothAdminCommands.DMUP()
+    if AzerothAdmin.cWorking == 0 then
+        AzerothAdmin.cWorking = 1
+        AzerothAdmin.incZ = ma_gobmovedistupdown:GetText()
+        SendChatMessage(".gps")
     end
 end
 
-function DMDown()
-    if cWorking == 0 then
-        cWorking = 1
-        incZ = 0 - ma_gobmovedistupdown:GetText()
-        SendChatMessage(GPS)
+function AzerothAdminCommands.DMDown()
+    if AzerothAdmin.cWorking == 0 then
+        AzerothAdmin.cWorking = 1
+        AzerothAdmin.incZ = 0 - ma_gobmovedistupdown:GetText()
+        SendChatMessage(".gps")
     end
 end
 
-function DMLeft()
-    if cWorking == 0 then
-        cWorking = 1
-        incY = ma_gobmovedistleftright:GetText()
-        SendChatMessage(GPS)
+function AzerothAdminCommands.DMLeft()
+    if AzerothAdmin.cWorking == 0 then
+        AzerothAdmin.cWorking = 1
+        AzerothAdmin.incY = ma_gobmovedistleftright:GetText()
+        SendChatMessage(".gps")
     end
 end
 
-function DMRight()
-    if cWorking == 0 then
-        cWorking = 1
-        incY = 0 - ma_gobmovedistleftright:GetText()
-        SendChatMessage(GPS)
+function AzerothAdminCommands.DMRight()
+    if AzerothAdmin.cWorking == 0 then
+        AzerothAdmin.cWorking = 1
+        AzerothAdmin.incY = 0 - ma_gobmovedistleftright:GetText()
+        SendChatMessage(".gps")
     end
 end
 
-function DMSS()
-    if cWorking == 0 then
-        cWorking = 1
-        SendChatMessage(GPS)
+function AzerothAdminCommands.DMSS()
+    if AzerothAdmin.cWorking == 0 then
+        AzerothAdmin.cWorking = 1
+        SendChatMessage(".gps")
     end
 end
 
-function DMSS2()
+function AzerothAdminCommands.DMSS2()
         isChecked = ma_spawnonmovecheck:GetChecked()
         isChecked2 = ma_moveonmovecheck:GetChecked()
         if isChecked == 1 then  --AddonMove
@@ -247,21 +283,21 @@ function DMSS2()
             SendChatMessage('.gob add '..ObjectN)
         else
         end
-        OBJTarget()
+        AzerothAdminCommands.OBJTarget()
 end
 
-function DMFront()
-    if cWorking == 0 then
-        cWorking = 1
-        incX = ma_gobmovedistforwardback:GetText()
-        SendChatMessage(GPS)
+function AzerothAdminCommands.DMFront()
+    if AzerothAdmin.cWorking == 0 then
+        AzerothAdmin.cWorking = 1
+        AzerothAdmin.incX = ma_gobmovedistforwardback:GetText()
+        SendChatMessage(".gps")
     end
 end
 
-function DMBack()
-    if cWorking == 0 then
-        cWorking = 1
-        incX = 0 - ma_gobmovedistforwardback:GetText()
-        SendChatMessage(GPS)
+function AzerothAdminCommands.DMBack()
+    if AzerothAdmin.cWorking == 0 then
+        AzerothAdmin.cWorking = 1
+        AzerothAdmin.incX = 0 - ma_gobmovedistforwardback:GetText()
+        SendChatMessage(".gps")
     end
 end

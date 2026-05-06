@@ -58,6 +58,29 @@ local function IsBarActive(bar)
     return true
 end
 
+local function IsVehicleOverrideActive()
+    if type(UnitHasVehicleUI) == "function" and UnitHasVehicleUI("player") then
+        return true
+    end
+    if type(UnitInVehicle) == "function" and UnitInVehicle("player") then
+        return true
+    end
+    return IsBarActive(_G.PossessBarFrame)
+end
+
+local function HideCustomBarFrames()
+    if not ActionBars.customFrames then
+        return
+    end
+
+    for _, key in ipairs({"main", "bottomLeft", "bottomRight", "right1", "right2"}) do
+        local frame = ActionBars.customFrames[key]
+        if frame then
+            frame:Hide()
+        end
+    end
+end
+
 local function AnchorBarAbove(bar, stack, yOffset, leftAlign)
     if not bar or not stack then
         return false
@@ -196,6 +219,13 @@ local function ApplyBlizzardMode()
         end
     end
 
+    -- Vehicle and possess bars already manage the bottom action bar state.
+    -- Forcing the regular bars visible here recreates duplicate menus.
+    if IsVehicleOverrideActive() then
+        RestoreBlizzardFormBarAnchors()
+        return
+    end
+
     if s.showMainBar == false then MainMenuBar:Hide() else MainMenuBar:Show() end
     if s.showBottomLeft == false and MultiBarBottomLeft then MultiBarBottomLeft:Hide() else if MultiBarBottomLeft then MultiBarBottomLeft:Show() end end
     if s.showBottomRight == false and MultiBarBottomRight then MultiBarBottomRight:Hide() else if MultiBarBottomRight then MultiBarBottomRight:Show() end end
@@ -228,6 +258,12 @@ local function ApplyCustomMode()
 
     if not ActionBars.customFrames then
         ActionBars.customFrames = {}
+    end
+
+    -- Keep Blizzard-owned vehicle UI unobstructed in custom mode.
+    if IsVehicleOverrideActive() then
+        HideCustomBarFrames()
+        return
     end
 
     local anchor = s.customAnchor or { point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 40 }

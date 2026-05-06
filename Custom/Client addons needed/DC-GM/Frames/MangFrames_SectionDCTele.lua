@@ -34,8 +34,17 @@ local function EnsureDCTelePrecomputed(list)
       if tele._id == nil then
         tele._id = (tele.id or tele.ID or tele.Id) or 0
       end
+      if tele._idStr == nil then
+        tele._idStr = tostring(tele._id or 0)
+      end
       if tele._lcName == nil then
         tele._lcName = string.lower(tele.name or "")
+      end
+      if tele._mapStr == nil then
+        tele._mapStr = tostring(tele.map or tele.Map or tele.mapId or tele.mapID or tele.MapID or "")
+      end
+      if tele._lcMap == nil then
+        tele._lcMap = string.lower(tele._mapStr or "")
       end
     end
   end
@@ -257,9 +266,11 @@ function AzerothAdmin:CreateDCTeleSection()
     btn = AzerothAdmin.db.account.style.color.buttons,
     frm = AzerothAdmin.db.account.style.color.frames
   }
+  local dcteleGroup = "dctele"
 
   FrameLib:BuildFrame({
     name = "ma_dctele_window",
+    group = dcteleGroup,
     parent = UIParent,
     texture = {
       color = {color.bg.r, color.bg.g, color.bg.b, transparency.bg}
@@ -303,6 +314,7 @@ function AzerothAdmin:CreateDCTeleSection()
   
   FrameLib:BuildFontString({
     name = "ma_dctele_title",
+    group = dcteleGroup,
     parent = ma_dctele_window,
     text = "DC Teleports",
     setpoint = {
@@ -313,6 +325,7 @@ function AzerothAdmin:CreateDCTeleSection()
 
   FrameLib:BuildButton({
     name = "ma_dctele_close",
+    group = dcteleGroup,
     parent = ma_dctele_window,
     texture = {
       color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn}
@@ -323,11 +336,30 @@ function AzerothAdmin:CreateDCTeleSection()
   })
   AzerothAdmin:PrepareScript(ma_dctele_close, "Close", function() ma_dctele_window:Hide() end)
 
+  FrameLib:BuildFontString({
+    name = "ma_dctele_search_label",
+    group = dcteleGroup,
+    parent = ma_dctele_window,
+    object = "GameFontNormalSmall",
+    text = "Search",
+    setpoint = { pos = "TOPLEFT", offX = 12, offY = -24 }
+  })
+
+  FrameLib:BuildFontString({
+    name = "ma_dctele_map_filter_label",
+    group = dcteleGroup,
+    parent = ma_dctele_window,
+    object = "GameFontNormalSmall",
+    text = "Map",
+    setpoint = { pos = "TOPLEFT", offX = 246, offY = -24 }
+  })
+
   FrameLib:BuildEditBox({
     name = "ma_dctele_search",
+    group = dcteleGroup,
     parent = ma_dctele_window,
-    size = { width = 350, height = 20 },
-    setpoint = { pos = "TOPLEFT", offX = 10, offY = -35 },
+    size = { width = 225, height = 20 },
+    setpoint = { pos = "TOPLEFT", offX = 10, offY = -38 },
     text = ""
   })
   local _searchBox = rawget(_G, "ma_dctele_search")
@@ -335,9 +367,23 @@ function AzerothAdmin:CreateDCTeleSection()
     _searchBox:SetScript("OnTextChanged", function(self) AzerothAdmin:UpdateDCTeleList() end)
   end
 
+  FrameLib:BuildEditBox({
+    name = "ma_dctele_map_filter",
+    group = dcteleGroup,
+    parent = ma_dctele_window,
+    size = { width = 110, height = 20 },
+    setpoint = { pos = "TOPLEFT", relTo = "ma_dctele_search", relPos = "TOPRIGHT", offX = 8, offY = 0 },
+    text = ""
+  })
+  local _mapFilterBox = rawget(_G, "ma_dctele_map_filter")
+  if _mapFilterBox and _mapFilterBox.SetScript then
+    _mapFilterBox:SetScript("OnTextChanged", function(self) AzerothAdmin:UpdateDCTeleList() end)
+  end
+
   -- Column headers for sorting
   FrameLib:BuildButton({
     name = "ma_dctele_col_name",
+    group = dcteleGroup,
     parent = ma_dctele_window,
     size = { width = 270, height = 18 },
     setpoint = { pos = "TOPLEFT", relTo = "ma_dctele_search", relPos = "BOTTOMLEFT", offY = -4, offX = 0 },
@@ -366,6 +412,7 @@ function AzerothAdmin:CreateDCTeleSection()
 
   FrameLib:BuildButton({
     name = "ma_dctele_col_id",
+    group = dcteleGroup,
     parent = ma_dctele_window,
     size = { width = 70, height = 18 },
     setpoint = { pos = "TOPLEFT", relTo = "ma_dctele_col_name", relPos = "TOPRIGHT", offX = 6, offY = 0 },
@@ -406,6 +453,7 @@ function AzerothAdmin:CreateDCTeleSection()
   FrameLib:BuildFrame({
     type = "ScrollFrame",
     name = "ma_DCTeleScrollBar",
+    group = dcteleGroup,
     parent = ma_dctele_window,
     inherits = "FauxScrollFrameTemplate",
     size = { width = 350, height = 400 },
@@ -423,6 +471,7 @@ function AzerothAdmin:CreateDCTeleSection()
   for i = 1, 20 do
     FrameLib:BuildButton({
       name = "ma_DCTeleEntry"..i,
+      group = dcteleGroup,
       parent = ma_dctele_window,
       size = { width = 350, height = 20 },
       setpoint = { pos = "TOPLEFT", relTo = (i==1 and "ma_DCTeleScrollBar" or "ma_DCTeleEntry"..(i-1)), relPos = (i==1 and "TOPLEFT" or "BOTTOMLEFT"), offY = (i==1 and 0 or 0) },
@@ -458,24 +507,41 @@ function AzerothAdmin:UpdateDCTeleList(recompute)
     end
     searchText = string.lower(searchText)
 
+    local mapFilterText = ""
+    local mapFilterBox = rawget(_G, "ma_dctele_map_filter") or ma_dctele_map_filter
+    if mapFilterBox and type(mapFilterBox.GetText) == "function" then
+      mapFilterText = mapFilterBox:GetText() or ""
+    end
+    mapFilterText = string.lower(mapFilterText)
+
     -- Recompute expensive filter/sort only when needed (open, search change, sort change, list change).
     if recompute == nil then recompute = true end
     local sortBy = AzerothAdmin.DCTeleSortBy or (AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortBy) or "id"
     local sortDir = AzerothAdmin.DCTeleSortDir or (AzerothAdmin.db and AzerothAdmin.db.account and AzerothAdmin.db.account.dctele and AzerothAdmin.db.account.dctele.sortDir) or "asc"
     local last = AzerothAdmin._dcteleLastComputed
+    local filtersChanged = recompute or (not last) or last.list ~= AzerothAdmin.DCTeleports or last.search ~= searchText or last.mapFilter ~= mapFilterText or last.sortBy ~= sortBy or last.sortDir ~= sortDir
 
-    if recompute or (not last) or last.list ~= AzerothAdmin.DCTeleports or last.search ~= searchText or last.sortBy ~= sortBy or last.sortDir ~= sortDir then
+    if filtersChanged then
       EnsureDCTelePrecomputed(AzerothAdmin.DCTeleports)
       local sorted = GetSortedTeleports(sortBy, sortDir)
 
-      if searchText == "" then
+      if searchText == "" and mapFilterText == "" then
         AzerothAdmin.filteredTeleports = sorted
       else
         local filtered = {}
         for i = 1, #sorted do
           local tele = sorted[i]
           local name = (type(tele) == "table" and tele._lcName) or ""
-          if string.find(name, searchText, 1, true) then
+          local mapText = (type(tele) == "table" and tele._lcMap) or ""
+          local idText = (type(tele) == "table" and tele._idStr) or ""
+          local matchesSearch = (searchText == "")
+            or string.find(name, searchText, 1, true)
+            or string.find(mapText, searchText, 1, true)
+            or string.find(idText, searchText, 1, true)
+          local matchesMap = (mapFilterText == "")
+            or string.find(mapText, mapFilterText, 1, true)
+
+          if matchesSearch and matchesMap then
             table.insert(filtered, tele)
           end
         end
@@ -485,9 +551,14 @@ function AzerothAdmin:UpdateDCTeleList(recompute)
       AzerothAdmin._dcteleLastComputed = {
         list = AzerothAdmin.DCTeleports,
         search = searchText,
+        mapFilter = mapFilterText,
         sortBy = sortBy,
         sortDir = sortDir,
       }
+    end
+
+    if filtersChanged then
+      scrollBar.offset = 0
     end
 
     -- Update header indicators

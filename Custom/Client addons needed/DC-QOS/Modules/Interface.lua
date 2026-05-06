@@ -1552,13 +1552,22 @@ local function SetupCombatPlates()
     local settings = addon.settings.interface
     if not settings.enabled or not settings.combatPlates then return end
 
+    local frame = GetManagedEventFrame("combatPlates")
+    frame:UnregisterAllEvents()
+    frame:SetScript("OnEvent", nil)
+
+    if addon.settings.nameplatesPlus and addon.settings.nameplatesPlus.enabled then
+        SafeSetCVar("nameplateShowEnemies", "1")
+        combatPlatesState.active = false
+        combatPlatesState.previousShowEnemies = nil
+        return
+    end
+
     if not combatPlatesState.active and type(GetCVar) == "function" then
         combatPlatesState.previousShowEnemies = GetCVar("nameplateShowEnemies")
     end
     combatPlatesState.active = true
 
-    local frame = GetManagedEventFrame("combatPlates")
-    frame:UnregisterAllEvents()
     frame:RegisterEvent("PLAYER_REGEN_DISABLED")  -- Enter combat
     frame:RegisterEvent("PLAYER_REGEN_ENABLED")   -- Leave combat
     frame:SetScript("OnEvent", function(self, event)

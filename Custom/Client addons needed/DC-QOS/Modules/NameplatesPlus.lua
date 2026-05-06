@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- DC-QoS: NameplatesPlus Module
 -- ============================================================
 -- Enhanced nameplate features for DarkChaos-255
@@ -7,6 +7,7 @@
 -- ============================================================
 
 local addon = DCQOS
+local LibRangeCheck = LibStub and LibStub("LibRangeCheck-2.0", true)
 
 -- ============================================================
 -- Module Configuration
@@ -43,7 +44,7 @@ local NameplatesPlus = {
             tankMode = false,
             -- Cast Bar
             showCastBar = true,
-            castBarHeight = 8,
+            castBarHeight = 7,
             castBarColor = { r = 1, g = 0.7, b = 0 },
             castBarInterruptColor = { r = 0.8, g = 0, b = 0 },
             showCastSpellName = true,
@@ -92,6 +93,7 @@ local NameplatesPlus = {
             nameplateRange = 41,
             fadeOutOfRange = false,
             outOfRangeAlpha = 0.5,
+            rangeFadeDistance = 30,
             
             -- Visuals
             textureMode = "Blizzard", -- "Blizzard" or "Flat"
@@ -139,8 +141,43 @@ local updateFrame = nil
 local playerGUID = nil
 local npcRoleCache = {} -- Name -> Role (Vendor, Innkeeper, etc)
 local groupGUIDCache = {} -- GUID -> unitID for group members (threat tracking)
+local unitMatchToFrame = {}
+local guidMatchToFrame = {}
 local auraCache = {} -- GUID -> {auras table, timestamp} for aura throttling
 local AURA_CACHE_DURATION = 0.2 -- Cache auras for 200ms to reduce scanning
+local DEBUFF_REFRESH_INTERVAL = 0.25
+local RANGE_REFRESH_INTERVAL = 0.20
+local CUSTOM_HEALTH_INSET_X = 0
+local CUSTOM_HEALTH_INSET_Y = 0
+local DEFAULT_HEALTH_COLOR = { r = 0.90, g = 0.15, b = 0.15 }
+local FRIENDLY_HEALTH_COLOR = { r = 0.20, g = 0.78, b = 0.20 }
+local NEUTRAL_HEALTH_COLOR = { r = 0.94, g = 0.80, b = 0.22 }
+local TARGET_ARROW_LEFT_OFFSET = -6
+local TARGET_ARROW_RIGHT_OFFSET = 6
+local NAME_TEXT_Y_OFFSET = -1
+local LEVEL_TEXT_X_OFFSET = -3
+local LEVEL_TEXT_Y_OFFSET = 1
+local CASTBAR_Y_GAP = -3
+local CASTBAR_BASE_HEIGHT = 7
+local NAMEPLATE_CASTBAR_CVAR = "ShowVKeyCastbar"
+local originalNameplateCastBarCVar = nil
+local TARGET_BORDER_PADDING = 1
+local MOUSEOVER_BORDER_PADDING = 1
+local MOUSEOVER_BORDER_COLOR = { r = 0.92, g = 0.82, b = 0.48, a = 0.90 }
+local ELITE_ICON_X_OFFSET = 4
+local ELITE_ICON_Y_OFFSET = 0
+local FACTION_ICON_X_OFFSET = -5
+local FACTION_ICON_Y_OFFSET = 3
+local NPC_ICON_X_OFFSET = -6
+local NPC_ICON_Y_OFFSET = 14
+
+local function GetConfiguredCastbarHeight(settings)
+    local configured = (settings and settings.castBarHeight) or CASTBAR_BASE_HEIGHT
+    if configured > CASTBAR_BASE_HEIGHT then
+        return configured - 1
+    end
+    return configured
+end
 
 local function SafeGetCVar(name)
     if type(GetCVar) ~= "function" then
@@ -163,8 +200,221 @@ local function SafeSetCVar(name, value)
     return ok and true or false
 end
 
+local function UpdateDefaultNameplateCastBarCVar(settings)
+    if SafeGetCVar(NAMEPLATE_CASTBAR_CVAR) == nil then
+        return
+    end
+
+    local current = SafeGetCVar(NAMEPLATE_CASTBAR_CVAR)
+    if originalNameplateCastBarCVar == nil then
+        originalNameplateCastBarCVar = current
+    end
+
+    if settings and settings.showCastBar then
+        if current ~= "0" then
+            SafeSetCVar(NAMEPLATE_CASTBAR_CVAR, "0")
+        end
+    elseif originalNameplateCastBarCVar ~= nil and current ~= originalNameplateCastBarCVar then
+        SafeSetCVar(NAMEPLATE_CASTBAR_CVAR, originalNameplateCastBarCVar)
+    end
+end
+
+local function ApplyNameplateCVars(settings)
+    settings = settings or addon.settings.nameplatesPlus
+    if not settings then
+        return
+    end
+
+    -- 3.3.5 stock nameplates cap out at 41 yards; keep them at the client max.
+    settings.nameplateRange = 41
+    SafeSetCVar("nameplateMaxDistance", "41")
+    SafeSetCVar("nameplateShowEnemies", "1")
+    UpdateDefaultNameplateCastBarCVar(settings)
+
+    if SafeGetCVar("nameplateShowEnemyMinions") ~= nil then
+        SafeSetCVar("nameplateShowEnemyMinions", "1")
+    end
+end
+
 local function IsPlaterActive()
     return rawget(_G, "Plater") ~= nil or rawget(_G, "PlaterDB") ~= nil
+end
+
+local UpdateDebuffFrameAnchor
+
+local function StoreRegionLayout(region)
+    if not region or region.dcOriginalLayout then
+        return
+    end
+
+    local layout = { points = {} }
+    local numPoints = region.GetNumPoints and region:GetNumPoints() or 0
+    for index = 1, numPoints do
+        local point, relativeTo, relativePoint, offsetX, offsetY = region:GetPoint(index)
+        layout.points[index] = {
+            point,
+            relativeTo,
+            relativePoint,
+            offsetX,
+            offsetY,
+        }
+    end
+
+    if region.GetWidth then
+        local width = region:GetWidth()
+        if width and width > 0 then
+            layout.width = width
+        end
+    end
+
+    if region.GetHeight then
+        local height = region:GetHeight()
+        if height and height > 0 then
+            layout.height = height
+        end
+    end
+
+    region.dcOriginalLayout = layout
+end
+
+local function RestoreRegionLayout(region)
+    local layout = region and region.dcOriginalLayout
+    if not layout then
+        return
+    end
+
+    region:ClearAllPoints()
+    for _, point in ipairs(layout.points) do
+        region:SetPoint(point[1], point[2], point[3], point[4], point[5])
+    end
+
+    if layout.width and region.SetWidth then
+        region:SetWidth(layout.width)
+    end
+
+    if layout.height and region.SetHeight then
+        region:SetHeight(layout.height)
+    end
+end
+
+local function UpdateCastBarLayout(frame)
+    if not frame then
+        return
+    end
+
+    local castBar = frame.dcCastBar
+    if not castBar then
+        return
+    end
+
+    local castLayout = castBar.dcOriginalLayout or {}
+    if castLayout.width and castBar.SetWidth then
+        castBar:SetWidth(castLayout.width)
+    end
+    if castLayout.height and castBar.SetHeight then
+        castBar:SetHeight(castLayout.height)
+    end
+
+    RestoreRegionLayout(castBar)
+
+    if castBar:IsShown() then
+        castBar:Hide()
+    end
+    if castBar:GetAlpha() ~= 0 then
+        castBar:SetAlpha(0)
+    end
+end
+
+local function NormalizeNameplateLayout(frame)
+    if not frame or IsPlaterActive() then
+        return
+    end
+
+    local healthBar = frame.dcHealthBar
+    if not healthBar then
+        return
+    end
+
+    local castBar = frame.dcCastBar
+    local nameText = frame.dcNameText
+    local levelText = frame.dcLevelText
+
+    StoreRegionLayout(healthBar)
+    StoreRegionLayout(castBar)
+    StoreRegionLayout(nameText)
+    StoreRegionLayout(levelText)
+
+    local healthLayout = healthBar.dcOriginalLayout or {}
+    if healthLayout.width and healthBar.SetWidth then
+        healthBar:SetWidth(healthLayout.width)
+    end
+    if healthLayout.height and healthBar.SetHeight then
+        healthBar:SetHeight(healthLayout.height)
+    end
+    healthBar:ClearAllPoints()
+    healthBar:SetPoint("TOP", frame, "TOP", 0, -6)
+
+    if castBar then
+        UpdateCastBarLayout(frame)
+    end
+
+    if nameText then
+        nameText:ClearAllPoints()
+        nameText:SetPoint("TOP", healthBar, "BOTTOM", 0, NAME_TEXT_Y_OFFSET)
+        nameText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+        nameText:SetJustifyH("CENTER")
+        nameText:SetAlpha(1)
+    end
+
+    if levelText then
+        levelText:ClearAllPoints()
+        levelText:SetPoint("BOTTOMRIGHT", healthBar, "TOPLEFT", LEVEL_TEXT_X_OFFSET, LEVEL_TEXT_Y_OFFSET)
+        levelText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
+        levelText:SetTextColor(0.2, 1, 0.2)
+        levelText:SetAlpha(1)
+    end
+
+    if frame.dcEliteIcon then
+        frame.dcEliteIcon:ClearAllPoints()
+        frame.dcEliteIcon:SetPoint("LEFT", healthBar, "RIGHT", ELITE_ICON_X_OFFSET, ELITE_ICON_Y_OFFSET)
+    end
+
+    if frame.dcFactionIcon then
+        frame.dcFactionIcon:ClearAllPoints()
+        frame.dcFactionIcon:SetPoint("BOTTOMRIGHT", healthBar, "TOPLEFT", FACTION_ICON_X_OFFSET, FACTION_ICON_Y_OFFSET)
+    end
+
+    if frame.dcNPCIcons then
+        frame.dcNPCIcons:ClearAllPoints()
+        frame.dcNPCIcons:SetPoint("BOTTOMRIGHT", healthBar, "TOPLEFT", NPC_ICON_X_OFFSET, NPC_ICON_Y_OFFSET)
+    end
+
+    UpdateDebuffFrameAnchor(frame)
+end
+
+local function RestoreNameplateLayout(frame)
+    if not frame then
+        return
+    end
+
+    RestoreRegionLayout(frame.dcHealthBar)
+    RestoreRegionLayout(frame.dcCastBar)
+    RestoreRegionLayout(frame.dcNameText)
+    RestoreRegionLayout(frame.dcLevelText)
+end
+
+UpdateDebuffFrameAnchor = function(frame)
+    if not frame or not frame.dcDebuffFrame or not frame.dcHealthBar then
+        return
+    end
+
+    local anchor = frame.dcHealthBar
+    if frame.dcCastBarOverlay and frame.dcCastBarOverlay:IsShown() then
+        anchor = frame.dcCastBarOverlay
+    end
+
+    frame.dcDebuffFrame:ClearAllPoints()
+    frame.dcDebuffFrame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
 end
 
 -- Tip Scanning for NPC detection
@@ -217,6 +467,12 @@ end
 local ELITE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Elite"
 local RARE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare"
 local RARE_ELITE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare-Elite"
+local NOTPLATER_ELITE_ICON_TCOORDS = { 0.75, 1, 0, 1 }
+
+local function GetNotPlaterEliteIconTexture()
+    local addonToken = (NotPlater and NotPlater.addonName) or "NotPlater-3.3.5"
+    return "Interface\\AddOns\\" .. addonToken .. "\\images\\glues-addon-icons.blp"
+end
 
 -- Faction Icon Textures
 local FACTION_ALLIANCE = "Interface\\TargetingFrame\\UI-PVP-Alliance"
@@ -293,7 +549,17 @@ local function GetAutomaticThreatMode()
     if class == "WARRIOR" and form == 2 then return "tank" end -- Defensive Stance
     if class == "DRUID" and form == 1 then return "tank" end -- Bear Form
     if class == "DEATHKNIGHT" and GetShapeshiftForm() == 1 then return "tank" end -- Blood Presence (simplified check)
-    if class == "PALADIN" and GetIcons and GetIcons() == "Righteous Fury" then return "tank" end -- Hard to check RF easily without buff scan
+    if class == "PALADIN" then
+        local buffIndex = 1
+        while true do
+            local buffName = UnitBuff("player", buffIndex)
+            if not buffName then break end
+            if buffName == "Righteous Fury" then
+                return "tank"
+            end
+            buffIndex = buffIndex + 1
+        end
+    end
     
     return "dps"
 end
@@ -301,33 +567,6 @@ end
 -- ============================================================
 -- Helper Functions
 -- ============================================================
-local function GetPlateUnit(frame)
-    if frame.unit then return frame.unit end
-    
-    local nameText = frame.dcNameText or frame.name
-    if nameText then
-        local name = nameText:GetText()
-        if name then
-            if UnitName("target") == name then return "target" end
-            if UnitName("focus") == name then return "focus" end
-            if UnitName("mouseover") == name then return "mouseover" end
-            
-            for i = 1, 4 do
-                if UnitName("party" .. i .. "target") == name then 
-                    return "party" .. i .. "target" 
-                end
-            end
-            for i = 1, 40 do
-                if UnitName("raid" .. i .. "target") == name then
-                    return "raid" .. i .. "target"
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
 local function IsPlateTarget(frame)
     local nameText = frame.dcNameText or frame.name
     if not nameText then return false end
@@ -338,6 +577,430 @@ local function IsPlateTarget(frame)
     return name and targetName and name == targetName and frame:GetAlpha() >= 0.99
 end
 
+local function IsPlateMouseOver(frame)
+    if not frame then
+        return false
+    end
+
+    if frame.IsMouseOver then
+        return frame:IsMouseOver()
+    end
+
+    if type(MouseIsOver) == "function" then
+        return MouseIsOver(frame)
+    end
+
+    return false
+end
+
+local function GetNumericTextValue(text)
+    if type(text) ~= "string" or text == "" then
+        return nil
+    end
+
+    local numericText = text:match("(%d+)")
+    if not numericText then
+        return nil
+    end
+
+    return tonumber(numericText)
+end
+
+local function GetPlateDisplaySignature(frame)
+    if not frame then
+        return ""
+    end
+
+    local nameText = frame.dcNameText and frame.dcNameText:GetText() or ""
+    local levelText = frame.dcLevelText and frame.dcLevelText:GetText() or ""
+    return tostring(nameText) .. "|" .. tostring(levelText)
+end
+
+local function InferClassificationFromPlate(frame)
+    if not frame or not frame.dcLevelText then
+        return nil
+    end
+
+    local levelText = frame.dcLevelText:GetText()
+    if type(levelText) ~= "string" or levelText == "" then
+        return nil
+    end
+
+    -- 3.3.5 plates typically expose elite/boss as + or ?? in level text.
+    if levelText:find("%?%?") then
+        return "worldboss"
+    end
+
+    if levelText:find("%+") then
+        return "elite"
+    end
+
+    return nil
+end
+
+local function InferClassificationFromTexturePath(texturePath)
+    if type(texturePath) ~= "string" then
+        return nil
+    end
+
+    local path = string.lower(texturePath)
+
+    if string.find(path, "nameplate-boss", 1, true) or string.find(path, "worldboss", 1, true) then
+        return "worldboss"
+    end
+
+    if string.find(path, "rare-elite", 1, true) or string.find(path, "rareelite", 1, true) then
+        return "rareelite"
+    end
+
+    if string.find(path, "nameplate-rare", 1, true) or string.find(path, "-rare", 1, true) then
+        return "rare"
+    end
+
+    if string.find(path, "nameplate-elite", 1, true) or string.find(path, "-elite", 1, true) then
+        return "elite"
+    end
+
+    return nil
+end
+
+local function InferClassificationFromSuppressedRegions(frame)
+    local regions = frame and frame.dcSuppressedRegions
+    if not regions then
+        return nil
+    end
+
+    local fallback = nil
+    for _, region in ipairs(regions) do
+        if region and region.GetObjectType and region:GetObjectType() == "Texture" and region.GetTexture then
+            local texture = region:GetTexture()
+            local classification = InferClassificationFromTexturePath(texture)
+            if classification == "worldboss" or classification == "rareelite" then
+                return classification
+            end
+            if classification and not fallback then
+                fallback = classification
+            end
+        end
+    end
+
+    return fallback
+end
+
+local function GetEstimatedRange(unit)
+    if not LibRangeCheck or not unit or not UnitExists(unit) then
+        return nil
+    end
+
+    local _, maxRange = LibRangeCheck:GetRange(unit, true)
+    if not maxRange then
+        return nil
+    end
+
+    return maxRange
+end
+
+local function PlateMatchesUnit(frame, unit, matchContext)
+    if not frame or not unit or not UnitExists(unit) or not frame.dcHealthBar then
+        return false
+    end
+
+    local nameText = frame.dcNameText or frame.name
+    if not nameText then
+        return false
+    end
+
+    local plateName = nameText:GetText()
+    if not plateName or plateName ~= UnitName(unit) then
+        return false
+    end
+
+    local plateLevel = frame.dcLevelText and GetNumericTextValue(frame.dcLevelText:GetText()) or nil
+    local unitLevel = type(UnitLevel) == "function" and UnitLevel(unit) or nil
+    if plateLevel and unitLevel and plateLevel ~= unitLevel then
+        return false
+    end
+
+    local healthValue = frame.dcHealthBar:GetValue()
+    local unitHealth = type(UnitHealth) == "function" and UnitHealth(unit) or nil
+    if unitHealth and healthValue ~= unitHealth then
+        return false
+    end
+
+    if matchContext == "target" and not IsPlateTarget(frame) then
+        return false
+    end
+
+    if matchContext == "mouseover" and not IsPlateMouseOver(frame) then
+        return false
+    end
+
+    return true
+end
+
+local function IsGroupTargetUnit(unit)
+    return type(unit) == "string" and (unit:match("^party%d+target$") or unit:match("^raid%d+target$"))
+end
+
+local function ReleaseFrameUnitMatch(frame)
+    if not frame then
+        return
+    end
+
+    local unit = frame.lastUnitMatch
+    local guid = frame.lastGuidMatch
+    if unit and unitMatchToFrame[unit] == frame then
+        unitMatchToFrame[unit] = nil
+    end
+    if guid and guidMatchToFrame[guid] == frame then
+        guidMatchToFrame[guid] = nil
+    end
+end
+
+local function MarkFrameDirty(frame)
+    if not frame then
+        return
+    end
+
+    frame.dcUnitMatchDirty = true
+    frame.dcDebuffDirty = true
+    frame.dcRangeDirty = true
+end
+
+local function MarkAllFramesDirty()
+    for frame in pairs(hookedPlates) do
+        MarkFrameDirty(frame)
+    end
+end
+
+local function InvalidateAuraCacheForUnit(unit)
+    if not unit or not UnitExists(unit) then
+        return
+    end
+
+    local guid = UnitGUID(unit)
+    if guid then
+        auraCache[guid] = nil
+    end
+end
+
+local function MarkMatchedUnitDebuffsDirty(unit)
+    if not unit then
+        return
+    end
+
+    for frame in pairs(hookedPlates) do
+        if frame.lastUnitMatch == unit then
+            frame.dcDebuffDirty = true
+        end
+    end
+end
+
+local function ClearFrameUnitMatch(frame)
+    if not frame then
+        return
+    end
+
+    ReleaseFrameUnitMatch(frame)
+    frame.lastUnitMatch = nil
+    frame.lastGuidMatch = nil
+    frame.dcDebuffDirty = true
+end
+
+local function SetFrameUnitMatch(frame, unit)
+    if not frame then
+        return false
+    end
+
+    local guid = unit and UnitGUID(unit) or nil
+    if frame.lastUnitMatch == unit and frame.lastGuidMatch == guid then
+        return true
+    end
+
+    if unit then
+        local claimedFrame = unitMatchToFrame[unit]
+        if claimedFrame and claimedFrame ~= frame and claimedFrame:IsShown() and PlateMatchesUnit(claimedFrame, unit, unit) then
+            return false
+        end
+
+        if guid then
+            local claimedGuidFrame = guidMatchToFrame[guid]
+            if claimedGuidFrame and claimedGuidFrame ~= frame and claimedGuidFrame:IsShown() and PlateMatchesUnit(claimedGuidFrame, unit, unit) then
+                return false
+            end
+        end
+    end
+
+    ReleaseFrameUnitMatch(frame)
+    frame.lastUnitMatch = unit
+    frame.lastGuidMatch = guid
+    if unit then
+        unitMatchToFrame[unit] = frame
+    end
+    if guid then
+        guidMatchToFrame[guid] = frame
+    end
+    frame.dcDebuffDirty = true
+    return true
+end
+
+local function FindUniqueFrameForUnit(unit, matchContext)
+    if not unit or not UnitExists(unit) then
+        return nil
+    end
+
+    local matchedFrame = nil
+    for frame in pairs(hookedPlates) do
+        if frame:IsShown() and PlateMatchesUnit(frame, unit, matchContext) then
+            if matchedFrame then
+                return nil
+            end
+            matchedFrame = frame
+        end
+    end
+
+    return matchedFrame
+end
+
+local function RefreshTrackedUnitMatch(unit)
+    local existing = unit and unitMatchToFrame[unit]
+    if existing and existing.lastUnitMatch == unit then
+        ClearFrameUnitMatch(existing)
+    end
+
+    if not unit or not UnitExists(unit) then
+        return
+    end
+
+    local frame = FindUniqueFrameForUnit(unit, unit)
+    if frame then
+        SetFrameUnitMatch(frame, unit)
+    end
+end
+
+local function HideTargetIndicators(frame)
+    if not frame then
+        return
+    end
+
+    if frame.dcTargetHighlight then
+        frame.dcTargetHighlight:Hide()
+    end
+    if frame.dcMouseoverBorder then
+        frame.dcMouseoverBorder:Hide()
+    end
+    if frame.dcTargetNeon then
+        frame.dcTargetNeon:Hide()
+    end
+    if frame.dcTargetArrowLeft then
+        frame.dcTargetArrowLeft:Hide()
+    end
+    if frame.dcTargetArrowRight then
+        frame.dcTargetArrowRight:Hide()
+    end
+    -- Reset scale so plates don't stay zoomed after losing their unit match.
+    if not IsPlaterActive() and frame.dcLastScale and frame.dcLastScale ~= 1.0 then
+        frame:SetScale(1.0)
+        frame.dcLastScale = 1.0
+    end
+    frame.dcIsTarget = nil
+end
+
+local function RestoreMouseoverNameText(frame)
+    if not frame or not frame.dcNameText or not frame.dcNameTextOriginalColor then
+        return
+    end
+
+    frame.dcNameText:SetTextColor(unpack(frame.dcNameTextOriginalColor))
+    frame.dcNameTextOriginalColor = nil
+end
+
+local function ClearGroupTargetMatches()
+    local unitsToClear = {}
+    for unit in pairs(unitMatchToFrame) do
+        if IsGroupTargetUnit(unit) then
+            unitsToClear[#unitsToClear + 1] = unit
+        end
+    end
+
+    for _, unit in ipairs(unitsToClear) do
+        local frame = unitMatchToFrame[unit]
+        if frame and frame.lastUnitMatch == unit then
+            ClearFrameUnitMatch(frame)
+        end
+    end
+end
+
+local function RefreshGroupTargetMatch(unit)
+    local existing = unit and unitMatchToFrame[unit]
+    if existing and existing.lastUnitMatch == unit then
+        ClearFrameUnitMatch(existing)
+    end
+
+    if not unit or not UnitExists(unit) then
+        return
+    end
+
+    local frame = FindUniqueFrameForUnit(unit, "group-target")
+    if frame and frame.lastUnitMatch ~= "target" and frame.lastUnitMatch ~= "focus" and frame.lastUnitMatch ~= "mouseover" then
+        SetFrameUnitMatch(frame, unit)
+    end
+end
+
+local function RefreshAllGroupTargetMatches()
+    ClearGroupTargetMatches()
+
+    for i = 1, 4 do
+        RefreshGroupTargetMatch("party" .. i .. "target")
+    end
+
+    for i = 1, 40 do
+        RefreshGroupTargetMatch("raid" .. i .. "target")
+    end
+end
+
+local function RefreshAllTrackedUnitMatches()
+    RefreshTrackedUnitMatch("target")
+    RefreshTrackedUnitMatch("focus")
+    RefreshTrackedUnitMatch("mouseover")
+    RefreshAllGroupTargetMatches()
+end
+
+local function GetPlateUnit(frame)
+    if not frame then
+        return nil
+    end
+
+    if frame.unit and UnitExists(frame.unit) then
+        return frame.unit
+    end
+
+    local matchedUnit = frame.lastUnitMatch
+    if matchedUnit then
+        if PlateMatchesUnit(frame, matchedUnit, matchedUnit) then
+            frame.dcUnitMatchDirty = nil
+            return matchedUnit
+        end
+        ClearFrameUnitMatch(frame)
+    end
+
+    frame.dcUnitMatchDirty = nil
+
+    if PlateMatchesUnit(frame, "target", "target") and SetFrameUnitMatch(frame, "target") then
+        return "target"
+    end
+
+    if PlateMatchesUnit(frame, "mouseover", "mouseover") and SetFrameUnitMatch(frame, "mouseover") then
+        return "mouseover"
+    end
+
+    if UnitExists("focus") and PlateMatchesUnit(frame, "focus", "focus") and SetFrameUnitMatch(frame, "focus") then
+        return "focus"
+    end
+
+    return frame.lastUnitMatch
+end
+
 local function GetUnitClass(unit)
     if not unit or not UnitExists(unit) then return nil end
     if not UnitIsPlayer(unit) then return nil end
@@ -346,9 +1009,85 @@ local function GetUnitClass(unit)
     return classToken
 end
 
+local VALID_FRAME_STRATA = {
+    BACKGROUND = true,
+    LOW = true,
+    MEDIUM = true,
+    HIGH = true,
+    DIALOG = true,
+    FULLSCREEN = true,
+    FULLSCREEN_DIALOG = true,
+    TOOLTIP = true,
+}
+
+local function GetSafeFrameStrata(frame)
+    if not frame or not frame.GetFrameStrata then
+        return "MEDIUM"
+    end
+
+    local strata = frame:GetFrameStrata()
+    if type(strata) ~= "string" then
+        return "MEDIUM"
+    end
+
+    if VALID_FRAME_STRATA[strata] then
+        return strata
+    end
+
+    return "MEDIUM"
+end
+
 -- ============================================================
 -- Component Creation
 -- ============================================================
+local function CreateFullEdgeBorder(parent)
+    if parent.dcFullEdgeBorder then
+        return parent.dcFullEdgeBorder
+    end
+
+    local border = {}
+    border.left = parent:CreateTexture(nil, "BORDER")
+    border.right = parent:CreateTexture(nil, "BORDER")
+    border.top = parent:CreateTexture(nil, "BORDER")
+    border.bottom = parent:CreateTexture(nil, "BORDER")
+
+    parent.dcFullEdgeBorder = border
+    return border
+end
+
+local function ConfigureFullEdgeBorder(parent, thickness, r, g, b, a)
+    local border = CreateFullEdgeBorder(parent)
+
+    border.left:ClearAllPoints()
+    border.left:SetTexture(r, g, b, a)
+    border.left:SetWidth(thickness)
+    border.left:SetPoint("TOPRIGHT", parent, "TOPLEFT", 0, thickness)
+    border.left:SetPoint("BOTTOMRIGHT", parent, "BOTTOMLEFT", 0, -thickness)
+
+    border.right:ClearAllPoints()
+    border.right:SetTexture(r, g, b, a)
+    border.right:SetWidth(thickness)
+    border.right:SetPoint("TOPLEFT", parent, "TOPRIGHT", 0, thickness)
+    border.right:SetPoint("BOTTOMLEFT", parent, "BOTTOMRIGHT", 0, -thickness)
+
+    border.top:ClearAllPoints()
+    border.top:SetTexture(r, g, b, a)
+    border.top:SetHeight(thickness)
+    border.top:SetPoint("BOTTOMLEFT", parent, "TOPLEFT", 0, 0)
+    border.top:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", 0, 0)
+
+    border.bottom:ClearAllPoints()
+    border.bottom:SetTexture(r, g, b, a)
+    border.bottom:SetHeight(thickness)
+    border.bottom:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, 0)
+    border.bottom:SetPoint("TOPRIGHT", parent, "BOTTOMRIGHT", 0, 0)
+
+    border.left:Show()
+    border.right:Show()
+    border.top:Show()
+    border.bottom:Show()
+end
+
 local function CreateHealthPercentText(healthBar)
     if healthBar.dcHealthPercent then return healthBar.dcHealthPercent end
     
@@ -361,17 +1100,302 @@ local function CreateHealthPercentText(healthBar)
     return text
 end
 
+local function CreateCustomHealthBar(frame, sourceHealthBar)
+    if frame.dcCustomHealthBar then
+        return frame.dcCustomHealthBar
+    end
+
+    if not sourceHealthBar then
+        return nil
+    end
+
+    local displayBar = CreateFrame("StatusBar", nil, frame)
+    displayBar.dcManagedByNameplatesPlus = true
+    displayBar:SetFrameStrata("MEDIUM")
+    displayBar:SetFrameLevel(frame:GetFrameLevel() + 3)
+    displayBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    displayBar:SetMinMaxValues(0, 1)
+    displayBar:SetValue(1)
+
+    local width = sourceHealthBar:GetWidth() or 110
+    local height = sourceHealthBar:GetHeight() or 10
+    if width <= 0 then width = 110 end
+    if height <= 0 then height = 10 end
+    displayBar:SetSize(width, height)
+    displayBar:SetPoint("TOPLEFT", sourceHealthBar, "TOPLEFT", CUSTOM_HEALTH_INSET_X, -CUSTOM_HEALTH_INSET_Y)
+    displayBar:SetPoint("BOTTOMRIGHT", sourceHealthBar, "BOTTOMRIGHT", -CUSTOM_HEALTH_INSET_X, CUSTOM_HEALTH_INSET_Y)
+    displayBar:SetStatusBarColor(DEFAULT_HEALTH_COLOR.r, DEFAULT_HEALTH_COLOR.g, DEFAULT_HEALTH_COLOR.b)
+
+    displayBar.dcSourceBar = sourceHealthBar
+    frame.dcCustomHealthBar = displayBar
+    return displayBar
+end
+
+local SyncCustomHealthBar
+local UpdateHealthPercent
+
+local function CollectNativeStatusBars(frame)
+    local statusBars = {}
+    for _, child in ipairs({ frame:GetChildren() }) do
+        if child.GetStatusBarTexture and not child.dcManagedByNameplatesPlus then
+            statusBars[#statusBars + 1] = child
+        end
+    end
+
+    table.sort(statusBars, function(a, b)
+        local aTop = a:GetTop() or 0
+        local bTop = b:GetTop() or 0
+        if aTop == bTop then
+            return (a:GetWidth() or 0) > (b:GetWidth() or 0)
+        end
+        return aTop > bTop
+    end)
+
+    return statusBars
+end
+
+local function EnsureSourceHealthHook(frame, sourceHealthBar)
+    if not frame or not sourceHealthBar then
+        return
+    end
+
+    if sourceHealthBar.dcHealthHookedByNameplatesPlus then
+        return
+    end
+
+    sourceHealthBar.dcHealthHookedByNameplatesPlus = true
+    sourceHealthBar:HookScript("OnValueChanged", function()
+        local settings = addon.settings.nameplatesPlus
+        if not settings.enabled then return end
+        SyncCustomHealthBar(frame)
+        if frame.dcHealthBar then
+            UpdateHealthPercent(frame.dcHealthBar, settings)
+        end
+    end)
+end
+
+local function SuppressFrameOnShow(target)
+    if not target or target.dcSuppressionHookedByNameplatesPlus then
+        return
+    end
+
+    target.dcSuppressionHookedByNameplatesPlus = true
+    target:HookScript("OnShow", function(self)
+        self:Hide()
+        self:SetAlpha(0)
+    end)
+end
+
+local function MaskSourceHealthBar(sourceBar)
+    if not sourceBar then
+        return
+    end
+
+    sourceBar:SetAlpha(0)
+    local texture = sourceBar.GetStatusBarTexture and sourceBar:GetStatusBarTexture() or nil
+    if texture then
+        texture:SetAlpha(0)
+    end
+
+    if sourceBar.bg then
+        sourceBar.bg:SetAlpha(0)
+    end
+
+    if sourceBar.background then
+        sourceBar.background:SetAlpha(0)
+    end
+
+    if sourceBar.border then
+        sourceBar.border:SetAlpha(0)
+    end
+
+    -- Some 3.3.5 plate templates draw the frame/backdrop as texture regions on
+    -- the native status bar. Hide them too so no boxed frame leaks behind the
+    -- custom bar.
+    for _, region in ipairs({ sourceBar:GetRegions() }) do
+        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+            region:SetAlpha(0)
+            region:Hide()
+        end
+    end
+end
+
+local function SuppressNativeNameplateChildren(frame, statusBars)
+    if not frame then
+        return
+    end
+
+    if statusBars then
+        for _, bar in ipairs(statusBars) do
+            if bar == frame.dcSourceHealthBar then
+                MaskSourceHealthBar(bar)
+                if not bar.dcSuppressionHookedByNameplatesPlus then
+                    bar.dcSuppressionHookedByNameplatesPlus = true
+                    bar:HookScript("OnShow", function(self)
+                        MaskSourceHealthBar(self)
+                    end)
+                end
+            else
+                bar:Hide()
+                bar:SetAlpha(0)
+                SuppressFrameOnShow(bar)
+            end
+
+            local parent = bar:GetParent()
+            if bar ~= frame.dcSourceHealthBar and parent and parent ~= frame and not parent.dcManagedByNameplatesPlus then
+                parent:Hide()
+                parent:SetAlpha(0)
+                SuppressFrameOnShow(parent)
+            end
+        end
+    end
+
+    -- Some plates expose non-StatusBar child containers that still render the
+    -- fallback second bar. Hide every unmanaged child as a final guard.
+    for _, child in ipairs({ frame:GetChildren() }) do
+        if child ~= frame.dcSourceHealthBar and not child.dcManagedByNameplatesPlus then
+            child:Hide()
+            child:SetAlpha(0)
+            SuppressFrameOnShow(child)
+        end
+    end
+end
+
+local function CollectSuppressibleRegions(regions, keepNameText, keepLevelText)
+    local suppressible = {}
+    for _, region in ipairs(regions or {}) do
+        if region ~= keepNameText and region ~= keepLevelText and not region.dcManagedByNameplatesPlus then
+            local objectType = region.GetObjectType and region:GetObjectType() or nil
+            if objectType == "Texture" then
+                local texture = region.GetTexture and region:GetTexture() or nil
+                local classification = InferClassificationFromTexturePath(texture)
+                -- Preserve native elite/rare/boss markers so classification cues
+                -- are visible even when no unit token is currently resolved.
+                if not classification then
+                    suppressible[#suppressible + 1] = region
+                end
+            end
+        end
+    end
+    return suppressible
+end
+
+local function SuppressNativeNameplateRegions(frame)
+    local regions = frame and frame.dcSuppressedRegions
+    if not regions then
+        return
+    end
+
+    for _, region in ipairs(regions) do
+        if region then
+            region:Hide()
+            region:SetAlpha(0)
+        end
+    end
+end
+
+SyncCustomHealthBar = function(frame)
+    if not frame then
+        return
+    end
+
+    local displayBar = frame.dcCustomHealthBar
+    local sourceBar = frame.dcSourceHealthBar
+    if not displayBar or not sourceBar or not sourceBar.GetMinMaxValues then
+        return
+    end
+
+    local minValue, maxValue = sourceBar:GetMinMaxValues()
+    local currentValue = sourceBar:GetValue()
+
+    displayBar:ClearAllPoints()
+    displayBar:SetPoint("TOPLEFT", sourceBar, "TOPLEFT", CUSTOM_HEALTH_INSET_X, -CUSTOM_HEALTH_INSET_Y)
+    displayBar:SetPoint("BOTTOMRIGHT", sourceBar, "BOTTOMRIGHT", -CUSTOM_HEALTH_INSET_X, CUSTOM_HEALTH_INSET_Y)
+
+    displayBar:SetMinMaxValues(minValue or 0, maxValue or 1)
+    displayBar:SetValue(currentValue or 0)
+
+    if sourceBar.GetStatusBarColor and not frame.dcResolvedUnit then
+        local r, g, b = sourceBar:GetStatusBarColor()
+        if r and g and b then
+            displayBar:SetStatusBarColor(r, g, b)
+        end
+    end
+
+    if displayBar:GetWidth() <= 0 and sourceBar.GetWidth then
+        local width = sourceBar:GetWidth() or 110
+        if width > 0 then
+            displayBar:SetWidth(width)
+        end
+    end
+
+    if displayBar:GetHeight() <= 0 and sourceBar.GetHeight then
+        local height = sourceBar:GetHeight() or 10
+        if height > 0 then
+            displayBar:SetHeight(height)
+        end
+    end
+end
+
 local function CreateTargetHighlight(frame)
     if frame.dcTargetHighlight then return frame.dcTargetHighlight end
     
-    local highlight = frame:CreateTexture(nil, "OVERLAY")
-    highlight:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Stealthed")
-    highlight:SetBlendMode("ADD")
-    highlight:SetAllPoints()
+    local highlight = CreateFrame("Frame", nil, frame)
+    highlight:SetFrameStrata(GetSafeFrameStrata(frame))
+    highlight:SetFrameLevel(frame:GetFrameLevel() + 6)
+
+    local border = CreateFullEdgeBorder(highlight)
+    border.left:SetDrawLayer("OVERLAY", 7)
+    border.right:SetDrawLayer("OVERLAY", 7)
+    border.top:SetDrawLayer("OVERLAY", 7)
+    border.bottom:SetDrawLayer("OVERLAY", 7)
+    highlight.border = border
     highlight:Hide()
     frame.dcTargetHighlight = highlight
     
     return highlight
+end
+
+local function CreateMouseoverBorder(frame)
+    if frame.dcMouseoverBorder then return frame.dcMouseoverBorder end
+
+    local borderFrame = CreateFrame("Frame", nil, frame)
+    borderFrame:SetFrameStrata(GetSafeFrameStrata(frame))
+    borderFrame:SetFrameLevel(frame:GetFrameLevel() + 5)
+
+    local border = CreateFullEdgeBorder(borderFrame)
+    border.left:SetDrawLayer("OVERLAY", 6)
+    border.right:SetDrawLayer("OVERLAY", 6)
+    border.top:SetDrawLayer("OVERLAY", 6)
+    border.bottom:SetDrawLayer("OVERLAY", 6)
+    borderFrame.border = border
+    borderFrame:Hide()
+    frame.dcMouseoverBorder = borderFrame
+
+    return borderFrame
+end
+
+local function CreateTargetArrows(frame, healthBar)
+    if frame.dcTargetArrowLeft and frame.dcTargetArrowRight then
+        return frame.dcTargetArrowLeft, frame.dcTargetArrowRight
+    end
+
+    local left = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    left:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    -- Keep extra left offset so the arrows clear level text.
+    left:SetPoint("RIGHT", healthBar, "LEFT", TARGET_ARROW_LEFT_OFFSET, 0)
+    left:SetText("<<")
+    left:Hide()
+
+    local right = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    right:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+    right:SetPoint("LEFT", healthBar, "RIGHT", TARGET_ARROW_RIGHT_OFFSET, 0)
+    right:SetText(">>")
+    right:Hide()
+
+    frame.dcTargetArrowLeft = left
+    frame.dcTargetArrowRight = right
+    return left, right
 end
 
 local function CreateThreatGlow(frame, healthBar)
@@ -420,8 +1444,9 @@ local function CreateEliteIcon(frame, healthBar)
     if frame.dcEliteIcon then return frame.dcEliteIcon end
     
     local icon = frame:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(24, 24)
-    icon:SetPoint("LEFT", healthBar, "RIGHT", 4, 0)
+    icon.dcManagedByNameplatesPlus = true
+    icon:SetSize(16, 16)
+    icon:SetPoint("LEFT", healthBar, "RIGHT", ELITE_ICON_X_OFFSET, ELITE_ICON_Y_OFFSET)
     icon:Hide()
     
     frame.dcEliteIcon = icon
@@ -432,8 +1457,9 @@ local function CreateFactionIcon(frame, healthBar)
     if frame.dcFactionIcon then return frame.dcFactionIcon end
     
     local icon = frame:CreateTexture(nil, "OVERLAY")
-    icon:SetSize(20, 20)
-    icon:SetPoint("RIGHT", healthBar, "LEFT", -4, 0)
+    icon.dcManagedByNameplatesPlus = true
+    icon:SetSize(16, 16)
+    icon:SetPoint("BOTTOMRIGHT", healthBar, "TOPLEFT", FACTION_ICON_X_OFFSET, FACTION_ICON_Y_OFFSET)
     icon:Hide()
     
     frame.dcFactionIcon = icon
@@ -442,10 +1468,14 @@ end
 
 local function CreateNPCIcons(frame, healthBar)
     if frame.dcNPCIcons then return frame.dcNPCIcons end
+
+    local settings = addon.settings.nameplatesPlus or {}
+    local size = settings.npcIconSize or 24
     
     local iconFrame = CreateFrame("Frame", nil, frame)
-    iconFrame:SetSize(24, 24)
-    iconFrame:SetPoint("CENTER", healthBar, "CENTER", 0, 20)
+    iconFrame.dcManagedByNameplatesPlus = true
+    iconFrame:SetSize(size, size)
+    iconFrame:SetPoint("BOTTOMRIGHT", healthBar, "TOPLEFT", NPC_ICON_X_OFFSET, NPC_ICON_Y_OFFSET)
     
     local icon = iconFrame:CreateTexture(nil, "OVERLAY")
     icon:SetAllPoints()
@@ -458,28 +1488,38 @@ end
 
 local function CreateCastBarOverlay(frame, originalCastBar)
     if frame.dcCastBarOverlay then return frame.dcCastBarOverlay end
-    if not originalCastBar then return nil end
-    
-    -- Create our overlay on top of the existing cast bar
-    local overlay = CreateFrame("Frame", nil, frame)
-    overlay:SetPoint("TOPLEFT", originalCastBar, "TOPLEFT")
-    overlay:SetPoint("BOTTOMRIGHT", originalCastBar, "BOTTOMRIGHT")
+    if not frame.dcHealthBar then return nil end
+
+    local overlay = CreateFrame("StatusBar", nil, frame)
+    overlay.dcManagedByNameplatesPlus = true
+    overlay:SetPoint("TOPLEFT", frame.dcHealthBar, "BOTTOMLEFT", 0, CASTBAR_Y_GAP)
+    overlay:SetPoint("TOPRIGHT", frame.dcHealthBar, "BOTTOMRIGHT", 0, CASTBAR_Y_GAP)
+    overlay:SetHeight(GetConfiguredCastbarHeight(addon.settings.nameplatesPlus))
+    overlay:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
     overlay:SetFrameLevel(frame:GetFrameLevel() + 5)
-    
+
+    local background = overlay:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints()
+    background:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    background:SetVertexColor(0.03, 0.03, 0.03, 0.72)
+    overlay.background = background
+
+    ConfigureFullEdgeBorder(overlay, 1, 0.04, 0.03, 0.02, 0.88)
+
     -- Spell name text
     local spellName = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     spellName:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
     spellName:SetPoint("LEFT", overlay, "LEFT", 2, 0)
     spellName:SetTextColor(1, 1, 1)
     overlay.spellName = spellName
-    
+
     -- Cast time text
     local castTime = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     castTime:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
     castTime:SetPoint("RIGHT", overlay, "RIGHT", -2, 0)
     castTime:SetTextColor(1, 1, 1)
     overlay.castTime = castTime
-    
+
     -- Shield icon for non-interruptible casts
     local shield = overlay:CreateTexture(nil, "OVERLAY")
     shield:SetTexture("Interface\\CastingBar\\UI-CastingBar-Small-Shield")
@@ -487,9 +1527,32 @@ local function CreateCastBarOverlay(frame, originalCastBar)
     shield:SetPoint("LEFT", overlay, "RIGHT", 2, 0)
     shield:Hide()
     overlay.shield = shield
+
+    overlay:Hide()
     
     frame.dcCastBarOverlay = overlay
     return overlay
+end
+
+local function SetCastBarVisualState(frame, castBar, isActive)
+    local overlay = frame and frame.dcCastBarOverlay
+
+    if castBar then
+        if castBar.dcOriginalAlpha == nil then
+            castBar.dcOriginalAlpha = castBar:GetAlpha() or 1
+        end
+        UpdateCastBarLayout(frame)
+    end
+
+    frame.dcCastBarActive = isActive and true or false
+
+    if overlay then
+        if frame.dcCastBarActive then
+            overlay:Show()
+        else
+            overlay:Hide()
+        end
+    end
 end
 
 local function CreateDebuffFrame(frame, healthBar)
@@ -498,6 +1561,7 @@ local function CreateDebuffFrame(frame, healthBar)
     local settings = addon.settings.nameplatesPlus
     
     local debuffFrame = CreateFrame("Frame", nil, frame)
+    debuffFrame.dcManagedByNameplatesPlus = true
     debuffFrame:SetPoint("TOPLEFT", healthBar, "BOTTOMLEFT", 0, -2)
     debuffFrame:SetSize(settings.debuffSize * settings.maxDebuffs, settings.debuffSize)
     debuffFrame.icons = {}
@@ -523,7 +1587,53 @@ local function CreateDebuffFrame(frame, healthBar)
     end
     
     frame.dcDebuffFrame = debuffFrame
+    UpdateDebuffFrameAnchor(frame)
     return debuffFrame
+end
+
+local function BuildAuraListLookup(list)
+    local lookup = {}
+    if not list then
+        return lookup
+    end
+
+    for index, auraName in ipairs(list) do
+        if auraName and auraName ~= "" then
+            lookup[auraName] = index
+        end
+    end
+
+    return lookup
+end
+
+local function InvalidateAuraFilterCache(settings)
+    if settings then
+        settings._dcAuraFilterCache = nil
+    end
+end
+
+local function GetAuraFilterCache(settings)
+    local cache = settings and settings._dcAuraFilterCache
+    if cache then
+        return cache
+    end
+
+    local auraFilter = settings and settings.auraFilter or {}
+    cache = {
+        enabled = auraFilter.enabled,
+        minDuration = auraFilter.minDuration or 0,
+        maxDuration = auraFilter.maxDuration or 0,
+        blacklistLookup = BuildAuraListLookup(auraFilter.blacklist),
+        whitelistLookup = BuildAuraListLookup(auraFilter.whitelist),
+        priorityLookup = BuildAuraListLookup(auraFilter.priority),
+    }
+    cache.hasWhitelist = next(cache.whitelistLookup) ~= nil
+
+    if settings then
+        settings._dcAuraFilterCache = cache
+    end
+
+    return cache
 end
 
 -- ============================================================
@@ -537,22 +1647,44 @@ local function FormatNumber(currentValue)
     return tostring(currentValue)
 end
 
-local function UpdateHealthPercent(healthBar, settings, forceUpdate)
+UpdateHealthPercent = function(healthBar, settings, forceUpdate)
+    if not healthBar then
+        return
+    end
+
+    local text = healthBar.dcHealthPercent or CreateHealthPercentText(healthBar)
+
     if not settings.showHealthPercent then
-        if healthBar.dcHealthPercent then healthBar.dcHealthPercent:Hide() end
+        if text then text:Hide() end
         return
     end
     
-    -- HEALTHBAR VALIDATION FIX: Ensure healthBar exists before accessing methods
-    if not healthBar or not healthBar.GetMinMaxValues then return end
+    if not healthBar.GetMinMaxValues then return end
     
-    local min, max = healthBar:GetMinMaxValues()
-    local cur = healthBar:GetValue()
+    local sourceBar = healthBar.dcSourceBar
+    local valueSource = (sourceBar and sourceBar.GetMinMaxValues) and sourceBar or healthBar
+    local min, max = valueSource:GetMinMaxValues()
+    local cur = valueSource:GetValue()
+
+    if max <= 0 and forceUpdate then
+        local ownerFrame = healthBar:GetParent()
+        local unit = ownerFrame and GetPlateUnit(ownerFrame)
+        if unit and UnitExists(unit) then
+            local fallbackMax = UnitHealthMax(unit)
+            if fallbackMax and fallbackMax > 0 then
+                max = fallbackMax
+                min = 0
+                cur = UnitHealth(unit)
+            end
+        end
+    end
     
-    -- If max is 0, the unit data isn't available yet - mark for delayed update
+    -- If max is 0, the unit data isn't available yet - mark for delayed update.
     if max <= 0 then
-        if not forceUpdate then
-            healthBar.dcHealthPending = true
+        healthBar.dcHealthPending = true
+        if text and text.dcLastValue and text.dcLastValue ~= "" then
+            text:SetText(text.dcLastValue)
+            text:Show()
         end
         return
     end
@@ -560,11 +1692,10 @@ local function UpdateHealthPercent(healthBar, settings, forceUpdate)
     healthBar.dcHealthPending = nil
     
     local percent = (cur / max) * 100
-    local text = healthBar.dcHealthPercent or CreateHealthPercentText(healthBar)
     
     local displayText
     if settings.showHealthRealValues then
-        displayText = string.format("%s/%s", FormatNumber(cur), FormatNumber(max))
+        displayText = string.format("%s (%.0f%%)", FormatNumber(cur), percent)
     else
         displayText = string.format(settings.healthPercentFormat, percent)
     end
@@ -582,7 +1713,7 @@ local function UpdateHealthPercent(healthBar, settings, forceUpdate)
         elseif pos == "RIGHT" then
             text:SetPoint("RIGHT", healthBar, "RIGHT", -2, 0)
         else
-            text:SetPoint("CENTER", healthBar, "CENTER", 0, 0)
+            text:SetPoint("CENTER", healthBar, "CENTER", 0, 1)
         end
         text.dcLastPosition = pos
     end
@@ -649,6 +1780,22 @@ local function UpdateHealthBarColor(frame, healthBar, unit, settings)
     end
     
     -- Apply Color (avoid redundant sets to reduce flicker)
+    if not setColor then
+        if UnitIsFriend("player", unit) then
+            r, g, b = FRIENDLY_HEALTH_COLOR.r, FRIENDLY_HEALTH_COLOR.g, FRIENDLY_HEALTH_COLOR.b
+        else
+            local reaction = UnitReaction(unit, "player")
+            if reaction and reaction == 4 then
+                r, g, b = NEUTRAL_HEALTH_COLOR.r, NEUTRAL_HEALTH_COLOR.g, NEUTRAL_HEALTH_COLOR.b
+            elseif reaction and reaction >= 5 and not UnitCanAttack("player", unit) then
+                r, g, b = FRIENDLY_HEALTH_COLOR.r, FRIENDLY_HEALTH_COLOR.g, FRIENDLY_HEALTH_COLOR.b
+            else
+                r, g, b = DEFAULT_HEALTH_COLOR.r, DEFAULT_HEALTH_COLOR.g, DEFAULT_HEALTH_COLOR.b
+            end
+        end
+        setColor = true
+    end
+
     if setColor and r and g and b then
         if healthBar.dcLastColorR ~= r or healthBar.dcLastColorG ~= g or healthBar.dcLastColorB ~= b then
             healthBar:SetStatusBarColor(r, g, b)
@@ -670,16 +1817,39 @@ local function UpdateHealthBarColor(frame, healthBar, unit, settings)
     end
 end
 
+local function HideThreatIndicators(frame)
+    if not frame then
+        return
+    end
+
+    local healthBar = frame.dcHealthBar
+    if frame.dcThreatGlow then
+        frame.dcThreatGlow:Hide()
+    end
+    if healthBar and healthBar.dcThreatDiff then
+        healthBar.dcThreatDiff:Hide()
+    end
+    if healthBar and healthBar.dcThreatPct then
+        healthBar.dcThreatPct:Hide()
+    end
+end
+
 local function UpdateThreat(frame, unit, settings)
     if not settings.showThreat then
-        if frame.dcThreatGlow then frame.dcThreatGlow:Hide() end
+        HideThreatIndicators(frame)
         return
     end
     
-    if not unit or not UnitExists(unit) then return end
-    if UnitIsFriend("player", unit) then return end
+    if not unit or not UnitExists(unit) then
+        HideThreatIndicators(frame)
+        return
+    end
+    if UnitIsFriend("player", unit) then
+        HideThreatIndicators(frame)
+        return
+    end
     if not UnitAffectingCombat(unit) then
-        if frame.dcThreatGlow then frame.dcThreatGlow:Hide() end
+        HideThreatIndicators(frame)
         return
     end
     
@@ -692,9 +1862,7 @@ local function UpdateThreat(frame, unit, settings)
     end
     
     if not status then
-        glow:Hide()
-        if healthBar.dcThreatDiff then healthBar.dcThreatDiff:Hide() end
-        if healthBar.dcThreatPct then healthBar.dcThreatPct:Hide() end
+        HideThreatIndicators(frame)
         return
     end
     
@@ -741,8 +1909,53 @@ local function UpdateThreat(frame, unit, settings)
                      healthBar.dcThreatDiff:SetTextColor(color.r, color.g, color.b)
                      healthBar.dcThreatDiff:Show()
                 end
+            else
+                if healthBar.dcThreatPct then
+                    healthBar.dcThreatPct:Hide()
+                end
+                if healthBar.dcThreatDiff then
+                    healthBar.dcThreatDiff:Hide()
+                end
+            end
+        else
+            if healthBar.dcThreatPct then
+                healthBar.dcThreatPct:Hide()
+            end
+            if healthBar.dcThreatDiff then
+                healthBar.dcThreatDiff:Hide()
             end
         end
+    end
+end
+
+local function HideUnitDependentPlateVisuals(frame)
+    if not frame then
+        return
+    end
+
+    HideThreatIndicators(frame)
+    HideTargetIndicators(frame)
+    RestoreMouseoverNameText(frame)
+
+    if frame.dcCastBarOverlay then
+        frame.dcCastBarOverlay.shield:Hide()
+        frame.dcCastBarOverlay:Hide()
+    end
+    SetCastBarVisualState(frame, frame.dcCastBar, false)
+
+    if frame.dcDebuffFrame and frame.dcDebuffFrame:IsShown() then
+        frame.dcDebuffFrame:Hide()
+    end
+    frame.dcNextDebuffRefresh = nil
+
+    if frame.dcEliteIcon then
+        frame.dcEliteIcon:Hide()
+    end
+    if frame.dcFactionIcon then
+        frame.dcFactionIcon:Hide()
+    end
+    if frame.dcNPCIcons then
+        frame.dcNPCIcons:Hide()
     end
 end
     
@@ -751,31 +1964,92 @@ local function UpdateEliteIcon(frame, unit, settings)
         if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
         return
     end
-    
-    if not unit or not UnitExists(unit) then
-        if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
-        return
-    end
-    
-    -- Don't show elite icon on players
-    if UnitIsPlayer(unit) then
-        if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
-        return
-    end
-    
-    local classification = UnitClassification(unit)
+
     local icon = frame.dcEliteIcon or CreateEliteIcon(frame, frame.dcHealthBar)
+    local classification = nil
+
+    if unit and UnitExists(unit) then
+        -- Don't show elite icon on players.
+        if UnitIsPlayer(unit) then
+            frame.dcLastClassification = nil
+            frame.dcLastClassificationSignature = nil
+            icon:Hide()
+            return
+        end
+
+        classification = UnitClassification(unit)
+        if classification and classification ~= "" then
+            frame.dcLastClassification = classification
+            frame.dcLastClassificationSignature = GetPlateDisplaySignature(frame)
+        end
+    else
+        classification = InferClassificationFromPlate(frame)
+
+        if not classification then
+            classification = InferClassificationFromSuppressedRegions(frame)
+        end
+
+        if not classification then
+            local signature = GetPlateDisplaySignature(frame)
+            if frame.dcLastClassification and frame.dcLastClassificationSignature == signature then
+                classification = frame.dcLastClassification
+            end
+        end
+    end
+
+    if not classification or classification == "" then
+        icon:Hide()
+        return
+    end
+
+    local notPlaterTexture = GetNotPlaterEliteIconTexture()
+    local canUseNotPlaterTexture = NotPlater and notPlaterTexture
     
     if classification == "worldboss" or classification == "elite" then
-        icon:SetTexture(ELITE_TEXTURE)
+        if canUseNotPlaterTexture then
+            icon:SetTexture(notPlaterTexture)
+            icon:SetTexCoord(
+                NOTPLATER_ELITE_ICON_TCOORDS[1],
+                NOTPLATER_ELITE_ICON_TCOORDS[2],
+                NOTPLATER_ELITE_ICON_TCOORDS[3],
+                NOTPLATER_ELITE_ICON_TCOORDS[4]
+            )
+            icon:SetVertexColor(1, 0.8, 0, 1)
+            icon:SetDesaturated(false)
+        else
+            icon:SetTexture(ELITE_TEXTURE)
+            icon:SetTexCoord(0, 1, 0, 1)
+            icon:SetVertexColor(1, 1, 1, 1)
+            icon:SetDesaturated(false)
+        end
         icon:Show()
-    elseif classification == "rare" then
-        icon:SetTexture(RARE_TEXTURE)
-        icon:Show()
-    elseif classification == "rareelite" then
-        icon:SetTexture(RARE_ELITE_TEXTURE)
+    elseif classification == "rare" or classification == "rareelite" then
+        if canUseNotPlaterTexture then
+            icon:SetTexture(notPlaterTexture)
+            icon:SetTexCoord(
+                NOTPLATER_ELITE_ICON_TCOORDS[1],
+                NOTPLATER_ELITE_ICON_TCOORDS[2],
+                NOTPLATER_ELITE_ICON_TCOORDS[3],
+                NOTPLATER_ELITE_ICON_TCOORDS[4]
+            )
+            icon:SetVertexColor(1, 1, 1, 1)
+            icon:SetDesaturated(true)
+        elseif classification == "rareelite" then
+            icon:SetTexture(RARE_ELITE_TEXTURE)
+            icon:SetTexCoord(0, 1, 0, 1)
+            icon:SetVertexColor(1, 1, 1, 1)
+            icon:SetDesaturated(false)
+        else
+            icon:SetTexture(RARE_TEXTURE)
+            icon:SetTexCoord(0, 1, 0, 1)
+            icon:SetVertexColor(1, 1, 1, 1)
+            icon:SetDesaturated(false)
+        end
         icon:Show()
     else
+        icon:SetTexCoord(0, 1, 0, 1)
+        icon:SetVertexColor(1, 1, 1, 1)
+        icon:SetDesaturated(false)
         icon:Hide()
     end
 end
@@ -826,6 +2100,11 @@ local function UpdateNPCIcons(frame, unit, settings)
     end
     
     local iconFrame = frame.dcNPCIcons or CreateNPCIcons(frame, frame.dcHealthBar)
+    local size = settings.npcIconSize or 24
+    if iconFrame.dcLastSize ~= size then
+        iconFrame:SetSize(size, size)
+        iconFrame.dcLastSize = size
+    end
     local tex = ""
     
     if role == "Vendor" then tex = "Interface\\Icons\\Inv_Misc_Bag_10"
@@ -846,29 +2125,62 @@ end
 
 local function UpdateCastBar(frame, castBar, unit, settings)
     if not settings.showCastBar then
+        SetCastBarVisualState(frame, castBar, false)
         if frame.dcCastBarOverlay then frame.dcCastBarOverlay:Hide() end
-        return
-    end
-    
-    if not castBar or not castBar:IsShown() then
-        if frame.dcCastBarOverlay then frame.dcCastBarOverlay:Hide() end
+        UpdateDebuffFrameAnchor(frame)
         return
     end
     
     local overlay = frame.dcCastBarOverlay or CreateCastBarOverlay(frame, castBar)
-    if not overlay then return end
+    if not overlay then
+        SetCastBarVisualState(frame, castBar, false)
+        UpdateDebuffFrameAnchor(frame)
+        return
+    end
+
+    local tunedCastBarHeight = GetConfiguredCastbarHeight(settings)
+    if overlay.dcLastHeight ~= tunedCastBarHeight then
+        overlay:SetHeight(tunedCastBarHeight)
+        overlay.dcLastHeight = tunedCastBarHeight
+    end
+
+    if settings.textureMode == "Flat" then
+        overlay:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    else
+        overlay:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    end
     
     -- Get casting info
     local spellName, _, _, _, startTime, endTime, _, castID, notInterruptible
+    local spellTexture
+    local isChannel = false
     
     if unit and UnitExists(unit) then
-        spellName, _, _, _, startTime, endTime, _, castID, notInterruptible = UnitCastingInfo(unit)
+        spellName, _, _, spellTexture, startTime, endTime, _, castID, notInterruptible = UnitCastingInfo(unit)
         if not spellName then
-            spellName, _, _, _, startTime, endTime, _, notInterruptible = UnitChannelInfo(unit)
+            spellName, _, _, spellTexture, startTime, endTime, _, notInterruptible = UnitChannelInfo(unit)
+            isChannel = spellName and true or false
         end
     end
     
     if spellName then
+        SetCastBarVisualState(frame, castBar, true)
+
+        local duration = (endTime and startTime) and ((endTime - startTime) / 1000) or 0
+        local currentValue = 0
+        if duration > 0 then
+            if isChannel then
+                currentValue = math.max(0, (endTime / 1000) - GetTime())
+            else
+                currentValue = math.max(0, math.min(duration, GetTime() - (startTime / 1000)))
+            end
+            overlay:SetMinMaxValues(0, duration)
+            overlay:SetValue(currentValue)
+        else
+            overlay:SetMinMaxValues(0, 1)
+            overlay:SetValue(0)
+        end
+
         if settings.showCastSpellName then
             overlay.spellName:SetText(spellName)
             overlay.spellName:Show()
@@ -877,9 +2189,9 @@ local function UpdateCastBar(frame, castBar, unit, settings)
         end
         
         if settings.showCastTime and startTime and endTime then
-            local remaining = (endTime - GetTime() * 1000) / 1000
-            if remaining > 0 then
-                overlay.castTime:SetFormattedText("%.1f", remaining)
+            local displayTime = isChannel and currentValue or ((endTime - GetTime() * 1000) / 1000)
+            if displayTime > 0 then
+                overlay.castTime:SetFormattedText("%.1f", displayTime)
                 overlay.castTime:Show()
             else
                 overlay.castTime:Hide()
@@ -890,17 +2202,21 @@ local function UpdateCastBar(frame, castBar, unit, settings)
         
         -- Color based on interruptibility
         if notInterruptible then
-            castBar:SetStatusBarColor(settings.castBarInterruptColor.r, settings.castBarInterruptColor.g, settings.castBarInterruptColor.b)
+            overlay:SetStatusBarColor(settings.castBarInterruptColor.r, settings.castBarInterruptColor.g, settings.castBarInterruptColor.b)
             overlay.shield:Show()
         else
-            castBar:SetStatusBarColor(settings.castBarColor.r, settings.castBarColor.g, settings.castBarColor.b)
+            overlay:SetStatusBarColor(settings.castBarColor.r, settings.castBarColor.g, settings.castBarColor.b)
             overlay.shield:Hide()
         end
         
         overlay:Show()
     else
+        SetCastBarVisualState(frame, castBar, false)
+        overlay.shield:Hide()
         overlay:Hide()
     end
+
+    UpdateDebuffFrameAnchor(frame)
 end
 
 local function UpdateDebuffs(frame, unit, settings)
@@ -964,8 +2280,8 @@ local function UpdateDebuffs(frame, unit, settings)
     end
     
     -- Cache miss or expired - scan auras
-    local auraFilter = settings.auraFilter or {}
-    local filterEnabled = auraFilter.enabled
+    local filterCache = GetAuraFilterCache(settings)
+    local filterEnabled = filterCache.enabled
     
     -- Helper: Check if aura passes filters
     local function ShouldShowAura(auraName, duration, caster)
@@ -979,37 +2295,24 @@ local function UpdateDebuffs(frame, unit, settings)
         end
         
         -- Check blacklist
-        if auraFilter.blacklist then
-            for _, blacklisted in ipairs(auraFilter.blacklist) do
-                if auraName == blacklisted then
-                    return false, 0
-                end
-            end
+        if filterCache.blacklistLookup[auraName] then
+            return false, 0
         end
         
         -- Check whitelist (if not empty, only show whitelisted)
-        if auraFilter.whitelist and #auraFilter.whitelist > 0 then
-            local found = false
-            for _, whitelisted in ipairs(auraFilter.whitelist) do
-                if auraName == whitelisted then
-                    found = true
-                    break
-                end
-            end
-            if not found then
-                return false, 0
-            end
+        if filterCache.hasWhitelist and not filterCache.whitelistLookup[auraName] then
+            return false, 0
         end
-        
+
         -- Check duration filters
-        if auraFilter.minDuration and auraFilter.minDuration > 0 then
-            if duration and duration < auraFilter.minDuration then
+        if filterCache.minDuration > 0 then
+            if duration and duration < filterCache.minDuration then
                 return false, 0
             end
         end
         
-        if auraFilter.maxDuration and auraFilter.maxDuration > 0 then
-            if duration and duration > auraFilter.maxDuration then
+        if filterCache.maxDuration > 0 then
+            if duration and duration > filterCache.maxDuration then
                 return false, 0
             end
         end
@@ -1018,13 +2321,9 @@ local function UpdateDebuffs(frame, unit, settings)
         local priority = 0
         
         -- Check user-defined priority list first
-        if auraFilter.priority then
-            for i, priorityAura in ipairs(auraFilter.priority) do
-                if auraName == priorityAura then
-                    priority = 1000 - i  -- User priority gets very high value
-                    break
-                end
-            end
+        local priorityIndex = filterCache.priorityLookup[auraName]
+        if priorityIndex then
+            priority = 1000 - priorityIndex  -- User priority gets very high value
         end
         
         -- If not in user priority, check CC/important debuff types
@@ -1113,7 +2412,6 @@ local function UpdateDebuffs(frame, unit, settings)
         end
     end
     
-    -- Hide remaining icons
     -- Hide unused icons
     for i = debuffIndex, settings.maxDebuffs do
         if debuffFrame.icons[i] then
@@ -1124,51 +2422,128 @@ local function UpdateDebuffs(frame, unit, settings)
     debuffFrame:Show()
 end
 
-local function UpdateTargetHighlight(frame, settings)
-    if not settings.targetHighlight then
-        if frame.dcTargetHighlight then frame.dcTargetHighlight:Hide() end
-        return
-    end
-    
+local function UpdateTargetHighlight(frame, unit, settings)
     local isPlater = IsPlaterActive()
-    local isTarget = IsPlateTarget(frame)
-    local highlight = frame.dcTargetHighlight or CreateTargetHighlight(frame)
+    local isTarget = false
+    local isMouseover = IsPlateMouseOver(frame)
     local c = settings.targetHighlightColor
-    
-    -- Neon Glow
-    if settings.targetNeon then
-        local neon = frame.dcTargetNeon or CreateTargetNeon(frame, frame.dcHealthBar)
-        if isTarget then
-            neon:SetVertexColor(c.r, c.g, c.b, c.a)
-            neon:Show()
-        else
-            neon:Hide()
-        end
+
+    if unit and UnitExists(unit) and UnitExists("target") and type(UnitIsUnit) == "function" then
+        isTarget = UnitIsUnit(unit, "target") and true or false
     else
-        if frame.dcTargetNeon then frame.dcTargetNeon:Hide() end
+        isTarget = IsPlateTarget(frame)
     end
 
-    if isTarget then
-        highlight:SetVertexColor(c.r, c.g, c.b, c.a)
-        highlight:Show()
-        frame.dcIsTarget = true
+    if not isPlater then
+        local targetScale = settings.targetScale or 1.0
+        if targetScale < 0.5 then
+            targetScale = 0.5
+        end
+
+        local desiredScale = isTarget and targetScale or 1.0
+        if frame.dcLastScale ~= desiredScale then
+            frame:SetScale(desiredScale)
+            frame.dcLastScale = desiredScale
+        end
+    end
+
+    if settings.targetArrows and frame.dcHealthBar then
+        local leftArrow, rightArrow = CreateTargetArrows(frame, frame.dcHealthBar)
+        leftArrow:ClearAllPoints()
+        leftArrow:SetPoint("RIGHT", frame.dcHealthBar, "LEFT", TARGET_ARROW_LEFT_OFFSET, 0)
+        rightArrow:ClearAllPoints()
+        rightArrow:SetPoint("LEFT", frame.dcHealthBar, "RIGHT", TARGET_ARROW_RIGHT_OFFSET, 0)
+        if isTarget then
+            leftArrow:SetTextColor(c.r, c.g, c.b, c.a)
+            rightArrow:SetTextColor(c.r, c.g, c.b, c.a)
+            leftArrow:Show()
+            rightArrow:Show()
+        else
+            leftArrow:Hide()
+            rightArrow:Hide()
+        end
     else
-        highlight:Hide()
-        frame.dcIsTarget = false
+        if frame.dcTargetArrowLeft then frame.dcTargetArrowLeft:Hide() end
+        if frame.dcTargetArrowRight then frame.dcTargetArrowRight:Hide() end
+    end
+
+    if not settings.targetHighlight then
+        if frame.dcTargetHighlight then frame.dcTargetHighlight:Hide() end
+        if frame.dcTargetNeon then frame.dcTargetNeon:Hide() end
+        frame.dcIsTarget = isTarget and true or false
+    else
+        local highlight = frame.dcTargetHighlight or CreateTargetHighlight(frame)
+    
+        -- Neon Glow
+        if settings.targetNeon then
+            local neon = frame.dcTargetNeon or CreateTargetNeon(frame, frame.dcHealthBar)
+            if isTarget then
+                neon:SetVertexColor(c.r, c.g, c.b, c.a)
+                neon:Show()
+            else
+                neon:Hide()
+            end
+        else
+            if frame.dcTargetNeon then frame.dcTargetNeon:Hide() end
+        end
+
+        if isTarget and frame.dcHealthBar then
+            highlight:ClearAllPoints()
+            highlight:SetPoint("TOPLEFT", frame.dcHealthBar, "TOPLEFT", -TARGET_BORDER_PADDING, TARGET_BORDER_PADDING)
+            highlight:SetPoint("BOTTOMRIGHT", frame.dcHealthBar, "BOTTOMRIGHT", TARGET_BORDER_PADDING, -TARGET_BORDER_PADDING)
+            ConfigureFullEdgeBorder(highlight, 1, c.r, c.g, c.b, math.min(c.a + 0.1, 1))
+            highlight:Show()
+        else
+            highlight:Hide()
+        end
+        frame.dcIsTarget = isTarget and true or false
+    end
+
+    local mouseoverBorder = frame.dcMouseoverBorder or CreateMouseoverBorder(frame)
+    if isMouseover and not isTarget and frame.dcHealthBar then
+        mouseoverBorder:ClearAllPoints()
+        mouseoverBorder:SetPoint("TOPLEFT", frame.dcHealthBar, "TOPLEFT", -MOUSEOVER_BORDER_PADDING, MOUSEOVER_BORDER_PADDING)
+        mouseoverBorder:SetPoint("BOTTOMRIGHT", frame.dcHealthBar, "BOTTOMRIGHT", MOUSEOVER_BORDER_PADDING, -MOUSEOVER_BORDER_PADDING)
+        ConfigureFullEdgeBorder(
+            mouseoverBorder,
+            1,
+            MOUSEOVER_BORDER_COLOR.r,
+            MOUSEOVER_BORDER_COLOR.g,
+            MOUSEOVER_BORDER_COLOR.b,
+            MOUSEOVER_BORDER_COLOR.a
+        )
+        mouseoverBorder:Show()
+    else
+        mouseoverBorder:Hide()
     end
     
     -- Alpha handling
     if not isPlater then
+        local desiredAlpha = 1.0
         if settings.nonTargetAlpha and settings.nonTargetAlpha < 1.0 and UnitExists("target") and not isTarget then
-            if frame.dcLastAlpha ~= settings.nonTargetAlpha then
-                frame:SetAlpha(settings.nonTargetAlpha)
-                frame.dcLastAlpha = settings.nonTargetAlpha
+            desiredAlpha = settings.nonTargetAlpha
+        end
+
+        if settings.fadeOutOfRange and unit and not isTarget then
+            local rangeFadeDistance = settings.rangeFadeDistance or 30
+            if rangeFadeDistance < 5 then
+                rangeFadeDistance = 5
             end
-        else
-            if frame.dcLastAlpha ~= 1.0 then
-                frame:SetAlpha(1.0)
-                frame.dcLastAlpha = 1.0
+
+            local estimatedRange = frame.dcEstimatedRange
+            if estimatedRange and estimatedRange > rangeFadeDistance then
+                local fadeAlpha = settings.outOfRangeAlpha or 0.5
+                if fadeAlpha < 0.1 then fadeAlpha = 0.1 end
+                if fadeAlpha > 1.0 then fadeAlpha = 1.0 end
+                if fadeAlpha < desiredAlpha then
+                    desiredAlpha = fadeAlpha
+                end
             end
+        end
+
+        if frame.dcLastAlpha ~= desiredAlpha then
+            frame:SetAlpha(desiredAlpha)
+            frame.dcLastAlpha = desiredAlpha
         end
     end
 end
@@ -1184,38 +2559,46 @@ local function HookNameplate(frame)
     if not settings.enabled then return end
     
     local regions = { frame:GetRegions() }
-    local children = { frame:GetChildren() }
-    
-    local healthBar = children[1]
-    local castBar = children[2]
-    
+    -- Collect native (Blizzard) statusbars only.
+    local statusBars = CollectNativeStatusBars(frame)
+    local sourceHealthBar = statusBars[1]
+    local castBar = (#statusBars >= 2) and statusBars[#statusBars] or nil
+    if castBar == sourceHealthBar then castBar = nil end
+
+    local healthBar = CreateCustomHealthBar(frame, sourceHealthBar)
+    if healthBar then
+        SyncCustomHealthBar(frame)
+    end
+
     -- Apply Texture Mode
     if healthBar and settings.textureMode == "Flat" then
         healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    end
-    if castBar and settings.textureMode == "Flat" then
-        castBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    elseif healthBar then
+        healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
     end
     
     local nameText = nil
     local levelText = nil
     for i, region in ipairs(regions) do
         if region:GetObjectType() == "FontString" then
-            local text = region:GetText()
-            if text and text ~= "" then
-                if not nameText then
-                    nameText = region
-                else
-                    levelText = region
-                end
+            if not nameText then
+                nameText = region
+            elseif not levelText then
+                levelText = region
+                break
             end
         end
     end
     
-    frame.dcHealthBar = healthBar
-    frame.dcCastBar = castBar
-    frame.dcNameText = nameText
-    frame.dcLevelText = levelText
+    frame.dcSourceHealthBar = sourceHealthBar
+    frame.dcHealthBar  = healthBar
+    frame.dcStatusBars = statusBars  -- all bars; [1]=health
+    frame.dcCastBar    = castBar
+    frame.dcNameText   = nameText
+    frame.dcLevelText  = levelText
+    frame.dcSuppressedRegions = CollectSuppressibleRegions(regions, nameText, levelText)
+
+    NormalizeNameplateLayout(frame)
     
     -- Create enhancements
     if healthBar then
@@ -1224,8 +2607,12 @@ local function HookNameplate(frame)
     end
     
     CreateTargetHighlight(frame)
-    
+
+    SuppressNativeNameplateChildren(frame, statusBars)
+    SuppressNativeNameplateRegions(frame)
+
     if castBar then
+        SetCastBarVisualState(frame, castBar, false)
         CreateCastBarOverlay(frame, castBar)
     end
     
@@ -1240,18 +2627,31 @@ local function HookNameplate(frame)
     end
     
     -- Hook health bar updates
-    if healthBar then
-        healthBar:HookScript("OnValueChanged", function(self)
-            local settings = addon.settings.nameplatesPlus
-            if not settings.enabled then return end
-            UpdateHealthPercent(self, settings)
-        end)
-    end
+    EnsureSourceHealthHook(frame, sourceHealthBar)
     
     -- Hook frame show
     frame:HookScript("OnShow", function(self)
         local settings = addon.settings.nameplatesPlus
         if not settings.enabled then return end
+
+        -- Re-resolve bars on every show because recycled nameplate internals can
+        -- shift around after hooks were first attached.
+        local refreshedBars = CollectNativeStatusBars(self)
+        if #refreshedBars > 0 then
+            self.dcStatusBars = refreshedBars
+            self.dcSourceHealthBar = refreshedBars[1]
+            self.dcHealthBar = CreateCustomHealthBar(self, self.dcSourceHealthBar)
+            SyncCustomHealthBar(self)
+            EnsureSourceHealthHook(self, self.dcSourceHealthBar)
+            local refreshedCast = (#refreshedBars >= 2) and refreshedBars[#refreshedBars] or nil
+            if refreshedCast == self.dcSourceHealthBar then refreshedCast = nil end
+            self.dcCastBar = refreshedCast
+
+            SuppressNativeNameplateChildren(self, refreshedBars)
+        end
+
+        self.dcSuppressedRegions = CollectSuppressibleRegions({ self:GetRegions() }, self.dcNameText, self.dcLevelText)
+        SuppressNativeNameplateRegions(self)
         
         -- Reset scale to 1.0 to ensure cleanliness (skip if Plater is active)
         if not IsPlaterActive() then
@@ -1259,31 +2659,35 @@ local function HookNameplate(frame)
                 self:SetScale(1.0)
             end
         end
+
+        NormalizeNameplateLayout(self)
+        SyncCustomHealthBar(self)
         
         if self.dcHealthBar then
-            UpdateHealthPercent(self.dcHealthBar, settings)
+            -- forceUpdate=true bypasses the max<=0 early-return so health
+            -- text retries are triggered immediately on every plate show.
+            UpdateHealthPercent(self.dcHealthBar, settings, true)
         end
     end)
 end
 
 -- ============================================================
 -- WorldFrame Scanner
--- ============================================================
 local lastWorldFrameChildren = 0
 
 local function ScanWorldFrame()
     local settings = addon.settings.nameplatesPlus
     if not settings or not settings.enabled then return end
-    
+
     local children = { WorldFrame:GetChildren() }
-    
+
     if #children ~= lastWorldFrameChildren then
         lastWorldFrameChildren = #children
-        
+
         for _, child in ipairs(children) do
             local regions = { child:GetRegions() }
             local childFrames = { child:GetChildren() }
-            
+
             if #childFrames >= 2 and #regions >= 7 then
                 local healthBar = childFrames[1]
                 if healthBar and healthBar.GetStatusBarTexture then
@@ -1291,6 +2695,8 @@ local function ScanWorldFrame()
                 end
             end
         end
+
+        RefreshAllTrackedUnitMatches()
     end
 end
 
@@ -1309,18 +2715,34 @@ local function OnUpdate(self, elapsed)
     self.updateElapsed = (self.updateElapsed or 0) + elapsed
     if self.updateElapsed >= 0.05 then
         self.updateElapsed = 0
+        local currentTime = GetTime()
         
         for frame, _ in pairs(hookedPlates) do
             if frame:IsShown() then
+                SyncCustomHealthBar(frame)
+                SuppressNativeNameplateRegions(frame)
                 local unit = GetPlateUnit(frame)
-                
-                -- Update pending health displays (unit data loaded late)
-                local healthBar = frame.dcHealthBar
-                if healthBar and healthBar.dcHealthPending then
-                    UpdateHealthPercent(healthBar, settings, true)
+                if frame.dcResolvedUnit ~= unit then
+                    frame.dcResolvedUnit = unit
+                    frame.dcDebuffDirty = true
+                    frame.dcNextDebuffRefresh = 0
+                end
+
+                if unit and (frame.dcRangeDirty or currentTime >= (frame.dcNextRangeRefresh or 0)) then
+                    frame.dcEstimatedRange = GetEstimatedRange(unit)
+                    frame.dcRangeDirty = nil
+                    frame.dcNextRangeRefresh = currentTime + RANGE_REFRESH_INTERVAL
+                elseif not unit then
+                    frame.dcEstimatedRange = nil
+                    frame.dcNextRangeRefresh = nil
                 end
                 
-                UpdateTargetHighlight(frame, settings)
+                -- Refresh health text every frame so freshly shown plates do
+                -- not wait for hover or click before drawing their values.
+                local healthBar = frame.dcHealthBar
+                if healthBar then
+                    UpdateHealthPercent(healthBar, settings, true)
+                end
                 
                 -- MOUSEOVER NAMETEXT HIGHLIGHT FIX: Brighten nametext on mouseover
                 if frame.dcNameText then
@@ -1334,17 +2756,26 @@ local function OnUpdate(self, elapsed)
                         frame.dcNameTextOriginalColor = nil
                     end
                 end
-                
+
                 if unit then
+                    -- Only run unit-dependent updates (including target highlight) when we
+                    -- have a resolved unit. Without a unit, name-based IsPlateTarget would
+                    -- falsely light up every same-name mob as target on every 50ms tick.
+                    UpdateTargetHighlight(frame, unit, settings)
                     UpdateHealthBarColor(frame, frame.dcHealthBar, unit, settings)
                     UpdateThreat(frame, unit, settings)
                     UpdateCastBar(frame, frame.dcCastBar, unit, settings)
-                    UpdateDebuffs(frame, unit, settings)
+                    if frame.dcDebuffDirty or currentTime >= (frame.dcNextDebuffRefresh or 0) then
+                        UpdateDebuffs(frame, unit, settings)
+                        frame.dcDebuffDirty = nil
+                        frame.dcNextDebuffRefresh = currentTime + DEBUFF_REFRESH_INTERVAL
+                    end
                     UpdateEliteIcon(frame, unit, settings)
                     UpdateFactionIcon(frame, unit, settings)
                     UpdateNPCIcons(frame, unit, settings)
-                    -- Ensure health text is always correct (fixes "missing values" bug)
-                    UpdateHealthPercent(frame.dcHealthBar, settings)
+                else
+                    HideUnitDependentPlateVisuals(frame)
+                    UpdateEliteIcon(frame, nil, settings)
                 end
             end
         end
@@ -1365,11 +2796,8 @@ function NameplatesPlus.OnInitialize()
     if SafeGetCVar("nameplateSelectedScale") ~= nil then
         SafeSetCVar("nameplateSelectedScale", "1")
     end
-    
-    -- Apply range setting
-    if addon.settings.nameplatesPlus.nameplateRange then
-        SafeSetCVar("nameplateMaxDistance", tostring(addon.settings.nameplatesPlus.nameplateRange))
-    end
+
+    ApplyNameplateCVars(addon.settings.nameplatesPlus)
 end
 
 function NameplatesPlus.OnEnable()
@@ -1377,6 +2805,8 @@ function NameplatesPlus.OnEnable()
     
     local settings = addon.settings.nameplatesPlus
     if not settings.enabled then return end
+
+    ApplyNameplateCVars(settings)
     
     if NotPlater then
         addon:Print("Notice: NotPlater detected. Some features may conflict.", true)
@@ -1386,12 +2816,46 @@ function NameplatesPlus.OnEnable()
         updateFrame = CreateFrame("Frame", "DCQoS_NameplatesFrame", UIParent)
         updateFrame:SetScript("OnUpdate", OnUpdate)
         
-        -- GROUP MEMBER GUID TRACKING: Register for roster updates
+        -- GROUP MEMBER GUID TRACKING: Register for roster and tracked-unit updates
         updateFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
         updateFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-        updateFrame:SetScript("OnEvent", function(self, event)
-            if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+        updateFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        updateFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+        updateFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+        updateFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+        updateFrame:RegisterEvent("UNIT_TARGET")
+        updateFrame:RegisterEvent("UNIT_AURA")
+        updateFrame:SetScript("OnEvent", function(self, event, arg1)
+            if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+                ApplyNameplateCVars(settings)
                 UpdateGroupGUIDs()
+                RefreshAllTrackedUnitMatches()
+                MarkAllFramesDirty()
+            elseif event == "PLAYER_TARGET_CHANGED" then
+                InvalidateAuraCacheForUnit("target")
+                RefreshTrackedUnitMatch("target")
+                MarkAllFramesDirty()
+            elseif event == "PLAYER_FOCUS_CHANGED" then
+                InvalidateAuraCacheForUnit("focus")
+                RefreshTrackedUnitMatch("focus")
+                MarkAllFramesDirty()
+            elseif event == "UPDATE_MOUSEOVER_UNIT" then
+                InvalidateAuraCacheForUnit("mouseover")
+                RefreshTrackedUnitMatch("mouseover")
+                MarkAllFramesDirty()
+            elseif event == "UNIT_TARGET" then
+                local unit = arg1
+                if unit and (unit:match("^party%d+$") or unit:match("^raid%d+$")) then
+                    InvalidateAuraCacheForUnit(unit .. "target")
+                    RefreshGroupTargetMatch(unit .. "target")
+                    MarkAllFramesDirty()
+                end
+            elseif event == "UNIT_AURA" then
+                local unit = arg1
+                if unit then
+                    InvalidateAuraCacheForUnit(unit)
+                    MarkMatchedUnitDebuffsDirty(unit)
+                end
             end
         end)
     end
@@ -1401,6 +2865,7 @@ function NameplatesPlus.OnEnable()
     UpdateGroupGUIDs()
     
     ScanWorldFrame()
+    RefreshAllTrackedUnitMatches()
     
     -- Slash command
     SLASH_DCNP1 = "/dcnameplate"
@@ -1420,6 +2885,7 @@ function NameplatesPlus.OnEnable()
                 local filter = settings.auraFilter or {}
                 filter.blacklist = filter.blacklist or {}
                 table.insert(filter.blacklist, auraName)
+                InvalidateAuraFilterCache(settings)
                 addon:Print("Added to blacklist: " .. auraName, true)
             end
         elseif msg:match("^whitelist ") then
@@ -1428,14 +2894,50 @@ function NameplatesPlus.OnEnable()
                 local filter = settings.auraFilter or {}
                 filter.whitelist = filter.whitelist or {}
                 table.insert(filter.whitelist, auraName)
+                InvalidateAuraFilterCache(settings)
                 addon:Print("Added to whitelist: " .. auraName, true)
             end
+        elseif msg == "debug" then
+            -- Full tree dump for every visible nameplate.
+            local wfChildren = { WorldFrame:GetChildren() }
+            local found = 0
+            for _, child in ipairs(wfChildren) do
+                if child:IsShown() then
+                    local cfList = { child:GetChildren() }
+                    local isPlate = false
+                    for _, cf in ipairs(cfList) do
+                        if cf.GetStatusBarTexture then isPlate = true; break end
+                    end
+                    if isPlate then
+                        found = found + 1
+                        local hooked = hookedPlates[child] and "HOOKED" or "unhooked"
+                        print(string.format("|cffffff00[NPD] plate#%d %s children=%d|r", found, hooked, #cfList))
+                        for ci, cf in ipairs(cfList) do
+                            local sb = cf.GetStatusBarTexture and "SB" or "  "
+                            local sh = cf:IsShown() and "SHOWN" or "hidn"
+                            local a  = string.format("%.2f", cf:GetAlpha() or 0)
+                            local tp = string.format("%.0f", cf:GetTop() or 0)
+                            local bt = string.format("%.0f", cf:GetBottom() or 0)
+                            print(string.format("|cffffff00  [%d] %s %s %s a=%s top=%s bot=%s|r", ci, cf:GetObjectType() or "?", sb, sh, a, tp, bt))
+                            for _, gcf in ipairs({ cf:GetChildren() }) do
+                                local gsb = gcf.GetStatusBarTexture and "SB" or "  "
+                                local gsh = gcf:IsShown() and "SH" or "hd"
+                                print(string.format("|cffaaaaaa    sub: %s %s %s|r", gcf:GetObjectType() or "?", gsb, gsh))
+                            end
+                        end
+                    end
+                end
+            end
+            if found == 0 then print("|cffff4444[NPD] No visible nameplates|r") end
+            local n=0; for _ in pairs(hookedPlates) do n=n+1 end
+            print("|cffffff00[NPD] hooked: " .. n .. "|r")
         elseif msg == "help" then
             addon:Print("NameplatesPlus Commands:", true)
             print("  |cffffd700/dcnp tank|r - Tank threat mode")
             print("  |cffffd700/dcnp dps|r - DPS/Healer threat mode")
             print("  |cffffd700/dcnp blacklist <aura>|r - Hide aura")
             print("  |cffffd700/dcnp whitelist <aura>|r - Priority aura")
+            print("  |cffffd700/dcnp debug|r - Dump nameplate frame structure")
         else
             addon:Print("Usage: /dcnp help", true)
         end
@@ -1444,10 +2946,20 @@ end
 
 function NameplatesPlus.OnDisable()
     addon:Debug("NameplatesPlus module disabling")
+
+    UpdateDefaultNameplateCastBarCVar(nil)
     
     -- Clear aura cache
     for k in pairs(auraCache) do
         auraCache[k] = nil
+    end
+
+    for k in pairs(unitMatchToFrame) do
+        unitMatchToFrame[k] = nil
+    end
+
+    for k in pairs(guidMatchToFrame) do
+        guidMatchToFrame[k] = nil
     end
     
     if updateFrame then
@@ -1455,13 +2967,63 @@ function NameplatesPlus.OnDisable()
     end
     
     for frame, _ in pairs(hookedPlates) do
-        if frame.dcTargetHighlight then frame.dcTargetHighlight:Hide() end
+        HideTargetIndicators(frame)
+        RestoreMouseoverNameText(frame)
+        if frame.dcCustomHealthBar then
+            frame.dcCustomHealthBar:Hide()
+        end
+
+        if frame.dcStatusBars then
+            for _, bar in ipairs(frame.dcStatusBars) do
+                bar:SetAlpha(1)
+                if not bar:IsShown() then
+                    bar:Show()
+                end
+            end
+        end
+
+        for _, child in ipairs({ frame:GetChildren() }) do
+            child:SetAlpha(1)
+            if not child:IsShown() then
+                child:Show()
+            end
+        end
+
+        if frame.dcSuppressedRegions then
+            for _, region in ipairs(frame.dcSuppressedRegions) do
+                if region then
+                    region:SetAlpha(1)
+                    region:Show()
+                end
+            end
+        end
+
         if frame.dcThreatGlow then frame.dcThreatGlow:Hide() end
         if frame.dcCastBarOverlay then frame.dcCastBarOverlay:Hide() end
         if frame.dcDebuffFrame then frame.dcDebuffFrame:Hide() end
+        if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
+        if frame.dcFactionIcon then frame.dcFactionIcon:Hide() end
+        if frame.dcNPCIcons then frame.dcNPCIcons:Hide() end
         if frame.dcHealthBar and frame.dcHealthBar.dcHealthPercent then
             frame.dcHealthBar.dcHealthPercent:Hide()
         end
+        frame.lastUnitMatch = nil
+        frame.lastGuidMatch = nil
+        frame.dcResolvedUnit = nil
+        frame.dcDebuffDirty = nil
+        frame.dcNextDebuffRefresh = nil
+        frame.dcRangeDirty = nil
+        frame.dcEstimatedRange = nil
+        frame.dcNextRangeRefresh = nil
+        frame.dcCastBarActive = nil
+        if frame.dcCastBar and frame.dcCastBar.dcOriginalAlpha ~= nil then
+            frame.dcCastBar:SetAlpha(frame.dcCastBar.dcOriginalAlpha)
+        end
+        if frame.dcCastBar and not frame.dcCastBar:IsShown() then
+            frame.dcCastBar:Show()
+        end
+        frame.dcLastScale = nil
+        RestoreNameplateLayout(frame)
         frame:SetScale(1.0)
         frame:SetAlpha(1.0)
     end
@@ -1616,7 +3178,64 @@ function NameplatesPlus.CreateSettings(parent)
     targetCb:SetScript("OnClick", function(self)
         addon:SetSetting("nameplatesPlus.targetHighlight", self:GetChecked())
     end)
-    yOffset = yOffset - 35
+    yOffset = yOffset - 25
+
+    local targetArrowsCb = addon:CreateCheckbox(parent)
+    targetArrowsCb:SetPoint("TOPLEFT", 36, yOffset)
+    targetArrowsCb.Text:SetText("Show target arrows")
+    targetArrowsCb:SetChecked(settings.targetArrows)
+    targetArrowsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.targetArrows", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local targetScaleSlider = addon:CreateSlider(parent)
+    targetScaleSlider:SetPoint("TOPLEFT", 36, yOffset)
+    targetScaleSlider:SetMinMaxValues(1.0, 1.5)
+    targetScaleSlider:SetValueStep(0.05)
+    targetScaleSlider:SetValue(settings.targetScale or 1.0)
+    targetScaleSlider.Text:SetText(string.format("Target scale: %.2fx", settings.targetScale or 1.0))
+    targetScaleSlider:SetScript("OnValueChanged", function(self, value)
+        local stepped = math.floor(value * 20 + 0.5) / 20
+        self.Text:SetText(string.format("Target scale: %.2fx", stepped))
+        addon:SetSetting("nameplatesPlus.targetScale", stepped)
+    end)
+    yOffset = yOffset - 50
+
+    local rangeFadeCb = addon:CreateCheckbox(parent)
+    rangeFadeCb:SetPoint("TOPLEFT", 16, yOffset)
+    rangeFadeCb.Text:SetText("Fade non-target matched plates when out of range")
+    rangeFadeCb:SetChecked(settings.fadeOutOfRange)
+    rangeFadeCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.fadeOutOfRange", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local rangeFadeDistanceSlider = addon:CreateSlider(parent)
+    rangeFadeDistanceSlider:SetPoint("TOPLEFT", 36, yOffset)
+    rangeFadeDistanceSlider:SetMinMaxValues(10, 40)
+    rangeFadeDistanceSlider:SetValueStep(1)
+    rangeFadeDistanceSlider:SetValue(settings.rangeFadeDistance or 30)
+    rangeFadeDistanceSlider.Text:SetText("Fade beyond: " .. (settings.rangeFadeDistance or 30) .. " yds")
+    rangeFadeDistanceSlider:SetScript("OnValueChanged", function(self, value)
+        local distance = math.floor(value + 0.5)
+        self.Text:SetText("Fade beyond: " .. distance .. " yds")
+        addon:SetSetting("nameplatesPlus.rangeFadeDistance", distance)
+    end)
+    yOffset = yOffset - 50
+
+    local outOfRangeAlphaSlider = addon:CreateSlider(parent)
+    outOfRangeAlphaSlider:SetPoint("TOPLEFT", 36, yOffset)
+    outOfRangeAlphaSlider:SetMinMaxValues(0.1, 1.0)
+    outOfRangeAlphaSlider:SetValueStep(0.05)
+    outOfRangeAlphaSlider:SetValue(settings.outOfRangeAlpha or 0.5)
+    outOfRangeAlphaSlider.Text:SetText(string.format("Out-of-range alpha: %.2f", settings.outOfRangeAlpha or 0.5))
+    outOfRangeAlphaSlider:SetScript("OnValueChanged", function(self, value)
+        local alpha = math.floor(value * 20 + 0.5) / 20
+        self.Text:SetText(string.format("Out-of-range alpha: %.2f", alpha))
+        addon:SetSetting("nameplatesPlus.outOfRangeAlpha", alpha)
+    end)
+    yOffset = yOffset - 50
 
     -- Icons Section
     local iconsHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -1640,7 +3259,29 @@ function NameplatesPlus.CreateSettings(parent)
     factionCb:SetScript("OnClick", function(self)
         addon:SetSetting("nameplatesPlus.factionIcons", self:GetChecked())
     end)
-    yOffset = yOffset - 35
+    yOffset = yOffset - 25
+
+    local npcIconCb = addon:CreateCheckbox(parent)
+    npcIconCb:SetPoint("TOPLEFT", 16, yOffset)
+    npcIconCb.Text:SetText("Show NPC role icons")
+    npcIconCb:SetChecked(settings.npcIcons)
+    npcIconCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.npcIcons", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local npcIconSizeSlider = addon:CreateSlider(parent)
+    npcIconSizeSlider:SetPoint("TOPLEFT", 36, yOffset)
+    npcIconSizeSlider:SetMinMaxValues(16, 36)
+    npcIconSizeSlider:SetValueStep(1)
+    npcIconSizeSlider:SetValue(settings.npcIconSize or 24)
+    npcIconSizeSlider.Text:SetText("NPC icon size: " .. (settings.npcIconSize or 24))
+    npcIconSizeSlider:SetScript("OnValueChanged", function(self, value)
+        local size = math.floor(value + 0.5)
+        self.Text:SetText("NPC icon size: " .. size)
+        addon:SetSetting("nameplatesPlus.npcIconSize", size)
+    end)
+    yOffset = yOffset - 50
     
     -- Visuals Section
     local visualHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")

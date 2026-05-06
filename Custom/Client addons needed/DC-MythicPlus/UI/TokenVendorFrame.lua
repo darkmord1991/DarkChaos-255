@@ -367,7 +367,7 @@ local function ensureFrame()
     -- Match DC-Leaderboards UI style across DC addons
     do
         local BG_FELLEATHER = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga"
-        local BG_TINT_ALPHA = 0.60
+        local BG_TINT_ALPHA = 0.78
 
         if frame.SetBackdropColor then
             frame:SetBackdropColor(0, 0, 0, 0)
