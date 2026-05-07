@@ -637,7 +637,7 @@ function GF:RefreshMythicGroups()
     
     local DC = rawget(_G, "DCAddonProtocol")
     if DC and DC.GroupFinder then
-        DC.GroupFinder.Search({})
+        DC.GroupFinder.Search({ category = "dungeon", listingType = 1 })
         -- Hide loading after timeout if no response
         C_Timer.After(5, function()
             if panel and panel.loadingText and panel.loadingText:IsShown() then
@@ -1204,41 +1204,27 @@ function GF:CreateMythicGroup(dungeonId, dungeonName, level, note)
     local DC = rawget(_G, "DCAddonProtocol")
     if DC and DC.GroupFinder then
         DC.GroupFinder.CreateListing({
+            category = "dungeon",
+            listingType = 1,
             dungeonId = dungeonId,
             dungeonName = dungeonName,
             keyLevel = level,
+            needTank = 1,
+            needHealer = 1,
+            needDps = 3,
             note = note,
             roles = { tank = false, healer = false, dps1 = true, dps2 = false, dps3 = false }
         })
-        
-        -- Show success feedback
+
+        -- Wait for the server ack before showing success.
         if self.MythicCreatePanel and self.MythicCreatePanel.statusText then
-            self.MythicCreatePanel.statusText:SetText("|cff44ff44Group created!|r")
+            self.MythicCreatePanel.statusText:SetText("|cffffff00Creating group...|r")
         end
         
-        -- Add to local mock list for immediate visibility
-        local newGroup = {
-            id = #mockGroups + 100,
-            dungeon = dungeonName,
-            level = level,
-            leader = playerName,
-            tank = true,
-            healer = false,
-            dps = 1,
-            note = note,
-            isOwn = true
-        }
-        table.insert(mockGroups, 1, newGroup)
-        
-        -- Show the View Applicants button
-        if self.MythicBrowsePanel and self.MythicBrowsePanel.applicantBtn then
-            self.MythicBrowsePanel.applicantBtn:Show()
-        end
-        
-        -- Switch to browse tab after short delay
+        -- Switch to browse tab after short delay and refresh from server
         C_Timer.After(0.5, function()
             GF:SelectMythicSubTab(1)
-            GF:PopulateMythicGroups(mockGroups)
+            GF:RefreshMythicGroups()
         end)
     else
         -- Demo mode - add to mock list
@@ -1718,20 +1704,67 @@ function GF:OnListingCreated(data)
     if data and data.listingId then
         myActiveListingId = data.listingId
         pendingApplicants[data.listingId] = {}
+        if self.MythicCreatePanel and self.MythicCreatePanel.statusText then
+            self.MythicCreatePanel.statusText:SetText("|cff44ff44Group created!|r")
+        end
+        if self.MythicBrowsePanel and self.MythicBrowsePanel.applicantBtn then
+            self.MythicBrowsePanel.applicantBtn:Show()
+        end
+        if self.RaidBrowsePanel and self.RaidBrowsePanel.applicantBtn then
+            self.RaidBrowsePanel.applicantBtn:Show()
+        end
         GF.Print("Your group listing is now active. Listing ID: " .. data.listingId)
     end
 end
 
 -- Called when application status changes (applicant's perspective)
 function GF:OnApplicationStatusChanged(data)
-    -- This is called when YOUR application is accepted/declined
-    -- Handled by chat message already in Core.lua
+    if self.RefreshMyQueues then
+        self:RefreshMyQueues()
+    end
 end
 
 -- Called when group composition changes
 function GF:OnGroupUpdated(data)
-    -- Could refresh group display, update slots, etc.
-    GF.Print("Group updated")
+    if not data then return end
+
+    local listingId = data.listingId or myActiveListingId
+    local action = data.action or "updated"
+    local applicantGuid = data.playerGuid
+
+    if listingId and pendingApplicants[listingId] then
+        if applicantGuid and (action == "accepted" or action == "declined" or action == "application_cancelled") then
+            for i, app in ipairs(pendingApplicants[listingId]) do
+                if app.guid == applicantGuid then
+                    table.remove(pendingApplicants[listingId], i)
+                    break
+                end
+            end
+        end
+    end
+
+    if action == "delisted" or action == "expired" or action == "ready" then
+        if listingId == myActiveListingId then
+            myActiveListingId = nil
+            pendingApplicants[listingId] = nil
+            if self.MythicBrowsePanel and self.MythicBrowsePanel.applicantBtn then
+                self.MythicBrowsePanel.applicantBtn:Hide()
+            end
+            if self.RaidBrowsePanel and self.RaidBrowsePanel.applicantBtn then
+                self.RaidBrowsePanel.applicantBtn:Hide()
+            end
+            self:HideApplicantPanel()
+        end
+
+        if self.RefreshMythicGroups then
+            self:RefreshMythicGroups()
+        end
+        if self.RefreshRaidGroups then
+            self:RefreshRaidGroups()
+        end
+    end
+
+    self:RefreshApplicantPanel()
 end
 
 -- Create the applicant management panel (floating frame for leaders)

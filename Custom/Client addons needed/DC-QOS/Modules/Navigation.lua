@@ -151,6 +151,8 @@ local MINIMAP_DIAMETER_YARDS = {
 local MINIMAP_PIN_BUCKET_SIZE = 18
 local MINIMAP_PIN_EDGE_PADDING = 10
 local MINIMAP_PIN_MAX_COUNT = 6
+local MINIMAP_BOUNDARY_POINT_MAX_COUNT = 24
+local MINIMAP_BOUNDARY_POINT_SIZE = 5
 local MINIMAP_WAYPOINT_SCALE = 0.55
 local MINIMAP_QUEST_SCALE = 0.42
 local QUEST_POI_LOCK_MAX_AGE_SEC = 1.25
@@ -205,10 +207,62 @@ local function Atan2(y, x)
 end
 
 local mapUtils = addon:GetMapUtils()
+local questTrackingUtils = type(addon.GetQuestTrackingUtils) == "function" and addon:GetQuestTrackingUtils() or nil
 local NormalizeCoord = mapUtils.NormalizeCoord
 local SafeSetMapToCurrentZone = mapUtils.SafeSetMapToCurrentZone
 local GetPlayerMapPositionSafe = mapUtils.GetPlayerMapPositionSafe
 local ComputeDistanceYards = mapUtils.ComputeDistanceYards
+local GetQuestIdFromLogIndex = questTrackingUtils and function(questLogIndex)
+    return questTrackingUtils.GetQuestIdFromLogIndex(questLogIndex, { allowQuestLogIndexFallback = true })
+end or function(questLogIndex)
+    questLogIndex = tonumber(questLogIndex)
+    if not questLogIndex or questLogIndex <= 0 then
+        return nil
+    end
+
+    local questLogApi = rawget(_G, "C_QuestLog")
+    if type(questLogApi) == "table" and type(questLogApi.GetQuestIDForQuestLogIndex) == "function" then
+        local ok, questId = pcall(questLogApi.GetQuestIDForQuestLogIndex, questLogIndex)
+        questId = tonumber(questId)
+        if ok and questId and questId > 0 then
+            return questId
+        end
+    end
+
+    if type(C_QuestLog_GetQuestIDForQuestLogIndex) == "function" then
+        local questId = tonumber(C_QuestLog_GetQuestIDForQuestLogIndex(questLogIndex))
+        if questId and questId > 0 then
+            return questId
+        end
+    end
+
+    if type(GetQuestLink) == "function" then
+        local questLink = GetQuestLink(questLogIndex)
+        if type(questLink) == "string" then
+            local linkQuestId = tonumber(questLink:match("|Hquest:(%d+):"))
+            if linkQuestId and linkQuestId > 0 then
+                return linkQuestId
+            end
+        end
+    end
+
+    if type(GetQuestLogTitle) ~= "function" then
+        return questLogIndex
+    end
+
+    local _, _, _, _, _, _, _, result8, result9, result10 = GetQuestLogTitle(questLogIndex)
+    if type(result10) == "number" and result10 > 0 then
+        return result10
+    end
+    if type(result9) == "number" and result9 > 0 then
+        return result9
+    end
+    if type(result8) == "number" and result8 > 1000 then
+        return result8
+    end
+
+    return questLogIndex
+end
 
 local function ResolveNamespacedFn(aliasName)
     if type(aliasName) ~= "string" then
@@ -1094,47 +1148,6 @@ local function MaybeSyncCurrentZoneMap(force)
         MaybeReloadMapForNavigation(true)
     end
     state.lastMapSyncAt = now
-end
-
-local function GetQuestIdFromLogIndex(questLogIndex)
-    questLogIndex = tonumber(questLogIndex)
-    if not questLogIndex or questLogIndex <= 0 then
-        return nil
-    end
-
-    if type(C_QuestLog_GetQuestIDForQuestLogIndex) == "function" then
-        local questId = tonumber(C_QuestLog_GetQuestIDForQuestLogIndex(questLogIndex))
-        if questId and questId > 0 then
-            return questId
-        end
-    end
-
-    if type(GetQuestLink) == "function" then
-        local questLink = GetQuestLink(questLogIndex)
-        if type(questLink) == "string" then
-            local linkQuestId = tonumber(questLink:match("|Hquest:(%d+):"))
-            if linkQuestId and linkQuestId > 0 then
-                return linkQuestId
-            end
-        end
-    end
-
-    if type(GetQuestLogTitle) ~= "function" then
-        return questLogIndex
-    end
-
-    local _, _, _, _, _, _, _, r8, r9, r10 = GetQuestLogTitle(questLogIndex)
-    if type(r10) == "number" and r10 > 0 then
-        return r10
-    end
-    if type(r9) == "number" and r9 > 0 then
-        return r9
-    end
-    if type(r8) == "number" and r8 > 1000 then
-        return r8
-    end
-
-    return questLogIndex
 end
 
 local function GetRecurringQuestType(questId, title)
@@ -2671,6 +2684,7 @@ local function EnsureRetailNavigationApiShims()
     -- code using dot-notation (C_QuestLog.IsComplete etc.) works on WotLK.
     local nativeQuestLogIsComplete = type(_G.C_QuestLog_IsComplete) == "function" and _G.C_QuestLog_IsComplete or nil
     local nativeQuestLogGetQuestsOnMap = type(_G.C_QuestLog_GetQuestsOnMap) == "function" and _G.C_QuestLog_GetQuestsOnMap or nil
+    local nativeQuestLogGetQuestIDForLogIndex = type(_G.C_QuestLog_GetQuestIDForQuestLogIndex) == "function" and _G.C_QuestLog_GetQuestIDForQuestLogIndex or nil
     local nativeQuestLogGetQuestIDForWatchIndex = type(_G.C_QuestLog_GetQuestIDForQuestWatchIndex) == "function" and _G.C_QuestLog_GetQuestIDForQuestWatchIndex or nil
     local nativeQuestLogReadyForTurnIn = type(_G.C_QuestLog_ReadyForTurnIn) == "function" and _G.C_QuestLog_ReadyForTurnIn or nil
     local nativeQuestLogGetQuestAdditionalHighlights = type(_G.C_QuestLog_GetQuestAdditionalHighlights) == "function" and _G.C_QuestLog_GetQuestAdditionalHighlights or nil
@@ -2694,6 +2708,19 @@ local function EnsureRetailNavigationApiShims()
                 return nil
             end
             local ok, result = pcall(nativeQuestLogGetQuestsOnMap, mapId)
+            if not ok then
+                return nil
+            end
+            return result
+        end
+    end
+
+    if type(questLogApi.GetQuestIDForQuestLogIndex) ~= "function" then
+        questLogApi.GetQuestIDForQuestLogIndex = function(questLogIndex)
+            if not nativeQuestLogGetQuestIDForLogIndex then
+                return nil
+            end
+            local ok, result = pcall(nativeQuestLogGetQuestIDForLogIndex, questLogIndex)
             if not ok then
                 return nil
             end
@@ -2748,6 +2775,7 @@ local function EnsureRetailNavigationApiShims()
     EnsureFlatNamespaceAliases(questLogApi, {
         { "C_QuestLog_IsComplete", "IsComplete" },
         { "C_QuestLog_GetQuestsOnMap", "GetQuestsOnMap" },
+        { "C_QuestLog_GetQuestIDForQuestLogIndex", "GetQuestIDForQuestLogIndex" },
         { "C_QuestLog_GetQuestIDForQuestWatchIndex", "GetQuestIDForQuestWatchIndex" },
         { "C_QuestLog_ReadyForTurnIn", "ReadyForTurnIn" },
         { "C_QuestLog_GetQuestAdditionalHighlights", "GetQuestAdditionalHighlights" },
@@ -3029,6 +3057,65 @@ local function GetPoiCoordsFromButtonAnchor(button)
 end
 
 local FindQuestLogIndexByQuestId
+
+local function GetCachedQuestPoiClusterAnchor(questId, mapId, fallbackX, fallbackY)
+    questId = tonumber(questId)
+    if not questId or questId <= 0 then
+        return fallbackX, fallbackY, nil, 0
+    end
+
+    local bucket = state.questPoiCache and state.questPoiCache[questId]
+    if not bucket or not bucket.points or #bucket.points == 0 then
+        return fallbackX, fallbackY, nil, 0
+    end
+
+    local currentMapId = mapId
+    if not currentMapId and type(GetCurrentMapAreaID) == "function" then
+        currentMapId = GetCurrentMapAreaID()
+    end
+
+    local selected = {}
+    local centerX = 0
+    local centerY = 0
+
+    for i = 1, #bucket.points do
+        local point = bucket.points[i]
+        if point and point.x and point.y and (not currentMapId or not point.mapId or point.mapId == currentMapId) then
+            table.insert(selected, point)
+            centerX = centerX + point.x
+            centerY = centerY + point.y
+        end
+    end
+
+    local pointCount = #selected
+    if pointCount == 0 then
+        return fallbackX, fallbackY, nil, 0
+    end
+
+    if pointCount == 1 then
+        return selected[1].x, selected[1].y, nil, 1
+    end
+
+    centerX = centerX / pointCount
+    centerY = centerY / pointCount
+
+    local maxRadius = 0
+    for i = 1, pointCount do
+        local point = selected[i]
+        local distanceYards = ComputeDistanceYards(currentMapId, centerX, centerY, point.x, point.y)
+        if distanceYards and distanceYards > maxRadius then
+            maxRadius = distanceYards
+        end
+    end
+
+    if maxRadius > 0 then
+        maxRadius = math_max(maxRadius + 25, 45)
+    else
+        maxRadius = nil
+    end
+
+    return centerX, centerY, maxRadius, pointCount
+end
 
 local function CacheQuestPoiDisplayEntry(parentName, buttonType, buttonIndex, questId)
     local qid = tonumber(questId)
@@ -3452,16 +3539,38 @@ local function IsPointInsidePolygon(px, py, polygon)
     return inside
 end
 
-local function ResolveQuestPoiBoundary(questLogIndex, questId, mapId, centerX, centerY)
+local function IsPlayerInsideQuestPoiArea(playerX, playerY, centerX, centerY, radiusYards, boundaryPoints, mapId)
+    if not playerX or not playerY or not centerX or not centerY then
+        return false
+    end
+
+    if boundaryPoints and #boundaryPoints >= 3 then
+        return IsPointInsidePolygon(playerX, playerY, boundaryPoints)
+    end
+
+    if not radiusYards or radiusYards <= 0 or not mapId then
+        return false
+    end
+
+    local distanceYards = ComputeDistanceYards(mapId, playerX, playerY, centerX, centerY)
+    return distanceYards and distanceYards <= radiusYards or false
+end
+
+local function ResolveQuestPoiAreaData(questLogIndex, questId, mapId, fallbackX, fallbackY)
     local boundaryPoints = GetCachedQuestPoiBoundaryPoints(questId, mapId)
     if boundaryPoints and #boundaryPoints >= 3 then
-        local radiusFromPolygon = EstimateQuestPoiBoundaryRadiusFromPolygon(mapId, centerX, centerY, boundaryPoints)
+        local radiusFromPolygon = EstimateQuestPoiBoundaryRadiusFromPolygon(mapId, fallbackX, fallbackY, boundaryPoints)
         if radiusFromPolygon and radiusFromPolygon > 0 then
-            return radiusFromPolygon, boundaryPoints
+            return fallbackX, fallbackY, radiusFromPolygon, boundaryPoints
         end
     end
 
-    return EstimateQuestPoiBoundaryRadius(questLogIndex, centerX, centerY), nil
+    local clusterCenterX, clusterCenterY, clusterRadius, clusterCount = GetCachedQuestPoiClusterAnchor(questId, mapId, fallbackX, fallbackY)
+    if clusterCount and clusterCount > 1 and clusterCenterX and clusterCenterY and clusterRadius and clusterRadius > 0 then
+        return clusterCenterX, clusterCenterY, clusterRadius, nil
+    end
+
+    return fallbackX, fallbackY, EstimateQuestPoiBoundaryRadius(questLogIndex, fallbackX, fallbackY), nil
 end
 
 local function CalculateNearestBoundaryPoint(playerX, playerY, centerX, centerY, radiusYards, dxYards, dyYards, boundaryPoints)
@@ -3535,11 +3644,11 @@ end
 
 local function ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target)
     if not target or not target.x or not target.y then
-        return nil, nil, nil
+        return nil, nil, nil, nil, false, nil, nil
     end
 
     if not target.questId or target.questId <= 0 then
-        return target.x, target.y, nil
+        return target.x, target.y, nil, nil, false, target.x, target.y
     end
 
     local questLogIndex = target.questLogIndex
@@ -3547,10 +3656,10 @@ local function ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target
         questLogIndex = FindQuestLogIndexByQuestId(target.questId)
     end
     if not questLogIndex or questLogIndex <= 0 then
-        return target.x, target.y, nil
+        return target.x, target.y, nil, nil, false, target.x, target.y
     end
 
-    local radiusYards, boundaryPoints = ResolveQuestPoiBoundary(
+    local areaCenterX, areaCenterY, radiusYards, boundaryPoints = ResolveQuestPoiAreaData(
         questLogIndex,
         target.questId,
         mapId,
@@ -3558,26 +3667,31 @@ local function ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target
         target.y
     )
     if not radiusYards or radiusYards <= 0 then
-        return target.x, target.y, nil
+        return target.x, target.y, nil, boundaryPoints, false, areaCenterX or target.x, areaCenterY or target.y
     end
 
-    local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, target.x, target.y)
+    local insideArea = IsPlayerInsideQuestPoiArea(playerX, playerY, areaCenterX, areaCenterY, radiusYards, boundaryPoints, mapId)
+    if insideArea then
+        return playerX, playerY, radiusYards, boundaryPoints, true, areaCenterX, areaCenterY
+    end
+
+    local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, areaCenterX, areaCenterY)
     if not distanceYards then
-        return target.x, target.y, radiusYards
+        return target.x, target.y, radiusYards, boundaryPoints, false, areaCenterX, areaCenterY
     end
 
     local navX, navY = CalculateNearestBoundaryPoint(
         playerX,
         playerY,
-        target.x,
-        target.y,
+        areaCenterX,
+        areaCenterY,
         radiusYards,
         dxYards,
         dyYards,
         boundaryPoints
     )
 
-    return navX or target.x, navY or target.y, radiusYards
+    return navX or target.x, navY or target.y, radiusYards, boundaryPoints, false, areaCenterX, areaCenterY
 end
 
 local function GetQuestPinStyle(info, pinKind)
@@ -3691,6 +3805,17 @@ local function AcquireMinimapPin(index)
     frame.Highlight:SetPoint("CENTER", frame, "CENTER", 0, 0)
     frame.Highlight:SetSize(26, 26)
 
+    frame.Arrow = frame:CreateTexture(nil, "OVERLAY")
+    if not TrySetTrackedArrowAtlas(frame.Arrow) then
+        frame.Arrow:SetTexture(TEXTURE_ATLAS)
+        frame.Arrow:SetTexCoord(unpack(ARROW_TEXCOORD))
+    end
+    frame.minimapArrowBaseWidth = ARROW_WIDTH * 0.72
+    frame.minimapArrowBaseHeight = ARROW_HEIGHT * 0.72
+    frame.Arrow:SetSize(frame.minimapArrowBaseWidth, frame.minimapArrowBaseHeight)
+    frame.Arrow:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.Arrow:Hide()
+
     state.minimapPins[index] = frame
     return frame
 end
@@ -3739,12 +3864,12 @@ local function AddQuestPinCandidate(pins, seenQuestIds, playerX, playerY, mapId,
 
     seenQuestIds[info.questId] = true
 
-    local radiusYards, boundaryPoints = ResolveQuestPoiBoundary(questLogIndex, questId, mapId, qx, qy)
+    local areaCenterX, areaCenterY, radiusYards, boundaryPoints = ResolveQuestPoiAreaData(questLogIndex, questId, mapId, qx, qy)
     local boundaryX, boundaryY, _ = CalculateNearestBoundaryPoint(
         playerX,
         playerY,
-        qx,
-        qy,
+        areaCenterX,
+        areaCenterY,
         radiusYards,
         dxYards,
         dyYards,
@@ -3760,6 +3885,14 @@ local function AddQuestPinCandidate(pins, seenQuestIds, playerX, playerY, mapId,
         boundaryDxYards or dxYards,
         boundaryDyYards or dyYards
     )
+    local insideArea = IsPlayerInsideQuestPoiArea(playerX, playerY, areaCenterX, areaCenterY, radiusYards, boundaryPoints, mapId)
+    if insideArea then
+        boundaryX = playerX
+        boundaryY = playerY
+        boundaryDistanceYards = 0
+        boundaryDirection = 0
+        boundaryRelative = 0
+    end
 
     table.insert(pins, {
         questId = questId,
@@ -3773,9 +3906,11 @@ local function AddQuestPinCandidate(pins, seenQuestIds, playerX, playerY, mapId,
         isComplete = info.isComplete,
         isFocused = pinKind == "focused",
         isSuperTracked = superTrackedQuestId and superTrackedQuestId == questId,
-        centerX = qx,
-        centerY = qy,
+        insideArea = insideArea == true,
+        centerX = areaCenterX,
+        centerY = areaCenterY,
         radiusYards = radiusYards,
+        boundaryPoints = boundaryPoints,
         boundaryX = boundaryX,
         boundaryY = boundaryY,
         distanceYards = boundaryDistanceYards or distanceYards,
@@ -3805,15 +3940,15 @@ local function BuildMinimapQuestPins(playerX, playerY, mapId, target)
             local info = questLogIndex and GetQuestLogInfo(questLogIndex) or nil
             local pinKind = target.questId and "quest" or "manual"
 
-            local radiusYards, boundaryPoints = 0, nil
+            local areaCenterX, areaCenterY, radiusYards, boundaryPoints = target.x, target.y, 0, nil
             if questLogIndex then
-                radiusYards, boundaryPoints = ResolveQuestPoiBoundary(questLogIndex, target.questId, mapId, target.x, target.y)
+                areaCenterX, areaCenterY, radiusYards, boundaryPoints = ResolveQuestPoiAreaData(questLogIndex, target.questId, mapId, target.x, target.y)
             end
             local boundaryX, boundaryY, _ = CalculateNearestBoundaryPoint(
                 playerX,
                 playerY,
-                target.x,
-                target.y,
+                areaCenterX,
+                areaCenterY,
                 radiusYards,
                 dxYards,
                 dyYards,
@@ -3829,6 +3964,14 @@ local function BuildMinimapQuestPins(playerX, playerY, mapId, target)
                 boundaryDxYards or dxYards,
                 boundaryDyYards or dyYards
             )
+            local insideArea = target.insideArea == true or IsPlayerInsideQuestPoiArea(playerX, playerY, areaCenterX, areaCenterY, radiusYards, boundaryPoints, mapId)
+            if insideArea then
+                boundaryX = playerX
+                boundaryY = playerY
+                boundaryDistanceYards = 0
+                boundaryDirection = 0
+                boundaryRelative = 0
+            end
 
             table.insert(pins, {
                 questId = target.questId,
@@ -3842,9 +3985,11 @@ local function BuildMinimapQuestPins(playerX, playerY, mapId, target)
                 isComplete = info and info.isComplete or false,
                 isFocused = target.source == "quest-focused",
                 isSuperTracked = target.questId and Navigation:GetSuperTrackedQuestID() == target.questId,
-                centerX = target.x,
-                centerY = target.y,
+                insideArea = insideArea == true,
+                centerX = areaCenterX,
+                centerY = areaCenterY,
                 radiusYards = radiusYards,
+                boundaryPoints = boundaryPoints,
                 boundaryX = boundaryX,
                 boundaryY = boundaryY,
                 distanceYards = boundaryDistanceYards or distanceYards,
@@ -3902,9 +4047,8 @@ end
 local function ApplyMinimapPinStyle(pinFrame, pin, now, radiusPx, diameterYards)
     local isWaypoint = pin.pinKind == "manual"
     local showQuestZone = pin.questId and pin.radiusYards and pin.radiusYards > 0
-    -- Quest POIs should render as area boundaries only (retail-like), not as
-    -- moving minimap icon diamonds.
-    local showIcon = isWaypoint
+    local showIcon = isWaypoint or ((pin.isFocused or pin.isSuperTracked) and not pin.insideArea)
+    local showArrow = pin.isClamped and pin.questId and (pin.isFocused or pin.isSuperTracked) and not pin.insideArea
     local colorR, colorG, colorB, glowAlpha = GetQuestPinPalette(pin.style)
     local baseWidth = ICON_WIDTH * (isWaypoint and MINIMAP_WAYPOINT_SCALE or MINIMAP_QUEST_SCALE)
     local baseHeight = ICON_HEIGHT * (isWaypoint and MINIMAP_WAYPOINT_SCALE or MINIMAP_QUEST_SCALE)
@@ -3953,7 +4097,69 @@ local function ApplyMinimapPinStyle(pinFrame, pin, now, radiusPx, diameterYards)
         end
     end
 
-    if showQuestZone and radiusPx and radiusPx > 0 and diameterYards and diameterYards > 0 then
+    if pinFrame.Arrow then
+        if showArrow then
+            local arrowWidth = pinFrame.minimapArrowBaseWidth or (ARROW_WIDTH * 0.72)
+            local arrowHeight = pinFrame.minimapArrowBaseHeight or (ARROW_HEIGHT * 0.72)
+            local length = math_sqrt(((pin.pixelX or 0) * (pin.pixelX or 0)) + ((pin.pixelY or 0) * (pin.pixelY or 0)))
+
+            pinFrame.Arrow:SetSize(arrowWidth, arrowHeight)
+            pinFrame.Arrow:SetVertexColor(colorR, colorG, colorB, 0.95)
+
+            if length > 0 then
+                local toArrowX = (pin.pixelX or 0) / length
+                local toArrowY = (pin.pixelY or 0) / length
+                local angle = Atan2(toArrowX, toArrowY)
+
+                if pinFrame.Arrow.SetRotation then
+                    pinFrame.Arrow:SetRotation(-angle)
+                end
+
+                local arrowOffset = math_max(baseWidth, baseHeight) * 0.40
+                pinFrame.Arrow:ClearAllPoints()
+                pinFrame.Arrow:SetPoint("CENTER", pinFrame, "CENTER", toArrowX * arrowOffset, toArrowY * arrowOffset)
+            else
+                pinFrame.Arrow:ClearAllPoints()
+                pinFrame.Arrow:SetPoint("CENTER", pinFrame, "CENTER", 0, 0)
+            end
+
+            pinFrame.Arrow:Show()
+        else
+            pinFrame.Arrow:Hide()
+        end
+    end
+
+    local boundaryPointCount = pin.projectedBoundaryPoints and #pin.projectedBoundaryPoints or 0
+    if boundaryPointCount > 0 then
+        pinFrame.BoundaryPoints = pinFrame.BoundaryPoints or {}
+
+        for pointIndex = 1, boundaryPointCount do
+            local point = pin.projectedBoundaryPoints[pointIndex]
+            local pointTexture = pinFrame.BoundaryPoints[pointIndex]
+            if not pointTexture then
+                pointTexture = pinFrame:CreateTexture(nil, "OVERLAY")
+                pointTexture:SetTexture("Interface\\Buttons\\WHITE8X8")
+                pointTexture:SetBlendMode("ADD")
+                pinFrame.BoundaryPoints[pointIndex] = pointTexture
+            end
+
+            pointTexture:ClearAllPoints()
+            pointTexture:SetPoint("CENTER", pinFrame, "CENTER", point.xOffset or 0, point.yOffset or 0)
+            pointTexture:SetSize(MINIMAP_BOUNDARY_POINT_SIZE, MINIMAP_BOUNDARY_POINT_SIZE)
+            pointTexture:SetVertexColor(0.38, 0.86, 1.0, point.alpha or 0.34)
+            pointTexture:Show()
+        end
+
+        for pointIndex = boundaryPointCount + 1, #(pinFrame.BoundaryPoints or {}) do
+            pinFrame.BoundaryPoints[pointIndex]:Hide()
+        end
+    elseif pinFrame.BoundaryPoints then
+        for pointIndex = 1, #pinFrame.BoundaryPoints do
+            pinFrame.BoundaryPoints[pointIndex]:Hide()
+        end
+    end
+
+    if showQuestZone and pin.insideArea and radiusPx and radiusPx > 0 and diameterYards and diameterYards > 0 then
         if not pinFrame.ZoneFill then
             pinFrame.ZoneFill = pinFrame:CreateTexture(nil, "BORDER")
             pinFrame.ZoneFill:SetTexture("Interface\\Minimap\\UI-Minimap-Ping")
@@ -3966,7 +4172,10 @@ local function ApplyMinimapPinStyle(pinFrame, pin, now, radiusPx, diameterYards)
         end
 
         local boundaryPixelRadius = (pin.radiusYards / (diameterYards * 0.5)) * radiusPx
-        if boundaryPixelRadius > 2 then
+        if boundaryPointCount > 0 then
+            pinFrame.ZoneFill:Hide()
+            pinFrame.BoundaryOutline:Hide()
+        elseif boundaryPixelRadius > 2 then
             local zoneDiameter = boundaryPixelRadius * 2
             pinFrame.ZoneFill:SetSize(zoneDiameter, zoneDiameter)
             pinFrame.ZoneFill:SetPoint("CENTER", pinFrame, "CENTER", 0, 0)
@@ -4021,7 +4230,9 @@ local function UpdateMinimapQuestPins(playerX, playerY, mapId, target)
         local projectionDistance = (pin.distanceYards or 0)
         local isWaypointPin = pin.pinKind == "waypoint" or pin.pinKind == "manual"
 
-        if (not isWaypointPin) and pin.centerX and pin.centerY and pin.radiusYards and pin.radiusYards > 0 then
+        if (not isWaypointPin)
+            and not pin.insideArea
+            and pin.centerX and pin.centerY and pin.radiusYards and pin.radiusYards > 0 then
             local centerDistance, centerDxYards, centerDyYards = ComputeDistanceYards(
                 mapId,
                 playerX,
@@ -4045,9 +4256,12 @@ local function UpdateMinimapQuestPins(playerX, playerY, mapId, target)
         end
 
         local projectedRadius = 0
+        local unclampedProjectedRadius = 0
         if diameterYards > 0 then
-            projectedRadius = (projectionDistance / (diameterYards * 0.5)) * radiusPx
+            unclampedProjectedRadius = (projectionDistance / (diameterYards * 0.5)) * radiusPx
+            projectedRadius = unclampedProjectedRadius
         end
+        pin.isClamped = unclampedProjectedRadius > radiusPx
         if projectedRadius > radiusPx then
             projectedRadius = radiusPx
         end
@@ -4057,6 +4271,55 @@ local function UpdateMinimapQuestPins(playerX, playerY, mapId, target)
         pin.pixelX = x
         pin.pixelY = y
         pin.priority = GetMinimapPinPriority(pin)
+
+        if pin.boundaryPoints and #pin.boundaryPoints >= 3 then
+            local sampledBoundary = {}
+            local step = math_max(1, math.ceil(#pin.boundaryPoints / MINIMAP_BOUNDARY_POINT_MAX_COUNT))
+
+            for pointIndex = 1, #pin.boundaryPoints, step do
+                local point = pin.boundaryPoints[pointIndex]
+                if point and point.x and point.y then
+                    local pointDistance, pointDxYards, pointDyYards = ComputeDistanceYards(
+                        mapId,
+                        playerX,
+                        playerY,
+                        point.x,
+                        point.y
+                    )
+                    if pointDistance then
+                        local pointDirection, pointRelative = ComputeRelativeHeading(
+                            facing,
+                            playerX,
+                            playerY,
+                            point.x,
+                            point.y,
+                            pointDxYards,
+                            pointDyYards
+                        )
+                        local pointHeading = rotateMinimap and pointRelative or pointDirection
+                        local pointRadius = 0
+                        if diameterYards > 0 then
+                            pointRadius = (pointDistance / (diameterYards * 0.5)) * radiusPx
+                        end
+                        if pointRadius > radiusPx then
+                            pointRadius = radiusPx
+                        end
+
+                        local pointX = math_sin(pointHeading or 0) * pointRadius
+                        local pointY = math_cos(pointHeading or 0) * pointRadius
+                        table.insert(sampledBoundary, {
+                            xOffset = pointX - x,
+                            yOffset = pointY - y,
+                            alpha = pin.isSuperTracked and 0.42 or 0.30,
+                        })
+                    end
+                end
+            end
+
+            pin.projectedBoundaryPoints = sampledBoundary
+        else
+            pin.projectedBoundaryPoints = nil
+        end
 
         local bucketX = math_floor((x + radiusPx) / MINIMAP_PIN_BUCKET_SIZE)
         local bucketY = math_floor((y + radiusPx) / MINIMAP_PIN_BUCKET_SIZE)
@@ -4868,20 +5131,55 @@ local function UpdateMarker()
         return
     end
 
-    UpdateMinimapQuestPins(playerX, playerY, mapId, target)
-
     local frame = EnsureFrame()
     frame:SetScale(settings.markerScale or 1.0)
 
-    local navX, navY, navRadiusYards = ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target)
+    local navX, navY, navRadiusYards, boundaryPoints, insideQuestArea, areaCenterX, areaCenterY = ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target)
     navX = navX or target.x
     navY = navY or target.y
+    target.boundaryPoints = boundaryPoints
+    target.insideArea = insideQuestArea == true
+    target.centerX = areaCenterX or target.x
+    target.centerY = areaCenterY or target.y
+
+    if target.insideArea then
+        UpdateMinimapQuestPins(playerX, playerY, mapId, target)
+        state.target = target
+        state.lastDistance = 0
+        state.lastPoiSource = target.poiSource
+        state.lastProjectedRadius = 0
+        state.lastClamped = false
+        state.lastNavState = NAV_STATE_IN_RANGE
+        state.lastAlpha = 0
+        frame:Hide()
+        return
+    end
+
+    local visualX = target.x or navX
+    local visualY = target.y or navY
+    if target.questId and target.questId > 0 then
+        visualX = target.centerX or target.x or navX
+        visualY = target.centerY or target.y or navY
+    else
+        visualX = navX
+        visualY = navY
+    end
 
     target.navX = navX
     target.navY = navY
+    target.visualX = visualX
+    target.visualY = visualY
     target.radiusYards = navRadiusYards
 
     local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, navX, navY)
+    local projectionDistanceYards, projectionDxYards, projectionDyYards = ComputeDistanceYards(mapId, playerX, playerY, visualX, visualY)
+    if not projectionDistanceYards then
+        projectionDistanceYards = distanceYards
+        projectionDxYards = dxYards
+        projectionDyYards = dyYards
+        visualX = navX
+        visualY = navY
+    end
     state.target = target
     state.lastDistance = distanceYards
 
@@ -4894,8 +5192,8 @@ local function UpdateMarker()
         local nativeSyncKey = string.format(
             "%d:%.5f:%.5f:%s",
             tonumber(mapId) or 0,
-            tonumber(navX) or 0,
-            tonumber(navY) or 0,
+            tonumber(visualX) or 0,
+            tonumber(visualY) or 0,
             tostring(target.questId or "")
         )
 
@@ -4913,7 +5211,7 @@ local function UpdateMarker()
             end
 
             if type(state.nativeSetSuperTrackedQuestWaypointForMap) == "function" then
-                pcall(state.nativeSetSuperTrackedQuestWaypointForMap, tonumber(mapId), navX, navY)
+                pcall(state.nativeSetSuperTrackedQuestWaypointForMap, tonumber(mapId), visualX, visualY)
             end
         end
     end
@@ -4925,10 +5223,10 @@ local function UpdateMarker()
         facing,
         playerX,
         playerY,
-        navX,
-        navY,
-        dxYards,
-        dyYards
+        visualX,
+        visualY,
+        projectionDxYards,
+        projectionDyYards
     )
 
     -- Damp tiny heading noise so the marker stays visually fixed when aligned.
@@ -4944,6 +5242,32 @@ local function UpdateMarker()
     if type(state.nativeNavigationSetPlayerState) == "function" then
         pcall(state.nativeNavigationSetPlayerState, tonumber(mapId), tonumber(playerX), tonumber(playerY), tonumber(facing or 0))
     end
+
+    local nativeTargetState = nil
+    local navigationApi = rawget(_G, "C_Navigation")
+    if type(navigationApi) == "table" and type(navigationApi.GetTargetState) == "function" then
+        local ok, navTargetState = pcall(navigationApi.GetTargetState)
+        navTargetState = tonumber(navTargetState)
+        if ok and navTargetState ~= nil then
+            nativeTargetState = navTargetState
+        end
+    end
+
+    if nativeTargetState == NAV_STATE_IN_RANGE and target.questId and target.radiusYards and target.radiusYards > 0 then
+        target.insideArea = true
+        UpdateMinimapQuestPins(playerX, playerY, mapId, target)
+        state.target = target
+        state.lastDistance = 0
+        state.lastPoiSource = target.poiSource
+        state.lastProjectedRadius = 0
+        state.lastClamped = false
+        state.lastNavState = NAV_STATE_IN_RANGE
+        state.lastAlpha = 0
+        frame:Hide()
+        return
+    end
+
+    UpdateMinimapQuestPins(playerX, playerY, mapId, target)
 
     local arrivalDistance = settings.arrivalDistanceYards or 8
     local arrived = distanceYards and distanceYards <= arrivalDistance
@@ -5088,7 +5412,7 @@ local function UpdateMarker()
     end
 
     if not usingNativeProjection then
-        if type(dxYards) ~= "number" or type(dyYards) ~= "number" then
+        if type(projectionDxYards) ~= "number" or type(projectionDyYards) ~= "number" then
             DebugNavigationProjection("reject: missing map delta for target " .. tostring(targetKey), true)
             ClearMarker()
             return
@@ -5096,7 +5420,7 @@ local function UpdateMarker()
 
         -- POI-locked fallback: use POI deltas for distance, then rotate by
         -- facing-relative heading so screen placement follows world direction.
-        fallbackRadius = math_sqrt((dxYards * dxYards) + (dyYards * dyYards)) * projectionScale
+        fallbackRadius = math_sqrt((projectionDxYards * projectionDxYards) + (projectionDyYards * projectionDyYards)) * projectionScale
         rawX = math_sin(relative) * fallbackRadius
         rawY = (math_cos(relative) * fallbackRadius) + anchorYOffset
 
@@ -5197,7 +5521,9 @@ local function UpdateMarker()
         frame.Arrow:SetVertexColor(1, 1, 1)
     end
 
-    if clampedToEllipse then
+    local showQuestArrow = not (target and target.questId and target.questId > 0)
+
+    if clampedToEllipse and showQuestArrow then
         local length = math_sqrt((projectedX * projectedX) + (projectedY * projectedY))
         if length > 0 then
             local toArrowX = projectedX / length
@@ -5495,6 +5821,13 @@ local function RequestQuestTrackingVisualRefreshSettled(delay)
     RequestQuestTrackingVisualRefresh()
 end
 
+local function RequestQuestTrackingVisualRefreshSequence(delay, includeSettled)
+    RequestQuestTrackingVisualRefresh()
+    if includeSettled then
+        RequestQuestTrackingVisualRefreshSettled(delay)
+    end
+end
+
 function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
     questLogIndex = tonumber(questLogIndex)
     if not questLogIndex or questLogIndex <= 0 then
@@ -5510,32 +5843,18 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
     local isCompleted = IsQuestLogIndexCompleted(questLogIndex)
     local poiOptions = isCompleted and { bypassCache = true, clearQuestCache = true } or nil
     local qx, qy, questId = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
-    if not qx or not qy then
-        MaybeSyncCurrentZoneMap(true)
-        playerX, playerY, mapId = GetPlayerMapPositionSafe()
-        qx, qy, questId = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
-    end
-
-    local hasPoiOnCurrentMap = qx and qy
+    local hasPoiOnCurrentMap = (qx and qy) and true or false
+    local needsForcedMapSync = not hasPoiOnCurrentMap
 
     state.followedQuestLogIndex = questLogIndex
     state.followedQuestId = questId
     state.followedQuestTitle = title or ("Quest " .. tostring(questId or questLogIndex))
 
-    if questId and questId > 0 then
-        ShimSetSuperTrackedQuestID(questId)
-        ShimSetSuperTrackedUserWaypoint(false)
-        ShimSetSuperTrackedQuestName(state.followedQuestTitle)
-        if hasPoiOnCurrentMap and mapId and qx and qy then
-            ShimSetSuperTrackedQuestWaypointForMap(mapId, qx, qy)
-        end
-    end
-
     EnsureQuestSelectionFocused(questLogIndex, false)
 
     local watchSynced = EnsureQuestIsWatched(questLogIndex)
     if watchSynced then
-        MaybeSyncCurrentZoneMap(true)
+        needsForcedMapSync = true
     end
 
     local minimapTrackingSynced = false
@@ -5543,7 +5862,7 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
         minimapTrackingSynced = addon:EnsureQuestMinimapTrackingEnabled()
     end
     if minimapTrackingSynced then
-        MaybeSyncCurrentZoneMap(true)
+        needsForcedMapSync = true
     end
 
     if addon.settings.navigation.clearManualOnQuestSelect then
@@ -5554,23 +5873,30 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
         end
     end
 
-    RequestQuestTrackingVisualRefresh()
-    RequestQuestTrackingVisualRefreshSettled(0.05)
-
-    if not hasPoiOnCurrentMap then
+    local performedForcedMapSync = false
+    if needsForcedMapSync then
         MaybeSyncCurrentZoneMap(true)
+        performedForcedMapSync = true
         playerX, playerY, mapId = GetPlayerMapPositionSafe()
         qx, qy, questId = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
-        hasPoiOnCurrentMap = qx and qy
+        hasPoiOnCurrentMap = (qx and qy) and true or false
 
         if questId and questId > 0 then
             state.followedQuestId = questId
         end
+    end
 
+    local followedQuestId = tonumber(state.followedQuestId) or nil
+    if followedQuestId and followedQuestId > 0 then
+        ShimSetSuperTrackedQuestID(followedQuestId)
+        ShimSetSuperTrackedUserWaypoint(false)
+        ShimSetSuperTrackedQuestName(state.followedQuestTitle)
         if hasPoiOnCurrentMap and mapId and qx and qy then
             ShimSetSuperTrackedQuestWaypointForMap(mapId, qx, qy)
         end
     end
+
+    RequestQuestTrackingVisualRefreshSequence(0.05, performedForcedMapSync or not hasPoiOnCurrentMap)
 
     state.dirty = true
     if not silent then
@@ -6677,8 +7003,7 @@ function Navigation.OnEnable()
                 if addon.EnsureQuestMinimapTrackingEnabled then
                     addon:EnsureQuestMinimapTrackingEnabled(event)
                 end
-                RequestQuestTrackingVisualRefresh()
-                RequestQuestTrackingVisualRefreshSettled(0.05)
+                RequestQuestTrackingVisualRefreshSequence(0.05, true)
             end
 
             state.dirty = true

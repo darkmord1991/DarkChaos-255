@@ -33,7 +33,8 @@ namespace DCAddon
         GF_LISTING_MYTHIC_PLUS = 1,
         GF_LISTING_RAID        = 2,
         GF_LISTING_PVP         = 3,
-        GF_LISTING_OTHER       = 4
+        GF_LISTING_OTHER       = 4,
+        GF_LISTING_QUEST       = 5
     };
 
     enum GroupFinderApplicationStatus : uint8

@@ -6,6 +6,7 @@
 -- ============================================================
 
 local addon = DCQOS
+local questTrackingUtils = type(addon.GetQuestTrackingUtils) == "function" and addon:GetQuestTrackingUtils() or nil
 
 local QuestFrames = {
     displayName = "QuestFrames",
@@ -328,16 +329,7 @@ local function SetWorldMapHoverQuestId(questId)
     QueueRefresh(0)
 end
 
-local function ParseQuestIdFromLink(link)
-    if type(link) ~= "string" then
-        return nil
-    end
-
-    local questId = tonumber(link:match("|Hquest:(%d+):"))
-    if questId and questId > 0 then
-        return questId
-    end
-
+local ParseQuestIdFromLink = questTrackingUtils and questTrackingUtils.ParseQuestIdFromLink or function()
     return nil
 end
 
@@ -432,24 +424,8 @@ local function GetRecurringQuestFlags(questId, title, stockIsDaily)
     return recurrenceType, isRecurring, isDaily, isWeekly
 end
 
-local function GetQuestIdFromLogIndex(questLogIndex)
-    questLogIndex = tonumber(questLogIndex)
-    if not questLogIndex or questLogIndex <= 0 then
-        return nil
-    end
-
-    if type(C_QuestLog_GetQuestIDForQuestLogIndex) == "function" then
-        local questId = tonumber(C_QuestLog_GetQuestIDForQuestLogIndex(questLogIndex))
-        if questId and questId > 0 then
-            return questId
-        end
-    end
-
-    if type(GetQuestLink) ~= "function" then
-        return nil
-    end
-
-    return ParseQuestIdFromLink(GetQuestLink(questLogIndex))
+local GetQuestIdFromLogIndex = questTrackingUtils and questTrackingUtils.GetQuestIdFromLogIndex or function()
+    return nil
 end
 
 local function BuildQuestRegionLookup()
@@ -572,12 +548,7 @@ local function FindQuestLogInfoByTitle(title)
     return nil
 end
 
-local function GetSuperTrackedQuestId()
-    local markers = addon and addon.QuestTrackerMarkers or nil
-    if markers and type(markers.GetSuperTrackedQuestId) == "function" then
-        return markers.GetSuperTrackedQuestId()
-    end
-
+local GetSuperTrackedQuestId = questTrackingUtils and questTrackingUtils.GetSuperTrackedQuestId or function()
     return nil
 end
 
@@ -2716,6 +2687,28 @@ local function EnsureWorldMapQuestPoiChrome(button)
         getHoverQuestId = function()
             return state.worldMapHoverQuestId
         end,
+        selectQuest = function(ownerButton)
+            if not ownerButton then
+                return
+            end
+
+            local questLogIndex = tonumber(ownerButton.questLogIndex or ownerButton.questIndex)
+            local questId = tonumber(ownerButton.questId or ownerButton.questID)
+
+            if (not questLogIndex or questLogIndex <= 0) and questId and questId > 0 then
+                questLogIndex = FindQuestLogIndexByQuestId(questId)
+            end
+
+            if questLogIndex and questLogIndex > 0 and type(QuestLog_SetSelection) == "function" then
+                pcall(QuestLog_SetSelection, questLogIndex)
+            end
+
+            if type(WorldMapFrame_SelectQuestFrame) == "function" then
+                pcall(WorldMapFrame_SelectQuestFrame, ownerButton)
+            end
+
+            QueueRefresh(0)
+        end,
     })
 end
 
@@ -2735,6 +2728,28 @@ local function UpdateWorldMapQuestPoi(button, isTracked, isSelected, isWatched, 
         setHoverQuestId = SetWorldMapHoverQuestId,
         getHoverQuestId = function()
             return state.worldMapHoverQuestId
+        end,
+        selectQuest = function(ownerButton)
+            if not ownerButton then
+                return
+            end
+
+            local questLogIndex = tonumber(ownerButton.questLogIndex or ownerButton.questIndex)
+            local questId = tonumber(ownerButton.questId or ownerButton.questID)
+
+            if (not questLogIndex or questLogIndex <= 0) and questId and questId > 0 then
+                questLogIndex = FindQuestLogIndexByQuestId(questId)
+            end
+
+            if questLogIndex and questLogIndex > 0 and type(QuestLog_SetSelection) == "function" then
+                pcall(QuestLog_SetSelection, questLogIndex)
+            end
+
+            if type(WorldMapFrame_SelectQuestFrame) == "function" then
+                pcall(WorldMapFrame_SelectQuestFrame, ownerButton)
+            end
+
+            QueueRefresh(0)
         end,
         resolveTextureRegion = ResolveTextureRegion,
     })

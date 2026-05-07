@@ -48,12 +48,81 @@ end
 -- Print Helper
 -- =====================================================================
 
-local function Print(msg)
-    if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff32c4ffGroup Finder:|r " .. (msg or ""))
+local function Print(selfOrMsg, maybeMsg)
+    local text = maybeMsg
+    if text == nil then
+        text = selfOrMsg
+    end
+
+    text = tostring(text or "")
+
+    if GF.SetStatusMessage then
+        GF:SetStatusMessage(text)
     end
 end
 GF.Print = Print
+
+function GF:PrintImportant(msg)
+    local text = tostring(msg or "")
+
+    if self.SetStatusMessage then
+        self:SetStatusMessage(text)
+    end
+
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff32c4ffGroup Finder:|r " .. text)
+    end
+end
+
+function GF:SetStatusMessage(msg)
+    self._pendingStatusMessage = tostring(msg or "")
+
+    if not self.mainFrame or not self.mainFrame.StatusText then
+        return
+    end
+
+    self._statusMessageToken = (self._statusMessageToken or 0) + 1
+    local token = self._statusMessageToken
+
+    self.mainFrame.StatusText:SetText(self._pendingStatusMessage)
+
+    if C_Timer and C_Timer.After then
+        C_Timer.After(6, function()
+            if GF._statusMessageToken == token and GF.mainFrame and GF.mainFrame.StatusText then
+                GF.mainFrame.StatusText:SetText("")
+            end
+        end)
+    end
+end
+
+local function FormatRoleMask(role)
+    local roleValue = tonumber(role) or 0
+    local labels = {}
+
+    if bit and bit.band then
+        if bit.band(roleValue, 1) ~= 0 then table.insert(labels, "Tank") end
+        if bit.band(roleValue, 2) ~= 0 then table.insert(labels, "Healer") end
+        if bit.band(roleValue, 4) ~= 0 then table.insert(labels, "DPS") end
+    else
+        if roleValue >= 4 then
+            table.insert(labels, "DPS")
+            roleValue = roleValue - 4
+        end
+        if roleValue >= 2 then
+            table.insert(labels, 1, "Healer")
+            roleValue = roleValue - 2
+        end
+        if roleValue >= 1 then
+            table.insert(labels, 1, "Tank")
+        end
+    end
+
+    if #labels == 0 then
+        return "Unknown"
+    end
+
+    return table.concat(labels, "/")
+end
 
 -- =====================================================================
 -- Main Frame Creation
@@ -144,17 +213,28 @@ function GF:CreateMainFrame()
     -- Content container
     local contentFrame = CreateFrame("Frame", nil, frame)
     contentFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 8, -8)
-    contentFrame:SetPoint("BOTTOMRIGHT", -15, 15)
+    contentFrame:SetPoint("BOTTOMRIGHT", -15, 42)
     frame.contentFrame = contentFrame
     
     -- Content background (slightly lighter)
     local contentBg = contentFrame:CreateTexture(nil, "BACKGROUND")
     contentBg:SetAllPoints()
     contentBg:SetColorTexture(0.15, 0.15, 0.15, 0.5)
+
+    local statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statusText:SetPoint("BOTTOMRIGHT", -12, 8)
+    statusText:SetWidth(360)
+    statusText:SetJustifyH("RIGHT")
+    statusText:SetText("")
+    frame.StatusText = statusText
     
     self.mainFrame = frame
     self:CreateTabButtons()
     self:CreateRewardFrame()
+
+    if self._pendingStatusMessage and self._pendingStatusMessage ~= "" then
+        frame.StatusText:SetText(self._pendingStatusMessage)
+    end
     
     -- ESC to close
     tinsert(UISpecialFrames, "DCMythicPlusGroupFinderFrame")
@@ -322,6 +402,9 @@ function GF:ShowRaidTab()
     end
     if self.RaidTabContent then
         self.RaidTabContent:Show()
+        if self.RefreshRaidGroups then
+            self:RefreshRaidGroups()
+        end
     end
 end
 
@@ -378,6 +461,20 @@ function GF:CreateMyQueuesTab()
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 10, -10)
     title:SetText("My Active Applications")
+
+    local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    refreshBtn:SetSize(90, 22)
+    refreshBtn:SetPoint("TOPRIGHT", -10, -6)
+    refreshBtn:SetText("Refresh")
+    refreshBtn:SetScript("OnClick", function()
+        GF:RefreshMyQueues()
+    end)
+    frame.refreshBtn = refreshBtn
+
+    local emptyText = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    emptyText:SetPoint("CENTER", 0, 0)
+    emptyText:SetText("No active applications.")
+    frame.emptyText = emptyText
     
     -- Scroll frame for applications
     local scrollFrame = CreateFrame("ScrollFrame", "DCGroupFinderMyQueuesScroll", frame, "UIPanelScrollFrameTemplate")
@@ -388,6 +485,8 @@ function GF:CreateMyQueuesTab()
     scrollChild:SetSize(scrollFrame:GetWidth(), 1)
     scrollFrame:SetScrollChild(scrollChild)
     frame.scrollChild = scrollChild
+
+    self.myApplications = self.myApplications or {}
     
     self.MyQueuesTabContent = frame
 end
@@ -397,6 +496,104 @@ function GF:RefreshMyQueues()
     if DC and DC.GroupFinder and DC.GroupFinder.GetMyApplications then
         DC.GroupFinder.GetMyApplications()
     end
+end
+
+function GF:UpdateMyApplications(applications)
+    if type(applications) ~= "table" then
+        applications = {}
+    elseif applications[1] == nil then
+        local normalized = {}
+        for _, entry in pairs(applications) do
+            if type(entry) == "table" then
+                table.insert(normalized, entry)
+            end
+        end
+        applications = normalized
+    end
+
+    self.myApplications = applications
+    self:RenderMyQueues()
+end
+
+function GF:CancelMyApplication(listingId)
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and DC.GroupFinder and DC.GroupFinder.CancelApplication then
+        DC.GroupFinder.CancelApplication(listingId)
+    end
+end
+
+function GF:RenderMyQueues()
+    if not self.MyQueuesTabContent or not self.MyQueuesTabContent.scrollChild then
+        return
+    end
+
+    local frame = self.MyQueuesTabContent
+    local scrollChild = frame.scrollChild
+    local applications = self.myApplications or {}
+
+    for _, child in ipairs({ scrollChild:GetChildren() }) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    if #applications == 0 then
+        frame.emptyText:Show()
+        scrollChild:SetHeight(1)
+        return
+    end
+
+    frame.emptyText:Hide()
+
+    local yOffset = 0
+    local rowHeight = 58
+
+    for index, app in ipairs(applications) do
+        local row = CreateFrame("Frame", nil, scrollChild)
+        row:SetSize(scrollChild:GetWidth() - 8, rowHeight - 4)
+        row:SetPoint("TOPLEFT", 4, -yOffset)
+
+        row.bg = row:CreateTexture(nil, "BACKGROUND")
+        row.bg:SetAllPoints()
+        if index % 2 == 0 then
+            row.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
+        else
+            row.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+        end
+
+        local title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOPLEFT", 10, -8)
+        title:SetText((app.dungeonName or app.dungeon or "Unknown Listing") .. "  |cff888888(" .. (app.difficultyName or "Unknown") .. ")|r")
+
+        local info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        info:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+        info:SetText(string.format("Leader: %s  |  Role: %s", app.leader or "Unknown", FormatRoleMask(app.role)))
+
+        local status = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        status:SetPoint("TOPRIGHT", -100, -8)
+        status:SetText("|cff00ff00Pending|r")
+
+        if app.note and app.note ~= "" then
+            local note = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            note:SetPoint("BOTTOMLEFT", 10, 8)
+            note:SetText(app.note)
+        elseif tonumber(app.keystoneLevel or 0) > 0 then
+            local meta = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            meta:SetPoint("BOTTOMLEFT", 10, 8)
+            meta:SetText("Key Level: +" .. tonumber(app.keystoneLevel or 0))
+        end
+
+        local cancelBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+        cancelBtn:SetSize(80, 22)
+        cancelBtn:SetPoint("RIGHT", -10, 0)
+        cancelBtn:SetText("Withdraw")
+        cancelBtn:SetScript("OnClick", function()
+            GF:CancelMyApplication(app.listingId)
+        end)
+
+        yOffset = yOffset + rowHeight
+    end
+
+    scrollChild:SetHeight(math.max(yOffset, 1))
 end
 
 -- Application Dialog
@@ -540,7 +737,8 @@ function GF:CreateRewardFrame()
     
     local frame = CreateFrame("Frame", nil, self.mainFrame)
     frame:SetSize(300, 30)
-    frame:SetPoint("BOTTOMLEFT", 10, 5)
+    frame:SetPoint("BOTTOMLEFT", 14, 10)
+    frame:SetFrameLevel(self.mainFrame:GetFrameLevel() + 20)
     
     -- Label
     local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

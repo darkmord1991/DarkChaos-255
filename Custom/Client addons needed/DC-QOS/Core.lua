@@ -633,6 +633,186 @@ function addon:GetMapUtils()
     return mapUtils
 end
 
+function addon:GetQuestTrackingUtils()
+    if self._questTrackingUtils then
+        return self._questTrackingUtils
+    end
+
+    local mapUtils = type(self.GetMapUtils) == "function" and self:GetMapUtils() or nil
+    local GetPlayerMapPositionSafe = mapUtils and mapUtils.GetPlayerMapPositionSafe or nil
+    local SafeSetMapToCurrentZone = mapUtils and mapUtils.SafeSetMapToCurrentZone or nil
+    local questTrackingUtils = {}
+
+    local function NormalizePositiveNumber(value)
+        value = tonumber(value)
+        if value and value > 0 then
+            return value
+        end
+
+        return nil
+    end
+
+    local function GetQuestIdFromQuestLogTitle(questLogIndex)
+        if type(GetQuestLogTitle) ~= "function" then
+            return nil
+        end
+
+        local _, _, _, _, _, _, _, result8, result9, result10 = GetQuestLogTitle(questLogIndex)
+
+        if type(result10) == "number" and result10 > 0 then
+            return result10
+        end
+        if type(result9) == "number" and result9 > 0 then
+            return result9
+        end
+        if type(result8) == "number" and result8 > 1000 then
+            return result8
+        end
+
+        return nil
+    end
+
+    function questTrackingUtils.ParseQuestIdFromLink(link)
+        if type(link) ~= "string" then
+            return nil
+        end
+
+        local questId = tonumber(link:match("|Hquest:(%d+):"))
+        if questId and questId > 0 then
+            return questId
+        end
+
+        return nil
+    end
+
+    function questTrackingUtils.GetQuestIdFromLogIndex(questLogIndex, options)
+        questLogIndex = NormalizePositiveNumber(questLogIndex)
+        if not questLogIndex then
+            return nil
+        end
+
+        options = type(options) == "table" and options or nil
+
+        local questApi = rawget(_G, "C_QuestLog")
+        if type(questApi) == "table" and type(questApi.GetQuestIDForQuestLogIndex) == "function" then
+            local ok, questId = pcall(questApi.GetQuestIDForQuestLogIndex, questLogIndex)
+            questId = NormalizePositiveNumber(questId)
+            if ok and questId then
+                return questId
+            end
+        end
+
+        local getter = rawget(_G, "C_QuestLog_GetQuestIDForQuestLogIndex") or rawget(_G, "GetQuestIDForQuestLogIndex")
+        if type(getter) == "function" then
+            local ok, questId = pcall(getter, questLogIndex)
+            questId = NormalizePositiveNumber(questId)
+            if ok and questId then
+                return questId
+            end
+        end
+
+        if type(GetQuestLink) == "function" then
+            local questId = questTrackingUtils.ParseQuestIdFromLink(GetQuestLink(questLogIndex))
+            if questId then
+                return questId
+            end
+        end
+
+        local questId = GetQuestIdFromQuestLogTitle(questLogIndex)
+        if questId then
+            return questId
+        end
+
+        if options and options.allowQuestLogIndexFallback then
+            return questLogIndex
+        end
+
+        return nil
+    end
+
+    function questTrackingUtils.GetSuperTrackedQuestId()
+        local nav = addon and addon.Navigation or nil
+        if nav and type(nav.GetSuperTrackedQuestID) == "function" then
+            local ok, questId = pcall(nav.GetSuperTrackedQuestID, nav)
+            questId = NormalizePositiveNumber(questId)
+            if ok and questId then
+                return questId
+            end
+        end
+
+        local api = rawget(_G, "C_SuperTrack")
+        if type(api) == "table" and type(api.GetSuperTrackedQuestID) == "function" then
+            local ok, questId = pcall(api.GetSuperTrackedQuestID)
+            questId = NormalizePositiveNumber(questId)
+            if ok and questId then
+                return questId
+            end
+        end
+
+        local getter = rawget(_G, "GetSuperTrackedQuestID") or rawget(_G, "C_SuperTrack_GetSuperTrackedQuestID")
+        if type(getter) ~= "function" then
+            return nil
+        end
+
+        local ok, questId = pcall(getter)
+        questId = NormalizePositiveNumber(questId)
+        if ok and questId then
+            return questId
+        end
+
+        return nil
+    end
+
+    function questTrackingUtils.GetCurrentMapId()
+        if type(GetPlayerMapPositionSafe) == "function" then
+            local _, _, mapId = GetPlayerMapPositionSafe()
+            mapId = NormalizePositiveNumber(mapId)
+            if mapId then
+                return mapId
+            end
+        end
+
+        if type(SafeSetMapToCurrentZone) == "function" then
+            SafeSetMapToCurrentZone()
+        end
+
+        local mapId = type(GetCurrentMapAreaID) == "function" and NormalizePositiveNumber(GetCurrentMapAreaID()) or nil
+        if mapId then
+            return mapId
+        end
+
+        return nil
+    end
+
+    function questTrackingUtils.GetNextWaypointForMap(mapId)
+        mapId = NormalizePositiveNumber(mapId) or questTrackingUtils.GetCurrentMapId()
+        if not mapId then
+            return nil
+        end
+
+        local superTrackApi = rawget(_G, "C_SuperTrack")
+        local getter = type(superTrackApi) == "table" and superTrackApi.GetNextWaypointForMap or nil
+
+        if type(getter) ~= "function" then
+            getter = rawget(_G, "GetNextWaypointForMap") or rawget(_G, "C_SuperTrack_GetNextWaypointForMap")
+        end
+
+        if type(getter) ~= "function" then
+            return nil
+        end
+
+        local ok, x, y, waypointText = pcall(getter, mapId)
+        if not ok then
+            return nil
+        end
+
+        return x, y, waypointText, mapId
+    end
+
+    self._questTrackingUtils = questTrackingUtils
+    return questTrackingUtils
+end
+
 -- 3.3.5a compatible delayed call
 function addon:DelayedCall(delay, func)
     if type(func) ~= "function" then

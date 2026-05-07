@@ -25,6 +25,86 @@
 namespace DCAddon
 {
 
+namespace
+{
+Player* FindConnectedPlayerByGuidLow(uint32 guidLow)
+{
+    if (!guidLow)
+        return nullptr;
+
+    return ObjectAccessor::FindConnectedPlayer(
+        ObjectGuid::Create<HighGuid::Player>(guidLow));
+}
+
+std::string RoleMaskToString(uint8 roleMask)
+{
+    std::string role;
+
+    if (roleMask & GF_ROLE_TANK)
+        role = "tank";
+
+    if (roleMask & GF_ROLE_HEALER)
+        role += role.empty() ? "healer" : "/healer";
+
+    if (roleMask & GF_ROLE_DPS)
+        role += role.empty() ? "dps" : "/dps";
+
+    if (role.empty())
+        role = "dps";
+
+    return role;
+}
+
+uint8 GuessLeaderRoleMask(Player* player)
+{
+    if (!player)
+        return GF_ROLE_DPS;
+
+    if (player->HasHealSpec())
+        return GF_ROLE_HEALER;
+
+    if (player->HasTankSpec())
+        return GF_ROLE_TANK;
+
+    return GF_ROLE_DPS;
+}
+
+uint8 SelectAcceptedRole(GroupFinderListing const& listing, uint8 roleMask)
+{
+    if ((roleMask & GF_ROLE_TANK) && listing.needTank > 0)
+        return GF_ROLE_TANK;
+
+    if ((roleMask & GF_ROLE_HEALER) && listing.needHealer > 0)
+        return GF_ROLE_HEALER;
+
+    if ((roleMask & GF_ROLE_DPS) && listing.needDps > 0)
+        return GF_ROLE_DPS;
+
+    return GF_ROLE_NONE;
+}
+
+void ApplyAcceptedRole(GroupFinderListing& listing, uint8 role)
+{
+    switch (role)
+    {
+        case GF_ROLE_TANK:
+            ++listing.currentTank;
+            --listing.needTank;
+            break;
+        case GF_ROLE_HEALER:
+            ++listing.currentHealer;
+            --listing.needHealer;
+            break;
+        case GF_ROLE_DPS:
+            ++listing.currentDps;
+            --listing.needDps;
+            break;
+        default:
+            break;
+    }
+}
+}
+
 GroupFinderMgr::GroupFinderMgr()
 {
     _lastCleanupTime = 0;
@@ -214,12 +294,14 @@ void GroupFinderMgr::CleanupExpiredListings()
 
     for (uint32 id : toRemove)
     {
-        auto& listing = _listings[id];
+        auto listingIt = _listings.find(id);
+        if (listingIt == _listings.end())
+            continue;
+
+        GroupFinderListing const& listing = listingIt->second;
 
         // Notify leader
-        Map* leaderMap = listing.leaderMapId ? sMapMgr->FindMap(listing.leaderMapId, listing.leaderInstanceId) : nullptr;
-        if (leaderMap)
-            if (Player* leader = ObjectAccessor::GetPlayer(leaderMap, ObjectGuid::Create<HighGuid::Player>(listing.leaderGuid)))
+        if (Player* leader = FindConnectedPlayerByGuidLow(listing.leaderGuid))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
                 .Set("action", "expired")
@@ -228,14 +310,37 @@ void GroupFinderMgr::CleanupExpiredListings()
                 .Send(leader);
         }
 
+        auto appsIt = _applications.find(id);
+        if (appsIt != _applications.end())
+        {
+            for (GroupFinderApplication const& app : appsIt->second)
+            {
+                if (app.status == GF_APP_PENDING)
+                {
+                    NotifyApplicationStatus(
+                        app.playerGuid,
+                        id,
+                        GF_APP_EXPIRED,
+                        "The group listing expired.");
+                }
+            }
+        }
+
         // Update database
         CharacterDatabase.Execute("UPDATE dc_group_finder_listings SET status = 0 WHERE id = {}", id);
         CharacterDatabase.Execute("UPDATE dc_group_finder_applications SET status = 4 WHERE listing_id = {} AND status = 0", id);
 
         // Remove from cache
-        _playerListings[listing.leaderGuid].erase(id);
+        auto playerListingsIt = _playerListings.find(listing.leaderGuid);
+        if (playerListingsIt != _playerListings.end())
+        {
+            playerListingsIt->second.erase(id);
+            if (playerListingsIt->second.empty())
+                _playerListings.erase(playerListingsIt);
+        }
+
         _applications.erase(id);
-        _listings.erase(id);
+        _listings.erase(listingIt);
     }
 
     if (!toRemove.empty())
@@ -244,13 +349,58 @@ void GroupFinderMgr::CleanupExpiredListings()
 
 void GroupFinderMgr::CleanupExpiredApplications()
 {
-    // Applications older than configured minutes that are still pending get expired
+    std::lock_guard<std::mutex> lock(_mutex);
+
     time_t cutoff = GameTime::GetGameTime().count() - (_applicationExpireMinutes * 60);
 
-    CharacterDatabase.Execute(
-        "UPDATE dc_group_finder_applications SET status = 4 "
-        "WHERE status = 0 AND created_at < FROM_UNIXTIME({})",
-        cutoff);
+    for (auto appsIt = _applications.begin(); appsIt != _applications.end();)
+    {
+        uint32 listingId = appsIt->first;
+        auto& apps = appsIt->second;
+
+        for (GroupFinderApplication const& app : apps)
+        {
+            if (app.status == GF_APP_PENDING && app.createdAt < cutoff)
+            {
+                CharacterDatabase.Execute(
+                    "UPDATE dc_group_finder_applications SET status = 4 WHERE id = {}",
+                    app.id);
+
+                NotifyApplicationStatus(
+                    app.playerGuid,
+                    listingId,
+                    GF_APP_EXPIRED,
+                    "Your application expired.");
+
+                if (auto listingIt = _listings.find(listingId); listingIt != _listings.end())
+                {
+                    if (Player* leader = FindConnectedPlayerByGuidLow(
+                            listingIt->second.leaderGuid))
+                    {
+                        JsonMessage(Module::GROUP_FINDER,
+                            Opcode::GroupFinder::SMSG_GROUP_UPDATED)
+                            .Set("action", "application_cancelled")
+                            .Set("listingId", static_cast<int32>(listingId))
+                            .Set("playerGuid", static_cast<int32>(app.playerGuid))
+                            .Send(leader);
+                    }
+                }
+            }
+        }
+
+        apps.erase(
+            std::remove_if(apps.begin(), apps.end(),
+                [cutoff](GroupFinderApplication const& app)
+                {
+                    return app.status == GF_APP_PENDING && app.createdAt < cutoff;
+                }),
+            apps.end());
+
+        if (apps.empty())
+            appsIt = _applications.erase(appsIt);
+        else
+            ++appsIt;
+    }
 }
 
 void GroupFinderMgr::CleanupExpiredEvents()
@@ -295,50 +445,64 @@ uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& l
     if (Group* group = player->GetGroup())
         groupGuid = group->GetGUID().GetCounter();
 
-    // Note: using synchronous execution below to ensure LAST_INSERT_ID() can be retrieved immediately.
-
-    // We need the ID. Since we can't easily get it from the async transaction above without a callback,
-    // and we need to return it immediately, we have to use a synchronous query or a different approach.
-    // BUT, we are already inside a lock and blocking.
-    // Let's use a synchronous execution with manual escaping for now to ensure we get the ID,
-    // OR better: use the "Execute" method that returns a future? No, ACore doesn't have that standard.
-
-    // Fallback to safe synchronous execution with escaping
     std::string safeNote = listing.note;
     std::string safeDungeonName = listing.dungeonName;
     CharacterDatabase.EscapeString(safeNote);
     CharacterDatabase.EscapeString(safeDungeonName);
 
+    GroupFinderListing storedListing = listing;
+    uint8 leaderRole = SelectAcceptedRole(storedListing, GuessLeaderRoleMask(player));
+    if (leaderRole == GF_ROLE_NONE)
+        leaderRole = SelectAcceptedRole(storedListing, GF_ROLE_TANK | GF_ROLE_HEALER | GF_ROLE_DPS);
+
+    ApplyAcceptedRole(storedListing, leaderRole);
+
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_listings "
         "(leader_guid, group_guid, listing_type, dungeon_id, dungeon_name, difficulty, "
-        "keystone_level, min_ilvl, need_tank, need_healer, need_dps, note, status) "
-        "VALUES ({}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, '{}', 1)",
-        guid, groupGuid, listing.listingType, listing.dungeonId, safeDungeonName,
-        listing.difficulty, listing.keystoneLevel, listing.minIlvl,
-        listing.needTank, listing.needHealer, listing.needDps, safeNote);
+        "keystone_level, min_ilvl, current_tank, current_healer, current_dps, "
+        "need_tank, need_healer, need_dps, note, status) "
+        "VALUES ({}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', 1)",
+        guid, groupGuid, storedListing.listingType, storedListing.dungeonId, safeDungeonName,
+        storedListing.difficulty, storedListing.keystoneLevel, storedListing.minIlvl,
+        storedListing.currentTank, storedListing.currentHealer, storedListing.currentDps,
+        storedListing.needTank, storedListing.needHealer, storedListing.needDps, safeNote);
 
-    // Get inserted ID
-    QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
+    // Avoid LAST_INSERT_ID() here because the insert and follow-up query can use different pooled connections.
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT id FROM dc_group_finder_listings WHERE leader_guid = {} AND group_guid = {} "
+        "AND listing_type = {} AND dungeon_id = {} AND dungeon_name = '{}' AND difficulty = {} "
+        "AND keystone_level = {} AND min_ilvl = {} AND current_tank = {} AND current_healer = {} "
+        "AND current_dps = {} AND need_tank = {} AND need_healer = {} AND need_dps = {} "
+        "AND note = '{}' AND status = 1 ORDER BY id DESC LIMIT 1",
+        guid, groupGuid, storedListing.listingType, storedListing.dungeonId, safeDungeonName,
+        storedListing.difficulty, storedListing.keystoneLevel, storedListing.minIlvl,
+        storedListing.currentTank, storedListing.currentHealer, storedListing.currentDps,
+        storedListing.needTank, storedListing.needHealer, storedListing.needDps, safeNote);
     uint32 listingId = result ? (*result)[0].Get<uint32>() : 0;
 
     if (listingId > 0)
     {
-        GroupFinderListing newListing = listing;
-        newListing.id = listingId;
-        newListing.leaderGuid = guid;
-        newListing.groupGuid = groupGuid;
-        newListing.leaderMapId = player->GetMapId();
-        newListing.leaderInstanceId = player->GetInstanceId();
-        newListing.createdAt = GameTime::GetGameTime().count();
-        newListing.expiresAt = newListing.createdAt + (_listingExpireMinutes * 60);
-        newListing.active = true;
+        storedListing.id = listingId;
+        storedListing.leaderGuid = guid;
+        storedListing.groupGuid = groupGuid;
+        storedListing.leaderMapId = player->GetMapId();
+        storedListing.leaderInstanceId = player->GetInstanceId();
+        storedListing.createdAt = GameTime::GetGameTime().count();
+        storedListing.expiresAt = storedListing.createdAt + (_listingExpireMinutes * 60);
+        storedListing.active = true;
 
-        _listings[listingId] = newListing;
+        _listings[listingId] = storedListing;
         _playerListings[guid].insert(listingId);
 
         // Notify potential matches
-        NotifyNewListing(newListing);
+        NotifyNewListing(storedListing);
+    }
+    else
+    {
+        LOG_ERROR("dc.groupfinder",
+            "Failed to resolve inserted listing id for leader={} dungeon='{}' type={} level={}",
+            guid, listing.dungeonName, listing.listingType, listing.keystoneLevel);
     }
 
     return listingId;
@@ -369,7 +533,14 @@ bool GroupFinderMgr::DeleteListing(Player* player, uint32 listingId)
     }
 
     // Remove from cache
-    _playerListings[it->second.leaderGuid].erase(listingId);
+    auto playerListingsIt = _playerListings.find(it->second.leaderGuid);
+    if (playerListingsIt != _playerListings.end())
+    {
+        playerListingsIt->second.erase(listingId);
+        if (playerListingsIt->second.empty())
+            _playerListings.erase(playerListingsIt);
+    }
+
     _applications.erase(listingId);
     _listings.erase(it);
 
@@ -527,6 +698,10 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
     {
         if (app.playerGuid == applicantGuid && app.status == GF_APP_PENDING)
         {
+            uint8 acceptedRole = SelectAcceptedRole(listingIt->second, app.role);
+            if (acceptedRole == GF_ROLE_NONE)
+                return false;
+
             app.status = GF_APP_ACCEPTED;
 
             // Update database
@@ -535,21 +710,7 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
                 app.id);
 
             // Update listing role counts
-            if (app.role == GF_ROLE_TANK && listingIt->second.needTank > 0)
-            {
-                listingIt->second.currentTank++;
-                listingIt->second.needTank--;
-            }
-            else if (app.role == GF_ROLE_HEALER && listingIt->second.needHealer > 0)
-            {
-                listingIt->second.currentHealer++;
-                listingIt->second.needHealer--;
-            }
-            else if (listingIt->second.needDps > 0)
-            {
-                listingIt->second.currentDps++;
-                listingIt->second.needDps--;
-            }
+            ApplyAcceptedRole(listingIt->second, acceptedRole);
 
             // Update database
             CharacterDatabase.Execute(
@@ -562,9 +723,7 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
             NotifyApplicationStatus(applicantGuid, listingId, GF_APP_ACCEPTED, "Your application was accepted!");
 
             // Invite to group
-            Map* applicantMap = app.playerMapId ? sMapMgr->FindMap(app.playerMapId, app.playerInstanceId) : nullptr;
-            if (applicantMap)
-                if (Player* applicant = ObjectAccessor::GetPlayer(applicantMap, ObjectGuid::Create<HighGuid::Player>(applicantGuid)))
+            if (Player* applicant = FindConnectedPlayerByGuidLow(applicantGuid))
             {
                 if (Group* group = leader->GetGroup())
                 {
@@ -642,6 +801,49 @@ bool GroupFinderMgr::DeclineApplication(Player* leader, uint32 listingId, uint32
     return false;
 }
 
+bool GroupFinderMgr::CancelApplication(Player* player, uint32 listingId)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    uint32 playerGuid = player->GetGUID().GetCounter();
+    auto appsIt = _applications.find(listingId);
+    if (appsIt == _applications.end())
+        return false;
+
+    auto& apps = appsIt->second;
+    for (auto appIt = apps.begin(); appIt != apps.end(); ++appIt)
+    {
+        if (appIt->playerGuid != playerGuid || appIt->status != GF_APP_PENDING)
+            continue;
+
+        CharacterDatabase.Execute(
+            "UPDATE dc_group_finder_applications SET status = 3 WHERE id = {}",
+            appIt->id);
+
+        if (auto listingIt = _listings.find(listingId); listingIt != _listings.end())
+        {
+            if (Player* leader = FindConnectedPlayerByGuidLow(
+                    listingIt->second.leaderGuid))
+            {
+                JsonMessage(Module::GROUP_FINDER,
+                    Opcode::GroupFinder::SMSG_GROUP_UPDATED)
+                    .Set("action", "application_cancelled")
+                    .Set("listingId", static_cast<int32>(listingId))
+                    .Set("playerGuid", static_cast<int32>(playerGuid))
+                    .Send(leader);
+            }
+        }
+
+        apps.erase(appIt);
+        if (apps.empty())
+            _applications.erase(appsIt);
+
+        return true;
+    }
+
+    return false;
+}
+
 std::vector<GroupFinderApplication> GroupFinderMgr::GetApplicationsForListing(uint32 listingId)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -669,9 +871,7 @@ void GroupFinderMgr::NotifyGroupReady(uint32 listingId)
         return;
 
     // Notify leader
-    Map* leaderMap = it->second.leaderMapId ? sMapMgr->FindMap(it->second.leaderMapId, it->second.leaderInstanceId) : nullptr;
-    if (leaderMap)
-        if (Player* leader = ObjectAccessor::GetPlayer(leaderMap, ObjectGuid::Create<HighGuid::Player>(it->second.leaderGuid)))
+    if (Player* leader = FindConnectedPlayerByGuidLow(it->second.leaderGuid))
     {
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
             .Set("action", "ready")
@@ -680,9 +880,38 @@ void GroupFinderMgr::NotifyGroupReady(uint32 listingId)
             .Send(leader);
     }
 
+    auto appsIt = _applications.find(listingId);
+    if (appsIt != _applications.end())
+    {
+        for (GroupFinderApplication const& app : appsIt->second)
+        {
+            if (app.status == GF_APP_PENDING)
+            {
+                NotifyApplicationStatus(
+                    app.playerGuid,
+                    listingId,
+                    GF_APP_CANCELLED,
+                    "The group is now full.");
+            }
+        }
+    }
+
     // Auto-delist since group is complete
-    it->second.active = false;
+    CharacterDatabase.Execute(
+        "UPDATE dc_group_finder_applications SET status = 3 WHERE listing_id = {} AND status = 0",
+        listingId);
     CharacterDatabase.Execute("UPDATE dc_group_finder_listings SET status = 0 WHERE id = {}", listingId);
+
+    auto playerListingsIt = _playerListings.find(it->second.leaderGuid);
+    if (playerListingsIt != _playerListings.end())
+    {
+        playerListingsIt->second.erase(listingId);
+        if (playerListingsIt->second.empty())
+            _playerListings.erase(playerListingsIt);
+    }
+
+    _applications.erase(listingId);
+    _listings.erase(it);
 }
 
 // ========================================================================
@@ -877,28 +1106,32 @@ void GroupFinderMgr::NotifyNewListing(const GroupFinderListing& listing)
 {
     // Future: Could broadcast to players who have matching search criteria
     // For now, just log
+    std::string listingType = "Other";
+    switch (listing.listingType)
+    {
+        case GF_LISTING_MYTHIC_PLUS:
+            listingType = "M+";
+            break;
+        case GF_LISTING_RAID:
+            listingType = "Raid";
+            break;
+        case GF_LISTING_PVP:
+            listingType = "PvP";
+            break;
+        case GF_LISTING_QUEST:
+            listingType = "Quest";
+            break;
+        default:
+            break;
+    }
+
     LOG_DEBUG("dc.groupfinder", "New listing created: {} {} +{}",
-        listing.dungeonName, listing.listingType == GF_LISTING_MYTHIC_PLUS ? "M+" : "Raid", listing.keystoneLevel);
+        listing.dungeonName, listingType, listing.keystoneLevel);
 }
 
 void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId, uint8 status, const std::string& message)
 {
-    Map* playerMap = nullptr;
-    auto appsIt = _applications.find(listingId);
-    if (appsIt != _applications.end())
-    {
-        for (auto const& app : appsIt->second)
-        {
-            if (app.playerGuid == playerGuid)
-            {
-                playerMap = app.playerMapId ? sMapMgr->FindMap(app.playerMapId, app.playerInstanceId) : nullptr;
-                break;
-            }
-        }
-    }
-
-    if (playerMap)
-        if (Player* player = ObjectAccessor::GetPlayer(playerMap, ObjectGuid::Create<HighGuid::Player>(playerGuid)))
+    if (Player* player = FindConnectedPlayerByGuidLow(playerGuid))
     {
         std::string statusStr;
         switch (status)
@@ -921,32 +1154,14 @@ void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId
 
 void GroupFinderMgr::NotifyNewApplication(uint32 leaderGuid, const GroupFinderApplication& app)
 {
-    Map* leaderMap = nullptr;
-    for (auto const& [id, listing] : _listings)
+    if (Player* leader = FindConnectedPlayerByGuidLow(leaderGuid))
     {
-        if (listing.leaderGuid == leaderGuid)
-        {
-            leaderMap = listing.leaderMapId ? sMapMgr->FindMap(listing.leaderMapId, listing.leaderInstanceId) : nullptr;
-            break;
-        }
-    }
-
-    if (leaderMap)
-        if (Player* leader = ObjectAccessor::GetPlayer(leaderMap, ObjectGuid::Create<HighGuid::Player>(leaderGuid)))
-    {
-        std::string roleStr;
-        switch (app.role)
-        {
-            case GF_ROLE_TANK: roleStr = "tank"; break;
-            case GF_ROLE_HEALER: roleStr = "healer"; break;
-            default: roleStr = "dps"; break;
-        }
-
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_NEW_APPLICATION)
+            .Set("applicationId", static_cast<int32>(app.id))
             .Set("listingId", static_cast<int32>(app.listingId))
             .Set("playerGuid", static_cast<int32>(app.playerGuid))
             .Set("playerName", app.playerName)
-            .Set("role", roleStr)
+            .Set("role", RoleMaskToString(app.role))
             .Set("playerClass", static_cast<int32>(app.playerClass))
             .Set("playerLevel", static_cast<int32>(app.playerLevel))
             .Set("playerIlvl", static_cast<int32>(app.playerIlvl))
@@ -968,38 +1183,135 @@ void GroupFinderMgr::CleanupPlayerData(uint32 playerGuid)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
-    // Remove player's listings
+    // Delist the player's active listings and notify pending applicants.
     auto listingIt = _playerListings.find(playerGuid);
     if (listingIt != _playerListings.end())
     {
         for (uint32 listingId : listingIt->second)
         {
+            auto currentListingIt = _listings.find(listingId);
+            if (currentListingIt == _listings.end())
+                continue;
+
+            auto appsIt = _applications.find(listingId);
+            if (appsIt != _applications.end())
+            {
+                for (GroupFinderApplication const& app : appsIt->second)
+                {
+                    if (app.status == GF_APP_PENDING)
+                    {
+                        NotifyApplicationStatus(
+                            app.playerGuid,
+                            listingId,
+                            GF_APP_CANCELLED,
+                            "The listing was removed because the leader logged out.");
+                    }
+                }
+            }
+
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_listings SET status = 0 WHERE id = {}",
+                listingId);
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_applications SET status = 3 WHERE listing_id = {} AND status = 0",
+                listingId);
+
             _applications.erase(listingId);
-            _listings.erase(listingId);
+            _listings.erase(currentListingIt);
         }
         _playerListings.erase(listingIt);
     }
 
-    // Remove player's pending applications from all listings
-    for (auto& [listingId, apps] : _applications)
+    // Cancel the player's pending applications and update leader queues.
+    for (auto appsIt = _applications.begin(); appsIt != _applications.end();)
     {
+        uint32 listingId = appsIt->first;
+        auto& apps = appsIt->second;
+
+        bool removedAny = false;
         apps.erase(
             std::remove_if(apps.begin(), apps.end(),
-                [playerGuid](const GroupFinderApplication& app) {
-                    return app.playerGuid == playerGuid && app.status == GF_APP_PENDING;
+                [&](GroupFinderApplication const& app)
+                {
+                    if (app.playerGuid != playerGuid || app.status != GF_APP_PENDING)
+                        return false;
+
+                    CharacterDatabase.Execute(
+                        "UPDATE dc_group_finder_applications SET status = 3 WHERE id = {}",
+                        app.id);
+                    removedAny = true;
+                    return true;
                 }),
             apps.end());
+
+        if (removedAny)
+        {
+            if (auto currentListingIt = _listings.find(listingId);
+                currentListingIt != _listings.end())
+            {
+                if (Player* leader = FindConnectedPlayerByGuidLow(
+                        currentListingIt->second.leaderGuid))
+                {
+                    JsonMessage(Module::GROUP_FINDER,
+                        Opcode::GroupFinder::SMSG_GROUP_UPDATED)
+                        .Set("action", "application_cancelled")
+                        .Set("listingId", static_cast<int32>(listingId))
+                        .Set("playerGuid", static_cast<int32>(playerGuid))
+                        .Send(leader);
+                }
+            }
+        }
+
+        if (apps.empty())
+            appsIt = _applications.erase(appsIt);
+        else
+            ++appsIt;
     }
 
-    // Remove player's event signups
+    // Cancel the player's event signups and rebalance signup counts.
     for (auto& [eventId, signups] : _eventSignups)
     {
+        uint32 removedCount = 0;
+
         signups.erase(
             std::remove_if(signups.begin(), signups.end(),
-                [playerGuid](const EventSignup& signup) {
-                    return signup.playerGuid == playerGuid;
+                [&](EventSignup const& signup)
+                {
+                    if (signup.playerGuid != playerGuid)
+                        return false;
+
+                    CharacterDatabase.Execute(
+                        "UPDATE dc_group_finder_event_signups SET status = 3 WHERE id = {}",
+                        signup.id);
+                    ++removedCount;
+                    return true;
                 }),
             signups.end());
+
+        if (removedCount == 0)
+            continue;
+
+        auto eventIt = _events.find(eventId);
+        if (eventIt == _events.end())
+            continue;
+
+        eventIt->second.currentSignups =
+            eventIt->second.currentSignups > removedCount
+                ? eventIt->second.currentSignups - removedCount
+                : 0;
+
+        CharacterDatabase.Execute(
+            "UPDATE dc_group_finder_scheduled_events SET current_signups = {}, status = CASE WHEN status = {} THEN {} ELSE status END WHERE id = {}",
+            eventIt->second.currentSignups,
+            static_cast<uint8>(GF_EVENT_FULL),
+            static_cast<uint8>(GF_EVENT_OPEN),
+            eventId);
+
+        if (eventIt->second.status == GF_EVENT_FULL &&
+            eventIt->second.currentSignups < eventIt->second.maxSignups)
+        {
+            eventIt->second.status = GF_EVENT_OPEN;
+        }
     }
 }
 

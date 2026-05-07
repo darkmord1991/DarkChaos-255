@@ -6,6 +6,7 @@
 -- ============================================================
 
 local addon = DCQOS
+local questTrackingUtils = type(addon.GetQuestTrackingUtils) == "function" and addon:GetQuestTrackingUtils() or nil
 
 -- ============================================================
 -- Module Configuration
@@ -915,16 +916,7 @@ local function SaveStandaloneWorldMapPlacement()
     worldMapState.standalonePoint = CapturePoint(WorldMapFrame)
 end
 
-local function ParseQuestIdFromLink(link)
-    if type(link) ~= "string" then
-        return nil
-    end
-
-    local questId = tonumber(link:match("|Hquest:(%d+):"))
-    if questId and questId > 0 then
-        return questId
-    end
-
+local ParseQuestIdFromLink = questTrackingUtils and questTrackingUtils.ParseQuestIdFromLink or function()
     return nil
 end
 
@@ -942,6 +934,9 @@ local function FindQuestLogIndexByQuestId(questId)
         local _, _, _, _, isHeader, _, _, _, questIdFromApi = GetQuestLogTitle(i)
         if not isHeader then
             local rowQuestId = tonumber(questIdFromApi)
+            if not rowQuestId or rowQuestId <= 0 then
+                rowQuestId = questTrackingUtils and questTrackingUtils.GetQuestIdFromLogIndex and questTrackingUtils.GetQuestIdFromLogIndex(i) or nil
+            end
             if (not rowQuestId or rowQuestId <= 0) and type(GetQuestLink) == "function" then
                 rowQuestId = ParseQuestIdFromLink(GetQuestLink(i))
             end
@@ -1099,26 +1094,6 @@ local function ResolveQuestLogIndexFromQuestFrame(questFrame)
                 local resolvedQuestLogIndex = ResolveQuestLogIndexFromOrdinal(suffixNumber)
                 if IsValidQuestLogIndex(resolvedQuestLogIndex) then
                     return resolvedQuestLogIndex
-                end
-            end
-        end
-
-        if type(current.GetRegions) == "function" then
-            local regions = { current:GetRegions() }
-            for i = 1, #regions do
-                local region = regions[i]
-                if region
-                    and type(region.GetObjectType) == "function"
-                    and region:GetObjectType() == "FontString"
-                    and type(region.GetText) == "function" then
-                    local text = region:GetText()
-                    local numberText = tonumber(text)
-                    if numberText and numberText > 0 then
-                        local resolvedQuestLogIndex = ResolveQuestLogIndexFromOrdinal(numberText)
-                        if IsValidQuestLogIndex(resolvedQuestLogIndex) then
-                            return resolvedQuestLogIndex
-                        end
-                    end
                 end
             end
         end
@@ -1610,11 +1585,12 @@ local function SetupQuestLevelText()
     if questLevelHookRegistered then return end
     questLevelHookRegistered = true
 
+    local ResolveQuestIdForQuestLogIndex
+
     local function BuildQuestTrackerLookup()
         local questLookupByIndex = {}
-        local questLookupByTitle = {}
         if type(GetNumQuestLogEntries) ~= "function" or type(GetQuestLogTitle) ~= "function" then
-            return questLookupByIndex, questLookupByTitle
+            return questLookupByIndex
         end
 
         local currentArea
@@ -1622,7 +1598,7 @@ local function SetupQuestLevelText()
         local areaQuestOrder = 0
         local numEntries = GetNumQuestLogEntries() or 0
         for questIndex = 1, numEntries do
-            local title, level, _, _, isHeader = GetQuestLogTitle(questIndex)
+            local title, level, _, _, isHeader, _, isComplete = GetQuestLogTitle(questIndex)
             if title then
                 if isHeader then
                     currentArea = title
@@ -1637,16 +1613,15 @@ local function SetupQuestLevelText()
                         areaOrder = areaOrder > 0 and areaOrder or questIndex,
                         areaQuestOrder = areaQuestOrder,
                         questLogIndex = questIndex,
+                        questId = ResolveQuestIdForQuestLogIndex(questIndex),
+                        isComplete = isComplete,
                     }
                     questLookupByIndex[questIndex] = info
-                    if info.level then
-                        questLookupByTitle[title] = info
-                    end
                 end
             end
         end
 
-        return questLookupByIndex, questLookupByTitle
+        return questLookupByIndex
     end
 
     local function StripQuestLevelPrefix(text)
@@ -1656,16 +1631,221 @@ local function SetupQuestLevelText()
         return (text:gsub("^%[%d+%]%s*", ""))
     end
 
-    local function ApplyQuestLevelsToWatchFrame()
+    ResolveQuestIdForQuestLogIndex = questTrackingUtils and questTrackingUtils.GetQuestIdFromLogIndex or function()
+        return nil
+    end
+    local GetSuperTrackedQuestId = questTrackingUtils and questTrackingUtils.GetSuperTrackedQuestId or function()
+        return nil
+    end
+
+    local function TrimTrackerText(text)
+        if type(text) ~= "string" then
+            return nil
+        end
+
+        text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+        text = text:gsub("|r", "")
+        text = text:gsub("^%s+", "")
+        text = text:gsub("%s+$", "")
+        return text
+    end
+
+    local function GetTrackerRouteText(info, isTracked, mapId)
+        if not isTracked or not info or not info.questId then
+            return nil
+        end
+
+        if not questTrackingUtils or type(questTrackingUtils.GetNextWaypointForMap) ~= "function" then
+            return nil
+        end
+
+        mapId = tonumber(mapId) or (questTrackingUtils.GetCurrentMapId and questTrackingUtils.GetCurrentMapId()) or nil
+        if not mapId or mapId <= 0 then
+            return nil
+        end
+
+        local _, _, waypointText = questTrackingUtils.GetNextWaypointForMap(mapId)
+
+        waypointText = TrimTrackerText(waypointText)
+        if not waypointText or waypointText == "" or waypointText == info.title then
+            return nil
+        end
+
+        if string.len(waypointText) > 72 then
+            waypointText = string.sub(waypointText, 1, 69) .. "..."
+        end
+
+        return waypointText
+    end
+
+    local function CollectVisibleWatchFontStrings(frame, depth, output)
+        if not frame or depth > 3 then
+            return
+        end
+
+        if type(frame.GetRegions) == "function" then
+            local regions = { frame:GetRegions() }
+            for i = 1, #regions do
+                local region = regions[i]
+                if region
+                    and type(region.GetObjectType) == "function"
+                    and region:GetObjectType() == "FontString"
+                    and type(region.GetText) == "function" then
+                    table.insert(output, region)
+                end
+            end
+        end
+
+        if type(frame.GetChildren) == "function" then
+            local children = { frame:GetChildren() }
+            for i = 1, #children do
+                CollectVisibleWatchFontStrings(children[i], depth + 1, output)
+            end
+        end
+    end
+
+    local function GetWatchRootStructureSignature(root)
+        if not root then
+            return 0, 0
+        end
+
+        local regionCount = type(root.GetRegions) == "function" and select("#", root:GetRegions()) or 0
+        local childCount = type(root.GetChildren) == "function" and select("#", root:GetChildren()) or 0
+        return regionCount, childCount
+    end
+
+    local function BuildWatchFontStringCache(root)
+        local fonts = {}
+        CollectVisibleWatchFontStrings(root, 0, fonts)
+
+        local regionCount, childCount = GetWatchRootStructureSignature(root)
+        root.__dcqosWatchFontStringCache = fonts
+        root.__dcqosWatchFontRegionCount = regionCount
+        root.__dcqosWatchFontChildCount = childCount
+        return fonts
+    end
+
+    local function GetCachedWatchFontStrings(root)
+        if not root then
+            return {}
+        end
+
+        local regionCount, childCount = GetWatchRootStructureSignature(root)
+        if type(root.__dcqosWatchFontStringCache) ~= "table"
+            or root.__dcqosWatchFontRegionCount ~= regionCount
+            or root.__dcqosWatchFontChildCount ~= childCount then
+            return BuildWatchFontStringCache(root)
+        end
+
+        return root.__dcqosWatchFontStringCache
+    end
+
+    local function ResolveWatchLineFonts(root, info)
+        local fonts = GetCachedWatchFontStrings(root)
+        local objectiveFonts = {}
+        local titleFont = nil
+
+        for i = 1, #fonts do
+            local fontString = fonts[i]
+            if fontString ~= root.__dcqosAreaHeader
+                and not fontString.__dcqosTrackerMeta
+                and (fontString.IsShown == nil or fontString:IsShown()) then
+                local text = TrimTrackerText(fontString:GetText())
+                if text and text ~= "" then
+                    local baseText = StripQuestLevelPrefix(text)
+                    if not titleFont and info and info.title and baseText == info.title then
+                        titleFont = fontString
+                    else
+                        table.insert(objectiveFonts, fontString)
+                    end
+                end
+            end
+        end
+
+        if not titleFont and #objectiveFonts > 0 then
+            titleFont = table.remove(objectiveFonts, 1)
+        end
+
+        table.sort(objectiveFonts, function(a, b)
+            local aTop = (type(a.GetTop) == "function" and a:GetTop()) or 0
+            local bTop = (type(b.GetTop) == "function" and b:GetTop()) or 0
+            if aTop ~= bTop then
+                return aTop > bTop
+            end
+
+            return tostring(a) < tostring(b)
+        end)
+
+        return titleFont, objectiveFonts
+    end
+
+    local function ApplyQuestTrackerStyling(root, info, superTrackedQuestId, mapId, showQuestLevels)
+        root.__dcqosWatchQuestExtraSpacing = 4
+
+        local markers = addon and addon.QuestTrackerMarkers
+        if type(markers) ~= "table" or type(markers.UpdateWatchFrameQuestChrome) ~= "function" then
+            return
+        end
+
+        local titleFont, objectiveFonts = ResolveWatchLineFonts(root, info)
+        local questId = info and info.questId or nil
+        local isTracked = questId and superTrackedQuestId and questId == superTrackedQuestId or false
+        local isComplete = info and (info.isComplete == true or info.isComplete == 1) or false
+
+        if titleFont and info and type(info.title) == "string"
+            and type(titleFont.GetText) == "function"
+            and type(titleFont.SetText) == "function" then
+            local titleText = info.title
+            if showQuestLevels and info.level then
+                titleText = string.format("[%d] %s", info.level, info.title)
+            end
+
+            if titleFont:GetText() ~= titleText then
+                titleFont:SetText(titleText)
+            end
+        end
+
+        markers.UpdateWatchFrameQuestChrome(root, {
+            titleFont = titleFont,
+            objectiveFonts = objectiveFonts,
+            isTracked = isTracked,
+            isWatched = true,
+            isComplete = isComplete,
+            isHover = type(root.IsMouseOver) == "function" and root:IsMouseOver() or false,
+            routeText = GetTrackerRouteText(info, isTracked, mapId),
+        })
+    end
+
+    local ApplyQuestLevelsToWatchFrame
+    local watchFrameStyleRefreshScheduled = false
+
+    local function RequestWatchFrameStyleRefresh()
+        if watchFrameStyleRefreshScheduled then
+            return
+        end
+
+        if not addon or type(addon.DelayedCall) ~= "function" then
+            ApplyQuestLevelsToWatchFrame()
+            return
+        end
+
+        watchFrameStyleRefreshScheduled = true
+        addon:DelayedCall(0, function()
+            watchFrameStyleRefreshScheduled = false
+            ApplyQuestLevelsToWatchFrame()
+        end)
+    end
+
+    ApplyQuestLevelsToWatchFrame = function()
         local settings = addon.settings and addon.settings.interface
-        if not settings or not settings.enabled or not settings.questLevelText then
+        if not settings or not settings.enabled then
             return
         end
         if not WatchFrame then
             return
         end
 
-        local questLookupByIndex, questLookupByTitle = BuildQuestTrackerLookup()
+        local questLookupByIndex = BuildQuestTrackerLookup()
         if not next(questLookupByIndex) then
             return
         end
@@ -1742,6 +1922,9 @@ local function SetupQuestLevelText()
                 return
             end
 
+            local superTrackedQuestId = tonumber(GetSuperTrackedQuestId()) or nil
+            local mapId = questTrackingUtils and questTrackingUtils.GetCurrentMapId and questTrackingUtils.GetCurrentMapId() or nil
+
             table.sort(entries, function(a, b)
                 local aAreaOrder = (a.info and a.info.areaOrder) or math.huge
                 local bAreaOrder = (b.info and b.info.areaOrder) or math.huge
@@ -1778,7 +1961,8 @@ local function SetupQuestLevelText()
 
                 root:ClearAllPoints()
                 if previousRoot then
-                    local yOffset = showHeader and -16 or -4
+                    local extraSpacing = tonumber(previousRoot.__dcqosWatchQuestExtraSpacing) or 0
+                    local yOffset = (showHeader and -16 or -4) - extraSpacing
                     root:SetPoint("TOPLEFT", previousRoot, "BOTTOMLEFT", 0, yOffset)
                 else
                     local firstYOffset = showHeader and -12 or 0
@@ -1791,50 +1975,12 @@ local function SetupQuestLevelText()
                     )
                 end
 
+                ApplyQuestTrackerStyling(root, info, superTrackedQuestId, mapId, settings.questLevelText)
+
                 previousRoot = root
                 previousAreaName = info and info.areaName or previousAreaName
             end
         end
-
-        local function UpdateFrameText(frame, depth)
-            if not frame or depth > 3 then
-                return
-            end
-
-            if type(frame.GetRegions) == "function" then
-                local regions = { frame:GetRegions() }
-                for i = 1, #regions do
-                    local region = regions[i]
-                    if region
-                        and type(region.GetObjectType) == "function"
-                        and region:GetObjectType() == "FontString"
-                        and type(region.GetText) == "function"
-                        and type(region.SetText) == "function" then
-                        local text = region:GetText()
-                        if type(text) == "string" and text ~= "" then
-                            local baseTitle = StripQuestLevelPrefix(text)
-                            local questInfo = questLookupByTitle[baseTitle]
-                            local level = questInfo and questInfo.level or nil
-                            if level then
-                                local withLevel = string.format("[%d] %s", level, baseTitle)
-                                if text ~= withLevel then
-                                    region:SetText(withLevel)
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-
-            if type(frame.GetChildren) == "function" then
-                local children = { frame:GetChildren() }
-                for i = 1, #children do
-                    UpdateFrameText(children[i], depth + 1)
-                end
-            end
-        end
-
-        UpdateFrameText(WatchFrame, 0)
         ApplyWatchFrameGrouping()
     end
 
@@ -1850,22 +1996,30 @@ local function SetupQuestLevelText()
             local questLogTitle = _G["QuestLogTitle" .. i]
             if questLogTitle then
                 local questIndex = questLogTitle:GetID()
-                local title, level, tag, suggestedGroup, isHeader, isCollapsed, isComplete = GetQuestLogTitle(questIndex)
+                local title, level, _, _, isHeader = GetQuestLogTitle(questIndex)
 
                 if title and not isHeader then
-                    local newTitle = string.format("[%d] %s", level, title)
-                    questLogTitle:SetText(newTitle)
-                    questLogTitle:SetNormalFontObject("GameFontNormal")
+                    local baseTitle = StripQuestLevelPrefix(title)
+                    local displayTitle = baseTitle
+                    if type(level) == "number" and level > 0 then
+                        displayTitle = string.format("[%d] %s", level, baseTitle)
+                    end
+
+                    if type(questLogTitle.GetText) == "function"
+                        and type(questLogTitle.SetText) == "function"
+                        and questLogTitle:GetText() ~= displayTitle then
+                        questLogTitle:SetText(displayTitle)
+                    end
                 end
             end
         end
     end)
 
     if type(WatchFrame_Update) == "function" then
-        hooksecurefunc("WatchFrame_Update", ApplyQuestLevelsToWatchFrame)
+        hooksecurefunc("WatchFrame_Update", RequestWatchFrameStyleRefresh)
     end
     if type(QuestWatch_Update) == "function" then
-        hooksecurefunc("QuestWatch_Update", ApplyQuestLevelsToWatchFrame)
+        hooksecurefunc("QuestWatch_Update", RequestWatchFrameStyleRefresh)
     end
 end
 

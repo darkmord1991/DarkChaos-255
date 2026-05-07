@@ -89,6 +89,46 @@ namespace DCPerfTest
         return out.str();
     }
 
+    static void ClearTimingStats(TimingResult& result)
+    {
+        result.totalUs = 0;
+        result.avgUs = 0;
+        result.minUs = 0;
+        result.maxUs = 0;
+        result.p95Us = 0;
+        result.p99Us = 0;
+    }
+
+    static void FinalizeTimingSamples(TimingResult& result, std::vector<uint64>& times)
+    {
+        if (times.empty())
+        {
+            ClearTimingStats(result);
+            result.iterations = 0;
+            return;
+        }
+
+        std::sort(times.begin(), times.end());
+        result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
+
+        uint32 divisor = result.iterations ? result.iterations : static_cast<uint32>(times.size());
+        result.avgUs = divisor ? result.totalUs / divisor : 0;
+        result.minUs = times.front();
+        result.maxUs = times.back();
+        result.p95Us = GetPercentile(times, 95.0f);
+        result.p99Us = GetPercentile(times, 99.0f);
+    }
+
+    static TimingResult MakeSkippedTimingResult(std::string const& testName, std::string const& reason)
+    {
+        TimingResult result;
+        result.testName = testName + " [SKIPPED: " + reason + "]";
+        result.iterations = 0;
+        result.success = true;
+        ClearTimingStats(result);
+        return result;
+    }
+
     static std::string JsonEscape(std::string const& in)
     {
         std::string out;
@@ -1458,12 +1498,540 @@ namespace DCPerfTest
         return result;
     }
 
+    struct AddonStressAvailability
+    {
+        bool hasProtocolCaps = false;
+        bool hasProtocolStats = false;
+        bool hasProtocolErrors = false;
+        bool hasProtocolLog = false;
+        bool hasQosSettings = false;
+        bool hasHotspots = false;
+        bool hasWelcomeFaq = false;
+        bool hasWelcomeWhatsNew = false;
+        bool hasMplusRating = false;
+        bool hasPrestige = false;
+        bool hasMplusScores = false;
+        bool hasMplusRuns = false;
+        bool hasGroupFinderListings = false;
+        bool hasGroupFinderEvents = false;
+        bool hasGroupFinderSignups = false;
+        bool hasMplusKeys = false;
+        bool hasMplusBestRuns = false;
+        bool hasMplusDungeons = false;
+        bool hasWardrobeOutfits = false;
+        bool hasHLBGSeasonal = false;
+        bool hasHLBGAllTime = false;
+        char const* transmogCollectionTable = nullptr;
+
+        bool HasProtocolSurface() const
+        {
+            return hasProtocolCaps || hasProtocolStats || hasProtocolErrors || hasProtocolLog;
+        }
+
+        bool HasWelcomeSurface() const
+        {
+            return hasWelcomeFaq || hasWelcomeWhatsNew || hasMplusRating || hasPrestige
+                || hasMplusScores || hasMplusRuns;
+        }
+
+        bool HasGroupFinderSurface() const
+        {
+            return hasGroupFinderListings || hasGroupFinderEvents || hasGroupFinderSignups;
+        }
+
+        bool HasMythicPlusSurface() const
+        {
+            return hasMplusKeys || hasMplusBestRuns || hasMplusDungeons;
+        }
+
+        bool HasWardrobeSurface() const
+        {
+            return hasWardrobeOutfits || transmogCollectionTable != nullptr;
+        }
+
+        bool HasHLBGSurface() const
+        {
+            return hasHLBGSeasonal || hasHLBGAllTime;
+        }
+
+        bool HasAnySurface() const
+        {
+            return HasProtocolSurface() || hasQosSettings || hasHotspots || HasWelcomeSurface()
+                || HasGroupFinderSurface() || HasMythicPlusSurface()
+                || HasWardrobeSurface() || HasHLBGSurface();
+        }
+    };
+
+    enum class AddonSurface : uint8
+    {
+        Protocol,
+        QoS,
+        World,
+        Welcome,
+        GroupFinder,
+        MythicPlus,
+        Wardrobe,
+        HLBG,
+    };
+
+    static AddonStressAvailability DetectAddonStressAvailability()
+    {
+        AddonStressAvailability availability;
+
+        availability.hasProtocolCaps = CharacterTableExists("dc_addon_client_caps");
+        availability.hasProtocolStats = CharacterTableExists("dc_addon_protocol_stats");
+        availability.hasProtocolErrors = CharacterTableExists("dc_addon_protocol_errors");
+        availability.hasProtocolLog = CharacterTableExists("dc_addon_protocol_log");
+        availability.hasQosSettings = CharacterTableExists("dc_player_qos_settings");
+        availability.hasHotspots = WorldTableExists("dc_hotspots_active");
+        availability.hasWelcomeFaq = WorldTableExists("dc_welcome_faq");
+        availability.hasWelcomeWhatsNew = WorldTableExists("dc_welcome_whats_new");
+        availability.hasMplusRating = CharacterTableExists("dc_mplus_player_ratings");
+        availability.hasPrestige = CharacterTableExists("dc_character_prestige");
+        availability.hasMplusScores = CharacterTableExists("dc_mplus_scores");
+        availability.hasMplusRuns = CharacterTableExists("dc_mplus_runs");
+        availability.hasGroupFinderListings = CharacterTableExists("dc_group_finder_listings");
+        availability.hasGroupFinderEvents = CharacterTableExists("dc_group_finder_scheduled_events");
+        availability.hasGroupFinderSignups = CharacterTableExists("dc_group_finder_event_signups");
+        availability.hasMplusKeys = CharacterTableExists("dc_mplus_keystones");
+        availability.hasMplusBestRuns = CharacterTableExists("dc_mplus_best_runs");
+        availability.hasMplusDungeons = WorldTableExists("dc_mplus_dungeons");
+        availability.hasWardrobeOutfits = CharacterTableExists("dc_collection_community_outfits");
+        availability.hasHLBGSeasonal = CharacterTableExists("v_hlbg_player_seasonal_stats");
+        availability.hasHLBGAllTime = CharacterTableExists("v_hlbg_player_alltime_stats");
+
+        if (CharacterTableExists("dc_transmog_collection"))
+            availability.transmogCollectionTable = "dc_transmog_collection";
+        else if (CharacterTableExists("dc_collection_transmog"))
+            availability.transmogCollectionTable = "dc_collection_transmog";
+
+        return availability;
+    }
+
+    static bool ExecuteAddonSurfaceQuery(AddonStressAvailability const& availability,
+        AddonSurface surface, uint32 fakeGuid, uint32 fakeAccount, uint32 seed)
+    {
+        switch (surface)
+        {
+            case AddonSurface::Protocol:
+            {
+                if (availability.hasProtocolCaps
+                    && ((seed % 4) == 0 || (!availability.hasProtocolStats && !availability.hasProtocolErrors && !availability.hasProtocolLog)))
+                {
+                    CharacterDatabase.Query(
+                        "SELECT account_id, version_string, capabilities, negotiated_caps "
+                        "FROM dc_addon_client_caps ORDER BY last_seen DESC LIMIT 50");
+                    return true;
+                }
+
+                if (availability.hasProtocolStats
+                    && ((seed % 4) == 1 || (!availability.hasProtocolErrors && !availability.hasProtocolLog)))
+                {
+                    CharacterDatabase.Query(
+                        "SELECT guid, module, total_requests, total_responses, avg_response_time_ms, max_response_time_ms "
+                        "FROM dc_addon_protocol_stats ORDER BY last_request DESC LIMIT 50");
+                    return true;
+                }
+
+                if (availability.hasProtocolErrors
+                    && ((seed % 4) == 2 || !availability.hasProtocolLog))
+                {
+                    CharacterDatabase.Query(
+                        "SELECT guid, module, opcode, event_type "
+                        "FROM dc_addon_protocol_errors ORDER BY id DESC LIMIT 25");
+                    return true;
+                }
+
+                if (availability.hasProtocolLog)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT guid, module, opcode, status "
+                        "FROM dc_addon_protocol_log ORDER BY id DESC LIMIT 25");
+                    return true;
+                }
+
+                return false;
+            }
+
+            case AddonSurface::QoS:
+            {
+                if (!availability.hasQosSettings)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT setting_key, setting_value FROM dc_player_qos_settings WHERE guid = {}",
+                    fakeGuid);
+                return true;
+            }
+
+            case AddonSurface::World:
+            {
+                if (!availability.hasHotspots)
+                    return false;
+
+                WorldDatabase.Query(
+                    "SELECT id, map_id, zone_id, x, y, z, (expire_time - UNIX_TIMESTAMP()) as dur "
+                    "FROM dc_hotspots_active WHERE expire_time > UNIX_TIMESTAMP()");
+                return true;
+            }
+
+            case AddonSurface::Welcome:
+            {
+                if (availability.hasWelcomeFaq
+                    && ((seed % 4) == 0 || (!availability.hasWelcomeWhatsNew && !availability.hasMplusScores && !availability.hasMplusRating && !availability.hasPrestige)))
+                {
+                    WorldDatabase.Query(
+                        "SELECT id, category, question, answer FROM dc_welcome_faq "
+                        "WHERE active = 1 ORDER BY category, priority DESC, id LIMIT 25");
+                    return true;
+                }
+
+                if (availability.hasWelcomeWhatsNew
+                    && ((seed % 4) == 1 || (!availability.hasMplusScores && !availability.hasMplusRating && !availability.hasPrestige)))
+                {
+                    WorldDatabase.Query(
+                        "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
+                        "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
+                        "ORDER BY priority DESC, id DESC LIMIT 10");
+                    return true;
+                }
+
+                if (availability.hasMplusScores)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
+                        "WHERE character_guid = {} AND season_id = {}",
+                        fakeGuid, 1u);
+                    if (availability.hasMplusRuns)
+                    {
+                        CharacterDatabase.Query(
+                            "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
+                            "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
+                            fakeGuid);
+                    }
+                    return true;
+                }
+
+                if (availability.hasMplusRating)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT rating FROM dc_mplus_player_ratings WHERE player_guid = {}",
+                        fakeGuid);
+                    return true;
+                }
+
+                if (availability.hasPrestige)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
+                        fakeGuid);
+                    return true;
+                }
+
+                if (availability.hasMplusRuns)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
+                        "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
+                        fakeGuid);
+                    return true;
+                }
+
+                return false;
+            }
+
+            case AddonSurface::GroupFinder:
+            {
+                if (availability.hasGroupFinderListings
+                    && ((seed % 3) == 0 || (!availability.hasGroupFinderEvents && !availability.hasGroupFinderSignups)))
+                {
+                    CharacterDatabase.Query(
+                        "SELECT l.id, l.leader_guid, l.dungeon_id, l.dungeon_name, l.keystone_level, l.min_ilvl "
+                        "FROM dc_group_finder_listings l "
+                        "LEFT JOIN characters c ON l.leader_guid = c.guid "
+                        "WHERE l.status = 1 "
+                        "ORDER BY l.keystone_level DESC, l.created_at DESC LIMIT 50");
+                    return true;
+                }
+
+                if (availability.hasGroupFinderEvents
+                    && ((seed % 3) == 1 || !availability.hasGroupFinderSignups))
+                {
+                    CharacterDatabase.Query(
+                        "SELECT e.id, e.leader_guid, e.dungeon_id, e.keystone_level, UNIX_TIMESTAMP(e.scheduled_time) "
+                        "FROM dc_group_finder_scheduled_events e "
+                        "LEFT JOIN characters c ON e.leader_guid = c.guid "
+                        "WHERE e.status IN (1, 2) AND e.scheduled_time > NOW() "
+                        "ORDER BY e.scheduled_time ASC LIMIT 50");
+                    return true;
+                }
+
+                if (availability.hasGroupFinderSignups && availability.hasGroupFinderEvents)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT s.id, s.event_id, s.role, s.status "
+                        "FROM dc_group_finder_event_signups s "
+                        "JOIN dc_group_finder_scheduled_events e ON s.event_id = e.id "
+                        "WHERE s.player_guid = {} AND s.status IN (0, 1) AND e.scheduled_time > NOW() "
+                        "ORDER BY e.scheduled_time ASC LIMIT 25",
+                        fakeGuid);
+                    return true;
+                }
+
+                return false;
+            }
+
+            case AddonSurface::MythicPlus:
+            {
+                bool executed = false;
+
+                if (availability.hasMplusKeys)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
+                        fakeGuid);
+                    executed = true;
+                }
+
+                if (availability.hasMplusBestRuns)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT * FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
+                        fakeGuid);
+                    executed = true;
+                }
+
+                if (availability.hasMplusDungeons)
+                {
+                    WorldDatabase.Query(
+                        "SELECT dungeon_id, dungeon_name FROM dc_mplus_dungeons ORDER BY dungeon_name LIMIT 25");
+                    executed = true;
+                }
+
+                return executed;
+            }
+
+            case AddonSurface::Wardrobe:
+            {
+                bool executed = false;
+
+                if (availability.hasWardrobeOutfits)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downvotes, o.downloads, o.views, o.tags "
+                        "FROM dc_collection_community_outfits o "
+                        "ORDER BY (o.upvotes - o.downvotes) DESC, o.downloads DESC LIMIT 25");
+                    executed = true;
+                }
+
+                if (availability.transmogCollectionTable)
+                {
+                    std::ostringstream sql;
+                    sql << "SELECT display_id FROM " << availability.transmogCollectionTable
+                        << " WHERE account_id = " << fakeAccount << " LIMIT 200";
+                    CharacterDatabase.Query(sql.str().c_str());
+                    executed = true;
+                }
+
+                return executed;
+            }
+
+            case AddonSurface::HLBG:
+            {
+                if (availability.hasHLBGSeasonal
+                    && ((seed % 2) == 0 || !availability.hasHLBGAllTime))
+                {
+                    CharacterDatabase.Query(
+                        "SELECT guid, player_name, current_rating, wins "
+                        "FROM v_hlbg_player_seasonal_stats "
+                        "WHERE season_id = {} ORDER BY current_rating DESC LIMIT 25",
+                        1u);
+                    return true;
+                }
+
+                if (availability.hasHLBGAllTime)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT guid, total_matches, lifetime_wins, lifetime_kills "
+                        "FROM v_hlbg_player_alltime_stats ORDER BY total_matches DESC LIMIT 25");
+                    return true;
+                }
+
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    TimingResult TestAddonExtensionSurfaceQueries(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "AddonExtension Surface Queries (" + std::to_string(iterations) + " calls)";
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        AddonStressAvailability availability = DetectAddonStressAvailability();
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(8);
+
+        if (availability.HasProtocolSurface())
+            surfaces.push_back(AddonSurface::Protocol);
+        if (availability.hasQosSettings)
+            surfaces.push_back(AddonSurface::QoS);
+        if (availability.hasHotspots)
+            surfaces.push_back(AddonSurface::World);
+        if (availability.HasWelcomeSurface())
+            surfaces.push_back(AddonSurface::Welcome);
+        if (availability.HasGroupFinderSurface())
+            surfaces.push_back(AddonSurface::GroupFinder);
+        if (availability.HasMythicPlusSurface())
+            surfaces.push_back(AddonSurface::MythicPlus);
+        if (availability.HasWardrobeSurface())
+            surfaces.push_back(AddonSurface::Wardrobe);
+        if (availability.HasHLBGSurface())
+            surfaces.push_back(AddonSurface::HLBG);
+
+        if (surfaces.empty())
+            return MakeSkippedTimingResult(result.testName, "no AddonExtension backing tables/views present");
+
+        std::vector<uint64> times;
+        times.reserve(iterations);
+
+        try
+        {
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                uint32 fakeGuid = 10000 + (i % 5000);
+                uint32 fakeAccount = 1000 + (i % 200);
+                AddonSurface surface = surfaces[i % surfaces.size()];
+
+                auto start = Clock::now();
+                bool executed = ExecuteAddonSurfaceQuery(availability, surface, fakeGuid, fakeAccount, i);
+                auto end = Clock::now();
+
+                if (executed)
+                    times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+            }
+
+            if (times.empty())
+                return MakeSkippedTimingResult(result.testName, "no executable AddonExtension surfaces detected");
+
+            result.iterations = static_cast<uint32>(times.size());
+            FinalizeTimingSamples(result, times);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonExtensionHeavySimulation(uint32 playerCount)
+    {
+        TimingResult result;
+        result.testName = "AddonExtension Heavy Call Simulation (" + std::to_string(playerCount) + " players)";
+        result.iterations = playerCount;
+        result.success = true;
+
+        if (playerCount == 0)
+        {
+            result.success = false;
+            result.error = "playerCount must be > 0";
+            return result;
+        }
+
+        AddonStressAvailability availability = DetectAddonStressAvailability();
+        if (!availability.HasAnySurface())
+            return MakeSkippedTimingResult(result.testName, "no AddonExtension backing tables/views present");
+
+        std::vector<AddonSurface> workload;
+        workload.reserve(8);
+        if (availability.hasQosSettings)
+            workload.push_back(AddonSurface::QoS);
+        if (availability.HasWelcomeSurface())
+            workload.push_back(AddonSurface::Welcome);
+        if (availability.hasHotspots)
+            workload.push_back(AddonSurface::World);
+        if (availability.HasMythicPlusSurface())
+            workload.push_back(AddonSurface::MythicPlus);
+        if (availability.HasGroupFinderSurface())
+            workload.push_back(AddonSurface::GroupFinder);
+        if (availability.HasWardrobeSurface())
+            workload.push_back(AddonSurface::Wardrobe);
+        if (availability.HasHLBGSurface())
+            workload.push_back(AddonSurface::HLBG);
+        if (availability.HasProtocolSurface())
+            workload.push_back(AddonSurface::Protocol);
+
+        if (workload.empty())
+            return MakeSkippedTimingResult(result.testName, "no executable AddonExtension workload available");
+
+        std::vector<uint64> times;
+        times.reserve(playerCount);
+
+        try
+        {
+            for (uint32 i = 0; i < playerCount; ++i)
+            {
+                uint32 fakeGuid = 10000 + ((i * 13) % 5000);
+                uint32 fakeAccount = 1000 + (i % 200);
+
+                auto start = Clock::now();
+                bool executedAny = false;
+
+                for (size_t j = 0; j < workload.size(); ++j)
+                {
+                    executedAny = ExecuteAddonSurfaceQuery(availability, workload[j], fakeGuid,
+                        fakeAccount, i + static_cast<uint32>(j)) || executedAny;
+                }
+
+                auto end = Clock::now();
+
+                if (executedAny)
+                    times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+            }
+
+            if (times.empty())
+                return MakeSkippedTimingResult(result.testName, "workload produced no executable queries");
+
+            result.iterations = static_cast<uint32>(times.size());
+            FinalizeTimingSamples(result, times);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
     TimingResult TestMassTransactionWrite(uint32 batchSize)
     {
         TimingResult result;
         result.testName = "Mass Transaction Write (" + std::to_string(batchSize) + " rows)";
         result.iterations = 1;
         result.success = true;
+
+        if (batchSize == 0)
+        {
+            result.success = false;
+            result.error = "batchSize must be > 0";
+            return result;
+        }
+
+        if (!CharacterTableExists("log_arena_memberstats"))
+            return MakeSkippedTimingResult(result.testName, "log_arena_memberstats missing");
 
         auto start = Clock::now();
 
@@ -1518,6 +2086,47 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(playerCount);
 
+        bool hasPrestige = CharacterTableExists("dc_character_prestige");
+        bool hasItemUpgrades = CharacterTableExists("dc_item_upgrades");
+        char const* keystoneTable = nullptr;
+        char const* keystoneGuidColumn = nullptr;
+        char const* keystoneSelectClause = nullptr;
+
+        char const* itemUpgradeOwnerColumn = nullptr;
+        if (hasItemUpgrades)
+        {
+            if (CharacterColumnExists("dc_item_upgrades", "player_guid"))
+                itemUpgradeOwnerColumn = "player_guid";
+            else if (CharacterColumnExists("dc_item_upgrades", "owner_guid"))
+                itemUpgradeOwnerColumn = "owner_guid";
+        }
+
+        char const* mountCollectionTable = nullptr;
+        char const* mountCollectionIdColumn = nullptr;
+        if (CharacterTableExists("dc_mount_collection"))
+        {
+            mountCollectionTable = "dc_mount_collection";
+            mountCollectionIdColumn = "spell_id";
+        }
+        else if (CharacterTableExists("dc_collection_mounts"))
+        {
+            mountCollectionTable = "dc_collection_mounts";
+            mountCollectionIdColumn = "entry_id";
+        }
+
+        if (CharacterTableExists("dc_mplus_keystones"))
+        {
+            keystoneTable = "dc_mplus_keystones";
+            keystoneGuidColumn = "character_guid";
+            keystoneSelectClause = "map_id, level";
+        }
+        else if (CharacterTableExists("dc_player_keystones"))
+        {
+            keystoneTable = "dc_player_keystones";
+            keystoneGuidColumn = "player_guid";
+            keystoneSelectClause = "current_keystone_level";
+        }
+
         try
         {
             // Simulate the queries that happen during player login for DC systems
@@ -1530,7 +2139,7 @@ namespace DCPerfTest
 
                 // Query 1: Prestige data
                 {
-                    if (CharacterTableExists("dc_character_prestige"))
+                    if (hasPrestige)
                     {
                         std::ostringstream sql;
                         sql << "SELECT prestige_level FROM dc_character_prestige WHERE guid = " << fakeGuid;
@@ -1540,53 +2149,33 @@ namespace DCPerfTest
 
                 // Query 2: Item upgrades for equipped items (simulated)
                 {
-                    if (CharacterTableExists("dc_item_upgrades"))
+                    if (itemUpgradeOwnerColumn)
                     {
-                        char const* ownerColumn = nullptr;
-                        if (CharacterColumnExists("dc_item_upgrades", "player_guid"))
-                            ownerColumn = "player_guid";
-                        else if (CharacterColumnExists("dc_item_upgrades", "owner_guid"))
-                            ownerColumn = "owner_guid";
-
-                        if (ownerColumn)
-                        {
-                            std::ostringstream sql;
-                            sql << "SELECT item_guid, tier_id, upgrade_level FROM dc_item_upgrades WHERE " << ownerColumn
-                                << " = " << fakeGuid << " LIMIT 20";
-                            CharacterDatabase.Query(sql.str().c_str());
-                        }
+                        std::ostringstream sql;
+                        sql << "SELECT item_guid, tier_id, upgrade_level FROM dc_item_upgrades WHERE "
+                            << itemUpgradeOwnerColumn << " = " << fakeGuid << " LIMIT 20";
+                        CharacterDatabase.Query(sql.str().c_str());
                     }
                 }
 
                 // Query 3: Collection sync (mounts)
                 {
-                    char const* table = nullptr;
-                    char const* idColumn = nullptr;
-                    if (CharacterTableExists("dc_mount_collection"))
-                    {
-                        table = "dc_mount_collection";
-                        idColumn = "spell_id";
-                    }
-                    else if (CharacterTableExists("dc_collection_mounts"))
-                    {
-                        table = "dc_collection_mounts";
-                        idColumn = "entry_id";
-                    }
-
-                    if (table && idColumn)
+                    if (mountCollectionTable && mountCollectionIdColumn)
                     {
                         std::ostringstream sql;
-                        sql << "SELECT " << idColumn << " FROM " << table << " WHERE account_id = " << fakeAccount;
+                        sql << "SELECT " << mountCollectionIdColumn << " FROM " << mountCollectionTable
+                            << " WHERE account_id = " << fakeAccount;
                         CharacterDatabase.Query(sql.str().c_str());
                     }
                 }
 
                 // Query 4: Mythic+ data
                 {
-                    if (CharacterTableExists("dc_player_keystones"))
+                    if (keystoneTable && keystoneGuidColumn && keystoneSelectClause)
                     {
                         std::ostringstream sql;
-                        sql << "SELECT current_keystone_level FROM dc_player_keystones WHERE player_guid = " << fakeGuid;
+                        sql << "SELECT " << keystoneSelectClause << " FROM " << keystoneTable
+                            << " WHERE " << keystoneGuidColumn << " = " << fakeGuid;
                         CharacterDatabase.Query(sql.str().c_str());
                     }
                 }
@@ -1595,16 +2184,8 @@ namespace DCPerfTest
                 times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }
 
-            if (!times.empty())
-            {
-                std::sort(times.begin(), times.end());
-                result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
-                result.avgUs = result.totalUs / playerCount;
-                result.minUs = times.front();
-                result.maxUs = times.back();
-                result.p95Us = GetPercentile(times, 95.0f);
-                result.p99Us = GetPercentile(times, 99.0f);
-            }
+            result.iterations = static_cast<uint32>(times.size());
+            FinalizeTimingSamples(result, times);
         }
         catch (const std::exception& e)
         {
@@ -2164,6 +2745,106 @@ public:
                 DCPerfTest::PrintResult(handler, r);
         }
 
+        static void AddSystemsSuiteResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, char const* args)
+        {
+            uint32 addonIterations = 200;
+            if (args && *args)
+            {
+                uint32 val = atoi(args);
+                if (val > 0)
+                    addonIterations = val;
+            }
+            if (addonIterations > 5000)
+                addonIterations = 5000;
+
+            if (printDetails)
+                handler->SendSysMessage("|cff00ff00=== DC Performance Test: DC Systems ===|r");
+
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestDCTableQueries());
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionSurfaceQueries(addonIterations));
+        }
+
+        static void AddAddonSuiteResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, char const* args)
+        {
+            uint32 queryIterations = 240;
+            uint32 burstPlayers = 80;
+
+            if (args && *args)
+            {
+                std::istringstream iss(args);
+                iss >> queryIterations;
+                if (!(iss >> burstPlayers))
+                    burstPlayers = std::max<uint32>(20, std::min<uint32>(250, queryIterations / 3));
+            }
+
+            if (queryIterations == 0)
+                queryIterations = 1;
+            if (burstPlayers == 0)
+                burstPlayers = 1;
+            if (queryIterations > 5000)
+                queryIterations = 5000;
+            if (burstPlayers > 500)
+                burstPlayers = 500;
+
+            if (printDetails)
+                handler->SendSysMessage("|cff00ff00=== DC Performance Test: AddonExtension ===|r");
+
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionSurfaceQueries(queryIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionHeavySimulation(burstPlayers));
+        }
+
+        static void AddCpuSuiteResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, char const* args)
+        {
+            uint32 iterations = 50000;
+            if (args && *args)
+            {
+                uint32 val = atoi(args);
+                if (val > 0)
+                    iterations = val;
+            }
+
+            if (iterations > 500000)
+                iterations = 500000;
+
+            if (printDetails)
+                handler->SendSysMessage("|cff00ff00=== DC Performance Test: CPU/Hot-path ===|r");
+
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestSpellInfoCache(iterations));
+        }
+
+        static void AddStressSuiteResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, char const* args)
+        {
+            uint32 baseCount = 50;
+            if (args && *args)
+            {
+                uint32 val = atoi(args);
+                if (val > 0)
+                    baseCount = val;
+            }
+
+            uint32 limitSafe = (baseCount > 500) ? 500 : baseCount;
+
+            if (printDetails)
+            {
+                handler->SendSysMessage("|cff00ff00=== DC Performance Test: STRESS SIMULATION ===|r");
+                handler->SendSysMessage("Running heavy load simulations. Server may hiccup...");
+            }
+
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestItemUpgradeStateLookups(baseCount * 10));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCollectionTableQueries(baseCount * 8));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionSurfaceQueries(std::min<uint32>(baseCount * 8, 4000)));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestLoginSimulation(limitSafe));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestConcurrentQueryPattern(baseCount * 4));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassTransactionWrite(baseCount * 2));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGreatVaultSimulation(limitSafe * 2));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGuildHouseLoadSimulation(limitSafe));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassMapEntityLoad((limitSafe > 2) ? (limitSafe * 4 / 10) : 1));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreCharacterTableQueries(limitSafe * 4));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreWorldTableQueries(limitSafe * 4));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPlayerCountSimulation(limitSafe * 4, true, false));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionHeavySimulation(std::min<uint32>(limitSafe * 2, 400)));
+        }
+
         static bool RunSuite(ChatHandler* handler, std::string const& suite, char const* args, bool printDetails, std::vector<DCPerfTest::TimingResult>& out)
         {
             if (suite == "sql")
@@ -2187,9 +2868,13 @@ public:
 
             if (suite == "systems")
             {
-                if (printDetails)
-                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: DC Systems ===|r");
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestDCTableQueries());
+                AddSystemsSuiteResults(handler, printDetails, out, args);
+                return true;
+            }
+
+            if (suite == "addon")
+            {
+                AddAddonSuiteResults(handler, printDetails, out, args);
                 return true;
             }
 
@@ -2297,31 +2982,7 @@ public:
 
             if (suite == "stress" || suite == "big")
             {
-                if (printDetails)
-                {
-                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: STRESS SIMULATION ===|r");
-                    handler->SendSysMessage("Running heavy load simulations. Server may hiccup...");
-                }
-
-                uint32 baseCount = 50;
-                if (args && *args)
-                {
-                    uint32 val = atoi(args);
-                    if (val > 0)
-                        baseCount = val;
-                }
-                uint32 limitSafe = (baseCount > 500) ? 500 : baseCount;
-
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestItemUpgradeStateLookups(baseCount * 10));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCollectionTableQueries(baseCount * 8));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestLoginSimulation(limitSafe));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestConcurrentQueryPattern(baseCount * 4));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassTransactionWrite(baseCount * 2));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGreatVaultSimulation(limitSafe * 2));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGuildHouseLoadSimulation(limitSafe));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassMapEntityLoad((limitSafe > 2) ? (limitSafe * 4 / 10) : 1));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreCharacterTableQueries(limitSafe * 4));
-                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreWorldTableQueries(limitSafe * 4));
+                AddStressSuiteResults(handler, printDetails, out, args);
                 return true;
             }
 
@@ -2334,9 +2995,8 @@ public:
 
             if (suite == "cpu")
             {
-                // CPU suite currently has no TimingResult-returning tests here; keep existing behavior.
-                // (If we add CPU TimingResults later, they will naturally flow into this report.)
-                return HandlePerfTestCPU(handler, args);
+                AddCpuSuiteResults(handler, printDetails, out, args);
+                return true;
             }
 
             if (suite == "full")
@@ -2345,6 +3005,7 @@ public:
                 RunSuite(handler, "cache", "", printDetails, out);
                 RunSuite(handler, "systems", "", printDetails, out);
                 RunSuite(handler, "coredb", "", printDetails, out);
+                RunSuite(handler, "playersim", "", printDetails, out);
                 RunSuite(handler, "stress", "", printDetails, out);
                 if (printDetails)
                     DCPerfTest::PrintMySQLStatus(handler);
@@ -2439,21 +3100,19 @@ public:
 
     static bool HandlePerfTestCPU(ChatHandler* handler, const char* args)
     {
-        handler->SendSysMessage("|cff00ff00=== DC Performance Test: CPU/Hot-path ===|r");
+        std::vector<DCPerfTest::TimingResult> results;
+        results.reserve(1);
+        AddCpuSuiteResults(handler, true, results, args);
 
-        uint32 iterations = 50000;
-        if (args && *args)
-        {
-            uint32 val = atoi(args);
-            if (val > 0)
-                iterations = val;
-        }
+        handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
+        return true;
+    }
 
-        if (iterations > 500000)
-            iterations = 500000;
-
-        auto r1 = TestSpellInfoCache(iterations);
-        PrintResult(handler, r1);
+    static bool HandlePerfTestAddon(ChatHandler* handler, const char* args)
+    {
+        std::vector<DCPerfTest::TimingResult> results;
+        results.reserve(2);
+        AddAddonSuiteResults(handler, true, results, args);
 
         handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
         return true;
@@ -2464,7 +3123,7 @@ public:
         // Usage:
         // .stresstest loop <suite> [loops=10] [sleepMs=1000] [suiteArgs...]
         // Optional: prefix suiteArgs with "quiet" to only print the final summary.
-        // suite: sql|cache|systems|coredb|playersim|stress|dbasync|path|cpu|mysql|full
+        // suite: sql|cache|systems|addon|coredb|playersim|stress|dbasync|path|cpu|mysql|full
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOP ===|r");
 
         std::string suite;
@@ -2522,36 +3181,13 @@ public:
         {
             auto start = DCPerfTest::Clock::now();
 
-            bool ok = true;
             char const* passArgs = suiteArgs.empty() ? "" : suiteArgs.c_str();
 
-            if (suite == "sql")
-                ok = HandlePerfTestSQL(handler, passArgs);
-            else if (suite == "cache")
-                ok = HandlePerfTestCache(handler, passArgs);
-            else if (suite == "systems")
-                ok = HandlePerfTestSystems(handler, passArgs);
-            else if (suite == "coredb")
-                ok = HandlePerfTestCoreDB(handler, passArgs);
-            else if (suite == "playersim")
-                ok = HandlePerfTestPlayerSim(handler, passArgs);
-            else if (suite == "stress" || suite == "big")
-                ok = HandlePerfTestStress(handler, passArgs);
-            else if (suite == "dbasync")
-                ok = HandlePerfTestDBAsync(handler, passArgs);
-            else if (suite == "path")
-                ok = HandlePerfTestPath(handler, passArgs);
-            else if (suite == "cpu")
-                ok = HandlePerfTestCPU(handler, passArgs);
-            else if (suite == "mysql")
-                ok = PrintMySQLStatus(handler, passArgs);
-            else if (suite == "full")
-                ok = HandlePerfTestFull(handler, passArgs);
-            else
-            {
-                handler->SendSysMessage(Acore::StringFormat("|cffff0000Unknown suite '{}'|r", suite));
+            std::vector<DCPerfTest::TimingResult> results;
+            results.reserve(32);
+            bool ok = RunSuite(handler, suite, passArgs, !quiet, results);
+            if (!ok && results.empty())
                 return true;
-            }
 
             auto end = DCPerfTest::Clock::now();
             uint64 us = std::chrono::duration_cast<DCPerfTest::Microseconds>(end - start).count();
@@ -2810,6 +3446,7 @@ public:
             ChatCommandBuilder("sql",     HandlePerfTestSQL,     SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("cache",   HandlePerfTestCache,   SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("systems", HandlePerfTestSystems, SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("addon",   HandlePerfTestAddon,   SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("coredb",  HandlePerfTestCoreDB,  SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("playersim", HandlePerfTestPlayerSim, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("stress",  HandlePerfTestStress,  SEC_GAMEMASTER, Console::Yes),
@@ -2863,12 +3500,11 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestSystems(ChatHandler* handler, const char* /*args*/)
+    static bool HandlePerfTestSystems(ChatHandler* handler, const char* args)
     {
-        handler->SendSysMessage("|cff00ff00=== DC Performance Test: DC Systems ===|r");
-
-        auto r1 = TestDCTableQueries();
-        PrintResult(handler, r1);
+        std::vector<DCPerfTest::TimingResult> results;
+        results.reserve(2);
+        AddSystemsSuiteResults(handler, true, results, args);
 
         handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
         return true;
@@ -2928,50 +3564,9 @@ public:
 
     static bool HandlePerfTestStress(ChatHandler* handler, const char* args)
     {
-        handler->SendSysMessage("|cff00ff00=== DC Performance Test: STRESS SIMULATION ===|r");
-        handler->SendSysMessage("Running heavy load simulations. Server may hiccup...");
-
-        uint32 baseCount = 50;
-        if (args && *args)
-        {
-            uint32 val = atoi(args);
-            if (val > 0) baseCount = val;
-        }
-
-        uint32 limitSafe = (baseCount > 500) ? 500 : baseCount; // Safety cap
-
-        auto r1 = TestItemUpgradeStateLookups(baseCount * 10);
-        PrintResult(handler, r1);
-
-        auto r2 = TestCollectionTableQueries(baseCount * 8);
-        PrintResult(handler, r2);
-
-        auto r3 = TestLoginSimulation(limitSafe);
-        PrintResult(handler, r3);
-
-        auto r4 = TestConcurrentQueryPattern(baseCount * 4);
-        PrintResult(handler, r4);
-
-        auto r5 = TestMassTransactionWrite(baseCount * 2);
-        PrintResult(handler, r5);
-
-        auto r6 = TestGreatVaultSimulation(limitSafe * 2);
-        PrintResult(handler, r6);
-
-        auto r7 = TestGuildHouseLoadSimulation(limitSafe);
-        PrintResult(handler, r7);
-
-        auto r8 = TestMassMapEntityLoad((limitSafe > 2) ? (limitSafe * 4 / 10) : 1);
-        PrintResult(handler, r8);
-
-        auto r9 = TestCoreCharacterTableQueries(limitSafe * 4);
-        PrintResult(handler, r9);
-
-        auto r10 = TestCoreWorldTableQueries(limitSafe * 4);
-        PrintResult(handler, r10);
-
-        auto r11 = TestPlayerCountSimulation(limitSafe * 4, true, false);
-        PrintResult(handler, r11);
+        std::vector<DCPerfTest::TimingResult> results;
+        results.reserve(16);
+        AddStressSuiteResults(handler, true, results, args);
 
         handler->SendSysMessage("|cff00ff00=== Stress Test Complete ===|r");
         return true;
@@ -2988,13 +3583,9 @@ public:
         handler->SendSysMessage("|cff00ff00=== DC Full Performance Test Suite ===|r");
         auto overallStart = Clock::now();
 
-        HandlePerfTestSQL(handler, "");
-        HandlePerfTestCache(handler, "");
-        HandlePerfTestSystems(handler, "");
-        HandlePerfTestCoreDB(handler, "");
-        HandlePerfTestPlayerSim(handler, "");
-        HandlePerfTestStress(handler, "");
-        PrintMySQLStatus(handler, "");
+        std::vector<DCPerfTest::TimingResult> results;
+        results.reserve(32);
+        RunSuite(handler, "full", "", true, results);
 
         auto overallEnd = Clock::now();
         auto totalMs = std::chrono::duration_cast<Milliseconds>(overallEnd - overallStart).count();

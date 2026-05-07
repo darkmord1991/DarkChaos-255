@@ -9,6 +9,26 @@
 local addon = DCQOS
 local LibRangeCheck = LibStub and LibStub("LibRangeCheck-2.0", true)
 
+local NAMEPLATE_STYLE_VERSION = 4
+local FLAT_BAR_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+local BLIZZARD_BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+local LEGACY_TARGET_HIGHLIGHT_COLOR = { r = 1.00, g = 1.00, b = 0.00, a = 0.80 }
+local LEGACY_TARGET_HIGHLIGHT_COLOR_V2 = { r = 0.98, g = 0.82, b = 0.30, a = 0.92 }
+local DEFAULT_TARGET_HIGHLIGHT_COLOR = { r = 0.00, g = 0.52, b = 1.00, a = 0.75 }
+local LEGACY_CAST_BAR_HEIGHT = 7
+local DEFAULT_CAST_BAR_HEIGHT = 6
+local LEGACY_CAST_BAR_COLOR = { r = 1.00, g = 0.70, b = 0.00 }
+local LEGACY_CAST_BAR_COLOR_V2 = { r = 0.93, g = 0.68, b = 0.24 }
+local DEFAULT_CAST_BAR_COLOR = { r = 0.765, g = 0.525, b = 0.00 }
+local LEGACY_CAST_BAR_INTERRUPT_COLOR = { r = 0.80, g = 0.00, b = 0.00 }
+local LEGACY_CAST_BAR_INTERRUPT_COLOR_V2 = { r = 0.74, g = 0.24, b = 0.20 }
+local DEFAULT_CAST_BAR_INTERRUPT_COLOR = { r = 0.85, g = 0.20, b = 0.12 }
+local DEFAULT_HEALTH_BAR_HEIGHT = 14
+local HEALTH_BAR_BACKDROP_COLOR = { r = 0.10, g = 0.10, b = 0.10, a = 0.80 }
+local HEALTH_BAR_BORDER_COLOR = { r = 0.00, g = 0.00, b = 0.00, a = 0.80 }
+local CAST_BAR_BACKDROP_COLOR = { r = 0.10, g = 0.10, b = 0.10, a = 0.80 }
+local CAST_BAR_BORDER_COLOR = { r = 0.00, g = 0.00, b = 0.00, a = 0.00 }
+
 -- ============================================================
 -- Module Configuration
 -- ============================================================
@@ -19,6 +39,7 @@ local NameplatesPlus = {
     defaults = {
         nameplatesPlus = {
             enabled = true,
+            styleVersion = NAMEPLATE_STYLE_VERSION,
             -- Profile System
             currentProfile = "Default",
             profiles = {
@@ -35,18 +56,18 @@ local NameplatesPlus = {
             showHealthRealValues = true,
             -- Target
             targetHighlight = true,
-            targetHighlightColor = { r = 1, g = 1, b = 0, a = 0.8 },
-            targetScale = 1.0,
-            nonTargetAlpha = 0.7,
+            targetHighlightColor = DEFAULT_TARGET_HIGHLIGHT_COLOR,
+            targetScale = 1.11,
+            nonTargetAlpha = 0.95,
             -- Threat
             showThreat = true,
             threatColors = true,
             tankMode = false,
             -- Cast Bar
             showCastBar = true,
-            castBarHeight = 7,
-            castBarColor = { r = 1, g = 0.7, b = 0 },
-            castBarInterruptColor = { r = 0.8, g = 0, b = 0 },
+            castBarHeight = DEFAULT_CAST_BAR_HEIGHT,
+            castBarColor = DEFAULT_CAST_BAR_COLOR,
+            castBarInterruptColor = DEFAULT_CAST_BAR_INTERRUPT_COLOR,
             showCastSpellName = true,
             showCastTime = true,
             -- Debuffs
@@ -96,7 +117,7 @@ local NameplatesPlus = {
             rangeFadeDistance = 30,
             
             -- Visuals
-            textureMode = "Blizzard", -- "Blizzard" or "Flat"
+            textureMode = "Flat", -- "Blizzard" or "Flat"
             
             -- Advanced Threat
             threatMode = "Auto", -- "Auto", "Tank", "DPS"
@@ -149,21 +170,22 @@ local DEBUFF_REFRESH_INTERVAL = 0.25
 local RANGE_REFRESH_INTERVAL = 0.20
 local CUSTOM_HEALTH_INSET_X = 0
 local CUSTOM_HEALTH_INSET_Y = 0
-local DEFAULT_HEALTH_COLOR = { r = 0.90, g = 0.15, b = 0.15 }
-local FRIENDLY_HEALTH_COLOR = { r = 0.20, g = 0.78, b = 0.20 }
-local NEUTRAL_HEALTH_COLOR = { r = 0.94, g = 0.80, b = 0.22 }
+local DEFAULT_HEALTH_COLOR = { r = 0.50, g = 0.50, b = 1.00 }
+local FRIENDLY_HEALTH_COLOR = { r = 0.38, g = 0.68, b = 1.00 }
+local NEUTRAL_HEALTH_COLOR = { r = 0.92, g = 0.74, b = 0.16 }
 local TARGET_ARROW_LEFT_OFFSET = -6
 local TARGET_ARROW_RIGHT_OFFSET = 6
 local NAME_TEXT_Y_OFFSET = -1
 local LEVEL_TEXT_X_OFFSET = -3
 local LEVEL_TEXT_Y_OFFSET = 1
 local CASTBAR_Y_GAP = -3
-local CASTBAR_BASE_HEIGHT = 7
+local CASTBAR_BASE_HEIGHT = DEFAULT_CAST_BAR_HEIGHT
 local NAMEPLATE_CASTBAR_CVAR = "ShowVKeyCastbar"
 local originalNameplateCastBarCVar = nil
-local TARGET_BORDER_PADDING = 1
+local TARGET_BORDER_PADDING = 0
 local MOUSEOVER_BORDER_PADDING = 1
-local MOUSEOVER_BORDER_COLOR = { r = 0.92, g = 0.82, b = 0.48, a = 0.90 }
+local MOUSEOVER_BORDER_COLOR = { r = 1.00, g = 1.00, b = 1.00, a = 0.32 }
+local TARGET_BORDER_ALPHA_MULTIPLIER = 0.82
 local ELITE_ICON_X_OFFSET = 4
 local ELITE_ICON_Y_OFFSET = 0
 local FACTION_ICON_X_OFFSET = -5
@@ -172,11 +194,22 @@ local NPC_ICON_X_OFFSET = -6
 local NPC_ICON_Y_OFFSET = 14
 
 local function GetConfiguredCastbarHeight(settings)
-    local configured = (settings and settings.castBarHeight) or CASTBAR_BASE_HEIGHT
-    if configured > CASTBAR_BASE_HEIGHT then
-        return configured - 1
+    local configured = tonumber(settings and settings.castBarHeight) or CASTBAR_BASE_HEIGHT
+    if configured < 4 then
+        return 4
     end
     return configured
+end
+
+local function GetConfiguredHealthBarHeight(settings, fallbackHeight)
+    local height = tonumber(fallbackHeight) or DEFAULT_HEALTH_BAR_HEIGHT
+    if settings and settings.textureMode == "Flat" then
+        height = DEFAULT_HEALTH_BAR_HEIGHT
+    end
+    if height < 8 then
+        return 8
+    end
+    return height
 end
 
 local function SafeGetCVar(name)
@@ -198,6 +231,95 @@ local function SafeSetCVar(name, value)
 
     local ok = pcall(SetCVar, name, value)
     return ok and true or false
+end
+
+local function CopyColor(color)
+    if type(color) ~= "table" then
+        return nil
+    end
+
+    return {
+        r = color.r,
+        g = color.g,
+        b = color.b,
+        a = color.a,
+    }
+end
+
+local function ColorMatches(color, reference)
+    if type(color) ~= "table" or type(reference) ~= "table" then
+        return false
+    end
+
+    local function NearlyEqual(lhs, rhs)
+        if lhs == nil or rhs == nil then
+            return lhs == rhs
+        end
+
+        return math.abs(lhs - rhs) < 0.001
+    end
+
+    return NearlyEqual(color.r, reference.r)
+        and NearlyEqual(color.g, reference.g)
+        and NearlyEqual(color.b, reference.b)
+        and NearlyEqual(color.a, reference.a)
+end
+
+local function GetConfiguredBarTexture(settings)
+    if settings and settings.textureMode == "Blizzard" then
+        return BLIZZARD_BAR_TEXTURE
+    end
+
+    return FLAT_BAR_TEXTURE
+end
+
+local function MigrateNameplateStyleSettings(settings)
+    if not settings then
+        return
+    end
+
+    if (settings.styleVersion or 0) >= NAMEPLATE_STYLE_VERSION then
+        return
+    end
+
+    if settings.textureMode == nil or settings.textureMode == "Blizzard" then
+        settings.textureMode = "Flat"
+    end
+
+    if settings.targetHighlightColor == nil
+        or ColorMatches(settings.targetHighlightColor, LEGACY_TARGET_HIGHLIGHT_COLOR)
+        or ColorMatches(settings.targetHighlightColor, LEGACY_TARGET_HIGHLIGHT_COLOR_V2)
+    then
+        settings.targetHighlightColor = CopyColor(DEFAULT_TARGET_HIGHLIGHT_COLOR)
+    end
+
+    if settings.castBarColor == nil
+        or ColorMatches(settings.castBarColor, LEGACY_CAST_BAR_COLOR)
+        or ColorMatches(settings.castBarColor, LEGACY_CAST_BAR_COLOR_V2)
+    then
+        settings.castBarColor = CopyColor(DEFAULT_CAST_BAR_COLOR)
+    end
+
+    if settings.castBarInterruptColor == nil
+        or ColorMatches(settings.castBarInterruptColor, LEGACY_CAST_BAR_INTERRUPT_COLOR)
+        or ColorMatches(settings.castBarInterruptColor, LEGACY_CAST_BAR_INTERRUPT_COLOR_V2)
+    then
+        settings.castBarInterruptColor = CopyColor(DEFAULT_CAST_BAR_INTERRUPT_COLOR)
+    end
+
+    if settings.castBarHeight == nil or settings.castBarHeight == LEGACY_CAST_BAR_HEIGHT then
+        settings.castBarHeight = DEFAULT_CAST_BAR_HEIGHT
+    end
+
+    if settings.targetScale == nil or math.abs((settings.targetScale or 1) - 1.0) < 0.001 then
+        settings.targetScale = 1.11
+    end
+
+    if settings.nonTargetAlpha == nil or math.abs((settings.nonTargetAlpha or 1) - 0.7) < 0.001 then
+        settings.nonTargetAlpha = 0.95
+    end
+
+    settings.styleVersion = NAMEPLATE_STYLE_VERSION
 end
 
 local function UpdateDefaultNameplateCastBarCVar(settings)
@@ -241,6 +363,7 @@ local function IsPlaterActive()
 end
 
 local UpdateDebuffFrameAnchor
+local SyncCustomHealthBarLayout
 
 local function StoreRegionLayout(region)
     if not region or region.dcOriginalLayout then
@@ -345,14 +468,22 @@ local function NormalizeNameplateLayout(frame)
     StoreRegionLayout(levelText)
 
     local healthLayout = healthBar.dcOriginalLayout or {}
-    if healthLayout.width and healthBar.SetWidth then
-        healthBar:SetWidth(healthLayout.width)
+    if frame.dcSourceHealthBar then
+        SyncCustomHealthBarLayout(healthBar, frame.dcSourceHealthBar,
+            addon.settings.nameplatesPlus)
+    else
+        if healthLayout.width and healthBar.SetWidth then
+            healthBar:SetWidth(healthLayout.width)
+        end
+        if healthBar.SetHeight then
+            healthBar:SetHeight(GetConfiguredHealthBarHeight(
+                addon.settings.nameplatesPlus,
+                healthLayout.height
+            ))
+        end
+        healthBar:ClearAllPoints()
+        healthBar:SetPoint("TOP", frame, "TOP", 0, -6)
     end
-    if healthLayout.height and healthBar.SetHeight then
-        healthBar:SetHeight(healthLayout.height)
-    end
-    healthBar:ClearAllPoints()
-    healthBar:SetPoint("TOP", frame, "TOP", 0, -6)
 
     if castBar then
         UpdateCastBarLayout(frame)
@@ -496,15 +627,15 @@ local CLASS_COLORS = RAID_CLASS_COLORS or {
 local THREAT_COLORS = {
     -- DPS/Healer mode (don't want aggro)
     dps = {
-        safe    = { r = 0.2, g = 0.8, b = 0.2 },  -- Green: safe, low threat
-        warning = { r = 1.0, g = 0.8, b = 0.0 },  -- Yellow: watch out
-        danger  = { r = 1.0, g = 0.0, b = 0.0 },  -- Red: you have aggro!
+        safe    = { r = 0.50, g = 0.50, b = 1.00 },  -- Blue: safe, low threat
+        warning = { r = 1.00, g = 0.80, b = 0.00 },  -- Amber: watch out
+        danger  = { r = 1.00, g = 0.109, b = 0.00 }, -- Red: you have aggro!
     },
     -- Tank mode (want aggro)
     tank = {
-        safe    = { r = 0.2, g = 0.8, b = 0.2 },  -- Green: you have aggro
-        warning = { r = 1.0, g = 0.8, b = 0.0 },  -- Yellow: losing aggro
-        danger  = { r = 1.0, g = 0.0, b = 0.0 },  -- Red: lost aggro!
+        safe    = { r = 0.50, g = 0.50, b = 1.00 },  -- Blue: you have aggro
+        warning = { r = 1.00, g = 0.80, b = 0.00 },  -- Amber: losing aggro
+        danger  = { r = 1.00, g = 0.109, b = 0.00 }, -- Red: lost aggro!
     },
 }
 
@@ -1088,6 +1219,72 @@ local function ConfigureFullEdgeBorder(parent, thickness, r, g, b, a)
     border.bottom:Show()
 end
 
+local function EnsureBarBackdrop(statusBar)
+    if not statusBar then
+        return nil
+    end
+
+    local background = statusBar.background
+    if not background then
+        background = statusBar:CreateTexture(nil, "BACKGROUND")
+        background:SetTexture(FLAT_BAR_TEXTURE)
+        statusBar.background = background
+    end
+
+    background:ClearAllPoints()
+    background:SetAllPoints(statusBar)
+    return background
+end
+
+local function ApplyCustomBarStyle(statusBar, settings, backdropColor, borderColor)
+    if not statusBar then
+        return
+    end
+
+    local desiredTexture = GetConfiguredBarTexture(settings)
+    local textureObject = statusBar.GetStatusBarTexture and statusBar:GetStatusBarTexture() or nil
+    local currentTexture = textureObject and textureObject.GetTexture and textureObject:GetTexture() or nil
+    if currentTexture ~= desiredTexture then
+        statusBar:SetStatusBarTexture(desiredTexture)
+    end
+
+    local background = EnsureBarBackdrop(statusBar)
+    local bgColor = backdropColor or HEALTH_BAR_BACKDROP_COLOR
+    background:SetVertexColor(bgColor.r, bgColor.g, bgColor.b, bgColor.a)
+
+    local edgeColor = borderColor or HEALTH_BAR_BORDER_COLOR
+    if edgeColor.a and edgeColor.a > 0 then
+        ConfigureFullEdgeBorder(statusBar, 1, edgeColor.r, edgeColor.g, edgeColor.b, edgeColor.a)
+    elseif statusBar.border then
+        statusBar.border.left:Hide()
+        statusBar.border.right:Hide()
+        statusBar.border.top:Hide()
+        statusBar.border.bottom:Hide()
+    end
+end
+
+SyncCustomHealthBarLayout = function(displayBar, sourceHealthBar, settings)
+    if not displayBar or not sourceHealthBar then
+        return
+    end
+
+    local width = sourceHealthBar.GetWidth and sourceHealthBar:GetWidth() or 110
+    local height = GetConfiguredHealthBarHeight(
+        settings,
+        sourceHealthBar.GetHeight and sourceHealthBar:GetHeight()
+            or DEFAULT_HEALTH_BAR_HEIGHT
+    )
+
+    if not width or width <= 0 then
+        width = 110
+    end
+
+    displayBar:ClearAllPoints()
+    displayBar:SetSize(width, height)
+    displayBar:SetPoint("TOPLEFT", sourceHealthBar, "TOPLEFT",
+        CUSTOM_HEALTH_INSET_X, -CUSTOM_HEALTH_INSET_Y)
+end
+
 local function CreateHealthPercentText(healthBar)
     if healthBar.dcHealthPercent then return healthBar.dcHealthPercent end
     
@@ -1111,20 +1308,16 @@ local function CreateCustomHealthBar(frame, sourceHealthBar)
 
     local displayBar = CreateFrame("StatusBar", nil, frame)
     displayBar.dcManagedByNameplatesPlus = true
-    displayBar:SetFrameStrata("MEDIUM")
-    displayBar:SetFrameLevel(frame:GetFrameLevel() + 3)
-    displayBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    displayBar:SetFrameStrata(GetSafeFrameStrata(frame))
+    displayBar:SetFrameLevel(frame:GetFrameLevel() + 4)
+    displayBar:SetStatusBarTexture(GetConfiguredBarTexture(addon.settings.nameplatesPlus))
     displayBar:SetMinMaxValues(0, 1)
     displayBar:SetValue(1)
 
-    local width = sourceHealthBar:GetWidth() or 110
-    local height = sourceHealthBar:GetHeight() or 10
-    if width <= 0 then width = 110 end
-    if height <= 0 then height = 10 end
-    displayBar:SetSize(width, height)
-    displayBar:SetPoint("TOPLEFT", sourceHealthBar, "TOPLEFT", CUSTOM_HEALTH_INSET_X, -CUSTOM_HEALTH_INSET_Y)
-    displayBar:SetPoint("BOTTOMRIGHT", sourceHealthBar, "BOTTOMRIGHT", -CUSTOM_HEALTH_INSET_X, CUSTOM_HEALTH_INSET_Y)
+    SyncCustomHealthBarLayout(displayBar, sourceHealthBar,
+        addon.settings.nameplatesPlus)
     displayBar:SetStatusBarColor(DEFAULT_HEALTH_COLOR.r, DEFAULT_HEALTH_COLOR.g, DEFAULT_HEALTH_COLOR.b)
+    ApplyCustomBarStyle(displayBar, addon.settings.nameplatesPlus, HEALTH_BAR_BACKDROP_COLOR, HEALTH_BAR_BORDER_COLOR)
 
     displayBar.dcSourceBar = sourceHealthBar
     frame.dcCustomHealthBar = displayBar
@@ -1186,6 +1379,35 @@ local function SuppressFrameOnShow(target)
     end)
 end
 
+local function SuppressTextureRegions(target)
+    if not target or not target.GetRegions then
+        return
+    end
+
+    for _, region in ipairs({ target:GetRegions() }) do
+        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+            region:SetAlpha(0)
+            region:Hide()
+        end
+    end
+end
+
+local function SuppressNestedChildren(target)
+    if not target or not target.GetChildren then
+        return
+    end
+
+    for _, child in ipairs({ target:GetChildren() }) do
+        if child and not child.dcManagedByNameplatesPlus then
+            SuppressTextureRegions(child)
+            SuppressNestedChildren(child)
+            child:Hide()
+            child:SetAlpha(0)
+            SuppressFrameOnShow(child)
+        end
+    end
+end
+
 local function MaskSourceHealthBar(sourceBar)
     if not sourceBar then
         return
@@ -1212,12 +1434,8 @@ local function MaskSourceHealthBar(sourceBar)
     -- Some 3.3.5 plate templates draw the frame/backdrop as texture regions on
     -- the native status bar. Hide them too so no boxed frame leaks behind the
     -- custom bar.
-    for _, region in ipairs({ sourceBar:GetRegions() }) do
-        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-            region:SetAlpha(0)
-            region:Hide()
-        end
-    end
+    SuppressTextureRegions(sourceBar)
+    SuppressNestedChildren(sourceBar)
 end
 
 local function SuppressNativeNameplateChildren(frame, statusBars)
@@ -1308,9 +1526,8 @@ SyncCustomHealthBar = function(frame)
     local minValue, maxValue = sourceBar:GetMinMaxValues()
     local currentValue = sourceBar:GetValue()
 
-    displayBar:ClearAllPoints()
-    displayBar:SetPoint("TOPLEFT", sourceBar, "TOPLEFT", CUSTOM_HEALTH_INSET_X, -CUSTOM_HEALTH_INSET_Y)
-    displayBar:SetPoint("BOTTOMRIGHT", sourceBar, "BOTTOMRIGHT", -CUSTOM_HEALTH_INSET_X, CUSTOM_HEALTH_INSET_Y)
+    SyncCustomHealthBarLayout(displayBar, sourceBar,
+        addon.settings.nameplatesPlus)
 
     displayBar:SetMinMaxValues(minValue or 0, maxValue or 1)
     displayBar:SetValue(currentValue or 0)
@@ -1429,12 +1646,11 @@ end
 local function CreateTargetNeon(frame, healthBar)
     if frame.dcTargetNeon then return frame.dcTargetNeon end
     
-    local neon = frame:CreateTexture(nil, "OVERLAY")
-    neon:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Flash")
-    neon:SetBlendMode("ADD")
-    neon:SetPoint("TOPLEFT", healthBar, "TOPLEFT", -2, 2)
-    neon:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", 2, -2)
-    neon:SetVertexColor(1, 1, 1, 0.5)
+    local neon = frame:CreateTexture(nil, "ARTWORK")
+    neon:SetTexture(FLAT_BAR_TEXTURE)
+    neon:SetPoint("TOPLEFT", healthBar, "TOPLEFT", 0, 0)
+    neon:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", 0, 0)
+    neon:SetVertexColor(1, 1, 1, 0.05)
     neon:Hide()
     frame.dcTargetNeon = neon
     return neon
@@ -1495,16 +1711,10 @@ local function CreateCastBarOverlay(frame, originalCastBar)
     overlay:SetPoint("TOPLEFT", frame.dcHealthBar, "BOTTOMLEFT", 0, CASTBAR_Y_GAP)
     overlay:SetPoint("TOPRIGHT", frame.dcHealthBar, "BOTTOMRIGHT", 0, CASTBAR_Y_GAP)
     overlay:SetHeight(GetConfiguredCastbarHeight(addon.settings.nameplatesPlus))
-    overlay:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    overlay:SetStatusBarTexture(GetConfiguredBarTexture(addon.settings.nameplatesPlus))
+    overlay:SetFrameStrata(GetSafeFrameStrata(frame))
     overlay:SetFrameLevel(frame:GetFrameLevel() + 5)
-
-    local background = overlay:CreateTexture(nil, "BACKGROUND")
-    background:SetAllPoints()
-    background:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    background:SetVertexColor(0.03, 0.03, 0.03, 0.72)
-    overlay.background = background
-
-    ConfigureFullEdgeBorder(overlay, 1, 0.04, 0.03, 0.02, 0.88)
+    ApplyCustomBarStyle(overlay, addon.settings.nameplatesPlus, CAST_BAR_BACKDROP_COLOR, CAST_BAR_BORDER_COLOR)
 
     -- Spell name text
     local spellName = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1805,16 +2015,7 @@ local function UpdateHealthBarColor(frame, healthBar, unit, settings)
         end
     end
 
-    -- Texture Enforcement (Check first to avoid redundant sets)
-    if settings.textureMode == "Flat" then
-        local texObj = healthBar:GetStatusBarTexture()
-        if texObj and texObj.GetTexture and texObj:GetTexture() ~= "Interface\\Buttons\\WHITE8x8" then
-            healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-        elseif not texObj then
-             -- Fallback if no texture object exists yet
-             healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-        end
-    end
+    ApplyCustomBarStyle(healthBar, settings, HEALTH_BAR_BACKDROP_COLOR, HEALTH_BAR_BORDER_COLOR)
 end
 
 local function HideThreatIndicators(frame)
@@ -2144,11 +2345,7 @@ local function UpdateCastBar(frame, castBar, unit, settings)
         overlay.dcLastHeight = tunedCastBarHeight
     end
 
-    if settings.textureMode == "Flat" then
-        overlay:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    else
-        overlay:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    end
+    ApplyCustomBarStyle(overlay, settings, CAST_BAR_BACKDROP_COLOR, CAST_BAR_BORDER_COLOR)
     
     -- Get casting info
     local spellName, _, _, _, startTime, endTime, _, castID, notInterruptible
@@ -2454,8 +2651,8 @@ local function UpdateTargetHighlight(frame, unit, settings)
         rightArrow:ClearAllPoints()
         rightArrow:SetPoint("LEFT", frame.dcHealthBar, "RIGHT", TARGET_ARROW_RIGHT_OFFSET, 0)
         if isTarget then
-            leftArrow:SetTextColor(c.r, c.g, c.b, c.a)
-            rightArrow:SetTextColor(c.r, c.g, c.b, c.a)
+            leftArrow:SetTextColor(c.r, c.g, c.b, c.a * 0.7)
+            rightArrow:SetTextColor(c.r, c.g, c.b, c.a * 0.7)
             leftArrow:Show()
             rightArrow:Show()
         else
@@ -2478,7 +2675,7 @@ local function UpdateTargetHighlight(frame, unit, settings)
         if settings.targetNeon then
             local neon = frame.dcTargetNeon or CreateTargetNeon(frame, frame.dcHealthBar)
             if isTarget then
-                neon:SetVertexColor(c.r, c.g, c.b, c.a)
+                neon:SetVertexColor(1, 1, 1, 0.05)
                 neon:Show()
             else
                 neon:Hide()
@@ -2491,7 +2688,8 @@ local function UpdateTargetHighlight(frame, unit, settings)
             highlight:ClearAllPoints()
             highlight:SetPoint("TOPLEFT", frame.dcHealthBar, "TOPLEFT", -TARGET_BORDER_PADDING, TARGET_BORDER_PADDING)
             highlight:SetPoint("BOTTOMRIGHT", frame.dcHealthBar, "BOTTOMRIGHT", TARGET_BORDER_PADDING, -TARGET_BORDER_PADDING)
-            ConfigureFullEdgeBorder(highlight, 1, c.r, c.g, c.b, math.min(c.a + 0.1, 1))
+            ConfigureFullEdgeBorder(highlight, 1, c.r, c.g, c.b,
+                math.min(c.a * TARGET_BORDER_ALPHA_MULTIPLIER, 1))
             highlight:Show()
         else
             highlight:Hide()
@@ -2568,13 +2766,7 @@ local function HookNameplate(frame)
     local healthBar = CreateCustomHealthBar(frame, sourceHealthBar)
     if healthBar then
         SyncCustomHealthBar(frame)
-    end
-
-    -- Apply Texture Mode
-    if healthBar and settings.textureMode == "Flat" then
-        healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    elseif healthBar then
-        healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+        ApplyCustomBarStyle(healthBar, settings, HEALTH_BAR_BACKDROP_COLOR, HEALTH_BAR_BORDER_COLOR)
     end
     
     local nameText = nil
@@ -2642,6 +2834,7 @@ local function HookNameplate(frame)
             self.dcSourceHealthBar = refreshedBars[1]
             self.dcHealthBar = CreateCustomHealthBar(self, self.dcSourceHealthBar)
             SyncCustomHealthBar(self)
+            ApplyCustomBarStyle(self.dcHealthBar, settings, HEALTH_BAR_BACKDROP_COLOR, HEALTH_BAR_BORDER_COLOR)
             EnsureSourceHealthHook(self, self.dcSourceHealthBar)
             local refreshedCast = (#refreshedBars >= 2) and refreshedBars[#refreshedBars] or nil
             if refreshedCast == self.dcSourceHealthBar then refreshedCast = nil end
@@ -2787,6 +2980,7 @@ end
 -- ============================================================
 function NameplatesPlus.OnInitialize()
     addon:Debug("NameplatesPlus module initializing")
+    MigrateNameplateStyleSettings(addon.settings.nameplatesPlus)
     -- NIL-SAFETY FIX: Prevent errors if UnitGUID returns nil early
     if UnitGUID("player") then
         playerGUID = UnitGUID("player")
@@ -2804,6 +2998,7 @@ function NameplatesPlus.OnEnable()
     addon:Debug("NameplatesPlus module enabling")
     
     local settings = addon.settings.nameplatesPlus
+    MigrateNameplateStyleSettings(settings)
     if not settings.enabled then return end
 
     ApplyNameplateCVars(settings)
@@ -3292,12 +3487,12 @@ function NameplatesPlus.CreateSettings(parent)
     -- Texture Mode
     local textureCb = addon:CreateCheckbox(parent)
     textureCb:SetPoint("TOPLEFT", 16, yOffset)
-    textureCb.Text:SetText("Use Flat (Sharp) Textures")
+    textureCb.Text:SetText("Use Flat (NotPlater-style) bar textures")
     textureCb:SetChecked(settings.textureMode == "Flat")
     textureCb:SetScript("OnClick", function(self)
         local mode = self:GetChecked() and "Flat" or "Blizzard"
         addon:SetSetting("nameplatesPlus.textureMode", mode)
-        addon:Print("Reload UI required for texture changes to fully apply.", true)
+        MarkAllFramesDirty()
     end)
     yOffset = yOffset - 25
 

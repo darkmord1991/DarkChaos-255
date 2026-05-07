@@ -3470,6 +3470,22 @@ if DC then
     
     local GFOpcodes = DC.GroupFinderOpcodes or {}
 
+    local function PrintGroupFinder(msg, important)
+        if namespace.GroupFinder then
+            if important and namespace.GroupFinder.PrintImportant then
+                namespace.GroupFinder:PrintImportant(msg)
+                return
+            end
+
+            if namespace.GroupFinder.Print then
+                namespace.GroupFinder:Print(msg)
+                return
+            end
+        end
+
+        Print("Group Finder: " .. tostring(msg or ""))
+    end
+
     -- SMSG_SCHEDULED_EVENTS (0x72) - List of scheduled events
     DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SCHEDULED_EVENTS or 0x72, function(...)
         local args = {...}
@@ -3490,7 +3506,7 @@ if DC then
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
-            Print("Group listing created! ID: " .. (data.listingId or "?"))
+            PrintGroupFinder("Group listing created! ID: " .. (data.listingId or "?"), false)
             if namespace.GroupFinder then
                 namespace.GroupFinder:OnListingCreated(data)
             end
@@ -3502,8 +3518,20 @@ if DC then
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
+            local groups = data.groups or {}
+            if type(groups) == "string" and type(DC.DecodeJSON) == "function" then
+                groups = DC:DecodeJSON(groups) or {}
+            end
+
+            local category = data.category
             if namespace.GroupFinder then
-                namespace.GroupFinder:PopulateMythicGroups(data.groups or {})
+                if category == "raid" and namespace.GroupFinder.PopulateRaidGroups then
+                    namespace.GroupFinder:PopulateRaidGroups(groups)
+                elseif (category == "world" or category == "other" or category == "quest") and namespace.GroupFinder.UpdateWorldGroups then
+                    namespace.GroupFinder:UpdateWorldGroups(groups, category)
+                else
+                    namespace.GroupFinder:PopulateMythicGroups(groups)
+                end
             end
         end
     end)
@@ -3515,11 +3543,13 @@ if DC then
             local data = args[1]
             local status = data.status or "unknown"
             if status == "accepted" then
-                Print("|cff00ff00Your application was accepted!|r")
+                PrintGroupFinder("|cff00ff00Your application was accepted!|r", true)
             elseif status == "declined" or status == "rejected" then
-                Print("|cffff0000Your application was declined.|r")
+                PrintGroupFinder("|cffff0000Your application was declined.|r", true)
+            elseif status == "cancelled" then
+                PrintGroupFinder("|cffffff00Your application was withdrawn or the listing closed.|r", true)
             else
-                Print("Application status: " .. status)
+                PrintGroupFinder("Application status: " .. status, false)
             end
 
             if namespace.GroupFinder and namespace.GroupFinder.OnApplicationStatusChanged then
@@ -3533,7 +3563,7 @@ if DC then
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
-            Print("|cffffff00New applicant:|r " .. (data.playerName or "Unknown") .. " (" .. (data.role or "?") .. ")")
+            PrintGroupFinder("|cffffff00New applicant:|r " .. (data.playerName or "Unknown") .. " (" .. (data.role or "?") .. ")", true)
             if namespace.GroupFinder and namespace.GroupFinder.OnNewApplication then
                 namespace.GroupFinder:OnNewApplication(data)
             end
@@ -3547,6 +3577,22 @@ if DC then
             local data = args[1]
             if namespace.GroupFinder then
                 namespace.GroupFinder:OnGroupUpdated(data)
+            end
+        end
+    end)
+
+    -- SMSG_MY_APPLICATIONS (0x35) - My active applications
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_MY_APPLICATIONS or 0x35, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            local applications = data.applications or {}
+            if type(applications) == "string" and type(DC.DecodeJSON) == "function" then
+                applications = DC:DecodeJSON(applications) or {}
+            end
+
+            if namespace.GroupFinder and namespace.GroupFinder.UpdateMyApplications then
+                namespace.GroupFinder:UpdateMyApplications(applications)
             end
         end
     end)
@@ -3628,6 +3674,30 @@ if DC then
             end
         end
     end)
+
+    -- SMSG_OPEN_UI (0x50) - Open Group Finder UI from server
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_OPEN_UI or 0x50, function(...)
+        local args = {...}
+        if type(args[1]) == "table" or args[1] == nil then
+            if namespace.GroupFinder and namespace.GroupFinder.Show then
+                namespace.GroupFinder:Show()
+            end
+        end
+    end)
+
+    -- SMSG_ERROR (0x5F) - Group Finder error response
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_ERROR or 0x5F, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            local err = data.error or data.message or "Unknown Group Finder error"
+            PrintGroupFinder("|cffff4444" .. err .. "|r", true)
+
+            if namespace.GroupFinder and namespace.GroupFinder.MythicCreatePanel and namespace.GroupFinder.MythicCreatePanel.statusText then
+                namespace.GroupFinder.MythicCreatePanel.statusText:SetText("|cffff4444Group Finder: " .. err .. "|r")
+            end
+        end
+    end)
     
     -- SMSG_DIFFICULTY_CHANGED (0x51) - Confirm difficulty changed
     DC:RegisterHandler("GRPF", GFOpcodes.SMSG_DIFFICULTY_CHANGED or 0x51, function(...)
@@ -3635,7 +3705,7 @@ if DC then
         if type(args[1]) == "table" then
             local data = args[1]
             local diffName = data.difficultyName or "Unknown"
-            Print("Difficulty changed to: |cff32c4ff" .. diffName .. "|r")
+            PrintGroupFinder("Difficulty changed to: |cff32c4ff" .. diffName .. "|r", false)
             if namespace.GroupFinder then
                 namespace.GroupFinder:UpdateDifficultyDisplay(data.difficultyId, diffName)
             end

@@ -574,6 +574,7 @@ DC.GroupFinderOpcodes = {
     SMSG_SPECTATE_LIST       = 0x47,  -- Available runs to spectate
     SMSG_SPECTATE_STARTED    = 0x48,  -- Spectating started
     SMSG_SPECTATE_ENDED      = 0x49,  -- Spectating ended
+    SMSG_OPEN_UI             = 0x50,  -- Open the Group Finder UI
     
     -- Server -> Client: Scheduled Events
     SMSG_EVENT_CREATED       = 0x70,  -- Event created confirmation

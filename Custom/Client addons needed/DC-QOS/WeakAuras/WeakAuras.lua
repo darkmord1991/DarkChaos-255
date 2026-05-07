@@ -956,7 +956,12 @@ do -- Archive stuff
     if Archivist:IsInitialized() then
       return Archivist
     else
-      if not IsAddOnLoaded("WeakAurasArchive") then
+      local hasStandaloneArchive = GetAddOnMetadata("WeakAurasArchive", "Title") ~= nil
+      if not hasStandaloneArchive then
+        if type(WeakAurasArchive) ~= "table" then
+          WeakAurasArchive = {}
+        end
+      elseif not IsAddOnLoaded("WeakAurasArchive") then
         local ok, reason = LoadAddOn("WeakAurasArchive")
         if not ok then
           if not archiveStub then

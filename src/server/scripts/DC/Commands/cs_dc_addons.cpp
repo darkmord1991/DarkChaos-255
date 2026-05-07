@@ -10,14 +10,20 @@
  *      Grant <amount> XP to <playername> using server GiveXP path.
  *  - .dc grantself <amount>
  *      Grant <amount> XP to your own character.
- *  - .dc givexp <playername> <amount>  (alias form exposed via .dc)
- *  - .dc givexp self <amount>
+ *  - .dc info [playername|self]
+ *      Show XP, next-level XP, level, GUID, and XP-blocked state.
+ *  - .dc dedupe [playername|self]
+ *      Show the last DCRXP payload key and timestamp for dedupe diagnostics.
+ *  - .dc clearflag [playername|self]
+ *      Remove PLAYER_FLAGS_NO_XP_GAIN and refresh the addon snapshot.
+ *  - .dc relearnspells [playername|self]
+ *      Re-run the DC First Start class spell grant for the target player.
  *
  * Examples:
  *  .dc send Alice
  *  .dc sendforce-self
  *  .dc grant Bob 100000
- *  .dc givexp self 50000
+ *  .dc relearnspells self
  *
  * Notes:
  *  - This file consolidates DC-related GM commands into a single top-level command
@@ -61,7 +67,7 @@ public:
     {
         if (args.empty())
         {
-            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload mythic");
+            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | info [player|self] | dedupe [player|self] | grant <player> <amt> | grantself <amt> | clearflag [player|self] | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload <mythic|mythicplus|m+>");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -526,7 +532,7 @@ public:
             return false;
         }
 
-        handler->PSendSysMessage("Unknown subcommand. Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload mythic");
+        handler->PSendSysMessage("Unknown subcommand. Usage: .dc send <playername> | sendforce <playername>|sendforce-self | info [player|self] | dedupe [player|self] | grant <player> <amt> | grantself <amt> | clearflag [player|self] | relearnspells [self|player] | difficulty <normal|heroic|mythic|info> | reload <mythic|mythicplus|m+>");
         handler->SetSentErrorMessage(true);
         return false;
     }

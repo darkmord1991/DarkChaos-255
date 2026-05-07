@@ -19,6 +19,7 @@
 #include "Log.h"
 #include "GameTime.h"
 #include "DBCEnums.h"
+#include "CharacterCache.h"
 #include "dc_addon_groupfinder.h"
 
 namespace DCAddon
@@ -90,7 +91,8 @@ namespace GroupFinder
         LISTING_MYTHIC_PLUS = 1,
         LISTING_RAID        = 2,
         LISTING_PVP         = 3,
-        LISTING_OTHER       = 4
+        LISTING_OTHER       = 4,
+        LISTING_QUEST       = 5
     };
 
     enum ApplicationStatus : uint8
@@ -100,6 +102,77 @@ namespace GroupFinder
         APP_STATUS_DECLINED = 2,
         APP_STATUS_CANCELLED = 3
     };
+
+    static uint8 ListingTypeFromCategory(std::string const& category)
+    {
+        if (category == "dungeon" || category == "mythic" ||
+            category == "mythic+")
+            return LISTING_MYTHIC_PLUS;
+
+        if (category == "raid")
+            return LISTING_RAID;
+
+        if (category == "pvp")
+            return LISTING_PVP;
+
+        if (category == "quest")
+            return LISTING_QUEST;
+
+        if (category == "other" || category == "world")
+            return LISTING_OTHER;
+
+        return 0;
+    }
+
+    static std::string CategoryFromListingType(uint8 listingType)
+    {
+        switch (listingType)
+        {
+            case LISTING_MYTHIC_PLUS:
+                return "dungeon";
+            case LISTING_RAID:
+                return "raid";
+            case LISTING_PVP:
+                return "pvp";
+            case LISTING_QUEST:
+                return "quest";
+            case LISTING_OTHER:
+                return "other";
+            default:
+                return "other";
+        }
+    }
+
+    static std::string DifficultyNameFromListing(uint8 listingType,
+        uint8 difficulty)
+    {
+        if (listingType == LISTING_RAID)
+        {
+            switch (difficulty)
+            {
+                case RAID_DIFFICULTY_10MAN_NORMAL:
+                    return "10 Normal";
+                case RAID_DIFFICULTY_25MAN_NORMAL:
+                    return "25 Normal";
+                case RAID_DIFFICULTY_10MAN_HEROIC:
+                    return "10 Heroic";
+                case RAID_DIFFICULTY_25MAN_HEROIC:
+                    return "25 Heroic";
+                default:
+                    return "Raid";
+            }
+        }
+
+        switch (difficulty)
+        {
+            case DUNGEON_DIFFICULTY_HEROIC:
+                return "Heroic";
+            case DUNGEON_DIFFICULTY_EPIC:
+                return "Mythic";
+            default:
+                return "Normal";
+        }
+    }
 
     // ========================================================================
     // HANDLERS: LISTING MANAGEMENT
@@ -138,8 +211,18 @@ namespace GroupFinder
             }
         }
 
+        std::string category = JsonGetString(json, "category", "");
         // Extract listing data
-        uint8 listingType = static_cast<uint8>(JsonGetInt(json, "listingType", LISTING_MYTHIC_PLUS));
+        uint8 listingType = static_cast<uint8>(JsonGetInt(json, "listingType", 0));
+        if (!category.empty())
+        {
+            if (uint8 categoryType = ListingTypeFromCategory(category))
+                listingType = categoryType;
+        }
+
+        if (listingType == 0)
+            listingType = LISTING_MYTHIC_PLUS;
+
         uint32 dungeonId = static_cast<uint32>(JsonGetInt(json, "dungeonId", 0));
         std::string dungeonName = JsonGetString(json, "dungeonName", "Unknown");
         uint8 keystoneLevel = static_cast<uint8>(JsonGetInt(json, "keyLevel", 0));
@@ -148,6 +231,16 @@ namespace GroupFinder
         uint8 needHealer = static_cast<uint8>(JsonGetInt(json, "needHealer", 1));
         uint8 needDps = static_cast<uint8>(JsonGetInt(json, "needDps", 3));
         std::string note = JsonGetString(json, "note", "");
+        int32 difficultyId = JsonGetInt(json, "difficultyId", -1);
+        if (difficultyId < 0 && json["difficulty"].IsNumber())
+            difficultyId = json["difficulty"].AsInt32();
+
+        if (difficultyId < 0)
+        {
+            difficultyId = listingType == LISTING_RAID
+                ? static_cast<int32>(player->GetRaidDifficulty())
+                : static_cast<int32>(player->GetDungeonDifficulty());
+        }
 
         // Get group GUID if in a group
         uint32 groupGuid = 0;
@@ -159,7 +252,7 @@ namespace GroupFinder
         listing.listingType = listingType;
         listing.dungeonId = dungeonId;
         listing.dungeonName = dungeonName;
-        listing.difficulty = player->GetDungeonDifficulty();
+        listing.difficulty = static_cast<uint8>(difficultyId);
         listing.keystoneLevel = keystoneLevel;
         listing.minIlvl = minIlvl;
         listing.needTank = needTank;
@@ -194,72 +287,81 @@ namespace GroupFinder
         auto json = GetJsonData(msg);
 
         // Optional filters
+        std::string category = JsonGetString(json, "category", "");
         int32 listingType = JsonGetInt(json, "listingType", 0);  // 0 = all
         int32 dungeonId = JsonGetInt(json, "dungeonId", 0);      // 0 = all
         int32 minLevel = JsonGetInt(json, "minLevel", 0);
         int32 maxLevel = JsonGetInt(json, "maxLevel", 0);
+        int32 minRating = JsonGetInt(json, "minRating", 0);
 
-        // Build query
-        std::string query =
-            "SELECT l.id, l.leader_guid, l.dungeon_id, l.dungeon_name, l.difficulty, "
-            "l.keystone_level, l.min_ilvl, l.current_tank, l.current_healer, l.current_dps, "
-            "l.need_tank, l.need_healer, l.need_dps, l.note, l.listing_type, c.name AS leader_name "
-            "FROM dc_group_finder_listings l "
-            "LEFT JOIN characters c ON l.leader_guid = c.guid "
-            "WHERE l.status = 1";
+        if (listingType <= 0 && !category.empty())
+            listingType = ListingTypeFromCategory(category);
 
-        if (listingType > 0)
-            query += " AND l.listing_type = " + std::to_string(listingType);
-        if (dungeonId > 0)
-            query += " AND l.dungeon_id = " + std::to_string(dungeonId);
-        if (minLevel > 0)
-            query += " AND l.keystone_level >= " + std::to_string(minLevel);
-        if (maxLevel > 0)
-            query += " AND l.keystone_level <= " + std::to_string(maxLevel);
-
-        query += " ORDER BY l.keystone_level DESC, l.created_at DESC LIMIT 50";
-
-        QueryResult result = CharacterDatabase.Query(query);
+        auto results = sGroupFinderMgr.SearchListings(
+            static_cast<uint8>(listingType > 0 ? listingType : 0),
+            static_cast<uint32>(dungeonId > 0 ? dungeonId : 0),
+            static_cast<uint8>(minLevel > 0 ? minLevel : 0),
+            static_cast<uint8>(maxLevel > 0 ? maxLevel : 0),
+            static_cast<uint16>(minRating > 0 ? minRating : 0));
 
         JsonValue groupsArray;
         groupsArray.SetArray();
 
-        if (result)
+        for (GroupFinderListing const& listing : results)
         {
-            do
-            {
-                JsonValue group;
-                group.SetObject();
-                group.Set("id", JsonValue((*result)[0].Get<int32>()));
-                group.Set("leaderGuid", JsonValue((*result)[1].Get<int32>()));
-                group.Set("dungeonId", JsonValue((*result)[2].Get<int32>()));
-                group.Set("dungeon", JsonValue((*result)[3].Get<std::string>()));
-                group.Set("difficulty", JsonValue((*result)[4].Get<int32>()));
-                group.Set("level", JsonValue((*result)[5].Get<int32>()));
-                group.Set("minIlvl", JsonValue((*result)[6].Get<int32>()));
+            JsonValue group;
+            group.SetObject();
 
-                bool hasTank = (*result)[7].Get<uint8>() > 0;
-                bool hasHealer = (*result)[8].Get<uint8>() > 0;
-                uint8 dpsCount = (*result)[9].Get<uint8>();
+            std::string leaderName = "Unknown";
+            sCharacterCache->GetCharacterNameByGuid(
+                ObjectGuid::Create<HighGuid::Player>(listing.leaderGuid),
+                leaderName);
 
-                group.Set("tank", JsonValue(hasTank));
-                group.Set("healer", JsonValue(hasHealer));
-                group.Set("dps", JsonValue(static_cast<int32>(dpsCount)));
-                group.Set("needTank", JsonValue(static_cast<int32>((*result)[10].Get<uint8>())));
-                group.Set("needHealer", JsonValue(static_cast<int32>((*result)[11].Get<uint8>())));
-                group.Set("needDps", JsonValue(static_cast<int32>((*result)[12].Get<uint8>())));
-                group.Set("note", JsonValue((*result)[13].Get<std::string>()));
-                group.Set("type", JsonValue((*result)[14].Get<int32>()));
-                group.Set("leader", JsonValue((*result)[15].Get<std::string>()));
+            std::string listingCategory = !category.empty()
+                ? category
+                : CategoryFromListingType(listing.listingType);
 
-                groupsArray.Push(group);
-            } while (result->NextRow());
+            group.Set("id", JsonValue(static_cast<int32>(listing.id)));
+            group.Set("leaderGuid", JsonValue(static_cast<int32>(listing.leaderGuid)));
+            group.Set("dungeonId", JsonValue(static_cast<int32>(listing.dungeonId)));
+            group.Set("dungeon", JsonValue(listing.dungeonName));
+            group.Set("dungeonName", JsonValue(listing.dungeonName));
+            group.Set("raid", JsonValue(listing.dungeonName));
+            group.Set("difficulty", JsonValue(static_cast<int32>(listing.difficulty)));
+            group.Set("difficultyName", JsonValue(DifficultyNameFromListing(
+                listing.listingType, listing.difficulty)));
+            group.Set("level", JsonValue(static_cast<int32>(listing.keystoneLevel)));
+            group.Set("keystoneLevel", JsonValue(static_cast<int32>(listing.keystoneLevel)));
+            group.Set("minIlvl", JsonValue(static_cast<int32>(listing.minIlvl)));
+            group.Set("tank", JsonValue(listing.currentTank > 0));
+            group.Set("healer", JsonValue(listing.currentHealer > 0));
+            group.Set("dps", JsonValue(static_cast<int32>(listing.currentDps)));
+            group.Set("needTank", JsonValue(static_cast<int32>(listing.needTank)));
+            group.Set("needHealer", JsonValue(static_cast<int32>(listing.needHealer)));
+            group.Set("needDps", JsonValue(static_cast<int32>(listing.needDps)));
+            group.Set("spots", JsonValue(static_cast<int32>(
+                listing.needTank + listing.needHealer + listing.needDps)));
+            group.Set("note", JsonValue(listing.note));
+            group.Set("progress", JsonValue(listing.note));
+            group.Set("type", JsonValue(static_cast<int32>(listing.listingType)));
+            group.Set("category", JsonValue(listingCategory));
+            group.Set("leader", JsonValue(leaderName));
+
+            groupsArray.Push(group);
         }
 
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SEARCH_RESULTS)
-            .Set("groups", groupsArray.Encode())
-            .Set("count", static_cast<int32>(groupsArray.Size()))
-            .Send(player);
+        JsonMessage jsonMsg(Module::GROUP_FINDER,
+            Opcode::GroupFinder::SMSG_SEARCH_RESULTS);
+        jsonMsg.Set("groups", groupsArray.Encode());
+        jsonMsg.Set("count", static_cast<int32>(groupsArray.Size()));
+
+        if (!category.empty())
+            jsonMsg.Set("category", category);
+        else if (listingType > 0)
+            jsonMsg.Set("category", CategoryFromListingType(
+                static_cast<uint8>(listingType)));
+
+        jsonMsg.Send(player);
     }
 
     // Apply to join a group
@@ -364,9 +466,22 @@ namespace GroupFinder
             // Get listing details for context
             if (auto listingOpt = sGroupFinderMgr.GetListing(app.listingId))
             {
+                std::string leaderName = "Unknown";
+                sCharacterCache->GetCharacterNameByGuid(
+                    ObjectGuid::Create<HighGuid::Player>(listingOpt->leaderGuid),
+                    leaderName);
+
                 appObj.Set("dungeonName", JsonValue(listingOpt->dungeonName));
+                appObj.Set("dungeon", JsonValue(listingOpt->dungeonName));
                 appObj.Set("dungeonId", JsonValue(static_cast<int32>(listingOpt->dungeonId)));
                 appObj.Set("keystoneLevel", JsonValue(static_cast<int32>(listingOpt->keystoneLevel)));
+                appObj.Set("difficulty", JsonValue(static_cast<int32>(listingOpt->difficulty)));
+                appObj.Set("difficultyName", JsonValue(DifficultyNameFromListing(
+                    listingOpt->listingType, listingOpt->difficulty)));
+                appObj.Set("listingType", JsonValue(static_cast<int32>(listingOpt->listingType)));
+                appObj.Set("category", JsonValue(CategoryFromListingType(
+                    listingOpt->listingType)));
+                appObj.Set("leader", JsonValue(leaderName));
             }
 
             appsArray.Push(appObj);
@@ -382,12 +497,13 @@ namespace GroupFinder
     {
         auto json = GetJsonData(msg);
 
-        int32 applicationId = JsonGetInt(json, "applicationId", 0);
+        uint32 listingId = JsonGetUInt(json, "listingId", 0);
+        uint32 applicationId = JsonGetUInt(json, "applicationId", 0);
         uint32 applicantGuid = static_cast<uint32>(JsonGetInt(json, "applicantGuid", 0));
 
-        // leaderGuid not required here; manager validates leader permissions internally
+        if (listingId == 0 && applicationId > 0)
+            listingId = sGroupFinderMgr.FindListingIdForApplication(applicationId);
 
-        uint32 listingId = sGroupFinderMgr.FindListingIdForApplication(static_cast<uint32>(applicationId));
         // Use manager to accept application (handles DB, cache, and notifications)
         if (listingId != 0 && sGroupFinderMgr.AcceptApplication(player, listingId, applicantGuid))
         {
@@ -409,13 +525,14 @@ namespace GroupFinder
     {
         auto json = GetJsonData(msg);
 
-        int32 applicationId = JsonGetInt(json, "applicationId", 0);
+        uint32 listingId = JsonGetUInt(json, "listingId", 0);
+        uint32 applicationId = JsonGetUInt(json, "applicationId", 0);
         uint32 applicantGuid = static_cast<uint32>(JsonGetInt(json, "applicantGuid", 0));
 
-        // leaderGuid not required here; manager validates leader permissions internally
-
         // Use manager to decline application
-        uint32 listingId = sGroupFinderMgr.FindListingIdForApplication(static_cast<uint32>(applicationId));
+        if (listingId == 0 && applicationId > 0)
+            listingId = sGroupFinderMgr.FindListingIdForApplication(applicationId);
+
         if (listingId != 0 && sGroupFinderMgr.DeclineApplication(player, listingId, applicantGuid))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
@@ -427,6 +544,37 @@ namespace GroupFinder
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Failed to decline application")
+                .Send(player);
+        }
+    }
+
+    static void HandleCancelApplication(Player* player, const ParsedMessage& msg)
+    {
+        auto json = GetJsonData(msg);
+        uint32 listingId = JsonGetUInt(json, "listingId", 0);
+
+        if (listingId == 0)
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Invalid listing ID")
+                .Send(player);
+            return;
+        }
+
+        if (sGroupFinderMgr.CancelApplication(player, listingId))
+        {
+            JsonMessage(Module::GROUP_FINDER,
+                Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
+                .Set("success", true)
+                .Set("status", "cancelled")
+                .Set("listingId", static_cast<int32>(listingId))
+                .Set("message", "Application withdrawn")
+                .Send(player);
+        }
+        else
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Failed to withdraw application")
                 .Send(player);
         }
     }
@@ -1332,6 +1480,7 @@ namespace GroupFinder
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_CREATE_LISTING, HandleCreateListing);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_SEARCH_LISTINGS, HandleSearchListings);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_APPLY_TO_GROUP, HandleApplyToGroup);
+        DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_CANCEL_APPLICATION, HandleCancelApplication);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_ACCEPT_APPLICATION, HandleAcceptApplication);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_DECLINE_APPLICATION, HandleDeclineApplication);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_DELIST_GROUP, HandleDelistGroup);

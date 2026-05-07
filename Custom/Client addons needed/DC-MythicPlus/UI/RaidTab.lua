@@ -410,6 +410,18 @@ function GF:CreateRaidBrowsePanel(parent)
 end
 
 function GF:PopulateRaidGroups(groups)
+    if type(groups) ~= "table" then
+        groups = {}
+    elseif groups[1] == nil then
+        local normalized = {}
+        for _, entry in pairs(groups) do
+            if type(entry) == "table" then
+                table.insert(normalized, entry)
+            end
+        end
+        groups = normalized
+    end
+
     local panel = self.RaidBrowsePanel
     if not panel or not panel.scrollChild then return end
     
@@ -484,7 +496,7 @@ function GF:PopulateRaidGroups(groups)
         spotsText:SetText(string.format("|cff00ff00%d spots|r", group.spots))
         
         -- Note
-        if group.note and group.note ~= "" then
+        if group.note and group.note ~= "" and group.note ~= group.progress then
             local noteText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             noteText:SetPoint("BOTTOMLEFT", 10, 6)
             noteText:SetText("|cff888888" .. group.note .. "|r")
@@ -511,7 +523,7 @@ function GF:PopulateRaidGroups(groups)
             -- Other groups - show Apply button
             actionBtn:SetText("Apply")
             actionBtn:SetScript("OnClick", function()
-                GF:ApplyToRaid(group.id)
+                GF:ApplyToRaid(group.id, group.raid)
             end)
         end
         
@@ -524,39 +536,39 @@ end
 function GF:RefreshRaidGroups()
     GF.Print("Refreshing raid list...")
     local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("RAID", 0x10, { action = "list_raids" })
+    if DC and DC.GroupFinder then
+        DC.GroupFinder.Search({ category = "raid", listingType = 2 })
+    else
+        GF:PopulateRaidGroups(mockRaidGroups)
     end
 end
 
-function GF:ApplyToRaid(raidId)
+function GF:ApplyToRaid(raidId, raidName)
     GF.Print("Applying to raid #" .. raidId .. "...")
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("RAID", 0x11, { raid_id = raidId })
-    end
+    GF:ShowApplicationDialog(raidId, raidName or "Raid Group")
 end
 
 function GF:CancelRaidGroup(raidId)
     GF.Print("Cancelling raid group #" .. raidId .. "...")
     
     local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("RAID", 0x13, { raid_id = raidId, action = "cancel" })
-    end
-    
-    -- Remove from local mock list
-    for i, group in ipairs(mockRaidGroups) do
-        if group.id == raidId then
-            table.remove(mockRaidGroups, i)
-            break
+    if DC and DC.GroupFinder and DC.GroupFinder.Delist then
+        DC.GroupFinder.Delist(raidId)
+        C_Timer.After(0.3, function()
+            GF:RefreshRaidGroups()
+        end)
+    else
+        for i, group in ipairs(mockRaidGroups) do
+            if group.id == raidId then
+                table.remove(mockRaidGroups, i)
+                break
+            end
         end
+
+        C_Timer.After(0.3, function()
+            GF:PopulateRaidGroups(mockRaidGroups)
+        end)
     end
-    
-    -- Refresh the list
-    C_Timer.After(0.3, function()
-        GF:PopulateRaidGroups(mockRaidGroups)
-    end)
 end
 
 -- =====================================================================
@@ -760,53 +772,72 @@ function GF:CreateRaidCreatePanel(parent)
     
     createBtn:SetScript("OnClick", function()
         local raid = panel.selectedRaid or "Unknown"
+        local raidId = panel.selectedRaidId or 0
         local difficulty = panel.selectedDifficulty or "25 Normal"
+        local difficultyId = panel.selectedDifficultyId or 1
         local progress = panel.progressEdit:GetText() or "Fresh"
         local note = panel.noteEdit:GetText() or ""
-        GF:CreateRaidGroup(raid, difficulty, progress, note)
+        GF:CreateRaidGroup(raidId, raid, difficultyId, difficulty, progress, note)
     end)
     
     self.RaidCreatePanel = panel
 end
 
-function GF:CreateRaidGroup(raid, difficulty, progress, note)
+function GF:CreateRaidGroup(raidId, raid, difficultyId, difficulty, progress, note)
     GF.Print(string.format("Creating raid group: %s (%s) - %s", raid, difficulty, progress))
     
     local playerName = UnitName("player") or "You"
     
     local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("RAID", 0x12, {
+    if DC and DC.GroupFinder then
+        local combinedNote = progress or ""
+        if note and note ~= "" then
+            if combinedNote ~= "" then
+                combinedNote = combinedNote .. " | " .. note
+            else
+                combinedNote = note
+            end
+        end
+
+        DC.GroupFinder.CreateListing({
+            category = "raid",
+            listingType = 2,
+            dungeonId = raidId or 0,
+            dungeonName = raid,
+            difficultyId = difficultyId or 1,
+            needTank = 2,
+            needHealer = 5,
+            needDps = 18,
+            note = combinedNote
+        })
+
+        -- Switch to browse tab after short delay and refresh from server
+        C_Timer.After(0.5, function()
+            GF:SelectRaidSubTab(1)
+            GF:RefreshRaidGroups()
+        end)
+    else
+        local newGroup = {
+            id = #mockRaidGroups + 100,
             raid = raid,
             difficulty = difficulty,
             progress = progress,
-            note = note
-        })
+            leader = playerName,
+            spots = 20,
+            note = note,
+            isOwn = true
+        }
+        table.insert(mockRaidGroups, 1, newGroup)
+
+        if self.RaidBrowsePanel and self.RaidBrowsePanel.applicantBtn then
+            self.RaidBrowsePanel.applicantBtn:Show()
+        end
+
+        C_Timer.After(0.5, function()
+            GF:SelectRaidSubTab(1)
+            GF:PopulateRaidGroups(mockRaidGroups)
+        end)
     end
-    
-    -- Add to local mock list for immediate visibility
-    local newGroup = {
-        id = #mockRaidGroups + 100,
-        raid = raid,
-        difficulty = difficulty,
-        progress = progress,
-        leader = playerName,
-        spots = 20,
-        note = note,
-        isOwn = true
-    }
-    table.insert(mockRaidGroups, 1, newGroup)
-    
-    -- Show the View Applicants button
-    if self.RaidBrowsePanel and self.RaidBrowsePanel.applicantBtn then
-        self.RaidBrowsePanel.applicantBtn:Show()
-    end
-    
-    -- Switch to browse tab after short delay
-    C_Timer.After(0.5, function()
-        GF:SelectRaidSubTab(1)
-        GF:PopulateRaidGroups(mockRaidGroups)
-    end)
 end
 
 -- =====================================================================

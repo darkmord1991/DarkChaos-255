@@ -19,6 +19,8 @@ local WORLD_CONTENT_TYPES = {
     { id = "rare", name = "Rare Hunting", icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01" },
     { id = "farming", name = "Farming Groups", icon = "Interface\\Icons\\INV_Misc_Herb_Goldclover" },
     { id = "pvp", name = "World PvP", icon = "Interface\\Icons\\Ability_DualWield" },
+    { id = "quest", name = "Questing", icon = "Interface\\Icons\\INV_Misc_Note_01" },
+    { id = "other", name = "Other Groups", icon = "Interface\\Icons\\INV_Misc_GroupLooking" },
 }
 
 -- Sample world content data (populated from server)
@@ -29,7 +31,8 @@ local worldContent = {
     rares = {},
     farming = {},
     pvp = {},
-    groups = {},
+    questGroups = {},
+    otherGroups = {},
 }
 
 -- =====================================================================
@@ -37,6 +40,11 @@ local worldContent = {
 -- =====================================================================
 
 local function Print(msg)
+    if GF and GF.Print then
+        GF:Print(msg)
+        return
+    end
+
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff32c4ffWorld Content:|r " .. (msg or ""))
     end
@@ -299,6 +307,10 @@ function GF:SelectWorldFilter(contentId)
     
     -- Refresh content list
     self:RefreshWorldContentList()
+
+    if (contentId == "quest" or contentId == "other") and self.WorldTabContent and self.WorldTabContent:IsShown() then
+        self:RefreshWorldContent()
+    end
 end
 
 -- =====================================================================
@@ -314,7 +326,17 @@ function GF:RefreshWorldContent()
     
     -- Request world content data
     DC:Request("WRLD", 0x01, {})  -- Hotspots + bosses + events
-    DC:Request("GRPF", 0x11, { category = "world" })  -- World groups
+
+    local groupCategory = nil
+    if self.selectedWorldFilter == "quest" then
+        groupCategory = "quest"
+    elseif self.selectedWorldFilter == "other" then
+        groupCategory = "other"
+    end
+
+    if groupCategory then
+        DC:Request("GRPF", 0x11, { category = groupCategory })
+    end
     
     Print("Refreshing world content...")
     
@@ -372,8 +394,10 @@ function GF:RefreshWorldContentList()
         items = worldContent.farming or {}
     elseif filter == "pvp" then
         items = worldContent.pvp or {}
+    elseif filter == "quest" then
+        items = worldContent.questGroups or {}
     else
-        items = worldContent.groups or {}
+        items = worldContent.otherGroups or {}
     end
     
     if #items == 0 then
@@ -396,6 +420,31 @@ function GF:RefreshWorldContentList()
     end
     
     self.worldScrollChild:SetHeight(math.abs(yOffset) + 20)
+end
+
+function GF:UpdateWorldGroups(groups, category)
+    if type(groups) ~= "table" then
+        groups = {}
+    elseif groups[1] == nil then
+        local normalized = {}
+        for _, entry in pairs(groups) do
+            if type(entry) == "table" then
+                table.insert(normalized, entry)
+            end
+        end
+        groups = normalized
+    end
+
+    if category == "quest" then
+        worldContent.questGroups = groups
+    else
+        worldContent.otherGroups = groups
+    end
+
+    if (category == "quest" and self.selectedWorldFilter == "quest") or
+        ((category == nil or category == "other") and self.selectedWorldFilter == "other") then
+        GF:RefreshWorldContentList()
+    end
 end
 
 function GF:CreateWorldContentEntry(parent, item, contentType)
@@ -425,6 +474,8 @@ function GF:CreateWorldContentEntry(parent, item, contentType)
     name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -4)
     if contentType == "hotspot" then
         name:SetText(item.zoneName or item.zone or "Unknown Zone")
+    elseif contentType == "quest" or contentType == "other" then
+        name:SetText(item.dungeonName or item.dungeon or item.raid or item.name or "Unknown Group")
     else
         name:SetText(item.name or "Unknown")
     end
@@ -440,6 +491,10 @@ function GF:CreateWorldContentEntry(parent, item, contentType)
     elseif contentType == "hotspot" then
         local bonus = item.bonusPercent or item.bonus or 0
         info:SetText((item.name or "Hotspot") .. " - |cff00ff00+" .. bonus .. "% Bonus|r")
+    elseif contentType == "quest" or contentType == "other" then
+        local leader = item.leader or "Unknown"
+        local note = item.note or "Open group listing"
+        info:SetText("Leader: " .. leader .. " - " .. note)
     else
         info:SetText(item.description or "No description")
     end
@@ -508,8 +563,85 @@ function GF:TeleportToSelectedWorld()
 end
 
 function GF:ShowWorldGroupCreateDialog()
-    -- TODO: Implement group creation dialog for world content
-    Print("Create World Group dialog coming soon!")
+    local categoryConfig = {
+        quest = { category = "quest", listingType = 5, title = "Questing Group" },
+        other = { category = "other", listingType = 4, title = "Other Group" },
+    }
+
+    local config = categoryConfig[self.selectedWorldFilter]
+    if not config then
+        Print("Select Questing or Other Groups to create a listing.")
+        return
+    end
+
+    if not self.worldGroupDialog then
+        local frame = CreateFrame("Frame", "DCWorldGroupCreateDialog", UIParent)
+        frame:SetSize(320, 170)
+        frame:SetPoint("CENTER")
+        frame:SetFrameStrata("DIALOG")
+        frame:EnableMouse(true)
+
+        frame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        })
+
+        local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", 0, -16)
+        frame.title = title
+
+        local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("TOPLEFT", 20, -52)
+        label:SetText("Group Note:")
+
+        local noteBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+        noteBox:SetSize(270, 22)
+        noteBox:SetPoint("TOPLEFT", 24, -74)
+        noteBox:SetAutoFocus(false)
+        frame.noteBox = noteBox
+
+        local createBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        createBtn:SetSize(100, 24)
+        createBtn:SetPoint("BOTTOMLEFT", 40, 20)
+        createBtn:SetText("Create")
+        createBtn:SetScript("OnClick", function()
+            local DC = rawget(_G, "DCAddonProtocol")
+            if DC and DC.GroupFinder then
+                DC.GroupFinder.CreateListing({
+                    category = frame.category,
+                    listingType = frame.listingType,
+                    dungeonName = frame.listingName,
+                    note = frame.noteBox:GetText() or "",
+                    needTank = 1,
+                    needHealer = 1,
+                    needDps = 3,
+                })
+                frame:Hide()
+                C_Timer.After(0.5, function()
+                    GF:RefreshWorldContent()
+                end)
+            end
+        end)
+
+        local cancelBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        cancelBtn:SetSize(100, 24)
+        cancelBtn:SetPoint("BOTTOMRIGHT", -40, 20)
+        cancelBtn:SetText("Cancel")
+        cancelBtn:SetScript("OnClick", function()
+            frame:Hide()
+        end)
+
+        self.worldGroupDialog = frame
+    end
+
+    self.worldGroupDialog.category = config.category
+    self.worldGroupDialog.listingType = config.listingType
+    self.worldGroupDialog.listingName = config.title
+    self.worldGroupDialog.title:SetText("Create " .. config.title)
+    self.worldGroupDialog.noteBox:SetText("")
+    self.worldGroupDialog:Show()
 end
 
 -- =====================================================================
@@ -556,9 +688,8 @@ local function RegisterWorldHandlers()
     -- Handle group search results for world category
     if DC.GroupFinderOpcodes then
         DC:RegisterHandler("GRPF", DC.GroupFinderOpcodes.SMSG_SEARCH_RESULTS, function(data)
-            if data and data.category == "world" then
-                worldContent.groups = data.groups or {}
-                GF:RefreshWorldContentList()
+            if data and (data.category == "quest" or data.category == "other") then
+                GF:UpdateWorldGroups(data.groups or {}, data.category)
             end
         end)
     end
