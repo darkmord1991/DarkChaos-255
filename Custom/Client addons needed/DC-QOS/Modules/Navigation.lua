@@ -1219,11 +1219,17 @@ local QUEST_POI_BOUNDARY_CONTAINER_KEYS = {
     "poiPoints",
 }
 
+local function IsQuestPoiBoundaryPointTable(value)
+    return type(value) == "table"
+        and ((type(value.x) == "number" and type(value.y) == "number")
+            or (type(value[1]) == "number" and type(value[2]) == "number"))
+end
+
 local function ParseQuestPoiBoundaryPoints(...)
     local collected = {}
     local keys = {}
 
-    local function AddPoint(xRaw, yRaw, mapIdRaw, source)
+    local function AddPoint(xRaw, yRaw, mapIdRaw, source, groupKey)
         local x = NormalizeCoord(xRaw)
         local y = NormalizeCoord(yRaw)
         if not x or not y then
@@ -1235,7 +1241,9 @@ local function ParseQuestPoiBoundaryPoints(...)
             mapId = nil
         end
 
-        local key = string.format("%s:%.4f:%.4f", tostring(mapId or "n/a"), x, y)
+        groupKey = tostring(groupKey or source or "root")
+
+        local key = string.format("%s:%s:%.4f:%.4f", tostring(mapId or "n/a"), groupKey, x, y)
         if keys[key] then
             return
         end
@@ -1292,10 +1300,11 @@ local function ParseQuestPoiBoundaryPoints(...)
         return collected
     end
 
+            groupKey = groupKey,
     return nil
 end
 
-local function EnsureQuestPoiCompatibilityShim()
+    local function ParseValue(value, depth, inheritedMapId, source, groupKey)
     if type(QuestPOIGetIconInfo) == "function" then
         return
     end
@@ -1304,24 +1313,31 @@ local function EnsureQuestPoiCompatibilityShim()
         local questId = tonumber(questValue)
         if not questId or questId <= 0 then
             return nil, nil, nil
+
+        local currentGroupKey = tostring(groupKey or source or "root")
         end
 
-        if type(GetNumQuestLogEntries) == "function" and type(GetQuestLogTitle) == "function" then
+            AddPoint(value.x, value.y, mapId, source, currentGroupKey)
             local numEntries = GetNumQuestLogEntries() or 0
-            if questId <= numEntries then
+            AddPoint(value[1], value[2], mapId, source, currentGroupKey)
                 local title, _, _, _, isHeader = GetQuestLogTitle(questId)
                 if title and not isHeader then
                     questId = GetQuestIdFromLogIndex(questId) or questId
                 end
             end
         end
-
+                ParseValue(nested, depth + 1, mapId, key, currentGroupKey .. "." .. key)
         -- Prefer quest waypoint from the client shim when the quest is currently super-tracked.
         local trackedQuestId = ShimGetSuperTrackedQuestID()
         if trackedQuestId and trackedQuestId == questId then
-            local mapId = (type(GetCurrentMapAreaID) == "function") and GetCurrentMapAreaID() or nil
-            if mapId then
-                local wx, wy = ShimGetSuperTrackedQuestWaypointForMap(mapId)
+        for index = 1, #value do
+            local nested = value[index]
+            if type(nested) == "table" then
+                local nestedGroupKey = currentGroupKey
+                if not IsQuestPoiBoundaryPointTable(nested) then
+                    nestedGroupKey = string.format("%s[%d]", currentGroupKey, index)
+                end
+                ParseValue(nested, depth + 1, mapId, source, nestedGroupKey)
                 if wx and wy then
                     return nil, wx, wy
                 end
@@ -1330,7 +1346,8 @@ local function EnsureQuestPoiCompatibilityShim()
 
         -- Fallback to cached POI display points if available.
         local cached = state.questPoiCache and state.questPoiCache[questId]
-        if cached and cached.points and #cached.points > 0 then
+            local rootKey = "arg" .. tostring(i)
+            ParseValue(value, 1, nil, rootKey, rootKey)
             local point = cached.points[1]
             if point and point.x and point.y then
                 return nil, point.x, point.y
@@ -2959,7 +2976,8 @@ local function AddQuestPoiBoundaryPoints(questId, points, mapId, source)
             if pointMapId and pointMapId <= 0 then
                 pointMapId = nil
             end
-            local key = string.format("%s:%.4f:%.4f", tostring(pointMapId or "n/a"), x, y)
+            local groupKey = tostring((point and point.groupKey) or source or point.source or "default")
+            local key = string.format("%s:%s:%.4f:%.4f", tostring(pointMapId or "n/a"), groupKey, x, y)
             if not bucket.boundaryKeys[key] then
                 bucket.boundaryKeys[key] = true
                 table.insert(bucket.boundaryPoints, {
@@ -2967,6 +2985,7 @@ local function AddQuestPoiBoundaryPoints(questId, points, mapId, source)
                     y = y,
                     mapId = pointMapId,
                     source = source or point.source,
+                    groupKey = groupKey,
                 })
                 inserted = inserted + 1
             end
@@ -2978,7 +2997,7 @@ local function AddQuestPoiBoundaryPoints(questId, points, mapId, source)
     end
 end
 
-local function GetCachedQuestPoiBoundaryPoints(questId, mapId)
+local function GetCachedQuestPoiBoundaryPoints(questId, mapId, anchorX, anchorY)
     questId = tonumber(questId)
     if not questId or questId <= 0 then
         return nil
@@ -2995,18 +3014,79 @@ local function GetCachedQuestPoiBoundaryPoints(questId, mapId)
     end
 
     local selected = {}
+    local grouped = {}
+    local groupOrder = {}
+    local hasGroups = false
+
     for i = 1, #bucket.boundaryPoints do
         local point = bucket.boundaryPoints[i]
         if not currentMapId or not point.mapId or point.mapId == currentMapId then
-            table.insert(selected, {
+            local selectedPoint = {
                 x = point.x,
                 y = point.y,
-            })
+            }
+            table.insert(selected, selectedPoint)
+
+            local groupKey = point.groupKey
+            if groupKey and groupKey ~= "" then
+                hasGroups = true
+            else
+                groupKey = "__default"
+            end
+
+            local group = grouped[groupKey]
+            if not group then
+                group = {
+                    points = {},
+                    sumX = 0,
+                    sumY = 0,
+                }
+                grouped[groupKey] = group
+                table.insert(groupOrder, group)
+            end
+
+            table.insert(group.points, selectedPoint)
+            group.sumX = group.sumX + point.x
+            group.sumY = group.sumY + point.y
         end
     end
 
     if #selected < 3 then
         return nil
+    end
+
+    if hasGroups then
+        local bestGroup
+        local bestMetric
+
+        for i = 1, #groupOrder do
+            local group = groupOrder[i]
+            local pointCount = #group.points
+            if pointCount >= 3 then
+                local centerX = group.sumX / pointCount
+                local centerY = group.sumY / pointCount
+                local metric
+
+                if anchorX and anchorY then
+                    local dx = centerX - anchorX
+                    local dy = centerY - anchorY
+                    metric = (dx * dx) + (dy * dy)
+                else
+                    metric = -pointCount
+                end
+
+                if not bestGroup
+                    or metric < bestMetric
+                    or (metric == bestMetric and pointCount > #bestGroup.points) then
+                    bestGroup = group
+                    bestMetric = metric
+                end
+            end
+        end
+
+        if bestGroup and #bestGroup.points >= 3 then
+            return bestGroup.points
+        end
     end
 
     local cx, cy = 0, 0
@@ -3557,7 +3637,7 @@ local function IsPlayerInsideQuestPoiArea(playerX, playerY, centerX, centerY, ra
 end
 
 local function ResolveQuestPoiAreaData(questLogIndex, questId, mapId, fallbackX, fallbackY)
-    local boundaryPoints = GetCachedQuestPoiBoundaryPoints(questId, mapId)
+    local boundaryPoints = GetCachedQuestPoiBoundaryPoints(questId, mapId, fallbackX, fallbackY)
     if boundaryPoints and #boundaryPoints >= 3 then
         local radiusFromPolygon = EstimateQuestPoiBoundaryRadiusFromPolygon(mapId, fallbackX, fallbackY, boundaryPoints)
         if radiusFromPolygon and radiusFromPolygon > 0 then

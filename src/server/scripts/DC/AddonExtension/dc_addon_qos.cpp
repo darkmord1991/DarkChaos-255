@@ -501,6 +501,51 @@ namespace DCQoS
         msg.Send(player);
     }
 
+    static CreatureData const* FindCachedCreatureSpawnData(uint32 entry)
+    {
+        for (auto const& pair : sObjectMgr->GetAllCreatureData())
+        {
+            CreatureData const& creatureData = pair.second;
+            if (creatureData.id1 == entry || creatureData.id2 == entry || creatureData.id3 == entry)
+                return &creatureData;
+        }
+
+        return nullptr;
+    }
+
+    static CreatureData const* ResolveNpcTooltipSpawnData(Player* player,
+        ObjectGuid guid,
+        uint32 entry,
+        uint32& spawnId)
+    {
+        if (player && guid.IsCreatureOrVehicle())
+        {
+            if (Creature* creature = ObjectAccessor::GetCreature(*player, guid))
+            {
+                spawnId = creature->GetSpawnId();
+
+                if (CreatureData const* creatureData = creature->GetCreatureData())
+                    return creatureData;
+
+                if (spawnId > 0)
+                {
+                    if (CreatureData const* creatureData = sObjectMgr->GetCreatureData(spawnId))
+                        return creatureData;
+                }
+            }
+        }
+
+        if (CreatureData const* creatureData = FindCachedCreatureSpawnData(entry))
+        {
+            if (spawnId == 0)
+                spawnId = creatureData->spawnId;
+
+            return creatureData;
+        }
+
+        return nullptr;
+    }
+
     void SendNpcInfo(Player* player, const std::string& guidStr)
     {
         if (!player || !player->GetSession())
@@ -550,47 +595,22 @@ namespace DCQoS
         msg.Set("npcFlags", creatureTemplate->npcflag);
         msg.Set("unitClass", creatureTemplate->unit_class);
         msg.Set("type", creatureTemplate->type);
-
-        // Get spawn information if available
-        QueryResult spawnResult = WorldDatabase.Query(
-            "SELECT guid, map, position_x, position_y, position_z, spawntimesecs "
-            "FROM creature WHERE id1 = {} OR id2 = {} OR id3 = {} LIMIT 1",
-            entry, entry, entry
-        );
-
-        // Try to get live spawn information from active creatures
         uint32 spawnId = 0;
-        if (guid.IsCreatureOrVehicle())
-        {
-            if (Creature* creature = ObjectAccessor::GetCreature(*player, guid))
-            {
-                spawnId = creature->GetSpawnId();
-            }
-        }
-        else if (guid.IsGameObject())
-        {
-            if (GameObject* go = ObjectAccessor::GetGameObject(*player, guid))
-            {
-                spawnId = go->GetSpawnId();
-            }
-        }
+        CreatureData const* spawnData = ResolveNpcTooltipSpawnData(player, guid, entry, spawnId);
 
         // Include spawn ID if available (used by DC-Welcome addon for tooltips)
         if (spawnId > 0)
-        {
             msg.Set("spawnId", static_cast<int32>(spawnId));
-        }
 
-        if (spawnResult)
+        if (spawnData)
         {
-            Field* fields = spawnResult->Fetch();
-            msg.Set("dbGuid", static_cast<int32>(fields[0].Get<uint32>()));
-            msg.Set("spawnGuid", static_cast<int32>(fields[0].Get<uint32>()));
-            msg.Set("mapId", static_cast<int32>(fields[1].Get<uint16>()));
-            msg.Set("spawnX", fields[2].Get<float>());
-            msg.Set("spawnY", fields[3].Get<float>());
-            msg.Set("spawnZ", fields[4].Get<float>());
-            msg.Set("spawnTime", static_cast<int32>(fields[5].Get<uint32>()));
+            msg.Set("dbGuid", static_cast<int32>(spawnData->spawnId));
+            msg.Set("spawnGuid", static_cast<int32>(spawnData->spawnId));
+            msg.Set("mapId", static_cast<int32>(spawnData->mapid));
+            msg.Set("spawnX", spawnData->posX);
+            msg.Set("spawnY", spawnData->posY);
+            msg.Set("spawnZ", spawnData->posZ);
+            msg.Set("spawnTime", static_cast<int32>(spawnData->spawntimesecs));
         }
 
         msg.Send(player);

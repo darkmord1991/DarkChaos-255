@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
     `last_request` TIMESTAMP NULL DEFAULT NULL COMMENT 'Most recent message',
     PRIMARY KEY (`guid`, `module`),
     INDEX `idx_module` (`module`),
-    INDEX `idx_last_request` (`last_request`)
+    INDEX `idx_last_request` (`last_request`),
+    INDEX `idx_last_request_recent_cover_v2` (`last_request`, `guid`, `module`, `total_requests`, `total_responses`, `avg_response_time_ms`, `max_response_time_ms`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Aggregated protocol statistics per player per module';
 

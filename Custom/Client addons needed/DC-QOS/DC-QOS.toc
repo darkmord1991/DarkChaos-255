@@ -262,7 +262,6 @@ WeakAurasArchive\WeakAurasArchive.lua
 # ============================================================
 # WEAKAURAS MODEL PATHS
 # ============================================================
-WeakAurasModelPaths\ModelPaths.lua
 
 # ============================================================
 # DC-QOS CORE FRAMEWORK

@@ -39,7 +39,10 @@
 #include <iomanip>
 #include <cmath>
 #include <cctype>
+#include <cstdlib>
+#include <limits>
 #include <map>
+#include <utility>
 
 namespace DCAddon
 {
@@ -1386,81 +1389,200 @@ namespace DCAddon
         void Set(const std::string& v) { _type = String; _string = v; }
 
         void SetArray() { _type = Array; _array.clear(); }
+        void SetArray(size_t reserveCount)
+        {
+            _type = Array;
+            _array.clear();
+            _array.reserve(reserveCount);
+        }
         void Push(const JsonValue& v) { if (_type == Array) _array.push_back(v); }
+        void Push(JsonValue&& v) { if (_type == Array) _array.push_back(std::move(v)); }
 
         void SetObject() { _type = Object; _object.clear(); }
         void Set(const std::string& key, const JsonValue& v)
         {
             if (_type == Object) _object[key] = v;
         }
+        void Set(const std::string& key, JsonValue&& v)
+        {
+            if (_type == Object) _object[key] = std::move(v);
+        }
 
-        // Encode to JSON string
-        std::string Encode() const
+        std::size_t EstimateEncodedSize() const
         {
             switch (_type)
             {
-                case Null: return "null";
-                case Bool: return _bool ? "true" : "false";
+                case Null:
+                    return 4;
+                case Bool:
+                    return _bool ? 4 : 5;
+                case Number: {
+                    // Integer values dominate addon payloads; reserve for the
+                    // fast path and keep a safe fallback budget for doubles.
+                    if (std::isfinite(_number))
+                    {
+                        double intPart = 0.0;
+                        if (std::modf(_number, &intPart) == 0.0)
+                            return std::to_string(static_cast<long long>(intPart)).size();
+                    }
+
+                    return 24;
+                }
+                case String: {
+                    std::size_t size = 2;
+                    for (char c : _string)
+                    {
+                        if (c == '"' || c == '\\' || c == '\n'
+                            || c == '\r' || c == '\t')
+                        {
+                            size += 2;
+                        }
+                        else
+                        {
+                            ++size;
+                        }
+                    }
+
+                    return size;
+                }
+                case Array: {
+                    std::size_t size = 2;
+                    if (!_array.empty())
+                        size += (_array.size() - 1);
+
+                    for (JsonValue const& value : _array)
+                        size += value.EstimateEncodedSize();
+
+                    return size;
+                }
+                case Object: {
+                    std::size_t size = 2;
+                    bool first = true;
+                    for (auto const& [k, v] : _object)
+                    {
+                        if (!first)
+                            ++size;
+                        first = false;
+
+                        size += 3;
+                        for (char c : k)
+                        {
+                            if (c == '"' || c == '\\' || c == '\n'
+                                || c == '\r' || c == '\t')
+                            {
+                                size += 2;
+                            }
+                            else
+                            {
+                                ++size;
+                            }
+                        }
+
+                        size += v.EstimateEncodedSize();
+                    }
+                    return size;
+                }
+            }
+            return 4;
+        }
+
+        void AppendEncodedTo(std::string& out) const
+        {
+            switch (_type)
+            {
+                case Null:
+                    out += "null";
+                    return;
+                case Bool:
+                    out += _bool ? "true" : "false";
+                    return;
                 case Number: {
                     // IMPORTANT: Preserve integer fidelity for large IDs (e.g. spawnId ~= 9,000,000).
                     // Default iostream precision (6) would round 9000189/9000191 to 9.00019e+06.
                     if (std::isfinite(_number))
                     {
                         double intPart = 0.0;
-                        if (std::modf(_number, &intPart) == 0.0)
+                        if (std::modf(_number, &intPart) == 0.0
+                            && intPart >= static_cast<double>(std::numeric_limits<long long>::min())
+                            && intPart <= static_cast<double>(std::numeric_limits<long long>::max()))
                         {
-                            // Integer: emit without scientific notation.
-                            std::ostringstream ss;
-                            ss.setf(std::ios::fmtflags(0), std::ios::floatfield);
-                            ss << static_cast<long long>(intPart);
-                            return ss.str();
+                            out += std::to_string(static_cast<long long>(intPart));
+                            return;
                         }
                     }
 
-                    // Non-integer: emit with enough precision to round-trip.
                     std::ostringstream ss;
                     ss << std::setprecision(15) << _number;
-                    return ss.str();
+                    out += ss.str();
+                    return;
                 }
                 case String: {
-                    std::string result = "\"";
-                    for (char c : _string) {
-                        if (c == '"') result += "\\\"";
-                        else if (c == '\\') result += "\\\\";
-                        else if (c == '\n') result += "\\n";
-                        else if (c == '\r') result += "\\r";
-                        else if (c == '\t') result += "\\t";
-                        else result += c;
-                    }
-                    result += "\"";
-                    return result;
+                    out.push_back('"');
+                    AppendEscapedString(_string, out);
+                    out.push_back('"');
+                    return;
                 }
                 case Array: {
-                    std::string result = "[";
-                    for (size_t i = 0; i < _array.size(); ++i) {
-                        if (i > 0) result += ",";
-                        result += _array[i].Encode();
+                    out.push_back('[');
+                    for (size_t i = 0; i < _array.size(); ++i)
+                    {
+                        if (i > 0)
+                            out.push_back(',');
+                        _array[i].AppendEncodedTo(out);
                     }
-                    result += "]";
-                    return result;
+                    out.push_back(']');
+                    return;
                 }
                 case Object: {
-                    std::string result = "{";
+                    out.push_back('{');
                     bool first = true;
                     for (auto const& [k, v] : _object)
                     {
-                        if (!first) result += ",";
+                        if (!first)
+                            out.push_back(',');
                         first = false;
-                        result += "\"" + k + "\":" + v.Encode();
+                        out.push_back('"');
+                        AppendEscapedString(k, out);
+                        out.push_back('"');
+                        out.push_back(':');
+                        v.AppendEncodedTo(out);
                     }
-                    result += "}";
-                    return result;
+                    out.push_back('}');
+                    return;
                 }
             }
-            return "null";
+        }
+
+        // Encode to JSON string
+        std::string Encode() const
+        {
+            std::string result;
+            result.reserve(EstimateEncodedSize());
+            AppendEncodedTo(result);
+            return result;
         }
 
     private:
+        static void AppendEscapedString(std::string const& source,
+            std::string& out)
+        {
+            for (char c : source)
+            {
+                if (c == '"')
+                    out += "\\\"";
+                else if (c == '\\')
+                    out += "\\\\";
+                else if (c == '\n')
+                    out += "\\n";
+                else if (c == '\r')
+                    out += "\\r";
+                else if (c == '\t')
+                    out += "\\t";
+                else
+                    out.push_back(c);
+            }
+        }
+
         Type _type = Null;
         bool _bool = false;
         double _number = 0.0;
@@ -1495,9 +1617,9 @@ namespace DCAddon
             if (c == '"') return ParseString(s, pos);
             if (c == '{') return ParseObject(s, pos);
             if (c == '[') return ParseArray(s, pos);
-            if (c == 't' && s.substr(pos, 4) == "true") { pos += 4; return JsonValue(true); }
-            if (c == 'f' && s.substr(pos, 5) == "false") { pos += 5; return JsonValue(false); }
-            if (c == 'n' && s.substr(pos, 4) == "null") { pos += 4; return JsonValue(); }
+            if (c == 't' && s.compare(pos, 4, "true") == 0) { pos += 4; return JsonValue(true); }
+            if (c == 'f' && s.compare(pos, 5, "false") == 0) { pos += 5; return JsonValue(false); }
+            if (c == 'n' && s.compare(pos, 4, "null") == 0) { pos += 4; return JsonValue(); }
             if (c == '-' || (c >= '0' && c <= '9')) return ParseNumber(s, pos);
 
             return JsonValue();
@@ -1534,20 +1656,57 @@ namespace DCAddon
         static JsonValue ParseNumber(const std::string& s, size_t& pos)
         {
             size_t start = pos;
-            if (s[pos] == '-') ++pos;
-            while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9') ++pos;
+            bool negative = false;
+            if (s[pos] == '-')
+            {
+                negative = true;
+                ++pos;
+            }
+
+            uint64 integerValue = 0;
+            bool hasDigits = false;
+            bool integerOverflow = false;
+
+            while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9')
+            {
+                hasDigits = true;
+                uint32 digit = static_cast<uint32>(s[pos] - '0');
+                if (!integerOverflow)
+                {
+                    if (integerValue > ((std::numeric_limits<uint64>::max() - digit) / 10))
+                        integerOverflow = true;
+                    else
+                        integerValue = (integerValue * 10) + digit;
+                }
+
+                ++pos;
+            }
+
+            bool isFloating = false;
             if (pos < s.size() && s[pos] == '.')
             {
+                isFloating = true;
                 ++pos;
-                while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9') ++pos;
+                while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9')
+                    ++pos;
             }
             if (pos < s.size() && (s[pos] == 'e' || s[pos] == 'E'))
             {
+                isFloating = true;
                 ++pos;
-                if (pos < s.size() && (s[pos] == '+' || s[pos] == '-')) ++pos;
-                while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9') ++pos;
+                if (pos < s.size() && (s[pos] == '+' || s[pos] == '-'))
+                    ++pos;
+                while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9')
+                    ++pos;
             }
-            return JsonValue(std::stod(s.substr(start, pos - start)));
+
+            if (hasDigits && !isFloating && !integerOverflow)
+            {
+                double value = static_cast<double>(integerValue);
+                return JsonValue(negative ? -value : value);
+            }
+
+            return JsonValue(std::strtod(s.c_str() + start, nullptr));
         }
 
         static JsonValue ParseArray(const std::string& s, size_t& pos)
@@ -1619,12 +1778,18 @@ namespace DCAddon
         JsonMessage& Set(const std::string& key, const std::string& v) { _json.Set(key, JsonValue(v)); return *this; }
         JsonMessage& Set(const std::string& key, const char* v) { _json.Set(key, JsonValue(v)); return *this; }
         JsonMessage& Set(const std::string& key, const JsonValue& v) { _json.Set(key, v); return *this; }
+        JsonMessage& Set(const std::string& key, JsonValue&& v) { _json.Set(key, std::move(v)); return *this; }
 
         std::string Build() const
         {
-            std::string result = _module;
+            std::string const opcode = std::to_string(_opcode);
+            std::string result;
+            result.reserve(_module.size() + opcode.size() + _json.EstimateEncodedSize()
+                + (_requestId.empty() ? 3 : (8 + _requestId.size())));
+
+            result = _module;
             result += DELIMITER;
-            result += std::to_string(_opcode);
+            result += opcode;
             result += DELIMITER;
             if (!_requestId.empty())
             {
@@ -1634,7 +1799,7 @@ namespace DCAddon
             }
             result += JSON_MARKER;
             result += DELIMITER;
-            result += _json.Encode();
+            _json.AppendEncodedTo(result);
             return result;
         }
 

@@ -36,11 +36,257 @@
 #include "World.h"
 #include "AchievementMgr.h"
 #include "../CrossSystem/CrossSystemSeasonHelper.h"
+#include "../Seasons/DCWeeklyResetHub.h"
+#include <algorithm>
+#include <cctype>
+#include <ctime>
+#include <mutex>
 #include <string>
 #include <sstream>
+#include <unordered_map>
 
 namespace DCWelcome
 {
+    namespace
+    {
+        constexpr std::time_t WELCOME_CONTENT_CACHE_TTL_SECS = 30;
+
+        bool CharacterTableExists(char const* tableName)
+        {
+            return CharacterDatabase.Query(
+                "SELECT 1 FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
+                tableName) != nullptr;
+        }
+
+        struct CachedFaqPayload
+        {
+            std::string entries = "[]";
+            uint32 count = 0;
+            std::time_t expiresAt = 0;
+        };
+
+        struct CachedWhatsNewPayload
+        {
+            std::string version = "1.0.0";
+            std::string entries = "[]";
+            uint32 count = 0;
+            std::time_t expiresAt = 0;
+        };
+
+        std::mutex sWelcomeContentCacheLock;
+        std::unordered_map<std::string, CachedFaqPayload> sCachedFaqPayloads;
+        CachedWhatsNewPayload sCachedWhatsNewPayload;
+
+        std::string NormalizeFaqCategoryFilter(std::string categoryFilter)
+        {
+            if (categoryFilter.empty())
+                return "all";
+
+            std::transform(categoryFilter.begin(), categoryFilter.end(),
+                categoryFilter.begin(), [](unsigned char value)
+                {
+                    return static_cast<char>(std::tolower(value));
+                });
+
+            if (categoryFilter == "all")
+                return "all";
+
+            if (!std::all_of(categoryFilter.begin(), categoryFilter.end(),
+                [](unsigned char value)
+                {
+                    return std::isalnum(value) || value == '_';
+                }))
+            {
+                return "all";
+            }
+
+            return categoryFilter;
+        }
+
+        CachedFaqPayload LoadFaqPayload(std::string const& categoryFilter)
+        {
+            CachedFaqPayload payload;
+            std::string query =
+                "SELECT id, category, question, answer FROM dc_welcome_faq WHERE active = 1";
+
+            if (categoryFilter != "all")
+                query += " AND category = '" + categoryFilter + "'";
+
+            query += " ORDER BY category, priority DESC, id";
+
+            if (QueryResult result = WorldDatabase.Query(query))
+            {
+                DCAddon::JsonValue entriesArray;
+                entriesArray.SetArray();
+
+                do
+                {
+                    Field* fields = result->Fetch();
+                    DCAddon::JsonValue entry;
+                    entry.SetObject();
+                    entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
+                    entry.Set("category", DCAddon::JsonValue(fields[1].Get<std::string>()));
+                    entry.Set("question", DCAddon::JsonValue(fields[2].Get<std::string>()));
+                    entry.Set("answer", DCAddon::JsonValue(fields[3].Get<std::string>()));
+                    entriesArray.Push(entry);
+                    ++payload.count;
+                } while (result->NextRow());
+
+                payload.entries = entriesArray.Encode();
+            }
+
+            payload.expiresAt = std::time(nullptr) + WELCOME_CONTENT_CACHE_TTL_SECS;
+            return payload;
+        }
+
+        CachedFaqPayload GetCachedFaqPayload(std::string const& categoryFilter)
+        {
+            std::string const normalizedFilter = NormalizeFaqCategoryFilter(categoryFilter);
+            std::time_t const now = std::time(nullptr);
+            std::lock_guard<std::mutex> lock(sWelcomeContentCacheLock);
+
+            auto itr = sCachedFaqPayloads.find(normalizedFilter);
+            if (itr != sCachedFaqPayloads.end() && itr->second.expiresAt > now)
+                return itr->second;
+
+            CachedFaqPayload payload = LoadFaqPayload(normalizedFilter);
+            sCachedFaqPayloads[normalizedFilter] = payload;
+            return payload;
+        }
+
+        CachedWhatsNewPayload LoadWhatsNewPayload()
+        {
+            CachedWhatsNewPayload payload;
+
+            if (QueryResult result = WorldDatabase.Query(
+                "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
+                "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
+                "ORDER BY priority DESC, id DESC LIMIT 10"))
+            {
+                DCAddon::JsonValue entriesArray;
+                entriesArray.SetArray();
+
+                do
+                {
+                    Field* fields = result->Fetch();
+                    DCAddon::JsonValue entry;
+                    entry.SetObject();
+                    entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
+                    entry.Set("version", DCAddon::JsonValue(fields[1].Get<std::string>()));
+                    entry.Set("title", DCAddon::JsonValue(fields[2].Get<std::string>()));
+                    entry.Set("content", DCAddon::JsonValue(fields[3].Get<std::string>()));
+                    entry.Set("icon", DCAddon::JsonValue(fields[4].Get<std::string>()));
+                    entry.Set("category", DCAddon::JsonValue(fields[5].Get<std::string>()));
+                    entriesArray.Push(entry);
+                    ++payload.count;
+
+                    if (payload.version == "1.0.0")
+                        payload.version = fields[1].Get<std::string>();
+                } while (result->NextRow());
+
+                payload.entries = entriesArray.Encode();
+            }
+
+            payload.expiresAt = std::time(nullptr) + WELCOME_CONTENT_CACHE_TTL_SECS;
+            return payload;
+        }
+
+        CachedWhatsNewPayload GetCachedWhatsNewPayload()
+        {
+            std::time_t const now = std::time(nullptr);
+            std::lock_guard<std::mutex> lock(sWelcomeContentCacheLock);
+
+            if (sCachedWhatsNewPayload.expiresAt > now)
+                return sCachedWhatsNewPayload;
+
+            sCachedWhatsNewPayload = LoadWhatsNewPayload();
+            return sCachedWhatsNewPayload;
+        }
+
+        bool HasWeeklyVaultSummary()
+        {
+            static bool const hasWeeklyVaultTable = CharacterTableExists("dc_weekly_vault");
+            return hasWeeklyVaultTable
+                && sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", false);
+        }
+
+        struct ProgressSnapshot
+        {
+            uint32 mythicRating = 0;
+            uint32 prestigeLevel = 0;
+            uint32 seasonPoints = 0;
+            uint32 completedRunsThisWeek = 0;
+            uint32 altBonusLevel = 0;
+        };
+
+        ProgressSnapshot LoadProgressSnapshot(uint32 guid, uint32 accountId,
+            uint32 activeSeason, uint32 weekStart, uint32 weekEnd,
+            uint32 maxLevel)
+        {
+            ProgressSnapshot snapshot;
+            bool const useWeeklyVaultSummary = HasWeeklyVaultSummary();
+
+            QueryResult result;
+
+            if (useWeeklyVaultSummary)
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT "
+                    "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
+                    "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
+                    "COALESCE((SELECT prestige_level FROM dc_character_prestige "
+                    "WHERE guid = {} LIMIT 1), 0), "
+                    "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
+                    "WHERE character_guid = {} AND season_id = {}), 0), "
+                    "COALESCE((SELECT runs_completed FROM dc_weekly_vault "
+                    "WHERE character_guid = {} AND season_id = {} AND week_start = {} LIMIT 1), 0), "
+                    "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
+                    "WHERE account = {} AND level >= {}), 0))",
+                    guid,
+                    activeSeason,
+                    guid,
+                    guid, activeSeason,
+                    guid, activeSeason, weekStart,
+                    accountId, maxLevel);
+            }
+            else
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT "
+                    "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
+                    "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
+                    "COALESCE((SELECT prestige_level FROM dc_character_prestige "
+                    "WHERE guid = {} LIMIT 1), 0), "
+                    "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
+                    "WHERE character_guid = {} AND season_id = {}), 0), "
+                    "COALESCE((SELECT COUNT(*) FROM dc_mplus_runs "
+                    "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                    "AND completed_at >= FROM_UNIXTIME({}) "
+                    "AND completed_at < FROM_UNIXTIME({})), 0), "
+                    "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
+                    "WHERE account = {} AND level >= {}), 0))",
+                    guid,
+                    activeSeason,
+                    guid,
+                    guid, activeSeason,
+                    guid, activeSeason, weekStart, weekEnd,
+                    accountId, maxLevel);
+            }
+
+            if (!result)
+                return snapshot;
+
+            Field* fields = result->Fetch();
+            snapshot.mythicRating = fields[0].Get<uint32>();
+            snapshot.prestigeLevel = fields[1].Get<uint32>();
+            snapshot.seasonPoints = fields[2].Get<uint32>();
+            snapshot.completedRunsThisWeek = fields[3].Get<uint32>();
+            snapshot.altBonusLevel = fields[4].Get<uint32>();
+            return snapshot;
+        }
+    }
+
     // Module identifier - must match client-side
     constexpr const char* MODULE = "WELC";
 
@@ -211,45 +457,11 @@ namespace DCWelcome
             categoryFilter = json["category"].AsString();
         }
 
-        // Build FAQ query - load shared welcome content from world DB
-        std::string query = "SELECT id, category, question, answer FROM dc_welcome_faq WHERE active = 1";
-        if (!categoryFilter.empty() && categoryFilter != "all")
-        {
-            query += " AND category = '" + categoryFilter + "'";
-        }
-        query += " ORDER BY category, priority DESC, id";
-
-        QueryResult result = WorldDatabase.Query(query);
-
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_FAQ_DATA);
 
-        if (result)
-        {
-            DCAddon::JsonValue entriesArray;
-            entriesArray.SetArray();
-
-            int count = 0;
-            do
-            {
-                Field* fields = result->Fetch();
-                DCAddon::JsonValue entry;
-                entry.SetObject();
-                entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
-                entry.Set("category", DCAddon::JsonValue(fields[1].Get<std::string>()));
-                entry.Set("question", DCAddon::JsonValue(fields[2].Get<std::string>()));
-                entry.Set("answer", DCAddon::JsonValue(fields[3].Get<std::string>()));
-                entriesArray.Push(entry);
-                count++;
-            } while (result->NextRow());
-
-            response.Set("entries", entriesArray.Encode());
-            response.Set("count", count);
-        }
-        else
-        {
-            response.Set("entries", "[]");
-            response.Set("count", 0);
-        }
+        CachedFaqPayload payload = GetCachedFaqPayload(categoryFilter);
+        response.Set("entries", payload.entries);
+        response.Set("count", static_cast<int32>(payload.count));
 
         response.Send(player);
     }
@@ -297,51 +509,15 @@ namespace DCWelcome
         if (!player || !player->GetSession())
             return;
 
-        // Load shared What's New content from world DB
-        QueryResult result = WorldDatabase.Query(
-            "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
-            "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
-            "ORDER BY priority DESC, id DESC LIMIT 10"
-        );
-
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_WHATS_NEW);
 
-        if (result)
-        {
-            DCAddon::JsonValue entriesArray;
-            entriesArray.SetArray();
-            std::string latestVersion = "";
-            int count = 0;
+        CachedWhatsNewPayload payload = GetCachedWhatsNewPayload();
+        response.Set("version", payload.version);
+        response.Set("entries", payload.entries);
+        response.Set("count", static_cast<int32>(payload.count));
 
-            do
-            {
-                Field* fields = result->Fetch();
-                DCAddon::JsonValue entry;
-                entry.SetObject();
-                entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
-                entry.Set("version", DCAddon::JsonValue(fields[1].Get<std::string>()));
-                entry.Set("title", DCAddon::JsonValue(fields[2].Get<std::string>()));
-                entry.Set("content", DCAddon::JsonValue(fields[3].Get<std::string>()));
-                entry.Set("icon", DCAddon::JsonValue(fields[4].Get<std::string>()));
-                entry.Set("category", DCAddon::JsonValue(fields[5].Get<std::string>()));
-                entriesArray.Push(entry);
-                count++;
-
-                if (latestVersion.empty())
-                    latestVersion = fields[1].Get<std::string>();
-            } while (result->NextRow());
-
-            response.Set("version", latestVersion);
-            response.Set("entries", entriesArray.Encode());
-            response.Set("count", count);
-        }
-        else
-        {
-            // Fallback to hardcoded message if no DB entries
-            response.Set("version", "1.0.0");
+        if (payload.count == 0)
             response.Set("content", "Welcome to DarkChaos-255! Features include Mythic+, Prestige, Hotspots, and more.");
-            response.Set("count", 0);
-        }
 
         response.Send(player);
     }
@@ -356,65 +532,27 @@ namespace DCWelcome
             return;
 
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_PROGRESS_DATA);
+        uint32 guid = player->GetGUID().GetCounter();
+        uint32 accountId = player->GetSession()->GetAccountId();
+        uint32 activeSeason = DarkChaos::GetActiveSeasonId();
+        uint32 weekStart = DarkChaos::Seasons::GetVaultWeekStartTimestamp();
+        uint32 weekEnd = weekStart + 7u * 24u * 60u * 60u;
+        uint32 maxLevel = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.MaxLevel", 255);
+        ProgressSnapshot snapshot = LoadProgressSnapshot(guid, accountId,
+            activeSeason, weekStart, weekEnd, maxLevel);
 
-        // Get M+ Rating from dc_mplus_player_ratings table (canonical rating table)
-        uint32 mythicRating = 0;
-        {
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT rating FROM dc_mplus_player_ratings WHERE player_guid = {}",
-                player->GetGUID().GetCounter()
-            );
-            if (result)
-                mythicRating = result->Fetch()[0].Get<uint32>();
-        }
-        response.Set("mythicRating", static_cast<int32>(mythicRating));
+        response.Set("mythicRating", static_cast<int32>(snapshot.mythicRating));
 
-        // Get Prestige Level from dc_character_prestige table
-        uint32 prestigeLevel = 0;
         uint32 prestigeXP = 0;  // Prestige XP not tracked in current schema, reserved for future
-        {
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
-                player->GetGUID().GetCounter()
-            );
-            if (result)
-            {
-                prestigeLevel = result->Fetch()[0].Get<uint32>();
-            }
-        }
-        response.Set("prestigeLevel", static_cast<int32>(prestigeLevel));
+        response.Set("prestigeLevel", static_cast<int32>(snapshot.prestigeLevel));
         response.Set("prestigeXP", static_cast<int32>(prestigeXP));
 
-        // Get Season Rank/Points from dc_mplus_scores table (aggregate best scores)
-        uint32 seasonPoints = 0;
         uint32 seasonRank = 0;
-        {
-            // Use unified season helper
-            uint32 activeSeason = DarkChaos::GetActiveSeasonId();
-
-            // Sum best scores across all dungeons for the season
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
-                "WHERE character_guid = {} AND season_id = {}",
-                player->GetGUID().GetCounter(), activeSeason
-            );
-            if (result && !result->Fetch()[0].IsNull())
-                seasonPoints = result->Fetch()[0].Get<uint32>();
-        }
-        response.Set("seasonPoints", static_cast<int32>(seasonPoints));
+        response.Set("seasonPoints", static_cast<int32>(snapshot.seasonPoints));
         response.Set("seasonRank", static_cast<int32>(seasonRank));
 
         // Get Weekly Vault Progress (M+ runs this week)
-        uint32 weeklyVaultProgress = 0;
-        {
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
-                "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
-                player->GetGUID().GetCounter()
-            );
-            if (result)
-                weeklyVaultProgress = std::min(static_cast<uint32>(3), result->Fetch()[0].Get<uint32>());
-        }
+        uint32 weeklyVaultProgress = std::min(static_cast<uint32>(3), snapshot.completedRunsThisWeek);
         response.Set("weeklyVaultProgress", static_cast<int32>(weeklyVaultProgress));
 
         // Get Achievement Points - calculate from completed achievements
@@ -436,35 +574,12 @@ namespace DCWelcome
         response.Set("achievementPoints", static_cast<int32>(achievementPoints));
 
         // Keys completed this week
-        uint32 keysThisWeek = 0;
-        {
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
-                "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
-                player->GetGUID().GetCounter()
-            );
-            if (result)
-                keysThisWeek = result->Fetch()[0].Get<uint32>();
-        }
+        uint32 keysThisWeek = snapshot.completedRunsThisWeek;
         response.Set("keysThisWeek", static_cast<int32>(keysThisWeek));
 
         // Prestige Alt Bonus Level (max-level chars on account, capped at 5)
-        uint32 altBonusLevel = 0;
-        uint32 altBonusPercent = 0;
-        {
-            uint32 accountId = player->GetSession()->GetAccountId();
-            uint32 maxLevel = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.MaxLevel", 255);
-
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
-                accountId, maxLevel
-            );
-            if (result)
-            {
-                altBonusLevel = std::min(static_cast<uint32>(5), result->Fetch()[0].Get<uint32>());
-                altBonusPercent = altBonusLevel * 5;  // 5% per max-level char
-            }
-        }
+        uint32 altBonusLevel = snapshot.altBonusLevel;
+        uint32 altBonusPercent = altBonusLevel * 5;  // 5% per max-level char
         response.Set("altBonusLevel", static_cast<int32>(altBonusLevel));
         response.Set("altBonusPercent", static_cast<int32>(altBonusPercent));
 

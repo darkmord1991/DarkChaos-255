@@ -139,6 +139,12 @@ namespace DCAddon
         time_t createdAt = 0;
     };
 
+    struct PlayerEventSignup
+    {
+        EventSignup signup;
+        ScheduledEvent event;
+    };
+
     // ========================================================================
     // GROUP FINDER MANAGER
     // ========================================================================
@@ -231,6 +237,7 @@ namespace DCAddon
         bool ConfirmEventSignup(Player* leader, uint32 eventId, uint32 playerGuid);
         std::vector<ScheduledEvent> GetUpcomingEvents(uint8 eventType);
         std::vector<EventSignup> GetEventSignups(uint32 eventId);
+        std::vector<PlayerEventSignup> GetPlayerEventSignups(uint32 playerGuid);
 
         // Player Rating
         uint16 GetPlayerMythicRating(uint32 playerGuid);

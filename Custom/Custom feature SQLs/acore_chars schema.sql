@@ -816,7 +816,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `last_request` timestamp NULL DEFAULT NULL COMMENT 'Most recent message',
   PRIMARY KEY (`guid`,`module`),
   KEY `idx_module` (`module`),
-  KEY `idx_last_request` (`last_request`)
+  KEY `idx_last_request` (`last_request`),
+  KEY `idx_last_request_recent_cover_v2` (`last_request`,`guid`,`module`,`total_requests`,`total_responses`,`avg_response_time_ms`,`max_response_time_ms`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Aggregated protocol statistics per player per module';
 
 CREATE TABLE IF NOT EXISTS `dc_aoeloot_accumulated` (
@@ -1069,6 +1070,7 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `prestige_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Current prestige level (0-10)',
   `total_prestiges` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total number of times prestiged',
+  `prestige_points` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total prestige points earned',
   `last_prestige_time` int unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp of last prestige',
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Tracks player prestige levels';
@@ -1080,6 +1082,9 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_log` (
   `prestige_time` int unsigned NOT NULL COMMENT 'Unix timestamp when prestige occurred',
   `from_level` tinyint unsigned NOT NULL COMMENT 'Character level before prestige',
   `kept_gear` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1 if kept gear, 0 if removed',
+  `awarded_points` int unsigned NOT NULL DEFAULT '0' COMMENT 'Prestige points granted for this prestige',
+  `awarded_tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Upgrade tokens granted for this prestige',
+  `awarded_essence` int unsigned NOT NULL DEFAULT '0' COMMENT 'Artifact essence granted for this prestige',
   PRIMARY KEY (`id`),
   KEY `idx_guid` (`guid`),
   KEY `idx_prestige_level` (`prestige_level`),

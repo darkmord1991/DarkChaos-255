@@ -12,3 +12,13 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_rewards` (
 
 -- Add column to listings to store if it was auto-created or manual (optional, but good for tracking)
 ALTER TABLE `dc_group_finder_listings` ADD COLUMN `auto_group` TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER `status`;
+
+-- Expand the listing type contract to include quest listings.
+ALTER TABLE `dc_group_finder_listings`
+    MODIFY COLUMN `listing_type` TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1=Mythic+, 2=Raid, 3=PvP, 4=Other, 5=Quest';
+
+-- Align spectator storage with the live spectate handler payload.
+ALTER TABLE `dc_group_finder_spectators`
+    ADD COLUMN `spectator_name` VARCHAR(12) NOT NULL DEFAULT '' AFTER `spectator_guid`,
+    CHANGE COLUMN `joined_at` `started_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    DROP COLUMN `privacy_level`;

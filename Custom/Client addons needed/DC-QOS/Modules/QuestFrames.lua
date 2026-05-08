@@ -47,7 +47,7 @@ local QUEST_GREETING_TOPRIGHT_TEXTURE = ASSET_ROOT .. "ui-questgreeting-topright
 local QUEST_GREETING_BOTTOMLEFT_TEXTURE = ASSET_ROOT .. "ui-questgreeting-botleft"
 local QUEST_GREETING_BOTTOMRIGHT_TEXTURE = ASSET_ROOT .. "ui-questgreeting-botright"
 local QUEST_ITEM_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questitemhighlight"
-local QUEST_ITEM_NAMEFRAME_TEXTURE = ASSET_ROOT .. "ui-questitemnameframe"
+local QUEST_ITEM_ICON_FRAME_TEXTURE = "Interface\\Buttons\\UI-Quickslot2"
 local QUEST_LOG_TITLE_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questlogtitlehighlight"
 local QUEST_TITLE_HIGHLIGHT_TEXTURE = ASSET_ROOT .. "ui-questtitlehighlight"
 local QUEST_AVAILABLE_ICON_TEXTURE = ASSET_ROOT .. "availablequesticon"
@@ -126,6 +126,15 @@ local BODY_TEXT_NAMES = {
     "QuestInfoDescriptionText",
     "QuestInfoObjectivesText",
     "QuestInfoRewardText",
+    "QuestInfoItemChooseText",
+    "QuestInfoItemReceiveText",
+    "QuestInfoSpellLearnText",
+    "QuestInfoXPFrameReceiveText",
+    "QuestInfoHonorFrameReceiveText",
+    "QuestInfoArenaPointsFrameReceiveText",
+    "QuestInfoTalentFrameReceiveText",
+    "QuestInfoPlayerTitleFrameReceiveText",
+    "QuestInfoReputationText",
     "QuestProgressText",
     "QuestRewardText",
     "GreetingText",
@@ -134,6 +143,7 @@ local BODY_TEXT_NAMES = {
 local SECTION_TEXT_NAMES = {
     "QuestInfoDescriptionHeader",
     "QuestInfoObjectivesHeader",
+    "QuestInfoRewardsHeader",
     "QuestProgressRequiredItemsText",
     "CurrentQuestsText",
     "AvailableQuestsText",
@@ -577,6 +587,27 @@ local function BuildGreetingStatus()
     end
 
     return table.concat(parts, "  |  ")
+end
+
+local function GetQuestDetailTextColors(isTracked, isComplete)
+    local titleR, titleG, titleB = 0.93, 0.78, 0.24
+    local sectionR, sectionG, sectionB = 0.74, 0.56, 0.18
+    local bodyR, bodyG, bodyB = 0.26, 0.17, 0.08
+    local objectiveR, objectiveG, objectiveB = 0.31, 0.21, 0.10
+
+    if isTracked then
+        titleR, titleG, titleB = 0.98, 0.84, 0.30
+        sectionR, sectionG, sectionB = 0.80, 0.61, 0.20
+    elseif isComplete then
+        titleR, titleG, titleB = 0.37, 0.52, 0.23
+        sectionR, sectionG, sectionB = 0.42, 0.51, 0.24
+        objectiveR, objectiveG, objectiveB = 0.30, 0.39, 0.18
+    end
+
+    return titleR, titleG, titleB,
+        sectionR, sectionG, sectionB,
+        bodyR, bodyG, bodyB,
+        objectiveR, objectiveG, objectiveB
 end
 
 local function GetQuestFrameContext(ownerFrame)
@@ -1461,6 +1492,60 @@ local function GetQuestItemNameFrameRegion(button)
     end
 
     return nil
+end
+
+local function TextureRegionInList(region, regions)
+    if not region or type(regions) ~= "table" then
+        return false
+    end
+
+    for i = 1, #regions do
+        if regions[i] == region then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function HideQuestItemTextureRegion(region, iconRegions)
+    if not region or TextureRegionInList(region, iconRegions) then
+        return
+    end
+
+    if region.SetAlpha then
+        region:SetAlpha(0)
+    end
+    if region.Hide then
+        region:Hide()
+    end
+end
+
+local function GetQuestItemNameColor(button)
+    if not button or type(GetQuestItemInfo) ~= "function" then
+        return 0.40, 0.25, 0.12
+    end
+
+    local itemType = button.type
+    if type(itemType) == "string" then
+        itemType = string.lower(itemType)
+    end
+
+    local itemIndex = button.GetID and tonumber(button:GetID()) or nil
+    if not itemType or not itemIndex or itemIndex <= 0 then
+        return 0.40, 0.25, 0.12
+    end
+
+    local _, _, _, quality = GetQuestItemInfo(itemType, itemIndex)
+    quality = tonumber(quality)
+    if quality and quality > 1 and type(GetItemQualityColor) == "function" then
+        local r, g, b = GetItemQualityColor(quality)
+        if r and g and b then
+            return r, g, b
+        end
+    end
+
+    return 0.40, 0.25, 0.12
 end
 
 local function EnsureMovableFrame(frame)
@@ -2810,19 +2895,11 @@ local function StyleWorldMapQuestDetailTextRecursive(root, depth, selectedTitle,
         return
     end
 
-    local titleR, titleG, titleB = 0.98, 0.90, 0.52
-    local sectionR, sectionG, sectionB = 0.92, 0.78, 0.30
-    local bodyR, bodyG, bodyB = 0.94, 0.88, 0.74
-    local objectiveR, objectiveG, objectiveB = 0.96, 0.92, 0.80
-
-    if isTracked then
-        titleR, titleG, titleB = 1.0, 0.90, 0.42
-        sectionR, sectionG, sectionB = 0.96, 0.82, 0.34
-    elseif isComplete then
-        titleR, titleG, titleB = 0.74, 0.88, 0.60
-        sectionR, sectionG, sectionB = 0.72, 0.86, 0.58
-        objectiveR, objectiveG, objectiveB = 0.80, 0.90, 0.76
-    end
+    local titleR, titleG, titleB,
+        sectionR, sectionG, sectionB,
+        bodyR, bodyG, bodyB,
+        objectiveR, objectiveG, objectiveB =
+        GetQuestDetailTextColors(isTracked, isComplete)
 
     if root.GetObjectType and root:GetObjectType() == "FontString" then
         local text = root.GetText and root:GetText() or nil
@@ -3191,25 +3268,34 @@ ApplyFontStyle = function(fontString, minSize, sizeDelta, r, g, b)
 end
 
 local function StyleQuestText()
-    local tracked = IsQuestTracked(ResolveQuestContext(QuestFrame))
+    local activeContext = ResolveQuestContext(QuestFrame)
+    if not activeContext or not activeContext.title then
+        activeContext = ResolveQuestContext(QuestLogDetailFrame)
+    end
+
+    local tracked = IsQuestTracked(activeContext)
+    local isComplete = activeContext and activeContext.isComplete or false
     local preferStockChrome = UseModernQuestWindowCompatibility()
         or ShouldPreferStockQuestChrome(QuestFrame)
         or ShouldPreferStockQuestChrome(QuestLogDetailFrame)
-    local titleR, titleG, titleB = 1.0, 0.82, 0.08
-    if GetSettings().accentTrackedQuest and tracked then
-        titleR, titleG, titleB = 1.0, 0.90, 0.34
-    end
+    local titleR, titleG, titleB,
+        sectionR, sectionG, sectionB,
+        bodyR, bodyG, bodyB =
+        GetQuestDetailTextColors(
+            GetSettings().accentTrackedQuest and tracked,
+            isComplete
+        )
 
     for _, name in ipairs(TITLE_TEXT_NAMES) do
         ApplyFontStyle(_G[name], 13, preferStockChrome and 0 or 2, titleR, titleG, titleB)
     end
 
     for _, name in ipairs(BODY_TEXT_NAMES) do
-        ApplyFontStyle(_G[name], 12, preferStockChrome and 0 or 1, 0.98, 0.92, 0.78)
+        ApplyFontStyle(_G[name], 12, preferStockChrome and 0 or 1, bodyR, bodyG, bodyB)
     end
 
     for _, name in ipairs(SECTION_TEXT_NAMES) do
-        ApplyFontStyle(_G[name], 11, preferStockChrome and 0 or 1, 0.94, 0.80, 0.32)
+        ApplyFontStyle(_G[name], 11, preferStockChrome and 0 or 1, sectionR, sectionG, sectionB)
     end
 
     UpdateQuestInfoTitles()
@@ -3244,8 +3330,8 @@ local function StyleQuestItemButton(button)
         button.__dcqosQuestItem = true
 
         local iconFrame = button:CreateTexture(nil, "BORDER")
-        iconFrame:SetTexture(QUEST_ITEM_NAMEFRAME_TEXTURE)
-        iconFrame:SetAlpha(0.96)
+        iconFrame:SetTexture(QUEST_ITEM_ICON_FRAME_TEXTURE)
+        iconFrame:SetAlpha(0.88)
         iconFrame:Show()
         button.__dcqosQuestItemFrame = iconFrame
 
@@ -3303,6 +3389,16 @@ local function StyleQuestItemButton(button)
 
     ApplyQuestItemTexture(button, iconRegion, iconRegions)
 
+    if type(button.GetNormalTexture) == "function" then
+        HideQuestItemTextureRegion(button:GetNormalTexture(), iconRegions)
+    end
+    if type(button.GetPushedTexture) == "function" then
+        HideQuestItemTextureRegion(button:GetPushedTexture(), iconRegions)
+    end
+    if type(button.GetHighlightTexture) == "function" then
+        HideQuestItemTextureRegion(button:GetHighlightTexture(), iconRegions)
+    end
+
     local iconAnchor = iconRegion or button
 
     if iconRegion and iconRegion.SetAlpha then
@@ -3318,10 +3414,10 @@ local function StyleQuestItemButton(button)
     end
     if button.__dcqosQuestItemFrame then
         button.__dcqosQuestItemFrame:ClearAllPoints()
-        button.__dcqosQuestItemFrame:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", -8, 8)
-        button.__dcqosQuestItemFrame:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 8, -8)
+        button.__dcqosQuestItemFrame:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", -5, 5)
+        button.__dcqosQuestItemFrame:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 5, -5)
         button.__dcqosQuestItemFrame:SetDrawLayer("BORDER", 0)
-        button.__dcqosQuestItemFrame:SetVertexColor(1, 1, 1, 1)
+        button.__dcqosQuestItemFrame:SetVertexColor(0.92, 0.84, 0.66, 1)
         button.__dcqosQuestItemFrame:Show()
     end
     if button.__dcqosQuestItemBorder and button.__dcqosQuestItemBorder.ClearAllPoints then
@@ -3335,8 +3431,9 @@ local function StyleQuestItemButton(button)
 
     local nameLabel = GetQuestItemNameLabel(button)
     if nameLabel then
+        local nameR, nameG, nameB = GetQuestItemNameColor(button)
         UpdateQuestItemNameFrame(button, nameLabel)
-        ApplyFontStyle(nameLabel, 11, 1, 0.98, 0.92, 0.78)
+        ApplyFontStyle(nameLabel, 11, 1, nameR, nameG, nameB)
     end
 
     if iconRegion and iconRegion.SetTexCoord then

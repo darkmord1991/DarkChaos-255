@@ -50,7 +50,8 @@ CREATE TABLE `dc_addon_protocol_stats` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `idx_guid_module` (`guid`, `module`),
     KEY `idx_module` (`module`),
-    KEY `idx_last_request` (`last_request`)
+    KEY `idx_last_request` (`last_request`),
+    KEY `idx_last_request_recent_cover_v2` (`last_request`, `guid`, `module`, `total_requests`, `total_responses`, `avg_response_time_ms`, `max_response_time_ms`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Aggregated protocol statistics per player per module';
 
 -- Daily summary for trend analysis

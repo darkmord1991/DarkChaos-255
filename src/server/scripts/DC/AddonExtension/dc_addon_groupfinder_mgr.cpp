@@ -252,6 +252,39 @@ void GroupFinderMgr::LoadFromDatabase()
     }
 
     LOG_INFO("dc.groupfinder", "Loaded {} scheduled events", count);
+
+    // Load active event signups
+    count = 0;
+    result = CharacterDatabase.Query(
+        "SELECT id, event_id, player_guid, player_name, role, status, note, UNIX_TIMESTAMP(created_at) "
+        "FROM dc_group_finder_event_signups WHERE status IN (0, 1)");
+
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 eventId = fields[1].Get<uint32>();
+
+            if (_events.find(eventId) == _events.end())
+                continue;
+
+            EventSignup signup;
+            signup.id = fields[0].Get<uint32>();
+            signup.eventId = eventId;
+            signup.playerGuid = fields[2].Get<uint32>();
+            signup.playerName = fields[3].Get<std::string>();
+            signup.role = fields[4].Get<uint8>();
+            signup.status = fields[5].Get<uint8>();
+            signup.note = fields[6].Get<std::string>();
+            signup.createdAt = fields[7].Get<time_t>();
+
+            _eventSignups[eventId].push_back(signup);
+            ++count;
+        } while (result->NextRow());
+    }
+
+    LOG_INFO("dc.groupfinder", "Loaded {} active event signups", count);
 }
 
 void GroupFinderMgr::Initialize()
@@ -1056,6 +1089,47 @@ std::vector<EventSignup> GroupFinderMgr::GetEventSignups(uint32 eventId)
         return it->second;
 
     return {};
+}
+
+std::vector<PlayerEventSignup> GroupFinderMgr::GetPlayerEventSignups(uint32 playerGuid)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    std::vector<PlayerEventSignup> results;
+    time_t now = GameTime::GetGameTime().count();
+
+    for (auto const& [eventId, signups] : _eventSignups)
+    {
+        auto eventIt = _events.find(eventId);
+        if (eventIt == _events.end())
+            continue;
+
+        ScheduledEvent const& event = eventIt->second;
+        if (event.status > GF_EVENT_FULL)
+            continue;
+
+        if (event.scheduledTime < now)
+            continue;
+
+        for (EventSignup const& signup : signups)
+        {
+            if (signup.playerGuid != playerGuid)
+                continue;
+
+            if (signup.status != GF_APP_PENDING && signup.status != GF_APP_ACCEPTED)
+                continue;
+
+            results.push_back({ signup, event });
+        }
+    }
+
+    std::sort(results.begin(), results.end(),
+        [](PlayerEventSignup const& left, PlayerEventSignup const& right)
+        {
+            return left.event.scheduledTime < right.event.scheduledTime;
+        });
+
+    return results;
 }
 
 // ========================================================================

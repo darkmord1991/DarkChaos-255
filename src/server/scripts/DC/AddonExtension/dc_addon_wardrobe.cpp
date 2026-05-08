@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <memory>
 #include <mutex>
 
 namespace DCCollection
@@ -702,7 +703,7 @@ namespace DCCollection
     }
 
     // Unlocking Logic
-    static std::unordered_map<uint32, std::unordered_set<uint32>> s_AccountUnlockedTransmogAppearances;
+    static std::unordered_map<uint32, std::shared_ptr<std::unordered_set<uint32> const>> s_AccountUnlockedTransmogAppearances;
     constexpr size_t MAX_NOTIFIED_APPEARANCES_PER_PLAYER = 10000;
     static std::unordered_map<uint32, std::unordered_set<uint32>> sessionNotifiedAppearances;
     static std::mutex s_WardrobeMutex;  // Thread safety for wardrobe caches
@@ -726,7 +727,7 @@ namespace DCCollection
         sessionNotifiedAppearances.erase(guid);
     }
 
-    static std::unordered_set<uint32> GetAccountUnlockedTransmogAppearances(uint32 accountId)
+    static std::shared_ptr<std::unordered_set<uint32> const> GetAccountUnlockedTransmogAppearances(uint32 accountId)
     {
         {
             std::lock_guard<std::mutex> lock(s_WardrobeMutex);
@@ -735,7 +736,7 @@ namespace DCCollection
                 return it->second;
         }
 
-        std::unordered_set<uint32> unlocked;
+        auto unlocked = std::make_shared<std::unordered_set<uint32>>();
 
         // Load from dc_transmog_collection table
         QueryResult result = CharacterDatabase.Query(
@@ -748,7 +749,7 @@ namespace DCCollection
             {
                 Field* fields = result->Fetch();
                 uint32 dId = fields[0].Get<uint32>();
-                if (dId) unlocked.insert(dId);
+                if (dId) unlocked->insert(dId);
             } while (result->NextRow());
         }
 
@@ -765,7 +766,7 @@ namespace DCCollection
     {
         if (!accountId || !displayId) return false;
         auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
-        return unlocked.find(displayId) != unlocked.end();
+        return unlocked && unlocked->find(displayId) != unlocked->end();
     }
 
     bool IsItemEligibleForTransmogUnlock(ItemTemplate const* proto)
@@ -819,7 +820,11 @@ namespace DCCollection
             std::lock_guard<std::mutex> lock(s_WardrobeMutex);
             auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
             if (cacheIt != s_AccountUnlockedTransmogAppearances.end())
-                cacheIt->second.insert(displayId);
+            {
+                auto updated = std::make_shared<std::unordered_set<uint32>>(*cacheIt->second);
+                updated->insert(displayId);
+                cacheIt->second = updated;
+            }
         }
 
         if (shouldNotify)
@@ -1058,12 +1063,13 @@ namespace DCCollection
         if (byEquipSlot && hasEntries)
         {
             uint32 accountId = GetAccountId(player);
-            auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+            auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
             auto const& idx = GetTransmogAppearanceIndexCached();
 
             if (verbose)
                 LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}, skipUnlockCheck={}",
-                    player->GetName(), accountId, static_cast<uint32>(unlocked.size()),
+                    player->GetName(), accountId,
+                    unlocked ? static_cast<uint32>(unlocked->size()) : 0u,
                     static_cast<uint32>(idx.size()), static_cast<uint32>(json["entries"].AsArray().size()),
                     sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false));
 
@@ -1332,8 +1338,11 @@ namespace DCCollection
 
         // Critical optimization: iterate the player's unlocked displayIds instead of scanning the entire item_template-derived index.
         // Scanning the full index on each slot/search request can hitch the world thread even with few players.
-        auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
-        for (uint32 displayId : unlocked)
+        auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        if (!unlocked)
+            return matchingItemIds;
+
+        for (uint32 displayId : *unlocked)
         {
             auto it = appearances.find(displayId);
             if (it == appearances.end())
@@ -1446,16 +1455,20 @@ namespace DCCollection
     {
         if (!player) return;
         uint32 accountId = GetAccountId(player);
-        auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
 
         DCAddon::JsonValue appArr; appArr.SetArray();
-        for (uint32 d : unlocked) appArr.Push(DCAddon::JsonValue(d));
+        if (unlocked)
+        {
+            for (uint32 d : *unlocked)
+                appArr.Push(DCAddon::JsonValue(d));
+        }
 
         // NOTE: We intentionally do NOT include a secondary "items" array here.
         // Building canonical itemId lists forces loading the full transmog appearance index
         // (item_template scan), which can cause noticeable server hitching when the addon opens.
         DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COLLECTED_APPEARANCES);
-        response.Set("count", static_cast<uint32>(unlocked.size()));
+        response.Set("count", unlocked ? static_cast<uint32>(unlocked->size()) : 0u);
         response.Set("appearances", appArr);
         response.Send(player);
     }

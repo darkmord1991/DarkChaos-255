@@ -117,6 +117,25 @@ namespace MythicPlus
             return false;
         }
 
+        bool CharacterTableExists(char const* tableName)
+        {
+            if (QueryResult result = CharacterDatabase.Query(
+                "SELECT 1 FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
+                tableName))
+            {
+                return result->GetRowCount() > 0;
+            }
+
+            return false;
+        }
+
+        bool HasCharacterDungeonTable()
+        {
+            static bool const hasTable = CharacterTableExists("dc_mplus_dungeons");
+            return hasTable;
+        }
+
         void SendVaultAvailableNotification(Player* player)
         {
             if (!player)
@@ -199,9 +218,22 @@ namespace MythicPlus
         // Query player's current keystone from dc_mplus_keystones
         uint32 guid = player->GetGUID().GetCounter();
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
-            guid);
+        QueryResult result;
+        if (HasCharacterDungeonTable())
+        {
+            result = CharacterDatabase.Query(
+                "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
+                "FROM dc_mplus_keystones k "
+                "LEFT JOIN dc_mplus_dungeons d ON k.map_id = d.map_id "
+                "WHERE k.character_guid = {}",
+                guid);
+        }
+        else
+        {
+            result = CharacterDatabase.Query(
+                "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
+                guid);
+        }
 
         if (result)
         {
@@ -211,11 +243,20 @@ namespace MythicPlus
 
             // Get dungeon name
             std::string dungeonName = "Unknown";
-            QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
-                dungeonId);
-            if (nameResult)
-                dungeonName = (*nameResult)[0].Get<std::string>();
+            if (HasCharacterDungeonTable())
+            {
+                std::string const joinedName = (*result)[2].Get<std::string>();
+                if (!joinedName.empty())
+                    dungeonName = joinedName;
+            }
+            else
+            {
+                QueryResult nameResult = WorldDatabase.Query(
+                    "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
+                    dungeonId);
+                if (nameResult)
+                    dungeonName = (*nameResult)[0].Get<std::string>();
+            }
 
             Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
                 .Add(1)  // has keystone
@@ -1352,9 +1393,22 @@ namespace MythicPlus
     {
         uint32 guid = player->GetGUID().GetCounter();
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
-            guid);
+        QueryResult result;
+        if (HasCharacterDungeonTable())
+        {
+            result = CharacterDatabase.Query(
+                "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
+                "FROM dc_mplus_keystones k "
+                "LEFT JOIN dc_mplus_dungeons d ON k.map_id = d.map_id "
+                "WHERE k.character_guid = {}",
+                guid);
+        }
+        else
+        {
+            result = CharacterDatabase.Query(
+                "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
+                guid);
+        }
 
         if (result)
         {
@@ -1364,11 +1418,20 @@ namespace MythicPlus
 
             // Get dungeon name
             std::string dungeonName = "Unknown";
-            QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
-                dungeonId);
-            if (nameResult)
-                dungeonName = (*nameResult)[0].Get<std::string>();
+            if (HasCharacterDungeonTable())
+            {
+                std::string const joinedName = (*result)[2].Get<std::string>();
+                if (!joinedName.empty())
+                    dungeonName = joinedName;
+            }
+            else
+            {
+                QueryResult nameResult = WorldDatabase.Query(
+                    "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
+                    dungeonId);
+                if (nameResult)
+                    dungeonName = (*nameResult)[0].Get<std::string>();
+            }
 
             JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
                 .Set("hasKey", true)
@@ -1420,10 +1483,24 @@ namespace MythicPlus
     {
         uint32 guid = player->GetGUID().GetCounter();
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT dungeon_id, level, completion_time, deaths, season "
-            "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
-            guid);
+        QueryResult result;
+        if (HasCharacterDungeonTable())
+        {
+            result = CharacterDatabase.Query(
+                "SELECT r.dungeon_id, r.level, r.completion_time, r.deaths, r.season, "
+                "COALESCE(d.dungeon_name, '') "
+                "FROM dc_mplus_best_runs r "
+                "LEFT JOIN dc_mplus_dungeons d ON r.dungeon_id = d.map_id "
+                "WHERE r.player_guid = {} ORDER BY r.level DESC LIMIT 10",
+                guid);
+        }
+        else
+        {
+            result = CharacterDatabase.Query(
+                "SELECT dungeon_id, level, completion_time, deaths, season "
+                "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
+                guid);
+        }
 
         JsonValue runsArray;
         runsArray.SetArray();
@@ -1440,15 +1517,23 @@ namespace MythicPlus
                 run.Set("deaths", JsonValue((*result)[3].Get<int32>()));
                 run.Set("season", JsonValue((*result)[4].Get<int32>()));
 
-                // Get dungeon name
-                uint32 dungeonId = (*result)[0].Get<uint32>();
-                QueryResult nameResult = WorldDatabase.Query(
-                    "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
-                    dungeonId);
-                if (nameResult)
-                    run.Set("dungeonName", JsonValue((*nameResult)[0].Get<std::string>()));
+                if (HasCharacterDungeonTable())
+                {
+                    std::string const joinedName = (*result)[5].Get<std::string>();
+                    run.Set("dungeonName", JsonValue(
+                        joinedName.empty() ? "Unknown" : joinedName));
+                }
                 else
-                    run.Set("dungeonName", JsonValue("Unknown"));
+                {
+                    uint32 dungeonId = (*result)[0].Get<uint32>();
+                    QueryResult nameResult = WorldDatabase.Query(
+                        "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
+                        dungeonId);
+                    if (nameResult)
+                        run.Set("dungeonName", JsonValue((*nameResult)[0].Get<std::string>()));
+                    else
+                        run.Set("dungeonName", JsonValue("Unknown"));
+                }
 
                 runsArray.Push(run);
             } while (result->NextRow());

@@ -1089,43 +1089,38 @@ namespace GroupFinder
             eventType = static_cast<uint8>(JsonGetInt(GetJsonData(msg), "eventType", 0));
         }
 
-        std::string typeFilter = eventType > 0 ?
-            Acore::StringFormat(" AND event_type = {}", eventType) : "";
-
-        // Query upcoming events
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT e.id, e.leader_guid, e.event_type, e.dungeon_id, e.dungeon_name, e.keystone_level, "
-            "UNIX_TIMESTAMP(e.scheduled_time) as scheduled_time, e.max_signups, e.current_signups, e.note, e.status, "
-            "c.name as leader_name "
-            "FROM dc_group_finder_scheduled_events e "
-            "LEFT JOIN characters c ON e.leader_guid = c.guid "
-            "WHERE e.status IN (1, 2) AND e.scheduled_time > NOW(){} "
-            "ORDER BY e.scheduled_time ASC LIMIT 50",
-            typeFilter);
+        auto events = sGroupFinderMgr.GetUpcomingEvents(eventType);
 
         JsonValue eventsArray;
         eventsArray.SetArray();
+        size_t eventCount = 0;
 
-        if (result)
+        for (ScheduledEvent const& scheduledEvent : events)
         {
-            do
-            {
-                JsonValue event;
-                event.SetObject();
-                event.Set("eventId", JsonValue((*result)[0].Get<int32>()));
-                event.Set("leaderGuid", JsonValue((*result)[1].Get<int32>()));
-                event.Set("eventType", JsonValue((*result)[2].Get<int32>()));
-                event.Set("dungeonId", JsonValue((*result)[3].Get<int32>()));
-                event.Set("dungeonName", JsonValue((*result)[4].Get<std::string>()));
-                event.Set("keyLevel", JsonValue((*result)[5].Get<int32>()));
-                event.Set("scheduledTime", JsonValue((*result)[6].Get<int32>()));
-                event.Set("maxSignups", JsonValue((*result)[7].Get<int32>()));
-                event.Set("currentSignups", JsonValue((*result)[8].Get<int32>()));
-                event.Set("note", JsonValue((*result)[9].Get<std::string>()));
-                event.Set("status", JsonValue((*result)[10].Get<int32>()));
-                event.Set("leaderName", JsonValue((*result)[11].Get<std::string>()));
-                eventsArray.Push(event);
-            } while (result->NextRow());
+            if (eventCount >= 50)
+                break;
+
+            std::string leaderName = "Unknown";
+            sCharacterCache->GetCharacterNameByGuid(
+                ObjectGuid::Create<HighGuid::Player>(scheduledEvent.leaderGuid),
+                leaderName);
+
+            JsonValue event;
+            event.SetObject();
+            event.Set("eventId", JsonValue(static_cast<int32>(scheduledEvent.id)));
+            event.Set("leaderGuid", JsonValue(static_cast<int32>(scheduledEvent.leaderGuid)));
+            event.Set("eventType", JsonValue(static_cast<int32>(scheduledEvent.eventType)));
+            event.Set("dungeonId", JsonValue(static_cast<int32>(scheduledEvent.dungeonId)));
+            event.Set("dungeonName", JsonValue(scheduledEvent.title));
+            event.Set("keyLevel", JsonValue(static_cast<int32>(scheduledEvent.keystoneLevel)));
+            event.Set("scheduledTime", JsonValue(static_cast<int32>(scheduledEvent.scheduledTime)));
+            event.Set("maxSignups", JsonValue(static_cast<int32>(scheduledEvent.maxSignups)));
+            event.Set("currentSignups", JsonValue(static_cast<int32>(scheduledEvent.currentSignups)));
+            event.Set("note", JsonValue(scheduledEvent.description));
+            event.Set("status", JsonValue(static_cast<int32>(scheduledEvent.status)));
+            event.Set("leaderName", JsonValue(leaderName));
+            eventsArray.Push(event);
+            ++eventCount;
         }
 
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SCHEDULED_EVENTS)
@@ -1138,37 +1133,29 @@ namespace GroupFinder
     static void HandleGetMySignups(Player* player, const ParsedMessage& /*msg*/)
     {
         uint32 guid = player->GetGUID().GetCounter();
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT s.id, s.event_id, s.role, s.status, "
-            "e.dungeon_name, e.keystone_level, UNIX_TIMESTAMP(e.scheduled_time) as scheduled_time, "
-            "c.name as leader_name "
-            "FROM dc_group_finder_event_signups s "
-            "JOIN dc_group_finder_scheduled_events e ON s.event_id = e.id "
-            "LEFT JOIN characters c ON e.leader_guid = c.guid "
-            "WHERE s.player_guid = {} AND s.status IN (0, 1) AND e.scheduled_time > NOW() "
-            "ORDER BY e.scheduled_time ASC",
-            guid);
+        auto signups = sGroupFinderMgr.GetPlayerEventSignups(guid);
 
         JsonValue signupsArray;
         signupsArray.SetArray();
 
-        if (result)
+        for (PlayerEventSignup const& playerSignup : signups)
         {
-            do
-            {
-                JsonValue signup;
-                signup.SetObject();
-                signup.Set("signupId", JsonValue((*result)[0].Get<int32>()));
-                signup.Set("eventId", JsonValue((*result)[1].Get<int32>()));
-                signup.Set("role", JsonValue((*result)[2].Get<int32>()));
-                signup.Set("status", JsonValue((*result)[3].Get<int32>()));
-                signup.Set("dungeonName", JsonValue((*result)[4].Get<std::string>()));
-                signup.Set("keyLevel", JsonValue((*result)[5].Get<int32>()));
-                signup.Set("scheduledTime", JsonValue((*result)[6].Get<int32>()));
-                signup.Set("leaderName", JsonValue((*result)[7].Get<std::string>()));
-                signupsArray.Push(signup);
-            } while (result->NextRow());
+            std::string leaderName = "Unknown";
+            sCharacterCache->GetCharacterNameByGuid(
+                ObjectGuid::Create<HighGuid::Player>(playerSignup.event.leaderGuid),
+                leaderName);
+
+            JsonValue signup;
+            signup.SetObject();
+            signup.Set("signupId", JsonValue(static_cast<int32>(playerSignup.signup.id)));
+            signup.Set("eventId", JsonValue(static_cast<int32>(playerSignup.signup.eventId)));
+            signup.Set("role", JsonValue(static_cast<int32>(playerSignup.signup.role)));
+            signup.Set("status", JsonValue(static_cast<int32>(playerSignup.signup.status)));
+            signup.Set("dungeonName", JsonValue(playerSignup.event.title));
+            signup.Set("keyLevel", JsonValue(static_cast<int32>(playerSignup.event.keystoneLevel)));
+            signup.Set("scheduledTime", JsonValue(static_cast<int32>(playerSignup.event.scheduledTime)));
+            signup.Set("leaderName", JsonValue(leaderName));
+            signupsArray.Push(signup);
         }
 
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_MY_SIGNUPS)

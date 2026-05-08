@@ -2289,6 +2289,8 @@ namespace DCCollection
         // Previous code re-ran LoadPlayerCollection a second time below to
         // compute the hash, doubling the number of DB queries per full sync.
         std::map<CollectionType, std::vector<uint32>> loaded;
+        std::map<CollectionType, uint32> counts;
+        uint32 totalOwnedItems = 0;
 
         for (int t = 1; t <= 6; ++t)
         {
@@ -2296,19 +2298,21 @@ namespace DCCollection
                 continue; // Toys are disabled
             CollectionType ct = static_cast<CollectionType>(t);
             auto items = LoadPlayerCollection(accountId, ct);
+            uint32 ownedCount = static_cast<uint32>(items.size());
+            counts[ct] = ownedCount;
+            totalOwnedItems += ownedCount;
 
             DCAddon::JsonValue arr;
-            arr.SetArray();
+            arr.SetArray(items.size());
             for (uint32 id : items)
             {
                 arr.Push(DCAddon::JsonValue(id));
             }
-            collections.Set(typeNames[t], arr);
+            collections.Set(typeNames[t], std::move(arr));
             loaded.emplace(ct, std::move(items));
         }
 
-        // Load counts and totals for percentages
-        auto counts = LoadCollectionCounts(accountId);
+        // Load totals for percentages.
         auto totals = LoadTotalDefinitions();
 
         DCAddon::JsonValue stats;
@@ -2326,28 +2330,30 @@ namespace DCCollection
             typeStat.Set("owned", owned);
             typeStat.Set("total", total);
             typeStat.Set("percent", total > 0 ? static_cast<double>(owned * 100) / total : 0.0);
-            stats.Set(typeNames[t], typeStat);
+            stats.Set(typeNames[t], std::move(typeStat));
         }
 
         // Mount speed bonus
         uint32 mountCount = counts[CollectionType::MOUNT];
+        uint32 nextThreshold = GetNextMountThreshold(mountCount);
         DCAddon::JsonValue bonuses;
         bonuses.SetObject();
         bonuses.Set("mountSpeedBonus", GetMountSpeedBonusPercent(mountCount));
-        bonuses.Set("nextThreshold", GetNextMountThreshold(mountCount));
-        bonuses.Set("mountsToNext", GetNextMountThreshold(mountCount) > 0 ?
-            static_cast<int32>(GetNextMountThreshold(mountCount) - mountCount) : 0);
+        bonuses.Set("nextThreshold", nextThreshold);
+        bonuses.Set("mountsToNext", nextThreshold > 0 ?
+            static_cast<int32>(nextThreshold - mountCount) : 0);
 
         // Compute hash from the already-loaded vectors (avoid a second DB pass).
         std::vector<uint32> allItems;
+        allItems.reserve(totalOwnedItems);
         for (auto const& kv : loaded)
             allItems.insert(allItems.end(), kv.second.begin(), kv.second.end());
         uint32 serverHash = GenerateCollectionHash(allItems);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
-        msg.Set("collections", collections);
-        msg.Set("stats", stats);
-        msg.Set("bonuses", bonuses);
+        msg.Set("collections", std::move(collections));
+        msg.Set("stats", std::move(stats));
+        msg.Set("bonuses", std::move(bonuses));
         msg.Set("hash", serverHash);
         msg.Set("timestamp", static_cast<uint32>(std::time(nullptr)));
 

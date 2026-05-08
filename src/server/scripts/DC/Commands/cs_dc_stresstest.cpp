@@ -15,12 +15,17 @@
 #include "World.h"
 #include "ObjectMgr.h"
 #include "Log.h"
+#include "CharacterCache.h"
 #include "PathGenerator.h"
 #include "Random.h"
 #include "SpellMgr.h"
+#include "DBCStores.h"
+#include "../AddonExtension/dc_addon_groupfinder_mgr.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include <chrono>
 #include <vector>
 #include <algorithm>
+#include <cctype>
 #include <numeric>
 #include <sstream>
 #include <cmath>
@@ -29,13 +34,116 @@
 #include <fstream>
 #include <filesystem>
 #include <ctime>
+#include <mutex>
 
 namespace DCPerfTest
 {
     // Timing utilities
     using Clock = std::chrono::high_resolution_clock;
     using Microseconds = std::chrono::microseconds;
+    using Nanoseconds = std::chrono::nanoseconds;
     using Milliseconds = std::chrono::milliseconds;
+
+    constexpr std::time_t WELCOME_CONTENT_CACHE_TTL_SECS = 30;
+
+    struct CachedFaqSurfacePayload
+    {
+        std::string entries = "[]";
+        uint32 count = 0;
+        std::time_t expiresAt = 0;
+    };
+
+    struct CachedWhatsNewSurfacePayload
+    {
+        std::string version = "1.0.0";
+        std::string entries = "[]";
+        uint32 count = 0;
+        std::time_t expiresAt = 0;
+    };
+
+    std::mutex sWelcomeSurfaceCacheLock;
+    CachedFaqSurfacePayload sCachedWelcomeFaqSurfacePayload;
+    CachedWhatsNewSurfacePayload sCachedWelcomeWhatsNewSurfacePayload;
+
+    CachedFaqSurfacePayload GetCachedWelcomeFaqSurfacePayload()
+    {
+        std::time_t const now = std::time(nullptr);
+        std::lock_guard<std::mutex> lock(sWelcomeSurfaceCacheLock);
+
+        if (sCachedWelcomeFaqSurfacePayload.expiresAt > now)
+            return sCachedWelcomeFaqSurfacePayload;
+
+        CachedFaqSurfacePayload payload;
+        if (QueryResult result = WorldDatabase.Query(
+            "SELECT id, category, question, answer FROM dc_welcome_faq "
+            "WHERE active = 1 ORDER BY category, priority DESC, id"))
+        {
+            DCAddon::JsonValue entriesArray;
+            entriesArray.SetArray();
+
+            do
+            {
+                Field* fields = result->Fetch();
+                DCAddon::JsonValue entry;
+                entry.SetObject();
+                entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
+                entry.Set("category", DCAddon::JsonValue(fields[1].Get<std::string>()));
+                entry.Set("question", DCAddon::JsonValue(fields[2].Get<std::string>()));
+                entry.Set("answer", DCAddon::JsonValue(fields[3].Get<std::string>()));
+                entriesArray.Push(entry);
+                ++payload.count;
+            } while (result->NextRow());
+
+            payload.entries = entriesArray.Encode();
+        }
+
+        payload.expiresAt = now + WELCOME_CONTENT_CACHE_TTL_SECS;
+        sCachedWelcomeFaqSurfacePayload = payload;
+        return payload;
+    }
+
+    CachedWhatsNewSurfacePayload GetCachedWelcomeWhatsNewSurfacePayload()
+    {
+        std::time_t const now = std::time(nullptr);
+        std::lock_guard<std::mutex> lock(sWelcomeSurfaceCacheLock);
+
+        if (sCachedWelcomeWhatsNewSurfacePayload.expiresAt > now)
+            return sCachedWelcomeWhatsNewSurfacePayload;
+
+        CachedWhatsNewSurfacePayload payload;
+        if (QueryResult result = WorldDatabase.Query(
+            "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
+            "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
+            "ORDER BY priority DESC, id DESC LIMIT 10"))
+        {
+            DCAddon::JsonValue entriesArray;
+            entriesArray.SetArray();
+
+            do
+            {
+                Field* fields = result->Fetch();
+                DCAddon::JsonValue entry;
+                entry.SetObject();
+                entry.Set("id", DCAddon::JsonValue(static_cast<int32>(fields[0].Get<uint32>())));
+                entry.Set("version", DCAddon::JsonValue(fields[1].Get<std::string>()));
+                entry.Set("title", DCAddon::JsonValue(fields[2].Get<std::string>()));
+                entry.Set("content", DCAddon::JsonValue(fields[3].Get<std::string>()));
+                entry.Set("icon", DCAddon::JsonValue(fields[4].Get<std::string>()));
+                entry.Set("category", DCAddon::JsonValue(fields[5].Get<std::string>()));
+                entriesArray.Push(entry);
+                ++payload.count;
+
+                if (payload.version == "1.0.0")
+                    payload.version = fields[1].Get<std::string>();
+            } while (result->NextRow());
+
+            payload.entries = entriesArray.Encode();
+        }
+
+        payload.expiresAt = now + WELCOME_CONTENT_CACHE_TTL_SECS;
+        sCachedWelcomeWhatsNewSurfacePayload = payload;
+        return payload;
+    }
 
     struct TimingResult
     {
@@ -46,7 +154,15 @@ namespace DCPerfTest
         uint64 maxUs = 0;
         uint64 p95Us = 0;
         uint64 p99Us = 0;
+        std::string totalDisplay;
+        std::string avgDisplay;
+        std::string minDisplay;
+        std::string maxDisplay;
+        std::string p95Display;
+        std::string p99Display;
+        uint64 avgSortNs = 0;
         uint32 iterations = 0;
+        uint32 throughputCount = 0;
         bool success = false;
         std::string error;
     };
@@ -89,6 +205,48 @@ namespace DCPerfTest
         return out.str();
     }
 
+    static std::string FormatPreciseScalar(double value, char const* unit)
+    {
+        std::ostringstream out;
+        double rounded = std::round(value);
+        if (std::fabs(value - rounded) < 0.0005)
+        {
+            out << static_cast<int64>(rounded);
+        }
+        else
+        {
+            int precision = 3;
+            if (std::fabs(value) >= 100.0)
+                precision = 1;
+            else if (std::fabs(value) >= 10.0)
+                precision = 2;
+
+            out << std::fixed << std::setprecision(precision) << value;
+            std::string text = out.str();
+            while (!text.empty() && text.back() == '0')
+                text.pop_back();
+            if (!text.empty() && text.back() == '.')
+                text.pop_back();
+            out.str("");
+            out.clear();
+            out << text;
+        }
+
+        out << unit;
+        return out.str();
+    }
+
+    static std::string FormatTimeFromNanoseconds(double nanoseconds)
+    {
+        if (nanoseconds >= 1000000000.0)
+            return FormatPreciseScalar(nanoseconds / 1000000000.0, "s");
+        if (nanoseconds >= 1000000.0)
+            return FormatPreciseScalar(nanoseconds / 1000000.0, "ms");
+        if (nanoseconds >= 1000.0)
+            return FormatPreciseScalar(nanoseconds / 1000.0, "us");
+        return FormatPreciseScalar(nanoseconds, "ns");
+    }
+
     static void ClearTimingStats(TimingResult& result)
     {
         result.totalUs = 0;
@@ -97,6 +255,13 @@ namespace DCPerfTest
         result.maxUs = 0;
         result.p95Us = 0;
         result.p99Us = 0;
+        result.avgSortNs = 0;
+        result.totalDisplay.clear();
+        result.avgDisplay.clear();
+        result.minDisplay.clear();
+        result.maxDisplay.clear();
+        result.p95Display.clear();
+        result.p99Display.clear();
     }
 
     static void FinalizeTimingSamples(TimingResult& result, std::vector<uint64>& times)
@@ -113,10 +278,43 @@ namespace DCPerfTest
 
         uint32 divisor = result.iterations ? result.iterations : static_cast<uint32>(times.size());
         result.avgUs = divisor ? result.totalUs / divisor : 0;
+        result.avgSortNs = divisor ? (result.totalUs * 1000ULL) / divisor : 0;
         result.minUs = times.front();
         result.maxUs = times.back();
         result.p95Us = GetPercentile(times, 95.0f);
         result.p99Us = GetPercentile(times, 99.0f);
+    }
+
+    static void FinalizeTimingSamplesNs(TimingResult& result,
+        std::vector<uint64>& timesNs)
+    {
+        if (timesNs.empty())
+        {
+            ClearTimingStats(result);
+            result.iterations = 0;
+            return;
+        }
+
+        std::sort(timesNs.begin(), timesNs.end());
+        uint64 totalNs = std::accumulate(timesNs.begin(), timesNs.end(), 0ULL);
+        uint32 divisor = result.iterations ? result.iterations : static_cast<uint32>(timesNs.size());
+
+        result.totalUs = totalNs / 1000;
+        result.avgUs = divisor ? result.totalUs / divisor : 0;
+        result.avgSortNs = divisor ? totalNs / divisor : 0;
+        result.minUs = timesNs.front() / 1000;
+        result.maxUs = timesNs.back() / 1000;
+        result.p95Us = GetPercentile(timesNs, 95.0f) / 1000;
+        result.p99Us = GetPercentile(timesNs, 99.0f) / 1000;
+
+        result.totalDisplay = FormatTimeFromNanoseconds(static_cast<double>(totalNs));
+        result.avgDisplay = divisor
+            ? FormatTimeFromNanoseconds(static_cast<double>(totalNs) / divisor)
+            : std::string("0ns");
+        result.minDisplay = FormatTimeFromNanoseconds(static_cast<double>(timesNs.front()));
+        result.maxDisplay = FormatTimeFromNanoseconds(static_cast<double>(timesNs.back()));
+        result.p95Display = FormatTimeFromNanoseconds(static_cast<double>(GetPercentile(timesNs, 95.0f)));
+        result.p99Display = FormatTimeFromNanoseconds(static_cast<double>(GetPercentile(timesNs, 99.0f)));
     }
 
     static TimingResult MakeSkippedTimingResult(std::string const& testName, std::string const& reason)
@@ -124,6 +322,7 @@ namespace DCPerfTest
         TimingResult result;
         result.testName = testName + " [SKIPPED: " + reason + "]";
         result.iterations = 0;
+        result.throughputCount = 0;
         result.success = true;
         ClearTimingStats(result);
         return result;
@@ -193,6 +392,20 @@ namespace DCPerfTest
         return out;
     }
 
+    static uint32 GetThroughputCount(TimingResult const& result)
+    {
+        return result.throughputCount ? result.throughputCount : result.iterations;
+    }
+
+    static std::string GetDisplayedTime(TimingResult const& result,
+        std::string TimingResult::*displayField,
+        uint64 TimingResult::*valueField)
+    {
+        return (result.*displayField).empty()
+            ? FormatTime(result.*valueField)
+            : (result.*displayField);
+    }
+
     static std::string MakeTimestampForFilename()
     {
         std::time_t t = std::time(nullptr);
@@ -245,12 +458,19 @@ namespace DCPerfTest
                 out << "\"testName\":\"" << JsonEscape(r.testName) << "\",";
                 out << "\"success\":" << (r.success ? "true" : "false") << ",";
                 out << "\"iterations\":" << r.iterations << ",";
+                out << "\"throughput_count\":" << GetThroughputCount(r) << ",";
                 out << "\"total_us\":" << r.totalUs << ",";
                 out << "\"avg_us\":" << r.avgUs << ",";
                 out << "\"min_us\":" << r.minUs << ",";
                 out << "\"max_us\":" << r.maxUs << ",";
                 out << "\"p95_us\":" << r.p95Us << ",";
                 out << "\"p99_us\":" << r.p99Us << ",";
+                out << "\"total_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::totalDisplay, &TimingResult::totalUs)) << "\",";
+                out << "\"avg_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::avgDisplay, &TimingResult::avgUs)) << "\",";
+                out << "\"min_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::minDisplay, &TimingResult::minUs)) << "\",";
+                out << "\"max_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::maxDisplay, &TimingResult::maxUs)) << "\",";
+                out << "\"p95_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::p95Display, &TimingResult::p95Us)) << "\",";
+                out << "\"p99_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::p99Display, &TimingResult::p99Us)) << "\",";
                 out << "\"error\":\"" << JsonEscape(r.error) << "\"";
                 out << "}";
                 if (i + 1 < results.size())
@@ -292,19 +512,26 @@ namespace DCPerfTest
             out << "wall_us," << wallUs << "\n";
             out << "generated_at," << CsvEscape(MakeTimestampForFilename()) << "\n";
             out << "\n";
-            out << "testName,success,iterations,total_us,avg_us,min_us,max_us,p95_us,p99_us,error\n";
+            out << "testName,success,iterations,throughput_count,total_us,avg_us,min_us,max_us,p95_us,p99_us,total_display,avg_display,min_display,max_display,p95_display,p99_display,error\n";
 
             for (TimingResult const& r : results)
             {
                 out << CsvEscape(r.testName) << ",";
                 out << (r.success ? 1 : 0) << ",";
                 out << r.iterations << ",";
+                out << GetThroughputCount(r) << ",";
                 out << r.totalUs << ",";
                 out << r.avgUs << ",";
                 out << r.minUs << ",";
                 out << r.maxUs << ",";
                 out << r.p95Us << ",";
                 out << r.p99Us << ",";
+                out << CsvEscape(GetDisplayedTime(r, &TimingResult::totalDisplay, &TimingResult::totalUs)) << ",";
+                out << CsvEscape(GetDisplayedTime(r, &TimingResult::avgDisplay, &TimingResult::avgUs)) << ",";
+                out << CsvEscape(GetDisplayedTime(r, &TimingResult::minDisplay, &TimingResult::minUs)) << ",";
+                out << CsvEscape(GetDisplayedTime(r, &TimingResult::maxDisplay, &TimingResult::maxUs)) << ",";
+                out << CsvEscape(GetDisplayedTime(r, &TimingResult::p95Display, &TimingResult::p95Us)) << ",";
+                out << CsvEscape(GetDisplayedTime(r, &TimingResult::p99Display, &TimingResult::p99Us)) << ",";
                 out << CsvEscape(r.error) << "\n";
             }
             return true;
@@ -408,12 +635,19 @@ namespace DCPerfTest
             out << "\"testName\":\"" << JsonEscape(r.testName) << "\",";
             out << "\"success\":" << (r.success ? "true" : "false") << ",";
             out << "\"iterations\":" << r.iterations << ",";
+            out << "\"throughput_count\":" << GetThroughputCount(r) << ",";
             out << "\"total_us\":" << r.totalUs << ",";
             out << "\"avg_us\":" << r.avgUs << ",";
             out << "\"min_us\":" << r.minUs << ",";
             out << "\"max_us\":" << r.maxUs << ",";
             out << "\"p95_us\":" << r.p95Us << ",";
             out << "\"p99_us\":" << r.p99Us << ",";
+            out << "\"total_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::totalDisplay, &TimingResult::totalUs)) << "\",";
+            out << "\"avg_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::avgDisplay, &TimingResult::avgUs)) << "\",";
+            out << "\"min_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::minDisplay, &TimingResult::minUs)) << "\",";
+            out << "\"max_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::maxDisplay, &TimingResult::maxUs)) << "\",";
+            out << "\"p95_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::p95Display, &TimingResult::p95Us)) << "\",";
+            out << "\"p99_display\":\"" << JsonEscape(GetDisplayedTime(r, &TimingResult::p99Display, &TimingResult::p99Us)) << "\",";
             out << "\"error\":\"" << JsonEscape(r.error) << "\"";
             out << "}";
             if (i + 1 < results.size())
@@ -451,7 +685,7 @@ namespace DCPerfTest
         out << "suite_args," << CsvEscape(suiteArgs) << "\n";
         out << "generated_at," << CsvEscape(MakeTimestampForFilename()) << "\n";
         out << "\n";
-        out << "run_index,wall_us,testName,success,iterations,total_us,avg_us,min_us,max_us,p95_us,p99_us,error\n";
+        out << "run_index,wall_us,testName,success,iterations,throughput_count,total_us,avg_us,min_us,max_us,p95_us,p99_us,total_display,avg_display,min_display,max_display,p95_display,p99_display,error\n";
     }
 
     static void WriteLoopReportCsvRun(std::ofstream& out,
@@ -466,12 +700,19 @@ namespace DCPerfTest
             out << CsvEscape(r.testName) << ",";
             out << (r.success ? 1 : 0) << ",";
             out << r.iterations << ",";
+            out << GetThroughputCount(r) << ",";
             out << r.totalUs << ",";
             out << r.avgUs << ",";
             out << r.minUs << ",";
             out << r.maxUs << ",";
             out << r.p95Us << ",";
             out << r.p99Us << ",";
+            out << CsvEscape(GetDisplayedTime(r, &TimingResult::totalDisplay, &TimingResult::totalUs)) << ",";
+            out << CsvEscape(GetDisplayedTime(r, &TimingResult::avgDisplay, &TimingResult::avgUs)) << ",";
+            out << CsvEscape(GetDisplayedTime(r, &TimingResult::minDisplay, &TimingResult::minUs)) << ",";
+            out << CsvEscape(GetDisplayedTime(r, &TimingResult::maxDisplay, &TimingResult::maxUs)) << ",";
+            out << CsvEscape(GetDisplayedTime(r, &TimingResult::p95Display, &TimingResult::p95Us)) << ",";
+            out << CsvEscape(GetDisplayedTime(r, &TimingResult::p99Display, &TimingResult::p99Us)) << ",";
             out << CsvEscape(r.error) << "\n";
         }
     }
@@ -517,6 +758,7 @@ namespace DCPerfTest
         TimingResult result;
         result.testName = "Bulk SELECT (" + std::to_string(rowCount) + " rows)";
         result.iterations = 1;
+        result.throughputCount = rowCount;
         result.success = true;
 
         auto start = Clock::now();
@@ -552,6 +794,19 @@ namespace DCPerfTest
             result.maxUs = result.avgUs;
             result.p95Us = result.avgUs;
             result.p99Us = result.avgUs;
+            result.throughputCount = fetchedRows;
+
+            if (fetchedRows > 0)
+            {
+                std::string avgDisplay = FormatTimeFromNanoseconds(
+                    (static_cast<double>(result.totalUs) * 1000.0) / fetchedRows);
+                result.avgDisplay = avgDisplay;
+                result.minDisplay = avgDisplay;
+                result.maxDisplay = avgDisplay;
+                result.p95Display = avgDisplay;
+                result.p99Display = avgDisplay;
+                result.avgSortNs = (static_cast<uint64>(result.totalUs) * 1000ULL) / fetchedRows;
+            }
 
             if (fetchedRows < rowCount)
             {
@@ -613,6 +868,7 @@ namespace DCPerfTest
         TimingResult result;
         result.testName = "Transaction Batch (" + std::to_string(batchSize) + " ops)";
         result.iterations = 1;
+        result.throughputCount = batchSize;
         result.success = true;
 
         auto start = Clock::now();
@@ -643,7 +899,7 @@ namespace DCPerfTest
             // Cleanup our test data
             trans->Append("DELETE FROM log_arena_memberstats WHERE fight_id >= 4290000000");
 
-            CharacterDatabase.CommitTransaction(trans);
+            CharacterDatabase.DirectCommitTransaction(trans);
 
             auto end = Clock::now();
             result.totalUs = std::chrono::duration_cast<Microseconds>(end - start).count();
@@ -652,6 +908,15 @@ namespace DCPerfTest
             result.maxUs = result.avgUs;
             result.p95Us = result.avgUs;
             result.p99Us = result.avgUs;
+
+            std::string avgDisplay = FormatTimeFromNanoseconds(
+                (static_cast<double>(result.totalUs) * 1000.0) / batchSize);
+            result.avgDisplay = avgDisplay;
+            result.minDisplay = avgDisplay;
+            result.maxDisplay = avgDisplay;
+            result.p95Display = avgDisplay;
+            result.p99Display = avgDisplay;
+            result.avgSortNs = (static_cast<uint64>(result.totalUs) * 1000ULL) / batchSize;
         }
         catch (const std::exception& e)
         {
@@ -914,33 +1179,32 @@ namespace DCPerfTest
         TimingResult result;
         result.testName = "ObjectMgr Cache (creature templates)";
         result.success = true;
+        result.iterations = 10000;
 
-        std::vector<uint64> times;
+        std::vector<uint64> timesNs;
         const uint32 iterations = 10000;
-        times.reserve(iterations);
+        timesNs.reserve(iterations);
 
         try
         {
+            uint64 digest = 0;
+
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 entry = (i % 1000) + 1; // Cycle through entries 1-1000
 
                 auto start = Clock::now();
-                sObjectMgr->GetCreatureTemplate(entry);
+                if (CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry))
+                    digest += creatureTemplate->Entry;
                 auto end = Clock::now();
 
-                times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
             }
 
-            std::sort(times.begin(), times.end());
+            if (digest == std::numeric_limits<uint64>::max())
+                result.error.clear();
 
-            result.iterations = iterations;
-            result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
-            result.avgUs = result.totalUs / iterations;
-            result.minUs = times.front();
-            result.maxUs = times.back();
-            result.p95Us = GetPercentile(times, 95.0f);
-            result.p99Us = GetPercentile(times, 99.0f);
+            FinalizeTimingSamplesNs(result, timesNs);
         }
         catch (const std::exception& e)
         {
@@ -956,33 +1220,32 @@ namespace DCPerfTest
         TimingResult result;
         result.testName = "ItemTemplate Cache (10k lookups)";
         result.success = true;
+        result.iterations = 10000;
 
-        std::vector<uint64> times;
+        std::vector<uint64> timesNs;
         const uint32 iterations = 10000;
-        times.reserve(iterations);
+        timesNs.reserve(iterations);
 
         try
         {
+            uint64 digest = 0;
+
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 entry = (i % 5000) + 1; // Cycle through item entries
 
                 auto start = Clock::now();
-                sObjectMgr->GetItemTemplate(entry);
+                if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(entry))
+                    digest += itemTemplate->ItemLevel;
                 auto end = Clock::now();
 
-                times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
             }
 
-            std::sort(times.begin(), times.end());
+            if (digest == std::numeric_limits<uint64>::max())
+                result.error.clear();
 
-            result.iterations = iterations;
-            result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
-            result.avgUs = result.totalUs / iterations;
-            result.minUs = times.front();
-            result.maxUs = times.back();
-            result.p95Us = GetPercentile(times, 95.0f);
-            result.p99Us = GetPercentile(times, 99.0f);
+            FinalizeTimingSamplesNs(result, timesNs);
         }
         catch (const std::exception& e)
         {
@@ -1252,25 +1515,31 @@ namespace DCPerfTest
             return;
         }
 
+        auto formatField = [](std::string const& overrideText, uint64 us) -> std::string
+        {
+            return overrideText.empty() ? FormatTime(us) : overrideText;
+        };
+
         handler->SendSysMessage(Acore::StringFormat("|cffffffff{}|r", result.testName));
         handler->SendSysMessage(Acore::StringFormat("  Total: {} | Avg: {} | Min: {} | Max: {}",
-            FormatTime(result.totalUs),
-            FormatTime(result.avgUs),
-            FormatTime(result.minUs),
-            FormatTime(result.maxUs)));
+            formatField(result.totalDisplay, result.totalUs),
+            formatField(result.avgDisplay, result.avgUs),
+            formatField(result.minDisplay, result.minUs),
+            formatField(result.maxDisplay, result.maxUs)));
 
-        if (result.iterations > 0 && result.totalUs > 0)
+        uint32 throughputCount = result.throughputCount ? result.throughputCount : result.iterations;
+        if (throughputCount > 0 && result.totalUs > 0)
         {
             double secs = double(result.totalUs) / 1000000.0;
-            double opsPerSec = secs > 0.0 ? (double(result.iterations) / secs) : 0.0;
+            double opsPerSec = secs > 0.0 ? (double(throughputCount) / secs) : 0.0;
             handler->SendSysMessage(Acore::StringFormat("  Ops/s: {:.2f}", opsPerSec));
         }
 
         if (result.iterations > 1)
         {
             handler->SendSysMessage(Acore::StringFormat("  P95: {} | P99: {} ({} iterations)",
-                FormatTime(result.p95Us),
-                FormatTime(result.p99Us),
+                formatField(result.p95Display, result.p95Us),
+                formatField(result.p99Display, result.p99Us),
                 result.iterations));
         }
     }
@@ -1279,6 +1548,13 @@ namespace DCPerfTest
     {
         if (!handler)
             return;
+
+        auto formatField = [](TimingResult const& r,
+            std::string TimingResult::*displayField,
+            uint64 TimingResult::*valueField) -> std::string
+        {
+            return (r.*displayField).empty() ? FormatTime(r.*valueField) : (r.*displayField);
+        };
 
         uint32 okCount = 0;
         uint32 failCount = 0;
@@ -1314,7 +1590,14 @@ namespace DCPerfTest
             return;
 
         auto byTotalDesc = [](TimingResult const* a, TimingResult const* b) { return a->totalUs > b->totalUs; };
-        auto byAvgDesc = [](TimingResult const* a, TimingResult const* b) { return a->avgUs > b->avgUs; };
+        auto avgNs = [](TimingResult const* r) -> uint64
+        {
+            return r->avgSortNs ? r->avgSortNs : (r->avgUs * 1000ULL);
+        };
+        auto byAvgDesc = [avgNs](TimingResult const* a, TimingResult const* b)
+        {
+            return avgNs(a) > avgNs(b);
+        };
 
         std::sort(ok.begin(), ok.end(), byTotalDesc);
         if (topN == 0)
@@ -1329,10 +1612,10 @@ namespace DCPerfTest
             handler->SendSysMessage(Acore::StringFormat("#{} {} | total {} | avg {} | p95 {} | p99 {} | iters {}",
                 i + 1,
                 r.testName,
-                FormatTime(r.totalUs),
-                FormatTime(r.avgUs),
-                FormatTime(r.p95Us),
-                FormatTime(r.p99Us),
+                formatField(r, &TimingResult::totalDisplay, &TimingResult::totalUs),
+                formatField(r, &TimingResult::avgDisplay, &TimingResult::avgUs),
+                formatField(r, &TimingResult::p95Display, &TimingResult::p95Us),
+                formatField(r, &TimingResult::p99Display, &TimingResult::p99Us),
                 r.iterations));
         }
 
@@ -1344,10 +1627,10 @@ namespace DCPerfTest
             handler->SendSysMessage(Acore::StringFormat("#{} {} | avg {} | p95 {} | p99 {} | total {} | iters {}",
                 i + 1,
                 r.testName,
-                FormatTime(r.avgUs),
-                FormatTime(r.p95Us),
-                FormatTime(r.p99Us),
-                FormatTime(r.totalUs),
+                formatField(r, &TimingResult::avgDisplay, &TimingResult::avgUs),
+                formatField(r, &TimingResult::p95Display, &TimingResult::p95Us),
+                formatField(r, &TimingResult::p99Display, &TimingResult::p99Us),
+                formatField(r, &TimingResult::totalDisplay, &TimingResult::totalUs),
                 r.iterations));
         }
 
@@ -1512,6 +1795,8 @@ namespace DCPerfTest
         bool hasPrestige = false;
         bool hasMplusScores = false;
         bool hasMplusRuns = false;
+        bool hasWeeklyVault = false;
+        bool hasCharacters = false;
         bool hasGroupFinderListings = false;
         bool hasGroupFinderEvents = false;
         bool hasGroupFinderSignups = false;
@@ -1521,7 +1806,12 @@ namespace DCPerfTest
         bool hasWardrobeOutfits = false;
         bool hasHLBGSeasonal = false;
         bool hasHLBGAllTime = false;
+        bool hasHLBGParticipants = false;
+        bool hasHLBGWinnerHistory = false;
         char const* transmogCollectionTable = nullptr;
+        char const* hlbgAllTimeGamesColumn = nullptr;
+        char const* hlbgAllTimeWinsColumn = nullptr;
+        char const* hlbgAllTimeKillsColumn = nullptr;
 
         bool HasProtocolSurface() const
         {
@@ -1531,7 +1821,7 @@ namespace DCPerfTest
         bool HasWelcomeSurface() const
         {
             return hasWelcomeFaq || hasWelcomeWhatsNew || hasMplusRating || hasPrestige
-                || hasMplusScores || hasMplusRuns;
+                || hasMplusScores || hasMplusRuns || hasWeeklyVault;
         }
 
         bool HasGroupFinderSurface() const
@@ -1541,7 +1831,7 @@ namespace DCPerfTest
 
         bool HasMythicPlusSurface() const
         {
-            return hasMplusKeys || hasMplusBestRuns || hasMplusDungeons;
+            return hasMplusKeys || hasMplusBestRuns;
         }
 
         bool HasWardrobeSurface() const
@@ -1549,9 +1839,17 @@ namespace DCPerfTest
             return hasWardrobeOutfits || transmogCollectionTable != nullptr;
         }
 
+        bool HasHLBGUnifiedTables() const
+        {
+            return hasHLBGParticipants && hasHLBGWinnerHistory;
+        }
+
         bool HasHLBGSurface() const
         {
-            return hasHLBGSeasonal || hasHLBGAllTime;
+            return HasHLBGUnifiedTables() || hasHLBGSeasonal || (hasHLBGAllTime
+                && hlbgAllTimeGamesColumn != nullptr
+                && hlbgAllTimeWinsColumn != nullptr
+                && hlbgAllTimeKillsColumn != nullptr);
         }
 
         bool HasAnySurface() const
@@ -1565,14 +1863,324 @@ namespace DCPerfTest
     enum class AddonSurface : uint8
     {
         Protocol,
+        ProtocolClientCaps,
+        ProtocolStats,
+        ProtocolErrors,
+        ProtocolLog,
         QoS,
         World,
         Welcome,
+        WelcomeFaq,
+        WelcomeWhatsNew,
+        WelcomeProgress,
+        WelcomeProgressRating,
+        WelcomeProgressPrestige,
+        WelcomeProgressSeasonPoints,
+        WelcomeProgressWeeklyRuns,
+        WelcomeProgressAltBonus,
         GroupFinder,
+        GroupFinderListings,
+        GroupFinderEvents,
+        GroupFinderSignups,
         MythicPlus,
+        MythicPlusKeyInfo,
+        MythicPlusBestRuns,
         Wardrobe,
+        WardrobeCommunity,
+        WardrobeCollected,
         HLBG,
+        HLBGSeasonal,
+        HLBGAllTime,
     };
+
+    char const* GetAddonSurfaceName(AddonSurface surface)
+    {
+        switch (surface)
+        {
+            case AddonSurface::Protocol:
+                return "Protocol";
+            case AddonSurface::ProtocolClientCaps:
+                return "Protocol Client Caps";
+            case AddonSurface::ProtocolStats:
+                return "Protocol Stats";
+            case AddonSurface::ProtocolErrors:
+                return "Protocol Errors";
+            case AddonSurface::ProtocolLog:
+                return "Protocol Log";
+            case AddonSurface::QoS:
+                return "QoS";
+            case AddonSurface::World:
+                return "World";
+            case AddonSurface::Welcome:
+                return "Welcome";
+            case AddonSurface::WelcomeFaq:
+                return "Welcome FAQ";
+            case AddonSurface::WelcomeWhatsNew:
+                return "Welcome What's New";
+            case AddonSurface::WelcomeProgress:
+                return "Welcome Progress";
+            case AddonSurface::WelcomeProgressRating:
+                return "Welcome Progress Rating";
+            case AddonSurface::WelcomeProgressPrestige:
+                return "Welcome Progress Prestige";
+            case AddonSurface::WelcomeProgressSeasonPoints:
+                return "Welcome Progress Season Points";
+            case AddonSurface::WelcomeProgressWeeklyRuns:
+                return "Welcome Progress Weekly Runs";
+            case AddonSurface::WelcomeProgressAltBonus:
+                return "Welcome Progress Alt Bonus";
+            case AddonSurface::GroupFinder:
+                return "GroupFinder";
+            case AddonSurface::GroupFinderListings:
+                return "GroupFinder Listings";
+            case AddonSurface::GroupFinderEvents:
+                return "GroupFinder Scheduled Events";
+            case AddonSurface::GroupFinderSignups:
+                return "GroupFinder My Signups";
+            case AddonSurface::MythicPlus:
+                return "MythicPlus";
+            case AddonSurface::MythicPlusKeyInfo:
+                return "MythicPlus Key Info";
+            case AddonSurface::MythicPlusBestRuns:
+                return "MythicPlus Best Runs";
+            case AddonSurface::Wardrobe:
+                return "Wardrobe";
+            case AddonSurface::WardrobeCommunity:
+                return "Wardrobe Community Outfits";
+            case AddonSurface::WardrobeCollected:
+                return "Wardrobe Collected Appearances";
+            case AddonSurface::HLBG:
+                return "HLBG";
+            case AddonSurface::HLBGSeasonal:
+                return "HLBG Seasonal";
+            case AddonSurface::HLBGAllTime:
+                return "HLBG All-Time";
+        }
+
+        return "Unknown";
+    }
+
+    std::vector<AddonSurface> CollectAddonStressSurfaces(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(8);
+
+        if (availability.HasProtocolSurface())
+            surfaces.push_back(AddonSurface::Protocol);
+        if (availability.hasQosSettings)
+            surfaces.push_back(AddonSurface::QoS);
+        if (availability.hasHotspots)
+            surfaces.push_back(AddonSurface::World);
+        if (availability.HasWelcomeSurface())
+            surfaces.push_back(AddonSurface::Welcome);
+        if (availability.HasGroupFinderSurface())
+            surfaces.push_back(AddonSurface::GroupFinder);
+        if (availability.HasMythicPlusSurface())
+            surfaces.push_back(AddonSurface::MythicPlus);
+        if (availability.HasWardrobeSurface())
+            surfaces.push_back(AddonSurface::Wardrobe);
+        if (availability.HasHLBGSurface())
+            surfaces.push_back(AddonSurface::HLBG);
+
+        return surfaces;
+    }
+
+    std::vector<AddonSurface> CollectAddonProtocolSurfaceDetails(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(4);
+
+        if (availability.hasProtocolCaps)
+            surfaces.push_back(AddonSurface::ProtocolClientCaps);
+        if (availability.hasProtocolStats)
+            surfaces.push_back(AddonSurface::ProtocolStats);
+        if (availability.hasProtocolErrors)
+            surfaces.push_back(AddonSurface::ProtocolErrors);
+        if (availability.hasProtocolLog)
+            surfaces.push_back(AddonSurface::ProtocolLog);
+
+        return surfaces;
+    }
+
+    std::vector<AddonSurface> CollectAddonWelcomeSurfaceDetails(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(3);
+
+        if (availability.hasWelcomeFaq)
+            surfaces.push_back(AddonSurface::WelcomeFaq);
+        if (availability.hasWelcomeWhatsNew)
+            surfaces.push_back(AddonSurface::WelcomeWhatsNew);
+        if (availability.hasMplusScores || availability.hasMplusRating
+            || availability.hasPrestige || availability.hasMplusRuns)
+        {
+            surfaces.push_back(AddonSurface::WelcomeProgress);
+        }
+
+        return surfaces;
+    }
+
+    std::vector<AddonSurface> CollectAddonWelcomeProgressSurfaceDetails(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(5);
+
+        if (availability.hasMplusRating)
+            surfaces.push_back(AddonSurface::WelcomeProgressRating);
+        if (availability.hasPrestige)
+            surfaces.push_back(AddonSurface::WelcomeProgressPrestige);
+        if (availability.hasMplusScores)
+            surfaces.push_back(AddonSurface::WelcomeProgressSeasonPoints);
+        if (availability.hasMplusRuns || availability.hasWeeklyVault)
+            surfaces.push_back(AddonSurface::WelcomeProgressWeeklyRuns);
+        if (availability.hasCharacters)
+            surfaces.push_back(AddonSurface::WelcomeProgressAltBonus);
+
+        return surfaces;
+    }
+
+    std::vector<AddonSurface> CollectAddonGroupFinderSurfaceDetails(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(3);
+
+        if (availability.hasGroupFinderListings)
+            surfaces.push_back(AddonSurface::GroupFinderListings);
+        if (availability.hasGroupFinderEvents)
+            surfaces.push_back(AddonSurface::GroupFinderEvents);
+        if (availability.hasGroupFinderEvents && availability.hasGroupFinderSignups)
+            surfaces.push_back(AddonSurface::GroupFinderSignups);
+
+        return surfaces;
+    }
+
+    std::vector<AddonSurface> CollectAddonMythicPlusSurfaceDetails(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(2);
+
+        if (availability.hasMplusKeys)
+            surfaces.push_back(AddonSurface::MythicPlusKeyInfo);
+        if (availability.hasMplusBestRuns)
+            surfaces.push_back(AddonSurface::MythicPlusBestRuns);
+
+        return surfaces;
+    }
+
+    std::vector<AddonSurface> CollectAddonWardrobeSurfaceDetails(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(2);
+
+        if (availability.hasWardrobeOutfits)
+            surfaces.push_back(AddonSurface::WardrobeCommunity);
+        if (availability.transmogCollectionTable)
+            surfaces.push_back(AddonSurface::WardrobeCollected);
+
+        return surfaces;
+    }
+
+    std::vector<AddonSurface> CollectAddonHLBGSurfaceDetails(
+        AddonStressAvailability const& availability)
+    {
+        std::vector<AddonSurface> surfaces;
+        surfaces.reserve(2);
+
+        if (availability.HasHLBGUnifiedTables() || availability.hasHLBGSeasonal)
+            surfaces.push_back(AddonSurface::HLBGSeasonal);
+        if (availability.HasHLBGUnifiedTables() || (availability.hasHLBGAllTime
+            && availability.hlbgAllTimeGamesColumn
+            && availability.hlbgAllTimeWinsColumn
+            && availability.hlbgAllTimeKillsColumn))
+        {
+            surfaces.push_back(AddonSurface::HLBGAllTime);
+        }
+
+        return surfaces;
+    }
+
+    bool IsAddonSurfaceAvailable(AddonStressAvailability const& availability,
+        AddonSurface surface)
+    {
+        switch (surface)
+        {
+            case AddonSurface::Protocol:
+                return availability.HasProtocolSurface();
+            case AddonSurface::ProtocolClientCaps:
+                return availability.hasProtocolCaps;
+            case AddonSurface::ProtocolStats:
+                return availability.hasProtocolStats;
+            case AddonSurface::ProtocolErrors:
+                return availability.hasProtocolErrors;
+            case AddonSurface::ProtocolLog:
+                return availability.hasProtocolLog;
+            case AddonSurface::QoS:
+                return availability.hasQosSettings;
+            case AddonSurface::World:
+                return availability.hasHotspots;
+            case AddonSurface::Welcome:
+                return availability.HasWelcomeSurface();
+            case AddonSurface::WelcomeFaq:
+                return availability.hasWelcomeFaq;
+            case AddonSurface::WelcomeWhatsNew:
+                return availability.hasWelcomeWhatsNew;
+            case AddonSurface::WelcomeProgress:
+                return availability.hasMplusScores || availability.hasMplusRating
+                    || availability.hasPrestige || availability.hasMplusRuns
+                    || availability.hasWeeklyVault;
+            case AddonSurface::WelcomeProgressRating:
+                return availability.hasMplusRating;
+            case AddonSurface::WelcomeProgressPrestige:
+                return availability.hasPrestige;
+            case AddonSurface::WelcomeProgressSeasonPoints:
+                return availability.hasMplusScores;
+            case AddonSurface::WelcomeProgressWeeklyRuns:
+                return availability.hasMplusRuns || availability.hasWeeklyVault;
+            case AddonSurface::WelcomeProgressAltBonus:
+                return availability.hasCharacters;
+            case AddonSurface::GroupFinder:
+                return availability.HasGroupFinderSurface();
+            case AddonSurface::GroupFinderListings:
+                return availability.hasGroupFinderListings;
+            case AddonSurface::GroupFinderEvents:
+                return availability.hasGroupFinderEvents;
+            case AddonSurface::GroupFinderSignups:
+                return availability.hasGroupFinderEvents
+                    && availability.hasGroupFinderSignups;
+            case AddonSurface::MythicPlus:
+                return availability.HasMythicPlusSurface();
+            case AddonSurface::MythicPlusKeyInfo:
+                return availability.hasMplusKeys;
+            case AddonSurface::MythicPlusBestRuns:
+                return availability.hasMplusBestRuns;
+            case AddonSurface::Wardrobe:
+                return availability.HasWardrobeSurface();
+            case AddonSurface::WardrobeCommunity:
+                return availability.hasWardrobeOutfits;
+            case AddonSurface::WardrobeCollected:
+                return availability.transmogCollectionTable != nullptr;
+            case AddonSurface::HLBG:
+                return availability.HasHLBGSurface();
+            case AddonSurface::HLBGSeasonal:
+                return availability.HasHLBGUnifiedTables()
+                    || availability.hasHLBGSeasonal;
+            case AddonSurface::HLBGAllTime:
+                return availability.HasHLBGUnifiedTables()
+                    || (availability.hasHLBGAllTime
+                    && availability.hlbgAllTimeGamesColumn
+                    && availability.hlbgAllTimeWinsColumn
+                    && availability.hlbgAllTimeKillsColumn);
+        }
+
+        return false;
+    }
 
     static AddonStressAvailability DetectAddonStressAvailability()
     {
@@ -1590,15 +2198,37 @@ namespace DCPerfTest
         availability.hasPrestige = CharacterTableExists("dc_character_prestige");
         availability.hasMplusScores = CharacterTableExists("dc_mplus_scores");
         availability.hasMplusRuns = CharacterTableExists("dc_mplus_runs");
+        availability.hasWeeklyVault = CharacterTableExists("dc_weekly_vault");
+        availability.hasCharacters = CharacterTableExists("characters");
         availability.hasGroupFinderListings = CharacterTableExists("dc_group_finder_listings");
         availability.hasGroupFinderEvents = CharacterTableExists("dc_group_finder_scheduled_events");
         availability.hasGroupFinderSignups = CharacterTableExists("dc_group_finder_event_signups");
         availability.hasMplusKeys = CharacterTableExists("dc_mplus_keystones");
         availability.hasMplusBestRuns = CharacterTableExists("dc_mplus_best_runs");
-        availability.hasMplusDungeons = WorldTableExists("dc_mplus_dungeons");
+        availability.hasMplusDungeons = CharacterTableExists("dc_mplus_dungeons");
         availability.hasWardrobeOutfits = CharacterTableExists("dc_collection_community_outfits");
         availability.hasHLBGSeasonal = CharacterTableExists("v_hlbg_player_seasonal_stats");
         availability.hasHLBGAllTime = CharacterTableExists("v_hlbg_player_alltime_stats");
+        availability.hasHLBGParticipants = CharacterTableExists("dc_hlbg_match_participants");
+        availability.hasHLBGWinnerHistory = CharacterTableExists("dc_hlbg_winner_history");
+
+        if (availability.hasHLBGAllTime)
+        {
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_matches"))
+                availability.hlbgAllTimeGamesColumn = "total_matches";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_games_played"))
+                availability.hlbgAllTimeGamesColumn = "total_games_played";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_wins"))
+                availability.hlbgAllTimeWinsColumn = "lifetime_wins";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_wins"))
+                availability.hlbgAllTimeWinsColumn = "total_wins";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_kills"))
+                availability.hlbgAllTimeKillsColumn = "lifetime_kills";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_kills"))
+                availability.hlbgAllTimeKillsColumn = "total_kills";
+        }
 
         if (CharacterTableExists("dc_transmog_collection"))
             availability.transmogCollectionTable = "dc_transmog_collection";
@@ -1606,6 +2236,1062 @@ namespace DCPerfTest
             availability.transmogCollectionTable = "dc_collection_transmog";
 
         return availability;
+    }
+
+    std::string ToLowerForStress(std::string value)
+    {
+        std::transform(value.begin(), value.end(), value.begin(),
+            [](unsigned char ch)
+            {
+                return static_cast<char>(std::tolower(ch));
+            });
+
+        return value;
+    }
+
+    uint32 ClampStressValue(uint32 value, uint32 fallback, uint32 minValue,
+        uint32 maxValue)
+    {
+        if (value == 0)
+            value = fallback;
+
+        if (value < minValue)
+            return minValue;
+
+        if (value > maxValue)
+            return maxValue;
+
+        return value;
+    }
+
+    std::string MakeSizedStressText(std::string const& prefix,
+        size_t targetLength, uint32 seed)
+    {
+        static char const alphabet[] =
+            "abcdefghijklmnopqrstuvwxyz0123456789";
+
+        std::string text = prefix;
+        if (targetLength == 0)
+            return text;
+
+        while (text.size() < targetLength)
+        {
+            size_t const index =
+                (seed + static_cast<uint32>(text.size()))
+                % (sizeof(alphabet) - 1);
+            text.push_back(alphabet[index]);
+        }
+
+        if (text.size() > targetLength)
+            text.resize(targetLength);
+
+        return text;
+    }
+
+    std::string GetLeaderboardClassNameForStress(uint8 classId)
+    {
+        switch (classId)
+        {
+            case 1:
+                return "WARRIOR";
+            case 2:
+                return "PALADIN";
+            case 3:
+                return "HUNTER";
+            case 4:
+                return "ROGUE";
+            case 5:
+                return "PRIEST";
+            case 6:
+                return "DEATHKNIGHT";
+            case 7:
+                return "SHAMAN";
+            case 8:
+                return "MAGE";
+            case 9:
+                return "WARLOCK";
+            case 11:
+                return "DRUID";
+            default:
+                return "UNKNOWN";
+        }
+    }
+
+    std::string BuildAoeItemsExtraForStress(uint32 qPoor, uint32 qCommon,
+        uint32 qUncommon, uint32 qRare, uint32 qEpic, uint32 qLegendary)
+    {
+        std::ostringstream oss;
+        if (qLegendary > 0)
+            oss << "|cffff8000L:" << qLegendary << "|r ";
+        if (qEpic > 0)
+            oss << "|cffa335eeE:" << qEpic << "|r ";
+        if (qRare > 0)
+            oss << "|cff0070ddR:" << qRare << "|r ";
+        if (qUncommon > 0)
+            oss << "|cff1eff00U:" << qUncommon << "|r";
+
+        std::string extra = oss.str();
+        if (extra.empty())
+            extra = std::to_string(qCommon + qPoor) + " common/poor";
+
+        return extra;
+    }
+
+    std::string GetGroupFinderDifficultyNameForStress(uint32 listingType,
+        uint32 difficulty)
+    {
+        if (listingType == 2)
+        {
+            switch (difficulty)
+            {
+                case 0:
+                    return "10 Normal";
+                case 1:
+                    return "25 Normal";
+                case 2:
+                    return "10 Heroic";
+                case 3:
+                    return "25 Heroic";
+                default:
+                    return "Raid";
+            }
+        }
+
+        switch (difficulty)
+        {
+            case 1:
+                return "Heroic";
+            case 2:
+                return "Mythic";
+            default:
+                return "Normal";
+        }
+    }
+
+    struct CollectionStressSample
+    {
+        uint32 mountCount = 72;
+        uint32 petCount = 34;
+        uint32 heirloomCount = 18;
+        uint32 titleCount = 12;
+        uint32 transmogCount = 220;
+        uint32 mountTotal = 420;
+        uint32 petTotal = 180;
+        uint32 heirloomTotal = 64;
+        uint32 titleTotal = 48;
+        uint32 transmogTotal = 1800;
+    };
+
+    bool ApplyCollectionSampleValue(CollectionStressSample& sample,
+        std::string const& rawKey, uint32 value, bool totals)
+    {
+        std::string const key = ToLowerForStress(rawKey);
+
+        auto setValue = [&](uint32& countField, uint32& totalField)
+        {
+            if (totals)
+                totalField = value;
+            else
+                countField = value;
+        };
+
+        if (key == "1" || key == "mount" || key == "mounts")
+        {
+            setValue(sample.mountCount, sample.mountTotal);
+            return true;
+        }
+
+        if (key == "2" || key == "pet" || key == "pets"
+            || key == "companion" || key == "companions")
+        {
+            setValue(sample.petCount, sample.petTotal);
+            return true;
+        }
+
+        if (key == "4" || key == "heirloom" || key == "heirlooms")
+        {
+            setValue(sample.heirloomCount, sample.heirloomTotal);
+            return true;
+        }
+
+        if (key == "5" || key == "title" || key == "titles")
+        {
+            setValue(sample.titleCount, sample.titleTotal);
+            return true;
+        }
+
+        if (key == "6" || key == "transmog" || key == "transmogs"
+            || key == "appearance" || key == "appearances")
+        {
+            setValue(sample.transmogCount, sample.transmogTotal);
+            return true;
+        }
+
+        return false;
+    }
+
+    uint32 LoadTopAccountCountFromTable(char const* tableName)
+    {
+        if (!CharacterTableExists(tableName)
+            || !CharacterColumnExists(tableName, "account_id"))
+        {
+            return 0;
+        }
+
+        std::ostringstream sql;
+        sql << "SELECT COUNT(*) FROM " << tableName
+            << " GROUP BY account_id ORDER BY COUNT(*) DESC LIMIT 1";
+        QueryResult result = CharacterDatabase.Query(sql.str().c_str());
+        return result ? result->Fetch()[0].Get<uint32>() : 0;
+    }
+
+    CollectionStressSample LoadCollectionStressSample()
+    {
+        CollectionStressSample sample;
+        AddonStressAvailability const availability =
+            DetectAddonStressAvailability();
+
+        if (CharacterTableExists("dc_collection_items")
+            && CharacterColumnExists("dc_collection_items", "account_id")
+            && CharacterColumnExists("dc_collection_items", "collection_type")
+            && CharacterColumnExists("dc_collection_items", "unlocked"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT account_id, "
+                "SUM(CASE WHEN LOWER(CAST(collection_type AS CHAR)) IN ('1', 'mount', 'mounts') THEN 1 ELSE 0 END) AS mounts, "
+                "SUM(CASE WHEN LOWER(CAST(collection_type AS CHAR)) IN ('2', 'pet', 'pets', 'companion', 'companions') THEN 1 ELSE 0 END) AS pets, "
+                "SUM(CASE WHEN LOWER(CAST(collection_type AS CHAR)) IN ('4', 'heirloom', 'heirlooms') THEN 1 ELSE 0 END) AS heirlooms, "
+                "SUM(CASE WHEN LOWER(CAST(collection_type AS CHAR)) IN ('5', 'title', 'titles') THEN 1 ELSE 0 END) AS titles, "
+                "SUM(CASE WHEN LOWER(CAST(collection_type AS CHAR)) IN ('6', 'transmog', 'transmogs', 'appearance', 'appearances') THEN 1 ELSE 0 END) AS transmog "
+                "FROM dc_collection_items "
+                "WHERE unlocked = 1 "
+                "GROUP BY account_id "
+                "ORDER BY mounts + pets + heirlooms + titles + transmog DESC "
+                "LIMIT 1");
+
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                uint32 const totalOwned = fields[1].Get<uint32>()
+                    + fields[2].Get<uint32>() + fields[3].Get<uint32>()
+                    + fields[4].Get<uint32>() + fields[5].Get<uint32>();
+
+                if (totalOwned > 0)
+                {
+                    sample.mountCount = fields[1].Get<uint32>();
+                    sample.petCount = fields[2].Get<uint32>();
+                    sample.heirloomCount = fields[3].Get<uint32>();
+                    sample.titleCount = fields[4].Get<uint32>();
+                    sample.transmogCount = fields[5].Get<uint32>();
+                }
+            }
+        }
+
+        if (WorldTableExists("dc_collection_definitions")
+            && WorldColumnExists("dc_collection_definitions", "collection_type"))
+        {
+            std::ostringstream sql;
+            sql << "SELECT LOWER(CAST(collection_type AS CHAR)), COUNT(*) "
+                << "FROM dc_collection_definitions";
+
+            if (WorldColumnExists("dc_collection_definitions", "enabled"))
+                sql << " WHERE enabled = 1";
+
+            sql << " GROUP BY LOWER(CAST(collection_type AS CHAR))";
+
+            QueryResult result = WorldDatabase.Query(sql.str().c_str());
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    ApplyCollectionSampleValue(sample,
+                        fields[0].Get<std::string>(),
+                        fields[1].Get<uint32>(), true);
+                } while (result->NextRow());
+            }
+        }
+
+        if (WorldTableExists("dc_mount_definitions"))
+        {
+            QueryResult result = WorldDatabase.Query(
+                "SELECT COUNT(*) FROM dc_mount_definitions");
+            if (result)
+                sample.mountTotal = result->Fetch()[0].Get<uint32>();
+        }
+
+        if (WorldTableExists("dc_pet_definitions"))
+        {
+            QueryResult result = WorldDatabase.Query(
+                "SELECT COUNT(*) FROM dc_pet_definitions");
+            if (result)
+                sample.petTotal = result->Fetch()[0].Get<uint32>();
+        }
+
+        if (WorldTableExists("dc_heirloom_definitions"))
+        {
+            QueryResult result = WorldDatabase.Query(
+                "SELECT COUNT(*) FROM dc_heirloom_definitions");
+            if (result)
+                sample.heirloomTotal = result->Fetch()[0].Get<uint32>();
+        }
+
+        uint32 legacyMountCount = LoadTopAccountCountFromTable(
+            "dc_mount_collection");
+        if (legacyMountCount == 0)
+            legacyMountCount = LoadTopAccountCountFromTable(
+                "dc_collection_mounts");
+        if (legacyMountCount > 0)
+            sample.mountCount = legacyMountCount;
+
+        uint32 legacyPetCount = LoadTopAccountCountFromTable(
+            "dc_pet_collection");
+        if (legacyPetCount == 0)
+            legacyPetCount = LoadTopAccountCountFromTable(
+                "dc_collection_pets");
+        if (legacyPetCount > 0)
+            sample.petCount = legacyPetCount;
+
+        uint32 legacyHeirloomCount = LoadTopAccountCountFromTable(
+            "dc_heirloom_collection");
+        if (legacyHeirloomCount == 0)
+            legacyHeirloomCount = LoadTopAccountCountFromTable(
+                "dc_collection_heirlooms");
+        if (legacyHeirloomCount > 0)
+            sample.heirloomCount = legacyHeirloomCount;
+
+        if (availability.transmogCollectionTable)
+        {
+            uint32 const transmogCount = LoadTopAccountCountFromTable(
+                availability.transmogCollectionTable);
+            if (transmogCount > 0)
+                sample.transmogCount = transmogCount;
+        }
+
+        sample.mountTotal = std::max(sample.mountTotal, sample.mountCount);
+        sample.petTotal = std::max(sample.petTotal, sample.petCount);
+        sample.heirloomTotal = std::max(sample.heirloomTotal,
+            sample.heirloomCount);
+        sample.titleTotal = std::max(sample.titleTotal, sample.titleCount);
+        sample.transmogTotal = std::max(sample.transmogTotal,
+            sample.transmogCount);
+
+        return sample;
+    }
+
+    struct LeaderboardStressRowSample
+    {
+        std::string name = "Player";
+        std::string className = "WARRIOR";
+        uint32 score = 1;
+        std::string extra = "detail";
+        uint32 mapId = 0;
+        bool hasWinsLosses = false;
+        uint32 wins = 0;
+        uint32 losses = 0;
+        bool hasKD = false;
+        uint32 kills = 0;
+        uint32 deaths = 0;
+        double kdRatio = 0.0;
+        bool hasQuality = false;
+        uint32 qPoor = 0;
+        uint32 qCommon = 0;
+        uint32 qUncommon = 0;
+        uint32 qRare = 0;
+        uint32 qEpic = 0;
+        uint32 qLeg = 0;
+    };
+
+    struct LeaderboardStressVariant
+    {
+        std::string category;
+        std::string subcategory;
+        uint32 totalEntries = 0;
+        uint32 scoreBase = 0;
+        uint32 auxA = 0;
+        uint32 auxB = 0;
+        uint32 auxC = 0;
+        uint32 auxD = 0;
+        std::vector<LeaderboardStressRowSample> rowSamples;
+    };
+
+    std::vector<LeaderboardStressVariant> LoadLeaderboardStressVariants()
+    {
+        std::vector<LeaderboardStressVariant> variants;
+        variants.reserve(4);
+
+        LeaderboardStressVariant mplus;
+        mplus.category = "mplus";
+        mplus.subcategory = "mplus_key";
+        mplus.totalEntries = 96;
+        mplus.scoreBase = 18;
+        mplus.auxA = 33;
+        variants.push_back(mplus);
+
+        LeaderboardStressVariant hlbg;
+        hlbg.category = "hlbg";
+        hlbg.subcategory = "hlbg_rating";
+        hlbg.totalEntries = 64;
+        hlbg.scoreBase = 2200;
+        hlbg.auxA = 40;
+        hlbg.auxB = 8;
+        variants.push_back(hlbg);
+
+        LeaderboardStressVariant duel;
+        duel.category = "duel";
+        duel.subcategory = "duel_wins";
+        duel.totalEntries = 48;
+        duel.scoreBase = 180;
+        duel.auxA = 12;
+        variants.push_back(duel);
+
+        LeaderboardStressVariant aoe;
+        aoe.category = "aoe";
+        aoe.subcategory = "aoe_items";
+        aoe.totalEntries = 64;
+        aoe.scoreBase = 900;
+        aoe.auxA = 90;
+        aoe.auxB = 40;
+        aoe.auxC = 20;
+        aoe.auxD = 3;
+        variants.push_back(aoe);
+
+        if (CharacterTableExists("dc_mplus_scores"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(DISTINCT character_guid), "
+                "COALESCE(MAX(best_level), 0) "
+                "FROM dc_mplus_scores");
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                if (fields[0].Get<uint32>() > 0)
+                    variants[0].totalEntries = fields[0].Get<uint32>();
+                variants[0].scoreBase = std::max<uint32>(10,
+                    fields[1].Get<uint32>());
+            }
+
+            if (CharacterTableExists("characters"))
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT c.name, c.class, MAX(s.best_level) AS best_level, "
+                    "SUM(s.best_score) AS total_score, SUM(s.total_runs) AS total_runs, "
+                    "COALESCE(MAX(s.map_id), 0) AS map_id "
+                    "FROM dc_mplus_scores s "
+                    "JOIN characters c ON s.character_guid = c.guid "
+                    "GROUP BY s.character_guid, c.name, c.class "
+                    "ORDER BY best_level DESC, total_score DESC "
+                    "LIMIT 50");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        LeaderboardStressRowSample rowSample;
+                        rowSample.name = fields[0].Get<std::string>();
+                        rowSample.className = GetLeaderboardClassNameForStress(
+                            fields[1].Get<uint8>());
+                        rowSample.score = std::max<uint32>(1,
+                            fields[2].Get<uint32>());
+                        rowSample.mapId = fields[5].Get<uint32>();
+                        rowSample.extra = std::to_string(fields[4].Get<uint32>())
+                            + " runs";
+                        variants[0].rowSamples.push_back(rowSample);
+                    } while (result->NextRow());
+                }
+            }
+        }
+
+        if (CharacterTableExists("v_hlbg_player_seasonal_stats"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(DISTINCT guid), COALESCE(MAX(current_rating), 0), "
+                "COALESCE(ROUND(AVG(wins)), 0), COALESCE(ROUND(AVG(losses)), 0) "
+                "FROM v_hlbg_player_seasonal_stats");
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                variants[1].subcategory = "hlbg_rating";
+                if (fields[0].Get<uint32>() > 0)
+                    variants[1].totalEntries = fields[0].Get<uint32>();
+                variants[1].scoreBase = std::max<uint32>(1000,
+                    fields[1].Get<uint32>());
+                variants[1].auxA = fields[2].Get<uint32>();
+                variants[1].auxB = fields[3].Get<uint32>();
+            }
+
+            if (CharacterTableExists("characters"))
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT c.name, c.class, v.current_rating, v.wins, v.losses "
+                    "FROM v_hlbg_player_seasonal_stats v "
+                    "JOIN characters c ON v.guid = c.guid "
+                    "ORDER BY v.current_rating DESC "
+                    "LIMIT 50");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        LeaderboardStressRowSample rowSample;
+                        uint32 wins = fields[3].Get<uint32>();
+                        uint32 losses = fields[4].Get<uint32>();
+                        rowSample.name = fields[0].Get<std::string>();
+                        rowSample.className = GetLeaderboardClassNameForStress(
+                            fields[1].Get<uint8>());
+                        rowSample.score = std::max<uint32>(1,
+                            fields[2].Get<uint32>());
+                        rowSample.hasWinsLosses = true;
+                        rowSample.wins = wins;
+                        rowSample.losses = losses;
+                        rowSample.extra = std::to_string(wins) + "W/"
+                            + std::to_string(losses) + "L";
+                        variants[1].rowSamples.push_back(rowSample);
+                    } while (result->NextRow());
+                }
+            }
+        }
+        else if (CharacterTableExists("dc_hlbg_player_stats"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(*), COALESCE(MAX(total_kills), 0), "
+                "COALESCE(ROUND(AVG(battles_won)), 0), "
+                "COALESCE(ROUND(AVG(total_deaths)), 0) "
+                "FROM dc_hlbg_player_stats");
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                variants[1].subcategory = "hlbg_kills";
+                if (fields[0].Get<uint32>() > 0)
+                    variants[1].totalEntries = fields[0].Get<uint32>();
+                variants[1].scoreBase = std::max<uint32>(250,
+                    fields[1].Get<uint32>());
+                variants[1].auxA = fields[2].Get<uint32>();
+                variants[1].auxB = fields[3].Get<uint32>();
+            }
+
+            if (CharacterTableExists("characters"))
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT c.name, c.class, h.total_kills, h.total_deaths, "
+                    "h.battles_won, h.battles_participated "
+                    "FROM dc_hlbg_player_stats h "
+                    "JOIN characters c ON h.player_guid = c.guid "
+                    "ORDER BY h.total_kills DESC "
+                    "LIMIT 50");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        LeaderboardStressRowSample rowSample;
+                        uint32 kills = fields[2].Get<uint32>();
+                        uint32 deaths = fields[3].Get<uint32>();
+                        double kdRatio = deaths > 0
+                            ? (static_cast<double>(kills) / deaths)
+                            : static_cast<double>(kills);
+                        char kdBuffer[16];
+                        std::snprintf(kdBuffer, sizeof(kdBuffer), "%.2f K/D",
+                            kdRatio);
+
+                        rowSample.name = fields[0].Get<std::string>();
+                        rowSample.className = GetLeaderboardClassNameForStress(
+                            fields[1].Get<uint8>());
+                        rowSample.score = std::max<uint32>(1, kills);
+                        rowSample.hasKD = true;
+                        rowSample.kills = kills;
+                        rowSample.deaths = deaths;
+                        rowSample.kdRatio = kdRatio;
+                        rowSample.extra = kdBuffer;
+                        variants[1].rowSamples.push_back(rowSample);
+                    } while (result->NextRow());
+                }
+            }
+        }
+
+        if (CharacterTableExists("dc_duel_statistics"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(*), COALESCE(MAX(wins), 0), "
+                "COALESCE(ROUND(AVG(losses)), 0) "
+                "FROM dc_duel_statistics");
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                if (fields[0].Get<uint32>() > 0)
+                    variants[2].totalEntries = fields[0].Get<uint32>();
+                variants[2].scoreBase = std::max<uint32>(50,
+                    fields[1].Get<uint32>());
+                variants[2].auxA = fields[2].Get<uint32>();
+            }
+
+            if (CharacterTableExists("characters"))
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT c.name, c.class, d.wins, d.losses "
+                    "FROM dc_duel_statistics d "
+                    "JOIN characters c ON d.player_guid = c.guid "
+                    "ORDER BY d.wins DESC "
+                    "LIMIT 50");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        LeaderboardStressRowSample rowSample;
+                        rowSample.name = fields[0].Get<std::string>();
+                        rowSample.className = GetLeaderboardClassNameForStress(
+                            fields[1].Get<uint8>());
+                        rowSample.score = std::max<uint32>(1,
+                            fields[2].Get<uint32>());
+                        rowSample.extra = std::to_string(fields[3].Get<uint32>())
+                            + " losses";
+                        variants[2].rowSamples.push_back(rowSample);
+                    } while (result->NextRow());
+                }
+            }
+        }
+
+        if (CharacterTableExists("dc_aoeloot_detailed_stats"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT COUNT(*), COALESCE(MAX(total_items), 0), "
+                "COALESCE(ROUND(AVG(quality_uncommon)), 0), "
+                "COALESCE(ROUND(AVG(quality_rare)), 0), "
+                "COALESCE(ROUND(AVG(quality_epic)), 0), "
+                "COALESCE(ROUND(AVG(quality_legendary)), 0) "
+                "FROM dc_aoeloot_detailed_stats");
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                if (fields[0].Get<uint32>() > 0)
+                    variants[3].totalEntries = fields[0].Get<uint32>();
+                variants[3].scoreBase = std::max<uint32>(250,
+                    fields[1].Get<uint32>());
+                variants[3].auxA = fields[2].Get<uint32>();
+                variants[3].auxB = fields[3].Get<uint32>();
+                variants[3].auxC = fields[4].Get<uint32>();
+                variants[3].auxD = fields[5].Get<uint32>();
+            }
+
+            if (CharacterTableExists("characters"))
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT c.name, c.class, a.total_items, "
+                    "COALESCE(a.quality_poor, 0), COALESCE(a.quality_common, 0), "
+                    "COALESCE(a.quality_uncommon, 0), COALESCE(a.quality_rare, 0), "
+                    "COALESCE(a.quality_epic, 0), COALESCE(a.quality_legendary, 0) "
+                    "FROM dc_aoeloot_detailed_stats a "
+                    "JOIN characters c ON a.player_guid = c.guid "
+                    "ORDER BY a.total_items DESC "
+                    "LIMIT 50");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        LeaderboardStressRowSample rowSample;
+                        rowSample.name = fields[0].Get<std::string>();
+                        rowSample.className = GetLeaderboardClassNameForStress(
+                            fields[1].Get<uint8>());
+                        rowSample.score = std::max<uint32>(1,
+                            fields[2].Get<uint32>());
+                        rowSample.hasQuality = true;
+                        rowSample.qPoor = fields[3].Get<uint32>();
+                        rowSample.qCommon = fields[4].Get<uint32>();
+                        rowSample.qUncommon = fields[5].Get<uint32>();
+                        rowSample.qRare = fields[6].Get<uint32>();
+                        rowSample.qEpic = fields[7].Get<uint32>();
+                        rowSample.qLeg = fields[8].Get<uint32>();
+                        rowSample.extra = BuildAoeItemsExtraForStress(
+                            rowSample.qPoor, rowSample.qCommon,
+                            rowSample.qUncommon, rowSample.qRare,
+                            rowSample.qEpic, rowSample.qLeg);
+                        variants[3].rowSamples.push_back(rowSample);
+                    } while (result->NextRow());
+                }
+            }
+        }
+
+        for (LeaderboardStressVariant& variant : variants)
+        {
+            if (variant.totalEntries == 0 && !variant.rowSamples.empty())
+                variant.totalEntries = static_cast<uint32>(
+                    variant.rowSamples.size());
+
+            if (variant.scoreBase == 0 && !variant.rowSamples.empty())
+                variant.scoreBase = variant.rowSamples.front().score;
+        }
+
+        return variants;
+    }
+
+    struct GroupFinderStressRowSample
+    {
+        uint32 id = 1000;
+        uint32 leaderGuid = 50000;
+        uint32 listingType = 1;
+        uint32 dungeonId = 33;
+        std::string dungeonName = "Dungeon";
+        uint32 difficulty = 2;
+        uint32 keystoneLevel = 10;
+        uint32 minIlvl = 260;
+        uint32 currentTank = 0;
+        uint32 currentHealer = 0;
+        uint32 currentDps = 1;
+        uint32 needTank = 1;
+        uint32 needHealer = 1;
+        uint32 needDps = 2;
+        std::string note = "Need clean run";
+        std::string leaderName = "Leader";
+    };
+
+    struct GroupFinderStressVariant
+    {
+        std::string category = "dungeon";
+        uint32 listingType = 1;
+        uint32 groupCount = 18;
+        uint32 dungeonNameLength = 12;
+        uint32 noteLength = 18;
+        uint32 difficulty = 2;
+        uint32 keystoneLevel = 10;
+        uint32 minIlvl = 260;
+        uint32 currentTank = 0;
+        uint32 currentHealer = 0;
+        uint32 currentDps = 1;
+        uint32 needTank = 1;
+        uint32 needHealer = 1;
+        uint32 needDps = 2;
+        bool sampled = false;
+        std::vector<GroupFinderStressRowSample> rowSamples;
+    };
+
+    std::string GroupFinderCategoryFromType(uint32 listingType)
+    {
+        switch (listingType)
+        {
+            case 1:
+                return "dungeon";
+            case 2:
+                return "raid";
+            case 3:
+                return "pvp";
+            case 4:
+                return "other";
+            case 5:
+                return "quest";
+            default:
+                return "other";
+        }
+    }
+
+    GroupFinderStressVariant* FindGroupFinderStressVariant(
+        std::vector<GroupFinderStressVariant>& variants,
+        std::string const& category)
+    {
+        for (GroupFinderStressVariant& variant : variants)
+            if (variant.category == category)
+                return &variant;
+
+        return nullptr;
+    }
+
+    std::vector<GroupFinderStressVariant> LoadGroupFinderStressVariants()
+    {
+        std::vector<GroupFinderStressVariant> variants;
+        variants.reserve(3);
+
+        variants.push_back(GroupFinderStressVariant{});
+
+        GroupFinderStressVariant raid;
+        raid.category = "raid";
+        raid.listingType = 2;
+        raid.groupCount = 12;
+        raid.dungeonNameLength = 14;
+        raid.noteLength = 24;
+        raid.difficulty = 3;
+        raid.keystoneLevel = 0;
+        raid.minIlvl = 240;
+        raid.currentTank = 1;
+        raid.currentHealer = 1;
+        raid.currentDps = 3;
+        raid.needTank = 0;
+        raid.needHealer = 0;
+        raid.needDps = 2;
+        variants.push_back(raid);
+
+        GroupFinderStressVariant pvp;
+        pvp.category = "pvp";
+        pvp.listingType = 3;
+        pvp.groupCount = 10;
+        pvp.dungeonNameLength = 10;
+        pvp.noteLength = 20;
+        pvp.difficulty = 1;
+        pvp.keystoneLevel = 0;
+        pvp.minIlvl = 220;
+        pvp.currentDps = 2;
+        pvp.needDps = 1;
+        variants.push_back(pvp);
+
+        if (CharacterTableExists("dc_group_finder_listings"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT listing_type, COUNT(*), "
+                "COALESCE(ROUND(AVG(CHAR_LENGTH(COALESCE(dungeon_name, '')))), 0), "
+                "COALESCE(ROUND(AVG(CHAR_LENGTH(COALESCE(note, '')))), 0), "
+                "COALESCE(ROUND(AVG(difficulty)), 0), "
+                "COALESCE(ROUND(AVG(keystone_level)), 0), "
+                "COALESCE(ROUND(AVG(min_ilvl)), 0), "
+                "COALESCE(ROUND(AVG(current_tank)), 0), "
+                "COALESCE(ROUND(AVG(current_healer)), 0), "
+                "COALESCE(ROUND(AVG(current_dps)), 0), "
+                "COALESCE(ROUND(AVG(need_tank)), 0), "
+                "COALESCE(ROUND(AVG(need_healer)), 0), "
+                "COALESCE(ROUND(AVG(need_dps)), 0) "
+                "FROM dc_group_finder_listings "
+                "WHERE status = 1 "
+                "GROUP BY listing_type");
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint32 const listingType = fields[0].Get<uint32>();
+                    std::string const category =
+                        GroupFinderCategoryFromType(listingType);
+                    GroupFinderStressVariant* variant =
+                        FindGroupFinderStressVariant(variants, category);
+
+                    if (!variant)
+                    {
+                        variants.push_back(GroupFinderStressVariant{});
+                        variant = &variants.back();
+                        variant->category = category;
+                        variant->listingType = listingType;
+                    }
+
+                    variant->groupCount = fields[1].Get<uint32>();
+                    variant->dungeonNameLength = fields[2].Get<uint32>();
+                    variant->noteLength = fields[3].Get<uint32>();
+                    variant->difficulty = fields[4].Get<uint32>();
+                    variant->keystoneLevel = fields[5].Get<uint32>();
+                    variant->minIlvl = fields[6].Get<uint32>();
+                    variant->currentTank = fields[7].Get<uint32>();
+                    variant->currentHealer = fields[8].Get<uint32>();
+                    variant->currentDps = fields[9].Get<uint32>();
+                    variant->needTank = fields[10].Get<uint32>();
+                    variant->needHealer = fields[11].Get<uint32>();
+                    variant->needDps = fields[12].Get<uint32>();
+                    variant->sampled = true;
+                } while (result->NextRow());
+            }
+
+            if (CharacterTableExists("characters"))
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT l.id, l.leader_guid, l.listing_type, l.dungeon_id, "
+                    "COALESCE(l.dungeon_name, ''), l.difficulty, l.keystone_level, "
+                    "l.min_ilvl, l.current_tank, l.current_healer, l.current_dps, "
+                    "l.need_tank, l.need_healer, l.need_dps, COALESCE(l.note, ''), "
+                    "COALESCE(c.name, 'Unknown') "
+                    "FROM dc_group_finder_listings l "
+                    "LEFT JOIN characters c ON l.leader_guid = c.guid "
+                    "WHERE l.status = 1 "
+                    "ORDER BY l.id DESC "
+                    "LIMIT 50");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 const listingType = fields[2].Get<uint32>();
+                        std::string const category =
+                            GroupFinderCategoryFromType(listingType);
+                        GroupFinderStressVariant* variant =
+                            FindGroupFinderStressVariant(variants, category);
+
+                        if (!variant)
+                        {
+                            variants.push_back(GroupFinderStressVariant{});
+                            variant = &variants.back();
+                            variant->category = category;
+                            variant->listingType = listingType;
+                        }
+
+                        GroupFinderStressRowSample rowSample;
+                        rowSample.id = fields[0].Get<uint32>();
+                        rowSample.leaderGuid = fields[1].Get<uint32>();
+                        rowSample.listingType = listingType;
+                        rowSample.dungeonId = fields[3].Get<uint32>();
+                        rowSample.dungeonName = fields[4].Get<std::string>();
+                        rowSample.difficulty = fields[5].Get<uint32>();
+                        rowSample.keystoneLevel = fields[6].Get<uint32>();
+                        rowSample.minIlvl = fields[7].Get<uint32>();
+                        rowSample.currentTank = fields[8].Get<uint32>();
+                        rowSample.currentHealer = fields[9].Get<uint32>();
+                        rowSample.currentDps = fields[10].Get<uint32>();
+                        rowSample.needTank = fields[11].Get<uint32>();
+                        rowSample.needHealer = fields[12].Get<uint32>();
+                        rowSample.needDps = fields[13].Get<uint32>();
+                        rowSample.note = fields[14].Get<std::string>();
+                        rowSample.leaderName = fields[15].Get<std::string>();
+                        variant->rowSamples.push_back(rowSample);
+                    } while (result->NextRow());
+                }
+            }
+        }
+
+        if (CharacterTableExists("dc_group_finder_scheduled_events"))
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT event_type, COUNT(*), "
+                "COALESCE(ROUND(AVG(CHAR_LENGTH(COALESCE(dungeon_name, '')))), 0), "
+                "COALESCE(ROUND(AVG(CHAR_LENGTH(COALESCE(note, '')))), 0), "
+                "COALESCE(ROUND(AVG(keystone_level)), 0), "
+                "COALESCE(ROUND(AVG(max_signups)), 0), "
+                "COALESCE(ROUND(AVG(current_signups)), 0) "
+                "FROM dc_group_finder_scheduled_events "
+                "WHERE status IN (1, 2) "
+                "GROUP BY event_type");
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint32 const listingType = fields[0].Get<uint32>();
+                    std::string const category =
+                        GroupFinderCategoryFromType(listingType);
+                    GroupFinderStressVariant* variant =
+                        FindGroupFinderStressVariant(variants, category);
+
+                    if (!variant)
+                    {
+                        variants.push_back(GroupFinderStressVariant{});
+                        variant = &variants.back();
+                        variant->category = category;
+                        variant->listingType = listingType;
+                    }
+
+                    if (!variant->sampled)
+                    {
+                        uint32 const maxSignups = fields[5].Get<uint32>();
+                        uint32 const currentSignups = fields[6].Get<uint32>();
+
+                        variant->groupCount = fields[1].Get<uint32>();
+                        variant->dungeonNameLength = fields[2].Get<uint32>();
+                        variant->noteLength = fields[3].Get<uint32>();
+                        variant->keystoneLevel = fields[4].Get<uint32>();
+                        variant->currentDps = currentSignups;
+                        variant->needDps = maxSignups > currentSignups
+                            ? (maxSignups - currentSignups) : 1;
+                        variant->sampled = true;
+                    }
+                } while (result->NextRow());
+            }
+
+            if (CharacterTableExists("characters"))
+            {
+                result = CharacterDatabase.Query(
+                    "SELECT e.id, e.leader_guid, e.event_type, e.dungeon_id, "
+                    "COALESCE(e.dungeon_name, ''), e.keystone_level, e.max_signups, "
+                    "e.current_signups, COALESCE(e.note, ''), "
+                    "COALESCE(c.name, 'Unknown') "
+                    "FROM dc_group_finder_scheduled_events e "
+                    "LEFT JOIN characters c ON e.leader_guid = c.guid "
+                    "WHERE e.status IN (1, 2) "
+                    "ORDER BY e.id DESC "
+                    "LIMIT 50");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 const listingType = fields[2].Get<uint32>();
+                        std::string const category =
+                            GroupFinderCategoryFromType(listingType);
+                        GroupFinderStressVariant* variant =
+                            FindGroupFinderStressVariant(variants, category);
+
+                        if (!variant)
+                        {
+                            variants.push_back(GroupFinderStressVariant{});
+                            variant = &variants.back();
+                            variant->category = category;
+                            variant->listingType = listingType;
+                        }
+
+                        if (variant->rowSamples.empty())
+                        {
+                            GroupFinderStressRowSample rowSample;
+                            uint32 maxSignups = fields[6].Get<uint32>();
+                            uint32 currentSignups = fields[7].Get<uint32>();
+
+                            rowSample.id = fields[0].Get<uint32>();
+                            rowSample.leaderGuid = fields[1].Get<uint32>();
+                            rowSample.listingType = listingType;
+                            rowSample.dungeonId = fields[3].Get<uint32>();
+                            rowSample.dungeonName = fields[4].Get<std::string>();
+                            rowSample.difficulty = variant->difficulty;
+                            rowSample.keystoneLevel = fields[5].Get<uint32>();
+                            rowSample.minIlvl = variant->minIlvl;
+                            rowSample.currentDps = currentSignups;
+                            rowSample.needTank = variant->needTank;
+                            rowSample.needHealer = variant->needHealer;
+                            rowSample.needDps = maxSignups > currentSignups
+                                ? (maxSignups - currentSignups) : 0;
+                            rowSample.note = fields[8].Get<std::string>();
+                            rowSample.leaderName = fields[9].Get<std::string>();
+                            variant->rowSamples.push_back(rowSample);
+                        }
+                    } while (result->NextRow());
+                }
+            }
+        }
+
+        for (GroupFinderStressVariant& variant : variants)
+            if (variant.groupCount == 0 && !variant.rowSamples.empty())
+                variant.groupCount = static_cast<uint32>(
+                    variant.rowSamples.size());
+
+        return variants;
+    }
+
+    static std::vector<uint32> LoadHLBGParticipantSampleGuids(uint32 limit)
+    {
+        std::vector<uint32> guids;
+
+        QueryResult result;
+        if (CharacterTableExists("dc_hlbg_match_participants"))
+        {
+            result = CharacterDatabase.Query(
+                "SELECT guid FROM dc_hlbg_match_participants "
+                "GROUP BY guid ORDER BY MAX(match_date) DESC LIMIT {}",
+                limit);
+        }
+        else if (CharacterTableExists("v_hlbg_player_alltime_stats"))
+        {
+            result = CharacterDatabase.Query(
+                "SELECT guid FROM v_hlbg_player_alltime_stats LIMIT {}",
+                limit);
+        }
+
+        if (!result)
+            return guids;
+
+        do
+            guids.push_back((*result)[0].Get<uint32>());
+        while (result->NextRow());
+
+        return guids;
     }
 
     static bool ExecuteAddonSurfaceQuery(AddonStressAvailability const& availability,
@@ -1618,39 +3304,79 @@ namespace DCPerfTest
                 if (availability.hasProtocolCaps
                     && ((seed % 4) == 0 || (!availability.hasProtocolStats && !availability.hasProtocolErrors && !availability.hasProtocolLog)))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT account_id, version_string, capabilities, negotiated_caps "
-                        "FROM dc_addon_client_caps ORDER BY last_seen DESC LIMIT 50");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::ProtocolClientCaps, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.hasProtocolStats
                     && ((seed % 4) == 1 || (!availability.hasProtocolErrors && !availability.hasProtocolLog)))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT guid, module, total_requests, total_responses, avg_response_time_ms, max_response_time_ms "
-                        "FROM dc_addon_protocol_stats ORDER BY last_request DESC LIMIT 50");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::ProtocolStats, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.hasProtocolErrors
                     && ((seed % 4) == 2 || !availability.hasProtocolLog))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT guid, module, opcode, event_type "
-                        "FROM dc_addon_protocol_errors ORDER BY id DESC LIMIT 25");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::ProtocolErrors, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.hasProtocolLog)
                 {
-                    CharacterDatabase.Query(
-                        "SELECT guid, module, opcode, status "
-                        "FROM dc_addon_protocol_log ORDER BY id DESC LIMIT 25");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::ProtocolLog, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 return false;
+            }
+
+            case AddonSurface::ProtocolClientCaps:
+            {
+                if (!availability.hasProtocolCaps)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT account_id, version_string, capabilities, negotiated_caps "
+                    "FROM dc_addon_client_caps ORDER BY last_seen DESC LIMIT 50");
+                return true;
+            }
+
+            case AddonSurface::ProtocolStats:
+            {
+                if (!availability.hasProtocolStats)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT guid, module, total_requests, total_responses, avg_response_time_ms, max_response_time_ms "
+                    "FROM dc_addon_protocol_stats ORDER BY last_request DESC LIMIT 50");
+                return true;
+            }
+
+            case AddonSurface::ProtocolErrors:
+            {
+                if (!availability.hasProtocolErrors)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT guid, module, opcode, event_type "
+                    "FROM dc_addon_protocol_errors ORDER BY id DESC LIMIT 25");
+                return true;
+            }
+
+            case AddonSurface::ProtocolLog:
+            {
+                if (!availability.hasProtocolLog)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT guid, module, opcode, status "
+                    "FROM dc_addon_protocol_log ORDER BY id DESC LIMIT 25");
+                return true;
             }
 
             case AddonSurface::QoS:
@@ -1678,36 +3404,108 @@ namespace DCPerfTest
             case AddonSurface::Welcome:
             {
                 if (availability.hasWelcomeFaq
-                    && ((seed % 4) == 0 || (!availability.hasWelcomeWhatsNew && !availability.hasMplusScores && !availability.hasMplusRating && !availability.hasPrestige)))
+                    && ((seed % 3) == 0
+                        || (!availability.hasWelcomeWhatsNew
+                            && !(availability.hasMplusScores
+                                || availability.hasMplusRating
+                                || availability.hasPrestige
+                                || availability.hasMplusRuns))))
                 {
-                    WorldDatabase.Query(
-                        "SELECT id, category, question, answer FROM dc_welcome_faq "
-                        "WHERE active = 1 ORDER BY category, priority DESC, id LIMIT 25");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::WelcomeFaq, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.hasWelcomeWhatsNew
-                    && ((seed % 4) == 1 || (!availability.hasMplusScores && !availability.hasMplusRating && !availability.hasPrestige)))
+                    && ((seed % 3) == 1
+                        || !(availability.hasMplusScores || availability.hasMplusRating
+                            || availability.hasPrestige || availability.hasMplusRuns)))
                 {
-                    WorldDatabase.Query(
-                        "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
-                        "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
-                        "ORDER BY priority DESC, id DESC LIMIT 10");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::WelcomeWhatsNew, fakeGuid,
+                        fakeAccount, seed);
                 }
 
-                if (availability.hasMplusScores)
+                return ExecuteAddonSurfaceQuery(availability,
+                    AddonSurface::WelcomeProgress, fakeGuid,
+                    fakeAccount, seed);
+            }
+
+            case AddonSurface::WelcomeFaq:
+            {
+                if (!availability.hasWelcomeFaq)
+                    return false;
+
+                GetCachedWelcomeFaqSurfacePayload();
+                return true;
+            }
+
+            case AddonSurface::WelcomeWhatsNew:
+            {
+                if (!availability.hasWelcomeWhatsNew)
+                    return false;
+
+                GetCachedWelcomeWhatsNewSurfacePayload();
+                return true;
+            }
+
+            case AddonSurface::WelcomeProgress:
+            {
+                bool executed = false;
+                constexpr uint32 fakeSeasonId = 1u;
+                constexpr uint32 fakeWeekStart = 1700000000u;
+                constexpr uint32 fakeWeekEnd = fakeWeekStart + (7u * 24u * 60u * 60u);
+                bool const useWeeklyVaultSummary = availability.hasWeeklyVault
+                    && sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", false);
+
+                if (availability.hasMplusRating && availability.hasPrestige
+                    && availability.hasMplusScores
+                    && (availability.hasMplusRuns || useWeeklyVaultSummary)
+                    && availability.hasCharacters)
                 {
-                    CharacterDatabase.Query(
-                        "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
-                        "WHERE character_guid = {} AND season_id = {}",
-                        fakeGuid, 1u);
-                    if (availability.hasMplusRuns)
+                    if (useWeeklyVaultSummary)
                     {
                         CharacterDatabase.Query(
-                            "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
-                            "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
-                            fakeGuid);
+                            "SELECT "
+                            "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
+                            "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
+                            "COALESCE((SELECT prestige_level FROM dc_character_prestige "
+                            "WHERE guid = {} LIMIT 1), 0), "
+                            "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
+                            "WHERE character_guid = {} AND season_id = {}), 0), "
+                            "COALESCE((SELECT runs_completed FROM dc_weekly_vault "
+                            "WHERE character_guid = {} AND season_id = {} AND week_start = {} LIMIT 1), 0), "
+                            "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
+                            "WHERE account = {} AND level >= {}), 0))",
+                            fakeGuid,
+                            fakeSeasonId,
+                            fakeGuid,
+                            fakeGuid, fakeSeasonId,
+                            fakeGuid, fakeSeasonId, fakeWeekStart,
+                            fakeAccount, 255u);
+                    }
+                    else
+                    {
+                        CharacterDatabase.Query(
+                            "SELECT "
+                            "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
+                            "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
+                            "COALESCE((SELECT prestige_level FROM dc_character_prestige "
+                            "WHERE guid = {} LIMIT 1), 0), "
+                            "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
+                            "WHERE character_guid = {} AND season_id = {}), 0), "
+                            "COALESCE((SELECT COUNT(*) FROM dc_mplus_runs "
+                            "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                            "AND completed_at >= FROM_UNIXTIME({}) "
+                            "AND completed_at < FROM_UNIXTIME({})), 0), "
+                            "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
+                            "WHERE account = {} AND level >= {}), 0))",
+                            fakeGuid,
+                            fakeSeasonId,
+                            fakeGuid,
+                            fakeGuid, fakeSeasonId,
+                            fakeGuid, fakeSeasonId, fakeWeekStart, fakeWeekEnd,
+                            fakeAccount, 255u);
                     }
                     return true;
                 }
@@ -1715,9 +3513,10 @@ namespace DCPerfTest
                 if (availability.hasMplusRating)
                 {
                     CharacterDatabase.Query(
-                        "SELECT rating FROM dc_mplus_player_ratings WHERE player_guid = {}",
-                        fakeGuid);
-                    return true;
+                        "SELECT rating FROM dc_mplus_player_ratings "
+                        "WHERE player_guid = {} AND season_id = {}",
+                        fakeGuid, fakeSeasonId);
+                    executed = true;
                 }
 
                 if (availability.hasPrestige)
@@ -1725,19 +3524,125 @@ namespace DCPerfTest
                     CharacterDatabase.Query(
                         "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
                         fakeGuid);
-                    return true;
+                    executed = true;
                 }
 
-                if (availability.hasMplusRuns)
+                if (availability.hasMplusScores)
                 {
                     CharacterDatabase.Query(
-                        "SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = {} AND success = 1 "
-                        "AND YEARWEEK(completed_at, 1) = YEARWEEK(NOW(), 1)",
-                        fakeGuid);
-                    return true;
+                        "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
+                        "WHERE character_guid = {} AND season_id = {}",
+                        fakeGuid, fakeSeasonId);
+                    executed = true;
                 }
 
-                return false;
+                if (useWeeklyVaultSummary)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT runs_completed FROM dc_weekly_vault "
+                        "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+                        fakeGuid, fakeSeasonId, fakeWeekStart);
+                    executed = true;
+                }
+                else if (availability.hasMplusRuns)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM dc_mplus_runs "
+                        "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                        "AND completed_at >= FROM_UNIXTIME({}) "
+                        "AND completed_at < FROM_UNIXTIME({})",
+                        fakeGuid, fakeSeasonId, fakeWeekStart, fakeWeekEnd);
+                    executed = true;
+                }
+
+                if (availability.hasCharacters)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
+                        fakeAccount, 255u);
+                    executed = true;
+                }
+
+                return executed;
+            }
+
+            case AddonSurface::WelcomeProgressRating:
+            {
+                if (!availability.hasMplusRating)
+                    return false;
+
+                constexpr uint32 fakeSeasonId = 1u;
+                CharacterDatabase.Query(
+                    "SELECT rating FROM dc_mplus_player_ratings "
+                    "WHERE player_guid = {} AND season_id = {}",
+                    fakeGuid, fakeSeasonId);
+                return true;
+            }
+
+            case AddonSurface::WelcomeProgressPrestige:
+            {
+                if (!availability.hasPrestige)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
+                    fakeGuid);
+                return true;
+            }
+
+            case AddonSurface::WelcomeProgressSeasonPoints:
+            {
+                if (!availability.hasMplusScores)
+                    return false;
+
+                constexpr uint32 fakeSeasonId = 1u;
+                CharacterDatabase.Query(
+                    "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
+                    "WHERE character_guid = {} AND season_id = {}",
+                    fakeGuid, fakeSeasonId);
+                return true;
+            }
+
+            case AddonSurface::WelcomeProgressWeeklyRuns:
+            {
+                bool const useWeeklyVaultSummary = availability.hasWeeklyVault
+                    && sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", false);
+
+                if (!useWeeklyVaultSummary && !availability.hasMplusRuns)
+                    return false;
+
+                constexpr uint32 fakeSeasonId = 1u;
+                constexpr uint32 fakeWeekStart = 1700000000u;
+                constexpr uint32 fakeWeekEnd = fakeWeekStart + (7u * 24u * 60u * 60u);
+
+                if (useWeeklyVaultSummary)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT runs_completed FROM dc_weekly_vault "
+                        "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+                        fakeGuid, fakeSeasonId, fakeWeekStart);
+                }
+                else
+                {
+                    CharacterDatabase.Query(
+                        "SELECT COUNT(*) FROM dc_mplus_runs "
+                        "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                        "AND completed_at >= FROM_UNIXTIME({}) "
+                        "AND completed_at < FROM_UNIXTIME({})",
+                        fakeGuid, fakeSeasonId, fakeWeekStart, fakeWeekEnd);
+                }
+                return true;
+            }
+
+            case AddonSurface::WelcomeProgressAltBonus:
+            {
+                if (!availability.hasCharacters)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
+                    fakeAccount, 255u);
+                return true;
             }
 
             case AddonSurface::GroupFinder:
@@ -1745,95 +3650,248 @@ namespace DCPerfTest
                 if (availability.hasGroupFinderListings
                     && ((seed % 3) == 0 || (!availability.hasGroupFinderEvents && !availability.hasGroupFinderSignups)))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT l.id, l.leader_guid, l.dungeon_id, l.dungeon_name, l.keystone_level, l.min_ilvl "
-                        "FROM dc_group_finder_listings l "
-                        "LEFT JOIN characters c ON l.leader_guid = c.guid "
-                        "WHERE l.status = 1 "
-                        "ORDER BY l.keystone_level DESC, l.created_at DESC LIMIT 50");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::GroupFinderListings, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.hasGroupFinderEvents
                     && ((seed % 3) == 1 || !availability.hasGroupFinderSignups))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT e.id, e.leader_guid, e.dungeon_id, e.keystone_level, UNIX_TIMESTAMP(e.scheduled_time) "
-                        "FROM dc_group_finder_scheduled_events e "
-                        "LEFT JOIN characters c ON e.leader_guid = c.guid "
-                        "WHERE e.status IN (1, 2) AND e.scheduled_time > NOW() "
-                        "ORDER BY e.scheduled_time ASC LIMIT 50");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::GroupFinderEvents, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.hasGroupFinderSignups && availability.hasGroupFinderEvents)
                 {
-                    CharacterDatabase.Query(
-                        "SELECT s.id, s.event_id, s.role, s.status "
-                        "FROM dc_group_finder_event_signups s "
-                        "JOIN dc_group_finder_scheduled_events e ON s.event_id = e.id "
-                        "WHERE s.player_guid = {} AND s.status IN (0, 1) AND e.scheduled_time > NOW() "
-                        "ORDER BY e.scheduled_time ASC LIMIT 25",
-                        fakeGuid);
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::GroupFinderSignups, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 return false;
             }
 
+            case AddonSurface::GroupFinderListings:
+            {
+                if (!availability.hasGroupFinderListings)
+                    return false;
+
+                std::vector<DCAddon::GroupFinderListing> results =
+                    DCAddon::sGroupFinderMgr.SearchListings(0, 0, 0, 0, 0);
+                DCAddon::JsonValue groupsArray;
+                groupsArray.SetArray();
+
+                for (DCAddon::GroupFinderListing const& listing : results)
+                {
+                    DCAddon::JsonValue group;
+                    group.SetObject();
+                    group.Set("id", DCAddon::JsonValue(static_cast<int32>(listing.id)));
+                    group.Set("leaderGuid", DCAddon::JsonValue(static_cast<int32>(listing.leaderGuid)));
+                    group.Set("dungeonId", DCAddon::JsonValue(static_cast<int32>(listing.dungeonId)));
+                    group.Set("dungeonName", DCAddon::JsonValue(listing.dungeonName));
+                    group.Set("keystoneLevel", DCAddon::JsonValue(static_cast<int32>(listing.keystoneLevel)));
+                    group.Set("minIlvl", DCAddon::JsonValue(static_cast<int32>(listing.minIlvl)));
+                    group.Set("spots", DCAddon::JsonValue(static_cast<int32>(
+                        listing.needTank + listing.needHealer + listing.needDps)));
+                    group.Set("note", DCAddon::JsonValue(listing.note));
+                    groupsArray.Push(group);
+                }
+
+                groupsArray.Encode();
+                return true;
+            }
+
+            case AddonSurface::GroupFinderEvents:
+            {
+                if (!availability.hasGroupFinderEvents)
+                    return false;
+
+                std::vector<DCAddon::ScheduledEvent> events =
+                    DCAddon::sGroupFinderMgr.GetUpcomingEvents(0);
+                DCAddon::JsonValue eventsArray;
+                eventsArray.SetArray();
+                size_t eventCount = 0;
+
+                for (DCAddon::ScheduledEvent const& scheduledEvent : events)
+                {
+                    if (eventCount >= 50)
+                        break;
+
+                    std::string leaderName = "Unknown";
+                    sCharacterCache->GetCharacterNameByGuid(
+                        ObjectGuid::Create<HighGuid::Player>(scheduledEvent.leaderGuid),
+                        leaderName);
+
+                    DCAddon::JsonValue event;
+                    event.SetObject();
+                    event.Set("eventId", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.id)));
+                    event.Set("leaderGuid", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.leaderGuid)));
+                    event.Set("eventType", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.eventType)));
+                    event.Set("dungeonId", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.dungeonId)));
+                    event.Set("dungeonName", DCAddon::JsonValue(scheduledEvent.title));
+                    event.Set("keyLevel", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.keystoneLevel)));
+                    event.Set("scheduledTime", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.scheduledTime)));
+                    event.Set("maxSignups", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.maxSignups)));
+                    event.Set("currentSignups", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.currentSignups)));
+                    event.Set("note", DCAddon::JsonValue(scheduledEvent.description));
+                    event.Set("status", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.status)));
+                    event.Set("leaderName", DCAddon::JsonValue(leaderName));
+                    eventsArray.Push(event);
+                    ++eventCount;
+                }
+
+                eventsArray.Encode();
+                return true;
+            }
+
+            case AddonSurface::GroupFinderSignups:
+            {
+                if (!availability.hasGroupFinderEvents || !availability.hasGroupFinderSignups)
+                    return false;
+
+                std::vector<DCAddon::PlayerEventSignup> signups =
+                    DCAddon::sGroupFinderMgr.GetPlayerEventSignups(fakeGuid);
+                DCAddon::JsonValue signupsArray;
+                signupsArray.SetArray();
+
+                for (DCAddon::PlayerEventSignup const& playerSignup : signups)
+                {
+                    std::string leaderName = "Unknown";
+                    sCharacterCache->GetCharacterNameByGuid(
+                        ObjectGuid::Create<HighGuid::Player>(playerSignup.event.leaderGuid),
+                        leaderName);
+
+                    DCAddon::JsonValue signup;
+                    signup.SetObject();
+                    signup.Set("signupId", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.id)));
+                    signup.Set("eventId", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.eventId)));
+                    signup.Set("role", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.role)));
+                    signup.Set("status", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.status)));
+                    signup.Set("dungeonName", DCAddon::JsonValue(playerSignup.event.title));
+                    signup.Set("keyLevel", DCAddon::JsonValue(static_cast<int32>(playerSignup.event.keystoneLevel)));
+                    signup.Set("scheduledTime", DCAddon::JsonValue(static_cast<int32>(playerSignup.event.scheduledTime)));
+                    signup.Set("leaderName", DCAddon::JsonValue(leaderName));
+                    signupsArray.Push(signup);
+                }
+
+                signupsArray.Encode();
+                return true;
+            }
+
             case AddonSurface::MythicPlus:
             {
-                bool executed = false;
-
-                if (availability.hasMplusKeys)
+                if (availability.hasMplusKeys
+                    && ((seed % 2) == 0 || !availability.hasMplusBestRuns))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
-                        fakeGuid);
-                    executed = true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::MythicPlusKeyInfo, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.hasMplusBestRuns)
                 {
-                    CharacterDatabase.Query(
-                        "SELECT * FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
-                        fakeGuid);
-                    executed = true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::MythicPlusBestRuns, fakeGuid,
+                        fakeAccount, seed);
                 }
+
+                return false;
+            }
+
+            case AddonSurface::MythicPlusKeyInfo:
+            {
+                if (!availability.hasMplusKeys)
+                    return false;
 
                 if (availability.hasMplusDungeons)
                 {
-                    WorldDatabase.Query(
-                        "SELECT dungeon_id, dungeon_name FROM dc_mplus_dungeons ORDER BY dungeon_name LIMIT 25");
-                    executed = true;
+                    CharacterDatabase.Query(
+                        "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
+                        "FROM dc_mplus_keystones k "
+                        "LEFT JOIN dc_mplus_dungeons d ON k.map_id = d.map_id "
+                        "WHERE k.character_guid = {}",
+                        fakeGuid);
+                }
+                else
+                {
+                    CharacterDatabase.Query(
+                        "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
+                        fakeGuid);
                 }
 
-                return executed;
+                return true;
+            }
+
+            case AddonSurface::MythicPlusBestRuns:
+            {
+                if (!availability.hasMplusBestRuns)
+                    return false;
+
+                if (availability.hasMplusDungeons)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT r.dungeon_id, r.level, r.completion_time, r.deaths, r.season, "
+                        "COALESCE(d.dungeon_name, '') "
+                        "FROM dc_mplus_best_runs r "
+                        "LEFT JOIN dc_mplus_dungeons d ON r.dungeon_id = d.map_id "
+                        "WHERE r.player_guid = {} ORDER BY r.level DESC LIMIT 10",
+                        fakeGuid);
+                }
+                else
+                {
+                    CharacterDatabase.Query(
+                        "SELECT dungeon_id, level, completion_time, deaths, season "
+                        "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
+                        fakeGuid);
+                }
+
+                return true;
             }
 
             case AddonSurface::Wardrobe:
             {
-                bool executed = false;
-
-                if (availability.hasWardrobeOutfits)
+                if (availability.hasWardrobeOutfits
+                    && ((seed % 2) == 0 || !availability.transmogCollectionTable))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downvotes, o.downloads, o.views, o.tags "
-                        "FROM dc_collection_community_outfits o "
-                        "ORDER BY (o.upvotes - o.downvotes) DESC, o.downloads DESC LIMIT 25");
-                    executed = true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::WardrobeCommunity, fakeGuid,
+                        fakeAccount, seed);
                 }
 
                 if (availability.transmogCollectionTable)
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT display_id FROM " << availability.transmogCollectionTable
-                        << " WHERE account_id = " << fakeAccount << " LIMIT 200";
-                    CharacterDatabase.Query(sql.str().c_str());
-                    executed = true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::WardrobeCollected, fakeGuid,
+                        fakeAccount, seed);
                 }
 
-                return executed;
+                return false;
+            }
+
+            case AddonSurface::WardrobeCommunity:
+            {
+                if (!availability.hasWardrobeOutfits)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downvotes, o.downloads, o.views, o.tags "
+                    "FROM dc_collection_community_outfits o "
+                    "ORDER BY (o.upvotes - o.downvotes) DESC, o.downloads DESC LIMIT 25");
+                return true;
+            }
+
+            case AddonSurface::WardrobeCollected:
+            {
+                if (!availability.transmogCollectionTable)
+                    return false;
+
+                std::ostringstream sql;
+                sql << "SELECT display_id FROM " << availability.transmogCollectionTable
+                    << " WHERE account_id = " << fakeAccount << " LIMIT 200";
+                CharacterDatabase.Query(sql.str().c_str());
+                return true;
             }
 
             case AddonSurface::HLBG:
@@ -1841,33 +3899,522 @@ namespace DCPerfTest
                 if (availability.hasHLBGSeasonal
                     && ((seed % 2) == 0 || !availability.hasHLBGAllTime))
                 {
-                    CharacterDatabase.Query(
-                        "SELECT guid, player_name, current_rating, wins "
-                        "FROM v_hlbg_player_seasonal_stats "
-                        "WHERE season_id = {} ORDER BY current_rating DESC LIMIT 25",
-                        1u);
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::HLBGSeasonal, fakeGuid, fakeAccount,
+                        seed);
                 }
 
                 if (availability.hasHLBGAllTime)
                 {
-                    CharacterDatabase.Query(
-                        "SELECT guid, total_matches, lifetime_wins, lifetime_kills "
-                        "FROM v_hlbg_player_alltime_stats ORDER BY total_matches DESC LIMIT 25");
-                    return true;
+                    return ExecuteAddonSurfaceQuery(availability,
+                        AddonSurface::HLBGAllTime, fakeGuid, fakeAccount,
+                        seed);
                 }
 
                 return false;
+            }
+
+            case AddonSurface::HLBGSeasonal:
+            {
+                if (availability.HasHLBGUnifiedTables())
+                {
+                    CharacterDatabase.Query(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "GREATEST(0, COALESCE(SUM(p.rating_change), 0) + 1200) AS current_rating, "
+                        "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS wins "
+                        "FROM dc_hlbg_match_participants p "
+                        "LEFT JOIN dc_hlbg_winner_history wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = {} "
+                        "GROUP BY p.guid "
+                        "ORDER BY current_rating DESC LIMIT 25",
+                        1u);
+                    return true;
+                }
+
+                if (!availability.hasHLBGSeasonal)
+                    return false;
+
+                CharacterDatabase.Query(
+                    "SELECT guid, player_name, current_rating, wins "
+                    "FROM v_hlbg_player_seasonal_stats "
+                    "WHERE season_id = {} ORDER BY current_rating DESC LIMIT 25",
+                    1u);
+                return true;
+            }
+
+            case AddonSurface::HLBGAllTime:
+            {
+                if (availability.HasHLBGUnifiedTables())
+                {
+                    static std::vector<uint32> const sampleGuids =
+                        LoadHLBGParticipantSampleGuids(64);
+                    uint32 guid = sampleGuids.empty()
+                        ? fakeGuid
+                        : sampleGuids[seed % sampleGuids.size()];
+
+                    CharacterDatabase.Query(
+                        "SELECT COUNT(*), "
+                        "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
+                        "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
+                        "COALESCE(SUM(p.kills), 0) "
+                        "FROM dc_hlbg_match_participants p "
+                        "LEFT JOIN dc_hlbg_winner_history wh ON p.match_id = wh.id "
+                        "WHERE p.guid = {}",
+                        guid);
+                    return true;
+                }
+
+                if (!availability.hasHLBGAllTime
+                    || !availability.hlbgAllTimeGamesColumn
+                    || !availability.hlbgAllTimeWinsColumn
+                    || !availability.hlbgAllTimeKillsColumn)
+                {
+                    return false;
+                }
+
+                std::ostringstream sql;
+                sql << "SELECT guid, " << availability.hlbgAllTimeGamesColumn
+                    << ", " << availability.hlbgAllTimeWinsColumn
+                    << ", " << availability.hlbgAllTimeKillsColumn
+                    << " FROM v_hlbg_player_alltime_stats ORDER BY "
+                    << availability.hlbgAllTimeGamesColumn
+                    << " DESC LIMIT 25";
+                CharacterDatabase.Query(sql.str().c_str());
+                return true;
             }
         }
 
         return false;
     }
 
-    TimingResult TestAddonExtensionSurfaceQueries(uint32 iterations)
+    static std::vector<uint32> LoadWorldTemplateSampleEntries(char const* tableName,
+        uint32 limit)
+    {
+        std::vector<uint32> entries;
+        std::ostringstream sql;
+        sql << "SELECT entry FROM " << tableName << " ORDER BY entry DESC LIMIT "
+            << limit;
+
+        QueryResult result = WorldDatabase.Query(sql.str().c_str());
+        if (!result)
+            return entries;
+
+        do
+        {
+            entries.push_back((*result)[0].Get<uint32>());
+        } while (result->NextRow());
+
+        return entries;
+    }
+
+    struct CreatureTooltipSample
+    {
+        ObjectGuid::LowType spawnId = 0;
+        uint32 entry = 0;
+        uint16 mapId = 0;
+        float posX = 0.0f;
+        float posY = 0.0f;
+        float posZ = 0.0f;
+        uint32 spawnTimeSecs = 0;
+    };
+
+    static std::vector<CreatureTooltipSample> LoadCreatureTooltipSamples(uint32 limit)
+    {
+        std::vector<CreatureTooltipSample> candidates;
+        candidates.reserve(sObjectMgr->GetAllCreatureData().size());
+
+        for (auto const& pair : sObjectMgr->GetAllCreatureData())
+        {
+            CreatureData const& creatureData = pair.second;
+            if (!creatureData.id1)
+                continue;
+
+            CreatureTooltipSample sample;
+            sample.spawnId = pair.first;
+            sample.entry = creatureData.id1;
+            sample.mapId = creatureData.mapid;
+            sample.posX = creatureData.posX;
+            sample.posY = creatureData.posY;
+            sample.posZ = creatureData.posZ;
+            sample.spawnTimeSecs = creatureData.spawntimesecs;
+            candidates.push_back(sample);
+        }
+
+        std::sort(candidates.begin(), candidates.end(), [](CreatureTooltipSample const& left, CreatureTooltipSample const& right)
+        {
+            if (left.entry != right.entry)
+                return left.entry > right.entry;
+
+            return left.spawnId > right.spawnId;
+        });
+
+        std::vector<CreatureTooltipSample> samples;
+        samples.reserve(std::min<uint32>(limit, candidates.size()));
+
+        uint32 lastEntry = 0;
+        bool haveLastEntry = false;
+        for (CreatureTooltipSample const& candidate : candidates)
+        {
+            if (haveLastEntry && candidate.entry == lastEntry)
+                continue;
+
+            samples.push_back(candidate);
+            lastEntry = candidate.entry;
+            haveLastEntry = true;
+
+            if (samples.size() >= limit)
+                break;
+        }
+
+        return samples;
+    }
+
+    static std::string BuildProtocolStressBlob(char fill, std::size_t length)
+    {
+        return std::string(length, fill);
+    }
+
+    namespace AddonTooltipStressOpcode
+    {
+        constexpr uint8 ItemInfo = 0x10;
+        constexpr uint8 NpcInfo = 0x13;
+        constexpr uint8 SpellInfo = 0x14;
+    }
+
+    static std::string BuildNpcGuidStringForStress(CreatureTooltipSample const& sample)
+    {
+        uint64 guidValue = (static_cast<uint64>(sample.entry) << 24)
+            | static_cast<uint64>(sample.spawnId);
+
+        std::ostringstream guid;
+        guid << "0x" << std::uppercase << std::hex << std::setw(16)
+            << std::setfill('0') << guidValue;
+        return guid.str();
+    }
+
+    static std::string RoundTripChunkedPayloadForStress(std::string const& payload,
+        char const* context)
+    {
+        std::vector<std::string> chunks = DCAddon::ChunkedMessage::Chunk(payload);
+        DCAddon::ChunkedMessage reassembly;
+        for (std::string const& chunk : chunks)
+            reassembly.AddChunk(chunk);
+
+        if (!reassembly.IsComplete())
+            throw std::runtime_error(std::string("Failed to reassemble ") + context);
+
+        return reassembly.GetCompleteMessage();
+    }
+
+    static std::string ValidateAndRoundTripJsonPayloadForStress(
+        std::string const& payload, char const* context, uint8 expectedOpcode)
+    {
+        std::string roundTrip = RoundTripChunkedPayloadForStress(payload, context);
+        DCAddon::ParsedMessage parsed(roundTrip);
+        if (!parsed.IsValid() || parsed.GetOpcode() != expectedOpcode
+            || parsed.GetDataCount() < 2)
+        {
+            throw std::runtime_error(std::string("Failed to parse ") + context);
+        }
+
+        if (parsed.GetString(0) != DCAddon::JSON_MARKER)
+            throw std::runtime_error(std::string("Missing JSON marker for ") + context);
+
+        DCAddon::JsonValue json = DCAddon::JsonParser::Parse(parsed.GetString(1));
+        if (!json.IsObject())
+            throw std::runtime_error(std::string("Failed to parse JSON object for ") + context);
+
+        return roundTrip;
+    }
+
+    static std::string ValidateAndRoundTripPlainPayloadForStress(
+        std::string const& payload, char const* context, uint8 expectedOpcode)
+    {
+        std::string roundTrip = RoundTripChunkedPayloadForStress(payload, context);
+        DCAddon::ParsedMessage parsed(roundTrip);
+        if (!parsed.IsValid() || parsed.GetOpcode() != expectedOpcode)
+            throw std::runtime_error(std::string("Failed to parse ") + context);
+
+        return roundTrip;
+    }
+
+    static DCAddon::JsonValue BuildSequentialJsonArrayForStress(uint32 start,
+        uint32 count, uint32 step = 1)
+    {
+        DCAddon::JsonValue array;
+        array.SetArray(count);
+
+        for (uint32 index = 0; index < count; ++index)
+        {
+            uint32 value = start + (index * step);
+            array.Push(DCAddon::JsonValue(static_cast<int32>(value)));
+        }
+
+        return array;
+    }
+
+    struct CollectionSyncPayloadBuildResult
+    {
+        std::string payload;
+        uint64 digestContribution = 0;
+    };
+
+    static CollectionSyncPayloadBuildResult BuildCollectionSyncPayloadForStress(
+        CollectionStressSample const& sample, uint32 iteration)
+    {
+        uint32 mountCount = std::min(sample.mountTotal,
+            sample.mountCount + (iteration % std::max<uint32>(1,
+                std::min<uint32>(8, (sample.mountCount / 20) + 1))));
+        uint32 petCount = std::min(sample.petTotal,
+            sample.petCount + (iteration % std::max<uint32>(1,
+                std::min<uint32>(6, (sample.petCount / 18) + 1))));
+        uint32 heirloomCount = std::min(sample.heirloomTotal,
+            sample.heirloomCount + (iteration % std::max<uint32>(1,
+                std::min<uint32>(4, (sample.heirloomCount / 16) + 1))));
+        uint32 titleCount = std::min(sample.titleTotal,
+            sample.titleCount + (iteration % std::max<uint32>(1,
+                std::min<uint32>(3, (sample.titleCount / 12) + 1))));
+        uint32 transmogCount = std::min(sample.transmogTotal,
+            sample.transmogCount + (iteration % std::max<uint32>(1,
+                std::min<uint32>(16, (sample.transmogCount / 24) + 1))));
+
+        DCAddon::JsonValue collections;
+        collections.SetObject();
+        collections.Set("mounts", BuildSequentialJsonArrayForStress(6000 + iteration,
+            mountCount, 3));
+        collections.Set("pets", BuildSequentialJsonArrayForStress(9000 + iteration,
+            petCount, 2));
+        collections.Set("heirlooms", BuildSequentialJsonArrayForStress(
+            300000 + iteration, heirloomCount, 1));
+        collections.Set("titles", BuildSequentialJsonArrayForStress(500 + iteration,
+            titleCount, 1));
+        collections.Set("transmog", BuildSequentialJsonArrayForStress(
+            150000 + iteration, transmogCount, 1));
+
+        auto addStats = [](DCAddon::JsonValue& stats, char const* key,
+            uint32 owned, uint32 total)
+        {
+            DCAddon::JsonValue stat;
+            stat.SetObject();
+            stat.Set("owned", owned);
+            stat.Set("total", total);
+            stat.Set("percent", total > 0
+                ? (static_cast<double>(owned) * 100.0) / total : 0.0);
+            stats.Set(key, std::move(stat));
+        };
+
+        DCAddon::JsonValue stats;
+        stats.SetObject();
+        addStats(stats, "mounts", mountCount, sample.mountTotal);
+        addStats(stats, "pets", petCount, sample.petTotal);
+        addStats(stats, "heirlooms", heirloomCount, sample.heirloomTotal);
+        addStats(stats, "titles", titleCount, sample.titleTotal);
+        addStats(stats, "transmog", transmogCount, sample.transmogTotal);
+
+        DCAddon::JsonValue bonuses;
+        bonuses.SetObject();
+        bonuses.Set("mountSpeedBonus", static_cast<int32>(std::min<uint32>(20,
+            mountCount / 8)));
+        bonuses.Set("nextThreshold", static_cast<int32>(100));
+        bonuses.Set("mountsToNext", static_cast<int32>(std::max<int32>(0,
+            100 - static_cast<int32>(mountCount))));
+
+        uint32 serverHash = 0xC011EC71u ^ (mountCount * 131u)
+            ^ (petCount * 59u) ^ (transmogCount * 17u) ^ iteration;
+
+        DCAddon::JsonMessage msg(DCAddon::Module::COLLECTION,
+            DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
+        msg.Set("collections", std::move(collections));
+        msg.Set("stats", std::move(stats));
+        msg.Set("bonuses", std::move(bonuses));
+        msg.Set("hash", serverHash);
+        msg.Set("timestamp", static_cast<uint32>(std::time(nullptr)) + iteration);
+
+        CollectionSyncPayloadBuildResult result;
+        result.payload = msg.Build();
+        result.digestContribution = static_cast<uint64>(mountCount) + petCount
+            + heirloomCount + titleCount + transmogCount + serverHash;
+        return result;
+    }
+
+    TimingResult TestAddonProtocolClientCommunication(uint32 iterations)
     {
         TimingResult result;
-        result.testName = "AddonExtension Surface Queries (" + std::to_string(iterations) + " calls)";
+        result.testName = "Addon Protocol Client Communication (" + std::to_string(iterations)
+            + " cycles)";
+        result.iterations = iterations;
+        result.throughputCount = iterations * 5;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        static char const* const protocolModules[] = {
+            DCAddon::Module::CORE,
+            DCAddon::Module::AOE_LOOT,
+            DCAddon::Module::SPECTATOR,
+            DCAddon::Module::UPGRADE,
+            DCAddon::Module::HINTERLAND,
+            DCAddon::Module::PHASED_DUELS,
+            DCAddon::Module::MYTHIC_PLUS,
+            DCAddon::Module::PRESTIGE,
+            DCAddon::Module::SEASONAL,
+            DCAddon::Module::HOTSPOT,
+            DCAddon::Module::LEADERBOARD,
+            DCAddon::Module::WELCOME,
+            DCAddon::Module::GROUP_FINDER,
+            DCAddon::Module::GOMOVE,
+            DCAddon::Module::NPCMOVE,
+            DCAddon::Module::TELEPORTS,
+            DCAddon::Module::EVENTS,
+            DCAddon::Module::WORLD,
+            DCAddon::Module::COLLECTION,
+            DCAddon::Module::QOS,
+        };
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+
+        try
+        {
+            uint64 digest = 0;
+            std::size_t const moduleCount = sizeof(protocolModules) / sizeof(protocolModules[0]);
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                std::size_t moduleIndex = i % moduleCount;
+                char const* module = protocolModules[moduleIndex];
+                char const* nextModule = protocolModules[(moduleIndex + 1) % moduleCount];
+                uint32 fakeGuid = 10000 + (i % 5000);
+                uint32 fakeAccount = 1000 + (i % 200);
+                std::string requestId = "stress-" + std::to_string(moduleIndex) + "-" + std::to_string(i);
+
+                auto start = Clock::now();
+
+                DCAddon::Message inbound(module, 0x01);
+                inbound.SetRequestId(requestId)
+                    .Add(fakeGuid)
+                    .Add(fakeAccount)
+                    .Add(static_cast<int32>(i % 17))
+                    .Add(std::string(module));
+                std::string inboundPayload = inbound.Build();
+                DCAddon::ParsedMessage parsedInbound(inboundPayload);
+                if (!parsedInbound.IsValid())
+                    throw std::runtime_error("Failed to parse addon protocol inbound payload");
+
+                digest += parsedInbound.GetOpcode();
+                digest += parsedInbound.GetDataCount();
+                digest += parsedInbound.GetRequestId().size();
+                digest += parsedInbound.GetUInt32(0);
+                digest += parsedInbound.GetUInt32(1);
+                digest += parsedInbound.GetString(3).size();
+
+                std::ostringstream batchRaw;
+                batchRaw << DCAddon::Batch::MODULE << DCAddon::DELIMITER << 0
+                    << DCAddon::DELIMITER << 2
+                    << DCAddon::DELIMITER << module
+                    << DCAddon::DELIMITER << 0x01
+                    << DCAddon::DELIMITER << fakeGuid
+                    << DCAddon::DELIMITER << (i % 9)
+                    << DCAddon::DELIMITER << nextModule
+                    << DCAddon::DELIMITER << 0x02
+                    << DCAddon::DELIMITER << fakeAccount
+                    << DCAddon::DELIMITER << (i % 13);
+                DCAddon::ParsedMessage batchParsed(batchRaw.str());
+                if (!batchParsed.IsValid())
+                    throw std::runtime_error("Failed to parse addon protocol batch payload");
+
+                std::vector<DCAddon::Batch::BatchEntry> batchEntries = DCAddon::Batch::ParseBatch(batchParsed);
+                if (batchEntries.size() != 2)
+                    throw std::runtime_error("Failed to parse expected addon protocol batch entries");
+
+                digest += batchEntries[0].module.size();
+                digest += batchEntries[1].module.size();
+                digest += batchEntries[0].data.size();
+                digest += batchEntries[1].data.size();
+
+                DCAddon::Message outbound(module, 0x10);
+                outbound.SetRequestId(requestId)
+                    .Add(fakeGuid)
+                    .Add(fakeAccount)
+                    .Add(true)
+                    .Add(std::string("ack:" + std::string(module)));
+                std::string outboundPayload = outbound.Build();
+                std::vector<std::string> outboundChunks = DCAddon::ChunkedMessage::Chunk(outboundPayload);
+                DCAddon::ChunkedMessage outboundReassembly;
+                for (std::string const& chunk : outboundChunks)
+                    outboundReassembly.AddChunk(chunk);
+                if (!outboundReassembly.IsComplete())
+                    throw std::runtime_error("Failed to reassemble addon protocol plain message chunks");
+
+                digest += outboundPayload.size();
+                digest += outboundChunks.size();
+                digest += outboundReassembly.GetCompleteMessage().size();
+
+                std::string blob = BuildProtocolStressBlob(
+                    static_cast<char>('A' + (i % 26)),
+                    (i % 5) == 0 ? 320u : 72u);
+
+                DCAddon::JsonMessage outboundJson(module, 0x11);
+                outboundJson.SetRequestId(requestId)
+                    .Set("guid", fakeGuid)
+                    .Set("account", fakeAccount)
+                    .Set("module", module)
+                    .Set("status", static_cast<int32>(i % 4))
+                    .Set("payload", blob);
+
+                std::string jsonPayload = outboundJson.Build();
+                DCAddon::ParsedMessage parsedJson(jsonPayload);
+                if (!parsedJson.IsValid() || parsedJson.GetDataCount() < 2)
+                    throw std::runtime_error("Failed to parse addon protocol JSON payload");
+
+                if (parsedJson.GetString(0) != DCAddon::JSON_MARKER)
+                    throw std::runtime_error("Addon protocol JSON payload missing JSON marker");
+
+                DCAddon::JsonValue jsonValue = DCAddon::JsonParser::Parse(parsedJson.GetString(1));
+                if (!jsonValue.IsObject())
+                    throw std::runtime_error("Failed to parse addon protocol JSON object payload");
+
+                std::vector<std::string> jsonChunks = DCAddon::ChunkedMessage::Chunk(jsonPayload);
+                DCAddon::ChunkedMessage jsonReassembly;
+                for (std::string const& chunk : jsonChunks)
+                    jsonReassembly.AddChunk(chunk);
+                if (!jsonReassembly.IsComplete())
+                    throw std::runtime_error("Failed to reassemble addon protocol JSON message chunks");
+
+                digest += jsonPayload.size();
+                digest += jsonChunks.size();
+                digest += jsonReassembly.GetCompleteMessage().size();
+                digest += parsedJson.GetRequestId().size();
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            result.throughputCount = result.iterations * 5;
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonCollectionSyncBuildEncode(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon Collection Sync Build+Encode ("
+            + std::to_string(iterations) + " syncs)";
         result.iterations = iterations;
         result.success = true;
 
@@ -1878,29 +4425,1926 @@ namespace DCPerfTest
             return result;
         }
 
-        AddonStressAvailability availability = DetectAddonStressAvailability();
-        std::vector<AddonSurface> surfaces;
-        surfaces.reserve(8);
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+        CollectionStressSample const sample = LoadCollectionStressSample();
 
-        if (availability.HasProtocolSurface())
-            surfaces.push_back(AddonSurface::Protocol);
-        if (availability.hasQosSettings)
-            surfaces.push_back(AddonSurface::QoS);
-        if (availability.hasHotspots)
-            surfaces.push_back(AddonSurface::World);
-        if (availability.HasWelcomeSurface())
-            surfaces.push_back(AddonSurface::Welcome);
-        if (availability.HasGroupFinderSurface())
-            surfaces.push_back(AddonSurface::GroupFinder);
-        if (availability.HasMythicPlusSurface())
-            surfaces.push_back(AddonSurface::MythicPlus);
-        if (availability.HasWardrobeSurface())
-            surfaces.push_back(AddonSurface::Wardrobe);
-        if (availability.HasHLBGSurface())
-            surfaces.push_back(AddonSurface::HLBG);
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+                CollectionSyncPayloadBuildResult built =
+                    BuildCollectionSyncPayloadForStress(sample, i);
+
+                auto end = Clock::now();
+                digest += built.payload.size() + built.digestContribution;
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonCollectionSyncRoundTripParse(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon Collection Sync Roundtrip+Parse ("
+            + std::to_string(iterations) + " syncs)";
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+        CollectionStressSample const sample = LoadCollectionStressSample();
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                CollectionSyncPayloadBuildResult built =
+                    BuildCollectionSyncPayloadForStress(sample, i);
+
+                auto start = Clock::now();
+                std::string roundTrip = ValidateAndRoundTripJsonPayloadForStress(
+                    built.payload, "collection sync payload",
+                    DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
+                auto end = Clock::now();
+
+                digest += roundTrip.size() + built.digestContribution;
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonCollectionSyncPayloads(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon Collection Full Sync Total ("
+            + std::to_string(iterations) + " syncs)";
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+        CollectionStressSample const sample = LoadCollectionStressSample();
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+                CollectionSyncPayloadBuildResult built =
+                    BuildCollectionSyncPayloadForStress(sample, i);
+                std::string roundTrip = ValidateAndRoundTripJsonPayloadForStress(
+                    built.payload, "collection sync payload",
+                    DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
+                auto end = Clock::now();
+
+                digest += roundTrip.size() + built.digestContribution;
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonLeaderboardSyncPayloads(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon Leaderboard Syncs (" + std::to_string(iterations)
+            + " syncs)";
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+        std::vector<LeaderboardStressVariant> const variants =
+            LoadLeaderboardStressVariants();
+
+        try
+        {
+            uint64 digest = 0;
+            std::size_t const categoryCount = variants.size();
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+
+                LeaderboardStressVariant const& variant =
+                    variants[i % categoryCount];
+                std::string const& category = variant.category;
+                std::string const& subcategory = variant.subcategory;
+                uint32 entryCount = std::min<uint32>(50,
+                    std::max<uint32>(1, variant.totalEntries));
+                uint32 totalEntries = std::max<uint32>(entryCount,
+                    variant.totalEntries);
+                uint32 totalPages = std::max<uint32>(1,
+                    (totalEntries + entryCount - 1) / entryCount);
+                uint32 scoreBase = std::max<uint32>(1, variant.scoreBase);
+                uint32 scoreStep = std::max<uint32>(1,
+                    scoreBase / std::max<uint32>(entryCount * 2, 1));
+
+                std::string entriesJson = "[";
+                for (uint32 entryIndex = 0; entryIndex < entryCount; ++entryIndex)
+                {
+                    if (entryIndex > 0)
+                        entriesJson += ",";
+
+                    uint32 score = scoreBase > (entryIndex * scoreStep)
+                        ? (scoreBase - (entryIndex * scoreStep))
+                        : std::max<uint32>(1, scoreBase / 4);
+                        LeaderboardStressRowSample const* rowSample =
+                            variant.rowSamples.empty()
+                            ? nullptr
+                            : &variant.rowSamples[(entryIndex + i)
+                                % variant.rowSamples.size()];
+                        std::string playerName = rowSample
+                            ? rowSample->name
+                            : MakeSizedStressText("Player",
+                                10 + ((entryIndex + i) % 4),
+                                (i * 37u) + entryIndex);
+                        std::string className = rowSample
+                            ? rowSample->className
+                            : "WARRIOR";
+                        if (rowSample && rowSample->score > 0)
+                            score = rowSample->score;
+                        std::string entryExtra;
+
+                    entriesJson += "{";
+                    entriesJson += "\"rank\":" + std::to_string(entryIndex + 1) + ",";
+                    entriesJson += "\"name\":\"" + JsonEscape(playerName)
+                        + "\",";
+                        entriesJson += "\"class\":\"" + JsonEscape(className)
+                            + "\",";
+                    entriesJson += "\"score\":" + std::to_string(score)
+                        + ",";
+
+                    if (category == "hlbg")
+                    {
+                            if (rowSample && rowSample->hasWinsLosses)
+                            {
+                                entriesJson += "\"wins\":"
+                                    + std::to_string(rowSample->wins) + ",";
+                                entriesJson += "\"losses\":"
+                                    + std::to_string(rowSample->losses) + ",";
+                                entryExtra = rowSample->extra;
+                            }
+                            else if (rowSample && rowSample->hasKD)
+                            {
+                                entriesJson += "\"kills\":"
+                                    + std::to_string(rowSample->kills) + ",";
+                                entriesJson += "\"deaths\":"
+                                    + std::to_string(rowSample->deaths) + ",";
+                                entriesJson += "\"kdRatio\":"
+                                    + std::to_string(rowSample->kdRatio) + ",";
+                                entryExtra = rowSample->extra;
+                            }
+                            else
+                            {
+                                uint32 wins = variant.auxA + (entryIndex % 5);
+                                uint32 losses = variant.auxB + (entryIndex % 4);
+                                entriesJson += "\"wins\":"
+                                    + std::to_string(wins) + ",";
+                                entriesJson += "\"losses\":"
+                                    + std::to_string(losses) + ",";
+                                entryExtra = std::to_string(wins) + "W/"
+                                    + std::to_string(losses) + "L";
+                            }
+                    }
+                    else if (category == "aoe")
+                    {
+                            uint32 qLeg = rowSample && rowSample->hasQuality
+                                ? rowSample->qLeg
+                                : (variant.auxD + (entryIndex % 2));
+                            uint32 qEpic = rowSample && rowSample->hasQuality
+                                ? rowSample->qEpic
+                                : (variant.auxC + (entryIndex % 3));
+                            uint32 qRare = rowSample && rowSample->hasQuality
+                                ? rowSample->qRare
+                                : (variant.auxB + (entryIndex % 5));
+                            uint32 qUncommon = rowSample && rowSample->hasQuality
+                                ? rowSample->qUncommon
+                                : (variant.auxA + (entryIndex % 7));
+
+                            entriesJson += "\"qLeg\":" + std::to_string(qLeg)
+                                + ",";
+                            entriesJson += "\"qEpic\":"
+                                + std::to_string(qEpic) + ",";
+                            entriesJson += "\"qRare\":"
+                                + std::to_string(qRare) + ",";
+                            entriesJson += "\"qUncommon\":"
+                                + std::to_string(qUncommon) + ",";
+                            entryExtra = rowSample && rowSample->hasQuality
+                                ? rowSample->extra
+                                : BuildAoeItemsExtraForStress(0, 0, qUncommon,
+                                    qRare, qEpic, qLeg);
+                    }
+                    else if (category == "mplus")
+                    {
+                            entriesJson += "\"mapId\":"
+                                + std::to_string(rowSample && rowSample->mapId > 0
+                                    ? rowSample->mapId
+                                    : (variant.auxA + (entryIndex % 10)))
+                                + ",";
+                            entryExtra = rowSample
+                                ? rowSample->extra
+                                : (std::string("best-key-")
+                                    + std::to_string(score));
+                    }
+                    else if (category == "duel")
+                    {
+                            entryExtra = rowSample
+                                ? rowSample->extra
+                                : (std::to_string(variant.auxA + (entryIndex % 6))
+                                    + " losses");
+                    }
+                    else
+                    {
+                            entryExtra = rowSample
+                                ? rowSample->extra
+                                : (std::string("detail-") + category + "-"
+                                    + std::to_string(entryIndex));
+                    }
+                        entriesJson += "\"extra\":\"" + JsonEscape(entryExtra)
+                            + "\"";
+                    entriesJson += "}";
+                }
+                entriesJson += "]";
+
+                std::string fullJson = "{";
+                fullJson += "\"category\":\"" + JsonEscape(category) + "\",";
+                fullJson += "\"subcategory\":\"" + JsonEscape(subcategory)
+                    + "\",";
+                fullJson += "\"page\":"
+                    + std::to_string((i % totalPages) + 1) + ",";
+                fullJson += "\"totalPages\":" + std::to_string(totalPages) + ",";
+                fullJson += "\"totalEntries\":" + std::to_string(totalEntries) + ",";
+                fullJson += "\"entries\":" + entriesJson;
+                fullJson += "}";
+
+                std::string payload = std::string(DCAddon::Module::LEADERBOARD)
+                    + DCAddon::DELIMITER
+                    + std::to_string(DCAddon::Opcode::Leaderboard::SMSG_LEADERBOARD_DATA)
+                    + DCAddon::DELIMITER + DCAddon::JSON_MARKER
+                    + DCAddon::DELIMITER + fullJson;
+
+                std::string roundTrip = ValidateAndRoundTripJsonPayloadForStress(
+                    payload, "leaderboard sync payload",
+                    DCAddon::Opcode::Leaderboard::SMSG_LEADERBOARD_DATA);
+
+                digest += roundTrip.size();
+                digest += entryCount + totalEntries;
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonGroupFinderSyncPayloads(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon GroupFinder Search Sync (" + std::to_string(iterations)
+            + " syncs)";
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+        std::vector<GroupFinderStressVariant> const variants =
+            LoadGroupFinderStressVariants();
+
+        try
+        {
+            uint64 digest = 0;
+            std::size_t const categoryCount = variants.size();
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+
+                GroupFinderStressVariant const& variant =
+                    variants[i % categoryCount];
+                uint32 groupCount = std::min<uint32>(50,
+                    std::max<uint32>(1, variant.groupCount));
+                std::string const& category = variant.category;
+                uint32 dungeonNameLength = ClampStressValue(
+                    variant.dungeonNameLength, 12, 8, 32);
+                uint32 noteLength = ClampStressValue(variant.noteLength,
+                    20, 10, 72);
+                uint32 difficulty = ClampStressValue(variant.difficulty,
+                    variant.listingType == 1 ? 2 : 1, 1, 4);
+                uint32 keystoneLevel = variant.listingType == 1
+                    ? ClampStressValue(variant.keystoneLevel, 10, 2, 30) : 0;
+                uint32 minIlvl = ClampStressValue(variant.minIlvl, 240,
+                    180, 400);
+                uint32 currentTank = std::min<uint32>(1, variant.currentTank);
+                uint32 currentHealer = std::min<uint32>(1,
+                    variant.currentHealer);
+                uint32 currentDps = ClampStressValue(variant.currentDps, 1,
+                    0, 5);
+                uint32 needTank = std::min<uint32>(1, variant.needTank);
+                uint32 needHealer = std::min<uint32>(1,
+                    variant.needHealer);
+                uint32 needDps = ClampStressValue(variant.needDps, 2, 0, 5);
+
+                DCAddon::JsonValue groupsArray;
+                groupsArray.SetArray();
+                for (uint32 groupIndex = 0; groupIndex < groupCount; ++groupIndex)
+                {
+                    GroupFinderStressRowSample const* rowSample =
+                        variant.rowSamples.empty()
+                        ? nullptr
+                        : &variant.rowSamples[(groupIndex + i)
+                            % variant.rowSamples.size()];
+                    uint32 rowListingType = rowSample
+                        ? rowSample->listingType
+                        : variant.listingType;
+                    std::string rowCategory = GroupFinderCategoryFromType(
+                        rowListingType);
+                    std::string dungeonName = rowSample
+                        ? rowSample->dungeonName
+                        : MakeSizedStressText("Dungeon-", dungeonNameLength,
+                            i + groupIndex);
+                    std::string note = rowSample
+                        ? rowSample->note
+                        : MakeSizedStressText("Need ", noteLength,
+                            (i * 13u) + groupIndex);
+                    uint32 rowDifficulty = rowSample
+                        ? rowSample->difficulty
+                        : difficulty;
+                    uint32 rowKeystoneLevel = rowSample
+                        ? rowSample->keystoneLevel
+                        : keystoneLevel;
+                    uint32 rowMinIlvl = rowSample
+                        ? rowSample->minIlvl
+                        : minIlvl;
+                    uint32 rowCurrentTank = rowSample
+                        ? rowSample->currentTank
+                        : currentTank;
+                    uint32 rowCurrentHealer = rowSample
+                        ? rowSample->currentHealer
+                        : currentHealer;
+                    uint32 rowCurrentDps = rowSample
+                        ? rowSample->currentDps
+                        : currentDps;
+                    uint32 rowNeedTank = rowSample
+                        ? rowSample->needTank
+                        : needTank;
+                    uint32 rowNeedHealer = rowSample
+                        ? rowSample->needHealer
+                        : needHealer;
+                    uint32 rowNeedDps = rowSample
+                        ? rowSample->needDps
+                        : needDps;
+
+                    DCAddon::JsonValue group;
+                    group.SetObject();
+                    group.Set("id", static_cast<int32>(rowSample
+                        ? rowSample->id
+                        : (1000 + groupIndex + i)));
+                    group.Set("leaderGuid", static_cast<int32>(rowSample
+                        ? rowSample->leaderGuid
+                        : (50000 + groupIndex + i)));
+                    group.Set("dungeonId", static_cast<int32>(rowSample
+                        ? rowSample->dungeonId
+                        : (33 + (groupIndex % 12))));
+                    group.Set("dungeon", dungeonName);
+                    group.Set("dungeonName", dungeonName);
+                    group.Set("raid", dungeonName);
+                    group.Set("difficulty", static_cast<int32>(rowDifficulty));
+                    group.Set("difficultyName",
+                        GetGroupFinderDifficultyNameForStress(rowListingType,
+                            rowDifficulty));
+                    group.Set("level", static_cast<int32>(rowKeystoneLevel));
+                    group.Set("keystoneLevel",
+                        static_cast<int32>(rowKeystoneLevel));
+                    group.Set("minIlvl", static_cast<int32>(rowMinIlvl));
+                    group.Set("tank", rowCurrentTank > 0);
+                    group.Set("healer", rowCurrentHealer > 0);
+                    group.Set("dps", static_cast<int32>(rowCurrentDps));
+                    group.Set("needTank", static_cast<int32>(rowNeedTank));
+                    group.Set("needHealer", static_cast<int32>(rowNeedHealer));
+                    group.Set("needDps", static_cast<int32>(rowNeedDps));
+                    group.Set("spots", static_cast<int32>(rowNeedTank
+                        + rowNeedHealer + rowNeedDps));
+                    group.Set("note", note);
+                    group.Set("progress", note);
+                    group.Set("type", static_cast<int32>(rowListingType));
+                    group.Set("category", rowCategory);
+                    group.Set("leader", rowSample
+                        ? rowSample->leaderName
+                        : MakeSizedStressText("Leader-", 12,
+                            groupIndex + i));
+                    groupsArray.Push(group);
+                }
+
+                std::string groupsEncoded = groupsArray.Encode();
+                DCAddon::JsonMessage jsonMsg(DCAddon::Module::GROUP_FINDER,
+                    DCAddon::Opcode::GroupFinder::SMSG_SEARCH_RESULTS);
+                jsonMsg.Set("groups", groupsEncoded);
+                jsonMsg.Set("count", static_cast<int32>(groupCount));
+                jsonMsg.Set("category", category);
+
+                std::string payload = jsonMsg.Build();
+                std::string roundTrip = ValidateAndRoundTripJsonPayloadForStress(
+                    payload, "groupfinder sync payload",
+                    DCAddon::Opcode::GroupFinder::SMSG_SEARCH_RESULTS);
+
+                digest += roundTrip.size();
+                digest += groupsEncoded.size() + groupCount;
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonHLBGHudSyncPayloads(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon HLBG HUD Sync (" + std::to_string(iterations)
+            + " updates / " + std::to_string(iterations * 5)
+            + " messages)";
+        result.iterations = iterations;
+        result.throughputCount = iterations * 5;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+                uint32 elapsedMs = (i * 1000u) % 900000u;
+                uint32 remainingMs = 900000u - elapsedMs;
+
+                DCAddon::Message status(DCAddon::Module::HINTERLAND,
+                    DCAddon::Opcode::HLBG::SMSG_STATUS);
+                status.Add(static_cast<uint8>(1 + (i % 4)))
+                    .Add(static_cast<uint32>(30))
+                    .Add(remainingMs);
+
+                DCAddon::Message resources(DCAddon::Module::HINTERLAND,
+                    DCAddon::Opcode::HLBG::SMSG_RESOURCES);
+                resources.Add(static_cast<uint32>(400 + (i % 150)))
+                    .Add(static_cast<uint32>(380 + (i % 140)))
+                    .Add(static_cast<uint32>(1 + (i % 3)))
+                    .Add(static_cast<uint32>(1 + ((i + 1) % 3)));
+
+                DCAddon::Message queue(DCAddon::Module::HINTERLAND,
+                    DCAddon::Opcode::HLBG::SMSG_QUEUE_UPDATE);
+                queue.Add(static_cast<uint8>(1))
+                    .Add(static_cast<uint32>(1 + (i % 8)))
+                    .Add(static_cast<uint32>(45000))
+                    .Add(static_cast<uint32>(30 + (i % 10)))
+                    .Add(static_cast<uint32>(15 + (i % 5)))
+                    .Add(static_cast<uint32>(15 + ((i + 2) % 5)))
+                    .Add(static_cast<uint32>(10))
+                    .Add(static_cast<uint8>(2 + (i % 2)));
+
+                DCAddon::Message timer(DCAddon::Module::HINTERLAND,
+                    DCAddon::Opcode::HLBG::SMSG_TIMER_SYNC);
+                timer.Add(elapsedMs)
+                    .Add(static_cast<uint32>(900000));
+
+                DCAddon::Message teamScore(DCAddon::Module::HINTERLAND,
+                    DCAddon::Opcode::HLBG::SMSG_TEAM_SCORE);
+                teamScore.Add(static_cast<uint32>(18 + (i % 12)))
+                    .Add(static_cast<uint32>(14 + (i % 10)))
+                    .Add(static_cast<uint32>(45 + (i % 18)))
+                    .Add(static_cast<uint32>(39 + (i % 16)));
+
+                std::string statusPayload = ValidateAndRoundTripPlainPayloadForStress(
+                    status.Build(), "hlbg status payload",
+                    DCAddon::Opcode::HLBG::SMSG_STATUS);
+                std::string resourcesPayload = ValidateAndRoundTripPlainPayloadForStress(
+                    resources.Build(), "hlbg resources payload",
+                    DCAddon::Opcode::HLBG::SMSG_RESOURCES);
+                std::string queuePayload = ValidateAndRoundTripPlainPayloadForStress(
+                    queue.Build(), "hlbg queue payload",
+                    DCAddon::Opcode::HLBG::SMSG_QUEUE_UPDATE);
+                std::string timerPayload = ValidateAndRoundTripPlainPayloadForStress(
+                    timer.Build(), "hlbg timer payload",
+                    DCAddon::Opcode::HLBG::SMSG_TIMER_SYNC);
+                std::string teamScorePayload = ValidateAndRoundTripPlainPayloadForStress(
+                    teamScore.Build(), "hlbg team score payload",
+                    DCAddon::Opcode::HLBG::SMSG_TEAM_SCORE);
+
+                digest += statusPayload.size() + resourcesPayload.size()
+                    + queuePayload.size() + timerPayload.size()
+                    + teamScorePayload.size();
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            result.throughputCount = result.iterations * 5;
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonMythicHudSyncPayloads(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon Mythic HUD Sync (" + std::to_string(iterations)
+            + " updates)";
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+
+                DCAddon::JsonMessage hudUpdate(DCAddon::Module::MYTHIC_PLUS,
+                    DCAddon::Opcode::MPlus::SMSG_TIMER_UPDATE);
+                hudUpdate.Set("runId", static_cast<int32>(9000 + i));
+                hudUpdate.Set("elapsed", static_cast<int32>(i * 950));
+                hudUpdate.Set("remaining", static_cast<int32>(1800000 - (i * 950)));
+                hudUpdate.Set("deaths", static_cast<int32>(i % 9));
+                hudUpdate.Set("bossesKilled", static_cast<int32>(i % 5));
+                hudUpdate.Set("bossesTotal", 5);
+                hudUpdate.Set("enemyCount", static_cast<int32>(35 + (i % 70)));
+                hudUpdate.Set("enemyRequired", 100);
+                hudUpdate.Set("failed", false);
+                hudUpdate.Set("completed", false);
+
+                std::string payload = hudUpdate.Build();
+                std::string roundTrip = ValidateAndRoundTripJsonPayloadForStress(
+                    payload, "mythic hud payload",
+                    DCAddon::Opcode::MPlus::SMSG_TIMER_UPDATE);
+
+                digest += roundTrip.size() + i;
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    static std::string FormatSpellSecondsForStress(uint32 milliseconds)
+    {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision((milliseconds % 1000) != 0 ? 1 : 0)
+            << (static_cast<double>(milliseconds) / 1000.0)
+            << " sec";
+        return out.str();
+    }
+
+    static char const* GetPowerTypeLabelForStress(uint32 powerType)
+    {
+        switch (powerType)
+        {
+            case POWER_MANA: return "Mana";
+            case POWER_RAGE: return "Rage";
+            case POWER_FOCUS: return "Focus";
+            case POWER_ENERGY: return "Energy";
+            case POWER_HAPPINESS: return "Happiness";
+            case POWER_RUNE: return "Rune";
+            case POWER_RUNIC_POWER: return "Runic Power";
+            case POWER_HEALTH: return "Health";
+            default: return "Power";
+        }
+    }
+
+    static std::vector<std::string> WrapTooltipTextForStress(std::string const& text,
+        std::size_t maxWidth = 92)
+    {
+        std::vector<std::string> wrapped;
+        if (text.empty() || maxWidth < 8)
+        {
+            wrapped.push_back(text);
+            return wrapped;
+        }
+
+        std::string remaining = text;
+        while (remaining.size() > maxWidth)
+        {
+            std::size_t split = remaining.rfind(' ', maxWidth);
+            if (split == std::string::npos || split < maxWidth / 2)
+                split = maxWidth;
+
+            wrapped.push_back(remaining.substr(0, split));
+            if (split < remaining.size() && remaining[split] == ' ')
+                ++split;
+            remaining.erase(0, split);
+        }
+
+        if (!remaining.empty())
+            wrapped.push_back(remaining);
+
+        if (wrapped.empty())
+            wrapped.push_back(text);
+
+        return wrapped;
+    }
+
+    static std::string LoadSpellDescriptionTemplateForStress(uint32 spellId)
+    {
+        SpellEntry const* spellEntry = sSpellStore.LookupEntry(spellId);
+        if (!spellEntry)
+
+        if (spellEntry->Description[0] && *spellEntry->Description[0])
+            return spellEntry->Description[0];
+
+        if (spellEntry->ToolTip[0] && *spellEntry->ToolTip[0])
+            return spellEntry->ToolTip[0];
+
+        return "";
+    }
+
+    static std::string FormatDurationTemplateForStress(uint32 milliseconds)
+    {
+        if (milliseconds == 0)
+            return "0 sec";
+
+        if (milliseconds % 60000 == 0)
+            return std::to_string(milliseconds / 60000) + " min";
+
+        if (milliseconds % 1000 == 0)
+            return std::to_string(milliseconds / 1000) + " sec";
+
+        return FormatSpellSecondsForStress(milliseconds);
+    }
+
+    static std::string TrimTemplateTextForStress(std::string value)
+    {
+        auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
+
+        while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
+            value.erase(value.begin());
+        while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
+            value.pop_back();
+
+        return value;
+    }
+
+    static bool TryParseStrictDoubleForStress(std::string const& text, double& out)
+    {
+        std::string trimmed = TrimTemplateTextForStress(text);
+        if (trimmed.empty())
+            return false;
+
+        try
+        {
+            std::size_t index = 0;
+            out = std::stod(trimmed, &index);
+            return index == trimmed.size();
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    static bool TryParseLeadingDoubleForStress(std::string const& text, double& out)
+    {
+        std::string trimmed = TrimTemplateTextForStress(text);
+        if (trimmed.empty())
+            return false;
+
+        try
+        {
+            std::size_t index = 0;
+            out = std::stod(trimmed, &index);
+            return index > 0;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    static std::string FormatTemplateNumericValueForStress(double value)
+    {
+        double rounded = std::round(value);
+        if (std::fabs(value - rounded) < 0.0001)
+            return std::to_string(static_cast<int64>(rounded));
+
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(2) << value;
+        std::string text = out.str();
+        while (!text.empty() && text.back() == '0')
+            text.pop_back();
+        if (!text.empty() && text.back() == '.')
+            text.pop_back();
+        return text.empty() ? "0" : text;
+    }
+
+    static std::string FormatSignedAmountForStress(int32 value)
+    {
+        return std::to_string(std::abs(value));
+    }
+
+    static bool GetTemplateEffectForStress(SpellInfo const* spellInfo,
+        uint32 effectNumber, SpellEffectInfo const*& effect)
+    {
+        if (!spellInfo || effectNumber == 0 || effectNumber > MAX_SPELL_EFFECTS)
+            return false;
+
+        SpellEffectInfo const& candidate = spellInfo->Effects[effectNumber - 1];
+        if (!candidate.IsEffect())
+            return false;
+
+        effect = &candidate;
+        return true;
+    }
+
+    static std::string ReplaceNamedSpellTemplateTokenForStress(Player* player,
+        SpellInfo const* spellInfo, std::string const& tokenName)
+    {
+        if (!player || !spellInfo)
+            return "";
+
+        if (tokenName == "AP")
+            return std::to_string(std::max<int32>(0, player->GetTotalAttackPowerValue(BASE_ATTACK)));
+
+        if (tokenName == "SP")
+            return std::to_string(std::max<int32>(0, player->SpellBaseDamageBonusDone(spellInfo->GetSchoolMask())));
+
+        return "";
+    }
+
+    static std::string ReplaceSpellTemplateTokenForStress(Player* player,
+        SpellInfo const* spellInfo, char token, uint32 effectNumber)
+    {
+        if (!spellInfo)
+            return "";
+
+        if (token == 'n')
+            return spellInfo->SpellName[0] ? spellInfo->SpellName[0] : "";
+
+        if (token == 'r')
+        {
+            float maxRange = spellInfo->GetMaxRange(false, player);
+            if (maxRange <= 0.0f)
+                return "0";
+
+            std::ostringstream out;
+            out << std::fixed << std::setprecision(0) << maxRange;
+            return out.str();
+        }
+
+        if (token == 'd')
+        {
+            int32 durationMs = spellInfo->GetMaxDuration();
+            if (durationMs <= 0)
+                return "0 sec";
+            return FormatDurationTemplateForStress(static_cast<uint32>(durationMs));
+        }
+
+        if (effectNumber == 0)
+            effectNumber = 1;
+
+        SpellEffectInfo const* effect = nullptr;
+        if (!GetTemplateEffectForStress(spellInfo, effectNumber, effect))
+            return "";
+
+        int32 baseValue = effect->CalcValue(player);
+        switch (token)
+        {
+            case 's':
+            case 'm':
+            case 'M':
+            case 'b':
+                return FormatSignedAmountForStress(baseValue);
+            case 'o':
+            {
+                int32 durationMs = spellInfo->GetMaxDuration();
+                uint32 tickCount = (effect->Amplitude > 0 && durationMs > 0)
+                    ? std::max<uint32>(1u, static_cast<uint32>(durationMs / int32(effect->Amplitude)))
+                    : 1u;
+                return FormatSignedAmountForStress(baseValue * int32(tickCount));
+            }
+            case 't':
+                return effect->Amplitude > 0
+                    ? FormatDurationTemplateForStress(effect->Amplitude)
+                    : std::string("0 sec");
+            case 'a':
+            {
+                float radius = effect->CalcRadius(player);
+                if (radius <= 0.0f)
+                    return "0";
+                std::ostringstream out;
+                out << std::fixed << std::setprecision(0) << radius;
+                return out.str();
+            }
+            case 'u':
+            {
+                float combo = effect->PointsPerComboPoint;
+                if (combo == 0.0f)
+                    return "0";
+                std::ostringstream out;
+                out << std::fixed << std::setprecision(0) << std::abs(combo);
+                return out.str();
+            }
+            default:
+                break;
+        }
+
+        return "";
+    }
+
+    static bool TryEvaluateTemplateOperandForStress(Player* player,
+        SpellInfo const* spellInfo, std::string const& operand, double& out)
+    {
+        std::string trimmed = TrimTemplateTextForStress(operand);
+        if (trimmed.empty())
+            return false;
+
+        if (trimmed.front() != '$')
+            return TryParseStrictDoubleForStress(trimmed, out);
+
+        if (trimmed.size() >= 3
+            && std::isalpha(static_cast<unsigned char>(trimmed[1]))
+            && std::isalpha(static_cast<unsigned char>(trimmed[2])))
+        {
+            std::string namedToken;
+            namedToken.push_back(trimmed[1]);
+            namedToken.push_back(trimmed[2]);
+            return TryParseLeadingDoubleForStress(
+                ReplaceNamedSpellTemplateTokenForStress(player, spellInfo, namedToken), out);
+        }
+
+        char token = trimmed.size() > 1 ? trimmed[1] : '\0';
+        uint32 effectNumber = 0;
+        if (std::isdigit(static_cast<unsigned char>(token)))
+        {
+            token = 's';
+            std::size_t indexEnd = 1;
+            while (indexEnd < trimmed.size()
+                && std::isdigit(static_cast<unsigned char>(trimmed[indexEnd])))
+            {
+                ++indexEnd;
+            }
+
+            effectNumber = static_cast<uint32>(std::stoul(trimmed.substr(1, indexEnd - 1)));
+        }
+        else if (trimmed.size() > 2)
+        {
+            std::size_t indexEnd = 2;
+            while (indexEnd < trimmed.size()
+                && std::isdigit(static_cast<unsigned char>(trimmed[indexEnd])))
+            {
+                ++indexEnd;
+            }
+
+            if (indexEnd > 2)
+                effectNumber = static_cast<uint32>(std::stoul(trimmed.substr(2, indexEnd - 2)));
+        }
+
+        return TryParseLeadingDoubleForStress(
+            ReplaceSpellTemplateTokenForStress(player, spellInfo, token, effectNumber), out);
+    }
+
+    static bool TryEvaluateSimpleTemplateExpressionForStress(Player* player,
+        SpellInfo const* spellInfo, std::string const& expression, std::string& out)
+    {
+        std::string expr = TrimTemplateTextForStress(expression);
+        if (expr.empty())
+            return false;
+
+        std::vector<std::string> operands;
+        std::vector<char> operators;
+        std::size_t tokenStart = 0;
+        for (std::size_t i = 0; i < expr.size(); ++i)
+        {
+            char c = expr[i];
+            bool isOperator = (c == '*' || c == '/' || c == '+' || c == '-');
+            if (!isOperator || i == 0)
+                continue;
+
+            operands.push_back(expr.substr(tokenStart, i - tokenStart));
+            operators.push_back(c);
+            tokenStart = i + 1;
+        }
+
+        operands.push_back(expr.substr(tokenStart));
+        if (operands.empty())
+            return false;
+
+        std::vector<double> values;
+        values.reserve(operands.size());
+        for (std::string const& operandText : operands)
+        {
+            double value = 0.0;
+            if (!TryEvaluateTemplateOperandForStress(player, spellInfo, operandText, value))
+                return false;
+            values.push_back(value);
+        }
+
+        std::vector<double> reducedValues;
+        std::vector<char> reducedOperators;
+        reducedValues.push_back(values[0]);
+
+        for (std::size_t opIndex = 0; opIndex < operators.size(); ++opIndex)
+        {
+            char op = operators[opIndex];
+            double rhs = values[opIndex + 1];
+            if (op == '*' || op == '/')
+            {
+                double lhs = reducedValues.back();
+                if (op == '/')
+                {
+                    if (std::fabs(rhs) < 0.000001)
+                        return false;
+                    reducedValues.back() = lhs / rhs;
+                }
+                else
+                {
+                    reducedValues.back() = lhs * rhs;
+                }
+            }
+            else
+            {
+                reducedOperators.push_back(op);
+                reducedValues.push_back(rhs);
+            }
+        }
+
+        double result = reducedValues[0];
+        for (std::size_t opIndex = 0; opIndex < reducedOperators.size(); ++opIndex)
+        {
+            if (reducedOperators[opIndex] == '+')
+                result += reducedValues[opIndex + 1];
+            else if (reducedOperators[opIndex] == '-')
+                result -= reducedValues[opIndex + 1];
+            else
+                return false;
+        }
+
+        out = FormatTemplateNumericValueForStress(result);
+        return true;
+    }
+
+    static double ExtractLastTemplateQuantityForStress(std::string const& renderedText)
+    {
+        for (std::size_t pos = renderedText.size(); pos > 0; --pos)
+        {
+            if (!std::isdigit(static_cast<unsigned char>(renderedText[pos - 1])))
+                continue;
+
+            std::size_t end = pos;
+            std::size_t start = pos - 1;
+            while (start > 0)
+            {
+                char c = renderedText[start - 1];
+                if (std::isdigit(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '+')
+                    --start;
+                else
+                    break;
+            }
+
+            double value = 0.0;
+            if (TryParseStrictDoubleForStress(renderedText.substr(start, end - start), value))
+                return value;
+        }
+
+        return 2.0;
+    }
+
+    static std::string RenderSpellDescriptionTemplateForStress(Player* player,
+        SpellInfo const* spellInfo, std::string const& sourceTemplate)
+    {
+        if (!spellInfo || sourceTemplate.empty())
+            return "";
+
+        std::string rendered;
+        rendered.reserve(sourceTemplate.size() + 32);
+
+        std::size_t i = 0;
+        while (i < sourceTemplate.size())
+        {
+            char ch = sourceTemplate[i];
+            if (ch != '$')
+            {
+                rendered.push_back(ch);
+                ++i;
+                continue;
+            }
+
+            if (i + 1 >= sourceTemplate.size())
+            {
+                rendered.push_back(ch);
+                ++i;
+                continue;
+            }
+
+            char token = sourceTemplate[i + 1];
+            if (token == '$')
+            {
+                rendered.push_back('$');
+                i += 2;
+                continue;
+            }
+
+            if (token == '{')
+            {
+                std::size_t closeBrace = sourceTemplate.find('}', i + 2);
+                if (closeBrace != std::string::npos)
+                {
+                    std::string expression = sourceTemplate.substr(i + 2, closeBrace - (i + 2));
+                    std::string expressionValue;
+                    if (TryEvaluateSimpleTemplateExpressionForStress(player, spellInfo, expression, expressionValue))
+                        rendered += expressionValue;
+                    else
+                        rendered.append(sourceTemplate, i, closeBrace - i + 1);
+
+                    i = closeBrace + 1;
+                    continue;
+                }
+
+                rendered.push_back('$');
+                ++i;
+                continue;
+            }
+
+            if (token == 'l')
+            {
+                std::size_t variantStart = i + 2;
+                std::size_t colonPos = sourceTemplate.find(':', variantStart);
+                std::size_t semiPos = sourceTemplate.find(';', variantStart);
+                if (colonPos != std::string::npos && semiPos != std::string::npos && colonPos < semiPos)
+                {
+                    std::string singular = sourceTemplate.substr(variantStart, colonPos - variantStart);
+                    std::string plural = sourceTemplate.substr(colonPos + 1, semiPos - (colonPos + 1));
+                    double quantity = ExtractLastTemplateQuantityForStress(rendered);
+                    rendered += (std::fabs(quantity - 1.0) < 0.0001) ? singular : plural;
+                    i = semiPos + 1;
+                    continue;
+                }
+            }
+
+            if (std::isdigit(static_cast<unsigned char>(token)))
+            {
+                std::size_t indexEnd = i + 1;
+                while (indexEnd < sourceTemplate.size()
+                    && std::isdigit(static_cast<unsigned char>(sourceTemplate[indexEnd])))
+                {
+                    ++indexEnd;
+                }
+
+                uint32 effectNumber = static_cast<uint32>(std::stoul(sourceTemplate.substr(i + 1, indexEnd - (i + 1))));
+                std::string replacement = ReplaceSpellTemplateTokenForStress(player, spellInfo, 's', effectNumber);
+                if (!replacement.empty())
+                {
+                    rendered += replacement;
+                    i = indexEnd;
+                    continue;
+                }
+            }
+
+            if (std::isalpha(static_cast<unsigned char>(token))
+                && i + 2 < sourceTemplate.size()
+                && std::isalpha(static_cast<unsigned char>(sourceTemplate[i + 2])))
+            {
+                std::string namedToken;
+                namedToken.push_back(token);
+                namedToken.push_back(sourceTemplate[i + 2]);
+                std::string namedReplacement = ReplaceNamedSpellTemplateTokenForStress(player, spellInfo, namedToken);
+                if (!namedReplacement.empty())
+                {
+                    rendered += namedReplacement;
+                    i += 3;
+                    continue;
+                }
+            }
+
+            std::size_t indexStart = i + 2;
+            std::size_t indexEnd = indexStart;
+            while (indexEnd < sourceTemplate.size() && std::isdigit(static_cast<unsigned char>(sourceTemplate[indexEnd])))
+                ++indexEnd;
+
+            uint32 effectNumber = 0;
+            if (indexEnd > indexStart)
+                effectNumber = static_cast<uint32>(std::stoul(sourceTemplate.substr(indexStart, indexEnd - indexStart)));
+
+            bool tokenSupported = (token == 'd') || (token == 'n') || (token == 'r')
+                || (token == 's') || (token == 'm') || (token == 'M')
+                || (token == 'b') || (token == 'o') || (token == 't')
+                || (token == 'a') || (token == 'u');
+            if (!tokenSupported)
+            {
+                rendered.push_back('$');
+                ++i;
+                continue;
+            }
+
+            std::string replacement = ReplaceSpellTemplateTokenForStress(player, spellInfo, token, effectNumber);
+            if (replacement.empty())
+                rendered.append(sourceTemplate, i, indexEnd - i);
+            else
+                rendered += replacement;
+
+            i = indexEnd;
+        }
+
+        return rendered;
+    }
+
+    static bool HasUnresolvedTemplateTokensForStress(std::string const& text)
+    {
+        for (std::size_t i = 0; i + 1 < text.size(); ++i)
+        {
+            if (text[i] != '$')
+                continue;
+
+            char token = text[i + 1];
+            if (token == '$')
+            {
+                ++i;
+                continue;
+            }
+
+            if (token == '{' || token == 'l' || std::isdigit(static_cast<unsigned char>(token)))
+                return true;
+
+            if (std::isalpha(static_cast<unsigned char>(token)) && i + 2 < text.size())
+            {
+                char next = text[i + 2];
+                if (std::isalpha(static_cast<unsigned char>(next)) || std::isdigit(static_cast<unsigned char>(next)))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    static std::string BuildSpellEffectTooltipLineForStress(Player* player,
+        SpellInfo const* spellInfo, SpellEffectInfo const& effect)
+    {
+        int32 amount = effect.CalcValue(player);
+
+        if ((effect.Effect == SPELL_EFFECT_TRIGGER_SPELL
+            || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL_2
+            || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL_WITH_VALUE
+            || effect.Effect == SPELL_EFFECT_TRIGGER_MISSILE
+            || effect.Effect == SPELL_EFFECT_TRIGGER_MISSILE_SPELL_WITH_VALUE)
+            && effect.TriggerSpell > 0)
+        {
+            SpellInfo const* triggered = sSpellMgr->GetSpellInfo(effect.TriggerSpell);
+            if (triggered && triggered->SpellName[0] && *triggered->SpellName[0])
+                return std::string("Triggers ") + triggered->SpellName[0] + " (Spell "
+                    + std::to_string(effect.TriggerSpell) + ").";
+
+            return "Triggers Spell " + std::to_string(effect.TriggerSpell) + ".";
+        }
+
+        switch (effect.Effect)
+        {
+            case SPELL_EFFECT_SCHOOL_DAMAGE:
+            case SPELL_EFFECT_HEALTH_LEECH:
+                if (amount != 0)
+                    return "Causes " + FormatSignedAmountForStress(amount) + " damage.";
+                break;
+            case SPELL_EFFECT_HEAL:
+            case SPELL_EFFECT_HEAL_MECHANICAL:
+                if (amount != 0)
+                    return "Heals a friendly target for " + FormatSignedAmountForStress(amount) + ".";
+                break;
+            case SPELL_EFFECT_ENERGIZE:
+                if (amount != 0)
+                    return std::string("Restores ") + FormatSignedAmountForStress(amount) + " "
+                        + GetPowerTypeLabelForStress(spellInfo ? spellInfo->PowerType : POWER_MANA) + ".";
+                break;
+            default:
+                break;
+        }
+
+        if (!effect.IsAura())
+            return "";
+
+        switch (effect.ApplyAuraName)
+        {
+            case SPELL_AURA_PERIODIC_DAMAGE:
+            case SPELL_AURA_PERIODIC_LEECH:
+            case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
+            {
+                int32 durationMs = spellInfo ? spellInfo->GetMaxDuration() : 0;
+                uint32 tickCount = (effect.Amplitude > 0 && durationMs > 0)
+                    ? std::max<uint32>(1u, static_cast<uint32>(durationMs / int32(effect.Amplitude)))
+                    : 1u;
+                return "Causes " + FormatSignedAmountForStress(amount * int32(tickCount))
+                    + " damage over " + FormatSpellSecondsForStress(std::max<int32>(1, durationMs)) + ".";
+            }
+            case SPELL_AURA_PERIODIC_HEAL:
+            case SPELL_AURA_PERIODIC_HEALTH_FUNNEL:
+            {
+                int32 durationMs = spellInfo ? spellInfo->GetMaxDuration() : 0;
+                uint32 tickCount = (effect.Amplitude > 0 && durationMs > 0)
+                    ? std::max<uint32>(1u, static_cast<uint32>(durationMs / int32(effect.Amplitude)))
+                    : 1u;
+                return "Heals " + FormatSignedAmountForStress(amount * int32(tickCount))
+                    + " health over " + FormatSpellSecondsForStress(std::max<int32>(1, durationMs)) + ".";
+            }
+            case SPELL_AURA_MOD_STUN:
+                return "Stuns the target.";
+            case SPELL_AURA_MOD_ROOT:
+                return "Roots the target in place.";
+            case SPELL_AURA_MOD_FEAR:
+                return "Causes the target to flee in fear.";
+            case SPELL_AURA_MOD_CONFUSE:
+                return "Disorients the target.";
+            case SPELL_AURA_MOD_SILENCE:
+                return "Silences the target.";
+            case SPELL_AURA_MOD_INCREASE_SPEED:
+                if (amount != 0)
+                    return "Increases movement speed by " + FormatSignedAmountForStress(amount) + "%.";
+                break;
+            case SPELL_AURA_MOD_DECREASE_SPEED:
+                if (amount != 0)
+                    return "Reduces movement speed by " + FormatSignedAmountForStress(amount) + "%.";
+                break;
+            case SPELL_AURA_MOD_DAMAGE_DONE:
+            case SPELL_AURA_MOD_DAMAGE_PERCENT_DONE:
+                if (amount != 0)
+                    return "Increases damage done by " + FormatSignedAmountForStress(amount) + ".";
+                break;
+            case SPELL_AURA_MOD_HEALING:
+                if (amount != 0)
+                    return "Increases healing done by " + FormatSignedAmountForStress(amount) + ".";
+                break;
+            case SPELL_AURA_MOD_STAT:
+            case SPELL_AURA_MOD_PERCENT_STAT:
+                if (amount != 0)
+                    return "Modifies stats by " + FormatSignedAmountForStress(amount) + ".";
+                break;
+            default:
+                break;
+        }
+
+        std::ostringstream fallback;
+        fallback << "Effect " << static_cast<uint32>(effect.Effect);
+        if (amount != 0)
+            fallback << " for " << FormatSignedAmountForStress(amount);
+        if (effect.HasRadius())
+            fallback << " in " << std::fixed << std::setprecision(0)
+                << effect.CalcRadius(player) << " yd";
+        fallback << '.';
+        return fallback.str();
+    }
+
+    TimingResult TestAddonItemTooltipCalls(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon Item Tooltip Calls (" + std::to_string(iterations)
+            + " requests)";
+        result.iterations = iterations;
+        result.throughputCount = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        bool hasItemCustomData = WorldTableExists("dc_item_custom_data");
+        std::vector<uint32> itemEntries = LoadWorldTemplateSampleEntries("item_template", 64);
+
+        if (itemEntries.empty())
+            return MakeSkippedTimingResult(result.testName,
+                "missing item_template samples");
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+
+                uint32 itemId = itemEntries[i % itemEntries.size()];
+                if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId))
+                {
+                    DCAddon::JsonMessage msg(DCAddon::Module::QOS,
+                        AddonTooltipStressOpcode::ItemInfo);
+                    msg.Set("itemId", itemId);
+                    msg.Set("name", itemTemplate->Name1);
+                    msg.Set("quality", itemTemplate->Quality);
+                    msg.Set("itemLevel", itemTemplate->ItemLevel);
+                    msg.Set("requiredLevel", itemTemplate->RequiredLevel);
+                    msg.Set("class", itemTemplate->Class);
+                    msg.Set("subclass", itemTemplate->SubClass);
+                    msg.Set("inventoryType", itemTemplate->InventoryType);
+                    msg.Set("maxStack", itemTemplate->GetMaxStackSize());
+                    msg.Set("sellPrice", itemTemplate->SellPrice);
+                    msg.Set("buyPrice", itemTemplate->BuyPrice);
+
+                    if (hasItemCustomData)
+                    {
+                        QueryResult customResult = WorldDatabase.Query(
+                            "SELECT custom_note, custom_source, is_custom "
+                            "FROM dc_item_custom_data WHERE item_id = {}",
+                            itemId);
+                        if (customResult)
+                        {
+                            Field* fields = customResult->Fetch();
+                            msg.Set("customNote", fields[0].Get<std::string>());
+                            msg.Set("customSource", fields[1].Get<std::string>());
+                            msg.Set("isCustom", fields[2].Get<bool>());
+                        }
+                    }
+
+                    std::string payload = msg.Build();
+                    digest += itemTemplate->Quality;
+                    digest += itemTemplate->ItemLevel;
+                    digest += itemTemplate->RequiredLevel;
+                    digest += itemTemplate->InventoryType;
+                    digest += itemTemplate->GetMaxStackSize();
+                    digest += itemTemplate->Name1.size();
+                    digest += payload.size();
+                }
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            result.throughputCount = result.iterations;
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonNpcTooltipCalls(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon NPC Tooltip Calls (" + std::to_string(iterations)
+            + " requests)";
+        result.iterations = iterations;
+        result.throughputCount = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        std::vector<CreatureTooltipSample> creatureSamples = LoadCreatureTooltipSamples(64);
+        if (creatureSamples.empty())
+            return MakeSkippedTimingResult(result.testName,
+                "missing cached creature spawn samples");
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                CreatureTooltipSample const& sample = creatureSamples[i % creatureSamples.size()];
+
+                auto start = Clock::now();
+
+                if (CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(sample.entry))
+                {
+                    std::string guidStr = BuildNpcGuidStringForStress(sample);
+                    DCAddon::JsonMessage msg(DCAddon::Module::QOS,
+                        AddonTooltipStressOpcode::NpcInfo);
+                    msg.Set("guid", guidStr);
+                    msg.Set("entry", sample.entry);
+                    msg.Set("name", creatureTemplate->Name);
+                    msg.Set("subname", creatureTemplate->SubName);
+                    msg.Set("minLevel", creatureTemplate->minlevel);
+                    msg.Set("maxLevel", creatureTemplate->maxlevel);
+                    msg.Set("rank", creatureTemplate->rank);
+                    msg.Set("faction", creatureTemplate->faction);
+                    msg.Set("npcFlags", creatureTemplate->npcflag);
+                    msg.Set("unitClass", creatureTemplate->unit_class);
+                    msg.Set("type", creatureTemplate->type);
+
+                    if (sample.spawnId > 0)
+                        msg.Set("spawnId", static_cast<int32>(sample.spawnId));
+
+                    msg.Set("dbGuid", static_cast<int32>(sample.spawnId));
+                    msg.Set("spawnGuid", static_cast<int32>(sample.spawnId));
+                    msg.Set("mapId", static_cast<int32>(sample.mapId));
+                    msg.Set("spawnX", sample.posX);
+                    msg.Set("spawnY", sample.posY);
+                    msg.Set("spawnZ", sample.posZ);
+                    msg.Set("spawnTime", static_cast<int32>(sample.spawnTimeSecs));
+
+                    std::string payload = msg.Build();
+                    digest += creatureTemplate->minlevel;
+                    digest += creatureTemplate->maxlevel;
+                    digest += creatureTemplate->rank;
+                    digest += creatureTemplate->npcflag;
+                    digest += creatureTemplate->type;
+                    digest += creatureTemplate->Name.size();
+                    digest += creatureTemplate->SubName.size();
+                    digest += guidStr.size();
+                    digest += sample.spawnId;
+                    digest += sample.mapId;
+                    digest += sample.spawnTimeSecs;
+                    digest += payload.size();
+                    digest += static_cast<uint64>(std::abs(sample.posX)
+                        + std::abs(sample.posY) + std::abs(sample.posZ));
+                }
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            result.throughputCount = result.iterations;
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonSpellInfoCalls(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Addon Spell Info Calls (" + std::to_string(iterations)
+            + " requests)";
+        result.iterations = iterations;
+        result.throughputCount = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        bool hasSpellCustomData = WorldTableExists("dc_spell_custom_data");
+        uint32 const tooltipSpells[] = { 116, 133, 172, 339, 403, 585, 686, 774,
+            2061, 30455, 49998, 5185, 20484 };
+        uint32 const tooltipSpellCount = sizeof(tooltipSpells) / sizeof(tooltipSpells[0]);
+
+        std::vector<uint64> timesNs;
+        timesNs.reserve(iterations);
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                auto start = Clock::now();
+
+                uint32 spellId = tooltipSpells[i % tooltipSpellCount];
+                if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId))
+                {
+                    DCAddon::JsonMessage msg(DCAddon::Module::QOS,
+                        AddonTooltipStressOpcode::SpellInfo);
+                    msg.Set("spellId", spellId);
+                    msg.Set("name", spellInfo->SpellName[0] ? spellInfo->SpellName[0] : "");
+                    msg.Set("rank", spellInfo->Rank[0] ? spellInfo->Rank[0] : "");
+                    msg.Set("school", spellInfo->SchoolMask);
+                    msg.Set("powerType", spellInfo->PowerType);
+                    msg.Set("castTime", spellInfo->CastTimeEntry
+                        ? spellInfo->CastTimeEntry->CastTime : 0);
+                    msg.Set("cooldown", spellInfo->RecoveryTime);
+                    msg.Set("category", spellInfo->GetCategory());
+
+                    if (hasSpellCustomData)
+                    {
+                        QueryResult customResult = WorldDatabase.Query(
+                            "SELECT custom_note, modified_values FROM dc_spell_custom_data "
+                            "WHERE spell_id = {}",
+                            spellId);
+                        if (customResult)
+                        {
+                            Field* fields = customResult->Fetch();
+                            msg.Set("customNote", fields[0].Get<std::string>());
+                            msg.Set("modifiedValues", fields[1].Get<std::string>());
+                        }
+                    }
+
+                    std::string payload = msg.Build();
+                    digest += spellInfo->SchoolMask;
+                    digest += spellInfo->PowerType;
+                    digest += spellInfo->RecoveryTime;
+                    digest += spellInfo->GetCategory();
+                    if (spellInfo->SpellName[0])
+                        digest += std::string(spellInfo->SpellName[0]).size();
+                    digest += payload.size();
+                }
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                timesNs.push_back(std::chrono::duration_cast<Nanoseconds>(end - start).count());
+            }
+
+            result.iterations = static_cast<uint32>(timesNs.size());
+            result.throughputCount = result.iterations;
+            FinalizeTimingSamplesNs(result, timesNs);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestAddonSpellTooltipEnrichment(uint32 iterations, Player* player)
+    {
+        TimingResult result;
+        result.testName = player
+            ? "Addon Dynamic Spell Tooltip Enrichment (" + std::to_string(iterations)
+                + " calls)"
+            : "Addon Spell Tooltip Enrichment (" + std::to_string(iterations)
+                + " calls, console fallback)";
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
+
+        uint32 const tooltipSpells[] = { 53, 116, 133, 172, 339, 403, 585, 686,
+            774, 2061, 30455, 49998, 5185, 20484 };
+        uint32 const tooltipSpellCount = sizeof(tooltipSpells) / sizeof(tooltipSpells[0]);
+
+        std::vector<uint64> times;
+        times.reserve(iterations);
+
+        try
+        {
+            uint64 digest = 0;
+
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                uint32 spellId = tooltipSpells[i % tooltipSpellCount];
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                if (!spellInfo)
+                    continue;
+
+                auto start = Clock::now();
+
+                std::vector<std::string> lines;
+                lines.reserve(16);
+                std::string legacyLine;
+
+                std::ostringstream tooltip;
+                if (spellInfo->SpellName[0])
+                    tooltip << spellInfo->SpellName[0] << '|';
+                if (spellInfo->Rank[0] && *spellInfo->Rank[0])
+                {
+                    tooltip << spellInfo->Rank[0] << '|';
+                    lines.emplace_back(spellInfo->Rank[0]);
+                }
+
+                uint32 castTimeMs = player ? spellInfo->CalcCastTime(player)
+                    : spellInfo->CalcCastTime();
+                int32 powerCost = player
+                    ? spellInfo->CalcPowerCost(player, spellInfo->GetSchoolMask())
+                    : 0;
+                float minRange = spellInfo->GetMinRange(false);
+                float maxRange = spellInfo->GetMaxRange(false, player);
+                int32 durationMs = spellInfo->GetMaxDuration();
+
+                std::ostringstream topLine;
+                if (powerCost > 0)
+                    topLine << powerCost << ' ' << GetPowerTypeLabelForStress(spellInfo->PowerType);
+                if (maxRange > 0.0f)
+                {
+                    if (topLine.tellp() > 0)
+                        topLine << " | ";
+                    topLine << std::fixed << std::setprecision(0);
+                    if (minRange > 0.0f)
+                        topLine << minRange << '-' << maxRange << " yd range";
+                    else
+                        topLine << maxRange << " yd range";
+                }
+                if (topLine.tellp() > 0)
+                    lines.push_back(topLine.str());
+
+                std::ostringstream timingLine;
+                timingLine << ((castTimeMs == 0)
+                    ? std::string("Instant cast")
+                    : (FormatSpellSecondsForStress(castTimeMs) + " cast"));
+                if (spellInfo->GetRecoveryTime() > 0)
+                    timingLine << " | "
+                        << FormatSpellSecondsForStress(spellInfo->GetRecoveryTime())
+                        << " cooldown";
+                lines.push_back(timingLine.str());
+
+                if (durationMs > 0)
+                    lines.push_back("Duration | " + FormatSpellSecondsForStress(static_cast<uint32>(durationMs)));
+
+                tooltip << "cost=" << powerCost
+                    << "|cast=" << castTimeMs
+                    << "|cd=" << spellInfo->GetRecoveryTime()
+                    << "|range=" << std::fixed << std::setprecision(0)
+                    << minRange << '-' << maxRange;
+
+                if (durationMs > 0)
+                    tooltip << "|dur=" << durationMs;
+
+                std::string descriptionTemplate = LoadSpellDescriptionTemplateForStress(spellId);
+                if (!descriptionTemplate.empty())
+                {
+                    std::string renderedDescription =
+                        RenderSpellDescriptionTemplateForStress(player, spellInfo, descriptionTemplate);
+                    std::string const& bodySource = (!renderedDescription.empty()
+                        && !HasUnresolvedTemplateTokensForStress(renderedDescription))
+                        ? renderedDescription
+                        : descriptionTemplate;
+                    if (legacyLine.empty() && !renderedDescription.empty())
+                        legacyLine = renderedDescription;
+                    std::vector<std::string> wrapped = WrapTooltipTextForStress(bodySource);
+                    lines.insert(lines.end(), wrapped.begin(), wrapped.end());
+                }
+
+                uint32 effectIndex = 0;
+                for (SpellEffectInfo const& effect : spellInfo->Effects)
+                {
+                    if (!effect.IsEffect())
+                    {
+                        ++effectIndex;
+                        continue;
+                    }
+
+                    tooltip << "|e" << effectIndex << '=' << effect.CalcValue(player);
+                    std::string effectDescription =
+                        BuildSpellEffectTooltipLineForStress(player, spellInfo, effect);
+                    if (legacyLine.empty() && !effectDescription.empty())
+                        legacyLine = effectDescription;
+                    std::ostringstream effectLine;
+                    effectLine << (!effectDescription.empty()
+                        ? effectDescription
+                        : (std::string("Effect ") + std::to_string(effectIndex)))
+                        << " | opcode=" << static_cast<uint32>(effect.Effect)
+                        << " | value=" << effect.CalcValue(player);
+                    if (effect.HasRadius())
+                    {
+                        tooltip << '@' << std::fixed << std::setprecision(0)
+                            << effect.CalcRadius(player);
+                        effectLine << " | radius=" << std::fixed
+                            << std::setprecision(0) << effect.CalcRadius(player)
+                            << " yd";
+                    }
+                    if (effect.IsAura())
+                    {
+                        tooltip << ':' << static_cast<uint32>(effect.ApplyAuraName);
+                        effectLine << " | aura=" << static_cast<uint32>(effect.ApplyAuraName);
+                    }
+                    if (effect.TriggerSpell)
+                        effectLine << " | trigger=" << effect.TriggerSpell;
+
+                    std::vector<std::string> wrappedEffect = WrapTooltipTextForStress(effectLine.str());
+                    lines.insert(lines.end(), wrappedEffect.begin(), wrappedEffect.end());
+                    ++effectIndex;
+                }
+
+                if (legacyLine.empty())
+                {
+                    if (!lines.empty())
+                        legacyLine = lines.back();
+                    else if (castTimeMs == 0)
+                        legacyLine = "Instant cast.";
+                    else
+                        legacyLine = "Cast time: " + FormatSpellSecondsForStress(castTimeMs) + ".";
+                }
+
+                uint32 requestId = i + 1;
+                uint32 contextHash = 0xA5A50000u ^ spellId ^ (i * 2654435761u);
+                std::ostringstream payload;
+                payload << '{'
+                    << "\"requestId\":" << requestId
+                    << ",\"spellId\":" << spellId
+                    << ",\"contextHash\":" << contextHash
+                    << ",\"status\":0"
+                    << ",\"source\":\"server-v2\""
+                    << ",\"line\":\"" << JsonEscape(legacyLine) << "\""
+                    << ",\"lines\":[";
+
+                for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex)
+                {
+                    payload << '{'
+                        << "\"left\":\"" << JsonEscape(lines[lineIndex]) << "\""
+                        << ",\"r\":0.95,\"g\":0.82,\"b\":0.55"
+                        << ",\"kind\":\"body\"}";
+                    if (lineIndex + 1 < lines.size())
+                        payload << ',';
+                }
+
+                payload << "]}";
+
+                std::string rendered = tooltip.str();
+                digest += rendered.size();
+                for (std::string const& line : lines)
+                    digest += line.size();
+                digest += lines.size();
+                digest += payload.str().size();
+                digest += castTimeMs;
+                digest += static_cast<uint64>(std::max<int32>(0, durationMs));
+
+                auto end = Clock::now();
+                if (digest == std::numeric_limits<uint64>::max())
+                    result.error.clear();
+                times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+            }
+
+            if (times.empty())
+                return MakeSkippedTimingResult(result.testName,
+                    "no spell tooltip samples resolved");
+
+            result.iterations = static_cast<uint32>(times.size());
+            FinalizeTimingSamples(result, times);
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    static TimingResult RunAddonExtensionSurfaceQueryBenchmark(
+        AddonStressAvailability const& availability,
+        std::vector<AddonSurface> const& surfaces,
+        uint32 iterations,
+        std::string const& testName)
+    {
+        TimingResult result;
+        result.testName = testName;
+        result.iterations = iterations;
+        result.success = true;
+
+        if (iterations == 0)
+        {
+            result.success = false;
+            result.error = "iterations must be > 0";
+            return result;
+        }
 
         if (surfaces.empty())
-            return MakeSkippedTimingResult(result.testName, "no AddonExtension backing tables/views present");
+            return MakeSkippedTimingResult(result.testName,
+                "no AddonExtension backing tables/views present");
 
         std::vector<uint64> times;
         times.reserve(iterations);
@@ -1934,6 +6378,36 @@ namespace DCPerfTest
         }
 
         return result;
+    }
+
+    TimingResult TestAddonExtensionSurfaceQueries(uint32 iterations)
+    {
+        AddonStressAvailability availability = DetectAddonStressAvailability();
+        std::vector<AddonSurface> surfaces =
+            CollectAddonStressSurfaces(availability);
+
+        return RunAddonExtensionSurfaceQueryBenchmark(availability, surfaces,
+            iterations,
+            "AddonExtension Surface Queries (" + std::to_string(iterations)
+                + " calls)");
+    }
+
+    TimingResult TestAddonExtensionSurfaceQueryComponent(
+        uint32 iterations, AddonSurface surface)
+    {
+        AddonStressAvailability availability = DetectAddonStressAvailability();
+        if (!IsAddonSurfaceAvailable(availability, surface))
+        {
+            return MakeSkippedTimingResult(
+                std::string("Addon Surface Query: ")
+                    + GetAddonSurfaceName(surface),
+                "surface unavailable");
+        }
+
+        return RunAddonExtensionSurfaceQueryBenchmark(availability,
+            std::vector<AddonSurface>{ surface }, iterations,
+            std::string("Addon Surface Query: ") + GetAddonSurfaceName(surface)
+                + " (" + std::to_string(iterations) + " calls)");
     }
 
     TimingResult TestAddonExtensionHeavySimulation(uint32 playerCount)
@@ -2021,6 +6495,7 @@ namespace DCPerfTest
         TimingResult result;
         result.testName = "Mass Transaction Write (" + std::to_string(batchSize) + " rows)";
         result.iterations = 1;
+        result.throughputCount = batchSize;
         result.success = true;
 
         if (batchSize == 0)
@@ -2057,7 +6532,7 @@ namespace DCPerfTest
             // Immediately clean up our test data
             trans->Append("DELETE FROM log_arena_memberstats WHERE fight_id >= 4290100000");
 
-            CharacterDatabase.CommitTransaction(trans);
+            CharacterDatabase.DirectCommitTransaction(trans);
 
             auto end = Clock::now();
             result.totalUs = std::chrono::duration_cast<Microseconds>(end - start).count();
@@ -2066,6 +6541,15 @@ namespace DCPerfTest
             result.maxUs = result.avgUs;
             result.p95Us = result.avgUs;
             result.p99Us = result.avgUs;
+
+            std::string avgDisplay = FormatTimeFromNanoseconds(
+                (static_cast<double>(result.totalUs) * 1000.0) / batchSize);
+            result.avgDisplay = avgDisplay;
+            result.minDisplay = avgDisplay;
+            result.maxDisplay = avgDisplay;
+            result.p95Display = avgDisplay;
+            result.p99Display = avgDisplay;
+            result.avgSortNs = (static_cast<uint64>(result.totalUs) * 1000ULL) / batchSize;
         }
         catch (const std::exception& e)
         {
@@ -2745,6 +7229,66 @@ public:
                 DCPerfTest::PrintResult(handler, r);
         }
 
+        static void AppendAddonSurfaceBreakdownResults(ChatHandler* handler,
+            bool printDetails,
+            std::vector<DCPerfTest::TimingResult>& out,
+            uint32 iterations,
+            char const* label,
+            std::vector<DCPerfTest::AddonSurface> const& surfaces)
+        {
+            if (surfaces.size() <= 1)
+                return;
+
+            if (printDetails)
+                handler->SendSysMessage(label);
+
+            for (DCPerfTest::AddonSurface surface : surfaces)
+            {
+                AppendAndMaybePrint(handler, printDetails, out,
+                    DCPerfTest::TestAddonExtensionSurfaceQueryComponent(
+                        iterations, surface));
+            }
+        }
+
+        static void AddAddonSurfaceQueryResults(ChatHandler* handler,
+            bool printDetails,
+            std::vector<DCPerfTest::TimingResult>& out,
+            uint32 iterations)
+        {
+            DCPerfTest::AddonStressAvailability const availability =
+                DCPerfTest::DetectAddonStressAvailability();
+
+            AppendAndMaybePrint(handler, printDetails, out,
+                DCPerfTest::TestAddonExtensionSurfaceQueries(iterations));
+
+            std::vector<DCPerfTest::AddonSurface> surfaces =
+                DCPerfTest::CollectAddonStressSurfaces(availability);
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down AddonExtension surface families...",
+                surfaces);
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down Protocol surface queries...",
+                DCPerfTest::CollectAddonProtocolSurfaceDetails(availability));
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down Welcome surface queries...",
+                DCPerfTest::CollectAddonWelcomeSurfaceDetails(availability));
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down Welcome Progress queries...",
+                DCPerfTest::CollectAddonWelcomeProgressSurfaceDetails(availability));
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down GroupFinder surface queries...",
+                DCPerfTest::CollectAddonGroupFinderSurfaceDetails(availability));
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down MythicPlus surface queries...",
+                DCPerfTest::CollectAddonMythicPlusSurfaceDetails(availability));
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down Wardrobe surface queries...",
+                DCPerfTest::CollectAddonWardrobeSurfaceDetails(availability));
+            AppendAddonSurfaceBreakdownResults(handler, printDetails, out,
+                iterations, "Breaking down HLBG surface queries...",
+                DCPerfTest::CollectAddonHLBGSurfaceDetails(availability));
+        }
+
         static void AddSystemsSuiteResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, char const* args)
         {
             uint32 addonIterations = 200;
@@ -2761,7 +7305,44 @@ public:
                 handler->SendSysMessage("|cff00ff00=== DC Performance Test: DC Systems ===|r");
 
             AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestDCTableQueries());
-            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionSurfaceQueries(addonIterations));
+            AddAddonSurfaceQueryResults(handler, printDetails, out, addonIterations);
+            AddAddonTooltipResults(handler, printDetails, out, addonIterations);
+            AddAddonSyncAndHudResults(handler, printDetails, out, addonIterations);
+        }
+
+        static void AddAddonTooltipResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, uint32 baseIterations)
+        {
+            uint32 perTypeIterations = std::min<uint32>(std::max<uint32>(1, baseIterations), 2000);
+            uint32 enrichmentIterations = std::min<uint32>(perTypeIterations * 3, 6000);
+            uint32 protocolIterations = std::min<uint32>(std::max<uint32>(1, baseIterations), 4000);
+
+            if (printDetails)
+                handler->SendSysMessage("Running tooltip-heavy addon probes...");
+
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonItemTooltipCalls(perTypeIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonNpcTooltipCalls(perTypeIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonSpellInfoCalls(perTypeIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonSpellTooltipEnrichment(enrichmentIterations, handler->GetPlayer()));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonProtocolClientCommunication(protocolIterations));
+        }
+
+        static void AddAddonSyncAndHudResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, uint32 baseIterations)
+        {
+            uint32 collectionIterations = std::min<uint32>(std::max<uint32>(1, baseIterations / 4), 200);
+            uint32 leaderboardIterations = std::min<uint32>(std::max<uint32>(1, baseIterations / 3), 240);
+            uint32 groupFinderIterations = std::min<uint32>(std::max<uint32>(1, baseIterations / 2), 320);
+            uint32 hudIterations = std::min<uint32>(std::max<uint32>(1, baseIterations), 1000);
+
+            if (printDetails)
+                handler->SendSysMessage("Running addon sync/HUD probes...");
+
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonCollectionSyncBuildEncode(collectionIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonCollectionSyncRoundTripParse(collectionIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonCollectionSyncPayloads(collectionIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonLeaderboardSyncPayloads(leaderboardIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonGroupFinderSyncPayloads(groupFinderIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonHLBGHudSyncPayloads(hudIterations));
+            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonMythicHudSyncPayloads(hudIterations));
         }
 
         static void AddAddonSuiteResults(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, char const* args)
@@ -2789,7 +7370,9 @@ public:
             if (printDetails)
                 handler->SendSysMessage("|cff00ff00=== DC Performance Test: AddonExtension ===|r");
 
-            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionSurfaceQueries(queryIterations));
+            AddAddonSurfaceQueryResults(handler, printDetails, out, queryIterations);
+            AddAddonTooltipResults(handler, printDetails, out, queryIterations);
+            AddAddonSyncAndHudResults(handler, printDetails, out, queryIterations);
             AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionHeavySimulation(burstPlayers));
         }
 
@@ -2832,7 +7415,7 @@ public:
 
             AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestItemUpgradeStateLookups(baseCount * 10));
             AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCollectionTableQueries(baseCount * 8));
-            AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAddonExtensionSurfaceQueries(std::min<uint32>(baseCount * 8, 4000)));
+            AddAddonSurfaceQueryResults(handler, printDetails, out, std::min<uint32>(baseCount * 8, 4000));
             AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestLoginSimulation(limitSafe));
             AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestConcurrentQueryPattern(baseCount * 4));
             AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassTransactionWrite(baseCount * 2));
@@ -3111,7 +7694,7 @@ public:
     static bool HandlePerfTestAddon(ChatHandler* handler, const char* args)
     {
         std::vector<DCPerfTest::TimingResult> results;
-        results.reserve(2);
+        results.reserve(4);
         AddAddonSuiteResults(handler, true, results, args);
 
         handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
@@ -3503,7 +8086,7 @@ public:
     static bool HandlePerfTestSystems(ChatHandler* handler, const char* args)
     {
         std::vector<DCPerfTest::TimingResult> results;
-        results.reserve(2);
+        results.reserve(4);
         AddSystemsSuiteResults(handler, true, results, args);
 
         handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");

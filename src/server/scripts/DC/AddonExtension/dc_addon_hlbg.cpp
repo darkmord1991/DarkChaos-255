@@ -57,9 +57,124 @@ namespace HLBG
 {
     namespace
     {
+        struct AllTimeViewColumns
+        {
+            char const* totalMatches = nullptr;
+            char const* totalWins = nullptr;
+            char const* totalLosses = nullptr;
+            char const* totalKills = nullptr;
+            char const* totalDeaths = nullptr;
+            char const* kdRatio = nullptr;
+            char const* avgKills = nullptr;
+            char const* avgDamage = nullptr;
+
+            bool IsComplete() const
+            {
+                return totalMatches && totalWins && totalLosses && totalKills
+                    && totalDeaths && kdRatio && avgKills && avgDamage;
+            }
+        };
+
         // Avoid expensive lookups and allow rate-limiting without extra dependencies.
         static std::unordered_map<uint32, uint32> s_lastRequestMs;
         static std::mutex s_rateLimitMutex;  // Thread safety for rate limiting
+
+        static bool CharacterColumnExists(char const* tableName,
+            char const* columnName)
+        {
+            std::string query = Acore::StringFormat(
+                "SELECT 1 FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '%s' "
+                "AND COLUMN_NAME = '%s' LIMIT 1",
+                tableName, columnName);
+            return CharacterDatabase.Query(query) != nullptr;
+        }
+
+        static bool CharacterTableExists(char const* tableName)
+        {
+            std::string query = Acore::StringFormat(
+                "SELECT 1 FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '%s' LIMIT 1",
+                tableName);
+            return CharacterDatabase.Query(query) != nullptr;
+        }
+
+        static bool HasUnifiedStatTables()
+        {
+            static bool const hasTables =
+                CharacterTableExists("dc_hlbg_match_participants")
+                && CharacterTableExists("dc_hlbg_winner_history");
+            return hasTables;
+        }
+
+        static AllTimeViewColumns DetectAllTimeViewColumns()
+        {
+            AllTimeViewColumns columns;
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "total_matches"))
+                columns.totalMatches = "total_matches";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "total_games_played"))
+                columns.totalMatches = "total_games_played";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "lifetime_wins"))
+                columns.totalWins = "lifetime_wins";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "total_wins"))
+                columns.totalWins = "total_wins";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "lifetime_losses"))
+                columns.totalLosses = "lifetime_losses";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "total_losses"))
+                columns.totalLosses = "total_losses";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "lifetime_kills"))
+                columns.totalKills = "lifetime_kills";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "total_kills"))
+                columns.totalKills = "total_kills";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "lifetime_deaths"))
+                columns.totalDeaths = "lifetime_deaths";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "total_deaths"))
+                columns.totalDeaths = "total_deaths";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "lifetime_kd_ratio"))
+                columns.kdRatio = "lifetime_kd_ratio";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "overall_kd_ratio"))
+                columns.kdRatio = "overall_kd_ratio";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "avg_kills_career"))
+                columns.avgKills = "avg_kills_career";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "avg_kills_per_game"))
+                columns.avgKills = "avg_kills_per_game";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "avg_damage_career"))
+                columns.avgDamage = "avg_damage_career";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+                    "avg_damage_per_game"))
+                columns.avgDamage = "avg_damage_per_game";
+
+            return columns;
+        }
+
+        static AllTimeViewColumns const& GetAllTimeViewColumns()
+        {
+            static AllTimeViewColumns const columns = DetectAllTimeViewColumns();
+            return columns;
+        }
 
         static bool IsRateLimited(Player* player, uint32 cooldownMs)
         {
@@ -284,75 +399,179 @@ namespace HLBG
     {
         std::string query;
 
-        // Map leaderboard type to SQL query
-        switch (leaderboardType)
+        if (HasUnifiedStatTables())
         {
-            case 1:  // RATING
-                query = Acore::StringFormat(
-                    "SELECT guid, player_name, current_rating, wins "
-                    "FROM `v_hlbg_player_seasonal_stats` "
-                    "WHERE season_id = %u "
-                    "ORDER BY current_rating DESC LIMIT %u",
-                    season, limit);
-                break;
+            switch (leaderboardType)
+            {
+                case 1:
+                    query = Acore::StringFormat(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "GREATEST(0, COALESCE(SUM(p.rating_change), 0) + 1200) AS score, "
+                        "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS extra "
+                        "FROM `dc_hlbg_match_participants` p "
+                        "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = %u "
+                        "GROUP BY p.guid "
+                        "ORDER BY score DESC LIMIT %u",
+                        season, limit);
+                    break;
 
-            case 2:  // WINS
-                query = Acore::StringFormat(
-                    "SELECT guid, player_name, wins, games_played "
-                    "FROM `v_hlbg_player_seasonal_stats` "
-                    "WHERE season_id = %u "
-                    "ORDER BY wins DESC LIMIT %u",
-                    season, limit);
-                break;
+                case 2:
+                    query = Acore::StringFormat(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS score, "
+                        "COUNT(*) AS extra "
+                        "FROM `dc_hlbg_match_participants` p "
+                        "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = %u "
+                        "GROUP BY p.guid "
+                        "ORDER BY score DESC LIMIT %u",
+                        season, limit);
+                    break;
 
-            case 3:  // WINRATE
-                query = Acore::StringFormat(
-                    "SELECT guid, player_name, CAST(win_rate * 100 AS UNSIGNED), games_played "
-                    "FROM `v_hlbg_player_seasonal_stats` "
-                    "WHERE season_id = %u AND games_played >= 5 "
-                    "ORDER BY win_rate DESC LIMIT %u",
-                    season, limit);
-                break;
+                case 3:
+                    query = Acore::StringFormat(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "CAST(ROUND((SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) * 10000.0) / NULLIF(COUNT(*), 0), 0) AS UNSIGNED) AS score, "
+                        "COUNT(*) AS extra "
+                        "FROM `dc_hlbg_match_participants` p "
+                        "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = %u "
+                        "GROUP BY p.guid "
+                        "HAVING COUNT(*) >= 5 "
+                        "ORDER BY score DESC LIMIT %u",
+                        season, limit);
+                    break;
 
-            case 4:  // GAMES PLAYED
-                query = Acore::StringFormat(
-                    "SELECT guid, player_name, games_played, wins "
-                    "FROM `v_hlbg_player_seasonal_stats` "
-                    "WHERE season_id = %u "
-                    "ORDER BY games_played DESC LIMIT %u",
-                    season, limit);
-                break;
+                case 4:
+                    query = Acore::StringFormat(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "COUNT(*) AS score, "
+                        "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS extra "
+                        "FROM `dc_hlbg_match_participants` p "
+                        "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = %u "
+                        "GROUP BY p.guid "
+                        "ORDER BY score DESC LIMIT %u",
+                        season, limit);
+                    break;
 
-            case 5:  // KILLS
-                query = Acore::StringFormat(
-                    "SELECT guid, player_name, total_kills, avg_kills_per_game "
-                    "FROM `v_hlbg_player_seasonal_stats` "
-                    "WHERE season_id = %u "
-                    "ORDER BY total_kills DESC LIMIT %u",
-                    season, limit);
-                break;
+                case 5:
+                    query = Acore::StringFormat(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "COALESCE(SUM(p.kills), 0) AS score, "
+                        "CAST(ROUND(COALESCE(SUM(p.kills), 0) / NULLIF(COUNT(*), 0), 0) AS UNSIGNED) AS extra "
+                        "FROM `dc_hlbg_match_participants` p "
+                        "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = %u "
+                        "GROUP BY p.guid "
+                        "ORDER BY score DESC LIMIT %u",
+                        season, limit);
+                    break;
 
-            case 6:  // RESOURCES CAPTURED
-                query = Acore::StringFormat(
-                    "SELECT guid, player_name, total_resources_captured, games_played "
-                    "FROM `v_hlbg_player_seasonal_stats` "
-                    "WHERE season_id = %u "
-                    "ORDER BY total_resources_captured DESC LIMIT %u",
-                    season, limit);
-                break;
+                case 6:
+                    query = Acore::StringFormat(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "COALESCE(SUM(p.resources_captured), 0) AS score, "
+                        "COUNT(*) AS extra "
+                        "FROM `dc_hlbg_match_participants` p "
+                        "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = %u "
+                        "GROUP BY p.guid "
+                        "ORDER BY score DESC LIMIT %u",
+                        season, limit);
+                    break;
 
-            case 7:  // K/D RATIO
-                query = Acore::StringFormat(
-                    "SELECT guid, player_name, CAST(kd_ratio * 100 AS UNSIGNED), games_played "
-                    "FROM `v_hlbg_player_seasonal_stats` "
-                    "WHERE season_id = %u AND total_deaths > 0 "
-                    "ORDER BY kd_ratio DESC LIMIT %u",
-                    season, limit);
-                break;
+                case 7:
+                    query = Acore::StringFormat(
+                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                        "CAST(ROUND((COALESCE(SUM(p.kills), 0) * 100.0) / NULLIF(COALESCE(SUM(p.deaths), 0), 0), 0) AS UNSIGNED) AS score, "
+                        "COUNT(*) AS extra "
+                        "FROM `dc_hlbg_match_participants` p "
+                        "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                        "WHERE p.season_id = %u "
+                        "GROUP BY p.guid "
+                        "HAVING COALESCE(SUM(p.deaths), 0) > 0 "
+                        "ORDER BY score DESC LIMIT %u",
+                        season, limit);
+                    break;
 
-            default:
-                outError = "Invalid leaderboard type";
-                return false;
+                default:
+                    outError = "Invalid leaderboard type";
+                    return false;
+            }
+        }
+        else
+        {
+            switch (leaderboardType)
+            {
+                case 1:  // RATING
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, current_rating, wins "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY current_rating DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 2:  // WINS
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, wins, games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY wins DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 3:  // WINRATE
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, CAST(win_rate * 100 AS UNSIGNED), games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u AND games_played >= 5 "
+                        "ORDER BY win_rate DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 4:  // GAMES PLAYED
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, games_played, wins "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY games_played DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 5:  // KILLS
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, total_kills, avg_kills_per_game "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY total_kills DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 6:  // RESOURCES CAPTURED
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, total_resources_captured, games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY total_resources_captured DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 7:  // K/D RATIO
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, CAST(kd_ratio * 100 AS UNSIGNED), games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u AND total_deaths > 0 "
+                        "ORDER BY kd_ratio DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                default:
+                    outError = "Invalid leaderboard type";
+                    return false;
+            }
         }
 
         // Execute query
@@ -398,21 +617,44 @@ namespace HLBG
 
         uint32 playerGuid = player->GetGUID().GetCounter();
 
-        std::string query = Acore::StringFormat(
-            "SELECT "
-            "IFNULL(current_rating, 0), "
-            "IFNULL(wins, 0), "
-            "IFNULL(losses, 0), "
-            "IFNULL(games_played, 0), "
-            "IFNULL(win_rate, 0), "
-            "IFNULL(total_kills, 0), "
-            "IFNULL(total_deaths, 0), "
-            "IFNULL(kd_ratio, 0), "
-            "IFNULL(avg_kills_per_game, 0), "
-            "IFNULL(avg_damage_per_game, 0) "
-            "FROM `v_hlbg_player_seasonal_stats` "
-            "WHERE guid = %u AND season_id = %u",
-            playerGuid, season);
+        std::string query;
+        if (HasUnifiedStatTables())
+        {
+            query = Acore::StringFormat(
+                "SELECT "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE GREATEST(0, COALESCE(SUM(p.rating_change), 0) + 1200) END, "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
+                "COUNT(*), "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND((SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 2) END, "
+                "COALESCE(SUM(p.kills), 0), "
+                "COALESCE(SUM(p.deaths), 0), "
+                "CASE WHEN COALESCE(SUM(p.deaths), 0) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / SUM(p.deaths), 2) END, "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / COUNT(*), 2) END, "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.damage_done), 0) / COUNT(*), 0) END "
+                "FROM `dc_hlbg_match_participants` p "
+                "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                "WHERE p.guid = %u AND p.season_id = %u",
+                playerGuid, season);
+        }
+        else
+        {
+            query = Acore::StringFormat(
+                "SELECT "
+                "IFNULL(current_rating, 0), "
+                "IFNULL(wins, 0), "
+                "IFNULL(losses, 0), "
+                "IFNULL(games_played, 0), "
+                "IFNULL(win_rate, 0), "
+                "IFNULL(total_kills, 0), "
+                "IFNULL(total_deaths, 0), "
+                "IFNULL(kd_ratio, 0), "
+                "IFNULL(avg_kills_per_game, 0), "
+                "IFNULL(avg_damage_per_game, 0) "
+                "FROM `v_hlbg_player_seasonal_stats` "
+                "WHERE guid = %u AND season_id = %u",
+                playerGuid, season);
+        }
 
         QueryResult result = CharacterDatabase.Query(query);
         if (!result)
@@ -471,19 +713,62 @@ namespace HLBG
 
         uint32 playerGuid = player->GetGUID().GetCounter();
 
-        std::string query = Acore::StringFormat(
-            "SELECT "
-            "IFNULL(total_matches, 0), "
-            "IFNULL(lifetime_wins, 0), "
-            "IFNULL(lifetime_losses, 0), "
-            "IFNULL(lifetime_kills, 0), "
-            "IFNULL(lifetime_deaths, 0), "
-            "IFNULL(lifetime_kd_ratio, 0), "
-            "IFNULL(avg_kills_career, 0), "
-            "IFNULL(avg_damage_career, 0) "
-            "FROM `v_hlbg_player_alltime_stats` "
-            "WHERE guid = %u",
-            playerGuid);
+        std::string query;
+        if (HasUnifiedStatTables())
+        {
+            query = Acore::StringFormat(
+                "SELECT "
+                "COUNT(*), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(p.kills), 0), "
+                "COALESCE(SUM(p.deaths), 0), "
+                "CASE WHEN COALESCE(SUM(p.deaths), 0) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / SUM(p.deaths), 2) END, "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / COUNT(*), 2) END, "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.damage_done), 0) / COUNT(*), 0) END "
+                "FROM `dc_hlbg_match_participants` p "
+                "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
+                "WHERE p.guid = %u",
+                playerGuid);
+        }
+        else
+        {
+            AllTimeViewColumns const& columns = GetAllTimeViewColumns();
+
+            if (!columns.IsComplete())
+            {
+                LOG_ERROR("dc.hlbg",
+                    "v_hlbg_player_alltime_stats is missing one or more expected columns");
+                outJson = "{"
+                    "\"totalMatches\":0,\"lifetimeWins\":0,\"lifetimeLosses\":0,"
+                    "\"lifetimeKills\":0,\"lifetimeDeaths\":0,\"kdRatio\":0,"
+                    "\"avgKills\":0,\"avgDamage\":0"
+                    "}";
+                return true;
+            }
+
+            query = Acore::StringFormat(
+                "SELECT "
+                "IFNULL(%s, 0), "
+                "IFNULL(%s, 0), "
+                "IFNULL(%s, 0), "
+                "IFNULL(%s, 0), "
+                "IFNULL(%s, 0), "
+                "IFNULL(%s, 0), "
+                "IFNULL(%s, 0), "
+                "IFNULL(%s, 0) "
+                "FROM `v_hlbg_player_alltime_stats` "
+                "WHERE guid = %u",
+                columns.totalMatches,
+                columns.totalWins,
+                columns.totalLosses,
+                columns.totalKills,
+                columns.totalDeaths,
+                columns.kdRatio,
+                columns.avgKills,
+                columns.avgDamage,
+                playerGuid);
+        }
 
         QueryResult result = CharacterDatabase.Query(query);
         if (!result)
