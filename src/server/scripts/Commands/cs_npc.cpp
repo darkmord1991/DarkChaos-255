@@ -201,8 +201,8 @@ public:
             { "follow",         npcFollowCommandTable },
             { "load",           HandleNpcLoadCommand,              SEC_ADMINISTRATOR, Console::Yes },
             { "set",            npcSetCommandTable },
-            { "spawngroup",     HandleNpcSpawnGroupCommand,        SEC_ADMINISTRATOR, Console::No },
-            { "despawngroup",   HandleNpcDespawnGroupCommand,      SEC_ADMINISTRATOR, Console::No }
+            { "spawngroup",     HandleNpcSpawnGroupCommand,        rbac::RBAC_PERM_COMMAND_NPC_SPAWNGROUP,   Console::No },
+            { "despawngroup",   HandleNpcDespawnGroupCommand,      rbac::RBAC_PERM_COMMAND_NPC_DESPAWNGROUP, Console::No }
         };
         static ChatCommandTable commandTable =
         {

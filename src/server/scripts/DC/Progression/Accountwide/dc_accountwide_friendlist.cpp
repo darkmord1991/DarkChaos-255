@@ -13,6 +13,7 @@
 #include "Log.h"
 #include "ObjectGuid.h"
 #include "Player.h"
+#include "RBAC.h"
 #include "ScriptMgr.h"
 #include "SocialMgr.h"
 #include "World.h"
@@ -123,11 +124,11 @@ namespace
             return false;
 
         if (AccountMgr::IsPlayerAccount(player->GetSession()->GetSecurity()) &&
-            !sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_ADD_FRIEND))
+            player->GetTeamId() != Player::TeamIdForRace(cache->Race) &&
+            !player->GetSession()->HasPermission(
+                rbac::RBAC_PERM_TWO_SIDE_ADD_FRIEND))
         {
-            TeamId friendTeam = Player::TeamIdForRace(cache->Race);
-            if (friendTeam != player->GetTeamId())
-                return false;
+            return false;
         }
 
         return true;
