@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
     INDEX `idx_module` (`module`),
     INDEX `idx_direction_module` (`direction`, `module`),
     INDEX `idx_request_type` (`request_type`),
-    INDEX `idx_status` (`status`)
+    INDEX `idx_status` (`status`),
+    INDEX `idx_recent_browse_cover_v1` (`id`, `guid`, `module`, `opcode`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Detailed log of all addon protocol messages (debugging)';
 
@@ -108,7 +109,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
     INDEX `idx_guid` (`guid`),
     INDEX `idx_account` (`account_id`),
     INDEX `idx_module` (`module`),
-    INDEX `idx_event_type` (`event_type`)
+    INDEX `idx_event_type` (`event_type`),
+    INDEX `idx_recent_browse_cover_v1` (`id`, `guid`, `module`, `opcode`, `event_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Discrete addon protocol error/timeout events (debugging)';
 

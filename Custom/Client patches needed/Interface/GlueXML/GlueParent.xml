@@ -1,7 +1,6 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
 ..\FrameXML\UI.xsd">
 	<Script file="GlueParent.lua"/>
-	<Include file="GlueXML\DarkChaos\DarkChaosBreakingNews.xml"/>
 	<Frame name="GlueParent" setAllPoints="true">
 		<Scripts>
 			<!-- Register here for any events you want to monitor globally -->
@@ -14,6 +13,9 @@
 			</OnEvent>
 			<OnUpdate>
 				GlueFrameFadeUpdate(elapsed);
+				if ( DCBreakingNews_OnUpdate ) then
+					DCBreakingNews_OnUpdate(elapsed);
+				end
 			</OnUpdate>
 		</Scripts>
 	</Frame>

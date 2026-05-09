@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <sstream>
@@ -114,6 +115,21 @@ namespace DCBreakingNews
         bool ReadContentFile(std::string const& path, std::string& content,
             std::string* errorMessage)
         {
+            std::error_code errorCode;
+            std::filesystem::path contentPath(path);
+
+            if (std::filesystem::exists(contentPath, errorCode) &&
+                std::filesystem::is_directory(contentPath, errorCode))
+            {
+                if (errorMessage)
+                {
+                    *errorMessage =
+                        "Configured content path points to a directory; expected a file: " +
+                        path;
+                }
+                return false;
+            }
+
             std::ifstream input(path, std::ios::in | std::ios::binary);
             if (!input.is_open())
             {
@@ -252,6 +268,15 @@ namespace DCBreakingNews
         data << snapshot.title;
         data << snapshot.body;
         session->SendPacket(&data);
+
+        if (sConfigMgr->GetOption<bool>(CONFIG_VERBOSE, false))
+        {
+            LOG_INFO("module.dc",
+                "Breaking news sent to account={} (revision={}, format={}, bodyBytes={})",
+                session->GetAccountId(), snapshot.revision,
+                snapshot.format, snapshot.body.size());
+        }
+
         return true;
     }
 }

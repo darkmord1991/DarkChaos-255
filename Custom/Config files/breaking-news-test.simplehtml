@@ -1,0 +1,11 @@
+<p>|cffffd200DarkChaos Test Bulletin|r</p>
+<br/>
+<p>If you can see this popup on the character-select screen, the full breaking-news path is working:</p>
+<p>|cff00ff00server config|r -> |cff00ff00file load|r -> |cff00ff00packet 1315|r -> |cff00ff00GlueXML render|r</p>
+<br/>
+<p>|cffffff00Quick checks|r</p>
+<p>1. The title should come from |cff33ccffDC.BreakingNews.Title|r in the server config.</p>
+<p>2. This body should come from |cff33ccffbreaking-news-test.simplehtml|r.</p>
+<p>3. Closing the popup should not reopen it again for the same revision.</p>
+<br/>
+<p>|cffaaaaaaUpdated: 2026-05-09 test payload|r</p>

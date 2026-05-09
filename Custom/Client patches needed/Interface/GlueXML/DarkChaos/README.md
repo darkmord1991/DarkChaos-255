@@ -3,7 +3,7 @@ DarkChaos breaking news GlueXML package
 What this package does:
 - Loads a tiny GlueXML driver on the login and character-select side.
 - Polls the WotLK-Extensions glue Lua exports for the latest breaking-news payload.
-- Pushes the received title and body into the stock `ServerAlertFrame` once the character-select screen is visible.
+- Renders the received title and body inside a self-contained breaking-news frame once the character-select screen is visible.
 
 Files in this folder:
 - `DarkChaosBreakingNews.xml`: additive GlueXML include that loads the Lua driver and a tiny update ticker.
@@ -22,10 +22,16 @@ How the client reads it:
 2. `CGlueMgr` registers the breaking-news Lua functions into the GlueXML environment.
 3. Your modified `GlueParent.xml` includes `GlueXML\DarkChaos\DarkChaosBreakingNews.xml` as a top-level `Include` under the root `Ui` node.
 4. The XML loads `DarkChaosBreakingNews.lua`, which polls `HasBreakingNews()` while the character-select screen is shown.
-5. When the server sends packet `1315` during character enumeration, the DLL caches the payload and the Lua driver renders it into `ServerAlertFrame`.
+5. When the server sends packet `1315` during character enumeration, the DLL caches the payload and the Lua driver renders it into its own character-select news frame.
 
 Packaging notes:
 - The client still uses normal Blizzard GlueXML loading rules. The patcher only unlocks custom Glue XML edits; it does not auto-load this file for you.
 - Because of that, one explicit include in `GlueParent.xml` is still required.
 - If you extracted `GlueParent.lua` and do not see any include list, that is expected. The include list lives in `GlueParent.xml`, not in `GlueParent.lua`.
 - The safest body format is a short `simplehtml` fragment using tags like `<p>` and `<br/>` plus WoW color codes.
+- The upstream `mod-breaking-news-override` note about escaping `[`, `]`, `'`, and `\` does not apply to this implementation. Here the server sends binary packet cstrings and the client reads them directly, so those characters do not need transport escaping.
+- Practical limits in this implementation are: stay within WoW `SimpleHTML` compatibility, avoid embedded NUL bytes, and follow normal config-file quoting rules for `DC.BreakingNews.Title`.
+
+Optional validation:
+- Install the `DCPatchApiProbe` addon from the WotLK-Extensions repo and run `/dctest news` after logging through character select.
+- The probe now reports whether the payload was cached, whether the Glue driver loaded, and whether it applied the same revision that the client cached.

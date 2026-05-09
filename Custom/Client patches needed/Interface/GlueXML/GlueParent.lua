@@ -126,6 +126,318 @@ SEX_NONE = 1;
 SEX_MALE = 2;
 SEX_FEMALE = 3;
 
+local DCBREAKINGNEWS_GLUE_PACKAGE = "dc-breakingnews-glueparent-ui-2026-05-09-r4";
+local DCBREAKINGNEWS_FRAME_WIDTH = 400;
+local DCBREAKINGNEWS_FRAME_HEIGHT = 240;
+local DCBreakingNewsState = {
+	appliedRevision = 0,
+	updateTimer = 0,
+};
+
+local function DCBreakingNews_TryNativeNotify(functionName, ...)
+	local callback = _G[functionName];
+	if ( type(callback) ~= "function" ) then
+		return false;
+	end
+
+	local ok = pcall(callback, ...);
+	return ok;
+end
+
+local function DCBreakingNews_ReportGlueProbeState(applied, revision, stageCode, detail)
+	if ( stageCode == 10 ) then
+		if ( DCBreakingNews_TryNativeNotify("DCBreakingNews_NotifyGlueLoaded",
+				DCBREAKINGNEWS_GLUE_PACKAGE) ) then
+			return;
+		end
+	elseif ( stageCode == 30 ) then
+		if ( DCBreakingNews_TryNativeNotify("DCBreakingNews_NotifyGlueHidden",
+				detail or "hidden") ) then
+			return;
+		end
+	elseif ( stageCode == 110 ) then
+		if ( DCBreakingNews_TryNativeNotify("DCBreakingNews_NotifyGlueApplied",
+				revision or 0) ) then
+			return;
+		end
+	elseif ( stageCode == 900 ) then
+		if ( DCBreakingNews_TryNativeNotify("DCBreakingNews_NotifyGlueError",
+				detail or "glue-error") ) then
+			return;
+		end
+	end
+
+	if ( type(SetBreakingNewsGlueProbeState) ~= "function" ) then
+		return;
+	end
+
+	SetBreakingNewsGlueProbeState(true, applied and true or false,
+		revision or 0, stageCode or 0, detail or "",
+		DCBREAKINGNEWS_GLUE_PACKAGE);
+end
+
+local function DCBreakingNews_HasClientApi()
+	return type(HasBreakingNews) == "function"
+		and type(GetBreakingNewsBody) == "function"
+		and type(GetBreakingNewsRevision) == "function";
+end
+
+local function DCBreakingNews_GetParentFrame()
+	if ( CharacterSelect ) then
+		return CharacterSelect;
+	end
+
+	if ( GlueParent ) then
+		return GlueParent;
+	end
+
+	return UIParent;
+end
+
+local function DCBreakingNews_BuildFallbackText(body)
+	if ( not body or body == "" ) then
+		return nil;
+	end
+
+	body = string.gsub(body, "\r\n", "\n");
+	body = string.gsub(body, "\r", "\n");
+	body = string.gsub(body, "<[bB][rR]%s*/?>", "\n");
+	body = string.gsub(body, "</[pP]>", "\n\n");
+	body = string.gsub(body, "<[pP][^>]*>", "");
+	body = string.gsub(body, "</[hH][1-6]>", "\n");
+	body = string.gsub(body, "<[hH][1-6][^>]*>", "");
+	body = string.gsub(body, "</[lL][iI]>", "\n");
+	body = string.gsub(body, "<[lL][iI][^>]*>", "* ");
+	body = string.gsub(body, "<[^>]+>", "");
+	body = string.gsub(body, "\n%s*\n%s*\n+", "\n\n");
+	body = string.gsub(body, "^%s+", "");
+	body = string.gsub(body, "%s+$", "");
+	return body;
+end
+
+local function DCBreakingNews_NormalizeBody(format, body)
+	if ( not body or body == "" ) then
+		return nil;
+	end
+
+	if ( format == "plain" ) then
+		body = string.gsub(body, "\r\n", "\n");
+		body = string.gsub(body, "\r", "\n");
+		return body;
+	end
+
+	return DCBreakingNews_BuildFallbackText(body);
+end
+
+local function DCBreakingNews_ApplyFontStyle(fontString, fontObjectName,
+		fontPath, fontSize, r, g, b)
+	if ( not fontString ) then
+		return;
+	end
+
+	local fontObject = fontObjectName and _G[fontObjectName];
+	if ( fontObject and fontString.SetFontObject ) then
+		fontString:SetFontObject(fontObject);
+		return;
+	end
+
+	if ( fontString.SetFont ) then
+		fontString:SetFont(fontPath, fontSize, "");
+	end
+	if ( r and g and b and fontString.SetTextColor ) then
+		fontString:SetTextColor(r, g, b);
+	end
+end
+
+local function DCBreakingNews_EnsureFrame()
+	if ( DCBreakingNewsFrame ) then
+		return DCBreakingNewsFrame;
+	end
+
+	local frame = CreateFrame("Frame", "DCBreakingNewsFrame", DCBreakingNews_GetParentFrame());
+	frame:SetWidth(DCBREAKINGNEWS_FRAME_WIDTH);
+	frame:SetHeight(DCBREAKINGNEWS_FRAME_HEIGHT);
+	frame:SetToplevel(true);
+	frame:SetFrameStrata("FULLSCREEN_DIALOG");
+	if ( frame.SetClampedToScreen ) then
+		frame:SetClampedToScreen(true);
+	end
+	frame:Hide();
+
+	if ( frame.SetBackdrop ) then
+		frame:SetBackdrop({
+			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+			tile = true,
+			tileSize = 16,
+			edgeSize = 16,
+			insets = { left = 5, right = 5, top = 5, bottom = 5 },
+		});
+		frame:SetBackdropColor(0.02, 0.02, 0.02, 0.9);
+	end
+
+	local title = frame:CreateFontString(nil, "OVERLAY");
+	DCBreakingNews_ApplyFontStyle(title, "GameFontHighlightLarge",
+		"Fonts\\FRIZQT__.TTF", 16, 1.0, 0.82, 0.0);
+	title:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -18);
+	title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -34, -18);
+	title:SetJustifyH("LEFT");
+
+	local body = frame:CreateFontString(nil, "OVERLAY");
+	DCBreakingNews_ApplyFontStyle(body, "GameFontHighlight",
+		"Fonts\\FRIZQT__.TTF", 13, 1.0, 0.82, 0.0);
+	body:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -48);
+	body:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18);
+	body:SetJustifyH("LEFT");
+	body:SetJustifyV("TOP");
+	if ( body.SetNonSpaceWrap ) then
+		body:SetNonSpaceWrap(true);
+	end
+
+	local closeButton = CreateFrame("Button", nil, frame);
+	closeButton:SetWidth(20);
+	closeButton:SetHeight(20);
+	closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10);
+
+	local closeText = closeButton:CreateFontString(nil, "OVERLAY");
+	DCBreakingNews_ApplyFontStyle(closeText, "GameFontNormal",
+		"Fonts\\FRIZQT__.TTF", 14, 1.0, 0.82, 0.0);
+	closeText:SetPoint("CENTER", closeButton, "CENTER", 0, 0);
+	closeText:SetText("x");
+
+	closeButton:SetScript("OnClick", function()
+		frame:Hide();
+	end);
+
+	frame.titleText = title;
+	frame.bodyText = body;
+
+	return frame;
+end
+
+local function DCBreakingNews_ShowFrame(title, body)
+	local frame = DCBreakingNews_EnsureFrame();
+	local parent = DCBreakingNews_GetParentFrame();
+
+	if ( frame.GetParent and frame:GetParent() ~= parent ) then
+		frame:SetParent(parent);
+	end
+
+	frame:ClearAllPoints();
+	frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -150);
+	frame.titleText:SetText(title);
+	frame.bodyText:SetText(body);
+	frame:Show();
+end
+
+local function DCBreakingNews_HideFrame(reason)
+	if ( DCBreakingNewsFrame and DCBreakingNewsFrame.Hide ) then
+		DCBreakingNewsFrame:Hide();
+	end
+
+	DCBreakingNews_ReportGlueProbeState(false,
+		DCBreakingNewsState.appliedRevision or 0, 30, reason or "hidden");
+end
+
+local function DCBreakingNews_ApplyCurrent(reason)
+	DCBreakingNews_ReportGlueProbeState(false, 0, 40, reason or "apply-start");
+
+	if ( not DCBreakingNews_HasClientApi() ) then
+		DCBreakingNews_ReportGlueProbeState(false, 0, 50, "api-missing");
+		return;
+	end
+
+	if ( not HasBreakingNews() ) then
+		DCBreakingNews_HideFrame("payload-missing");
+		return;
+	end
+
+	local revision = tonumber(GetBreakingNewsRevision and GetBreakingNewsRevision()) or 0;
+	if ( revision ~= 0 and DCBreakingNewsState.appliedRevision == revision ) then
+		DCBreakingNews_ReportGlueProbeState(true, revision, 70,
+			"already-applied revision=" .. tostring(revision));
+		return;
+	end
+
+	local title = "Breaking News";
+	if ( type(GetBreakingNewsTitle) == "function" ) then
+		local value = GetBreakingNewsTitle();
+		if ( value and value ~= "" ) then
+			title = value;
+		end
+	end
+
+	local format = type(GetBreakingNewsFormat) == "function"
+		and GetBreakingNewsFormat()
+		or "simplehtml";
+	local body = DCBreakingNews_NormalizeBody(format, GetBreakingNewsBody());
+	if ( not body ) then
+		DCBreakingNews_ReportGlueProbeState(false, revision, 80,
+			"body-missing format=" .. tostring(format));
+		return;
+	end
+
+	DCBreakingNews_ReportGlueProbeState(false, revision, 90,
+		"show-frame reason=" .. tostring(reason or "charselect"));
+	DCBreakingNews_ShowFrame(title, body);
+	DCBreakingNewsState.appliedRevision = revision;
+	DCBreakingNews_ReportGlueProbeState(true, revision, 110,
+		"applied revision=" .. tostring(revision));
+end
+
+local function DCBreakingNews_TryApplyCurrent(reason)
+	local ok, err = pcall(DCBreakingNews_ApplyCurrent, reason);
+	if ( not ok ) then
+		DCBreakingNews_ReportGlueProbeState(false,
+			DCBreakingNewsState.appliedRevision or 0, 900, tostring(err));
+	end
+	return ok;
+end
+
+function DCBreakingNews_OnPayloadUpdated(revision, reason)
+	local callbackReason = reason;
+	if ( not callbackReason or callbackReason == "" ) then
+		if ( revision and revision ~= 0 ) then
+			callbackReason = "revision=" .. tostring(revision);
+		else
+			callbackReason = "payload-updated";
+		end
+	end
+
+	if ( type(HasBreakingNews) == "function" and not HasBreakingNews() ) then
+		DCBreakingNews_HideFrame("native-callback-" .. tostring(callbackReason));
+		return;
+	end
+
+	DCBreakingNews_TryApplyCurrent(
+		"native-callback-" .. tostring(callbackReason));
+end
+
+function DCBreakingNews_OnUpdate(elapsed)
+	if ( GetCurrentGlueScreenName and GetCurrentGlueScreenName() ~= "charselect" ) then
+		return;
+	end
+
+	DCBreakingNewsState.updateTimer =
+		(DCBreakingNewsState.updateTimer or 0) + (tonumber(elapsed) or 0);
+	if ( DCBreakingNewsState.updateTimer < 0.25 ) then
+		return;
+	end
+	DCBreakingNewsState.updateTimer = 0;
+
+	if ( not DCBreakingNews_HasClientApi() or not HasBreakingNews() ) then
+		return;
+	end
+
+	local revision = tonumber(GetBreakingNewsRevision and GetBreakingNewsRevision()) or 0;
+	if ( revision == 0 or DCBreakingNewsState.appliedRevision == revision ) then
+		return;
+	end
+
+	DCBreakingNews_TryApplyCurrent(
+		"onupdate-revision=" .. tostring(revision));
+end
+
 
 function SetGlueScreen(name)
 	local newFrame;
@@ -143,6 +455,11 @@ function SetGlueScreen(name)
 		newFrame:Show();
 		SetCurrentScreen(name);
 		SetCurrentGlueScreenName(name);
+		if ( name == "charselect" ) then
+			DCBreakingNews_TryApplyCurrent("setgluescreen-charselect");
+		else
+			DCBreakingNews_HideFrame("screen=" .. tostring(name));
+		end
 		if ( name == "credits" ) then
 			PlayCreditsMusic( GlueCreditsSoundKits[CreditsFrame.creditsType] );
 			StopGlueAmbience();
@@ -192,6 +509,7 @@ function GlueParent_OnLoad(self)
 	self:RegisterEvent("ACCOUNT_MESSAGES_AVAILABLE");
 	self:RegisterEvent("ACCOUNT_MESSAGES_HEADERS_LOADED");
 	self:RegisterEvent("ACCOUNT_MESSAGES_BODY_LOADED");
+	DCBreakingNews_ReportGlueProbeState(false, 0, 10, "driver-loaded");
 end
 
 function GlueParent_OnEvent(event, arg1, arg2, arg3)

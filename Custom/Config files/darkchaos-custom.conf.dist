@@ -2872,7 +2872,11 @@ DC.BreakingNews.Enable = 0
 
 #
 #    DC.BreakingNews.Title
-#        Description: Title shown in the character-select alert frame
+#        Description: Title shown in the character-select alert frame.
+#                     This implementation sends raw cstring fields in a
+#                     binary packet, so the upstream addon-text escaping note
+#                     for [, ], ', and \ does not apply here.
+#                     Only normal config-file quoting rules still apply.
 #        Default:     "Breaking News"
 #
 DC.BreakingNews.Title = "Breaking News"
@@ -2882,6 +2886,9 @@ DC.BreakingNews.Title = "Breaking News"
 #        Description: Relative or absolute path to the news body file loaded by
 #                     the server and pushed during character enumeration.
 #                     Recommended format is a SimpleHTML body fragment.
+#                     Supported tags still follow WoW SimpleHTML rules, but the
+#                     upstream text-payload escaping note for [, ], ', and \
+#                     is not needed for this binary packet transport.
 #        Default:     "./Custom/Config files/breaking-news.simplehtml"
 #
 DC.BreakingNews.ContentPath = "./Custom/Config files/breaking-news.simplehtml"

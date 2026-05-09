@@ -42,10 +42,10 @@
 #include <limits>
 #include <mutex>
 
+extern uint32 GetHotspotXPBonusPercentage();
+
 namespace DCPerfTest
 {
-    extern uint32 GetHotspotXPBonusPercentage();
-
     // Timing utilities
     using Clock = std::chrono::high_resolution_clock;
     using Microseconds = std::chrono::microseconds;

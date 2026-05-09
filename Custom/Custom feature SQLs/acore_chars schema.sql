@@ -754,7 +754,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_client_caps` (
   `last_character_name` varchar(48) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `last_seen` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`account_id`,`addon_name`),
-  KEY `idx_last_seen` (`last_seen`)
+  KEY `idx_last_seen` (`last_seen`),
+  KEY `idx_last_seen_recent_cover_v1` (`last_seen`,`account_id`,`version_string`,`capabilities`,`negotiated_caps`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Addon client capabilities per account';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
@@ -775,7 +776,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   KEY `idx_guid` (`guid`),
   KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
-  KEY `idx_event_type` (`event_type`)
+  KEY `idx_event_type` (`event_type`),
+  KEY `idx_recent_browse_cover_v1` (`id`,`guid`,`module`,`opcode`,`event_type`)
 ) ENGINE=InnoDB AUTO_INCREMENT=763 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
@@ -800,7 +802,8 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_module` (`module`),
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
-  KEY `idx_request_type` (`request_type`)
+  KEY `idx_request_type` (`request_type`),
+  KEY `idx_recent_browse_cover_v1` (`id`,`guid`,`module`,`opcode`,`status`)
 ) ENGINE=InnoDB AUTO_INCREMENT=752817 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
