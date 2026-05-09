@@ -27,6 +27,8 @@
 #include "dc_addon_death_markers.h"
 
 #include <ctime>
+#include <mutex>
+#include <vector>
 
 // Some builds comment out sWorldMapAreaStore in DBCStores.h, but still define it in DBCStores.cpp.
 // Declare it here in the global namespace so we link against the correct symbol.
@@ -46,6 +48,17 @@ namespace World
 {
     constexpr const char* MODULE_WORLD = Module::WORLD;
     constexpr int32 WORLD_SCHEMA_VERSION = 1;
+    constexpr uint64 WORLD_CONTENT_CACHE_TTL_MS = 1000;
+
+    struct CachedWorldContentPayload
+    {
+        std::string snapshotJson;
+        std::vector<std::string> bossUpdateJsons;
+        uint64 expiresAtMs = 0;
+    };
+
+    static std::mutex sWorldContentCacheLock;
+    static CachedWorldContentPayload sCachedWorldContentPayload;
 
     // Helper: Build hotspots array using existing table
     static JsonValue BuildHotspotArray()
@@ -105,27 +118,29 @@ namespace World
         return arr;
     }
 
-    void SendWorldContentSnapshot(Player* player)
+    static CachedWorldContentPayload BuildWorldContentPayload()
     {
+        CachedWorldContentPayload payload;
+
         JsonValue hotspots = BuildHotspotArray();
-        // Use the centralized WorldBossMgr to get the boss list. 
-        // This ensures coordinates and zones are calculated correctly (using CrossSystemMapCoords).
-        JsonValue bosses = sWorldBossMgr->BuildBossesContentArray();
+        JsonValue bosses = sWorldBossMgr
+            ? sWorldBossMgr->BuildBossesContentArray()
+            : JsonValue();
+        if (!bosses.IsArray())
+            bosses.SetArray();
         JsonValue events = BuildEventsArray();
         JsonValue deaths = DCAddon::DeathMarkers::BuildDeathMarkersArray();
 
-        JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
-        response.Set("schemaVersion", JsonValue(WORLD_SCHEMA_VERSION));
-        response.Set("serverTime", JsonValue(static_cast<uint32>(time(nullptr))));
-        response.Set("hotspots", hotspots);
-        response.Set("bosses", bosses);
-        response.Set("events", events);
-        response.Set("deaths", deaths);
-        response.Send(player);
+        JsonValue snapshot;
+        snapshot.SetObject();
+        snapshot.Set("schemaVersion", JsonValue(WORLD_SCHEMA_VERSION));
+        snapshot.Set("serverTime", JsonValue(static_cast<uint32>(time(nullptr))));
+        snapshot.Set("hotspots", hotspots);
+        snapshot.Set("bosses", bosses);
+        snapshot.Set("events", events);
+        snapshot.Set("deaths", deaths);
+        payload.snapshotJson = snapshot.Encode();
 
-        // Compatibility / robustness:
-        // Even with JSON chunking, some clients may fail to reassemble or may miss large snapshots.
-        // Send each boss as a small SMSG_UPDATE payload so DC-InfoBar can always populate the list.
         if (bosses.IsArray())
         {
             for (auto const& boss : bosses.AsArray())
@@ -133,10 +148,52 @@ namespace World
                 JsonValue one; one.SetArray();
                 one.Push(boss);
 
-                JsonMessage upd(Module::WORLD, Opcode::World::SMSG_UPDATE);
-                upd.Set("bosses", one);
-                upd.Send(player);
+                JsonValue update;
+                update.SetObject();
+                update.Set("bosses", one);
+                payload.bossUpdateJsons.push_back(update.Encode());
             }
+        }
+
+        payload.expiresAtMs = static_cast<uint64>(
+            GameTime::GetGameTimeMS().count()) + WORLD_CONTENT_CACHE_TTL_MS;
+        return payload;
+    }
+
+    static CachedWorldContentPayload GetCachedWorldContentPayload()
+    {
+        uint64 const nowMs = static_cast<uint64>(
+            GameTime::GetGameTimeMS().count());
+
+        {
+            std::lock_guard<std::mutex> lock(sWorldContentCacheLock);
+            if (sCachedWorldContentPayload.expiresAtMs > nowMs)
+                return sCachedWorldContentPayload;
+        }
+
+        CachedWorldContentPayload payload = BuildWorldContentPayload();
+
+        std::lock_guard<std::mutex> lock(sWorldContentCacheLock);
+        sCachedWorldContentPayload = payload;
+        return payload;
+    }
+
+    void SendWorldContentSnapshot(Player* player)
+    {
+        CachedWorldContentPayload payload = GetCachedWorldContentPayload();
+
+        JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
+        response.SetPreEncodedJson(payload.snapshotJson);
+        response.Send(player);
+
+        // Compatibility / robustness:
+        // Even with JSON chunking, some clients may fail to reassemble or may miss large snapshots.
+        // Send each boss as a small SMSG_UPDATE payload so DC-InfoBar can always populate the list.
+        for (std::string const& bossUpdateJson : payload.bossUpdateJsons)
+        {
+            JsonMessage upd(Module::WORLD, Opcode::World::SMSG_UPDATE);
+            upd.SetPreEncodedJson(bossUpdateJson);
+            upd.Send(player);
         }
     }
 

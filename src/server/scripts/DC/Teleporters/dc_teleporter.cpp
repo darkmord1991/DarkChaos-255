@@ -8,7 +8,9 @@
 #include "DatabaseEnv.h"
 
 #include <algorithm>
+#include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "../GuildHousing/dc_guildhouse.h"
@@ -37,6 +39,62 @@ struct TeleporterOption
 
 std::map<uint32, TeleporterOption> sTeleporterOptions;
 std::unordered_map<uint32, std::vector<uint32>> sTeleporterByParent;
+
+void ValidateTeleporterOptions()
+{
+    uint32 orphanParentCount = 0;
+    uint32 emptyMenuCount = 0;
+    uint32 duplicateLabelCount = 0;
+
+    for (auto const& [id, option] : sTeleporterOptions)
+    {
+        if (option.Type < TELEPORTER_TYPE_MENU || option.Type > TELEPORTER_TYPE_GUILDHOUSE)
+            LOG_ERROR("server.loading", "dc_teleporter: invalid type {} for id {} ('{}').", option.Type, id, option.Name);
+
+        if (option.ParentId != 0 && sTeleporterOptions.find(option.ParentId) == sTeleporterOptions.end())
+        {
+            ++orphanParentCount;
+            LOG_WARN("server.loading", "dc_teleporter: id {} ('{}') references missing parent {}.", id, option.Name, option.ParentId);
+        }
+
+        if (option.Type == TELEPORTER_TYPE_MENU)
+        {
+            auto childIt = sTeleporterByParent.find(id);
+            if (childIt == sTeleporterByParent.end() || childIt->second.empty())
+            {
+                ++emptyMenuCount;
+                LOG_WARN("server.loading", "dc_teleporter: menu id {} ('{}') has no child entries.", id, option.Name);
+            }
+        }
+    }
+
+    for (auto const& [parentId, ids] : sTeleporterByParent)
+    {
+        std::unordered_set<std::string> seenPerParent;
+        seenPerParent.reserve(ids.size());
+
+        for (uint32 id : ids)
+        {
+            auto optIt = sTeleporterOptions.find(id);
+            if (optIt == sTeleporterOptions.end())
+                continue;
+
+            TeleporterOption const& option = optIt->second;
+            std::string duplicateKey = std::to_string(option.Faction) + ":" + std::to_string(option.SecurityLevel) + ":" + option.Name;
+            if (!seenPerParent.insert(duplicateKey).second)
+            {
+                ++duplicateLabelCount;
+                LOG_WARN("server.loading", "dc_teleporter: duplicate label '{}' under parent {} (id {}).", option.Name, parentId, option.Id);
+            }
+        }
+    }
+
+    if (orphanParentCount || emptyMenuCount || duplicateLabelCount)
+    {
+        LOG_WARN("server.loading", "dc_teleporter validation summary: {} orphan parent link(s), {} empty menu(s), {} duplicate label(s).",
+            orphanParentCount, emptyMenuCount, duplicateLabelCount);
+    }
+}
 
 void BuildTeleporterIndex()
 {
@@ -86,6 +144,7 @@ void LoadTeleporterOptions()
     } while (result->NextRow());
 
     BuildTeleporterIndex();
+    ValidateTeleporterOptions();
     LOG_INFO("server.loading", "Loaded {} teleporter options.", sTeleporterOptions.size());
 }
 
@@ -102,7 +161,7 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
-        if (action == 0) // Back to main menu (if parent was 0, though usually 0 is not a valid action for options unless specifically handled)
+        if (action == 0)
         {
              ShowMenu(player, creature, 0);
              return true;
@@ -153,30 +212,11 @@ public:
     }
 
 private:
-    /*
-     * ShowMenu - builds gossip menu for teleporter NPC
-     *
-     * Notes about gossip buttons/icons:
-     * - `option.Icon` is an integer stored in the `dc_teleporter` table and maps to
-     *   GossipOptionIcon values (see `GossipDef.h`). Common icons and appearance:
-     *     - GOSSIP_ICON_CHAT (0): white chat bubble — plain text/button
-     *     - GOSSIP_ICON_VENDOR (1): brown bag — merchant-style action
-     *     - GOSSIP_ICON_TAXI (2): paper plane — flight/taxi marker
-     *     - GOSSIP_ICON_TRAINER (3): brown book — trainer-like action
-     *     - GOSSIP_ICON_INTERACT_1/2 (4/5): golden interaction wheel
-     *     - GOSSIP_ICON_MONEY_BAG (6): bag with coin — purchase/payment
-     *     - GOSSIP_ICON_TALK (7): chat bubble with ellipsis — more info
-     *     - GOSSIP_ICON_TABARD (8): tabard icon
-     *     - GOSSIP_ICON_BATTLE (9): crossed swords — battle/duel
-     *     - GOSSIP_ICON_DOT (10): small yellow dot — marker/indicator
-     *
-     * - Example usage:
-     *     AddGossipItemFor(player, option.Icon, option.Name, 0, option.Id);
-     *     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "[Back]", 0, backId);
-     */
     void ShowMenu(Player* player, Creature* creature, uint32 parentId)
     {
         ClearGossipMenuFor(player);
+        bool hasVisibleEntries = false;
+
         auto listIt = sTeleporterByParent.find(parentId);
         if (listIt != sTeleporterByParent.end())
         {
@@ -194,9 +234,13 @@ private:
                 if (player->GetSession()->GetSecurity() < option.SecurityLevel)
                     continue;
 
+                hasVisibleEntries = true;
                 AddGossipItemFor(player, option.Icon, option.Name, 0, option.Id);
             }
         }
+
+        if (!hasVisibleEntries && parentId != 0)
+            ChatHandler(player->GetSession()).PSendSysMessage("No destinations are available in this menu.");
 
         if (parentId != 0)
         {
@@ -206,20 +250,6 @@ private:
             {
                 backId = it->second.ParentId;
             }
-
-            // If backId is 0, it means back to main menu.
-            // If backId is not 0, it means back to parent menu.
-            // We need to send an action that OnGossipSelect understands.
-            // If we send 0, OnGossipSelect calls ShowMenu(0).
-            // If we send backId (e.g. 5), OnGossipSelect calls ShowMenu(5).
-            // However, if backId is 0, we send 0.
-            // But wait, if we have an option with ID 0 (unlikely but possible), it would conflict.
-            // Assuming no option with ID 0.
-
-            // But wait, if backId is a MENU option, OnGossipSelect will find it in sTeleporterOptions and call ShowMenu(backId).
-            // If backId is 0, it won't find it (unless ID 0 exists).
-            // If not found, OnGossipSelect returns false?
-            // No, I added a check: if (action == 0) ShowMenu(0).
 
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "[Back]", 0, backId);
         }
@@ -248,16 +278,6 @@ public:
         static ChatCommandTable commandTable =
         {
             ChatCommandBuilder("dc", dcCommandTable)
-        };
-
-        return commandTable;
-    }
-
-    static ChatCommandTable GetTeleporterSubCommands()
-    {
-        static ChatCommandTable commandTable =
-        {
-            ChatCommandBuilder("reload", HandleReloadCommand, SEC_GAMEMASTER, Console::No)
         };
 
         return commandTable;

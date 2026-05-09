@@ -64,6 +64,7 @@ void AddSC_dc_aoeloot_unified();              // QOL/dc_aoeloot_unified.cpp
 // --- QOL scripts ---
 void AddSC_dc_questgiver_status_override_qol(); // QOL/dc_questgiver_status_override.cpp
 void AddSC_dc_looter_pet_qol();               // QOL/dc_looter_pet.cpp
+void AddSC_dc_breaking_news_qol();           // QOL/dc_breaking_news_qol.cpp
 
 // --- Hotspots system ---
 void AddSC_ac_hotspots();                     // Hotspot/ac_hotspots.cpp
@@ -278,6 +279,7 @@ void AddDCScripts()
     LogSection("QOL Scripts");
     DC_LOAD(AddSC_dc_questgiver_status_override_qol);
     DC_LOAD(AddSC_dc_looter_pet_qol);
+    DC_LOAD(AddSC_dc_breaking_news_qol);
 
     LogSection("Hotspots System");
     // AddSC_ac_hotspots also registers hotspot command handlers.

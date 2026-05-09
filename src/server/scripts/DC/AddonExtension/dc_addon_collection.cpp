@@ -41,7 +41,9 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include <string>
+#include <charconv>
 #include <sstream>
+#include <iomanip>
 #include <unordered_set>
 #include <unordered_map>
 #include <ctime>
@@ -53,9 +55,182 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include <cstdlib>
 #include <array>
 #include <atomic>
+#include <limits>
 
 namespace DCCollection
 {
+    namespace
+    {
+        constexpr std::size_t kCollectionTypeSlotCount =
+            static_cast<std::size_t>(CollectionType::ITEM_SET) + 1;
+
+        using CollectionBuckets =
+            std::array<std::vector<uint32>, kCollectionTypeSlotCount>;
+        using CollectionCounts =
+            std::array<uint32, kCollectionTypeSlotCount>;
+
+        constexpr std::array<CollectionType, 5> kOwnedCollectionTypes = {
+            CollectionType::MOUNT,
+            CollectionType::PET,
+            CollectionType::HEIRLOOM,
+            CollectionType::TITLE,
+            CollectionType::TRANSMOG,
+        };
+
+        constexpr std::array<CollectionType, 5> kOwnedCollectionTypesByJsonKey = {
+            CollectionType::HEIRLOOM,
+            CollectionType::MOUNT,
+            CollectionType::PET,
+            CollectionType::TITLE,
+            CollectionType::TRANSMOG,
+        };
+
+        constexpr std::array<char const*, kCollectionTypeSlotCount>
+            kCollectionTypeNames = {
+                "",
+                "mounts",
+                "pets",
+                "toys",
+                "heirlooms",
+                "titles",
+                "transmog",
+                "itemSets",
+            };
+
+        constexpr std::size_t GetCollectionTypeSlot(CollectionType type)
+        {
+            return static_cast<std::size_t>(type);
+        }
+
+        inline uint32 MixCollectionHash(uint32 hash, uint32 item)
+        {
+            hash ^= (item * 2654435761u);
+            return (hash << 13) | (hash >> 19);
+        }
+
+        inline void AppendUnsignedJsonNumber(std::string& out, uint32 value)
+        {
+            char buffer[16];
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+            if (ec != std::errc())
+            {
+                out += std::to_string(value);
+                return;
+            }
+
+            out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+        }
+
+        inline void AppendSignedJsonNumber(std::string& out, int32 value)
+        {
+            char buffer[16];
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+            if (ec != std::errc())
+            {
+                out += std::to_string(value);
+                return;
+            }
+
+            out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+        }
+
+        inline void AppendFloatingJsonNumber(std::string& out, double value)
+        {
+            std::ostringstream stream;
+            stream << std::setprecision(15) << value;
+            out += stream.str();
+        }
+
+        inline void AppendJsonKey(std::string& out, char const* key)
+        {
+            out.push_back('"');
+            out += key;
+            out += "\":";
+        }
+
+        inline void AppendJsonUInt32Array(std::string& out,
+            std::vector<uint32> const& items)
+        {
+            out.push_back('[');
+            for (std::size_t index = 0; index < items.size(); ++index)
+            {
+                if (index > 0)
+                    out.push_back(',');
+
+                AppendUnsignedJsonNumber(out, items[index]);
+            }
+            out.push_back(']');
+        }
+
+        inline void AppendCollectionStatsJson(std::string& out, uint32 owned,
+            uint32 total)
+        {
+            out += "{\"owned\":";
+            AppendUnsignedJsonNumber(out, owned);
+            out += ",\"percent\":";
+            AppendFloatingJsonNumber(out,
+                total > 0 ? static_cast<double>(owned * 100) / total : 0.0);
+            out += ",\"total\":";
+            AppendUnsignedJsonNumber(out, total);
+            out.push_back('}');
+        }
+
+        std::string BuildFullCollectionDataJson(CollectionBuckets const& loaded,
+            CollectionCounts const& counts,
+            std::map<CollectionType, uint32> const& totals,
+            uint32 serverHash, uint32 timestamp, uint8 mountSpeedBonus,
+            uint32 nextThreshold, int32 mountsToNext, uint32 totalOwnedItems)
+        {
+            std::string json;
+            json.reserve(512 + (static_cast<std::size_t>(totalOwnedItems) * 8));
+
+            json += "{\"bonuses\":{";
+            json += "\"mountSpeedBonus\":";
+            AppendUnsignedJsonNumber(json, mountSpeedBonus);
+            json += ",\"mountsToNext\":";
+            AppendSignedJsonNumber(json, mountsToNext);
+            json += ",\"nextThreshold\":";
+            AppendUnsignedJsonNumber(json, nextThreshold);
+            json += "},\"collections\":{";
+
+            bool firstField = true;
+            for (CollectionType type : kOwnedCollectionTypesByJsonKey)
+            {
+                if (!firstField)
+                    json.push_back(',');
+                firstField = false;
+
+                std::size_t const slot = GetCollectionTypeSlot(type);
+                AppendJsonKey(json, kCollectionTypeNames[slot]);
+                AppendJsonUInt32Array(json, loaded[slot]);
+            }
+
+            json += "},\"hash\":";
+            AppendUnsignedJsonNumber(json, serverHash);
+            json += ",\"stats\":{";
+
+            firstField = true;
+            for (CollectionType type : kOwnedCollectionTypesByJsonKey)
+            {
+                if (!firstField)
+                    json.push_back(',');
+                firstField = false;
+
+                std::size_t const slot = GetCollectionTypeSlot(type);
+                AppendJsonKey(json, kCollectionTypeNames[slot]);
+
+                auto totalIt = totals.find(type);
+                uint32 const total = totalIt != totals.end() ? totalIt->second : 0;
+                AppendCollectionStatsJson(json, counts[slot], total);
+            }
+
+            json += "},\"timestamp\":";
+            AppendUnsignedJsonNumber(json, timestamp);
+            json.push_back('}');
+            return json;
+        }
+    }
+
     // =======================================================================
     // Configuration
     // =======================================================================
@@ -1634,10 +1809,49 @@ namespace DCCollection
 
         uint32 hash = 0;
         for (uint32 item : normalized)
+            hash = MixCollectionHash(hash, item);
+
+        return hash;
+    }
+
+    inline uint32 GenerateCollectionHashFromSortedBuckets(
+        CollectionBuckets const& buckets)
+    {
+        std::array<std::size_t, kCollectionTypeSlotCount> positions = {};
+        uint32 hash = 0;
+        bool hasAnyItems = false;
+
+        for (;;)
         {
-            hash ^= (item * 2654435761u);  // Knuth's multiplicative hash
-            hash = (hash << 13) | (hash >> 19);  // Rotate
+            uint32 nextItem = std::numeric_limits<uint32>::max();
+            std::size_t nextSlot = 0;
+            bool found = false;
+
+            for (CollectionType type : kOwnedCollectionTypes)
+            {
+                std::size_t const slot = GetCollectionTypeSlot(type);
+                auto const& items = buckets[slot];
+                std::size_t const index = positions[slot];
+                if (index >= items.size())
+                    continue;
+
+                uint32 const candidate = items[index];
+                if (!found || candidate < nextItem)
+                {
+                    nextItem = candidate;
+                    nextSlot = slot;
+                    found = true;
+                }
+            }
+
+            if (!found)
+                return hasAnyItems ? hash : 0;
+
+            hash = MixCollectionHash(hash, nextItem);
+            ++positions[nextSlot];
+            hasAnyItems = true;
         }
+
         return hash;
     }
 
@@ -1741,6 +1955,32 @@ namespace DCCollection
         }
 
         return items;
+    }
+
+    CollectionBuckets LoadOwnedCollectionBuckets(uint32 accountId,
+        CollectionCounts* counts = nullptr, uint32* totalOwnedItems = nullptr)
+    {
+        CollectionBuckets buckets;
+
+        if (counts)
+            counts->fill(0);
+        if (totalOwnedItems)
+            *totalOwnedItems = 0;
+
+        for (CollectionType type : kOwnedCollectionTypes)
+        {
+            std::size_t const slot = GetCollectionTypeSlot(type);
+            auto& items = buckets[slot];
+            items = LoadPlayerCollection(accountId, type);
+
+            uint32 const ownedCount = static_cast<uint32>(items.size());
+            if (counts)
+                (*counts)[slot] = ownedCount;
+            if (totalOwnedItems)
+                *totalOwnedItems += ownedCount;
+        }
+
+        return buckets;
     }
 
     // Load collection counts for all types
@@ -2238,23 +2478,16 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
-        // Load all collections and compute server hash
-        std::vector<uint32> allItems;
-        for (int t = 1; t <= 6; ++t)
-        {
-            if (t == static_cast<int>(CollectionType::TOY))
-                continue; // Toys are disabled
-            auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
-            allItems.insert(allItems.end(), items.begin(), items.end());
-        }
-
-        uint32 serverHash = GenerateCollectionHash(allItems);
+        uint32 totalOwnedItems = 0;
+        CollectionBuckets buckets = LoadOwnedCollectionBuckets(accountId,
+            nullptr, &totalOwnedItems);
+        uint32 serverHash = GenerateCollectionHashFromSortedBuckets(buckets);
         bool needsSync = (serverHash != clientHash);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_HANDSHAKE_ACK);
         msg.Set("serverHash", serverHash);
         msg.Set("needsSync", needsSync);
-        msg.Set("totalItems", static_cast<uint32>(allItems.size()));
+        msg.Set("totalItems", totalOwnedItems);
 
         // Publish per-type curated definitions syncVersions so the client can
         // skip CMSG_GET_DEFINITIONS entirely for types where its cached copy
@@ -2278,84 +2511,30 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
-        // Build JSON object with all collection types
-        DCAddon::JsonValue collections;
-        collections.SetObject();
-
-        // Load each collection type
-        const char* typeNames[] = { "", "mounts", "pets", "toys", "heirlooms", "titles", "transmog" };
-
-        // Cache per-type loads so we only hit CharacterDatabase once per type.
-        // Previous code re-ran LoadPlayerCollection a second time below to
-        // compute the hash, doubling the number of DB queries per full sync.
-        std::map<CollectionType, std::vector<uint32>> loaded;
-        std::map<CollectionType, uint32> counts;
+        CollectionCounts counts = {};
         uint32 totalOwnedItems = 0;
 
-        for (int t = 1; t <= 6; ++t)
-        {
-            if (t == static_cast<int>(CollectionType::TOY))
-                continue; // Toys are disabled
-            CollectionType ct = static_cast<CollectionType>(t);
-            auto items = LoadPlayerCollection(accountId, ct);
-            uint32 ownedCount = static_cast<uint32>(items.size());
-            counts[ct] = ownedCount;
-            totalOwnedItems += ownedCount;
-
-            DCAddon::JsonValue arr;
-            arr.SetArray(items.size());
-            for (uint32 id : items)
-            {
-                arr.Push(DCAddon::JsonValue(id));
-            }
-            collections.Set(typeNames[t], std::move(arr));
-            loaded.emplace(ct, std::move(items));
-        }
+        CollectionBuckets loaded = LoadOwnedCollectionBuckets(accountId,
+            &counts, &totalOwnedItems);
 
         // Load totals for percentages.
         auto totals = LoadTotalDefinitions();
 
-        DCAddon::JsonValue stats;
-        stats.SetObject();
-        for (int t = 1; t <= 6; ++t)
-        {
-            if (t == static_cast<int>(CollectionType::TOY))
-                continue; // Toys are disabled
-            CollectionType type = static_cast<CollectionType>(t);
-            uint32 owned = counts[type];
-            uint32 total = totals[type];
-
-            DCAddon::JsonValue typeStat;
-            typeStat.SetObject();
-            typeStat.Set("owned", owned);
-            typeStat.Set("total", total);
-            typeStat.Set("percent", total > 0 ? static_cast<double>(owned * 100) / total : 0.0);
-            stats.Set(typeNames[t], std::move(typeStat));
-        }
-
         // Mount speed bonus
-        uint32 mountCount = counts[CollectionType::MOUNT];
+        uint32 mountCount = counts[GetCollectionTypeSlot(CollectionType::MOUNT)];
         uint32 nextThreshold = GetNextMountThreshold(mountCount);
-        DCAddon::JsonValue bonuses;
-        bonuses.SetObject();
-        bonuses.Set("mountSpeedBonus", GetMountSpeedBonusPercent(mountCount));
-        bonuses.Set("nextThreshold", nextThreshold);
-        bonuses.Set("mountsToNext", nextThreshold > 0 ?
-            static_cast<int32>(nextThreshold - mountCount) : 0);
+        uint8 mountSpeedBonus = GetMountSpeedBonusPercent(mountCount);
+        int32 mountsToNext = nextThreshold > 0
+            ? static_cast<int32>(nextThreshold - mountCount) : 0;
 
-        // Compute hash from the already-loaded vectors (avoid a second DB pass).
-        std::vector<uint32> allItems;
-        allItems.reserve(totalOwnedItems);
-        for (auto const& kv : loaded)
-            allItems.insert(allItems.end(), kv.second.begin(), kv.second.end());
-        uint32 serverHash = GenerateCollectionHash(allItems);
+        uint32 serverHash = GenerateCollectionHashFromSortedBuckets(loaded);
+        uint32 timestamp = static_cast<uint32>(std::time(nullptr));
+        std::string rawData = BuildFullCollectionDataJson(loaded, counts, totals,
+            serverHash, timestamp, mountSpeedBonus, nextThreshold,
+            mountsToNext, totalOwnedItems);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
-        msg.Set("collections", std::move(collections));
-        msg.Set("stats", std::move(stats));
-        msg.Set("bonuses", std::move(bonuses));
-        msg.Set("hash", serverHash);
-        msg.Set("timestamp", static_cast<uint32>(std::time(nullptr)));
+        msg.SetPreEncodedJson(std::move(rawData));
 
         msg.Send(player);
     }
@@ -4002,15 +4181,8 @@ namespace DCCollection
         if (clientHash != 0)
         {
             uint32 accountId = GetAccountId(player);
-            std::vector<uint32> allItems;
-            for (int t = 1; t <= 6; ++t)
-            {
-                if (t == static_cast<int>(CollectionType::TOY))
-                    continue;
-                auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
-                allItems.insert(allItems.end(), items.begin(), items.end());
-            }
-            uint32 serverHash = GenerateCollectionHash(allItems);
+            CollectionBuckets buckets = LoadOwnedCollectionBuckets(accountId);
+            uint32 serverHash = GenerateCollectionHashFromSortedBuckets(buckets);
 
             if (serverHash == clientHash)
             {

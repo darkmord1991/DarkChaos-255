@@ -1254,10 +1254,11 @@ local function ParseQuestPoiBoundaryPoints(...)
             y = y,
             mapId = mapId,
             source = source,
+            groupKey = groupKey,
         })
     end
 
-    local function ParseValue(value, depth, inheritedMapId, source)
+    local function ParseValue(value, depth, inheritedMapId, source, groupKey)
         if depth > 4 or type(value) ~= "table" then
             return
         end
@@ -1267,69 +1268,22 @@ local function ParseQuestPoiBoundaryPoints(...)
             mapId = nil
         end
 
+        local currentGroupKey = tostring(groupKey or source or "root")
+
         if type(value.x) == "number" and type(value.y) == "number" then
-            AddPoint(value.x, value.y, mapId, source)
+            AddPoint(value.x, value.y, mapId, source, currentGroupKey)
         elseif type(value[1]) == "number" and type(value[2]) == "number" then
-            AddPoint(value[1], value[2], mapId, source)
+            AddPoint(value[1], value[2], mapId, source, currentGroupKey)
         end
 
         for i = 1, #QUEST_POI_BOUNDARY_CONTAINER_KEYS do
             local key = QUEST_POI_BOUNDARY_CONTAINER_KEYS[i]
             local nested = value[key]
             if type(nested) == "table" then
-                ParseValue(nested, depth + 1, mapId, key)
-            end
-        end
-
-        for index, nested in pairs(value) do
-            if type(index) == "number" and type(nested) == "table" then
-                ParseValue(nested, depth + 1, mapId, source)
-            end
-        end
-    end
-
-    local argc = select("#", ...)
-    for i = 1, argc do
-        local value = select(i, ...)
-        if type(value) == "table" then
-            ParseValue(value, 0, nil, "vararg")
-        end
-    end
-
-    if #collected >= 3 then
-        return collected
-    end
-
-            groupKey = groupKey,
-    return nil
-end
-
-    local function ParseValue(value, depth, inheritedMapId, source, groupKey)
-    if type(QuestPOIGetIconInfo) == "function" then
-        return
-    end
-
-    _G.QuestPOIGetIconInfo = function(questValue)
-        local questId = tonumber(questValue)
-        if not questId or questId <= 0 then
-            return nil, nil, nil
-
-        local currentGroupKey = tostring(groupKey or source or "root")
-        end
-
-            AddPoint(value.x, value.y, mapId, source, currentGroupKey)
-            local numEntries = GetNumQuestLogEntries() or 0
-            AddPoint(value[1], value[2], mapId, source, currentGroupKey)
-                local title, _, _, _, isHeader = GetQuestLogTitle(questId)
-                if title and not isHeader then
-                    questId = GetQuestIdFromLogIndex(questId) or questId
-                end
-            end
-        end
                 ParseValue(nested, depth + 1, mapId, key, currentGroupKey .. "." .. key)
-        -- Prefer quest waypoint from the client shim when the quest is currently super-tracked.
-        local trackedQuestId = ShimGetSuperTrackedQuestID()
-        if trackedQuestId and trackedQuestId == questId then
+            end
+        end
+
         for index = 1, #value do
             local nested = value[index]
             if type(nested) == "table" then
@@ -1338,16 +1292,60 @@ end
                     nestedGroupKey = string.format("%s[%d]", currentGroupKey, index)
                 end
                 ParseValue(nested, depth + 1, mapId, source, nestedGroupKey)
+            end
+        end
+    end
+
+    local argc = select("#", ...)
+    for i = 1, argc do
+        local value = select(i, ...)
+        if type(value) == "table" then
+            local rootKey = "arg" .. tostring(i)
+            ParseValue(value, 1, nil, rootKey, rootKey)
+        end
+    end
+
+    if #collected >= 3 then
+        return collected
+    end
+
+    return nil
+end
+
+local function EnsureQuestPoiCompatibilityShim()
+    if type(QuestPOIGetIconInfo) == "function" then
+        return
+    end
+
+    _G.QuestPOIGetIconInfo = function(questValue)
+        local questId = tonumber(questValue)
+        if not questId or questId <= 0 then
+            return nil, nil, nil
+        end
+
+        if type(GetQuestLogTitle) == "function" and type(GetNumQuestLogEntries) == "function" then
+            local numEntries = GetNumQuestLogEntries() or 0
+            if questId >= 1 and questId <= numEntries then
+                local title, _, _, _, isHeader = GetQuestLogTitle(questId)
+                if title and not isHeader then
+                    questId = GetQuestIdFromLogIndex(questId) or questId
+                end
+            end
+        end
+
+        local trackedQuestId = ShimGetSuperTrackedQuestID()
+        if trackedQuestId and trackedQuestId == questId then
+            local currentMapId = (type(GetCurrentMapAreaID) == "function") and tonumber(GetCurrentMapAreaID()) or nil
+            if currentMapId and currentMapId > 0 then
+                local wx, wy = ShimGetNextWaypointForMap(currentMapId)
                 if wx and wy then
                     return nil, wx, wy
                 end
             end
         end
 
-        -- Fallback to cached POI display points if available.
         local cached = state.questPoiCache and state.questPoiCache[questId]
-            local rootKey = "arg" .. tostring(i)
-            ParseValue(value, 1, nil, rootKey, rootKey)
+        if cached and cached.points and #cached.points > 0 then
             local point = cached.points[1]
             if point and point.x and point.y then
                 return nil, point.x, point.y
@@ -1364,7 +1362,7 @@ end
             local quests = ShimGetQuestsOnMap(mapId)
             if quests then
                 for _, info in pairs(quests) do
-                    if info and info.questID == questId then
+                    if info and tonumber(info.questID) == questId then
                         return completed, info.x, info.y
                     end
                 end
@@ -1402,7 +1400,10 @@ local function EnsureQuestWatchCompatibilityShim()
             end
         end
 
-        if (not questLogIndex or questLogIndex <= 0) and questId and type(GetNumQuestLogEntries) == "function" and type(GetQuestLogTitle) == "function" then
+        if (not questLogIndex or questLogIndex <= 0)
+            and questId
+            and type(GetNumQuestLogEntries) == "function"
+            and type(GetQuestLogTitle) == "function" then
             local numEntries = GetNumQuestLogEntries() or 0
             for i = 1, numEntries do
                 local _, _, _, _, isHeader = GetQuestLogTitle(i)
@@ -1417,7 +1418,6 @@ local function EnsureQuestWatchCompatibilityShim()
             return nil
         end
 
-        -- Return shape keeps legacy first-value quest-log-index behavior.
         return questLogIndex, nil, nil, nil, nil, nil, nil, questId
     end
 end

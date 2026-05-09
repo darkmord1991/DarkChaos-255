@@ -57,6 +57,8 @@ namespace HLBG
 {
     namespace
     {
+        constexpr uint64 HLBG_RESPONSE_CACHE_TTL_MS = 1000;
+
         struct AllTimeViewColumns
         {
             char const* totalMatches = nullptr;
@@ -78,6 +80,37 @@ namespace HLBG
         // Avoid expensive lookups and allow rate-limiting without extra dependencies.
         static std::unordered_map<uint32, uint32> s_lastRequestMs;
         static std::mutex s_rateLimitMutex;  // Thread safety for rate limiting
+
+        struct CachedLeaderboardPayload
+        {
+            std::string response;
+            uint64 expiresAtMs = 0;
+        };
+
+        struct CachedAllTimeStatsPayload
+        {
+            std::string response;
+            uint64 expiresAtMs = 0;
+        };
+
+        static std::unordered_map<uint64, CachedLeaderboardPayload>
+            s_cachedLeaderboardPayloads;
+        static std::unordered_map<uint32, CachedAllTimeStatsPayload>
+            s_cachedAllTimeStatsPayloads;
+        static std::mutex s_responseCacheMutex;
+
+        static uint64 GetNowMs()
+        {
+            return static_cast<uint64>(GameTime::GetGameTimeMS().count());
+        }
+
+        static uint64 MakeLeaderboardCacheKey(uint32 leaderboardType,
+            uint32 season, uint32 limit)
+        {
+            return (static_cast<uint64>(leaderboardType) << 48)
+                | (static_cast<uint64>(season) << 16)
+                | static_cast<uint64>(limit);
+        }
 
         static bool CharacterColumnExists(char const* tableName,
             char const* columnName)
@@ -105,6 +138,20 @@ namespace HLBG
                 CharacterTableExists("dc_hlbg_match_participants")
                 && CharacterTableExists("dc_hlbg_winner_history");
             return hasTables;
+        }
+
+        static bool HasSeasonalStatView()
+        {
+            static bool const hasView =
+                CharacterTableExists("v_hlbg_player_seasonal_stats");
+            return hasView;
+        }
+
+        static bool HasSeasonalSummaryTable()
+        {
+            static bool const hasTable =
+                CharacterTableExists("dc_hlbg_player_season_data");
+            return hasTable;
         }
 
         static AllTimeViewColumns DetectAllTimeViewColumns()
@@ -399,7 +446,130 @@ namespace HLBG
     {
         std::string query;
 
-        if (HasUnifiedStatTables())
+        if (HasSeasonalSummaryTable() && leaderboardType <= 4)
+        {
+            switch (leaderboardType)
+            {
+                case 1:  // RATING
+                    query = Acore::StringFormat(
+                        "SELECT s.player_guid, COALESCE(c.name, ''), s.rating, s.wins "
+                        "FROM `dc_hlbg_player_season_data` s "
+                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
+                        "WHERE s.season_id = %u "
+                        "ORDER BY s.rating DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 2:  // WINS
+                    query = Acore::StringFormat(
+                        "SELECT s.player_guid, COALESCE(c.name, ''), s.wins, s.completed_games "
+                        "FROM `dc_hlbg_player_season_data` s "
+                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
+                        "WHERE s.season_id = %u "
+                        "ORDER BY s.wins DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 3:  // WINRATE
+                    query = Acore::StringFormat(
+                        "SELECT s.player_guid, COALESCE(c.name, ''), "
+                        "CAST(ROUND((s.wins * 10000.0) / NULLIF(s.completed_games, 0), 0) AS UNSIGNED), "
+                        "s.completed_games "
+                        "FROM `dc_hlbg_player_season_data` s "
+                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
+                        "WHERE s.season_id = %u AND s.completed_games >= 5 "
+                        "ORDER BY (s.wins / NULLIF(s.completed_games, 0)) DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 4:  // GAMES PLAYED
+                    query = Acore::StringFormat(
+                        "SELECT s.player_guid, COALESCE(c.name, ''), s.completed_games, s.wins "
+                        "FROM `dc_hlbg_player_season_data` s "
+                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
+                        "WHERE s.season_id = %u "
+                        "ORDER BY s.completed_games DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                default:
+                    outError = "Invalid leaderboard type";
+                    return false;
+            }
+        }
+        else if (HasSeasonalStatView())
+        {
+            switch (leaderboardType)
+            {
+                case 1:  // RATING
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, current_rating, wins "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY current_rating DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 2:  // WINS
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, wins, games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY wins DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 3:  // WINRATE
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, CAST(win_rate * 100 AS UNSIGNED), games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u AND games_played >= 5 "
+                        "ORDER BY win_rate DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 4:  // GAMES PLAYED
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, games_played, wins "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY games_played DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 5:  // KILLS
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, total_kills, avg_kills_per_game "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY total_kills DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 6:  // RESOURCES CAPTURED
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, total_resources_captured, games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u "
+                        "ORDER BY total_resources_captured DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                case 7:  // K/D RATIO
+                    query = Acore::StringFormat(
+                        "SELECT guid, player_name, CAST(kd_ratio * 100 AS UNSIGNED), games_played "
+                        "FROM `v_hlbg_player_seasonal_stats` "
+                        "WHERE season_id = %u AND total_deaths > 0 "
+                        "ORDER BY kd_ratio DESC LIMIT %u",
+                        season, limit);
+                    break;
+
+                default:
+                    outError = "Invalid leaderboard type";
+                    return false;
+            }
+        }
+        else if (HasUnifiedStatTables())
         {
             switch (leaderboardType)
             {
@@ -503,75 +673,8 @@ namespace HLBG
         }
         else
         {
-            switch (leaderboardType)
-            {
-                case 1:  // RATING
-                    query = Acore::StringFormat(
-                        "SELECT guid, player_name, current_rating, wins "
-                        "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY current_rating DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 2:  // WINS
-                    query = Acore::StringFormat(
-                        "SELECT guid, player_name, wins, games_played "
-                        "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY wins DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 3:  // WINRATE
-                    query = Acore::StringFormat(
-                        "SELECT guid, player_name, CAST(win_rate * 100 AS UNSIGNED), games_played "
-                        "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u AND games_played >= 5 "
-                        "ORDER BY win_rate DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 4:  // GAMES PLAYED
-                    query = Acore::StringFormat(
-                        "SELECT guid, player_name, games_played, wins "
-                        "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY games_played DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 5:  // KILLS
-                    query = Acore::StringFormat(
-                        "SELECT guid, player_name, total_kills, avg_kills_per_game "
-                        "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY total_kills DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 6:  // RESOURCES CAPTURED
-                    query = Acore::StringFormat(
-                        "SELECT guid, player_name, total_resources_captured, games_played "
-                        "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY total_resources_captured DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 7:  // K/D RATIO
-                    query = Acore::StringFormat(
-                        "SELECT guid, player_name, CAST(kd_ratio * 100 AS UNSIGNED), games_played "
-                        "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u AND total_deaths > 0 "
-                        "ORDER BY kd_ratio DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                default:
-                    outError = "Invalid leaderboard type";
-                    return false;
-            }
+            outError = "No seasonal stats source available";
+            return false;
         }
 
         // Execute query
@@ -597,6 +700,83 @@ namespace HLBG
             outEntries.push_back(entry);
         } while (result->NextRow());
 
+        return true;
+    }
+
+    static bool BuildSeasonalLeaderboardResponse(
+        uint32 leaderboardType,
+        uint32 season,
+        uint32 limit,
+        std::string& outResponse,
+        std::string& outError)
+    {
+        std::vector<LeaderboardEntry> entries;
+        if (!QuerySeasonalLeaderboard(leaderboardType, season, limit, entries,
+            outError))
+        {
+            return false;
+        }
+
+        std::string jsonEntries = "[";
+        for (size_t i = 0; i < entries.size(); ++i)
+        {
+            if (i > 0)
+                jsonEntries += ",";
+
+            jsonEntries += Acore::StringFormat(
+                "{\"rank\":%u,\"guid\":%u,\"name\":\"%s\",\"score\":%u,\"extra\":%u}",
+                entries[i].rank,
+                entries[i].playerGuid,
+                entries[i].playerName.c_str(),
+                entries[i].score,
+                entries[i].extra);
+        }
+        jsonEntries += "]";
+
+        outResponse = Acore::StringFormat(
+            "{\"leaderboardType\":%u,\"season\":%u,\"entries\":%s}",
+            leaderboardType,
+            season,
+            jsonEntries.c_str());
+        return true;
+    }
+
+    static bool GetCachedSeasonalLeaderboardResponse(
+        uint32 leaderboardType,
+        uint32 season,
+        uint32 limit,
+        std::string& outResponse,
+        std::string& outError)
+    {
+        uint64 const cacheKey = MakeLeaderboardCacheKey(leaderboardType,
+            season, limit);
+        uint64 const nowMs = GetNowMs();
+
+        {
+            std::lock_guard<std::mutex> lock(s_responseCacheMutex);
+            auto itr = s_cachedLeaderboardPayloads.find(cacheKey);
+            if (itr != s_cachedLeaderboardPayloads.end()
+                && itr->second.expiresAtMs > nowMs)
+            {
+                outResponse = itr->second.response;
+                return true;
+            }
+        }
+
+        std::string response;
+        if (!BuildSeasonalLeaderboardResponse(leaderboardType, season, limit,
+            response, outError))
+        {
+            return false;
+        }
+
+        CachedLeaderboardPayload payload;
+        payload.response = response;
+        payload.expiresAtMs = nowMs + HLBG_RESPONSE_CACHE_TTL_MS;
+
+        std::lock_guard<std::mutex> lock(s_responseCacheMutex);
+        s_cachedLeaderboardPayloads[cacheKey] = payload;
+        outResponse = payload.response;
         return true;
     }
 
@@ -637,7 +817,7 @@ namespace HLBG
                 "WHERE p.guid = %u AND p.season_id = %u",
                 playerGuid, season);
         }
-        else
+        else if (HasSeasonalStatView())
         {
             query = Acore::StringFormat(
                 "SELECT "
@@ -654,6 +834,11 @@ namespace HLBG
                 "FROM `v_hlbg_player_seasonal_stats` "
                 "WHERE guid = %u AND season_id = %u",
                 playerGuid, season);
+        }
+        else
+        {
+            outError = "No seasonal stats source available";
+            return false;
         }
 
         QueryResult result = CharacterDatabase.Query(query);
@@ -807,6 +992,43 @@ namespace HLBG
         return true;
     }
 
+    static bool GetCachedAllTimeStatsResponse(Player* player,
+        std::string& outJson, std::string& outError)
+    {
+        if (!player)
+        {
+            outError = "Invalid player";
+            return false;
+        }
+
+        uint32 const playerGuid = player->GetGUID().GetCounter();
+        uint64 const nowMs = GetNowMs();
+
+        {
+            std::lock_guard<std::mutex> lock(s_responseCacheMutex);
+            auto itr = s_cachedAllTimeStatsPayloads.find(playerGuid);
+            if (itr != s_cachedAllTimeStatsPayloads.end()
+                && itr->second.expiresAtMs > nowMs)
+            {
+                outJson = itr->second.response;
+                return true;
+            }
+        }
+
+        std::string response;
+        if (!QueryPlayerAllTimeStats(player, response, outError))
+            return false;
+
+        CachedAllTimeStatsPayload payload;
+        payload.response = response;
+        payload.expiresAtMs = nowMs + HLBG_RESPONSE_CACHE_TTL_MS;
+
+        std::lock_guard<std::mutex> lock(s_responseCacheMutex);
+        s_cachedAllTimeStatsPayloads[playerGuid] = payload;
+        outJson = payload.response;
+        return true;
+    }
+
     // =====================================================================
     // MESSAGE HANDLERS
     // =====================================================================
@@ -952,39 +1174,17 @@ namespace HLBG
 
         limit = std::min<uint32>(limit, 200u);
 
-        // Query leaderboard
-        std::vector<LeaderboardEntry> entries;
+        std::string response;
         std::string error;
 
-        if (!QuerySeasonalLeaderboard(leaderboardType, season, limit, entries, error))
+        if (!GetCachedSeasonalLeaderboardResponse(leaderboardType, season,
+            limit, response, error))
         {
             Message packet(Module::HINTERLAND, SMSG_ERROR);
             packet.Add(error);
             packet.Send(player);
             return;
         }
-
-        // Build JSON response
-        std::string jsonEntries = "[";
-        for (size_t i = 0; i < entries.size(); ++i)
-        {
-            if (i > 0) jsonEntries += ",";
-
-            jsonEntries += Acore::StringFormat(
-                "{\"rank\":%u,\"guid\":%u,\"name\":\"%s\",\"score\":%u,\"extra\":%u}",
-                entries[i].rank,
-                entries[i].playerGuid,
-                entries[i].playerName.c_str(),
-                entries[i].score,
-                entries[i].extra);
-        }
-        jsonEntries += "]";
-
-        std::string response = Acore::StringFormat(
-            "{\"leaderboardType\":%u,\"season\":%u,\"entries\":%s}",
-            leaderboardType,
-            season,
-            jsonEntries.c_str());
 
         Message packet(Module::HINTERLAND, SMSG_LEADERBOARD_DATA);
         packet.Add(response);
@@ -1055,7 +1255,7 @@ namespace HLBG
         std::string statsJson;
         std::string error;
 
-        if (!QueryPlayerAllTimeStats(player, statsJson, error))
+        if (!GetCachedAllTimeStatsResponse(player, statsJson, error))
         {
             Message msg(Module::HINTERLAND, SMSG_ERROR);
             msg.Add(error);

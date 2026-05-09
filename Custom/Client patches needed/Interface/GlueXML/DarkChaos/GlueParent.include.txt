@@ -1,0 +1,10 @@
+Add this line to Interface\GlueXML\GlueParent.xml as a top-level child of the root Ui element.
+In the stock 3.3.5a client layout, place it after the existing GlueParent.lua script line and before the GlueParent frame block:
+
+<Include file="GlueXML\DarkChaos\DarkChaosBreakingNews.xml"/>
+
+Important:
+- Do not add this to GlueParent.lua.
+- GlueParent.lua is only the Lua script loaded by GlueParent.xml.
+- The file you need to extract or patch on the client is Interface\GlueXML\GlueParent.xml.
+- If your GlueParent.xml has no existing include list, that is fine. A top-level Include under Ui is valid here.

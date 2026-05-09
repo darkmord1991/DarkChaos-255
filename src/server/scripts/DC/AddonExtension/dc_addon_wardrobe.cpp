@@ -24,6 +24,7 @@
 #include "Bag.h"
 #include "CryptoHash.h"
 #include <vector>
+#include <charconv>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -703,15 +704,62 @@ namespace DCCollection
     }
 
     // Unlocking Logic
+    struct CachedCollectedAppearancesPayload
+    {
+        std::shared_ptr<std::unordered_set<uint32> const> snapshot;
+        std::shared_ptr<std::string const> payload;
+        uint32 count = 0;
+    };
+
     static std::unordered_map<uint32, std::shared_ptr<std::unordered_set<uint32> const>> s_AccountUnlockedTransmogAppearances;
+    static std::unordered_map<uint32, CachedCollectedAppearancesPayload> s_AccountCollectedAppearancesPayloads;
     constexpr size_t MAX_NOTIFIED_APPEARANCES_PER_PLAYER = 10000;
     static std::unordered_map<uint32, std::unordered_set<uint32>> sessionNotifiedAppearances;
     static std::mutex s_WardrobeMutex;  // Thread safety for wardrobe caches
+
+    static void AppendUnsignedJsonNumber(std::string& out, uint32 value)
+    {
+        char buffer[16];
+        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+        if (ec != std::errc())
+        {
+            out += std::to_string(value);
+            return;
+        }
+
+        out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+    }
+
+    static std::shared_ptr<std::string const> BuildCollectedAppearancesPayload(
+        std::unordered_set<uint32> const& unlocked)
+    {
+        std::vector<uint32> sortedAppearances(unlocked.begin(), unlocked.end());
+        std::sort(sortedAppearances.begin(), sortedAppearances.end());
+
+        auto payload = std::make_shared<std::string>();
+        payload->reserve(32 + (sortedAppearances.size() * 8));
+        payload->append("{\"count\":");
+        AppendUnsignedJsonNumber(*payload,
+            static_cast<uint32>(sortedAppearances.size()));
+        payload->append(",\"appearances\":[");
+
+        for (std::size_t index = 0; index < sortedAppearances.size(); ++index)
+        {
+            if (index > 0)
+                payload->push_back(',');
+
+            AppendUnsignedJsonNumber(*payload, sortedAppearances[index]);
+        }
+
+        payload->append("]}");
+        return payload;
+    }
 
     void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId)
     {
         std::lock_guard<std::mutex> lock(s_WardrobeMutex);
         s_AccountUnlockedTransmogAppearances.erase(accountId);
+        s_AccountCollectedAppearancesPayloads.erase(accountId);
     }
 
     // Session notification helpers: keep the actual storage private to this translation unit.
@@ -760,6 +808,40 @@ namespace DCCollection
 
         s_AccountUnlockedTransmogAppearances[accountId] = unlocked;
         return unlocked;
+    }
+
+    static CachedCollectedAppearancesPayload GetCollectedAppearancesPayload(
+        uint32 accountId)
+    {
+        auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        if (!unlocked)
+        {
+            CachedCollectedAppearancesPayload emptyPayload;
+            emptyPayload.payload = std::make_shared<std::string>(
+                "{\"count\":0,\"appearances\":[]}");
+            return emptyPayload;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+            auto it = s_AccountCollectedAppearancesPayloads.find(accountId);
+            if (it != s_AccountCollectedAppearancesPayloads.end()
+                && it->second.snapshot == unlocked
+                && it->second.payload)
+            {
+                return it->second;
+            }
+        }
+
+        CachedCollectedAppearancesPayload builtPayload;
+        builtPayload.snapshot = unlocked;
+        builtPayload.count = static_cast<uint32>(unlocked->size());
+        builtPayload.payload = BuildCollectedAppearancesPayload(*unlocked);
+
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+        auto& cached = s_AccountCollectedAppearancesPayloads[accountId];
+        cached = builtPayload;
+        return cached;
     }
 
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId)
@@ -825,6 +907,8 @@ namespace DCCollection
                 updated->insert(displayId);
                 cacheIt->second = updated;
             }
+
+            s_AccountCollectedAppearancesPayloads.erase(accountId);
         }
 
         if (shouldNotify)
@@ -1455,21 +1539,16 @@ namespace DCCollection
     {
         if (!player) return;
         uint32 accountId = GetAccountId(player);
-        auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
-
-        DCAddon::JsonValue appArr; appArr.SetArray();
-        if (unlocked)
-        {
-            for (uint32 d : *unlocked)
-                appArr.Push(DCAddon::JsonValue(d));
-        }
+        CachedCollectedAppearancesPayload payload =
+            GetCollectedAppearancesPayload(accountId);
 
         // NOTE: We intentionally do NOT include a secondary "items" array here.
         // Building canonical itemId lists forces loading the full transmog appearance index
         // (item_template scan), which can cause noticeable server hitching when the addon opens.
         DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COLLECTED_APPEARANCES);
-        response.Set("count", unlocked ? static_cast<uint32>(unlocked->size()) : 0u);
-        response.Set("appearances", appArr);
+        response.SetPreEncodedJson(payload.payload
+            ? *payload.payload
+            : std::string("{\"count\":0,\"appearances\":[]}"));
         response.Send(player);
     }
 

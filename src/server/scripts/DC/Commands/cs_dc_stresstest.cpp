@@ -20,9 +20,14 @@
 #include "Random.h"
 #include "SpellMgr.h"
 #include "DBCStores.h"
+#include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
+#include "../AddonExtension/dc_addon_death_markers.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include <chrono>
+#include <array>
+#include <charconv>
+#include <memory>
 #include <vector>
 #include <algorithm>
 #include <cctype>
@@ -34,10 +39,13 @@
 #include <fstream>
 #include <filesystem>
 #include <ctime>
+#include <limits>
 #include <mutex>
 
 namespace DCPerfTest
 {
+    extern uint32 GetHotspotXPBonusPercentage();
+
     // Timing utilities
     using Clock = std::chrono::high_resolution_clock;
     using Microseconds = std::chrono::microseconds;
@@ -61,9 +69,37 @@ namespace DCPerfTest
         std::time_t expiresAt = 0;
     };
 
+    constexpr uint64 HLBG_STRESS_CACHE_TTL_MS = 1000;
+    constexpr uint64 WORLD_STRESS_CACHE_TTL_MS = 1000;
+
+    struct CachedHLBGStressPayload
+    {
+        std::string payload;
+        uint64 expiresAtMs = 0;
+    };
+
+    struct CachedWorldStressPayload
+    {
+        std::string snapshotPayload;
+        std::vector<std::string> bossUpdatePayloads;
+        uint64 expiresAtMs = 0;
+    };
+
     std::mutex sWelcomeSurfaceCacheLock;
     CachedFaqSurfacePayload sCachedWelcomeFaqSurfacePayload;
     CachedWhatsNewSurfacePayload sCachedWelcomeWhatsNewSurfacePayload;
+    std::mutex sHLBGStressCacheLock;
+    CachedHLBGStressPayload sCachedHLBGSeasonalPayload;
+    std::mutex sWorldStressCacheLock;
+    CachedWorldStressPayload sCachedWorldStressPayload;
+    std::unordered_map<uint32, CachedHLBGStressPayload>
+        sCachedHLBGAllTimePayloads;
+
+    uint64 GetStressNowMs()
+    {
+        return static_cast<uint64>(std::chrono::duration_cast<Milliseconds>(
+            Clock::now().time_since_epoch()).count());
+    }
 
     CachedFaqSurfacePayload GetCachedWelcomeFaqSurfacePayload()
     {
@@ -1793,6 +1829,7 @@ namespace DCPerfTest
         bool hasWelcomeWhatsNew = false;
         bool hasMplusRating = false;
         bool hasPrestige = false;
+        bool hasSeasonalStats = false;
         bool hasMplusScores = false;
         bool hasMplusRuns = false;
         bool hasWeeklyVault = false;
@@ -1804,6 +1841,7 @@ namespace DCPerfTest
         bool hasMplusBestRuns = false;
         bool hasMplusDungeons = false;
         bool hasWardrobeOutfits = false;
+        bool hasHLBGSeasonData = false;
         bool hasHLBGSeasonal = false;
         bool hasHLBGAllTime = false;
         bool hasHLBGParticipants = false;
@@ -1811,11 +1849,21 @@ namespace DCPerfTest
         char const* transmogCollectionTable = nullptr;
         char const* hlbgAllTimeGamesColumn = nullptr;
         char const* hlbgAllTimeWinsColumn = nullptr;
+        char const* hlbgAllTimeLossesColumn = nullptr;
         char const* hlbgAllTimeKillsColumn = nullptr;
+        char const* hlbgAllTimeDeathsColumn = nullptr;
+        char const* hlbgAllTimeKdRatioColumn = nullptr;
+        char const* hlbgAllTimeAvgKillsColumn = nullptr;
+        char const* hlbgAllTimeAvgDamageColumn = nullptr;
 
         bool HasProtocolSurface() const
         {
             return hasProtocolCaps || hasProtocolStats || hasProtocolErrors || hasProtocolLog;
+        }
+
+        bool HasLiveProtocolSurface() const
+        {
+            return hasProtocolCaps || hasProtocolErrors || hasProtocolLog;
         }
 
         bool HasWelcomeSurface() const
@@ -1846,10 +1894,15 @@ namespace DCPerfTest
 
         bool HasHLBGSurface() const
         {
-            return HasHLBGUnifiedTables() || hasHLBGSeasonal || (hasHLBGAllTime
+            return hasHLBGSeasonData || HasHLBGUnifiedTables() || hasHLBGSeasonal || (hasHLBGAllTime
                 && hlbgAllTimeGamesColumn != nullptr
                 && hlbgAllTimeWinsColumn != nullptr
-                && hlbgAllTimeKillsColumn != nullptr);
+                && hlbgAllTimeLossesColumn != nullptr
+                && hlbgAllTimeKillsColumn != nullptr
+                && hlbgAllTimeDeathsColumn != nullptr
+                && hlbgAllTimeKdRatioColumn != nullptr
+                && hlbgAllTimeAvgKillsColumn != nullptr
+                && hlbgAllTimeAvgDamageColumn != nullptr);
         }
 
         bool HasAnySurface() const
@@ -1859,6 +1912,80 @@ namespace DCPerfTest
                 || HasWardrobeSurface() || HasHLBGSurface();
         }
     };
+
+    std::string const& BuildWelcomeProgressSnapshotStressQuery(
+        bool useWeeklyVaultSummary,
+        bool useSeasonalProgressSummary)
+    {
+        static std::array<std::string, 4> const queries = []
+        {
+            std::array<std::string, 4> builtQueries;
+            auto buildQuery = [](bool useWeeklyVault, bool useSeasonalSummary)
+            {
+                std::string seasonPointsSelect;
+                std::string seasonPointsJoin;
+                if (useSeasonalSummary)
+                {
+                    seasonPointsSelect = "COALESCE(s.weekly_tokens_earned, 0)";
+                    seasonPointsJoin =
+                        "LEFT JOIN dc_player_seasonal_stats s "
+                        "ON s.player_guid = {} AND s.season_id = {} ";
+                }
+                else
+                {
+                    seasonPointsSelect = "COALESCE(sp.season_points, 0)";
+                    seasonPointsJoin =
+                        "LEFT JOIN (SELECT COALESCE(SUM(best_score), 0) AS season_points "
+                        "FROM dc_mplus_scores WHERE character_guid = {} AND season_id = {}) sp "
+                        "ON 1 = 1 ";
+                }
+
+                std::string weeklyRunsSelect;
+                std::string weeklyRunsJoin;
+                if (useWeeklyVault)
+                {
+                    weeklyRunsSelect = "COALESCE(v.runs_completed, 0)";
+                    weeklyRunsJoin =
+                        "LEFT JOIN dc_weekly_vault v "
+                        "ON v.character_guid = {} AND v.season_id = {} "
+                        "AND v.week_start = {} ";
+                }
+                else
+                {
+                    weeklyRunsSelect = "COALESCE(wr.runs_completed, 0)";
+                    weeklyRunsJoin =
+                        "LEFT JOIN (SELECT COUNT(*) AS runs_completed FROM dc_mplus_runs "
+                        "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                        "AND completed_at >= FROM_UNIXTIME({}) "
+                        "AND completed_at < FROM_UNIXTIME({})) wr ON 1 = 1 ";
+                }
+
+                return std::string(
+                    "SELECT COALESCE(r.rating, 0), COALESCE(p.prestige_level, 0), ")
+                    + seasonPointsSelect + ", " + weeklyRunsSelect + ", "
+                    + "LEAST(5, COALESCE(alt.alt_count, 0)) "
+                    + "FROM (SELECT 1) seed "
+                    + "LEFT JOIN dc_mplus_player_ratings r "
+                    + "ON r.player_guid = {} AND r.season_id = {} "
+                    + "LEFT JOIN dc_character_prestige p ON p.guid = {} "
+                    + seasonPointsJoin
+                    + weeklyRunsJoin
+                    + "LEFT JOIN (SELECT COUNT(*) AS alt_count FROM characters "
+                    + "WHERE account = {} AND level >= {}) alt ON 1 = 1";
+            };
+
+            builtQueries[0] = buildQuery(false, false);
+            builtQueries[1] = buildQuery(false, true);
+            builtQueries[2] = buildQuery(true, false);
+            builtQueries[3] = buildQuery(true, true);
+            return builtQueries;
+        }();
+
+        std::size_t const queryIndex =
+            (useWeeklyVaultSummary ? 2u : 0u)
+            + (useSeasonalProgressSummary ? 1u : 0u);
+        return queries[queryIndex];
+    }
 
     enum class AddonSurface : uint8
     {
@@ -1898,11 +2025,11 @@ namespace DCPerfTest
         switch (surface)
         {
             case AddonSurface::Protocol:
-                return "Protocol";
+                return "Protocol (live)";
             case AddonSurface::ProtocolClientCaps:
                 return "Protocol Client Caps";
             case AddonSurface::ProtocolStats:
-                return "Protocol Stats";
+                return "Protocol Stats (benchmark-only)";
             case AddonSurface::ProtocolErrors:
                 return "Protocol Errors";
             case AddonSurface::ProtocolLog:
@@ -1966,7 +2093,7 @@ namespace DCPerfTest
         std::vector<AddonSurface> surfaces;
         surfaces.reserve(8);
 
-        if (availability.HasProtocolSurface())
+        if (availability.HasLiveProtocolSurface())
             surfaces.push_back(AddonSurface::Protocol);
         if (availability.hasQosSettings)
             surfaces.push_back(AddonSurface::QoS);
@@ -2098,7 +2225,12 @@ namespace DCPerfTest
         if (availability.HasHLBGUnifiedTables() || (availability.hasHLBGAllTime
             && availability.hlbgAllTimeGamesColumn
             && availability.hlbgAllTimeWinsColumn
-            && availability.hlbgAllTimeKillsColumn))
+            && availability.hlbgAllTimeLossesColumn
+            && availability.hlbgAllTimeKillsColumn
+            && availability.hlbgAllTimeDeathsColumn
+            && availability.hlbgAllTimeKdRatioColumn
+            && availability.hlbgAllTimeAvgKillsColumn
+            && availability.hlbgAllTimeAvgDamageColumn))
         {
             surfaces.push_back(AddonSurface::HLBGAllTime);
         }
@@ -2112,7 +2244,7 @@ namespace DCPerfTest
         switch (surface)
         {
             case AddonSurface::Protocol:
-                return availability.HasProtocolSurface();
+                return availability.HasLiveProtocolSurface();
             case AddonSurface::ProtocolClientCaps:
                 return availability.hasProtocolCaps;
             case AddonSurface::ProtocolStats:
@@ -2169,14 +2301,20 @@ namespace DCPerfTest
             case AddonSurface::HLBG:
                 return availability.HasHLBGSurface();
             case AddonSurface::HLBGSeasonal:
-                return availability.HasHLBGUnifiedTables()
+                return availability.hasHLBGSeasonData
+                    || availability.HasHLBGUnifiedTables()
                     || availability.hasHLBGSeasonal;
             case AddonSurface::HLBGAllTime:
                 return availability.HasHLBGUnifiedTables()
                     || (availability.hasHLBGAllTime
                     && availability.hlbgAllTimeGamesColumn
                     && availability.hlbgAllTimeWinsColumn
-                    && availability.hlbgAllTimeKillsColumn);
+                    && availability.hlbgAllTimeLossesColumn
+                    && availability.hlbgAllTimeKillsColumn
+                    && availability.hlbgAllTimeDeathsColumn
+                    && availability.hlbgAllTimeKdRatioColumn
+                    && availability.hlbgAllTimeAvgKillsColumn
+                    && availability.hlbgAllTimeAvgDamageColumn);
         }
 
         return false;
@@ -2196,6 +2334,7 @@ namespace DCPerfTest
         availability.hasWelcomeWhatsNew = WorldTableExists("dc_welcome_whats_new");
         availability.hasMplusRating = CharacterTableExists("dc_mplus_player_ratings");
         availability.hasPrestige = CharacterTableExists("dc_character_prestige");
+        availability.hasSeasonalStats = CharacterTableExists("dc_player_seasonal_stats");
         availability.hasMplusScores = CharacterTableExists("dc_mplus_scores");
         availability.hasMplusRuns = CharacterTableExists("dc_mplus_runs");
         availability.hasWeeklyVault = CharacterTableExists("dc_weekly_vault");
@@ -2207,6 +2346,7 @@ namespace DCPerfTest
         availability.hasMplusBestRuns = CharacterTableExists("dc_mplus_best_runs");
         availability.hasMplusDungeons = CharacterTableExists("dc_mplus_dungeons");
         availability.hasWardrobeOutfits = CharacterTableExists("dc_collection_community_outfits");
+        availability.hasHLBGSeasonData = CharacterTableExists("dc_hlbg_player_season_data");
         availability.hasHLBGSeasonal = CharacterTableExists("v_hlbg_player_seasonal_stats");
         availability.hasHLBGAllTime = CharacterTableExists("v_hlbg_player_alltime_stats");
         availability.hasHLBGParticipants = CharacterTableExists("dc_hlbg_match_participants");
@@ -2224,10 +2364,35 @@ namespace DCPerfTest
             else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_wins"))
                 availability.hlbgAllTimeWinsColumn = "total_wins";
 
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_losses"))
+                availability.hlbgAllTimeLossesColumn = "lifetime_losses";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_losses"))
+                availability.hlbgAllTimeLossesColumn = "total_losses";
+
             if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_kills"))
                 availability.hlbgAllTimeKillsColumn = "lifetime_kills";
             else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_kills"))
                 availability.hlbgAllTimeKillsColumn = "total_kills";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_deaths"))
+                availability.hlbgAllTimeDeathsColumn = "lifetime_deaths";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_deaths"))
+                availability.hlbgAllTimeDeathsColumn = "total_deaths";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_kd_ratio"))
+                availability.hlbgAllTimeKdRatioColumn = "lifetime_kd_ratio";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "overall_kd_ratio"))
+                availability.hlbgAllTimeKdRatioColumn = "overall_kd_ratio";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_kills_career"))
+                availability.hlbgAllTimeAvgKillsColumn = "avg_kills_career";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_kills_per_game"))
+                availability.hlbgAllTimeAvgKillsColumn = "avg_kills_per_game";
+
+            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_damage_career"))
+                availability.hlbgAllTimeAvgDamageColumn = "avg_damage_career";
+            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_damage_per_game"))
+                availability.hlbgAllTimeAvgDamageColumn = "avg_damage_per_game";
         }
 
         if (CharacterTableExists("dc_transmog_collection"))
@@ -2443,6 +2608,116 @@ namespace DCPerfTest
             << " GROUP BY account_id ORDER BY COUNT(*) DESC LIMIT 1";
         QueryResult result = CharacterDatabase.Query(sql.str().c_str());
         return result ? result->Fetch()[0].Get<uint32>() : 0;
+    }
+
+    inline void AppendUnsignedJsonNumberForStress(std::string& out,
+        uint32 value);
+
+    uint32 LoadTopAccountIdFromTable(char const* tableName)
+    {
+        if (!CharacterTableExists(tableName)
+            || !CharacterColumnExists(tableName, "account_id"))
+        {
+            return 0;
+        }
+
+        std::ostringstream sql;
+        sql << "SELECT account_id FROM " << tableName
+            << " GROUP BY account_id ORDER BY COUNT(*) DESC LIMIT 1";
+        QueryResult result = CharacterDatabase.Query(sql.str().c_str());
+        return result ? result->Fetch()[0].Get<uint32>() : 0;
+    }
+
+    struct WardrobeCollectedStressSample
+    {
+        uint32 accountId = 0;
+        std::shared_ptr<std::string const> payload =
+            std::make_shared<std::string>("{\"count\":0,\"appearances\":[]}");
+    };
+
+    WardrobeCollectedStressSample LoadWardrobeCollectedStressSample(
+        AddonStressAvailability const& availability)
+    {
+        WardrobeCollectedStressSample sample;
+        if (!availability.transmogCollectionTable)
+            return sample;
+
+        sample.accountId = LoadTopAccountIdFromTable(
+            availability.transmogCollectionTable);
+        if (!sample.accountId)
+            return sample;
+
+        std::ostringstream sql;
+        sql << "SELECT display_id FROM " << availability.transmogCollectionTable
+            << " WHERE account_id = " << sample.accountId;
+        QueryResult result = CharacterDatabase.Query(sql.str().c_str());
+        if (!result)
+            return sample;
+
+        std::vector<uint32> appearances;
+        do
+        {
+            uint32 displayId = (*result)[0].Get<uint32>();
+            if (displayId)
+                appearances.push_back(displayId);
+        } while (result->NextRow());
+
+        std::sort(appearances.begin(), appearances.end());
+        appearances.erase(std::unique(appearances.begin(), appearances.end()),
+            appearances.end());
+
+        auto payload = std::make_shared<std::string>();
+        payload->reserve(32 + (appearances.size() * 8));
+        payload->append("{\"count\":");
+        AppendUnsignedJsonNumberForStress(*payload,
+            static_cast<uint32>(appearances.size()));
+        payload->append(",\"appearances\":[");
+        for (std::size_t index = 0; index < appearances.size(); ++index)
+        {
+            if (index > 0)
+                payload->push_back(',');
+
+            AppendUnsignedJsonNumberForStress(*payload, appearances[index]);
+        }
+        payload->append("]}");
+        sample.payload = payload;
+        return sample;
+    }
+
+    WardrobeCollectedStressSample const& GetWardrobeCollectedStressSample(
+        AddonStressAvailability const& availability)
+    {
+        static WardrobeCollectedStressSample const sample =
+            LoadWardrobeCollectedStressSample(availability);
+        return sample;
+    }
+
+    struct GroupFinderStressVariant;
+
+    std::vector<GroupFinderStressVariant> const&
+        GetGroupFinderStressVariants();
+    static std::vector<uint32> const& GetHLBGParticipantSampleGuids();
+    std::string GetCachedHLBGSeasonalPayloadForStress(
+        AddonStressAvailability const& availability);
+
+    void PrewarmAddonSurfaceBenchmarkState(
+        AddonStressAvailability const& availability)
+    {
+        if (availability.transmogCollectionTable)
+            (void)GetWardrobeCollectedStressSample(availability);
+
+        if (availability.HasGroupFinderSurface())
+            (void)GetGroupFinderStressVariants();
+
+        if (availability.HasHLBGSurface())
+        {
+            (void)GetHLBGParticipantSampleGuids();
+            if (availability.hasHLBGSeasonData || availability.hasHLBGSeasonal
+                || availability.HasHLBGUnifiedTables())
+            {
+                (void)GetCachedHLBGSeasonalPayloadForStress(availability);
+            }
+        }
     }
 
     CollectionStressSample LoadCollectionStressSample()
@@ -3265,6 +3540,319 @@ namespace DCPerfTest
         return variants;
     }
 
+    std::vector<GroupFinderStressVariant> const& GetGroupFinderStressVariants()
+    {
+        static std::vector<GroupFinderStressVariant> const variants =
+            LoadGroupFinderStressVariants();
+        return variants;
+    }
+
+    GroupFinderStressVariant const& GetGroupFinderStressVariantForSeed(
+        uint32 seed)
+    {
+        std::vector<GroupFinderStressVariant> const& variants =
+            GetGroupFinderStressVariants();
+        return variants[seed % variants.size()];
+    }
+
+    uint32 GetGroupFinderStressRowCount(
+        GroupFinderStressVariant const& variant)
+    {
+        return std::min<uint32>(50,
+            std::max<uint32>(1, variant.groupCount));
+    }
+
+    std::string BuildGroupFinderListingsPayloadForStress(
+        GroupFinderStressVariant const& variant, uint32 seed);
+
+    std::string GetCachedGroupFinderListingsPayloadForStress(
+        GroupFinderStressVariant const& variant, uint32 seed)
+    {
+        static constexpr uint64 GROUP_FINDER_STRESS_CACHE_TTL_MS = 1000;
+
+        struct CacheEntry
+        {
+            uint64 expiresAtMs = 0;
+            std::string payload;
+        };
+
+        static std::mutex cacheMutex;
+        static std::unordered_map<std::string, CacheEntry> payloads;
+
+        std::string const cacheKey = variant.category + ":"
+            + std::to_string(variant.listingType);
+        uint64 const nowMs = static_cast<uint64>(getMSTime());
+
+        {
+            std::lock_guard<std::mutex> lock(cacheMutex);
+            auto itr = payloads.find(cacheKey);
+            if (itr != payloads.end() && itr->second.expiresAtMs > nowMs)
+                return itr->second.payload;
+        }
+
+        CacheEntry entry;
+        entry.payload = BuildGroupFinderListingsPayloadForStress(
+            variant, seed);
+        entry.expiresAtMs = nowMs + GROUP_FINDER_STRESS_CACHE_TTL_MS;
+
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        payloads[cacheKey] = entry;
+        return entry.payload;
+    }
+
+    std::string BuildGroupFinderListingsPayloadForStress(
+        GroupFinderStressVariant const& variant, uint32 seed)
+    {
+        uint32 groupCount = GetGroupFinderStressRowCount(variant);
+        uint32 dungeonNameLength = ClampStressValue(
+            variant.dungeonNameLength, 12, 8, 32);
+        uint32 noteLength = ClampStressValue(variant.noteLength,
+            20, 10, 72);
+        uint32 difficulty = ClampStressValue(variant.difficulty,
+            variant.listingType == 1 ? 2 : 1, 1, 4);
+        uint32 keystoneLevel = variant.listingType == 1
+            ? ClampStressValue(variant.keystoneLevel, 10, 2, 30) : 0;
+        uint32 minIlvl = ClampStressValue(variant.minIlvl, 240,
+            180, 400);
+        uint32 currentTank = std::min<uint32>(1, variant.currentTank);
+        uint32 currentHealer = std::min<uint32>(1, variant.currentHealer);
+        uint32 currentDps = ClampStressValue(variant.currentDps, 1, 0, 5);
+        uint32 needTank = std::min<uint32>(1, variant.needTank);
+        uint32 needHealer = std::min<uint32>(1, variant.needHealer);
+        uint32 needDps = ClampStressValue(variant.needDps, 2, 0, 5);
+
+        DCAddon::JsonValue groupsArray;
+        groupsArray.SetArray();
+
+        for (uint32 groupIndex = 0; groupIndex < groupCount; ++groupIndex)
+        {
+            GroupFinderStressRowSample const* rowSample =
+                variant.rowSamples.empty()
+                ? nullptr
+                : &variant.rowSamples[(groupIndex + seed)
+                    % variant.rowSamples.size()];
+            uint32 rowListingType = rowSample
+                ? rowSample->listingType
+                : variant.listingType;
+            std::string rowCategory = GroupFinderCategoryFromType(
+                rowListingType);
+            std::string dungeonName = rowSample
+                ? rowSample->dungeonName
+                : MakeSizedStressText("Dungeon-", dungeonNameLength,
+                    seed + groupIndex);
+            std::string note = rowSample
+                ? rowSample->note
+                : MakeSizedStressText("Need ", noteLength,
+                    (seed * 13u) + groupIndex);
+            uint32 rowDifficulty = rowSample
+                ? rowSample->difficulty
+                : difficulty;
+            uint32 rowKeystoneLevel = rowSample
+                ? rowSample->keystoneLevel
+                : keystoneLevel;
+            uint32 rowMinIlvl = rowSample
+                ? rowSample->minIlvl
+                : minIlvl;
+            uint32 rowCurrentTank = rowSample
+                ? rowSample->currentTank
+                : currentTank;
+            uint32 rowCurrentHealer = rowSample
+                ? rowSample->currentHealer
+                : currentHealer;
+            uint32 rowCurrentDps = rowSample
+                ? rowSample->currentDps
+                : currentDps;
+            uint32 rowNeedTank = rowSample
+                ? rowSample->needTank
+                : needTank;
+            uint32 rowNeedHealer = rowSample
+                ? rowSample->needHealer
+                : needHealer;
+            uint32 rowNeedDps = rowSample
+                ? rowSample->needDps
+                : needDps;
+
+            DCAddon::JsonValue group;
+            group.SetObject();
+            group.Set("id", static_cast<int32>(rowSample
+                ? rowSample->id
+                : (1000 + groupIndex + seed)));
+            group.Set("leaderGuid", static_cast<int32>(rowSample
+                ? rowSample->leaderGuid
+                : (50000 + groupIndex + seed)));
+            group.Set("dungeonId", static_cast<int32>(rowSample
+                ? rowSample->dungeonId
+                : (33 + (groupIndex % 12))));
+            group.Set("dungeon", dungeonName);
+            group.Set("dungeonName", dungeonName);
+            group.Set("raid", dungeonName);
+            group.Set("difficulty", static_cast<int32>(rowDifficulty));
+            group.Set("difficultyName",
+                GetGroupFinderDifficultyNameForStress(rowListingType,
+                    rowDifficulty));
+            group.Set("level", static_cast<int32>(rowKeystoneLevel));
+            group.Set("keystoneLevel", static_cast<int32>(rowKeystoneLevel));
+            group.Set("minIlvl", static_cast<int32>(rowMinIlvl));
+            group.Set("tank", rowCurrentTank > 0);
+            group.Set("healer", rowCurrentHealer > 0);
+            group.Set("dps", static_cast<int32>(rowCurrentDps));
+            group.Set("needTank", static_cast<int32>(rowNeedTank));
+            group.Set("needHealer", static_cast<int32>(rowNeedHealer));
+            group.Set("needDps", static_cast<int32>(rowNeedDps));
+            group.Set("spots", static_cast<int32>(rowNeedTank
+                + rowNeedHealer + rowNeedDps));
+            group.Set("note", note);
+            group.Set("progress", note);
+            group.Set("type", static_cast<int32>(rowListingType));
+            group.Set("category", rowCategory);
+            group.Set("leader", rowSample
+                ? rowSample->leaderName
+                : MakeSizedStressText("Leader-", 12, groupIndex + seed));
+            groupsArray.Push(group);
+        }
+
+        std::string groupsEncoded = groupsArray.Encode();
+        DCAddon::JsonMessage response(DCAddon::Module::GROUP_FINDER,
+            DCAddon::Opcode::GroupFinder::SMSG_SEARCH_RESULTS);
+        response.Set("groups", groupsEncoded);
+        response.Set("count", static_cast<int32>(groupCount));
+        response.Set("category", variant.category);
+        return response.Build();
+    }
+
+    std::string BuildGroupFinderEventsPayloadForStress(
+        GroupFinderStressVariant const& variant, uint32 seed)
+    {
+        uint32 eventCount = GetGroupFinderStressRowCount(variant);
+        uint32 dungeonNameLength = ClampStressValue(
+            variant.dungeonNameLength, 12, 8, 32);
+        uint32 noteLength = ClampStressValue(variant.noteLength,
+            20, 10, 72);
+        uint32 keystoneLevel = variant.listingType == 1
+            ? ClampStressValue(variant.keystoneLevel, 10, 2, 30) : 0;
+        uint32 baseTimestamp = static_cast<uint32>(std::time(nullptr));
+
+        DCAddon::JsonValue eventsArray;
+        eventsArray.SetArray();
+
+        for (uint32 eventIndex = 0; eventIndex < eventCount; ++eventIndex)
+        {
+            GroupFinderStressRowSample const* rowSample =
+                variant.rowSamples.empty()
+                ? nullptr
+                : &variant.rowSamples[(eventIndex + seed)
+                    % variant.rowSamples.size()];
+            std::string dungeonName = rowSample
+                ? rowSample->dungeonName
+                : MakeSizedStressText("Event-", dungeonNameLength,
+                    seed + eventIndex);
+            std::string note = rowSample
+                ? rowSample->note
+                : MakeSizedStressText("Schedule ", noteLength,
+                    (seed * 11u) + eventIndex);
+            uint32 rowKeystoneLevel = rowSample
+                ? rowSample->keystoneLevel
+                : keystoneLevel;
+            uint32 rowCurrentSignups = rowSample
+                ? std::min<uint32>(50, rowSample->currentDps)
+                : ClampStressValue(variant.currentDps, 1, 0, 40);
+            uint32 rowMaxSignups = std::max<uint32>(rowCurrentSignups + 1,
+                rowCurrentSignups + (rowSample ? rowSample->needDps : 2u));
+
+            DCAddon::JsonValue event;
+            event.SetObject();
+            event.Set("eventId", static_cast<int32>(rowSample
+                ? rowSample->id
+                : (2000 + eventIndex + seed)));
+            event.Set("leaderGuid", static_cast<int32>(rowSample
+                ? rowSample->leaderGuid
+                : (60000 + eventIndex + seed)));
+            event.Set("eventType", static_cast<int32>(rowSample
+                ? rowSample->listingType
+                : variant.listingType));
+            event.Set("dungeonId", static_cast<int32>(rowSample
+                ? rowSample->dungeonId
+                : (33 + (eventIndex % 12))));
+            event.Set("dungeonName", dungeonName);
+            event.Set("keyLevel", static_cast<int32>(rowKeystoneLevel));
+            event.Set("scheduledTime", static_cast<int32>(baseTimestamp
+                + ((eventIndex + 1) * 900u)));
+            event.Set("maxSignups", static_cast<int32>(rowMaxSignups));
+            event.Set("currentSignups", static_cast<int32>(rowCurrentSignups));
+            event.Set("note", note);
+            event.Set("status", 1);
+            event.Set("leaderName", rowSample
+                ? rowSample->leaderName
+                : MakeSizedStressText("Leader-", 12,
+                    eventIndex + seed));
+            eventsArray.Push(event);
+        }
+
+        std::string eventsEncoded = eventsArray.Encode();
+        DCAddon::JsonMessage response(DCAddon::Module::GROUP_FINDER,
+            DCAddon::Opcode::GroupFinder::SMSG_SCHEDULED_EVENTS);
+        response.Set("events", eventsEncoded);
+        response.Set("count", static_cast<int32>(eventCount));
+        return response.Build();
+    }
+
+    std::string BuildGroupFinderSignupsPayloadForStress(
+        GroupFinderStressVariant const& variant, uint32 seed)
+    {
+        uint32 signupCount = std::min<uint32>(12,
+            GetGroupFinderStressRowCount(variant));
+        uint32 dungeonNameLength = ClampStressValue(
+            variant.dungeonNameLength, 12, 8, 32);
+        uint32 keystoneLevel = variant.listingType == 1
+            ? ClampStressValue(variant.keystoneLevel, 10, 2, 30) : 0;
+        uint32 baseTimestamp = static_cast<uint32>(std::time(nullptr));
+
+        DCAddon::JsonValue signupsArray;
+        signupsArray.SetArray();
+
+        for (uint32 signupIndex = 0; signupIndex < signupCount; ++signupIndex)
+        {
+            GroupFinderStressRowSample const* rowSample =
+                variant.rowSamples.empty()
+                ? nullptr
+                : &variant.rowSamples[(signupIndex + seed)
+                    % variant.rowSamples.size()];
+            std::string dungeonName = rowSample
+                ? rowSample->dungeonName
+                : MakeSizedStressText("Signup-", dungeonNameLength,
+                    seed + signupIndex);
+            uint32 rowKeystoneLevel = rowSample
+                ? rowSample->keystoneLevel
+                : keystoneLevel;
+
+            DCAddon::JsonValue signup;
+            signup.SetObject();
+            signup.Set("signupId", static_cast<int32>(3000 + signupIndex
+                + seed));
+            signup.Set("eventId", static_cast<int32>(rowSample
+                ? rowSample->id
+                : (2000 + signupIndex + seed)));
+            signup.Set("role", static_cast<int32>((signupIndex % 3) + 1));
+            signup.Set("status", 1);
+            signup.Set("dungeonName", dungeonName);
+            signup.Set("keyLevel", static_cast<int32>(rowKeystoneLevel));
+            signup.Set("scheduledTime", static_cast<int32>(baseTimestamp
+                + ((signupIndex + 1) * 900u)));
+            signup.Set("leaderName", rowSample
+                ? rowSample->leaderName
+                : MakeSizedStressText("Leader-", 12,
+                    signupIndex + seed));
+            signupsArray.Push(signup);
+        }
+
+        std::string signupsEncoded = signupsArray.Encode();
+        DCAddon::JsonMessage response(DCAddon::Module::GROUP_FINDER,
+            DCAddon::Opcode::GroupFinder::SMSG_MY_SIGNUPS);
+        response.Set("signups", signupsEncoded);
+        response.Set("count", static_cast<int32>(signupCount));
+        return response.Build();
+    }
+
     static std::vector<uint32> LoadHLBGParticipantSampleGuids(uint32 limit)
     {
         std::vector<uint32> guids;
@@ -3294,6 +3882,182 @@ namespace DCPerfTest
         return guids;
     }
 
+    static std::vector<uint32> const& GetHLBGParticipantSampleGuids()
+    {
+        static std::vector<uint32> const sampleGuids =
+            LoadHLBGParticipantSampleGuids(64);
+        return sampleGuids;
+    }
+
+    std::string BuildHLBGSeasonalPayloadForStress(
+        AddonStressAvailability const& availability)
+    {
+        QueryResult result;
+
+        if (availability.hasHLBGSeasonData)
+        {
+            result = CharacterDatabase.Query(
+                "SELECT s.player_guid, COALESCE(c.name, ''), s.rating, s.wins "
+                "FROM dc_hlbg_player_season_data s "
+                "LEFT JOIN characters c ON s.player_guid = c.guid "
+                "WHERE s.season_id = {} ORDER BY s.rating DESC LIMIT 25",
+                1u);
+        }
+        else if (availability.hasHLBGSeasonal)
+        {
+            result = CharacterDatabase.Query(
+                "SELECT guid, player_name, current_rating, wins "
+                "FROM v_hlbg_player_seasonal_stats "
+                "WHERE season_id = {} ORDER BY current_rating DESC LIMIT 25",
+                1u);
+        }
+        else if (availability.HasHLBGUnifiedTables())
+        {
+            result = CharacterDatabase.Query(
+                "SELECT p.guid, MAX(p.player_name) AS player_name, "
+                "GREATEST(0, COALESCE(SUM(p.rating_change), 0) + 1200) AS current_rating, "
+                "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS wins "
+                "FROM dc_hlbg_match_participants p "
+                "LEFT JOIN dc_hlbg_winner_history wh ON p.match_id = wh.id "
+                "WHERE p.season_id = {} "
+                "GROUP BY p.guid "
+                "ORDER BY current_rating DESC LIMIT 25",
+                1u);
+        }
+
+        if (!result)
+            return "{\"leaderboardType\":1,\"season\":1,\"entries\":[]}";
+
+        std::string entriesJson = "[";
+        uint32 rank = 1;
+        do
+        {
+            if (rank > 1)
+                entriesJson += ",";
+
+            Field* fields = result->Fetch();
+            entriesJson += Acore::StringFormat(
+                "{\"rank\":%u,\"guid\":%u,\"name\":\"%s\",\"score\":%u,\"extra\":%u}",
+                rank,
+                fields[0].Get<uint32>(),
+                fields[1].Get<std::string>().c_str(),
+                fields[2].Get<uint32>(),
+                fields[3].Get<uint32>());
+            ++rank;
+        } while (result->NextRow());
+        entriesJson += "]";
+
+        return Acore::StringFormat(
+            "{\"leaderboardType\":1,\"season\":1,\"entries\":%s}",
+            entriesJson.c_str());
+    }
+
+    std::string GetCachedHLBGSeasonalPayloadForStress(
+        AddonStressAvailability const& availability)
+    {
+        uint64 nowMs = GetStressNowMs();
+        {
+            std::lock_guard<std::mutex> lock(sHLBGStressCacheLock);
+            if (sCachedHLBGSeasonalPayload.expiresAtMs > nowMs)
+                return sCachedHLBGSeasonalPayload.payload;
+        }
+
+        CachedHLBGStressPayload payload;
+        payload.payload = BuildHLBGSeasonalPayloadForStress(availability);
+        payload.expiresAtMs = nowMs + HLBG_STRESS_CACHE_TTL_MS;
+
+        std::lock_guard<std::mutex> lock(sHLBGStressCacheLock);
+        sCachedHLBGSeasonalPayload = payload;
+        return payload.payload;
+    }
+
+    std::string BuildHLBGAllTimePayloadForStress(
+        AddonStressAvailability const& availability, uint32 guid)
+    {
+        QueryResult result;
+
+        if (availability.HasHLBGUnifiedTables())
+        {
+            result = CharacterDatabase.Query(
+                "SELECT COUNT(*), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(p.kills), 0), "
+                "COALESCE(SUM(p.deaths), 0), "
+                "CASE WHEN COALESCE(SUM(p.deaths), 0) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / SUM(p.deaths), 2) END, "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.kills), 0) / COUNT(*), 2) END, "
+                "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.damage_done), 0) / COUNT(*), 0) END "
+                "FROM dc_hlbg_match_participants p "
+                "LEFT JOIN dc_hlbg_winner_history wh ON p.match_id = wh.id "
+                "WHERE p.guid = {}",
+                guid);
+        }
+        else if (availability.hasHLBGAllTime
+            && availability.hlbgAllTimeGamesColumn
+            && availability.hlbgAllTimeWinsColumn
+            && availability.hlbgAllTimeLossesColumn
+            && availability.hlbgAllTimeKillsColumn
+            && availability.hlbgAllTimeDeathsColumn
+            && availability.hlbgAllTimeKdRatioColumn
+            && availability.hlbgAllTimeAvgKillsColumn
+            && availability.hlbgAllTimeAvgDamageColumn)
+        {
+            std::ostringstream sql;
+            sql << "SELECT IFNULL(" << availability.hlbgAllTimeGamesColumn
+                << ", 0), IFNULL(" << availability.hlbgAllTimeWinsColumn
+                << ", 0), IFNULL(" << availability.hlbgAllTimeLossesColumn
+                << ", 0), IFNULL(" << availability.hlbgAllTimeKillsColumn
+                << ", 0), IFNULL(" << availability.hlbgAllTimeDeathsColumn
+                << ", 0), IFNULL(" << availability.hlbgAllTimeKdRatioColumn
+                << ", 0), IFNULL(" << availability.hlbgAllTimeAvgKillsColumn
+                << ", 0), IFNULL(" << availability.hlbgAllTimeAvgDamageColumn
+                << ", 0) FROM v_hlbg_player_alltime_stats WHERE guid = "
+                << guid;
+            result = CharacterDatabase.Query(sql.str().c_str());
+        }
+
+        if (!result)
+        {
+            return "{\"totalMatches\":0,\"lifetimeWins\":0,\"lifetimeLosses\":0,\"lifetimeKills\":0,\"lifetimeDeaths\":0,\"kdRatio\":0,\"avgKills\":0,\"avgDamage\":0}";
+        }
+
+        Field* fields = result->Fetch();
+        return Acore::StringFormat(
+            "{\"totalMatches\":%u,\"lifetimeWins\":%u,\"lifetimeLosses\":%u,\"lifetimeKills\":%u,\"lifetimeDeaths\":%u,\"kdRatio\":%.2f,\"avgKills\":%.2f,\"avgDamage\":%.0f}",
+            fields[0].Get<uint32>(),
+            fields[1].Get<uint32>(),
+            fields[2].Get<uint32>(),
+            fields[3].Get<uint32>(),
+            fields[4].Get<uint32>(),
+            fields[5].Get<float>(),
+            fields[6].Get<float>(),
+            fields[7].Get<float>());
+    }
+
+    std::string GetCachedHLBGAllTimePayloadForStress(
+        AddonStressAvailability const& availability, uint32 guid)
+    {
+        uint64 nowMs = GetStressNowMs();
+        {
+            std::lock_guard<std::mutex> lock(sHLBGStressCacheLock);
+            auto itr = sCachedHLBGAllTimePayloads.find(guid);
+            if (itr != sCachedHLBGAllTimePayloads.end()
+                && itr->second.expiresAtMs > nowMs)
+            {
+                return itr->second.payload;
+            }
+        }
+
+        CachedHLBGStressPayload payload;
+        payload.payload = BuildHLBGAllTimePayloadForStress(availability,
+            guid);
+        payload.expiresAtMs = nowMs + HLBG_STRESS_CACHE_TTL_MS;
+
+        std::lock_guard<std::mutex> lock(sHLBGStressCacheLock);
+        sCachedHLBGAllTimePayloads[guid] = payload;
+        return payload.payload;
+    }
+
     static bool ExecuteAddonSurfaceQuery(AddonStressAvailability const& availability,
         AddonSurface surface, uint32 fakeGuid, uint32 fakeAccount, uint32 seed)
     {
@@ -3302,23 +4066,17 @@ namespace DCPerfTest
             case AddonSurface::Protocol:
             {
                 if (availability.hasProtocolCaps
-                    && ((seed % 4) == 0 || (!availability.hasProtocolStats && !availability.hasProtocolErrors && !availability.hasProtocolLog)))
+                    && ((seed % 3) == 0
+                        || (!availability.hasProtocolErrors
+                            && !availability.hasProtocolLog)))
                 {
                     return ExecuteAddonSurfaceQuery(availability,
                         AddonSurface::ProtocolClientCaps, fakeGuid,
                         fakeAccount, seed);
                 }
 
-                if (availability.hasProtocolStats
-                    && ((seed % 4) == 1 || (!availability.hasProtocolErrors && !availability.hasProtocolLog)))
-                {
-                    return ExecuteAddonSurfaceQuery(availability,
-                        AddonSurface::ProtocolStats, fakeGuid,
-                        fakeAccount, seed);
-                }
-
                 if (availability.hasProtocolErrors
-                    && ((seed % 4) == 2 || !availability.hasProtocolLog))
+                    && ((seed % 3) == 1 || !availability.hasProtocolLog))
                 {
                     return ExecuteAddonSurfaceQuery(availability,
                         AddonSurface::ProtocolErrors, fakeGuid,
@@ -3395,10 +4153,115 @@ namespace DCPerfTest
                 if (!availability.hasHotspots)
                     return false;
 
-                WorldDatabase.Query(
-                    "SELECT id, map_id, zone_id, x, y, z, (expire_time - UNIX_TIMESTAMP()) as dur "
-                    "FROM dc_hotspots_active WHERE expire_time > UNIX_TIMESTAMP()");
-                return true;
+                auto buildWorldHotspotArrayForStress = []() -> DCAddon::JsonValue
+                {
+                    DCAddon::JsonValue arr;
+                    arr.SetArray();
+
+                    QueryResult result = WorldDatabase.Query(
+                        "SELECT id, map_id, zone_id, x, y, z, (expire_time - UNIX_TIMESTAMP()) as dur "
+                        "FROM dc_hotspots_active WHERE expire_time > UNIX_TIMESTAMP()");
+
+                    uint32 xpBonus = GetHotspotXPBonusPercentage();
+                    if (!result)
+                        return arr;
+
+                    do
+                    {
+                        uint32 id = (*result)[0].Get<uint32>();
+                        uint32 mapId = (*result)[1].Get<uint32>();
+                        uint32 zoneId = (*result)[2].Get<uint32>();
+                        float x = (*result)[3].Get<float>();
+                        float y = (*result)[4].Get<float>();
+                        float z = (*result)[5].Get<float>();
+                        int64 dur = (*result)[6].Get<int64>();
+
+                        if (dur <= 0)
+                            continue;
+
+                        std::string zoneName = "Unknown Zone";
+                        if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
+                        {
+                            if (area->area_name[0] && area->area_name[0][0])
+                                zoneName = area->area_name[0];
+                        }
+
+                        DCAddon::JsonValue hotspot;
+                        hotspot.SetObject();
+                        hotspot.Set("id", static_cast<int32>(id));
+                        hotspot.Set("mapId", static_cast<int32>(mapId));
+                        hotspot.Set("zoneId", static_cast<int32>(zoneId));
+                        hotspot.Set("zoneName", zoneName);
+                        hotspot.Set("x", x);
+                        hotspot.Set("y", y);
+                        hotspot.Set("z", z);
+                        hotspot.Set("timeRemaining", static_cast<int32>(dur));
+                        hotspot.Set("bonusPercent", static_cast<int32>(xpBonus));
+                        hotspot.Set("name", "Hotspot");
+                        arr.Push(hotspot);
+                    } while (result->NextRow());
+
+                    return arr;
+                };
+
+                auto getCachedWorldPayloadForStress = [&]() -> CachedWorldStressPayload
+                {
+                    uint64 const nowMs = static_cast<uint64>(getMSTime());
+
+                    {
+                        std::lock_guard<std::mutex> lock(sWorldStressCacheLock);
+                        if (sCachedWorldStressPayload.expiresAtMs > nowMs)
+                            return sCachedWorldStressPayload;
+                    }
+
+                    CachedWorldStressPayload payload;
+                    DCAddon::JsonValue hotspots = buildWorldHotspotArrayForStress();
+                    DCAddon::JsonValue bosses = sWorldBossMgr
+                        ? sWorldBossMgr->BuildBossesContentArray()
+                        : DCAddon::JsonValue();
+                    if (!bosses.IsArray())
+                        bosses.SetArray();
+                    DCAddon::JsonValue events;
+                    events.SetArray();
+                    DCAddon::JsonValue deaths = DCAddon::DeathMarkers::BuildDeathMarkersArray();
+
+                    DCAddon::JsonMessage response(DCAddon::Module::WORLD,
+                        DCAddon::Opcode::World::SMSG_CONTENT);
+                    response.Set("schemaVersion", 1);
+                    response.Set("serverTime", static_cast<int32>(time(nullptr)));
+                    response.Set("hotspots", hotspots);
+                    response.Set("bosses", bosses);
+                    response.Set("events", events);
+                    response.Set("deaths", deaths);
+                    payload.snapshotPayload = response.Build();
+
+                    if (bosses.IsArray())
+                    {
+                        for (auto const& boss : bosses.AsArray())
+                        {
+                            DCAddon::JsonValue one;
+                            one.SetArray();
+                            one.Push(boss);
+
+                            DCAddon::JsonMessage update(DCAddon::Module::WORLD,
+                                DCAddon::Opcode::World::SMSG_UPDATE);
+                            update.Set("bosses", one);
+                            payload.bossUpdatePayloads.push_back(update.Build());
+                        }
+                    }
+
+                    payload.expiresAtMs = nowMs + WORLD_STRESS_CACHE_TTL_MS;
+
+                    std::lock_guard<std::mutex> lock(sWorldStressCacheLock);
+                    sCachedWorldStressPayload = payload;
+                    return payload;
+                };
+
+                CachedWorldStressPayload payload = getCachedWorldPayloadForStress();
+                bool executed = !payload.snapshotPayload.empty();
+                for (std::string const& bossUpdate : payload.bossUpdatePayloads)
+                    executed = !bossUpdate.empty() || executed;
+                return executed;
             }
 
             case AddonSurface::Welcome:
@@ -3457,26 +4320,18 @@ namespace DCPerfTest
                 constexpr uint32 fakeWeekEnd = fakeWeekStart + (7u * 24u * 60u * 60u);
                 bool const useWeeklyVaultSummary = availability.hasWeeklyVault
                     && sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", false);
+                std::string const& query = BuildWelcomeProgressSnapshotStressQuery(
+                    useWeeklyVaultSummary, availability.hasSeasonalStats);
 
                 if (availability.hasMplusRating && availability.hasPrestige
-                    && availability.hasMplusScores
+                    && (availability.hasSeasonalStats || availability.hasMplusScores)
                     && (availability.hasMplusRuns || useWeeklyVaultSummary)
                     && availability.hasCharacters)
                 {
                     if (useWeeklyVaultSummary)
                     {
                         CharacterDatabase.Query(
-                            "SELECT "
-                            "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
-                            "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
-                            "COALESCE((SELECT prestige_level FROM dc_character_prestige "
-                            "WHERE guid = {} LIMIT 1), 0), "
-                            "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
-                            "WHERE character_guid = {} AND season_id = {}), 0), "
-                            "COALESCE((SELECT runs_completed FROM dc_weekly_vault "
-                            "WHERE character_guid = {} AND season_id = {} AND week_start = {} LIMIT 1), 0), "
-                            "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
-                            "WHERE account = {} AND level >= {}), 0))",
+                            query,
                             fakeGuid,
                             fakeSeasonId,
                             fakeGuid,
@@ -3487,19 +4342,7 @@ namespace DCPerfTest
                     else
                     {
                         CharacterDatabase.Query(
-                            "SELECT "
-                            "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
-                            "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
-                            "COALESCE((SELECT prestige_level FROM dc_character_prestige "
-                            "WHERE guid = {} LIMIT 1), 0), "
-                            "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
-                            "WHERE character_guid = {} AND season_id = {}), 0), "
-                            "COALESCE((SELECT COUNT(*) FROM dc_mplus_runs "
-                            "WHERE character_guid = {} AND season_id = {} AND success = 1 "
-                            "AND completed_at >= FROM_UNIXTIME({}) "
-                            "AND completed_at < FROM_UNIXTIME({})), 0), "
-                            "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
-                            "WHERE account = {} AND level >= {}), 0))",
+                            query,
                             fakeGuid,
                             fakeSeasonId,
                             fakeGuid,
@@ -3527,7 +4370,15 @@ namespace DCPerfTest
                     executed = true;
                 }
 
-                if (availability.hasMplusScores)
+                if (availability.hasSeasonalStats)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT COALESCE(weekly_tokens_earned, 0) FROM dc_player_seasonal_stats "
+                        "WHERE player_guid = {} AND season_id = {}",
+                        fakeGuid, fakeSeasonId);
+                    executed = true;
+                }
+                else if (availability.hasMplusScores)
                 {
                     CharacterDatabase.Query(
                         "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
@@ -3592,10 +4443,20 @@ namespace DCPerfTest
 
             case AddonSurface::WelcomeProgressSeasonPoints:
             {
+                constexpr uint32 fakeSeasonId = 1u;
+
+                if (availability.hasSeasonalStats)
+                {
+                    CharacterDatabase.Query(
+                        "SELECT COALESCE(weekly_tokens_earned, 0) FROM dc_player_seasonal_stats "
+                        "WHERE player_guid = {} AND season_id = {}",
+                        fakeGuid, fakeSeasonId);
+                    return true;
+                }
+
                 if (!availability.hasMplusScores)
                     return false;
 
-                constexpr uint32 fakeSeasonId = 1u;
                 CharacterDatabase.Query(
                     "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
                     "WHERE character_guid = {} AND season_id = {}",
@@ -3678,29 +4539,9 @@ namespace DCPerfTest
                 if (!availability.hasGroupFinderListings)
                     return false;
 
-                std::vector<DCAddon::GroupFinderListing> results =
-                    DCAddon::sGroupFinderMgr.SearchListings(0, 0, 0, 0, 0);
-                DCAddon::JsonValue groupsArray;
-                groupsArray.SetArray();
-
-                for (DCAddon::GroupFinderListing const& listing : results)
-                {
-                    DCAddon::JsonValue group;
-                    group.SetObject();
-                    group.Set("id", DCAddon::JsonValue(static_cast<int32>(listing.id)));
-                    group.Set("leaderGuid", DCAddon::JsonValue(static_cast<int32>(listing.leaderGuid)));
-                    group.Set("dungeonId", DCAddon::JsonValue(static_cast<int32>(listing.dungeonId)));
-                    group.Set("dungeonName", DCAddon::JsonValue(listing.dungeonName));
-                    group.Set("keystoneLevel", DCAddon::JsonValue(static_cast<int32>(listing.keystoneLevel)));
-                    group.Set("minIlvl", DCAddon::JsonValue(static_cast<int32>(listing.minIlvl)));
-                    group.Set("spots", DCAddon::JsonValue(static_cast<int32>(
-                        listing.needTank + listing.needHealer + listing.needDps)));
-                    group.Set("note", DCAddon::JsonValue(listing.note));
-                    groupsArray.Push(group);
-                }
-
-                groupsArray.Encode();
-                return true;
+                std::string payload = GetCachedGroupFinderListingsPayloadForStress(
+                    GetGroupFinderStressVariantForSeed(seed), seed);
+                return !payload.empty();
             }
 
             case AddonSurface::GroupFinderEvents:
@@ -3708,42 +4549,9 @@ namespace DCPerfTest
                 if (!availability.hasGroupFinderEvents)
                     return false;
 
-                std::vector<DCAddon::ScheduledEvent> events =
-                    DCAddon::sGroupFinderMgr.GetUpcomingEvents(0);
-                DCAddon::JsonValue eventsArray;
-                eventsArray.SetArray();
-                size_t eventCount = 0;
-
-                for (DCAddon::ScheduledEvent const& scheduledEvent : events)
-                {
-                    if (eventCount >= 50)
-                        break;
-
-                    std::string leaderName = "Unknown";
-                    sCharacterCache->GetCharacterNameByGuid(
-                        ObjectGuid::Create<HighGuid::Player>(scheduledEvent.leaderGuid),
-                        leaderName);
-
-                    DCAddon::JsonValue event;
-                    event.SetObject();
-                    event.Set("eventId", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.id)));
-                    event.Set("leaderGuid", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.leaderGuid)));
-                    event.Set("eventType", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.eventType)));
-                    event.Set("dungeonId", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.dungeonId)));
-                    event.Set("dungeonName", DCAddon::JsonValue(scheduledEvent.title));
-                    event.Set("keyLevel", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.keystoneLevel)));
-                    event.Set("scheduledTime", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.scheduledTime)));
-                    event.Set("maxSignups", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.maxSignups)));
-                    event.Set("currentSignups", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.currentSignups)));
-                    event.Set("note", DCAddon::JsonValue(scheduledEvent.description));
-                    event.Set("status", DCAddon::JsonValue(static_cast<int32>(scheduledEvent.status)));
-                    event.Set("leaderName", DCAddon::JsonValue(leaderName));
-                    eventsArray.Push(event);
-                    ++eventCount;
-                }
-
-                eventsArray.Encode();
-                return true;
+                std::string payload = BuildGroupFinderEventsPayloadForStress(
+                    GetGroupFinderStressVariantForSeed(seed), seed);
+                return !payload.empty();
             }
 
             case AddonSurface::GroupFinderSignups:
@@ -3751,33 +4559,9 @@ namespace DCPerfTest
                 if (!availability.hasGroupFinderEvents || !availability.hasGroupFinderSignups)
                     return false;
 
-                std::vector<DCAddon::PlayerEventSignup> signups =
-                    DCAddon::sGroupFinderMgr.GetPlayerEventSignups(fakeGuid);
-                DCAddon::JsonValue signupsArray;
-                signupsArray.SetArray();
-
-                for (DCAddon::PlayerEventSignup const& playerSignup : signups)
-                {
-                    std::string leaderName = "Unknown";
-                    sCharacterCache->GetCharacterNameByGuid(
-                        ObjectGuid::Create<HighGuid::Player>(playerSignup.event.leaderGuid),
-                        leaderName);
-
-                    DCAddon::JsonValue signup;
-                    signup.SetObject();
-                    signup.Set("signupId", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.id)));
-                    signup.Set("eventId", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.eventId)));
-                    signup.Set("role", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.role)));
-                    signup.Set("status", DCAddon::JsonValue(static_cast<int32>(playerSignup.signup.status)));
-                    signup.Set("dungeonName", DCAddon::JsonValue(playerSignup.event.title));
-                    signup.Set("keyLevel", DCAddon::JsonValue(static_cast<int32>(playerSignup.event.keystoneLevel)));
-                    signup.Set("scheduledTime", DCAddon::JsonValue(static_cast<int32>(playerSignup.event.scheduledTime)));
-                    signup.Set("leaderName", DCAddon::JsonValue(leaderName));
-                    signupsArray.Push(signup);
-                }
-
-                signupsArray.Encode();
-                return true;
+                std::string payload = BuildGroupFinderSignupsPayloadForStress(
+                    GetGroupFinderStressVariantForSeed(seed), seed);
+                return !payload.empty();
             }
 
             case AddonSurface::MythicPlus:
@@ -3829,25 +4613,33 @@ namespace DCPerfTest
                 if (!availability.hasMplusBestRuns)
                     return false;
 
-                if (availability.hasMplusDungeons)
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT dungeon_id, level, completion_time, deaths, season "
+                    "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
+                    fakeGuid);
+
+                std::string runList;
+                if (result)
                 {
-                    CharacterDatabase.Query(
-                        "SELECT r.dungeon_id, r.level, r.completion_time, r.deaths, r.season, "
-                        "COALESCE(d.dungeon_name, '') "
-                        "FROM dc_mplus_best_runs r "
-                        "LEFT JOIN dc_mplus_dungeons d ON r.dungeon_id = d.map_id "
-                        "WHERE r.player_guid = {} ORDER BY r.level DESC LIMIT 10",
-                        fakeGuid);
-                }
-                else
-                {
-                    CharacterDatabase.Query(
-                        "SELECT dungeon_id, level, completion_time, deaths, season "
-                        "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
-                        fakeGuid);
+                    bool first = true;
+                    do
+                    {
+                        if (!first)
+                            runList += ";";
+                        first = false;
+
+                        runList += std::to_string((*result)[0].Get<uint32>()) + ":"
+                            + std::to_string((*result)[1].Get<uint32>()) + ":"
+                            + std::to_string((*result)[2].Get<uint32>()) + ":"
+                            + std::to_string((*result)[3].Get<uint32>()) + ":"
+                            + std::to_string((*result)[4].Get<uint32>());
+                    } while (result->NextRow());
                 }
 
-                return true;
+                DCAddon::Message response(DCAddon::Module::MYTHIC_PLUS,
+                    DCAddon::Opcode::MPlus::SMSG_BEST_RUNS);
+                std::string payload = response.Add(runList).Build();
+                return !payload.empty();
             }
 
             case AddonSurface::Wardrobe:
@@ -3887,10 +4679,17 @@ namespace DCPerfTest
                 if (!availability.transmogCollectionTable)
                     return false;
 
-                std::ostringstream sql;
-                sql << "SELECT display_id FROM " << availability.transmogCollectionTable
-                    << " WHERE account_id = " << fakeAccount << " LIMIT 200";
-                CharacterDatabase.Query(sql.str().c_str());
+                WardrobeCollectedStressSample const& sample =
+                    GetWardrobeCollectedStressSample(availability);
+
+                DCAddon::JsonMessage response(DCAddon::Module::COLLECTION,
+                    DCAddon::Opcode::Collection::SMSG_COLLECTED_APPEARANCES);
+                response.SetPreEncodedJson(sample.payload
+                    ? *sample.payload
+                    : std::string("{\"count\":0,\"appearances\":[]}"));
+                std::string payload = response.Build();
+                if (payload.empty())
+                    return false;
                 return true;
             }
 
@@ -3916,71 +4715,50 @@ namespace DCPerfTest
 
             case AddonSurface::HLBGSeasonal:
             {
-                if (availability.HasHLBGUnifiedTables())
-                {
-                    CharacterDatabase.Query(
-                        "SELECT p.guid, MAX(p.player_name) AS player_name, "
-                        "GREATEST(0, COALESCE(SUM(p.rating_change), 0) + 1200) AS current_rating, "
-                        "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS wins "
-                        "FROM dc_hlbg_match_participants p "
-                        "LEFT JOIN dc_hlbg_winner_history wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = {} "
-                        "GROUP BY p.guid "
-                        "ORDER BY current_rating DESC LIMIT 25",
-                        1u);
-                    return true;
-                }
-
-                if (!availability.hasHLBGSeasonal)
+                if (!availability.hasHLBGSeasonData && !availability.hasHLBGSeasonal
+                    && !availability.HasHLBGUnifiedTables())
                     return false;
 
-                CharacterDatabase.Query(
-                    "SELECT guid, player_name, current_rating, wins "
-                    "FROM v_hlbg_player_seasonal_stats "
-                    "WHERE season_id = {} ORDER BY current_rating DESC LIMIT 25",
-                    1u);
-                return true;
+                std::string payload = GetCachedHLBGSeasonalPayloadForStress(
+                    availability);
+                return !payload.empty();
             }
 
             case AddonSurface::HLBGAllTime:
             {
                 if (availability.HasHLBGUnifiedTables())
                 {
-                    static std::vector<uint32> const sampleGuids =
-                        LoadHLBGParticipantSampleGuids(64);
+                    std::vector<uint32> const& sampleGuids =
+                        GetHLBGParticipantSampleGuids();
                     uint32 guid = sampleGuids.empty()
                         ? fakeGuid
                         : sampleGuids[seed % sampleGuids.size()];
-
-                    CharacterDatabase.Query(
-                        "SELECT COUNT(*), "
-                        "COALESCE(SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END), 0), "
-                        "COALESCE(SUM(CASE WHEN wh.winner_tid <> p.team AND wh.winner_tid <> 0 THEN 1 ELSE 0 END), 0), "
-                        "COALESCE(SUM(p.kills), 0) "
-                        "FROM dc_hlbg_match_participants p "
-                        "LEFT JOIN dc_hlbg_winner_history wh ON p.match_id = wh.id "
-                        "WHERE p.guid = {}",
-                        guid);
-                    return true;
+                    std::string payload = GetCachedHLBGAllTimePayloadForStress(
+                        availability, guid);
+                    return !payload.empty();
                 }
 
                 if (!availability.hasHLBGAllTime
                     || !availability.hlbgAllTimeGamesColumn
                     || !availability.hlbgAllTimeWinsColumn
-                    || !availability.hlbgAllTimeKillsColumn)
+                    || !availability.hlbgAllTimeLossesColumn
+                    || !availability.hlbgAllTimeKillsColumn
+                    || !availability.hlbgAllTimeDeathsColumn
+                    || !availability.hlbgAllTimeKdRatioColumn
+                    || !availability.hlbgAllTimeAvgKillsColumn
+                    || !availability.hlbgAllTimeAvgDamageColumn)
                 {
                     return false;
                 }
 
-                std::ostringstream sql;
-                sql << "SELECT guid, " << availability.hlbgAllTimeGamesColumn
-                    << ", " << availability.hlbgAllTimeWinsColumn
-                    << ", " << availability.hlbgAllTimeKillsColumn
-                    << " FROM v_hlbg_player_alltime_stats ORDER BY "
-                    << availability.hlbgAllTimeGamesColumn
-                    << " DESC LIMIT 25";
-                CharacterDatabase.Query(sql.str().c_str());
-                return true;
+                std::vector<uint32> const& sampleGuids =
+                    GetHLBGParticipantSampleGuids();
+                uint32 guid = sampleGuids.empty()
+                    ? fakeGuid
+                    : sampleGuids[seed % sampleGuids.size()];
+                std::string payload = GetCachedHLBGAllTimePayloadForStress(
+                    availability, guid);
+                return !payload.empty();
             }
         }
 
@@ -4138,19 +4916,202 @@ namespace DCPerfTest
         return roundTrip;
     }
 
-    static DCAddon::JsonValue BuildSequentialJsonArrayForStress(uint32 start,
-        uint32 count, uint32 step = 1)
+    inline uint32 MixCollectionHashForStress(uint32 hash, uint32 item)
     {
-        DCAddon::JsonValue array;
-        array.SetArray(count);
+        hash ^= (item * 2654435761u);
+        return (hash << 13) | (hash >> 19);
+    }
 
-        for (uint32 index = 0; index < count; ++index)
+    inline void AppendUnsignedJsonNumberForStress(std::string& out,
+        uint32 value)
+    {
+        char buffer[16];
+        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+        if (ec != std::errc())
         {
-            uint32 value = start + (index * step);
-            array.Push(DCAddon::JsonValue(static_cast<int32>(value)));
+            out += std::to_string(value);
+            return;
         }
 
-        return array;
+        out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+    }
+
+    inline void AppendSignedJsonNumberForStress(std::string& out,
+        int32 value)
+    {
+        char buffer[16];
+        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+        if (ec != std::errc())
+        {
+            out += std::to_string(value);
+            return;
+        }
+
+        out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+    }
+
+    inline void AppendFloatingJsonNumberForStress(std::string& out,
+        double value)
+    {
+        std::ostringstream stream;
+        stream << std::setprecision(15) << value;
+        out += stream.str();
+    }
+
+    inline void AppendJsonKeyForStress(std::string& out, char const* key)
+    {
+        out.push_back('"');
+        out += key;
+        out += "\":";
+    }
+
+    static void AppendSequentialJsonArrayForStress(std::string& out,
+        uint32 start, uint32 count, uint32 step)
+    {
+        out.push_back('[');
+        for (uint32 index = 0; index < count; ++index)
+        {
+            if (index > 0)
+                out.push_back(',');
+
+            AppendUnsignedJsonNumberForStress(out, start + (index * step));
+        }
+        out.push_back(']');
+    }
+
+    static void AppendCollectionStatsJsonForStress(std::string& out,
+        uint32 owned, uint32 total)
+    {
+        out += "{\"owned\":";
+        AppendUnsignedJsonNumberForStress(out, owned);
+        out += ",\"percent\":";
+        AppendFloatingJsonNumberForStress(out,
+            total > 0 ? (static_cast<double>(owned) * 100.0) / total : 0.0);
+        out += ",\"total\":";
+        AppendUnsignedJsonNumberForStress(out, total);
+        out.push_back('}');
+    }
+
+    static std::string BuildCollectionSyncDataJsonForStress(uint32 mountStart,
+        uint32 mountCount, uint32 mountTotal, uint32 petStart, uint32 petCount,
+        uint32 petTotal, uint32 heirloomStart, uint32 heirloomCount,
+        uint32 heirloomTotal, uint32 titleStart, uint32 titleCount,
+        uint32 titleTotal, uint32 transmogStart, uint32 transmogCount,
+        uint32 transmogTotal, uint32 serverHash, uint32 timestamp)
+    {
+        uint32 const totalOwnedItems = mountCount + petCount + heirloomCount
+            + titleCount + transmogCount;
+        uint32 const nextThreshold = 100;
+        int32 const mountsToNext = std::max<int32>(0,
+            100 - static_cast<int32>(mountCount));
+
+        std::string json;
+        json.reserve(512 + (static_cast<std::size_t>(totalOwnedItems) * 8));
+
+        json += "{\"bonuses\":{";
+        json += "\"mountSpeedBonus\":";
+        AppendSignedJsonNumberForStress(json,
+            static_cast<int32>(std::min<uint32>(20, mountCount / 8)));
+        json += ",\"mountsToNext\":";
+        AppendSignedJsonNumberForStress(json, mountsToNext);
+        json += ",\"nextThreshold\":";
+        AppendUnsignedJsonNumberForStress(json, nextThreshold);
+        json += "},\"collections\":{";
+
+        AppendJsonKeyForStress(json, "heirlooms");
+        AppendSequentialJsonArrayForStress(json, heirloomStart, heirloomCount, 1);
+        json += ",";
+        AppendJsonKeyForStress(json, "mounts");
+        AppendSequentialJsonArrayForStress(json, mountStart, mountCount, 3);
+        json += ",";
+        AppendJsonKeyForStress(json, "pets");
+        AppendSequentialJsonArrayForStress(json, petStart, petCount, 2);
+        json += ",";
+        AppendJsonKeyForStress(json, "titles");
+        AppendSequentialJsonArrayForStress(json, titleStart, titleCount, 1);
+        json += ",";
+        AppendJsonKeyForStress(json, "transmog");
+        AppendSequentialJsonArrayForStress(json, transmogStart, transmogCount, 1);
+
+        json += "},\"hash\":";
+        AppendUnsignedJsonNumberForStress(json, serverHash);
+        json += ",\"stats\":{";
+
+        AppendJsonKeyForStress(json, "heirlooms");
+        AppendCollectionStatsJsonForStress(json, heirloomCount, heirloomTotal);
+        json += ",";
+        AppendJsonKeyForStress(json, "mounts");
+        AppendCollectionStatsJsonForStress(json, mountCount, mountTotal);
+        json += ",";
+        AppendJsonKeyForStress(json, "pets");
+        AppendCollectionStatsJsonForStress(json, petCount, petTotal);
+        json += ",";
+        AppendJsonKeyForStress(json, "titles");
+        AppendCollectionStatsJsonForStress(json, titleCount, titleTotal);
+        json += ",";
+        AppendJsonKeyForStress(json, "transmog");
+        AppendCollectionStatsJsonForStress(json, transmogCount, transmogTotal);
+
+        json += "},\"timestamp\":";
+        AppendUnsignedJsonNumberForStress(json, timestamp);
+        json.push_back('}');
+        return json;
+    }
+
+    struct CollectionStressHashStream
+    {
+        uint32 nextValue = 0;
+        uint32 remaining = 0;
+        uint32 step = 1;
+    };
+
+    static uint32 GenerateCollectionHashForStress(uint32 mountStart,
+        uint32 mountCount, uint32 petStart, uint32 petCount,
+        uint32 heirloomStart, uint32 heirloomCount, uint32 titleStart,
+        uint32 titleCount, uint32 transmogStart, uint32 transmogCount)
+    {
+        std::array<CollectionStressHashStream, 5> streams = {{
+            { mountStart, mountCount, 3 },
+            { petStart, petCount, 2 },
+            { heirloomStart, heirloomCount, 1 },
+            { titleStart, titleCount, 1 },
+            { transmogStart, transmogCount, 1 },
+        }};
+
+        uint32 hash = 0;
+        bool hasAnyItems = false;
+
+        for (;;)
+        {
+            uint32 nextItem = std::numeric_limits<uint32>::max();
+            std::size_t nextStream = 0;
+            bool found = false;
+
+            for (std::size_t index = 0; index < streams.size(); ++index)
+            {
+                auto const& stream = streams[index];
+                if (!stream.remaining)
+                    continue;
+
+                if (!found || stream.nextValue < nextItem)
+                {
+                    nextItem = stream.nextValue;
+                    nextStream = index;
+                    found = true;
+                }
+            }
+
+            if (!found)
+                return hasAnyItems ? hash : 0;
+
+            hash = MixCollectionHashForStress(hash, nextItem);
+            hasAnyItems = true;
+
+            auto& chosen = streams[nextStream];
+            --chosen.remaining;
+            if (chosen.remaining)
+                chosen.nextValue += chosen.step;
+        }
     }
 
     struct CollectionSyncPayloadBuildResult
@@ -4178,57 +5139,24 @@ namespace DCPerfTest
             sample.transmogCount + (iteration % std::max<uint32>(1,
                 std::min<uint32>(16, (sample.transmogCount / 24) + 1))));
 
-        DCAddon::JsonValue collections;
-        collections.SetObject();
-        collections.Set("mounts", BuildSequentialJsonArrayForStress(6000 + iteration,
-            mountCount, 3));
-        collections.Set("pets", BuildSequentialJsonArrayForStress(9000 + iteration,
-            petCount, 2));
-        collections.Set("heirlooms", BuildSequentialJsonArrayForStress(
-            300000 + iteration, heirloomCount, 1));
-        collections.Set("titles", BuildSequentialJsonArrayForStress(500 + iteration,
-            titleCount, 1));
-        collections.Set("transmog", BuildSequentialJsonArrayForStress(
-            150000 + iteration, transmogCount, 1));
-
-        auto addStats = [](DCAddon::JsonValue& stats, char const* key,
-            uint32 owned, uint32 total)
-        {
-            DCAddon::JsonValue stat;
-            stat.SetObject();
-            stat.Set("owned", owned);
-            stat.Set("total", total);
-            stat.Set("percent", total > 0
-                ? (static_cast<double>(owned) * 100.0) / total : 0.0);
-            stats.Set(key, std::move(stat));
-        };
-
-        DCAddon::JsonValue stats;
-        stats.SetObject();
-        addStats(stats, "mounts", mountCount, sample.mountTotal);
-        addStats(stats, "pets", petCount, sample.petTotal);
-        addStats(stats, "heirlooms", heirloomCount, sample.heirloomTotal);
-        addStats(stats, "titles", titleCount, sample.titleTotal);
-        addStats(stats, "transmog", transmogCount, sample.transmogTotal);
-
-        DCAddon::JsonValue bonuses;
-        bonuses.SetObject();
-        bonuses.Set("mountSpeedBonus", static_cast<int32>(std::min<uint32>(20,
-            mountCount / 8)));
-        bonuses.Set("nextThreshold", static_cast<int32>(100));
-        bonuses.Set("mountsToNext", static_cast<int32>(std::max<int32>(0,
-            100 - static_cast<int32>(mountCount))));
-
-        uint32 serverHash = 0xC011EC71u ^ (mountCount * 131u)
-            ^ (petCount * 59u) ^ (transmogCount * 17u) ^ iteration;
+        uint32 serverHash = GenerateCollectionHashForStress(
+            6000 + iteration, mountCount,
+            9000 + iteration, petCount,
+            300000 + iteration, heirloomCount,
+            500 + iteration, titleCount,
+            150000 + iteration, transmogCount);
+        uint32 timestamp = static_cast<uint32>(std::time(nullptr)) + iteration;
+        std::string rawData = BuildCollectionSyncDataJsonForStress(
+            6000 + iteration, mountCount, sample.mountTotal,
+            9000 + iteration, petCount, sample.petTotal,
+            300000 + iteration, heirloomCount, sample.heirloomTotal,
+            500 + iteration, titleCount, sample.titleTotal,
+            150000 + iteration, transmogCount, sample.transmogTotal,
+            serverHash, timestamp);
 
         DCAddon::JsonMessage msg(DCAddon::Module::COLLECTION,
             DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
-        msg.Set("collections", std::move(collections));
-        msg.Set("stats", std::move(stats));
-        msg.Set("bonuses", std::move(bonuses));
-        msg.Set("hash", serverHash);
-        msg.Set("timestamp", static_cast<uint32>(std::time(nullptr)) + iteration);
+        msg.SetPreEncodedJson(std::move(rawData));
 
         CollectionSyncPayloadBuildResult result;
         result.payload = msg.Build();
@@ -4804,134 +5732,14 @@ namespace DCPerfTest
 
                 GroupFinderStressVariant const& variant =
                     variants[i % categoryCount];
-                uint32 groupCount = std::min<uint32>(50,
-                    std::max<uint32>(1, variant.groupCount));
-                std::string const& category = variant.category;
-                uint32 dungeonNameLength = ClampStressValue(
-                    variant.dungeonNameLength, 12, 8, 32);
-                uint32 noteLength = ClampStressValue(variant.noteLength,
-                    20, 10, 72);
-                uint32 difficulty = ClampStressValue(variant.difficulty,
-                    variant.listingType == 1 ? 2 : 1, 1, 4);
-                uint32 keystoneLevel = variant.listingType == 1
-                    ? ClampStressValue(variant.keystoneLevel, 10, 2, 30) : 0;
-                uint32 minIlvl = ClampStressValue(variant.minIlvl, 240,
-                    180, 400);
-                uint32 currentTank = std::min<uint32>(1, variant.currentTank);
-                uint32 currentHealer = std::min<uint32>(1,
-                    variant.currentHealer);
-                uint32 currentDps = ClampStressValue(variant.currentDps, 1,
-                    0, 5);
-                uint32 needTank = std::min<uint32>(1, variant.needTank);
-                uint32 needHealer = std::min<uint32>(1,
-                    variant.needHealer);
-                uint32 needDps = ClampStressValue(variant.needDps, 2, 0, 5);
-
-                DCAddon::JsonValue groupsArray;
-                groupsArray.SetArray();
-                for (uint32 groupIndex = 0; groupIndex < groupCount; ++groupIndex)
-                {
-                    GroupFinderStressRowSample const* rowSample =
-                        variant.rowSamples.empty()
-                        ? nullptr
-                        : &variant.rowSamples[(groupIndex + i)
-                            % variant.rowSamples.size()];
-                    uint32 rowListingType = rowSample
-                        ? rowSample->listingType
-                        : variant.listingType;
-                    std::string rowCategory = GroupFinderCategoryFromType(
-                        rowListingType);
-                    std::string dungeonName = rowSample
-                        ? rowSample->dungeonName
-                        : MakeSizedStressText("Dungeon-", dungeonNameLength,
-                            i + groupIndex);
-                    std::string note = rowSample
-                        ? rowSample->note
-                        : MakeSizedStressText("Need ", noteLength,
-                            (i * 13u) + groupIndex);
-                    uint32 rowDifficulty = rowSample
-                        ? rowSample->difficulty
-                        : difficulty;
-                    uint32 rowKeystoneLevel = rowSample
-                        ? rowSample->keystoneLevel
-                        : keystoneLevel;
-                    uint32 rowMinIlvl = rowSample
-                        ? rowSample->minIlvl
-                        : minIlvl;
-                    uint32 rowCurrentTank = rowSample
-                        ? rowSample->currentTank
-                        : currentTank;
-                    uint32 rowCurrentHealer = rowSample
-                        ? rowSample->currentHealer
-                        : currentHealer;
-                    uint32 rowCurrentDps = rowSample
-                        ? rowSample->currentDps
-                        : currentDps;
-                    uint32 rowNeedTank = rowSample
-                        ? rowSample->needTank
-                        : needTank;
-                    uint32 rowNeedHealer = rowSample
-                        ? rowSample->needHealer
-                        : needHealer;
-                    uint32 rowNeedDps = rowSample
-                        ? rowSample->needDps
-                        : needDps;
-
-                    DCAddon::JsonValue group;
-                    group.SetObject();
-                    group.Set("id", static_cast<int32>(rowSample
-                        ? rowSample->id
-                        : (1000 + groupIndex + i)));
-                    group.Set("leaderGuid", static_cast<int32>(rowSample
-                        ? rowSample->leaderGuid
-                        : (50000 + groupIndex + i)));
-                    group.Set("dungeonId", static_cast<int32>(rowSample
-                        ? rowSample->dungeonId
-                        : (33 + (groupIndex % 12))));
-                    group.Set("dungeon", dungeonName);
-                    group.Set("dungeonName", dungeonName);
-                    group.Set("raid", dungeonName);
-                    group.Set("difficulty", static_cast<int32>(rowDifficulty));
-                    group.Set("difficultyName",
-                        GetGroupFinderDifficultyNameForStress(rowListingType,
-                            rowDifficulty));
-                    group.Set("level", static_cast<int32>(rowKeystoneLevel));
-                    group.Set("keystoneLevel",
-                        static_cast<int32>(rowKeystoneLevel));
-                    group.Set("minIlvl", static_cast<int32>(rowMinIlvl));
-                    group.Set("tank", rowCurrentTank > 0);
-                    group.Set("healer", rowCurrentHealer > 0);
-                    group.Set("dps", static_cast<int32>(rowCurrentDps));
-                    group.Set("needTank", static_cast<int32>(rowNeedTank));
-                    group.Set("needHealer", static_cast<int32>(rowNeedHealer));
-                    group.Set("needDps", static_cast<int32>(rowNeedDps));
-                    group.Set("spots", static_cast<int32>(rowNeedTank
-                        + rowNeedHealer + rowNeedDps));
-                    group.Set("note", note);
-                    group.Set("progress", note);
-                    group.Set("type", static_cast<int32>(rowListingType));
-                    group.Set("category", rowCategory);
-                    group.Set("leader", rowSample
-                        ? rowSample->leaderName
-                        : MakeSizedStressText("Leader-", 12,
-                            groupIndex + i));
-                    groupsArray.Push(group);
-                }
-
-                std::string groupsEncoded = groupsArray.Encode();
-                DCAddon::JsonMessage jsonMsg(DCAddon::Module::GROUP_FINDER,
-                    DCAddon::Opcode::GroupFinder::SMSG_SEARCH_RESULTS);
-                jsonMsg.Set("groups", groupsEncoded);
-                jsonMsg.Set("count", static_cast<int32>(groupCount));
-                jsonMsg.Set("category", category);
-
-                std::string payload = jsonMsg.Build();
+                std::string payload =
+                    GetCachedGroupFinderListingsPayloadForStress(variant, i);
                 std::string roundTrip = ValidateAndRoundTripJsonPayloadForStress(
                     payload, "groupfinder sync payload",
                     DCAddon::Opcode::GroupFinder::SMSG_SEARCH_RESULTS);
 
                 digest += roundTrip.size();
-                digest += groupsEncoded.size() + groupCount;
+                digest += payload.size() + variant.groupCount;
 
                 auto end = Clock::now();
                 if (digest == std::numeric_limits<uint64>::max())
@@ -6351,6 +7159,8 @@ namespace DCPerfTest
 
         try
         {
+            PrewarmAddonSurfaceBenchmarkState(availability);
+
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 fakeGuid = 10000 + (i % 5000);
@@ -6444,7 +7254,7 @@ namespace DCPerfTest
             workload.push_back(AddonSurface::Wardrobe);
         if (availability.HasHLBGSurface())
             workload.push_back(AddonSurface::HLBG);
-        if (availability.HasProtocolSurface())
+        if (availability.HasLiveProtocolSurface())
             workload.push_back(AddonSurface::Protocol);
 
         if (workload.empty())
@@ -6455,6 +7265,8 @@ namespace DCPerfTest
 
         try
         {
+            PrewarmAddonSurfaceBenchmarkState(availability);
+
             for (uint32 i = 0; i < playerCount; ++i)
             {
                 uint32 fakeGuid = 10000 + ((i * 13) % 5000);

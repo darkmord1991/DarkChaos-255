@@ -22,6 +22,9 @@
 #include "CharacterCache.h"
 #include "dc_addon_groupfinder.h"
 
+#include <mutex>
+#include <unordered_map>
+
 namespace DCAddon
 {
 namespace GroupFinder
@@ -65,6 +68,159 @@ namespace GroupFinder
     inline bool JsonGetBool(const JsonValue& json, const std::string& key, bool defaultVal = false)
     {
         return json[key].IsBool() ? json[key].AsBool() : defaultVal;
+    }
+
+    static std::string CategoryFromListingType(uint8 listingType);
+    static std::string DifficultyNameFromListing(uint8 listingType,
+        uint8 difficulty);
+
+    namespace
+    {
+        constexpr uint64 GROUP_FINDER_SEARCH_CACHE_TTL_MS = 1000;
+
+        struct SearchListingsCacheKey
+        {
+            std::string category;
+            uint8 listingType = 0;
+            uint32 dungeonId = 0;
+            uint8 minLevel = 0;
+            uint8 maxLevel = 0;
+            uint16 minRating = 0;
+
+            bool operator==(SearchListingsCacheKey const& other) const
+            {
+                return category == other.category
+                    && listingType == other.listingType
+                    && dungeonId == other.dungeonId
+                    && minLevel == other.minLevel
+                    && maxLevel == other.maxLevel
+                    && minRating == other.minRating;
+            }
+        };
+
+        struct SearchListingsCacheKeyHash
+        {
+            size_t operator()(SearchListingsCacheKey const& key) const
+            {
+                size_t hash = std::hash<std::string>{}(key.category);
+                hash ^= static_cast<size_t>(key.listingType) + 0x9e3779b9u + (hash << 6) + (hash >> 2);
+                hash ^= static_cast<size_t>(key.dungeonId) + 0x9e3779b9u + (hash << 6) + (hash >> 2);
+                hash ^= static_cast<size_t>(key.minLevel) + 0x9e3779b9u + (hash << 6) + (hash >> 2);
+                hash ^= static_cast<size_t>(key.maxLevel) + 0x9e3779b9u + (hash << 6) + (hash >> 2);
+                hash ^= static_cast<size_t>(key.minRating) + 0x9e3779b9u + (hash << 6) + (hash >> 2);
+                return hash;
+            }
+        };
+
+        struct CachedSearchListingsPayload
+        {
+            uint64 expiresAtMs = 0;
+            std::string encodedJson;
+        };
+
+        std::mutex sSearchListingsCacheMutex;
+        std::unordered_map<SearchListingsCacheKey, CachedSearchListingsPayload,
+            SearchListingsCacheKeyHash> sSearchListingsPayloads;
+
+        uint64 GetGroupFinderSearchCacheNowMs()
+        {
+            return GameTime::GetGameTimeMS().count();
+        }
+
+        void InvalidateSearchListingsCache()
+        {
+            std::lock_guard<std::mutex> lock(sSearchListingsCacheMutex);
+            sSearchListingsPayloads.clear();
+        }
+
+        std::string BuildSearchListingsJson(
+            std::string const& category,
+            uint8 listingType,
+            std::vector<GroupFinderListing> const& results)
+        {
+            JsonValue groupsArray;
+            groupsArray.SetArray();
+
+            for (GroupFinderListing const& listing : results)
+            {
+                JsonValue group;
+                group.SetObject();
+
+                std::string leaderName = "Unknown";
+                sCharacterCache->GetCharacterNameByGuid(
+                    ObjectGuid::Create<HighGuid::Player>(listing.leaderGuid),
+                    leaderName);
+
+                std::string listingCategory = !category.empty()
+                    ? category
+                    : CategoryFromListingType(listing.listingType);
+
+                group.Set("id", JsonValue(static_cast<int32>(listing.id)));
+                group.Set("leaderGuid", JsonValue(static_cast<int32>(listing.leaderGuid)));
+                group.Set("dungeonId", JsonValue(static_cast<int32>(listing.dungeonId)));
+                group.Set("dungeon", JsonValue(listing.dungeonName));
+                group.Set("dungeonName", JsonValue(listing.dungeonName));
+                group.Set("raid", JsonValue(listing.dungeonName));
+                group.Set("difficulty", JsonValue(static_cast<int32>(listing.difficulty)));
+                group.Set("difficultyName", JsonValue(DifficultyNameFromListing(
+                    listing.listingType, listing.difficulty)));
+                group.Set("level", JsonValue(static_cast<int32>(listing.keystoneLevel)));
+                group.Set("keystoneLevel", JsonValue(static_cast<int32>(listing.keystoneLevel)));
+                group.Set("minIlvl", JsonValue(static_cast<int32>(listing.minIlvl)));
+                group.Set("tank", JsonValue(listing.currentTank > 0));
+                group.Set("healer", JsonValue(listing.currentHealer > 0));
+                group.Set("dps", JsonValue(static_cast<int32>(listing.currentDps)));
+                group.Set("needTank", JsonValue(static_cast<int32>(listing.needTank)));
+                group.Set("needHealer", JsonValue(static_cast<int32>(listing.needHealer)));
+                group.Set("needDps", JsonValue(static_cast<int32>(listing.needDps)));
+                group.Set("spots", JsonValue(static_cast<int32>(
+                    listing.needTank + listing.needHealer + listing.needDps)));
+                group.Set("note", JsonValue(listing.note));
+                group.Set("progress", JsonValue(listing.note));
+                group.Set("type", JsonValue(static_cast<int32>(listing.listingType)));
+                group.Set("category", JsonValue(listingCategory));
+                group.Set("leader", JsonValue(leaderName));
+                groupsArray.Push(group);
+            }
+
+            JsonValue payload;
+            payload.SetObject();
+            payload.Set("groups", JsonValue(groupsArray.Encode()));
+            payload.Set("count", JsonValue(static_cast<int32>(groupsArray.Size())));
+
+            if (!category.empty())
+                payload.Set("category", JsonValue(category));
+            else if (listingType > 0)
+                payload.Set("category", JsonValue(CategoryFromListingType(listingType)));
+
+            return payload.Encode();
+        }
+
+        std::string GetCachedSearchListingsJson(
+            SearchListingsCacheKey const& cacheKey,
+            std::vector<GroupFinderListing> const& results)
+        {
+            uint64 const nowMs = GetGroupFinderSearchCacheNowMs();
+
+            {
+                std::lock_guard<std::mutex> lock(sSearchListingsCacheMutex);
+                auto itr = sSearchListingsPayloads.find(cacheKey);
+                if (itr != sSearchListingsPayloads.end()
+                    && itr->second.expiresAtMs > nowMs)
+                {
+                    return itr->second.encodedJson;
+                }
+            }
+
+            CachedSearchListingsPayload cacheEntry;
+            cacheEntry.encodedJson = BuildSearchListingsJson(
+                cacheKey.category, cacheKey.listingType, results);
+            cacheEntry.expiresAtMs = nowMs + GROUP_FINDER_SEARCH_CACHE_TTL_MS;
+
+            std::lock_guard<std::mutex> lock(sSearchListingsCacheMutex);
+            sSearchListingsPayloads[cacheKey] = cacheEntry;
+            return cacheEntry.encodedJson;
+        }
     }
 
     // ========================================================================
@@ -266,6 +422,8 @@ namespace GroupFinder
 
         if (listingId > 0)
         {
+            InvalidateSearchListingsCache();
+
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_LISTING_CREATED)
                 .Set("success", true)
                 .Set("listingId", static_cast<int32>(listingId))
@@ -297,70 +455,24 @@ namespace GroupFinder
         if (listingType <= 0 && !category.empty())
             listingType = ListingTypeFromCategory(category);
 
+        SearchListingsCacheKey cacheKey;
+        cacheKey.category = category;
+        cacheKey.listingType = static_cast<uint8>(listingType > 0 ? listingType : 0);
+        cacheKey.dungeonId = static_cast<uint32>(dungeonId > 0 ? dungeonId : 0);
+        cacheKey.minLevel = static_cast<uint8>(minLevel > 0 ? minLevel : 0);
+        cacheKey.maxLevel = static_cast<uint8>(maxLevel > 0 ? maxLevel : 0);
+        cacheKey.minRating = static_cast<uint16>(minRating > 0 ? minRating : 0);
+
         auto results = sGroupFinderMgr.SearchListings(
-            static_cast<uint8>(listingType > 0 ? listingType : 0),
-            static_cast<uint32>(dungeonId > 0 ? dungeonId : 0),
-            static_cast<uint8>(minLevel > 0 ? minLevel : 0),
-            static_cast<uint8>(maxLevel > 0 ? maxLevel : 0),
-            static_cast<uint16>(minRating > 0 ? minRating : 0));
-
-        JsonValue groupsArray;
-        groupsArray.SetArray();
-
-        for (GroupFinderListing const& listing : results)
-        {
-            JsonValue group;
-            group.SetObject();
-
-            std::string leaderName = "Unknown";
-            sCharacterCache->GetCharacterNameByGuid(
-                ObjectGuid::Create<HighGuid::Player>(listing.leaderGuid),
-                leaderName);
-
-            std::string listingCategory = !category.empty()
-                ? category
-                : CategoryFromListingType(listing.listingType);
-
-            group.Set("id", JsonValue(static_cast<int32>(listing.id)));
-            group.Set("leaderGuid", JsonValue(static_cast<int32>(listing.leaderGuid)));
-            group.Set("dungeonId", JsonValue(static_cast<int32>(listing.dungeonId)));
-            group.Set("dungeon", JsonValue(listing.dungeonName));
-            group.Set("dungeonName", JsonValue(listing.dungeonName));
-            group.Set("raid", JsonValue(listing.dungeonName));
-            group.Set("difficulty", JsonValue(static_cast<int32>(listing.difficulty)));
-            group.Set("difficultyName", JsonValue(DifficultyNameFromListing(
-                listing.listingType, listing.difficulty)));
-            group.Set("level", JsonValue(static_cast<int32>(listing.keystoneLevel)));
-            group.Set("keystoneLevel", JsonValue(static_cast<int32>(listing.keystoneLevel)));
-            group.Set("minIlvl", JsonValue(static_cast<int32>(listing.minIlvl)));
-            group.Set("tank", JsonValue(listing.currentTank > 0));
-            group.Set("healer", JsonValue(listing.currentHealer > 0));
-            group.Set("dps", JsonValue(static_cast<int32>(listing.currentDps)));
-            group.Set("needTank", JsonValue(static_cast<int32>(listing.needTank)));
-            group.Set("needHealer", JsonValue(static_cast<int32>(listing.needHealer)));
-            group.Set("needDps", JsonValue(static_cast<int32>(listing.needDps)));
-            group.Set("spots", JsonValue(static_cast<int32>(
-                listing.needTank + listing.needHealer + listing.needDps)));
-            group.Set("note", JsonValue(listing.note));
-            group.Set("progress", JsonValue(listing.note));
-            group.Set("type", JsonValue(static_cast<int32>(listing.listingType)));
-            group.Set("category", JsonValue(listingCategory));
-            group.Set("leader", JsonValue(leaderName));
-
-            groupsArray.Push(group);
-        }
+            cacheKey.listingType,
+            cacheKey.dungeonId,
+            cacheKey.minLevel,
+            cacheKey.maxLevel,
+            cacheKey.minRating);
 
         JsonMessage jsonMsg(Module::GROUP_FINDER,
             Opcode::GroupFinder::SMSG_SEARCH_RESULTS);
-        jsonMsg.Set("groups", groupsArray.Encode());
-        jsonMsg.Set("count", static_cast<int32>(groupsArray.Size()));
-
-        if (!category.empty())
-            jsonMsg.Set("category", category);
-        else if (listingType > 0)
-            jsonMsg.Set("category", CategoryFromListingType(
-                static_cast<uint8>(listingType)));
-
+        jsonMsg.SetPreEncodedJson(GetCachedSearchListingsJson(cacheKey, results));
         jsonMsg.Send(player);
     }
 
@@ -507,6 +619,8 @@ namespace GroupFinder
         // Use manager to accept application (handles DB, cache, and notifications)
         if (listingId != 0 && sGroupFinderMgr.AcceptApplication(player, listingId, applicantGuid))
         {
+            InvalidateSearchListingsCache();
+
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
                 .Set("action", "accepted")
                 .Set("playerGuid", static_cast<int32>(applicantGuid))
@@ -589,6 +703,8 @@ namespace GroupFinder
         // Use manager to delete listing
         if (sGroupFinderMgr.DeleteListing(player, listingId))
         {
+            InvalidateSearchListingsCache();
+
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
                 .Set("action", "delisted")
                 .Set("listingId", listingId)

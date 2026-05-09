@@ -62,6 +62,7 @@ set(SCRIPTS_DC_AoELoot
 set(SCRIPTS_DC_QOL
     QOL/dc_questgiver_status_override.cpp
     QOL/dc_looter_pet.cpp
+    QOL/dc_breaking_news_qol.cpp
 )
 
 # Phased Duels System
@@ -225,6 +226,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_hlbg.cpp
     AddonExtension/dc_addon_seasons.cpp
     AddonExtension/dc_addon_leaderboards.cpp
+    AddonExtension/dc_addon_breaking_news.cpp
     AddonExtension/dc_addon_welcome.cpp
     AddonExtension/dc_addon_duels.cpp
     AddonExtension/dc_addon_prestige.cpp

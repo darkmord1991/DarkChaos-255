@@ -39,6 +39,7 @@
 #include <iomanip>
 #include <cmath>
 #include <cctype>
+#include <charconv>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -1419,12 +1420,9 @@ namespace DCAddon
                 case Number: {
                     // Integer values dominate addon payloads; reserve for the
                     // fast path and keep a safe fallback budget for doubles.
-                    if (std::isfinite(_number))
-                    {
-                        double intPart = 0.0;
-                        if (std::modf(_number, &intPart) == 0.0)
-                            return std::to_string(static_cast<long long>(intPart)).size();
-                    }
+                    long long integralValue = 0;
+                    if (TryGetIntegralValue(_number, integralValue))
+                        return CountIntegerChars(integralValue);
 
                     return 24;
                 }
@@ -1499,16 +1497,11 @@ namespace DCAddon
                 case Number: {
                     // IMPORTANT: Preserve integer fidelity for large IDs (e.g. spawnId ~= 9,000,000).
                     // Default iostream precision (6) would round 9000189/9000191 to 9.00019e+06.
-                    if (std::isfinite(_number))
+                    long long integralValue = 0;
+                    if (TryGetIntegralValue(_number, integralValue))
                     {
-                        double intPart = 0.0;
-                        if (std::modf(_number, &intPart) == 0.0
-                            && intPart >= static_cast<double>(std::numeric_limits<long long>::min())
-                            && intPart <= static_cast<double>(std::numeric_limits<long long>::max()))
-                        {
-                            out += std::to_string(static_cast<long long>(intPart));
-                            return;
-                        }
+                        AppendInteger(integralValue, out);
+                        return;
                     }
 
                     std::ostringstream ss;
@@ -1563,6 +1556,48 @@ namespace DCAddon
         }
 
     private:
+        static bool TryGetIntegralValue(double value, long long& out)
+        {
+            if (!std::isfinite(value))
+                return false;
+
+            double intPart = 0.0;
+            if (std::modf(value, &intPart) != 0.0)
+                return false;
+
+            if (intPart < static_cast<double>(std::numeric_limits<long long>::min())
+                || intPart > static_cast<double>(std::numeric_limits<long long>::max()))
+            {
+                return false;
+            }
+
+            out = static_cast<long long>(intPart);
+            return true;
+        }
+
+        static std::size_t CountIntegerChars(long long value)
+        {
+            char buffer[32];
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+            if (ec != std::errc())
+                return 24;
+
+            return static_cast<std::size_t>(ptr - buffer);
+        }
+
+        static void AppendInteger(long long value, std::string& out)
+        {
+            char buffer[32];
+            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
+            if (ec != std::errc())
+            {
+                out += std::to_string(value);
+                return;
+            }
+
+            out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+        }
+
         static void AppendEscapedString(std::string const& source,
             std::string& out)
         {
@@ -1771,20 +1806,72 @@ namespace DCAddon
             return *this;
         }
 
-        JsonMessage& Set(const std::string& key, bool v) { _json.Set(key, JsonValue(v)); return *this; }
-        JsonMessage& Set(const std::string& key, int32 v) { _json.Set(key, JsonValue(v)); return *this; }
-        JsonMessage& Set(const std::string& key, uint32 v) { _json.Set(key, JsonValue(v)); return *this; }
-        JsonMessage& Set(const std::string& key, double v) { _json.Set(key, JsonValue(v)); return *this; }
-        JsonMessage& Set(const std::string& key, const std::string& v) { _json.Set(key, JsonValue(v)); return *this; }
-        JsonMessage& Set(const std::string& key, const char* v) { _json.Set(key, JsonValue(v)); return *this; }
-        JsonMessage& Set(const std::string& key, const JsonValue& v) { _json.Set(key, v); return *this; }
-        JsonMessage& Set(const std::string& key, JsonValue&& v) { _json.Set(key, std::move(v)); return *this; }
+        JsonMessage& Set(const std::string& key, bool v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, JsonValue(v));
+            return *this;
+        }
+        JsonMessage& Set(const std::string& key, int32 v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, JsonValue(v));
+            return *this;
+        }
+        JsonMessage& Set(const std::string& key, uint32 v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, JsonValue(v));
+            return *this;
+        }
+        JsonMessage& Set(const std::string& key, double v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, JsonValue(v));
+            return *this;
+        }
+        JsonMessage& Set(const std::string& key, const std::string& v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, JsonValue(v));
+            return *this;
+        }
+        JsonMessage& Set(const std::string& key, const char* v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, JsonValue(v));
+            return *this;
+        }
+        JsonMessage& Set(const std::string& key, const JsonValue& v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, v);
+            return *this;
+        }
+        JsonMessage& Set(const std::string& key, JsonValue&& v)
+        {
+            ClearPreEncodedJson();
+            _json.Set(key, std::move(v));
+            return *this;
+        }
+        JsonMessage& SetPreEncodedJson(const std::string& json)
+        {
+            _preEncodedJson = json;
+            _hasPreEncodedJson = true;
+            return *this;
+        }
+        JsonMessage& SetPreEncodedJson(std::string&& json)
+        {
+            _preEncodedJson = std::move(json);
+            _hasPreEncodedJson = true;
+            return *this;
+        }
 
         std::string Build() const
         {
             std::string const opcode = std::to_string(_opcode);
             std::string result;
-            result.reserve(_module.size() + opcode.size() + _json.EstimateEncodedSize()
+            result.reserve(_module.size() + opcode.size() + GetEncodedJsonSize()
                 + (_requestId.empty() ? 3 : (8 + _requestId.size())));
 
             result = _module;
@@ -1799,7 +1886,7 @@ namespace DCAddon
             }
             result += JSON_MARKER;
             result += DELIMITER;
-            _json.AppendEncodedTo(result);
+            AppendEncodedJsonTo(result);
             return result;
         }
 
@@ -1830,7 +1917,7 @@ namespace DCAddon
                 payload += DELIMITER;
                 payload += JSON_MARKER;
                 payload += DELIMITER;
-                payload += _json.Encode();
+                payload += EncodeJson();
             }
             else
             {
@@ -1880,10 +1967,40 @@ namespace DCAddon
         }
 
     private:
+        void ClearPreEncodedJson()
+        {
+            _hasPreEncodedJson = false;
+            _preEncodedJson.clear();
+        }
+
+        std::size_t GetEncodedJsonSize() const
+        {
+            return _hasPreEncodedJson ? _preEncodedJson.size()
+                : _json.EstimateEncodedSize();
+        }
+
+        void AppendEncodedJsonTo(std::string& out) const
+        {
+            if (_hasPreEncodedJson)
+            {
+                out += _preEncodedJson;
+                return;
+            }
+
+            _json.AppendEncodedTo(out);
+        }
+
+        std::string EncodeJson() const
+        {
+            return _hasPreEncodedJson ? _preEncodedJson : _json.Encode();
+        }
+
         std::string _module;
         uint8 _opcode;
         JsonValue _json;
         std::string _requestId;
+        std::string _preEncodedJson;
+        bool _hasPreEncodedJson = false;
     };
 
     // Check if a parsed message contains JSON

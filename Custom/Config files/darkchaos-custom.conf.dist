@@ -5,7 +5,7 @@
 # Master configuration file for DarkChaos-255 private server (WoW 3.3.5a)
 # Level 255 progression with custom systems
 #
-# Last Updated: January 2026
+# Last Updated: May 2026
 #
 # =============================================================================
 # TABLE OF CONTENTS
@@ -2856,6 +2856,60 @@ DCFirstStart.AnnounceMessage = "Welcome to |cff00ff00DarkChaos-255|r! Type |cfff
 #        Default:     0 (Disabled)
 #
 DCFirstStart.PlayerAnnounce = 0
+
+# -----------------------------------------------------------------------------
+# Character Select Breaking News
+# -----------------------------------------------------------------------------
+
+#
+#    DC.BreakingNews.Enable
+#        Description: Enable custom breaking-news payloads on character select.
+#                     Requires the WotLK-Extensions breaking-news client glue
+#                     package and custom packet support on the client.
+#        Default:     0 (Disabled)
+#
+DC.BreakingNews.Enable = 0
+
+#
+#    DC.BreakingNews.Title
+#        Description: Title shown in the character-select alert frame
+#        Default:     "Breaking News"
+#
+DC.BreakingNews.Title = "Breaking News"
+
+#
+#    DC.BreakingNews.ContentPath
+#        Description: Relative or absolute path to the news body file loaded by
+#                     the server and pushed during character enumeration.
+#                     Recommended format is a SimpleHTML body fragment.
+#        Default:     "./Custom/Config files/breaking-news.simplehtml"
+#
+DC.BreakingNews.ContentPath = "./Custom/Config files/breaking-news.simplehtml"
+
+#
+#    DC.BreakingNews.Format
+#        Description: Body format sent to the client
+#                     Supported: plain, simplehtml
+#                     Note: "html" is treated as simplehtml.
+#        Default:     "simplehtml"
+#
+DC.BreakingNews.Format = "simplehtml"
+
+#
+#    DC.BreakingNews.Cache
+#        Description: Cache the loaded news body for short bursts of repeated
+#                     character-list requests to reduce file IO.
+#        Default:     1 (Enabled)
+#
+DC.BreakingNews.Cache = 1
+
+#
+#    DC.BreakingNews.Verbose
+#        Description: Enable verbose log output when the breaking-news payload
+#                     is refreshed or sent.
+#        Default:     0 (Disabled)
+#
+DC.BreakingNews.Verbose = 0
 
 # -----------------------------------------------------------------------------
 # Bind-on-Account Heirloom Items

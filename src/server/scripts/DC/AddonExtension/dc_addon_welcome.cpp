@@ -50,6 +50,7 @@ namespace DCWelcome
     namespace
     {
         constexpr std::time_t WELCOME_CONTENT_CACHE_TTL_SECS = 30;
+        constexpr uint64 WELCOME_PROGRESS_CACHE_TTL_MS = 1000;
 
         bool CharacterTableExists(char const* tableName)
         {
@@ -74,8 +75,19 @@ namespace DCWelcome
             std::time_t expiresAt = 0;
         };
 
+        struct CachedProgressPayload
+        {
+            uint32 accountId = 0;
+            uint32 activeSeason = 0;
+            uint32 weekStart = 0;
+            uint32 maxLevel = 0;
+            std::string data = "{}";
+            uint64 expiresAtMs = 0;
+        };
+
         std::mutex sWelcomeContentCacheLock;
         std::unordered_map<std::string, CachedFaqPayload> sCachedFaqPayloads;
+        std::unordered_map<uint32, CachedProgressPayload> sCachedProgressPayloads;
         CachedWhatsNewPayload sCachedWhatsNewPayload;
 
         std::string NormalizeFaqCategoryFilter(std::string categoryFilter)
@@ -211,11 +223,100 @@ namespace DCWelcome
                 && sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", false);
         }
 
+        bool HasSeasonalProgressSummary()
+        {
+            static bool const hasSeasonalStatsTable = CharacterTableExists("dc_player_seasonal_stats");
+            return hasSeasonalStatsTable;
+        }
+
+        uint32 GetWeeklySeasonPointCap()
+        {
+            uint32 cap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyTokenCap", 0);
+            if (cap == 0)
+                cap = sConfigMgr->GetOption<uint32>("SeasonalRewards.MaxTokensPerWeek", 0);
+
+            return cap > 0 ? cap : 1000;
+        }
+
+        std::string const& BuildProgressSnapshotQuery(bool useWeeklyVaultSummary,
+            bool useSeasonalProgressSummary)
+        {
+            static std::array<std::string, 4> const queries = []
+            {
+                std::array<std::string, 4> builtQueries;
+                auto buildQuery = [](bool useWeeklyVault, bool useSeasonalSummary)
+                {
+                    std::string seasonPointsSelect;
+                    std::string seasonPointsJoin;
+                    if (useSeasonalSummary)
+                    {
+                        seasonPointsSelect = "COALESCE(s.weekly_tokens_earned, 0)";
+                        seasonPointsJoin =
+                            "LEFT JOIN dc_player_seasonal_stats s "
+                            "ON s.player_guid = {} AND s.season_id = {} ";
+                    }
+                    else
+                    {
+                        seasonPointsSelect = "COALESCE(sp.season_points, 0)";
+                        seasonPointsJoin =
+                            "LEFT JOIN (SELECT COALESCE(SUM(best_score), 0) AS season_points "
+                            "FROM dc_mplus_scores WHERE character_guid = {} AND season_id = {}) sp "
+                            "ON 1 = 1 ";
+                    }
+
+                    std::string weeklyRunsSelect;
+                    std::string weeklyRunsJoin;
+                    if (useWeeklyVault)
+                    {
+                        weeklyRunsSelect = "COALESCE(v.runs_completed, 0)";
+                        weeklyRunsJoin =
+                            "LEFT JOIN dc_weekly_vault v "
+                            "ON v.character_guid = {} AND v.season_id = {} "
+                            "AND v.week_start = {} ";
+                    }
+                    else
+                    {
+                        weeklyRunsSelect = "COALESCE(wr.runs_completed, 0)";
+                        weeklyRunsJoin =
+                            "LEFT JOIN (SELECT COUNT(*) AS runs_completed FROM dc_mplus_runs "
+                            "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                            "AND completed_at >= FROM_UNIXTIME({}) "
+                            "AND completed_at < FROM_UNIXTIME({})) wr ON 1 = 1 ";
+                    }
+
+                    return std::string(
+                        "SELECT COALESCE(r.rating, 0), COALESCE(p.prestige_level, 0), ")
+                        + seasonPointsSelect + ", " + weeklyRunsSelect + ", "
+                        + "LEAST(5, COALESCE(alt.alt_count, 0)) "
+                        + "FROM (SELECT 1) seed "
+                        + "LEFT JOIN dc_mplus_player_ratings r "
+                        + "ON r.player_guid = {} AND r.season_id = {} "
+                        + "LEFT JOIN dc_character_prestige p ON p.guid = {} "
+                        + seasonPointsJoin
+                        + weeklyRunsJoin
+                        + "LEFT JOIN (SELECT COUNT(*) AS alt_count FROM characters "
+                        + "WHERE account = {} AND level >= {}) alt ON 1 = 1";
+                };
+
+                builtQueries[0] = buildQuery(false, false);
+                builtQueries[1] = buildQuery(false, true);
+                builtQueries[2] = buildQuery(true, false);
+                builtQueries[3] = buildQuery(true, true);
+                return builtQueries;
+            }();
+
+            std::size_t const queryIndex =
+                (useWeeklyVaultSummary ? 2u : 0u)
+                + (useSeasonalProgressSummary ? 1u : 0u);
+            return queries[queryIndex];
+        }
+
         struct ProgressSnapshot
         {
             uint32 mythicRating = 0;
             uint32 prestigeLevel = 0;
             uint32 seasonPoints = 0;
+            uint32 seasonPointsMax = 1000;
             uint32 completedRunsThisWeek = 0;
             uint32 altBonusLevel = 0;
         };
@@ -226,23 +327,19 @@ namespace DCWelcome
         {
             ProgressSnapshot snapshot;
             bool const useWeeklyVaultSummary = HasWeeklyVaultSummary();
+            bool const useSeasonalProgressSummary = HasSeasonalProgressSummary();
+
+            if (useSeasonalProgressSummary)
+                snapshot.seasonPointsMax = GetWeeklySeasonPointCap();
 
             QueryResult result;
+            std::string const& query = BuildProgressSnapshotQuery(
+                useWeeklyVaultSummary, useSeasonalProgressSummary);
 
             if (useWeeklyVaultSummary)
             {
                 result = CharacterDatabase.Query(
-                    "SELECT "
-                    "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
-                    "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
-                    "COALESCE((SELECT prestige_level FROM dc_character_prestige "
-                    "WHERE guid = {} LIMIT 1), 0), "
-                    "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
-                    "WHERE character_guid = {} AND season_id = {}), 0), "
-                    "COALESCE((SELECT runs_completed FROM dc_weekly_vault "
-                    "WHERE character_guid = {} AND season_id = {} AND week_start = {} LIMIT 1), 0), "
-                    "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
-                    "WHERE account = {} AND level >= {}), 0))",
+                    query,
                     guid,
                     activeSeason,
                     guid,
@@ -253,19 +350,7 @@ namespace DCWelcome
             else
             {
                 result = CharacterDatabase.Query(
-                    "SELECT "
-                    "COALESCE((SELECT rating FROM dc_mplus_player_ratings "
-                    "WHERE player_guid = {} AND season_id = {} LIMIT 1), 0), "
-                    "COALESCE((SELECT prestige_level FROM dc_character_prestige "
-                    "WHERE guid = {} LIMIT 1), 0), "
-                    "COALESCE((SELECT SUM(best_score) FROM dc_mplus_scores "
-                    "WHERE character_guid = {} AND season_id = {}), 0), "
-                    "COALESCE((SELECT COUNT(*) FROM dc_mplus_runs "
-                    "WHERE character_guid = {} AND season_id = {} AND success = 1 "
-                    "AND completed_at >= FROM_UNIXTIME({}) "
-                    "AND completed_at < FROM_UNIXTIME({})), 0), "
-                    "LEAST(5, COALESCE((SELECT COUNT(*) FROM characters "
-                    "WHERE account = {} AND level >= {}), 0))",
+                    query,
                     guid,
                     activeSeason,
                     guid,
@@ -284,6 +369,104 @@ namespace DCWelcome
             snapshot.completedRunsThisWeek = fields[3].Get<uint32>();
             snapshot.altBonusLevel = fields[4].Get<uint32>();
             return snapshot;
+        }
+
+        uint32 CalculateAchievementPoints(Player* player)
+        {
+            if (!player)
+                return 0;
+
+            uint32 achievementPoints = 0;
+            if (AchievementMgr* achieveMgr = player->GetAchievementMgr())
+            {
+                CompletedAchievementMap const& completedAchievements =
+                    achieveMgr->GetCompletedAchievements();
+                for (auto const& [achievementId, completedData]
+                    : completedAchievements)
+                {
+                    if (AchievementEntry const* achievement =
+                        sAchievementStore.LookupEntry(achievementId))
+                    {
+                        achievementPoints += achievement->points;
+                    }
+                }
+            }
+
+            return achievementPoints;
+        }
+
+        CachedProgressPayload BuildProgressPayload(Player* player,
+            uint32 accountId, uint32 activeSeason, uint32 weekStart,
+            uint32 weekEnd, uint32 maxLevel)
+        {
+            CachedProgressPayload payload;
+            if (!player)
+                return payload;
+
+            uint32 guid = player->GetGUID().GetCounter();
+            ProgressSnapshot snapshot = LoadProgressSnapshot(guid, accountId,
+                activeSeason, weekStart, weekEnd, maxLevel);
+            uint32 achievementPoints = CalculateAchievementPoints(player);
+            uint32 weeklyVaultProgress = std::min(static_cast<uint32>(3),
+                snapshot.completedRunsThisWeek);
+            uint32 altBonusPercent = snapshot.altBonusLevel * 5;
+
+            DCAddon::JsonValue data;
+            data.SetObject();
+            data.Set("mythicRating", static_cast<int32>(snapshot.mythicRating));
+            data.Set("prestigeLevel", static_cast<int32>(snapshot.prestigeLevel));
+            data.Set("prestigeXP", 0);
+            data.Set("seasonPoints", static_cast<int32>(snapshot.seasonPoints));
+            data.Set("seasonPointsMax", static_cast<int32>(snapshot.seasonPointsMax));
+            data.Set("seasonRank", 0);
+            data.Set("weeklyVaultProgress", static_cast<int32>(weeklyVaultProgress));
+            data.Set("achievementPoints", static_cast<int32>(achievementPoints));
+            data.Set("keysThisWeek", static_cast<int32>(snapshot.completedRunsThisWeek));
+            data.Set("altBonusLevel", static_cast<int32>(snapshot.altBonusLevel));
+            data.Set("altBonusPercent", static_cast<int32>(altBonusPercent));
+
+            payload.accountId = accountId;
+            payload.activeSeason = activeSeason;
+            payload.weekStart = weekStart;
+            payload.maxLevel = maxLevel;
+            payload.data = data.Encode();
+            payload.expiresAtMs = static_cast<uint64>(
+                GameTime::GetGameTimeMS().count())
+                + WELCOME_PROGRESS_CACHE_TTL_MS;
+            return payload;
+        }
+
+        CachedProgressPayload GetCachedProgressPayload(Player* player,
+            uint32 accountId, uint32 activeSeason, uint32 weekStart,
+            uint32 weekEnd, uint32 maxLevel)
+        {
+            CachedProgressPayload payload;
+            if (!player)
+                return payload;
+
+            uint32 guid = player->GetGUID().GetCounter();
+            uint64 nowMs = static_cast<uint64>(GameTime::GetGameTimeMS().count());
+
+            {
+                std::lock_guard<std::mutex> lock(sWelcomeContentCacheLock);
+                auto itr = sCachedProgressPayloads.find(guid);
+                if (itr != sCachedProgressPayloads.end()
+                    && itr->second.accountId == accountId
+                    && itr->second.activeSeason == activeSeason
+                    && itr->second.weekStart == weekStart
+                    && itr->second.maxLevel == maxLevel
+                    && itr->second.expiresAtMs > nowMs)
+                {
+                    return itr->second;
+                }
+            }
+
+            payload = BuildProgressPayload(player, accountId, activeSeason,
+                weekStart, weekEnd, maxLevel);
+
+            std::lock_guard<std::mutex> lock(sWelcomeContentCacheLock);
+            sCachedProgressPayloads[guid] = payload;
+            return payload;
         }
     }
 
@@ -531,58 +714,17 @@ namespace DCWelcome
         if (!player || !player->GetSession())
             return;
 
-        DCAddon::JsonMessage response(MODULE, Opcode::SMSG_PROGRESS_DATA);
-        uint32 guid = player->GetGUID().GetCounter();
         uint32 accountId = player->GetSession()->GetAccountId();
         uint32 activeSeason = DarkChaos::GetActiveSeasonId();
         uint32 weekStart = DarkChaos::Seasons::GetVaultWeekStartTimestamp();
         uint32 weekEnd = weekStart + 7u * 24u * 60u * 60u;
-        uint32 maxLevel = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.MaxLevel", 255);
-        ProgressSnapshot snapshot = LoadProgressSnapshot(guid, accountId,
-            activeSeason, weekStart, weekEnd, maxLevel);
+        uint32 maxLevel = sConfigMgr->GetOption<uint32>(
+            "Prestige.AltBonus.MaxLevel", 255);
+        CachedProgressPayload payload = GetCachedProgressPayload(player,
+            accountId, activeSeason, weekStart, weekEnd, maxLevel);
 
-        response.Set("mythicRating", static_cast<int32>(snapshot.mythicRating));
-
-        uint32 prestigeXP = 0;  // Prestige XP not tracked in current schema, reserved for future
-        response.Set("prestigeLevel", static_cast<int32>(snapshot.prestigeLevel));
-        response.Set("prestigeXP", static_cast<int32>(prestigeXP));
-
-        uint32 seasonRank = 0;
-        response.Set("seasonPoints", static_cast<int32>(snapshot.seasonPoints));
-        response.Set("seasonRank", static_cast<int32>(seasonRank));
-
-        // Get Weekly Vault Progress (M+ runs this week)
-        uint32 weeklyVaultProgress = std::min(static_cast<uint32>(3), snapshot.completedRunsThisWeek);
-        response.Set("weeklyVaultProgress", static_cast<int32>(weeklyVaultProgress));
-
-        // Get Achievement Points - calculate from completed achievements
-        uint32 achievementPoints = 0;
-        {
-            // Get completed achievements and sum up their points from DBC
-            if (AchievementMgr* achieveMgr = player->GetAchievementMgr())
-            {
-                CompletedAchievementMap const& completedAchievements = achieveMgr->GetCompletedAchievements();
-                for (auto const& [achievementId, completedData] : completedAchievements)
-                {
-                    if (AchievementEntry const* achievement = sAchievementStore.LookupEntry(achievementId))
-                    {
-                        achievementPoints += achievement->points;
-                    }
-                }
-            }
-        }
-        response.Set("achievementPoints", static_cast<int32>(achievementPoints));
-
-        // Keys completed this week
-        uint32 keysThisWeek = snapshot.completedRunsThisWeek;
-        response.Set("keysThisWeek", static_cast<int32>(keysThisWeek));
-
-        // Prestige Alt Bonus Level (max-level chars on account, capped at 5)
-        uint32 altBonusLevel = snapshot.altBonusLevel;
-        uint32 altBonusPercent = altBonusLevel * 5;  // 5% per max-level char
-        response.Set("altBonusLevel", static_cast<int32>(altBonusLevel));
-        response.Set("altBonusPercent", static_cast<int32>(altBonusPercent));
-
+        DCAddon::JsonMessage response(MODULE, Opcode::SMSG_PROGRESS_DATA);
+        response.SetPreEncodedJson(payload.data);
         response.Send(player);
     }
 
