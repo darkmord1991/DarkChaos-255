@@ -72,7 +72,6 @@ enum Actions
     ACTION_START_ENCOUNTER              = 1,
     ACTION_DRAKE_BREATH                 = 2,
     ACTION_PHASE2                       = 3,
-    ACTION_HARPOON_HIT                  = 4,
 };
 
 enum CombatPhase
@@ -172,8 +171,6 @@ public:
             _events.Reset();
             _summons.DespawnAll();
             _phase = PHASE_GROUND;
-            _harpoonHit = 0;
-            _loveSkadi = 0;
             _firstWaveSummoned = false;
             _encounterStarted = false;
 
@@ -267,8 +264,6 @@ public:
                     _events.ScheduleEvent(EVENT_SKADI_RESET_CHECK, 6s);
                     break;
                 case ACTION_DRAKE_BREATH:
-                    if (_loveSkadi == 1)
-                        ++_loveSkadi;
                     Talk(SAY_DRAKE_BREATH);
                     break;
                 case ACTION_PHASE2:
@@ -284,19 +279,7 @@ public:
                     _events.ScheduleEvent(EVENT_SKADI_SPEAR, 11s);
                     _events.ScheduleEvent(EVENT_SKADI_WHIRLWIND, 23s);
                     break;
-                case ACTION_HARPOON_HIT:
-                    ++_harpoonHit;
-                    if (_harpoonHit == 1)
-                        _loveSkadi = 1;
-                    break;
             }
-        }
-
-        uint32 GetData(uint32 id) const override
-        {
-            if (id == DATA_LOVE_TO_SKADI)
-                return _loveSkadi;
-            return 0;
         }
 
         void UpdateAI(uint32 diff) override
@@ -385,8 +368,6 @@ public:
         EventMap _events;
         SummonList _summons;
         CombatPhase _phase;
-        uint8 _harpoonHit;
-        uint8 _loveSkadi;
         bool _firstWaveSummoned;
         bool _encounterStarted;
     };
@@ -416,6 +397,7 @@ public:
             me->SetReactState(REACT_PASSIVE);
             me->SetSpeedRate(MOVE_RUN, 2.5f);
             _flyingToSide = false;
+            _passFreshStart = false;
         }
 
         void DoAction(int32 param) override
@@ -429,13 +411,6 @@ public:
                 me->SetAnimTier(AnimTier::Fly);
                 me->GetMotionMaster()->MovePath(PATH_INITIAL, FORCED_MOVEMENT_RUN);
             }
-        }
-
-        void SpellHit(Unit* /*caster*/, SpellInfo const* spellInfo) override
-        {
-            if (spellInfo->Id == SPELL_LAUNCH_HARPOON)
-                if (Creature* skadi = _instance->GetCreature(DATA_SKADI_THE_RUTHLESS))
-                    skadi->AI()->DoAction(ACTION_HARPOON_HIT);
         }
 
         void MovementInform(uint32 type, uint32 /*id*/) override
@@ -471,6 +446,7 @@ public:
                         FORCED_MOVEMENT_RUN);
                     break;
                 case EVENT_GRAUF_BREATH_START:
+                    _passFreshStart = me->IsFullHealth();
                     me->GetMotionMaster()->MovePath(
                         _lastSide == POINT_LEFT ? PATH_LEFT : PATH_RIGHT,
                         FORCED_MOVEMENT_RUN);
@@ -494,10 +470,11 @@ public:
             {
                 skadi->ExitVehicle();
                 skadi->AI()->DoAction(ACTION_PHASE2);
-
-                if (skadi->AI()->GetData(DATA_LOVE_TO_SKADI) == 1)
-                    _instance->SetData(DATA_SKADI_ACHIEVEMENT, true);
             }
+
+            if (_passFreshStart)
+                _instance->SetData(DATA_SKADI_ACHIEVEMENT, true);
+
             me->DespawnOrUnsummon(6s);
         }
 
@@ -507,6 +484,7 @@ public:
         SummonList _summons;
         uint8 _lastSide = POINT_LEFT;
         bool _flyingToSide = false;
+        bool _passFreshStart = false;
     };
 };
 
