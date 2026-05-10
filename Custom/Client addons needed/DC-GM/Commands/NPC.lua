@@ -295,6 +295,11 @@ function AzerothAdminCommands.NPCFreezeDEL()
   AzerothAdmin:ChatMsg(".npc set movetype stay")
 end
 
+function AzerothAdminCommands.WayStart()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp start")
+end
+
 function AzerothAdminCommands.WayEndAdd()
   local NPC_target = UnitName("target")
   AzerothAdmin:ChatMsg(".wp add")
@@ -317,6 +322,11 @@ function AzerothAdminCommands.WayModifyDel()
   AzerothAdmin:ChatMsg(".wp modify del")
 end
 
+function AzerothAdminCommands.WayModifyMove()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp modify move")
+end
+
 function AzerothAdminCommands.NPCAdd_WayShowOn()
   local NPC_target = UnitName("target")
   local npc =	ma_NPC_guidbutton:GetText()
@@ -333,9 +343,28 @@ function AzerothAdminCommands.WayShowOff()
   AzerothAdmin:ChatMsg(".wp show off")
 end
 
+function AzerothAdminCommands.WayWipe()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".wp wipe")
+end
+
+function AzerothAdminCommands.WayWander30()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc set wanderdistance 30")
+end
+
+function AzerothAdminCommands.WayWanderOff()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc set wanderdistance 0")
+end
+
 function AzerothAdminCommands.NPCUnFreeze_Way()
   local NPC_target = UnitName("target")
   AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
+end
+
+function AzerothAdminCommands.WayRun()
+  AzerothAdminCommands.NPCUnFreeze_Way()
 end
 
 function AzerothAdminCommands.ShowMove()

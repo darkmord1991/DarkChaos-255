@@ -219,7 +219,7 @@ public:
 
         // check character count
         uint32 charcount = AccountMgr::GetCharactersCount(delInfo.accountId);
-        if (charcount >= 10)
+        if (charcount >= sWorld->getIntConfig(CONFIG_CHARACTERS_PER_REALM))
         {
             handler->PSendSysMessage(LANG_CHARACTER_DELETED_SKIP_FULL, delInfo.name, delInfo.lowGuid, delInfo.accountId);
             return;

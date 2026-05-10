@@ -574,23 +574,23 @@ function AzerothAdmin:OpenDCWaypoints()
 
   -- Compact 2-column layout (GOMove-like)
   local baseY = -85
-  WpBtn("ma_dcwp_start", LocaleText("ma_WayAdd", "Start"), pad, baseY, LocaleText("tt_WayStart", "Start waypoint movement for the selected creature."), function() WayStart() end)
-  WpBtn("ma_dcwp_add", LocaleText("ma_WayEndAdd", "Add End"), col2X, baseY, LocaleText("tt_WayEndAdd", "Add a waypoint to the end of the existing stack."), function() WayEndAdd() end)
-  WpBtn("ma_dcwp_showon", LocaleText("ma_WayShow1", "Show On"), pad, baseY - (btnH + 2), LocaleText("tt_WayShow1", "Show waypoints for the selected creature."), function() WayShowOn() end)
-  WpBtn("ma_dcwp_showoff", LocaleText("ma_WayShow0", "Show Off"), col2X, baseY - (btnH + 2), LocaleText("tt_WayShow0", "Hide waypoints for the selected creature."), function() WayShowOff() end)
-  WpBtn("ma_dcwp_insert", LocaleText("ma_WayMAdd", "Insert"), pad, baseY - ((btnH + 2) * 2), LocaleText("tt_WayMAdd", "Insert a waypoint."), function() WayModifyAdd() end)
-  WpBtn("ma_dcwp_del", LocaleText("ma_WayMDel", "Delete"), col2X, baseY - ((btnH + 2) * 2), LocaleText("tt_WayModifyDel", "Delete the selected waypoint."), function() WayModifyDel() end)
-  WpBtn("ma_dcwp_move", LocaleText("ma_WayMove", "Move WP"), pad, baseY - ((btnH + 2) * 3), LocaleText("tt_WayMove", "Move the selected waypoint to your current position."), function() WayModifyMove() end)
-  WpBtn("ma_dcwp_wipe", LocaleText("ma_WayWipe", "Wipe"), col2X, baseY - ((btnH + 2) * 3), LocaleText("tt_WayWipe", "Delete all waypoints for the selected creature."), function() WayWipe() end)
+  WpBtn("ma_dcwp_start", LocaleText("ma_WayAdd", "Start"), pad, baseY, LocaleText("tt_WayStart", "Start waypoint movement for the selected creature."), function() AzerothAdminCommands.WayStart() end)
+  WpBtn("ma_dcwp_add", LocaleText("ma_WayEndAdd", "Add End"), col2X, baseY, LocaleText("tt_WayEndAdd", "Add a waypoint to the end of the existing stack."), function() AzerothAdminCommands.WayEndAdd() end)
+  WpBtn("ma_dcwp_showon", LocaleText("ma_WayShow1", "Show On"), pad, baseY - (btnH + 2), LocaleText("tt_WayShow1", "Show waypoints for the selected creature."), function() AzerothAdminCommands.WayShowOn() end)
+  WpBtn("ma_dcwp_showoff", LocaleText("ma_WayShow0", "Show Off"), col2X, baseY - (btnH + 2), LocaleText("tt_WayShow0", "Hide waypoints for the selected creature."), function() AzerothAdminCommands.WayShowOff() end)
+  WpBtn("ma_dcwp_insert", LocaleText("ma_WayMAdd", "Insert"), pad, baseY - ((btnH + 2) * 2), LocaleText("tt_WayMAdd", "Insert a waypoint."), function() AzerothAdminCommands.WayModifyAdd() end)
+  WpBtn("ma_dcwp_del", LocaleText("ma_WayMDel", "Delete"), col2X, baseY - ((btnH + 2) * 2), LocaleText("tt_WayModifyDel", "Delete the selected waypoint."), function() AzerothAdminCommands.WayModifyDel() end)
+  WpBtn("ma_dcwp_move", LocaleText("ma_WayMove", "Move WP"), pad, baseY - ((btnH + 2) * 3), LocaleText("tt_WayMove", "Move the selected waypoint to your current position."), function() AzerothAdminCommands.WayModifyMove() end)
+  WpBtn("ma_dcwp_wipe", LocaleText("ma_WayWipe", "Wipe"), col2X, baseY - ((btnH + 2) * 3), LocaleText("tt_WayWipe", "Delete all waypoints for the selected creature."), function() AzerothAdminCommands.WayWipe() end)
 
   -- Wander-distance controls (spawn random movement radius)
-  WpBtn("ma_dcwp_wander30", LocaleText("ma_WayWander30", "Wander 30"), pad, baseY - ((btnH + 2) * 4), LocaleText("tt_WayWander30", "Set wander distance to 30"), function() WayWander30() end)
-  WpBtn("ma_dcwp_wanderoff", LocaleText("ma_WayWanderOff", "Wander Off"), col2X, baseY - ((btnH + 2) * 4), LocaleText("tt_WayWanderOff", "Disable wandering"), function() WayWanderOff() end)
+  WpBtn("ma_dcwp_wander30", LocaleText("ma_WayWander30", "Wander 30"), pad, baseY - ((btnH + 2) * 4), LocaleText("tt_WayWander30", "Set wander distance to 30"), function() AzerothAdminCommands.WayWander30() end)
+  WpBtn("ma_dcwp_wanderoff", LocaleText("ma_WayWanderOff", "Wander Off"), col2X, baseY - ((btnH + 2) * 4), LocaleText("tt_WayWanderOff", "Disable wandering"), function() AzerothAdminCommands.WayWanderOff() end)
 
   -- Start creature movement along its waypoint path.
   local runY = baseY - ((btnH + 2) * 5)
   FrameLib:BuildButton({ name = "ma_dcwp_run", group = dcWaypointsGroup, parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = contentW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = pad, offY = runY }, text = LocaleText("ma_WayRun", "Run Path") })
-  AzerothAdmin:PrepareScript(ma_dcwp_run, LocaleText("tt_WayRun", "Start waypoint movement"), function() WayRun() end)
+  AzerothAdmin:PrepareScript(ma_dcwp_run, LocaleText("tt_WayRun", "Start waypoint movement"), function() AzerothAdminCommands.WayRun() end)
 
   ma_dcwaypoints_window:Show()
 end

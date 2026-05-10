@@ -280,9 +280,12 @@ Modules\Tooltips.lua
 Modules\Automation.lua
 Modules\Chat.lua
 Modules\Interface.lua
+Modules\GraphicsPlus.lua
 Modules\QuestRecurringLookup.lua
+Modules\QuestMapData.lua
 Modules\QuestTrackerMarkers.lua
 Modules\QuestFrames.lua
+Modules\QuestMapPins.lua
 Modules\DruidFix.lua
 Modules\ExtendedStats\ExtendedStats.lua
 Modules\GTFO.lua

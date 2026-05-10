@@ -341,15 +341,50 @@ local function UpdateDefaultNameplateCastBarCVar(settings)
     end
 end
 
+local function HasExtendedNameplateDistanceApi()
+    return type(SetNameplateDistance) == "function"
+end
+
+local function GetNameplateRangeBounds()
+    if HasExtendedNameplateDistanceApi() then
+        return 20, 100
+    end
+
+    return 20, 41
+end
+
+local function GetConfiguredNameplateRange(settings)
+    local configured = tonumber(settings and settings.nameplateRange) or 41
+
+    if configured < 20 then
+        configured = 20
+    end
+
+    return math.floor(configured + 0.5)
+end
+
+local function ApplyNameplateRange(settings)
+    local configured = GetConfiguredNameplateRange(settings)
+    local _, maxRange = GetNameplateRangeBounds()
+    local appliedRange = math.min(configured, maxRange)
+    local stockRange = math.min(appliedRange, 41)
+
+    SafeSetCVar("nameplateMaxDistance", tostring(stockRange))
+
+    if HasExtendedNameplateDistanceApi() then
+        pcall(SetNameplateDistance, appliedRange)
+    end
+
+    return appliedRange
+end
+
 local function ApplyNameplateCVars(settings)
     settings = settings or addon.settings.nameplatesPlus
     if not settings then
         return
     end
 
-    -- 3.3.5 stock nameplates cap out at 41 yards; keep them at the client max.
-    settings.nameplateRange = 41
-    SafeSetCVar("nameplateMaxDistance", "41")
+    ApplyNameplateRange(settings)
     SafeSetCVar("nameplateShowEnemies", "1")
     UpdateDefaultNameplateCastBarCVar(settings)
 
@@ -3015,13 +3050,14 @@ function NameplatesPlus.OnEnable()
         updateFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
         updateFrame:RegisterEvent("RAID_ROSTER_UPDATE")
         updateFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        updateFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
         updateFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
         updateFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
         updateFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
         updateFrame:RegisterEvent("UNIT_TARGET")
         updateFrame:RegisterEvent("UNIT_AURA")
         updateFrame:SetScript("OnEvent", function(self, event, arg1)
-            if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+            if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
                 ApplyNameplateCVars(settings)
                 UpdateGroupGUIDs()
                 RefreshAllTrackedUnitMatches()
@@ -3497,25 +3533,43 @@ function NameplatesPlus.CreateSettings(parent)
     yOffset = yOffset - 25
 
     -- Range Slider
+    local rangeMin, rangeMax = GetNameplateRangeBounds()
+    local rangeValue = math.min(GetConfiguredNameplateRange(settings), rangeMax)
+
     local rangeSlider = CreateFrame("Slider", "DCQoSNameplateRange", parent, "OptionsSliderTemplate")
     rangeSlider:SetPoint("TOPLEFT", 20, yOffset - 10)
     rangeSlider:SetWidth(200)
     rangeSlider:SetHeight(17)
-    rangeSlider:SetMinMaxValues(20, 41)
+    rangeSlider:SetMinMaxValues(rangeMin, rangeMax)
     rangeSlider:SetValueStep(1)
-    rangeSlider:SetValue(settings.nameplateRange or 41)
+    rangeSlider:SetValue(rangeValue)
     
-    _G[rangeSlider:GetName() .. "Text"]:SetText("View Distance: " .. (settings.nameplateRange or 41) .. " yds")
-    _G[rangeSlider:GetName() .. "Low"]:SetText("20")
-    _G[rangeSlider:GetName() .. "High"]:SetText("41")
+    _G[rangeSlider:GetName() .. "Text"]:SetText("View Distance: " .. rangeValue .. " yds")
+    _G[rangeSlider:GetName() .. "Low"]:SetText(tostring(rangeMin))
+    _G[rangeSlider:GetName() .. "High"]:SetText(tostring(rangeMax))
     
     rangeSlider:SetScript("OnValueChanged", function(self, value)
-        local val = math.floor(value)
+        local val = math.floor(value + 0.5)
         addon:SetSetting("nameplatesPlus.nameplateRange", val)
         _G[self:GetName() .. "Text"]:SetText("View Distance: " .. val .. " yds")
-        SafeSetCVar("nameplateMaxDistance", tostring(val))
+        if HasExtendedNameplateDistanceApi() then
+            ApplyNameplateRange(addon.settings.nameplatesPlus)
+        else
+            SafeSetCVar("nameplateMaxDistance", tostring(math.min(val, 41)))
+        end
     end)
     yOffset = yOffset - 50
+
+    local rangeInfo = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    rangeInfo:SetPoint("TOPLEFT", 20, yOffset + 8)
+    rangeInfo:SetWidth(420)
+    rangeInfo:SetJustifyH("LEFT")
+    if HasExtendedNameplateDistanceApi() then
+        rangeInfo:SetText("Extended native nameplate range is available in this client build. Values above 41 use the Graphics+ native patch path.")
+    else
+        rangeInfo:SetText("Stock client nameplate range is capped at 41 yards. Build the native Graphics+ patch to unlock the extended range path.")
+    end
+    yOffset = yOffset - 26
     
     return yOffset - 50
 end

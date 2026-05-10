@@ -33,7 +33,7 @@ local moduleCategories = {
     },
     {
         name = "UI Customization",
-        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Navigation", "PingSystem", "Keybinds", "WeakAuras" }
+        modules = { "GraphicsPlus", "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Navigation", "QuestMapPins", "PingSystem", "Keybinds", "WeakAuras" }
     },
     {
         name = "Character",
@@ -50,6 +50,7 @@ local moduleDisplayNames = {
     ["Experience"] = "Experience Shell",
     ["Automation"] = "Automation",
     ["Interface"] = "Interface",
+    ["GraphicsPlus"] = "Graphics+",
     ["Chat"] = "Chat Enhancements",
     ["Tooltips"] = "Tooltip Info",
     ["DruidFix"] = "Druid Fix",
@@ -66,6 +67,7 @@ local moduleDisplayNames = {
     ["ActionBars"] = "Action Bars",
     ["Minimap"] = "Minimap",
     ["Navigation"] = "Navigation",
+    ["QuestMapPins"] = "Quest Map",
     ["PingSystem"] = "Ping System",
     ["Keybinds"] = "Keybinds",
     ["SocialEnhancements"] = "Social",
@@ -80,6 +82,7 @@ local moduleIcons = {
     ["Experience"] = "Interface\\Icons\\Ability_Hunter_MasterMarksman",
     ["Automation"] = "Interface\\Icons\\Inv_Gizmo_02",
     ["Interface"] = "Interface\\Icons\\Inv_Misc_Book_09",
+    ["GraphicsPlus"] = "Interface\\Icons\\Spell_Nature_Farsight",
     ["Chat"] = "Interface\\Icons\\Spell_Holy_Dizzy",
     ["Tooltips"] = "Interface\\Icons\\Inv_Misc_Note_02",
     ["DruidFix"] = "Interface\\Icons\\Ability_Druid_TwilightsWrath",
@@ -96,6 +99,7 @@ local moduleIcons = {
     ["ActionBars"] = "Interface\\Icons\\Ability_Warrior_BattleShout",
     ["Minimap"] = "Interface\\Icons\\INV_Misc_Map_01",
     ["Navigation"] = "Interface\\Icons\\INV_Misc_Map_01",
+    ["QuestMapPins"] = "Interface\\Icons\\INV_Misc_Map_01",
     ["PingSystem"] = "Interface\\Icons\\Ability_Hunter_MasterMarksman",
     ["Keybinds"] = "Interface\\Icons\\INV_Misc_Key_14",
     ["SocialEnhancements"] = "Interface\\Icons\\Spell_Holy_Stoicism",

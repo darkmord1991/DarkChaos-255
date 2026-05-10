@@ -99,6 +99,7 @@ local DEFAULT_KEYWORDS = {
     Keybinds = { "bindings", "hover bind", "keys", "quick bind" },
     Minimap = { "minimap", "tracking", "buttons", "calendar", "zoom" },
     Navigation = { "navigation", "waypoint", "supertrack", "quest follow", "marker" },
+    QuestMapPins = { "questie", "quest map", "world map", "quest markers", "quest starts", "kill markers", "turn in" },
     SocialEnhancements = { "social", "friends", "guild", "who", "auto invite" },
     Mail = { "mail", "collect all", "mailbox" },
     Profiles = { "profiles", "export", "import", "settings profile" },
