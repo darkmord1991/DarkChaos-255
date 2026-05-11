@@ -226,7 +226,7 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<uint32>(CONFIG_CHARACTERS_PER_REALM, "CharactersPerRealm", 25, ConfigValueCache::Reloadable::Yes, [](uint32 const& value) { return value > 0 && value <= 25; }, "> 0 && <= 25");
 
     // must be after CONFIG_CHARACTERS_PER_REALM
-    SetConfigValue<uint32>(CONFIG_CHARACTERS_PER_ACCOUNT, "CharactersPerAccount", 25, ConfigValueCache::Reloadable::Yes, [this](uint32 const& value) { return value >= GetConfigValue<uint32>(CONFIG_CHARACTERS_PER_REALM) && value <= 25; }, ">= CONFIG_CHARACTERS_PER_REALM && <= 25");
+    SetConfigValue<uint32>(CONFIG_CHARACTERS_PER_ACCOUNT, "CharactersPerAccount", 50, ConfigValueCache::Reloadable::Yes, [this](uint32 const& value) { return value >= GetConfigValue<uint32>(CONFIG_CHARACTERS_PER_REALM); }, ">= CONFIG_CHARACTERS_PER_REALM");
     SetConfigValue<uint32>(CONFIG_HEROIC_CHARACTERS_PER_REALM, "HeroicCharactersPerRealm", 1, ConfigValueCache::Reloadable::Yes, [this](uint32 const& value) { return value <= GetConfigValue<uint32>(CONFIG_CHARACTERS_PER_REALM); }, "<= CONFIG_CHARACTERS_PER_REALM");
 
     SetConfigValue<uint32>(CONFIG_CHARACTER_CREATING_MIN_LEVEL_FOR_HEROIC_CHARACTER, "CharacterCreating.MinLevelForHeroicCharacter", 55);

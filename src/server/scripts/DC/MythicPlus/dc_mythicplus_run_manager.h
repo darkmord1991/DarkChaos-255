@@ -72,8 +72,9 @@ public:
         bool keystoneUpgraded = false; // Tracks if keystone was upgraded
         uint64 abandonedAt = 0;  // Timestamp when last player left
         bool cancellationPending = false;
-        uint64 countdownStarted = 0;  // Timestamp when countdown began
+        uint64 countdownStarted = 0;  // Timestamp in ms when countdown began
         bool countdownActive = false;
+        ObjectGuid countdownBarrierGuid;
         std::unordered_set<ObjectGuid::LowType> participants;
         std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
         uint64 cancellationVoteStarted = 0;  // Timestamp when first vote was cast
@@ -200,8 +201,11 @@ private:
     std::string SerializeParticipants(const InstanceState* state) const;
 
     // Teleportation helpers
+    bool GetEntranceLocation(Map* map, float& x, float& y, float& z, float& o) const;
     void TeleportGroupToEntrance(Player* activator, Map* map);
     void TeleportPlayerToEntrance(Player* player, Map* map);
+    void SpawnCountdownBarrier(InstanceState* state, Map* map, Player* activator) const;
+    void DespawnCountdownBarrier(InstanceState* state, Map* map) const;
     void StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator);
     bool AreCompletionObjectivesMet(InstanceState const* state) const;
     bool IsFinalBossEncounter(const InstanceState* state, const Creature* creature) const;

@@ -147,6 +147,13 @@ local vaultToastVersion = 0
 local lastRequestTime = 0
 local REQUEST_COOLDOWN = 1.0
 local VAULT_TOAST_DURATION = 12
+local questTrackerSuppression = {
+    active = false,
+    watchFrameShown = nil,
+    watchShowObjectives = nil,
+    questWatchFrameShown = nil,
+    objectiveTrackerShown = nil,
+}
 
 local function GetCharacterKey()
     local name = (type(UnitName) == "function" and UnitName("player")) or "Unknown"
@@ -265,6 +272,143 @@ end
 
 local function IsMythicRunActive()
     return IsRunInProgress(activeState)
+end
+
+local function ShouldHideQuestObjectivesForMythicPlus()
+    if not activeState or not IsRunInProgress(activeState) then
+        return false
+    end
+
+    local keyLevel = tonumber(activeState.keystone or activeState.keyLevel
+        or activeState.keystoneLevel or activeState.level or 0) or 0
+    if keyLevel <= 0 then
+        return false
+    end
+
+    if type(IsInInstance) == "function" then
+        local inInstance = select(1, IsInInstance())
+        if not inInstance then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function RefreshQuestTrackerDisplay()
+    if type(QuestWatch_Update) == "function" then
+        pcall(QuestWatch_Update)
+    end
+    if type(WatchFrame_Update) == "function" then
+        pcall(WatchFrame_Update)
+    end
+end
+
+local function ApplyMythicQuestTrackerSuppression()
+    if WatchFrame then
+        WatchFrame.showObjectives = false
+        WatchFrame:Hide()
+    end
+
+    if QuestWatchFrame and QuestWatchFrame ~= WatchFrame then
+        QuestWatchFrame:Hide()
+    end
+
+    if ObjectiveTrackerFrame then
+        ObjectiveTrackerFrame:Hide()
+    end
+end
+
+local function EnsureQuestTrackerSuppressionHooks()
+    namespace._questTrackerOnShowHooks = namespace._questTrackerOnShowHooks or {}
+    local onShowHooks = namespace._questTrackerOnShowHooks
+
+    if not namespace._questTrackerUpdateHooksInstalled and type(hooksecurefunc) == "function" then
+        if type(WatchFrame_Update) == "function" then
+            hooksecurefunc("WatchFrame_Update", function()
+                if questTrackerSuppression.active then
+                    ApplyMythicQuestTrackerSuppression()
+                end
+            end)
+        end
+
+        if type(QuestWatch_Update) == "function" then
+            hooksecurefunc("QuestWatch_Update", function()
+                if questTrackerSuppression.active then
+                    ApplyMythicQuestTrackerSuppression()
+                end
+            end)
+        end
+
+        namespace._questTrackerUpdateHooksInstalled = true
+    end
+
+    local function HookFrameOnShow(frameRef, key)
+        if not frameRef or onShowHooks[key] or type(frameRef.HookScript) ~= "function" then
+            return
+        end
+
+        local ok = pcall(function()
+            frameRef:HookScript("OnShow", function(self)
+                if questTrackerSuppression.active then
+                    self:Hide()
+                end
+            end)
+        end)
+
+        if ok then
+            onShowHooks[key] = true
+        end
+    end
+
+    HookFrameOnShow(WatchFrame, "WatchFrame")
+    HookFrameOnShow(QuestWatchFrame, "QuestWatchFrame")
+    HookFrameOnShow(ObjectiveTrackerFrame, "ObjectiveTrackerFrame")
+end
+
+local function UpdateQuestTrackerSuppression()
+    EnsureQuestTrackerSuppressionHooks()
+
+    if ShouldHideQuestObjectivesForMythicPlus() then
+        if not questTrackerSuppression.active then
+            questTrackerSuppression.watchFrameShown = WatchFrame and WatchFrame:IsShown() or nil
+            questTrackerSuppression.watchShowObjectives = WatchFrame and (WatchFrame.showObjectives ~= false) or nil
+            questTrackerSuppression.questWatchFrameShown = (QuestWatchFrame and QuestWatchFrame ~= WatchFrame and QuestWatchFrame:IsShown()) or nil
+            questTrackerSuppression.objectiveTrackerShown = ObjectiveTrackerFrame and ObjectiveTrackerFrame:IsShown() or nil
+            questTrackerSuppression.active = true
+        end
+
+        ApplyMythicQuestTrackerSuppression()
+        return
+    end
+
+    if not questTrackerSuppression.active then
+        return
+    end
+
+    if WatchFrame and questTrackerSuppression.watchShowObjectives ~= nil then
+        WatchFrame.showObjectives = questTrackerSuppression.watchShowObjectives
+    end
+
+    RefreshQuestTrackerDisplay()
+
+    if WatchFrame and questTrackerSuppression.watchFrameShown == false then
+        WatchFrame:Hide()
+    end
+
+    if QuestWatchFrame and QuestWatchFrame ~= WatchFrame and questTrackerSuppression.questWatchFrameShown == false then
+        QuestWatchFrame:Hide()
+    end
+
+    if ObjectiveTrackerFrame and questTrackerSuppression.objectiveTrackerShown == false then
+        ObjectiveTrackerFrame:Hide()
+    end
+
+    questTrackerSuppression.active = false
+    questTrackerSuppression.watchFrameShown = nil
+    questTrackerSuppression.watchShowObjectives = nil
+    questTrackerSuppression.questWatchFrameShown = nil
+    questTrackerSuppression.objectiveTrackerShown = nil
 end
 
 local function ResetLocalRunTimer(keepActiveIfInInstance)
@@ -2031,6 +2175,7 @@ local function ShowIdleState()
     end
     EnsureCenterCountdownOverlay()
     activeState = nil
+    UpdateQuestTrackerSuppression()
     lastPayload = nil
     headerText:SetText("Mythic+ HUD")
     timerText:SetText("Timer: --:-- / --:--")
@@ -2386,6 +2531,7 @@ end
 local function UpdateFrameFromState(data)
     data = NormalizeHudState(data)
     activeState = data
+    UpdateQuestTrackerSuppression()
     if IsRunInProgress(data) then
         if DCMythicPlusHUDDB.hidden then
             DCMythicPlusHUDDB.hidden = false

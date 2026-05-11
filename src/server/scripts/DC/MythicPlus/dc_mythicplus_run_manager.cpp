@@ -46,9 +46,29 @@ constexpr uint32 DEFAULT_VAULT_TOKENS[3] = { 50, 100, 150 };
 constexpr uint32 DEFAULT_HUD_TIMER_SECONDS = 2400; // 40 minutes baseline
 constexpr uint32 DEFAULT_HUD_PER_BOSS = 60;        // +1 minute per boss over baseline
 constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
+constexpr uint64 MILLISECONDS_PER_SECOND = 1000;
+constexpr uint32 COUNTDOWN_BARRIER_ENTRY = 700003;
+constexpr uint32 COUNTDOWN_BARRIER_EARLY_DESPAWN_SECONDS = 1;
 
 constexpr std::string_view HUD_REASON_PERIODIC = "tick";
 constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
+
+uint32 GetCountdownRemainingSeconds(uint64 countdownStartedMs,
+    uint32 countdownDurationSeconds, uint64 nowMs)
+{
+    if (countdownDurationSeconds == 0)
+        return 0;
+
+    uint64 durationMs = static_cast<uint64>(countdownDurationSeconds) *
+        MILLISECONDS_PER_SECOND;
+    uint64 countdownEndMs = countdownStartedMs + durationMs;
+    if (nowMs >= countdownEndMs)
+        return 0;
+
+    uint64 remainingMs = countdownEndMs - nowMs;
+    return static_cast<uint32>((remainingMs + MILLISECONDS_PER_SECOND - 1) /
+        MILLISECONDS_PER_SECOND);
+}
 
 uint32 GetConfiguredTokenItem()
 {
@@ -116,6 +136,9 @@ MythicPlusRunManager* MythicPlusRunManager::instance()
 
 void MythicPlusRunManager::Reset()
 {
+    for (auto& [_, state] : _instanceStates)
+        DespawnCountdownBarrier(&state, nullptr);
+
     _instanceStates.clear();
     CacheBossMetadata();
     // EnsureHudCacheTable(); // Moved to SQL migration
@@ -427,8 +450,10 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
 
     // Start countdown before activating run
     uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
-    state->countdownStarted = GameTime::GetGameTime().count();
+    state->countdownStarted = GameTime::GetGameTimeMS().count();
     state->countdownActive = true;
+    DespawnCountdownBarrier(state, map);
+    SpawnCountdownBarrier(state, map, player);
 
     // Calculate scaling multiplier for display
     float hpMult = 0.0f, damageMult = 0.0f;
@@ -441,10 +466,6 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     AnnounceToInstance(map, Acore::StringFormat("M+ Multiplier: |cffaaaaaa+{:.0f}% HP, +{:.0f}% Damage|r",
         (hpMult - 1.0f) * 100.0f, (damageMult - 1.0f) * 100.0f));
     AnnounceToInstance(map, Acore::StringFormat("Starting in: |cffffff00{} seconds...|r", countdownDuration));
-
-    // Mark countdown as active and store start time
-    state->countdownActive = true;
-    state->countdownStarted = GameTime::GetGameTime().count();
 
     InitializeHud(state, map);
 
@@ -956,9 +977,6 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     outDescriptor.expiresOn = 0; // No expiration for inventory keystones
     outDescriptor.ownerGuid = player->GetGUID();
 
-    LOG_DEBUG("mythic.run", "Selected keystone +{} (item {}) for player {} on map {}",
-              uint32(selectedLevel), selectedItemId, player->GetGUID().GetCounter(), expectedMap);
-
     return true;
 }
 
@@ -1061,6 +1079,62 @@ void MythicPlusRunManager::ApplyCountdownRoot(Map* map) const
     }
 }
 
+void MythicPlusRunManager::SpawnCountdownBarrier(InstanceState* state, Map* map, Player* activator) const
+{
+    if (!state || !map || !activator)
+        return;
+
+    if (!sObjectMgr->GetGameObjectTemplate(COUNTDOWN_BARRIER_ENTRY))
+        return;
+
+    if (!state->countdownBarrierGuid.IsEmpty())
+    {
+        if (map->GetGameObject(state->countdownBarrierGuid))
+            return;
+
+        state->countdownBarrierGuid.Clear();
+    }
+
+    float x = activator->GetPositionX();
+    float y = activator->GetPositionY();
+    float z = activator->GetPositionZ();
+    float o = activator->GetOrientation();
+    GetEntranceLocation(map, x, y, z, o);
+
+    GameObject* barrier = new GameObject();
+    if (!barrier->Create(map->GenerateLowGuid<HighGuid::GameObject>(),
+            COUNTDOWN_BARRIER_ENTRY, map, activator->GetPhaseMaskForSpawn(),
+            x, y, z, o, G3D::Quat(), 255, GO_STATE_READY))
+    {
+        delete barrier;
+        return;
+    }
+
+    barrier->SetRespawnTime(0);
+    if (map->AddToMap(barrier))
+        state->countdownBarrierGuid = barrier->GetGUID();
+    else
+        delete barrier;
+}
+
+void MythicPlusRunManager::DespawnCountdownBarrier(InstanceState* state, Map* map) const
+{
+    if (!state || state->countdownBarrierGuid.IsEmpty())
+        return;
+
+    if (!map)
+        map = sMapMgr->FindMap(state->mapId, state->instanceId);
+
+    if (map)
+        if (GameObject* barrier = map->GetGameObject(state->countdownBarrierGuid))
+        {
+            barrier->SetRespawnTime(0);
+            barrier->Delete();
+        }
+
+    state->countdownBarrierGuid.Clear();
+}
+
 void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) const
 {
     if (!map || keystoneLevel < 2)
@@ -1108,6 +1182,8 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
     state->completed = true;
 
     Map* map = sMapMgr->FindMap(state->mapId, state->instanceId);
+    DespawnCountdownBarrier(state, map);
+
     if (map)
     {
         std::ostringstream ss;
@@ -2079,8 +2155,10 @@ void MythicPlusRunManager::ProcessCancellationTimers()
 
 void MythicPlusRunManager::ProcessCountdowns()
 {
-    uint64 now = GameTime::GetGameTime().count();
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
     uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
+    uint64 countdownDurationMs = static_cast<uint64>(countdownDuration) *
+        MILLISECONDS_PER_SECOND;
 
     static std::unordered_map<uint64, std::unordered_set<uint32>> announcedIntervals;
 
@@ -2089,12 +2167,13 @@ void MythicPlusRunManager::ProcessCountdowns()
         if (!state.countdownActive || state.completed || state.failed)
             continue;
 
-        uint64 elapsed = now - state.countdownStarted;
-        uint32 remaining = elapsed < countdownDuration ? countdownDuration - elapsed : 0;
+        uint32 remaining = GetCountdownRemainingSeconds(
+            state.countdownStarted, countdownDuration, nowMs);
 
         Map* map = sMapMgr->FindMap(state.mapId, state.instanceId);
         if (!map)
         {
+            state.countdownBarrierGuid.Clear();
             state.countdownActive = false;
             announcedIntervals.erase(key);
             continue;
@@ -2102,6 +2181,9 @@ void MythicPlusRunManager::ProcessCountdowns()
 
         // Re-apply root as needed in case players join late or lose root unexpectedly.
         ApplyCountdownRoot(map);
+
+        if (remaining <= COUNTDOWN_BARRIER_EARLY_DESPAWN_SECONDS)
+            DespawnCountdownBarrier(&state, map);
 
         SetHudWorldState(&state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, remaining);
         // Force countdown HUD pushes so clients receive each second consistently.
@@ -2121,7 +2203,7 @@ void MythicPlusRunManager::ProcessCountdowns()
         }
 
         // Start the run when countdown completes
-        if (remaining == 0 && elapsed >= countdownDuration)
+        if (remaining == 0 && nowMs >= state.countdownStarted + countdownDurationMs)
         {
             state.countdownActive = false;
             announcedIntervals.erase(key);
@@ -2262,16 +2344,16 @@ void MythicPlusRunManager::TeleportGroupToEntrance(Player* activator, Map* map)
     }
 }
 
-void MythicPlusRunManager::TeleportPlayerToEntrance(Player* player, Map* map)
+bool MythicPlusRunManager::GetEntranceLocation(Map* map, float& x, float& y,
+    float& z, float& o) const
 {
-    if (!player || !map)
-        return;
+    if (!map)
+        return false;
 
     struct EntranceLocation
     {
         bool loaded = false;
         bool valid = false;
-        uint32 targetMap = 0;
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;
@@ -2279,26 +2361,21 @@ void MythicPlusRunManager::TeleportPlayerToEntrance(Player* player, Map* map)
     };
 
     static std::unordered_map<uint32, EntranceLocation> entranceCache;
-    uint32 mapId = map->GetId();
-    EntranceLocation& loc = entranceCache[mapId];
-
+    EntranceLocation& loc = entranceCache[map->GetId()];
     if (!loc.loaded)
     {
         loc.loaded = true;
 
-        // Reuse existing areatrigger_teleport coordinates (same as dungeon entrance portals).
         QueryResult result = WorldDatabase.Query(
             "SELECT target_position_x, target_position_y, target_position_z, target_orientation "
             "FROM areatrigger_teleport "
             "WHERE target_map = {} "
             "ORDER BY id ASC LIMIT 1",
-            mapId
-        );
+            map->GetId());
 
         if (result)
         {
             Field* fields = result->Fetch();
-            loc.targetMap = mapId;
             loc.x = fields[0].Get<float>();
             loc.y = fields[1].Get<float>();
             loc.z = fields[2].Get<float>();
@@ -2308,19 +2385,38 @@ void MythicPlusRunManager::TeleportPlayerToEntrance(Player* player, Map* map)
     }
 
     if (!loc.valid)
+        return false;
+
+    x = loc.x;
+    y = loc.y;
+    z = loc.z;
+    o = loc.o;
+    return true;
+}
+
+void MythicPlusRunManager::TeleportPlayerToEntrance(Player* player, Map* map)
+{
+    if (!player || !map)
+        return;
+
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float o = 0.0f;
+    if (!GetEntranceLocation(map, x, y, z, o))
     {
         LOG_WARN("mythic.run", "No entrance areatrigger found for map {} - player not teleported",
-                 mapId);
+                 map->GetId());
         ChatHandler(player->GetSession()).SendSysMessage(
             "|cffff0000Warning:|r No entrance coordinates found for this dungeon.");
         return;
     }
 
-    player->TeleportTo(loc.targetMap, loc.x, loc.y, loc.z, loc.o);
+    player->TeleportTo(map->GetId(), x, y, z, o);
     ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Teleported to dungeon entrance.|r");
 
     LOG_DEBUG("mythic.run", "Teleported {} to entrance of map {} at ({}, {}, {})",
-              player->GetName(), mapId, loc.x, loc.y, loc.z);
+              player->GetName(), map->GetId(), x, y, z);
 }
 
 // ============================================================
@@ -2335,6 +2431,8 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     // Mark run as officially started
     state->startedAt = GameTime::GetGameTime().count();
     state->countdownActive = false;
+    state->countdownStarted = 0;
+    DespawnCountdownBarrier(state, map);
     if (state->hudTimerDuration == 0)
         state->hudTimerDuration = GetHudTimerDuration(state->mapId, state->keystoneLevel);
     state->timerEndsAt = state->hudTimerDuration ? state->startedAt + state->hudTimerDuration : 0;
@@ -2683,8 +2781,9 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     if (state->countdownActive)
     {
         uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
-        uint64 countdownEnd = state->countdownStarted + countdownDuration;
-        countdown = countdownEnd > now ? static_cast<uint32>(countdownEnd - now) : 0;
+        countdown = GetCountdownRemainingSeconds(
+            state->countdownStarted, countdownDuration,
+            GameTime::GetGameTimeMS().count());
     }
 
     uint32 totalBosses = state->bossOrder.empty() ? GetTotalBossesForDungeon(state->mapId) : static_cast<uint32>(state->bossOrder.size());
