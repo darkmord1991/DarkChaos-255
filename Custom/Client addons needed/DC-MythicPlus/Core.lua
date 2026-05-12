@@ -2075,11 +2075,18 @@ local function ScanInventoryForKeystone()
                     
                     -- Only accept if we found a valid level
                     if level and level > 0 then
+                        local itemTexture = nil
+                        if type(GetContainerItemInfo) == "function" then
+                            itemTexture = GetContainerItemInfo(bag, slot)
+                        end
+
                         found = {
                             hasKey = true,
                             level = level or 0,
                             dungeonName = dungeon,
+                            itemId = itemId,
                             itemLink = itemLink,
+                            itemTexture = itemTexture,
                             bag = bag,
                             slot = slot,
                         }
@@ -3535,8 +3542,8 @@ if DC then
     -- Keystone Activation Integration (integrated KeystoneUI)
     -- =========================================================================
     
-    -- SMSG_KEYSTONE_ACTIVATE (0x40) - Server requesting keystone activation UI
-    DC:RegisterHandler("MPLUS", 0x40, function(...)
+    -- SMSG_KEYSTONE_ACTIVATE (0x50) - Server requesting keystone activation UI
+    DC:RegisterHandler("MPLUS", 0x50, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
@@ -3549,8 +3556,8 @@ if DC then
         end
     end)
     
-    -- SMSG_KEYSTONE_STATUS (0x41) - Player ready state update
-    DC:RegisterHandler("MPLUS", 0x41, function(...)
+    -- SMSG_KEYSTONE_STATUS (0x51) - Player ready state update
+    DC:RegisterHandler("MPLUS", 0x51, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
@@ -3560,8 +3567,8 @@ if DC then
         end
     end)
     
-    -- SMSG_KEYSTONE_COUNTDOWN (0x43) - Countdown update
-    DC:RegisterHandler("MPLUS", 0x43, function(...)
+    -- SMSG_KEYSTONE_COUNTDOWN (0x52) - Countdown update
+    DC:RegisterHandler("MPLUS", 0x52, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
@@ -3571,8 +3578,8 @@ if DC then
         end
     end)
     
-    -- SMSG_KEYSTONE_CANCEL (0x44) - Activation cancelled
-    DC:RegisterHandler("MPLUS", 0x44, function(...)
+    -- SMSG_KEYSTONE_CANCEL (0x53) - Activation cancelled
+    DC:RegisterHandler("MPLUS", 0x53, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
@@ -3892,7 +3899,21 @@ if DC then
     -- Respond to keystone activation
     namespace.RespondToKeystone = function(accepted)
         if DC then
-            DC:Send("MPLUS", 0x42, { accepted = accepted })  -- CMSG_KEYSTONE_RESPOND
+            if type(DC.Request) == "function" then
+                DC:Request("MPLUS", 0x08, { accepted = accepted })  -- CMSG_KEYSTONE_RESPONSE
+            else
+                DC:Send("MPLUS", 0x08, { accepted = accepted })  -- CMSG_KEYSTONE_RESPONSE
+            end
+        end
+    end
+
+    namespace.CancelPendingKeystoneActivation = function()
+        if DC then
+            if type(DC.Request) == "function" then
+                DC:Request("MPLUS", 0x09, { cancel = true })  -- CMSG_KEYSTONE_CANCEL
+            else
+                DC:Send("MPLUS", 0x09, { cancel = true })  -- CMSG_KEYSTONE_CANCEL
+            end
         end
     end
     

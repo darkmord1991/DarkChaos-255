@@ -223,6 +223,8 @@ namespace DCAddon
             constexpr uint8 CMSG_REQUEST_HUD       = 0x05;  // Request HUD snapshot (force refresh)
             constexpr uint8 CMSG_GET_VAULT_INFO    = 0x06;  // Request Great Vault info
             constexpr uint8 CMSG_CLAIM_VAULT_REWARD = 0x07; // Claim a vault reward
+            constexpr uint8 CMSG_KEYSTONE_RESPONSE = 0x08;  // Ready/decline pending Font of Power activation
+            constexpr uint8 CMSG_KEYSTONE_CANCEL   = 0x09;  // Cancel pending Font of Power activation
 
             constexpr uint8 SMSG_KEY_INFO          = 0x10;
             constexpr uint8 SMSG_AFFIXES           = 0x11;
@@ -235,6 +237,10 @@ namespace DCAddon
             constexpr uint8 SMSG_VAULT_INFO        = 0x18;  // Great Vault info (JSON)
             constexpr uint8 SMSG_CLAIM_VAULT_RESULT = 0x19; // Claim result
             constexpr uint8 SMSG_VAULT_AVAILABLE   = 0x1A;  // Login reminder: unclaimed Vault reward
+            constexpr uint8 SMSG_KEYSTONE_ACTIVATE = 0x50;  // Open keystone activation / ready-check UI
+            constexpr uint8 SMSG_KEYSTONE_STATUS   = 0x51;  // Pending activation ready-state update
+            constexpr uint8 SMSG_KEYSTONE_COUNTDOWN = 0x52; // Pending activation countdown started
+            constexpr uint8 SMSG_KEYSTONE_CANCEL   = 0x53;  // Pending activation cancelled
 
             // =================================================================
             // Mythic+ Token Vendor UI (NPC-driven)

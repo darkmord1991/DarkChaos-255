@@ -74,6 +74,7 @@ public:
         bool cancellationPending = false;
         uint64 countdownStarted = 0;  // Timestamp in ms when countdown began
         bool countdownActive = false;
+        bool scalingApplied = false;
         ObjectGuid countdownBarrierGuid;
         std::unordered_set<ObjectGuid::LowType> participants;
         std::unordered_set<ObjectGuid::LowType> cancellationVotes;  // Players who voted to cancel
@@ -180,6 +181,7 @@ private:
     void AnnounceToInstance(Map* map, std::string_view message) const;
     void ApplyEntryBarrier(Map* map) const;
     void ApplyCountdownRoot(Map* map) const;
+    void ResetDungeonForRunStart(Map* map) const;
     void ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) const;
     void HandleFailState(InstanceState* state, std::string_view reason, bool downgradeKeystone);
     bool IsDeathBudgetEnabled() const;

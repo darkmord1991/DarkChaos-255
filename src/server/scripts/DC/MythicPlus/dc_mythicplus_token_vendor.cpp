@@ -974,7 +974,7 @@ public:
                         playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToGive,
                         DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
                     {
-                        ChatHandler(player->GetSession()).PSendSysMessage("Exchanged %u Tokens for %u Essence.", tokensToTake, essenceToGive);
+                        ChatHandler(player->GetSession()).PSendSysMessage("Exchanged {} Tokens for {} Essence.", tokensToTake, essenceToGive);
                     }
                 }
                 else
@@ -997,7 +997,7 @@ public:
                             if (Item* item = player->StoreNewItem(dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true))
                             {
                                 player->SendNewItem(item, tokensToGive, true, false);
-                                ChatHandler(player->GetSession()).PSendSysMessage("Exchanged %u Essence for %u Tokens.", essenceToTake, tokensToGive);
+                                ChatHandler(player->GetSession()).PSendSysMessage("Exchanged {} Essence for {} Tokens.", essenceToTake, tokensToGive);
                             }
                         }
                     }

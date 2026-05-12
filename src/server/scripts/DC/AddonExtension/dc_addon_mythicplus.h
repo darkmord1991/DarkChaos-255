@@ -20,6 +20,10 @@ namespace DCAddon
 
         // Sends a specific signal to open the Vault UI
         void SendOpenVault(Player* player);
+
+        // Bridges addon keystone-activation requests to the Font of Power state machine.
+        void HandleKeystoneActivationResponse(Player* player, bool accepted);
+        void HandleKeystoneActivationCancel(Player* player);
     }
 }
 

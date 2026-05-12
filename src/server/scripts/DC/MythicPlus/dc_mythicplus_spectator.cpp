@@ -399,7 +399,7 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
     std::string error;
     if (!CanSpectate(player, instanceId, error))
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000[M+ Spectator]|r %s", error.c_str());
+        ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000[M+ Spectator]|r {}", error);
         return false;
     }
 
@@ -835,8 +835,8 @@ void MythicSpectatorManager::Update(uint32 diff)
                     case ReplayEventType::RUN_FAIL: typeLabel = "Run Fail"; break;
                 }
 
-                ChatHandler(viewer->GetSession()).PSendSysMessage("|cff00ff00[M+ Replay]|r %s: %s",
-                    typeLabel, event.data.c_str());
+                ChatHandler(viewer->GetSession()).PSendSysMessage("|cff00ff00[M+ Replay]|r {}: {}",
+                    typeLabel, event.data);
 
                 playback.nextEventIndex++;
             }
@@ -1426,9 +1426,17 @@ public:
             uint32 mins = run.timerRemaining / 60;
             uint32 secs = run.timerRemaining % 60;
 
-            handler->PSendSysMessage("|cffffffff%5u | +%-4u | %-15.15s | %-12.12s | %u/%u B %02u:%02u | %u|r",
-                run.instanceId, run.keystoneLevel, mapName.c_str(), run.leaderName.c_str(),
-                run.bossesKilled, run.bossesTotal, mins, secs, uint32(run.spectators.size()));
+            handler->SendSysMessage(Acore::StringFormat(
+                "|cffffffff{:>5} | +{:<4} | {:<15} | {:<12} | {}/{} B {:02}:{:02} | {}|r",
+                run.instanceId,
+                run.keystoneLevel,
+                mapName.substr(0, 15),
+                run.leaderName.substr(0, 12),
+                run.bossesKilled,
+                run.bossesTotal,
+                mins,
+                secs,
+                uint32(run.spectators.size())));
         }
 
         handler->SendSysMessage("|cff00ff00==================================|r");
@@ -1520,7 +1528,7 @@ public:
         state->streamMode = newMode;
 
         const char* modeNames[] = { "Normal", "Names Hidden", "Full Anonymous" };
-        handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Stream mode: %s", modeNames[newMode]);
+        handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Stream mode: {}", modeNames[newMode]);
         return true;
     }
 
@@ -1561,8 +1569,8 @@ public:
             return true;
         }
 
-        handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Invite Code: |cffffd700%s|r", inviteCode.c_str());
-        handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Valid for %u minutes, %u uses remaining.", duration, uses);
+        handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Invite Code: |cffffd700{}|r", inviteCode);
+        handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Valid for {} minutes, {} uses remaining.", duration, uses);
         handler->SendSysMessage("Share this code! Others can join with: |cffffd700.spectate code <CODE>|r");
         return true;
     }
@@ -1628,7 +1636,7 @@ public:
         handler->SendSysMessage("|cff00ff00======== RECENT REPLAYS ========|r");
         for (auto const& [id, desc] : replays)
         {
-            handler->PSendSysMessage("|cffffffff[%u]|r %s", id, desc.c_str());
+            handler->PSendSysMessage("|cffffffff[{}]|r {}", id, desc);
         }
         handler->SendSysMessage("|cff00ff00==============================|r");
         handler->SendSysMessage("Use |cffffd700.spectate replay <ID>|r to watch.");

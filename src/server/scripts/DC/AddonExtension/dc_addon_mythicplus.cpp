@@ -21,6 +21,7 @@
 #include "../MythicPlus/dc_mythicplus_constants.h"
 #include "dc_addon_mythicplus.h"
 
+#include <algorithm>
 #include <optional>
 #include <unordered_map>
 
@@ -31,6 +32,26 @@ namespace MythicPlus
     namespace
     {
         constexpr uint32 WEEK_SECONDS = 7u * 24u * 60u * 60u;
+
+        bool JsonGetBool(DCAddon::JsonValue const& json, std::string const& key,
+            bool defaultValue = false)
+        {
+            DCAddon::JsonValue const& value = json[key];
+            if (value.IsBool())
+                return value.AsBool();
+            if (value.IsNumber())
+                return value.AsInt32() != 0;
+            if (value.IsString())
+            {
+                std::string lowered = value.AsString();
+                std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                return lowered == "1" || lowered == "true" || lowered == "yes" ||
+                    lowered == "on";
+            }
+
+            return defaultValue;
+        }
 
         uint32 CountBits32(uint32 value)
         {
@@ -371,6 +392,36 @@ namespace MythicPlus
     static void HandleGetKeystoneList(Player* player, const ParsedMessage& /*msg*/)
     {
         SendJsonKeystoneList(player);
+    }
+
+    // Handler: Pending keystone activation ready / decline response
+    static void HandleKeystoneResponse(Player* player, const ParsedMessage& msg)
+    {
+        if (!player)
+            return;
+
+        bool accepted = true;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+            accepted = JsonGetBool(json, "accepted",
+                JsonGetBool(json, "ready", true));
+        }
+        else if (msg.GetDataCount() > 0)
+        {
+            accepted = msg.GetBool(0);
+        }
+
+        HandleKeystoneActivationResponse(player, accepted);
+    }
+
+    // Handler: Pending keystone activation cancel request
+    static void HandleKeystoneCancel(Player* player, const ParsedMessage& /*msg*/)
+    {
+        if (!player)
+            return;
+
+        HandleKeystoneActivationCancel(player);
     }
 
     // Send Great Vault info
@@ -975,6 +1026,14 @@ namespace MythicPlus
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_REQUEST_HUD, HandleRequestHud);
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_GET_VAULT_INFO, HandleGetVaultInfo);
         DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_CLAIM_VAULT_REWARD, HandleClaimVaultReward);
+
+        if (sConfigMgr->GetOption<bool>("DC.AddonProtocol.MythicPlus.Enable", true))
+        {
+            DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_KEYSTONE_RESPONSE,
+                HandleKeystoneResponse);
+            DC_REGISTER_HANDLER(Module::MYTHIC_PLUS, Opcode::MPlus::CMSG_KEYSTONE_CANCEL,
+                HandleKeystoneCancel);
+        }
 
         LOG_INFO("dc.addon", "Mythic+ module handlers registered (includes HUD cache manager)");
     }

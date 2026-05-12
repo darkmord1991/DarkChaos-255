@@ -246,19 +246,21 @@ These commands require GM or Administrator access levels.
 ### General: Addons & XP (`.dc`)
 *Command:* `.dc`
 
+Consolidated GM command for DCRXP addon sync, XP administration, spell relearning, manual dungeon difficulty control, and Mythic+ profile reloads.
+
 | Subcommand | Arguments | Description |
 | :--- | :--- | :--- |
-| `send` | `<player>` | Send data snapshot to player (Addon sync). |
-| `sendforce` | `<player>` | Force send snapshot, bypassing throttles. |
-| `sendforce-self` | | Force send snapshot to yourself (bypass throttles). |
-| `grant` | `<player> <amount>` | Grant custom XP to a player. |
-| `grantself` | `<amount>` | Grant custom XP to self. |
-| `givexp` | `<player\|self> <amount>` | Alias for XP granting (same as `grant`/`grantself`). |
-| `difficulty` | `<mode>` | Manage/Set dungeon difficulty manually. |
-| `reload` | `mythic` | Reload Mythic+ configuration. |
-| `info` | `[player]` | Show detailed XP/Addon info for a player. |
-| `dedupe` | `[player]` | Show DCRXP deduplication state. |
-| `clearflag` | `[player]` | Clear the `PLAYER_FLAGS_NO_XP_GAIN` flag. |
+| `send` | `<player>` | Send the current DCRXP addon snapshot to the target player. |
+| `sendforce` | `<player>` | Force-send the current DCRXP snapshot, bypassing throttles/guards. |
+| `sendforce-self` | | Force-send the current DCRXP snapshot to yourself. |
+| `info` | `[player\|self]` | Show XP, next-level XP, level, GUID, and XP-blocked state. Defaults to yourself when omitted in-game. |
+| `dedupe` | `[player\|self]` | Show the last recorded DCRXP payload key and age for dedupe diagnostics. Defaults to yourself when omitted in-game. |
+| `grant` | `<player> <amount>` | Force-grant XP to a player, then send an updated DCRXP snapshot if XP changed. |
+| `grantself` | `<amount>` | Force-grant XP to yourself, then send an updated DCRXP snapshot if XP changed. |
+| `clearflag` | `[player\|self]` | Remove `PLAYER_FLAGS_NO_XP_GAIN` and immediately refresh the player's addon XP snapshot. Defaults to yourself when omitted in-game. |
+| `difficulty` | `<normal\|heroic\|mythic\|info>` | Show current dungeon difficulty info or set manual dungeon difficulty. Mythic requires level 80 unless GM; group changes require leader privileges. |
+| `relearnspells` | `[player\|self]` | Re-run the DC First Start class spell grant for the target player. Aliases: `relearn`, `learnspells`. |
+| `reload` | `<mythic\|mythicplus\|m+>` | Reload Mythic+ dungeon profile configuration. |
 
 ### System: Dungeon Quests (`.dcquests`)
 *Command:* `.dcquests`

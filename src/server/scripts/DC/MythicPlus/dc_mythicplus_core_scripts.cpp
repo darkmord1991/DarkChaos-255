@@ -5,6 +5,8 @@
 
 #include "ScriptMgr.h"
 #include "AllMapScript.h"
+#include "AllSpellScript.h"
+#include "Spell.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
 #include "dc_mythicplus_affixes.h"
@@ -30,6 +32,23 @@ GuidUnorderedSet& GetMythicSelectLevelProcessedCreatures()
     static thread_local GuidUnorderedSet processedCreatures;
     return processedCreatures;
 }
+
+bool IsCountdownBlockedSpell(SpellInfo const* spellInfo)
+{
+    if (!spellInfo)
+        return false;
+
+    return spellInfo->HasEffect(SPELL_EFFECT_TELEPORT_UNITS) ||
+        spellInfo->HasEffect(SPELL_EFFECT_TELEPORT_UNITS_FACE_CASTER) ||
+        spellInfo->HasEffect(SPELL_EFFECT_CHARGE) ||
+        spellInfo->HasEffect(SPELL_EFFECT_CHARGE_DEST) ||
+        spellInfo->HasEffect(SPELL_EFFECT_JUMP) ||
+        spellInfo->HasEffect(SPELL_EFFECT_JUMP_DEST) ||
+        spellInfo->HasEffect(SPELL_EFFECT_LEAP_BACK) ||
+        spellInfo->HasEffect(SPELL_EFFECT_KNOCK_BACK) ||
+        spellInfo->HasEffect(SPELL_EFFECT_KNOCK_BACK_DEST) ||
+        spellInfo->HasEffect(SPELL_EFFECT_PULL_TOWARDS_DEST);
+}
 }
 
 // Forward declaration
@@ -48,6 +67,44 @@ public:
         sMythicRuns->Reset();
         RegisterMythicPlusAffixHandlers();
         LOG_INFO("server.loading", ">> Mythic+ system loaded successfully");
+    }
+};
+
+class MythicPlusCountdownSpellGate : public AllSpellScript
+{
+public:
+    MythicPlusCountdownSpellGate()
+        : AllSpellScript("MythicPlusCountdownSpellGate",
+            { ALLSPELLHOOK_ON_SPELL_CHECK_CAST }) { }
+
+    void OnSpellCheckCast(Spell* spell, bool /*strict*/,
+        SpellCastResult& res) override
+    {
+        if (!spell || res != SPELL_CAST_OK)
+            return;
+
+        Player* player = spell->GetCaster() ?
+            spell->GetCaster()->ToPlayer() : nullptr;
+        if (!player)
+            return;
+
+        Map* map = player->GetMap();
+        if (!map)
+            return;
+
+        MythicPlusRunManager::InstanceState const* state =
+            sMythicRuns->GetRunState(map);
+        if (!state || !state->countdownActive)
+            return;
+
+        if (state->participants.find(player->GetGUID().GetCounter()) ==
+                state->participants.end())
+            return;
+
+        if (!IsCountdownBlockedSpell(spell->GetSpellInfo()))
+            return;
+
+        res = SPELL_FAILED_ROOTED;
     }
 };
 
@@ -744,6 +801,7 @@ public:
 void AddSC_mythic_plus_core_scripts()
 {
     new MythicPlusWorldScript();
+    new MythicPlusCountdownSpellGate();
     new MythicPlusCreatureScript();
     new MythicPlusPlayerScript();
     new MythicPlusAllMapScript();

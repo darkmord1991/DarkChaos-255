@@ -15,6 +15,7 @@
 #include "GameTime.h"
 #include "Group.h"
 #include "Item.h"
+#include "InstanceScript.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
@@ -338,6 +339,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->completed = false;
     state->tokensGranted = false;
     state->countdownActive = false;
+    state->scalingApplied = false;
     state->countdownStarted = 0;
     state->participants.clear();
     state->recentBossEvades.clear();
@@ -448,12 +450,16 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     // Apply root to all players during countdown
     ApplyCountdownRoot(map);
 
-    // Start countdown before activating run
+    DespawnCountdownBarrier(state, map);
+    SpawnCountdownBarrier(state, map, player);
+
+    InitializeHud(state, map);
+
+    // Start the run countdown only after the prep work above has completed so
+    // chat announcements and HUD countdowns share the same zero-point.
     uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
     state->countdownStarted = GameTime::GetGameTimeMS().count();
     state->countdownActive = true;
-    DespawnCountdownBarrier(state, map);
-    SpawnCountdownBarrier(state, map, player);
 
     // Calculate scaling multiplier for display
     float hpMult = 0.0f, damageMult = 0.0f;
@@ -466,8 +472,6 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     AnnounceToInstance(map, Acore::StringFormat("M+ Multiplier: |cffaaaaaa+{:.0f}% HP, +{:.0f}% Damage|r",
         (hpMult - 1.0f) * 100.0f, (damageMult - 1.0f) * 100.0f));
     AnnounceToInstance(map, Acore::StringFormat("Starting in: |cffffff00{} seconds...|r", countdownDuration));
-
-    InitializeHud(state, map);
 
     // Push an immediate HUD snapshot so clients pop the frame as soon as the countdown begins
     UpdateHud(state, map, true, "countdown_start");
@@ -1079,6 +1083,57 @@ void MythicPlusRunManager::ApplyCountdownRoot(Map* map) const
     }
 }
 
+void MythicPlusRunManager::ResetDungeonForRunStart(Map* map) const
+{
+    if (!map || !map->IsDungeon())
+        return;
+
+    uint32 encountersReset = 0;
+    if (InstanceMap* instanceMap = map->ToInstanceMap())
+    {
+        if (InstanceScript* instanceScript = instanceMap->GetInstanceScript())
+        {
+            uint32 encounterCount = instanceScript->GetEncounterCount();
+            for (uint32 encounterId = 0; encounterId < encounterCount; ++encounterId)
+            {
+                EncounterState state = instanceScript->GetBossState(encounterId);
+                if (state == TO_BE_DECIDED || state == NOT_STARTED)
+                    continue;
+
+                if (instanceScript->SetBossState(encounterId, NOT_STARTED))
+                    ++encountersReset;
+            }
+
+            instanceScript->SetCompletedEncountersMask(0, true);
+        }
+    }
+
+    auto const& creatureStore = map->GetCreatureBySpawnIdStore();
+    std::vector<Creature*> creatureSnapshot;
+    creatureSnapshot.reserve(creatureStore.size());
+    for (auto const& pair : creatureStore)
+        creatureSnapshot.push_back(pair.second);
+
+    uint32 creaturesReset = 0;
+    for (Creature* creature : creatureSnapshot)
+    {
+        if (!creature || creature->GetMap() != map)
+            continue;
+
+        if (!creature->GetSpawnId())
+            continue;
+
+        if (creature->IsControlledByPlayer())
+            continue;
+
+        creature->Respawn(true);
+        ++creaturesReset;
+    }
+
+    LOG_INFO("mythic.run", "Reset dungeon state for instance {} (map {}): {} encounters, {} creatures",
+             map->GetInstanceId(), map->GetId(), encountersReset, creaturesReset);
+}
+
 void MythicPlusRunManager::SpawnCountdownBarrier(InstanceState* state, Map* map, Player* activator) const
 {
     if (!state || !map || !activator)
@@ -1141,7 +1196,6 @@ void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) c
         return;
 
     uint32 refreshed = 0;
-    uint32 forcedRespawns = 0;
     auto const& creatureStore = map->GetCreatureBySpawnIdStore();
     std::vector<Creature*> creatureSnapshot;
     creatureSnapshot.reserve(creatureStore.size());
@@ -1159,18 +1213,18 @@ void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) c
         if (creature->IsControlledByPlayer())
             continue;
 
-        if (creature->IsAlive())
-        {
-            creature->DisappearAndDie();
-            ++forcedRespawns;
-        }
+        // Re-run SelectLevel against the active keystone state so already
+        // loaded dungeon NPCs immediately pick up the Mythic+ multipliers.
+        creature->SelectLevel();
 
-        creature->Respawn(true);
+        if (creature->IsAlive())
+            creature->SetHealth(creature->GetMaxHealth());
+
         ++refreshed;
     }
 
-    LOG_INFO("mythic.run", "Refreshed {} hostile creatures ({} forced) for keystone level +{} in instance {} (map {})",
-             refreshed, forcedRespawns, keystoneLevel, map->GetInstanceId(), map->GetId());
+    LOG_INFO("mythic.run", "Refreshed {} hostile creatures for keystone level +{} in instance {} (map {})",
+             refreshed, keystoneLevel, map->GetInstanceId(), map->GetId());
 }
 
 void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_view reason, bool downgradeKeystone)
@@ -2437,6 +2491,11 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
         state->hudTimerDuration = GetHudTimerDuration(state->mapId, state->keystoneLevel);
     state->timerEndsAt = state->hudTimerDuration ? state->startedAt + state->hudTimerDuration : 0;
 
+    ResetDungeonForRunStart(map);
+
+    ApplyKeystoneScaling(map, state->keystoneLevel);
+    state->scalingApplied = true;
+
     // Remove root spell from all players to allow movement
     Map::PlayerList const& players = map->GetPlayers();
     for (auto const& ref : players)
@@ -2449,8 +2508,6 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
         }
     }
 
-    // Apply scaling and barriers
-    ApplyKeystoneScaling(map, state->keystoneLevel);
     ApplyEntryBarrier(map);
 
     SetHudWorldState(state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, 0);
