@@ -1270,7 +1270,7 @@ namespace DCCollection
         if (!accountId)
             return;
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return;
 
@@ -1906,7 +1906,7 @@ namespace DCCollection
     {
         std::vector<uint32> items;
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return items;
 
@@ -2004,7 +2004,7 @@ namespace DCCollection
     // Check whether an account owns a given collection item (unlocked)
     bool HasCollectionItem(uint32 accountId, CollectionType type, uint32 entryId)
     {
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return false;
 
@@ -2209,7 +2209,7 @@ namespace DCCollection
         if (!accountId || limit == 0)
             return recent;
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return recent;
 
@@ -3314,7 +3314,7 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
         {
             DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
@@ -3671,7 +3671,7 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return;
 
@@ -3795,7 +3795,7 @@ namespace DCCollection
             {
                 std::vector<uint32> favorites;
 
-                std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+                std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
                 if (itemsEntryCol.empty())
                     return;
 
@@ -3959,7 +3959,7 @@ namespace DCCollection
         player->CastSpell(player, spellId, false);
 
         // Update usage counter
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return;
 
@@ -4029,7 +4029,7 @@ namespace DCCollection
 
         if (!hasCollection && hadTitleBefore)
         {
-            std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+            std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
             if (!itemsEntryCol.empty())
             {
                 std::string const typeTitleValue =
@@ -5077,7 +5077,7 @@ namespace DCCollection
         if ((ct == CollectionType::MOUNT || !loadedAny) &&
             WorldTableExists("dc_collection_definitions"))
         {
-            std::string const& defEntryCol = GetWorldEntryColumn("dc_collection_definitions");
+            std::string defEntryCol = GetWorldEntryColumn("dc_collection_definitions");
             if (defEntryCol.empty())
                 return;
 
@@ -6072,7 +6072,7 @@ namespace DCCollection
 
             if (isMount)
             {
-                std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+                std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
                 if (itemsEntryCol.empty())
                     return;
 
@@ -6099,7 +6099,7 @@ namespace DCCollection
                 if (!itemId)
                     return;
 
-                std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+                std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
                 if (itemsEntryCol.empty())
                     return;
 

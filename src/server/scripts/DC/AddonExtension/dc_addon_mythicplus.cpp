@@ -943,8 +943,9 @@ namespace MythicPlus
             for (uint8 slotInTrack = 1; slotInTrack <= 3; ++slotInTrack)
             {
                 uint8 globalSlot = slotInTrack;
-                RecentRunEntry const* run = (slotInTrack - 1) < recentRuns.size()
-                    ? &recentRuns[slotInTrack - 1]
+                std::size_t const runIndex = static_cast<std::size_t>(slotInTrack - 1);
+                RecentRunEntry const* run = runIndex < recentRuns.size()
+                    ? &recentRuns[runIndex]
                     : nullptr;
                 slotsArr.Push(MakeHistorySlotObj(globalSlot, slotInTrack, run));
             }

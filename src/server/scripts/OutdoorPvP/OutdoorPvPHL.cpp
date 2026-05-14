@@ -1122,7 +1122,10 @@
             {
                 uint32 wtype = GetAffixWeatherType(_activeAffix);
                 float wint = GetAffixWeatherIntensity(_activeAffix);
-                if (wint <= 0.0f) wint = 0.50f; pct = uint32(std::lround(wint * 100.0f));
+                if (wint <= 0.0f)
+                    wint = 0.50f;
+
+                pct = uint32(std::lround(wint * 100.0f));
                 switch (wtype) { case 1: wname = "Rain"; break; case 2: wname = "Snow"; break; case 3: wname = "Storm"; break; default: wname = "Fine"; break; }
                 std::ostringstream ss;
                 ss << "[Hinterland BG] Affix active: " << aff << " \u2014 Weather: " << wname << " (" << pct << "%)";

@@ -978,7 +978,7 @@ namespace DarkChaos
                     if (result && result->GetRowCount() > 0)
                     {
                         uint8 highest_tier = result->Fetch()[0].Get<uint8>();
-                        return highest_tier > 0 ? highest_tier : TIER_LEVELING;
+                        return highest_tier > 0 ? highest_tier : static_cast<uint8>(TIER_LEVELING);
                     }
 
                     // If no upgraded items found, return default tier

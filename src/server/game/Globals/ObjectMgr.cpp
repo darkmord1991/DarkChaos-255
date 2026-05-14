@@ -9893,7 +9893,7 @@ void ObjectMgr::LoadMailLevelRewards()
     {
         Field* fields = result->Fetch();
 
-        uint8 level           = fields[0].Get<uint8>();
+        uint32 level          = fields[0].Get<uint32>();
         uint32 raceMask       = fields[1].Get<uint32>();
         uint32 mailTemplateId = fields[2].Get<uint32>();
         uint32 senderEntry    = fields[3].Get<uint32>();
