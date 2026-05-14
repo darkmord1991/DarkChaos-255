@@ -16,6 +16,7 @@ local function InstallDCCentral(DC)
         return true
     end
     DC._dccentralInstalled = true
+    rawset(_G, "DCCentral", DC)
 
     -- Token and Essence Information (Seasonal Currency)
     DC.TOKEN_ITEM_ID = tonumber(DC.TOKEN_ITEM_ID) or 0
@@ -75,13 +76,12 @@ local function InstallDCCentral(DC)
     EnsureCurrencyInfoEntry(DC, DC.TOKEN_ITEM_ID, DEFAULT_TOKEN_INFO)
     EnsureCurrencyInfoEntry(DC, DC.ESSENCE_ITEM_ID, DEFAULT_ESSENCE_INFO)
 
-    -- Keystone item IDs (M+2 through M+20): mirror server constants
-    DC.KEYSTONE_ITEM_IDS = {
-        [300313] = true, [300314] = true, [300315] = true, [300316] = true, [300317] = true,
-        [300318] = true, [300319] = true, [300320] = true, [300321] = true, [300322] = true,
-        [300323] = true, [300324] = true, [300325] = true, [300326] = true, [300327] = true,
-        [300328] = true, [300329] = true, [300330] = true, [300331] = true,
-    }
+    -- Keystone item IDs (M+2 through M+20): use the protocol core's shared map.
+    if type(DC.SetKeystoneItemIds) == "function" then
+        DC:SetKeystoneItemIds()
+    elseif type(DC.KEYSTONE_ITEM_IDS) ~= "table" then
+        DC.KEYSTONE_ITEM_IDS = {}
+    end
 
     -- Optional server-reported currency balance
     DC.ServerCurrencyBalance = DC.ServerCurrencyBalance or {

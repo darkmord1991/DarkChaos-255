@@ -31,6 +31,7 @@
 #include "Config.h"
 #include "ObjectMgr.h"
 #include "ObjectAccessor.h"
+#include "../PhasedDuels/dc_phased_duels.h"
 
 namespace DCDuelAddon
 {
@@ -270,29 +271,44 @@ namespace DCDuelAddon
      * Returns list of active duels if no target specified
      * TODO: Full spectator integration with PhasedDuels system
      */
-    void HandleSpectateRequest(Player* player, ObjectGuid targetGuid)
+    void HandleSpectateRequest(Player* player, ObjectGuid targetGuid,
+        uint32 matchId)
     {
         if (!player || !player->GetSession())
             return;
 
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_DUEL_UPDATE);
 
-        if (targetGuid.IsEmpty())
+        if (targetGuid.IsEmpty() && matchId == 0)
         {
-            // Return list of active duels
-            // For now, we query characters currently flagged as dueling
-            // Full implementation would integrate with PhasedDuels sActiveDuels map
             msg.Set("action", "list");
-            msg.Set("activeDuels", "[]");  // TODO: Query from PhasedDuels system
-            msg.Set("message", "Duel spectating coming soon!");
+            msg.Set("activeDuels", DCPhasedDuels::BuildActiveDuelListJson());
+            msg.Set("message", "Active duels updated.");
         }
         else
         {
-            // Request to spectate a specific duel
-            // TODO: Implement phasing into duel phase for spectating
+            std::string error;
+            std::string opponentName;
+            uint32 phaseId = 0;
+            bool const success = DCPhasedDuels::StartSpectating(player,
+                matchId, targetGuid, error, opponentName, phaseId);
+
             msg.Set("action", "spectate");
-            msg.Set("success", false);
-            msg.Set("message", "Duel spectating is not yet implemented.");
+            msg.Set("success", success);
+            msg.Set("matchId", static_cast<int32>(matchId > 0 ? matchId : phaseId));
+
+            if (success)
+            {
+                msg.Set("phaseId", static_cast<int32>(phaseId));
+                msg.Set("opponent", opponentName);
+                msg.Set("message", "Now spectating duel.");
+            }
+            else
+            {
+                msg.Set("message", error.empty()
+                    ? "Unable to spectate that duel."
+                    : error);
+            }
         }
 
         msg.Send(player);
@@ -352,18 +368,26 @@ namespace DCDuelAddon
             return;
 
         ObjectGuid targetGuid;
+        uint32 matchId = 0;
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
-        if (!json.IsNull() && json.HasKey("targetGuid"))
+        if (!json.IsNull())
         {
-            uint64 rawGuid = static_cast<uint64>(json["targetGuid"].AsInt32());
-            if (rawGuid > 0)
+            if (json.HasKey("targetGuid"))
             {
-                targetGuid = ObjectGuid::Create<HighGuid::Player>(static_cast<uint32>(rawGuid));
+                uint64 rawGuid = static_cast<uint64>(json["targetGuid"].AsInt32());
+                if (rawGuid > 0)
+                {
+                    targetGuid = ObjectGuid::Create<HighGuid::Player>(
+                        static_cast<uint32>(rawGuid));
+                }
             }
+
+            if (json.HasKey("matchId"))
+                matchId = json["matchId"].AsUInt32();
         }
 
-        HandleSpectateRequest(player, targetGuid);
+        HandleSpectateRequest(player, targetGuid, matchId);
     }
 
     // =======================================================================

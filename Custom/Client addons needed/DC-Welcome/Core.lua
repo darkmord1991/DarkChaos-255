@@ -1110,6 +1110,20 @@ function DCWelcome:ShowWelcome(forceShow)
     DCWelcomeDB.shown = true
 end
 
+    function DCWelcome:ShowWelcomeTab(tabId)
+        self:ShowWelcome(true)
+
+        if not tabId or tabId == "" then
+            return
+        end
+
+        C_Timer_After(0.1, function()
+            if welcomeFrame and welcomeFrame.SelectTab then
+                welcomeFrame:SelectTab(tabId)
+            end
+        end)
+    end
+
 function DCWelcome:HideWelcome()
     if welcomeFrame then
         welcomeFrame:Hide()
@@ -1380,6 +1394,27 @@ SlashCmdList["DCPROGRESS"] = function(msg)
     else
         Print("Usage: /dcprogress [show|refresh]")
     end
+end
+
+SLASH_DCENDGAME1 = "/dcendgame"
+SLASH_DCENDGAME2 = "/endgame"
+SlashCmdList["DCENDGAME"] = function(msg)
+    local args = {}
+    for word in string.gmatch(msg or "", "%S+") do
+        table.insert(args, string.lower(word))
+    end
+
+    local cmd = args[1] or ""
+
+    if cmd == "refresh" then
+        if DCWelcome.RefreshEndgameDirector then
+            DCWelcome:RefreshEndgameDirector(true)
+        elseif DCWelcome.RequestProgressData then
+            DCWelcome:RequestProgressData()
+        end
+    end
+
+    DCWelcome:ShowWelcomeTab("endgame")
 end
 
 -- Addons hub command

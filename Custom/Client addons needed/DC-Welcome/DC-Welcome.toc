@@ -12,6 +12,7 @@ Localization.lua
 Core.lua
 AddonsPanel.lua
 ProgressPanel.lua
+EndgameDirector.lua
 WelcomeFrame.lua
 ChallengePrestigeUI.lua
 FAQ.lua

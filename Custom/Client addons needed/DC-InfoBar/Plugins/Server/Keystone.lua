@@ -10,15 +10,27 @@
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
--- Keystone item IDs (custom DC keystone items)
--- Keystone item IDs: prefer central DC.KEYSTONE_ITEM_IDS, fallback to plugin-local mapping
-local DCproto = rawget(_G, "DCAddonProtocol")
-local DCCentral = rawget(_G, "DCCentral")
-local KEYSTONE_ITEM_IDS = (DCCentral and DCCentral.KEYSTONE_ITEM_IDS) or (DCproto and DCproto.KEYSTONE_ITEM_IDS) or {
-    [60000] = true,
-    [60001] = true,
-    [60002] = true,
-}
+local function GetDCProtocol()
+    return rawget(_G, "DCAddonProtocol")
+end
+
+local function GetDCCentral()
+    return rawget(_G, "DCCentral")
+end
+
+local function GetKeystoneItemIds()
+    local central = GetDCCentral()
+    if central and type(central.KEYSTONE_ITEM_IDS) == "table" then
+        return central.KEYSTONE_ITEM_IDS
+    end
+
+    local proto = GetDCProtocol()
+    if proto and type(proto.KEYSTONE_ITEM_IDS) == "table" then
+        return proto.KEYSTONE_ITEM_IDS
+    end
+
+    return nil
+end
 
 -- Use centralized dungeon abbreviations from Core.lua (single source of truth)
 local DUNGEON_ABBREVS = DCInfoBar.DUNGEON_ABBREVS or {}
@@ -54,6 +66,8 @@ end
 
 -- Scan inventory for keystone items
 function KeystonePlugin:ScanInventoryForKeystone()
+    local keystoneItemIds = GetKeystoneItemIds()
+
     -- Check all bag slots for keystone items
     for bag = 0, 4 do
         local numSlots = GetContainerNumSlots(bag)
@@ -61,7 +75,7 @@ function KeystonePlugin:ScanInventoryForKeystone()
             local itemId = GetContainerItemID(bag, slot)
             if itemId then
                 -- Fast path: check known keystone item IDs
-                if KEYSTONE_ITEM_IDS[itemId] then
+                if keystoneItemIds and keystoneItemIds[itemId] then
                     local itemName, itemLink = GetItemInfo(itemId)
                     if not itemLink then
                         itemLink = GetContainerItemLink(bag, slot)
@@ -128,6 +142,8 @@ end
 function KeystonePlugin:GetItemTooltipData(bag, slot)
     -- Prefer shared scan tooltip provided by DC or DCCentral
     local tooltip
+    local DCproto = GetDCProtocol()
+    local DCCentral = GetDCCentral()
     if DCproto and type(DCproto.GetScanTooltip) == 'function' then
         tooltip = DCproto:GetScanTooltip()
     elseif DCCentral and DCCentral.scanTooltip then

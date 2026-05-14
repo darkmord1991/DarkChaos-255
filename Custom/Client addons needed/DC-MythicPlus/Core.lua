@@ -199,6 +199,22 @@ local function NowSeconds()
     return 0
 end
 
+local function IsMythicDifficulty(id, label)
+    id = tonumber(id) or 0
+    if id == 3 or id == 16 or id == 23 then
+        return true
+    end
+
+    if type(label) == "string" then
+        local lowered = string.lower(label)
+        if string.find(lowered, "mythic") or string.find(lowered, "epic") then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function GetTrackableInstanceInfo()
     if type(IsInInstance) ~= "function" or type(GetInstanceInfo) ~= "function" then
         return nil
@@ -212,20 +228,6 @@ local function GetTrackableInstanceInfo()
     local name, instanceType, difficultyID, difficultyName = GetInstanceInfo()
     if instanceType ~= "party" and instanceType ~= "raid" then
         return nil
-    end
-
-    local function IsMythicDifficulty(id, label)
-        id = tonumber(id) or 0
-        if id == 16 or id == 23 then
-            return true
-        end
-        if type(label) == "string" then
-            local lowered = string.lower(label)
-            if string.find(lowered, "mythic") then
-                return true
-            end
-        end
-        return false
     end
 
     -- Local timer is strictly for non-Mythic runs.
@@ -753,7 +755,7 @@ local function GetCurrentRunKey()
     return GetRunKey(mapId, keystone), mapId, keystone
 end
 
--- Override the minimap instance difficulty badge text with +key during active Mythic+ runs.
+-- Override the minimap instance difficulty badge text with M0 or M+key.
 local function GetActiveMythicKeyForMinimapBadge()
     if not IsRunInProgress(activeState) then
         return nil
@@ -765,6 +767,33 @@ local function GetActiveMythicKeyForMinimapBadge()
     end
 
     return keyLevel
+end
+
+local function GetMythicMinimapBadgeDisplay()
+    if type(IsInInstance) ~= "function" or type(GetInstanceInfo) ~= "function" then
+        return nil
+    end
+
+    local inInstance = select(1, IsInInstance())
+    if not inInstance then
+        return nil
+    end
+
+    local _, instanceType, difficultyID, difficultyName = GetInstanceInfo()
+    if instanceType ~= "party" and instanceType ~= "raid" then
+        return nil
+    end
+
+    local keyLevel = GetActiveMythicKeyForMinimapBadge()
+    if keyLevel then
+        return "M+" .. tostring(keyLevel)
+    end
+
+    if IsMythicDifficulty(difficultyID, difficultyName) then
+        return "M0"
+    end
+
+    return nil
 end
 
 local function RefreshBlizzardMinimapInstanceBadge()
@@ -782,9 +811,8 @@ local function UpdateMinimapMythicKeyBadge()
         return
     end
 
-    local keyLevel = GetActiveMythicKeyForMinimapBadge()
-    if keyLevel then
-        local display = "+" .. tostring(keyLevel)
+    local display = GetMythicMinimapBadgeDisplay()
+    if display then
         if text:GetText() ~= display then
             text:SetText(display)
         end
@@ -2000,10 +2028,11 @@ end
 local function ScanInventoryForKeystone()
     -- Scan all bags (0-4) for keystone-like items; try to parse level/dungeon
     local found = nil
-    -- Determine ID mapping from central DC addon protocol if available (fallback to small hardcoded set)
+    -- Determine ID mapping from the shared DC addon protocol if available.
     local DCproto = rawget(_G, "DCAddonProtocol")
     local DCCentral = rawget(_G, "DCCentral")
-    local KEYSTONE_IDS = (DCCentral and DCCentral.KEYSTONE_ITEM_IDS) or (DCproto and DCproto.KEYSTONE_ITEM_IDS) or { [60000] = true, [60001] = true, [60002] = true }
+    local KEYSTONE_IDS = (DCCentral and DCCentral.KEYSTONE_ITEM_IDS) or
+        (DCproto and DCproto.KEYSTONE_ITEM_IDS)
     for bag = 0, 4 do
         local numSlots = GetContainerNumSlots(bag)
         for slot = 1, numSlots do
@@ -2011,7 +2040,7 @@ local function ScanInventoryForKeystone()
             if itemId then
                 local itemName, itemLink = GetItemInfo(itemId)
                 -- Fast path: check known keystone item IDs
-                local isKeystoneId = KEYSTONE_IDS[itemId]
+                local isKeystoneId = KEYSTONE_IDS and KEYSTONE_IDS[itemId]
                 if isKeystoneId or (itemName and string.find(itemName, "Keystone")) then
                     -- Attempt to extract level
                     local level = tonumber((itemName and (string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)") or string.match(itemName, "%((%d+)%)")))) or nil

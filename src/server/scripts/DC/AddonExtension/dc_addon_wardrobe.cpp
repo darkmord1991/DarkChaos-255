@@ -2058,18 +2058,26 @@ namespace DCCollection
             std::vector<std::string> setJson;    // individual {"id":..,"name":..,"items":[..]} entries
             std::vector<std::string> setPacked;  // individual id;urlenc(name);csv(items)
             uint32 syncVersion = 0;
+            uint32 transmogSyncVersion = 0;
+            bool virtualSetsEnabled = true;
         };
 
         // Cache the set fragments by locale (names are locale-dependent).
         static std::map<uint8, ItemSetPayload> s_itemSetsByLocale;
+        bool virtualSetsEnabled = sConfigMgr->GetOption<bool>(TRANSMOG_VIRTUAL_SETS_ENABLED, true);
+        uint32 transmogSyncVersion = virtualSetsEnabled ? GetTransmogDefinitionsSyncVersionCached() : 0;
 
         uint8 locale = static_cast<uint8>(player->GetSession()->GetSessionDbcLocale());
         auto it = s_itemSetsByLocale.find(locale);
-        if (it == s_itemSetsByLocale.end())
+        if (it == s_itemSetsByLocale.end()
+            || it->second.virtualSetsEnabled != virtualSetsEnabled
+            || it->second.transmogSyncVersion != transmogSyncVersion)
         {
             ItemSetPayload payload;
             payload.setJson.reserve(600);
             payload.setPacked.reserve(600);
+            payload.virtualSetsEnabled = virtualSetsEnabled;
+            payload.transmogSyncVersion = transmogSyncVersion;
 
             // Packed-name escaping (percent-encoding for a few separators/controls).
             auto packEscape = [](std::string const& s)
@@ -2150,7 +2158,7 @@ namespace DCCollection
 
             // Virtual Sets Generation
             // Group appearances by base name (removing the last word, e.g. "Netherwind Crown" -> "Netherwind")
-            if (sConfigMgr->GetOption<bool>(TRANSMOG_VIRTUAL_SETS_ENABLED, true)) // just use a loosely related config or default true
+            if (virtualSetsEnabled)
             {
                 uint32 vSetId = sItemSetStore.GetNumRows() + 10000;
                 auto const& idx = GetTransmogAppearanceIndexCached();
@@ -2222,7 +2230,10 @@ namespace DCCollection
             auto const& d = md5.GetDigest();
             payload.syncVersion = uint32(d[0]) | (uint32(d[1]) << 8) | (uint32(d[2]) << 16) | (uint32(d[3]) << 24);
 
-            it = s_itemSetsByLocale.emplace(locale, std::move(payload)).first;
+            if (it == s_itemSetsByLocale.end())
+                it = s_itemSetsByLocale.emplace(locale, std::move(payload)).first;
+            else
+                it->second = std::move(payload);
         }
 
         ItemSetPayload const& payload = it->second;

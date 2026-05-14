@@ -58,10 +58,12 @@ DCAddonProtocol = {
     _crossEventHandlers = {},
     
     -- Request tracking system
-    _requestLog = {},           -- Array of request entries
+    _requestLog = {},           -- Circular buffer of request entries
     _requestLogMax = 100,       -- Max entries to keep
-    _responseLog = {},          -- Array of response entries
+    _requestLogSeq = 0,
+    _responseLog = {},          -- Circular buffer of response entries
     _responseLogMax = 100,
+    _responseLogSeq = 0,
     _pendingRequests = {},      -- Requests waiting for response (keyed by requestId)
     _pendingRequestsLegacy = {},-- Legacy lookup by module_opcode
 
@@ -90,6 +92,289 @@ DCAddonProtocol = {
 }
 
 local DC = DCAddonProtocol
+local DEFAULT_DB
+
+local DEFAULT_KEYSTONE_ITEM_LIST = {
+    300313, 300314, 300315, 300316, 300317,
+    300318, 300319, 300320, 300321, 300322,
+    300323, 300324, 300325, 300326, 300327,
+    300328, 300329, 300330, 300331,
+}
+
+local function NormalizeBufferCapacity(capacity, fallback, minimum)
+    local normalized = tonumber(capacity)
+    if normalized == nil then
+        normalized = tonumber(fallback)
+    end
+    if normalized == nil then
+        normalized = minimum or 1
+    end
+
+    normalized = math.floor(normalized)
+    if normalized < (minimum or 1) then
+        normalized = minimum or 1
+    end
+
+    return normalized
+end
+
+local function CreateCircularBuffer(capacity, fallback, minimum)
+    return {
+        entries = {},
+        head = 1,
+        count = 0,
+        capacity = NormalizeBufferCapacity(capacity, fallback, minimum),
+    }
+end
+
+local function IsCircularBuffer(buffer)
+    return type(buffer) == "table"
+        and type(buffer.entries) == "table"
+        and type(buffer.head) == "number"
+        and type(buffer.count) == "number"
+        and type(buffer.capacity) == "number"
+end
+
+local function GetCircularBufferCount(buffer)
+    if not IsCircularBuffer(buffer) then
+        return 0
+    end
+
+    return math.max(0, math.floor(tonumber(buffer.count) or 0))
+end
+
+local function AppendCircularBuffer(buffer, entry)
+    if not IsCircularBuffer(buffer) then
+        return entry
+    end
+
+    local capacity = NormalizeBufferCapacity(buffer.capacity, 1, 1)
+    local count = GetCircularBufferCount(buffer)
+
+    if count < capacity then
+        local index = ((buffer.head + count - 2) % capacity) + 1
+        buffer.entries[index] = entry
+        buffer.count = count + 1
+    else
+        buffer.entries[buffer.head] = entry
+        buffer.head = (buffer.head % capacity) + 1
+    end
+
+    return entry
+end
+
+local function GetCircularBufferEntries(buffer, limit, newestFirst)
+    local result = {}
+    local count = GetCircularBufferCount(buffer)
+    if count == 0 then
+        return result
+    end
+
+    limit = tonumber(limit)
+    if limit == nil or limit < 1 or limit > count then
+        limit = count
+    else
+        limit = math.floor(limit)
+    end
+
+    local capacity = NormalizeBufferCapacity(buffer.capacity, count, 1)
+    if newestFirst then
+        for offset = 0, limit - 1 do
+            local index = ((buffer.head + count - 2 - offset) % capacity) + 1
+            result[#result + 1] = buffer.entries[index]
+        end
+        return result
+    end
+
+    local startOffset = count - limit
+    for offset = startOffset, count - 1 do
+        local index = ((buffer.head + offset - 1) % capacity) + 1
+        result[#result + 1] = buffer.entries[index]
+    end
+
+    return result
+end
+
+local function EnsureCircularBuffer(buffer, capacity, newestFirst, fallback, minimum)
+    local normalizedCapacity = NormalizeBufferCapacity(capacity, fallback, minimum)
+
+    if IsCircularBuffer(buffer) then
+        if buffer.capacity ~= normalizedCapacity then
+            local preserved = GetCircularBufferEntries(
+                buffer,
+                math.min(GetCircularBufferCount(buffer), normalizedCapacity),
+                false)
+
+            buffer.entries = {}
+            buffer.head = 1
+            buffer.count = 0
+            buffer.capacity = normalizedCapacity
+
+            for i = 1, #preserved do
+                AppendCircularBuffer(buffer, preserved[i])
+            end
+        end
+
+        return buffer
+    end
+
+    local converted = CreateCircularBuffer(normalizedCapacity, normalizedCapacity, minimum)
+    if type(buffer) ~= "table" then
+        return converted
+    end
+
+    if newestFirst then
+        local keep = math.min(#buffer, normalizedCapacity)
+        for i = keep, 1, -1 do
+            AppendCircularBuffer(converted, buffer[i])
+        end
+        return converted
+    end
+
+    local start = math.max(1, #buffer - normalizedCapacity + 1)
+    for i = start, #buffer do
+        AppendCircularBuffer(converted, buffer[i])
+    end
+
+    return converted
+end
+
+local function ClearCircularBuffer(buffer, capacity, fallback, minimum)
+    local cleared = EnsureCircularBuffer(buffer, capacity, false, fallback, minimum)
+    cleared.entries = {}
+    cleared.head = 1
+    cleared.count = 0
+    return cleared
+end
+
+local function CopyKeystoneItemIdSet(target, items)
+    if type(target) ~= "table" then
+        target = {}
+    end
+
+    for key in pairs(target) do
+        target[key] = nil
+    end
+
+    if type(items) ~= "table" then
+        return target
+    end
+
+    if items[1] ~= nil then
+        for _, itemId in ipairs(items) do
+            local num = tonumber(itemId)
+            if num and num > 0 then
+                target[num] = true
+            end
+        end
+        return target
+    end
+
+    for key, value in pairs(items) do
+        local num = tonumber(key)
+        if num and num > 0 and value then
+            target[num] = true
+        end
+    end
+
+    return target
+end
+
+function DC:GetDefaultKeystoneItemMap()
+    return CopyKeystoneItemIdSet({}, DEFAULT_KEYSTONE_ITEM_LIST)
+end
+
+function DC:SetKeystoneItemIds(items)
+    local source = items
+    if type(source) ~= "table" or next(source) == nil then
+        source = DEFAULT_KEYSTONE_ITEM_LIST
+    end
+
+    local target = self.KEYSTONE_ITEM_IDS
+    if type(target) ~= "table" then
+        target = {}
+        self.KEYSTONE_ITEM_IDS = target
+    end
+
+    if source == target then
+        return target
+    end
+
+    return CopyKeystoneItemIdSet(target, source)
+end
+
+function DC:_EnsureRequestLogBuffer()
+    if not IsCircularBuffer(self._requestLog) then
+        local maxId = tonumber(self._requestLogSeq) or 0
+        if type(self._requestLog) == "table" then
+            for i = 1, #self._requestLog do
+                local entry = self._requestLog[i]
+                local entryId = entry and tonumber(entry.id) or 0
+                if entryId > maxId then
+                    maxId = entryId
+                end
+            end
+        end
+
+        self._requestLog = EnsureCircularBuffer(self._requestLog,
+            self._requestLogMax, true, 100, 10)
+        self._requestLogSeq = maxId
+        return self._requestLog
+    end
+
+    self._requestLog = EnsureCircularBuffer(self._requestLog,
+        self._requestLogMax, true, 100, 10)
+    return self._requestLog
+end
+
+function DC:_EnsureResponseLogBuffer()
+    if not IsCircularBuffer(self._responseLog) then
+        local maxId = tonumber(self._responseLogSeq) or 0
+        if type(self._responseLog) == "table" then
+            for i = 1, #self._responseLog do
+                local entry = self._responseLog[i]
+                local entryId = entry and tonumber(entry.id) or 0
+                if entryId > maxId then
+                    maxId = entryId
+                end
+            end
+        end
+
+        self._responseLog = EnsureCircularBuffer(self._responseLog,
+            self._responseLogMax, true, 100, 10)
+        self._responseLogSeq = maxId
+        return self._responseLog
+    end
+
+    self._responseLog = EnsureCircularBuffer(self._responseLog,
+        self._responseLogMax, true, 100, 10)
+    return self._responseLog
+end
+
+function DC:_EnsureNetLogBuffer()
+    if not self._settings then
+        self:_InitDB()
+    end
+    if not self._settings then
+        return CreateCircularBuffer(DEFAULT_DB and DEFAULT_DB.netLogMaxEntries or 200,
+            200, 10)
+    end
+
+    self._settings.netLog = EnsureCircularBuffer(self._settings.netLog,
+        self._settings.netLogMaxEntries,
+        false,
+        DEFAULT_DB and DEFAULT_DB.netLogMaxEntries or 200,
+        10)
+    return self._settings.netLog
+end
+
+function DC:GetRequestLogCount()
+    return GetCircularBufferCount(self:_EnsureRequestLogBuffer())
+end
+
+function DC:GetResponseLogCount()
+    return GetCircularBufferCount(self:_EnsureResponseLogBuffer())
+end
 
 function DC:GetHandshakeVersionString()
     return tostring(self.VERSION) .. "|" .. tostring(self.CAPABILITIES or 0)
@@ -180,7 +465,7 @@ end
 -- SAVED VARIABLES (Settings + NetLog)
 -- ============================================================================
 
-local DEFAULT_DB = {
+DEFAULT_DB = {
     -- Controls detailed request/response logging. Keep off by default for performance.
     loggingEnabled = false,
 
@@ -206,12 +491,16 @@ function DC:_InitDB()
         end
     end
     if type(DCAddonProtocolDB.netLog) ~= "table" then
-        DCAddonProtocolDB.netLog = {}
+        DCAddonProtocolDB.netLog = CreateCircularBuffer(
+            DEFAULT_DB.netLogMaxEntries,
+            DEFAULT_DB.netLogMaxEntries,
+            10)
     end
 
     self._settings = DCAddonProtocolDB
     -- Apply persisted loggingEnabled on load.
     self._loggingEnabled = (DCAddonProtocolDB.loggingEnabled and true or false)
+    self:_EnsureNetLogBuffer()
 end
 
 function DC:GetSetting(key)
@@ -230,6 +519,8 @@ function DC:SetSetting(key, value)
 
     if key == "loggingEnabled" then
         self._loggingEnabled = value and true or false
+    elseif key == "netLogMaxEntries" then
+        self:_EnsureNetLogBuffer()
     end
 end
 
@@ -241,44 +532,37 @@ function DC:LogNetEvent(level, tag, message, extra)
         return
     end
 
-    local log = self._settings.netLog
-    if type(log) ~= "table" then
-        log = {}
-        self._settings.netLog = log
-    end
+    local log = self:_EnsureNetLogBuffer()
 
-    log[#log + 1] = {
+    AppendCircularBuffer(log, {
         t = time(),
         level = tostring(level or "info"),
         tag = tostring(tag or ""),
         msg = tostring(message or ""),
         extra = extra,
-    }
-
-    local maxEntries = tonumber(self._settings.netLogMaxEntries) or 200
-    if maxEntries < 10 then maxEntries = 10 end
-    while #log > maxEntries do
-        table.remove(log, 1)
-    end
+    })
 end
 
 function DC:DumpNetLog(n)
     if not self._settings then
         self:_InitDB()
     end
-    local log = self._settings and self._settings.netLog
-    if type(log) ~= "table" or #log == 0 then
+    local log = self:_EnsureNetLogBuffer()
+    local total = GetCircularBufferCount(log)
+    if total == 0 then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r NetLog: (empty)")
         return
     end
 
     n = tonumber(n) or 20
     if n < 1 then n = 1 end
-    if n > #log then n = #log end
+    if n > total then n = total end
 
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[DC]|r NetLog: last %d/%d", n, #log))
-    for i = #log - n + 1, #log do
-        local e = log[i]
+    local entries = GetCircularBufferEntries(log, n, false)
+
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[DC]|r NetLog: last %d/%d", n, total))
+    for i = 1, #entries do
+        local e = entries[i]
         local ts = (e and e.t and date("%H:%M:%S", e.t)) or "??:??:??"
         local lvl = (e and e.level) or "?"
         local tg = (e and e.tag and e.tag ~= "" and ("/" .. e.tag) or "") or ""
@@ -292,7 +576,11 @@ function DC:ClearNetLog()
         self:_InitDB()
     end
     if self._settings then
-        self._settings.netLog = {}
+        self._settings.netLog = ClearCircularBuffer(
+            self._settings.netLog,
+            self._settings.netLogMaxEntries,
+            DEFAULT_DB.netLogMaxEntries,
+            10)
     end
 end
 
@@ -478,12 +766,7 @@ DC.ModuleNames = {
 -- Shared Keystone item IDs mapping for client addons (faster inventory detection)
 -- These are the default keystone item IDs (M+2 through M+20). The server will send
 -- an updated list via SMSG_KEYSTONE_LIST on login if needed.
-DC.KEYSTONE_ITEM_IDS = {
-    [300313] = true, [300314] = true, [300315] = true, [300316] = true, [300317] = true,
-    [300318] = true, [300319] = true, [300320] = true, [300321] = true, [300322] = true,
-    [300323] = true, [300324] = true, [300325] = true, [300326] = true, [300327] = true,
-    [300328] = true, [300329] = true, [300330] = true, [300331] = true,
-}
+DC:SetKeystoneItemIds()
 
 -- Shared scan tooltip accessor. If DCCentral exposes one (DCScanTooltip), use it; otherwise DC will lazily create a fallback.
 function DC:GetScanTooltip()
@@ -505,16 +788,12 @@ function DC:GetScanTooltip()
     return self.ScanTooltip
 end
 
--- Ensure we link to DCCentral KEYSTONE mapping and shared tooltip if present after addon load
+-- Ensure we link to the shared tooltip if present after addon load
 do
     local f = CreateFrame("Frame")
     f:RegisterEvent("PLAYER_LOGIN")
     f:RegisterEvent("ADDON_LOADED")
-    f:SetScript("OnEvent", function(self, event, arg1)
-        local central = rawget(_G, "DCCentral")
-        if central and central.KEYSTONE_ITEM_IDS then
-            DC.KEYSTONE_ITEM_IDS = central.KEYSTONE_ITEM_IDS
-        end
+    f:SetScript("OnEvent", function(self)
         if rawget(_G, "DCScanTooltip") then
             DC.ScanTooltip = rawget(_G, "DCScanTooltip")
         end
@@ -594,9 +873,12 @@ function DC:LogRequest(module, opcode, data, requestId)
         self._stats.totalRequests = (self._stats.totalRequests or 0) + 1
         return nil
     end
+
+    local requestLog = self:_EnsureRequestLogBuffer()
+    self._requestLogSeq = (tonumber(self._requestLogSeq) or 0) + 1
     
     local entry = {
-        id = #self._requestLog + 1,
+        id = self._requestLogSeq,
         timestamp = time(),
         timeStr = date("%H:%M:%S"),
         player = UnitName("player"),
@@ -608,14 +890,8 @@ function DC:LogRequest(module, opcode, data, requestId)
         status = "pending",
         responseTime = nil,
     }
-    
-    -- Use ring buffer instead of inserting at front (O(1) instead of O(n))
-    local logLen = #self._requestLog
-    if logLen >= self._requestLogMax then
-        -- Remove oldest entry
-        table.remove(self._requestLog)
-    end
-    table.insert(self._requestLog, 1, entry)
+
+    AppendCircularBuffer(requestLog, entry)
     
     -- Track pending request
     if requestId then
@@ -643,9 +919,12 @@ function DC:LogResponse(module, opcode, data, jsonStr, requestId)
         self._stats.totalResponses = (self._stats.totalResponses or 0) + 1
         return nil
     end
+
+    local responseLog = self:_EnsureResponseLogBuffer()
+    self._responseLogSeq = (tonumber(self._responseLogSeq) or 0) + 1
     
     local entry = {
-        id = #self._responseLog + 1,
+        id = self._responseLogSeq,
         timestamp = time(),
         timeStr = date("%H:%M:%S"),
         player = UnitName("player"),
@@ -656,13 +935,8 @@ function DC:LogResponse(module, opcode, data, jsonStr, requestId)
         jsonLength = jsonStr and #jsonStr or 0,  -- Use # instead of string.len
         requestId = requestId,
     }
-    
-    -- Use ring buffer instead of inserting at front
-    local logLen = #self._responseLog
-    if logLen >= self._responseLogMax then
-        table.remove(self._responseLog)
-    end
-    table.insert(self._responseLog, 1, entry)
+
+    AppendCircularBuffer(responseLog, entry)
     
     -- Update statistics
     self:UpdateStats("response", entry)
@@ -722,22 +996,12 @@ end
 
 -- Get request log for display
 function DC:GetRequestLog(limit)
-    limit = limit or 20
-    local result = {}
-    for i = 1, math.min(limit, #self._requestLog) do
-        table.insert(result, self._requestLog[i])
-    end
-    return result
+    return GetCircularBufferEntries(self:_EnsureRequestLogBuffer(), limit or 20, true)
 end
 
 -- Get response log for display
 function DC:GetResponseLog(limit)
-    limit = limit or 20
-    local result = {}
-    for i = 1, math.min(limit, #self._responseLog) do
-        table.insert(result, self._responseLog[i])
-    end
-    return result
+    return GetCircularBufferEntries(self:_EnsureResponseLogBuffer(), limit or 20, true)
 end
 
 -- Get pending requests
@@ -755,8 +1019,12 @@ end
 
 -- Clear logs
 function DC:ClearLogs()
-    self._requestLog = {}
-    self._responseLog = {}
+    self._requestLog = ClearCircularBuffer(self._requestLog,
+        self._requestLogMax, 100, 10)
+    self._responseLog = ClearCircularBuffer(self._responseLog,
+        self._responseLogMax, 100, 10)
+    self._requestLogSeq = 0
+    self._responseLogSeq = 0
     self._pendingRequests = {}
     self._pendingRequestsLegacy = {}
 end
@@ -3129,8 +3397,8 @@ local function CreateDiagnosticsPanel()
             "",
             "Internal Structures:",
             "  Handlers: " .. DC:CountTable(DC._handlers),
-            "  Request Log: " .. #DC._requestLog,
-            "  Response Log: " .. #DC._responseLog,
+            "  Request Log: " .. DC:GetRequestLogCount(),
+            "  Response Log: " .. DC:GetResponseLogCount(),
             "  Pending Requests: " .. DC:CountTable(DC._pendingRequests),
             "  Chunk Buffers: " .. DC:CountTable(DC._chunkBuffers or {}),
             "  Module Stats: " .. DC:CountTable(DC._stats and DC._stats.moduleStats or {}),
@@ -3418,19 +3686,7 @@ DC:RegisterHandler("MPLUS", 0x17, function(data)
             end
         end
         if itemsTbl and type(itemsTbl) == 'table' then
-            local newMap = {}
-            for _, id in ipairs(itemsTbl) do
-                local num = tonumber(id)
-                if num then
-                    newMap[num] = true
-                end
-            end
-            DC.KEYSTONE_ITEM_IDS = newMap
-            -- If the DC central module is present, copy to DCCentral too
-            local DCCentral = rawget(_G, "DCCentral")
-            if DCCentral then
-                DCCentral.KEYSTONE_ITEM_IDS = newMap
-            end
+            DC:SetKeystoneItemIds(itemsTbl)
             if DC._debug then
                 DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Keystone ID list updated from server (" .. tostring(#itemsTbl) .. " items)")
             end
@@ -3501,8 +3757,8 @@ function DC:GetModuleLeaderboard()
             module = mod,
             moduleName = self.ModuleNames[mod] or mod,
             requests = stats.requests,
-            responses = stats.responses,
-            timeouts = stats.timeouts,
+            "  Request Log: " .. DC:GetRequestLogCount(),
+            "  Response Log: " .. DC:GetResponseLogCount(),
             successRate = stats.requests > 0 and math.min(100, math.floor((stats.responses / stats.requests) * 100)) or 0,
             avgResponseTime = stats.avgResponseTime,
         })

@@ -51,6 +51,7 @@
 #include <cctype>
 #include <cmath>
 #include <set>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 #include "Mail.h"
@@ -144,6 +145,9 @@ namespace DCQoS
         bool questLevelText = true;
     };
 
+    static std::unordered_map<uint32, QoSSettings> s_PlayerSettingsCache;
+    static std::mutex s_PlayerSettingsCacheMutex;
+
     // =======================================================================
     // Helper Functions
     // =======================================================================
@@ -223,7 +227,49 @@ namespace DCQoS
     // Settings Database Functions
     // =======================================================================
 
-    QoSSettings LoadPlayerSettings(Player* player)
+    static void ApplyPlayerSetting(QoSSettings& settings,
+                                   std::string const& key,
+                                   std::string const& value)
+    {
+        if (key == "tooltips.enabled") settings.tooltipsEnabled = (value == "1");
+        else if (key == "tooltips.showItemId") settings.showItemId = (value == "1");
+        else if (key == "tooltips.showItemLevel") settings.showItemLevel = (value == "1");
+        else if (key == "tooltips.showNpcId") settings.showNpcId = (value == "1");
+        else if (key == "tooltips.showSpellId") settings.showSpellId = (value == "1");
+        else if (key == "tooltips.showSpellFamilyMetadata") settings.showSpellFamilyMetadata = (value == "1");
+        else if (key == "tooltips.showGuildRank") settings.showGuildRank = (value == "1");
+        else if (key == "tooltips.showTarget") settings.showTarget = (value == "1");
+        else if (key == "tooltips.hideHealthBar") settings.hideHealthBar = (value == "1");
+        else if (key == "tooltips.hideInCombat") settings.hideInCombat = (value == "1");
+        else if (key == "tooltips.scale")
+        {
+            try
+            {
+                settings.tooltipScale = std::stof(value);
+            }
+            catch (...)
+            {
+            }
+        }
+        else if (key == "automation.enabled") settings.automationEnabled = (value == "1");
+        else if (key == "automation.autoRepair") settings.autoRepair = (value == "1");
+        else if (key == "automation.autoRepairGuild") settings.autoRepairGuild = (value == "1");
+        else if (key == "automation.autoSellJunk") settings.autoSellJunk = (value == "1");
+        else if (key == "automation.autoDismount") settings.autoDismount = (value == "1");
+        else if (key == "automation.autoAcceptSummon") settings.autoAcceptSummon = (value == "1");
+        else if (key == "automation.autoAcceptResurrect") settings.autoAcceptResurrect = (value == "1");
+        else if (key == "automation.autoDeclineDuels") settings.autoDeclineDuels = (value == "1");
+        else if (key == "automation.autoAcceptQuests") settings.autoAcceptQuests = (value == "1");
+        else if (key == "automation.autoTurnInQuests") settings.autoTurnInQuests = (value == "1");
+        else if (key == "chat.enabled") settings.chatEnabled = (value == "1");
+        else if (key == "chat.hideChannelNames") settings.hideChannelNames = (value == "1");
+        else if (key == "chat.stickyChannels") settings.stickyChannels = (value == "1");
+        else if (key == "interface.enabled") settings.interfaceEnabled = (value == "1");
+        else if (key == "interface.combatPlates") settings.combatPlates = (value == "1");
+        else if (key == "interface.questLevelText") settings.questLevelText = (value == "1");
+    }
+
+    QoSSettings LoadPlayerSettingsFromDb(Player* player)
     {
         QoSSettings settings;
 
@@ -243,38 +289,43 @@ namespace DCQoS
                 std::string key = fields[0].Get<std::string>();
                 std::string value = fields[1].Get<std::string>();
 
-                // Parse settings
-                if (key == "tooltips.enabled") settings.tooltipsEnabled = (value == "1");
-                else if (key == "tooltips.showItemId") settings.showItemId = (value == "1");
-                else if (key == "tooltips.showItemLevel") settings.showItemLevel = (value == "1");
-                else if (key == "tooltips.showNpcId") settings.showNpcId = (value == "1");
-                else if (key == "tooltips.showSpellId") settings.showSpellId = (value == "1");
-                else if (key == "tooltips.showSpellFamilyMetadata") settings.showSpellFamilyMetadata = (value == "1");
-                else if (key == "tooltips.showGuildRank") settings.showGuildRank = (value == "1");
-                else if (key == "tooltips.showTarget") settings.showTarget = (value == "1");
-                else if (key == "tooltips.hideHealthBar") settings.hideHealthBar = (value == "1");
-                else if (key == "tooltips.hideInCombat") settings.hideInCombat = (value == "1");
-                else if (key == "tooltips.scale") settings.tooltipScale = std::stof(value);
-                else if (key == "automation.enabled") settings.automationEnabled = (value == "1");
-                else if (key == "automation.autoRepair") settings.autoRepair = (value == "1");
-                else if (key == "automation.autoRepairGuild") settings.autoRepairGuild = (value == "1");
-                else if (key == "automation.autoSellJunk") settings.autoSellJunk = (value == "1");
-                else if (key == "automation.autoDismount") settings.autoDismount = (value == "1");
-                else if (key == "automation.autoAcceptSummon") settings.autoAcceptSummon = (value == "1");
-                else if (key == "automation.autoAcceptResurrect") settings.autoAcceptResurrect = (value == "1");
-                else if (key == "automation.autoDeclineDuels") settings.autoDeclineDuels = (value == "1");
-                else if (key == "automation.autoAcceptQuests") settings.autoAcceptQuests = (value == "1");
-                else if (key == "automation.autoTurnInQuests") settings.autoTurnInQuests = (value == "1");
-                else if (key == "chat.enabled") settings.chatEnabled = (value == "1");
-                else if (key == "chat.hideChannelNames") settings.hideChannelNames = (value == "1");
-                else if (key == "chat.stickyChannels") settings.stickyChannels = (value == "1");
-                else if (key == "interface.enabled") settings.interfaceEnabled = (value == "1");
-                else if (key == "interface.combatPlates") settings.combatPlates = (value == "1");
-                else if (key == "interface.questLevelText") settings.questLevelText = (value == "1");
+                ApplyPlayerSetting(settings, key, value);
             } while (result->NextRow());
         }
 
         return settings;
+    }
+
+    QoSSettings GetPlayerSettingsCached(Player* player)
+    {
+        QoSSettings settings;
+
+        if (!player)
+            return settings;
+
+        uint32 guid = player->GetGUID().GetCounter();
+
+        {
+            std::lock_guard<std::mutex> lock(s_PlayerSettingsCacheMutex);
+            auto itr = s_PlayerSettingsCache.find(guid);
+            if (itr != s_PlayerSettingsCache.end())
+                return itr->second;
+        }
+
+        settings = LoadPlayerSettingsFromDb(player);
+
+        std::lock_guard<std::mutex> lock(s_PlayerSettingsCacheMutex);
+        s_PlayerSettingsCache[guid] = settings;
+        return settings;
+    }
+
+    void InvalidatePlayerSettingsCache(uint32 guid)
+    {
+        if (!guid)
+            return;
+
+        std::lock_guard<std::mutex> lock(s_PlayerSettingsCacheMutex);
+        s_PlayerSettingsCache.erase(guid);
     }
 
     void SavePlayerSetting(Player* player, const std::string& key, const std::string& value)
@@ -296,6 +347,8 @@ namespace DCQoS
             escapedValue,
             escapedValue
         );
+
+        InvalidatePlayerSettingsCache(player->GetGUID().GetCounter());
     }
 
     // =======================================================================
@@ -307,7 +360,7 @@ namespace DCQoS
         if (!player || !player->GetSession())
             return;
 
-        QoSSettings settings = LoadPlayerSettings(player);
+        QoSSettings settings = GetPlayerSettingsCached(player);
 
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SETTINGS_SYNC);
 
@@ -2273,7 +2326,7 @@ namespace DCQoS
             return;
         }
 
-        QoSSettings settings = LoadPlayerSettings(player);
+        QoSSettings settings = GetPlayerSettingsCached(player);
         bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
 
         SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 0, line, protocolRequestId, spellInfo, includeFamilyMetadata);
@@ -2495,7 +2548,7 @@ namespace DCQoS
         if (!player || !player->IsInWorld())
             return;
 
-        QoSSettings settings = LoadPlayerSettings(player);
+        QoSSettings settings = GetPlayerSettingsCached(player);
         bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
 
         uint8 level            = static_cast<uint8>(player->GetLevel());
@@ -2567,6 +2620,14 @@ public:
             new DCQoS_SpellEnrichmentPushEvent(player->GetGUID()),
             player->m_Events.CalculateTime(3000)
         );
+    }
+
+    void OnPlayerLogout(Player* player) override
+    {
+        if (!player)
+            return;
+
+        DCQoS::InvalidatePlayerSettingsCache(player->GetGUID().GetCounter());
     }
 };
 

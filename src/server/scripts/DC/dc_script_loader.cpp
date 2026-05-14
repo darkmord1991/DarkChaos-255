@@ -106,15 +106,12 @@ void AddSC_GOMove_commandscript();            // GOMove/GOMoveScripts.cpp
 
 // --- Item upgrade system ---
 void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
-void AddSC_ItemUpgradeProgression();          // ItemUpgrades/ItemUpgradeProgressionImpl.cpp
-void AddSC_ItemUpgradeAdvanced();             // ItemUpgrades/ItemUpgradeAdvancedImpl.cpp
 void AddSC_ItemUpgradeVendor();               // ItemUpgrades/ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator();              // ItemUpgrades/ItemUpgradeNPC_Curator.cpp
 void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades/ItemUpgradeSeasonalImpl.cpp
 void AddSC_ItemUpgradeExchange();             // ItemUpgrades/ItemUpgradeExchangeNPC.cpp
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades/ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades/ItemUpgradeProcScaling.cpp
-void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades/ItemUpgradeStatApplication.cpp
 
 // --- Random enchants system ---
 void AddSC_dc_random_enchants();              // RandomEnchants/dc_random_enchants.cpp
@@ -318,16 +315,12 @@ void AddDCScripts()
 
     LogSection("Item Upgrade System");
     DC_LOAD(AddSC_ItemUpgradeMechanicsImpl);
-    // Currently no-op placeholders in their modules, kept here for completeness.
-    DC_LOAD(AddSC_ItemUpgradeProgression);
-    DC_LOAD(AddSC_ItemUpgradeAdvanced);
     DC_LOAD(AddSC_ItemUpgradeVendor);
     DC_LOAD(AddSC_ItemUpgradeCurator);
     DC_LOAD(AddSC_ItemUpgradeSeasonal);
     DC_LOAD(AddSC_ItemUpgradeExchange);
     DC_LOAD(AddSC_ItemUpgradeTokenHooks);
     DC_LOAD(AddSC_ItemUpgradeProcScaling);
-    DC_LOAD(AddSC_ItemUpgradeStatApplication);
 
     LogSection("Random Enchants System");
     DC_LOAD(AddSC_dc_random_enchants);

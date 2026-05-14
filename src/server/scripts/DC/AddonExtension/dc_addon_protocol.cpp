@@ -697,6 +697,7 @@ struct StatsEntry
     uint32 totalErrors = 0;
     uint32 sumResponseTime = 0;
     uint32 maxResponseTime = 0;
+    time_t firstRequest = 0;
     time_t lastRequest = 0;
     bool dirty = false;
 };
@@ -732,8 +733,8 @@ static void FlushStats(uint32 guid = 0)
             // Since we can't define new PreparedStatements in core enum dynamically, we will simulate it safely.
 
             trans->Append("INSERT INTO dc_addon_protocol_stats "
-                "(guid, module, total_requests, total_responses, total_timeouts, total_errors, avg_response_time_ms, max_response_time_ms, last_request) "
-                "VALUES ({}, '{}', {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({})) "
+                "(guid, module, total_requests, total_responses, total_timeouts, total_errors, avg_response_time_ms, max_response_time_ms, first_request, last_request) "
+                "VALUES ({}, '{}', {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}), FROM_UNIXTIME({})) "
                 "ON DUPLICATE KEY UPDATE "
                 "total_requests = total_requests + {}, "
                 "total_responses = total_responses + {}, "
@@ -741,14 +742,16 @@ static void FlushStats(uint32 guid = 0)
                 "total_errors = total_errors + {}, "
                 "avg_response_time_ms = (avg_response_time_ms * total_responses + {}) / GREATEST(1, total_responses + {}), "
                 "max_response_time_ms = GREATEST(max_response_time_ms, {}), "
+                "first_request = COALESCE(first_request, FROM_UNIXTIME({})), "
                 "last_request = FROM_UNIXTIME({})",
                 currentGuid, module,
                 stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors,
                 (stats.totalResponses > 0 ? stats.sumResponseTime / stats.totalResponses : 0),
-                stats.maxResponseTime, stats.lastRequest,
+                stats.maxResponseTime, stats.firstRequest, stats.lastRequest,
                 // Update part
                 stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors,
                 stats.sumResponseTime, stats.totalResponses,
+                stats.firstRequest,
                 stats.maxResponseTime,
                 stats.lastRequest
             );
@@ -776,6 +779,11 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
     std::lock_guard<std::mutex> lock(s_StatsMutex);
     auto& stats = s_StatsBuffer[player->GetGUID().GetCounter()][safeModule];
 
+    time_t now = time(nullptr);
+
+    if (stats.firstRequest == 0)
+        stats.firstRequest = now;
+
     if (isRequest)
         stats.totalRequests++;
     else
@@ -791,7 +799,7 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
         stats.sumResponseTime += responseTimeMs;
         if (responseTimeMs > stats.maxResponseTime) stats.maxResponseTime = responseTimeMs;
     }
-    stats.lastRequest = time(nullptr);
+    stats.lastRequest = now;
     stats.dirty = true;
 }
 

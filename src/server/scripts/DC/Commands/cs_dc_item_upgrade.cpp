@@ -23,6 +23,7 @@
 
 #include "ScriptMgr.h"
 #include "Chat.h"
+#include "DatabaseEnv.h"
 #include "Player.h"
 #include "Item.h"
 #include "Config.h"
@@ -64,6 +65,143 @@ namespace
         {CLASS_WARLOCK, {{47796, 47798, 47800, 47802, 47804, 50173}, "Warlock Tier 9.5 + Weapon"}},
         {CLASS_DRUID, {{48102, 48104, 48106, 48108, 48110, 50428, 47666}, "Druid Tier 9.5 + Weapons"}}
     };
+
+    Player* ResolveUpgradeCommandPlayer(ChatHandler* handler)
+    {
+        Player* player = handler->getSelectedPlayerOrSelf();
+        if (!player)
+            handler->SendSysMessage("Select a player in-game or target one first.");
+
+        return player;
+    }
+
+    char const* GetEquipmentSlotLabel(uint8 slot)
+    {
+        switch (slot)
+        {
+            case EQUIPMENT_SLOT_HEAD: return "Head";
+            case EQUIPMENT_SLOT_NECK: return "Neck";
+            case EQUIPMENT_SLOT_SHOULDERS: return "Shoulders";
+            case EQUIPMENT_SLOT_BODY: return "Shirt";
+            case EQUIPMENT_SLOT_CHEST: return "Chest";
+            case EQUIPMENT_SLOT_WAIST: return "Waist";
+            case EQUIPMENT_SLOT_LEGS: return "Legs";
+            case EQUIPMENT_SLOT_FEET: return "Feet";
+            case EQUIPMENT_SLOT_WRISTS: return "Wrists";
+            case EQUIPMENT_SLOT_HANDS: return "Hands";
+            case EQUIPMENT_SLOT_FINGER1: return "Finger1";
+            case EQUIPMENT_SLOT_FINGER2: return "Finger2";
+            case EQUIPMENT_SLOT_TRINKET1: return "Trinket1";
+            case EQUIPMENT_SLOT_TRINKET2: return "Trinket2";
+            case EQUIPMENT_SLOT_BACK: return "Back";
+            case EQUIPMENT_SLOT_MAINHAND: return "MainHand";
+            case EQUIPMENT_SLOT_OFFHAND: return "OffHand";
+            case EQUIPMENT_SLOT_RANGED: return "Ranged";
+            case EQUIPMENT_SLOT_TABARD: return "Tabard";
+            default: return "Slot";
+        }
+    }
+
+    uint8 ResolveItemTier(UpgradeManager* mgr, Item* item, ItemUpgradeState const* state = nullptr)
+    {
+        if (!mgr || !item)
+            return TIER_INVALID;
+
+        if (state && state->tier_id != TIER_INVALID)
+            return state->tier_id;
+
+        return mgr->GetItemTier(item->GetEntry());
+    }
+
+    uint8 ResolveTierMaxLevel(UpgradeManager* mgr, uint8 tier)
+    {
+        if (!mgr || tier == TIER_INVALID)
+            return 0;
+
+        return mgr->GetTierMaxLevel(tier);
+    }
+
+    uint32 ResolveBaseUpgradeItemId(uint32 itemId)
+    {
+        QueryResult result = WorldDatabase.Query(
+            "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {} LIMIT 1",
+            itemId);
+        if (!result)
+            return itemId;
+
+        return result->Fetch()[0].Get<uint32>();
+    }
+
+    std::string BuildEquippedUpgradeSummary(Item* item, UpgradeManager* mgr,
+                                            uint8 slot)
+    {
+        ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+        std::string itemName = proto ? std::string(proto->Name1)
+                                     : ("Item " + std::to_string(item ? item->GetEntry() : 0));
+        uint16 baseItemLevel = proto ? proto->ItemLevel : 0;
+
+        ItemUpgradeState const* state = (mgr && item)
+            ? mgr->GetItemUpgradeState(item->GetGUID().GetCounter())
+            : nullptr;
+        uint8 tier = ResolveItemTier(mgr, item, state);
+        uint8 upgradeLevel = state ? state->upgrade_level : 0;
+        uint8 maxLevel = ResolveTierMaxLevel(mgr, tier);
+        uint16 upgradedItemLevel = (mgr && item)
+            ? mgr->GetUpgradedItemLevel(item->GetGUID().GetCounter(), baseItemLevel)
+            : baseItemLevel;
+
+        std::ostringstream oss;
+        oss << "  [" << GetEquipmentSlotLabel(slot) << "] " << itemName
+            << " - Tier " << static_cast<uint32>(tier)
+            << ", Upgrade " << static_cast<uint32>(upgradeLevel);
+
+        if (maxLevel > 0)
+            oss << "/" << static_cast<uint32>(maxLevel);
+
+        oss << ", iLvL " << baseItemLevel;
+        if (upgradedItemLevel != baseItemLevel)
+            oss << " -> " << upgradedItemLevel;
+
+        if (mgr && maxLevel > 0 && upgradeLevel < maxLevel)
+        {
+            uint8 nextLevel = upgradeLevel + 1;
+            oss << ", Next: " << mgr->GetUpgradeCost(tier, nextLevel)
+                << " tokens / " << mgr->GetEssenceCost(tier, nextLevel)
+                << " essence";
+        }
+        else if (maxLevel > 0 && upgradeLevel >= maxLevel)
+        {
+            oss << ", Maxed";
+        }
+
+        return oss.str();
+    }
+
+    Item* FindEquippedItemByEntry(Player* player, uint32 itemId, uint8& outSlot)
+    {
+        outSlot = EQUIPMENT_SLOT_END;
+
+        if (!player)
+            return nullptr;
+
+        uint32 requestedBaseItemId = ResolveBaseUpgradeItemId(itemId);
+
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!item)
+                continue;
+
+            uint32 equippedEntry = item->GetEntry();
+            if (equippedEntry != itemId && ResolveBaseUpgradeItemId(equippedEntry) != requestedBaseItemId)
+                continue;
+
+            outSlot = slot;
+            return item;
+        }
+
+        return nullptr;
+    }
 }
 
 class ItemUpgradeCommands : public CommandScript
@@ -569,40 +707,73 @@ public:
 
     static bool HandleUpgradeStatusCommand(ChatHandler* handler, char const* /*args*/)
     {
-        Player* player = handler->GetSession()->GetPlayer();
+        Player* player = ResolveUpgradeCommandPlayer(handler);
         if (!player)
         {
-            handler->SendSysMessage("Error: No player found.");
             return true;
         }
 
-        handler->PSendSysMessage("=== Upgrade Token Status ===");
-        handler->PSendSysMessage("This is a placeholder. Full implementation coming in Phase 3B.");
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!mgr)
+        {
+            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
+            return true;
+        }
+
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+        uint32 tokens = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season);
+        uint32 essence = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season);
+        uint8 highestTier = mgr->GetPlayerHighestTier(playerGuid);
+
+        handler->SendSysMessage(("=== Upgrade Status for " + player->GetName() + " ===").c_str());
+        handler->PSendSysMessage("Season: %u", season);
+        handler->PSendSysMessage("Upgrade Tokens: %u", tokens);
+        handler->PSendSysMessage("Artifact Essence: %u", essence);
+        handler->PSendSysMessage("Highest tier reached: %u", highestTier);
         handler->SendSysMessage("Equipped Items:");
 
-        uint32 count = 0;
+        uint32 equippedCount = 0;
+        uint32 upgradedCount = 0;
+        uint32 upgradeableCount = 0;
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
             Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
             if (!item)
                 continue;
 
-            ItemTemplate const* proto = item->GetTemplate();
-            std::string slotMsg = "  Slot " + std::to_string(slot) + ": " + std::string(proto->Name1) + " (iLvL: " + std::to_string(proto->ItemLevel) + ")";
-            handler->SendSysMessage(slotMsg.c_str());
-            count++;
+            ItemUpgradeState const* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+            uint8 tier = ResolveItemTier(mgr, item, state);
+            uint8 maxLevel = ResolveTierMaxLevel(mgr, tier);
+            uint8 upgradeLevel = state ? state->upgrade_level : 0;
+
+            if (upgradeLevel > 0)
+                upgradedCount++;
+            if (maxLevel > 0 && upgradeLevel < maxLevel)
+                upgradeableCount++;
+
+            handler->SendSysMessage(BuildEquippedUpgradeSummary(item, mgr, slot).c_str());
+            equippedCount++;
         }
 
-        handler->PSendSysMessage("Total equipped items: %u", count);
+        handler->PSendSysMessage("Equipped items tracked: %u", equippedCount);
+        handler->PSendSysMessage("Items with upgrades applied: %u", upgradedCount);
+        handler->PSendSysMessage("Items with a next upgrade available: %u", upgradeableCount);
         return true;
     }
 
     static bool HandleUpgradeListCommand(ChatHandler* handler, char const* /*args*/)
     {
-        Player* player = handler->GetSession()->GetPlayer();
+        Player* player = ResolveUpgradeCommandPlayer(handler);
         if (!player)
         {
-            handler->SendSysMessage("Error: No player found.");
+            return true;
+        }
+
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!mgr)
+        {
+            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
             return true;
         }
 
@@ -615,26 +786,19 @@ public:
             if (!item)
                 continue;
 
-            ItemTemplate const* proto = item->GetTemplate();
-            // Get tier from database mapping
-            uint32 currentTier = 1;
-            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-                currentTier = mgr->GetItemTier(item->GetEntry());
-            else
-                currentTier = 1; // fallback if manager not available
+            ItemUpgradeState const* state = mgr->GetItemUpgradeState(item->GetGUID().GetCounter());
+            uint8 tier = ResolveItemTier(mgr, item, state);
+            uint8 maxLevel = ResolveTierMaxLevel(mgr, tier);
+            uint8 upgradeLevel = state ? state->upgrade_level : 0;
+            if (maxLevel == 0 || upgradeLevel >= maxLevel)
+                continue;
 
-            if (currentTier < 5)
-            {
-                std::string upgradeMsg = "  [Slot " + std::to_string(slot) + "] " + std::string(proto->Name1) +
-                                        " (Tier " + std::to_string(currentTier) + " -> Tier " + std::to_string(currentTier + 1) +
-                                        ", iLvL: " + std::to_string(proto->ItemLevel) + ")";
-                handler->SendSysMessage(upgradeMsg.c_str());
-                upgradeCount++;
-            }
+            handler->SendSysMessage(BuildEquippedUpgradeSummary(item, mgr, slot).c_str());
+            upgradeCount++;
         }
 
         if (upgradeCount == 0)
-            handler->SendSysMessage("No items available for upgrade.");
+            handler->SendSysMessage("All equipped items are already at their current upgrade cap.");
         else
             handler->PSendSysMessage("Total upgradeable items: %u", upgradeCount);
 
@@ -663,10 +827,63 @@ public:
             return false;
         }
 
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!mgr)
+        {
+            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
+            return true;
+        }
+
+        uint32 baseItemId = ResolveBaseUpgradeItemId(itemId);
+        uint8 tier = mgr->GetItemTier(itemId);
+        uint8 maxLevel = ResolveTierMaxLevel(mgr, tier);
+        uint32 firstUpgradeTokens = maxLevel > 0 ? mgr->GetUpgradeCost(tier, 1) : 0;
+        uint32 firstUpgradeEssence = maxLevel > 0 ? mgr->GetEssenceCost(tier, 1) : 0;
+
         handler->PSendSysMessage("=== Item Info ===");
         handler->SendSysMessage(("Item: " + std::string(itemTemplate->Name1)).c_str());
+        handler->PSendSysMessage("Item Entry: %u", itemId);
+        if (baseItemId != itemId)
+            handler->PSendSysMessage("Base Item Entry: %u", baseItemId);
         handler->PSendSysMessage("Item Level: %u", itemTemplate->ItemLevel);
-        handler->PSendSysMessage("This is a placeholder. Full upgrade info coming in Phase 3B.");
+        handler->PSendSysMessage("Upgrade Tier: %u", tier);
+        handler->PSendSysMessage("Max Upgrade Level: %u", maxLevel);
+        handler->PSendSysMessage("First Upgrade Cost: %u tokens / %u essence",
+            firstUpgradeTokens, firstUpgradeEssence);
+
+        uint8 equippedSlot = EQUIPMENT_SLOT_END;
+        Player* player = handler->getSelectedPlayerOrSelf();
+        Item* equippedItem = FindEquippedItemByEntry(player, itemId, equippedSlot);
+        if (!equippedItem)
+        {
+            if (player)
+                handler->SendSysMessage("No equipped instance of this item was found on the target player.");
+
+            return true;
+        }
+
+        ItemUpgradeState const* state = mgr->GetItemUpgradeState(equippedItem->GetGUID().GetCounter());
+        uint8 currentLevel = state ? state->upgrade_level : 0;
+        uint16 upgradedItemLevel = mgr->GetUpgradedItemLevel(equippedItem->GetGUID().GetCounter(), itemTemplate->ItemLevel);
+
+        handler->PSendSysMessage("Equipped Slot: %s", GetEquipmentSlotLabel(equippedSlot));
+        handler->PSendSysMessage("Current Upgrade Level: %u / %u", currentLevel, maxLevel);
+        handler->PSendSysMessage("Current Effective iLvL: %u", upgradedItemLevel);
+        handler->PSendSysMessage("Total Invested: %u tokens / %u essence",
+            state ? state->tokens_invested : 0,
+            state ? state->essence_invested : 0);
+
+        if (maxLevel > 0 && currentLevel < maxLevel)
+        {
+            uint8 nextLevel = currentLevel + 1;
+            handler->PSendSysMessage("Next Upgrade Cost: %u tokens / %u essence",
+                mgr->GetUpgradeCost(tier, nextLevel),
+                mgr->GetEssenceCost(tier, nextLevel));
+        }
+        else if (maxLevel > 0)
+        {
+            handler->SendSysMessage("This equipped item is already at its current upgrade cap.");
+        }
 
         return true;
     }

@@ -638,81 +638,96 @@ std::vector<GroupFinderListing> GroupFinderMgr::SearchListings(uint8 listingType
 
 bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role, const std::string& note)
 {
-    std::lock_guard<std::mutex> lock(_mutex);
+    bool applied = false;
 
-    auto it = _listings.find(listingId);
-    if (it == _listings.end() || !it->second.active)
-        return false;
-
-    uint32 guid = player->GetGUID().GetCounter();
-
-    // Can't apply to own listing
-    if (it->second.leaderGuid == guid)
-        return false;
-
-    // Check if already applied
-    auto& apps = _applications[listingId];
-    for (auto const& app : apps)
     {
-        if (app.playerGuid == guid && app.status == GF_APP_PENDING)
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        auto it = _listings.find(listingId);
+        if (it == _listings.end() || !it->second.active)
             return false;
-    }
 
-    // Check item level requirement
-    uint16 playerIlvl = GetPlayerItemLevel(player);
-    if (it->second.minIlvl > 0 && playerIlvl < it->second.minIlvl)
-        return false;
+        uint32 guid = player->GetGUID().GetCounter();
 
-    // Check rating requirement for M+
-    uint16 playerRating = 0;
-    if (it->second.listingType == GF_LISTING_MYTHIC_PLUS && it->second.minRating > 0)
-    {
-        playerRating = GetPlayerMythicRating(guid);
-        if (playerRating < it->second.minRating)
+        // Can't apply to own listing
+        if (it->second.leaderGuid == guid)
             return false;
+
+        // Check if already applied
+        auto& apps = _applications[listingId];
+        for (auto const& app : apps)
+        {
+            if (app.playerGuid == guid && app.status == GF_APP_PENDING)
+                return false;
+        }
+
+        // Check item level requirement
+        uint16 playerIlvl = GetPlayerItemLevel(player);
+        if (it->second.minIlvl > 0 && playerIlvl < it->second.minIlvl)
+            return false;
+
+        // Check rating requirement for M+
+        uint16 playerRating = 0;
+        if (it->second.listingType == GF_LISTING_MYTHIC_PLUS &&
+            it->second.minRating > 0)
+        {
+            playerRating = GetPlayerMythicRating(guid);
+            if (playerRating < it->second.minRating)
+                return false;
+        }
+
+        std::string safeNote = note;
+        CharacterDatabase.EscapeString(safeNote);
+        std::string safePlayerName = player->GetName();
+        CharacterDatabase.EscapeString(safePlayerName);
+
+        // Insert application
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_group_finder_applications "
+            "(listing_id, player_guid, player_name, role, player_class, player_level, player_ilvl, note, status) "
+            "VALUES ({}, {}, '{}', {}, {}, {}, {}, '{}', 0)",
+            listingId, guid, safePlayerName, role, player->getClass(),
+            player->GetLevel(), playerIlvl, safeNote);
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT id FROM dc_group_finder_applications WHERE listing_id = {} "
+            "AND player_guid = {} AND player_name = '{}' AND role = {} "
+            "AND player_class = {} AND player_level = {} AND player_ilvl = {} "
+            "AND note = '{}' AND status = 0 ORDER BY id DESC LIMIT 1",
+            listingId, guid, safePlayerName, role, player->getClass(),
+            player->GetLevel(), playerIlvl, safeNote);
+        uint32 appId = result ? (*result)[0].Get<uint32>() : 0;
+
+        if (appId > 0)
+        {
+            GroupFinderApplication app;
+            app.id = appId;
+            app.listingId = listingId;
+            app.playerGuid = guid;
+            app.playerMapId = player->GetMapId();
+            app.playerInstanceId = player->GetInstanceId();
+            app.playerName = player->GetName();
+            app.role = role;
+            app.playerClass = player->getClass();
+            app.playerLevel = player->GetLevel();
+            app.playerIlvl = playerIlvl;
+            app.playerRating = playerRating;
+            app.note = note;
+            app.status = GF_APP_PENDING;
+            app.createdAt = GameTime::GetGameTime().count();
+
+            apps.push_back(app);
+
+            // Notify leader
+            NotifyNewApplication(it->second.leaderGuid, app);
+            applied = true;
+        }
     }
 
-    std::string safeNote = note;
-    CharacterDatabase.EscapeString(safeNote);
-    std::string safePlayerName = player->GetName();
-    CharacterDatabase.EscapeString(safePlayerName);
+    if (applied)
+        TryAutoMatch(listingId);
 
-    // Insert application
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_group_finder_applications "
-        "(listing_id, player_guid, player_name, role, player_class, player_level, player_ilvl, note, status) "
-        "VALUES ({}, {}, '{}', {}, {}, {}, {}, '{}', 0)",
-        listingId, guid, safePlayerName, role, player->getClass(), player->GetLevel(), playerIlvl, safeNote);
-
-    // Get inserted ID
-    QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
-    uint32 appId = result ? (*result)[0].Get<uint32>() : 0;
-
-    if (appId > 0)
-    {
-        GroupFinderApplication app;
-        app.id = appId;
-        app.listingId = listingId;
-        app.playerGuid = guid;
-        app.playerMapId = player->GetMapId();
-        app.playerInstanceId = player->GetInstanceId();
-        app.playerName = player->GetName();
-        app.role = role;
-        app.playerClass = player->getClass();
-        app.playerLevel = player->GetLevel();
-        app.playerIlvl = playerIlvl;
-        app.playerRating = playerRating;
-        app.note = note;
-        app.status = GF_APP_PENDING;
-        app.createdAt = GameTime::GetGameTime().count();
-
-        apps.push_back(app);
-
-        // Notify leader
-        NotifyNewApplication(it->second.leaderGuid, app);
-    }
-
-    return appId > 0;
+    return applied;
 }
 
 bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid)
@@ -1549,8 +1564,58 @@ void GroupFinderMgr::GiveReward(Player* player)
 
 void GroupFinderMgr::TryAutoMatch(uint32 listingId)
 {
-    (void)listingId; // not implemented yet
-    // Placeholder for auto-match logic
+    std::vector<uint32> applicantsToAccept;
+    uint32 leaderGuid = 0;
+
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        auto listingIt = _listings.find(listingId);
+        if (listingIt == _listings.end() || !listingIt->second.active)
+            return;
+
+        leaderGuid = listingIt->second.leaderGuid;
+        if (!FindConnectedPlayerByGuidLow(leaderGuid))
+            return;
+
+        auto appsIt = _applications.find(listingId);
+        if (appsIt == _applications.end() || appsIt->second.empty())
+            return;
+
+        GroupFinderListing projectedListing = listingIt->second;
+        for (GroupFinderApplication const& app : appsIt->second)
+        {
+            if (app.status != GF_APP_PENDING)
+                continue;
+
+            if (!FindConnectedPlayerByGuidLow(app.playerGuid))
+                continue;
+
+            uint8 acceptedRole = SelectAcceptedRole(projectedListing, app.role);
+            if (acceptedRole == GF_ROLE_NONE)
+                continue;
+
+            applicantsToAccept.push_back(app.playerGuid);
+            ApplyAcceptedRole(projectedListing, acceptedRole);
+
+            if (CheckRoleRequirements(projectedListing))
+                break;
+        }
+    }
+
+    for (uint32 applicantGuid : applicantsToAccept)
+    {
+        Player* leader = FindConnectedPlayerByGuidLow(leaderGuid);
+        if (!leader)
+            break;
+
+        if (!AcceptApplication(leader, listingId, applicantGuid))
+            continue;
+
+        auto listing = GetListing(listingId);
+        if (!listing || CheckRoleRequirements(*listing))
+            break;
+    }
 }
 
 }  // namespace DCAddon

@@ -21,6 +21,7 @@
 #include "DBCEnums.h"
 #include "CharacterCache.h"
 #include "dc_addon_groupfinder.h"
+#include "../MythicPlus/dc_mythicplus_spectator.h"
 
 #include <mutex>
 #include <unordered_map>
@@ -542,10 +543,24 @@ namespace GroupFinder
 
         if (sGroupFinderMgr.ApplyToListing(player, listingId, roleMask, message))
         {
+            InvalidateSearchListingsCache();
+
+            uint8 applicationStatus = GF_APP_PENDING;
+            QueryResult appResult = CharacterDatabase.Query(
+                "SELECT status FROM dc_group_finder_applications "
+                "WHERE listing_id = {} AND player_guid = {} "
+                "ORDER BY id DESC LIMIT 1",
+                listingId, player->GetGUID().GetCounter());
+
+            if (appResult)
+                applicationStatus = (*appResult)[0].Get<uint8>();
+
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
                 .Set("success", true)
-                .Set("status", "pending")
-                .Set("message", "Application submitted")
+                .Set("status", applicationStatus == GF_APP_ACCEPTED ? "accepted" : "pending")
+                .Set("message", applicationStatus == GF_APP_ACCEPTED
+                    ? "Application accepted"
+                    : "Application submitted")
                 .Send(player);
         }
         else
@@ -1352,11 +1367,21 @@ namespace GroupFinder
 
         auto json = GetJsonData(msg);
         uint32 runId = static_cast<uint32>(JsonGetInt(json, "runId", 0));
-        uint32 guid = player->GetGUID().GetCounter();
+        if (runId == 0)
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Invalid run id")
+                .Send(player);
+            return;
+        }
 
-        // Check if run exists and allows spectating
+        auto& spectatorMgr = DCMythicSpectator::MythicSpectatorManager::Get();
+
         QueryResult runResult = CharacterDatabase.Query(
-            "SELECT map_id, key_level FROM dc_mplus_runs WHERE run_id = {} AND status = 1 AND allow_spectate = 1",
+            "SELECT map_id, instance_id, key_level, allow_spectate, c.name "
+            "FROM dc_mplus_runs r "
+            "LEFT JOIN characters c ON c.guid = r.leader_guid "
+            "WHERE r.run_id = {} AND r.status = 1",
             runId);
 
         if (!runResult)
@@ -1367,53 +1392,86 @@ namespace GroupFinder
             return;
         }
 
-        // Add to spectators
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_group_finder_spectators (run_id, spectator_guid, spectator_name, started_at) "
-            "VALUES ({}, {}, '{}', NOW()) "
-            "ON DUPLICATE KEY UPDATE started_at = NOW()",
-            runId, guid, player->GetName());
+        uint32 mapId = (*runResult)[0].Get<uint32>();
+        uint32 instanceId = (*runResult)[1].Get<uint32>();
+        uint8 keyLevel = (*runResult)[2].Get<uint8>();
+        bool allowSpectate = (*runResult)[3].Get<bool>();
+        std::string leaderName = (*runResult)[4].IsNull()
+            ? std::string("Unknown")
+            : (*runResult)[4].Get<std::string>();
+
+        if (instanceId == 0 || !allowSpectate)
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Run not found or spectating not allowed")
+                .Send(player);
+            return;
+        }
+
+        if (!spectatorMgr.GetRun(instanceId))
+            spectatorMgr.RegisterActiveRun(instanceId, mapId, keyLevel,
+                leaderName, allowSpectate);
+
+        if (!spectatorMgr.StartSpectating(player, instanceId))
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "Failed to start spectating")
+                .Send(player);
+            return;
+        }
 
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SPECTATE_STARTED)
             .Set("success", true)
             .Set("runId", static_cast<int32>(runId))
             .Set("message", "Now spectating the run")
             .Send(player);
-
-        // TODO: Teleport player to spectator position in the dungeon
     }
 
     // Stop spectating a run
     static void HandleStopSpectate(Player* player, const ParsedMessage& msg)
     {
-        uint32 guid = player->GetGUID().GetCounter();
         uint32 runId = 0;
+        uint32 instanceId = 0;
+
+        auto& spectatorMgr = DCMythicSpectator::MythicSpectatorManager::Get();
+        if (!spectatorMgr.IsSpectating(player))
+        {
+            JsonMessage(Module::GROUP_FINDER,
+                Opcode::GroupFinder::SMSG_SPECTATE_ENDED)
+                .Set("success", false)
+                .Set("message", "Not currently spectating")
+                .Send(player);
+            return;
+        }
+
+        if (DCMythicSpectator::SpectatorState* state =
+                spectatorMgr.GetSpectatorState(player->GetGUID()))
+        {
+            instanceId = state->targetInstanceId;
+        }
 
         if (IsJsonMessage(msg))
         {
             runId = static_cast<uint32>(JsonGetInt(GetJsonData(msg), "runId", 0));
         }
 
-        if (runId > 0)
+        if (runId == 0 && instanceId > 0)
         {
-            CharacterDatabase.Execute(
-                "DELETE FROM dc_group_finder_spectators WHERE run_id = {} AND spectator_guid = {}",
-                runId, guid);
+            QueryResult runResult = CharacterDatabase.Query(
+                "SELECT run_id FROM dc_mplus_runs WHERE instance_id = {} "
+                "AND status = 1 ORDER BY run_id DESC LIMIT 1",
+                instanceId);
+            if (runResult)
+                runId = (*runResult)[0].Get<uint32>();
         }
-        else
-        {
-            // Stop spectating all runs
-            CharacterDatabase.Execute(
-                "DELETE FROM dc_group_finder_spectators WHERE spectator_guid = {}",
-                guid);
-        }
+
+        spectatorMgr.StopSpectating(player);
 
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SPECTATE_ENDED)
             .Set("success", true)
+            .Set("runId", static_cast<int32>(runId))
             .Set("message", "Stopped spectating")
             .Send(player);
-
-        // TODO: Teleport player back to their previous position
     }
 
     // ========================================================================

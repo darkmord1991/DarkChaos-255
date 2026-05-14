@@ -108,6 +108,7 @@ public:
         KeystoneDescriptor& outDescriptor, std::string& outErrorText,
         uint8 forcedKeystoneLevel = 0);
     uint32 GetKeystoneLevel(Map* map) const;
+    bool RespawnPlayerAtEntrance(Player* player, float healthPct = 0.5f);
 
     // Participation tracking
     void RegisterPlayerEnter(Player* player);

@@ -491,6 +491,32 @@ uint32 MythicPlusRunManager::GetKeystoneLevel(Map* map) const
     return itr->second.keystoneLevel;
 }
 
+bool MythicPlusRunManager::RespawnPlayerAtEntrance(Player* player,
+    float healthPct)
+{
+    if (!player)
+        return false;
+
+    Map* map = player->GetMap();
+    if (!map || !map->IsDungeon())
+        return false;
+
+    InstanceState const* state = GetState(map);
+    if (!state || state->keystoneLevel == 0 || state->completed || state->failed)
+        return false;
+
+    if (healthPct <= 0.0f)
+        healthPct = 0.5f;
+
+    player->ResurrectPlayer(healthPct);
+    player->SpawnCorpseBones();
+    TeleportPlayerToEntrance(player, map);
+
+    LOG_DEBUG("mythic.run", "Player {} released in Mythic+ +{} and was returned to the dungeon entrance",
+        player->GetName(), uint32(state->keystoneLevel));
+    return true;
+}
+
 void MythicPlusRunManager::RegisterPlayerEnter(Player* player)
 {
     if (!player)
@@ -956,7 +982,6 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     // If multiple keystones exist, select the highest level one so the run
     // matches player intent and does not silently fall back to a lower key.
     uint8 selectedLevel = 0;
-    uint32 selectedItemId = 0;
 
     for (uint8 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL; level <= MythicPlusConstants::MAX_KEYSTONE_LEVEL; ++level)
     {
@@ -968,7 +993,6 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
             continue;
 
         selectedLevel = level;
-        selectedItemId = keystoneItemId;
     }
 
     if (!selectedLevel)

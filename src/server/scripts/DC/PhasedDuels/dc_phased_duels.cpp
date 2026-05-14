@@ -12,6 +12,7 @@
 #include "Pet.h"
 #include "Config.h"
 #include "Chat.h"
+#include "dc_phased_duels.h"
 #include "GameTime.h"
 #include "DatabaseEnv.h"
 #include "ObjectAccessor.h"
@@ -23,6 +24,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
+#include <optional>
+#include <sstream>
+#include <vector>
 
 using namespace Acore::ChatCommands;
 
@@ -98,6 +102,18 @@ namespace DCPhasedDuels
 
     static std::unordered_map<ObjectGuid, ActiveDuel> sActiveDuels;
     static std::unordered_set<uint32> sUsedPhases;
+    struct DuelSpectatorState
+    {
+        ObjectGuid spectatorGuid;
+        ObjectGuid targetGuid;
+        uint32 watchedPhaseId = 0;
+        uint32 savedMapId = 0;
+        uint32 savedPhaseMask = PHASEMASK_NORMAL;
+        Position savedPosition;
+        bool wasSpectator = false;
+    };
+
+    static std::unordered_map<ObjectGuid, DuelSpectatorState> sDuelSpectators;
     static std::mutex sDuelMutex;  // Thread safety for static containers
 
     // ============================================================
@@ -192,6 +208,106 @@ namespace DCPhasedDuels
                   p1->GetName(), p2->GetName(), phaseId);
     }
 
+    std::optional<ActiveDuel> GetActiveDuelCopy(ObjectGuid targetGuid, uint32 matchId)
+    {
+        std::lock_guard<std::mutex> lock(sDuelMutex);
+
+        if (!targetGuid.IsEmpty())
+        {
+            auto const it = sActiveDuels.find(targetGuid);
+            if (it != sActiveDuels.end())
+                return it->second;
+        }
+
+        if (matchId == 0)
+            return std::nullopt;
+
+        for (auto const& [guid, duel] : sActiveDuels)
+        {
+            (void)guid;
+            if (duel.phaseId == matchId)
+                return duel;
+        }
+
+        return std::nullopt;
+    }
+
+    void RestoreSpectatorState(Player* spectator,
+        DuelSpectatorState const& state)
+    {
+        if (!spectator)
+            return;
+
+        if (!state.wasSpectator)
+            spectator->SetIsSpectator(false);
+
+        spectator->SetPhaseMask(state.savedPhaseMask, false);
+        spectator->UpdateObjectVisibility();
+        spectator->TeleportTo(state.savedMapId,
+            state.savedPosition.GetPositionX(),
+            state.savedPosition.GetPositionY(),
+            state.savedPosition.GetPositionZ(),
+            state.savedPosition.GetOrientation());
+    }
+
+    void StopSpectatorsForPhase(uint32 phaseId, std::string const& reason)
+    {
+        std::vector<ObjectGuid> spectators;
+
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            for (auto const& [guid, state] : sDuelSpectators)
+            {
+                if (state.watchedPhaseId == phaseId)
+                    spectators.push_back(guid);
+            }
+        }
+
+        for (ObjectGuid const& spectatorGuid : spectators)
+        {
+            if (Player* spectator = ObjectAccessor::FindConnectedPlayer(
+                    spectatorGuid))
+            {
+                StopSpectating(spectator, reason);
+            }
+            else
+            {
+                std::lock_guard<std::mutex> lock(sDuelMutex);
+                sDuelSpectators.erase(spectatorGuid);
+            }
+        }
+    }
+
+    void CleanupActiveDuelForPlayer(Player* player)
+    {
+        if (!player)
+            return;
+
+        uint32 phaseId = 0;
+        ObjectGuid otherPlayerGuid;
+
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            auto const it = sActiveDuels.find(player->GetGUID());
+            if (it == sActiveDuels.end())
+                return;
+
+            phaseId = it->second.phaseId;
+            otherPlayerGuid = it->second.player1 == player->GetGUID()
+                ? it->second.player2
+                : it->second.player1;
+
+            sUsedPhases.erase(phaseId);
+            sActiveDuels.erase(player->GetGUID());
+            if (!otherPlayerGuid.IsEmpty())
+                sActiveDuels.erase(otherPlayerGuid);
+        }
+
+        if (phaseId != 0)
+            StopSpectatorsForPhase(phaseId,
+                "The duel ended unexpectedly.");
+    }
+
     void RecordDuelEnd(Player* winner, Player* loser, DuelCompleteType type)
     {
         if (!winner || !loser)
@@ -208,13 +324,10 @@ namespace DCPhasedDuels
             if (it == sActiveDuels.end())
                 return;
 
-            duel = it->second;  // Copy the duel data
+            duel = it->second;
             phaseId = duel.phaseId;
 
-            // Release phase
             sUsedPhases.erase(phaseId);
-
-            // Cleanup active duels
             sActiveDuels.erase(winner->GetGUID());
             sActiveDuels.erase(loser->GetGUID());
         }
@@ -222,7 +335,9 @@ namespace DCPhasedDuels
         uint64 now = GameTime::GetGameTime().count();
         uint32 durationSeconds = static_cast<uint32>(now - duel.startTime);
 
-        // Update statistics if enabled
+        if (phaseId != 0)
+            StopSpectatorsForPhase(phaseId, "The duel has ended.");
+
         if (sConfig.trackStatistics)
         {
             std::lock_guard<std::mutex> lock(sDuelMutex);
@@ -253,7 +368,6 @@ namespace DCPhasedDuels
             loserStats.lastDuelTime = now;
             loserStats.lastOpponent = winner->GetGUID();
 
-            // Track damage (if we tracked it during duel)
             if (duel.player1 == winner->GetGUID())
             {
                 winnerStats.totalDamageDealt += duel.player1DamageDealt;
@@ -265,7 +379,6 @@ namespace DCPhasedDuels
                 loserStats.totalDamageTaken += duel.player2DamageDealt;
             }
 
-            // Persist to database (async)
             CharacterDatabase.Execute(
                 "INSERT INTO dc_duel_statistics (player_guid, wins, losses, draws, total_damage_dealt, "
                 "total_damage_taken, longest_duel_seconds, shortest_win_seconds, last_duel_time, last_opponent_guid) "
@@ -282,11 +395,232 @@ namespace DCPhasedDuels
                 now, loser->GetGUID().GetCounter(),
                 winnerStats.wins, winnerStats.losses, winnerStats.draws,
                 winnerStats.totalDamageDealt, winnerStats.totalDamageTaken,
-                durationSeconds, durationSeconds, now, loser->GetGUID().GetCounter());
+                durationSeconds, durationSeconds, now,
+                loser->GetGUID().GetCounter());
         }
 
         LOG_DEBUG("scripts.dc", "PhasedDuels: Ended duel between {} and {} (winner: {}, duration: {}s)",
-                  winner->GetName(), loser->GetName(), winner->GetName(), durationSeconds);
+            winner->GetName(), loser->GetName(), winner->GetName(), durationSeconds);
+    }
+
+    std::string EscapeJson(std::string const& value)
+    {
+        std::string escaped;
+        escaped.reserve(value.size());
+
+        for (char c : value)
+        {
+            switch (c)
+            {
+                case '\\':
+                    escaped += "\\\\";
+                    break;
+                case '"':
+                    escaped += "\\\"";
+                    break;
+                default:
+                    escaped += c;
+                    break;
+            }
+        }
+
+        return escaped;
+    }
+
+    std::string BuildActiveDuelListJson()
+    {
+        std::vector<ActiveDuel> activeDuels;
+        std::unordered_set<uint32> seenPhases;
+
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            for (auto const& [guid, duel] : sActiveDuels)
+            {
+                (void)guid;
+                if (!seenPhases.insert(duel.phaseId).second)
+                    continue;
+
+                activeDuels.push_back(duel);
+            }
+        }
+
+        std::ostringstream json;
+        json << "[";
+        bool first = true;
+
+        for (ActiveDuel const& duel : activeDuels)
+        {
+            Player* player1 = ObjectAccessor::FindConnectedPlayer(duel.player1);
+            Player* player2 = ObjectAccessor::FindConnectedPlayer(duel.player2);
+            if (!player1 || !player2)
+                continue;
+
+            uint32 durationSeconds = 0;
+            uint64 now = GameTime::GetGameTime().count();
+            if (now > duel.startTime)
+                durationSeconds = static_cast<uint32>(now - duel.startTime);
+
+            if (!first)
+                json << ",";
+            first = false;
+
+            json << "{"
+                 << "\"matchId\":" << duel.phaseId << ","
+                 << "\"phaseId\":" << duel.phaseId << ","
+                 << "\"duration\":" << durationSeconds << ","
+                 << "\"player1Guid\":" << player1->GetGUID().GetCounter() << ","
+                 << "\"player1Name\":\"" << EscapeJson(player1->GetName()) << "\","
+                 << "\"player1Class\":" << uint32(player1->getClass()) << ","
+                 << "\"player1Level\":" << uint32(player1->GetLevel()) << ","
+                 << "\"player1Damage\":" << duel.player1DamageDealt << ","
+                 << "\"player2Guid\":" << player2->GetGUID().GetCounter() << ","
+                 << "\"player2Name\":\"" << EscapeJson(player2->GetName()) << "\","
+                 << "\"player2Class\":" << uint32(player2->getClass()) << ","
+                 << "\"player2Level\":" << uint32(player2->GetLevel()) << ","
+                 << "\"player2Damage\":" << duel.player2DamageDealt
+                 << "}";
+        }
+
+        json << "]";
+        return json.str();
+    }
+
+    bool IsSpectating(Player* spectator)
+    {
+        if (!spectator)
+            return false;
+
+        std::lock_guard<std::mutex> lock(sDuelMutex);
+        return sDuelSpectators.find(spectator->GetGUID()) !=
+            sDuelSpectators.end();
+    }
+
+    bool StartSpectating(Player* spectator, uint32 matchId,
+        ObjectGuid targetGuid, std::string& error, std::string& opponentName,
+        uint32& phaseId)
+    {
+        if (!spectator)
+        {
+            error = "Invalid spectator.";
+            return false;
+        }
+
+        if (!sConfig.enabled)
+        {
+            error = "Phased duels are disabled.";
+            return false;
+        }
+
+        if (IsSpectating(spectator))
+        {
+            error = "You are already spectating a duel.";
+            return false;
+        }
+
+        if (spectator->IsBeingTeleported() || !spectator->IsInWorld())
+        {
+            error = "You cannot spectate while being teleported.";
+            return false;
+        }
+
+        if (spectator->FindMap() && spectator->FindMap()->Instanceable())
+        {
+            error = "You cannot spectate while inside an instance.";
+            return false;
+        }
+
+        if (spectator->GetVehicle() || spectator->IsInCombat() ||
+            spectator->InBattlegroundQueue() || !spectator->IsAlive())
+        {
+            error = "You cannot spectate from your current state.";
+            return false;
+        }
+
+        std::optional<ActiveDuel> duel = GetActiveDuelCopy(targetGuid, matchId);
+        if (!duel)
+        {
+            error = "That duel is no longer active.";
+            return false;
+        }
+
+        Player* watchedPlayer = nullptr;
+        Player* otherPlayer = nullptr;
+
+        if (!targetGuid.IsEmpty() && duel->player2 == targetGuid)
+        {
+            watchedPlayer = ObjectAccessor::FindConnectedPlayer(duel->player2);
+            otherPlayer = ObjectAccessor::FindConnectedPlayer(duel->player1);
+        }
+        else
+        {
+            watchedPlayer = ObjectAccessor::FindConnectedPlayer(duel->player1);
+            otherPlayer = ObjectAccessor::FindConnectedPlayer(duel->player2);
+        }
+
+        if (!watchedPlayer || !otherPlayer || !watchedPlayer->IsInWorld() ||
+            !otherPlayer->IsInWorld())
+        {
+            error = "That duel is no longer available.";
+            return false;
+        }
+
+        DuelSpectatorState state;
+        state.spectatorGuid = spectator->GetGUID();
+        state.targetGuid = watchedPlayer->GetGUID();
+        state.watchedPhaseId = duel->phaseId;
+        state.savedMapId = spectator->GetMapId();
+        state.savedPhaseMask = spectator->GetPhaseMask();
+        state.savedPosition = Position(spectator->GetPositionX(),
+            spectator->GetPositionY(), spectator->GetPositionZ(),
+            spectator->GetOrientation());
+        state.wasSpectator = spectator->IsSpectator();
+
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            sDuelSpectators[spectator->GetGUID()] = state;
+        }
+
+        if (!state.wasSpectator)
+            spectator->SetIsSpectator(true);
+
+        spectator->SetPhaseMask(duel->phaseId, false);
+        spectator->UpdateObjectVisibility();
+        spectator->TeleportTo(watchedPlayer->GetMapId(),
+            watchedPlayer->GetPositionX(), watchedPlayer->GetPositionY(),
+            watchedPlayer->GetPositionZ() + 0.25f,
+            watchedPlayer->GetOrientation());
+
+        opponentName = otherPlayer->GetName();
+        phaseId = duel->phaseId;
+        return true;
+    }
+
+    bool StopSpectating(Player* spectator, std::string const& reason)
+    {
+        if (!spectator)
+            return false;
+
+        DuelSpectatorState state;
+
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            auto const it = sDuelSpectators.find(spectator->GetGUID());
+            if (it == sDuelSpectators.end())
+                return false;
+
+            state = it->second;
+            sDuelSpectators.erase(it);
+        }
+
+        RestoreSpectatorState(spectator, state);
+
+        if (!reason.empty() && spectator->GetSession())
+        {
+            ChatHandler(spectator->GetSession()).PSendSysMessage(
+                "|cffffd700[Phased Duels]|r {}", reason);
+        }
+
+        return true;
     }
 
     void RestorePlayerState(Player* player)
@@ -382,10 +716,13 @@ public:
     {
         if (player)
         {
+            StopSpectating(player);
+
             std::lock_guard<std::mutex> lock(sDuelMutex);
             sPlayerDuelStats.erase(player->GetGUID());
-            sActiveDuels.erase(player->GetGUID());
         }
+
+        CleanupActiveDuelForPlayer(player);
     }
 
     void OnPlayerDuelStart(Player* player1, Player* player2) override

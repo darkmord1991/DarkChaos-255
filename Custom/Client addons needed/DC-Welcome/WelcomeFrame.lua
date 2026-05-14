@@ -1114,6 +1114,7 @@ function DCWelcome:CreateWelcomeFrame()
         { id = "features", label = L["TAB_FEATURES"], icon = "Interface\\Icons\\Spell_Nature_EnchantArmor" },
         { id = "addons", label = L["TAB_ADDONS"] or "Addons", icon = "Interface\\Icons\\Trade_Engineering" },
         { id = "progress", label = L["TAB_PROGRESS"] or "Progress", icon = "Interface\\Icons\\Achievement_challengemode_gold" },
+        { id = "endgame", label = L["TAB_ENDGAME"] or "Endgame", icon = "Interface\\Icons\\INV_Misc_PocketWatch_01" },
         { id = "season", label = L["TAB_SEASON"] or "Season", icon = "Interface\\Icons\\Achievement_Zone_Hyjal" },
         { id = "faq", label = L["TAB_FAQ"], icon = "Interface\\Icons\\INV_Misc_QuestionMark" },
         { id = "community", label = L["TAB_LINKS"], icon = SERVER_PORTAL_ICON },
@@ -1142,6 +1143,7 @@ function DCWelcome:CreateWelcomeFrame()
     contentFrames.features = CreateScrollableContent(frame, "features")
     contentFrames.addons = CreateScrollableContent(frame, "addons")
     contentFrames.progress = CreateScrollableContent(frame, "progress")
+    contentFrames.endgame = CreateScrollableContent(frame, "endgame")
     contentFrames.faq = CreateScrollableContent(frame, "faq")
     contentFrames.community = CreateScrollableContent(frame, "community")
     contentFrames.season = CreateScrollableContent(frame, "season")
@@ -1158,6 +1160,9 @@ function DCWelcome:CreateWelcomeFrame()
     -- Populate progress panel if function exists
     if DCWelcome.PopulateProgressPanel then
         DCWelcome:PopulateProgressPanel(contentFrames.progress.scrollChild)
+    end
+    if DCWelcome.PopulateEndgameDirectorPanel then
+        DCWelcome:PopulateEndgameDirectorPanel(contentFrames.endgame.scrollChild)
     end
     
     PopulateFAQ(contentFrames.faq.scrollChild)
