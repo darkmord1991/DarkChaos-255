@@ -90,6 +90,33 @@ local function OpenAoELootSettings()
     end
 end
 
+local function OpenQoSModule(moduleName)
+    local qos = rawget(_G, "DCQOS")
+    if qos and type(qos.OpenSettingsModule) == "function" then
+        qos:OpenSettingsModule(moduleName)
+        return true
+    end
+
+    RunSlashCommand("/dcqos")
+    return false
+end
+
+local function OpenQoSFrameMoverEditor()
+    local qos = rawget(_G, "DCQOS")
+    if qos then
+        if type(qos.OpenSettingsModule) == "function" then
+            qos:OpenSettingsModule("FrameMover")
+        end
+
+        if type(qos.EnterEditMode) == "function" then
+            qos:EnterEditMode()
+            return
+        end
+    end
+
+    RunSlashCommand("/dcqos edit")
+end
+
 local function ApplyIconStyle(icon)
     if not icon then return end
     -- Crop default icon borders to keep a consistent look.
@@ -729,9 +756,16 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
             end,
         },
         {
-            name = "AoE Loot Settings",
-            icon = "Interface\\AddOns\\DC-Welcome\\Textures\\Icons\\AOESettings_64.tga",
-            onClick = OpenAoELootSettings,
+            name = "Graphics+",
+            icon = "Interface\\Icons\\Spell_Nature_Farsight",
+            onClick = function()
+                OpenQoSModule("GraphicsPlus")
+            end,
+        },
+        {
+            name = "Move Frames Editor",
+            icon = "Interface\\Icons\\INV_Misc_Map_01",
+            onClick = OpenQoSFrameMoverEditor,
         },
         {
             name = "CombatLog Window",
@@ -768,8 +802,12 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
         },
     }
 
-    if not HasAoELootSettings() then
-        table.remove(entries, 2)
+    if HasAoELootSettings() then
+        table.insert(entries, 4, {
+            name = "AoE Loot Settings",
+            icon = "Interface\\AddOns\\DC-Welcome\\Textures\\Icons\\AOESettings_64.tga",
+            onClick = OpenAoELootSettings,
+        })
     end
 
     local iconSize = tonumber(DCInfoBar:GetPluginSetting(self.id, "iconSize")) or 16

@@ -49,6 +49,7 @@ for k, v in pairs(defaults) do addon.defaults[k] = v end
 -- Match DC-Leaderboards UI style across DC addons
 local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.60
+local FRAME_BG_INSET = 10
 
 local function ApplyLeaderboardsStyle(frame)
     if not frame or frame.__dcLeaderboardsStyle then return end
@@ -59,13 +60,16 @@ local function ApplyLeaderboardsStyle(frame)
     end
 
     local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
-    bg:SetAllPoints()
+    bg:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_BG_INSET,
+        -FRAME_BG_INSET)
+    bg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",
+        -FRAME_BG_INSET, FRAME_BG_INSET)
     bg:SetTexture(BG_FELLEATHER)
     if bg.SetHorizTile then bg:SetHorizTile(false) end
     if bg.SetVertTile then bg:SetVertTile(false) end
 
     local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    tint:SetAllPoints()
+    tint:SetAllPoints(bg)
     tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 
     frame.__dcBg = bg

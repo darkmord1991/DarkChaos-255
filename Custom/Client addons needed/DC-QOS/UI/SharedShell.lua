@@ -565,6 +565,11 @@ function addon:EnterEditMode()
         return false
     end
 
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        self:Notify("Edit mode cannot be opened in combat.", "warning", { title = "Edit Mode" })
+        return false
+    end
+
     local frameMover = self.modules and self.modules.FrameMover
     if not frameMover or not frameMover.EnableEditorMode then
         self:Notify("Frame mover is not available.", "error")

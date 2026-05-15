@@ -1063,8 +1063,12 @@ public:
             if (!_EnterEvadeMode(why))
                 return;
 
+            me->GetMotionMaster()->Clear(false);
+            me->GetMotionMaster()->MoveTargetedHome();
+
             // Keep spawned dummy alive, but reset mechanics.
             Reset();
+            me->ClearUnitState(UNIT_STATE_EVADE);
         }
 
         void JustEngagedWith(Unit* /*who*/) override
@@ -1286,7 +1290,10 @@ public:
             if (!_EnterEvadeMode(why))
                 return;
 
+            me->GetMotionMaster()->Clear(false);
+            me->GetMotionMaster()->MoveTargetedHome();
             Reset();
+            me->ClearUnitState(UNIT_STATE_EVADE);
         }
 
         void DamageTaken(Unit*, uint32& damage, DamageEffectType, SpellSchoolMask) override

@@ -2405,6 +2405,90 @@ local function TrySetTooltipHyperlink(tooltip, hyperlink)
     return ok
 end
 
+local function AddUniqueTooltipLine(tooltip, existing, text, r, g, b, wrap)
+    if not tooltip or type(tooltip.AddLine) ~= "function" then
+        return false
+    end
+
+    local normalized = NormalizeTooltipTextValue(text)
+    if normalized == "" or existing[normalized] then
+        return false
+    end
+
+    tooltip:AddLine(text, r or 1.0, g or 1.0, b or 1.0, wrap)
+    existing[normalized] = true
+    return true
+end
+
+local function FormatSpellRangeText(minRange, maxRange)
+    local low = tonumber(minRange) or 0
+    local high = tonumber(maxRange) or 0
+    if high <= 0 then
+        return nil
+    end
+
+    low = math.floor(low + 0.5)
+    high = math.floor(high + 0.5)
+    if low > 0 and low < high then
+        return string.format("%d-%d yd range", low, high)
+    end
+
+    return string.format("%d yd range", high)
+end
+
+local function FormatSpellCastTimeText(castTimeMs)
+    local castTime = tonumber(castTimeMs) or 0
+    if castTime <= 0 then
+        return "Instant cast"
+    end
+
+    local seconds = castTime / 1000
+    if math.abs(seconds - math.floor(seconds)) < 0.001 then
+        return string.format("%d sec cast", math.floor(seconds))
+    end
+
+    return string.format("%.1f sec cast", seconds)
+end
+
+local function AddFallbackSpellBookLines(tooltip, tooltipData)
+    if not tooltip or type(tooltipData) ~= "table" then
+        return
+    end
+
+    local spellId = tonumber(tooltipData.spellId)
+    local existing = BuildExistingTooltipTextSet(tooltip)
+
+    if spellId and spellId > 0 and type(GetSpellInfo) == "function" then
+        local _, _, _, castTimeMs, minRange, maxRange = GetSpellInfo(spellId)
+        local rangeText = FormatSpellRangeText(minRange, maxRange)
+        if rangeText then
+            AddUniqueTooltipLine(tooltip, existing, rangeText, 0.8, 0.8, 0.8, true)
+        end
+
+        local passive = false
+        if type(IsPassiveSpell) == "function"
+            and tooltipData.bookSlot and tooltipData.bookType then
+            local ok, result = pcall(function()
+                return IsPassiveSpell(tooltipData.bookSlot, tooltipData.bookType)
+            end)
+            passive = ok and result and true or false
+        end
+
+        if passive then
+            AddUniqueTooltipLine(tooltip, existing, PASSIVE or "Passive", 0.8, 0.8, 0.8, true)
+        else
+            AddUniqueTooltipLine(tooltip, existing, FormatSpellCastTimeText(castTimeMs), 0.8, 0.8, 0.8, true)
+        end
+    end
+
+    if spellId and spellId > 0 then
+        local description = GetClientSpellDescription(spellId)
+        if description then
+            AddClientSpellDescriptionLines(tooltip, description)
+        end
+    end
+end
+
 local function SetFallbackActionTooltip(button)
     if not GameTooltip or not button then
         return
@@ -2562,6 +2646,123 @@ local function SetFallbackActionTooltip(button)
     GameTooltip:Show()
 end
 
+local function ResolveSpellBookTooltipData(button)
+    if type(button) ~= "table"
+        or type(button.GetID) ~= "function"
+        or type(SpellBook_GetSpellID) ~= "function"
+        or type(SpellBookFrame) ~= "table" then
+        return nil
+    end
+
+    local buttonId = tonumber(button:GetID())
+    if not buttonId or buttonId <= 0 then
+        return nil
+    end
+
+    local bookType = SpellBookFrame.bookType
+    if bookType ~= BOOKTYPE_SPELL and bookType ~= BOOKTYPE_PET then
+        return nil
+    end
+
+    local bookSlot, displaySlot = SpellBook_GetSpellID(buttonId)
+    bookSlot = tonumber(bookSlot)
+    displaySlot = tonumber(displaySlot)
+
+    local effectiveSlot = bookSlot or displaySlot
+    if not effectiveSlot or effectiveSlot <= 0 then
+        return nil
+    end
+
+    local spellName, spellRank
+    if type(GetSpellBookItemName) == "function" then
+        if bookSlot and bookSlot > 0 then
+            spellName, spellRank = GetSpellBookItemName(bookSlot, bookType)
+        end
+        if (not spellName or spellName == "")
+            and displaySlot and displaySlot > 0 and displaySlot ~= bookSlot then
+            spellName, spellRank = GetSpellBookItemName(displaySlot, bookType)
+        end
+    end
+
+    local spellId = nil
+    if bookSlot and bookSlot > 0 then
+        spellId = GetSpellIdFromBookSlot(bookSlot, bookType)
+    end
+    if (not spellId or spellId <= 0)
+        and displaySlot and displaySlot > 0 and displaySlot ~= bookSlot then
+        spellId = GetSpellIdFromBookSlot(displaySlot, bookType)
+    end
+    if (not spellId or spellId <= 0)
+        and bookType == BOOKTYPE_SPELL
+        and spellName and spellName ~= "" then
+        spellId = FindCurrentRankSpellIdByName(spellName)
+    end
+    spellId = tonumber(spellId)
+
+    if (spellId and spellId > 0) and (not spellName or spellName == "")
+        and type(GetSpellInfo) == "function" then
+        spellName, spellRank = GetSpellInfo(spellId)
+    end
+
+    if (not spellName or spellName == "") and (not spellId or spellId <= 0) then
+        return nil
+    end
+
+    return {
+        bookSlot = effectiveSlot,
+        displaySlot = displaySlot,
+        bookType = bookType,
+        spellId = spellId,
+        spellName = spellName,
+        spellRank = spellRank,
+    }
+end
+
+local function SetFallbackSpellBookTooltip(button)
+    if not GameTooltip or type(button) ~= "table" then
+        return false
+    end
+
+    local tooltipData = ResolveSpellBookTooltipData(button)
+    if not tooltipData then
+        if GameTooltip.Hide then
+            GameTooltip:Hide()
+        end
+        button.UpdateTooltip = nil
+        return false
+    end
+
+    if type(GameTooltip.SetOwner) == "function" then
+        GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    end
+
+    MarkSpellTooltipSource(GameTooltip, "spellbook")
+    GameTooltip._dcqosResolvedSpellId = tooltipData.spellId
+
+    local wroteTooltip = false
+    if tooltipData.spellName and tooltipData.spellName ~= "" then
+        GameTooltip:SetText(tooltipData.spellName)
+        if tooltipData.spellRank and tooltipData.spellRank ~= "" then
+            GameTooltip:AddLine(tooltipData.spellRank, 0.8, 0.8, 0.8)
+        end
+        AddFallbackSpellBookLines(GameTooltip, tooltipData)
+        wroteTooltip = true
+    end
+
+    if wroteTooltip and tooltipData.spellId and tooltipData.spellId > 0 then
+        EnhanceSpellTooltip(GameTooltip, tooltipData.spellId)
+        button.UpdateTooltip = SafeSpellButtonOnEnter
+        GameTooltip:Show()
+        return true
+    end
+
+    if GameTooltip.Hide then
+        GameTooltip:Hide()
+    end
+    button.UpdateTooltip = nil
+    return false
+end
+
 local function SetFallbackShapeshiftTooltip(button)
     if not GameTooltip then
         return
@@ -2701,6 +2902,21 @@ local function SafeShapeshiftButtonOnEnter(self)
     SetFallbackShapeshiftTooltip(button)
 end
 
+function SafeSpellButtonOnEnter(self)
+    EnsureGameTooltipActionMethods()
+
+    local button = self
+    if type(button) ~= "table" then
+        button = this
+    end
+
+    if type(button) ~= "table" then
+        return
+    end
+
+    SetFallbackSpellBookTooltip(button)
+end
+
 local function InstallShapeshiftOnEnterGuards()
     local maxButtons = tonumber(NUM_SHAPESHIFT_SLOTS) or 10
     for i = 1, maxButtons do
@@ -2834,6 +3050,15 @@ local function HookSpellTooltips()
             EnsureGameTooltipActionMethods()
             local button = ResolveActionButtonFromArgs(...)
             SetFallbackActionTooltip(button)
+        end
+    end
+
+    if type(SpellButton_OnEnter) == "function" and not addon._dcqosWrappedSpellButtonOnEnter then
+        addon._dcqosWrappedSpellButtonOnEnter = true
+        local originalSpellButtonOnEnter = SpellButton_OnEnter
+        addon._dcqosOriginalSpellButtonOnEnter = originalSpellButtonOnEnter
+        SpellButton_OnEnter = function(...)
+            return SafeSpellButtonOnEnter(...)
         end
     end
 

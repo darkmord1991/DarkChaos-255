@@ -95,6 +95,43 @@ local isUnlocked = false
 local editorOverlay
 local gridOverlay
 local frameMoverContextMenu
+local RefreshEditorOverlay
+local EnsureEditorOverlay
+
+local function IsRestrictedCombat()
+    return type(InCombatLockdown) == "function" and InCombatLockdown()
+end
+
+local function NotifyCombatBlocked()
+    if addon.Notify then
+        addon:Notify("Frame mover cannot be opened in combat.", "warning", { title = "Frame Mover" })
+    else
+        addon:Print("Frame mover cannot be opened in combat.", true)
+    end
+end
+
+local function CanOpenFrameMover()
+    if not IsRestrictedCombat() then
+        return true
+    end
+
+    NotifyCombatBlocked()
+    return false
+end
+
+local function ShouldShowEditorOverlay()
+    local frameMoverSettings = addon.settings and addon.settings.frameMover
+    if not frameMoverSettings then
+        return false
+    end
+
+    if isUnlocked then
+        return true
+    end
+
+    return frameMoverSettings.editorMode == true
+        and (not addon.settings.editMode or addon.settings.editMode.showToolbar ~= false)
+end
 
 -- ============================================================
 -- Utility Functions
@@ -448,7 +485,20 @@ end
 -- Lock/Unlock Functions
 -- ============================================================
 local function UnlockFrames()
-    if isUnlocked then return end
+    if isUnlocked then
+        if EnsureEditorOverlay then
+            EnsureEditorOverlay()
+        end
+        if RefreshEditorOverlay then
+            RefreshEditorOverlay()
+        end
+        return true
+    end
+
+    if not CanOpenFrameMover() then
+        return false
+    end
+
     isUnlocked = true
     addon.settings.frameMover.unlocked = true
     
@@ -472,8 +522,16 @@ local function UnlockFrames()
             end
         end
     end
+
+    if EnsureEditorOverlay then
+        EnsureEditorOverlay()
+    end
+    if RefreshEditorOverlay then
+        RefreshEditorOverlay()
+    end
     
     addon:Print("Frames UNLOCKED. Drag to move, scroll to scale, right-click for options.", true)
+    return true
 end
 
 local function LockFrames()
@@ -484,22 +542,22 @@ local function LockFrames()
     for name, anchor in pairs(anchorFrames) do
         anchor:Hide()
     end
+
+    if RefreshEditorOverlay then
+        RefreshEditorOverlay()
+    end
     
     addon:Print("Frames LOCKED.", true)
 end
-
-local RefreshEditorOverlay
 
 local function ToggleLock()
     if isUnlocked then
         LockFrames()
     else
-        UnlockFrames()
+        return UnlockFrames()
     end
 
-    if RefreshEditorOverlay then
-        RefreshEditorOverlay()
-    end
+    return true
 end
 
 local function EnsureGridOverlay()
@@ -567,6 +625,12 @@ end
 RefreshEditorOverlay = function()
     if not editorOverlay then return end
 
+    if ShouldShowEditorOverlay() then
+        editorOverlay:Show()
+    else
+        editorOverlay:Hide()
+    end
+
     if editorOverlay.lockBtn then
         editorOverlay.lockBtn:SetText(isUnlocked and "Lock" or "Unlock")
     end
@@ -603,7 +667,7 @@ RefreshEditorOverlay = function()
     end
 end
 
-local function EnsureEditorOverlay()
+EnsureEditorOverlay = function()
     if editorOverlay then return end
 
     editorOverlay = CreateFrame("Frame", "DCQOS_EditorOverlay", UIParent)
@@ -766,23 +830,25 @@ local function EnsureEditorOverlay()
 end
 
 local function EnableEditorMode()
-    EnsureEditorOverlay()
-    if not addon.settings.editMode or addon.settings.editMode.showToolbar ~= false then
-        editorOverlay:Show()
-    else
-        editorOverlay:Hide()
+    if not CanOpenFrameMover() then
+        return false
     end
+
+    EnsureEditorOverlay()
+    addon.settings.frameMover.editorMode = true
     if not isUnlocked then
-        UnlockFrames()
+        if UnlockFrames() == false then
+            addon.settings.frameMover.editorMode = false
+            return false
+        end
     end
     UpdateGridOverlay()
-    addon.settings.frameMover.editorMode = true
     addon:SaveSettings()
     RefreshEditorOverlay()
+    return true
 end
 
 local function DisableEditorMode()
-    if editorOverlay then editorOverlay:Hide() end
     if gridOverlay then gridOverlay:Hide() end
     addon.settings.frameMover.editorMode = false
     addon:SaveSettings()
