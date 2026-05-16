@@ -1041,63 +1041,76 @@ local function CreateTransmogPanel()
         table.insert(frame.gridButtons, b)
     end
 
-    local prevBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-    prevBtn:SetSize(60, 20)
-    prevBtn:SetPoint("BOTTOMLEFT", right, "BOTTOMLEFT", 0, 10)
-    prevBtn:SetText("Prev")
-    prevBtn:SetScript("OnClick", function()
-        local newPage = math.max(1, (UI.currentPage or 1) - 1)
-        if newPage < (UI.currentPage or 1) then
+    local pageBar = DC:CreateCenteredPagerFrame(right, {
+        leftInset = 0,
+        rightInset = 198,
+        bottomInset = 10,
+        height = 20,
+        pagerWidth = 160,
+        pagerHeight = 20,
+        buttonTemplate = "UIPanelButtonTemplate",
+        buttonWidth = 60,
+        buttonHeight = 20,
+        pagerEdgePadding = 0,
+        pageFontObject = "GameFontNormalSmall",
+        pageText = "Page 1",
+        prevText = "Prev",
+        nextText = "Next",
+        onPrev = function()
+            local newPage = math.max(1, (UI.currentPage or 1) - 1)
+            if newPage < (UI.currentPage or 1) then
+                UI.currentPage = newPage
+                -- Request previous page from server
+                local slotDef = GetSelectedSlotDef()
+                if slotDef and slotDef.visualSlot then
+                    local searchText = UI.searchText
+                    if searchText and searchText ~= "" then
+                        if DC and DC.SearchTransmogItems then
+                            DC:SearchTransmogItems(
+                                slotDef.visualSlot,
+                                searchText,
+                                newPage)
+                        end
+                    else
+                        if DC and DC.RequestTransmogSlotItems then
+                            DC:RequestTransmogSlotItems(
+                                slotDef.visualSlot,
+                                newPage)
+                        end
+                    end
+                end
+            end
+        end,
+        onNext = function()
+            if not UI.hasMorePages then
+                return
+            end
+            local newPage = (UI.currentPage or 1) + 1
             UI.currentPage = newPage
-            -- Request previous page from server
+            -- Request next page from server
             local slotDef = GetSelectedSlotDef()
             if slotDef and slotDef.visualSlot then
                 local searchText = UI.searchText
                 if searchText and searchText ~= "" then
                     if DC and DC.SearchTransmogItems then
-                        DC:SearchTransmogItems(slotDef.visualSlot, searchText, newPage)
+                        DC:SearchTransmogItems(
+                            slotDef.visualSlot,
+                            searchText,
+                            newPage)
                     end
                 else
                     if DC and DC.RequestTransmogSlotItems then
-                        DC:RequestTransmogSlotItems(slotDef.visualSlot, newPage)
+                        DC:RequestTransmogSlotItems(
+                            slotDef.visualSlot,
+                            newPage)
                     end
                 end
             end
-        end
-    end)
-    frame.prevBtn = prevBtn
-
-    local nextBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-    nextBtn:SetSize(60, 20)
-    nextBtn:SetPoint("BOTTOMLEFT", prevBtn, "BOTTOMRIGHT", 6, 0)
-    nextBtn:SetText("Next")
-    nextBtn:SetScript("OnClick", function()
-        if not UI.hasMorePages then
-            return
-        end
-        local newPage = (UI.currentPage or 1) + 1
-        UI.currentPage = newPage
-        -- Request next page from server
-        local slotDef = GetSelectedSlotDef()
-        if slotDef and slotDef.visualSlot then
-            local searchText = UI.searchText
-            if searchText and searchText ~= "" then
-                if DC and DC.SearchTransmogItems then
-                    DC:SearchTransmogItems(slotDef.visualSlot, searchText, newPage)
-                end
-            else
-                if DC and DC.RequestTransmogSlotItems then
-                    DC:RequestTransmogSlotItems(slotDef.visualSlot, newPage)
-                end
-            end
-        end
-    end)
-    frame.nextBtn = nextBtn
-
-    local pageText = right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pageText:SetPoint("LEFT", nextBtn, "RIGHT", 8, 0)
-    pageText:SetText("Page 1")
-    frame.pageText = pageText
+        end,
+    })
+    frame.prevBtn = pageBar.prevBtn
+    frame.nextBtn = pageBar.nextBtn
+    frame.pageText = pageBar.pageText
 
     local applyBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
     applyBtn:SetSize(60, 20)

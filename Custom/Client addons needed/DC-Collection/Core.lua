@@ -141,15 +141,172 @@ DC.collectionStats = {}
 -- Recent additions for My Collection overview
 DC.recentAdditions = {}
 
+local QUESTION_MARK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+local function ToPositiveNumber(value)
+    local numericValue = tonumber(value)
+    if numericValue and numericValue > 0 then
+        return numericValue
+    end
+    return nil
+end
+
+local function NormalizeRecentCollectionType(rawType)
+    if rawType == nil then
+        return nil
+    end
+
+    if type(DC.NormalizeCollectionType) == "function" then
+        return DC:NormalizeCollectionType(rawType)
+    end
+
+    if type(rawType) == "number" and type(DC.GetTypeNameFromId) == "function" then
+        return DC:GetTypeNameFromId(rawType)
+    end
+
+    local collType = string.lower(tostring(rawType))
+    if collType == "companion" or collType == "companions" then
+        return "pets"
+    end
+    if collType == "mount" then
+        return "mounts"
+    end
+    if collType == "pet" then
+        return "pets"
+    end
+    if collType == "heirloom" then
+        return "heirlooms"
+    end
+    if collType == "title" then
+        return "titles"
+    end
+    if collType == "appearance" or collType == "appearances" then
+        return "transmog"
+    end
+
+    return collType
+end
+
+local function ResolveRecentDefinitionForCache(entry)
+    if type(entry) ~= "table" then
+        return nil, nil
+    end
+
+    local collType = NormalizeRecentCollectionType(entry.type)
+    if not collType or type(DC.GetDefinition) ~= "function" then
+        return nil, collType
+    end
+
+    local candidates = {
+        ToPositiveNumber(entry.id),
+        ToPositiveNumber(entry.itemId),
+        ToPositiveNumber(entry.spellId),
+    }
+
+    for _, candidate in ipairs(candidates) do
+        if candidate then
+            local definition = DC:GetDefinition(collType, candidate)
+            if definition then
+                return definition, collType
+            end
+        end
+    end
+
+    return nil, collType
+end
+
+function DC:RehydrateRecentAdditions()
+    if type(self.recentAdditions) ~= "table" then
+        return false
+    end
+
+    local changed = false
+
+    for _, entry in ipairs(self.recentAdditions) do
+        if type(entry) == "table" then
+            local definition, collType = ResolveRecentDefinitionForCache(entry)
+            local itemId = ToPositiveNumber(entry.itemId)
+            local spellId = ToPositiveNumber(entry.spellId)
+
+            if collType and entry.type ~= collType then
+                entry.type = collType
+                changed = true
+            end
+
+            if type(definition) == "table" then
+                local definitionItemId = ToPositiveNumber(
+                    definition.itemId or definition.item_id or definition.itemID)
+                local definitionSpellId = ToPositiveNumber(
+                    definition.spellId or definition.spell_id or definition.spellID)
+                local definitionRarity = tonumber(definition.rarity)
+
+                if (not entry.name or entry.name == "" or entry.name == "Unknown") and
+                   type(definition.name) == "string" and definition.name ~= "" then
+                    entry.name = definition.name
+                    changed = true
+                end
+
+                if not itemId and definitionItemId then
+                    entry.itemId = definitionItemId
+                    itemId = definitionItemId
+                    changed = true
+                end
+
+                if not spellId and definitionSpellId then
+                    entry.spellId = definitionSpellId
+                    spellId = definitionSpellId
+                    changed = true
+                end
+
+                if (not entry.rarity or tonumber(entry.rarity) <= 0) and
+                   definitionRarity and definitionRarity > 0 then
+                    entry.rarity = definitionRarity
+                    changed = true
+                end
+            end
+
+            local currentIcon = entry.icon
+            if (type(currentIcon) ~= "string" or currentIcon == "" or
+                currentIcon == QUESTION_MARK_ICON) and
+               type(self.ResolveDefinitionIcon) == "function" and collType then
+                local resolveId = ToPositiveNumber(entry.id) or itemId or spellId
+                local resolvedIcon = self:ResolveDefinitionIcon(
+                    collType,
+                    resolveId,
+                    definition)
+                if type(resolvedIcon) == "string" and resolvedIcon ~= "" and
+                   resolvedIcon ~= QUESTION_MARK_ICON then
+                    entry.icon = resolvedIcon
+                    changed = true
+                end
+            end
+        end
+    end
+
+    if changed and DCCollectionDB then
+        DCCollectionDB.recentAdditions = self.recentAdditions
+        DCCollectionDB.recentAdditionsUpdatedAt = time()
+    end
+
+    if changed and self.MyCollection and
+       type(self.MyCollection.UpdateRecentIcons) == "function" and
+       self.MyCollection.frame and self.MyCollection.frame:IsShown() then
+        self.MyCollection:UpdateRecentIcons()
+    end
+
+    return changed
+end
+
 function DC:SetRecentAdditions(recent)
     if type(recent) ~= "table" then
         return
     end
 
     self.recentAdditions = recent
+    self:RehydrateRecentAdditions()
 
     if DCCollectionDB then
-        DCCollectionDB.recentAdditions = recent
+        DCCollectionDB.recentAdditions = self.recentAdditions
         DCCollectionDB.recentAdditionsUpdatedAt = time()
     end
 end
@@ -521,9 +678,280 @@ function DC:NormalizeTexturePath(texture, fallback)
     return "Interface\\Icons\\" .. tex
 end
 
+function DC:CreateCenteredPagerFrame(parent, options)
+    if not parent then
+        return nil
+    end
+
+    options = options or {}
+
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:ClearAllPoints()
+
+    local frameHeight = options.height or 25
+    local hasInsets =
+        options.leftInset ~= nil or
+        options.rightInset ~= nil or
+        options.bottomInset ~= nil
+
+    if hasInsets then
+        frame:SetPoint(
+            "BOTTOMLEFT",
+            parent,
+            "BOTTOMLEFT",
+            options.leftInset or 0,
+            options.bottomInset or 0)
+        frame:SetPoint(
+            "BOTTOMRIGHT",
+            parent,
+            "BOTTOMRIGHT",
+            -(options.rightInset or 0),
+            options.bottomInset or 0)
+        frame:SetHeight(frameHeight)
+    else
+        frame:SetSize(options.width or 200, frameHeight)
+        frame:SetPoint(
+            options.point or "CENTER",
+            options.relativeTo or parent,
+            options.relativePoint or options.point or "CENTER",
+            options.xOffset or 0,
+            options.yOffset or 0)
+    end
+
+    if options.frameStrata then
+        frame:SetFrameStrata(options.frameStrata)
+    end
+
+    if options.frameLevel then
+        frame:SetFrameLevel(options.frameLevel)
+    end
+
+    if (options.leftGroupWidth or 0) > 0 then
+        local leftGroup = CreateFrame("Frame", nil, frame)
+        leftGroup:SetPoint(
+            "LEFT",
+            frame,
+            "LEFT",
+            options.leftGroupInset or 0,
+            0)
+        leftGroup:SetSize(options.leftGroupWidth, frameHeight)
+        frame.leftGroup = leftGroup
+    end
+
+    if (options.rightGroupWidth or 0) > 0 then
+        local rightGroup = CreateFrame("Frame", nil, frame)
+        rightGroup:SetPoint(
+            "RIGHT",
+            frame,
+            "RIGHT",
+            -(options.rightGroupInset or 0),
+            0)
+        rightGroup:SetSize(options.rightGroupWidth, frameHeight)
+        frame.rightGroup = rightGroup
+    end
+
+    local pagerWidth = options.pagerWidth or options.width or 110
+    local pagerHeight = options.pagerHeight or math.min(frameHeight, 22)
+    local pager = CreateFrame("Frame", nil, frame)
+    pager:SetSize(pagerWidth, pagerHeight)
+    pager:SetPoint(
+        "CENTER",
+        frame,
+        "CENTER",
+        options.pagerOffsetX or 0,
+        options.pagerOffsetY or 0)
+
+    local pageText = pager:CreateFontString(
+        nil,
+        "OVERLAY",
+        options.pageFontObject or "GameFontNormal")
+    pageText:SetPoint("CENTER", pager, "CENTER", 0, 0)
+    pageText:SetText(options.pageText or "Page 1 of 1")
+
+    local function CreatePagerButton()
+        if options.buttonTemplate then
+            return CreateFrame("Button", nil, pager, options.buttonTemplate)
+        end
+
+        return CreateFrame("Button", nil, pager)
+    end
+
+    local buttonWidth = options.buttonWidth or 30
+    local buttonHeight = options.buttonHeight or 20
+    local prevBtn = CreatePagerButton()
+    prevBtn:SetSize(buttonWidth, buttonHeight)
+
+    local nextBtn = CreatePagerButton()
+    nextBtn:SetSize(buttonWidth, buttonHeight)
+
+    if options.buttonLayout == "adjacent" then
+        local buttonGap = options.buttonGap or 5
+        prevBtn:SetPoint("RIGHT", pageText, "LEFT", -buttonGap, 0)
+        nextBtn:SetPoint("LEFT", pageText, "RIGHT", buttonGap, 0)
+    else
+        local edgePadding = options.pagerEdgePadding
+        if edgePadding == nil then
+            edgePadding = 5
+        end
+
+        prevBtn:SetPoint("LEFT", pager, "LEFT", edgePadding, 0)
+        nextBtn:SetPoint("RIGHT", pager, "RIGHT", -edgePadding, 0)
+    end
+
+    if options.prevText ~= false then
+        prevBtn:SetText(options.prevText or "<")
+    end
+
+    if options.nextText ~= false then
+        nextBtn:SetText(options.nextText or ">")
+    end
+
+    if type(options.onPrev) == "function" then
+        prevBtn:SetScript("OnClick", options.onPrev)
+    end
+
+    if type(options.onNext) == "function" then
+        nextBtn:SetScript("OnClick", options.onNext)
+    end
+
+    if type(options.configurePrevButton) == "function" then
+        options.configurePrevButton(prevBtn)
+    end
+
+    if type(options.configureNextButton) == "function" then
+        options.configureNextButton(nextBtn)
+    end
+
+    frame.pager = pager
+    frame.pageText = pageText
+    frame.prevBtn = prevBtn
+    frame.nextBtn = nextBtn
+
+    return frame
+end
+
 -- ============================================================================
 -- SOURCE FORMATTING
 -- ============================================================================
+
+local function DecodeStructuredSourceStringValue(value)
+    if type(value) ~= "string" then
+        return value
+    end
+
+    local decoded = value
+    decoded = decoded:gsub('\\n', ' ')
+    decoded = decoded:gsub('\\r', ' ')
+    decoded = decoded:gsub('\\t', ' ')
+    decoded = decoded:gsub('\\"', '"')
+    decoded = decoded:gsub('\\/', '/')
+    decoded = decoded:gsub('\\\\', '\\')
+    return decoded
+end
+
+local function ParseStructuredSourceString(source)
+    if type(source) ~= "string" then
+        return nil
+    end
+
+    local trimmed = source:match('^%s*(.-)%s*$') or ""
+    if trimmed == "" then
+        return ""
+    end
+
+    local first = trimmed:sub(1, 1)
+    if first ~= "{" and first ~= "[" then
+        return nil
+    end
+
+    if not trimmed:find('"type"', 1, true) and
+       not trimmed:find('"sourceText"', 1, true) and
+       not trimmed:find('"name"', 1, true) then
+        return nil
+    end
+
+    local function ReadStringField(key)
+        local raw = trimmed:match('"' .. key .. '"%s*:%s*"(.-)"')
+        if raw and raw ~= "" then
+            return DecodeStructuredSourceStringValue(raw)
+        end
+        return nil
+    end
+
+    local function ReadNumberField(key)
+        return tonumber(trimmed:match('"' .. key .. '"%s*:%s*(%d+)'))
+    end
+
+    local sourceType = ReadStringField("type")
+    if type(sourceType) == "string" then
+        sourceType = string.lower(sourceType)
+    end
+
+    local sourceText = ReadStringField("sourceText") or ReadStringField("text")
+    if sourceText and sourceText ~= "" then
+        return sourceText
+    end
+
+    local sourceName =
+        ReadStringField("name") or
+        ReadStringField("sourceName") or
+        ReadStringField("npc") or
+        ReadStringField("vendor") or
+        ReadStringField("boss")
+
+    if sourceType == "vendor" then
+        return sourceName and ("Vendor: " .. sourceName) or "Vendor"
+    end
+
+    if sourceType == "drop" then
+        return sourceName and ("Drop: " .. sourceName) or "Drop"
+    end
+
+    if sourceType == "quest" then
+        local questId = ReadNumberField("questId") or ReadNumberField("id")
+        if questId then
+            return "Quest: #" .. tostring(questId)
+        end
+        return sourceName and ("Quest: " .. sourceName) or "Quest"
+    end
+
+    if sourceType == "item" then
+        if sourceName and sourceName ~= "" then
+            return "Item: " .. sourceName
+        end
+
+        local itemId = ReadNumberField("itemId") or ReadNumberField("id")
+        if itemId then
+            local itemName, itemLink = GetItemInfo(itemId)
+            if itemLink then
+                return "Item: " .. itemLink
+            elseif itemName then
+                return "Item: " .. itemName
+            end
+            return "Item ID: " .. tostring(itemId)
+        end
+
+        return "Item"
+    end
+
+    if sourceType == "spell" then
+        local spellId = ReadNumberField("spellId") or ReadNumberField("id")
+        if spellId then
+            local spellName = GetSpellInfo(spellId)
+            if spellName then
+                return "Spell: " .. spellName
+            end
+            return "Spell ID: " .. tostring(spellId)
+        end
+        return sourceName and ("Spell: " .. sourceName) or "Spell"
+    end
+
+    if sourceName and sourceName ~= "" then
+        return sourceName
+    end
+
+    return nil
+end
 
 function DC:FormatSource(source)
     if not source then
@@ -532,7 +960,8 @@ function DC:FormatSource(source)
 
     local t = type(source)
     if t == "string" then
-        return source
+        local parsed = ParseStructuredSourceString(source)
+        return parsed or source
     end
 
     if t ~= "table" then
@@ -618,6 +1047,7 @@ function DC:LoadSettings()
     -- Restore cached recent additions (My Collection overview)
     if type(DCCollectionDB.recentAdditions) == "table" then
         self.recentAdditions = DCCollectionDB.recentAdditions
+        self:RehydrateRecentAdditions()
     end
     
     -- Character-specific settings
@@ -1226,6 +1656,7 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
         DC:Print("  /dcc debug - Toggle debug mode")
         DC:Print("  /dcc netlog [N] - Show last N net events")
         DC:Print("  /dcc netclear - Clear net event log")
+        DC:Print("  /dcc cdbcprobe - Print static manifest and native loader probe")
     else
         DC:Print("Unknown command. Type /dcc help for a list of commands.")
     end
@@ -1502,11 +1933,21 @@ function events:ADDON_LOADED(addonName)
         if cacheFresh and hasDefs then
             DC:Debug("Cache is fresh on ADDON_LOADED; using cached data")
             DC._initialDataRequested = true
-            -- Still fetch lightweight currency/stats after a short delay
+            -- Still run the normal lightweight init path so handshake metadata
+            -- can suppress unchanged runtime ownership refreshes.
             After(0.5, function()
-                if DC:IsProtocolReady() then
-                    DC:RequestCurrency()
-                    DC:RequestStats()
+                if not DC:GetSetting("autoSyncOnLogin") then
+                    if DC:IsProtocolReady() then
+                        DC:RequestCurrency()
+                        DC:RequestStats()
+                    end
+                    return
+                end
+
+                if type(DC.RequestInitialDataWithRetry) == "function" then
+                    DC:RequestInitialDataWithRetry(8, 1)
+                elseif DC:IsProtocolReady() then
+                    DC:RequestInitialData(false)
                 end
             end)
             return
@@ -1660,6 +2101,10 @@ function DC:InitializeCache()
     if self.LoadCache then
         self:LoadCache()
     end
+
+    if type(self.BootstrapLocalCollectionCDBC) == "function" then
+        self:BootstrapLocalCollectionCDBC()
+    end
 end
 
 function DC:InitializeModules()
@@ -1704,6 +2149,32 @@ end
 function DC:RequestInitialData(skipHandshake, forceRefresh)
     DC:Debug("Requesting initial collection data...")
 
+    if not self:IsProtocolReady() then
+        self:Debug("Protocol not ready (or server sync disabled)")
+        return
+    end
+
+    -- Ensure handshake happens first when supported so startup can use the
+    -- server's lightweight ownership sync versions.
+    if not skipHandshake and type(self.RequestHandshake) == "function" and
+       not self._handshakeAcked then
+        self._pendingInitialDataAfterHandshake = {
+            forceRefresh = forceRefresh == true,
+        }
+
+        if not self._handshakeRequested then
+            self._handshakeRequested = true
+            self:Debug("Sending handshake...")
+            if type(self.BeginSyncProgress) == "function" then
+                self:BeginSyncProgress("initial-handshake", {
+                    { key = "handshake", label = "handshake" },
+                })
+            end
+            self:RequestHandshake()
+        end
+        return
+    end
+
     -- Guard against duplicate triggers (ADDON_LOADED, PLAYER_LOGIN, UI open, handshake ack).
     -- These can stack in the same second and spam the addon channel.
     if not forceRefresh then
@@ -1722,12 +2193,8 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
         end
     end
 
+    self._initialDataPendingAfterHandshake = nil
     self._initialDataRequested = true
-
-    if not self:IsProtocolReady() then
-        self:Debug("Protocol not ready (or server sync disabled)")
-        return
-    end
 
     -- If cache is fresh and we have definitions, skip heavy requests on reload/relog.
     -- This dramatically speeds up /reload scenarios.
@@ -1741,6 +2208,7 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
             self:BeginSyncProgress("initial-cache", {
                 { key = "currency", label = "currency" },
                 { key = "stats", label = "stats" },
+                { key = "coll:transmog", label = "collection: transmog" },
                 { key = "coll:titles", label = "collection: titles" },
                 { key = "shop", label = "shop data" },
             })
@@ -1753,6 +2221,15 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
         -- Titles can desync if local cache kept stale ownership entries.
         -- Always refresh title ownership from server even on fresh cache loads.
         if type(self.RequestCollection) == "function" then
+            if type(self.HasCurrentTransmogOwnedState) == "function" and
+               self:HasCurrentTransmogOwnedState() then
+                if type(self._syncProgress) == "table" then
+                    self:CompleteSyncProgressStep("coll:transmog", "collection: transmog")
+                end
+                self:Debug("Collected appearances are up to date; skipping transmog refresh")
+            else
+                self:RequestCollection("transmog")
+            end
             self:RequestCollection("title")
         end
 
@@ -1761,21 +2238,6 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
             self:RequestShopData()
         end
         return
-    end
-
-    -- Ensure handshake happens first when supported.
-    if not skipHandshake and type(self.RequestHandshake) == "function" then
-        if not self._handshakeRequested and not self._handshakeAcked then
-            self._handshakeRequested = true
-            self:Debug("Sending handshake...")
-            if type(self.BeginSyncProgress) == "function" then
-                self:BeginSyncProgress("initial-handshake", {
-                    { key = "handshake", label = "handshake" },
-                })
-            end
-            self:RequestHandshake()
-            return
-        end
     end
 
     if type(self.BeginSyncProgress) == "function" then

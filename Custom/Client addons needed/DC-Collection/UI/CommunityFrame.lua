@@ -432,33 +432,35 @@ function UI:Initialize(parent, options)
     self.gridFrame:SetScript("OnSizeChanged", function() UI:LayoutGrid() end)
     
     -- Paging Controls
-    local pagingFrame = CreateFrame("Frame", nil, self.frame)
-    pagingFrame:SetSize(200, 30)
-    pagingFrame:SetPoint("BOTTOM", 0, 10)
-    
-    self.prevBtn = CreateFrame("Button", nil, pagingFrame, "UIPanelButtonTemplate")
-    self.prevBtn:SetSize(30, 22)
-    self.prevBtn:SetPoint("LEFT", 0, 0)
-    self.prevBtn:SetText("<")
-    self.prevBtn:SetScript("OnClick", function()
-        if UI.offset >= (UI.limit or itemsPerPage) then
-            UI.offset = UI.offset - (UI.limit or itemsPerPage)
+    local pagingFrame = DC:CreateCenteredPagerFrame(self.frame, {
+        point = "BOTTOM",
+        relativeTo = self.frame,
+        relativePoint = "BOTTOM",
+        xOffset = 0,
+        yOffset = 10,
+        width = 200,
+        height = 30,
+        pagerWidth = 200,
+        pagerHeight = 22,
+        buttonTemplate = "UIPanelButtonTemplate",
+        buttonWidth = 30,
+        buttonHeight = 22,
+        pagerEdgePadding = 0,
+        pageText = "Page 1",
+        onPrev = function()
+            if UI.offset >= (UI.limit or itemsPerPage) then
+                UI.offset = UI.offset - (UI.limit or itemsPerPage)
+                UI:RequestList()
+            end
+        end,
+        onNext = function()
+            UI.offset = UI.offset + (UI.limit or itemsPerPage)
             UI:RequestList()
-        end
-    end)
-    
-    self.nextBtn = CreateFrame("Button", nil, pagingFrame, "UIPanelButtonTemplate")
-    self.nextBtn:SetSize(30, 22)
-    self.nextBtn:SetPoint("RIGHT", 0, 0)
-    self.nextBtn:SetText(">")
-    self.nextBtn:SetScript("OnClick", function()
-        UI.offset = UI.offset + (UI.limit or itemsPerPage)
-        UI:RequestList()
-    end)
-    
-    self.pageText = pagingFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    self.pageText:SetPoint("CENTER", pagingFrame, "CENTER")
-    self.pageText:SetText("Page 1")
+        end,
+    })
+    self.prevBtn = pagingFrame.prevBtn
+    self.nextBtn = pagingFrame.nextBtn
+    self.pageText = pagingFrame.pageText
     
 end
 

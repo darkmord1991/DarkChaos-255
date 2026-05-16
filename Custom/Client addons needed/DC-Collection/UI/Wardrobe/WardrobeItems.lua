@@ -57,6 +57,18 @@ function Wardrobe:SelectTab(tabKey)
     elseif tabKey == "community" then
         self:ShowCommunityContent()
     end
+
+    if self.frame then
+        if self.isEmbedded and type(self._ApplyEmbeddedLayout) == "function" then
+            self:_ApplyEmbeddedLayout()
+        elseif not self.isEmbedded and type(self._ApplyStandaloneLayout) == "function" then
+            self:_ApplyStandaloneLayout()
+        end
+
+        if tabKey == "outfits" and type(self.frame.LayoutOutfitButtons) == "function" then
+            self.frame.LayoutOutfitButtons()
+        end
+    end
 end
 
 function Wardrobe:ShowItemsContent()
@@ -452,11 +464,11 @@ function Wardrobe:RefreshGrid()
                 end
             end
 
-            local icon = nil
-            if type(GetItemIcon) == "function" and item.itemId then
+            local icon = item.icon
+            if (not icon or icon == "") and type(GetItemIcon) == "function" and item.itemId then
                 icon = GetItemIcon(item.itemId)
             end
-            if not icon and item.itemId and GetItemInfo then
+            if (not icon or icon == "") and item.itemId and GetItemInfo then
                 icon = select(10, GetItemInfo(item.itemId))
             end
 
@@ -625,6 +637,7 @@ function Wardrobe:BuildAppearanceList()
         local displayId
         local itemId
         local invType
+        local iconTexture
         local itemIds
         local itemIdsTotal
         local packedQuality
@@ -632,6 +645,7 @@ function Wardrobe:BuildAppearanceList()
         if type(def) == "string" and type(DC.ParsePackedTransmogDefinition) == "function" then
             local pName, pIcon, pQuality, pDisplayId, pInvType, _, _, _, pItemId, _, pItemIdsTotal, pItemIdsStr = DC:ParsePackedTransmogDefinition(def)
             name = pName or ""
+            iconTexture = pIcon or nil
             packedQuality = tonumber(pQuality) or 0
             displayId = tonumber(pDisplayId)
             invType = tonumber(pInvType) or 0
@@ -646,6 +660,7 @@ function Wardrobe:BuildAppearanceList()
             end
         else
             name = (def and def.name) or ""
+            iconTexture = def and (def.icon or def.Icon or def.texture or def.Texture) or nil
 
             displayId = def.displayId or def.displayID or def.display_id or def.appearanceId or def.appearance_id
             if type(displayId) == "string" then
@@ -756,6 +771,7 @@ function Wardrobe:BuildAppearanceList()
                     id = id,
                     itemId = itemId,
                     name = name or "",
+                    icon = iconTexture,
                     collected = collected,
                     inventoryType = invType,
                     displayId = displayId,
@@ -774,11 +790,15 @@ function Wardrobe:BuildAppearanceList()
                 if not existing.itemIdsTotal and itemIdsTotal then
                     existing.itemIdsTotal = itemIdsTotal
                 end
+                if (not existing.icon or existing.icon == "") and iconTexture and iconTexture ~= "" then
+                    existing.icon = iconTexture
+                end
                 -- Prefer a better representative itemId for the tooltip/model preview.
                 if IsBetterRepresentative(itemId, existing.itemId) then
                     existing.id = id
                     existing.itemId = itemId
                     existing.name = (name or existing.name or "")
+                    existing.icon = iconTexture or existing.icon
                     existing.inventoryType = invType
                     existing.displayId = displayId
                 end

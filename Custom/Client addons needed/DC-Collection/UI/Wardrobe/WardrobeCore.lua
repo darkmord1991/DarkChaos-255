@@ -790,6 +790,48 @@ function Wardrobe:RefreshTransmogDefinitions()
 
     -- Any refresh potentially changes definitions; invalidate randomizer pools.
     self.collectedCache = nil
+
+    if type(DC.BootstrapLocalCollectionCDBC) == "function" then
+        DC:BootstrapLocalCollectionCDBC(true)
+    end
+
+    if type(DC.HasLocalCollectionDefinitions) == "function" and
+       DC:HasLocalCollectionDefinitions("transmog") then
+        self.isRefreshing = false
+        self.definitionsLoaded = true
+        DC.definitionsLoaded = true
+
+        if type(self.ClearItemIdToDisplayIdCache) == "function" then
+            self:ClearItemIdToDisplayIdCache()
+        end
+
+        if self.frame and self.frame.refreshBtn then
+            if type(self.UpdateRefreshButtonForTab) == "function" then
+                self:UpdateRefreshButtonForTab()
+                self.frame.refreshBtn:Enable()
+            else
+                self.frame.refreshBtn:SetText("Refresh Data")
+                self.frame.refreshBtn:Enable()
+            end
+        end
+
+        if self.frame and self.frame.refreshStatus then
+            self.frame.refreshStatus:SetText("Using local static transmog definitions")
+            self.frame.refreshStatus:Show()
+            C_Timer.After(3, function()
+                if Wardrobe.frame and Wardrobe.frame.refreshStatus and not Wardrobe.isRefreshing then
+                    Wardrobe.frame.refreshStatus:Hide()
+                end
+            end)
+        end
+
+        if type(self.UpdateTransmogLoadingProgressUI) == "function" then
+            self:UpdateTransmogLoadingProgressUI(false)
+        end
+
+        self:RefreshGrid()
+        return
+    end
     
     -- Set refreshing flag
     self.isRefreshing = true

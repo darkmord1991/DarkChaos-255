@@ -1,0 +1,8 @@
+"ID","CollectionType","ParentID","SortOrder","Flags","Key","Name","Icon"
+"1","0","-1","10","0","bonus","Bonuses","Interface\Icons\INV_Misc_Coin_02"
+"2","1","-1","20","0","mount","Mounts","Interface\Icons\Ability_Mount_RidingHorse"
+"3","2","-1","30","0","pet","Pets","Interface\Icons\INV_Box_PetCarrier_01"
+"4","4","-1","40","0","heirloom","Heirlooms","Interface\Icons\INV_Chest_Chain_17"
+"5","5","-1","50","0","title","Titles","Interface\Icons\INV_Scroll_11"
+"6","6","-1","60","0","transmog","Appearances","Interface\Icons\INV_Chest_Cloth_17"
+"7","7","-1","70","0","itemset","Item Sets","Interface\Icons\INV_Chest_Chain_17"

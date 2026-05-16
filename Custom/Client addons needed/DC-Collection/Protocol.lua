@@ -908,6 +908,16 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
     local progressKey = "defs:" .. tostring(normalizedType)
     local progressLabel = "definitions: " .. tostring(normalizedType)
 
+    if type(self.HasLocalCollectionDefinitions) == "function" and
+       self:HasLocalCollectionDefinitions(normalizedType) then
+        if type(self._syncProgress) == "table" then
+            self:CompleteSyncProgressStep(progressKey, progressLabel .. " (local)")
+        end
+        self:Debug(string.format("RequestDefinitions(%s): using local CDBC metadata",
+            tostring(serverType)))
+        return true
+    end
+
     -- Avoid spamming the same request while waiting for a response.
     if self:_IsInflight(reqKey) then
         return false
@@ -1163,6 +1173,10 @@ function DC:RequestCollection(collType)
 
     local normalizedType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(collType)) or collType
 
+    if normalizedType == "transmog" and type(self.RequestCollectedAppearances) == "function" then
+        return self:RequestCollectedAppearances()
+    end
+
     -- Server commonly uses singular names.
     local serverType = normalizedType
     if normalizedType == "mounts" then serverType = "mount"
@@ -1227,9 +1241,16 @@ function DC:RequestShopItems(category)
             self:StartSyncProgressStep("shop", "shop data")
         end
         self:_MarkInflight(reqKey, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_SHOP, {
+        local payload = {
             category = category or "all",
-        })
+        }
+
+        if type(self.ShouldUseLocalCollectionShopMetadata) == "function" and
+           self:ShouldUseLocalCollectionShopMetadata() then
+            payload.omitStatic = 1
+        end
+
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_SHOP, payload)
         if not ok then
             self:_MarkInflight(reqKey, nil)
             if type(self._syncProgress) == "table" then
@@ -1456,8 +1477,14 @@ function DC.Protocol:RequestSavedOutfitsPage(offset, limit)
 end
 
 function DC:RequestItemSets(force)
+    local defs = self.definitions or DC.definitions
+    if defs then
+        if type(defs.itemsets) ~= "table" and type(defs.itemSets) == "table" then defs.itemsets = defs.itemSets end
+        if type(defs.itemSets) ~= "table" and type(defs.itemsets) == "table" then defs.itemSets = defs.itemsets end
+    end
+
     if self.itemSetsLoaded and not force then
-        return
+        return true
     end
 
     -- Avoid restarting the paging run while one is already in progress.
@@ -1470,13 +1497,6 @@ function DC:RequestItemSets(force)
     if self._transmogDefLoading and not force then
         self._deferItemSetsUntilTransmogComplete = true
         return
-    end
-
-    local defs = self.definitions or DC.definitions
-    if defs then
-        -- Keep both spellings in sync (older code used itemSets).
-        if type(defs.itemsets) ~= "table" and type(defs.itemSets) == "table" then defs.itemsets = defs.itemSets end
-        if type(defs.itemSets) ~= "table" and type(defs.itemsets) == "table" then defs.itemSets = defs.itemsets end
     end
 
     -- If item sets are already present from SavedVariables cache, validate via syncVersion
@@ -1870,7 +1890,35 @@ end
 
 -- Request all collected appearance displayIds (for tooltip highlighting)
 function DC:RequestCollectedAppearances()
-    return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTED_APPEARANCES, {})
+    local reqKey = "req:coll:transmog"
+    local progressKey = "coll:transmog"
+    local progressLabel = "collection: transmog"
+
+    if self:_IsInflight(reqKey) then
+        return false
+    end
+
+    self:_DebounceRequest(reqKey, 0.10, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+        if type(self._syncProgress) == "table" then
+            self:StartSyncProgressStep(progressKey, progressLabel)
+        end
+        self:_MarkInflight(reqKey, true)
+
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTED_APPEARANCES, {
+            syncVersion = self:_GetTransmogOwnedSyncVersion(),
+        })
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(progressKey, progressLabel .. " (failed)")
+            end
+        end
+    end)
+
+    return true
 end
 
 -- Request current transmog state for all slots
@@ -2284,6 +2332,91 @@ function DC:CopyLastInspectedAppearanceToOutfitPrompt()
 end
 
 -- Handle handshake acknowledgement
+local TRANSMOG_OWNED_SYNC_KEY = "transmog_owned"
+
+function DC:_SetServerOwnedSyncVersion(collectionType, version)
+    local normalizedType = (type(self.NormalizeCollectionType) == "function" and
+        self:NormalizeCollectionType(collectionType)) or collectionType
+    local numericVersion = tonumber(version)
+
+    if not normalizedType or numericVersion == nil then
+        return nil
+    end
+
+    self._serverOwnedSyncVersions = self._serverOwnedSyncVersions or {}
+    self._serverOwnedSyncVersions[normalizedType] = numericVersion
+    return numericVersion
+end
+
+function DC:_RememberOwnedSyncVersions(syncVersions)
+    if type(syncVersions) ~= "table" then
+        return
+    end
+
+    for key, value in pairs(syncVersions) do
+        self:_SetServerOwnedSyncVersion(key, value)
+    end
+end
+
+function DC:_GetServerOwnedSyncVersion(collectionType)
+    local normalizedType = (type(self.NormalizeCollectionType) == "function" and
+        self:NormalizeCollectionType(collectionType)) or collectionType
+
+    if not normalizedType or type(self._serverOwnedSyncVersions) ~= "table" then
+        return nil
+    end
+
+    return tonumber(self._serverOwnedSyncVersions[normalizedType])
+end
+
+function DC:_GetTransmogOwnedSyncVersion()
+    if type(self.GetSyncVersion) ~= "function" then
+        return 0
+    end
+
+    return tonumber(self:GetSyncVersion(TRANSMOG_OWNED_SYNC_KEY)) or 0
+end
+
+function DC:_SetTransmogOwnedSyncVersion(version)
+    local numericVersion = tonumber(version)
+    if numericVersion == nil then
+        return nil
+    end
+
+    self:_SetServerOwnedSyncVersion("transmog", numericVersion)
+    if type(self.SetSyncVersion) == "function" then
+        self:SetSyncVersion(TRANSMOG_OWNED_SYNC_KEY, numericVersion)
+    end
+
+    return numericVersion
+end
+
+function DC:HasCurrentTransmogOwnedState(serverVersion)
+    local numericServerVersion = tonumber(serverVersion)
+    if numericServerVersion == nil then
+        numericServerVersion = self:_GetServerOwnedSyncVersion("transmog")
+    end
+    if numericServerVersion == nil then
+        return false
+    end
+
+    if self:_GetTransmogOwnedSyncVersion() ~= numericServerVersion then
+        return false
+    end
+
+    local collection = self.collections and self.collections.transmog
+    if type(collection) ~= "table" then
+        return false
+    end
+
+    if numericServerVersion > 0 then
+        return next(collection) ~= nil or
+            (type(self.collectedAppearances) == "table" and next(self.collectedAppearances) ~= nil)
+    end
+
+    return true
+end
+
 function DC:HandleHandshakeAck(data)
     self:Debug("Handshake acknowledged")
     
@@ -2318,9 +2451,21 @@ function DC:HandleHandshakeAck(data)
             end
         end
     end
+
+    if type(self._RememberOwnedSyncVersions) == "function" then
+        self:_RememberOwnedSyncVersions(data.ownedSyncVersions)
+    end
+
+    local pendingInitialData = self._pendingInitialDataAfterHandshake
+    if pendingInitialData then
+        self._pendingInitialDataAfterHandshake = nil
+    end
     
     if data.needsSync then
         self:Debug("Server indicates full sync needed")
+        if pendingInitialData then
+            self._pendingInitialDataAfterFullCollection = pendingInitialData
+        end
         self:RequestFullCollection()
     else
         self:Debug("Collection is in sync with server")
@@ -2330,7 +2475,9 @@ function DC:HandleHandshakeAck(data)
     if type(self.RequestInitialData) == "function" then
         -- Handshake can arrive after ADDON_LOADED/PLAYER_LOGIN already kicked off init.
         -- Avoid duplicate request spikes.
-        if not self._initialDataRequested then
+        if pendingInitialData and not data.needsSync then
+            self:RequestInitialData(true, pendingInitialData.forceRefresh == true)
+        elseif not self._initialDataRequested then
             self:RequestInitialData(true)
         end
     end
@@ -2341,15 +2488,93 @@ function DC:HandleHandshakeAck(data)
     end
 end
 
+local function BuildCollectedAppearancesCollection(self, appearances, items)
+    local authoritative = {}
+
+    if type(appearances) == "table" then
+        local count = 0
+        for rawKey, value in pairs(appearances) do
+            local candidate = value
+            if type(value) == "boolean" or type(value) == "table" then
+                candidate = rawKey
+            end
+
+            local displayId = tonumber(candidate) or candidate
+            if displayId and displayId ~= 0 and not authoritative[displayId] then
+                authoritative[displayId] = { owned = true }
+                count = count + 1
+            end
+        end
+
+        if count > 0 then
+            return authoritative, count, "appearances"
+        end
+    end
+
+    if type(items) == "table" then
+        local mapped = 0
+        for rawKey, value in pairs(items) do
+            local candidate = value
+            if type(value) == "boolean" or type(value) == "table" then
+                candidate = rawKey
+            end
+
+            local itemId = tonumber(candidate) or candidate
+            local displayId = itemId
+            if self.Wardrobe and
+               type(self.Wardrobe.GetAppearanceDisplayIdForItemId) == "function" then
+                displayId = self.Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
+            end
+
+            displayId = tonumber(displayId) or displayId
+            if displayId and displayId ~= 0 and not authoritative[displayId] then
+                authoritative[displayId] = { owned = true }
+                mapped = mapped + 1
+            end
+        end
+
+        if mapped > 0 then
+            return authoritative, mapped, "items"
+        end
+    end
+
+    return authoritative, 0, "empty"
+end
+
+function DC:_SyncCollectedAppearancesFromCollection(items)
+    local collected = {}
+
+    if type(items) == "table" then
+        for rawId in pairs(items) do
+            local displayId = tonumber(rawId) or rawId
+            if displayId and displayId ~= 0 then
+                collected[displayId] = true
+            end
+        end
+    end
+
+    self.collectedAppearances = collected
+    return collected
+end
+
 -- Handle full collection data
 function DC:HandleFullCollection(data)
     self:Debug("Received full collection data")
+    local transmogDeferred = data and
+        (data.transmogDeferred == true or data.transmog_deferred == true)
+    local transmogOwnedSyncVersion = nil
+
+    if type(self._RememberOwnedSyncVersions) == "function" then
+        self:_RememberOwnedSyncVersions(data and data.ownedSyncVersions)
+        transmogOwnedSyncVersion = self:_GetServerOwnedSyncVersion("transmog")
+    end
 
     -- Server can ack with an empty payload when the client's local hash
     -- already matches (CMSG_SYNC_COLLECTION short-circuit). Bail early.
     if data and (data.upToDate == true or data.up_to_date == true) and
        (data.collections == nil or (type(data.collections) == "table" and next(data.collections) == nil)) then
         self._fullCollectionReceivedAt = (type(GetTime) == "function" and GetTime()) or time()
+        self._pendingCollectionHash = nil
         if data.hash then
             self.collectionHash = data.hash
         end
@@ -2358,8 +2583,7 @@ function DC:HandleFullCollection(data)
         end
         return
     end
-    
-    -- Store collections
+
     if data.collections then
         for typeName, items in pairs(data.collections) do
             local typeId = self:GetTypeIdFromName(typeName)
@@ -2367,78 +2591,110 @@ function DC:HandleFullCollection(data)
                 self:SetCollection(typeId, items)
             end
         end
+
+        if type(data.collections.transmog) == "table" and
+           type(self._SyncCollectedAppearancesFromCollection) == "function" then
+            self:_SyncCollectedAppearancesFromCollection(
+                self.collections and self.collections.transmog or data.collections.transmog)
+        end
     end
-    
-    -- Store stats
+
     if data.stats then
         self.stats = data.stats
-        -- Toys are disabled; ignore any server-provided toy stats.
         self.stats.toys = nil
     end
-    
-    -- Store bonuses
+
     if data.bonuses then
         self.bonuses = data.bonuses
     end
-    
-    -- Store hash for delta sync
-    if data.hash then
-        self.collectionHash = data.hash
+
+    local transmogOwnedCurrent = false
+    if transmogDeferred and type(self.HasCurrentTransmogOwnedState) == "function" then
+        transmogOwnedCurrent = self:HasCurrentTransmogOwnedState(transmogOwnedSyncVersion)
     end
 
-    -- Timestamp so `RequestInitialData` can skip a duplicate RequestCollections()
-    -- that would otherwise re-fetch the same 5 per-type payloads the server just sent.
+    if data.hash and (not transmogDeferred or transmogOwnedCurrent) then
+        self.collectionHash = data.hash
+        self._pendingCollectionHash = nil
+    elseif data.hash then
+        self._pendingCollectionHash = data.hash
+    end
+
     self._fullCollectionReceivedAt = (type(GetTime) == "function" and GetTime()) or time()
-    
-    -- Fire callback
+
+    if transmogDeferred then
+        if transmogOwnedCurrent then
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep("coll:transmog", "collection: transmog")
+            end
+            self:Debug("Collected appearances are up to date; skipping refresh")
+        elseif type(self.RequestCollectedAppearances) == "function" then
+            self:RequestCollectedAppearances()
+        end
+    end
+
     if self.callbacks.onCollectionReceived then
         self.callbacks.onCollectionReceived(data)
     end
-    
-    -- Refresh UI if open
-    if self.UI and self.UI.mainFrame and self.UI.mainFrame:IsShown() then
-        self.UI:RefreshCurrentTab()
+
+    local pendingInitialData = self._pendingInitialDataAfterFullCollection
+    if pendingInitialData then
+        self._pendingInitialDataAfterFullCollection = nil
+        if type(self.RequestInitialData) == "function" then
+            self:RequestInitialData(true, pendingInitialData.forceRefresh == true)
+        end
     end
 
-    -- Collection changes can change what randomizer considers "collected".
+    if self.MainFrame and self.MainFrame:IsShown() then
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
+    end
+
     if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
         self.Wardrobe:InvalidateRandomizerCache()
     end
 end
 
--- Handle delta sync update
 function DC:HandleDeltaSync(data)
     self:Debug("Received delta sync")
-    
-    -- Apply delta changes
+
     if data.added then
         for typeName, items in pairs(data.added) do
             local typeId = self:GetTypeIdFromName(typeName)
             if typeId then
                 for _, itemId in ipairs(items) do
                     self:AddToCollection(typeId, itemId)
+                    if typeName == "transmog" then
+                        self.collectedAppearances = self.collectedAppearances or {}
+                        self.collectedAppearances[itemId] = true
+                    end
                 end
             end
         end
     end
-    
+
     if data.removed then
         for typeName, items in pairs(data.removed) do
             local typeId = self:GetTypeIdFromName(typeName)
             if typeId then
                 for _, itemId in ipairs(items) do
                     self:RemoveFromCollection(typeId, itemId)
+                    if typeName == "transmog" and self.collectedAppearances then
+                        self.collectedAppearances[itemId] = nil
+                    end
                 end
             end
         end
     end
-    
-    -- Update hash
+
     if data.hash then
         self.collectionHash = data.hash
+        self._pendingCollectionHash = nil
     end
-    
-    -- Fire callback
+
     if self.callbacks.onDeltaSync then
         self.callbacks.onDeltaSync(data)
     end
@@ -2689,15 +2945,40 @@ function DC:HandleShopData(data)
 
     for _, it in ipairs(rawItems) do
         local collTypeId = it.type
-        local typeName = ResolveShopTypeName(collTypeId)
-        local legacyItemType = ResolveLegacyShopItemType(typeName, collTypeId)
-
         local shopId = it.shopId or it.id or it.shop_id
         local entryId = it.entryId or it.entry_id or it.entry
+        local shopStatic = nil
+
+        if type(self.GetLocalShopMetadata) == "function" then
+            shopStatic = self:GetLocalShopMetadata(shopId, collTypeId, entryId)
+        end
+
+        if (collTypeId == nil or collTypeId == "") and shopStatic then
+            collTypeId = shopStatic.collectionType
+        end
+        if (entryId == nil or entryId == "") and shopStatic then
+            entryId = shopStatic.entryId
+        end
+
+        local typeName = ResolveShopTypeName(
+            collTypeId or (shopStatic and shopStatic.collectionTypeName))
+        if (not typeName or typeName == "") and shopStatic then
+            typeName = ResolveShopTypeName(
+                shopStatic.collectionTypeName or shopStatic.collectionType)
+        end
+
+        local legacyItemType = ResolveLegacyShopItemType(
+            typeName,
+            collTypeId or (shopStatic and shopStatic.collectionType))
         local definition = nil
 
         if typeName and entryId and type(self.GetDefinition) == "function" then
             definition = self:GetDefinition(typeName, entryId)
+        end
+
+        local featured = it.featured
+        if featured == nil and shopStatic then
+            featured = shopStatic.featured
         end
 
         local card = {
@@ -2707,33 +2988,66 @@ function DC:HandleShopData(data)
             collectionTypeId = collTypeId,
             collectionTypeName = typeName,
             entryId = entryId,
-            appearanceId = it.appearanceId or it.appearance_id,
-            itemId = it.itemId or it.itemID or it.item_id,
-            spellId = it.spellId or it.spellID or it.spell,
+            appearanceId = it.appearanceId or it.appearance_id or
+                (shopStatic and shopStatic.appearanceId),
+            itemId = it.itemId or it.itemID or it.item_id or
+                (shopStatic and shopStatic.itemId),
+            spellId = it.spellId or it.spellID or it.spell or
+                (shopStatic and shopStatic.spellId),
+            displayId = it.displayId or it.display_id or
+                (shopStatic and shopStatic.displayId),
+            creatureId = it.creatureId or it.creature_id or
+                (shopStatic and shopStatic.creatureId),
             definition = definition,
-            priceTokens = it.priceTokens or it.costTokens or it.price_tokens or 0,
-            priceEmblems = it.priceEmblems or it.costEmblems or it.price_emblems or 0,
-            discount = it.discount or 0,
-            stock = it.stock,
-            featured = it.featured,
+            priceTokens = it.priceTokens or it.costTokens or it.price_tokens or
+                (shopStatic and shopStatic.priceTokens) or 0,
+            priceEmblems = it.priceEmblems or it.costEmblems or it.price_emblems or
+                (shopStatic and shopStatic.priceEmblems) or 0,
+            discount = it.discount or (shopStatic and shopStatic.discount) or 0,
+            stock = it.stock or (shopStatic and shopStatic.stock),
+            featured = featured,
             owned = it.owned or false,
             collected = it.owned or false,
-            rarity = it.rarity or 2,
-            source = "Shop",
-            name = it.name,
+            rarity = tonumber(it.rarity) or
+                (shopStatic and tonumber(shopStatic.rarity)) or 0,
+            source = (shopStatic and shopStatic.sourceText) or "Shop",
+            name = it.name or (shopStatic and shopStatic.name),
             icon = nil, -- resolved below
 
             -- ShopModule/ShopUI expected schema
             id = shopId,
             itemType = legacyItemType,
-            costTokens = it.costTokens or it.priceTokens or it.cost_tokens or it.price_tokens or 0,
-            costEmblems = it.costEmblems or it.priceEmblems or it.cost_emblems or it.price_emblems or 0,
-            isFeatured = (it.isFeatured ~= nil and it.isFeatured) or (it.featured ~= nil and it.featured) or false,
+            costTokens = it.costTokens or it.priceTokens or it.cost_tokens or it.price_tokens or
+                (shopStatic and shopStatic.priceTokens) or 0,
+            costEmblems = it.costEmblems or it.priceEmblems or it.cost_emblems or it.price_emblems or
+                (shopStatic and shopStatic.priceEmblems) or 0,
+            isFeatured = (it.isFeatured ~= nil and it.isFeatured) or
+                featured or false,
             purchased = it.purchased or it.owned or false,
             purchaseCount = it.purchaseCount or it.purchase_count or 0,
             maxPurchases = it.maxPurchases or it.max_purchases,
-            description = it.description,
+            description = it.description or (shopStatic and shopStatic.sourceText),
         }
+
+        if shopStatic then
+            card.itemId = card.itemId or shopStatic.itemId
+            card.spellId = card.spellId or shopStatic.spellId
+            card.appearanceId = card.appearanceId or shopStatic.appearanceId
+            card.displayId = card.displayId or shopStatic.displayId
+            card.creatureId = card.creatureId or shopStatic.creatureId
+            if (not card.name or card.name == "") and shopStatic.name then
+                card.name = shopStatic.name
+            end
+            if (not card.rarity or card.rarity <= 0) and shopStatic.rarity then
+                card.rarity = tonumber(shopStatic.rarity) or card.rarity
+            end
+            if shopStatic.icon then
+                local staticIcon = NormalizeShopIcon(shopStatic.icon)
+                if staticIcon then
+                    card.icon = staticIcon
+                end
+            end
+        end
 
         -- Fill missing identifiers from definitions when available.
         if definition then
@@ -2817,6 +3131,9 @@ function DC:HandleShopData(data)
         -- Final fallbacks
         card.icon = NormalizeShopIcon(card.icon) or "Interface\\Icons\\INV_Misc_QuestionMark"
         card.name = card.name or "Shop Item"
+        if not card.rarity or card.rarity <= 0 then
+            card.rarity = 2
+        end
 
         if typeName == "mounts" and ((not card.itemId) or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark") then
             needsMountDefinitions = true
@@ -3591,37 +3908,82 @@ end
 function DC:HandleCollectedAppearances(data)
     local appearances = data.appearances
     local items = data.items
+    local syncVersion = tonumber(data.syncVersion or data.version)
 
-    self.collectedAppearances = {}
+    if syncVersion ~= nil and type(self._SetTransmogOwnedSyncVersion) == "function" then
+        self:_SetTransmogOwnedSyncVersion(syncVersion)
+    end
 
-    -- Preferred field: appearances = { displayId, ... }
-    if type(appearances) == "table" and #appearances > 0 then
-        for _, displayId in ipairs(appearances) do
-            self.collectedAppearances[displayId] = true
+    if data and (data.upToDate == true or data.up_to_date == true) then
+        self.collections = self.collections or {}
+        self.collections.transmog = self.collections.transmog or {}
+        self.collectedAppearances = self.collectedAppearances or {}
+
+        if self._pendingCollectionHash then
+            self.collectionHash = self._pendingCollectionHash
+            self._pendingCollectionHash = nil
         end
-        self:Debug(string.format("Received %d collected appearances", #appearances))
-    elseif type(items) == "table" and #items > 0 then
-        -- Backwards/alternate schema: items = { itemId, ... }
-        -- Try to map itemId -> displayId using Wardrobe helper when available.
-        local mapped = 0
-        if DC.Wardrobe and type(DC.Wardrobe.GetAppearanceDisplayIdForItemId) == "function" then
-            for _, itemId in ipairs(items) do
-                local displayId = DC.Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
-                if displayId then
-                    self.collectedAppearances[displayId] = true
-                    mapped = mapped + 1
-                end
-            end
-        else
-            -- Fallback: treat numbers as displayIds to avoid hard-failing.
-            for _, v in ipairs(items) do
-                self.collectedAppearances[v] = true
-                mapped = mapped + 1
-            end
+
+        self:_MarkInflight("req:coll:transmog", nil)
+        if type(self._syncProgress) == "table" then
+            self:CompleteSyncProgressStep("coll:transmog", "collection: transmog")
         end
-        self:Debug(string.format("Received collected appearances via items (mapped %d)", mapped))
+
+        self:Debug("Collected appearances are up to date")
+
+        if self.callbacks.onCollectedAppearances then
+            self.callbacks.onCollectedAppearances(self.collectedAppearances)
+        end
+        return
+    end
+
+    local authoritative, count, mode = BuildCollectedAppearancesCollection(self,
+        appearances, items)
+
+    if type(self.SetCollection) == "function" then
+        self:SetCollection("transmog", authoritative)
+    else
+        self.collections = self.collections or {}
+        self.collections.transmog = authoritative
+    end
+
+    if type(self._SyncCollectedAppearancesFromCollection) == "function" then
+        self:_SyncCollectedAppearancesFromCollection(authoritative)
+    end
+
+    if self._pendingCollectionHash then
+        self.collectionHash = self._pendingCollectionHash
+        self._pendingCollectionHash = nil
+    end
+
+    self:_MarkInflight("req:coll:transmog", nil)
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("coll:transmog", "collection: transmog")
+    end
+
+    if mode == "appearances" then
+        self:Debug(string.format("Received %d collected appearances", count))
+    elseif mode == "items" then
+        self:Debug(string.format("Received collected appearances via items (mapped %d)", count))
     else
         self:Debug("Received 0 collected appearances")
+    end
+
+    if self.MainFrame and self.MainFrame:IsShown() then
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
+    end
+
+    if self.Wardrobe and self.Wardrobe.frame and self.Wardrobe.frame:IsShown() and
+       type(self.Wardrobe.RefreshGrid) == "function" then
+        self.Wardrobe:RefreshGrid()
+    end
+
+    if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
+        self.Wardrobe:InvalidateRandomizerCache()
     end
     
     -- Fire callback
@@ -4153,6 +4515,11 @@ function DC:HandleCollection(data)
     else
         self:CacheMergeCollection(collType, items)
     end
+
+    if collType == "transmog" and type(self._SyncCollectedAppearancesFromCollection) == "function" then
+        self:_SyncCollectedAppearancesFromCollection(
+            self.collections and self.collections.transmog or items)
+    end
     -- Cache will be saved by auto-save timer or on logout
 
     -- Release inflight guard for this type.
@@ -4475,6 +4842,11 @@ function DC:HandleNewItem(data)
     
     -- Add to cache
     self:CacheAddItem(collType, itemId, itemData)
+
+    if collType == "transmog" then
+        self.collectedAppearances = self.collectedAppearances or {}
+        self.collectedAppearances[itemId] = true
+    end
     
     -- Show notification
     if self:GetSetting("showNewItemToast") then
@@ -4753,7 +5125,6 @@ function DC:OnMsg_ItemSets(data)
     end
 
     self:Debug("Received " .. count .. " item sets definitions.")
-    if DC.Print then DC:Print("[PROTOCOL] Cached " .. count .. " item sets.") end
     
     -- Paging support: request remaining pages.
     -- If the server ignores paging and keeps returning the same page, stop to prevent infinite loops.
@@ -4803,6 +5174,14 @@ function DC:OnMsg_ItemSets(data)
     if self._pendingSyncVersions and self._pendingSyncVersions.itemsets ~= nil and type(self.SetSyncVersion) == "function" then
         self:SetSyncVersion("itemsets", self._pendingSyncVersions.itemsets)
         self._pendingSyncVersions.itemsets = nil
+    end
+
+    if DC.Print then
+        local totalCached = 0
+        for _ in pairs(DC.definitions.itemsets or {}) do
+            totalCached = totalCached + 1
+        end
+        DC:Print("[PROTOCOL] Cached " .. totalCached .. " item sets.")
     end
 
     -- Trigger UI update if Wardrobe is loaded

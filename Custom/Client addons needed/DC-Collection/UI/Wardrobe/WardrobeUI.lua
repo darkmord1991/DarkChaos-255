@@ -13,11 +13,12 @@ local Wardrobe = DC.Wardrobe
 
 local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.78
+local DEFAULT_WARDROBE_Y_OFFSET = 40
 
 local function GetLeftPanelWidth(modelWidth, slotSize)
     local slotColumnWidth = slotSize + 10
     local modelLayoutWidth = slotColumnWidth + modelWidth + slotColumnWidth + 40
-    local topButtonBarWidth = 110 + 120 + 110 + 125 + (3 * 3)
+    local topButtonBarWidth = 110 + 120 + 110 + (2 * 3)
     return math.max(modelLayoutWidth, topButtonBarWidth)
 end
 
@@ -108,7 +109,8 @@ function Wardrobe:CreateFrame()
 
     local frame = CreateFrame("Frame", "DCWardrobeFrame", UIParent)
     frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-    frame:SetPoint("CENTER")
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0,
+        DEFAULT_WARDROBE_Y_OFFSET)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
@@ -232,7 +234,8 @@ function Wardrobe:SetEmbeddedMode(isEmbedded, host)
     else
         frame:SetParent(UIParent)
         frame:ClearAllPoints()
-        frame:SetPoint("CENTER")
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0,
+            DEFAULT_WARDROBE_Y_OFFSET)
         frame:SetSize(self.FRAME_WIDTH, self.FRAME_HEIGHT)
 
         frame:SetMovable(true)
@@ -299,13 +302,18 @@ function Wardrobe:_ApplyEmbeddedLayout()
     local bottomBarHeight = 50
     local previewWidth = 280  -- Larger preview area to match bigger tooltip preview
     local leftPanelWidth = GetLeftPanelWidth(self.MODEL_WIDTH, self.SLOT_SIZE)
+    local usesPreviewSidebar = (self.currentTab == nil or self.currentTab == "items")
 
-    -- Right-side reserved area for tooltip/model preview.
-    previewHost:ClearAllPoints()
-    previewHost:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insetX, -topInset)
-    previewHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, bottomInset)
-    previewHost:SetWidth(previewWidth)
-    previewHost:Show()
+    if usesPreviewSidebar then
+        -- Right-side reserved area for tooltip/model preview.
+        previewHost:ClearAllPoints()
+        previewHost:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insetX, -topInset)
+        previewHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, bottomInset)
+        previewHost:SetWidth(previewWidth)
+        previewHost:Show()
+    else
+        previewHost:Hide()
+    end
 
     -- Left panel: slots + model + slots arrangement
     left:ClearAllPoints()
@@ -322,7 +330,11 @@ function Wardrobe:_ApplyEmbeddedLayout()
     -- Right panel: fill the space between left panel and preview host.
     right:ClearAllPoints()
     right:SetPoint("TOPLEFT", left, "TOPRIGHT", gap, 0)
-    right:SetPoint("BOTTOMRIGHT", previewHost, "BOTTOMLEFT", -gap, 0)
+    if usesPreviewSidebar then
+        right:SetPoint("BOTTOMRIGHT", previewHost, "BOTTOMLEFT", -gap, 0)
+    else
+        right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, bottomInset)
+    end
 
     -- Move Preview Toggle to Bottom Right (near page controls)
     if previewModeFrame then
@@ -338,12 +350,18 @@ function Wardrobe:_ApplyEmbeddedLayout()
         frame.pageFrame:SetPoint("TOPLEFT", frame.gridContainer, "BOTTOMLEFT", 0, -2)
     end
 
+    if frame.RefreshOutfitGridAnchors then
+        frame.RefreshOutfitGridAnchors()
+    end
+
     -- If the tooltip preview already exists, re-parent + re-anchor it.
-    if self.tooltipPreview and self.tooltipPreview.SetParent then
+    if usesPreviewSidebar and self.tooltipPreview and self.tooltipPreview.SetParent then
         self.tooltipPreview:SetParent(previewHost)
         self.tooltipPreview:ClearAllPoints()
         -- Bottom of preview host for embedded mode
         self.tooltipPreview:SetPoint("BOTTOM", previewHost, "BOTTOM", 0, 10)
+    elseif self.tooltipPreview then
+        self.tooltipPreview:Hide()
     end
 end
 
@@ -388,6 +406,10 @@ function Wardrobe:_ApplyStandaloneLayout()
         previewModeFrame:SetParent(right)
         previewModeFrame:ClearAllPoints()
         previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -45)
+    end
+
+    if frame.RefreshOutfitGridAnchors then
+        frame.RefreshOutfitGridAnchors()
     end
 
     if self.tooltipPreview and self.tooltipPreview.SetParent then
@@ -570,43 +592,7 @@ function Wardrobe:CreateLeftPanel(parent)
         Wardrobe:UpdateModel()
     end)
     parent.targetBtn = targetBtn
-
-    local refreshBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
-    refreshBtn:SetSize(125, 20)
-    refreshBtn:SetPoint("LEFT", targetBtn, "RIGHT", 3, 0)
-    refreshBtn:SetText("Refresh Data")
-    refreshBtn:SetScript("OnClick", function(self)
-        -- If we're actively refreshing transmog definitions, this button always acts as Cancel.
-        if Wardrobe.isRefreshing then
-            Wardrobe:CancelRefresh()
-            return
-        end
-
-        local tab = Wardrobe.currentTab or "items"
-        if tab == "outfits" then
-            local ITEMS_PER_PAGE = 6
-            local page = tonumber(Wardrobe.currentPage) or 1
-            local offset = (page - 1) * ITEMS_PER_PAGE
-            if DC and DC.Protocol and DC.Protocol.RequestSavedOutfitsPage then
-                DC.Protocol:RequestSavedOutfitsPage(offset, ITEMS_PER_PAGE)
-            elseif DC and DC.Protocol and DC.Protocol.RequestSavedOutfits then
-                DC.Protocol:RequestSavedOutfits()
-            end
-            return
-        elseif tab == "community" then
-            -- Community UI currently expects a 50-row window and paginates locally.
-            local page = tonumber(Wardrobe.communityPage) or 1
-            local offset = (page - 1) * 6
-            if DC and DC.RequestCommunityList then
-                DC:RequestCommunityList(offset, 50, "all", "newest")
-            end
-            return
-        end
-
-        -- Default behavior: refresh transmog definitions.
-        Wardrobe:RefreshTransmogDefinitions()
-    end)
-    parent.refreshBtn = refreshBtn
+    parent.refreshBtn = nil
     
     -- Add loading text below buttons
     local refreshStatus = left:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1340,64 +1326,77 @@ function Wardrobe:CreateRightPanel(parent)
 
     parent.gridFrame = gridFrame
 
-    local pageFrame = CreateFrame("Frame", nil, right)
-    pageFrame:ClearAllPoints()
-    pageFrame:SetPoint("BOTTOM", right, "BOTTOM", 0, -45)
-    pageFrame:SetSize(260, 25)
-    -- Ensure controls draw above the grid background
-    pageFrame:SetFrameStrata("HIGH")
-    pageFrame:SetFrameLevel(gridContainer:GetFrameLevel() + 10)
-    parent.pageFrame = pageFrame
-
-    parent.pageText = pageFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    parent.pageText:SetPoint("CENTER", pageFrame, "CENTER", 0, 0)
-    parent.pageText:SetText("Page 1 / 1")
-
-    parent.prevBtn = CreateFrame("Button", nil, pageFrame)
-    parent.prevBtn:SetSize(24, 24)
-    parent.prevBtn:SetPoint("RIGHT", parent.pageText, "LEFT", -5, 0)
-    parent.prevBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
-    parent.prevBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
-    parent.prevBtn:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
-    parent.prevBtn:SetScript("OnClick", function()
-        if Wardrobe.currentPage > 1 then
-            Wardrobe.currentPage = Wardrobe.currentPage - 1
-            if Wardrobe.currentTab == "sets" then
-                Wardrobe:RefreshSetsGrid()
-            elseif Wardrobe.currentTab == "outfits" then
-                Wardrobe:RefreshOutfitsGrid()
-            elseif Wardrobe.currentTab == "community" then
-                if Wardrobe.RefreshCommunityGrid then
-                    Wardrobe:RefreshCommunityGrid()
+    parent.pageFrame = DC:CreateCenteredPagerFrame(right, {
+        point = "BOTTOM",
+        relativeTo = right,
+        relativePoint = "BOTTOM",
+        xOffset = 0,
+        yOffset = -45,
+        width = 260,
+        height = 25,
+        pagerWidth = 260,
+        pagerHeight = 24,
+        buttonWidth = 24,
+        buttonHeight = 24,
+        buttonLayout = "adjacent",
+        buttonGap = 5,
+        prevText = false,
+        nextText = false,
+        pageText = "Page 1 / 1",
+        frameStrata = "HIGH",
+        frameLevel = gridContainer:GetFrameLevel() + 10,
+        onPrev = function()
+            if Wardrobe.currentPage > 1 then
+                Wardrobe.currentPage = Wardrobe.currentPage - 1
+                if Wardrobe.currentTab == "sets" then
+                    Wardrobe:RefreshSetsGrid()
+                elseif Wardrobe.currentTab == "outfits" then
+                    Wardrobe:RefreshOutfitsGrid()
+                elseif Wardrobe.currentTab == "community" then
+                    if Wardrobe.RefreshCommunityGrid then
+                        Wardrobe:RefreshCommunityGrid()
+                    end
+                else
+                    Wardrobe:RefreshGrid()
                 end
-            else
-                Wardrobe:RefreshGrid()
             end
-        end
-    end)
-
-    parent.nextBtn = CreateFrame("Button", nil, pageFrame)
-    parent.nextBtn:SetSize(24, 24)
-    parent.nextBtn:SetPoint("LEFT", parent.pageText, "RIGHT", 5, 0)
-    parent.nextBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
-    parent.nextBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
-    parent.nextBtn:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
-    parent.nextBtn:SetScript("OnClick", function()
-        if Wardrobe.currentPage < Wardrobe.totalPages then
-            Wardrobe.currentPage = Wardrobe.currentPage + 1
-            if Wardrobe.currentTab == "sets" then
-                Wardrobe:RefreshSetsGrid()
-            elseif Wardrobe.currentTab == "outfits" then
-                Wardrobe:RefreshOutfitsGrid()
-            elseif Wardrobe.currentTab == "community" then
-                if Wardrobe.RefreshCommunityGrid then
-                    Wardrobe:RefreshCommunityGrid()
+        end,
+        onNext = function()
+            if Wardrobe.currentPage < Wardrobe.totalPages then
+                Wardrobe.currentPage = Wardrobe.currentPage + 1
+                if Wardrobe.currentTab == "sets" then
+                    Wardrobe:RefreshSetsGrid()
+                elseif Wardrobe.currentTab == "outfits" then
+                    Wardrobe:RefreshOutfitsGrid()
+                elseif Wardrobe.currentTab == "community" then
+                    if Wardrobe.RefreshCommunityGrid then
+                        Wardrobe:RefreshCommunityGrid()
+                    end
+                else
+                    Wardrobe:RefreshGrid()
                 end
-            else
-                Wardrobe:RefreshGrid()
             end
-        end
-    end)
+        end,
+        configurePrevButton = function(button)
+            button:SetNormalTexture(
+                "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+            button:SetPushedTexture(
+                "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
+            button:SetDisabledTexture(
+                "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
+        end,
+        configureNextButton = function(button)
+            button:SetNormalTexture(
+                "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+            button:SetPushedTexture(
+                "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
+            button:SetDisabledTexture(
+                "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
+        end,
+    })
+    parent.pageText = parent.pageFrame.pageText
+    parent.prevBtn = parent.pageFrame.prevBtn
+    parent.nextBtn = parent.pageFrame.nextBtn
 
     self:CreateOutfitsGrid(parent, right)
 
@@ -1407,58 +1406,77 @@ end
 function Wardrobe:CreateOutfitsGrid(root, rightPanel)
     local OUTFIT_COLS = 3
     local OUTFIT_ROWS = 2
-    local OUTFIT_WIDTH = 165    -- Reduced from 200 to fit container
-    local OUTFIT_HEIGHT = 175   -- Reduced from 200
-    local GAP_X = 10            -- Reduced from 15
-    local GAP_Y = 10            -- Reduced from 15
+    local OUTFIT_WIDTH = 180
+    local OUTFIT_HEIGHT = 210
+    local GAP_X = 12
+    local GAP_Y = 12
+    local OUTFIT_MAX_SCALE = 1.55
 
     local container = CreateFrame("Frame", nil, rightPanel)
-    container:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 0, -25)  -- Adjusted per feedback (offset -25)
-    container:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", 0, 40) -- Leave space for pages/bottom bar
     if container.SetClipsChildren then
         container:SetClipsChildren(true)
     end
     container:Hide()
+
+    local function RefreshOutfitGridAnchors()
+        container:ClearAllPoints()
+
+        local topAnchor = root.tabButtons and root.tabButtons[1] or nil
+        if topAnchor then
+            container:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -8)
+        else
+            container:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 0, -34)
+        end
+
+        local bottomAnchor = root.previewModeFrame
+        if bottomAnchor and bottomAnchor.IsShown and bottomAnchor:IsShown() then
+            container:SetPoint("BOTTOMRIGHT", bottomAnchor, "TOPRIGHT", 0, 8)
+        else
+            container:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", 0, 0)
+        end
+    end
+
+    root.RefreshOutfitGridAnchors = RefreshOutfitGridAnchors
+    RefreshOutfitGridAnchors()
 
     -- Store on the main frame (root) to match how the rest of the Wardrobe code accesses widgets.
     root.outfitGridContainer = container
     root.outfitButtons = {}
 
     -- Dedicated outfits pager (Outfits tab only).
-    local pager = CreateFrame("Frame", nil, container)
-    pager:SetSize(200, 25)
-    pager:SetPoint("BOTTOM", container, "BOTTOM", 0, 8)
+    local pager = DC:CreateCenteredPagerFrame(container, {
+        point = "BOTTOM",
+        relativeTo = container,
+        relativePoint = "BOTTOM",
+        xOffset = 0,
+        yOffset = 4,
+        width = 200,
+        height = 25,
+        pagerWidth = 200,
+        pagerHeight = 22,
+        buttonTemplate = "UIPanelButtonTemplate",
+        buttonWidth = 50,
+        buttonHeight = 22,
+        pagerEdgePadding = 0,
+        pageText = "Page 1 / 1",
+        onPrev = function()
+            if Wardrobe.currentPage and Wardrobe.currentPage > 1 then
+                Wardrobe.currentPage = Wardrobe.currentPage - 1
+                Wardrobe:RefreshOutfitsGrid()
+            end
+        end,
+        onNext = function()
+            if Wardrobe.currentPage and Wardrobe.totalPages and Wardrobe.currentPage < Wardrobe.totalPages then
+                Wardrobe.currentPage = Wardrobe.currentPage + 1
+                Wardrobe:RefreshOutfitsGrid()
+            end
+        end,
+    })
     pager:Hide()
     root.outfitsPageFrame = pager
-
-    local prevBtn = CreateFrame("Button", nil, pager, "UIPanelButtonTemplate")
-    prevBtn:SetSize(50, 22)
-    prevBtn:SetPoint("LEFT", 0, 0)
-    prevBtn:SetText("<")
-    prevBtn:SetScript("OnClick", function()
-        if Wardrobe.currentPage and Wardrobe.currentPage > 1 then
-            Wardrobe.currentPage = Wardrobe.currentPage - 1
-            Wardrobe:RefreshOutfitsGrid()
-        end
-    end)
-    root.outfitsPrevBtn = prevBtn
-
-    local nextBtn = CreateFrame("Button", nil, pager, "UIPanelButtonTemplate")
-    nextBtn:SetSize(50, 22)
-    nextBtn:SetPoint("RIGHT", 0, 0)
-    nextBtn:SetText(">")
-    nextBtn:SetScript("OnClick", function()
-        if Wardrobe.currentPage and Wardrobe.totalPages and Wardrobe.currentPage < Wardrobe.totalPages then
-            Wardrobe.currentPage = Wardrobe.currentPage + 1
-            Wardrobe:RefreshOutfitsGrid()
-        end
-    end)
-    root.outfitsNextBtn = nextBtn
-
-    local pageText = pager:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pageText:SetPoint("CENTER", 0, 0)
-    pageText:SetText("Page 1 / 1")
-    root.outfitsPageText = pageText
+    root.outfitsPrevBtn = pager.prevBtn
+    root.outfitsNextBtn = pager.nextBtn
+    root.outfitsPageText = pager.pageText
 
     local function LayoutOutfitButtons()
         local w = container:GetWidth()
@@ -1477,16 +1495,18 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
         end
 
         -- Reserve space for the dedicated outfits pager at the bottom.
-        local pagerReserve = 40
-        local usableWidth = math.max(1, w - 2)
-        local usableHeight = math.max(1, h - pagerReserve)
+        local pagerReserve = 32
+        local sidePadding = 6
+        local topPadding = 2
+        local usableWidth = math.max(1, w - (sidePadding * 2))
+        local usableHeight = math.max(1, h - pagerReserve - topPadding)
 
         local baseLayoutWidth = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)
         local baseLayoutHeight = (OUTFIT_ROWS * OUTFIT_HEIGHT) + ((OUTFIT_ROWS - 1) * GAP_Y)
 
         local scaleW = usableWidth / baseLayoutWidth
         local scaleH = usableHeight / baseLayoutHeight
-        local scale = math.min(1, scaleW, scaleH)
+        local scale = math.min(OUTFIT_MAX_SCALE, scaleW, scaleH)
 
         local cardWidth = math.max(72, math.floor((OUTFIT_WIDTH * scale) + 0.5))
         local cardHeight = math.max(84, math.floor((OUTFIT_HEIGHT * scale) + 0.5))
@@ -1496,14 +1516,14 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
         local layoutWidth = (OUTFIT_COLS * cardWidth) + ((OUTFIT_COLS - 1) * gapX)
         local layoutHeight = (OUTFIT_ROWS * cardHeight) + ((OUTFIT_ROWS - 1) * gapY)
 
-        local startX = math.max(0, math.floor(((w - layoutWidth) / 2) + 0.5))
-        local topAreaHeight = math.max(1, h - pagerReserve)
-        local startY = 2 + math.max(0, math.floor(((topAreaHeight - layoutHeight) / 2) + 0.5))
+        local startX = sidePadding
+        local startY = topPadding
 
         local inset = math.max(3, math.floor((8 * scale) + 0.5))
         local titleTop = math.max(3, math.floor((8 * scale) + 0.5))
         local titleHeight = math.max(12, math.floor((20 * scale) + 0.5))
         local modelTopOffset = titleTop + titleHeight + math.max(2, math.floor((2 * scale) + 0.5))
+        local iconSize = math.max(64, math.floor((cardWidth * 0.38) + 0.5))
 
         for i, btn in ipairs(root.outfitButtons) do
             local row = math.floor((i - 1) / OUTFIT_COLS)
@@ -1521,8 +1541,12 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
             btn.model:ClearAllPoints()
             btn.model:SetPoint("TOPLEFT", inset, -modelTopOffset)
             btn.model:SetPoint("BOTTOMRIGHT", -inset, inset)
+
+            btn.icon:SetSize(iconSize, iconSize)
         end
     end
+
+    root.LayoutOutfitButtons = LayoutOutfitButtons
 
     for i = 1, (OUTFIT_COLS * OUTFIT_ROWS) do
         local btn = CreateFrame("Button", nil, container)

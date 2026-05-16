@@ -30,6 +30,130 @@ local LIST_WIDTH = 280
 local BUTTON_HEIGHT = 48
 local ITEMS_PER_PAGE = 12
 
+local PET_PREVIEW_VISUAL_FALLBACKS = {
+    -- Visual-only fallbacks for pet rows whose local source data still misses
+    -- or misstates preview metadata. These are validated against repo-local
+    -- world data or a same-name donor definition.
+    [4055] = {
+        creatureId = 32841,
+        displayId = 16189,
+    },
+    [7544] = {
+        creatureId = 9662,
+        displayId = 6294,
+    },
+    [10673] = {
+        creatureId = 9656,
+        displayId = 8909,
+    },
+    [15186] = {
+        creatureId = 15710,
+        displayId = 15671,
+    },
+    [33199] = {
+        creatureId = 32939,
+        displayId = 28397,
+    },
+    [34364] = {
+        creatureId = 29726,
+        displayId = 26452,
+    },
+    [34724] = {
+        creatureId = 38374,
+        displayId = 31073,
+    },
+    [36871] = {
+        creatureId = 32643,
+        displayId = 14273,
+    },
+    [39148] = {
+        creatureId = 24594,
+        displayId = 7046,
+    },
+}
+
+local function ToPositiveNumber(value)
+    local num = tonumber(value)
+    if num and num > 0 then
+        return num
+    end
+
+    return nil
+end
+
+local function GetPetPreviewFields(def)
+    if type(def) ~= "table" then
+        return nil, nil
+    end
+
+    local creatureId = ToPositiveNumber(
+        def.creatureId or def.creature_id or def.creatureEntry or
+        def.creature_entry or def.petEntry or def.pet_entry or
+        def.npcId or def.npc_id or def.entryId or def.entry_id)
+
+    local displayId = ToPositiveNumber(
+        def.displayId or def.displayID or def.display_id or
+        def.creatureDisplayId or def.creature_display_id or
+        def.modelId or def.model_id or
+        def.modelDisplayId or def.model_display_id)
+
+    return creatureId, displayId
+end
+
+local function NormalizePetPreviewName(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+
+    local trimmed = string.gsub(name, "^%s*(.-)%s*$", "%1")
+    if trimmed == "" then
+        return nil
+    end
+
+    return string.lower(trimmed)
+end
+
+local function FindDefinitionPreviewFallbackByName(petId, petName)
+    local defs = DC and DC.definitions and DC.definitions.pets
+    local wantedName = NormalizePetPreviewName(petName)
+    if type(defs) ~= "table" or not wantedName then
+        return nil
+    end
+
+    local targetId = ToPositiveNumber(petId)
+    local bestFallback = nil
+    local bestScore = -1
+
+    for otherId, otherDef in pairs(defs) do
+        local otherName = NormalizePetPreviewName(otherDef and otherDef.name)
+        local otherNumericId = ToPositiveNumber(otherId)
+        if otherName == wantedName and otherNumericId ~= targetId then
+            local creatureId, displayId = GetPetPreviewFields(otherDef)
+            local score = 0
+            if creatureId then
+                score = score + 2
+            end
+            if displayId then
+                score = score + 1
+            end
+
+            if score > bestScore then
+                bestFallback = {
+                    creatureId = creatureId,
+                    displayId = displayId,
+                }
+                bestScore = score
+            end
+        end
+    end
+
+    if bestScore <= 0 then
+        return nil
+    end
+
+    return bestFallback
+end
+
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
@@ -139,28 +263,20 @@ function PetJournal:CreatePetList(parent)
     listFrame.scrollFrame = scrollFrame
     listFrame.scrollChild = scrollChild
 
-    local pageFrame = CreateFrame("Frame", nil, listFrame)
-    pageFrame:SetPoint("BOTTOMLEFT", listFrame, "BOTTOMLEFT", 0, 5)
-    pageFrame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -25, 5)
-    pageFrame:SetHeight(25)
-
-    local prevBtn = CreateFrame("Button", nil, pageFrame, "UIPanelButtonTemplate")
-    prevBtn:SetSize(30, 20)
-    prevBtn:SetPoint("LEFT", pageFrame, "LEFT", 5, 0)
-    prevBtn:SetText("<")
-    prevBtn:SetScript("OnClick", function() PetJournal:PrevPage() end)
-    pageFrame.prevBtn = prevBtn
-
-    pageFrame.pageText = pageFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pageFrame.pageText:SetPoint("CENTER", pageFrame, "CENTER", 0, 0)
-    pageFrame.pageText:SetText("1/1")
-
-    local nextBtn = CreateFrame("Button", nil, pageFrame, "UIPanelButtonTemplate")
-    nextBtn:SetSize(30, 20)
-    nextBtn:SetPoint("RIGHT", pageFrame, "RIGHT", -5, 0)
-    nextBtn:SetText(">")
-    nextBtn:SetScript("OnClick", function() PetJournal:NextPage() end)
-    pageFrame.nextBtn = nextBtn
+    local pageFrame = DC:CreateCenteredPagerFrame(listFrame, {
+        leftInset = 0,
+        rightInset = 25,
+        bottomInset = 5,
+        height = 25,
+        pagerWidth = 110,
+        pagerHeight = 20,
+        buttonTemplate = "UIPanelButtonTemplate",
+        buttonWidth = 30,
+        buttonHeight = 20,
+        pageText = "1/1",
+        onPrev = function() PetJournal:PrevPage() end,
+        onNext = function() PetJournal:NextPage() end,
+    })
 
     -- Stats text (moved here from removed filter bar)
     listFrame.statsText = listFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -184,8 +300,9 @@ function PetJournal:CreateModelPreview(parent)
     bg:SetAllPoints()
     bg:SetTexture(0.05, 0.05, 0.1, 0.8)
 
-    -- 3D Model
-    local model = CreateFrame("PlayerModel", "DCPetJournalModel", modelFrame)
+    -- Use DressUpModel for parity with the mount journal and more reliable
+    -- creature/display preview rendering on 3.3.5a clients.
+    local model = CreateFrame("DressUpModel", "DCPetJournalModel", modelFrame)
     model:SetPoint("TOPLEFT", modelFrame, "TOPLEFT", 10, -60)
     model:SetPoint("BOTTOMRIGHT", modelFrame, "BOTTOMRIGHT", -10, 10)
 
@@ -674,26 +791,51 @@ function PetJournal:SelectPet(petData)
         if model.SetPosition then model:SetPosition(0, 0, 0) end
     end
 
-    local creatureId = def.creatureId or def.creature_id or def.creatureEntry
-                   or def.creature_entry or def.petEntry or def.pet_entry
-                   or def.npcId or def.npc_id or def.entryId or def.entry_id
-    if type(creatureId) == "string" then
-        creatureId = tonumber(creatureId)
+    local function HasLoadedModel()
+        if type(model.GetModel) ~= "function" then
+            return true
+        end
+
+        local currentModel = model:GetModel()
+        return currentModel ~= nil and currentModel ~= ""
     end
+
+    local creatureId = select(1, GetPetPreviewFields(def))
 
     -- Many datasets store only a CreatureDisplayInfoID (displayId).
     -- Prefer SetDisplayInfo when available and keep SetCreature as compatibility fallback.
-    local displayId = def.displayId or def.displayID or def.display_id
-                   or def.creatureDisplayId or def.creature_display_id
-                   or def.modelId or def.model_id
-                   or def.modelDisplayId or def.model_display_id
-    if type(displayId) == "string" then
-        displayId = tonumber(displayId)
-    end
+    local displayId = select(2, GetPetPreviewFields(def))
 
     local spellId = def.spellId or def.spell_id
     if type(spellId) == "string" then
         spellId = tonumber(spellId)
+    end
+
+    local fallbackKey = ToPositiveNumber(petData.id) or
+        ToPositiveNumber(def.itemId or def.item_id)
+    local explicitFallback = PET_PREVIEW_VISUAL_FALLBACKS[fallbackKey]
+    local donorFallback = FindDefinitionPreviewFallbackByName(
+        petData.id,
+        petData.name or def.name)
+    local previewFallback = nil
+    if explicitFallback or donorFallback then
+        previewFallback = {
+            creatureId = ToPositiveNumber(explicitFallback and explicitFallback.creatureId) or
+                ToPositiveNumber(donorFallback and donorFallback.creatureId),
+            displayId = ToPositiveNumber(explicitFallback and explicitFallback.displayId) or
+                ToPositiveNumber(donorFallback and donorFallback.displayId),
+        }
+    end
+    local resolvedDisplayId = displayId
+    if (not resolvedDisplayId or resolvedDisplayId <= 0) and
+       type(previewFallback) == "table" then
+        resolvedDisplayId = tonumber(previewFallback.displayId)
+    end
+
+    local resolvedDefinitionCreatureId = creatureId
+    if (not resolvedDefinitionCreatureId or resolvedDefinitionCreatureId <= 0) and
+       type(previewFallback) == "table" then
+        resolvedDefinitionCreatureId = tonumber(previewFallback.creatureId)
     end
 
     local function FindCollectedCompanionCreatureIdBySpellId(sId)
@@ -728,9 +870,10 @@ function PetJournal:SelectPet(petData)
     end
 
     -- Priority rules:
-    -- 1) If collected, prefer Blizzard creatureID from companion list.
-    -- 2) For not-collected entries, prefer definition displayId via SetDisplayInfo.
-    -- 3) Keep definition creatureId as a last-ditch fallback.
+    -- 1) Prefer creature/template ids when available; this matches the mount
+    --    preview path and frames critter models more reliably than SetDisplayInfo.
+    -- 2) Keep displayId as a fallback for rows that do not have a usable
+    --    creature/template id.
     local resolvedCompanionCreatureId = nil
     if petData.collected then
         resolvedCompanionCreatureId = FindCollectedCompanionCreatureIdBySpellId(spellId)
@@ -744,8 +887,8 @@ function PetJournal:SelectPet(petData)
     local fallbackCreatureId = nil
     if resolvedCompanionCreatureId and resolvedCompanionCreatureId > 0 then
         fallbackCreatureId = resolvedCompanionCreatureId
-    elseif creatureId and creatureId > 0 then
-        fallbackCreatureId = creatureId
+    elseif resolvedDefinitionCreatureId and resolvedDefinitionCreatureId > 0 then
+        fallbackCreatureId = resolvedDefinitionCreatureId
     end
 
     local function TrySetCreature(modelId)
@@ -776,28 +919,65 @@ function PetJournal:SelectPet(petData)
         return false
     end
 
-    model:ClearModel()
+    if type(model.ClearModel) == "function" then
+        model:ClearModel()
+    end
     local modelShown = false
 
-    -- Collected pets: companion creature IDs from the client list are most reliable.
-    if petData.collected and resolvedCompanionCreatureId and resolvedCompanionCreatureId > 0 then
-        modelShown = TrySetCreature(resolvedCompanionCreatureId)
+    -- Prefer creature path first; some critter displayIds report success while
+    -- still rendering off-camera or invisible on 3.3.5a clients.
+    if fallbackCreatureId and fallbackCreatureId > 0 then
+        modelShown = TrySetCreature(fallbackCreatureId)
     end
 
-    -- Not-collected pets often only have displayId in definitions.
-    if not modelShown and displayId and displayId > 0 then
-        -- Prefer SetDisplayInfo when available (same pattern as mount preview).
-        modelShown = TrySetDisplay(displayId)
+    if not modelShown and resolvedDisplayId and resolvedDisplayId > 0 then
+        modelShown = TrySetDisplay(resolvedDisplayId)
 
         -- Some clients support only SetCreature for display-like IDs.
         if not modelShown then
-            modelShown = TrySetCreature(displayId)
+            modelShown = TrySetCreature(resolvedDisplayId)
         end
     end
 
-    -- Final fallback to creature/template id from definition.
-    if not modelShown and fallbackCreatureId and fallbackCreatureId > 0 then
-        modelShown = TrySetCreature(fallbackCreatureId)
+    local verifyToken = (self._modelVerifyToken or 0) + 1
+    self._modelVerifyToken = verifyToken
+
+    local function VerifyModelLoaded()
+        if self._modelVerifyToken ~= verifyToken then
+            return
+        end
+
+        if self.selectedPet ~= petData then
+            return
+        end
+
+        if HasLoadedModel() then
+            return
+        end
+
+        local recovered = false
+
+        if fallbackCreatureId and fallbackCreatureId > 0 then
+            recovered = TrySetCreature(fallbackCreatureId)
+        end
+
+        if not recovered and resolvedDisplayId and resolvedDisplayId > 0 then
+            recovered = TrySetDisplay(resolvedDisplayId)
+            if not recovered then
+                recovered = TrySetCreature(resolvedDisplayId)
+            end
+        end
+
+        if not recovered and type(model.SetUnit) == "function" then
+            model:SetUnit("player")
+            ResetModelPose()
+        end
+    end
+
+    if DC and type(DC.After) == "function" then
+        DC.After(0.12, VerifyModelLoaded)
+    else
+        VerifyModelLoaded()
     end
 
     local summonBtn = self.frame.actionBar.summonBtn

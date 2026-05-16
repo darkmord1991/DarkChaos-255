@@ -328,28 +328,20 @@ function MountJournal:CreateMountList(parent)
     listFrame.scrollChild = scrollChild
 
     -- Page navigation
-    local pageFrame = CreateFrame("Frame", nil, listFrame)
-    pageFrame:SetPoint("BOTTOMLEFT", listFrame, "BOTTOMLEFT", 0, 5)
-    pageFrame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -25, 5)
-    pageFrame:SetHeight(25)
-
-    local prevBtn = CreateFrame("Button", nil, pageFrame, "UIPanelButtonTemplate")
-    prevBtn:SetSize(30, 20)
-    prevBtn:SetPoint("LEFT", pageFrame, "LEFT", 5, 0)
-    prevBtn:SetText("<")
-    prevBtn:SetScript("OnClick", function() MountJournal:PrevPage() end)
-    pageFrame.prevBtn = prevBtn
-
-    pageFrame.pageText = pageFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pageFrame.pageText:SetPoint("CENTER", pageFrame, "CENTER", 0, 0)
-    pageFrame.pageText:SetText("1/1")
-
-    local nextBtn = CreateFrame("Button", nil, pageFrame, "UIPanelButtonTemplate")
-    nextBtn:SetSize(30, 20)
-    nextBtn:SetPoint("RIGHT", pageFrame, "RIGHT", -5, 0)
-    nextBtn:SetText(">")
-    nextBtn:SetScript("OnClick", function() MountJournal:NextPage() end)
-    pageFrame.nextBtn = nextBtn
+    local pageFrame = DC:CreateCenteredPagerFrame(listFrame, {
+        leftInset = 0,
+        rightInset = 25,
+        bottomInset = 5,
+        height = 25,
+        pagerWidth = 110,
+        pagerHeight = 20,
+        buttonTemplate = "UIPanelButtonTemplate",
+        buttonWidth = 30,
+        buttonHeight = 20,
+        pageText = "1/1",
+        onPrev = function() MountJournal:PrevPage() end,
+        onNext = function() MountJournal:NextPage() end,
+    })
 
     listFrame.pageFrame = pageFrame
     parent.listFrame = listFrame

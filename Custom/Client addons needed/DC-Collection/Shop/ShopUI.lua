@@ -94,17 +94,31 @@ local function NormalizeShopPreviewType(item)
     return nil
 end
 
+local function GetSharedCollectionType(previewType)
+    if previewType == "mount" then
+        return "mounts"
+    elseif previewType == "pet" then
+        return "pets"
+    elseif previewType == "heirloom" then
+        return "heirlooms"
+    elseif previewType == "transmog" then
+        return "transmog"
+    elseif previewType == "title" then
+        return "titles"
+    end
+
+    return nil
+end
+
 local function ResolveShopItemIcon(item, rawIcon)
     if type(item) ~= "table" then
         return "Interface\\Icons\\INV_Misc_QuestionMark"
     end
 
     local icon = DC:NormalizeTexturePath(rawIcon, nil)
-    if IsNumericIconPath(icon) then
-        icon = nil
-    end
 
     local previewType = NormalizeShopPreviewType(item)
+    local sharedType = GetSharedCollectionType(previewType)
     local definition = item.definition
 
     if (not definition) and type(DC.GetDefinition) == "function" then
@@ -152,6 +166,15 @@ local function ResolveShopItemIcon(item, rawIcon)
         itemId = tonumber(item.entryId or item.entry_id or item.entry)
     end
 
+    if sharedType and type(DC.ResolveDefinitionIcon) == "function" then
+        local resolveId = spellId or itemId or tonumber(item.entryId or item.entry_id or item.entry)
+        local resolved = DC:ResolveDefinitionIcon(sharedType, resolveId, definition)
+        resolved = DC:NormalizeTexturePath(resolved, nil)
+        if type(resolved) == "string" and resolved ~= "" then
+            return resolved
+        end
+    end
+
     if (previewType == "mount" or previewType == "pet") and (not icon or icon == "") then
         if spellId and type(GetSpellTexture) == "function" then
             icon = GetSpellTexture(spellId)
@@ -172,10 +195,6 @@ local function ResolveShopItemIcon(item, rawIcon)
     end
 
     local finalIcon = DC:NormalizeTexturePath(icon, nil)
-    if IsNumericIconPath(finalIcon) then
-        finalIcon = nil
-    end
-
     return finalIcon or "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
@@ -291,12 +310,13 @@ function DC:CreateShopUI()
     filterFrame:SetSize(300, 30)
     frame.filterFrame = filterFrame
     
-    local filterButtons = {
-        { key = "all",    text = L["FILTER_ALL"] or "All" },
-        { key = "bonus",  text = L["SHOP_TYPE_BONUS"] or "Bonuses" },
-        { key = "mount",  text = L["SHOP_TYPE_MOUNT"] or "Mounts" },
-        { key = "pet",    text = L["SHOP_TYPE_PET"] or "Pets" },
-    }
+    local filterButtons = (type(DC.GetShopFilterButtons) == "function" and
+        DC:GetShopFilterButtons()) or {
+            { key = "all",   text = L["FILTER_ALL"] or "All" },
+            { key = "bonus", text = L["SHOP_TYPE_BONUS"] or "Bonuses" },
+            { key = "mount", text = L["SHOP_TYPE_MOUNT"] or "Mounts" },
+            { key = "pet",   text = L["SHOP_TYPE_PET"] or "Pets" },
+        }
     
     frame.filterButtons = {}
     local xOffset = 0
@@ -400,38 +420,36 @@ function DC:CreateShopUI()
     frame.historyEmptyText = historyEmptyText
     
     -- Page navigation
-    local navFrame = CreateFrame("Frame", nil, frame)
-    navFrame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 5, 5)
-    navFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -5, 5)
-    navFrame:SetHeight(25)
-    
-    local prevBtn = CreateFrame("Button", nil, navFrame, "UIPanelButtonTemplate")
-    prevBtn:SetSize(60, 22)
-    prevBtn:SetPoint("LEFT", navFrame, "LEFT", 0, 0)
-    prevBtn:SetText("<")
-    prevBtn:SetScript("OnClick", function()
-        DC:ShopPrevPage()
-    end)
-    frame.prevBtn = prevBtn
-    
-    local pageText = navFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pageText:SetPoint("CENTER", navFrame, "CENTER", 0, 0)
-    pageText:SetText("Page 1 of 1")
-    frame.pageText = pageText
-    
-    local nextBtn = CreateFrame("Button", nil, navFrame, "UIPanelButtonTemplate")
-    nextBtn:SetSize(60, 22)
-    nextBtn:SetPoint("RIGHT", navFrame, "RIGHT", 0, 0)
-    nextBtn:SetText(">")
-    nextBtn:SetScript("OnClick", function()
-        DC:ShopNextPage()
-    end)
-    frame.nextBtn = nextBtn
+    local navFrame = DC:CreateCenteredPagerFrame(frame, {
+        leftInset = 5,
+        rightInset = 5,
+        bottomInset = 5,
+        height = 25,
+        leftGroupWidth = 90,
+        pagerWidth = 210,
+        pagerHeight = 22,
+        buttonTemplate = "UIPanelButtonTemplate",
+        buttonWidth = 60,
+        buttonHeight = 22,
+        pagerEdgePadding = 0,
+        pageText = "Page 1 of 1",
+        onPrev = function()
+            DC:ShopPrevPage()
+        end,
+        onNext = function()
+            DC:ShopNextPage()
+        end,
+    })
+    frame.navFrame = navFrame
+    frame.pagerFrame = navFrame.pager
+    frame.prevBtn = navFrame.prevBtn
+    frame.pageText = navFrame.pageText
+    frame.nextBtn = navFrame.nextBtn
     
     -- Refresh button
     local refreshBtn = CreateFrame("Button", nil, navFrame, "UIPanelButtonTemplate")
     refreshBtn:SetSize(80, 22)
-    refreshBtn:SetPoint("RIGHT", nextBtn, "LEFT", -10, 0)
+    refreshBtn:SetPoint("LEFT", navFrame.leftGroup, "LEFT", 0, 0)
     refreshBtn:SetText(L["REFRESH"] or "Refresh")
     refreshBtn:SetScript("OnClick", function()
         if frame.activeView == "history" then
@@ -981,7 +999,10 @@ function DC:UpdateShopHistoryRow(row, entry)
         return
     end
 
-    row.icon:SetTexture(ResolveShopItemIcon(entry, entry.icon) or "Interface\\Icons\\INV_Misc_Note_01")
+    local resolvedIcon = ResolveShopItemIcon(entry, entry.icon) or
+        "Interface\\Icons\\INV_Misc_Note_01"
+    entry.icon = resolvedIcon
+    row.icon:SetTexture(resolvedIcon)
 
     local rarityColors = DC.RarityColors or {}
     local rarity = tonumber(entry.rarity) or 2
@@ -1018,7 +1039,9 @@ end
 function DC:UpdateShopItemFrame(frame, item)
     frame.itemData = item
 
-    frame.icon:SetTexture(ResolveShopItemIcon(item, item.icon))
+    local resolvedIcon = ResolveShopItemIcon(item, item.icon)
+    item.icon = resolvedIcon
+    frame.icon:SetTexture(resolvedIcon)
     
     -- Name with rarity color
     local rarityColors = DC.RarityColors or {}

@@ -55,21 +55,6 @@ local function ResolvePreviewItemId(rawId)
     end
 
     -- Try packed transmog definitions: itemId is field #9, itemIdsStr is field #12.
-    local packed = DC and DC._transmogDefinitions and DC._transmogDefinitions[n]
-    if type(packed) == "string" and DC and type(DC.ParsePackedTransmogDefinition) == "function" then
-        local _, _, _, _, _, _, _, _, defItemId, _, _, itemIdsStr = DC:ParsePackedTransmogDefinition(packed)
-        local resolved = tonumber(defItemId)
-        if resolved and resolved > 0 then
-            return resolved
-        end
-        if itemIdsStr and itemIdsStr ~= "" then
-            local first = tonumber((tostring(itemIdsStr):match("^(%d+)") or ""))
-            if first and first > 0 then
-                return first
-            end
-        end
-    end
-
     -- Try unpacked definition table.
     local def = DC and type(DC.GetDefinition) == "function" and DC:GetDefinition("transmog", n)
     if type(def) == "table" then
@@ -1150,12 +1135,6 @@ function Wardrobe:RandomizeOutfit()
 
         local function GetAppearanceType(displayId)
             if not displayId then return nil, nil, nil end
-            local packed = DC and DC._transmogDefinitions and DC._transmogDefinitions[displayId]
-            if type(packed) == "string" and DC and type(DC.ParsePackedTransmogDefinition) == "function" then
-                local _, _, _, _, pInvType, pClass, pSubClass = DC:ParsePackedTransmogDefinition(packed)
-                return tonumber(pInvType) or nil, tonumber(pClass) or nil, tonumber(pSubClass) or nil
-            end
-
             local def = DC and type(DC.GetDefinition) == "function" and DC:GetDefinition("transmog", displayId)
             if type(def) == "table" then
                 return tonumber(def.inventoryType), tonumber(def.class), tonumber(def.subclass)
@@ -1375,7 +1354,7 @@ function Wardrobe:RefreshOutfitsGrid()
     end
 
     local outfits = DC.db and DC.db.outfits or {}
-    local ITEMS_PER_PAGE = 6 -- 3x2 grid
+    local ITEMS_PER_PAGE = math.max(1, buttons and #buttons or 6)
 
     self.currentPage = self.currentPage or 1
     local wantOffset = (self.currentPage - 1) * ITEMS_PER_PAGE
@@ -1442,6 +1421,10 @@ function Wardrobe:RefreshOutfitsGrid()
 
     if self.frame.outfitsPageText then
         self.frame.outfitsPageText:SetText(string.format("Page %d / %d", self.currentPage, self.totalPages))
+    end
+
+    if self.frame and type(self.frame.LayoutOutfitButtons) == "function" then
+        self.frame.LayoutOutfitButtons()
     end
 
     if self.frame.outfitsPrevBtn and type(self.frame.outfitsPrevBtn.SetEnabled) == "function" then

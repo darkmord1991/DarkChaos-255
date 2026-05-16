@@ -16,6 +16,8 @@ local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection")
 local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
 local ICON_COLLECTION = ADDON_PATH .. "Textures\\Icons\\Collection_64.tga"
 local BG_TINT_ALPHA = 0.78
+local DEFAULT_MAINFRAME_Y_OFFSET = 40
+local WARDROBE_CONTENT_BOTTOM_INSET = 8
 
 local function SetWidgetEnabled(widget, enabled)
     if not widget then
@@ -543,7 +545,8 @@ function DC:CreateMainFrame()
     local frame = CreateFrame("Frame", "DCCollectionFrame", UIParent)
     frame:SetFrameStrata("HIGH")
     frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-    frame:SetPoint("CENTER")
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0,
+        DEFAULT_MAINFRAME_Y_OFFSET)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
@@ -2020,15 +2023,34 @@ end
 -- ============================================================================
 
 function DC:CreateFooter(parent)
-    local footer = CreateFrame("Frame", nil, parent)
-    footer:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 10, 5)
-    footer:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -10, 5)
-    footer:SetHeight(FOOTER_HEIGHT)
+    local footer = self:CreateCenteredPagerFrame(parent, {
+        leftInset = 10,
+        rightInset = 10,
+        bottomInset = 5,
+        height = FOOTER_HEIGHT,
+        leftGroupWidth = 170,
+        rightGroupWidth = 290,
+        pagerWidth = 220,
+        pagerHeight = 22,
+        buttonTemplate = "UIPanelButtonTemplate",
+        buttonWidth = 60,
+        buttonHeight = 22,
+        buttonLayout = "adjacent",
+        buttonGap = 10,
+        pageText = "Page 1 of 1",
+        onPrev = function()
+            DC:PrevPage()
+        end,
+        onNext = function()
+            DC:NextPage()
+        end,
+    })
+    footer.pageInfo = footer.pageText
     
     -- Sync button
     local syncBtn = CreateFrame("Button", nil, footer, "UIPanelButtonTemplate")
     syncBtn:SetSize(80, 22)
-    syncBtn:SetPoint("LEFT", footer, "LEFT", 5, 0)
+    syncBtn:SetPoint("LEFT", footer.leftGroup, "LEFT", 0, 0)
     syncBtn:SetText(L["SYNC"] or "Sync")
     syncBtn:SetScript("OnClick", function()
         DC:DeltaSync()
@@ -2043,31 +2065,6 @@ function DC:CreateFooter(parent)
         DC:ShowWishlist()
     end)
     
-    -- Page info
-    footer.pageInfo = footer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    footer.pageInfo:SetPoint("CENTER", footer, "CENTER", 0, 0)
-    footer.pageInfo:SetText("Page 1 of 1")
-    
-    -- Navigation buttons
-    local prevBtn = CreateFrame("Button", nil, footer, "UIPanelButtonTemplate")
-    prevBtn:SetSize(60, 22)
-    prevBtn:SetPoint("RIGHT", footer.pageInfo, "LEFT", -10, 0)
-    prevBtn:SetText("<")
-    prevBtn:SetScript("OnClick", function()
-        DC:PrevPage()
-    end)
-    
-    local nextBtn = CreateFrame("Button", nil, footer, "UIPanelButtonTemplate")
-    nextBtn:SetSize(60, 22)
-    nextBtn:SetPoint("LEFT", footer.pageInfo, "RIGHT", 10, 0)
-    nextBtn:SetText(">")
-    nextBtn:SetScript("OnClick", function()
-        DC:NextPage()
-    end)
-    
-    footer.prevBtn = prevBtn
-    footer.nextBtn = nextBtn
-
     -- Mounts: action buttons live in the footer row (aligned with Sync).
     local mp = parent.Content and parent.Content.mountPreview
     if mp and mp.summonBtn and mp.randomBtn and mp.favBtn then
@@ -2084,7 +2081,7 @@ function DC:CreateFooter(parent)
         mp.summonBtn:ClearAllPoints()
         mp.randomBtn:ClearAllPoints()
 
-        mp.favBtn:SetPoint("RIGHT", footer, "RIGHT", -5, 0)
+        mp.favBtn:SetPoint("RIGHT", footer.rightGroup, "RIGHT", 0, 0)
         mp.summonBtn:SetPoint("RIGHT", mp.favBtn, "LEFT", -8, 0)
         mp.randomBtn:SetPoint("RIGHT", mp.summonBtn, "LEFT", -8, 0)
 
@@ -2205,9 +2202,15 @@ function DC:SelectTab(tabKey)
     local content = self.MainFrame.Content
 
     -- Adjust content height when the footer is hidden.
-    -- Wardrobe embeds and uses the extra space; shop has its own pager controls.
+    -- Wardrobe embeds and uses the extra space; shop and pets have their own bottom controls.
     local footer = self.MainFrame.Footer
-    if tabKey == "wardrobe" or tabKey == "shop" then
+    if tabKey == "wardrobe" then
+        if footer then footer:Hide() end
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self.MainFrame.TabBar, "BOTTOMLEFT", 0, -2)
+        content:SetPoint("BOTTOMRIGHT", self.MainFrame, "BOTTOMRIGHT", -10,
+            WARDROBE_CONTENT_BOTTOM_INSET)
+    elseif tabKey == "shop" or tabKey == "pets" then
         if footer then footer:Hide() end
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", self.MainFrame.FilterBar, "BOTTOMLEFT", 0, 0)

@@ -179,7 +179,8 @@ namespace DCCollection
             CollectionCounts const& counts,
             std::map<CollectionType, uint32> const& totals,
             uint32 serverHash, uint32 timestamp, uint8 mountSpeedBonus,
-            uint32 nextThreshold, int32 mountsToNext, uint32 totalOwnedItems)
+            uint32 nextThreshold, int32 mountsToNext, uint32 totalOwnedItems,
+            uint32 transmogOwnedSyncVersion)
         {
             std::string json;
             json.reserve(512 + (static_cast<std::size_t>(totalOwnedItems) * 8));
@@ -196,6 +197,9 @@ namespace DCCollection
             bool firstField = true;
             for (CollectionType type : kOwnedCollectionTypesByJsonKey)
             {
+                if (type == CollectionType::TRANSMOG)
+                    continue;
+
                 if (!firstField)
                     json.push_back(',');
                 firstField = false;
@@ -207,6 +211,10 @@ namespace DCCollection
 
             json += "},\"hash\":";
             AppendUnsignedJsonNumber(json, serverHash);
+            json += ",\"transmogDeferred\":true";
+            json += ",\"ownedSyncVersions\":{\"transmog\":";
+            AppendUnsignedJsonNumber(json, transmogOwnedSyncVersion);
+            json += "}";
             json += ",\"stats\":{";
 
             firstField = true;
@@ -325,10 +333,14 @@ namespace DCCollection
     void HandleSetTitle(Player* player, uint32 entryId);
     void HandleSummonHeirloom(Player* player, uint32 entryId);
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
+    uint32 ResolveCompanionSummonSpellFromSpell(uint32 spellId);
     CharTitlesEntry const* ResolveTitleEntryByAnyKey(uint32 titleKey);
 
     uint32 FindCompanionItemIdForSpell(uint32 spellId)
     {
+        if (uint32 resolvedSpellId = ResolveCompanionSummonSpellFromSpell(spellId))
+            spellId = resolvedSpellId;
+
         // Static cache: spellId -> itemId mapping (0 means not found)
         static std::unordered_map<uint32, uint32> s_companionItemCache;
         [[maybe_unused]] static bool s_cacheInitialized = false;
@@ -415,28 +427,43 @@ namespace DCCollection
         if (!spellId)
             return 0;
 
-        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-        if (!spellInfo)
-            return 0;
+        std::vector<uint32> toVisit;
+        toVisit.push_back(spellId);
 
-        if (IsCompanionSpell(spellInfo))
-            return spellId;
+        std::unordered_set<uint32> visited;
+        visited.reserve(16);
 
-        // Teaching spells: follow LEARN_* effects to the taught summon spell.
-        for (uint8 eff = 0; eff < MAX_SPELL_EFFECTS; ++eff)
+        while (!toVisit.empty())
         {
-            if (spellInfo->Effects[eff].Effect != SPELL_EFFECT_LEARN_SPELL &&
-                spellInfo->Effects[eff].Effect != SPELL_EFFECT_LEARN_PET_SPELL)
+            uint32 spellIdToCheck = toVisit.back();
+            toVisit.pop_back();
+
+            if (!spellIdToCheck || visited.find(spellIdToCheck) != visited.end())
                 continue;
 
-            uint32 taughtSpellId = spellInfo->Effects[eff].TriggerSpell;
-            if (!taughtSpellId)
+            visited.insert(spellIdToCheck);
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellIdToCheck);
+            if (!spellInfo)
                 continue;
 
-            if (SpellInfo const* taughtInfo = sSpellMgr->GetSpellInfo(taughtSpellId))
+            if (IsCompanionSpell(spellInfo))
+                return spellIdToCheck;
+
+            for (uint8 eff = 0; eff < MAX_SPELL_EFFECTS; ++eff)
             {
-                if (IsCompanionSpell(taughtInfo))
-                    return taughtSpellId;
+                SpellEffectInfo const& effect = spellInfo->Effects[eff];
+                if (effect.Effect != SPELL_EFFECT_LEARN_SPELL &&
+                    effect.Effect != SPELL_EFFECT_LEARN_PET_SPELL &&
+                    effect.Effect != SPELL_EFFECT_TRIGGER_SPELL)
+                    continue;
+
+                uint32 nextSpellId = effect.TriggerSpell;
+                if (!nextSpellId && effect.MiscValue > 0)
+                    nextSpellId = static_cast<uint32>(effect.MiscValue);
+
+                if (nextSpellId && visited.find(nextSpellId) == visited.end())
+                    toVisit.push_back(nextSpellId);
             }
         }
 
@@ -2501,6 +2528,11 @@ namespace DCCollection
         syncVersions.Set("titles", GetCuratedDefinitionsSyncVersion(CollectionType::TITLE));
         msg.Set("syncVersions", syncVersions);
 
+        DCAddon::JsonValue ownedSyncVersions;
+        ownedSyncVersions.SetObject();
+        ownedSyncVersions.Set("transmog", GetCollectedAppearancesSyncVersion(accountId));
+        msg.Set("ownedSyncVersions", ownedSyncVersions);
+
         msg.Send(player);
     }
 
@@ -2529,9 +2561,10 @@ namespace DCCollection
 
         uint32 serverHash = GenerateCollectionHashFromSortedBuckets(loaded);
         uint32 timestamp = static_cast<uint32>(std::time(nullptr));
+        uint32 transmogOwnedSyncVersion = GetCollectedAppearancesSyncVersion(accountId);
         std::string rawData = BuildFullCollectionDataJson(loaded, counts, totals,
             serverHash, timestamp, mountSpeedBonus, nextThreshold,
-            mountsToNext, totalOwnedItems);
+            mountsToNext, totalOwnedItems, transmogOwnedSyncVersion);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
         msg.SetPreEncodedJson(std::move(rawData));
@@ -2724,7 +2757,8 @@ namespace DCCollection
         msg.Send(player);
     }
 
-    void SendShopData(Player* player, const std::string& category)
+    void SendShopData(Player* player, const std::string& category,
+        bool omitStatic = false)
     {
         if (!player || !player->GetSession())
             return;
@@ -2860,68 +2894,71 @@ namespace DCCollection
 
                 std::string key = std::to_string(collType) + "_" + std::to_string(ownedEntryId);
                 bool owned = ownedItems.count(key) > 0;
+                bool sendStatic = !omitStatic ||
+                    collType == static_cast<uint8>(CollectionType::TRANSMOG);
 
                 // Resolve name and icon for the shop item
                 std::string itemName;
                 std::string itemIcon;
-                uint32 itemRarity = 2; // Default to uncommon
+                uint32 itemRarity = 0;
 
-                switch (static_cast<CollectionType>(collType))
+                if (sendStatic)
                 {
-                    case CollectionType::MOUNT:
+                    switch (static_cast<CollectionType>(collType))
                     {
-                        // Mounts use spell data
-                        if (SpellInfo const* spell = sSpellMgr->GetSpellInfo(entryId))
+                        case CollectionType::MOUNT:
                         {
-                            itemName = spell->SpellName[0]; // English locale
-                            // Spell icons are stored as client texture IDs; client can use GetSpellTexture
-                            itemIcon = std::to_string(spell->SpellIconID);
+                            // Mounts use spell data
+                            if (SpellInfo const* spell = sSpellMgr->GetSpellInfo(entryId))
+                            {
+                                itemName = spell->SpellName[0]; // English locale
+                                // Spell icons are stored as client texture IDs; client can use GetSpellTexture
+                                itemIcon = std::to_string(spell->SpellIconID);
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    case CollectionType::PET:
-                    {
-                        // Pets are usually items that teach a pet spell
-                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        case CollectionType::PET:
                         {
-                            itemName = proto->Name1;
-                            itemIcon = std::to_string(proto->DisplayInfoID);
-                            itemRarity = proto->Quality;
+                            // Pets are usually items that teach a pet spell
+                            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                            {
+                                itemName = proto->Name1;
+                                itemIcon = std::to_string(proto->DisplayInfoID);
+                                itemRarity = proto->Quality;
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    case CollectionType::HEIRLOOM:
-                    {
-                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        case CollectionType::HEIRLOOM:
                         {
-                            itemName = proto->Name1;
-                            itemIcon = std::to_string(proto->DisplayInfoID);
-                            itemRarity = proto->Quality;
+                            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                            {
+                                itemName = proto->Name1;
+                                itemIcon = std::to_string(proto->DisplayInfoID);
+                                itemRarity = proto->Quality;
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    case CollectionType::TITLE:
-                    {
-                        if (CharTitlesEntry const* title = ResolveTitleEntryByAnyKey(entryId))
+                        case CollectionType::TITLE:
                         {
-                            itemName = title->nameMale[0]; // English locale
+                            if (CharTitlesEntry const* title = ResolveTitleEntryByAnyKey(entryId))
+                                itemName = title->nameMale[0]; // English locale
+                            itemIcon = ""; // Titles don't have icons; client uses static icon
+                            break;
                         }
-                        itemIcon = ""; // Titles don't have icons; client uses static icon
-                        break;
-                    }
-                    case CollectionType::TRANSMOG:
-                    {
-                        uint32 lookupItemId = itemId ? itemId : entryId;
-                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(lookupItemId))
+                        case CollectionType::TRANSMOG:
                         {
-                            itemName = proto->Name1;
-                            itemIcon = std::to_string(proto->DisplayInfoID);
-                            itemRarity = proto->Quality;
+                            uint32 lookupItemId = itemId ? itemId : entryId;
+                            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(lookupItemId))
+                            {
+                                itemName = proto->Name1;
+                                itemIcon = std::to_string(proto->DisplayInfoID);
+                                itemRarity = proto->Quality;
+                            }
+                            break;
                         }
-                        break;
+                        default:
+                            break;
                     }
-                    default:
-                        break;
                 }
 
                 DCAddon::JsonValue item;
@@ -2929,9 +2966,12 @@ namespace DCCollection
                 item.Set("shopId", shopId);
                 item.Set("type", collType);
                 item.Set("entryId", entryId);
-                item.Set("name", itemName);
-                item.Set("icon", itemIcon);
-                item.Set("rarity", itemRarity);
+                if (!itemName.empty())
+                    item.Set("name", itemName);
+                if (!itemIcon.empty())
+                    item.Set("icon", itemIcon);
+                if (itemRarity > 0)
+                    item.Set("rarity", itemRarity);
                 if (collType == static_cast<uint8>(CollectionType::TRANSMOG))
                 {
                     item.Set("appearanceId", appearanceId);
@@ -4227,15 +4267,24 @@ namespace DCCollection
     void HandleGetShop(Player* player, const DCAddon::ParsedMessage& msg)
     {
         std::string category = "all";
+        bool omitStatic = false;
 
         if (DCAddon::IsJsonMessage(msg))
         {
             DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
             if (json.HasKey("category"))
                 category = json["category"].AsString();
+
+            if (json.HasKey("omitStatic"))
+            {
+                if (json["omitStatic"].IsBool())
+                    omitStatic = json["omitStatic"].AsBool();
+                else if (json["omitStatic"].IsNumber())
+                    omitStatic = json["omitStatic"].AsUInt32() != 0;
+            }
         }
 
-        SendShopData(player, category);
+        SendShopData(player, category, omitStatic);
     }
 
     void HandleBuyItemMessage(Player* player, const DCAddon::ParsedMessage& msg)
@@ -4885,6 +4934,12 @@ namespace DCCollection
                         }
                     }
 
+                    if (spellId)
+                    {
+                        if (uint32 resolvedSpellId = ResolveCompanionSummonSpellFromSpell(spellId))
+                            spellId = resolvedSpellId;
+                    }
+
                     if (spellId && !itemId)
                         itemId = FindCompanionItemIdForSpell(spellId);
 
@@ -5258,34 +5313,42 @@ namespace DCCollection
                                 }
                             }
                         }
-                        else if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entryId))
+                        else if (sSpellMgr->GetSpellInfo(entryId))
                         {
                             // Fallback if entryId is actually a spellId (legacy)
                             // But only if it's a valid companion summon spell
-                            spellId = entryId;
+                            spellId = ResolveCompanionSummonSpellFromSpell(entryId);
+                            if (!spellId)
+                                spellId = entryId;
 
-                            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                            if (SpellInfo const* spellInfo =
+                                    spellId ? sSpellMgr->GetSpellInfo(spellId)
+                                            : nullptr)
                             {
-                                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
-                                    spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
+                                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
                                 {
-                                    SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
-                                    if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                                    if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
+                                        spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
                                     {
-                                        isValidCompanion = true;
-                                        if (spellInfo->SpellName[0])
-                                            name = spellInfo->SpellName[0];
-
-                                        creatureId = spellInfo->Effects[i].MiscValue;
-                                        if (creatureId)
+                                        SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                                        if (properties && properties->Type == SUMMON_TYPE_MINIPET)
                                         {
-                                            if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                                            isValidCompanion = true;
+                                            if (spellInfo->SpellName[0])
+                                                name = spellInfo->SpellName[0];
+
+                                            creatureId = spellInfo->Effects[i].MiscValue;
+                                            if (creatureId)
                                             {
-                                                if (CreatureModel const* m = cInfo->GetFirstValidModel())
-                                                    displayId = m->CreatureDisplayID;
+                                                if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                                                {
+                                                    if (CreatureModel const* m = cInfo->GetFirstValidModel())
+                                                        displayId = m->CreatureDisplayID;
+                                                }
                                             }
+
+                                            break;
                                         }
-                                        break;
                                     }
                                 }
                             }

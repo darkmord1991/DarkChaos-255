@@ -35,6 +35,7 @@ local STAT_CARD_WIDTH = 150
 local STAT_CARD_HEIGHT = 80
 local RECENT_ICON_SIZE = 48
 local MAX_RECENT_ITEMS = 12
+local QUESTION_MARK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 -- Collection type definitions with icons and display info
 local COLLECTION_TYPES = {
@@ -135,6 +136,82 @@ local function ResolveRecentCollectionType(rawType)
     end
 
     return collType
+end
+
+local function ResolveRecentDefinition(data)
+    if not DC or type(DC.GetDefinition) ~= "function" or type(data) ~= "table" then
+        return nil, ResolveRecentCollectionType(data and data.type)
+    end
+
+    local collType = ResolveRecentCollectionType(data.type)
+    local candidates = {
+        ToPositiveNumber(data.id),
+        ToPositiveNumber(data.itemId),
+        ToPositiveNumber(data.spellId),
+    }
+
+    for _, candidate in ipairs(candidates) do
+        if candidate then
+            local def = DC:GetDefinition(collType, candidate)
+            if def then
+                return def, collType
+            end
+        end
+    end
+
+    return nil, collType
+end
+
+local function ResolveRecentTooltipIds(data, def)
+    local itemId = ToPositiveNumber(data and data.itemId)
+    local spellId = ToPositiveNumber(data and data.spellId)
+
+    if type(def) == "table" then
+        if not itemId then
+            itemId = ToPositiveNumber(def.itemId or def.item_id or def.itemID)
+        end
+        if not spellId then
+            spellId = ToPositiveNumber(def.spellId or def.spell_id or def.spellID)
+        end
+    end
+
+    return itemId, spellId
+end
+
+local function ResolveRecentIcon(data, def, collType)
+    local icon = data and data.icon
+    if type(icon) == "string" and icon ~= "" and icon ~= QUESTION_MARK_ICON then
+        return icon
+    end
+
+    local resolveId = ToPositiveNumber(data and data.id)
+    local itemId, spellId = ResolveRecentTooltipIds(data, def)
+    if not resolveId then
+        resolveId = itemId or spellId
+    end
+
+    if DC and type(DC.ResolveDefinitionIcon) == "function" then
+        local resolved = DC:ResolveDefinitionIcon(collType, resolveId, def)
+        if type(resolved) == "string" and resolved ~= "" then
+            return resolved
+        end
+    end
+
+    if itemId and type(GetItemInfo) == "function" then
+        local itemIcon = select(10, GetItemInfo(itemId))
+        if itemIcon and itemIcon ~= "" then
+            return itemIcon
+        end
+    end
+
+    if spellId and type(GetSpellInfo) == "function" then
+        local _, _, spellIcon = GetSpellInfo(spellId)
+        if spellIcon and spellIcon ~= "" then
+            return spellIcon
+        end
+    end
+
+    return QUESTION_MARK_ICON
 end
 
 local function GetRecentTypeDisplayInfo(rawType)
@@ -674,22 +751,28 @@ function MyCollection:CreateRecentIcons(parent)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             
             local data = self.itemData
-            GameTooltip:AddLine(data.name or "Unknown", 1, 1, 1)
+            local def, collType = ResolveRecentDefinition(data)
+            local itemId, spellId = ResolveRecentTooltipIds(data, def)
+            local displayName = data.name or (def and def.name) or "Unknown"
+
+            GameTooltip:AddLine(displayName, 1, 1, 1)
             
             -- Show type
             local typeLabel, typeColor = GetRecentTypeDisplayInfo(data.type)
             GameTooltip:AddLine(typeLabel, typeColor[1], typeColor[2], typeColor[3])
 
             -- If item, show item tooltip
-            if data.itemId then
+            if itemId then
                 GameTooltip:AddLine(" ")
-                GameTooltip:SetHyperlink("item:" .. data.itemId)
-            elseif data.spellId then
+                GameTooltip:SetHyperlink("item:" .. itemId)
+            elseif spellId then
                 GameTooltip:AddLine(" ")
-                local spellName = GetSpellInfo(data.spellId)
+                local spellName = GetSpellInfo(spellId)
                 if spellName then
                     GameTooltip:AddLine("Spell: " .. spellName, 0.7, 0.7, 0.7)
                 end
+            elseif collType == "titles" and def and def.name then
+                GameTooltip:AddLine("Title: " .. def.name, 0.7, 0.7, 0.7)
             end
 
             -- Timestamp
@@ -844,15 +927,27 @@ function MyCollection:UpdateRecentIcons()
             btn:Show()
             btn.itemData = data
 
+            local def, collType = ResolveRecentDefinition(data)
+            local itemId, spellId = ResolveRecentTooltipIds(data, def)
+
+            if def then
+                if not data.name and type(def.name) == "string" and def.name ~= "" then
+                    data.name = def.name
+                end
+                if not data.itemId and itemId then
+                    data.itemId = itemId
+                end
+                if not data.spellId and spellId then
+                    data.spellId = spellId
+                end
+            end
+
             -- Set icon
-            local icon = data.icon
-            if not icon and data.itemId then
-                icon = select(10, GetItemInfo(data.itemId))
+            local icon = ResolveRecentIcon(data, def, collType)
+            if (not data.icon or data.icon == "" or data.icon == QUESTION_MARK_ICON) and icon and icon ~= QUESTION_MARK_ICON then
+                data.icon = icon
             end
-            if not icon and data.spellId then
-                icon = select(3, GetSpellInfo(data.spellId))
-            end
-            btn.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            btn.icon:SetTexture(icon or QUESTION_MARK_ICON)
 
             -- Set type indicator color
             local typeColor = {0.5, 0.5, 0.5}

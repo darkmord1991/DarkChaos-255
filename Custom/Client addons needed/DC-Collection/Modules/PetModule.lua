@@ -84,6 +84,51 @@ local function _num(x)
     return nil
 end
 
+local SUPPRESSED_PET_ENTRY_IDS = {
+    [13342] = true,
+    [13343] = true,
+    [22200] = true,
+    [28326] = true,
+    [33817] = true,
+    [34495] = true,
+    [35227] = true,
+    [37460] = true,
+    [38234] = true,
+    [38299] = true,
+    [38612] = true,
+    [40355] = true,
+    [44820] = true,
+    [44823] = true,
+    [44824] = true,
+    [44825] = true,
+    [44826] = true,
+    [44827] = true,
+    [44828] = true,
+    [44829] = true,
+    [46890] = true,
+    [46891] = true,
+    [46894] = true,
+    [49659] = true,
+    [49660] = true,
+    [49664] = true,
+    [49911] = true,
+    [50151] = true,
+}
+
+local function ShouldSuppressPetDefinition(petId, def)
+    local numericPetId = _num(petId)
+    if numericPetId and SUPPRESSED_PET_ENTRY_IDS[numericPetId] then
+        return true
+    end
+
+    local petName = def and def.name
+    if type(petName) == "string" and string.find(petName, "^NPC Equip ") then
+        return true
+    end
+
+    return false
+end
+
 function PetModule:_ResolveSpellIdForDef(def)
     if type(def) ~= "table" then
         return nil
@@ -288,56 +333,58 @@ function PetModule:GetFilteredPets(filters)
     -- DC:Debug("GetFilteredPets: definitions count = " .. count)
 
     for petId, def in pairs(definitions) do
-        local collected = self:IsPetCollected(petId)
-        local collData = self:GetCollectionEntryForPet(petId, def)
-        
-        local include = true
-        
-        -- Collected filter
-        if filters.collected ~= nil then
-            if filters.collected and not collected then include = false end
-            if not filters.collected and collected then include = false end
-        end
-        
-        -- Rarity filter
-        if filters.rarity and def.rarity ~= filters.rarity then
-            include = false
-        end
-        
-        -- Favorites only
-        if filters.favoritesOnly and (not collData or not collData.is_favorite) then
-            include = false
-        end
-        
-        -- Search filter
-        if filters.search and filters.search ~= "" then
-            local searchLower = string.lower(filters.search)
-            local nameLower = string.lower(def.name or "")
-            if not string.find(nameLower, searchLower, 1, true) then
+        if not ShouldSuppressPetDefinition(petId, def) then
+            local collected = self:IsPetCollected(petId)
+            local collData = self:GetCollectionEntryForPet(petId, def)
+            
+            local include = true
+            
+            -- Collected filter
+            if filters.collected ~= nil then
+                if filters.collected and not collected then include = false end
+                if not filters.collected and collected then include = false end
+            end
+            
+            -- Rarity filter
+            if filters.rarity and def.rarity ~= filters.rarity then
                 include = false
             end
-        end
-        
-        -- Source filter
-        if filters.source and filters.source ~= "" then
-            local sourceText = DC:FormatSource(def.source)
-            if sourceText ~= filters.source then
+            
+            -- Favorites only
+            if filters.favoritesOnly and (not collData or not collData.is_favorite) then
                 include = false
             end
-        end
-        
-        if include then
-            table.insert(results, {
-                id = petId,
-                name = def.name,
-                icon = def.icon,
-                rarity = def.rarity,
-                source = def.source,
-                collected = collected,
-                is_favorite = collData and collData.is_favorite,
-                times_used = collData and collData.times_used or 0,
-                definition = def,
-            })
+            
+            -- Search filter
+            if filters.search and filters.search ~= "" then
+                local searchLower = string.lower(filters.search)
+                local nameLower = string.lower(def.name or "")
+                if not string.find(nameLower, searchLower, 1, true) then
+                    include = false
+                end
+            end
+            
+            -- Source filter
+            if filters.source and filters.source ~= "" then
+                local sourceText = DC:FormatSource(def.source)
+                if sourceText ~= filters.source then
+                    include = false
+                end
+            end
+            
+            if include then
+                table.insert(results, {
+                    id = petId,
+                    name = def.name,
+                    icon = def.icon,
+                    rarity = def.rarity,
+                    source = def.source,
+                    collected = collected,
+                    is_favorite = collData and collData.is_favorite,
+                    times_used = collData and collData.times_used or 0,
+                    definition = def,
+                })
+            end
         end
     end
     
@@ -443,17 +490,19 @@ function PetModule:GetStats()
     local collection = self:GetPets()
     
     for petId, def in pairs(definitions) do
+        if not ShouldSuppressPetDefinition(petId, def) then
         total = total + 1
 
         if self:IsPetCollected(petId) then
-            owned = owned + 1
-        end
-        
-        local rarity = def.rarity or 1
-        byRarity[rarity] = byRarity[rarity] or { owned = 0, total = 0 }
-        byRarity[rarity].total = byRarity[rarity].total + 1
-        if self:IsPetCollected(petId) then
-            byRarity[rarity].owned = byRarity[rarity].owned + 1
+                owned = owned + 1
+            end
+
+            local rarity = def.rarity or 1
+            byRarity[rarity] = byRarity[rarity] or { owned = 0, total = 0 }
+            byRarity[rarity].total = byRarity[rarity].total + 1
+            if self:IsPetCollected(petId) then
+                byRarity[rarity].owned = byRarity[rarity].owned + 1
+            end
         end
     end
 

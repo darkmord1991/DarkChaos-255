@@ -10,6 +10,7 @@
 ]]
 
 local DC = DCCollection
+local L = DC.L
 
 -- ============================================================================
 -- REVISION TRACKING (UI performance)
@@ -250,6 +251,93 @@ function DC:_GetUnpackedTransmogDefinition(id, packed)
     return def
 end
 
+function DC:_InvalidateTransmogDefinitionLookup()
+    self._transmogDefinitionAliasLookup = nil
+end
+
+local function ShouldPreferTransmogAlias(currentDef, candidateDef)
+    if type(candidateDef) ~= "table" then
+        return false
+    end
+
+    if type(currentDef) ~= "table" then
+        return true
+    end
+
+    local candidateQuality = tonumber(candidateDef.quality or candidateDef.rarity) or 0
+    local currentQuality = tonumber(currentDef.quality or currentDef.rarity) or 0
+    if candidateQuality ~= currentQuality then
+        return candidateQuality > currentQuality
+    end
+
+    local candidateItemId = tonumber(candidateDef.itemId or candidateDef.item_id) or 0
+    local currentItemId = tonumber(currentDef.itemId or currentDef.item_id) or 0
+    if candidateItemId <= 0 then
+        return false
+    end
+    if currentItemId <= 0 then
+        return true
+    end
+
+    return candidateItemId < currentItemId
+end
+
+function DC:_EnsureTransmogDefinitionAliasLookup()
+    if type(self._transmogDefinitionAliasLookup) == "table" then
+        return self._transmogDefinitionAliasLookup
+    end
+
+    local defs = nil
+    if type(self.definitions) == "table" then
+        defs = self.definitions.transmog
+    end
+    if type(defs) ~= "table" then
+        defs = self._transmogDefinitions
+    end
+    if type(defs) ~= "table" then
+        return nil
+    end
+
+    local lookup = {
+        byDisplayId = {},
+        byItemId = {},
+    }
+
+    for defKey, rawDef in pairs(defs) do
+        local def = rawDef
+        if type(rawDef) == "string" then
+            def = self:_GetUnpackedTransmogDefinition(defKey, rawDef)
+        end
+
+        if type(def) == "table" then
+            local displayId = tonumber(def.displayId or def.displayID or def.display_id or def.appearanceId or def.appearance_id)
+            if displayId and displayId > 0 then
+                local current = lookup.byDisplayId[displayId]
+                if not current or ShouldPreferTransmogAlias(current.def, def) then
+                    lookup.byDisplayId[displayId] = { raw = rawDef, def = def }
+                end
+            end
+
+            local itemId = tonumber(def.itemId or def.item_id) or 0
+            if itemId > 0 and not lookup.byItemId[itemId] then
+                lookup.byItemId[itemId] = { raw = rawDef, def = def }
+            end
+
+            if type(def.itemIds) == "table" then
+                for _, candidateId in ipairs(def.itemIds) do
+                    candidateId = tonumber(candidateId) or 0
+                    if candidateId > 0 and not lookup.byItemId[candidateId] then
+                        lookup.byItemId[candidateId] = { raw = rawDef, def = def }
+                    end
+                end
+            end
+        end
+    end
+
+    self._transmogDefinitionAliasLookup = lookup
+    return lookup
+end
+
 -- ============================================================================
 -- LOAD CACHE
 -- ============================================================================
@@ -486,6 +574,10 @@ function DC:ClearCache()
     self.currency = { tokens = 0, emblems = 0 }
     self.wishlist = {}
     self.mountSpeedBonus = 0
+
+    if type(self.BootstrapLocalCollectionCDBC) == "function" then
+        self:BootstrapLocalCollectionCDBC(true)
+    end
     
     self:Print("Cache cleared")
 end
@@ -520,6 +612,759 @@ end
 -- consistently map server/client variants to the canonical keys.
 function DC:NormalizeCollectionType(collectionType)
     return NormalizeType(self, collectionType)
+end
+
+local LOCAL_COLLECTION_TYPE_TO_NAME = {
+    [1] = "mounts",
+    [2] = "pets",
+    [4] = "heirlooms",
+    [5] = "titles",
+    [6] = "transmog",
+}
+
+local SHOP_FILTER_DEFAULTS = {
+    { key = "all", text = L["FILTER_ALL"] or "All" },
+    { key = "bonus", text = L["SHOP_TYPE_BONUS"] or "Bonuses" },
+    { key = "mount", text = L["SHOP_TYPE_MOUNT"] or "Mounts" },
+    { key = "pet", text = L["SHOP_TYPE_PET"] or "Pets" },
+}
+
+local function MixLocalSignature(hash, value)
+    hash = tonumber(hash) or 5381
+    value = tonumber(value) or 0
+    hash = ((hash * 131) + value + 17) % 2147483647
+    if hash <= 0 then
+        hash = hash + 2147483646
+    end
+    return hash
+end
+
+local function MixLocalSignatureString(hash, value)
+    if type(value) ~= "string" then
+        return MixLocalSignature(hash, 0)
+    end
+
+    for index = 1, string.len(value) do
+        hash = MixLocalSignature(hash, string.byte(value, index))
+    end
+
+    return hash
+end
+
+local function ResolveLocalCategoryKey(row)
+    local key = row and row.key
+    if type(key) == "string" and key ~= "" then
+        return string.lower(key)
+    end
+
+    local collectionType = tonumber(row and row.collectionType) or 0
+    if collectionType == 1 then return "mount" end
+    if collectionType == 2 then return "pet" end
+    if collectionType == 4 then return "heirloom" end
+    if collectionType == 5 then return "title" end
+    if collectionType == 6 then return "transmog" end
+    return nil
+end
+
+local function ResolveLocalSourceValue(row)
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    local sourceType = row.sourceType
+    if type(sourceType) == "string" and sourceType ~= "" then
+        sourceType = string.lower(sourceType)
+    else
+        sourceType = nil
+    end
+
+    local sourceName = row.sourceName
+    local sourceText = row.sourceText
+    local sourceObjectId = tonumber(row.sourceObjectId) or 0
+    local sourceValue = tonumber(row.sourceValue) or 0
+    local itemId = tonumber(row.itemId) or 0
+
+    if sourceText and sourceText ~= "" and (not sourceType or sourceType == "text") then
+        return sourceText
+    end
+
+    if sourceType == "drop" then
+        local source = { type = "drop" }
+        if type(sourceName) == "string" and sourceName ~= "" then
+            source.boss = sourceName
+        end
+        if sourceObjectId > 0 then
+            source.creatureEntry = sourceObjectId
+        end
+        if sourceValue > 0 then
+            source.dropRate = sourceValue
+        end
+        return source
+    end
+
+    if sourceType == "vendor" then
+        local source = { type = "vendor" }
+        if type(sourceName) == "string" and sourceName ~= "" then
+            source.npc = sourceName
+        end
+        if sourceObjectId > 0 then
+            source.npcEntry = sourceObjectId
+        end
+        return source
+    end
+
+    if sourceType == "quest" then
+        local source = { type = "quest" }
+        if sourceObjectId > 0 then
+            source.questId = sourceObjectId
+        end
+        return source
+    end
+
+    if sourceType == "unknown" then
+        local source = { type = "unknown" }
+        if itemId > 0 then
+            source.itemId = itemId
+        end
+        return source
+    end
+
+    if sourceType == "achievement" then
+        return string.format(L["SOURCE_ACHIEVEMENT"] or "Achievement: %s",
+            (type(sourceName) == "string" and sourceName ~= "") and
+                sourceName or ("#" .. tostring(sourceObjectId)))
+    end
+
+    if sourceType == "profession" then
+        return string.format(L["SOURCE_PROFESSION"] or "Profession: %s",
+            (type(sourceName) == "string" and sourceName ~= "") and
+                sourceName or ("#" .. tostring(sourceObjectId)))
+    end
+
+    if sourceType == "reputation" then
+        return string.format(L["SOURCE_REPUTATION"] or "Reputation: %s",
+            (type(sourceName) == "string" and sourceName ~= "") and
+                sourceName or ("#" .. tostring(sourceObjectId)))
+    end
+
+    if sourceType == "pvp" then
+        return L["SOURCE_PVP"] or "PvP Reward"
+    end
+
+    if sourceType == "promotion" then
+        return L["SOURCE_PROMOTION"] or "Promotional"
+    end
+
+    if sourceType == "darkchaos" then
+        return L["SOURCE_DARKCHAOS"] or "DarkChaos Exclusive"
+    end
+
+    if type(sourceText) == "string" and sourceText ~= "" then
+        return sourceText
+    end
+
+    if type(sourceName) == "string" and sourceName ~= "" then
+        return sourceName
+    end
+
+    if itemId > 0 then
+        return { type = "unknown", itemId = itemId }
+    end
+
+    return nil
+end
+
+local function BuildLocalTransmogVariantKey(displayId, inventoryType, itemClass, itemSubClass)
+    return table.concat({
+        tostring(tonumber(displayId) or 0),
+        tostring(tonumber(inventoryType) or 0),
+        tostring(tonumber(itemClass) or 0),
+        tostring(tonumber(itemSubClass) or 0),
+    }, ":")
+end
+
+local function ParseLocalTransmogItemIds(rawValue)
+    if type(rawValue) == "table" then
+        return rawValue
+    end
+
+    if type(rawValue) ~= "string" or rawValue == "" then
+        return nil
+    end
+
+    local itemIds = {}
+    for token in string.gmatch(rawValue, "[^,]+") do
+        local itemId = tonumber(token)
+        if itemId and itemId > 0 then
+            itemIds[#itemIds + 1] = itemId
+        end
+    end
+
+    if #itemIds == 0 then
+        return nil
+    end
+
+    return itemIds
+end
+
+function DC:GetShopFilterButtons()
+    local byKey = self.collectionCategoriesByKey or {}
+    local filters = {}
+
+    for _, info in ipairs(SHOP_FILTER_DEFAULTS) do
+        local category = byKey[info.key] or byKey[info.key .. "s"]
+        filters[#filters + 1] = {
+            key = info.key,
+            text = (category and category.name) or info.text,
+            icon = category and category.icon or nil,
+        }
+    end
+
+    return filters
+end
+
+function DC:HasLocalCollectionDefinitions(collectionType)
+    local state = self._localCollectionCDBC
+    if type(state) ~= "table" or
+       type(state.definitionTypes) ~= "table" or
+       type(state.authoritativeDefinitionTypes) ~= "table" then
+        return false
+    end
+
+    local typeName = NormalizeType(self, collectionType)
+    if typeName == "pets" and
+       type(state.previewIncompleteDefinitionTypes) == "table" and
+       state.previewIncompleteDefinitionTypes.pets == true then
+        return false
+    end
+
+    return state.definitionTypes[typeName] == true and
+        state.authoritativeDefinitionTypes[typeName] == true
+end
+
+function DC:HasLocalCollectionItemSets()
+    local state = self._localCollectionCDBC
+    return type(state) == "table" and state.setsLoaded == true
+end
+
+function DC:ShouldUseLocalCollectionShopMetadata()
+    local state = self._localCollectionCDBC
+    return type(state) == "table" and
+        state.shopMetadataAuthoritative == true
+end
+
+function DC:GetLocalCollectionStaticManifest()
+    local state = self._localCollectionCDBC
+    if type(state) == "table" and type(state.manifest) == "table" then
+        return state.manifest
+    end
+
+    if type(self.COLLECTION_STATIC_MANIFEST) == "table" then
+        return self.COLLECTION_STATIC_MANIFEST
+    end
+
+    return nil
+end
+
+function DC:GetLocalCollectionCompleteness(collectionType)
+    local manifest = self:GetLocalCollectionStaticManifest()
+    if type(manifest) ~= "table" or type(manifest.types) ~= "table" then
+        return nil
+    end
+
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return nil
+    end
+
+    return manifest.types[typeName]
+end
+
+function DC:GetLocalShopMetadata(shopId, collectionType, entryId)
+    local state = self._localCollectionCDBC
+    if type(state) ~= "table" then
+        return nil
+    end
+
+    local normalizedShopId = tonumber(shopId)
+    if normalizedShopId and type(state.shopMetadataById) == "table" then
+        local byShopId = state.shopMetadataById[normalizedShopId]
+        if byShopId then
+            return byShopId
+        end
+    end
+
+    local typeName = NormalizeType(self, collectionType)
+    local normalizedEntryId = tonumber(entryId)
+    if typeName and normalizedEntryId and
+       type(state.shopMetadataByTypeEntry) == "table" then
+        local byType = state.shopMetadataByTypeEntry[typeName]
+        if type(byType) == "table" then
+            return byType[normalizedEntryId]
+        end
+    end
+
+    return nil
+end
+
+function DC:BootstrapLocalCollectionCDBC(force)
+    if self._localCollectionCDBCBootstrapped and not force then
+        return self._localCollectionCDBC
+    end
+
+    local state = {
+        available = false,
+        categoriesLoaded = false,
+        sourcesLoaded = false,
+        setsLoaded = false,
+        definitionTypes = {},
+        authoritativeDefinitionTypes = {},
+        previewIncompleteDefinitionTypes = {},
+        signatures = {},
+        manifest = nil,
+        shopMetadataById = {},
+        shopMetadataByTypeEntry = {},
+        shopMetadataAuthoritative = false,
+        shopMetadataSource = nil,
+    }
+
+    if type(self.COLLECTION_STATIC_MANIFEST) == "table" then
+        state.manifest = self.COLLECTION_STATIC_MANIFEST
+    end
+
+    if type(GetDCCollectionCategories) == "function" then
+        local ok, rows = pcall(GetDCCollectionCategories)
+        if ok and type(rows) == "table" and next(rows) ~= nil then
+            local byId = {}
+            local byKey = {}
+
+            for _, row in ipairs(rows) do
+                local id = tonumber(row.id)
+                if id and id > 0 then
+                    local category = {
+                        id = id,
+                        collectionType = tonumber(row.collectionType) or 0,
+                        parentId = tonumber(row.parentId) or nil,
+                        sortOrder = tonumber(row.sortOrder) or 0,
+                        flags = tonumber(row.flags) or 0,
+                        key = ResolveLocalCategoryKey(row),
+                        name = row.name,
+                        icon = row.icon,
+                    }
+
+                    byId[id] = category
+                    if category.key then
+                        byKey[category.key] = category
+                    end
+                end
+            end
+
+            self.collectionCategories = byId
+            self.collectionCategoriesById = byId
+            self.collectionCategoriesByKey = byKey
+            state.categoriesLoaded = true
+            state.available = true
+        end
+    end
+
+    if type(GetDCCollectionSources) == "function" then
+        local ok, rows = pcall(GetDCCollectionSources)
+        if ok and type(rows) == "table" and next(rows) ~= nil then
+            local perType = {
+                mounts = {},
+                pets = {},
+                heirlooms = {},
+                titles = {},
+            }
+            local localDefinitionsChanged = false
+            local signatures = {
+                mounts = 5381,
+                pets = 5381,
+                heirlooms = 5381,
+                titles = 5381,
+            }
+
+            for _, row in ipairs(rows) do
+                local typeName =
+                    LOCAL_COLLECTION_TYPE_TO_NAME[tonumber(row.collectionType)]
+                local entryId = tonumber(row.entryId)
+
+                if typeName and typeName ~= "transmog" and entryId and entryId > 0 then
+                    local def = {}
+                    if type(row.name) == "string" and row.name ~= "" then
+                        def.name = row.name
+                    end
+                    if type(row.icon) == "string" and row.icon ~= "" then
+                        def.icon = row.icon
+                    end
+
+                    local rarity = tonumber(row.rarity)
+                    if rarity and rarity > 0 then
+                        def.rarity = rarity
+                    end
+
+                    local itemId = tonumber(row.itemId)
+                    if itemId and itemId > 0 then
+                        def.itemId = itemId
+                    end
+
+                    local spellId = tonumber(row.spellId)
+                    if spellId and spellId > 0 then
+                        def.spellId = spellId
+                    end
+
+                    local displayId = tonumber(row.displayId)
+                    if displayId and displayId > 0 then
+                        def.displayId = displayId
+                    end
+
+                    local creatureId = tonumber(row.creatureId)
+                    if creatureId and creatureId > 0 then
+                        def.creatureId = creatureId
+                    end
+
+                    local mountType = tonumber(row.mountType)
+                    if typeName == "mounts" and mountType and mountType >= 0 then
+                        def.mountType = mountType
+                    end
+
+                    if typeName == "pets" and
+                       not (displayId and displayId > 0) and
+                       not (creatureId and creatureId > 0) then
+                        state.previewIncompleteDefinitionTypes.pets = true
+                    end
+
+                    local source = ResolveLocalSourceValue(row)
+                    if source ~= nil then
+                        def.source = source
+                    end
+
+                    perType[typeName][entryId] = def
+
+                    signatures[typeName] =
+                        MixLocalSignature(signatures[typeName], entryId)
+                    signatures[typeName] =
+                        MixLocalSignature(signatures[typeName], rarity or 0)
+                    signatures[typeName] =
+                        MixLocalSignature(signatures[typeName], itemId or 0)
+                    signatures[typeName] =
+                        MixLocalSignature(signatures[typeName], spellId or 0)
+                    signatures[typeName] =
+                        MixLocalSignature(signatures[typeName], displayId or 0)
+                    signatures[typeName] =
+                        MixLocalSignatureString(signatures[typeName], row.name)
+                    signatures[typeName] =
+                        MixLocalSignatureString(signatures[typeName], row.icon)
+                    signatures[typeName] =
+                        MixLocalSignatureString(signatures[typeName], row.sourceType)
+                    signatures[typeName] =
+                        MixLocalSignatureString(signatures[typeName], row.sourceName)
+                    signatures[typeName] =
+                        MixLocalSignatureString(signatures[typeName], row.sourceText)
+                end
+            end
+
+            for typeName, defs in pairs(perType) do
+                if next(defs) ~= nil then
+                    local manifestEntry = nil
+                    if type(state.manifest) == "table" and
+                       type(state.manifest.types) == "table" then
+                        manifestEntry = state.manifest.types[typeName]
+                    end
+
+                    self.definitions[typeName] = defs
+                    localDefinitionsChanged = true
+                    if type(self._BumpDefinitionsRevision) == "function" then
+                        self:_BumpDefinitionsRevision(typeName)
+                    end
+                    if self.stats[typeName] then
+                        self.stats[typeName].total = self:CountDefinitions(typeName)
+                    end
+                    self:SetSyncVersion(typeName, signatures[typeName])
+                    state.definitionTypes[typeName] = true
+                    if type(manifestEntry) == "table" and
+                       manifestEntry.requestSkip == true then
+                        state.authoritativeDefinitionTypes[typeName] = true
+                    elseif typeName == "titles" then
+                        state.authoritativeDefinitionTypes[typeName] = true
+                    end
+                    state.signatures[typeName] = signatures[typeName]
+                end
+            end
+
+            state.sourcesLoaded = next(state.definitionTypes) ~= nil
+            state.available = state.available or state.sourcesLoaded
+        end
+    end
+
+    if type(GetDCCollectionTransmog) == "function" then
+        local ok, rows = pcall(GetDCCollectionTransmog)
+        if ok and type(rows) == "table" and next(rows) ~= nil then
+            local defs = {}
+            local signature = 5381
+            local manifestEntry = nil
+
+            if type(state.manifest) == "table" and
+               type(state.manifest.types) == "table" then
+                manifestEntry = state.manifest.types.transmog
+            end
+
+            for _, row in ipairs(rows) do
+                local displayId = tonumber(row.displayId)
+                local inventoryType = tonumber(row.inventoryType) or 0
+                local itemClass = tonumber(row.class or row.itemClass) or 0
+                local itemSubClass = tonumber(row.subclass or row.itemSubClass) or 0
+                local itemId = tonumber(row.itemId or row.canonicalItemId) or 0
+
+                if displayId and displayId > 0 and inventoryType > 0 and itemClass > 0 then
+                    local key = BuildLocalTransmogVariantKey(
+                        displayId,
+                        inventoryType,
+                        itemClass,
+                        itemSubClass)
+                    local itemIds = ParseLocalTransmogItemIds(
+                        row.itemIds or row.itemIdsCsv)
+                    local def = {
+                        name = row.name,
+                        icon = row.icon,
+                        quality = tonumber(row.rarity) or 0,
+                        rarity = tonumber(row.rarity) or 0,
+                        displayId = displayId,
+                        inventoryType = inventoryType,
+                        class = itemClass,
+                        subclass = itemSubClass,
+                        visualSlot = tonumber(row.visualSlot) or nil,
+                        itemId = itemId,
+                        itemIdsTotal = tonumber(row.itemIdsTotal) or (itemIds and #itemIds) or nil,
+                        itemIds = itemIds,
+                    }
+
+                    if itemClass == 2 then
+                        def.weaponType = itemSubClass
+                    elseif itemClass == 4 then
+                        def.armorType = itemSubClass
+                    end
+
+                    defs[key] = PackTransmogDefinition(def)
+
+                    signature = MixLocalSignature(signature, displayId)
+                    signature = MixLocalSignature(signature, inventoryType)
+                    signature = MixLocalSignature(signature, itemClass)
+                    signature = MixLocalSignature(signature, itemSubClass)
+                    signature = MixLocalSignature(signature, itemId)
+                    signature = MixLocalSignature(signature, tonumber(row.rarity) or 0)
+                    signature = MixLocalSignature(signature, tonumber(row.itemLevel) or 0)
+                    signature = MixLocalSignature(signature, tonumber(row.itemIdsTotal) or 0)
+                    signature = MixLocalSignatureString(signature, row.name)
+                    signature = MixLocalSignatureString(signature, row.icon)
+                    signature = MixLocalSignatureString(signature, row.itemIds or row.itemIdsCsv)
+                end
+            end
+
+            if next(defs) ~= nil then
+                self.definitions.transmog = defs
+                self._transmogDefinitions = defs
+                self._transmogDefTotal = self:CountDefinitions("transmog")
+                self:SetSyncVersion("transmog", signature)
+                state.definitionTypes.transmog = true
+                if type(manifestEntry) == "table" and manifestEntry.requestSkip == true then
+                    state.authoritativeDefinitionTypes.transmog = true
+                end
+                state.signatures.transmog = signature
+                state.available = true
+                self.definitionsLoaded = true
+
+                if self.Wardrobe then
+                    self.Wardrobe.definitionsLoaded = true
+                end
+
+                if self.stats.transmog then
+                    self.stats.transmog.total = self._transmogDefTotal
+                end
+
+                if type(self._InvalidateTransmogDefinitionLookup) == "function" then
+                    self:_InvalidateTransmogDefinitionLookup()
+                end
+                if type(self._BumpDefinitionsRevision) == "function" then
+                    self:_BumpDefinitionsRevision("transmog")
+                end
+            end
+        end
+    end
+
+    if type(GetDCCollectionSets) == "function" then
+        local ok, rows = pcall(GetDCCollectionSets)
+        if ok and type(rows) == "table" and next(rows) ~= nil then
+            local sets = {}
+            local signature = 5381
+
+            for _, row in ipairs(rows) do
+                local setId = tonumber(row.id)
+                if setId and setId > 0 then
+                    local items = {}
+                    if type(row.items) == "table" then
+                        for _, itemId in ipairs(row.items) do
+                            itemId = tonumber(itemId)
+                            if itemId and itemId > 0 then
+                                items[#items + 1] = itemId
+                                signature = MixLocalSignature(signature, itemId)
+                            end
+                        end
+                    end
+
+                    sets[setId] = {
+                        ID = setId,
+                        name = row.name or ("Set " .. tostring(setId)),
+                        icon = row.icon,
+                        items = items,
+                        categoryId = tonumber(row.categoryId) or nil,
+                        sortOrder = tonumber(row.sortOrder) or 0,
+                        flags = tonumber(row.flags) or 0,
+                        pieceCount = tonumber(row.pieceCount) or #items,
+                    }
+
+                    signature = MixLocalSignature(signature, setId)
+                    signature = MixLocalSignatureString(signature, row.name)
+                    signature = MixLocalSignatureString(signature, row.icon)
+                end
+            end
+
+            if next(sets) ~= nil then
+                local existingItemSetSyncVersion =
+                    type(self.GetSyncVersion) == "function" and
+                    tonumber(self:GetSyncVersion("itemsets")) or 0
+
+                self.definitions.itemsets = sets
+                self.definitions.itemSets = sets
+                self.definitions.sets = sets
+                if existingItemSetSyncVersion == 0 then
+                    self:SetSyncVersion("itemsets", signature)
+                end
+                state.setsLoaded = true
+                state.signatures.itemsets = signature
+                state.available = true
+
+                if type(self._BumpDefinitionsRevision) == "function" then
+                    self:_BumpDefinitionsRevision("itemsets")
+                end
+            end
+        end
+    end
+
+    local shopRows = nil
+    local shopMetadataSource = nil
+
+    if type(GetDCCollectionShop) == "function" then
+        local ok, rows = pcall(GetDCCollectionShop)
+        if ok and type(rows) == "table" and next(rows) ~= nil then
+            shopRows = rows
+            shopMetadataSource = "native"
+        end
+    end
+
+    if not shopRows and type(self.SHOP_STATIC_DATA) == "table" and
+       next(self.SHOP_STATIC_DATA) ~= nil then
+        shopRows = self.SHOP_STATIC_DATA
+        shopMetadataSource = "lua"
+    end
+
+    if type(shopRows) == "table" and next(shopRows) ~= nil then
+        local byShopId = {}
+        local byTypeEntry = {}
+        local signature = 5381
+        local loaded = 0
+        local manifestShop = nil
+
+        if type(state.manifest) == "table" and type(state.manifest.shop) == "table" then
+            manifestShop = state.manifest.shop
+        end
+
+        for _, row in ipairs(shopRows) do
+            local shopId = tonumber(row.shopId)
+            local collectionType = tonumber(row.collectionType)
+            local entryId = tonumber(row.entryId)
+            local typeName = NormalizeType(
+                self,
+                row.collectionTypeName or collectionType)
+
+            if shopId and shopId > 0 and typeName and entryId and entryId > 0 then
+                local metadata = {
+                    shopId = shopId,
+                    collectionType = collectionType or 0,
+                    collectionTypeName = typeName,
+                    entryId = entryId,
+                    itemId = tonumber(row.itemId) or 0,
+                    spellId = tonumber(row.spellId) or 0,
+                    appearanceId = tonumber(row.appearanceId) or 0,
+                    displayId = tonumber(row.displayId) or 0,
+                    creatureId = tonumber(row.creatureId) or 0,
+                    mountType = tonumber(row.mountType) or -1,
+                    rarity = tonumber(row.rarity) or 0,
+                    priceTokens = tonumber(row.priceTokens) or 0,
+                    priceEmblems = tonumber(row.priceEmblems) or 0,
+                    discount = tonumber(row.discount) or 0,
+                    featured = tonumber(row.featured) == 1,
+                    enabled = tonumber(row.enabled or 1) ~= 0,
+                    stock = tonumber(row.stock) or -1,
+                    availableFrom = row.availableFrom,
+                    availableUntil = row.availableUntil,
+                    name = row.name,
+                    icon = row.icon,
+                    sourceType = row.sourceType,
+                    sourceName = row.sourceName,
+                    sourceText = row.sourceText,
+                }
+
+                byShopId[shopId] = metadata
+                byTypeEntry[typeName] = byTypeEntry[typeName] or {}
+                if not byTypeEntry[typeName][entryId] then
+                    byTypeEntry[typeName][entryId] = metadata
+                end
+
+                loaded = loaded + 1
+                signature = MixLocalSignature(signature, shopId)
+                signature = MixLocalSignature(signature, collectionType or 0)
+                signature = MixLocalSignature(signature, entryId)
+                signature = MixLocalSignature(signature, metadata.priceTokens)
+                signature = MixLocalSignature(signature, metadata.priceEmblems)
+                signature = MixLocalSignature(signature, metadata.discount)
+                signature = MixLocalSignature(signature, metadata.featured and 1 or 0)
+                signature = MixLocalSignatureString(signature, metadata.name)
+                signature = MixLocalSignatureString(signature, metadata.icon)
+            end
+        end
+
+        if loaded > 0 then
+            state.shopMetadataById = byShopId
+            state.shopMetadataByTypeEntry = byTypeEntry
+            state.shopMetadataAuthoritative =
+                type(manifestShop) == "table" and
+                manifestShop.authoritative == true
+            state.shopMetadataSource = shopMetadataSource
+            state.signatures.shop = signature
+            state.available = true
+
+            self.localShopMetadataById = byShopId
+            self.localShopMetadataByTypeEntry = byTypeEntry
+        end
+    end
+
+    self._localCollectionCDBC = state
+    self._localCollectionCDBCBootstrapped = true
+
+    if state.sourcesLoaded or state.setsLoaded or state.shopMetadataAuthoritative then
+        self.isDataReady = true
+        self.cacheNeedsSave = true
+        self:Debug(string.format(
+            "Bootstrapped local collection CDBC data (sources=%s, sets=%s, shop=%s, shopSource=%s, manifest=%s)",
+            tostring(state.sourcesLoaded),
+            tostring(state.setsLoaded),
+            tostring(state.shopMetadataAuthoritative),
+            tostring(state.shopMetadataSource),
+            tostring(type(state.manifest) == "table")))
+    end
+
+    return state
 end
 
 local function NormalizeId(id)
@@ -585,6 +1430,9 @@ function DC:CacheAddDefinition(collectionType, itemId, defData)
 
     if typeName == "transmog" then
         self.definitions[typeName][normalizedId] = PackTransmogDefinition(defData)
+        if type(self._InvalidateTransmogDefinitionLookup) == "function" then
+            self:_InvalidateTransmogDefinitionLookup()
+        end
     else
         self.definitions[typeName][normalizedId] = defData
     end
@@ -627,6 +1475,10 @@ function DC:CacheMergeDefinitions(collectionType, definitions)
         else
             self.definitions[typeName][normalizedId] = defData
         end
+    end
+
+    if typeName == "transmog" and type(self._InvalidateTransmogDefinitionLookup) == "function" then
+        self:_InvalidateTransmogDefinitionLookup()
     end
 
     if added > 0 then
@@ -769,6 +1621,18 @@ function DC:GetDefinition(collectionType, itemId)
     local normalizedId = NormalizeId(itemId)
     if self.definitions[typeName] then
         local v = self.definitions[typeName][normalizedId]
+        if not v and typeName == "transmog" and type(self._EnsureTransmogDefinitionAliasLookup) == "function" then
+            local lookup = self:_EnsureTransmogDefinitionAliasLookup()
+            if type(lookup) == "table" then
+                local alias = lookup.byDisplayId and lookup.byDisplayId[normalizedId]
+                if not alias and lookup.byItemId then
+                    alias = lookup.byItemId[normalizedId]
+                end
+                if type(alias) == "table" then
+                    v = alias.raw
+                end
+            end
+        end
         if typeName == "transmog" and type(v) == "string" then
             return self:_GetUnpackedTransmogDefinition(normalizedId, v)
         end
@@ -971,6 +1835,11 @@ local function ScheduleAutoSave()
             end
         end)
     else
+
+            if localDefinitionsChanged and
+               type(self.RehydrateRecentAdditions) == "function" then
+                self:RehydrateRecentAdditions()
+            end
         local timerFrame = CreateFrame("Frame")
         timerFrame.elapsed = 0
         timerFrame:SetScript("OnUpdate", function(self, elapsed)
@@ -1018,6 +1887,9 @@ end
 local origCacheMergeDefinitions = DC.CacheMergeDefinitions
 function DC:CacheMergeDefinitions(...)
     local result = origCacheMergeDefinitions(self, ...)
+    if type(self.RehydrateRecentAdditions) == "function" then
+        self:RehydrateRecentAdditions()
+    end
     if self.cacheNeedsSave then
         ScheduleAutoSave()
     end

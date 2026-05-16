@@ -24,6 +24,8 @@ ItemPreloader.lua
 Modules\HeirloomModule.lua
 Modules\MountModule.lua
 Data\CompanionItemSeeds.lua
+Data\CollectionCompletenessManifest.lua
+Data\ShopStatic.lua
 Modules\PetModule.lua
 Modules\TitleModule.lua
 Modules\ToyModule.lua
