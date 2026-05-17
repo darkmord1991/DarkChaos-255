@@ -10,6 +10,10 @@
 
 local DC = DCCollection
 local L = DC.L
+local addonNameGlobal = ...
+local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
+local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.78
 
 -- ============================================================================
 -- WISHLIST UI
@@ -20,16 +24,59 @@ function DC:CreateWishlistUI()
         return self.WishlistUI
     end
     
-    local frame = CreateFrame("Frame", "DCCollectionWishlistFrame", UIParent, "UIPanelDialogTemplate")
+    local frame = CreateFrame("Frame", "DCCollectionWishlistFrame", UIParent)
     frame:SetSize(400, 350)
     frame:SetPoint("CENTER", UIParent, "CENTER", 200, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:SetToplevel(true)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetScript("OnMouseDown", function(self)
+        self:Raise()
+    end)
+    frame:SetScript("OnShow", function(self)
+        self:SetFrameStrata("DIALOG")
+        if DC and DC.MainFrame and DC.MainFrame:IsShown() then
+            self:SetFrameLevel((DC.MainFrame:GetFrameLevel() or 0) + 30)
+        end
+        self:Raise()
+    end)
     frame:Hide()
+
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    frame:SetBackdropColor(0, 0, 0, 0)
+
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    frame.bg:SetAllPoints()
+    frame.bg:SetTexture(BG_FELLEATHER)
+    if frame.bg.SetHorizTile then frame.bg:SetHorizTile(false) end
+    if frame.bg.SetVertTile then frame.bg:SetVertTile(false) end
+
+    frame.bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    frame.bgTint:SetAllPoints(frame.bg)
+    frame.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+
+    local contentInset = CreateFrame("Frame", nil, frame)
+    contentInset:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -36)
+    contentInset:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 44)
+    contentInset:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    })
+    contentInset:SetBackdropColor(0, 0, 0, 0.35)
+    contentInset:SetBackdropBorderColor(0.30, 0.30, 0.30, 1)
+    frame.contentInset = contentInset
     
     -- Title
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -37,17 +84,17 @@ function DC:CreateWishlistUI()
     frame.title:SetText(L["WISHLIST"] or "Wishlist")
     
     -- Close button
-    local closeBtn = _G[frame:GetName() .. "Close"]
-    if closeBtn then
-        closeBtn:SetScript("OnClick", function()
-            frame:Hide()
-        end)
-    end
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
+    closeBtn:SetScript("OnClick", function()
+        frame:Hide()
+    end)
+    frame.closeBtn = closeBtn
     
     -- Content area
     local content = CreateFrame("Frame", nil, frame)
-    content:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -40)
-    content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 40)
+    content:SetPoint("TOPLEFT", frame.contentInset, "TOPLEFT", 8, -8)
+    content:SetPoint("BOTTOMRIGHT", frame.contentInset, "BOTTOMRIGHT", -8, 8)
     
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "DCWishlistScrollFrame", content, "UIPanelScrollFrameTemplate")
@@ -106,6 +153,7 @@ function DC:ShowWishlist()
     end
     
     self.WishlistUI:Show()
+    self.WishlistUI:Raise()
     self:RefreshWishlistUI()
 end
 
@@ -211,11 +259,28 @@ function DC:CreateWishlistItemFrame(parent, wish, yOffset)
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
     frame.icon:SetSize(40, 40)
     frame.icon:SetPoint("LEFT", frame, "LEFT", 5, 0)
-    frame.icon:SetTexture(def and def.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+
+    local resolvedIcon = nil
+    if type(self.ResolveDefinitionIcon) == "function" then
+        resolvedIcon = self:ResolveDefinitionIcon(wish.type, wish.itemId, def)
+    elseif def then
+        resolvedIcon = def.icon
+    end
+
+    frame.icon:SetTexture(resolvedIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
     
     -- Name
     local rarity = def and def.rarity or 1
-    local r, g, b = unpack(self.RARITY_COLORS[rarity] or {1, 1, 1})
+    local rarityColor = nil
+    if type(self.GetRarityColor) == "function" then
+        rarityColor = self:GetRarityColor(rarity)
+    elseif type(self.RarityColors) == "table" then
+        rarityColor = self.RarityColors[rarity] or self.RarityColors[0]
+    elseif type(self.RARITY_COLORS) == "table" then
+        rarityColor = self.RARITY_COLORS[rarity] or self.RARITY_COLORS[0]
+    end
+
+    local r, g, b = unpack(rarityColor or {1, 1, 1})
     
     frame.name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.name:SetPoint("TOPLEFT", frame.icon, "TOPRIGHT", 10, -5)
@@ -248,11 +313,9 @@ end
 
 function DC:AddToWishlist(collectionType, itemId)
     -- Check if already in wishlist
-    for _, wish in ipairs(self.wishlist) do
-        if wish.type == collectionType and wish.itemId == itemId then
-            self:Print(L["ALREADY_IN_WISHLIST"] or "Item is already in wishlist")
-            return
-        end
+    if type(self.IsOnWishlist) == "function" and self:IsOnWishlist(collectionType, itemId) then
+        self:Print(L["ALREADY_IN_WISHLIST"] or "Item is already in wishlist")
+        return
     end
     
     self:RequestAddWishlist(collectionType, itemId)
@@ -284,10 +347,8 @@ function DC:ClearWishlist()
 end
 
 function DC:IsInWishlist(collectionType, itemId)
-    for _, wish in ipairs(self.wishlist) do
-        if wish.type == collectionType and wish.itemId == itemId then
-            return true
-        end
+    if type(self.IsOnWishlist) == "function" then
+        return self:IsOnWishlist(collectionType, itemId)
     end
     return false
 end

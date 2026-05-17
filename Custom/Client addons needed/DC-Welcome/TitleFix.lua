@@ -211,6 +211,114 @@ DCWelcome.TitleFix = DCWelcome.TitleFix or {}
 DCWelcome.TitleFix.DEFAULT_TITLES = DEFAULT_TITLES
 
 local function InitializeTitleFix()
+    local function NormalizeTitleName(name)
+        if type(name) ~= "string" then
+            return ""
+        end
+
+        local normalized = string.lower(name)
+        normalized = string.gsub(normalized, "%%s", "")
+        normalized = string.gsub(normalized, "|c%x%x%x%x%x%x%x%x", "")
+        normalized = string.gsub(normalized, "|r", "")
+        normalized = string.gsub(normalized, "^%s+", "")
+        normalized = string.gsub(normalized, "%s+$", "")
+        normalized = string.gsub(normalized, "%s+", " ")
+
+        return normalized
+    end
+
+    local function BuildAuthoritativeTitleNameSet()
+        local DC = rawget(_G, "DCCollection")
+        if type(DC) ~= "table" or not DC._titleCollectionAuthoritative then
+            return nil
+        end
+
+        local collections = type(DC.collections) == "table" and DC.collections.titles
+        local definitions = type(DC.definitions) == "table" and DC.definitions.titles
+        if type(collections) ~= "table" or type(definitions) ~= "table" then
+            return nil
+        end
+
+        local allowed = {}
+        for titleId in pairs(collections) do
+            local def = definitions[titleId]
+            if not def then
+                local numericTitleId = tonumber(titleId)
+                if numericTitleId then
+                    def = definitions[numericTitleId] or definitions[tostring(numericTitleId)]
+                end
+            end
+
+            local titleName = def and (def.displayName or def.name)
+            local key = NormalizeTitleName(titleName)
+            if key ~= "" then
+                allowed[key] = true
+            end
+        end
+
+        return next(allowed) and allowed or nil
+    end
+
+    local function FilterPlayerTitlesToAuthoritativeCollection()
+        if type(playerTitles) ~= "table" then
+            return
+        end
+
+        local allowed = BuildAuthoritativeTitleNameSet()
+        if not allowed then
+            return
+        end
+
+        local filtered = {}
+        for _, titleEntry in ipairs(playerTitles) do
+            local titleIndex = titleEntry
+            if type(titleEntry) == "table" then
+                titleIndex = titleEntry.id or titleEntry.title or titleEntry.index or titleEntry[1]
+            end
+
+            local titleName = titleIndex and GetTitleName(titleIndex) or nil
+            local key = NormalizeTitleName(titleName)
+            if key ~= "" and allowed[key] then
+                table.insert(filtered, titleEntry)
+            end
+        end
+
+        for key in pairs(playerTitles) do
+            playerTitles[key] = nil
+        end
+
+        for index, titleEntry in ipairs(filtered) do
+            playerTitles[index] = titleEntry
+        end
+    end
+
+    local function ShouldExposeFallbackTitle(titleID)
+        local numericTitleID = tonumber(titleID)
+        if not numericTitleID then
+            return false
+        end
+
+        if numericTitleID == 0 then
+            return true
+        end
+
+        if type(IsTitleKnown) == "function" then
+            local success, known = pcall(IsTitleKnown, numericTitleID)
+            if success and known then
+                return true
+            end
+        end
+
+        if type(GetCurrentTitle) == "function" then
+            local success, currentTitle = pcall(GetCurrentTitle)
+            if success and tonumber(currentTitle) == numericTitleID then
+                return true
+            end
+        end
+
+        return false
+    end
+
     -- LAYER 1: Initialize playerTitles global table (must exist for frame functions)
     if not _G.playerTitles then
         _G.playerTitles = {}
@@ -246,13 +354,14 @@ local function InitializeTitleFix()
             return result
         end
         
-        -- Fall back to default title database
-        if DEFAULT_TITLES[titleID] then
+        -- Fall back only for titles the client actually knows (or currently has active).
+        -- Returning synthetic names for every ID pollutes the default title picker.
+        if DEFAULT_TITLES[titleID] and ShouldExposeFallbackTitle(titleID) then
             return DEFAULT_TITLES[titleID]
         end
         
-        -- Last resort: generate a generic title name
-        return "Title " .. tostring(titleID)
+        -- Preserve the non-nil contract without inventing unknown titles.
+        return ""
     end
     
     -- LAYER 4: Patch PlayerTitleFrame_UpdateTitles to handle nil title names
@@ -269,6 +378,10 @@ local function InitializeTitleFix()
             local success, err = pcall(function()
                 original_UpdateTitles()
             end)
+
+            if success then
+                FilterPlayerTitlesToAuthoritativeCollection()
+            end
             
             if not success then
                 -- Silent fail in integrated mode, but ensure frame is usable
@@ -287,6 +400,8 @@ local function InitializeTitleFix()
             if not playerTitles then
                 playerTitles = {}
             end
+
+            FilterPlayerTitlesToAuthoritativeCollection()
             
             local success, err = pcall(function()
                 original_ScrollUpdate()

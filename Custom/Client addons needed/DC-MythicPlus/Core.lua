@@ -64,6 +64,25 @@ end
 -- DCAddonProtocol integration
 local DC = rawget(_G, "DCAddonProtocol")
 namespace.useDCProtocol = (DC ~= nil)
+local NATIVE_MPLUS_HUD_CAPABILITY = 0x00001000
+local NATIVE_MPLUS_HUD_POLL_INTERVAL = 0.10
+local lastNativeHudRevision = 0
+local nativeHudPollFrame
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+
+    if capability <= 0 then
+        return false
+    end
+
+    if bit and bit.band then
+        return bit.band(mask, capability) ~= 0
+    end
+
+    return (mask % (capability * 2)) >= capability
+end
 
 local function RefreshDCProtocol()
     local protocol = rawget(_G, "DCAddonProtocol")
@@ -75,6 +94,61 @@ local function RefreshDCProtocol()
 end
 
 RefreshDCProtocol()
+
+local function GetClientCapabilityMask()
+    local protocol = RefreshDCProtocol()
+    if protocol and type(protocol.GetClientCapabilities) == "function" then
+        local ok, capabilities = pcall(protocol.GetClientCapabilities, protocol)
+        if ok then
+            return tonumber(capabilities) or 0
+        end
+    end
+
+    return 0
+end
+
+local function GetProtocolCapabilitySnapshot()
+    local protocol = RefreshDCProtocol()
+    if not protocol or type(protocol.GetCapabilitySnapshot) ~= "function" then
+        return nil
+    end
+
+    local ok, snapshot = pcall(protocol.GetCapabilitySnapshot, protocol)
+    if not ok or type(snapshot) ~= "table" then
+        return nil
+    end
+
+    return snapshot
+end
+
+local function IsCapabilityNegotiated(capability)
+    local snapshot = GetProtocolCapabilitySnapshot()
+    if not snapshot or not snapshot.connected then
+        return false
+    end
+
+    return HasCapabilityBit(tonumber(snapshot.negotiatedCaps) or 0,
+        capability)
+end
+
+local function HasNativeMythicPlusHudBridge()
+    if type(RequestNativeMythicPlusHud) ~= "function"
+        or type(GetNativeMythicPlusHudSnapshot) ~= "function" then
+        return false
+    end
+
+    local capabilities = GetClientCapabilityMask()
+    if capabilities > 0 then
+        return HasCapabilityBit(capabilities, NATIVE_MPLUS_HUD_CAPABILITY)
+    end
+
+    return true
+end
+
+local function ShouldUseNativeMythicPlusHudBridge()
+    return HasNativeMythicPlusHudBridge()
+        and IsCapabilityNegotiated(NATIVE_MPLUS_HUD_CAPABILITY)
+end
 
 local AIO = rawget(_G, "AIO")
 if not AIO then
@@ -2282,6 +2356,22 @@ local function RequestServerSnapshot(reason)
     local protocol = RefreshDCProtocol()
     local reqReason = reason or "client"
 
+    if ShouldUseNativeMythicPlusHudBridge() then
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if now <= 0 and type(time) == "function" then
+            now = time()
+        end
+        if REQUEST_COOLDOWN > 0 and lastRequestTime > 0 and now > 0 then
+            if (now - lastRequestTime) < REQUEST_COOLDOWN then
+                return
+            end
+        end
+        lastRequestTime = now > 0 and now or lastRequestTime
+        Trace("RequestHUD via native bridge, reason=" .. tostring(reqReason))
+        RequestNativeMythicPlusHud(reqReason)
+        return
+    end
+
     -- Try DCAddonProtocol first (new C++ backend)
     if namespace.useDCProtocol and protocol and protocol.MythicPlus and protocol.MythicPlus.RequestHUD then
         local now = (type(GetTime) == "function" and GetTime()) or 0
@@ -2666,6 +2756,49 @@ local function HandleIncomingPayload(payload)
     UpdateFrameFromState(data)
 end
 
+local function ConsumeNativeHudSnapshot()
+    if not ShouldUseNativeMythicPlusHudBridge() then
+        return false
+    end
+
+    local ok, revision, payload = pcall(GetNativeMythicPlusHudSnapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    if revision <= 0 or revision == lastNativeHudRevision then
+        return false
+    end
+
+    lastNativeHudRevision = revision
+    if type(payload) ~= "string" or payload == "" then
+        return false
+    end
+
+    Trace("Consumed native HUD snapshot rev=" .. tostring(revision))
+    HandleIncomingPayload(payload)
+    return true
+end
+
+local function EnsureNativeHudPollFrame()
+    if nativeHudPollFrame then
+        return
+    end
+
+    nativeHudPollFrame = CreateFrame("Frame")
+    nativeHudPollFrame.elapsed = 0
+    nativeHudPollFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_MPLUS_HUD_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativeHudSnapshot()
+    end)
+end
+
 local function HandleTimerUpdatePayload(...)
     local args = {...}
     local payload = args[1]
@@ -2737,6 +2870,10 @@ local retryTicker
 local function TryRegisterHandlers()
     local protocol = RefreshDCProtocol()
     local dcReady = namespace.useDCProtocol and protocol and type(protocol.RegisterHandler) == "function"
+
+    if HasNativeMythicPlusHudBridge() then
+        EnsureNativeHudPollFrame()
+    end
 
     if dcReady and not namespace._dcRuntimeHudHandlerBound then
         local okBind, bindErr = pcall(function()

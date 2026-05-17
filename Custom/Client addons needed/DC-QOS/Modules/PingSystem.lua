@@ -65,6 +65,13 @@ local state = {
     recentLocalRelaySequences = {},
 }
 
+local NATIVE_PING_RELAY_CAPABILITY = 0x00008000
+local NATIVE_PING_RELAY_POLL_INTERVAL = 0.10
+local lastNativePingRelayRevision = 0
+local nativePingRelayPollFrame
+
+local HandleProtocolFeatureData
+
 local SECURE_PING_EVENT_RADIAL_CREATED = "radialCreated"
 local SECURE_PING_EVENT_PENDING_OFFSCREEN = "pendingOffscreen"
 local SECURE_PING_EVENT_TOGGLE_LISTENER = "toggleListener"
@@ -111,6 +118,142 @@ local math_pi = math.pi
 local math_rad = math.rad
 local math_sin = math.sin
 local math_sqrt = math.sqrt
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+
+    if capability <= 0 then
+        return false
+    end
+
+    if bit and bit.band then
+        return bit.band(mask, capability) ~= 0
+    end
+
+    return (mask % (capability * 2)) >= capability
+end
+
+local function GetClientCapabilityMask()
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and type(DC.GetClientCapabilities) == "function" then
+        local ok, capabilities = pcall(DC.GetClientCapabilities, DC)
+        if ok then
+            return tonumber(capabilities) or 0
+        end
+    end
+
+    return 0
+end
+
+local function GetProtocolCapabilitySnapshot()
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not DC or type(DC.GetCapabilitySnapshot) ~= "function" then
+        return nil
+    end
+
+    local ok, snapshot = pcall(DC.GetCapabilitySnapshot, DC)
+    if not ok or type(snapshot) ~= "table" then
+        return nil
+    end
+
+    return snapshot
+end
+
+local function IsCapabilityNegotiated(capability)
+    local snapshot = GetProtocolCapabilitySnapshot()
+    if not snapshot or not snapshot.connected then
+        return false
+    end
+
+    return HasCapabilityBit(tonumber(snapshot.negotiatedCaps) or 0,
+        capability)
+end
+
+local function HasNativePingRelayBridge()
+    if type(RequestNativePingRelay) ~= "function"
+        or type(GetNativePingRelaySnapshot) ~= "function" then
+        return false
+    end
+
+    local capabilities = GetClientCapabilityMask()
+    if capabilities > 0 then
+        return HasCapabilityBit(capabilities, NATIVE_PING_RELAY_CAPABILITY)
+    end
+
+    return true
+end
+
+local function ShouldUseNativePingRelayBridge()
+    return HasNativePingRelayBridge()
+        and IsCapabilityNegotiated(NATIVE_PING_RELAY_CAPABILITY)
+end
+
+local function DecodeNativePingRelayEnvelope(payload)
+    if type(payload) == "table" then
+        return payload
+    end
+
+    if type(payload) ~= "string" or payload == "" then
+        return nil
+    end
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not DC or type(DC.DecodeJSON) ~= "function" then
+        return nil
+    end
+
+    local ok, decoded = pcall(DC.DecodeJSON, DC, payload)
+    if not ok or type(decoded) ~= "table" then
+        return nil
+    end
+
+    return decoded
+end
+
+local function ConsumeNativePingRelaySnapshot()
+    if not ShouldUseNativePingRelayBridge() then
+        return false
+    end
+
+    local ok, revision, payload = pcall(GetNativePingRelaySnapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    if revision <= 0 or revision == lastNativePingRelayRevision then
+        return false
+    end
+
+    lastNativePingRelayRevision = revision
+
+    local decoded = DecodeNativePingRelayEnvelope(payload)
+    if type(decoded) ~= "table" then
+        return false
+    end
+
+    HandleProtocolFeatureData(decoded)
+    return true
+end
+
+local function EnsureNativePingRelayPollFrame()
+    if nativePingRelayPollFrame then
+        return
+    end
+
+    nativePingRelayPollFrame = CreateFrame("Frame")
+    nativePingRelayPollFrame.elapsed = 0
+    nativePingRelayPollFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_PING_RELAY_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativePingRelaySnapshot()
+    end)
+end
 
 local RAID_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
 local PING_ATLAS_TEXTURE_SHEET = "Interface\\AddOns\\DC-QOS\\Textures\\PingSystem\\Blizzard\\RadialWheel\\uipingsystem.blp"
@@ -3332,6 +3475,23 @@ local function SendLocalPingRelay(normalized)
         return false, err
     end
 
+    if ShouldUseNativePingRelayBridge() then
+        EnsureNativePingRelayPollFrame()
+
+        local nativeOk, nativeSent = pcall(RequestNativePingRelay,
+            request.distribution or "AUTO",
+            request.payload or request.syncPayload or "")
+        if nativeOk and nativeSent ~= false then
+            RememberLocalRelaySequence(request.sequence, request)
+            return true
+        end
+
+        if not nativeOk then
+            addon:Debug("Native ping relay request failed: "
+                .. tostring(nativeSent))
+        end
+    end
+
     local protocol = addon and addon.protocol
     local opcodes = (type(protocol) == "table" and protocol.Opcodes) or nil
     local requestOpcode = (opcodes and opcodes.CMSG_REQUEST_FEATURE) or 0x06
@@ -3570,7 +3730,7 @@ local function ShouldSuppressInboundPing(payload)
     return false
 end
 
-local function HandleProtocolFeatureData(rawPayload)
+HandleProtocolFeatureData = function(rawPayload)
     local settings = GetSettings()
     if not settings.allowProtocolPings then
         return
@@ -4240,33 +4400,8 @@ function PingSystem:PushQuickPing(pingType, options)
             payload.noRelay = true
             DebugQuickPing("entity-only: no location coordinates resolved; keeping entity target metadata and disabling relay")
         elseif allowScreenFallback then
-            local screenX = tonumber(options.preResolvedScreenX)
-            local screenY = tonumber(options.preResolvedScreenY)
-            local usedCapturedScreen = (type(screenX) == "number" and type(screenY) == "number")
-
-            if not usedCapturedScreen then
-                screenX, screenY = GetCursorScreenOffsets()
-            end
-
-            if screenX and screenY then
-                local clampedX, clampedY = ClampScreenOffsetsToViewport(screenX, screenY, 52)
-                payload.screenX = clampedX
-                payload.screenY = clampedY
-                payload.targetType = "ground"
-                DebugQuickPing(
-                    string.format(
-                        "fallback: %s screen offsets raw=(%.1f, %.1f) clamped=(%.1f, %.1f)",
-                        usedCapturedScreen and "captured" or "cursor",
-                        screenX,
-                        screenY,
-                        clampedX,
-                        clampedY
-                    )
-                )
-            else
-                DebugQuickPing("reject: no resolved ground coordinates and no cursor screen position")
-                return false, "No ground location resolved for ping."
-            end
+            DebugQuickPing("reject: unresolved ground ping would fall back to camera-relative screen offsets")
+            return false, "No stable ground location resolved for ping."
         else
             DebugQuickPing("reject: no resolved target or ground coordinates")
             return false, "No target or ground location resolved for ping."
@@ -4414,6 +4549,9 @@ function PingSystem.OnInitialize()
     EnsureRootFrame()
     EnsureSlashCommand()
     EnsureFeatureEventBridge()
+    if HasNativePingRelayBridge() then
+        EnsureNativePingRelayPollFrame()
+    end
 
     addon.PingSystem = PingSystem
     addon.PushScreenPing = function(_, payload)
@@ -4428,6 +4566,9 @@ function PingSystem.OnEnable()
     EnsureRootFrame()
     EnsureSlashCommand()
     EnsureFeatureEventBridge()
+    if HasNativePingRelayBridge() then
+        EnsureNativePingRelayPollFrame()
+    end
 
     if not InstallProtocolHandler() and addon.DelayedCall then
         addon:DelayedCall(2.0, function()

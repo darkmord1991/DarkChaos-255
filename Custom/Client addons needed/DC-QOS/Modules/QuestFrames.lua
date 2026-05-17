@@ -182,6 +182,7 @@ local state = {
     refreshQueued = {},
     hooksInstalled = false,
     worldMapHooksInstalled = false,
+    worldMapRefreshListener = nil,
     worldMapLayoutApplying = false,
     lastWorldMapRefreshRequestAt = 0,
     movableHandles = {},
@@ -191,60 +192,6 @@ local state = {
 
 local ApplyFontStyle
 local GetSelectedWorldMapQuestFrame
-
-local function EnsureSharedWorldMapRefreshDebounce()
-    if type(addon.QueueWorldMapRefreshCycle) == "function" then
-        return
-    end
-
-    function addon:QueueWorldMapRefreshCycle(callback)
-        local bucket = self.__dcqosWorldMapRefreshCycle
-        if type(bucket) ~= "table" then
-            bucket = {
-                pending = false,
-                callbacks = {},
-            }
-            self.__dcqosWorldMapRefreshCycle = bucket
-        end
-
-        if type(callback) == "function" then
-            table.insert(bucket.callbacks, callback)
-        end
-
-        if bucket.pending then
-            return
-        end
-
-        bucket.pending = true
-
-        local function Flush()
-            bucket.pending = false
-
-            local callbacks = bucket.callbacks
-            bucket.callbacks = {}
-
-            for i = 1, #callbacks do
-                pcall(callbacks[i])
-            end
-        end
-
-        if type(self.DelayedCall) == "function" then
-            self:DelayedCall(0, Flush)
-        else
-            Flush()
-        end
-    end
-end
-
-local function QueueSharedWorldMapRefreshCycle(callback)
-    EnsureSharedWorldMapRefreshDebounce()
-
-    if type(addon.QueueWorldMapRefreshCycle) == "function" then
-        addon:QueueWorldMapRefreshCycle(callback)
-    elseif type(callback) == "function" then
-        callback()
-    end
-end
 
 local function GetSettings()
     return addon.settings and addon.settings.questFrames or addon.defaults.questFrames
@@ -2398,9 +2345,6 @@ local function InstallWorldMapHooks()
     if state.worldMapHooksInstalled then
         return
     end
-    if type(hooksecurefunc) ~= "function" then
-        return
-    end
 
     local function RequestRefresh()
         if state.worldMapLayoutApplying then
@@ -2422,36 +2366,13 @@ local function InstallWorldMapHooks()
         end
 
         state.lastWorldMapRefreshRequestAt = now
-        QueueSharedWorldMapRefreshCycle(function()
-            QueueRefresh(0.02)
-            QueueRefresh(0.08)
-        end)
+        QueueRefresh(0.02)
+        QueueRefresh(0.08)
     end
 
-    local hookNames = {
-        "WorldMapFrame_DisplayQuests",
-        "WorldMapFrame_DisplayQuestPOI",
-        "WorldMapFrame_UpdateQuests",
-        "WorldMapFrame_SelectQuestFrame",
-    }
-
-    for _, name in ipairs(hookNames) do
-        if type(_G[name]) == "function" then
-            hooksecurefunc(name, RequestRefresh)
-        end
-    end
-
-    if WorldMapFrame and type(WorldMapFrame.HookScript) == "function" then
-        WorldMapFrame:HookScript("OnShow", RequestRefresh)
-    end
-    if WorldMapFrameSizeUpButton and type(WorldMapFrameSizeUpButton.HookScript) == "function" then
-        WorldMapFrameSizeUpButton:HookScript("OnClick", RequestRefresh)
-    end
-    if WorldMapFrameSizeDownButton and type(WorldMapFrameSizeDownButton.HookScript) == "function" then
-        WorldMapFrameSizeDownButton:HookScript("OnClick", RequestRefresh)
-    end
-    if WorldMapQuestShowObjectives and type(WorldMapQuestShowObjectives.HookScript) == "function" then
-        WorldMapQuestShowObjectives:HookScript("OnClick", RequestRefresh)
+    state.worldMapRefreshListener = RequestRefresh
+    if type(addon.RegisterWorldMapRefreshListener) == "function" then
+        addon:RegisterWorldMapRefreshListener("QuestFramesWorldMap", RequestRefresh)
     end
 
     state.worldMapHooksInstalled = true
@@ -3329,9 +3250,16 @@ local function StyleQuestItemButton(button)
     if not button.__dcqosQuestItem then
         button.__dcqosQuestItem = true
 
-        local iconFrame = button:CreateTexture(nil, "BORDER")
-        iconFrame:SetTexture(QUEST_ITEM_ICON_FRAME_TEXTURE)
-        iconFrame:SetAlpha(0.88)
+        local iconFrame = CreateFrame("Frame", nil, button)
+        iconFrame:EnableMouse(false)
+        if type(iconFrame.SetBackdrop) == "function" then
+            iconFrame:SetBackdrop({
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = 1,
+                insets = { left = 0, right = 0, top = 0, bottom = 0 },
+            })
+            iconFrame:SetBackdropBorderColor(0.92, 0.84, 0.66, 0.95)
+        end
         iconFrame:Show()
         button.__dcqosQuestItemFrame = iconFrame
 
@@ -3341,7 +3269,7 @@ local function StyleQuestItemButton(button)
         -- icon was removed because some QuestProgressItem buttons render the
         -- icon at the BACKGROUND draw layer too, which made the fill cover the
         -- item art with a solid gold/brown block.
-        local highlight = button:CreateTexture(nil, "OVERLAY")
+        local highlight = iconFrame:CreateTexture(nil, "OVERLAY")
         highlight:SetTexture(QUEST_ITEM_HIGHLIGHT_TEXTURE)
         highlight:SetBlendMode("ADD")
         highlight:SetAlpha(0)
@@ -3407,18 +3335,19 @@ local function StyleQuestItemButton(button)
     if iconRegion and iconRegion.Show then
         iconRegion:Show()
     end
-    if button.__dcqosQuestItemHighlight then
-        button.__dcqosQuestItemHighlight:ClearAllPoints()
-        button.__dcqosQuestItemHighlight:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", -2, 2)
-        button.__dcqosQuestItemHighlight:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 2, -2)
-    end
+    local iconFrameAnchor = button.__dcqosQuestItemFrame or iconAnchor
     if button.__dcqosQuestItemFrame then
         button.__dcqosQuestItemFrame:ClearAllPoints()
-        button.__dcqosQuestItemFrame:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", -5, 5)
-        button.__dcqosQuestItemFrame:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 5, -5)
-        button.__dcqosQuestItemFrame:SetDrawLayer("BORDER", 0)
-        button.__dcqosQuestItemFrame:SetVertexColor(0.92, 0.84, 0.66, 1)
+        button.__dcqosQuestItemFrame:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", -2, 2)
+        button.__dcqosQuestItemFrame:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 2, -2)
+        if type(button.__dcqosQuestItemFrame.SetBackdropBorderColor) == "function" then
+            button.__dcqosQuestItemFrame:SetBackdropBorderColor(0.92, 0.84, 0.66, 0.95)
+        end
         button.__dcqosQuestItemFrame:Show()
+    end
+    if button.__dcqosQuestItemHighlight then
+        button.__dcqosQuestItemHighlight:ClearAllPoints()
+        button.__dcqosQuestItemHighlight:SetAllPoints(iconFrameAnchor)
     end
     if button.__dcqosQuestItemBorder and button.__dcqosQuestItemBorder.ClearAllPoints then
         -- Legacy decoration: keep it parked off the icon so saved references
@@ -3647,6 +3576,10 @@ end
 function QuestFrames.OnEnable()
     InstallHooks()
 
+    if state.worldMapRefreshListener and type(addon.RegisterWorldMapRefreshListener) == "function" then
+        addon:RegisterWorldMapRefreshListener("QuestFramesWorldMap", state.worldMapRefreshListener)
+    end
+
     if not state.eventFrame then
         state.eventFrame = CreateFrame("Frame")
         state.eventFrame:SetScript("OnEvent", function()
@@ -3671,6 +3604,10 @@ function QuestFrames.OnEnable()
 end
 
 function QuestFrames.OnDisable()
+    if type(addon.UnregisterWorldMapRefreshListener) == "function" then
+        addon:UnregisterWorldMapRefreshListener("QuestFramesWorldMap")
+    end
+
     if state.eventFrame then
         state.eventFrame:UnregisterAllEvents()
     end

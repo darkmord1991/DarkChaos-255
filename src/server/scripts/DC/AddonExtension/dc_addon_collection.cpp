@@ -77,6 +77,15 @@ namespace DCCollection
             CollectionType::TRANSMOG,
         };
 
+        // Handshake / delta-sync hash only covers collection domains that are
+        // authoritatively synchronized through the generic collection payloads.
+        // Wardrobe appearances use their own owned-sync version and payload.
+        constexpr std::array<CollectionType, 3> kHandshakeCollectionTypes = {
+            CollectionType::MOUNT,
+            CollectionType::PET,
+            CollectionType::HEIRLOOM,
+        };
+
         constexpr std::array<CollectionType, 5> kOwnedCollectionTypesByJsonKey = {
             CollectionType::HEIRLOOM,
             CollectionType::MOUNT,
@@ -841,6 +850,33 @@ namespace DCCollection
             return static_cast<uint8>(CollectionType::ITEM_SET);
 
         return 0;
+    }
+
+    bool TryParseOwnedCollectionType(
+        Field* field,
+        CollectionType& type)
+    {
+        if (!field)
+            return false;
+
+        uint8 typeId = 0;
+        if (ItemsCollectionTypeIsEnum())
+            typeId = ItemsCollectionTypeFromString(field->Get<std::string>());
+        else
+            typeId = field->Get<uint8>();
+
+        switch (static_cast<CollectionType>(typeId))
+        {
+            case CollectionType::MOUNT:
+            case CollectionType::PET:
+            case CollectionType::HEIRLOOM:
+            case CollectionType::TITLE:
+            case CollectionType::TRANSMOG:
+                type = static_cast<CollectionType>(typeId);
+                return true;
+            default:
+                return false;
+        }
     }
 
     std::string BuildItemsCollectionTypeWhereClause(
@@ -1854,7 +1890,7 @@ namespace DCCollection
             std::size_t nextSlot = 0;
             bool found = false;
 
-            for (CollectionType type : kOwnedCollectionTypes)
+            for (CollectionType type : kHandshakeCollectionTypes)
             {
                 std::size_t const slot = GetCollectionTypeSlot(type);
                 auto const& items = buckets[slot];
@@ -1977,6 +2013,10 @@ namespace DCCollection
                 }
             }
 
+        }
+
+        if (!items.empty())
+        {
             std::sort(items.begin(), items.end());
             items.erase(std::unique(items.begin(), items.end()), items.end());
         }
@@ -1994,13 +2034,68 @@ namespace DCCollection
         if (totalOwnedItems)
             *totalOwnedItems = 0;
 
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return buckets;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT collection_type, {} FROM dc_collection_items "
+            "WHERE account_id = {} AND unlocked = 1 "
+            "ORDER BY collection_type ASC, {} ASC",
+            itemsEntryCol, accountId, itemsEntryCol);
+
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                CollectionType type;
+                if (!TryParseOwnedCollectionType(&fields[0], type))
+                    continue;
+
+                uint32 entryId = fields[1].Get<uint32>();
+                if (!entryId)
+                    continue;
+
+                if (type == CollectionType::TITLE)
+                {
+                    if (CharTitlesEntry const* titleEntry =
+                        ResolveTitleEntryByAnyKey(entryId))
+                    {
+                        entryId = titleEntry->ID;
+                    }
+                }
+
+                buckets[GetCollectionTypeSlot(type)].push_back(entryId);
+            } while (result->NextRow());
+        }
+
+        auto& titleItems =
+            buckets[GetCollectionTypeSlot(CollectionType::TITLE)];
+        auto legacyTitles = LoadLegacyTitleCollection(accountId);
+        for (uint32 entryId : legacyTitles)
+        {
+            if (CharTitlesEntry const* titleEntry =
+                ResolveTitleEntryByAnyKey(entryId))
+            {
+                titleItems.push_back(titleEntry->ID);
+            }
+        }
+
+        for (CollectionType type : kOwnedCollectionTypes)
+        {
+            auto& items = buckets[GetCollectionTypeSlot(type)];
+            if (items.empty())
+                continue;
+
+            std::sort(items.begin(), items.end());
+            items.erase(std::unique(items.begin(), items.end()), items.end());
+        }
+
         for (CollectionType type : kOwnedCollectionTypes)
         {
             std::size_t const slot = GetCollectionTypeSlot(type);
-            auto& items = buckets[slot];
-            items = LoadPlayerCollection(accountId, type);
-
-            uint32 const ownedCount = static_cast<uint32>(items.size());
+            uint32 const ownedCount = static_cast<uint32>(buckets[slot].size());
             if (counts)
                 (*counts)[slot] = ownedCount;
             if (totalOwnedItems)
@@ -2018,12 +2113,39 @@ namespace DCCollection
         for (int t = 1; t <= 6; ++t)
         {
             if (t == static_cast<int>(CollectionType::TOY))
-                continue; // Toys are disabled
+                continue;
 
-            CollectionType type = static_cast<CollectionType>(t);
-            auto owned = LoadPlayerCollection(accountId, type);
-            counts[type] = static_cast<uint32>(owned.size());
+            counts[static_cast<CollectionType>(t)] = 0;
         }
+
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return counts;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT collection_type, COUNT(DISTINCT {}) FROM dc_collection_items "
+            "WHERE account_id = {} AND unlocked = 1 "
+            "GROUP BY collection_type",
+            itemsEntryCol, accountId);
+
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                CollectionType type;
+                if (!TryParseOwnedCollectionType(&fields[0], type))
+                    continue;
+
+                if (type == CollectionType::TITLE)
+                    continue;
+
+                counts[type] = fields[1].Get<uint32>();
+            } while (result->NextRow());
+        }
+
+        counts[CollectionType::TITLE] = static_cast<uint32>(
+            LoadPlayerCollection(accountId, CollectionType::TITLE).size());
 
         return counts;
     }
@@ -5030,9 +5152,16 @@ namespace DCCollection
                     if (spellId)
                         d.Set("spellId", spellId);
                     if (creatureId)
+                    {
                         d.Set("creatureId", creatureId);
+                        d.Set("previewCreatureId", creatureId);
+                    }
                     if (displayId)
+                    {
                         d.Set("displayId", displayId);
+                        d.Set("previewDisplayId", displayId);
+                        d.Set("creatureDisplayId", displayId);
+                    }
 
                     std::string source = f[4].Get<std::string>();
                     if (!source.empty())

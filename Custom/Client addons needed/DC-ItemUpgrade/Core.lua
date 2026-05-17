@@ -27,6 +27,8 @@ DC.useDCProtocolJSON = true;
 
 -- Protocol debug/verbose flag
 DC.verboseProtocol = false;
+DC.liveCostCache = DC.liveCostCache or {};
+DC.pendingCostRequests = DC.pendingCostRequests or {};
 
 --[[=====================================================
 	QUALITY COLOR FIX & ITEM ID TOOLTIPS
@@ -430,6 +432,36 @@ function DC.CreateSettingsPanel()
 	end);
 	
 	-- Debug checkbox
+	-- SMSG_COST_INFO (0x13) - Authoritative cost totals for a target range
+	DCProtocol:RegisterHandler("UPG", 0x13, function(data)
+		DC.Debug("Received SMSG_COST_INFO: " .. tostring(data or "nil"));
+		if type(data) ~= "table" then return; end
+
+		local tier = tonumber(data.tier) or 0;
+		local fromLevel = tonumber(data.fromLevel) or 0;
+		local toLevel = tonumber(data.toLevel) or 0;
+		local key = DC.BuildCostCacheKey and DC.BuildCostCacheKey(tier, fromLevel, toLevel);
+		if key then
+			DC.pendingCostRequests[key] = nil;
+		end
+
+		if data.success == false or tier <= 0 or toLevel <= fromLevel then
+			return;
+		end
+
+		if DC.CacheCostInfo then
+			DC.CacheCostInfo(tier, fromLevel, toLevel, data.tokens, data.essence);
+		end
+
+		if DC.currentItem and DarkChaos_ItemUpgrade_UpdateUI then
+			local currentLevel = DC.currentItem.currentUpgrade or 0;
+			local targetLevel = DC.targetUpgradeLevel or currentLevel;
+			if tier == (DC.currentItem.tier or 0) and fromLevel == currentLevel and toLevel == targetLevel then
+				DarkChaos_ItemUpgrade_UpdateUI();
+			end
+		end
+	end);
+	
 	local debugCheck = CreateFrame("CheckButton", "DC_ItemUpgrade_DebugCheck", panel, "InterfaceOptionsCheckButtonTemplate");
 	debugCheck:SetPoint("TOPLEFT", autoEquipCheck, "BOTTOMLEFT", 0, -8);
 	if not debugCheck.Text then
@@ -647,8 +679,14 @@ function DC.RegisterDCProtocolHandlers()
 	
 	-- SMSG_UPGRADE_RESULT (0x11) - Upgrade success/failure notification
 	DCProtocol:RegisterHandler("UPG", 0x11, function(data)
-		DC.Debug("Received SMSG_UPGRADE_RESULT: " .. tostring(data or "nil"));
 		if type(data) ~= "table" then return; end
+		DC.Debug(string.format(
+			"Received SMSG_UPGRADE_RESULT: success=%s item=%s level=%s slot=%s:%s",
+			tostring(data.success),
+			tostring(data.itemId or data.itemID or "nil"),
+			tostring(data.newLevel or 0),
+			tostring(data.serverBag or "nil"),
+			tostring(data.serverSlot or "nil")));
 		
 		local success = data.success
 		local itemId = data.itemId or data.itemID
@@ -656,6 +694,17 @@ function DC.RegisterDCProtocolHandlers()
 		local newEntry = data.newEntry
 		local errorCode = data.errorCode or 0
 		local errorMsg = data.errorMsg
+		local resultTier = tonumber(data.tier) or 0
+		local resultMaxUpgrade = tonumber(data.maxUpgrade) or 0
+		local nextTokenCost = tonumber(data.tokenCost) or 0
+		local nextEssenceCost = tonumber(data.essenceCost) or 0
+		local resultServerBag = tonumber(data.serverBag)
+		local resultServerSlot = tonumber(data.serverSlot)
+		local pending = DC.pendingUpgrade
+		local pendingKey = nil
+		if pending and pending.bag ~= nil and pending.serverSlot ~= nil then
+			pendingKey = tostring(pending.bag) .. ":" .. tostring(pending.serverSlot)
+		end
 		
 		if success then
 			-- Upgrade successful
@@ -669,12 +718,73 @@ function DC.RegisterDCProtocolHandlers()
 			DC.PlaySound("LEVELUPSOUND");
 			
 			-- Update cache
-			if DC.itemUpgradeCache and DC.itemUpgradeCache[itemId] then
-				DC.itemUpgradeCache[itemId].currentUpgrade = newLevel;
-				if newEntry then
-					DC.itemUpgradeCache[itemId].currentEntry = newEntry;
+			DC.itemUpgradeCache = DC.itemUpgradeCache or {}
+			DC.itemUpgradeCache[itemId] = DC.itemUpgradeCache[itemId] or {}
+			DC.itemUpgradeCache[itemId].currentUpgrade = newLevel;
+			if newEntry then
+				DC.itemUpgradeCache[itemId].currentEntry = newEntry;
+			end
+			if resultTier > 0 then
+				DC.itemUpgradeCache[itemId].tier = resultTier;
+			end
+			if resultMaxUpgrade > 0 then
+				DC.itemUpgradeCache[itemId].maxUpgrade = resultMaxUpgrade;
+			end
+			DC.itemUpgradeCache[itemId].tokenCost = nextTokenCost;
+			DC.itemUpgradeCache[itemId].essenceCost = nextEssenceCost;
+
+			if DC.CacheCostInfo and resultTier > 0 and resultMaxUpgrade > 0 and newLevel < resultMaxUpgrade then
+				DC.CacheCostInfo(resultTier, newLevel, newLevel + 1, nextTokenCost, nextEssenceCost);
+			end
+
+			if pendingKey and DC.currentItem then
+				local currentKey = tostring(DC.currentItem.serverBag or DC.currentItem.bag or -1) .. ":" .. tostring(DC.currentItem.serverSlot or -1)
+				if currentKey == pendingKey then
+					DC.currentItem.awaitingServerInfo = false
+					DC.currentItem.hasAuthoritativeState = true
+					DC.currentItem.allowBackgroundRefresh = true
+					DC.currentItem.currentUpgrade = tonumber(newLevel) or DC.currentItem.currentUpgrade or 0
+					if resultTier > 0 then
+						DC.currentItem.tier = resultTier
+					end
+					if resultMaxUpgrade > 0 then
+						DC.currentItem.maxUpgrade = resultMaxUpgrade
+					end
+					DC.currentItem.tokenCost = nextTokenCost
+					DC.currentItem.essenceCost = nextEssenceCost
+					if newEntry then
+						DC.currentItem.currentEntry = newEntry
+						DC.currentItem.itemID = newEntry
+					end
+					if resultServerBag ~= nil then
+						DC.currentItem.serverBag = resultServerBag
+					end
+					if resultServerSlot ~= nil then
+						DC.currentItem.serverSlot = resultServerSlot
+					end
+					if itemId then
+						DC.currentItem.guid = itemId
+						DC.itemLocationCache = DC.itemLocationCache or {}
+						DC.itemLocationCache[pendingKey] = itemId
+					end
+					if DC.currentItem.serverBag ~= nil and DC.currentItem.serverSlot ~= nil then
+						DC.currentItem.locationKey = tostring(DC.currentItem.serverBag) .. ":" .. tostring(DC.currentItem.serverSlot)
+					end
+					if DC.currentItem.maxUpgrade and newLevel < DC.currentItem.maxUpgrade then
+						DC.targetUpgradeLevel = newLevel + 1
+					else
+						DC.targetUpgradeLevel = math.max(newLevel, 1)
+					end
 				end
 			end
+
+			local nextTier = resultTier or tier or (DC.currentItem and DC.currentItem.tier) or 0
+			local nextMaxUpgrade = resultMaxUpgrade or maxUpgrade or (DC.currentItem and DC.currentItem.maxUpgrade) or 0
+			if DC.RequestCostInfo and nextTier > 0 and nextTier ~= 3 and newLevel < nextMaxUpgrade then
+				DC.RequestCostInfo(nextTier, newLevel, newLevel + 1)
+			end
+
+			DC.pendingUpgrade = nil
 
 			-- Record history (standard upgrades only; heirloom shirt handled by DCHEIRLOOM_SUCCESS)
 			if itemId ~= 300365 then
@@ -701,11 +811,21 @@ function DC.RegisterDCProtocolHandlers()
 			if DC.RefreshUpgradeFrame then
 				DC.RefreshUpgradeFrame();
 			end
+			if DarkChaos_ItemUpgrade_UpdateUI then
+				DarkChaos_ItemUpgrade_UpdateUI()
+			end
 			
 			DEFAULT_CHAT_FRAME:AddMessage(string.format(
 				"|cff00ff00Upgrade successful!|r Item upgraded to level %d", newLevel));
 		else
 			-- Upgrade failed
+			if pendingKey and DC.currentItem then
+				local currentKey = tostring(DC.currentItem.serverBag or DC.currentItem.bag or -1) .. ":" .. tostring(DC.currentItem.serverSlot or -1)
+				if currentKey == pendingKey then
+					DC.currentItem.awaitingServerInfo = false
+				end
+			end
+			DC.pendingUpgrade = nil
 			DC.PlaySound("igQuestFailed");
 			
 			local errorMessages = {
@@ -718,13 +838,15 @@ function DC.RegisterDCProtocolHandlers()
 			};
 			
 			local msg = errorMessages[errorCode] or errorMsg or "Unknown error";
+			if DarkChaos_ItemUpgrade_UpdateUI then
+				DarkChaos_ItemUpgrade_UpdateUI()
+			end
 			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Upgrade failed:|r " .. msg);
 		end
 	end);
 	
 	-- SMSG_CURRENCY_UPDATE (0x14) - Token/Essence balance update
 	DCProtocol:RegisterHandler("UPG", 0x14, function(data)
-		DC.Debug("Received SMSG_CURRENCY_UPDATE: " .. tostring(data));
 		if type(data) ~= "table" then return; end
 		
 		local tokens = data.tokens
@@ -742,7 +864,7 @@ function DC.RegisterDCProtocolHandlers()
 				DC.ESSENCE_ITEM_ID = tonumber(essenceId) or DC.ESSENCE_ITEM_ID;
 			end
 			
-			DC.Debug(string.format("Currency updated: %d tokens, %d essence", 
+			DC.Debug(string.format("Received SMSG_CURRENCY_UPDATE: %d tokens, %d essence",
 				DC.playerTokens, DC.playerEssence));
 			
 			-- Bridge: expose server currency into DCAddonProtocol's shared balance
@@ -1164,6 +1286,43 @@ end
 	PROTOCOL-AWARE REQUEST FUNCTIONS WITH FALLBACK
 =======================================================]]
 
+function DC.BuildCostCacheKey(tier, fromLevel, toLevel)
+	tier = tonumber(tier) or 0;
+	fromLevel = tonumber(fromLevel) or 0;
+	toLevel = tonumber(toLevel) or 0;
+	if tier <= 0 or fromLevel < 0 or toLevel <= fromLevel then
+		return nil;
+	end
+	return string.format("%d:%d:%d", tier, fromLevel, toLevel);
+end
+
+function DC.CacheCostInfo(tier, fromLevel, toLevel, tokens, essence)
+	local key = DC.BuildCostCacheKey(tier, fromLevel, toLevel);
+	if not key then
+		return nil;
+	end
+
+	DC.liveCostCache = DC.liveCostCache or {};
+	DC.liveCostCache[key] = {
+		tier = tonumber(tier) or 0,
+		fromLevel = tonumber(fromLevel) or 0,
+		toLevel = tonumber(toLevel) or 0,
+		tokens = tonumber(tokens) or 0,
+		essence = tonumber(essence) or 0,
+		timestamp = GetTime and GetTime() or 0,
+	};
+
+	return DC.liveCostCache[key];
+end
+
+function DC.GetCachedCostInfo(tier, fromLevel, toLevel)
+	local key = DC.BuildCostCacheKey(tier, fromLevel, toLevel);
+	if not key or not DC.liveCostCache then
+		return nil;
+	end
+	return DC.liveCostCache[key];
+end
+
 -- Protocol-aware request functions with fallback chain
 function DC.RequestItemInfo(bag, slot, itemLink)
 	-- Try DC Protocol first
@@ -1184,10 +1343,38 @@ function DC.RequestUpgrade(bag, slot, targetLevel)
 	end
 end
 
+function DC.RequestCostInfo(tier, fromLevel, toLevel)
+	if not (DCProtocol and DC.useDCProtocol) then
+		return false;
+	end
+
+	local key = DC.BuildCostCacheKey(tier, fromLevel, toLevel);
+	if not key then
+		return false;
+	end
+
+	DC.liveCostCache = DC.liveCostCache or {};
+	DC.pendingCostRequests = DC.pendingCostRequests or {};
+	if DC.liveCostCache[key] or DC.pendingCostRequests[key] then
+		return false;
+	end
+
+	DC.pendingCostRequests[key] = true;
+	DCProtocol:Request("UPG", 0x04, {
+		tier = tonumber(tier) or 0,
+		fromLevel = tonumber(fromLevel) or 0,
+		toLevel = tonumber(toLevel) or 0,
+	}); -- CMSG_GET_COSTS
+	DC.Debug(string.format("Sent cost info request via DC protocol: tier=%d from=%d to=%d",
+		tonumber(tier) or 0,
+		tonumber(fromLevel) or 0,
+		tonumber(toLevel) or 0));
+	return true;
+end
+
 function DC.RequestCurrencySync()
-	-- Server pushes currency updates based on events.
+	-- Currency is server-pushed on login and after upgrade events in DC protocol mode.
 	if DCProtocol and DC.useDCProtocol then
-		DCProtocol:Request("UPG", 0x04, {})
 		return
 	end
 end

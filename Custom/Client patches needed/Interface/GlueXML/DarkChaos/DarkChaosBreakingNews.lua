@@ -17,6 +17,31 @@ local function DCBreakingNews_HasClientApi()
         and type(GetBreakingNewsRevision) == "function"
 end
 
+local function DCBreakingNews_CoerceNativeBoolean(value)
+    local valueType = type(value)
+
+    if valueType == "boolean" then
+        return value
+    end
+
+    if valueType == "number" then
+        return value ~= 0
+    end
+
+    if valueType == "string" then
+        local lowered = string.lower(value)
+        if lowered == "0" or lowered == "false" or lowered == "no" or lowered == "" then
+            return false
+        end
+
+        if lowered == "1" or lowered == "true" or lowered == "yes" then
+            return true
+        end
+    end
+
+    return value and true or false
+end
+
 local function DCBreakingNews_GetParentFrame()
     if CharacterSelect then
         return CharacterSelect
@@ -204,7 +229,9 @@ local function DCBreakingNews_HideFrame(reason)
 end
 
 local function DCBreakingNews_ApplyCurrent()
-    if not DCBreakingNews_HasClientApi() or not HasBreakingNews() then
+    local hasPayload = DCBreakingNews_HasClientApi()
+        and DCBreakingNews_CoerceNativeBoolean(HasBreakingNews())
+    if not hasPayload then
         DCBreakingNews_HideFrame("payload-missing")
         return
     end

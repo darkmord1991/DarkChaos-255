@@ -1338,7 +1338,23 @@ enum Opcodes : uint16
     SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT1         = 0x51C,
     SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT2         = 0x51D,
     SMSG_MULTIPLE_MOVES                             = 0x51E, // uncompressed version of SMSG_COMPRESSED_MOVES
-    NUM_MSG_TYPES                                   = 0x51F
+    CMSG_TELEPORT_GRAVEYARD_REQUEST                 = 0x520,
+    CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT          = 0x521,
+    SMSG_SPELL_TOOLTIP_ENRICHMENT                  = 0x522,
+    SMSG_BREAKING_NEWS                             = 0x523,
+    CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP              = 0x524,
+    SMSG_ITEM_UPGRADE_TOOLTIP                      = 0x525,
+    CMSG_REQUEST_NPC_TOOLTIP_INFO                  = 0x526,
+    SMSG_NPC_TOOLTIP_INFO                          = 0x527,
+    CMSG_REQUEST_MPLUS_HUD_SNAPSHOT                = 0x528,
+    SMSG_MPLUS_HUD_SNAPSHOT                        = 0x529,
+    CMSG_REQUEST_COLLECTION_TRANSMOG_STATE         = 0x52A,
+    SMSG_COLLECTION_TRANSMOG_STATE                 = 0x52B,
+    CMSG_REQUEST_COLLECTION_ITEM_SETS              = 0x52C,
+    SMSG_COLLECTION_ITEM_SETS                      = 0x52D,
+    CMSG_REQUEST_QOS_PING_RELAY                    = 0x52E,
+    SMSG_QOS_PING_RELAY                            = 0x52F,
+    NUM_MSG_TYPES                                   = 0x530
 };
 
 enum OpcodeMisc : uint16

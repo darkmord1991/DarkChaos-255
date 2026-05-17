@@ -11,6 +11,7 @@
 #include "Common.h"
 #include "dc_addon_namespace.h"
 #include "WorldSessionMgr.h"
+#include "WorldPacket.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
@@ -29,9 +30,58 @@ namespace DCAddon
 {
 namespace MythicPlus
 {
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_HUD_SNAPSHOT = ::CMSG_REQUEST_MPLUS_HUD_SNAPSHOT,
+            SMSG_HUD_SNAPSHOT = ::SMSG_MPLUS_HUD_SNAPSHOT,
+        };
+    }
+
     namespace
     {
         constexpr uint32 WEEK_SECONDS = 7u * 24u * 60u * 60u;
+
+        bool SupportsNativeHudTransport(Player* player)
+        {
+            return player && DCAddon::SessionSupportsCapability(player,
+                DCAddon::ProtocolVersion::Capability::MYTHICPLUS_HUD_NATIVE);
+        }
+
+        void SendNativeHudSnapshot(Player* player,
+            std::string const& payload)
+        {
+            if (!player || !player->GetSession() || payload.empty())
+                return;
+
+            WorldPacket data(BridgeOpcode::SMSG_HUD_SNAPSHOT,
+                payload.size() + 1);
+            data << payload;
+            player->GetSession()->SendPacket(&data);
+        }
+
+        void SendAddonHudSnapshot(Player* player,
+            std::string const& payload)
+        {
+            if (!player || payload.empty())
+                return;
+
+            Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_TIMER_UPDATE)
+                .Add(payload)
+                .Send(player);
+        }
+
+        void SendHudSnapshot(Player* player, std::string const& payload)
+        {
+            if (SupportsNativeHudTransport(player))
+            {
+                SendNativeHudSnapshot(player, payload);
+                return;
+            }
+
+            SendAddonHudSnapshot(player, payload);
+        }
 
         bool JsonGetBool(DCAddon::JsonValue const& json, std::string const& key,
             bool defaultValue = false)
@@ -1053,9 +1103,7 @@ namespace MythicPlus
     // Send HUD update to player (pipe-delimited)
     void SendHUDUpdate(Player* player, const std::string& jsonData)
     {
-        Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_TIMER_UPDATE)
-            .Add(jsonData)
-            .Send(player);
+        SendHudSnapshot(player, jsonData);
     }
 
     // ========================================================================
@@ -1148,11 +1196,11 @@ namespace MythicPlus
             if (prev.idleReason == reason)
                 return;  // Already sent this idle reason
 
-            // Build JSON payload
-            JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_TIMER_UPDATE)
-                .Set("op", "idle")
-                .Set("reason", reason)
-                .Send(player);
+            JsonValue payload;
+            payload.SetObject();
+            payload.Set("op", "idle");
+            payload.Set("reason", reason);
+            SendHudSnapshot(player, payload.Encode());
 
             prev.idleReason = reason;
             prev.instanceKey = 0;
@@ -1172,10 +1220,7 @@ namespace MythicPlus
             if (!player || record.payload.empty())
                 return false;
 
-            // Send raw JSON payload
-            Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_TIMER_UPDATE)
-                .Add(record.payload)
-                .Send(player);
+            SendHudSnapshot(player, record.payload);
 
             StoreSnapshot(player->GetGUID().GetCounter(), record.instanceKey, record.updatedAt);
             return true;
@@ -1432,6 +1477,22 @@ namespace MythicPlus
     static void HandleRequestHud(Player* player, const ParsedMessage& msg)
     {
         std::string reason = msg.GetString(0);
+        if (reason.empty())
+            reason = "client_request";
+
+        HudCacheMgr::Instance().RequestHud(player, reason);
+
+        if (reason == "register" || reason == "PLAYER_LOGIN" ||
+            reason == "PLAYER_ENTERING_WORLD")
+        {
+            SendVaultAvailableNotification(player);
+        }
+    }
+
+    static void HandleNativeHudRequest(Player* player,
+        std::string const& reasonValue)
+    {
+        std::string reason = reasonValue;
         if (reason.empty())
             reason = "client_request";
 
@@ -1712,6 +1773,51 @@ public:
     }
 };
 
+class MythicPlusHudNativeServerScript : public ServerScript
+{
+public:
+    MythicPlusHudNativeServerScript()
+        : ServerScript("MythicPlusHudNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode() !=
+            DCAddon::MythicPlus::BridgeOpcode::CMSG_REQUEST_HUD_SNAPSHOT)
+            return true;
+
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        std::string reason;
+        if (packet.size() > 0)
+        {
+            WorldPacket nativePacket(packet);
+            nativePacket.rpos(0);
+
+            try
+            {
+                nativePacket >> reason;
+            }
+            catch (ByteBufferException const&)
+            {
+                reason.clear();
+            }
+        }
+
+        DCAddon::MythicPlus::HandleNativeHudRequest(player, reason);
+        return false;
+    }
+};
+
 void AddSC_dc_addon_mythicplus()
 {
     DCAddon::MythicPlus::RegisterHandlers();
@@ -1719,4 +1825,5 @@ void AddSC_dc_addon_mythicplus()
     new MythicPlusKeystoneLoginPlayerScript();
     // Start HUD cache polling
     new MythicPlusHudCacheWorldScript();
+    new MythicPlusHudNativeServerScript();
 }

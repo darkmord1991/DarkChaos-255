@@ -439,7 +439,34 @@ function DC:MaybeApplyLastOutfitOnLogin(currentState)
         return
     end
 
-    if self:_LoginOutfitStateMatches(saved.slots, currentState) then
+    local filteredSlots = {}
+    for slotStr, appearanceId in pairs(saved.slots) do
+        local equipSlot = tonumber(slotStr)
+        if equipSlot ~= nil then
+            local invSlotId = equipSlot + 1
+            if GetInventoryItemID("player", invSlotId) then
+                local n = tonumber(appearanceId) or 0
+                if n <= 0 then
+                    filteredSlots[tostring(equipSlot)] = n
+                else
+                    local isCompatible = true
+                    if self.Wardrobe and
+                        type(self.Wardrobe.IsOutfitAppearanceCompatibleWithEquipped) == "function" then
+                        isCompatible = self.Wardrobe:IsOutfitAppearanceCompatibleWithEquipped(invSlotId, equipSlot, n)
+                    end
+
+                    if isCompatible then
+                        filteredSlots[tostring(equipSlot)] = n
+                    end
+                end
+            end
+        end
+    end
+
+    saved.slots = filteredSlots
+    DCCollectionCharDB.lastAppliedOutfit = saved
+
+    if self:_LoginOutfitStateMatches(filteredSlots, currentState) then
         self._pendingLoginOutfitApply = nil
         self._loginOutfitApplied = true
         return
@@ -451,7 +478,7 @@ function DC:MaybeApplyLastOutfitOnLogin(currentState)
         entries = {}
     end
 
-    for slotStr, appearanceId in pairs(saved.slots) do
+    for slotStr, appearanceId in pairs(filteredSlots) do
         local equipSlot = tonumber(slotStr)
         if equipSlot ~= nil then
             local invSlotId = equipSlot + 1
@@ -492,7 +519,6 @@ end
 
 DC.isLoaded = false
 DC.isDataReady = false
-DC.pendingRequests = {}
 
 -- Creating chat windows too early (during ADDON_LOADED/cache init) can explode inside
 -- FrameXML's chat fade code on some clients. Only attempt after the UI is fully in-world.
@@ -1110,8 +1136,38 @@ function DC:IsFavorite(collectionType, id)
 end
 
 function DC:IsOnWishlist(collectionType, id)
+    local normalizedTypeId = nil
+    local normalizedTypeName = nil
+
+    if type(collectionType) == "number" then
+        normalizedTypeId = collectionType
+        if type(self.GetTypeNameFromId) == "function" then
+            normalizedTypeName = self:GetTypeNameFromId(collectionType)
+        end
+    elseif type(collectionType) == "string" then
+        normalizedTypeName = string.lower(collectionType)
+        if type(self.GetTypeIdFromName) == "function" then
+            normalizedTypeId = self:GetTypeIdFromName(collectionType)
+        end
+    end
+
+    local normalizedEntryId = tonumber(id) or id
+
     for _, item in ipairs(self.wishlist) do
-        if item.collection_type == collectionType and item.item_id == id then
+        local wishTypeId = tonumber(item.typeId or item.type_id or item.type)
+        local wishTypeName = item.type or item.collection_type
+        if type(wishTypeName) == "string" then
+            wishTypeName = string.lower(wishTypeName)
+        elseif wishTypeId and type(self.GetTypeNameFromId) == "function" then
+            wishTypeName = self:GetTypeNameFromId(wishTypeId)
+        end
+
+        local wishEntryId = tonumber(item.itemId or item.item_id or item.entryId or item.entry_id) or
+            (item.itemId or item.item_id or item.entryId or item.entry_id)
+
+        if wishEntryId == normalizedEntryId and
+           ((normalizedTypeId and wishTypeId == normalizedTypeId) or
+            (normalizedTypeName and wishTypeName == normalizedTypeName)) then
             return true
         end
     end
@@ -1757,11 +1813,36 @@ function DC:StartBackgroundWardrobeSync()
             -- 1) Resume / start transmog definitions paging
             if not pagingBusy then
                 DCCollectionDB = DCCollectionDB or {}
-                if DCCollectionDB.transmogDefsIncomplete and type(self.ResumeTransmogDefinitions) == "function" then
+                local hasTransmogDefs = false
+                local hasLocalTransmogDefs = false
+                if type(self._HasAnyTransmogDefinitions) == "function" then
+                    hasTransmogDefs = self:_HasAnyTransmogDefinitions() and true or false
+                elseif type(self.definitions) == "table" and
+                    type(self.definitions.transmog) == "table" then
+                    hasTransmogDefs = next(self.definitions.transmog) ~= nil
+                end
+                if type(self.HasLocalCollectionDefinitions) == "function" then
+                    hasLocalTransmogDefs =
+                        self:HasLocalCollectionDefinitions("transmog") and true or false
+                end
+
+                if hasLocalTransmogDefs and DCCollectionDB.transmogDefsIncomplete then
+                    DCCollectionDB.transmogDefsIncomplete = nil
+                    DCCollectionDB.transmogDefsResumeOffset = nil
+                    DCCollectionDB.transmogDefsResumeLimit = nil
+                    DCCollectionDB.transmogDefsResumeTotal = nil
+                    DCCollectionDB.transmogDefsResumeUpdatedAt = nil
+                end
+
+                if (not hasLocalTransmogDefs) and
+                    DCCollectionDB.transmogDefsIncomplete and
+                    type(self.ResumeTransmogDefinitions) == "function" then
                     self:Debug("Background wardrobe sync: resume transmog defs")
                     self:ResumeTransmogDefinitions("bg_sync")
                     didWork = true
-                elseif (not self.definitionsLoaded) and type(self.RequestDefinitions) == "function" then
+                elseif (not hasLocalTransmogDefs) and
+                    (not hasTransmogDefs) and
+                    type(self.RequestDefinitions) == "function" then
                     self:Debug("Background wardrobe sync: request transmog defs")
                     self:RequestDefinitions("transmog")
                     didWork = true
@@ -1783,8 +1864,16 @@ function DC:StartBackgroundWardrobeSync()
 
             -- 3) Light collection refresh (cheap)
             if not didWork and type(self.RequestCollection) == "function" then
-                self:RequestCollection("transmog")
-                didWork = true
+                local now = (type(GetTime) == "function" and GetTime()) or
+                    (type(time) == "function" and time()) or 0
+                local minInterval = 15 * 60
+                local last = tonumber(self._bgLastTransmogCollectionRequestAt) or 0
+
+                if now <= 0 or (now - last) >= minInterval then
+                    self._bgLastTransmogCollectionRequestAt = now
+                    self:RequestCollection("transmog")
+                    didWork = true
+                end
             end
 
             -- While there is work to do, keep a short cadence.
@@ -1812,6 +1901,16 @@ end
 function DC:MaybeResumeTransmogDefinitionsOnLogin()
     DCCollectionDB = DCCollectionDB or {}
     if not DCCollectionDB.transmogDefsIncomplete then
+        return
+    end
+
+    if type(self.HasLocalCollectionDefinitions) == "function" and
+       self:HasLocalCollectionDefinitions("transmog") then
+        DCCollectionDB.transmogDefsIncomplete = nil
+        DCCollectionDB.transmogDefsResumeOffset = nil
+        DCCollectionDB.transmogDefsResumeLimit = nil
+        DCCollectionDB.transmogDefsResumeTotal = nil
+        DCCollectionDB.transmogDefsResumeUpdatedAt = nil
         return
     end
 
@@ -1936,6 +2035,9 @@ function events:ADDON_LOADED(addonName)
             -- Still run the normal lightweight init path so handshake metadata
             -- can suppress unchanged runtime ownership refreshes.
             After(0.5, function()
+                if DC._initialDataLastRequestAt then
+                    return
+                end
                 if not DC:GetSetting("autoSyncOnLogin") then
                     if DC:IsProtocolReady() then
                         DC:RequestCurrency()
@@ -1955,6 +2057,9 @@ function events:ADDON_LOADED(addonName)
         
         -- Request initial data after a short delay (reduced from 2s to 1s)
         After(1, function()
+            if DC._initialDataLastRequestAt then
+                return
+            end
             if not DC:GetSetting("autoSyncOnLogin") then
                 return
             end
@@ -2193,7 +2298,7 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
         end
     end
 
-    self._initialDataPendingAfterHandshake = nil
+    self._pendingInitialDataAfterHandshake = nil
     self._initialDataRequested = true
 
     -- If cache is fresh and we have definitions, skip heavy requests on reload/relog.
@@ -2214,9 +2319,23 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
             })
         end
 
-        -- Only request lightweight data: currency + stats (for live balance updates).
-        self:RequestCurrency()
-        self:RequestStats()
+        -- Only request lightweight data that is not already covered by fresh cache.
+        if type(DCCollectionDB) == "table" and type(DCCollectionDB.currencyCache) == "table" then
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep("currency", "currency")
+            end
+            self:Debug("Currency cache is fresh; skipping refresh")
+        else
+            self:RequestCurrency()
+        end
+        if type(DCCollectionDB) == "table" and type(DCCollectionDB.statsCache) == "table" then
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep("stats", "stats")
+            end
+            self:Debug("Stats cache is fresh; skipping refresh")
+        else
+            self:RequestStats()
+        end
 
         -- Titles can desync if local cache kept stale ownership entries.
         -- Always refresh title ownership from server even on fresh cache loads.
@@ -2230,12 +2349,26 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
             else
                 self:RequestCollection("transmog")
             end
-            self:RequestCollection("title")
+
+            if self._titleCollectionAuthoritative == true then
+                if type(self._syncProgress) == "table" then
+                    self:CompleteSyncProgressStep("coll:titles", "collection: titles")
+                end
+                self:Debug("Title collection cache is authoritative; skipping refresh")
+            else
+                self:RequestCollection("title")
+            end
         end
 
-        -- Shop inventory/prices can change independently from cache freshness.
         if type(self.RequestShopData) == "function" then
-            self:RequestShopData()
+            if type(self.shopItems) == "table" and next(self.shopItems) ~= nil then
+                if type(self._syncProgress) == "table" then
+                    self:CompleteSyncProgressStep("shop", "shop data")
+                end
+                self:Debug("Shop cache is fresh; skipping refresh")
+            else
+                self:RequestShopData()
+            end
         end
         return
     end
@@ -2344,6 +2477,10 @@ function DC:RequestTransmogStateWithRetry(maxAttempts, delaySeconds)
         now = GetTime() or 0
     elseif type(time) == "function" then
         now = time() or 0
+    end
+    if now > 0 and self._transmogStateLastReceivedAt and
+       (now - self._transmogStateLastReceivedAt) < 5.0 then
+        return
     end
     if now > 0 and self._transmogStateLastRequestAt and (now - self._transmogStateLastRequestAt) < 3.0 then
         return

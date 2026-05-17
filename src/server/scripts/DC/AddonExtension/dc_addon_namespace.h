@@ -38,6 +38,9 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+
+class Player;
+class WorldSession;
 #include <cctype>
 #include <charconv>
 #include <cstdlib>
@@ -601,9 +604,23 @@ namespace DCAddon
             constexpr uint32 ASYNC_QUERIES  = 0x00000010;  // Async DB query responses
             constexpr uint32 DELTA_SYNC     = 0x00000020;  // Delta sync for collections
             constexpr uint32 HOT_RELOAD     = 0x00000040;  // Module hot-reload support
+            constexpr uint32 TOOLTIP_NATIVE_RESPONSE = 0x00000100; // Native SMSG tooltip enrichment bridge
+            constexpr uint32 BREAKING_NEWS_NATIVE = 0x00000200; // Native Glue breaking-news payload bridge
+            constexpr uint32 ITEM_UPGRADE_NATIVE = 0x00000400; // Native item-upgrade tooltip bridge
+            constexpr uint32 NPC_TOOLTIP_NATIVE = 0x00000800; // Native NPC tooltip bridge
+            constexpr uint32 MYTHICPLUS_HUD_NATIVE = 0x00001000; // Native Mythic+ HUD snapshot bridge
+            constexpr uint32 COLLECTION_TRANSMOG_STATE_NATIVE = 0x00002000; // Native collection transmog-state snapshot bridge
+            constexpr uint32 COLLECTION_ITEM_SETS_NATIVE = 0x00004000; // Native collection item-set paging bridge
+            constexpr uint32 PING_RELAY_NATIVE = 0x00008000; // Native QoS ping relay bridge
 
             // Default capabilities for current server version
-            constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES;
+            constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES |
+                TOOLTIP_NATIVE_RESPONSE | BREAKING_NEWS_NATIVE |
+                ITEM_UPGRADE_NATIVE | NPC_TOOLTIP_NATIVE |
+                MYTHICPLUS_HUD_NATIVE |
+                COLLECTION_TRANSMOG_STATE_NATIVE |
+                COLLECTION_ITEM_SETS_NATIVE |
+                PING_RELAY_NATIVE;
         }
 
         // Version info structure for handshake
@@ -665,6 +682,40 @@ namespace DCAddon
                    std::to_string(info.capabilities);
         }
     }
+
+    struct SessionCapabilityState
+    {
+        std::string clientVersionString;
+        uint32 clientCapabilities = 0;
+        uint32 negotiatedCapabilities = 0;
+        bool versionCompatible = false;
+        bool loadedFromPersistedFallback = false;
+        uint64 lastCharacterGuid = 0;
+        std::string lastCharacterName;
+        uint64 lastSeenUnix = 0;
+
+        bool HasClientCapability(uint32 cap) const
+        {
+            return (clientCapabilities & cap) != 0;
+        }
+
+        bool HasNegotiatedCapability(uint32 cap) const
+        {
+            return versionCompatible && (negotiatedCapabilities & cap) != 0;
+        }
+    };
+
+    struct CapabilityHistoryEntry
+    {
+        std::string source;
+        std::string clientVersionString;
+        uint32 clientCapabilities = 0;
+        uint32 negotiatedCapabilities = 0;
+        bool versionCompatible = false;
+        uint64 characterGuid = 0;
+        std::string characterName;
+        uint64 seenUnix = 0;
+    };
 
     inline bool IsSafeRequestId(const std::string& id)
     {
@@ -1045,6 +1096,26 @@ namespace DCAddon
     void LogS2CMessage(Player* player, const std::string& module, uint8 opcode,
         size_t dataSize, bool updateStats, const std::string& payloadPreview,
         uint32 processingTimeMs);
+    void SetSessionCapabilityState(Player* player,
+        const std::string& clientVersionStr, uint32 clientCaps,
+        uint32 negotiatedCaps, bool versionCompatible);
+    bool TryGetLiveSessionCapabilityState(uint32 accountId,
+        SessionCapabilityState& out);
+    bool TryGetPersistedCapabilityState(uint32 accountId,
+        SessionCapabilityState& out);
+    bool GetRecentCapabilityHistory(uint32 accountId, uint32 limit,
+        std::vector<CapabilityHistoryEntry>& out);
+    bool TryGetSessionCapabilityState(Player* player,
+        SessionCapabilityState& out);
+    bool TryGetSessionCapabilityState(WorldSession* session,
+        SessionCapabilityState& out);
+    SessionCapabilityState GetSessionCapabilityState(Player* player);
+    SessionCapabilityState GetSessionCapabilityState(WorldSession* session);
+    void ClearSessionCapabilityState(Player* player);
+    uint32 GetSessionNegotiatedCapabilities(Player* player);
+    uint32 GetSessionNegotiatedCapabilities(WorldSession* session);
+    bool SessionSupportsCapability(Player* player, uint32 capability);
+    bool SessionSupportsCapability(WorldSession* session, uint32 capability);
 
     // Quick permission helper: ensure module enabled and player has minimum security
     // (Moved below MessageRouter declaration to avoid forward-declare/ordering issues)

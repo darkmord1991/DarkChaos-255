@@ -425,19 +425,13 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
     -- Strategy 2: Check custom zone mappings (for special zones like Azshara Crater)
     local db = Pins.state and Pins.state.db
     local learned = db and db.customZoneMapping and db.customZoneMapping[mapId]
-    local resolvedZoneId = learned or CustomZoneForMap(mapId) or mapId
-    if hotspotZone == resolvedZoneId then
+    local resolvedZoneId = learned or CustomZoneForMap(mapId)
+    if resolvedZoneId and hotspotZone == resolvedZoneId then
         DebugPrint("Match via custom mapping: map", mapId, "-> zone", resolvedZoneId)
         return true
     end
-    
-    -- Strategy 3: Direct match (fallback - some zones might use same ID)
-    if hotspotZone == mapId then
-        DebugPrint("Direct match: map", mapId, "== zone", hotspotZone)
-        return true
-    end
 
-    -- Strategy 4: Name-based match (fallback)
+    -- Strategy 3: Name-based match (fallback)
     -- Some servers send zone IDs that don't line up with our MAP_TO_ZONE table.
     -- If the hotspot's resolved zone label matches the client map name for the
     -- currently viewed map, treat it as a match.

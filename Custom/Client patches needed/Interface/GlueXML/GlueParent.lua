@@ -182,6 +182,32 @@ local function DCBreakingNews_HasClientApi()
 		and type(GetBreakingNewsRevision) == "function";
 end
 
+local function DCBreakingNews_CoerceNativeBoolean(value)
+	local valueType = type(value);
+
+	if ( valueType == "boolean" ) then
+		return value;
+	end
+
+	if ( valueType == "number" ) then
+		return value ~= 0;
+	end
+
+	if ( valueType == "string" ) then
+		local lowered = string.lower(value);
+		if ( lowered == "0" or lowered == "false" or lowered == "no"
+				or lowered == "" ) then
+			return false;
+		end
+
+		if ( lowered == "1" or lowered == "true" or lowered == "yes" ) then
+			return true;
+		end
+	end
+
+	return value and true or false;
+end
+
 local function DCBreakingNews_GetParentFrame()
 	if ( CharacterSelect ) then
 		return CharacterSelect;
@@ -347,7 +373,7 @@ local function DCBreakingNews_ApplyCurrent(reason)
 		return;
 	end
 
-	if ( not HasBreakingNews() ) then
+	if ( not DCBreakingNews_CoerceNativeBoolean(HasBreakingNews()) ) then
 		DCBreakingNews_HideFrame("payload-missing");
 		return;
 	end
@@ -404,7 +430,8 @@ function DCBreakingNews_OnPayloadUpdated(revision, reason)
 		end
 	end
 
-	if ( type(HasBreakingNews) == "function" and not HasBreakingNews() ) then
+	if ( type(HasBreakingNews) == "function"
+			and not DCBreakingNews_CoerceNativeBoolean(HasBreakingNews()) ) then
 		DCBreakingNews_HideFrame("native-callback-" .. tostring(callbackReason));
 		return;
 	end
@@ -425,7 +452,8 @@ function DCBreakingNews_OnUpdate(elapsed)
 	end
 	DCBreakingNewsState.updateTimer = 0;
 
-	if ( not DCBreakingNews_HasClientApi() or not HasBreakingNews() ) then
+	if ( not DCBreakingNews_HasClientApi()
+			or not DCBreakingNews_CoerceNativeBoolean(HasBreakingNews()) ) then
 		return;
 	end
 

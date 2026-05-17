@@ -103,11 +103,19 @@ DISABLED_LOCAL_PET_ENTRY_IDS = {
 # Curated preview metadata for real companion sources that the generic
 # item-template spell walk cannot resolve from repo-local data alone.
 CURATED_PET_PREVIEW_OVERRIDES: dict[int, tuple[int, int, int]] = {
+    4055: (61855, 16189, 32841),
+    7544: (15067, 6294, 9662),
+    10673: (15048, 8909, 9656),
+    15186: (26010, 15671, 15710),
     18963: (23428, 14661, 14633),
     18965: (23432, 14660, 14632),
     18966: (23431, 14658, 14630),
     18967: (23430, 14659, 14631),
     19462: (23811, 14938, 14878),
+    33199: (43461, 28397, 32939),
+    34364: (44369, 26452, 29726),
+    34724: (71840, 31073, 38374),
+    36871: (61472, 14273, 32643),
 }
 
 CATEGORY_ROWS = (
@@ -1494,6 +1502,8 @@ def build_source_rows(
     for sort_order, entry_id in enumerate(sorted(mounts), start=1):
         mount = mounts[entry_id]
         source_fields = build_source_fields(mount.get("source"))
+        preview_display_id = int_or_default(mount.get("display_id"), 0)
+        preview_creature_id = 0
         rows.append(
             {
                 "ID": len(rows) + 1,
@@ -1505,8 +1515,8 @@ def build_source_rows(
                 "Rarity": int_or_default(mount.get("rarity"), 0),
                 "ItemID": int_or_default(source_fields["item_id"], 0),
                 "SpellID": entry_id,
-                "DisplayID": int_or_default(mount.get("display_id"), 0),
-                "CreatureID": int_or_default(source_fields["creature_id"], 0),
+                "DisplayID": preview_display_id,
+                "CreatureID": preview_creature_id,
                 "MountType": int_or_default(mount.get("mount_type"), -1),
                 "SourceObjectID": int_or_default(
                     source_fields["source_object_id"],
@@ -1578,6 +1588,9 @@ def build_source_rows(
             if creature_id <= 0:
                 creature_id = curated_creature_id
 
+        preview_display_id = display_id
+        preview_creature_id = creature_id
+
         rows.append(
             {
                 "ID": len(rows) + 1,
@@ -1589,8 +1602,8 @@ def build_source_rows(
                 "Rarity": int_or_default(pet.get("rarity"), 0),
                 "ItemID": item_id,
                 "SpellID": spell_id,
-                "DisplayID": display_id,
-                "CreatureID": creature_id,
+                "DisplayID": preview_display_id,
+                "CreatureID": preview_creature_id,
                 "MountType": -1,
                 "SourceObjectID": int_or_default(
                     source_fields["source_object_id"],

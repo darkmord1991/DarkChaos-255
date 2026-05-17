@@ -926,6 +926,142 @@ function addon:MergeDefaults(target, defaults)
     end
 end
 
+local WORLD_MAP_SHARED_REFRESH_FUNCTIONS = {
+    "WorldMapFrame_DisplayQuests",
+    "WorldMapFrame_DisplayQuestPOI",
+    "WorldMapFrame_UpdateQuests",
+    "WorldMapFrame_SelectQuestFrame",
+}
+
+function addon:QueueWorldMapRefreshCycle(callback)
+    local bucket = self.__dcqosWorldMapRefreshCycle
+    if type(bucket) ~= "table" then
+        bucket = {
+            pending = false,
+            callbacks = {},
+        }
+        self.__dcqosWorldMapRefreshCycle = bucket
+    end
+
+    if type(callback) == "function" then
+        table.insert(bucket.callbacks, callback)
+    end
+
+    if bucket.pending then
+        return
+    end
+
+    bucket.pending = true
+
+    local function Flush()
+        bucket.pending = false
+
+        local callbacks = bucket.callbacks
+        bucket.callbacks = {}
+
+        for index = 1, #callbacks do
+            pcall(callbacks[index])
+        end
+    end
+
+    if type(self.DelayedCall) == "function" then
+        self:DelayedCall(0, Flush)
+    else
+        Flush()
+    end
+end
+
+function addon:DispatchWorldMapRefreshListeners()
+    local registry = self.__dcqosWorldMapRefreshListeners
+    if type(registry) ~= "table" then
+        return
+    end
+
+    local callbacks = {}
+    for _, callback in pairs(registry) do
+        if type(callback) == "function" then
+            table.insert(callbacks, callback)
+        end
+    end
+
+    if #callbacks == 0 then
+        return
+    end
+
+    self:QueueWorldMapRefreshCycle(function()
+        for index = 1, #callbacks do
+            pcall(callbacks[index])
+        end
+    end)
+end
+
+function addon:EnsureWorldMapRefreshHookBridge()
+    if self.__dcqosWorldMapRefreshHookBridgeInstalled then
+        return true
+    end
+    if type(hooksecurefunc) ~= "function" then
+        return false
+    end
+
+    local function RequestSharedRefresh()
+        addon:DispatchWorldMapRefreshListeners()
+    end
+
+    for index = 1, #WORLD_MAP_SHARED_REFRESH_FUNCTIONS do
+        local name = WORLD_MAP_SHARED_REFRESH_FUNCTIONS[index]
+        if type(_G[name]) == "function" then
+            hooksecurefunc(name, RequestSharedRefresh)
+        end
+    end
+
+    local function TryHookScript(frame, scriptName)
+        if not frame or type(frame.HookScript) ~= "function" then
+            return
+        end
+
+        pcall(frame.HookScript, frame, scriptName, RequestSharedRefresh)
+    end
+
+    TryHookScript(WorldMapFrame, "OnShow")
+    TryHookScript(WorldMapButton, "OnShow")
+    TryHookScript(WorldMapButton, "OnSizeChanged")
+    TryHookScript(WorldMapFrameSizeUpButton, "OnClick")
+    TryHookScript(WorldMapFrameSizeDownButton, "OnClick")
+    TryHookScript(WorldMapQuestShowObjectives, "OnClick")
+
+    self.__dcqosWorldMapRefreshHookBridgeInstalled = true
+    return true
+end
+
+function addon:RegisterWorldMapRefreshListener(listenerKey, callback)
+    if type(listenerKey) ~= "string" or listenerKey == "" or type(callback) ~= "function" then
+        return false
+    end
+
+    local registry = self.__dcqosWorldMapRefreshListeners
+    if type(registry) ~= "table" then
+        registry = {}
+        self.__dcqosWorldMapRefreshListeners = registry
+    end
+
+    registry[listenerKey] = callback
+    return self:EnsureWorldMapRefreshHookBridge() ~= false
+end
+
+function addon:UnregisterWorldMapRefreshListener(listenerKey)
+    local registry = self.__dcqosWorldMapRefreshListeners
+    if type(registry) ~= "table" or type(listenerKey) ~= "string" then
+        return false
+    end
+
+    if registry[listenerKey] == nil then
+        return false
+    end
+
+    registry[listenerKey] = nil
+    return true
+end
+
 -- ============================================================
 -- Module Registration
 -- ============================================================
@@ -1442,6 +1578,192 @@ end)
 
 SLASH_DCQOS1 = "/dcqos"
 SLASH_DCQOS2 = "/qos"
+
+local function PrintTooltipTransportStatus(tooltipsModule)
+    local snapshot = tooltipsModule
+        and tooltipsModule.GetNativeBridgeSnapshot
+        and tooltipsModule.GetNativeBridgeSnapshot()
+
+    if not snapshot then
+        addon:Print("Tooltip transport diagnostics are not available.", true)
+        return false
+    end
+
+    local state = "inactive"
+    if not snapshot.exportsPresent then
+        state = "missing-native-exports"
+    elseif not snapshot.clientCapability and snapshot.clientMask > 0 then
+        state = "client-capability-missing"
+    elseif snapshot.connected and not snapshot.negotiatedCapability then
+        state = "not-negotiated"
+    elseif snapshot.stats and snapshot.stats.sessionDisabled then
+        state = "session-disabled"
+    elseif snapshot.stats and snapshot.stats.enabled then
+        state = "enabled"
+    elseif snapshot.bridgeAvailable then
+        state = "available-disabled"
+    end
+
+    addon:Print(
+        "Tooltip transport: state=" .. state
+        .. " exports=" .. (snapshot.exportsPresent and "yes" or "no")
+        .. " rawExport=" .. (snapshot.rawExportPresent and "yes" or "no")
+        .. " rawDebug=" .. (snapshot.rawDebugStringPresent and "yes" or "no")
+        .. " clientCap=" .. (snapshot.clientCapability and "yes" or "no")
+        .. " negotiated=" .. (snapshot.negotiatedCapability and "yes" or "no")
+        .. " bridge=" .. (snapshot.bridgeAvailable and "yes" or "no"),
+        true)
+    addon:Print(string.format(
+        "Tooltip transport masks: client=0x%X negotiated=0x%X connected=%s server=%s",
+        tonumber(snapshot.clientMask) or 0,
+        tonumber(snapshot.negotiatedMask) or 0,
+        snapshot.connected and "yes" or "no",
+        tostring(snapshot.serverVersion or "nil")),
+        true)
+    if snapshot.nativeBuildFingerprint then
+        addon:Print(
+            "Tooltip native build: "
+            .. tostring(snapshot.nativeBuildFingerprint),
+            true)
+    end
+    if snapshot.nativeTooltipRuntimeSignature then
+        addon:Print(
+            "Tooltip native runtime: "
+            .. tostring(snapshot.nativeTooltipRuntimeSignature),
+            true)
+    end
+    if snapshot.rawState then
+        addon:Print(
+            "Tooltip raw runtime: enabled="
+            .. (snapshot.rawState.enabled and "yes" or "no")
+            .. " sessionDisabled="
+            .. (snapshot.rawState.sessionDisabled and "yes" or "no")
+            .. " pendingTimedOut="
+            .. (snapshot.rawState.pendingTimedOut and "yes" or "no")
+            .. " hasResult="
+            .. (snapshot.rawState.hasResult and "yes" or "no")
+            .. " cached="
+            .. tostring(snapshot.rawState.cachedResultCount)
+            .. " pendingRequestId="
+            .. tostring(snapshot.rawState.pendingRequestId)
+            .. " pendingSpellId="
+            .. tostring(snapshot.rawState.pendingSpellId)
+            .. " pendingContextHash="
+            .. tostring(snapshot.rawState.pendingContextHash),
+            true)
+        addon:Print(
+            "Tooltip raw counters: consecutiveTimeouts="
+            .. tostring(snapshot.rawState.consecutiveTimeouts)
+            .. " totalTimeouts="
+            .. tostring(snapshot.rawState.totalTimeouts)
+            .. " stale="
+            .. tostring(snapshot.rawState.staleResponses)
+            .. " accepted="
+            .. tostring(snapshot.rawState.acceptedResponses)
+            .. " rejected="
+            .. tostring(snapshot.rawState.rejectedResponses),
+            true)
+    elseif snapshot.rawStateError then
+        addon:Print(
+            "Tooltip raw runtime unavailable: "
+            .. tostring(snapshot.rawStateError),
+            true)
+    end
+    if snapshot.rawDebugString then
+        addon:Print(
+            "Tooltip raw debug string: " .. tostring(snapshot.rawDebugString),
+            true)
+    elseif snapshot.rawDebugStringError then
+        addon:Print(
+            "Tooltip raw debug string unavailable: "
+            .. tostring(snapshot.rawDebugStringError),
+            true)
+    end
+    if snapshot.handshakeParserMode then
+        addon:Print(
+            "Tooltip handshake: parser=" .. tostring(snapshot.handshakeParserMode)
+            .. " raw2=" .. tostring(snapshot.handshakeRawArg2 or "<nil>")
+            .. " raw3=" .. tostring(snapshot.handshakeRawArg3 or "<nil>")
+            .. " raw4=" .. tostring(snapshot.handshakeRawArg4 or "<nil>"),
+            true)
+    end
+    if snapshot.lastBridgeSync then
+        addon:Print(
+            "Tooltip bridge sync: reason="
+            .. tostring(snapshot.lastBridgeSync.reason or "unknown")
+            .. " desired="
+            .. (snapshot.lastBridgeSync.desiredEnabled and "yes" or "no")
+            .. " negotiated="
+            .. (snapshot.lastBridgeSync.negotiated and "yes" or "no")
+            .. " tooltips="
+            .. (snapshot.lastBridgeSync.tooltipsEnabled and "yes" or "no")
+            .. " comm="
+            .. (snapshot.lastBridgeSync.communicationEnabled and "yes" or "no")
+            .. " configure="
+            .. (snapshot.lastBridgeSync.configureOk and "ok" or "fail")
+            .. " toggle="
+            .. (snapshot.lastBridgeSync.toggleOk and "ok" or "fail")
+            .. " readbackEnabled="
+            .. tostring(snapshot.lastBridgeSync.readbackEnabled)
+            .. " readbackSessionDisabled="
+            .. tostring(snapshot.lastBridgeSync.readbackSessionDisabled),
+            true)
+        if snapshot.lastBridgeSync.configureError then
+            addon:Print(
+                "Tooltip bridge configure error: "
+                .. tostring(snapshot.lastBridgeSync.configureError),
+                true)
+        end
+        if snapshot.lastBridgeSync.resetError then
+            addon:Print(
+                "Tooltip bridge reset error: "
+                .. tostring(snapshot.lastBridgeSync.resetError),
+                true)
+        end
+        if snapshot.lastBridgeSync.toggleError then
+            addon:Print(
+                "Tooltip bridge toggle error: "
+                .. tostring(snapshot.lastBridgeSync.toggleError),
+                true)
+        end
+        if snapshot.lastBridgeSync.readbackError then
+            addon:Print(
+                "Tooltip bridge readback error: "
+                .. tostring(snapshot.lastBridgeSync.readbackError),
+                true)
+        end
+    end
+
+    if snapshot.stats then
+        addon:Print(string.format(
+            "Tooltip native stats: enabled=%s sessionDisabled=%s accepted=%d rejected=%d stale=%d totalTimeouts=%d consecutiveTimeouts=%d timeoutMs=%d intervalMs=%d maxTimeouts=%d",
+            snapshot.stats.enabled and "yes" or "no",
+            snapshot.stats.sessionDisabled and "yes" or "no",
+            tonumber(snapshot.stats.acceptedResponses) or 0,
+            tonumber(snapshot.stats.rejectedResponses) or 0,
+            tonumber(snapshot.stats.staleResponses) or 0,
+            tonumber(snapshot.stats.totalTimeouts) or 0,
+            tonumber(snapshot.stats.consecutiveTimeouts) or 0,
+            tonumber(snapshot.stats.timeoutMs) or 0,
+            tonumber(snapshot.stats.minRequestIntervalMs) or 0,
+            tonumber(snapshot.stats.maxConsecutiveTimeouts) or 0),
+            true)
+
+        if snapshot.stats.enabled
+            and (tonumber(snapshot.stats.acceptedResponses) or 0) == 0
+            and (tonumber(snapshot.stats.rejectedResponses) or 0) == 0
+            and (tonumber(snapshot.stats.totalTimeouts) or 0) == 0 then
+            addon:Print(
+                "Tooltip native bridge is armed but not exercised yet. Hover a spell, then rerun /dcqos transport.",
+                true)
+        end
+    elseif snapshot.statsError then
+        addon:Print("Tooltip native stats error: " .. tostring(snapshot.statsError), true)
+    end
+
+    return true
+end
+
 SlashCmdList["DCQOS"] = function(msg)
     msg = msg and strlower(strtrim(msg)) or ""
     
@@ -1547,6 +1869,9 @@ SlashCmdList["DCQOS"] = function(msg)
         else
             addon:Print("Ping System module is not loaded.", true)
         end
+    elseif msg == "transport" or msg == "tooltiptransport" or msg == "tooltip" then
+        local tooltipsModule = addon.modules and addon.modules["Tooltips"]
+        PrintTooltipTransportStatus(tooltipsModule)
     elseif msg == "telemetry" or msg == "diag" or msg == "diagnostics" then
         local tooltipsModule = addon.modules and addon.modules["Tooltips"]
         local snapshot = tooltipsModule and tooltipsModule.GetTelemetrySnapshot and tooltipsModule.GetTelemetrySnapshot()
@@ -1594,6 +1919,7 @@ SlashCmdList["DCQOS"] = function(msg)
             .. " recv=" .. tostring(tonumber(npc.responsesReceived) or 0)
             .. " pendingRecoveries=" .. tostring(tonumber(npc.pendingTimeoutRecoveries) or 0)
         addon:Print(npcLine, true)
+        PrintTooltipTransportStatus(tooltipsModule)
     elseif msg == "help" then
         addon:Print("Commands:", true)
         print("  |cffffd700/dcqos|r - Open settings panel")
@@ -1608,6 +1934,7 @@ SlashCmdList["DCQOS"] = function(msg)
         print("  |cffffd700/dcping test|r - Show a local on-screen test ping")
         print("  |cffffd700/dcping menu|r - Open ping radial menu (release key/click to confirm)")
         print("  |cffffd700/dcqos telemetry|r - Print tooltip protocol diagnostics")
+        print("  |cffffd700/dcqos transport|r - Print native spell-tooltip bridge status")
         print("  |cffffd700/dcqos profile ...|r - Manage profiles")
         print("  |cffffd700/dcqos reload|r - Reload UI")
         print("  |cffffd700/dcqos help|r - Show this help message")

@@ -36,13 +36,27 @@ if DCAddonProtocol then return end
 DCAddonProtocol = {
     PREFIX = "DC",
     VERSION = "2.0.1",
+    Capability = {
+        JSON_MESSAGES = 0x00000001,
+        BATCH_MESSAGES = 0x00000002,
+        TOOLTIP_NATIVE_RESPONSE = 0x00000100,
+        BREAKING_NEWS_NATIVE = 0x00000200,
+        ITEM_UPGRADE_NATIVE = 0x00000400,
+        NPC_TOOLTIP_NATIVE = 0x00000800,
+        MYTHICPLUS_HUD_NATIVE = 0x00001000,
+        COLLECTION_TRANSMOG_STATE_NATIVE = 0x00002000,
+        COLLECTION_ITEM_SETS_NATIVE = 0x00004000,
+        PING_RELAY_NATIVE = 0x00008000,
+    },
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
-    CAPABILITIES = 3, -- JSON_MESSAGES(1) | BATCH_MESSAGES(2)
+    BASE_CAPABILITIES = 3,
+    CAPABILITIES = 3, -- Compatibility mirror; GetClientCapabilities() is authoritative.
     _handlers = {},
     _debug = false,
     _connected = false,
     _serverVersion = nil,
     _serverCaps = 0,
+    _clientCaps = 0,
     _features = {},
     _handshakeSent = false,
     _handshakePending = false,
@@ -53,6 +67,7 @@ DCAddonProtocol = {
     -- Server context (season/phase)
     _serverContext = nil,
     _serverContextHandlers = {},
+    _lastHandshakeAck = nil,
 
     -- CrossSystem event handlers
     _crossEventHandlers = {},
@@ -93,6 +108,83 @@ DCAddonProtocol = {
 
 local DC = DCAddonProtocol
 local DEFAULT_DB
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+
+    if capability <= 0 then
+        return false
+    end
+
+    if bit and bit.band then
+        return bit.band(mask, capability) ~= 0
+    end
+
+    return (mask % (capability * 2)) >= capability
+end
+
+local function CombineCapabilities(baseMask, extraMask)
+    local left = tonumber(baseMask) or 0
+    local right = tonumber(extraMask) or 0
+
+    if bit and bit.bor then
+        return bit.bor(left, right)
+    end
+
+    -- These capability families do not overlap, so addition is a safe fallback.
+    return left + right
+end
+
+local function ParseBooleanLike(value)
+    local valueType = type(value)
+
+    if valueType == "boolean" then
+        return true, value
+    end
+
+    if valueType == "number" then
+        if value == 1 then
+            return true, true
+        end
+        if value == 0 then
+            return true, false
+        end
+        return false, nil
+    end
+
+    if valueType == "string" then
+        local normalized = strlower(strtrim(value))
+        if normalized == "1" or normalized == "true" or normalized == "yes" then
+            return true, true
+        end
+        if normalized == "0" or normalized == "false" or normalized == "no" then
+            return true, false
+        end
+    end
+
+    return false, nil
+end
+
+local function DescribeHandshakeArg(value)
+    if value == nil then
+        return "<nil>"
+    end
+
+    if type(value) == "table" then
+        return string.format(
+            "{version=%s,compatible=%s,negotiatedCaps=%s}",
+            tostring(value.version or value.v or "<nil>"),
+            tostring(value.compatible),
+            tostring(value.negotiatedCaps
+                or value.negotiatedCapabilities
+                or value.caps
+                or value.capabilities
+                or "<nil>"))
+    end
+
+    return tostring(value)
+end
 
 local DEFAULT_KEYSTONE_ITEM_LIST = {
     300313, 300314, 300315, 300316, 300317,
@@ -376,8 +468,233 @@ function DC:GetResponseLogCount()
     return GetCircularBufferCount(self:_EnsureResponseLogBuffer())
 end
 
+function DC:GetNativeExtensionCapabilities()
+    local getter = rawget(_G, "GetDCClientCapabilities")
+    if type(getter) == "function" then
+        local ok, capabilities = pcall(getter)
+        if ok then
+            return tonumber(capabilities) or 0
+        end
+    end
+
+    local capabilities = 0
+    if type(SetSpellTooltipEnrichmentEnabled) == "function"
+        and type(ConfigureSpellTooltipEnrichment) == "function"
+        and type(GetSpellTooltipEnrichmentStats) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.TOOLTIP_NATIVE_RESPONSE)
+    end
+
+    if type(RequestNativeItemUpgradeTooltip) == "function"
+        and type(GetNativeItemUpgradeTooltipData) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.ITEM_UPGRADE_NATIVE)
+    end
+
+    if type(RequestNativeNpcTooltipInfo) == "function"
+        and type(GetNativeNpcTooltipInfo) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.NPC_TOOLTIP_NATIVE)
+    end
+
+    if type(RequestNativeMythicPlusHud) == "function"
+        and type(GetNativeMythicPlusHudSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.MYTHICPLUS_HUD_NATIVE)
+    end
+
+    if type(RequestNativeCollectionTransmogState) == "function"
+        and type(GetNativeCollectionTransmogStateSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.COLLECTION_TRANSMOG_STATE_NATIVE)
+    end
+
+    if type(RequestNativeCollectionItemSets) == "function"
+        and type(GetNativeCollectionItemSetsSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.COLLECTION_ITEM_SETS_NATIVE)
+    end
+
+    if type(RequestNativePingRelay) == "function"
+        and type(GetNativePingRelaySnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.PING_RELAY_NATIVE)
+    end
+
+    return capabilities
+end
+
+function DC:GetNativeExtensionBuildFingerprint()
+    local getter = rawget(_G, "GetWotLKExtensionsBuildFingerprint")
+    if type(getter) == "function" then
+        local ok, fingerprint = pcall(getter)
+        if ok and type(fingerprint) == "string" and fingerprint ~= "" then
+            return fingerprint
+        end
+    end
+
+    return nil
+end
+
+function DC:GetNativeTooltipRuntimeSignature()
+    local getter = rawget(_G, "GetSpellTooltipRuntimeSignature")
+    if type(getter) == "function" then
+        local ok, signature = pcall(getter)
+        if ok and type(signature) == "string" and signature ~= "" then
+            return signature
+        end
+    end
+
+    return nil
+end
+
+function DC:GetClientCapabilities()
+    local capabilities = CombineCapabilities(
+        self.BASE_CAPABILITIES or self.CAPABILITIES or 0,
+        self:GetNativeExtensionCapabilities())
+    self.CAPABILITIES = capabilities
+    self._clientCaps = capabilities
+    return capabilities
+end
+
+function DC:HasClientCapability(capability)
+    return HasCapabilityBit(self:GetClientCapabilities(), capability)
+end
+
+function DC:DescribeCapabilities(mask)
+    local capabilities = tonumber(mask) or 0
+    local parts = {}
+
+    if HasCapabilityBit(capabilities, self.Capability.JSON_MESSAGES) then
+        table.insert(parts, "JSON")
+    end
+    if HasCapabilityBit(capabilities, self.Capability.BATCH_MESSAGES) then
+        table.insert(parts, "Batch")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.TOOLTIP_NATIVE_RESPONSE) then
+        table.insert(parts, "NativeTooltip")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.BREAKING_NEWS_NATIVE) then
+        table.insert(parts, "NativeBreakingNews")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.ITEM_UPGRADE_NATIVE) then
+        table.insert(parts, "NativeItemUpgrade")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.NPC_TOOLTIP_NATIVE) then
+        table.insert(parts, "NativeNpcTooltip")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.MYTHICPLUS_HUD_NATIVE) then
+        table.insert(parts, "NativeMythicPlusHud")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.COLLECTION_TRANSMOG_STATE_NATIVE) then
+        table.insert(parts, "NativeCollectionTransmogState")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.COLLECTION_ITEM_SETS_NATIVE) then
+        table.insert(parts, "NativeCollectionItemSets")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.PING_RELAY_NATIVE) then
+        table.insert(parts, "NativePingRelay")
+    end
+
+    if #parts == 0 then
+        return "None"
+    end
+
+    return table.concat(parts, ", ")
+end
+
 function DC:GetHandshakeVersionString()
-    return tostring(self.VERSION) .. "|" .. tostring(self.CAPABILITIES or 0)
+    return tostring(self.VERSION) .. "|" .. tostring(self:GetClientCapabilities())
+end
+
+function DC:GetCapabilitySnapshot()
+    local nativeCaps = tonumber(self:GetNativeExtensionCapabilities()) or 0
+    local clientCaps = tonumber(self:GetClientCapabilities()) or 0
+    local negotiatedCaps = tonumber(self._serverCaps) or 0
+
+    return {
+        nativeCaps = nativeCaps,
+        nativeBuildFingerprint = self:GetNativeExtensionBuildFingerprint(),
+        nativeTooltipRuntimeSignature = self:GetNativeTooltipRuntimeSignature(),
+        clientCaps = clientCaps,
+        negotiatedCaps = negotiatedCaps,
+        handshake = tostring(self.VERSION) .. "|" .. tostring(clientCaps),
+        connected = self._connected and true or false,
+        serverVersion = self._serverVersion,
+        lastHandshakeAck = self._lastHandshakeAck,
+    }
+end
+
+function DC:PrintCapabilityStatus()
+    local snapshot = self:GetCapabilitySnapshot()
+
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r Capability snapshot")
+    DEFAULT_CHAT_FRAME:AddMessage("  Connected: " .. (snapshot.connected and "|cff00ff00Yes|r" or "|cffff0000No|r"))
+    DEFAULT_CHAT_FRAME:AddMessage("  Handshake: |cff00ccff" .. tostring(snapshot.handshake) .. "|r")
+    DEFAULT_CHAT_FRAME:AddMessage(string.format(
+        "  Native Caps: |cff00ccff0x%X|r (%s)",
+        snapshot.nativeCaps,
+        self:DescribeCapabilities(snapshot.nativeCaps)))
+    if snapshot.nativeBuildFingerprint then
+        DEFAULT_CHAT_FRAME:AddMessage(
+            "  Native Build: |cff00ccff"
+            .. tostring(snapshot.nativeBuildFingerprint)
+            .. "|r")
+    end
+    if snapshot.nativeTooltipRuntimeSignature then
+        DEFAULT_CHAT_FRAME:AddMessage(
+            "  Native Tooltip Runtime: |cff00ccff"
+            .. tostring(snapshot.nativeTooltipRuntimeSignature)
+            .. "|r")
+    end
+    DEFAULT_CHAT_FRAME:AddMessage(string.format(
+        "  Client Caps: |cff00ccff0x%X|r (%s)",
+        snapshot.clientCaps,
+        self:DescribeCapabilities(snapshot.clientCaps)))
+    DEFAULT_CHAT_FRAME:AddMessage(string.format(
+        "  Negotiated Caps: |cff00ccff0x%X|r (%s)",
+        snapshot.negotiatedCaps,
+        self:DescribeCapabilities(snapshot.negotiatedCaps)))
+    if snapshot.serverVersion then
+        DEFAULT_CHAT_FRAME:AddMessage("  Server Version: |cff00ccff" .. tostring(snapshot.serverVersion) .. "|r")
+    end
+    if snapshot.lastHandshakeAck then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "  ACK Parser: |cff00ccff%s|r raw2=%s raw3=%s raw4=%s",
+            tostring(snapshot.lastHandshakeAck.parserMode or "unknown"),
+            tostring(snapshot.lastHandshakeAck.rawArg2 or "<nil>"),
+            tostring(snapshot.lastHandshakeAck.rawArg3 or "<nil>"),
+            tostring(snapshot.lastHandshakeAck.rawArg4 or "<nil>")))
+    end
+
+    self:LogNetEvent("info", "caps", string.format(
+        "snapshot native=0x%X client=0x%X negotiated=0x%X connected=%s server=%s",
+        snapshot.nativeCaps,
+        snapshot.clientCaps,
+        snapshot.negotiatedCaps,
+        tostring(snapshot.connected),
+        tostring(snapshot.serverVersion or "nil")))
+end
+
+function DC:SendHandshake(reason)
+    local snapshot = self:GetCapabilitySnapshot()
+    local why = tostring(reason or "manual")
+
+    self:LogNetEvent("info", "handshake", string.format(
+        "send reason=%s native=0x%X client=0x%X payload=%s",
+        why,
+        snapshot.nativeCaps,
+        snapshot.clientCaps,
+        snapshot.handshake))
+    self:Send("CORE", 1, snapshot.handshake)
 end
 
 function DC:NextRequestId()
@@ -432,7 +749,7 @@ function DC:_AttemptReconnect()
     end
     
     self:LogNetEvent("info", "reconnect", "Attempting handshake (attempt " .. self._reconnectAttempts .. ")")
-    self:Send("CORE", 1, self:GetHandshakeVersionString())
+    self:SendHandshake("reconnect-attempt")
     
     -- Clear pending flag after a timeout (in case server doesn't respond)
     -- This is handled in _CheckRequestTimeouts implicitly via the handshake request timing out
@@ -2435,13 +2752,13 @@ frame:SetScript("OnEvent", function()
         if arg1 == "DC-AddonProtocol" or arg1 == "DCAddonProtocol" then
             if IsLoggedIn and IsLoggedIn() then
                 DC._handshakeSent = false
-                DC:Send("CORE", 1, DC:GetHandshakeVersionString())
+                DC:SendHandshake("addon-loaded")
             end
         end
     elseif event == "PLAYER_LOGIN" then
         DC:_InitDB()
         DC._stats.sessionStart = time()
-        DC:Send("CORE", 1, DC:GetHandshakeVersionString())
+        DC:SendHandshake("player-login")
     end
 end)
 
@@ -2512,18 +2829,22 @@ SlashCmdList["DC"] = function(msg)
             DC:SetSetting("netLogEnabled", false)
         end
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r NetLog: " .. (DC:GetSetting("netLogEnabled") and "ON" or "OFF"))
+    elseif cmd == "caps" or cmd == "capabilities" then
+        DC:PrintCapabilityStatus()
     elseif cmd == "status" then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r v" .. DC.VERSION)
         DEFAULT_CHAT_FRAME:AddMessage("  Connected: " .. (DC._connected and "|cff00ff00Yes|r" or "|cffff0000No|r"))
         if DC._serverVersion then
             DEFAULT_CHAT_FRAME:AddMessage("  Server Version: " .. DC._serverVersion)
         end
+        DEFAULT_CHAT_FRAME:AddMessage("  Client Caps: " .. DC:DescribeCapabilities(DC:GetClientCapabilities()))
+        DEFAULT_CHAT_FRAME:AddMessage("  Negotiated Caps: " .. DC:DescribeCapabilities(DC._serverCaps or 0))
         DEFAULT_CHAT_FRAME:AddMessage("  Handlers: " .. DC:CountHandlers())
         DEFAULT_CHAT_FRAME:AddMessage("  Debug: " .. (DC._debug and "ON" or "OFF"))
     elseif cmd == "reconnect" then
         DC._connected = false
         DC._handshakeSent = false
-        DC:Send("CORE", 1, DC:GetHandshakeVersionString())
+        DC:SendHandshake("manual-reconnect")
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handshake sent")
     elseif cmd == "handlers" then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Registered handlers (key: count):")
@@ -2626,6 +2947,7 @@ SlashCmdList["DC"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dc responses - Show recent responses")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc pending - Show pending requests")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc clearlog - Clear all logs")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc caps - Show native/client/negotiated capability masks")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc netlog [n] - Show recent NetLog entries")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc netlogclear - Clear NetLog")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc timeout <sec> - Set request timeout")
@@ -2956,7 +3278,7 @@ local function CreateTestingPanel()
     CreateButton("Reconnect", "Send handshake to server", function()
         DC._connected = false
         DC._handshakeSent = false
-        DC:Send("CORE", 1, DC.VERSION)
+        DC:SendHandshake("settings-panel")
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handshake sent")
         UpdateStatus()
     end, 0)
@@ -3346,7 +3668,7 @@ local function CreateDiagnosticsPanel()
         local startTime = time()
         DC._handshakePending = true
         DC._lastHandshakeTime = startTime
-        DC:Send("CORE", 1, DC:GetHandshakeVersionString())
+        DC:SendHandshake("diagnostics-test")
         panel.resultsText:SetText("|cffffff00Testing handshake...|r\n\nWaiting for server response.\nCheck chat for result.")
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Diagnostics]|r Handshake test sent at " .. date("%H:%M:%S"))
     end, 140)
@@ -3436,6 +3758,7 @@ local function CreateDiagnosticsPanel()
     
     local function UpdateHealth()
         local lines = {}
+        local clientCaps = DC:GetClientCapabilities()
         
         -- Connection status
         local connStatus = DC._connected and "|cff00ff00Connected|r" or "|cffff0000Disconnected|r"
@@ -3445,17 +3768,13 @@ local function CreateDiagnosticsPanel()
         if DC._serverVersion then
             table.insert(lines, "Server: v" .. DC._serverVersion .. " | Client: v" .. DC.VERSION)
         end
+        table.insert(lines, "Client Caps: " .. DC:DescribeCapabilities(clientCaps))
         
         -- Capabilities
         if DC._serverCaps and DC._serverCaps > 0 then
-            local caps = {}
-            if bit and bit.band then
-                if bit.band(DC._serverCaps, 1) > 0 then table.insert(caps, "JSON") end
-                if bit.band(DC._serverCaps, 2) > 0 then table.insert(caps, "Batch") end
-            else
-                table.insert(caps, "0x" .. string.format("%X", DC._serverCaps))
-            end
-            table.insert(lines, "Negotiated Caps: " .. table.concat(caps, ", "))
+            table.insert(lines,
+                "Negotiated Caps: " .. DC:DescribeCapabilities(DC._serverCaps)
+                .. " (0x" .. string.format("%X", DC._serverCaps) .. ")")
         end
         
         -- Reconnect state
@@ -3553,23 +3872,44 @@ end
 
 -- Register built-in handlers for CORE module
 DC:RegisterHandler("CORE", 0x10, function(...)
-    local arg1, arg2, arg3 = ...
+    local arg1, arg2, arg3, arg4 = ...
+    local parserMode = "unknown"
 
     -- Handle both JSON format (arg1 = table) and pipe format (arg1 = version string)
     local version, compatible, negotiatedCaps, features
     if type(arg1) == "table" then
+        parserMode = "json"
+        local hasCompatibleFlag, parsedCompatible = ParseBooleanLike(arg1.compatible)
         version = arg1.version or arg1.v or "1.0.0"
         features = arg1.features
-        compatible = (arg1.compatible ~= false)
-        negotiatedCaps = tonumber(arg1.caps or arg1.capabilities or 0) or 0
+        compatible = hasCompatibleFlag and parsedCompatible
+            or (arg1.compatible ~= false)
+        negotiatedCaps = tonumber(arg1.negotiatedCaps
+            or arg1.negotiatedCapabilities
+            or arg1.caps
+            or arg1.capabilities
+            or 0) or 0
     else
         version = arg1 or "1.0.0"
-        if type(arg2) == "boolean" then
+        local hasArg2CompatibleFlag, parsedArg2Compatible = ParseBooleanLike(arg2)
+        local hasArg3CompatibleFlag, parsedArg3Compatible = ParseBooleanLike(arg3)
+        if arg4 ~= nil and hasArg3CompatibleFlag then
+            -- Server ACK currently arrives as: version, serverCaps, compatible, negotiatedCaps
+            parserMode = "pipe-new-servercaps"
+            compatible = parsedArg3Compatible
+            negotiatedCaps = tonumber(arg4) or 0
+        elseif hasArg2CompatibleFlag then
             -- New server ACK: version, compatible(bool), negotiatedCaps(number)
-            compatible = arg2
+            parserMode = "pipe-new"
+            compatible = parsedArg2Compatible
+            negotiatedCaps = tonumber(arg3) or 0
+        elseif arg3 ~= nil then
+            parserMode = "pipe-new-fallback"
+            compatible = true
             negotiatedCaps = tonumber(arg3) or 0
         else
             -- Legacy ACK: version, features
+            parserMode = "pipe-legacy"
             compatible = true
             negotiatedCaps = 0
             features = arg2
@@ -3578,6 +3918,27 @@ DC:RegisterHandler("CORE", 0x10, function(...)
 
     DC._serverVersion = tostring(version)
     DC._serverCaps = negotiatedCaps or 0
+    DC._lastHandshakeAck = {
+        parserMode = parserMode,
+        rawArg1 = DescribeHandshakeArg(arg1),
+        rawArg2 = DescribeHandshakeArg(arg2),
+        rawArg3 = DescribeHandshakeArg(arg3),
+        rawArg4 = DescribeHandshakeArg(arg4),
+        compatible = compatible and true or false,
+        negotiatedCaps = tonumber(negotiatedCaps) or 0,
+        receivedAt = time() or 0,
+    }
+
+    DC:LogNetEvent("info", "handshake", string.format(
+        "ack mode=%s server=%s compatible=%s negotiated=0x%X client=0x%X raw2=%s raw3=%s raw4=%s",
+        tostring(parserMode),
+        tostring(version),
+        tostring(compatible),
+        tonumber(negotiatedCaps) or 0,
+        tonumber(DC:GetClientCapabilities()) or 0,
+        tostring(DC._lastHandshakeAck.rawArg2),
+        tostring(DC._lastHandshakeAck.rawArg3),
+        tostring(DC._lastHandshakeAck.rawArg4)))
     
     if compatible then
         DC:_OnHandshakeSuccess()
@@ -3601,6 +3962,22 @@ DC:RegisterHandler("CORE", 0x10, function(...)
             end
         end
     end
+
+    local handshakeEvent = {
+        type = "core-handshake",
+        serverVersion = DC._serverVersion,
+        connected = DC._connected and true or false,
+        compatible = compatible and true or false,
+        clientCaps = tonumber(DC:GetClientCapabilities()) or 0,
+        negotiatedCaps = tonumber(DC._serverCaps) or 0,
+        parserMode = parserMode,
+        rawArg2 = DC._lastHandshakeAck.rawArg2,
+        rawArg3 = DC._lastHandshakeAck.rawArg3,
+        rawArg4 = DC._lastHandshakeAck.rawArg4,
+    }
+    for _, handler in ipairs(DC._crossEventHandlers or {}) do
+        DC:_InvokeHandlerSafe("cross-event", "CORE", 0x10, handler, handshakeEvent)
+    end
     
     -- Update settings panel if open
     if DC._statusText then
@@ -3611,7 +3988,8 @@ DC:RegisterHandler("CORE", 0x10, function(...)
             "Status: " .. connected .. "\n" ..
             "Client Version: |cff00ccff" .. DC.VERSION .. "|r\n" ..
             "Server Version: |cff00ccff" .. DC._serverVersion .. "|r\n" ..
-            "Negotiated Caps: |cff00ccff" .. tostring(DC._serverCaps or 0) .. "|r\n" ..
+            "Client Caps: |cff00ccff" .. DC:DescribeCapabilities(DC:GetClientCapabilities()) .. "|r\n" ..
+            "Negotiated Caps: |cff00ccff" .. DC:DescribeCapabilities(DC._serverCaps or 0) .. "|r\n" ..
             "Handlers: |cffffff00" .. handlers .. "|r\n" ..
             "Debug Mode: " .. debug
         )

@@ -87,53 +87,7 @@ local function IsInRestrictedCombat()
     return type(InCombatLockdown) == "function" and InCombatLockdown()
 end
 
-local function EnsureSharedWorldMapRefreshDebounce()
-    if type(addon.QueueWorldMapRefreshCycle) == "function" then
-        return
-    end
-
-    function addon:QueueWorldMapRefreshCycle(callback)
-        local bucket = self.__dcqosWorldMapRefreshCycle
-        if type(bucket) ~= "table" then
-            bucket = {
-                pending = false,
-                callbacks = {},
-            }
-            self.__dcqosWorldMapRefreshCycle = bucket
-        end
-
-        if type(callback) == "function" then
-            table.insert(bucket.callbacks, callback)
-        end
-
-        if bucket.pending then
-            return
-        end
-
-        bucket.pending = true
-
-        local function Flush()
-            bucket.pending = false
-
-            local callbacks = bucket.callbacks
-            bucket.callbacks = {}
-
-            for i = 1, #callbacks do
-                pcall(callbacks[i])
-            end
-        end
-
-        if type(self.DelayedCall) == "function" then
-            self:DelayedCall(0, Flush)
-        else
-            Flush()
-        end
-    end
-end
-
 local function QueueSharedWorldMapRefreshCycle(callback)
-    EnsureSharedWorldMapRefreshDebounce()
-
     if type(addon.QueueWorldMapRefreshCycle) == "function" then
         addon:QueueWorldMapRefreshCycle(callback)
     elseif type(callback) == "function" then
@@ -1157,6 +1111,58 @@ local function SuppressStandaloneQuestLogPanels()
     end
 end
 
+local function RefreshQuestDetailAndPoiDisplays(questLogIndex, reason)
+    local activeQuestLogIndex = tonumber(questLogIndex)
+
+    if worldMapState.active
+        and WorldMapFrame
+        and type(WorldMapFrame.IsShown) == "function"
+        and WorldMapFrame:IsShown()
+        and type(WorldMapFrame_SetQuestMapView) == "function" then
+        pcall(WorldMapFrame_SetQuestMapView)
+    end
+
+    if type(QuestLog_Update) == "function" then
+        pcall(QuestLog_Update)
+    end
+    if type(QuestLog_UpdateQuestDetails) == "function" then
+        pcall(QuestLog_UpdateQuestDetails)
+    end
+
+    if IsValidQuestLogIndex(activeQuestLogIndex)
+        and type(WorldMapQuestShowObjectives) == "function" then
+        pcall(WorldMapQuestShowObjectives, activeQuestLogIndex)
+    elseif type(WorldMapQuestShowObjectives) == "function" then
+        pcall(WorldMapQuestShowObjectives)
+    end
+
+    if type(QuestPOIUpdateIcons) == "function" then
+        pcall(QuestPOIUpdateIcons)
+    end
+    if type(QuestMapUpdateAllQuests) == "function" then
+        pcall(QuestMapUpdateAllQuests)
+    end
+    if type(WorldMapFrame_DisplayQuests) == "function" then
+        pcall(WorldMapFrame_DisplayQuests)
+    end
+    if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
+        pcall(WorldMapFrame_SetPOIMaxBounds)
+    end
+    if type(WorldMapFrame_UpdateQuests) == "function" then
+        pcall(WorldMapFrame_UpdateQuests)
+    end
+    if type(QuestWatch_Update) == "function" then
+        pcall(QuestWatch_Update)
+    end
+    if type(WatchFrame_Update) == "function" then
+        pcall(WatchFrame_Update)
+    end
+
+    if addon and addon.EnsureQuestMinimapTrackingEnabled then
+        addon:EnsureQuestMinimapTrackingEnabled(reason or "Interface.RefreshQuestDetailAndPoiDisplays")
+    end
+end
+
 local function ReassertWorldMapObjectiveState(questLogIndex)
     if not worldMapState.active then
         return
@@ -1219,12 +1225,8 @@ local function ReassertWorldMapObjectiveState(questLogIndex)
             and WorldMapFrame
             and type(WorldMapFrame.IsShown) == "function"
             and WorldMapFrame:IsShown()
-            and type(QuestLog_OpenToQuestDetails) == "function" then
-            pcall(QuestLog_OpenToQuestDetails, questLogIndex)
-            if addon and addon.DelayedCall then
-                addon:DelayedCall(0, SuppressStandaloneQuestLogPanels)
-                addon:DelayedCall(0.05, SuppressStandaloneQuestLogPanels)
-            end
+            and type(WorldMapFrame_SetQuestMapView) == "function" then
+            pcall(WorldMapFrame_SetQuestMapView)
         end
 
         if allowSelectionWrites
@@ -1239,25 +1241,18 @@ local function ReassertWorldMapObjectiveState(questLogIndex)
             end
         end
 
-        if type(WorldMapQuestShowObjectives) == "function" then
-            pcall(WorldMapQuestShowObjectives, questLogIndex)
+        RefreshQuestDetailAndPoiDisplays(questLogIndex, "Interface.ReassertWorldMapObjectiveState")
+
+        if allowSelectionWrites and addon and addon.DelayedCall then
+            addon:DelayedCall(0, function()
+                RefreshQuestDetailAndPoiDisplays(questLogIndex, "Interface.ReassertWorldMapObjectiveState.0")
+            end)
+            addon:DelayedCall(0.05, function()
+                RefreshQuestDetailAndPoiDisplays(questLogIndex, "Interface.ReassertWorldMapObjectiveState.0.05")
+            end)
         end
-    elseif type(WorldMapQuestShowObjectives) == "function" then
-        pcall(WorldMapQuestShowObjectives)
-    end
-
-    if addon and addon.EnsureQuestMinimapTrackingEnabled then
-        addon:EnsureQuestMinimapTrackingEnabled()
-    end
-
-    if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
-        pcall(WorldMapFrame_SetPOIMaxBounds)
-    end
-    if type(WorldMapFrame_UpdateQuests) == "function" then
-        pcall(WorldMapFrame_UpdateQuests)
-    end
-    if type(WatchFrame_Update) == "function" then
-        pcall(WatchFrame_Update)
+    else
+        RefreshQuestDetailAndPoiDisplays(nil, "Interface.ReassertWorldMapObjectiveState.clear")
     end
 
     if ShouldSuppressStandaloneQuestLogPanels() then

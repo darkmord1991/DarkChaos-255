@@ -74,7 +74,8 @@ function Wardrobe:RefreshSetsGrid()
     end
     table.sort(list, function(a, b) return (a.name or "") < (b.name or "") end)
 
-    if DC and DC.Debug then
+    if DC and DC.Debug and self._lastLoggedSetCount ~= #list then
+        self._lastLoggedSetCount = #list
         DC:Debug("Found " .. #list .. " sets.")
     end
 

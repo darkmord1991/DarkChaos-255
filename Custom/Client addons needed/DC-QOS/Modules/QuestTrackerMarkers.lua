@@ -355,12 +355,19 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
 
     local resolveTextureRegion = type(opts.resolveTextureRegion) == "function" and opts.resolveTextureRegion or ResolveTextureRegion
     local iconRegion = resolveTextureRegion(poiIcon)
-    if iconRegion and not iconRegion.__dcqosOriginalTextureCaptured then
-        iconRegion.__dcqosOriginalTextureCaptured = true
-        iconRegion.__dcqosOriginalTexture = iconRegion.GetTexture and iconRegion:GetTexture() or nil
-        if iconRegion.GetTexCoord then
-            local left, right, top, bottom = iconRegion:GetTexCoord()
-            iconRegion.__dcqosOriginalTexCoord = { left, right, top, bottom }
+    if iconRegion then
+        local currentTexture = iconRegion.GetTexture and iconRegion:GetTexture() or nil
+        local shouldCaptureOriginal = currentTexture ~= QUEST_DAILY_POI_TEXTURE
+            or not iconRegion.__dcqosOriginalTexture
+
+        if shouldCaptureOriginal then
+            iconRegion.__dcqosOriginalTexture = currentTexture
+            if iconRegion.GetTexCoord then
+                local left, right, top, bottom = iconRegion:GetTexCoord()
+                iconRegion.__dcqosOriginalTexCoord = { left, right, top, bottom }
+            else
+                iconRegion.__dcqosOriginalTexCoord = nil
+            end
         end
     end
 
@@ -392,16 +399,16 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
         iconScale = 1.16
     elseif isSelected then
         if isDaily then
-            borderR, borderG, borderB, borderA = 0.34, 0.66, 0.96, 0.72
-            iconR, iconG, iconB = 0.68, 0.90, 1.0
+            borderR, borderG, borderB, borderA = 0.34, 0.66, 0.96, 0.0
+            iconR, iconG, iconB = 0.78, 0.94, 1.0
         else
-            borderR, borderG, borderB, borderA = 0.90, 0.72, 0.28, 0.68
-            iconR, iconG, iconB = 0.98, 0.84, 0.42
+            borderR, borderG, borderB, borderA = 0.96, 0.74, 0.22, 0.0
+            iconR, iconG, iconB = 1.0, 0.78, 0.18
         end
         fillAlpha = 0
-        glowAlpha = 0.28
-        pulseAlpha = 0.32
-        iconScale = 1.10
+        glowAlpha = 0
+        pulseAlpha = 0
+        iconScale = 1.0
     elseif isWatched then
         if isDaily then
             borderR, borderG, borderB, borderA = 0.32, 0.62, 0.92, 0.56
@@ -427,14 +434,25 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
             borderR, borderG, borderB, borderA = 0.84, 0.68, 0.26, 0.54
             fillAlpha = 0
             iconR, iconG, iconB = 0.96, 0.84, 0.44
-            iconScale = 1.10
+            iconScale = 1.0
         end
         glowAlpha = math.max(glowAlpha, 0.24)
         pulseAlpha = math.max(pulseAlpha, 0.18)
     end
 
-    chrome.glow:SetAlpha(0)
-    chrome.pulse:SetAlpha(0)
+    local renderGlowAlpha = 0
+    local renderPulseAlpha = 0
+    if isTracked or isSelected or isWatched or isComplete then
+        renderGlowAlpha = glowAlpha
+    end
+    if isTracked or isSelected then
+        renderPulseAlpha = pulseAlpha
+    end
+
+    chrome.glow:SetVertexColor(borderR, borderG, borderB, 1)
+    chrome.glow:SetAlpha(renderGlowAlpha)
+    chrome.pulse:SetVertexColor(borderR, borderG, borderB, 1)
+    chrome.pulse:SetAlpha(renderPulseAlpha)
     chrome.completeDot:SetAlpha(dotAlpha)
 
     if poiIcon.SetAlpha then

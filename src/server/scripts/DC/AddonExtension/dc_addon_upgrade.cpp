@@ -69,7 +69,11 @@ namespace Upgrade
                 DarkChaos::ItemUpgrade::CachePlayerMapContext(player);
         }
 
-        inline void SendUpgradeResult(Player* player, const std::string& requestId, bool success, uint32 itemGuid, uint32 newLevel, uint32 newEntry, uint32 errorCode, const std::string& errorMsg)
+        inline void SendUpgradeResult(Player* player, const std::string& requestId, bool success,
+            uint32 itemGuid, uint32 newLevel, uint32 newEntry, uint32 errorCode,
+            const std::string& errorMsg, uint32 tier = 0, uint32 maxUpgrade = 0,
+            uint32 tokenCost = 0, uint32 essenceCost = 0, uint32 serverBag = 0,
+            uint32 serverSlot = 0)
         {
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT)
                 .SetRequestId(requestId)
@@ -79,6 +83,12 @@ namespace Upgrade
                 .Set("newEntry", newEntry)
                 .Set("errorCode", errorCode)
                 .Set("errorMsg", errorMsg)
+                .Set("tier", tier)
+                .Set("maxUpgrade", maxUpgrade)
+                .Set("tokenCost", tokenCost)
+                .Set("essenceCost", essenceCost)
+                .Set("serverBag", serverBag)
+                .Set("serverSlot", serverSlot)
                 .Send(player);
         }
     }
@@ -134,6 +144,8 @@ namespace Upgrade
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
                 .SetRequestId(msg.GetRequestId())
                 .Set("success", false)
+                .Set("serverBag", extBag)
+                .Set("serverSlot", extSlot)
                 .Set("errorMsg", "Invalid slot")
                 .Send(player);
             return;
@@ -145,6 +157,8 @@ namespace Upgrade
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
                 .SetRequestId(msg.GetRequestId())
                 .Set("success", false)
+                .Set("serverBag", extBag)
+                .Set("serverSlot", extSlot)
                 .Set("errorMsg", "Item not found")
                 .Send(player);
             return;
@@ -181,6 +195,8 @@ namespace Upgrade
                 .SetRequestId(msg.GetRequestId())
                 .Set("success", true)
                 .Set("itemID", itemGUID)
+                .Set("serverBag", extBag)
+                .Set("serverSlot", extSlot)
                 .Set("currentUpgrade", upgradeLevel)
                 .Set("maxUpgrade", DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL)
                 .Set("tier", DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
@@ -255,6 +271,21 @@ namespace Upgrade
         if (tierResult)
             maxLevel = (*tierResult)[0].Get<uint32>();
 
+        uint32 nextTokenCost = 0;
+        uint32 nextEssenceCost = 0;
+        if (upgradeLevel < maxLevel)
+        {
+            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+            {
+                uint8 nextLevel = static_cast<uint8>(upgradeLevel + 1);
+                if (nextLevel > maxLevel)
+                    nextLevel = static_cast<uint8>(maxLevel);
+
+                nextTokenCost = mgr->GetUpgradeCost(static_cast<uint8>(tier), nextLevel);
+                nextEssenceCost = mgr->GetEssenceCost(static_cast<uint8>(tier), nextLevel);
+            }
+        }
+
         // Build clone map
         std::string cloneMap;
         QueryResult cloneResult = WorldDatabase.Query(
@@ -291,11 +322,13 @@ namespace Upgrade
             .SetRequestId(msg.GetRequestId())
             .Set("success", true)
             .Set("itemID", itemGUID)
+            .Set("serverBag", extBag)
+            .Set("serverSlot", extSlot)
             .Set("currentUpgrade", upgradeLevel)
             .Set("maxUpgrade", maxLevel)
             .Set("tier", tier)
-            .Set("tokenCost", 0u)
-            .Set("essenceCost", 0u)
+            .Set("tokenCost", nextTokenCost)
+            .Set("essenceCost", nextEssenceCost)
             .Set("baseEntry", baseEntry)
             .Set("currentEntry", currentEntry)
             .Set("cloneMap", cloneMap)
@@ -555,6 +588,28 @@ namespace Upgrade
 
         uint32 targetEntry = (*targetCloneRes)[0].Get<uint32>();
 
+        uint32 maxLevel = 15;
+        QueryResult tierResult = WorldDatabase.Query(
+            "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
+            tier);
+        if (tierResult)
+            maxLevel = (*tierResult)[0].Get<uint32>();
+
+        uint32 nextTokenCost = 0;
+        uint32 nextEssenceCost = 0;
+        if (targetLevel < maxLevel)
+        {
+            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+            {
+                uint8 nextLevel = static_cast<uint8>(targetLevel + 1);
+                if (nextLevel > maxLevel)
+                    nextLevel = static_cast<uint8>(maxLevel);
+
+                nextTokenCost = mgr->GetUpgradeCost(static_cast<uint8>(tier), nextLevel);
+                nextEssenceCost = mgr->GetEssenceCost(static_cast<uint8>(tier), nextLevel);
+            }
+        }
+
         // Consume currency
         if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
         if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
@@ -595,7 +650,9 @@ namespace Upgrade
                  }
             }
             // Send success
-              SendUpgradeResult(player, msg.GetRequestId(), true, newGuid, targetLevel, targetEntry, UPGRADE_ERR_NONE, "");
+              SendUpgradeResult(player, msg.GetRequestId(), true, newGuid, targetLevel,
+                  targetEntry, UPGRADE_ERR_NONE, "", tier, maxLevel, nextTokenCost,
+                  nextEssenceCost, extBag, extSlot);
             SendCurrencyUpdate(player);
         }
         else

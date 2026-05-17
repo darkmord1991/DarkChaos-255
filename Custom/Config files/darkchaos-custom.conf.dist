@@ -273,8 +273,22 @@ DC.AddonProtocol.Core.Enable = 1
 DC.AddonProtocol.Debug.Enable = 0
 
 #
+#    DC.Addon.CapabilityDebug.Enable
+#        Description: Log negotiated addon/native capability state per session
+#                     and DB-backed fallback loads used before world entry.
+#                     Pair with .dccaps, .dccaps account <id>, and
+#                     .dccaps player <name> when diagnosing live vs persisted
+#                     native capability state. Use .dccaps history and
+#                     .dccaps errors for row-level transition/error browsing.
+#        Default:     0 (Disabled)
+#
+DC.Addon.CapabilityDebug.Enable = 0
+
+#
 #    DC.AddonProtocol.Logging.Enable
-#        Description: Enable database logging of addon protocol messages
+#        Description: Enable database logging of addon protocol messages,
+#                     protocol errors, and recent error-health diagnostics
+#                     surfaced through .dccaps and .dccaps errors.
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Logging.Enable = 1
@@ -356,6 +370,14 @@ DC.AddonProtocol.Security.MaxPendingChunks = 5
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.QoS.Enable = 1
+
+#
+#    DC.QoS.TooltipTransport.Debug
+#        Description: Log why spell-tooltip enrichment used addon JSON or the
+#                     native bridge for each request.
+#        Default:     0 (Disabled)
+#
+DC.QoS.TooltipTransport.Debug = 0
 
 #
 #    DC.AddonProtocol.AOELoot.Enable
@@ -2868,7 +2890,7 @@ DCFirstStart.PlayerAnnounce = 0
 #                     package and custom packet support on the client.
 #        Default:     0 (Disabled)
 #
-DC.BreakingNews.Enable = 0
+DC.BreakingNews.Enable = 1
 
 #
 #    DC.BreakingNews.Title
@@ -2891,7 +2913,7 @@ DC.BreakingNews.Title = "Breaking News"
 #                     is not needed for this binary packet transport.
 #        Default:     "./Custom/Config files/breaking-news.simplehtml"
 #
-DC.BreakingNews.ContentPath = "./Custom/Config files/breaking-news.simplehtml"
+DC.BreakingNews.ContentPath = "/home/wowcore/azeroth-server/news/breaking-news.simplehtml"
 
 #
 #    DC.BreakingNews.Format
@@ -2917,6 +2939,24 @@ DC.BreakingNews.Cache = 1
 #        Default:     0 (Disabled)
 #
 DC.BreakingNews.Verbose = 0
+
+#
+#    DC.BreakingNews.TransportDebug
+#        Description: Log capability-gated native breaking-news send/suppress
+#                     decisions for each session, including pre-world
+#                     char-enum gating reasons.
+#        Default:     0 (Disabled)
+#
+DC.BreakingNews.TransportDebug = 0
+
+#
+#    DC.BreakingNews.DeliveryLog.Enable
+#        Description: Persist recent breaking-news native send/suppress
+#                     decisions per account for .dcnews status and
+#                     .dcnews recent diagnostics.
+#        Default:     1 (Enabled)
+#
+DC.BreakingNews.DeliveryLog.Enable = 1
 
 # -----------------------------------------------------------------------------
 # Bind-on-Account Heirloom Items

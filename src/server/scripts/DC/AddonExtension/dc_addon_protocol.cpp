@@ -41,10 +41,98 @@ static std::string EscapeSQLString(std::string s);
 
 namespace
 {
+    constexpr char const* CONFIG_CAPABILITY_DEBUG =
+        "DC.Addon.CapabilityDebug.Enable";
+    constexpr char const* TABLE_CAPABILITY_HISTORY =
+        "dc_addon_client_caps_history";
+    constexpr char const* TABLE_PROTOCOL_ERRORS =
+        "dc_addon_protocol_errors";
+    constexpr uint32 MAX_CAPABILITY_HISTORY_ENTRIES = 12;
+
     // Resiliency fallback for tooltip enrichment requests.
     constexpr uint8 QOS_CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 0x08;
     constexpr uint8 QOS_SMSG_SPELL_TOOLTIP_ENRICHMENT = 0x17;
     constexpr uint32 QOS_ENRICHMENT_STATUS_NO_DATA = 3;
+
+    bool IsCapabilityDebugEnabled()
+    {
+        return sConfigMgr->GetOption<bool>(CONFIG_CAPABILITY_DEBUG, false);
+    }
+
+    void LogCapabilityState(Player* player, char const* source,
+        std::string const& clientVersionStr, uint32 clientCaps,
+        uint32 negotiatedCaps, bool versionCompatible)
+    {
+        if (!IsCapabilityDebugEnabled() || !player || !player->GetSession())
+            return;
+
+        LOG_INFO("module.dc",
+            "DC capability state source={} account={} player='{}' version='{}' clientCaps=0x{:X} negotiatedCaps=0x{:X} compatible={}",
+            source, player->GetSession()->GetAccountId(), player->GetName(),
+            clientVersionStr, clientCaps, negotiatedCaps, versionCompatible);
+    }
+
+    void LogCapabilityFallback(WorldSession* session,
+        DCAddon::SessionCapabilityState const& state)
+    {
+        if (!IsCapabilityDebugEnabled() || !session)
+            return;
+
+        LOG_INFO("module.dc",
+            "DC capability fallback source=db account={} version='{}' clientCaps=0x{:X} negotiatedCaps=0x{:X} compatible={}",
+            session->GetAccountId(), state.clientVersionString,
+            state.clientCapabilities, state.negotiatedCapabilities,
+            state.versionCompatible);
+    }
+
+    bool DoesCharacterTableExist(char const* tableName)
+    {
+        if (!tableName || !*tableName)
+            return false;
+
+        return CharacterDatabase.Query(
+            "SELECT 1 FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
+            tableName) != nullptr;
+    }
+
+    bool HasCapabilityHistoryTable()
+    {
+        static std::once_flag once;
+        static bool exists = false;
+
+        std::call_once(once, []()
+        {
+            exists = DoesCharacterTableExist(TABLE_CAPABILITY_HISTORY);
+            if (!exists)
+            {
+                LOG_WARN("module.dc",
+                    "DC capability history table '{}' not found; capability-transition history will stay disabled until the SQL migration is applied.",
+                    TABLE_CAPABILITY_HISTORY);
+            }
+        });
+
+        return exists;
+    }
+
+    bool HasProtocolErrorTable()
+    {
+        static std::once_flag once;
+        static bool exists = false;
+
+        std::call_once(once, []()
+        {
+            exists = DoesCharacterTableExist(TABLE_PROTOCOL_ERRORS);
+            if (!exists)
+            {
+                LOG_WARN("module.dc",
+                    "DC addon protocol error table '{}' not found; protocol error events will not be persisted until the SQL schema is present.",
+                    TABLE_PROTOCOL_ERRORS);
+            }
+        });
+
+        return exists;
+    }
 
     bool TrySendQoSTooltipFallback(Player* player, const DCAddon::ParsedMessage& parsed)
     {
@@ -125,6 +213,292 @@ static void StoreClientCaps(Player* player, const std::string& clientVersionStr,
         player->GetGUID().GetCounter(),
         EscapeSQLString(player->GetName())
     );
+}
+
+static void StoreCapabilityHistory(Player* player,
+    std::string const& clientVersionStr, uint32 clientCaps,
+    uint32 negotiatedCaps, bool versionCompatible, char const* source)
+{
+    if (!player || !player->GetSession() || !HasCapabilityHistoryTable())
+        return;
+
+    uint32 accountId = player->GetSession()->GetAccountId();
+    uint64 characterGuid = player->GetGUID().GetCounter();
+    std::string const characterName = player->GetName();
+
+    QueryResult latestResult = CharacterDatabase.Query(
+        "SELECT version_string, capabilities, negotiated_caps, compatible, "
+        "character_guid, character_name "
+        "FROM dc_addon_client_caps_history "
+        "WHERE account_id = {} AND addon_name = 'DC' "
+        "ORDER BY seen_at DESC, id DESC LIMIT 1",
+        accountId);
+    if (latestResult)
+    {
+        Field* latestFields = latestResult->Fetch();
+        if (latestFields[0].Get<std::string>() == clientVersionStr &&
+            latestFields[1].Get<uint32>() == clientCaps &&
+            latestFields[2].Get<uint32>() == negotiatedCaps &&
+            (latestFields[3].Get<uint8>() != 0) == versionCompatible &&
+            latestFields[4].Get<uint64>() == characterGuid &&
+            latestFields[5].Get<std::string>() == characterName)
+        {
+            return;
+        }
+    }
+
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_addon_client_caps_history "
+        "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name) "
+        "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}')",
+        accountId,
+        EscapeSQLString(source ? source : "unknown"),
+        EscapeSQLString(clientVersionStr),
+        clientCaps,
+        negotiatedCaps,
+        versionCompatible ? 1 : 0,
+        characterGuid,
+        EscapeSQLString(characterName));
+
+    CharacterDatabase.Execute(
+        "DELETE FROM dc_addon_client_caps_history "
+        "WHERE account_id = {} AND addon_name = 'DC' AND id NOT IN ("
+            "SELECT id FROM ("
+                "SELECT id FROM dc_addon_client_caps_history "
+                "WHERE account_id = {} AND addon_name = 'DC' "
+                "ORDER BY seen_at DESC, id DESC LIMIT {}"
+            ") AS recent_rows"
+        ")",
+        accountId, accountId, MAX_CAPABILITY_HISTORY_ENTRIES);
+}
+
+namespace
+{
+    std::unordered_map<uint32, DCAddon::SessionCapabilityState> s_SessionCapabilityRegistry;
+    std::mutex s_SessionCapabilityRegistryMutex;
+
+    uint32 GetSessionCapabilityRegistryKey(WorldSession* session)
+    {
+        if (!session)
+            return 0;
+
+        return session->GetAccountId();
+    }
+
+    uint32 GetSessionCapabilityRegistryKey(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return 0;
+
+        return GetSessionCapabilityRegistryKey(player->GetSession());
+    }
+
+    bool TryGetLiveSessionCapabilityStateByAccount(uint32 accountId,
+        DCAddon::SessionCapabilityState& out)
+    {
+        if (accountId == 0)
+            return false;
+
+        std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+        auto itr = s_SessionCapabilityRegistry.find(accountId);
+        if (itr == s_SessionCapabilityRegistry.end())
+            return false;
+
+        out = itr->second;
+        out.loadedFromPersistedFallback = false;
+        return true;
+    }
+
+    bool TryGetPersistedCapabilityStateByAccount(uint32 accountId,
+        DCAddon::SessionCapabilityState& out)
+    {
+        if (accountId == 0)
+            return false;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT version_string, capabilities, negotiated_caps, "
+            "last_character_guid, last_character_name, "
+            "UNIX_TIMESTAMP(last_seen) "
+            "FROM dc_addon_client_caps "
+            "WHERE account_id = {} AND addon_name = 'DC' "
+            "ORDER BY last_seen DESC LIMIT 1",
+            accountId);
+        if (!result)
+            return false;
+
+        Field* fields = result->Fetch();
+        out = DCAddon::SessionCapabilityState();
+        out.clientVersionString = fields[0].Get<std::string>();
+        out.clientCapabilities = fields[1].Get<uint32>();
+        out.negotiatedCapabilities = fields[2].Get<uint32>();
+        out.lastCharacterGuid = fields[3].Get<uint64>();
+        out.lastCharacterName = fields[4].Get<std::string>();
+        out.lastSeenUnix = fields[5].Get<uint64>();
+        out.versionCompatible =
+            DCAddon::ProtocolVersion::GetServerVersion().IsCompatible(
+                DCAddon::ProtocolVersion::ParseClientVersion(
+                    out.clientVersionString));
+        out.loadedFromPersistedFallback = true;
+        return true;
+    }
+}
+
+namespace DCAddon
+{
+    void SetSessionCapabilityState(Player* player,
+        const std::string& clientVersionStr, uint32 clientCaps,
+        uint32 negotiatedCaps, bool versionCompatible)
+    {
+        uint32 key = GetSessionCapabilityRegistryKey(player);
+        if (key == 0)
+            return;
+
+        SessionCapabilityState state;
+        state.clientVersionString = clientVersionStr;
+        state.clientCapabilities = clientCaps;
+        state.negotiatedCapabilities = negotiatedCaps;
+        state.versionCompatible = versionCompatible;
+        state.loadedFromPersistedFallback = false;
+        state.lastCharacterGuid = player->GetGUID().GetCounter();
+        state.lastCharacterName = player->GetName();
+        state.lastSeenUnix = GameTime::GetGameTime().count();
+
+        std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+        s_SessionCapabilityRegistry[key] = std::move(state);
+    }
+
+    bool TryGetLiveSessionCapabilityState(uint32 accountId,
+        SessionCapabilityState& out)
+    {
+        return TryGetLiveSessionCapabilityStateByAccount(accountId, out);
+    }
+
+    bool TryGetPersistedCapabilityState(uint32 accountId,
+        SessionCapabilityState& out)
+    {
+        return TryGetPersistedCapabilityStateByAccount(accountId, out);
+    }
+
+    bool GetRecentCapabilityHistory(uint32 accountId, uint32 limit,
+        std::vector<CapabilityHistoryEntry>& out)
+    {
+        out.clear();
+
+        if (accountId == 0 || limit == 0 || !HasCapabilityHistoryTable())
+            return false;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT source, version_string, capabilities, negotiated_caps, compatible, "
+            "character_guid, character_name, UNIX_TIMESTAMP(seen_at) "
+            "FROM dc_addon_client_caps_history "
+            "WHERE account_id = {} AND addon_name = 'DC' "
+            "ORDER BY seen_at DESC, id DESC LIMIT {}",
+            accountId, std::min(limit, MAX_CAPABILITY_HISTORY_ENTRIES));
+        if (!result)
+            return true;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            CapabilityHistoryEntry entry;
+            entry.source = fields[0].Get<std::string>();
+            entry.clientVersionString = fields[1].Get<std::string>();
+            entry.clientCapabilities = fields[2].Get<uint32>();
+            entry.negotiatedCapabilities = fields[3].Get<uint32>();
+            entry.versionCompatible = fields[4].Get<uint8>() != 0;
+            entry.characterGuid = fields[5].Get<uint64>();
+            entry.characterName = fields[6].Get<std::string>();
+            entry.seenUnix = fields[7].Get<uint64>();
+            out.push_back(std::move(entry));
+        } while (result->NextRow());
+
+        return true;
+    }
+
+    bool TryGetSessionCapabilityState(Player* player,
+        SessionCapabilityState& out)
+    {
+        return TryGetSessionCapabilityState(player ? player->GetSession() : nullptr,
+            out);
+    }
+
+    bool TryGetSessionCapabilityState(WorldSession* session,
+        SessionCapabilityState& out)
+    {
+        uint32 key = GetSessionCapabilityRegistryKey(session);
+        if (key == 0)
+            return false;
+
+        if (TryGetLiveSessionCapabilityStateByAccount(key, out))
+            return true;
+
+        if (!TryGetPersistedCapabilityStateByAccount(key, out))
+            return false;
+
+        LogCapabilityFallback(session, out);
+        return true;
+    }
+
+    SessionCapabilityState GetSessionCapabilityState(Player* player)
+    {
+        SessionCapabilityState state;
+        TryGetSessionCapabilityState(player, state);
+        return state;
+    }
+
+    SessionCapabilityState GetSessionCapabilityState(WorldSession* session)
+    {
+        SessionCapabilityState state;
+        TryGetSessionCapabilityState(session, state);
+        return state;
+    }
+
+    void ClearSessionCapabilityState(Player* player)
+    {
+        uint32 key = GetSessionCapabilityRegistryKey(player);
+        if (key == 0)
+            return;
+
+        if (IsCapabilityDebugEnabled() && player && player->GetSession())
+        {
+            LOG_INFO("module.dc",
+                "DC capability state cleared account={} player='{}'",
+                player->GetSession()->GetAccountId(), player->GetName());
+        }
+
+        std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+        s_SessionCapabilityRegistry.erase(key);
+    }
+
+    uint32 GetSessionNegotiatedCapabilities(Player* player)
+    {
+        SessionCapabilityState state;
+        return TryGetSessionCapabilityState(player, state)
+            ? state.negotiatedCapabilities
+            : 0;
+    }
+
+    uint32 GetSessionNegotiatedCapabilities(WorldSession* session)
+    {
+        SessionCapabilityState state;
+        return TryGetSessionCapabilityState(session, state)
+            ? state.negotiatedCapabilities
+            : 0;
+    }
+
+    bool SessionSupportsCapability(Player* player, uint32 capability)
+    {
+        SessionCapabilityState state;
+        return TryGetSessionCapabilityState(player, state)
+            && state.HasNegotiatedCapability(capability);
+    }
+
+    bool SessionSupportsCapability(WorldSession* session, uint32 capability)
+    {
+        SessionCapabilityState state;
+        return TryGetSessionCapabilityState(session, state)
+            && state.HasNegotiatedCapability(capability);
+    }
 }
 
 // ============================================================================
@@ -530,6 +904,9 @@ static void LoadAddonConfig()
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
     g_S2CLoggingEnabled = s_AddonConfig.EnableProtocolLogging;
 
+    if (s_AddonConfig.EnableProtocolLogging)
+        HasProtocolErrorTable();
+
     s_AddonConfig.ProtocolVersion = "1.0.0";
 
     // Update router module enables
@@ -805,7 +1182,7 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
 
 static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message)
 {
-    if (!s_AddonConfig.EnableProtocolLogging)
+    if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
         return;
 
     std::string moduleCode = ExtractModuleCode(payload);
@@ -1030,6 +1407,13 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
 
     // Store client addon caps/version per account
     StoreClientCaps(player, clientVersionStr, clientVersion.capabilities, negotiatedCaps);
+    DCAddon::SetSessionCapabilityState(player, clientVersionStr,
+        clientVersion.capabilities, negotiatedCaps, compatible);
+    StoreCapabilityHistory(player, clientVersionStr,
+        clientVersion.capabilities, negotiatedCaps, compatible,
+        "core-handshake");
+    LogCapabilityState(player, "core-handshake", clientVersionStr,
+        clientVersion.capabilities, negotiatedCaps, compatible);
 
     if (!compatible)
     {
@@ -1441,7 +1825,8 @@ public:
             hadPendingChunks = s_ChunkStartTimes.find(accountId) != s_ChunkStartTimes.end();
         }
 
-        if (s_AddonConfig.EnableProtocolLogging && hadPendingChunks)
+        if (s_AddonConfig.EnableProtocolLogging && hadPendingChunks &&
+            HasProtocolErrorTable())
         {
             CharacterDatabase.Execute(
                 "INSERT INTO dc_addon_protocol_errors "
@@ -1468,6 +1853,8 @@ public:
             std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
             s_PendingRequests.erase(accountId);
         }
+
+        DCAddon::ClearSessionCapabilityState(player);
 
         // FLUSH STATS for this player and remove from buffer
         FlushStats(player->GetGUID().GetCounter());
@@ -1730,21 +2117,35 @@ public:
 
         RegisterPendingRequest(player, parsed);
 
-        // Capture handshake caps even if CORE module is disabled
-        if (parsed.GetModule() == DCAddon::Module::CORE &&
-            parsed.GetOpcode() == DCAddon::Opcode::Core::CMSG_HANDSHAKE)
-        {
-            std::string clientVersionStr = NormalizeHandshakeVersionString(parsed);
-            auto clientVersion = DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
-            auto serverVersion = DCAddon::ProtocolVersion::GetServerVersion();
-            uint32 negotiatedCaps = clientVersion.capabilities & serverVersion.capabilities;
-            StoreClientCaps(player, clientVersionStr, clientVersion.capabilities, negotiatedCaps);
-        }
-
         auto& router = DCAddon::MessageRouter::Instance();
         bool moduleEnabled = router.IsModuleEnabled(parsed.GetModule());
         bool hadRegisteredHandler =
             router.HasHandler(parsed.GetModule(), parsed.GetOpcode());
+
+        // Capture handshake caps only if the normal CORE handler will not run.
+        if (parsed.GetModule() == DCAddon::Module::CORE &&
+            parsed.GetOpcode() == DCAddon::Opcode::Core::CMSG_HANDSHAKE &&
+            (!moduleEnabled || !hadRegisteredHandler))
+        {
+            std::string clientVersionStr = NormalizeHandshakeVersionString(parsed);
+            auto clientVersion =
+                DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
+            auto serverVersion = DCAddon::ProtocolVersion::GetServerVersion();
+            bool compatible = serverVersion.IsCompatible(clientVersion);
+            uint32 negotiatedCaps =
+                clientVersion.capabilities & serverVersion.capabilities;
+
+            StoreClientCaps(player, clientVersionStr,
+                clientVersion.capabilities, negotiatedCaps);
+            DCAddon::SetSessionCapabilityState(player, clientVersionStr,
+                clientVersion.capabilities, negotiatedCaps, compatible);
+            StoreCapabilityHistory(player, clientVersionStr,
+                clientVersion.capabilities, negotiatedCaps, compatible,
+                "pre-router-fallback");
+            LogCapabilityState(player, "pre-router-fallback",
+                clientVersionStr, clientVersion.capabilities,
+                negotiatedCaps, compatible);
+        }
 
         // Route the message
         bool handled = false;

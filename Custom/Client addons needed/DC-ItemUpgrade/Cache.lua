@@ -1,6 +1,6 @@
 --[[
 	DC-ItemUpgrade - Cache Module
-	Item state pooling, batch query system, and item scanning
+	Item state pooling, shared bag helpers, and item scanning
 --]]
 
 local DC = DarkChaos_ItemUpgrade;
@@ -19,18 +19,10 @@ DC.itemScanCache = DC.itemScanCache or {};
 DC.itemScanCacheTime = DC.itemScanCacheTime or 0;
 DC.itemScanCacheLifetime = DC.itemScanCacheLifetime or 5; -- 5 seconds cache lifetime
 
--- Batch query system
-DC.batchQueryQueue = DC.batchQueryQueue or {};
-DC.batchQueryTimer = DC.batchQueryTimer or 0;
-DC.batchQueryDelay = DC.batchQueryDelay or 0.1; -- 100ms delay for batching
-
 -- Runtime caches
 DC.itemUpgradeCache = DC.itemUpgradeCache or {};
 DC.itemLocationCache = DC.itemLocationCache or {};
 DC.itemTooltipCache = DC.itemTooltipCache or {};
-DC.queryQueueList = DC.queryQueueList or {};
-DC.queryQueueMap = DC.queryQueueMap or {};
-DC.queryInFlight = DC.queryInFlight or nil;
 
 --[[=====================================================
 	BAG CONSTANTS
@@ -135,32 +127,6 @@ function DC.ReturnPooledItemState(state)
 	
 	DC.itemStatePoolSize = DC.itemStatePoolSize + 1;
 	DC.itemStatePool[DC.itemStatePoolSize] = state;
-end
-
---[[=====================================================
-	BATCH QUERY PROCESSING
-=======================================================]]
-
-function DC.ProcessBatchQueries()
-	if #DC.batchQueryQueue == 0 then
-		return;
-	end
-
-	DC.Debug(string.format("ProcessBatchQueries: flushing %d pending requests (inFlight=%s, queued=%d)",
-		#DC.batchQueryQueue,
-		tostring(DC.queryInFlight ~= nil),
-		#DC.queryQueueList));
-
-	-- Move pending requests into the sequential queue
-	for _, request in ipairs(DC.batchQueryQueue) do
-		table.insert(DC.queryQueueList, request);
-	end
-
-	DC.batchQueryQueue = {};
-
-	if not DC.queryInFlight then
-		DarkChaos_ItemUpgrade_StartNextQuery();
-	end
 end
 
 --[[=====================================================

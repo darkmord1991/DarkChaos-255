@@ -74,6 +74,211 @@ local function ResolvePreviewItemId(rawId)
     return n
 end
 
+local function GetPreviewOutfitSlotValue(invSlotId, equippedItemId)
+    if not invSlotId or not equippedItemId then
+        return nil
+    end
+
+    local eqSlot = invSlotId - 1
+    local state = DC and DC.transmogState or nil
+    local rawStateValue = state and (state[tostring(eqSlot)] or state[eqSlot])
+
+    if rawStateValue ~= nil then
+        local displayId = tonumber(rawStateValue)
+        if displayId ~= nil then
+            if displayId > 0 then
+                return displayId
+            end
+            return 0
+        end
+    end
+
+    return equippedItemId
+end
+
+local function GetSavedOutfitSlotValue(invSlotId)
+    if not invSlotId then
+        return nil
+    end
+
+    local eqSlot = invSlotId - 1
+    local state = DC and DC.transmogState or nil
+    local rawStateValue = state and (state[tostring(eqSlot)] or state[eqSlot])
+
+    if rawStateValue == nil then
+        return nil
+    end
+
+    local displayId = tonumber(rawStateValue)
+    if displayId == nil then
+        return nil
+    end
+
+    if displayId > 0 then
+        return displayId
+    end
+
+    return 0
+end
+
+local function GetEquippedArmorWeaponType(equippedItemId)
+    if not equippedItemId or type(GetItemInfo) ~= "function" then
+        return nil, nil
+    end
+
+    local _, _, _, _, _, itemType, itemSubType = GetItemInfo(equippedItemId)
+    if not itemType or not itemSubType then
+        return nil, nil
+    end
+
+    local ARMOR_STR = _G.ARMOR or "Armor"
+    local WEAPON_STR = _G.WEAPON or "Weapon"
+
+    if itemType == ARMOR_STR then
+        local armorMap = {
+            [(_G.MISCELLANEOUS or "Miscellaneous")] = 0,
+            [(_G.ITEM_SUBCLASS_ARMOR_CLOTH or "Cloth")] = 1,
+            [(_G.ITEM_SUBCLASS_ARMOR_LEATHER or "Leather")] = 2,
+            [(_G.ITEM_SUBCLASS_ARMOR_MAIL or "Mail")] = 3,
+            [(_G.ITEM_SUBCLASS_ARMOR_PLATE or "Plate")] = 4,
+            [(_G.ITEM_SUBCLASS_ARMOR_SHIELD or "Shields")] = 6,
+            [(_G.ITEM_SUBCLASS_ARMOR_LIBRAM or "Librams")] = 7,
+            [(_G.ITEM_SUBCLASS_ARMOR_IDOL or "Idols")] = 8,
+            [(_G.ITEM_SUBCLASS_ARMOR_TOTEM or "Totems")] = 9,
+            [(_G.ITEM_SUBCLASS_ARMOR_SIGIL or "Sigils")] = 10,
+        }
+        return 4, armorMap[itemSubType]
+    elseif itemType == WEAPON_STR then
+        local weaponMap = {
+            [(_G.ONE_HANDED_AXES or "One-Handed Axes")] = 0,
+            [(_G.TWO_HANDED_AXES or "Two-Handed Axes")] = 1,
+            [(_G.BOWS or "Bows")] = 2,
+            [(_G.GUNS or "Guns")] = 3,
+            [(_G.ONE_HANDED_MACES or "One-Handed Maces")] = 4,
+            [(_G.TWO_HANDED_MACES or "Two-Handed Maces")] = 5,
+            [(_G.POLEARMS or "Polearms")] = 6,
+            [(_G.ONE_HANDED_SWORDS or "One-Handed Swords")] = 7,
+            [(_G.TWO_HANDED_SWORDS or "Two-Handed Swords")] = 8,
+            [(_G.STAVES or "Staves")] = 10,
+            [(_G.FIST_WEAPONS or "Fist Weapons")] = 13,
+            [(_G.DAGGERS or "Daggers")] = 15,
+            [(_G.THROWN or "Thrown")] = 16,
+            [(_G.CROSSBOWS or "Crossbows")] = 18,
+            [(_G.WANDS or "Wands")] = 19,
+            [(_G.FISHING_POLES or "Fishing Poles")] = 20,
+        }
+        return 2, weaponMap[itemSubType]
+    end
+
+    return nil, nil
+end
+
+local function IsWeaponSubClassCompatible(eqSub, apSub)
+    if not eqSub or not apSub then
+        return true
+    end
+    if eqSub == apSub then
+        return true
+    end
+
+    local is1H = { [0] = true, [4] = true, [7] = true }
+    local is2H = { [1] = true, [5] = true, [8] = true }
+    local isRanged = { [2] = true, [3] = true, [18] = true }
+    local isPoleStaff = { [6] = true, [10] = true }
+
+    if is1H[eqSub] and is1H[apSub] then return true end
+    if is2H[eqSub] and is2H[apSub] then return true end
+    if isRanged[eqSub] and isRanged[apSub] then return true end
+    if isPoleStaff[eqSub] and isPoleStaff[apSub] then return true end
+    return false
+end
+
+local function GetAppearanceType(displayId)
+    if not displayId or not DC or type(DC.GetDefinition) ~= "function" then
+        return nil, nil, nil
+    end
+
+    local def = DC:GetDefinition("transmog", displayId)
+    if type(def) == "table" then
+        return tonumber(def.inventoryType), tonumber(def.class), tonumber(def.subclass)
+    end
+
+    return nil, nil, nil
+end
+
+local function IsInvTypeCompatibleForEquipmentSlot(equipmentSlot, invType)
+    local inv = DC and DC.InventoryTypes or nil
+    if not inv then
+        return true
+    end
+
+    if equipmentSlot == 0 then return invType == inv.HEAD end
+    if equipmentSlot == 2 then return invType == inv.SHOULDER end
+    if equipmentSlot == 3 then return invType == inv.SHIRT end
+    if equipmentSlot == 4 then return invType == inv.CHEST or invType == inv.ROBE end
+    if equipmentSlot == 5 then return invType == inv.WAIST end
+    if equipmentSlot == 6 then return invType == inv.LEGS end
+    if equipmentSlot == 7 then return invType == inv.FEET end
+    if equipmentSlot == 8 then return invType == inv.WRIST end
+    if equipmentSlot == 9 then return invType == inv.HANDS end
+    if equipmentSlot == 14 then return invType == inv.CLOAK end
+    if equipmentSlot == 15 then
+        return invType == inv.WEAPON or invType == inv.WEAPONMAINHAND or invType == inv.TWOHWEAPON
+    end
+    if equipmentSlot == 16 then
+        return invType == inv.WEAPON or invType == inv.WEAPONOFFHAND or invType == inv.SHIELD or invType == inv.HOLDABLE
+    end
+    if equipmentSlot == 17 then
+        return invType == inv.RANGED or invType == inv.RANGEDRIGHT or invType == inv.THROWN or invType == inv.RELIC
+    end
+    if equipmentSlot == 18 then return invType == inv.TABARD end
+
+    return true
+end
+
+local function IsOutfitAppearanceCompatibleWithEquipped(invSlotId, equipmentSlot, displayId)
+    if not invSlotId or not displayId then
+        return false
+    end
+
+    local equippedItemId = GetInventoryItemID("player", invSlotId)
+    if not equippedItemId then
+        return false
+    end
+
+    local aInvType, aClass, aSub = GetAppearanceType(displayId)
+    if aInvType and aInvType > 0 and not IsInvTypeCompatibleForEquipmentSlot(equipmentSlot, aInvType) then
+        return false
+    end
+
+    local eClass, eSub = GetEquippedArmorWeaponType(equippedItemId)
+
+    if not aClass or not eClass then
+        return true
+    end
+
+    if aClass ~= eClass then
+        return false
+    end
+
+    if eClass == 4 then
+        if eSub and aSub and eSub ~= 0 and aSub ~= 0 and eSub ~= aSub then
+            return false
+        end
+        return true
+    end
+
+    if eClass == 2 then
+        return IsWeaponSubClassCompatible(eSub, aSub)
+    end
+
+    return true
+end
+
+function Wardrobe:IsOutfitAppearanceCompatibleWithEquipped(invSlotId, equipmentSlot, displayId)
+    return IsOutfitAppearanceCompatibleWithEquipped(invSlotId, equipmentSlot, displayId)
+end
+
 -- Update slot buttons immediately from an outfit's slots table (used for instant feedback)
 function Wardrobe:_UpdateSlotButtonsFromOutfit(slots)
     if not self.frame or not self.frame.slotButtons or type(slots) ~= "table" then
@@ -137,38 +342,68 @@ function Wardrobe:_UpdateSlotButtonsFromOutfit(slots)
     end
 end
 
-function Wardrobe:_EnsurePendingApplyVerifier()
-    if self._pendingApplyVerifierFrame then
+local function EnsureWardrobePollingFrame(owner, fieldName, interval, onTick)
+    if owner[fieldName] then
+        return owner[fieldName]
+    end
+
+    local frame = CreateFrame("Frame")
+    frame:Hide()
+    frame.elapsed = 0
+    frame:SetScript("OnUpdate", function(pollFrame, dt)
+        pollFrame.elapsed = (pollFrame.elapsed or 0) + (dt or 0)
+        if pollFrame.elapsed < interval then
+            return
+        end
+
+        pollFrame.elapsed = 0
+        if onTick(owner, pollFrame) == false then
+            pollFrame:Hide()
+        end
+    end)
+
+    owner[fieldName] = frame
+    return frame
+end
+
+local function StartWardrobePollingFrame(owner, fieldName)
+    local frame = owner and owner[fieldName]
+    if not frame then
         return
     end
 
-    local f = CreateFrame("Frame")
-    f:Hide()
-    f.elapsed = 0
-    f:SetScript("OnUpdate", function(frame, dt)
-        frame.elapsed = (frame.elapsed or 0) + (dt or 0)
-        if frame.elapsed < 0.05 then
-            return
-        end
-        frame.elapsed = 0
+    frame.elapsed = 0
+    frame:Show()
+end
 
-        local pending = Wardrobe._pendingApplyOutfit
-        if not pending then
+local function StopWardrobePollingFrame(owner, fieldName)
+    local frame = owner and owner[fieldName]
+    if not frame then
+        return
+    end
+
+    frame.elapsed = 0
+    frame:Hide()
+end
+
+function Wardrobe:_EnsurePendingApplyVerifier()
+    EnsureWardrobePollingFrame(self, "_pendingApplyVerifierFrame", 0.05,
+        function(owner, frame)
+            local pending = owner._pendingApplyOutfit
+            if not pending then
+                return false
+            end
+
+            local now = (GetTime and GetTime()) or 0
+            local last = pending.lastUpdateAt or pending.startedAt or now
+            if now - last < 0.35 then
+                return true
+            end
+
             frame:Hide()
-            return
-        end
-
-        local now = (GetTime and GetTime()) or 0
-        local last = pending.lastUpdateAt or pending.startedAt or now
-        if now - last < 0.35 then
-            return
-        end
-
-        frame:Hide()
-        Wardrobe:_VerifyPendingOutfitApply()
-    end)
-
-    self._pendingApplyVerifierFrame = f
+            owner:_VerifyPendingOutfitApply()
+            return false
+        end)
 end
 
 function Wardrobe:OnTransmogStateReceived(state)
@@ -179,9 +414,7 @@ function Wardrobe:OnTransmogStateReceived(state)
     local now = (GetTime and GetTime()) or 0
     self._pendingApplyOutfit.lastUpdateAt = now
     self:_EnsurePendingApplyVerifier()
-    if self._pendingApplyVerifierFrame then
-        self._pendingApplyVerifierFrame:Show()
-    end
+    StartWardrobePollingFrame(self, "_pendingApplyVerifierFrame")
 end
 
 function Wardrobe:_VerifyPendingOutfitApply()
@@ -243,95 +476,74 @@ local function AllItemsCached(itemIds)
 end
 
 function Wardrobe:_EnsureOutfitPreviewQueue()
-    if self._outfitPreviewQueueFrame then
-        return
-    end
-
     self._outfitPreviewQueue = self._outfitPreviewQueue or {}
 
-    local f = CreateFrame("Frame")
-    f:Hide()
-    f.elapsed = 0
-    f:SetScript("OnUpdate", function(frame, dt)
-        frame.elapsed = (frame.elapsed or 0) + (dt or 0)
-        if frame.elapsed < 0.03 then
-            return
-        end
-        frame.elapsed = 0
-
-        local q = Wardrobe._outfitPreviewQueue
-        if not q or #q == 0 then
-            frame:Hide()
-            return
-        end
-
-        local job = q[1]
-        local btn = job and job.btn
-        local outfit = job and job.outfit
-        if not (btn and btn.model and outfit) then
-            table.remove(q, 1)
-            return
-        end
-
-        -- If the button has since been re-used for another outfit, skip.
-        if btn._outfitPreviewSig ~= job.sig then
-            table.remove(q, 1)
-            return
-        end
-
-        -- Extract item IDs from outfit
-        local isRetry = (job.retries or 0) > 0
-        local rawIds = ExtractOutfitItemIds(outfit, isRetry)
-        local itemIds = {}
-        for _, id in ipairs(rawIds) do
-            local resolved = ResolvePreviewItemId(id)
-            if resolved and resolved > 0 then
-                itemIds[#itemIds + 1] = resolved
+    EnsureWardrobePollingFrame(self, "_outfitPreviewQueueFrame", 0.03,
+        function(owner, frame)
+            local q = owner._outfitPreviewQueue
+            if not q or #q == 0 then
+                return false
             end
-        end
 
-        -- Pre-cache: call GetItemInfo on all items to trigger cache requests
-        for _, id in ipairs(itemIds) do
-            GetItemInfo(id)
-        end
-
-        -- Wait for items to cache (max 30 retries = ~0.9 seconds per outfit for cold cache)
-        job.retries = (job.retries or 0) + 1
-        if not AllItemsCached(itemIds) and job.retries < 30 then
-            -- Items not cached yet, wait a bit longer before rendering
-            return
-        end
-
-        -- Remove job from queue now that we're processing it
-        table.remove(q, 1)
-
-        local model = btn.model
-
-        -- Reset model completely before applying new outfit.
-        model:SetUnit("player")
-        model:SetFacing(0)
-        
-        if model.Undress then
-            model:Undress()
-        end
-        
-        if model.SetPortraitZoom then
-            model:SetPortraitZoom(0)
-        end
-        if model.RefreshCamera then
-            model:RefreshCamera()
-        end
-
-        -- TryOn all items
-        for _, id in ipairs(itemIds) do
-            local numId = tonumber(id)
-            if numId and numId > 0 then
-                pcall(function() model:TryOn(numId) end)
+            local job = q[1]
+            local btn = job and job.btn
+            local outfit = job and job.outfit
+            if not (btn and btn.model and outfit) then
+                table.remove(q, 1)
+                return true
             end
-        end
-    end)
 
-    self._outfitPreviewQueueFrame = f
+            -- If the button has since been re-used for another outfit, skip.
+            if btn._outfitPreviewSig ~= job.sig then
+                table.remove(q, 1)
+                return true
+            end
+
+            local isRetry = (job.retries or 0) > 0
+            local rawIds = ExtractOutfitItemIds(outfit, isRetry)
+            local itemIds = {}
+            for _, id in ipairs(rawIds) do
+                local resolved = ResolvePreviewItemId(id)
+                if resolved and resolved > 0 then
+                    itemIds[#itemIds + 1] = resolved
+                end
+            end
+
+            for _, id in ipairs(itemIds) do
+                GetItemInfo(id)
+            end
+
+            job.retries = (job.retries or 0) + 1
+            if not AllItemsCached(itemIds) and job.retries < 30 then
+                return true
+            end
+
+            table.remove(q, 1)
+
+            local model = btn.model
+            model:SetUnit("player")
+            model:SetFacing(0)
+
+            if model.Undress then
+                model:Undress()
+            end
+
+            if model.SetPortraitZoom then
+                model:SetPortraitZoom(0)
+            end
+            if model.RefreshCamera then
+                model:RefreshCamera()
+            end
+
+            for _, id in ipairs(itemIds) do
+                local numId = tonumber(id)
+                if numId and numId > 0 then
+                    pcall(function() model:TryOn(numId) end)
+                end
+            end
+
+            return true
+        end)
 end
 
 function Wardrobe:_QueueOutfitPreview(btn, outfit)
@@ -364,10 +576,16 @@ function Wardrobe:_QueueOutfitPreview(btn, outfit)
     btn._outfitPreviewSig = sig
 
     self._outfitPreviewQueue = self._outfitPreviewQueue or {}
-    table.insert(self._outfitPreviewQueue, { btn = btn, outfit = outfit, sig = sig })
-    if self._outfitPreviewQueueFrame then
-        self._outfitPreviewQueueFrame:Show()
+
+    for i = #self._outfitPreviewQueue, 1, -1 do
+        local queuedJob = self._outfitPreviewQueue[i]
+        if queuedJob and queuedJob.btn == btn then
+            table.remove(self._outfitPreviewQueue, i)
+        end
     end
+
+    table.insert(self._outfitPreviewQueue, { btn = btn, outfit = outfit, sig = sig })
+    StartWardrobePollingFrame(self, "_outfitPreviewQueueFrame")
 end
 
 local function GetCurrentOutfitSlots()
@@ -381,29 +599,7 @@ local function GetCurrentOutfitSlots()
         if invSlotId then
             local itemId = GetInventoryItemID("player", invSlotId)
             if itemId then
-                -- Build the "current outfit" using actual item entry IDs (fake_entry) so TryOn works.
-                -- DC.transmogState contains displayIds and only includes slots present in the server DB.
-                -- DC.transmogItemIds contains the corresponding fake_entry (item entry) for preview/texture.
-                local eqSlot = (invSlotId == 1 and 0) or (invSlotId and (invSlotId - 1))
-                local state = DC and DC.transmogState or nil
-                local itemIds = DC and DC.transmogItemIds or nil
-
-                local hasState = state and state[tostring(eqSlot)] ~= nil
-                local displayId = hasState and tonumber(state[tostring(eqSlot)]) or nil
-                if hasState and displayId ~= nil then
-                    if displayId == 0 then
-                        -- Slot is explicitly hidden.
-                        slots[slotDef.key] = 0
-                    else
-                        local fakeEntry = itemIds and (itemIds[eqSlot] or itemIds[tostring(eqSlot)])
-                        fakeEntry = tonumber(fakeEntry) or 0
-                        -- Fall back to equipped item if something is off.
-                        slots[slotDef.key] = (fakeEntry > 0) and fakeEntry or itemId
-                    end
-                else
-                    -- No transmog record for this slot: use the equipped item as the visual.
-                    slots[slotDef.key] = itemId
-                end
+                slots[slotDef.key] = GetPreviewOutfitSlotValue(invSlotId, itemId)
             end
         end
     end
@@ -591,8 +787,8 @@ function Wardrobe:ShowSaveOutfitDialog()
 end
 
 function Wardrobe:SaveCurrentOutfit(name, overwriteId)
-    -- Ensure we have authoritative transmog itemIds (actual item entries) before saving.
-    if not (DC and DC.transmogItemIds) then
+    -- Ensure we have authoritative transmog state (displayIds) before saving.
+    if not (DC and type(DC.transmogState) == "table") then
         self._pendingSaveOutfitName = name
         if Wardrobe and type(Wardrobe.RequestTransmogStateDebounced) == "function" then
             Wardrobe:RequestTransmogStateDebounced("save_outfit")
@@ -622,21 +818,10 @@ function Wardrobe:SaveCurrentOutfit(name, overwriteId)
         if invSlotId then
             local itemId = GetInventoryItemID("player", invSlotId)
             if itemId then
-                -- Use transmogItemIds which contains actual item entries (fakeEntry), not displayIds.
-                -- If no transmog is applied (state is 0 or nil), save the actual equipped item's ID.
-                local slotIdx = tostring(invSlotId - 1)
-                local transmogItemId = DC.transmogItemIds and DC.transmogItemIds[slotIdx]
-                local tid = tonumber(transmogItemId) or 0
-                
-                -- If transmog item ID is 0 or negative, use the actual equipped item ID
-                local valueToSave
-                if tid > 0 then
-                    valueToSave = tid  -- Transmog is applied, save the transmog item ID
-                else
-                    valueToSave = itemId  -- No transmog, save the actual equipped item ID
+                local valueToSave = GetSavedOutfitSlotValue(invSlotId)
+                if valueToSave ~= nil then
+                    outfit.slots[slotDef.key] = valueToSave
                 end
-                
-                outfit.slots[slotDef.key] = valueToSave
                 
                 -- Capture icon from chest/head for main icon if not set
                 if (slotDef.key == "ChestSlot" or slotDef.key == "HeadSlot") and outfit.icon == "Interface\\Icons\\INV_Chest_Cloth_17" then
@@ -891,6 +1076,9 @@ function Wardrobe:LoadOutfit(outfit)
             local equipmentSlot = invSlotId - 1
 
             local n = tonumber(appearanceId) or 0
+            local resolvedDef
+            local skipAppearance = false
+            local skipReason = nil
 
             -- Some payloads store itemIds instead of displayIds.
             local mapped
@@ -901,43 +1089,75 @@ function Wardrobe:LoadOutfit(outfit)
                 end
             end
 
+            if n and n > 0 and (not mapped or mapped <= 0)
+                and DC and type(DC.GetDefinition) == "function" then
+                resolvedDef = DC:GetDefinition("transmog", n)
+                if type(resolvedDef) == "table" then
+                    local resolvedDisplayId = tonumber(
+                        resolvedDef.displayId or resolvedDef.displayID or
+                        resolvedDef.display_id or resolvedDef.appearanceId or
+                        resolvedDef.appearance_id
+                    ) or 0
+                    if resolvedDisplayId > 0 then
+                        mapped = resolvedDisplayId
+                        n = resolvedDisplayId
+                    end
+                else
+                    skipAppearance = true
+                    skipReason = "unresolved"
+                end
+            end
+
+            if not skipAppearance and n and n > 0 and
+                not IsOutfitAppearanceCompatibleWithEquipped(invSlotId, equipmentSlot, n) then
+                skipAppearance = true
+                skipReason = "incompatible"
+            end
+
             if dbg and dbgCount < 6 then
                 dbgLines = dbgLines or {}
                 dbgCount = dbgCount + 1
                 dbgLines[#dbgLines + 1] = string.format("slot=%s inv=%d equip=%d raw=%s mapped=%s send=%d", tostring(slotKey), tonumber(invSlotId) or 0, tonumber(equipmentSlot) or 0, tostring(appearanceId), tostring(mapped), tonumber(n) or 0)
             end
 
-            if canBatch then
-                if n and n <= 0 then
-                    table.insert(batchEntries, { slot = equipmentSlot, clear = true })
-                else
-                    table.insert(batchEntries, { slot = equipmentSlot, appearanceId = n, clear = false })
+            if skipAppearance then
+                if dbg and DC and type(DC.Debug) == "function" then
+                    DC:Debug(string.format("[OUTFIT APPLY] skipping %s slot=%s raw=%s resolved=%s", tostring(skipReason or "unknown"), tostring(slotKey), tostring(appearanceId), tostring(n)))
                 end
             else
-                -- Fallback: per-slot apply (older servers)
-                if DC and DC.RequestSetTransmogByEquipmentSlot then
+
+                if canBatch then
                     if n and n <= 0 then
-                        if DC.RequestClearTransmogByEquipmentSlot then
-                            DC:RequestClearTransmogByEquipmentSlot(equipmentSlot)
-                        end
+                        table.insert(batchEntries, { slot = equipmentSlot, clear = true })
                     else
-                        DC:RequestSetTransmogByEquipmentSlot(equipmentSlot, n)
+                        table.insert(batchEntries, { slot = equipmentSlot, appearanceId = n, clear = false })
                     end
-                elseif DC and DC.RequestSetTransmog then
-                    if n and n <= 0 then
-                        if DC.RequestClearTransmog then
-                            DC:RequestClearTransmog(invSlotId)
+                else
+                    -- Fallback: per-slot apply (older servers)
+                    if DC and DC.RequestSetTransmogByEquipmentSlot then
+                        if n and n <= 0 then
+                            if DC.RequestClearTransmogByEquipmentSlot then
+                                DC:RequestClearTransmogByEquipmentSlot(equipmentSlot)
+                            end
+                        else
+                            DC:RequestSetTransmogByEquipmentSlot(equipmentSlot, n)
                         end
-                    else
-                        DC:RequestSetTransmog(invSlotId, n)
+                    elseif DC and DC.RequestSetTransmog then
+                        if n and n <= 0 then
+                            if DC.RequestClearTransmog then
+                                DC:RequestClearTransmog(invSlotId)
+                            end
+                        else
+                            DC:RequestSetTransmog(invSlotId, n)
+                        end
                     end
                 end
+
+                self._pendingApplyOutfit.expectedByEquipSlot[equipmentSlot] = tonumber(n) or 0
+                self._pendingApplyOutfit.slotLabelByEquipSlot[equipmentSlot] = tostring(slotKey)
+
+                appliedSlots[tostring(equipmentSlot)] = tonumber(n) or 0
             end
-
-            self._pendingApplyOutfit.expectedByEquipSlot[equipmentSlot] = tonumber(n) or 0
-            self._pendingApplyOutfit.slotLabelByEquipSlot[equipmentSlot] = tostring(slotKey)
-
-            appliedSlots[tostring(equipmentSlot)] = tonumber(n) or 0
         end
     end
 
@@ -1318,40 +1538,35 @@ function Wardrobe:RefreshOutfitsGrid()
         -- Mark as pending and retry a few times on the next frames.
         self._pendingOutfitsRefresh = true
 
-        if not self._outfitsRefreshRetryFrame then
-            local f = CreateFrame("Frame")
-            f.elapsed = 0
-            f.tries = 0
-            f:SetScript("OnUpdate", function(this, elapsed)
-                this.elapsed = (this.elapsed or 0) + (elapsed or 0)
-                if this.elapsed < 0.05 then return end
-                this.elapsed = 0
-                this.tries = (this.tries or 0) + 1
+        local retryFrame = EnsureWardrobePollingFrame(self, "_outfitsRefreshRetryFrame", 0.05,
+            function(owner, frame)
+                frame.tries = (frame.tries or 0) + 1
 
                 -- Stop after a short while to avoid running forever.
-                if this.tries > 40 then
-                    this:SetScript("OnUpdate", nil)
-                    Wardrobe._outfitsRefreshRetryFrame = nil
-                    return
+                if frame.tries > 40 then
+                    owner._pendingOutfitsRefresh = nil
+                    return false
                 end
 
-                if Wardrobe and Wardrobe._pendingOutfitsRefresh and type(Wardrobe.RefreshOutfitsGrid) == "function" then
+                if owner._pendingOutfitsRefresh and type(owner.RefreshOutfitsGrid) == "function" then
                     -- If the grid is now ready, this call will clear pending below.
-                    Wardrobe:RefreshOutfitsGrid()
+                    owner:RefreshOutfitsGrid()
                 end
+
+                return owner._pendingOutfitsRefresh ~= nil
             end)
-            self._outfitsRefreshRetryFrame = f
+
+        if not retryFrame:IsShown() then
+            retryFrame.tries = 0
         end
+        StartWardrobePollingFrame(self, "_outfitsRefreshRetryFrame")
 
         return
     end
 
     -- Grid is ready; stop any pending retry.
     self._pendingOutfitsRefresh = nil
-    if self._outfitsRefreshRetryFrame then
-        self._outfitsRefreshRetryFrame:SetScript("OnUpdate", nil)
-        self._outfitsRefreshRetryFrame = nil
-    end
+    StopWardrobePollingFrame(self, "_outfitsRefreshRetryFrame")
 
     local outfits = DC.db and DC.db.outfits or {}
     local ITEMS_PER_PAGE = math.max(1, buttons and #buttons or 6)

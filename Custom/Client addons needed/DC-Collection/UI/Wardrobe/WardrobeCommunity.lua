@@ -35,6 +35,74 @@ end
 -- COMMUNITY OUTFITS SYSTEM
 -- ============================================================================
 
+local function NormalizeCommunityOwnerFlag(value)
+    if value == nil then
+        return nil
+    end
+
+    if value == true or value == 1 or value == "1" then
+        return true
+    end
+
+    if value == false or value == 0 or value == "0" then
+        return false
+    end
+
+    if type(value) == "string" then
+        local lowered = string.lower(value)
+        if lowered == "true" then
+            return true
+        end
+        if lowered == "false" then
+            return false
+        end
+    end
+
+    return nil
+end
+
+local function GetComparableCommunityAuthorName(name)
+    if type(name) ~= "string" or name == "" then
+        return nil
+    end
+
+    local comparable = string.match(name, "^[^-]+") or name
+    comparable = string.lower(comparable)
+    if comparable == "" then
+        return nil
+    end
+
+    return comparable
+end
+
+local function IsCommunityOutfitOwnedByPlayer(outfit)
+    if type(outfit) ~= "table" then
+        return false
+    end
+
+    local normalizedFlag = NormalizeCommunityOwnerFlag(outfit.is_owner)
+    if normalizedFlag ~= nil then
+        return normalizedFlag
+    end
+
+    local playerGuid = UnitGUID("player")
+    local authorGuid = tonumber(outfit.author_guid)
+    if playerGuid and authorGuid then
+        local playerGuidCounter = tonumber(string.sub(playerGuid, -8), 16)
+        if playerGuidCounter and playerGuidCounter == authorGuid then
+            return true
+        end
+    end
+
+    local playerName = GetComparableCommunityAuthorName(UnitName("player"))
+    local authorName = GetComparableCommunityAuthorName(outfit.author or outfit.author_name)
+    if playerName and authorName then
+        return playerName == authorName
+    end
+
+    return false
+end
+
 function Wardrobe:ShowCommunityContent()
     if self.frame then
         if self.frame.modelTitle then self.frame.modelTitle:SetText("Community Outfits") end
@@ -362,18 +430,10 @@ function Wardrobe:RefreshCommunityGrid()
     
     -- Filter outfits if "show only mine" is checked
     local outfits = {}
-    local playerName = UnitName("player")
-    
-    if self.showOnlyMyCommunityOutfits and playerName then
+
+    if self.showOnlyMyCommunityOutfits then
         for _, outfit in ipairs(allOutfits) do
-            local outfitAuthor = outfit.author or outfit.author_name
-            local isOwner = outfit.is_owner
-            
-            if isOwner == nil and outfitAuthor then
-                isOwner = (string.lower(playerName) == string.lower(outfitAuthor))
-            end
-            
-            if isOwner then
+            if IsCommunityOutfitOwnedByPlayer(outfit) then
                 table.insert(outfits, outfit)
             end
         end
@@ -433,16 +493,7 @@ function Wardrobe:RefreshCommunityGrid()
             btn.outfit = outfit
             btn.name:SetText(outfit.name or ("Outfit #" .. idx))
             btn.author:SetText("by " .. (outfit.author or outfit.author_name or "Unknown"))
-            
-            -- Check if this outfit belongs to the current player
-            local playerName = UnitName("player")
-            local outfitAuthor = outfit.author or outfit.author_name
-            local isOwner = outfit.is_owner -- Server may send explicit flag
-            
-            -- If server doesn't send is_owner, compare by name (less reliable due to case/realm)
-            if isOwner == nil and playerName and outfitAuthor then
-                isOwner = (string.lower(playerName) == string.lower(outfitAuthor))
-            end
+            local isOwner = IsCommunityOutfitOwnedByPlayer(outfit)
             
             -- Show/hide delete button based on ownership
             if btn.deleteBtn then

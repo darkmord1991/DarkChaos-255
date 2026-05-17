@@ -1439,6 +1439,22 @@ void OpcodeTable::Initialize()
     /*0x51C*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT1,                 STATUS_NEVER);
     /*0x51D*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT2,                 STATUS_NEVER);
     /*0x51E*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_MULTIPLE_MOVES, STATUS_NEVER);
+    /*0x520*/ DEFINE_HANDLER(CMSG_TELEPORT_GRAVEYARD_REQUEST,                                       STATUS_UNHANDLED,  PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x521*/ DEFINE_HANDLER(CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT,                                 STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x522*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_SPELL_TOOLTIP_ENRICHMENT,                           STATUS_NEVER);
+    /*0x523*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_BREAKING_NEWS,                                      STATUS_NEVER);
+    /*0x524*/ DEFINE_HANDLER(CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP,                                     STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x525*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_ITEM_UPGRADE_TOOLTIP,                               STATUS_NEVER);
+    /*0x526*/ DEFINE_HANDLER(CMSG_REQUEST_NPC_TOOLTIP_INFO,                                         STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x527*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_NPC_TOOLTIP_INFO,                                   STATUS_NEVER);
+    /*0x528*/ DEFINE_HANDLER(CMSG_REQUEST_MPLUS_HUD_SNAPSHOT,                                       STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x529*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_MPLUS_HUD_SNAPSHOT,                                 STATUS_NEVER);
+    /*0x52A*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_TRANSMOG_STATE,                                STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x52B*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COLLECTION_TRANSMOG_STATE,                          STATUS_NEVER);
+    /*0x52C*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_ITEM_SETS,                                     STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x52D*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COLLECTION_ITEM_SETS,                               STATUS_NEVER);
+    /*0x52E*/ DEFINE_HANDLER(CMSG_REQUEST_QOS_PING_RELAY,                                           STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x52F*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_QOS_PING_RELAY,                                     STATUS_NEVER);
 
 #undef DEFINE_HANDLER
 #undef DEFINE_SERVER_OPCODE_HANDLER

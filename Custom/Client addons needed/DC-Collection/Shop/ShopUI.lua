@@ -754,13 +754,14 @@ function DC:CanPreviewShopItem(item)
 
     if previewType == "mount" then
         local spellId = tonumber(item.spellId or item.entryId or item.entry or (definition and (definition.spellId or definition.spell_id)))
-        local displayId = definition and (definition.displayId or definition.display_id or definition.creatureDisplayId)
-        local creatureId = definition and (definition.creatureId or definition.creature_id)
+        local displayId = definition and (definition.previewDisplayId or definition.preview_display_id or definition.displayId or definition.display_id or definition.creatureDisplayId)
+        local creatureId = definition and (definition.previewCreatureId or definition.preview_creature_id or definition.creatureId or definition.creature_id)
         return (spellId and spellId > 0) or (tonumber(displayId) or 0) > 0 or (tonumber(creatureId) or 0) > 0
     elseif previewType == "pet" then
         local petId = tonumber(item.entryId or item.spellId or item.itemId or (definition and (definition.spellId or definition.spell_id)))
-        local displayId = definition and (definition.displayId or definition.display_id or definition.creatureDisplayId)
-        return (petId and petId > 0) or (tonumber(displayId) or 0) > 0
+        local displayId = definition and (definition.previewDisplayId or definition.preview_display_id or definition.displayId or definition.display_id or definition.creatureDisplayId)
+        local creatureId = definition and (definition.previewCreatureId or definition.preview_creature_id or definition.creatureId or definition.creature_id)
+        return (petId and petId > 0) or (tonumber(displayId) or 0) > 0 or (tonumber(creatureId) or 0) > 0
     elseif previewType == "transmog" then
         local appearanceId = tonumber(item.appearanceId or item.appearance_id)
         local itemId = tonumber(item.itemId or item.itemID or item.item_id)

@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `dc_breaking_news_delivery_log` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `account_id` int unsigned NOT NULL,
+  `character_guid` int unsigned NOT NULL DEFAULT 0,
+  `character_name` varchar(48) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `source` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'unknown',
+  `sent` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `reason` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'unknown',
+  `has_capability_state` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `used_persisted_caps` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `feature_enabled` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `snapshot_ready` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `compatible` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `client_caps` int unsigned NOT NULL DEFAULT 0,
+  `negotiated_caps` int unsigned NOT NULL DEFAULT 0,
+  `revision` int unsigned NOT NULL DEFAULT 0,
+  `updated_at` int unsigned NOT NULL DEFAULT 0,
+  `body_bytes` int unsigned NOT NULL DEFAULT 0,
+  `event_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_account_recent_cover_v1` (`account_id`, `event_time`, `id`),
+  KEY `idx_account_reason_recent_v1` (`account_id`, `reason`, `event_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Recent breaking-news native delivery decisions per account';

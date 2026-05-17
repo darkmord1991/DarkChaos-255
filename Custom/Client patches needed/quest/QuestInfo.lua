@@ -1,5 +1,32 @@
 MAX_REPUTATIONS = 10;
 
+local function QuestInfo_GetItemHighlightAnchor(button)
+	if ( not button ) then
+		return nil;
+	end
+
+	local candidates = {
+		button.Icon,
+		button.icon,
+	};
+
+	if ( button.GetName ) then
+		local buttonName = button:GetName();
+		if ( buttonName ) then
+			tinsert(candidates, _G[buttonName.."IconTexture"]);
+			tinsert(candidates, _G[buttonName.."Icon"]);
+		end
+	end
+
+	for _, candidate in ipairs(candidates) do
+		if ( candidate and type(candidate.GetObjectType) == "function" and candidate:GetObjectType() == "Texture" ) then
+			return candidate;
+		end
+	end
+
+	return button;
+end;
+
 function QuestInfoFadingFrame_OnUpdate(self, elapsed)
 	if ( self.fading ) then
 		self.fadingProgress = self.fadingProgress + (elapsed * QUEST_DESCRIPTION_GRADIENT_CPS);
@@ -25,7 +52,10 @@ end
 
 function QuestInfoItem_OnClick(self)
 	if ( self.type == "choice" ) then
-		QuestInfoItemHighlight:SetPoint("TOPLEFT", self, "TOPLEFT", -8, 7);
+		local highlightAnchor = QuestInfo_GetItemHighlightAnchor(self);
+		QuestInfoItemHighlight:ClearAllPoints();
+		QuestInfoItemHighlight:SetPoint("TOPLEFT", highlightAnchor, "TOPLEFT", -2, 2);
+		QuestInfoItemHighlight:SetPoint("BOTTOMRIGHT", highlightAnchor, "BOTTOMRIGHT", 2, -2);
 		QuestInfoItemHighlight:Show();
 		QuestInfoFrame.itemChoice = self:GetID();
 	end

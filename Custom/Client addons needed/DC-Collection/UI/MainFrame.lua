@@ -253,6 +253,8 @@ local function ResolveMountPreviewDisplayId(item)
 
     -- Prefer explicit display/model fields from server definitions.
     local displayId =
+        ToPositiveNumber(def.previewDisplayId) or
+        ToPositiveNumber(def.preview_display_id) or
         ToPositiveNumber(def.displayId) or
         ToPositiveNumber(def.display_id) or
         ToPositiveNumber(def.creatureDisplayId) or
@@ -304,6 +306,8 @@ local function ResolveMountPreviewCreatureId(item)
 
     local def = item.definition or {}
     return
+        ToPositiveNumber(def.previewCreatureId) or
+        ToPositiveNumber(def.preview_creature_id) or
         ToPositiveNumber(def.creatureId) or
         ToPositiveNumber(def.creature_id) or
         ToPositiveNumber(def.creatureID) or
@@ -2134,30 +2138,41 @@ function DC:ShowMainFrame()
 
     -- If we open very early on login, the protocol may not be ready yet.
     -- Kick a short retry loop so data appears without requiring re-open.
-    if type(self.RequestInitialDataWithRetry) == "function" then
-        self:RequestInitialDataWithRetry(8, 1)
-    elseif type(self.RequestInitialData) == "function" then
-        self:RequestInitialData(false)
-    end
-    
-    -- Load all data on open (not just when clicking tabs)
-    self:RequestStats()
-    self:RequestCurrencies()
-    
-    -- Request definitions for all collection types
-    local collTypes = {"mounts", "pets", "heirlooms", "transmog", "titles"}
-    for _, collType in ipairs(collTypes) do
-        if not self.definitions[collType] or not next(self.definitions[collType]) then
-            self:RequestDefinitions(collType)
-        end
-        if not self.collections[collType] or not next(self.collections[collType]) then
-            self:RequestCollection(collType)
+    local requestedInitialLoad = false
+    local shouldRequestInitialLoad =
+        not self.isDataReady and
+        not self._initialDataRetryInProgress and
+        not self._initialDataLastRequestAt
+
+    if shouldRequestInitialLoad then
+        if type(self.RequestInitialDataWithRetry) == "function" then
+            self:RequestInitialDataWithRetry(8, 1)
+            requestedInitialLoad = true
+        elseif type(self.RequestInitialData) == "function" then
+            self:RequestInitialData(false)
+            requestedInitialLoad = true
         end
     end
-    
-    -- Request shop items
-    if not self.shopItems or #self.shopItems == 0 then
-        self:RequestShopItems()
+
+    if not requestedInitialLoad then
+        -- Fallback for stripped-down protocol states where the unified
+        -- initial-data entrypoint is unavailable.
+        self:RequestStats()
+        self:RequestCurrencies()
+
+        local collTypes = {"mounts", "pets", "heirlooms", "transmog", "titles"}
+        for _, collType in ipairs(collTypes) do
+            if not self.definitions[collType] or not next(self.definitions[collType]) then
+                self:RequestDefinitions(collType)
+            end
+            if not self.collections[collType] or not next(self.collections[collType]) then
+                self:RequestCollection(collType)
+            end
+        end
+
+        if not self.shopItems or #self.shopItems == 0 then
+            self:RequestShopItems()
+        end
     end
     
     -- Select the active tab to ensure correct layout (List vs Grid)

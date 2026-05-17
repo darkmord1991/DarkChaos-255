@@ -170,6 +170,505 @@ DC.isConnected = false
 DC.lastPing = 0
 DC.callbacks = DC.callbacks or {}
 
+local COLLECTION_TRANSMOG_STATE_NATIVE_CAPABILITY = 0x00002000
+local NATIVE_TRANSMOG_STATE_POLL_INTERVAL = 0.10
+local lastNativeTransmogStateRevision = 0
+local nativeTransmogStatePollFrame = nil
+local COLLECTION_ITEM_SETS_NATIVE_CAPABILITY = 0x00004000
+local NATIVE_ITEM_SETS_POLL_INTERVAL = 0.10
+local lastNativeItemSetsRevision = 0
+local nativeItemSetsPollFrame = nil
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+    if capability <= 0 then
+        return false
+    end
+
+    local band = nil
+    if type(bit) == "table" and type(bit.band) == "function" then
+        band = bit.band
+    elseif type(bit32) == "table" and type(bit32.band) == "function" then
+        band = bit32.band
+    end
+
+    if band then
+        return band(mask, capability) ~= 0
+    end
+
+    return (mask % (capability * 2)) >= capability
+end
+
+local function GetCollectionCentralProtocol()
+    local central = rawget(_G, "DCAddonProtocol")
+    if type(central) ~= "table" then
+        return nil
+    end
+
+    return central
+end
+
+local function GetCollectionCapabilitySnapshot()
+    local central = GetCollectionCentralProtocol()
+    if not central or type(central.GetCapabilitySnapshot) ~= "function" then
+        return nil
+    end
+
+    local ok, snapshot = pcall(function()
+        return central:GetCapabilitySnapshot()
+    end)
+    if not ok or type(snapshot) ~= "table" then
+        return nil
+    end
+
+    return snapshot
+end
+
+local function HasNativeCollectionTransmogStateBridge()
+    return type(RequestNativeCollectionTransmogState) == "function"
+        and type(GetNativeCollectionTransmogStateSnapshot) == "function"
+end
+
+local function ShouldUseNativeCollectionTransmogStateBridge()
+    if not HasNativeCollectionTransmogStateBridge() then
+        return false
+    end
+
+    local snapshot = GetCollectionCapabilitySnapshot()
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    return HasCapabilityBit(snapshot.clientCaps,
+            COLLECTION_TRANSMOG_STATE_NATIVE_CAPABILITY)
+        and HasCapabilityBit(snapshot.negotiatedCaps,
+            COLLECTION_TRANSMOG_STATE_NATIVE_CAPABILITY)
+end
+
+local function DecodeNativeCollectionTransmogState(payload)
+    if type(payload) ~= "string" or payload == "" then
+        return nil
+    end
+
+    local central = GetCollectionCentralProtocol()
+    if not central or type(central.DecodeJSON) ~= "function" then
+        return nil
+    end
+
+    local ok, decoded = pcall(function()
+        return central:DecodeJSON(payload)
+    end)
+    if not ok or type(decoded) ~= "table" then
+        return nil
+    end
+
+    return decoded
+end
+
+local function ConsumeNativeCollectionTransmogStateSnapshot()
+    if not ShouldUseNativeCollectionTransmogStateBridge() then
+        return false
+    end
+
+    local ok, revision, payload = pcall(GetNativeCollectionTransmogStateSnapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    if revision <= 0 or revision == lastNativeTransmogStateRevision then
+        return false
+    end
+
+    lastNativeTransmogStateRevision = revision
+
+    local decoded = DecodeNativeCollectionTransmogState(payload)
+    if type(decoded) ~= "table" then
+        return false
+    end
+
+    DC:HandleTransmogState(decoded)
+    return true
+end
+
+local function EnsureNativeCollectionTransmogStatePollFrame()
+    if nativeTransmogStatePollFrame then
+        return
+    end
+
+    nativeTransmogStatePollFrame = CreateFrame("Frame")
+    nativeTransmogStatePollFrame.elapsed = 0
+    nativeTransmogStatePollFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_TRANSMOG_STATE_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativeCollectionTransmogStateSnapshot()
+    end)
+end
+
+local function HasNativeCollectionItemSetsBridge()
+    return type(RequestNativeCollectionItemSets) == "function"
+        and type(GetNativeCollectionItemSetsSnapshot) == "function"
+end
+
+local function ShouldUseNativeCollectionItemSetsBridge()
+    if not HasNativeCollectionItemSetsBridge() then
+        return false
+    end
+
+    local snapshot = GetCollectionCapabilitySnapshot()
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    return HasCapabilityBit(snapshot.clientCaps,
+            COLLECTION_ITEM_SETS_NATIVE_CAPABILITY)
+        and HasCapabilityBit(snapshot.negotiatedCaps,
+            COLLECTION_ITEM_SETS_NATIVE_CAPABILITY)
+end
+
+local function DecodeNativeCollectionItemSets(payload)
+    if type(payload) ~= "string" or payload == "" then
+        return nil
+    end
+
+    local central = GetCollectionCentralProtocol()
+    if not central or type(central.DecodeJSON) ~= "function" then
+        return nil
+    end
+
+    local ok, decoded = pcall(function()
+        return central:DecodeJSON(payload)
+    end)
+    if not ok or type(decoded) ~= "table" then
+        return nil
+    end
+
+    return decoded
+end
+
+local function ConsumeNativeCollectionItemSetsSnapshot()
+    if not ShouldUseNativeCollectionItemSetsBridge() then
+        return false
+    end
+
+    local ok, revision, payload = pcall(GetNativeCollectionItemSetsSnapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    if revision <= 0 or revision == lastNativeItemSetsRevision then
+        return false
+    end
+
+    lastNativeItemSetsRevision = revision
+
+    local decoded = DecodeNativeCollectionItemSets(payload)
+    if type(decoded) ~= "table" then
+        return false
+    end
+
+    DC:OnMsg_ItemSets(decoded)
+    return true
+end
+
+local function EnsureNativeCollectionItemSetsPollFrame()
+    if nativeItemSetsPollFrame then
+        return
+    end
+
+    nativeItemSetsPollFrame = CreateFrame("Frame")
+    nativeItemSetsPollFrame.elapsed = 0
+    nativeItemSetsPollFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_ITEM_SETS_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativeCollectionItemSetsSnapshot()
+    end)
+end
+
+local function SendItemSetsRequest(payload)
+    payload = payload or {}
+
+    if ShouldUseNativeCollectionItemSetsBridge() then
+        local offset = tonumber(payload.offset) or 0
+        local limit = tonumber(payload.limit) or tonumber(DC._itemSetsLimit) or 50
+        local syncVersion = tonumber(payload.syncVersion or payload.version) or 0
+        local packed = payload.packed
+        local packedFlag = 1
+        if packed == false or packed == 0 or packed == "0" then
+            packedFlag = 0
+        end
+
+        DC._nativeItemSetsLastRequest = {
+            offset = offset,
+            limit = limit,
+            syncVersion = syncVersion,
+            packed = packedFlag,
+        }
+
+        EnsureNativeCollectionItemSetsPollFrame()
+
+        local ok, err = pcall(RequestNativeCollectionItemSets,
+            offset, limit, syncVersion, packedFlag)
+        if not ok and type(DC.Debug) == "function" then
+            DC:Debug("RequestNativeCollectionItemSets failed: "
+                .. tostring(err))
+        end
+        return ok
+    end
+
+    return DC:SendMessage(DC.Opcodes.CMSG_GET_ITEM_SETS, payload)
+end
+
+local function ClearPagingDelayFrame(frame)
+    if not frame then
+        return
+    end
+
+    frame.pendingRequest = nil
+    frame.elapsed = 0
+    frame:Hide()
+end
+
+local function EnsurePagingDelayFrame(owner, fieldName, options)
+    local frame = owner[fieldName]
+    if frame then
+        return frame
+    end
+
+    frame = CreateFrame("Frame")
+    frame.elapsed = 0
+    frame.pendingRequest = nil
+    frame:SetScript("OnUpdate", function(delayFrame, elapsed)
+        delayFrame.elapsed = (delayFrame.elapsed or 0) + (elapsed or 0)
+
+        local interval = tonumber(options.interval) or 0.2
+        if type(options.getInterval) == "function" then
+            interval = tonumber(options.getInterval(owner, delayFrame)) or interval
+        end
+
+        if delayFrame.elapsed < interval then
+            return
+        end
+
+        local request = delayFrame.pendingRequest
+        if not request then
+            ClearPagingDelayFrame(delayFrame)
+            return
+        end
+
+        if type(options.canSend) == "function" and
+           not options.canSend(owner, delayFrame, request) then
+            delayFrame.elapsed = 0
+            return
+        end
+
+        delayFrame.pendingRequest = nil
+        delayFrame.elapsed = 0
+        delayFrame:Hide()
+
+        if type(options.sendRequest) == "function" then
+            options.sendRequest(owner, request)
+        end
+    end)
+
+    owner[fieldName] = frame
+    return frame
+end
+
+local function QueuePagingDelayRequest(owner, fieldName, request, options)
+    local frame = EnsurePagingDelayFrame(owner, fieldName, options)
+    frame.pendingRequest = request
+    frame.elapsed = 0
+    frame:Show()
+    return frame
+end
+
+local function ResetPagingDelayTimer(owner, fieldName)
+    local frame = owner and owner[fieldName]
+    if not frame then
+        return
+    end
+
+    frame.elapsed = 0
+end
+
+local function CancelPagingDelayRequest(owner, fieldName)
+    local frame = owner and owner[fieldName]
+    if not frame then
+        return
+    end
+
+    ClearPagingDelayFrame(frame)
+end
+
+local function GetTransmogPagingVisibilityState(owner)
+    local wardrobeVisible = (owner.Wardrobe and owner.Wardrobe.frame and owner.Wardrobe.frame:IsShown())
+    if wardrobeVisible and owner.Wardrobe and
+       (owner.Wardrobe.currentTab == "outfits" or owner.Wardrobe.currentTab == "community") then
+        wardrobeVisible = false
+    end
+
+    local mainFrameVisible = (owner.MainFrame and owner.MainFrame:IsShown()) and true or false
+    local mainTabVisible = (mainFrameVisible and (owner.activeTab == "wardrobe" or owner.activeTab == "transmog")) and true or false
+    local collectionUiVisible = mainFrameVisible
+
+    local allowBackground = false
+    if type(owner.IsBackgroundWardrobeSyncEnabled) == "function" then
+        allowBackground = owner:IsBackgroundWardrobeSyncEnabled() and true or false
+    elseif DCCollectionDB and DCCollectionDB.backgroundWardrobeSync then
+        allowBackground = true
+    end
+
+    local isManualRefresh = owner.Wardrobe and owner.Wardrobe.isRefreshing
+
+    return wardrobeVisible, mainTabVisible, collectionUiVisible, allowBackground, isManualRefresh
+end
+
+local function GetTransmogPagingDelayInterval(owner)
+    local wardrobeVisible, mainTabVisible, collectionUiVisible =
+        GetTransmogPagingVisibilityState(owner)
+
+    local interval = owner._transmogPagingInterval or 0.75
+    if not (wardrobeVisible or mainTabVisible or collectionUiVisible) then
+        interval = math.max(interval, 1.25)
+    end
+
+    return interval
+end
+
+local function CanSendTransmogPagingRequest(owner)
+    local now = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
+    local pauseUntil = tonumber(owner._pauseTransmogPagingUntil or 0) or 0
+    if pauseUntil > 0 and now > 0 and now < pauseUntil then
+        return false
+    end
+
+    local wardrobeVisible, mainTabVisible, collectionUiVisible, allowBackground, isManualRefresh =
+        GetTransmogPagingVisibilityState(owner)
+
+    if not (wardrobeVisible or mainTabVisible or collectionUiVisible or isManualRefresh) and
+       not allowBackground then
+        return false
+    end
+
+    return true
+end
+
+local TRANSMOG_PAGING_DELAY_OPTIONS = {
+    interval = 0.75,
+    getInterval = function(owner)
+        return GetTransmogPagingDelayInterval(owner)
+    end,
+    canSend = function(owner)
+        return CanSendTransmogPagingRequest(owner)
+    end,
+    sendRequest = function(owner, request)
+        owner:SendMessage(owner.Opcodes.CMSG_GET_DEFINITIONS, {
+            type = "transmog",
+            offset = request.offset,
+            limit = request.limit,
+        })
+    end,
+}
+
+local ITEM_SETS_PAGING_DELAY_OPTIONS = {
+    interval = 0.2,
+    sendRequest = function(_, request)
+        SendItemSetsRequest({
+            offset = request.offset,
+            limit = request.limit,
+            packed = 1,
+        })
+    end,
+}
+
+local function ScheduleAwaitResponseDiagnostic(owner, options)
+    if not owner or type(owner.After) ~= "function" or type(options) ~= "table" then
+        return
+    end
+
+    local requestOpcode = tonumber(options.requestOpcode) or 0
+    local responseOpcode = tonumber(options.responseOpcode) or 0
+    local sentAt = tonumber(options.sentAt) or 0
+    local timeoutSec = tonumber(options.timeoutSec) or 2.0
+    local awaitMessage = tostring(options.awaitMessage or "Awaiting response")
+    local timeoutMessage = tostring(options.timeoutMessage or (awaitMessage .. " timed out"))
+
+    owner._awaitDiagnostics = owner._awaitDiagnostics or {}
+    local stateKey = tostring(responseOpcode)
+    local state = owner._awaitDiagnostics[stateKey] or {}
+    local token = (tonumber(state.token) or 0) + 1
+    state.token = token
+
+    local now = sentAt
+    if now <= 0 then
+        now = (type(GetTime) == "function" and GetTime()) or
+            (type(time) == "function" and time()) or 0
+    end
+
+    local lastAwaitLoggedAt = tonumber(state.awaitLoggedAt) or 0
+    if type(owner.LogNetEvent) == "function" and
+       (now <= 0 or lastAwaitLoggedAt <= 0 or (now - lastAwaitLoggedAt) >= 1.0) then
+        owner:LogNetEvent("info", "await", awaitMessage, {
+            opcode = requestOpcode,
+            responseOpcode = responseOpcode,
+        })
+        state.awaitLoggedAt = now
+    end
+
+    owner._awaitDiagnostics[stateKey] = state
+
+    owner.After(timeoutSec, function()
+        local liveState = owner._awaitDiagnostics and owner._awaitDiagnostics[stateKey]
+        if type(liveState) ~= "table" or tonumber(liveState.token) ~= token then
+            return
+        end
+
+        owner._lastRecvOpcodeAt = owner._lastRecvOpcodeAt or {}
+        local lastRecvAt = tonumber(owner._lastRecvOpcodeAt[responseOpcode] or 0) or 0
+        if sentAt > 0 and lastRecvAt >= sentAt then
+            return
+        end
+
+        local pending = owner.pendingRequests and owner.pendingRequests[requestOpcode]
+        local pendingSentAt = tonumber(pending and pending.sentAt or 0) or 0
+        if sentAt > 0 and pendingSentAt > sentAt then
+            return
+        end
+
+        local warnAt = (type(GetTime) == "function" and GetTime()) or
+            (type(time) == "function" and time()) or 0
+        local lastWarnAt = tonumber(liveState.warnedAt) or 0
+        if warnAt > 0 and lastWarnAt > 0 and (warnAt - lastWarnAt) < timeoutSec then
+            return
+        end
+
+        liveState.warnedAt = warnAt
+
+        if type(owner.LogNetEvent) == "function" then
+            owner:LogNetEvent("warn", "await", timeoutMessage, {
+                opcode = requestOpcode,
+                responseOpcode = responseOpcode,
+                timeoutSec = timeoutSec,
+            })
+        end
+        if type(owner.Debug) == "function" then
+            owner:Debug(timeoutMessage)
+        end
+    end)
+end
+
 -- ============================================================================
 -- CLIENT-SIDE ERROR/TIMEOUT LOG
 -- ============================================================================
@@ -802,6 +1301,13 @@ end
 -- Perform initial handshake with server
 function DC:RequestHandshake()
     local hash = self:ComputeCollectionHash()
+    self._lastHandshakeHash = hash
+    if type(self.GetHandshakeCollectionSnapshot) == "function" then
+        local snapshot = self:GetHandshakeCollectionSnapshot()
+        self._lastHandshakeCounts = snapshot and snapshot.counts or nil
+    else
+        self._lastHandshakeCounts = nil
+    end
     if type(self._syncProgress) == "table" then
         self:StartSyncProgressStep("handshake", "handshake")
     end
@@ -831,8 +1337,20 @@ end
 -- Request collection statistics
 function DC:RequestStats()
     local key = "req:stats"
+    local progressKey = "stats"
+    local progressLabel = "stats"
     if self:_IsInflight(key) then
         return false
+    end
+
+    local now = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
+    local lastReceivedAt = tonumber(self._statsLastReceivedAt) or 0
+    if now > 0 and lastReceivedAt > 0 and (now - lastReceivedAt) < 3.0 then
+        if type(self._syncProgress) == "table" then
+            self:CompleteSyncProgressStep(progressKey, progressLabel)
+        end
+        return true
     end
 
     self:_DebounceRequest(key, 0.30, function()
@@ -840,14 +1358,15 @@ function DC:RequestStats()
             return
         end
         if type(self._syncProgress) == "table" then
-            self:StartSyncProgressStep("stats", "stats")
+            self:StartSyncProgressStep(progressKey, progressLabel)
         end
         self:_MarkInflight(key, true)
         local ok = self:SendMessage(self.Opcodes.CMSG_GET_STATS, {})
         if not ok then
             self:_MarkInflight(key, nil)
             if type(self._syncProgress) == "table" then
-                self:CompleteSyncProgressStep("stats", "stats (failed)")
+                self:CompleteSyncProgressStep(progressKey,
+                    progressLabel .. " (failed)")
             end
         end
     end)
@@ -924,6 +1443,22 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
     end
 
     if serverType == "transmog" then
+        local forceTransmogRequest = (tonumber(clientSyncVersion) == 0)
+
+        -- Guard against background re-polls after we already confirmed
+        -- transmog definitions are current. Manual refreshes pass
+        -- clientSyncVersion=0 and bypass this cooldown.
+        if not forceTransmogRequest and type(self._HasAnyTransmogDefinitions) == "function" and
+           self:_HasAnyTransmogDefinitions() then
+            local now = (type(GetTime) == "function" and GetTime()) or
+                (type(time) == "function" and time()) or 0
+            local lastConfirmed = tonumber(self._transmogDefsConfirmedCurrentAt) or 0
+            local cooldownSec = tonumber(self._transmogDefsAutoRequestCooldownSec) or 180
+            if now > 0 and lastConfirmed > 0 and (now - lastConfirmed) < cooldownSec then
+                return false
+            end
+        end
+
         -- Don't restart a transmog paging run while already loading.
         if self._transmogDefLoading then
             return false
@@ -1073,11 +1608,7 @@ function DC:AbortTransmogDefinitionsPaging(reason)
     -- Do not clear _transmogClearOnFirstPage here: retries during a manual refresh
     -- should still clear when the first page arrives. Callers can unset it when needed.
 
-    if self._transmogPagingDelayFrame then
-        self._transmogPagingDelayFrame:Hide()
-        self._transmogPagingDelayFrame.pendingRequest = nil
-        self._transmogPagingDelayFrame.elapsed = 0
-    end
+    CancelPagingDelayRequest(self, "_transmogPagingDelayFrame")
 
     -- Clear inflight guard
     if type(self._MarkInflight) == "function" then
@@ -1103,6 +1634,17 @@ function DC:ResumeTransmogDefinitions(reason)
         return false
     end
     if not (self.Opcodes and self.Opcodes.CMSG_GET_DEFINITIONS) then
+        return false
+    end
+
+    if type(self.HasLocalCollectionDefinitions) == "function" and
+       self:HasLocalCollectionDefinitions("transmog") then
+        DCCollectionDB = DCCollectionDB or {}
+        DCCollectionDB.transmogDefsIncomplete = nil
+        DCCollectionDB.transmogDefsResumeOffset = nil
+        DCCollectionDB.transmogDefsResumeLimit = nil
+        DCCollectionDB.transmogDefsResumeTotal = nil
+        DCCollectionDB.transmogDefsResumeUpdatedAt = nil
         return false
     end
 
@@ -1183,6 +1725,27 @@ function DC:RequestCollection(collType)
     elseif normalizedType == "pets" then serverType = "pet"
     elseif normalizedType == "heirlooms" then serverType = "heirloom"
     elseif normalizedType == "titles" then serverType = "title"
+    end
+
+    if serverType ~= "transmog" then
+        local now = (type(GetTime) == "function" and GetTime()) or
+            (type(time) == "function" and time()) or 0
+        local lastReceivedAt = 0
+        if type(self._collectionLastReceivedAt) == "table" then
+            lastReceivedAt = tonumber(
+                self._collectionLastReceivedAt[normalizedType] or
+                self._collectionLastReceivedAt[serverType]) or 0
+        end
+        if serverType == "title" and lastReceivedAt <= 0 then
+            lastReceivedAt = tonumber(self._titleCollectionLastReceivedAt) or 0
+        end
+        if now > 0 and lastReceivedAt > 0 and (now - lastReceivedAt) < 3.0 then
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep("coll:" .. tostring(normalizedType),
+                    "collection: " .. tostring(normalizedType))
+            end
+            return true
+        end
     end
 
     local reqKey = "req:coll:" .. tostring(normalizedType)
@@ -1303,55 +1866,114 @@ end
 
 -- Request currency balance
 function DC:RequestCurrencies()
-    self:_MarkInflight("req:currency", true)
-    if type(self._syncProgress) == "table" then
-        self:StartSyncProgressStep("currency", "currency")
+    local reqKey = "req:currency"
+    local progressKey = "currency"
+    local progressLabel = "currency"
+
+    if self:_IsInflight(reqKey) then
+        return false
     end
 
-    local ok = self:SendMessage(self.Opcodes.CMSG_GET_CURRENCIES, {})
-    if not ok then
-        self:_MarkInflight("req:currency", nil)
+    local now = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
+    local lastReceivedAt = tonumber(self._currencyLastReceivedAt) or 0
+    if now > 0 and lastReceivedAt > 0 and (now - lastReceivedAt) < 3.0 then
         if type(self._syncProgress) == "table" then
-            self:CompleteSyncProgressStep("currency", "currency (failed)")
+            self:CompleteSyncProgressStep(progressKey, progressLabel)
         end
+        return true
     end
 
-    return ok
+    self:_DebounceRequest(reqKey, 0.20, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+
+        self:_MarkInflight(reqKey, true)
+        if type(self._syncProgress) == "table" then
+            self:StartSyncProgressStep(progressKey, progressLabel)
+        end
+
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_CURRENCIES, {})
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(progressKey,
+                    progressLabel .. " (failed)")
+            end
+        end
+    end)
+
+    return true
 end
 
 -- Request wishlist
-function DC:RequestWishlist()
-    self:_MarkInflight("req:wishlist", true)
-    if type(self._syncProgress) == "table" then
-        self:StartSyncProgressStep("wishlist", "wishlist")
+function DC:RequestWishlist(force)
+    local reqKey = "req:wishlist"
+    local progressKey = "wishlist"
+    local progressLabel = "wishlist"
+
+    if self:_IsInflight(reqKey) then
+        return false
     end
 
-    local ok = self:SendMessage(self.Opcodes.CMSG_GET_WISHLIST, {})
-    if not ok then
-        self:_MarkInflight("req:wishlist", nil)
+    local now = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
+    local lastReceivedAt = tonumber(self._wishlistLastReceivedAt) or 0
+    if not force and now > 0 and lastReceivedAt > 0 and (now - lastReceivedAt) < 5.0 and
+        type(self.wishlist) == "table" then
         if type(self._syncProgress) == "table" then
-            self:CompleteSyncProgressStep("wishlist", "wishlist (failed)")
+            self:CompleteSyncProgressStep(progressKey, progressLabel)
         end
+        return true
     end
 
-    return ok
+    self:_DebounceRequest(reqKey, 0.10, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+
+        if type(self._syncProgress) == "table" then
+            self:StartSyncProgressStep(progressKey, progressLabel)
+        end
+
+        self:_MarkInflight(reqKey, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_WISHLIST, {})
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(progressKey,
+                    progressLabel .. " (failed)")
+            end
+        end
+    end)
+
+    return true
 end
 
 -- Add to wishlist
 function DC:RequestAddWishlist(collectionType, entryId)
     local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
+    if not typeId or typeId == 0 then
+        return
+    end
+
     return self:SendMessage(self.Opcodes.CMSG_ADD_WISHLIST, {
-        type = typeId or 0,
-        entryId = entryId,
+        type = typeId,
+        entryId = tonumber(entryId) or entryId,
     })
 end
 
 -- Remove from wishlist
 function DC:RequestRemoveWishlist(collectionType, entryId)
     local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
+    if not typeId or typeId == 0 then
+        return
+    end
+
     return self:SendMessage(self.Opcodes.CMSG_REMOVE_WISHLIST, {
-        type = typeId or 0,
-        entryId = entryId,
+        type = typeId,
+        entryId = tonumber(entryId) or entryId,
     })
 end
 
@@ -1369,57 +1991,25 @@ end
 -- Request Item Sets (removed duplicate)
 
 -- =============================================================================
--- Wishlist Protocol
--- =============================================================================
-
-function DC:RequestAddWishlist(collType, entryId)
-    local typeId = self:GetTypeIdFromName(collType)
-    
-    -- Server expects numeric ID (1-7), but GetTypeIdFromName returns strings in current Core.lua
-    if type(typeId) == "string" then
-        if typeId == "mount" then typeId = 1
-        elseif typeId == "pet" then typeId = 2
-        elseif typeId == "toy" then typeId = 3
-        elseif typeId == "heirloom" then typeId = 4
-        elseif typeId == "title" then typeId = 5
-        elseif typeId == "transmog" then typeId = 6
-        elseif typeId == "item_set" then typeId = 7
-        end
-    end
-
-    if not typeId or typeId == 0 then return end
-    
-    self:SendMessage(self.Opcodes.CMSG_ADD_WISHLIST, { type = typeId, entryId = tonumber(entryId) })
-end
-
-function DC:RequestRemoveWishlist(collType, entryId)
-    local typeId = self:GetTypeIdFromName(collType)
-    
-    if type(typeId) == "string" then
-        if typeId == "mount" then typeId = 1
-        elseif typeId == "pet" then typeId = 2
-        elseif typeId == "toy" then typeId = 3
-        elseif typeId == "heirloom" then typeId = 4
-        elseif typeId == "title" then typeId = 5
-        elseif typeId == "transmog" then typeId = 6
-        elseif typeId == "item_set" then typeId = 7
-        end
-    end
-    
-    if not typeId or typeId == 0 then return end
-
-    self:SendMessage(self.Opcodes.CMSG_REMOVE_WISHLIST, { type = typeId, entryId = tonumber(entryId) })
-end
-
--- =============================================================================
 -- Outfit Saving Protocol
 -- =============================================================================
+
+local function InvalidateSavedOutfitsCache()
+    DCCollectionCharDB = DCCollectionCharDB or {}
+    DCCollectionCharDB.savedOutfits = nil
+    DCCollectionCharDB.savedOutfitsPages = nil
+    DCCollectionCharDB.savedOutfitsOffset = nil
+    DCCollectionCharDB.savedOutfitsLimit = nil
+    DCCollectionCharDB.savedOutfitsTotal = nil
+    DCCollectionCharDB.savedOutfitsMeta = nil
+end
 
 function DC.Protocol:SaveOutfit(id, name, icon, items)
     -- Any save invalidates cached paging/index views.
     DC.db = DC.db or {}
     DC.db.outfitsPages = nil
     DC.db.outfitsBySignature = nil
+    InvalidateSavedOutfitsCache()
 
     local data = {
         id = id,
@@ -1434,6 +2024,7 @@ function DC.Protocol:DeleteOutfit(id)
     DC.db = DC.db or {}
     DC.db.outfitsPages = nil
     DC.db.outfitsBySignature = nil
+    InvalidateSavedOutfitsCache()
     DC:SendMessage(DC.Opcodes.CMSG_DELETE_OUTFIT, { id = id })
 end
 
@@ -1451,26 +2042,22 @@ function DC.Protocol:RequestSavedOutfitsPage(offset, limit)
         now = time() or 0
     end
     DC._pauseTransmogPagingUntil = now + 3.0
-    if DC._transmogPagingDelayFrame then
-        DC._transmogPagingDelayFrame.elapsed = 0
-    end
+    ResetPagingDelayTimer(DC, "_transmogPagingDelayFrame")
 
     local ok = DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {
         offset = offset or 0,
         limit = limit or 6,
     })
 
-    -- If the server doesn't respond with SMSG_SAVED_OUTFITS (0x4C), tell the user.
-    if ok and type(DC.After) == "function" then
-        DC:LogNetEvent("info", "await", "Awaiting outfits response (0x4C)", { opcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS })
-        DC.After(2.0, function()
-            DC._lastRecvOpcodeAt = DC._lastRecvOpcodeAt or {}
-            local last = tonumber(DC._lastRecvOpcodeAt[DC.Opcodes.SMSG_SAVED_OUTFITS] or 0) or 0
-            if last < sentAt then
-                DC:Debug("[Net] No outfits response (0x4C) after 2s")
-                DC:Debug("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
-            end
-        end)
+    if ok then
+        ScheduleAwaitResponseDiagnostic(DC, {
+            requestOpcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS,
+            responseOpcode = DC.Opcodes.SMSG_SAVED_OUTFITS,
+            sentAt = sentAt,
+            timeoutSec = 2.0,
+            awaitMessage = "Awaiting outfits response (0x4C)",
+            timeoutMessage = "[Net] Await timeout for outfits response (0x4C); request may have been dropped or rate-limited",
+        })
     end
 
     return ok
@@ -1518,7 +2105,7 @@ function DC:RequestItemSets(force)
         end
     end
 
-    self:SendMessage(self.Opcodes.CMSG_GET_ITEM_SETS, payload)
+    return SendItemSetsRequest(payload)
 end
 
 -- Copy a community outfit to the player's personal account collection
@@ -1527,28 +2114,19 @@ function DC.Protocol:CopyCommunityOutfitToAccount(communityOutfitId)
 end
 
 function DC:OnMsg_SavedOutfits(data)
-    self:Debug("OnMsg_SavedOutfits called!")
-
     if not data then
-        if DC.Debug then DC:Debug("No data in outfits response!") end
+        self:Debug("Saved outfits response missing data")
         return
     end
 
     local outfitsList = data.outfits or data.savedOutfits or data.list
     if type(outfitsList) ~= "table" then
-        if DC.Debug then DC:Debug("No outfits list in response!") end
+        self:Debug("Saved outfits response missing outfits list")
         return
     end
-    
 
-    
-    if outfitsList[1] then
-         self:Debug("First outfit items type: " .. type(outfitsList[1].items))
-         if DC.Debug then DC:Debug("First outfit items type: " .. type(outfitsList[1].items)) end
-         if type(outfitsList[1].items) == "string" then
-             self:Debug("First outfit items string: " .. tostring(outfitsList[1].items))
-             if DC.Debug then DC:Debug("First outfit items string: " .. tostring(outfitsList[1].items)) end
-         end
+    if outfitsList[1] and type(outfitsList[1].items) ~= "table" then
+        self:Debug("Saved outfits payload requires item parsing (" .. type(outfitsList[1].items) .. ")")
     end
     
     DC.db = DC.db or {}
@@ -1636,9 +2214,16 @@ function DC:OnMsg_SavedOutfits(data)
     DC.db.outfitsMeta = DC.db.outfitsMeta or {}
     DC.db.outfitsMeta.lastSync = time()
     DC.db.outfitsMeta.total = DC.db.outfitsTotal
+
+    DCCollectionCharDB = DCCollectionCharDB or {}
+    DCCollectionCharDB.savedOutfits = pageOutfits
+    DCCollectionCharDB.savedOutfitsPages = DC.db.outfitsPages
+    DCCollectionCharDB.savedOutfitsOffset = DC.db.outfitsOffset
+    DCCollectionCharDB.savedOutfitsLimit = DC.db.outfitsLimit
+    DCCollectionCharDB.savedOutfitsTotal = DC.db.outfitsTotal
+    DCCollectionCharDB.savedOutfitsMeta = DC.db.outfitsMeta
     
-    self:Debug("Received " .. #DC.db.outfits .. " saved outfits from server.")
-    if DC.Debug then DC:Debug("Loaded " .. #DC.db.outfits .. " saved outfits.") end
+    self:Debug("Received " .. #DC.db.outfits .. " saved outfits from server")
 
     -- UI may not have finished creating the outfits grid yet; mark pending and attempt refresh.
     if DC.Wardrobe then
@@ -1661,9 +2246,7 @@ function DC:RequestCommunityList(offset, limit, filter, sort)
         now = time() or 0
     end
     self._pauseTransmogPagingUntil = now + 3.0
-    if self._transmogPagingDelayFrame then
-        self._transmogPagingDelayFrame.elapsed = 0
-    end
+    ResetPagingDelayTimer(self, "_transmogPagingDelayFrame")
 
     local ok = self:SendMessage(self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
         offset = offset or 0,
@@ -1672,16 +2255,15 @@ function DC:RequestCommunityList(offset, limit, filter, sort)
         sort = sort or "newest",
     })
 
-    if ok and type(self.After) == "function" then
-        self:LogNetEvent("info", "await", "Awaiting community response (0x63)", { opcode = self.Opcodes.CMSG_COMMUNITY_GET_LIST })
-        self.After(2.0, function()
-            self._lastRecvOpcodeAt = self._lastRecvOpcodeAt or {}
-            local last = tonumber(self._lastRecvOpcodeAt[self.Opcodes.SMSG_COMMUNITY_LIST] or 0) or 0
-            if last < sentAt then
-                self:Debug("[Net] No community response (0x63) after 2s")
-                self:Debug("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
-            end
-        end)
+    if ok then
+        ScheduleAwaitResponseDiagnostic(self, {
+            requestOpcode = self.Opcodes.CMSG_COMMUNITY_GET_LIST,
+            responseOpcode = self.Opcodes.SMSG_COMMUNITY_LIST,
+            sentAt = sentAt,
+            timeoutSec = 2.0,
+            awaitMessage = "Awaiting community response (0x63)",
+            timeoutMessage = "[Net] Await timeout for community response (0x63); request may have been dropped or rate-limited",
+        })
     end
 
     return ok
@@ -1894,6 +2476,14 @@ function DC:RequestCollectedAppearances()
     local progressKey = "coll:transmog"
     local progressLabel = "collection: transmog"
 
+    if type(self.HasCurrentTransmogOwnedState) == "function" and
+        self:HasCurrentTransmogOwnedState() then
+        if type(self._syncProgress) == "table" then
+            self:CompleteSyncProgressStep(progressKey, progressLabel)
+        end
+        return true
+    end
+
     if self:_IsInflight(reqKey) then
         return false
     end
@@ -1923,6 +2513,18 @@ end
 
 -- Request current transmog state for all slots
 function DC:RequestTransmogState()
+    if ShouldUseNativeCollectionTransmogStateBridge() then
+        EnsureNativeCollectionTransmogStatePollFrame()
+
+        local ok, err = pcall(RequestNativeCollectionTransmogState,
+            "collection_transmog_state")
+        if not ok and type(self.Debug) == "function" then
+            self:Debug("RequestNativeCollectionTransmogState failed: "
+                .. tostring(err))
+        end
+        return ok
+    end
+
     return self:SendMessage(self.Opcodes.CMSG_GET_TRANSMOG_STATE, {})
 end
 
@@ -2424,6 +3026,13 @@ function DC:HandleHandshakeAck(data)
     self.isConnected = true
     self._handshakeAcked = true
 
+    if ShouldUseNativeCollectionTransmogStateBridge() then
+        EnsureNativeCollectionTransmogStatePollFrame()
+    end
+    if ShouldUseNativeCollectionItemSetsBridge() then
+        EnsureNativeCollectionItemSetsPollFrame()
+    end
+
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("handshake", "handshake")
     end
@@ -2463,12 +3072,32 @@ function DC:HandleHandshakeAck(data)
     
     if data.needsSync then
         self:Debug("Server indicates full sync needed")
+        self:Debug(string.format(
+            "Handshake hash mismatch client=%s server=%s total=%s",
+            tostring(self._lastHandshakeHash or 0),
+            tostring(data.serverHash or 0),
+            tostring(data.totalItems or 0)))
+        if type(self._lastHandshakeCounts) == "table" then
+            self:Debug(string.format(
+                "Handshake local counts mounts=%s pets=%s heirlooms=%s titles=%s",
+                tostring(self._lastHandshakeCounts.mounts or 0),
+                tostring(self._lastHandshakeCounts.pets or 0),
+                tostring(self._lastHandshakeCounts.heirlooms or 0),
+                tostring(self._lastHandshakeCounts.titles or 0)))
+        end
         if pendingInitialData then
             self._pendingInitialDataAfterFullCollection = pendingInitialData
         end
         self:RequestFullCollection()
     else
         self:Debug("Collection is in sync with server")
+
+        local receivedAt = (type(GetTime) == "function" and GetTime()) or
+            (type(time) == "function" and time()) or 0
+        self._collectionLastReceivedAt = self._collectionLastReceivedAt or {}
+        self._collectionLastReceivedAt.mounts = receivedAt
+        self._collectionLastReceivedAt.pets = receivedAt
+        self._collectionLastReceivedAt.heirlooms = receivedAt
     end
 
     -- Request the rest of the initial data (definitions, currencies, shop, etc.)
@@ -2563,6 +3192,7 @@ function DC:HandleFullCollection(data)
     local transmogDeferred = data and
         (data.transmogDeferred == true or data.transmog_deferred == true)
     local transmogOwnedSyncVersion = nil
+    local receivedAt = (type(GetTime) == "function" and GetTime()) or time()
 
     if type(self._RememberOwnedSyncVersions) == "function" then
         self:_RememberOwnedSyncVersions(data and data.ownedSyncVersions)
@@ -2585,10 +3215,25 @@ function DC:HandleFullCollection(data)
     end
 
     if data.collections then
+        self._collectionLastReceivedAt = self._collectionLastReceivedAt or {}
         for typeName, items in pairs(data.collections) do
             local typeId = self:GetTypeIdFromName(typeName)
             if typeId then
                 self:SetCollection(typeId, items)
+            end
+
+            local collType = (type(self.NormalizeCollectionType) == "function" and
+                self:NormalizeCollectionType(typeName)) or typeName
+            if collType then
+                self._collectionLastReceivedAt[collType] = receivedAt
+                if collType == "titles" then
+                    self._titleCollectionAuthoritative = true
+                    self._titleCollectionLastReceivedAt = receivedAt
+                    if DCCollectionDB then
+                        DCCollectionDB.titleCollectionAuthoritative = true
+                        DCCollectionDB.titleCollectionLastReceivedAt = time()
+                    end
+                end
             end
         end
 
@@ -2620,7 +3265,7 @@ function DC:HandleFullCollection(data)
         self._pendingCollectionHash = data.hash
     end
 
-    self._fullCollectionReceivedAt = (type(GetTime) == "function" and GetTime()) or time()
+    self._fullCollectionReceivedAt = receivedAt
 
     if transmogDeferred then
         if transmogOwnedCurrent then
@@ -2708,6 +3353,8 @@ end
 function DC:HandleStatsLegacy(data)
     self:Debug("Received stats")
 
+    self._statsLastReceivedAt = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
     self:_MarkInflight("req:stats", nil)
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("stats", "stats")
@@ -3160,6 +3807,10 @@ function DC:HandleShopData(data)
     end
 
     self.shopItems = mapped
+    self.cacheNeedsSave = true
+    if type(self.ScheduleCacheAutoSave) == "function" then
+        self:ScheduleCacheAutoSave()
+    end
     
     -- Some items may need cache warming - schedule a refresh
     if self.shopNeedsCacheWarm == nil then
@@ -3434,6 +4085,8 @@ function DC:HandleCurrencies(data)
     self:Debug("Received currencies")
 
     self:_MarkInflight("req:currency", nil)
+    self._currencyLastReceivedAt = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("currency", "currency")
     end
@@ -3500,14 +4153,40 @@ end
 function DC:HandleWishlistData(data)
     self:Debug("Received wishlist")
 
+    self._wishlistLastReceivedAt =
+        (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
     self:_MarkInflight("req:wishlist", nil)
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("wishlist", "wishlist")
     end
-    
-    self.wishlist = data.items or {}
-    self.wishlistCount = data.count or 0
+
+    local rawWishlist = data.items or data.wishlist or data.list or {}
+    if type(self.NormalizeWishlistItems) == "function" then
+        self.wishlist = self:NormalizeWishlistItems(rawWishlist)
+    else
+        self.wishlist = rawWishlist
+    end
+
+    self.wishlistCount = data.count or #self.wishlist
     self.wishlistMaxItems = data.maxItems or 25
+
+    DCCollectionDB = DCCollectionDB or {}
+    DCCollectionDB.wishlistCache = self.wishlist
+
+    if type(self.RefreshWishlistUI) == "function" then
+        self:RefreshWishlistUI()
+    end
+
+    if type(self.PetJournal) == "table" and self.PetJournal.frame and self.PetJournal.frame:IsShown() and
+        self.PetJournal.selectedPet and type(self.PetJournal.SelectPet) == "function" then
+        self.PetJournal:SelectPet(self.PetJournal.selectedPet)
+    end
+
+    if type(self.MountJournal) == "table" and self.MountJournal.frame and self.MountJournal.frame:IsShown() and
+        self.MountJournal.selectedMount and type(self.MountJournal.SelectMount) == "function" then
+        self.MountJournal:SelectMount(self.MountJournal.selectedMount)
+    end
     
     -- Fire callback
     if self.callbacks.onWishlistReceived then
@@ -3541,7 +4220,8 @@ function DC:HandleWishlistUpdated(data)
         end
         
         -- Refresh wishlist
-        self:RequestWishlist()
+        self._wishlistLastReceivedAt = 0
+        self:RequestWishlist(true)
     else
         self:Print("|cffff0000Wishlist update failed:|r " .. (data.error or "Unknown error"))
     end
@@ -3799,6 +4479,9 @@ function DC:HandleTransmogState(data)
 
     self.transmogState = state
     self.transmogItemIds = itemIds  -- Store item entries for TryOn/outfit save
+    self._transmogStateLastReceivedAt =
+        (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
 
     DCCollectionCharDB = DCCollectionCharDB or {}
     DCCollectionCharDB.transmogState = state
@@ -4081,6 +4764,14 @@ function DC:HandleDefinitions(data)
         DC.Wardrobe:ClearItemIdToDisplayIdCache()
     end
 
+    if collType == "transmog" and type(self._HasAnyTransmogDefinitions) == "function" and
+       self:_HasAnyTransmogDefinitions() then
+        self.definitionsLoaded = true
+        if self.Wardrobe then
+            self.Wardrobe.definitionsLoaded = true
+        end
+    end
+
     if syncVersion ~= nil then
         if collType == "transmog" then
             self._pendingSyncVersions = self._pendingSyncVersions or {}
@@ -4110,8 +4801,8 @@ function DC:HandleDefinitions(data)
             local creatureId = nil
 
             if type(def) == "table" then
-                displayId = tonumber(def.displayId or def.display_id or def.creatureDisplayId or def.creature_display_id or def.modelId or def.model_id)
-                creatureId = tonumber(def.creatureId or def.creature_id or def.creatureID or def.entryId or def.entry_id or def.entry)
+                displayId = tonumber(def.previewDisplayId or def.preview_display_id or def.displayId or def.display_id or def.creatureDisplayId or def.creature_display_id or def.modelId or def.model_id)
+                creatureId = tonumber(def.previewCreatureId or def.preview_creature_id or def.creatureId or def.creature_id or def.creatureID or def.entryId or def.entry_id or def.entry)
             end
 
             if not displayId and not creatureId then
@@ -4196,6 +4887,13 @@ function DC:HandleDefinitions(data)
         local totalFromServer = tonumber(data.total or data.count) or 0
 
         if upToDate == true or upToDate == 1 or upToDate == "1" then
+            DCCollectionDB = DCCollectionDB or {}
+            DCCollectionDB.transmogDefsIncomplete = nil
+            DCCollectionDB.transmogDefsResumeOffset = nil
+            DCCollectionDB.transmogDefsResumeLimit = nil
+            DCCollectionDB.transmogDefsResumeTotal = nil
+            DCCollectionDB.transmogDefsResumeUpdatedAt = nil
+
             -- Server says definitions are up-to-date.
             -- If local cache is empty, force a full download once.
             -- Only warn about server misconfiguration when the server explicitly reports total=0.
@@ -4233,6 +4931,9 @@ function DC:HandleDefinitions(data)
             self:Debug("Transmog definitions up-to-date; skipping download")
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
+            self._transmogDefsConfirmedCurrentAt =
+                (type(GetTime) == "function" and GetTime()) or
+                (type(time) == "function" and time()) or 0
             if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                 self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
             end
@@ -4335,71 +5036,10 @@ function DC:HandleDefinitions(data)
                 return
             end
 
-            -- Use frame-based delay to prevent server overload and disconnects
-            -- Create delay frame if it doesn't exist
-            if not self._transmogPagingDelayFrame then
-                self._transmogPagingDelayFrame = CreateFrame("Frame")
-                self._transmogPagingDelayFrame.elapsed = 0
-                self._transmogPagingDelayFrame.pendingRequest = nil
-                
-                self._transmogPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
-                    frame.elapsed = frame.elapsed + elapsed
-
-                    local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
-                    local pauseUntil = tonumber(DC._pauseTransmogPagingUntil or 0) or 0
-                    if pauseUntil > 0 and now > 0 and now < pauseUntil then
-                        -- Keep delaying while UI-critical requests are in flight.
-                        frame.elapsed = 0
-                        return
-                    end
-
-                    local wardrobeVisible = (DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown())
-                    -- Avoid paging large transmog definitions while the user is on Outfits/Community.
-                    -- Those tabs can function without transmog defs and should not be starved by paging.
-                    if wardrobeVisible and DC.Wardrobe and (DC.Wardrobe.currentTab == "outfits" or DC.Wardrobe.currentTab == "community") then
-                        wardrobeVisible = false
-                    end
-                    local mainFrameVisible = (DC.MainFrame and DC.MainFrame:IsShown()) and true or false
-                    local mainTabVisible = (mainFrameVisible and (DC.activeTab == "wardrobe" or DC.activeTab == "transmog")) and true or false
-                    -- If the main collection UI is visible (for example on Mounts), keep paging in the
-                    -- background so users don't see progress stall at the first page until they open Wardrobe.
-                    local collectionUiVisible = mainFrameVisible
-                    local allowBackground = false
-                    if type(DC.IsBackgroundWardrobeSyncEnabled) == "function" then
-                        allowBackground = DC:IsBackgroundWardrobeSyncEnabled() and true or false
-                    elseif DCCollectionDB and DCCollectionDB.backgroundWardrobeSync then
-                        allowBackground = true
-                    end
-
-                    local interval = DC._transmogPagingInterval or 0.75
-                    -- If we're paging while the UI is not visible, be extra conservative.
-                    if not (wardrobeVisible or mainTabVisible or collectionUiVisible) then
-                        interval = math.max(interval, 1.25)
-                    end
-
-                    if frame.elapsed >= interval and frame.pendingRequest then
-                        local req = frame.pendingRequest
-                        -- Pause paging if user isn't actively viewing Wardrobe/transmog UI,
-                        -- unless background wardrobe sync is enabled OR manual refresh is in progress.
-                        local isManualRefresh = DC.Wardrobe and DC.Wardrobe.isRefreshing
-                        if not (wardrobeVisible or mainTabVisible or collectionUiVisible or isManualRefresh) and not allowBackground then
-                            frame.elapsed = 0
-                            return
-                        end
-
-                        frame.pendingRequest = nil
-                        frame.elapsed = 0
-                        frame:Hide()
-
-                        DC:SendMessage(DC.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = req.offset, limit = req.limit })
-                    end
-                end)
-            end
-            
-            -- Queue the next request with delay
-            self._transmogPagingDelayFrame.pendingRequest = { offset = nextOffset, limit = requestedLimit }
-            self._transmogPagingDelayFrame.elapsed = 0
-            self._transmogPagingDelayFrame:Show()
+            QueuePagingDelayRequest(self, "_transmogPagingDelayFrame", {
+                offset = nextOffset,
+                limit = requestedLimit,
+            }, TRANSMOG_PAGING_DELAY_OPTIONS)
 
             if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                 self.Wardrobe:UpdateTransmogLoadingProgressUI(true)
@@ -4409,6 +5049,13 @@ function DC:HandleDefinitions(data)
             if self._pendingSyncVersions and self._pendingSyncVersions.transmog ~= nil then
                 self:SetSyncVersion("transmog", self._pendingSyncVersions.transmog)
                 self._pendingSyncVersions.transmog = nil
+            elseif type(self._serverSyncVersions) == "table" then
+                local serverVersion = tonumber(
+                    self._serverSyncVersions.transmog or
+                    self._serverSyncVersions.appearances)
+                if serverVersion and serverVersion > 0 and self:_HasAnyTransmogDefinitions() then
+                    self:SetSyncVersion("transmog", serverVersion)
+                end
             end
 
             -- Clear persisted resume state.
@@ -4427,6 +5074,9 @@ function DC:HandleDefinitions(data)
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
             self:_StopTransmogFirstPageWatchdog(true)
+            self._transmogDefsConfirmedCurrentAt =
+                (type(GetTime) == "function" and GetTime()) or
+                (type(time) == "function" and time()) or 0
 
             -- Clear any deferred item set load.
             -- Item sets should be fetched on-demand (Sets tab) to avoid large transfers starving other UI.
@@ -4450,9 +5100,19 @@ function DC:HandleCollection(data)
     local collProgressKey = "coll:" .. tostring(collType)
     local collProgressLabel = "collection: " .. tostring(collType)
     local items = data.items or {}
+    local receivedAt = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
+
+    self._collectionLastReceivedAt = self._collectionLastReceivedAt or {}
+    self._collectionLastReceivedAt[collType] = receivedAt
 
     if collType == "titles" then
         self._titleCollectionAuthoritative = true
+        self._titleCollectionLastReceivedAt = receivedAt
+        if DCCollectionDB then
+            DCCollectionDB.titleCollectionAuthoritative = true
+            DCCollectionDB.titleCollectionLastReceivedAt = time()
+        end
     end
 
     -- Some servers/bridges return arrays instead of id->entry maps.
@@ -4519,6 +5179,10 @@ function DC:HandleCollection(data)
     if collType == "transmog" and type(self._SyncCollectedAppearancesFromCollection) == "function" then
         self:_SyncCollectedAppearancesFromCollection(
             self.collections and self.collections.transmog or items)
+    end
+    if collType == "titles" and self.TitleModule and
+       type(self.TitleModule.OnAuthoritativeCollectionUpdated) == "function" then
+        self.TitleModule:OnAuthoritativeCollectionUpdated()
     end
     -- Cache will be saved by auto-save timer or on logout
 
@@ -4603,33 +5267,7 @@ function DC:HandleFavoriteToggled(data)
 end
 
 function DC:HandleCurrency(data)
-    local tokens = data.tokens or data.token or data.Tokens or data.Token
-    local emblems = data.emblems or data.emblem or data.essence or data.Essence or data.Emblems
-
-    if type(tokens) == "string" then tokens = tonumber(tokens) end
-    if type(emblems) == "string" then emblems = tonumber(emblems) end
-
-    self:CacheUpdateCurrency(tokens, emblems)
-
-    -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
-    local central = rawget(_G, "DCAddonProtocol")
-    if central and type(central.SetServerCurrencyBalance) == "function" then
-        central:SetServerCurrencyBalance(self.currency.tokens or 0, self.currency.emblems or 0)
-    end
-    
-    -- Update UI
-    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() then
-        if type(self.UpdateShopCurrencyDisplay) == "function" then
-            self:UpdateShopCurrencyDisplay()
-        elseif type(self.UpdateShopUI) == "function" then
-            self:UpdateShopUI()
-        end
-    end
-
-    -- Update MainFrame Header if shown
-    if self.MainFrame and self.MainFrame:IsShown() then
-        self:UpdateHeader()
-    end
+    return self:HandleCurrencies(data)
 end
 
 function DC:HandleShopItems(data)
@@ -4686,13 +5324,7 @@ function DC:HandleShopResult(data)
 end
 
 function DC:HandleWishlist(data)
-    self.wishlist = data.items or {}
-    DCCollectionDB.wishlistCache = self.wishlist
-    
-    -- Notify UI
-    if self.WishlistUI and self.WishlistUI:IsShown() then
-        self.WishlistUI:Refresh()
-    end
+    self:HandleWishlistData(data)
 end
 
 function DC:HandleTitleSet(data)
@@ -4704,6 +5336,10 @@ function DC:HandleTitleSet(data)
 end
 
 function DC:HandleStats(data)
+    self._statsLastReceivedAt = (type(GetTime) == "function" and GetTime()) or
+        (type(time) == "function" and time()) or 0
+    self:_MarkInflight("req:stats", nil)
+
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("stats", "stats")
     end
@@ -5005,7 +5641,7 @@ function DC:OnMsg_ItemSets(data)
 
     -- Some servers do not echo offset/limit; fall back to the last request parameters.
     local req = self.pendingRequests and self.pendingRequests[self.Opcodes.CMSG_GET_ITEM_SETS]
-    local reqData = req and req.data
+    local reqData = (req and req.data) or self._nativeItemSetsLastRequest
     local offset = tonumber(data.offset)
     local limit = tonumber(data.limit)
     if reqData then
@@ -5141,30 +5777,10 @@ function DC:OnMsg_ItemSets(data)
         self._itemSetsOffset = nextOffset
         self._itemSetsLimit = limit
 
-        if not self._itemSetsPagingDelayFrame then
-            self._itemSetsPagingDelayFrame = CreateFrame("Frame")
-            self._itemSetsPagingDelayFrame.elapsed = 0
-            self._itemSetsPagingDelayFrame.pending = nil
-            self._itemSetsPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
-                frame.elapsed = frame.elapsed + (elapsed or 0)
-                if frame.elapsed < 0.2 then
-                    return
-                end
-                if not frame.pending then
-                    frame:Hide()
-                    return
-                end
-                local req = frame.pending
-                frame.pending = nil
-                frame.elapsed = 0
-                frame:Hide()
-                DC:SendMessage(DC.Opcodes.CMSG_GET_ITEM_SETS, { offset = req.offset, limit = req.limit })
-            end)
-        end
-
-        self._itemSetsPagingDelayFrame.pending = { offset = nextOffset, limit = limit }
-        self._itemSetsPagingDelayFrame.elapsed = 0
-        self._itemSetsPagingDelayFrame:Show()
+        QueuePagingDelayRequest(self, "_itemSetsPagingDelayFrame", {
+            offset = nextOffset,
+            limit = limit,
+        }, ITEM_SETS_PAGING_DELAY_OPTIONS)
         return
     end
 

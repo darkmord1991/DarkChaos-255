@@ -86,6 +86,18 @@ local CACHE_VERSION = 1
 -- Cache freshness: consider data "fresh" if loaded within this many seconds.
 -- This allows skipping redundant server requests on /reload or quick relog.
 local CACHE_FRESH_SECONDS = 300  -- 5 minutes
+local TITLE_CACHE_FRESH_SECONDS = 30 * 60
+local SAVED_OUTFITS_CACHE_FRESH_SECONDS = 30 * 60
+
+local function IsAbsoluteTimestampFresh(timestamp, maxAgeSeconds)
+    local savedAt = tonumber(timestamp) or 0
+    if savedAt <= 0 then
+        return false
+    end
+
+    local age = time() - savedAt
+    return age >= 0 and age < maxAgeSeconds
+end
 
 -- Check if cached data is fresh enough to skip a full server sync.
 -- Returns true if cache was saved within CACHE_FRESH_SECONDS ago.
@@ -381,11 +393,27 @@ function DC:LoadCache()
         end
         self:Debug("Loaded cached collections")
     end
+
+    self._titleCollectionAuthoritative =
+        DCCollectionDB.titleCollectionAuthoritative == true
+    self._titleCollectionLastReceivedAt =
+        tonumber(DCCollectionDB.titleCollectionLastReceivedAt) or 0
+    if self._titleCollectionLastReceivedAt > 0 then
+        self._collectionLastReceivedAt = self._collectionLastReceivedAt or {}
+        self._collectionLastReceivedAt.titles = self._titleCollectionLastReceivedAt
+    end
     
     -- Load currency
     if DCCollectionDB.currencyCache then
         self.currency.tokens = DCCollectionDB.currencyCache.tokens or 0
         self.currency.emblems = DCCollectionDB.currencyCache.emblems or 0
+
+        local central = rawget(_G, "DCAddonProtocol")
+        if central and type(central.SetServerCurrencyBalance) == "function" then
+            central:SetServerCurrencyBalance(
+                self.currency.tokens or 0,
+                self.currency.emblems or 0)
+        end
     end
     
     -- Load stats
@@ -397,13 +425,47 @@ function DC:LoadCache()
             end
         end
     end
+
+    if DCCollectionDB.shopItemsCache then
+        self.shopItems = DCCollectionDB.shopItemsCache
+        self.shopCategory = DCCollectionDB.shopCategoryCache or "default"
+    end
+
+    local cachedTitleCount = 0
+    if type(self.CountCollection) == "function" then
+        cachedTitleCount = tonumber(self:CountCollection("titles")) or 0
+    end
+    local cachedTitleOwned = tonumber(
+        DCCollectionDB.statsCache and
+        DCCollectionDB.statsCache.titles and
+        DCCollectionDB.statsCache.titles.owned) or 0
+
+    if self._titleCollectionAuthoritative ~= true and
+       cachedTitleCount == cachedTitleOwned then
+        self._titleCollectionAuthoritative = true
+    end
+
+    if self._titleCollectionAuthoritative == true and
+       IsAbsoluteTimestampFresh(
+           DCCollectionDB.titleCollectionLastReceivedAt,
+           TITLE_CACHE_FRESH_SECONDS) then
+        local runtimeReceivedAt = (type(GetTime) == "function" and GetTime()) or
+            (type(time) == "function" and time()) or 0
+        self._titleCollectionLastReceivedAt = runtimeReceivedAt
+        self._collectionLastReceivedAt = self._collectionLastReceivedAt or {}
+        self._collectionLastReceivedAt.titles = runtimeReceivedAt
+    end
     
     -- Load mount speed bonus
     self.mountSpeedBonus = DCCollectionDB.mountSpeedBonus or 0
     
     -- Load wishlist
     if DCCollectionDB.wishlistCache then
-        self.wishlist = DCCollectionDB.wishlistCache
+        if type(self.NormalizeWishlistItems) == "function" then
+            self.wishlist = self:NormalizeWishlistItems(DCCollectionDB.wishlistCache)
+        else
+            self.wishlist = DCCollectionDB.wishlistCache
+        end
     end
 
     -- Load per-character transmog state
@@ -461,6 +523,74 @@ function DC:LoadCache()
     end
     if self.transmogItemIds then
         self.transmogItemIds = normalizeSlotMap(self.transmogItemIds)
+    end
+
+    local savedOutfitsMeta = DCCollectionCharDB and DCCollectionCharDB.savedOutfitsMeta
+    if IsAbsoluteTimestampFresh(
+        savedOutfitsMeta and savedOutfitsMeta.lastSync,
+        SAVED_OUTFITS_CACHE_FRESH_SECONDS) then
+        local cachedPages = DCCollectionCharDB and DCCollectionCharDB.savedOutfitsPages
+        local cachedOutfits = DCCollectionCharDB and DCCollectionCharDB.savedOutfits
+        local normalizedPages = nil
+
+        if type(cachedPages) == "table" then
+            normalizedPages = {}
+            for pageOffset, page in pairs(cachedPages) do
+                if type(page) == "table" then
+                    local numericOffset = tonumber(pageOffset)
+                    if numericOffset ~= nil then
+                        normalizedPages[numericOffset] = page
+                    else
+                        normalizedPages[pageOffset] = page
+                    end
+                end
+            end
+        end
+
+        if type(normalizedPages) == "table" or type(cachedOutfits) == "table" then
+            DC.db = DC.db or {}
+            DC.db.outfitsPages = normalizedPages or { [0] = cachedOutfits }
+            DC.db.outfitsOffset = tonumber(DCCollectionCharDB and DCCollectionCharDB.savedOutfitsOffset) or 0
+            DC.db.outfitsLimit = tonumber(DCCollectionCharDB and DCCollectionCharDB.savedOutfitsLimit) or 6
+            DC.db.outfitsTotal = tonumber(DCCollectionCharDB and DCCollectionCharDB.savedOutfitsTotal)
+                or (type(cachedOutfits) == "table" and #cachedOutfits)
+                or 0
+            DC.db.outfitsMeta = savedOutfitsMeta
+
+            local cachedPage = DC.db.outfitsPages[DC.db.outfitsOffset]
+            if type(cachedPage) ~= "table" then
+                for pageOffset, page in pairs(DC.db.outfitsPages) do
+                    if type(page) == "table" then
+                        cachedPage = page
+                        DC.db.outfitsOffset = tonumber(pageOffset) or 0
+                        break
+                    end
+                end
+            end
+
+            DC.db.outfits = (type(cachedPage) == "table" and cachedPage)
+                or (type(cachedOutfits) == "table" and cachedOutfits)
+                or {}
+
+            if Wardrobe and type(Wardrobe.SerializeSlotsToJsonString) == "function" then
+                DC.db.outfitsBySignature = {}
+                for _, page in pairs(DC.db.outfitsPages) do
+                    if type(page) == "table" then
+                        for _, outfit in ipairs(page) do
+                            local slots = outfit and (outfit.slots or outfit.items)
+                            if type(slots) == "table" then
+                                local sig = Wardrobe.SerializeSlotsToJsonString(slots)
+                                if sig and sig ~= "" then
+                                    DC.db.outfitsBySignature[sig] = outfit
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            self:Debug("Loaded fresh saved outfits cache")
+        end
     end
 
     -- Load outfits (scope selectable)
@@ -540,7 +670,18 @@ function DC:SaveCache()
     DCCollectionDB.mountSpeedBonus = self.mountSpeedBonus
     
     -- Save wishlist
-    DCCollectionDB.wishlistCache = self.wishlist
+    if type(self.NormalizeWishlistItems) == "function" then
+        DCCollectionDB.wishlistCache = self:NormalizeWishlistItems(self.wishlist)
+    else
+        DCCollectionDB.wishlistCache = self.wishlist
+    end
+    DCCollectionDB.shopItemsCache = self.shopItems
+    DCCollectionDB.shopCategoryCache = self.shopCategory
+
+    DCCollectionDB.titleCollectionAuthoritative =
+        self._titleCollectionAuthoritative == true
+    DCCollectionDB.titleCollectionLastReceivedAt =
+        tonumber(self._titleCollectionLastReceivedAt) or 0
     
     self.cacheNeedsSave = false
     self:Debug("Cache saved")
@@ -556,7 +697,11 @@ function DC:ClearCache()
     DCCollectionDB.currencyCache = nil
     DCCollectionDB.statsCache = nil
     DCCollectionDB.wishlistCache = nil
+    DCCollectionDB.shopItemsCache = nil
+    DCCollectionDB.shopCategoryCache = nil
     DCCollectionDB.mountSpeedBonus = nil
+    DCCollectionDB.titleCollectionAuthoritative = nil
+    DCCollectionDB.titleCollectionLastReceivedAt = nil
     DCCollectionDB.lastSyncTime = 0
     DCCollectionDB.syncVersion = 0
     DCCollectionDB.syncVersions = nil
@@ -573,7 +718,11 @@ function DC:ClearCache()
     self._transmogDefinitions = self.definitions.transmog
     self.currency = { tokens = 0, emblems = 0 }
     self.wishlist = {}
+    self.shopItems = nil
+    self.shopCategory = nil
     self.mountSpeedBonus = 0
+    self._titleCollectionAuthoritative = nil
+    self._titleCollectionLastReceivedAt = nil
 
     if type(self.BootstrapLocalCollectionCDBC) == "function" then
         self:BootstrapLocalCollectionCDBC(true)
@@ -834,7 +983,8 @@ function DC:HasLocalCollectionDefinitions(collectionType)
     local typeName = NormalizeType(self, collectionType)
     if typeName == "pets" and
        type(state.previewIncompleteDefinitionTypes) == "table" and
-       state.previewIncompleteDefinitionTypes.pets == true then
+         state.previewIncompleteDefinitionTypes.pets == true and
+         state.allowPreviewIncompletePets ~= true then
         return false
     end
 
@@ -920,8 +1070,10 @@ function DC:BootstrapLocalCollectionCDBC(force)
         definitionTypes = {},
         authoritativeDefinitionTypes = {},
         previewIncompleteDefinitionTypes = {},
+        previewIncompleteDefinitionCounts = {},
         signatures = {},
         manifest = nil,
+        allowPreviewIncompletePets = false,
         shopMetadataById = {},
         shopMetadataByTypeEntry = {},
         shopMetadataAuthoritative = false,
@@ -986,8 +1138,9 @@ function DC:BootstrapLocalCollectionCDBC(force)
 
             for _, row in ipairs(rows) do
                 local typeName =
-                    LOCAL_COLLECTION_TYPE_TO_NAME[tonumber(row.collectionType)]
-                local entryId = tonumber(row.entryId)
+                    LOCAL_COLLECTION_TYPE_TO_NAME[tonumber(
+                        row.collectionType or row.CollectionType or row.collection_type)]
+                local entryId = tonumber(row.entryId or row.EntryID or row.entry_id)
 
                 if typeName and typeName ~= "transmog" and entryId and entryId > 0 then
                     local def = {}
@@ -998,32 +1151,48 @@ function DC:BootstrapLocalCollectionCDBC(force)
                         def.icon = row.icon
                     end
 
-                    local rarity = tonumber(row.rarity)
+                    local rarity = tonumber(row.rarity or row.Rarity)
                     if rarity and rarity > 0 then
                         def.rarity = rarity
                     end
 
-                    local itemId = tonumber(row.itemId)
+                    local itemId = tonumber(
+                        row.itemId or row.itemID or row.ItemID or row.item_id)
                     if itemId and itemId > 0 then
                         def.itemId = itemId
                     end
 
-                    local spellId = tonumber(row.spellId)
+                    local spellId = tonumber(
+                        row.spellId or row.spellID or row.SpellID or row.spell_id)
                     if spellId and spellId > 0 then
                         def.spellId = spellId
                     end
 
-                    local displayId = tonumber(row.displayId)
+                    local displayId = tonumber(
+                        row.previewDisplayId or row.previewDisplayID or
+                        row.PreviewDisplayID or row.preview_display_id or
+                        row.creatureDisplayId or row.creatureDisplayID or
+                        row.CreatureDisplayID or row.creature_display_id or
+                        row.displayId or row.displayID or row.DisplayID or
+                        row.display_id)
                     if displayId and displayId > 0 then
                         def.displayId = displayId
+                        def.previewDisplayId = displayId
+                        def.creatureDisplayId = displayId
                     end
 
-                    local creatureId = tonumber(row.creatureId)
+                    local creatureId = tonumber(
+                        row.previewCreatureId or row.previewCreatureID or
+                        row.PreviewCreatureID or row.preview_creature_id or
+                        row.creatureId or row.creatureID or row.CreatureID or
+                        row.creature_id or row.creatureEntry or row.creature_entry)
                     if creatureId and creatureId > 0 then
                         def.creatureId = creatureId
+                        def.previewCreatureId = creatureId
                     end
 
-                    local mountType = tonumber(row.mountType)
+                    local mountType = tonumber(
+                        row.mountType or row.MountType or row.mount_type)
                     if typeName == "mounts" and mountType and mountType >= 0 then
                         def.mountType = mountType
                     end
@@ -1032,6 +1201,8 @@ function DC:BootstrapLocalCollectionCDBC(force)
                        not (displayId and displayId > 0) and
                        not (creatureId and creatureId > 0) then
                         state.previewIncompleteDefinitionTypes.pets = true
+                        state.previewIncompleteDefinitionCounts.pets =
+                            (tonumber(state.previewIncompleteDefinitionCounts.pets) or 0) + 1
                     end
 
                     local source = ResolveLocalSourceValue(row)
@@ -1051,6 +1222,8 @@ function DC:BootstrapLocalCollectionCDBC(force)
                         MixLocalSignature(signatures[typeName], spellId or 0)
                     signatures[typeName] =
                         MixLocalSignature(signatures[typeName], displayId or 0)
+                    signatures[typeName] =
+                        MixLocalSignature(signatures[typeName], creatureId or 0)
                     signatures[typeName] =
                         MixLocalSignatureString(signatures[typeName], row.name)
                     signatures[typeName] =
@@ -1085,6 +1258,14 @@ function DC:BootstrapLocalCollectionCDBC(force)
                     if type(manifestEntry) == "table" and
                        manifestEntry.requestSkip == true then
                         state.authoritativeDefinitionTypes[typeName] = true
+                    elseif typeName == "pets" and
+                        ((type(manifestEntry) == "table" and
+                            (tonumber(manifestEntry.missingCount) or 0) <= 1) or
+                        (tonumber(state.previewIncompleteDefinitionCounts.pets) or 0) <= 1) then
+                        -- Keep pets on local authoritative metadata when only the
+                        -- known tiny unresolved tail remains (for example 39148).
+                        state.authoritativeDefinitionTypes[typeName] = true
+                        state.allowPreviewIncompletePets = true
                     elseif typeName == "titles" then
                         state.authoritativeDefinitionTypes[typeName] = true
                     end
@@ -1173,6 +1354,15 @@ function DC:BootstrapLocalCollectionCDBC(force)
                 state.signatures.transmog = signature
                 state.available = true
                 self.definitionsLoaded = true
+
+                if state.authoritativeDefinitionTypes.transmog == true then
+                    DCCollectionDB = DCCollectionDB or {}
+                    DCCollectionDB.transmogDefsIncomplete = nil
+                    DCCollectionDB.transmogDefsResumeOffset = nil
+                    DCCollectionDB.transmogDefsResumeLimit = nil
+                    DCCollectionDB.transmogDefsResumeTotal = nil
+                    DCCollectionDB.transmogDefsResumeUpdatedAt = nil
+                end
 
                 if self.Wardrobe then
                     self.Wardrobe.definitionsLoaded = true
@@ -1485,8 +1675,11 @@ function DC:CacheMergeDefinitions(collectionType, definitions)
         self:_BumpDefinitionsRevision(typeName)
     end
     
-    if self.stats[typeName] and added > 0 then
-        self.stats[typeName].total = (self.stats[typeName].total or 0) + added
+    if self.stats[typeName] then
+        local currentTotal = tonumber(self.stats[typeName].total) or 0
+        if currentTotal <= 0 then
+            self.stats[typeName].total = self:CountDefinitions(typeName)
+        end
     end
     
     self:Debug(string.format("Merged %d definitions for %s", added, typeName))
@@ -1661,16 +1854,21 @@ end
 
 -- Lookup table for type name to ID conversion
 local TYPE_NAME_TO_ID = {
-    ["mounts"] = DC.CollectionType.MOUNT,
-    ["mount"] = DC.CollectionType.MOUNT,
-    ["pets"] = DC.CollectionType.PET,
-    ["pet"] = DC.CollectionType.PET,
-    ["heirlooms"] = DC.CollectionType.HEIRLOOM,
-    ["heirloom"] = DC.CollectionType.HEIRLOOM,
-    ["titles"] = DC.CollectionType.TITLE,
-    ["title"] = DC.CollectionType.TITLE,
-    ["transmog"] = DC.CollectionType.TRANSMOG,
-    ["appearances"] = DC.CollectionType.TRANSMOG,
+    ["mounts"] = 1,
+    ["mount"] = 1,
+    ["pets"] = 2,
+    ["pet"] = 2,
+    ["toys"] = 3,
+    ["toy"] = 3,
+    ["bonus"] = 3,
+    ["heirlooms"] = 4,
+    ["heirloom"] = 4,
+    ["titles"] = 5,
+    ["title"] = 5,
+    ["transmog"] = 6,
+    ["appearances"] = 6,
+    ["item_sets"] = 7,
+    ["item_set"] = 7,
 }
 
 -- Reverse lookup for ID to name
@@ -1699,6 +1897,54 @@ end
 function DC:GetTypeNameFromId(typeId)
     if not typeId then return nil end
     return TYPE_ID_TO_NAME[typeId]
+end
+
+function DC:NormalizeWishlistItems(items)
+    local normalized = {}
+    if type(items) ~= "table" then
+        return normalized
+    end
+
+    for _, wish in ipairs(items) do
+        if type(wish) == "table" then
+            local normalizedWish = {}
+            for key, value in pairs(wish) do
+                normalizedWish[key] = value
+            end
+
+            local rawType = normalizedWish.typeId or normalizedWish.type_id or
+                normalizedWish.type or normalizedWish.collection_type
+            local typeId = tonumber(rawType)
+            if not typeId and type(rawType) == "string" then
+                typeId = self:GetTypeIdFromName(rawType)
+            end
+
+            local typeName = nil
+            if typeId then
+                typeName = self:GetTypeNameFromId(typeId)
+            elseif type(rawType) == "string" then
+                typeName = string.lower(rawType)
+            end
+
+            local entryId = tonumber(normalizedWish.entryId or normalizedWish.entry_id or
+                normalizedWish.itemId or normalizedWish.item_id or normalizedWish.entry or
+                normalizedWish.id)
+
+            if typeName and entryId and entryId > 0 then
+                normalizedWish.type = typeName
+                normalizedWish.collection_type = typeName
+                normalizedWish.typeId = typeId
+                normalizedWish.type_id = typeId
+                normalizedWish.entryId = entryId
+                normalizedWish.entry_id = entryId
+                normalizedWish.itemId = entryId
+                normalizedWish.item_id = entryId
+                normalized[#normalized + 1] = normalizedWish
+            end
+        end
+    end
+
+    return normalized
 end
 
 -- ============================================================================
@@ -1735,6 +1981,9 @@ function DC:SetCollection(collectionType, items)
     self:_BumpCollectionsRevision(typeName)
     
     self.cacheNeedsSave = true
+    if type(self.ScheduleCacheAutoSave) == "function" then
+        self:ScheduleCacheAutoSave()
+    end
     self:Debug(string.format("Set collection %s with %d items", 
         typeName, self:CountCollection(typeName)))
 end
@@ -1760,6 +2009,9 @@ function DC:AddToCollection(collectionType, itemId, itemData)
         end
         
         self.cacheNeedsSave = true
+        if type(self.ScheduleCacheAutoSave) == "function" then
+            self:ScheduleCacheAutoSave()
+        end
         return true  -- Item was added
     end
     
@@ -1785,6 +2037,9 @@ function DC:RemoveFromCollection(collectionType, itemId)
         end
         
         self.cacheNeedsSave = true
+        if type(self.ScheduleCacheAutoSave) == "function" then
+            self:ScheduleCacheAutoSave()
+        end
         return true  -- Item was removed
     end
     
@@ -1796,20 +2051,74 @@ end
 -- Matches server-side GenerateCollectionHash in dc_addon_collection.cpp
 -- ============================================================================
 
--- Compute hash of all collected item IDs for delta sync
-function DC:ComputeCollectionHash()
-    local hash = 0
-    
-    -- Iterate all collection types and their items
+local HANDSHAKE_HASHED_COLLECTION_TYPES = {
+    mounts = true,
+    pets = true,
+    heirlooms = true,
+}
+
+local HANDSHAKE_HASH_ORDER = {
+    "mounts",
+    "pets",
+    "heirlooms",
+}
+
+function DC:GetHandshakeCollectionSnapshot()
+    local buckets = {}
+    local counts = {}
+
+    for _, typeName in ipairs(HANDSHAKE_HASH_ORDER) do
+        buckets[typeName] = {}
+        counts[typeName] = 0
+    end
+
     for collectionType, items in pairs(self.collections) do
-        for itemId in pairs(items) do
-            -- Use same algorithm as server: Knuth's multiplicative hash
-            -- hash = hash XOR (id * 2654435761 % 2^32)
-            local idHash = bit.band(itemId * 2654435761, 0xFFFFFFFF)
-            hash = bit.bxor(hash, idHash)
+        local normalizedType = collectionType
+        if type(self.NormalizeCollectionType) == "function" then
+            normalizedType = self:NormalizeCollectionType(collectionType) or collectionType
+        end
+
+        if HANDSHAKE_HASHED_COLLECTION_TYPES[normalizedType] and
+           type(items) == "table" then
+            local bucket = buckets[normalizedType]
+            for itemId in pairs(items) do
+                itemId = tonumber(itemId)
+                if itemId and itemId > 0 and not bucket[itemId] then
+                    bucket[itemId] = true
+                    counts[normalizedType] = counts[normalizedType] + 1
+                end
+            end
         end
     end
-    
+
+    local sortedIds = {}
+    for _, typeName in ipairs(HANDSHAKE_HASH_ORDER) do
+        local bucket = buckets[typeName]
+        for itemId in pairs(bucket) do
+            table.insert(sortedIds, itemId)
+        end
+    end
+
+    table.sort(sortedIds)
+
+    return {
+        sortedIds = sortedIds,
+        counts = counts,
+    }
+end
+
+-- Compute hash of all collected item IDs for delta sync
+function DC:ComputeCollectionHash()
+    local snapshot = self:GetHandshakeCollectionSnapshot()
+    local sortedIds = snapshot and snapshot.sortedIds or {}
+
+    local hash = 0
+
+    for _, itemId in ipairs(sortedIds) do
+        hash = bit.bxor(hash, bit.band(itemId * 2654435761, 0xFFFFFFFF))
+        hash = bit.bor(bit.lshift(hash, 13), bit.rshift(hash, 19))
+    end
+
     return hash
 end
 
@@ -1835,11 +2144,6 @@ local function ScheduleAutoSave()
             end
         end)
     else
-
-            if localDefinitionsChanged and
-               type(self.RehydrateRecentAdditions) == "function" then
-                self:RehydrateRecentAdditions()
-            end
         local timerFrame = CreateFrame("Frame")
         timerFrame.elapsed = 0
         timerFrame:SetScript("OnUpdate", function(self, elapsed)
@@ -1854,6 +2158,10 @@ local function ScheduleAutoSave()
             end
         end)
     end
+end
+
+function DC:ScheduleCacheAutoSave()
+    ScheduleAutoSave()
 end
 
 -- Hook into cacheNeedsSave to schedule auto-save when data becomes dirty.

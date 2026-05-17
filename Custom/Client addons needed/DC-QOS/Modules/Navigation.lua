@@ -29,6 +29,10 @@ local Navigation = {
             pulseOnArrival = true,
             playArrivalSound = false,
             markerScale = 1.0,
+            showLiveGroupHud = true,
+            showLiveGroupMinimap = true,
+            liveGroupHudMaxMarkers = 5,
+            liveGroupMinimapMaxPins = 8,
             ringRadius = 240,
             distanceScreenScale = 0.45,
             frontArcDegrees = 40,
@@ -113,10 +117,26 @@ local state = {
     lastNavigationPlayerStateX = nil,
     lastNavigationPlayerStateY = nil,
     lastNavigationPlayerStateFacing = nil,
+    groupMarkerContainer = nil,
+    groupFrames = {},
     minimapPinContainer = nil,
     minimapPins = {},
+    groupMinimapPins = {},
     lastMinimapPinSig = nil,
     lastMinimapPinCount = 0,
+    liveGroupConfig = {
+        hudDefaultCount = 5,
+        hudSettingMaxCount = 12,
+        minimapDefaultCount = 8,
+        minimapSettingMaxCount = 16,
+        hudScale = 0.72,
+        minimapScale = 0.34,
+        minimapPinStackSpacing = 12,
+        labelMaxChars = 14,
+        labelEdgeMargin = 72,
+        labelHorizontalSpacing = 84,
+        labelVerticalSpacing = 18,
+    },
 }
 
 local NAVIGATION_TRACKED_ICON_ATLAS = "Navigation-Tracked-Icon"
@@ -991,6 +1011,8 @@ local function DebugNativeProjectionStats()
     )
 end
 
+local IsGroupNavigationTrackableType
+
 local function BuildTargetKey(target)
     if not target then
         return nil
@@ -1003,6 +1025,206 @@ local function BuildTargetKey(target)
         tonumber(target.x) or 0,
         tonumber(target.y) or 0
     )
+end
+
+local function GetTrackedLiveGroupContentId()
+    if not IsGroupNavigationTrackableType(state.retailSuperTrackedTrackableType) then
+        return nil
+    end
+
+    local contentId = state.retailSuperTrackedContentID
+    if type(contentId) ~= "string" or contentId == "" then
+        return nil
+    end
+
+    return string.lower(contentId)
+end
+
+local function IsTrackedLiveGroupTarget(target)
+    if type(target) ~= "table" then
+        return false
+    end
+
+    local trackedContentId = GetTrackedLiveGroupContentId()
+    if not trackedContentId then
+        return false
+    end
+
+    local guid = type(target.guid) == "string" and string.lower(target.guid) or nil
+    local unitToken = type(target.unitToken) == "string" and string.lower(target.unitToken) or nil
+    return trackedContentId == guid or trackedContentId == unitToken
+end
+
+local function IsLiveGroupMarkerLayerActive()
+    return GetTrackedLiveGroupContentId() ~= nil
+end
+
+function Navigation._ShouldShowLiveGroupHudMarkers(settings)
+    return type(settings) ~= "table" or settings.showLiveGroupHud ~= false
+end
+
+function Navigation._ShouldShowLiveGroupMinimapPins(settings)
+    return type(settings) ~= "table" or settings.showLiveGroupMinimap ~= false
+end
+
+function Navigation._GetLiveGroupHudMarkerLimit(settings)
+    local value = tonumber(settings and settings.liveGroupHudMaxMarkers)
+    value = value and math_floor(value + 0.5) or state.liveGroupConfig.hudDefaultCount
+    if value < 1 then
+        return 1
+    end
+    if value > state.liveGroupConfig.hudSettingMaxCount then
+        return state.liveGroupConfig.hudSettingMaxCount
+    end
+    return value
+end
+
+function Navigation._GetLiveGroupMinimapPinLimit(settings)
+    local value = tonumber(settings and settings.liveGroupMinimapMaxPins)
+    value = value and math_floor(value + 0.5) or state.liveGroupConfig.minimapDefaultCount
+    if value < 1 then
+        return 1
+    end
+    if value > state.liveGroupConfig.minimapSettingMaxCount then
+        return state.liveGroupConfig.minimapSettingMaxCount
+    end
+    return value
+end
+
+function Navigation._TrimLiveGroupTargets(targets, maxCount)
+    local trimmed = {}
+    if type(targets) ~= "table" then
+        return trimmed
+    end
+
+    maxCount = tonumber(maxCount)
+    if not maxCount or maxCount <= 0 then
+        for index = 1, #targets do
+            trimmed[index] = targets[index]
+        end
+        return trimmed
+    end
+
+    local limit = math_min(#targets, maxCount)
+    for index = 1, limit do
+        trimmed[index] = targets[index]
+    end
+
+    return trimmed
+end
+
+function Navigation._TruncateGroupMarkerLabel(text)
+    if type(text) ~= "string" or text == "" then
+        return nil
+    end
+
+    text = string.gsub(text, "^%s+", "")
+    text = string.gsub(text, "%s+$", "")
+    text = string.gsub(text, "%s+", " ")
+    if text == "" then
+        return nil
+    end
+
+    if string.len(text) <= state.liveGroupConfig.labelMaxChars then
+        return text
+    end
+
+    return string.sub(text, 1, state.liveGroupConfig.labelMaxChars - 3) .. "..."
+end
+
+function Navigation._DistributeLiveGroupMinimapPins(pins, radiusPx)
+    if type(pins) ~= "table" or #pins <= 1 then
+        return
+    end
+
+    local buckets = {}
+    for index = 1, #pins do
+        local pin = pins[index]
+        local pixelX = tonumber(pin and pin.pixelX) or 0
+        local pixelY = tonumber(pin and pin.pixelY) or 0
+        local bucketX = math_floor((pixelX + radiusPx) / MINIMAP_PIN_BUCKET_SIZE)
+        local bucketY = math_floor((pixelY + radiusPx) / MINIMAP_PIN_BUCKET_SIZE)
+        local bucketKey = tostring(bucketX) .. ":" .. tostring(bucketY)
+        local bucket = buckets[bucketKey]
+        if not bucket then
+            bucket = {}
+            buckets[bucketKey] = bucket
+        end
+
+        table.insert(bucket, pin)
+    end
+
+    local maxRadius = math_max(0, radiusPx - 3)
+    for _, bucket in pairs(buckets) do
+        if #bucket > 1 then
+            table.sort(bucket, function(left, right)
+                local leftDistance = tonumber(left and left.distanceYards) or math.huge
+                local rightDistance = tonumber(right and right.distanceYards) or math.huge
+                if leftDistance ~= rightDistance then
+                    return leftDistance < rightDistance
+                end
+
+                return tostring(left and left.unitToken or "") < tostring(right and right.unitToken or "")
+            end)
+
+            local baseX = 0
+            local baseY = 0
+            for index = 1, #bucket do
+                baseX = baseX + (tonumber(bucket[index].pixelX) or 0)
+                baseY = baseY + (tonumber(bucket[index].pixelY) or 0)
+            end
+
+            baseX = baseX / #bucket
+            baseY = baseY / #bucket
+
+            local tangentAngle = Atan2(baseX, baseY) + (math_pi * 0.5)
+            local centerIndex = (#bucket + 1) * 0.5
+            for index = 1, #bucket do
+                local pin = bucket[index]
+                local tangentOffset = (index - centerIndex) * state.liveGroupConfig.minimapPinStackSpacing
+                local spreadX = baseX + (math_sin(tangentAngle) * tangentOffset)
+                local spreadY = baseY + (math_cos(tangentAngle) * tangentOffset)
+                local spreadLength = math_sqrt((spreadX * spreadX) + (spreadY * spreadY))
+                if spreadLength > 0 and spreadLength > maxRadius then
+                    local scale = maxRadius / spreadLength
+                    spreadX = spreadX * scale
+                    spreadY = spreadY * scale
+                end
+
+                pin.pixelX = spreadX
+                pin.pixelY = spreadY
+            end
+        end
+    end
+end
+
+function Navigation._ShouldShowLiveGroupHudLabel(screenX, screenY, labelAnchors)
+    local rootFrame = rawget(_G, "UIParent")
+    local halfWidth = rootFrame and rootFrame.GetWidth and ((rootFrame:GetWidth() or 0) * 0.5) or 0
+    local halfHeight = rootFrame and rootFrame.GetHeight and ((rootFrame:GetHeight() or 0) * 0.5) or 0
+
+    if halfWidth > 0 and math_abs(screenX or 0) > (halfWidth - state.liveGroupConfig.labelEdgeMargin) then
+        return false
+    end
+
+    if halfHeight > 0 and math_abs(screenY or 0) > (halfHeight - state.liveGroupConfig.labelEdgeMargin) then
+        return false
+    end
+
+    for index = 1, #labelAnchors do
+        local anchor = labelAnchors[index]
+        if math_abs((anchor.x or 0) - (screenX or 0)) < state.liveGroupConfig.labelHorizontalSpacing
+            and math_abs((anchor.y or 0) - (screenY or 0)) < state.liveGroupConfig.labelVerticalSpacing then
+            return false
+        end
+    end
+
+    table.insert(labelAnchors, {
+        x = screenX or 0,
+        y = screenY or 0,
+    })
+
+    return true
 end
 
 local function ResetTravelMetrics()
@@ -1667,6 +1889,7 @@ local function EnsureRetailNavigationApiShims()
     local getSuperTrackedQuestName = type(_G.GetSuperTrackedQuestName) == "function" and _G.GetSuperTrackedQuestName or nil
     local getNavigationFrame = ResolveNavigationNativeFn("GetNavigationFrame", "C_Navigation_GetFrame")
     local getNavigationFrameState = ResolveNavigationNativeFn("GetNavigationFrameState", "C_Navigation_GetFrameState")
+    local getNavigationProjectionForMapPoint = ResolveNavigationNativeFn("GetNavigationProjectionForMapPoint", "C_Navigation_GetProjectionForMapPoint")
     local setNavigationPlayerState = ResolveNavigationNativeFn("SetNavigationPlayerState", "C_Navigation_SetPlayerState")
     local getNavigationTargetState = ResolveNavigationNativeFn("GetNavigationTargetState", "C_Navigation_GetTargetState")
     local getNavigationDistance = ResolveNavigationNativeFn("GetNavigationDistance", "C_Navigation_GetDistance")
@@ -1674,14 +1897,17 @@ local function EnsureRetailNavigationApiShims()
     local hasNavigationValidScreenPosition = ResolveNavigationNativeFn("HasNavigationValidScreenPosition", "C_Navigation_HasValidScreenPosition")
     local wasNavigationFrameClampedToScreen = ResolveNavigationNativeFn("WasNavigationFrameClampedToScreen", "C_Navigation_WasClampedToScreen")
     local getNavigationProjectionDebugStats = ResolveNavigationNativeFn("GetNavigationProjectionDebugStats", "C_Navigation_GetProjectionDebugStats")
+    local resolveEntityPositionByGUID = type(_G.ResolveEntityPositionByGUID) == "function" and _G.ResolveEntityPositionByGUID or type(_G.C_Ping_ResolveEntityPositionByGUID) == "function" and _G.C_Ping_ResolveEntityPositionByGUID or ResolveNamespacedFn("C_Ping_ResolveEntityPositionByGUID")
 
     -- Cache resolved native function handles so projection updates can call the
     -- exact export even when only shimmed namespaces are present globally.
     state.nativeNavigationGetFrameState = getNavigationFrameState
+    state.nativeNavigationGetProjectionForMapPoint = getNavigationProjectionForMapPoint
     state.nativeNavigationSetPlayerState = setNavigationPlayerState
     state.nativeNavigationHasValidScreenPosition = hasNavigationValidScreenPosition
     state.nativeNavigationWasClampedToScreen = wasNavigationFrameClampedToScreen
     state.nativeNavigationGetProjectionDebugStats = getNavigationProjectionDebugStats
+    state.nativeResolveEntityPositionByGUID = resolveEntityPositionByGUID
     state.nativeSetSuperTrackedQuestID = setSuperTrackedQuestId
     state.nativeSetSuperTrackedQuestName = setSuperTrackedQuestName
     state.nativeSetSuperTrackedQuestWaypointForMap = setSuperTrackedWaypoint
@@ -1704,6 +1930,46 @@ local function EnsureRetailNavigationApiShims()
         end
 
         return screenX, screenY, navState, clamped
+    end
+
+    local function CallNativeNavigationProjectionForMapPoint(mapIdOrPoint, x, y)
+        if not getNavigationProjectionForMapPoint then
+            return nil, nil, nil, nil, nil, nil
+        end
+
+        local point = NormalizeUiMapPointArgs(mapIdOrPoint, x, y)
+        if not point then
+            return nil, nil, nil, nil, nil, nil
+        end
+
+        local ok,
+            screenX,
+            screenY,
+            navState,
+            clamped,
+            usedWorldProjection,
+            distanceYards = pcall(
+                getNavigationProjectionForMapPoint,
+                point.uiMapID,
+                point.x,
+                point.y
+            )
+        if not ok then
+            return nil, nil, nil, nil, nil, nil
+        end
+
+        screenX = tonumber(screenX)
+        screenY = tonumber(screenY)
+        navState = tonumber(navState)
+        distanceYards = tonumber(distanceYards)
+        if type(clamped) ~= "boolean" then
+            clamped = nil
+        end
+        if type(usedWorldProjection) ~= "boolean" then
+            usedWorldProjection = nil
+        end
+
+        return screenX, screenY, navState, clamped, usedWorldProjection, distanceYards
     end
 
     if type(superTrackApi.SetSuperTrackedQuestID) ~= "function" then
@@ -2412,6 +2678,75 @@ local function EnsureRetailNavigationApiShims()
         end
     end
 
+    if type(navigationApi.GetProjectionForMapPoint) ~= "function" then
+        navigationApi.GetProjectionForMapPoint = function(mapIdOrPoint, x, y)
+            local point = NormalizeUiMapPointArgs(mapIdOrPoint, x, y)
+            if not point then
+                return nil, nil, NAV_STATE_INVALID, false, false, nil
+            end
+
+            local screenX,
+                screenY,
+                navState,
+                clamped,
+                usedWorldProjection,
+                distanceYards = CallNativeNavigationProjectionForMapPoint(point.uiMapID, point.x, point.y)
+
+            if screenX ~= nil and screenY ~= nil then
+                return screenX,
+                    screenY,
+                    navState or NAV_STATE_DISABLED,
+                    clamped == true,
+                    usedWorldProjection == true,
+                    distanceYards
+            end
+
+            local playerX, playerY, playerMapId = GetPlayerMapPositionSafe()
+            if not playerX or not playerY or playerMapId ~= point.uiMapID then
+                return nil, nil, NAV_STATE_INVALID, false, false, nil
+            end
+
+            local distanceYardsFallback, dxYards, dyYards = ComputeDistanceYards(point.uiMapID, playerX, playerY, point.x, point.y)
+            if not distanceYardsFallback then
+                return nil, nil, NAV_STATE_INVALID, false, false, nil
+            end
+
+            local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+            local _, relative = ComputeRelativeHeading(
+                facing,
+                playerX,
+                playerY,
+                point.x,
+                point.y,
+                dxYards,
+                dyYards
+            )
+
+            local settings = addon.settings and addon.settings.navigation or {}
+            local projectionScale = settings.distanceScreenScale or 0.45
+            if projectionScale < 0.05 then
+                projectionScale = 0.05
+            end
+
+            local rawRadius = distanceYardsFallback * projectionScale
+            if rawRadius < 12 then
+                rawRadius = 12
+            end
+
+            local rawX = math_sin(relative) * rawRadius
+            local rawY = math_cos(relative) * rawRadius
+            local ellipseMajorAxis, ellipseMinorAxis = GetBlizzlikeEllipseRadii(settings)
+            local projectedX, projectedY, clampedToEllipse = ClampPointToEllipse(rawX, rawY, ellipseMajorAxis, ellipseMinorAxis)
+
+            return projectedX,
+                projectedY,
+                clampedToEllipse and NAV_STATE_OCCLUDED or NAV_STATE_IN_RANGE,
+                clampedToEllipse,
+                false,
+                distanceYardsFallback
+        end
+    end
+
     if type(navigationApi.GetFrame) ~= "function" then
         navigationApi.GetFrame = function()
             if getNavigationFrame then
@@ -2688,6 +3023,7 @@ local function EnsureRetailNavigationApiShims()
         { "C_Navigation_GetDistanceSquared", "GetDistanceSquared" },
         { "C_Navigation_GetFrame", "GetFrame" },
         { "C_Navigation_GetFrameState", "GetFrameState" },
+        { "C_Navigation_GetProjectionForMapPoint", "GetProjectionForMapPoint" },
         { "C_Navigation_GetTargetState", "GetTargetState" },
         { "C_Navigation_HasValidScreenPosition", "HasValidScreenPosition" },
         { "C_Navigation_WasClampedToScreen", "WasClampedToScreen" },
@@ -3085,6 +3421,21 @@ local function GetCachedQuestPoiBoundaryPoints(questId, mapId, anchorX, anchorY)
         end
 
         if bestGroup and #bestGroup.points >= 3 then
+            local centerX = 0
+            local centerY = 0
+
+            for i = 1, #bestGroup.points do
+                centerX = centerX + bestGroup.points[i].x
+                centerY = centerY + bestGroup.points[i].y
+            end
+
+            centerX = centerX / #bestGroup.points
+            centerY = centerY / #bestGroup.points
+
+            table.sort(bestGroup.points, function(a, b)
+                return Atan2(a.y - centerY, a.x - centerX) < Atan2(b.y - centerY, b.x - centerX)
+            end)
+
             return bestGroup.points
         end
     end
@@ -3636,12 +3987,96 @@ local function IsPlayerInsideQuestPoiArea(playerX, playerY, centerX, centerY, ra
     return distanceYards and distanceYards <= radiusYards or false
 end
 
-local function ResolveQuestPoiAreaData(questLogIndex, questId, mapId, fallbackX, fallbackY)
-    local boundaryPoints = GetCachedQuestPoiBoundaryPoints(questId, mapId, fallbackX, fallbackY)
+local function GetContainingQuestPoiBoundaryPoints(questId, mapId, playerX, playerY)
+    questId = tonumber(questId)
+    if not questId or questId <= 0 or not playerX or not playerY then
+        return nil
+    end
+
+    local bucket = state.questPoiCache and state.questPoiCache[questId]
+    if not bucket or not bucket.boundaryPoints or #bucket.boundaryPoints < 3 then
+        return nil
+    end
+
+    local currentMapId = mapId
+    if not currentMapId and type(GetCurrentMapAreaID) == "function" then
+        currentMapId = GetCurrentMapAreaID()
+    end
+
+    local grouped = {}
+    for i = 1, #bucket.boundaryPoints do
+        local point = bucket.boundaryPoints[i]
+        if point and point.x and point.y and (not currentMapId or not point.mapId or point.mapId == currentMapId) then
+            local groupKey = point.groupKey or "__default"
+            local group = grouped[groupKey]
+            if not group then
+                group = {}
+                grouped[groupKey] = group
+            end
+
+            table.insert(group, {
+                x = point.x,
+                y = point.y,
+            })
+        end
+    end
+
+    for _, group in pairs(grouped) do
+        if #group >= 3 then
+            local centerX = 0
+            local centerY = 0
+
+            for i = 1, #group do
+                centerX = centerX + group[i].x
+                centerY = centerY + group[i].y
+            end
+
+            centerX = centerX / #group
+            centerY = centerY / #group
+
+            table.sort(group, function(a, b)
+                return Atan2(a.y - centerY, a.x - centerX) < Atan2(b.y - centerY, b.x - centerX)
+            end)
+
+            if IsPointInsidePolygon(playerX, playerY, group) then
+                return group
+            end
+        end
+    end
+
+    return nil
+end
+
+local function ResolveQuestPoiAreaData(questLogIndex, questId, mapId, fallbackX, fallbackY, playerX, playerY)
+    local boundaryPoints = GetContainingQuestPoiBoundaryPoints(questId, mapId, playerX, playerY)
+    if not boundaryPoints then
+        boundaryPoints = GetCachedQuestPoiBoundaryPoints(questId, mapId, fallbackX, fallbackY)
+    end
+
     if boundaryPoints and #boundaryPoints >= 3 then
-        local radiusFromPolygon = EstimateQuestPoiBoundaryRadiusFromPolygon(mapId, fallbackX, fallbackY, boundaryPoints)
+        local areaCenterX = fallbackX
+        local areaCenterY = fallbackY
+        local pointCount = 0
+        local sumX = 0
+        local sumY = 0
+
+        for i = 1, #boundaryPoints do
+            local point = boundaryPoints[i]
+            if point and point.x and point.y then
+                sumX = sumX + point.x
+                sumY = sumY + point.y
+                pointCount = pointCount + 1
+            end
+        end
+
+        if pointCount >= 3 then
+            areaCenterX = sumX / pointCount
+            areaCenterY = sumY / pointCount
+        end
+
+        local radiusFromPolygon = EstimateQuestPoiBoundaryRadiusFromPolygon(mapId, areaCenterX, areaCenterY, boundaryPoints)
         if radiusFromPolygon and radiusFromPolygon > 0 then
-            return fallbackX, fallbackY, radiusFromPolygon, boundaryPoints
+            return areaCenterX, areaCenterY, radiusFromPolygon, boundaryPoints
         end
     end
 
@@ -3744,7 +4179,9 @@ local function ResolveQuestTargetNavigationPoint(playerX, playerY, mapId, target
         target.questId,
         mapId,
         target.x,
-        target.y
+        target.y,
+        playerX,
+        playerY
     )
     if not radiusYards or radiusYards <= 0 then
         return target.x, target.y, nil, boundaryPoints, false, areaCenterX or target.x, areaCenterY or target.y
@@ -3900,11 +4337,67 @@ local function AcquireMinimapPin(index)
     return frame
 end
 
+local function AcquireGroupMinimapPin(index)
+    local existing = state.groupMinimapPins[index]
+    if existing then
+        return existing
+    end
+
+    local container = EnsureMinimapPinContainer()
+    if not container then
+        return nil
+    end
+
+    local frame = CreateFrame("Frame", nil, container)
+    frame:SetSize(16, 16)
+    frame:EnableMouse(false)
+    frame:SetFrameLevel(container:GetFrameLevel() + 8)
+
+    frame.Glow = frame:CreateTexture(nil, "BACKGROUND")
+    frame.Glow:SetTexture("Interface\\Minimap\\UI-Minimap-Ping")
+    frame.Glow:SetBlendMode("ADD")
+    frame.Glow:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.Glow:SetSize(20, 20)
+
+    frame.Icon = frame:CreateTexture(nil, "ARTWORK")
+    frame.Icon:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    if not TrySetTrackedIconAtlas(frame.Icon) then
+        frame.Icon:SetTexture(TEXTURE_ATLAS)
+        frame.Icon:SetTexCoord(unpack(ICON_TEXCOORD))
+    end
+
+    frame.Highlight = frame:CreateTexture(nil, "OVERLAY")
+    frame.Highlight:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
+    frame.Highlight:SetBlendMode("ADD")
+    frame.Highlight:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.Highlight:SetSize(22, 22)
+
+    frame.Arrow = frame:CreateTexture(nil, "OVERLAY")
+    if not TrySetTrackedArrowAtlas(frame.Arrow) then
+        frame.Arrow:SetTexture(TEXTURE_ATLAS)
+        frame.Arrow:SetTexCoord(unpack(ARROW_TEXCOORD))
+    end
+    frame.minimapArrowBaseWidth = ARROW_WIDTH * 0.62
+    frame.minimapArrowBaseHeight = ARROW_HEIGHT * 0.62
+    frame.Arrow:SetSize(frame.minimapArrowBaseWidth, frame.minimapArrowBaseHeight)
+    frame.Arrow:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.Arrow:Hide()
+
+    state.groupMinimapPins[index] = frame
+    return frame
+end
+
 local function ClearMinimapQuestPins()
     state.lastMinimapPinSig = nil
     state.lastMinimapPinCount = 0
     for i = 1, #state.minimapPins do
         state.minimapPins[i]:Hide()
+    end
+end
+
+local function ClearLiveGroupMinimapPins()
+    for index = 1, #state.groupMinimapPins do
+        state.groupMinimapPins[index]:Hide()
     end
 end
 
@@ -3944,7 +4437,15 @@ local function AddQuestPinCandidate(pins, seenQuestIds, playerX, playerY, mapId,
 
     seenQuestIds[info.questId] = true
 
-    local areaCenterX, areaCenterY, radiusYards, boundaryPoints = ResolveQuestPoiAreaData(questLogIndex, questId, mapId, qx, qy)
+    local areaCenterX, areaCenterY, radiusYards, boundaryPoints = ResolveQuestPoiAreaData(
+        questLogIndex,
+        questId,
+        mapId,
+        qx,
+        qy,
+        playerX,
+        playerY
+    )
     local boundaryX, boundaryY, _ = CalculateNearestBoundaryPoint(
         playerX,
         playerY,
@@ -4022,7 +4523,15 @@ local function BuildMinimapQuestPins(playerX, playerY, mapId, target)
 
             local areaCenterX, areaCenterY, radiusYards, boundaryPoints = target.x, target.y, 0, nil
             if questLogIndex then
-                areaCenterX, areaCenterY, radiusYards, boundaryPoints = ResolveQuestPoiAreaData(questLogIndex, target.questId, mapId, target.x, target.y)
+                areaCenterX, areaCenterY, radiusYards, boundaryPoints = ResolveQuestPoiAreaData(
+                    questLogIndex,
+                    target.questId,
+                    mapId,
+                    target.x,
+                    target.y,
+                    playerX,
+                    playerY
+                )
             end
             local boundaryX, boundaryY, _ = CalculateNearestBoundaryPoint(
                 playerX,
@@ -4452,6 +4961,321 @@ local function UpdateMinimapQuestPins(playerX, playerY, mapId, target)
     state.lastMinimapPinSig = table.concat(signatureParts, "|")
 end
 
+local function ApplyLiveGroupMinimapPinStyle(pinFrame, pin, now, settings)
+    if not pinFrame or not pin then
+        return
+    end
+
+    local arrivalDistance = settings.arrivalDistanceYards or 8
+    local arrived = pin.distanceYards and pin.distanceYards <= arrivalDistance
+    local colorR, colorG, colorB = 0.36, 0.90, 1.0
+    local glowAlpha = pin.isClamped and 0.14 or 0.20
+    if pin.isTracked then
+        colorR, colorG, colorB = 1.0, 0.82, 0.24
+        glowAlpha = glowAlpha + 0.06
+    end
+    if arrived then
+        colorR, colorG, colorB = 0.22, 1.0, 0.40
+        glowAlpha = glowAlpha + (0.05 * math_abs(math_sin((now or 0) * 7.0)))
+    end
+
+    local iconScale = state.liveGroupConfig.minimapScale * (pin.isTracked and 1.08 or 1.0)
+    local iconWidth = ICON_WIDTH * iconScale
+    local iconHeight = ICON_HEIGHT * iconScale
+
+    pinFrame.Icon:SetSize(iconWidth, iconHeight)
+    pinFrame.Icon:SetVertexColor(colorR, colorG, colorB)
+    pinFrame.Icon:Show()
+
+    if pinFrame.Glow then
+        pinFrame.Glow:SetSize(iconWidth * 1.6, iconHeight * 1.35)
+        pinFrame.Glow:SetVertexColor(colorR, colorG, colorB, glowAlpha)
+        pinFrame.Glow:Show()
+    end
+
+    if pinFrame.Highlight then
+        pinFrame.Highlight:SetSize(iconWidth * 1.85, iconHeight * 1.55)
+        pinFrame.Highlight:SetVertexColor(colorR, colorG, colorB, pin.isTracked and 0.22 or 0.12)
+        pinFrame.Highlight:Show()
+    end
+
+    if pinFrame.Arrow then
+        if pin.isClamped then
+            local arrowWidth = pinFrame.minimapArrowBaseWidth or (ARROW_WIDTH * 0.62)
+            local arrowHeight = pinFrame.minimapArrowBaseHeight or (ARROW_HEIGHT * 0.62)
+            local length = math_sqrt(((pin.pixelX or 0) * (pin.pixelX or 0)) + ((pin.pixelY or 0) * (pin.pixelY or 0)))
+
+            pinFrame.Arrow:SetSize(arrowWidth, arrowHeight)
+            pinFrame.Arrow:SetVertexColor(colorR, colorG, colorB, 0.95)
+
+            if length > 0 then
+                local toArrowX = (pin.pixelX or 0) / length
+                local toArrowY = (pin.pixelY or 0) / length
+                local angle = Atan2(toArrowX, toArrowY)
+
+                if pinFrame.Arrow.SetRotation then
+                    pinFrame.Arrow:SetRotation(-angle)
+                end
+
+                local arrowOffset = math_max(iconWidth, iconHeight) * 0.42
+                pinFrame.Arrow:ClearAllPoints()
+                pinFrame.Arrow:SetPoint("CENTER", pinFrame, "CENTER", toArrowX * arrowOffset, toArrowY * arrowOffset)
+            else
+                pinFrame.Arrow:ClearAllPoints()
+                pinFrame.Arrow:SetPoint("CENTER", pinFrame, "CENTER", 0, 0)
+            end
+
+            pinFrame.Arrow:Show()
+        else
+            pinFrame.Arrow:Hide()
+        end
+    end
+end
+
+Navigation._UpdateLiveGroupMinimapPins = function(playerX, playerY, mapId, settings, groupTargets, now)
+    local container = EnsureMinimapPinContainer()
+    if not Navigation._ShouldShowLiveGroupMinimapPins(settings)
+        or not container
+        or not Minimap
+        or type(groupTargets) ~= "table"
+        or #groupTargets == 0 then
+        ClearLiveGroupMinimapPins()
+        return
+    end
+
+    local radiusPx = (math_min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5) - MINIMAP_PIN_EDGE_PADDING
+    if radiusPx <= 0 then
+        ClearLiveGroupMinimapPins()
+        return
+    end
+
+    local diameterYards = GetMinimapDiameterYards()
+    local rotateMinimap = IsMinimapRotating()
+    local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+    local visiblePins = {}
+
+    for index = 1, #groupTargets do
+        local target = groupTargets[index]
+        if target and target.mapId == mapId and target.x and target.y then
+            local distanceYards, dxYards, dyYards = ComputeDistanceYards(mapId, playerX, playerY, target.x, target.y)
+            if distanceYards then
+                local direction, relative = ComputeRelativeHeading(
+                    facing,
+                    playerX,
+                    playerY,
+                    target.x,
+                    target.y,
+                    dxYards,
+                    dyYards
+                )
+                local heading = rotateMinimap and relative or direction
+                local projectedRadius = 0
+                local unclampedProjectedRadius = 0
+
+                if diameterYards and diameterYards > 0 then
+                    unclampedProjectedRadius = (distanceYards / (diameterYards * 0.5)) * radiusPx
+                    projectedRadius = unclampedProjectedRadius
+                end
+
+                local isClamped = projectedRadius > radiusPx
+                if projectedRadius > radiusPx then
+                    projectedRadius = radiusPx
+                end
+
+                table.insert(visiblePins, {
+                    unitToken = target.unitToken,
+                    guid = target.guid,
+                    title = target.title,
+                    distanceYards = distanceYards,
+                    isTracked = target.isTracked == true,
+                    isClamped = isClamped,
+                    pixelX = math_sin(heading or 0) * projectedRadius,
+                    pixelY = math_cos(heading or 0) * projectedRadius,
+                })
+            end
+        end
+    end
+
+    if #visiblePins == 0 then
+        ClearLiveGroupMinimapPins()
+        return
+    end
+
+    Navigation._DistributeLiveGroupMinimapPins(visiblePins, radiusPx)
+
+    local renderCount = math_min(#visiblePins, Navigation._GetLiveGroupMinimapPinLimit(settings))
+    for index = 1, renderCount do
+        local pin = visiblePins[index]
+        local pinFrame = AcquireGroupMinimapPin(index)
+        if pinFrame then
+            pinFrame:ClearAllPoints()
+            pinFrame:SetPoint("CENTER", container, "CENTER", pin.pixelX or 0, pin.pixelY or 0)
+            ApplyLiveGroupMinimapPinStyle(pinFrame, pin, now, settings)
+            pinFrame:Show()
+        end
+    end
+
+    for index = renderCount + 1, #state.groupMinimapPins do
+        state.groupMinimapPins[index]:Hide()
+    end
+end
+
+Navigation._UpdateLiveGroupHudMarkers = function(settings, groupTargets, now)
+    if not Navigation._ShouldShowLiveGroupHudMarkers(settings) or type(groupTargets) ~= "table" or #groupTargets == 0 then
+        state.ClearLiveGroupHudMarkers()
+        return
+    end
+
+    local labelAnchors = {}
+    local renderCount = math_min(#groupTargets, Navigation._GetLiveGroupHudMarkerLimit(settings))
+    for index = 1, renderCount do
+        local target = groupTargets[index]
+        local frame = state.AcquireLiveGroupMarker(index)
+        local navState = tonumber(target and target.navState) or NAV_STATE_INVALID
+        local screenX = tonumber(target and target.screenX)
+        local screenY = tonumber(target and target.screenY)
+
+        if not frame or screenX == nil or screenY == nil or navState == NAV_STATE_INVALID or navState == NAV_STATE_DISABLED then
+            if frame then
+                frame:Hide()
+            end
+        else
+            local arrived = target.distanceYards and target.distanceYards <= (settings.arrivalDistanceYards or 8)
+            local clamped = target.clamped == true or navState == NAV_STATE_OCCLUDED
+            local colorR, colorG, colorB = 0.36, 0.90, 1.0
+            if target.isTracked then
+                colorR, colorG, colorB = 1.0, 0.82, 0.24
+            end
+            if arrived then
+                colorR, colorG, colorB = 0.22, 1.0, 0.40
+            end
+
+            local alpha = clamped and 0.92 or 0.76
+            if target.isTracked then
+                alpha = alpha + 0.12
+            end
+            if arrived then
+                alpha = 0.90
+            end
+
+            frame:SetScale((settings.markerScale or 1.0) * state.liveGroupConfig.hudScale)
+            frame:SetAlpha(alpha)
+            frame:ClearAllPoints()
+            frame:SetPoint("CENTER", UIParent, "CENTER", screenX, screenY)
+
+            frame.Icon:SetSize(frame.iconBaseWidth or (ICON_WIDTH * state.liveGroupConfig.hudScale), frame.iconBaseHeight or (ICON_HEIGHT * state.liveGroupConfig.hudScale))
+            frame.Icon:SetVertexColor(colorR, colorG, colorB)
+            frame.Glow:SetSize((frame.iconBaseWidth or ICON_WIDTH) * 1.8, (frame.iconBaseHeight or ICON_HEIGHT) * 1.55)
+            frame.Glow:SetVertexColor(colorR, colorG, colorB, clamped and 0.10 or 0.18)
+
+            if clamped then
+                local length = math_sqrt((screenX * screenX) + (screenY * screenY))
+                frame.Arrow:SetSize(frame.arrowBaseWidth or (ARROW_WIDTH * state.liveGroupConfig.hudScale), frame.arrowBaseHeight or (ARROW_HEIGHT * state.liveGroupConfig.hudScale))
+                frame.Arrow:SetVertexColor(colorR, colorG, colorB, 0.95)
+
+                if length > 0 then
+                    local toArrowX = screenX / length
+                    local toArrowY = screenY / length
+                    local angle = Atan2(toArrowX, toArrowY)
+
+                    if frame.Arrow.SetRotation then
+                        frame.Arrow:SetRotation(-angle)
+                    end
+
+                    local arrowOffset = math_max(frame.Icon:GetWidth() or 0, frame.Icon:GetHeight() or 0) * 0.45
+                    frame.Arrow:ClearAllPoints()
+                    frame.Arrow:SetPoint("CENTER", frame, "CENTER", toArrowX * arrowOffset, toArrowY * arrowOffset)
+                else
+                    frame.Arrow:ClearAllPoints()
+                    frame.Arrow:SetPoint("CENTER", frame, "CENTER", 0, frame.arrowAnchorY or (ARROW_ANCHOR_Y * 0.65))
+                end
+
+                frame.Arrow:Show()
+                frame.Label:SetText("")
+                frame.Label:Hide()
+            else
+                frame.Arrow:ClearAllPoints()
+                frame.Arrow:SetPoint("CENTER", frame, "CENTER", 0, frame.arrowAnchorY or (ARROW_ANCHOR_Y * 0.65))
+                frame.Arrow:Hide()
+
+                local label = Navigation._TruncateGroupMarkerLabel(target.title or target.unitToken or "Group")
+                local labelY = screenY - ((frame.Icon:GetHeight() or 0) * 0.5) - 10
+                if settings.showWaypointText ~= false and label and Navigation._ShouldShowLiveGroupHudLabel(screenX, labelY, labelAnchors) then
+                    frame.Label:SetText(label)
+                    frame.Label:SetTextColor(colorR, colorG, colorB)
+                    frame.Label:Show()
+                else
+                    frame.Label:SetText("")
+                    frame.Label:Hide()
+                end
+            end
+
+            frame:Show()
+        end
+    end
+
+    for index = renderCount + 1, #state.groupFrames do
+        state.groupFrames[index]:Hide()
+    end
+end
+
+Navigation._ClearLiveGroupMarkers = function()
+    state.ClearLiveGroupHudMarkers()
+    ClearLiveGroupMinimapPins()
+end
+
+Navigation._UpdateLiveGroupMarkers = function(playerX, playerY, mapId, settings)
+    if not settings.enabled or not IsLiveGroupMarkerLayerActive() then
+        Navigation._ClearLiveGroupMarkers()
+        return nil
+    end
+
+    local showHud = Navigation._ShouldShowLiveGroupHudMarkers(settings)
+    local showMinimap = Navigation._ShouldShowLiveGroupMinimapPins(settings)
+    if not showHud and not showMinimap then
+        Navigation._ClearLiveGroupMarkers()
+        return nil
+    end
+
+    local allTargets = Navigation:GetLiveGroupTargets()
+    if type(allTargets) ~= "table" or #allTargets == 0 then
+        Navigation._ClearLiveGroupMarkers()
+        return nil
+    end
+
+    local trackedTarget = nil
+    local secondaryTargets = {}
+    for index = 1, #allTargets do
+        local target = allTargets[index]
+        target.isTracked = IsTrackedLiveGroupTarget(target)
+        if target.isTracked then
+            trackedTarget = target
+        else
+            table.insert(secondaryTargets, target)
+        end
+    end
+
+    if #secondaryTargets == 0 then
+        Navigation._ClearLiveGroupMarkers()
+        return trackedTarget
+    end
+
+    local now = GetTime() or 0
+    if showHud then
+        Navigation._UpdateLiveGroupHudMarkers(settings, Navigation._TrimLiveGroupTargets(secondaryTargets, Navigation._GetLiveGroupHudMarkerLimit(settings)), now)
+    else
+        state.ClearLiveGroupHudMarkers()
+    end
+
+    if showMinimap then
+        Navigation._UpdateLiveGroupMinimapPins(playerX, playerY, mapId, settings, Navigation._TrimLiveGroupTargets(secondaryTargets, Navigation._GetLiveGroupMinimapPinLimit(settings)), now)
+    else
+        ClearLiveGroupMinimapPins()
+    end
+
+    return trackedTarget
+end
+
 local function SyncFollowStateFromShim()
     ResolveSuperTrackShim()
 
@@ -4803,6 +5627,184 @@ local function GetManualTarget(mapId)
     }
 end
 
+local function IterateLiveGroupUnitTokens(callback)
+    if type(callback) ~= "function" then
+        return nil
+    end
+
+    local raidCount = (type(GetNumRaidMembers) == "function") and tonumber(GetNumRaidMembers()) or 0
+    if raidCount and raidCount > 0 then
+        for index = 1, raidCount do
+            local result = callback("raid" .. tostring(index))
+            if result ~= nil and result ~= false then
+                return result
+            end
+        end
+        return nil
+    end
+
+    local partyCount = (type(GetNumPartyMembers) == "function") and tonumber(GetNumPartyMembers()) or 0
+    if not partyCount or partyCount <= 0 then
+        return nil
+    end
+
+    for index = 1, partyCount do
+        local result = callback("party" .. tostring(index))
+        if result ~= nil and result ~= false then
+            return result
+        end
+    end
+
+    return nil
+end
+
+IsGroupNavigationTrackableType = function(trackableType)
+    local normalized = NormalizeSuperTrackedContentType(trackableType)
+    return normalized == "groupmember"
+        or normalized == "partymember"
+        or normalized == "raidmember"
+        or normalized == "unit"
+end
+
+local function GetGroupUnitDisplayName(unitToken)
+    if type(UnitName) == "function" then
+        local name = UnitName(unitToken)
+        if type(name) == "string" and name ~= "" then
+            return name
+        end
+    end
+
+    return unitToken
+end
+
+local function ResolveLiveGroupUnitTarget(unitToken, preferredMapId)
+    if type(unitToken) ~= "string" or unitToken == "" then
+        return nil
+    end
+
+    if type(UnitExists) == "function" and not UnitExists(unitToken) then
+        return nil
+    end
+
+    if type(UnitIsUnit) == "function" and UnitIsUnit(unitToken, "player") then
+        return nil
+    end
+
+    if type(UnitIsDeadOrGhost) == "function" and UnitIsDeadOrGhost(unitToken) then
+        return nil
+    end
+
+    local activeMapId = tonumber(preferredMapId)
+    if not activeMapId then
+        local _, _, playerMapId = GetPlayerMapPositionSafe()
+        activeMapId = tonumber(playerMapId)
+    end
+
+    local guid = type(UnitGUID) == "function" and UnitGUID(unitToken) or nil
+    local title = GetGroupUnitDisplayName(unitToken)
+
+    if type(GetPlayerMapPosition) == "function" and activeMapId then
+        local ok, unitX, unitY = pcall(GetPlayerMapPosition, unitToken)
+        if ok then
+            unitX = NormalizeCoord(unitX)
+            unitY = NormalizeCoord(unitY)
+            if unitX and unitY and not (unitX == 0 and unitY == 0) then
+                return {
+                    unitToken = unitToken,
+                    guid = guid,
+                    title = title,
+                    mapId = activeMapId,
+                    x = unitX,
+                    y = unitY,
+                }
+            end
+        end
+    end
+
+    local resolveEntityPositionByGUID = state.nativeResolveEntityPositionByGUID
+    if type(resolveEntityPositionByGUID) == "function"
+        and type(guid) == "string"
+        and guid ~= "" then
+        local ok, _, targetType, mapId, mapX, mapY = pcall(resolveEntityPositionByGUID, guid)
+        mapId = tonumber(mapId)
+        mapX = NormalizeCoord(mapX)
+        mapY = NormalizeCoord(mapY)
+        if ok
+            and targetType == "unit"
+            and mapId
+            and mapX
+            and mapY
+            and (not activeMapId or activeMapId == mapId) then
+            return {
+                unitToken = unitToken,
+                guid = guid,
+                title = title,
+                mapId = mapId,
+                x = mapX,
+                y = mapY,
+            }
+        end
+    end
+
+    return nil
+end
+
+local function FindLiveGroupUnitTokenByContentId(contentId)
+    if type(contentId) ~= "string" or contentId == "" then
+        return nil
+    end
+
+    if type(UnitExists) == "function" and UnitExists(contentId) then
+        if type(UnitIsUnit) == "function" and UnitIsUnit(contentId, "player") then
+            return nil
+        end
+        return contentId
+    end
+
+    local normalizedContentId = string.lower(contentId)
+    return IterateLiveGroupUnitTokens(function(unitToken)
+        if type(UnitExists) == "function" and not UnitExists(unitToken) then
+            return nil
+        end
+
+        local unitGuid = type(UnitGUID) == "function" and UnitGUID(unitToken) or nil
+        if type(unitGuid) == "string" and unitGuid ~= "" and string.lower(unitGuid) == normalizedContentId then
+            return unitToken
+        end
+
+        return nil
+    end)
+end
+
+local function ResolveSuperTrackedGroupMemberTarget(mapId)
+    if not IsGroupNavigationTrackableType(state.retailSuperTrackedTrackableType) then
+        return nil
+    end
+
+    local contentId = state.retailSuperTrackedContentID
+    local unitToken = FindLiveGroupUnitTokenByContentId(contentId)
+    if not unitToken then
+        return nil
+    end
+
+    local unitTarget = ResolveLiveGroupUnitTarget(unitToken, mapId)
+    if not unitTarget then
+        return nil
+    end
+
+    return {
+        source = "supertracked-group-member",
+        title = unitTarget.title or "Group Member",
+        mapId = unitTarget.mapId,
+        x = unitTarget.x,
+        y = unitTarget.y,
+        unitToken = unitTarget.unitToken,
+        guid = unitTarget.guid,
+        contentType = state.retailSuperTrackedTrackableType,
+        contentId = contentId,
+    }
+end
+
 local function BuildSuperTrackedWaypointTarget(mapId, source, title)
     if not mapId then
         return nil
@@ -4872,6 +5874,11 @@ local function GetSuperTrackedNonQuestTarget(mapId)
     end
 
     if highType == enumContent or (enumContent == nil and NormalizeSuperTrackedContentType(state.retailSuperTrackedContentType) == "content") then
+        local groupTarget = ResolveSuperTrackedGroupMemberTarget(mapId)
+        if groupTarget then
+            return groupTarget
+        end
+
         return BuildSuperTrackedWaypointTarget(mapId, "supertracked-content", "Content")
     end
 
@@ -4984,6 +5991,111 @@ local function SelectTarget(playerX, playerY, mapId)
     return questLogTarget
 end
 
+local function EnsureLiveGroupMarkerContainer()
+    if state.groupMarkerContainer then
+        return state.groupMarkerContainer
+    end
+
+    local container = CreateFrame("Frame", nil, UIParent)
+    container:SetAllPoints(UIParent)
+    container:SetFrameStrata("BACKGROUND")
+    container:SetFrameLevel(4)
+    container:EnableMouse(false)
+    state.groupMarkerContainer = container
+    return container
+end
+
+state.AcquireLiveGroupMarker = function(index)
+    local existing = state.groupFrames[index]
+    if existing then
+        return existing
+    end
+
+    local container = EnsureLiveGroupMarkerContainer()
+    if not container then
+        return nil
+    end
+
+    local frame = CreateFrame("Frame", nil, container)
+    frame:SetSize(88, 88)
+    frame:EnableMouse(false)
+    frame:SetFrameLevel(container:GetFrameLevel() + index)
+
+    frame.Icon = frame:CreateTexture(nil, "ARTWORK")
+    if TrySetTrackedIconAtlas(frame.Icon) then
+        frame.iconBaseWidth = frame.Icon:GetWidth()
+        frame.iconBaseHeight = frame.Icon:GetHeight()
+        if not frame.iconBaseWidth or frame.iconBaseWidth <= 0 or not frame.iconBaseHeight or frame.iconBaseHeight <= 0 then
+            frame.iconBaseWidth = ICON_WIDTH
+            frame.iconBaseHeight = ICON_HEIGHT
+        end
+    else
+        frame.Icon:SetTexture(TEXTURE_ATLAS)
+        frame.Icon:SetTexCoord(unpack(ICON_TEXCOORD))
+        frame.iconBaseWidth = ICON_WIDTH
+        frame.iconBaseHeight = ICON_HEIGHT
+    end
+    frame.iconBaseWidth = frame.iconBaseWidth * state.liveGroupConfig.hudScale
+    frame.iconBaseHeight = frame.iconBaseHeight * state.liveGroupConfig.hudScale
+    frame.Icon:SetSize(frame.iconBaseWidth, frame.iconBaseHeight)
+    frame.Icon:SetPoint("CENTER", frame, "CENTER", 0, 0)
+
+    frame.Glow = frame:CreateTexture(nil, "BACKGROUND")
+    frame.Glow:SetTexture("Interface\\Minimap\\UI-Minimap-Ping")
+    frame.Glow:SetBlendMode("ADD")
+    frame.Glow:SetPoint("CENTER", frame.Icon, "CENTER", 0, 0)
+    frame.Glow:SetSize(frame.iconBaseWidth * 1.8, frame.iconBaseHeight * 1.55)
+
+    frame.Arrow = frame:CreateTexture(nil, "OVERLAY")
+    if TrySetTrackedArrowAtlas(frame.Arrow) then
+        frame.arrowBaseWidth = frame.Arrow:GetWidth()
+        frame.arrowBaseHeight = frame.Arrow:GetHeight()
+        if not frame.arrowBaseWidth or frame.arrowBaseWidth <= 0 or not frame.arrowBaseHeight or frame.arrowBaseHeight <= 0 then
+            frame.arrowBaseWidth = ARROW_WIDTH
+            frame.arrowBaseHeight = ARROW_HEIGHT
+        end
+    else
+        frame.Arrow:SetTexture(TEXTURE_ATLAS)
+        frame.Arrow:SetTexCoord(unpack(ARROW_TEXCOORD))
+        frame.arrowBaseWidth = ARROW_WIDTH
+        frame.arrowBaseHeight = ARROW_HEIGHT
+    end
+    frame.arrowBaseWidth = frame.arrowBaseWidth * state.liveGroupConfig.hudScale
+    frame.arrowBaseHeight = frame.arrowBaseHeight * state.liveGroupConfig.hudScale
+    frame.arrowAnchorY = ARROW_ANCHOR_Y * 0.65
+    frame.Arrow:SetSize(frame.arrowBaseWidth, frame.arrowBaseHeight)
+    frame.Arrow:SetPoint("CENTER", frame, "CENTER", 0, frame.arrowAnchorY)
+    frame.Arrow:Hide()
+
+    frame.Label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frame.Label:SetPoint("TOP", frame.Icon, "BOTTOM", 0, -2)
+    frame.Label:SetWidth(120)
+    frame.Label:SetJustifyH("CENTER")
+    frame.Label:SetShadowColor(0, 0, 0, 0.95)
+    frame.Label:SetShadowOffset(1, -1)
+    frame.Label:SetText("")
+    frame.Label:Hide()
+
+    state.groupFrames[index] = frame
+    return frame
+end
+
+state.ClearLiveGroupHudMarkers = function()
+    for index = 1, #state.groupFrames do
+        local frame = state.groupFrames[index]
+        frame:Hide()
+        if frame.Label then
+            frame.Label:SetText("")
+            frame.Label:Hide()
+        end
+        if frame.Arrow then
+            frame.Arrow:ClearAllPoints()
+            frame.Arrow:SetPoint("CENTER", frame, "CENTER", 0, frame.arrowAnchorY or (ARROW_ANCHOR_Y * 0.65))
+            frame.Arrow:Hide()
+        end
+    end
+end
+
 local function EnsureFrame()
     if state.frame then
         return state.frame
@@ -5074,7 +6186,7 @@ local function EnsureFrame()
     return frame
 end
 
-local function ClearMarker()
+local function ClearPrimaryMarker()
     local frame = EnsureFrame()
     frame:Hide()
     frame:SetAlpha(1)
@@ -5116,6 +6228,11 @@ local function ClearMarker()
     state.lastAlpha = nil
     ResetTravelMetrics()
     ClearMinimapQuestPins()
+end
+
+local function ClearMarker()
+    ClearPrimaryMarker()
+    ClearLiveGroupMarkers()
 end
 
 local function MaybeClearManualOnArrival(target, distanceYards)
@@ -5205,9 +6322,16 @@ local function UpdateMarker()
         return
     end
 
+    local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+    if type(state.nativeNavigationSetPlayerState) == "function" then
+        pcall(state.nativeNavigationSetPlayerState, tonumber(mapId), tonumber(playerX), tonumber(playerY), tonumber(facing or 0))
+    end
+
+    Navigation._UpdateLiveGroupMarkers(playerX, playerY, mapId, settings)
+
     local target = SelectTarget(playerX, playerY, mapId)
     if not target then
-        ClearMarker()
+        ClearPrimaryMarker()
         return
     end
 
@@ -5298,7 +6422,6 @@ local function UpdateMarker()
 
     MaybeClearManualOnArrival(target, distanceYards)
 
-    local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
     local direction, relative = ComputeRelativeHeading(
         facing,
         playerX,
@@ -5318,10 +6441,6 @@ local function UpdateMarker()
     state.lastFacing = facing
     state.lastDirection = direction
     state.lastRelative = relative
-
-    if type(state.nativeNavigationSetPlayerState) == "function" then
-        pcall(state.nativeNavigationSetPlayerState, tonumber(mapId), tonumber(playerX), tonumber(playerY), tonumber(facing or 0))
-    end
 
     local nativeTargetState = nil
     local navigationApi = rawget(_G, "C_Navigation")
@@ -5494,7 +6613,7 @@ local function UpdateMarker()
     if not usingNativeProjection then
         if type(projectionDxYards) ~= "number" or type(projectionDyYards) ~= "number" then
             DebugNavigationProjection("reject: missing map delta for target " .. tostring(targetKey), true)
-            ClearMarker()
+            ClearPrimaryMarker()
             return
         end
 
@@ -5836,7 +6955,7 @@ local function GetWorldMapObjectiveQuestLogIndex()
     return nil
 end
 
-local function RefreshQuestTrackingVisuals()
+Navigation._RefreshQuestTrackingVisuals = function()
     MaybeReloadMapForNavigation(false)
 
     if type(QuestLog_Update) == "function" then
@@ -5869,17 +6988,17 @@ local function RefreshQuestTrackingVisuals()
     end
 end
 
-local function RequestQuestTrackingVisualRefresh()
+Navigation._RequestQuestTrackingVisualRefresh = function()
     local now = GetTime() or 0
     if (now - (state.lastQuestVisualRefreshAt or 0)) < 0.03 then
         return
     end
 
     state.lastQuestVisualRefreshAt = now
-    RefreshQuestTrackingVisuals()
+    Navigation._RefreshQuestTrackingVisuals()
 end
 
-local function RequestQuestTrackingVisualRefreshSettled(delay)
+Navigation._RequestQuestTrackingVisualRefreshSettled = function(delay)
     if state.questVisualRefreshScheduled then
         return
     end
@@ -5893,18 +7012,18 @@ local function RequestQuestTrackingVisualRefreshSettled(delay)
         state.questVisualRefreshScheduled = true
         addon:DelayedCall(waitTime, function()
             state.questVisualRefreshScheduled = false
-            RequestQuestTrackingVisualRefresh()
+            Navigation._RequestQuestTrackingVisualRefresh()
         end)
         return
     end
 
-    RequestQuestTrackingVisualRefresh()
+    Navigation._RequestQuestTrackingVisualRefresh()
 end
 
-local function RequestQuestTrackingVisualRefreshSequence(delay, includeSettled)
-    RequestQuestTrackingVisualRefresh()
+Navigation._RequestQuestTrackingVisualRefreshSequence = function(delay, includeSettled)
+    Navigation._RequestQuestTrackingVisualRefresh()
     if includeSettled then
-        RequestQuestTrackingVisualRefreshSettled(delay)
+        Navigation._RequestQuestTrackingVisualRefreshSettled(delay)
     end
 end
 
@@ -5976,7 +7095,7 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
         end
     end
 
-    RequestQuestTrackingVisualRefreshSequence(0.05, performedForcedMapSync or not hasPoiOnCurrentMap)
+    Navigation._RequestQuestTrackingVisualRefreshSequence(0.05, performedForcedMapSync or not hasPoiOnCurrentMap)
 
     state.dirty = true
     if not silent then
@@ -6030,7 +7149,145 @@ function Navigation:GetSuperTrackedQuestID()
     return nil
 end
 
-local function TrySetFollowFromQuestLogSelection(bypassSetting)
+function Navigation:SetFollowGroupMember(unitTokenOrGuid, silent)
+    EnsureRetailNavigationApiShims()
+
+    local contentId = type(unitTokenOrGuid) == "string" and unitTokenOrGuid:gsub("^%s+", ""):gsub("%s+$", "") or nil
+    if not contentId or contentId == "" then
+        return false, "Expected a party token, raid token, or unit GUID."
+    end
+
+    local unitToken = FindLiveGroupUnitTokenByContentId(contentId)
+    if not unitToken then
+        return false, "Group member not found."
+    end
+
+    local unitTarget = ResolveLiveGroupUnitTarget(unitToken)
+    if not unitTarget then
+        return false, "Group member position is unavailable on the current map."
+    end
+
+    local superTrackApi = rawget(_G, "C_SuperTrack")
+    if type(superTrackApi) ~= "table" or type(superTrackApi.SetSuperTrackedContent) ~= "function" then
+        return false, "Supertrack API is unavailable."
+    end
+
+    local trackedContentId = (type(unitTarget.guid) == "string" and unitTarget.guid ~= "") and unitTarget.guid or unitToken
+    local ok, result = pcall(superTrackApi.SetSuperTrackedContent, "groupMember", trackedContentId)
+    if not ok or result == false then
+        return false, "Failed to set the tracked group member."
+    end
+
+    state.lastNativeNavigationSyncKey = nil
+
+    if not silent and addon.Notify then
+        addon:Notify("Following " .. tostring(unitTarget.title or unitToken), "success", { title = "Navigation" })
+    end
+
+    return true, unitToken, unitTarget.title or GetGroupUnitDisplayName(unitToken)
+end
+
+function Navigation:ClearFollowGroupMember()
+    EnsureRetailNavigationApiShims()
+
+    if not IsGroupNavigationTrackableType(state.retailSuperTrackedTrackableType) then
+        return true
+    end
+
+    local superTrackApi = rawget(_G, "C_SuperTrack")
+    if type(superTrackApi) ~= "table" or type(superTrackApi.ClearSuperTrackedContent) ~= "function" then
+        return false, "Supertrack API is unavailable."
+    end
+
+    local ok, result = pcall(superTrackApi.ClearSuperTrackedContent)
+    if not ok or result == false then
+        return false, "Failed to clear the tracked group member."
+    end
+
+    state.lastNativeNavigationSyncKey = nil
+    return true
+end
+
+function Navigation:GetLiveGroupTargets(maxCount)
+    EnsureRetailNavigationApiShims()
+
+    local targets = {}
+    local playerX, playerY, playerMapId = GetPlayerMapPositionSafe()
+    playerMapId = tonumber(playerMapId)
+    if not playerX or not playerY or not playerMapId then
+        return targets
+    end
+
+    local navigationApi = rawget(_G, "C_Navigation")
+    IterateLiveGroupUnitTokens(function(unitToken)
+        local unitTarget = ResolveLiveGroupUnitTarget(unitToken, playerMapId)
+        if not unitTarget then
+            return nil
+        end
+
+        local screenX, screenY, navState, clamped, usedWorldProjection, distanceYards = nil, nil, nil, nil, nil, nil
+        if type(navigationApi) == "table" and type(navigationApi.GetProjectionForMapPoint) == "function" then
+            screenX,
+                screenY,
+                navState,
+                clamped,
+                usedWorldProjection,
+                distanceYards = navigationApi.GetProjectionForMapPoint(
+                    unitTarget.mapId,
+                    unitTarget.x,
+                    unitTarget.y
+                )
+        end
+
+        if distanceYards == nil then
+            distanceYards = ComputeDistanceYards(
+                unitTarget.mapId,
+                playerX,
+                playerY,
+                unitTarget.x,
+                unitTarget.y
+            )
+        end
+
+        table.insert(targets, {
+            unitToken = unitTarget.unitToken,
+            guid = unitTarget.guid,
+            title = unitTarget.title,
+            mapId = unitTarget.mapId,
+            x = unitTarget.x,
+            y = unitTarget.y,
+            screenX = tonumber(screenX),
+            screenY = tonumber(screenY),
+            navState = tonumber(navState) or NAV_STATE_INVALID,
+            clamped = clamped == true,
+            usedWorldProjection = usedWorldProjection == true,
+            distanceYards = tonumber(distanceYards),
+        })
+
+        return nil
+    end)
+
+    table.sort(targets, function(left, right)
+        local leftDistance = tonumber(left and left.distanceYards) or math.huge
+        local rightDistance = tonumber(right and right.distanceYards) or math.huge
+        if leftDistance ~= rightDistance then
+            return leftDistance < rightDistance
+        end
+
+        return tostring(left and left.unitToken or "") < tostring(right and right.unitToken or "")
+    end)
+
+    maxCount = tonumber(maxCount)
+    if maxCount and maxCount > 0 and #targets > maxCount then
+        for index = #targets, maxCount + 1, -1 do
+            table.remove(targets, index)
+        end
+    end
+
+    return targets
+end
+
+Navigation._TrySetFollowFromQuestLogSelection = function(bypassSetting)
     if not bypassSetting and not addon.settings.navigation.followQuestFromTracker then
         return false
     end
@@ -6047,7 +7304,7 @@ local function TrySetFollowFromQuestLogSelection(bypassSetting)
     return false
 end
 
-local function TrySetFollowFromWorldMapObjectiveSelection(bypassSetting)
+Navigation._TrySetFollowFromWorldMapObjectiveSelection = function(bypassSetting)
     if not bypassSetting and not addon.settings.navigation.followQuestFromTracker then
         return false
     end
@@ -6061,17 +7318,17 @@ local function TrySetFollowFromWorldMapObjectiveSelection(bypassSetting)
     return false
 end
 
-local function ScheduleFollowFromQuestLogSelection()
-    TrySetFollowFromQuestLogSelection()
+Navigation._ScheduleFollowFromQuestLogSelection = function()
+    Navigation._TrySetFollowFromQuestLogSelection()
 
     if addon and addon.DelayedCall then
-        addon:DelayedCall(0, TrySetFollowFromQuestLogSelection)
-        addon:DelayedCall(0.05, TrySetFollowFromQuestLogSelection)
-        addon:DelayedCall(0.15, TrySetFollowFromQuestLogSelection)
+        addon:DelayedCall(0, Navigation._TrySetFollowFromQuestLogSelection)
+        addon:DelayedCall(0.05, Navigation._TrySetFollowFromQuestLogSelection)
+        addon:DelayedCall(0.15, Navigation._TrySetFollowFromQuestLogSelection)
     end
 end
 
-local function PrimeQuestPoiButtonCacheFromVisibleButtons(force)
+Navigation._PrimeQuestPoiButtonCacheFromVisibleButtons = function(force)
     if not _G then
         return
     end
@@ -6119,7 +7376,7 @@ local function PrimeQuestPoiButtonCacheFromVisibleButtons(force)
     end
 end
 
-local function ResolveWatchIndexFromClickFrame(frame)
+Navigation._ResolveWatchIndexFromClickFrame = function(frame)
     if not frame then
         return nil
     end
@@ -6150,14 +7407,14 @@ local function ResolveWatchIndexFromClickFrame(frame)
     if frame.GetParent then
         local parent = frame:GetParent()
         if parent and parent ~= frame then
-            return ResolveWatchIndexFromClickFrame(parent)
+            return Navigation._ResolveWatchIndexFromClickFrame(parent)
         end
     end
 
     return nil
 end
 
-local function TagFrameTreeWithQuestData(root, questLogIndex, questId, watchIndex, depth)
+Navigation._TagFrameTreeWithQuestData = function(root, questLogIndex, questId, watchIndex, depth)
     if not root or depth > 4 then
         return
     end
@@ -6181,11 +7438,11 @@ local function TagFrameTreeWithQuestData(root, questLogIndex, questId, watchInde
 
     local children = { root:GetChildren() }
     for i = 1, #children do
-        TagFrameTreeWithQuestData(children[i], questLogIndex, questId, watchIndex, depth + 1)
+        Navigation._TagFrameTreeWithQuestData(children[i], questLogIndex, questId, watchIndex, depth + 1)
     end
 end
 
-local function AnnotateWatchFrameQuestIndices()
+Navigation._AnnotateWatchFrameQuestIndices = function()
     if not WatchFrame then
         return
     end
@@ -6200,13 +7457,13 @@ local function AnnotateWatchFrameQuestIndices()
             local questLogIndex = ResolveQuestLogIndexFromWatchIndex(watchIndex)
             if questLogIndex and questLogIndex > 0 then
                 local questId = GetQuestIdFromLogIndex(questLogIndex)
-                TagFrameTreeWithQuestData(watchRoot, questLogIndex, questId, watchIndex, 0)
+                Navigation._TagFrameTreeWithQuestData(watchRoot, questLogIndex, questId, watchIndex, 0)
             end
         end
     end
 end
 
-local function ResolveQuestLogIndexFromClickFrame(frame)
+Navigation._ResolveQuestLogIndexFromClickFrame = function(frame)
     if not frame then
         return nil
     end
@@ -6231,7 +7488,7 @@ local function ResolveQuestLogIndexFromClickFrame(frame)
     elseif frame.questIndex and frame.questIndex > 0 then
         questLogIndex = frame.questIndex
     else
-        local watchIndex = ResolveWatchIndexFromClickFrame(frame)
+        local watchIndex = Navigation._ResolveWatchIndexFromClickFrame(frame)
         if watchIndex and watchIndex > 0 then
             questLogIndex = ResolveQuestLogIndexFromWatchIndex(watchIndex)
         end
@@ -6262,14 +7519,14 @@ local function ResolveQuestLogIndexFromClickFrame(frame)
     if (not questLogIndex or questLogIndex <= 0) and frame.GetParent then
         local parent = frame:GetParent()
         if parent and parent ~= frame then
-            questLogIndex = ResolveQuestLogIndexFromClickFrame(parent)
+            questLogIndex = Navigation._ResolveQuestLogIndexFromClickFrame(parent)
         end
     end
 
     return questLogIndex
 end
 
-local function WithQuestLogSelection(questLogIndex, callback)
+Navigation._WithQuestLogSelection = function(questLogIndex, callback)
     if type(callback) ~= "function" then
         return nil
     end
@@ -6303,7 +7560,7 @@ local function WithQuestLogSelection(questLogIndex, callback)
     return nil
 end
 
-local function CanShareQuestByLogIndex(questLogIndex)
+Navigation._CanShareQuestByLogIndex = function(questLogIndex)
     if type(IsInGroup) ~= "function" or not IsInGroup() then
         return false
     end
@@ -6314,7 +7571,7 @@ local function CanShareQuestByLogIndex(questLogIndex)
         return true
     end
 
-    local pushable = WithQuestLogSelection(questLogIndex, function()
+    local pushable = Navigation._WithQuestLogSelection(questLogIndex, function()
         local okWithArg, valueWithArg = pcall(GetQuestLogPushable, questLogIndex)
         if okWithArg and valueWithArg ~= nil then
             return valueWithArg
@@ -6335,12 +7592,12 @@ local function CanShareQuestByLogIndex(questLogIndex)
     return tonumber(pushable) == 1
 end
 
-local function ShareQuestByLogIndex(questLogIndex)
-    if not CanShareQuestByLogIndex(questLogIndex) then
+Navigation._ShareQuestByLogIndex = function(questLogIndex)
+    if not Navigation._CanShareQuestByLogIndex(questLogIndex) then
         return false
     end
 
-    local shared = WithQuestLogSelection(questLogIndex, function()
+    local shared = Navigation._WithQuestLogSelection(questLogIndex, function()
         local ok = pcall(QuestLogPushQuest)
         return ok == true
     end)
@@ -6348,7 +7605,7 @@ local function ShareQuestByLogIndex(questLogIndex)
     return shared == true
 end
 
-local function CanAbandonQuestByLogIndex(questLogIndex)
+Navigation._CanAbandonQuestByLogIndex = function(questLogIndex)
     if type(SetAbandonQuest) ~= "function" or type(AbandonQuest) ~= "function" then
         return false
     end
@@ -6361,12 +7618,12 @@ local function CanAbandonQuestByLogIndex(questLogIndex)
     return not isHeader
 end
 
-local function AbandonQuestByLogIndex(questLogIndex)
-    if not CanAbandonQuestByLogIndex(questLogIndex) then
+Navigation._AbandonQuestByLogIndex = function(questLogIndex)
+    if not Navigation._CanAbandonQuestByLogIndex(questLogIndex) then
         return false
     end
 
-    local abandoned = WithQuestLogSelection(questLogIndex, function()
+    local abandoned = Navigation._WithQuestLogSelection(questLogIndex, function()
         local okSet = pcall(SetAbandonQuest)
         if not okSet then
             return false
@@ -6379,7 +7636,7 @@ local function AbandonQuestByLogIndex(questLogIndex)
     return abandoned == true
 end
 
-local function EnsureQuestContextMenuFrame()
+Navigation._EnsureQuestContextMenuFrame = function()
     if state.questContextMenuFrame then
         return state.questContextMenuFrame
     end
@@ -6388,7 +7645,7 @@ local function EnsureQuestContextMenuFrame()
     return state.questContextMenuFrame
 end
 
-local function ShowQuestContextMenu(questLogIndex, frame)
+Navigation._ShowQuestContextMenu = function(questLogIndex, frame)
     if type(EasyMenu) ~= "function" then
         return false
     end
@@ -6402,8 +7659,8 @@ local function ShowQuestContextMenu(questLogIndex, frame)
     local trackedQuestId = ShimGetSuperTrackedQuestID() or state.followedQuestId
     local isSuperTrackedQuest = trackedQuestId and questId and trackedQuestId == questId
     local canStopTracking = type(RemoveQuestWatch) == "function"
-    local canShare = CanShareQuestByLogIndex(questLogIndex)
-    local canAbandon = CanAbandonQuestByLogIndex(questLogIndex)
+    local canShare = Navigation._CanShareQuestByLogIndex(questLogIndex)
+    local canAbandon = Navigation._CanAbandonQuestByLogIndex(questLogIndex)
 
     local menu = {
         { text = title or ("Quest " .. tostring(questId or questLogIndex)), isTitle = true, notCheckable = true },
@@ -6416,7 +7673,7 @@ local function ShowQuestContextMenu(questLogIndex, frame)
                 else
                     Navigation:SetFollowQuestByLogIndex(questLogIndex, true)
                 end
-                RequestQuestTrackingVisualRefresh()
+                Navigation._RequestQuestTrackingVisualRefresh()
                 state.dirty = true
             end,
         },
@@ -6448,7 +7705,7 @@ local function ShowQuestContextMenu(questLogIndex, frame)
                 if canStopTracking then
                     pcall(RemoveQuestWatch, questLogIndex)
                     -- Keep follow/supertrack state independent from watch-list toggles.
-                    RequestQuestTrackingVisualRefresh()
+                    Navigation._RequestQuestTrackingVisualRefresh()
                     state.dirty = true
                 end
             end,
@@ -6458,7 +7715,7 @@ local function ShowQuestContextMenu(questLogIndex, frame)
             notCheckable = true,
             disabled = not canShare,
             func = function()
-                ShareQuestByLogIndex(questLogIndex)
+                Navigation._ShareQuestByLogIndex(questLogIndex)
             end,
         },
         {
@@ -6466,29 +7723,29 @@ local function ShowQuestContextMenu(questLogIndex, frame)
             notCheckable = true,
             disabled = not canAbandon,
             func = function()
-                if AbandonQuestByLogIndex(questLogIndex) then
+                if Navigation._AbandonQuestByLogIndex(questLogIndex) then
                     if questId and state.followedQuestId == questId then
                         Navigation:ClearFollowQuest(true)
                     end
-                    RequestQuestTrackingVisualRefresh()
+                    Navigation._RequestQuestTrackingVisualRefresh()
                     state.dirty = true
                 end
             end,
         },
     }
 
-    local menuFrame = EnsureQuestContextMenuFrame()
+    local menuFrame = Navigation._EnsureQuestContextMenuFrame()
     EasyMenu(menu, menuFrame, frame or "cursor", 0, 0, "MENU")
 
     return true
 end
 
-local function TryShowQuestContextMenu(frame, button)
+Navigation._TryShowQuestContextMenu = function(frame, button)
     if button ~= "RightButton" then
         return false
     end
 
-    local questLogIndex = ResolveQuestLogIndexFromClickFrame(frame)
+    local questLogIndex = Navigation._ResolveQuestLogIndexFromClickFrame(frame)
     if not questLogIndex or questLogIndex <= 0 then
         return false
     end
@@ -6498,7 +7755,7 @@ local function TryShowQuestContextMenu(frame, button)
         return true
     end
 
-    if not ShowQuestContextMenu(questLogIndex, frame) then
+    if not Navigation._ShowQuestContextMenu(questLogIndex, frame) then
         return false
     end
 
@@ -6507,7 +7764,7 @@ local function TryShowQuestContextMenu(frame, button)
     return true
 end
 
-local function ShouldSuppressDuplicateFollowClick(questLogIndex)
+Navigation._ShouldSuppressDuplicateFollowClick = function(questLogIndex)
     local now = GetTime() or 0
 
     if state.lastFollowClickQuestLogIndex == questLogIndex and (now - (state.lastFollowClickAt or 0)) < 0.1 then
@@ -6519,36 +7776,36 @@ local function ShouldSuppressDuplicateFollowClick(questLogIndex)
     return false
 end
 
-local function TrySetFollowFromTrackerClickFrame(frame, silent, bypassSetting)
+Navigation._TrySetFollowFromTrackerClickFrame = function(frame, silent, bypassSetting)
     if not bypassSetting and not addon.settings.navigation.followQuestFromTracker then
         return false
     end
 
-    local questLogIndex = ResolveQuestLogIndexFromClickFrame(frame)
+    local questLogIndex = Navigation._ResolveQuestLogIndexFromClickFrame(frame)
     if (not questLogIndex or questLogIndex <= 0) and WatchFrame then
-        AnnotateWatchFrameQuestIndices()
-        questLogIndex = ResolveQuestLogIndexFromClickFrame(frame)
+        Navigation._AnnotateWatchFrameQuestIndices()
+        questLogIndex = Navigation._ResolveQuestLogIndexFromClickFrame(frame)
     end
     if (not questLogIndex or questLogIndex <= 0) then
-        PrimeQuestPoiButtonCacheFromVisibleButtons()
-        questLogIndex = ResolveQuestLogIndexFromClickFrame(frame)
+        Navigation._PrimeQuestPoiButtonCacheFromVisibleButtons()
+        questLogIndex = Navigation._ResolveQuestLogIndexFromClickFrame(frame)
     end
     if questLogIndex and questLogIndex > 0 then
-        if ShouldSuppressDuplicateFollowClick(questLogIndex) then
+        if Navigation._ShouldSuppressDuplicateFollowClick(questLogIndex) then
             return true
         end
         Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
         return true
     end
 
-    if TrySetFollowFromWorldMapObjectiveSelection(bypassSetting) then
+    if Navigation._TrySetFollowFromWorldMapObjectiveSelection(bypassSetting) then
         return true
     end
 
     return false
 end
 
-local function EnsureWatchFrameHooks()
+Navigation._EnsureWatchFrameHooks = function()
     if not addon.settings.navigation.followQuestFromTracker then
         return
     end
@@ -6564,11 +7821,11 @@ local function EnsureWatchFrameHooks()
         local hooked = false
 
         local okClick = pcall(frame.HookScript, frame, "OnClick", function(self, button)
-            if TryShowQuestContextMenu(self, button) then
+            if Navigation._TryShowQuestContextMenu(self, button) then
                 return
             end
-            if not TrySetFollowFromTrackerClickFrame(self, false) then
-                ScheduleFollowFromQuestLogSelection()
+            if not Navigation._TrySetFollowFromTrackerClickFrame(self, false) then
+                Navigation._ScheduleFollowFromQuestLogSelection()
             end
         end)
         if okClick then
@@ -6576,11 +7833,11 @@ local function EnsureWatchFrameHooks()
         end
 
         local okMouse = pcall(frame.HookScript, frame, "OnMouseUp", function(self, button)
-            if TryShowQuestContextMenu(self, button) then
+            if Navigation._TryShowQuestContextMenu(self, button) then
                 return
             end
-            if not TrySetFollowFromTrackerClickFrame(self, false) then
-                ScheduleFollowFromQuestLogSelection()
+            if not Navigation._TrySetFollowFromTrackerClickFrame(self, false) then
+                Navigation._ScheduleFollowFromQuestLogSelection()
             end
         end)
         if okMouse then
@@ -6610,11 +7867,11 @@ local function EnsureWatchFrameHooks()
     end
 
     HookFrameTree(WatchFrame, 0)
-    AnnotateWatchFrameQuestIndices()
+    Navigation._AnnotateWatchFrameQuestIndices()
     state.watchFrameHooksInstalled = true
 end
 
-local function EnsureSelectionHooks()
+Navigation._EnsureSelectionHooks = function()
     if state.selectionHooksInstalled then
         return
     end
@@ -6626,11 +7883,11 @@ local function EnsureSelectionHooks()
 
     if type(WatchFrameItem_OnClick) == "function" then
         hooksecurefunc("WatchFrameItem_OnClick", function(frame, button)
-            if TryShowQuestContextMenu(frame, button) then
+            if Navigation._TryShowQuestContextMenu(frame, button) then
                 return
             end
-            if not TrySetFollowFromTrackerClickFrame(frame, false) then
-                ScheduleFollowFromQuestLogSelection()
+            if not Navigation._TrySetFollowFromTrackerClickFrame(frame, false) then
+                Navigation._ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -6638,11 +7895,11 @@ local function EnsureSelectionHooks()
 
     if type(QuestPOIButton_OnClick) == "function" then
         hooksecurefunc("QuestPOIButton_OnClick", function(frame, button)
-            if TryShowQuestContextMenu(frame, button) then
+            if Navigation._TryShowQuestContextMenu(frame, button) then
                 return
             end
-            if not TrySetFollowFromTrackerClickFrame(frame, false) then
-                ScheduleFollowFromQuestLogSelection()
+            if not Navigation._TrySetFollowFromTrackerClickFrame(frame, false) then
+                Navigation._ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -6650,11 +7907,11 @@ local function EnsureSelectionHooks()
 
     if type(WorldMapQuestPOI_OnClick) == "function" then
         hooksecurefunc("WorldMapQuestPOI_OnClick", function(frame, button)
-            if TryShowQuestContextMenu(frame, button) then
+            if Navigation._TryShowQuestContextMenu(frame, button) then
                 return
             end
-            if not TrySetFollowFromTrackerClickFrame(frame, false) then
-                ScheduleFollowFromQuestLogSelection()
+            if not Navigation._TrySetFollowFromTrackerClickFrame(frame, false) then
+                Navigation._ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -6662,11 +7919,11 @@ local function EnsureSelectionHooks()
 
     if type(QuestLogTitleButton_OnClick) == "function" then
         hooksecurefunc("QuestLogTitleButton_OnClick", function(frame, button)
-            if TryShowQuestContextMenu(frame, button) then
+            if Navigation._TryShowQuestContextMenu(frame, button) then
                 return
             end
-            if not TrySetFollowFromTrackerClickFrame(frame, false) then
-                ScheduleFollowFromQuestLogSelection()
+            if not Navigation._TrySetFollowFromTrackerClickFrame(frame, false) then
+                Navigation._ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -6675,7 +7932,7 @@ local function EnsureSelectionHooks()
     state.selectionHooksInstalled = hookedAny
 end
 
-local function EnsurePoiDisplayHook()
+Navigation._EnsurePoiDisplayHook = function()
     if state.poiDisplayHookInstalled then
         return
     end
@@ -6694,7 +7951,7 @@ local function EnsurePoiDisplayHook()
 
     if type(WorldMapFrame_DisplayQuestPOI) == "function" then
         hooksecurefunc("WorldMapFrame_DisplayQuestPOI", function()
-            PrimeQuestPoiButtonCacheFromVisibleButtons()
+            Navigation._PrimeQuestPoiButtonCacheFromVisibleButtons()
         end)
         hooked = true
     end
@@ -6702,7 +7959,7 @@ local function EnsurePoiDisplayHook()
     state.poiDisplayHookInstalled = hooked
 end
 
-local function EnsureSlashCommand()
+Navigation._EnsureSlashCommand = function()
     if SlashCmdList["DCQOSNAV"] then
         return
     end
@@ -6931,9 +8188,54 @@ local function EnsureSlashCommand()
             return
         end
 
+        if text == "group" then
+            local targets = Navigation:GetLiveGroupTargets(6)
+            if #targets == 0 then
+                addon:Print("Navigation: no live party or raid targets are available on the current map.", true)
+                return
+            end
+
+            local summary = {}
+            for index = 1, #targets do
+                local target = targets[index]
+                table.insert(summary, string.format(
+                    "%s=%s %.1fyd %s clamp=%s",
+                    tostring(target.unitToken or "?"),
+                    tostring(target.title or "Group Member"),
+                    tonumber(target.distanceYards) or -1,
+                    GetNavStateName(target.navState),
+                    tostring(target.clamped == true)
+                ))
+            end
+
+            addon:Print("Navigation group targets: " .. table.concat(summary, " | "), true)
+            return
+        end
+
+        if text == "group clear" then
+            local ok, err = Navigation:ClearFollowGroupMember()
+            if not ok then
+                addon:Print("Navigation: " .. tostring(err), true)
+            else
+                addon:Print("Navigation: cleared tracked group member.", true)
+            end
+            return
+        end
+
+        local groupSpecifier = text:match("^group%s+(.+)$")
+        if groupSpecifier then
+            local ok, unitToken, displayName = Navigation:SetFollowGroupMember(groupSpecifier, true)
+            if not ok then
+                addon:Print("Navigation: " .. tostring(unitToken), true)
+            else
+                addon:Print("Navigation: following " .. tostring(displayName or unitToken) .. ".", true)
+            end
+            return
+        end
+
         local xStr, yStr = text:match("^(%-?[%d%.]+)%s+(%-?[%d%.]+)$")
         if not xStr or not yStr then
-            addon:Print("Usage: /dcnav <x> <y> | /dcnav follow [questLogIndex] | /dcnav status | /dcnav poi [questLogIndex] | /dcnav clear", true)
+            addon:Print("Usage: /dcnav <x> <y> | /dcnav follow [questLogIndex] | /dcnav group [party1|raid1|GUID|clear] | /dcnav status | /dcnav poi [questLogIndex] | /dcnav clear", true)
             return
         end
 
@@ -6960,10 +8262,10 @@ function Navigation.OnInitialize()
     SyncFollowStateFromShim()
 
     EnsureFrame()
-    EnsureSlashCommand()
-    EnsureSelectionHooks()
-    EnsurePoiDisplayHook()
-    EnsureWatchFrameHooks()
+    Navigation._EnsureSlashCommand()
+    Navigation._EnsureSelectionHooks()
+    Navigation._EnsurePoiDisplayHook()
+    Navigation._EnsureWatchFrameHooks()
 
     addon.Navigation = Navigation
 end
@@ -6977,9 +8279,9 @@ function Navigation.OnEnable()
     ResolveSuperTrackShim()
     SyncFollowStateFromShim()
 
-    EnsureSelectionHooks()
-    EnsurePoiDisplayHook()
-    EnsureWatchFrameHooks()
+    Navigation._EnsureSelectionHooks()
+    Navigation._EnsurePoiDisplayHook()
+    Navigation._EnsureWatchFrameHooks()
 
     if addon.EnsureQuestMinimapTrackingEnabled then
         addon:EnsureQuestMinimapTrackingEnabled("Navigation.OnEnable")
@@ -7004,9 +8306,9 @@ function Navigation.OnEnable()
             pcall(state.eventFrame.RegisterEvent, state.eventFrame, "QUEST_POI_UPDATE")
         end
         state.eventFrame:SetScript("OnEvent", function(_, event, ...)
-            EnsureWatchFrameHooks()
-            EnsurePoiDisplayHook()
-            AnnotateWatchFrameQuestIndices()
+            Navigation._EnsureWatchFrameHooks()
+            Navigation._EnsurePoiDisplayHook()
+            Navigation._AnnotateWatchFrameQuestIndices()
             if event == "PLAYER_ENTERING_WORLD"
                 or event == "ZONE_CHANGED"
                 or event == "ZONE_CHANGED_INDOORS"
@@ -7083,7 +8385,7 @@ function Navigation.OnEnable()
                 if addon.EnsureQuestMinimapTrackingEnabled then
                     addon:EnsureQuestMinimapTrackingEnabled(event)
                 end
-                RequestQuestTrackingVisualRefreshSequence(0.05, true)
+                Navigation._RequestQuestTrackingVisualRefreshSequence(0.05, true)
             end
 
             state.dirty = true
@@ -7393,6 +8695,65 @@ function Navigation.CreateSettings(parent)
         addon:SetSetting("navigation.autoClearManualOnReach", self:GetChecked())
     end)
     yOffset = yOffset - 34
+
+    local liveGroupHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    liveGroupHeader:SetPoint("TOPLEFT", 16, yOffset)
+    liveGroupHeader:SetText("Live Group Follow")
+    yOffset = yOffset - 24
+
+    local liveGroupHudCb = addon:CreateCheckbox(parent)
+    liveGroupHudCb:SetPoint("TOPLEFT", 16, yOffset)
+    liveGroupHudCb.Text:SetText("Show pooled HUD markers for non-tracked party or raid members")
+    liveGroupHudCb:SetChecked(settings.showLiveGroupHud ~= false)
+    liveGroupHudCb:SetScript("OnClick", function(self)
+        addon:SetSetting("navigation.showLiveGroupHud", self:GetChecked())
+        state.dirty = true
+    end)
+    yOffset = yOffset - 25
+
+    local liveGroupMinimapCb = addon:CreateCheckbox(parent)
+    liveGroupMinimapCb:SetPoint("TOPLEFT", 16, yOffset)
+    liveGroupMinimapCb.Text:SetText("Show pooled minimap markers for non-tracked party or raid members")
+    liveGroupMinimapCb:SetChecked(settings.showLiveGroupMinimap ~= false)
+    liveGroupMinimapCb:SetScript("OnClick", function(self)
+        addon:SetSetting("navigation.showLiveGroupMinimap", self:GetChecked())
+        state.dirty = true
+    end)
+    yOffset = yOffset - 34
+
+    local liveGroupHudLimitSlider = addon:CreateSlider(parent)
+    liveGroupHudLimitSlider:SetPoint("TOPLEFT", 16, yOffset)
+    liveGroupHudLimitSlider:SetWidth(220)
+    liveGroupHudLimitSlider:SetMinMaxValues(1, state.liveGroupConfig.hudSettingMaxCount)
+    liveGroupHudLimitSlider:SetValueStep(1)
+    liveGroupHudLimitSlider:SetValue(Navigation._GetLiveGroupHudMarkerLimit(settings))
+    liveGroupHudLimitSlider.Text:SetText("Live Group HUD Limit: " .. tostring(Navigation._GetLiveGroupHudMarkerLimit(settings)))
+    liveGroupHudLimitSlider.Low:SetText("1")
+    liveGroupHudLimitSlider.High:SetText(tostring(state.liveGroupConfig.hudSettingMaxCount))
+    liveGroupHudLimitSlider:SetScript("OnValueChanged", function(self, value)
+        local rounded = math_floor(value + 0.5)
+        self.Text:SetText("Live Group HUD Limit: " .. tostring(rounded))
+        addon:SetSetting("navigation.liveGroupHudMaxMarkers", rounded)
+        state.dirty = true
+    end)
+    yOffset = yOffset - 54
+
+    local liveGroupMinimapLimitSlider = addon:CreateSlider(parent)
+    liveGroupMinimapLimitSlider:SetPoint("TOPLEFT", 16, yOffset)
+    liveGroupMinimapLimitSlider:SetWidth(220)
+    liveGroupMinimapLimitSlider:SetMinMaxValues(1, state.liveGroupConfig.minimapSettingMaxCount)
+    liveGroupMinimapLimitSlider:SetValueStep(1)
+    liveGroupMinimapLimitSlider:SetValue(Navigation._GetLiveGroupMinimapPinLimit(settings))
+    liveGroupMinimapLimitSlider.Text:SetText("Live Group Minimap Limit: " .. tostring(Navigation._GetLiveGroupMinimapPinLimit(settings)))
+    liveGroupMinimapLimitSlider.Low:SetText("1")
+    liveGroupMinimapLimitSlider.High:SetText(tostring(state.liveGroupConfig.minimapSettingMaxCount))
+    liveGroupMinimapLimitSlider:SetScript("OnValueChanged", function(self, value)
+        local rounded = math_floor(value + 0.5)
+        self.Text:SetText("Live Group Minimap Limit: " .. tostring(rounded))
+        addon:SetSetting("navigation.liveGroupMinimapMaxPins", rounded)
+        state.dirty = true
+    end)
+    yOffset = yOffset - 54
 
     local manualHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     manualHeader:SetPoint("TOPLEFT", 16, yOffset)

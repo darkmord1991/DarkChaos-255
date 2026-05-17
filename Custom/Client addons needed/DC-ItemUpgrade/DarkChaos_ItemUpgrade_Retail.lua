@@ -7,6 +7,15 @@
 -- Global namespace - use existing table from Core.lua, don't overwrite it!
 DarkChaos_ItemUpgrade = DarkChaos_ItemUpgrade or {};
 local DC = DarkChaos_ItemUpgrade;
+local BAG_BACKPACK = DC.BAG_BACKPACK;
+local BAG_BANK = DC.BAG_BANK;
+local BAG_EQUIPPED = DC.BAG_EQUIPPED;
+local EQUIPMENT_SLOTS = DC.EQUIPMENT_SLOTS;
+local IsEquippedBag = DC.IsEquippedBag;
+local GetServerSlotFromClient = DC.GetServerSlotFromClient;
+local GetServerBagFromClient = DC.GetServerBagFromClient;
+local BuildLocationKey = DC.BuildLocationKey;
+local InvalidateCachedItemData = DC.InvalidateCachedItemData;
 
 --[[=====================================================
 	QUALITY COLOR FIX & ITEM ID TOOLTIPS
@@ -295,6 +304,54 @@ function DarkChaos_ItemUpgrade_UpdateTierIndicator(tier)
 	-- Removed as per request
 end
 
+DC.HEIRLOOM_SHIRT_ENTRY = DC.HEIRLOOM_SHIRT_ENTRY or 300365;
+
+function DC.IsHeirloomItem(item)
+	if not item then
+		return false;
+	end
+
+	local trackedItemId = tonumber(item.itemID)
+		or tonumber(item.baseEntry)
+		or tonumber(item.currentEntry);
+	if trackedItemId == DC.HEIRLOOM_SHIRT_ENTRY then
+		return true;
+	end
+
+	if tonumber(item.tier) == 3 then
+		return true;
+	end
+
+	if item.link then
+		local linkedItemId = tonumber(item.link:match("item:(%d+)"));
+		if linkedItemId == DC.HEIRLOOM_SHIRT_ENTRY then
+			return true;
+		end
+	end
+
+	return false;
+end
+
+local lastUpdateCostDebugState = nil;
+local lastUpdateCostDebugCost = nil;
+
+local function DebugUpdateCostState(message)
+	if lastUpdateCostDebugState == message then
+		return;
+	end
+	lastUpdateCostDebugState = message;
+	DC.Debug(message);
+end
+
+local function DebugUpdateCostRequiredValue(totalCost, useEssence)
+	local key = string.format("%s:%s", useEssence and "essence" or "tokens", tostring(totalCost));
+	if lastUpdateCostDebugCost == key then
+		return;
+	end
+	lastUpdateCostDebugCost = key;
+	DC.Debug("UpdateCost: Required value is " .. tostring(totalCost));
+end
+
 function DarkChaos_ItemUpgrade_UpdateCost()
 	local frame = DarkChaos_ItemUpgradeFrame;
 	if not frame then 
@@ -303,7 +360,8 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	end
 	
 	-- Determine which currency to display based on UI mode
-	local isHeirloomMode = (DC.uiMode == "HEIRLOOM");
+	local isHeirloomMode = (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem))
+		or (DC.uiMode == "HEIRLOOM");
 	
 	-- Always update owned currency display (even without an item selected)
 	local playerTokens = DC.playerTokens or 0;
@@ -313,17 +371,11 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	local displayCurrency = isHeirloomMode and playerEssence or playerTokens;
 	local displayCurrencyItemID = isHeirloomMode and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID;
 	
-	DC.Debug("UpdateCost: playerTokens=" .. tostring(playerTokens) .. ", playerEssence=" .. tostring(playerEssence) .. ", mode=" .. tostring(DC.uiMode));
-	
 	if frame.CostFrame then
-		DC.Debug("UpdateCost: CostFrame exists");
 		-- Update Owned currency display
 		if frame.CostFrame.OwnedValue then
-			DC.Debug("UpdateCost: Setting OwnedValue to " .. tostring(displayCurrency));
 			frame.CostFrame.OwnedValue:SetText(tostring(displayCurrency));
 			frame.CostFrame.OwnedValue:Show();
-		else
-			DC.Debug("UpdateCost: OwnedValue is nil!");
 		end
 		if frame.CostFrame.OwnedIcon then
 			frame.CostFrame.OwnedIcon:Show();
@@ -341,26 +393,31 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	
 	-- Early return if no item selected - but owned currency is already updated above
 	if not DC.currentItem then 
-		DC.Debug("UpdateCost: No item selected, early return after setting owned values");
+		DebugUpdateCostState("UpdateCost: No item selected");
 		return 
 	end
 
 	local currentLevel = DC.currentItem.currentUpgrade or 0;
 	local targetLevel = DC.targetUpgradeLevel or currentLevel;
 	local tier = DC.currentItem.tier or 1;
-	
-	DC.Debug("UpdateCost: item selected, currentLevel=" .. tostring(currentLevel) .. ", targetLevel=" .. tostring(targetLevel) .. ", tier=" .. tostring(tier));
 
 	if targetLevel <= currentLevel then 
-		DC.Debug("UpdateCost: target <= current, hiding CostFrame");
+		DebugUpdateCostState(string.format("UpdateCost: currentLevel=%d targetLevel=%d tier=%d cost hidden", currentLevel, targetLevel, tier));
 		if frame.CostFrame then frame.CostFrame:Hide() end
 		return 
 	end
-	DC.Debug("UpdateCost: showing CostFrame");
+	DebugUpdateCostState(string.format(
+		"UpdateCost: currentLevel=%d targetLevel=%d tier=%d tokens=%d essence=%d mode=%s",
+		currentLevel,
+		targetLevel,
+		tier,
+		playerTokens,
+		playerEssence,
+		tostring(DC.uiMode)));
 	if frame.CostFrame then frame.CostFrame:Show() end
 
 	-- Calculate total cost for the upgrade
-	local totals, missingLevel
+	local totals, missingLevel, costPending
 	local totalTokens = 0
 	local totalEssence = 0
 
@@ -378,12 +435,16 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 			totalTokens = 0
 		end
 	else
-		totals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
-		if missingLevel then
+		totals, missingLevel, costPending = DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, targetLevel);
+		if costPending then
+			totalTokens = 0
+			totalEssence = 0
+		elseif missingLevel then
 			return;
+		else
+			totalTokens = (totals and totals.tokens) or 0;
+			totalEssence = (totals and totals.essence) or 0;
 		end
-		totalTokens = (totals and totals.tokens) or 0;
-		totalEssence = (totals and totals.essence) or 0;
 	end
 
 	local playerTokens = DC.playerTokens or 0;
@@ -412,6 +473,39 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 		end
 	end
 
+	if costPending then
+		if frame.CostFrame and frame.CostFrame.RequiredValue then
+			frame.CostFrame.RequiredValue:SetText("...")
+			frame.CostFrame.RequiredValue:SetTextColor(0.85, 0.85, 0.85)
+			frame.CostFrame.RequiredValue:Show()
+		end
+		if frame.CostFrame and frame.CostFrame.RequiredLabel then
+			frame.CostFrame.RequiredLabel:Show()
+		end
+		if frame.CostFrame and frame.CostFrame.RequiredIcon then
+			frame.CostFrame.RequiredIcon:Show()
+			if costCurrencyItemID then
+				local icon = GetItemIcon(costCurrencyItemID)
+				if icon then
+					frame.CostFrame.RequiredIcon:SetTexture(icon)
+				end
+			end
+		end
+		if frame.CostFrame and frame.CostFrame.RequiredEssenceValue then
+			frame.CostFrame.RequiredEssenceValue:Hide();
+			if frame.CostFrame.RequiredEssenceIcon then
+				frame.CostFrame.RequiredEssenceIcon:Hide();
+			end
+		end
+		if frame.CostFrame and frame.CostFrame.OwnedEssenceValue then
+			frame.CostFrame.OwnedEssenceValue:Hide();
+			if frame.CostFrame.OwnedEssenceIcon then
+				frame.CostFrame.OwnedEssenceIcon:Hide();
+			end
+		end
+		return
+	end
+
 	-- Determine cost color based on affordability
 	local costColor;
 	if totalCost <= playerCurrency then
@@ -427,7 +521,7 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 		frame.CostFrame.RequiredValue:SetText(tostring(totalCost));
 		frame.CostFrame.RequiredValue:SetTextColor(costColor.r, costColor.g, costColor.b);
 		frame.CostFrame.RequiredValue:Show();
-		DC.Debug("Set RequiredValue (Cost) to: " .. tostring(totalCost));
+		DebugUpdateCostRequiredValue(totalCost, useEssence);
 	end
 	if frame.CostFrame and frame.CostFrame.RequiredLabel then
 		frame.CostFrame.RequiredLabel:Show();
@@ -517,6 +611,28 @@ function DarkChaos_ItemUpgrade_InitializeCosts()
 end
 
 function DarkChaos_ItemUpgrade_GetCost(tier, level)
+	local numericTier = tonumber(tier);
+	local numericLevel = tonumber(level);
+	if numericTier == 3 and DarkChaos_ItemUpgrade_GetHeirloomCost then
+		local heirloomCost = DarkChaos_ItemUpgrade_GetHeirloomCost(numericLevel);
+		if heirloomCost then
+			return {
+				tokens = 0,
+				essence = heirloomCost.essence or 0,
+			};
+		end
+	end
+
+	if DC.GetCachedCostInfo and numericTier and numericLevel and numericLevel > 0 then
+		local liveCost = DC.GetCachedCostInfo(numericTier, numericLevel - 1, numericLevel);
+		if liveCost then
+			return {
+				tokens = liveCost.tokens or 0,
+				essence = liveCost.essence or 0,
+			};
+		end
+	end
+
 	if not DC.upgradeCosts[tier] or not DC.upgradeCosts[tier][level] then
 		return nil;
 	end
@@ -544,6 +660,48 @@ DarkChaos_ItemUpgrade_ComputeCostTotals = function(tier, currentLevel, targetLev
 	return totals, missingLevel;
 end
 
+local function DarkChaos_ItemUpgrade_CopyCostTotals(tokens, essence)
+	return {
+		tokens = tonumber(tokens) or 0,
+		essence = tonumber(essence) or 0,
+	};
+end
+
+function DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, targetLevel)
+	local totals = { tokens = 0, essence = 0 };
+	if not tier or not targetLevel or not currentLevel or targetLevel <= currentLevel then
+		return totals, nil, false;
+	end
+
+	if tonumber(tier) == 3 or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
+		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentLevel, targetLevel);
+		return DarkChaos_ItemUpgrade_CopyCostTotals(0, (heirloomTotals and heirloomTotals.essence) or 0), nil, false;
+	end
+
+	if DC.useDCProtocol and DC.GetCachedCostInfo then
+		local liveTotals = DC.GetCachedCostInfo(tier, currentLevel, targetLevel);
+		if liveTotals then
+			return DarkChaos_ItemUpgrade_CopyCostTotals(liveTotals.tokens, liveTotals.essence), nil, false;
+		end
+
+		if targetLevel == (currentLevel + 1) and DC.currentItem then
+			local nextTokens = tonumber(DC.currentItem.tokenCost) or 0;
+			local nextEssence = tonumber(DC.currentItem.essenceCost) or 0;
+			if nextTokens > 0 or nextEssence > 0 then
+				return DarkChaos_ItemUpgrade_CopyCostTotals(nextTokens, nextEssence), nil, false;
+			end
+		end
+
+		if DC.RequestCostInfo then
+			DC.RequestCostInfo(tier, currentLevel, targetLevel);
+			return nil, nil, true;
+		end
+	end
+
+	local fallbackTotals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
+	return fallbackTotals, missingLevel, false;
+end
+
 local lastCurrencyRequestTime = 0;
 
 function DarkChaos_ItemUpgrade_RequestCurrencies(force)
@@ -557,15 +715,20 @@ function DarkChaos_ItemUpgrade_RequestCurrencies(force)
 	DC.RequestCurrencySync();
 end
 
-DarkChaos_ItemUpgrade_RequestItemInfo = function()
+DarkChaos_ItemUpgrade_RequestItemInfo = function(options)
+	options = options or {};
 	if not DC.currentItem then return end
 	local bag = DC.currentItem.serverBag or DC.currentItem.bag;
 	local serverSlot = DC.currentItem.serverSlot;
 	if bag == nil or serverSlot == nil then return end -- Ensure bag and serverSlot are defined
 	local locationKey = DC.currentItem.locationKey or BuildLocationKey(bag, serverSlot);
+	local backgroundRefresh = options.background == true;
 	DC.currentItem.locationKey = locationKey;
 	DC.currentItem.serverBag = bag;
 	DC.currentItem.serverSlot = serverSlot;
+	if not backgroundRefresh then
+		DC.currentItem.awaitingServerInfo = true;
+	end
 	local cached = DarkChaos_ItemUpgrade_GetCachedDataForLocation(bag, serverSlot);
 	if cached then
 		DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, cached);
@@ -574,48 +737,19 @@ DarkChaos_ItemUpgrade_RequestItemInfo = function()
 		end
 		DarkChaos_ItemUpgrade_UpdateUI();
 	end
-	DC.Debug(string.format("Refreshing item query for %d:%d", bag or -1, serverSlot or -1));
+	if not backgroundRefresh then
+		DC.Debug(string.format("Refreshing item query for %d:%d", bag or -1, serverSlot or -1));
+	end
 	DarkChaos_ItemUpgrade_QueueQuery(bag, serverSlot, {
 		type = "refresh",
 		locationKey = locationKey,
+		blocksInteraction = not backgroundRefresh,
 	});
+	DC.currentItem.allowBackgroundRefresh = false;
 end
 
 -- Initialize costs on load
 DarkChaos_ItemUpgrade_InitializeCosts();
-
--- Settings defaults
-DC.DEFAULT_SETTINGS = {
-	autoEquip = true,           -- Auto-equip upgraded items if they were equipped
-	debug = false,              -- Enable debug logging
-	showTooltips = true,        -- Show upgrade info in tooltips
-	playSounds = true,          -- Play sound effects
-	showCelebration = true,     -- Show upgrade celebration animation
-	batchQueryDelay = 0.1,      -- Delay between batch queries (seconds)
-	maxPoolSize = 50,           -- Maximum object pool size
-	itemScanCacheLifetime = 5,  -- Item scan cache lifetime (seconds)
-};
-
--- Load settings with defaults
-DC_ItemUpgrade_Settings = DC_ItemUpgrade_Settings or {};
-for key, defaultValue in pairs(DC.DEFAULT_SETTINGS) do
-	if DC_ItemUpgrade_Settings[key] == nil then
-		DC_ItemUpgrade_Settings[key] = defaultValue;
-	end
-end
-
--- Apply settings to runtime variables
-DC.itemStatePoolSize = DC.itemStatePoolSize or 0;
-DC.maxPoolSize = DC_ItemUpgrade_Settings.maxPoolSize or DC.DEFAULT_SETTINGS.maxPoolSize;
-DC.itemScanCacheLifetime = DC_ItemUpgrade_Settings.itemScanCacheLifetime or DC.DEFAULT_SETTINGS.itemScanCacheLifetime;
-DC.batchQueryDelay = DC_ItemUpgrade_Settings.batchQueryDelay or DC.DEFAULT_SETTINGS.batchQueryDelay;
-
--- Helper function to play sounds with setting check
-function DC.PlaySound(soundName)
-	if DC_ItemUpgrade_Settings and DC_ItemUpgrade_Settings.playSounds then
-		PlaySound(soundName);
-	end
-end
 
 -- Settings panel functions
 function DC.CreateSettingsPanel()
@@ -1264,122 +1398,76 @@ function DC_ItemUpgrade_BagFrameButton_OnClick(self)
 	end
 end
 
--- Memory pooling for ItemUpgradeState objects
-DC.itemStatePool = DC.itemStatePool or {};
-DC.itemStatePoolSize = DC.itemStatePoolSize or 0;
-DC.maxPoolSize = DC.maxPoolSize or 50;
-
 -- Batch query system
 DC.batchQueryQueue = DC.batchQueryQueue or {};
 DC.batchQueryTimer = DC.batchQueryTimer or 0;
 DC.batchQueryDelay = DC.batchQueryDelay or 0.1; -- 100ms delay for batching
 
--- Optimized item scanning cache
-DC.itemScanCache = DC.itemScanCache or {};
-DC.itemScanCacheTime = DC.itemScanCacheTime or 0;
-DC.itemScanCacheLifetime = DC.itemScanCacheLifetime or 5; -- 5 seconds cache lifetime
+local function GetItemLocationKey(item)
+	if not item then
+		return nil;
+	end
 
--- Bag constants
-local BAG_BACKPACK = 0;
-local BAG_BANK = _G.BANK_CONTAINER or -1;
-local BAG_EQUIPPED = _G.INVENTORY_SLOT_BAG_0 or 255;
+	local bag = item.serverBag or item.bag;
+	local slot = item.serverSlot;
+	if slot == nil and item.bag ~= nil and item.slot ~= nil then
+		slot = GetServerSlotFromClient(item.bag, item.slot);
+	end
 
--- Equipment slots for scanning
-local EQUIPMENT_SLOTS = {
-	_G.INVSLOT_HEAD or 1,
-	_G.INVSLOT_NECK or 2,
-	_G.INVSLOT_SHOULDER or 3,
-	_G.INVSLOT_BODY or 4,
-	_G.INVSLOT_CHEST or 5,
-	_G.INVSLOT_WAIST or 6,
-	_G.INVSLOT_LEGS or 7,
-	_G.INVSLOT_FEET or 8,
-	_G.INVSLOT_WRIST or 9,
-	_G.INVSLOT_HAND or 10,
-	_G.INVSLOT_FINGER1 or 11,
-	_G.INVSLOT_FINGER2 or 12,
-	_G.INVSLOT_TRINKET1 or 13,
-	_G.INVSLOT_TRINKET2 or 14,
-	_G.INVSLOT_BACK or 15,
-	_G.INVSLOT_MAINHAND or 16,
-	_G.INVSLOT_OFFHAND or 17,
-	_G.INVSLOT_RANGED or 18,
-	_G.INVSLOT_TABARD or 19,
-};
+	if bag == nil or slot == nil then
+		return item.locationKey;
+	end
 
--- Helper functions for bag/slot conversion
-local function IsEquippedBag(bag)
-	return bag == BAG_EQUIPPED;
+	item.locationKey = item.locationKey or BuildLocationKey(bag, slot);
+	return item.locationKey;
 end
 
-local function GetServerSlotFromClient(bag, slot)
-	-- For equipped items (bag 255), convert from client 1-indexed to server 0-indexed
-	-- Client: HEAD=1, NECK=2, SHOULDERS=3, BODY=4, CHEST=5, etc.
-	-- Server: HEAD=0, NECK=1, SHOULDERS=2, BODY=3, CHEST=4, etc.
-	if IsEquippedBag(bag) then
-		return math.max(0, (slot or 1) - 1);  -- Subtract 1 to convert to 0-indexed
-	end
-	
-	-- For bag items, subtract 1 to convert from 1-indexed to 0-indexed
-	local normalizedSlot = math.max(0, (slot or 1) - 1);
-	if bag == BAG_BANK then
-		return BANK_SLOT_ITEM_START + normalizedSlot;
-	end
-	return normalizedSlot;
-end
-
-local function GetServerBagFromClient(bag)
-	if IsEquippedBag(bag) then
-		return BAG_EQUIPPED;
+function DC.IsItemSyncPending(item)
+	local locationKey = GetItemLocationKey(item);
+	if not locationKey then
+		return false;
 	end
 
-	if bag == BAG_BANK then
-		return BAG_EQUIPPED;
+	if item.awaitingServerInfo then
+		return true;
 	end
 
-	return bag;
-end
-
-local function BuildLocationKey(bag, slot)
-	return string.format("%d:%d", bag or -1, slot or -1);
-end
-
--- Helper function to get pooled ItemUpgradeState object
-function DC.GetPooledItemState()
-	if DC.itemStatePoolSize > 0 then
-		local state = DC.itemStatePool[DC.itemStatePoolSize];
-		DC.itemStatePool[DC.itemStatePoolSize] = nil;
-		DC.itemStatePoolSize = DC.itemStatePoolSize - 1;
-		return state;
+	if DC.pendingUpgrade and DC.pendingUpgrade.bag ~= nil and DC.pendingUpgrade.serverSlot ~= nil then
+		local pendingKey = BuildLocationKey(DC.pendingUpgrade.bag, DC.pendingUpgrade.serverSlot);
+		if pendingKey == locationKey then
+			return true;
+		end
 	end
-	return {};
-end
 
--- Helper function to return ItemUpgradeState object to pool
-function DC.ReturnPooledItemState(state)
-	if not state or DC.itemStatePoolSize >= DC.maxPoolSize then
-		return;
+	local function RequestBlocksInteraction(request)
+		return request and request.blocksInteraction == true;
 	end
-	
-	-- Clear the object
-	for k in pairs(state) do
-		state[k] = nil;
+
+	if DC.queryInFlight and DC.queryInFlight.key == locationKey and RequestBlocksInteraction(DC.queryInFlight) then
+		return true;
 	end
-	
-	DC.itemStatePoolSize = DC.itemStatePoolSize + 1;
-	DC.itemStatePool[DC.itemStatePoolSize] = state;
+
+	if DC.queryQueueMap and RequestBlocksInteraction(DC.queryQueueMap[locationKey]) then
+		return true;
+	end
+
+	if DC.batchQueryQueue then
+		for _, request in ipairs(DC.batchQueryQueue) do
+			if request and request.key == locationKey and RequestBlocksInteraction(request) then
+				return true;
+			end
+		end
+	end
+
+	return false;
 end
 
 -- Batch query processing
 function DC.ProcessBatchQueries()
-	if #DC.batchQueryQueue == 0 then
+	local pendingCount = #DC.batchQueryQueue;
+	if pendingCount == 0 then
 		return;
 	end
-
-	DC.Debug(string.format("ProcessBatchQueries: flushing %d pending requests (inFlight=%s, queued=%d)",
-		#DC.batchQueryQueue,
-		tostring(DC.queryInFlight ~= nil),
-		#DC.queryQueueList));
 
 	-- Move pending requests into the sequential queue so responses can be tracked reliably.
 	for _, request in ipairs(DC.batchQueryQueue) do
@@ -1387,87 +1475,15 @@ function DC.ProcessBatchQueries()
 	end
 
 	DC.batchQueryQueue = {};
-	
-	DC.Debug("ProcessBatchQueries: Queue now has " .. #DC.queryQueueList .. " items");
+	DC.Debug(string.format("ProcessBatchQueries: moved %d requests to queue (inFlight=%s, queued=%d)",
+		pendingCount,
+		tostring(DC.queryInFlight ~= nil),
+		#DC.queryQueueList));
 
 	if not DC.queryInFlight then
-		DC.Debug("ProcessBatchQueries: Starting query processing");
 		DarkChaos_ItemUpgrade_StartNextQuery();
-	else
-		DC.Debug("ProcessBatchQueries: Query already in flight, will continue after response");
 	end
 end
-
--- Optimized item scanning with caching
-function DC.GetScannedItems()
-	local now = GetTime and GetTime() or 0;
-	
-	-- Return cached results if still valid
-	if DC.itemScanCacheTime and (now - DC.itemScanCacheTime) < DC.itemScanCacheLifetime then
-		return DC.itemScanCache;
-	end
-	
-	-- Clear old cache
-	DC.itemScanCache = {};
-	
-	-- Scan equipped items
-	for _, slotID in ipairs(EQUIPMENT_SLOTS) do
-		local link = GetInventoryItemLink("player", slotID);
-		if link then
-			local name, _, quality, _, _, _, _, _, equipLoc = GetItemInfo(link);
-			-- Include common+ equipment (tier-1 items can be common). Avoid caching non-equippable items.
-			if quality and quality >= 1 and equipLoc and equipLoc ~= "" then
-				local serverBag = GetServerBagFromClient(BAG_EQUIPPED);
-				local serverSlot = GetServerSlotFromClient(BAG_EQUIPPED, slotID);
-				local key = BuildLocationKey(serverBag, serverSlot);
-				
-				DC.itemScanCache[key] = {
-					bag = BAG_EQUIPPED,
-					serverBag = serverBag,
-					slot = slotID,
-					serverSlot = serverSlot,
-					link = link,
-					name = name,
-					quality = quality,
-					isEquipped = true,
-					lastSeen = now,
-				};
-			end
-		end
-	end
-	
-	-- Scan bag items
-	for bag = BAG_BACKPACK, NUM_BAG_SLOTS do
-		for slot = 1, GetContainerNumSlots(bag) do
-			local link = GetContainerItemLink(bag, slot);
-			if link then
-				local name, _, quality, _, _, _, _, _, equipLoc = GetItemInfo(link);
-				-- Include common+ equipment (tier-1 items can be common). Avoid caching non-equippable items.
-				if quality and quality >= 1 and equipLoc and equipLoc ~= "" then
-					local serverBag = GetServerBagFromClient(bag);
-					local serverSlot = GetServerSlotFromClient(bag, slot);
-					local key = BuildLocationKey(serverBag, serverSlot);
-					
-					DC.itemScanCache[key] = {
-						bag = bag,
-						serverBag = serverBag,
-						slot = slot,
-						serverSlot = serverSlot,
-						link = link,
-						name = name,
-						quality = quality,
-						isEquipped = false,
-						lastSeen = now,
-					};
-				end
-			end
-		end
-	end
-	
-	DC.itemScanCacheTime = now;
-	return DC.itemScanCache;
-end
-
 -- Create simulated item link for upgrade preview
 function DC.CreateUpgradePreviewItemLink(baseItemLink, targetUpgradeLevel, tier)
 	if not baseItemLink or not targetUpgradeLevel then
@@ -1680,6 +1696,9 @@ function DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, context)
 	-- Check if already queued
 	if DC.queryQueueMap[key] then
 		table.insert(DC.queryQueueMap[key].contexts, context);
+		if context.blocksInteraction then
+			DC.queryQueueMap[key].blocksInteraction = true;
+		end
 		return;
 	end
 
@@ -1690,6 +1709,7 @@ function DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, context)
 		-- command removed (using direct call in StartNextQuery)
 		contexts = { context },
 		type = "item",
+		blocksInteraction = context.blocksInteraction == true,
 	};
 
 	-- Add to batch queue instead of immediate processing
@@ -1895,13 +1915,78 @@ local function DarkChaos_ItemUpgrade_HandleTooltipContext(context, data, errorMs
 	end
 end
 
+local function DarkChaos_ItemUpgrade_FinalizeQueuedItemInfo(locationKey, data)
+	if not locationKey then
+		return nil;
+	end
+
+	local finished = nil;
+	if DC.queryInFlight and DC.queryInFlight.key == locationKey then
+		finished = DarkChaos_ItemUpgrade_CompleteQuery();
+	elseif DC.queryQueueMap and DC.queryQueueMap[locationKey] then
+		finished = DC.queryQueueMap[locationKey];
+		DC.queryQueueMap[locationKey] = nil;
+
+		if DC.queryQueueList then
+			for i = #DC.queryQueueList, 1, -1 do
+				if DC.queryQueueList[i] and DC.queryQueueList[i].key == locationKey then
+					table.remove(DC.queryQueueList, i);
+				end
+			end
+		end
+
+		if DC.batchQueryQueue then
+			for i = #DC.batchQueryQueue, 1, -1 do
+				if DC.batchQueryQueue[i] and DC.batchQueryQueue[i].key == locationKey then
+					table.remove(DC.batchQueryQueue, i);
+				end
+			end
+		end
+	end
+
+	if finished and finished.contexts then
+		for _, ctx in ipairs(finished.contexts) do
+			if ctx.callback then
+				ctx.callback(data);
+			else
+				DarkChaos_ItemUpgrade_HandleTooltipContext(ctx, data);
+			end
+		end
+	end
+
+	return finished;
+end
+
 function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 	if type(info) ~= "table" then
 		return;
 	end
 
+	local responseBag = tonumber(info.serverBag);
+	local responseSlot = tonumber(info.serverSlot);
+	local responseLocationKey = nil;
+	if responseBag ~= nil and responseSlot ~= nil then
+		responseLocationKey = BuildLocationKey(responseBag, responseSlot);
+	elseif DC.queryInFlight and DC.queryInFlight.key then
+		responseLocationKey = DC.queryInFlight.key;
+	end
+
+	if info.success == false then
+		DC.Debug("SMSG_ITEM_INFO failed for " .. tostring(responseLocationKey or "unknown") .. ": " .. tostring(info.errorMsg or "Unknown error"));
+
+		if responseLocationKey and DC.currentItem and DC.currentItem.locationKey == responseLocationKey and DC.currentItem.hasAuthoritativeState then
+			DC.currentItem.awaitingServerInfo = false;
+			DarkChaos_ItemUpgrade_UpdateUI();
+		end
+
+		DarkChaos_ItemUpgrade_FinalizeQueuedItemInfo(responseLocationKey, nil);
+		return;
+	end
+
 	local guid = tonumber(info.itemID or info.itemId or info.guid) or 0;
 	if guid == 0 then
+		DC.Debug("SMSG_ITEM_INFO missing item GUID for " .. tostring(responseLocationKey or "unknown") .. "; finalizing queued request");
+		DarkChaos_ItemUpgrade_FinalizeQueuedItemInfo(responseLocationKey, nil);
 		return;
 	end
 
@@ -1917,6 +2002,10 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 		currentEntry = tonumber(info.currentEntry) or 0,
 		currentUpgrade = tonumber(info.currentUpgrade) or 0,
 		maxUpgrade = tonumber(info.maxUpgrade) or 0,
+		tokenCost = tonumber(info.tokenCost) or 0,
+		essenceCost = tonumber(info.essenceCost) or 0,
+		serverBag = tonumber(info.serverBag),
+		serverSlot = tonumber(info.serverSlot),
 		cloneEntries = cloneEntries,
 		timestamp = GetTime and GetTime() or 0,
 	};
@@ -1925,48 +2014,52 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 		data.heirloomPackageId = info.heirloomPackageId or info.packageId or (existing and existing.heirloomPackageId) or 0;
 	end
 
+	if DC.CacheCostInfo and data.tier > 0 and data.maxUpgrade > data.currentUpgrade then
+		if data.tokenCost > 0 or data.essenceCost > 0 then
+			DC.CacheCostInfo(data.tier, data.currentUpgrade, data.currentUpgrade + 1, data.tokenCost, data.essenceCost);
+		end
+	end
+
 	DC.itemUpgradeCache = DC.itemUpgradeCache or {};
 	DC.itemUpgradeCache[guid] = data;
 
 	local matchedInFlight = false;
 	if DC.queryInFlight then
 		local locationKey = DC.queryInFlight.key;
-		local bagStr, slotStr = string.match(locationKey, "(%d+):(%d+)");
-		local queryBag = tonumber(bagStr);
-		local querySlot = tonumber(slotStr);
-		local queryLink = nil;
-		if queryBag == 255 then
-			queryLink = GetInventoryItemLink("player", querySlot + 1);
-		else
-			queryLink = GetContainerItemLink(queryBag, querySlot + 1);
-		end
-		if queryLink then
-			local queryItemId = tonumber(string.match(queryLink, "item:(%d+)"));
-			if queryItemId and (queryItemId == data.currentEntry or queryItemId == data.baseEntry) then
-				DC.itemLocationCache = DC.itemLocationCache or {};
-				DC.itemLocationCache[locationKey] = guid;
-				matchedInFlight = true;
+		DC.itemLocationCache = DC.itemLocationCache or {};
+		DC.itemLocationCache[locationKey] = guid;
+		matchedInFlight = true;
 
-				if DC.currentItem and DC.currentItem.locationKey == locationKey then
-					DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
-					DarkChaos_ItemUpgrade_UpdateUI();
-				end
-
-				local finished = DarkChaos_ItemUpgrade_CompleteQuery();
-				if finished and finished.contexts then
-					for _, ctx in ipairs(finished.contexts) do
-						if ctx.callback then
-							ctx.callback(data);
-						else
-							DarkChaos_ItemUpgrade_HandleTooltipContext(ctx, data);
-						end
-					end
-				end
-			end
+		if DC.currentItem and DC.currentItem.locationKey == locationKey then
+			DC.currentItem.awaitingServerInfo = false;
+			DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
+			DarkChaos_ItemUpgrade_UpdateUI();
 		end
+
+		DarkChaos_ItemUpgrade_FinalizeQueuedItemInfo(locationKey, data);
 	end
 
 	if not matchedInFlight then
+		local matchedByLocation = false;
+		if data.serverBag ~= nil and data.serverSlot ~= nil then
+			local locationKey = BuildLocationKey(data.serverBag, data.serverSlot);
+			DC.itemLocationCache = DC.itemLocationCache or {};
+			DC.itemLocationCache[locationKey] = guid;
+
+			if DC.currentItem and DC.currentItem.locationKey == locationKey then
+				DC.currentItem.awaitingServerInfo = false;
+				DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
+				DarkChaos_ItemUpgrade_UpdateUI();
+			end
+
+			DarkChaos_ItemUpgrade_FinalizeQueuedItemInfo(locationKey, data);
+			matchedByLocation = true;
+		end
+
+		if matchedByLocation then
+			return;
+		end
+
 		-- Try to map by scanning equipment and bags
 		for slotID = 1, 19 do
 			local link = GetInventoryItemLink("player", slotID);
@@ -2009,6 +2102,7 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	                        (data.baseEntry == HEIRLOOM_SHIRT_ENTRY);
 	
 	if isHeirloomShirt then
+		DC.uiMode = "HEIRLOOM";
 		item.tier = 3;  -- TIER_HEIRLOOM
 		item.maxUpgrade = 15;
 		DC.Debug("ApplyQueryData: Forced HEIRLOOM tier for item 300365");
@@ -2018,6 +2112,10 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	end
 	
 	item.currentUpgrade = data.currentUpgrade or 0;
+	item.tokenCost = tonumber(data.tokenCost) or item.tokenCost or 0;
+	item.essenceCost = tonumber(data.essenceCost) or item.essenceCost or 0;
+	item.hasAuthoritativeState = true;
+	item.allowBackgroundRefresh = false;
 	DC.Debug("ApplyQueryData: data.maxUpgrade=" .. tostring(data.maxUpgrade) .. ", item.tier=" .. tostring(item.tier) .. ", final item.maxUpgrade=" .. tostring(item.maxUpgrade));
 	item.baseLevel = data.baseItemLevel or item.baseLevel or 0;
 	local calculatedLevel = data.upgradedItemLevel or GetUpgradedItemLevel(item.baseLevel, item.currentUpgrade, item.tier);
@@ -3118,20 +3216,44 @@ function DarkChaos_ItemUpgrade_OnHide(self)
 	DC.pendingUpgrade = nil;
 end
 
-local function InvalidateCachedItemData()
-	DC.itemTooltipCache = {};
-	DC.itemScanCache = {};
-	DC.itemScanCacheTime = 0;
-end
-
 local function RefreshBrowserIfOpen()
 	if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
 		DarkChaos_ItemBrowser_Update();
 	end
 end
 
+local function CurrentSelectionHasPendingUpgrade()
+	if not DC.currentItem or not DC.pendingUpgrade then
+		return false;
+	end
+
+	local pendingBag = DC.pendingUpgrade.bag;
+	local pendingSlot = DC.pendingUpgrade.serverSlot;
+	if pendingBag == nil or pendingSlot == nil then
+		return false;
+	end
+
+	local locationKey = DC.currentItem.locationKey;
+	if not locationKey and DC.currentItem.serverBag ~= nil and DC.currentItem.serverSlot ~= nil then
+		locationKey = BuildLocationKey(DC.currentItem.serverBag, DC.currentItem.serverSlot);
+	elseif not locationKey and DC.currentItem.bag ~= nil and DC.currentItem.slot ~= nil then
+		locationKey = BuildLocationKey(GetServerBagFromClient(DC.currentItem.bag), GetServerSlotFromClient(DC.currentItem.bag, DC.currentItem.slot));
+	end
+
+	if not locationKey then
+		return false;
+	end
+
+	return locationKey == BuildLocationKey(pendingBag, pendingSlot);
+end
+
 local function RefreshCurrentSelectedItem()
 	if not DC.currentItem then
+		return;
+	end
+
+	if CurrentSelectionHasPendingUpgrade() then
+		DC.Debug("Selected item has a pending upgrade; skipping pre-result refresh");
 		return;
 	end
 
@@ -3144,7 +3266,14 @@ local function RefreshCurrentSelectedItem()
 
 	RefreshCurrentItemMetadata(link);
 	DC.currentItem.texture = GetItemTextureForLocation(DC.currentItem.bag, DC.currentItem.slot, link);
-	DarkChaos_ItemUpgrade_RequestItemInfo();
+	if DC.currentItem.allowBackgroundRefresh == true and DC.currentItem.hasAuthoritativeState == true then
+		DC.currentItem.allowBackgroundRefresh = false;
+		DC.currentItem.awaitingServerInfo = false;
+	else
+		DarkChaos_ItemUpgrade_RequestItemInfo({
+			background = DC.currentItem.allowBackgroundRefresh == true,
+		});
+	end
 	DarkChaos_ItemUpgrade_UpdateUI();
 end
 
@@ -3632,6 +3761,11 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 		return;
 	end
 
+	if DC.IsItemSyncPending and DC.IsItemSyncPending(DC.currentItem) then
+		print("|cffffff00Item data is still syncing. Please wait a moment.|r");
+		return;
+	end
+
 	local currentUpgrade = DC.currentItem.currentUpgrade or 0;
 	local maxUpgrade = DC.currentItem.maxUpgrade or DC.MAX_UPGRADE_LEVEL;
 	local tier = DC.currentItem.tier or 1;
@@ -3657,29 +3791,44 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 	-- Check if stat package is required for heirloom shirt
 	local isHeirloomShirt = false;
 	local packageId = 0;
-	if DC.uiMode == "HEIRLOOM" and DC.currentItem.link then
-		local itemID = tonumber(DC.currentItem.link:match("item:(%d+)"));
-		if itemID == 300365 then
-			isHeirloomShirt = true;
-			if not DC.selectedStatPackage or DC.selectedStatPackage <= 0 then
-				print("|cffff0000Please select a stat package first!|r");
-				return;
-			end
-			packageId = DC.selectedStatPackage;
+	if DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem) then
+		isHeirloomShirt = true;
+		if not DC.selectedStatPackage or DC.selectedStatPackage <= 0 then
+			print("|cffff0000Please select a stat package first!|r");
+			return;
 		end
+		packageId = DC.selectedStatPackage;
 	end
 
-	local totals = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentUpgrade, targetLevel);
-	local singleCost = DarkChaos_ItemUpgrade_GetCost(tier, targetLevel);
-	if (totals.tokens or 0) <= 0 and not singleCost then
+	local totals, missingLevel, costPending = DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentUpgrade, targetLevel);
+	local singleCost = nil;
+	if targetLevel == currentUpgrade + 1 then
+		singleCost = totals;
+	else
+		singleCost = DarkChaos_ItemUpgrade_GetCost(tier, targetLevel);
+	end
+	if costPending then
+		print("|cffffff00Upgrade cost is still syncing. Please wait a moment.|r");
+		return;
+	end
+	if missingLevel then
+		print(string.format("|cffff0000Upgrade failed:|r Missing cost data for level %d.", missingLevel));
+		return;
+	end
+	if ((totals and totals.tokens) or 0) <= 0 and ((totals and totals.essence) or 0) <= 0 and not singleCost then
 		print("|cffff0000Upgrade failed:|r Unable to determine the cost for the selected level.");
 		return;
 	end
 
-	local requiredTokens = singleCost and (singleCost.tokens or 0) or (totals.tokens or 0);
+	local requiredTokens = (totals and totals.tokens) or 0;
+	local requiredEssence = (totals and totals.essence) or 0;
 
-	if (DC.playerTokens or 0) < requiredTokens then
+	if requiredTokens > 0 and (DC.playerTokens or 0) < requiredTokens then
 		print(string.format("|cffff0000Not enough Upgrade Tokens!|r Need %d but have %d.", requiredTokens, DC.playerTokens or 0));
+		return;
+	end
+	if requiredEssence > 0 and (DC.playerEssence or 0) < requiredEssence then
+		print(string.format("|cffff0000Not enough Artifact Essence!|r Need %d but have %d.", requiredEssence, DC.playerEssence or 0));
 		return;
 	end
 
@@ -3720,12 +3869,13 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 		packageId = packageId,
 		isHeirloom = isHeirloomShirt,
 		cost = {
-			tokens = totals.tokens or requiredTokens,
+			tokens = requiredTokens,
+			essence = requiredEssence,
 		},
 	};
 	-- DC.Debug("Sending perform command: "..command); -- Legacy debug
 	local itemLabel = DC.currentItem.link or DC.currentItem.name or "item";
-	local projectedTokens = (totals.tokens or 0) > 0 and totals.tokens or requiredTokens;
+	local projectedTokens = requiredTokens;
 	DC.Debug(string.format("Upgrading %s to level %d/%d...", itemLabel, targetLevel, maxUpgrade));
 	if isHeirloomShirt then
 		local pkg = DC.STAT_PACKAGES[packageId];
@@ -3733,10 +3883,14 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 			DC.Debug(string.format("[Stat Package] %s - %s", pkg.name, table.concat(pkg.stats, ", ")));
 		end
 	end
-	if projectedTokens > 0 then
+	if isHeirloomShirt and requiredEssence > 0 then
+		DC.Debug(string.format("Projected total to reach level %d: %d Essence", targetLevel, requiredEssence));
+	elseif projectedTokens > 0 then
 		DC.Debug(string.format("Projected total to reach level %d: %d Tokens", targetLevel, projectedTokens));
 	end
-	if singleCost and (singleCost.tokens or 0) > 0 then
+	if isHeirloomShirt and singleCost and (singleCost.essence or 0) > 0 then
+		DC.Debug(string.format("Immediate cost for this step: %d Essence", singleCost.essence));
+	elseif singleCost and (singleCost.tokens or 0) > 0 then
 		DC.Debug(string.format("Immediate cost for this step: %d Tokens", singleCost.tokens));
 	end
 	-- SendChatMessage(command, "SAY"); -- Moved inside block above
@@ -3877,8 +4031,9 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	
 	-- SPECIAL HANDLING: Heirloom Adventurer's Shirt (300365)
 	-- Force tier 3 with 15 max levels immediately for UI responsiveness
-	local HEIRLOOM_SHIRT_ID = 300365;
+	local HEIRLOOM_SHIRT_ID = DC.HEIRLOOM_SHIRT_ENTRY or 300365;
 	if itemID == HEIRLOOM_SHIRT_ID then
+		DC.uiMode = "HEIRLOOM";
 		pooledItem.tier = 3;  -- TIER_HEIRLOOM
 		pooledItem.maxUpgrade = 15;
 		DC.Debug("SelectItemBySlot: Initialized heirloom shirt with tier 3, max 15 levels");
@@ -3896,6 +4051,9 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	pooledItem.cloneEntries = {
 		[0] = itemID,
 	};
+	pooledItem.awaitingServerInfo = true;
+	pooledItem.hasAuthoritativeState = false;
+	pooledItem.allowBackgroundRefresh = false;
 
 	-- Return old item to pool if it exists
 	if DC.currentItem then
@@ -4153,10 +4311,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	-- Check if this is the heirloom shirt for special package stat display
 	local isHeirloomShirt = false;
 	local activePackageId = nil;
-	if DC.uiMode == "HEIRLOOM" and item.link then
-		local itemID = tonumber(item.link:match("item:(%d+)"));
-		isHeirloomShirt = (itemID == 300365);
-	end
+	isHeirloomShirt = (DC.IsHeirloomItem and DC.IsHeirloomItem(item)) or false;
 	if isHeirloomShirt then
 		activePackageId = item.heirloomPackageId or DC.selectedStatPackage;
 	end
@@ -4258,30 +4413,45 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	
 	-- Update Upgrade Button
 	local canUpgrade = currentUpgrade < maxUpgrade;
-	local cost = DarkChaos_ItemUpgrade_GetCost(item.tier, DC.targetUpgradeLevel);
 	local canAfford = true;
-	if cost and (cost.tokens or 0) > (DC.playerTokens or 0) then
-		canAfford = false;
+	local costPending = false;
+	local itemSyncPending = (DC.IsItemSyncPending and DC.IsItemSyncPending(item)) or false;
+	if DC.IsHeirloomItem and DC.IsHeirloomItem(item) then
+		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentUpgrade, DC.targetUpgradeLevel);
+		if (heirloomTotals.essence or 0) > (DC.playerEssence or 0) then
+			canAfford = false;
+		end
+	else
+		local totals = nil;
+		totals, _, costPending = DarkChaos_ItemUpgrade_GetAuthoritativeTotals(item.tier, currentUpgrade, DC.targetUpgradeLevel);
+		if costPending then
+			canAfford = false;
+		elseif totals then
+			if (totals.tokens or 0) > (DC.playerTokens or 0) or (totals.essence or 0) > (DC.playerEssence or 0) then
+				canAfford = false;
+			end
+		end
 	end
 	
 	-- Check if stat package is required (heirloom shirt item 300365)
 	local needsPackage = false;
 	local hasPackage = true;
-	if DC.uiMode == "HEIRLOOM" and item.link then
-		local itemID = tonumber(item.link:match("item:(%d+)"));
-		if itemID == 300365 then
-			needsPackage = true;
-			hasPackage = (DC.selectedStatPackage ~= nil and DC.selectedStatPackage > 0);
-		end
+	if DC.IsHeirloomItem and DC.IsHeirloomItem(item) then
+		needsPackage = true;
+		hasPackage = (DC.selectedStatPackage ~= nil and DC.selectedStatPackage > 0);
 	end
 	
-	if canUpgrade and canAfford and (not needsPackage or hasPackage) then
+	if canUpgrade and not itemSyncPending and canAfford and (not needsPackage or hasPackage) then
 		SetButtonEnabled(frame.UpgradeButton, true);
 		frame.UpgradeButton.disabledTooltip = nil;
 	else
 		SetButtonEnabled(frame.UpgradeButton, false);
 		if not canUpgrade then
 			frame.UpgradeButton.disabledTooltip = "Item is fully upgraded.";
+		elseif itemSyncPending then
+			frame.UpgradeButton.disabledTooltip = "Item data is syncing.";
+		elseif costPending then
+			frame.UpgradeButton.disabledTooltip = "Upgrade cost is syncing.";
 		elseif needsPackage and not hasPackage then
 			frame.UpgradeButton.disabledTooltip = "Select a stat package first.";
 		else

@@ -41,6 +41,16 @@ local MOUNT_TYPE_ICONS = {
     [3] = "Interface\\Icons\\Ability_Mount_BlackPanther",  -- All
 }
 
+local function GetWishlistButtonText(isWishlisted)
+    if isWishlisted then
+        return (L and (L["REMOVE_FROM_WISHLIST"] or L["REMOVE_WISHLIST"] or
+            L["ACTION_REMOVE_WISHLIST"])) or "Remove from wishlist"
+    end
+
+    return (L and (L["ADD_TO_WISHLIST"] or L["ACTION_ADD_WISHLIST"] or
+        L["WISHLIST"])) or "Add to wishlist"
+end
+
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
@@ -126,6 +136,8 @@ local function ResolveMountPreviewDisplayId(mountData)
 
     local def = mountData.definition or {}
     return
+        ToPositiveNumber(def.previewDisplayId) or
+        ToPositiveNumber(def.preview_display_id) or
         ToPositiveNumber(def.displayId) or
         ToPositiveNumber(def.display_id) or
         ToPositiveNumber(def.creatureDisplayId) or
@@ -150,6 +162,8 @@ local function ResolveMountPreviewCreatureId(mountData, spellId)
 
     local def = mountData.definition or {}
     return
+        ToPositiveNumber(def.previewCreatureId) or
+        ToPositiveNumber(def.preview_creature_id) or
         ToPositiveNumber(def.creatureId) or
         ToPositiveNumber(def.creature_id) or
         ToPositiveNumber(def.creatureID) or
@@ -465,12 +479,25 @@ function MountJournal:CreateActionBar(parent)
 
     -- Summon button
     local summonBtn = CreateFrame("Button", nil, actionBar, "UIPanelButtonTemplate")
-    summonBtn:SetSize(120, 28)
+    summonBtn:SetSize(140, 28)
     summonBtn:SetPoint("LEFT", actionBar, "LEFT", 5, 0)
     summonBtn:SetText(L["SUMMON"] or "Summon")
     summonBtn:SetScript("OnClick", function()
-        if MountJournal.selectedMount and MountJournal.selectedMount.collected then
-            DC.MountModule:SummonMount(MountJournal.selectedMount.id)
+        local selectedMount = MountJournal.selectedMount
+        if not selectedMount then
+            return
+        end
+
+        if selectedMount.collected then
+            DC.MountModule:SummonMount(selectedMount.id)
+            return
+        end
+
+        local isWishlisted = DC.IsInWishlist and DC:IsInWishlist("mounts", selectedMount.id) or false
+        if isWishlisted then
+            DC:RequestRemoveWishlist("mounts", selectedMount.id)
+        else
+            DC:RequestAddWishlist("mounts", selectedMount.id)
         end
     end)
     actionBar.summonBtn = summonBtn
@@ -932,8 +959,9 @@ function MountJournal:SelectMount(mountData)
         summonBtn:Enable()
         summonBtn:SetText(L["SUMMON"] or "Summon")
     else
-        summonBtn:Disable()
-        summonBtn:SetText(L["NOT_COLLECTED"] or "Not Collected")
+        summonBtn:Enable()
+        summonBtn:SetText(GetWishlistButtonText(
+            DC.IsInWishlist and DC:IsInWishlist("mounts", mountData.id) or false))
     end
 
     -- Refresh list to update selection highlight
@@ -989,12 +1017,23 @@ function MountJournal:Show()
         self:Create()
     end
 
-    -- Request latest data
-    if DC.RequestDefinitions then
-        DC:RequestDefinitions("mounts")
-    end
-    if DC.RequestCollection then
-        DC:RequestCollection("mounts")
+    do
+        local now = (type(GetTime) == "function" and GetTime()) or
+            (type(time) == "function" and time()) or 0
+        local last = tonumber(self._lastMountsRefreshAt or 0) or 0
+        local hasLocalMounts = DC and DC.collections and
+            type(DC.collections.mounts) == "table" and
+            next(DC.collections.mounts) ~= nil
+
+        if (not hasLocalMounts) or now <= 0 or (now - last) >= 20 then
+            self._lastMountsRefreshAt = now
+            if DC.RequestDefinitions then
+                DC:RequestDefinitions("mounts")
+            end
+            if DC.RequestCollection then
+                DC:RequestCollection("mounts")
+            end
+        end
     end
 
     self.frame:Show()

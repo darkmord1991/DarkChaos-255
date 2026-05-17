@@ -33,7 +33,7 @@ INSERT INTO `quest_template`
 VALUES
 (
 	920100, 2, 80, 80, 25, 0, 0,
-	0, 250000, 0x0800,
+	0, 250000, 0x1000,
 	'Hinterland Daily: Claim Victory',
 	'Win one Hinterland Battleground match.',
 	'Fight in the Hinterlands and secure a victory for your faction.',
@@ -42,7 +42,7 @@ VALUES
 ),
 (
 	920101, 2, 80, 80, 25, 0, 0,
-	0, 1000000, 0x1000,
+	0, 1000000, 0x8000,
 	'Hinterland Weekly: Frontline Duty',
 	'Participate in five Hinterland Battleground matches.',
 	'The war effort needs veterans. Complete five Hinterland BG matches this week.',

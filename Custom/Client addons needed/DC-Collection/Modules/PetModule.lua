@@ -67,11 +67,49 @@ function PetModule:GetPetDefinitions()
 end
 
 function PetModule:GetPet(petId)
-    return DC.collections.pets and DC.collections.pets[petId]
+    if not (DC.collections and DC.collections.pets) then
+        return nil
+    end
+
+    local coll = DC.collections.pets
+    if coll[petId] ~= nil then
+        return coll[petId]
+    end
+
+    local n = tonumber(petId)
+    if n ~= nil and coll[n] ~= nil then
+        return coll[n]
+    end
+
+    local s = tostring(petId)
+    if s ~= nil and coll[s] ~= nil then
+        return coll[s]
+    end
+
+    return nil
 end
 
 function PetModule:GetPetDefinition(petId)
-    return DC.definitions.pets and DC.definitions.pets[petId]
+    if not (DC.definitions and DC.definitions.pets) then
+        return nil
+    end
+
+    local defs = DC.definitions.pets
+    if defs[petId] ~= nil then
+        return defs[petId]
+    end
+
+    local n = tonumber(petId)
+    if n ~= nil and defs[n] ~= nil then
+        return defs[n]
+    end
+
+    local s = tostring(petId)
+    if s ~= nil and defs[s] ~= nil then
+        return defs[s]
+    end
+
+    return nil
 end
 
 local function _num(x)
@@ -334,8 +372,9 @@ function PetModule:GetFilteredPets(filters)
 
     for petId, def in pairs(definitions) do
         if not ShouldSuppressPetDefinition(petId, def) then
-            local collected = self:IsPetCollected(petId)
-            local collData = self:GetCollectionEntryForPet(petId, def)
+            local normalizedPetId = _num(petId) or _num(def and (def.itemId or def.item_id)) or petId
+            local collected = self:IsPetCollected(normalizedPetId)
+            local collData = self:GetCollectionEntryForPet(normalizedPetId, def)
             
             local include = true
             
@@ -374,7 +413,7 @@ function PetModule:GetFilteredPets(filters)
             
             if include then
                 table.insert(results, {
-                    id = petId,
+                    id = normalizedPetId,
                     name = def.name,
                     icon = def.icon,
                     rarity = def.rarity,

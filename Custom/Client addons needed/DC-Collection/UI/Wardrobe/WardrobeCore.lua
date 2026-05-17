@@ -504,7 +504,11 @@ function Wardrobe:HookItemTooltip()
     if self.tooltipHooked then return end
 
     if DC and DC.RequestCollectedAppearances then
-        DC:RequestCollectedAppearances()
+        local ownedStateCurrent = type(DC.HasCurrentTransmogOwnedState) == "function"
+            and DC:HasCurrentTransmogOwnedState()
+        if not ownedStateCurrent then
+            DC:RequestCollectedAppearances()
+        end
     end
 
     local function TooltipHasLine(tooltip, text)

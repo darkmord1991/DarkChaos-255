@@ -31,46 +31,24 @@ local BUTTON_HEIGHT = 48
 local ITEMS_PER_PAGE = 12
 
 local PET_PREVIEW_VISUAL_FALLBACKS = {
-    -- Visual-only fallbacks for pet rows whose local source data still misses
-    -- or misstates preview metadata. These are validated against repo-local
-    -- world data or a same-name donor definition.
-    [4055] = {
-        creatureId = 32841,
-        displayId = 16189,
-    },
-    [7544] = {
-        creatureId = 9662,
-        displayId = 6294,
-    },
-    [10673] = {
-        creatureId = 9656,
-        displayId = 8909,
-    },
-    [15186] = {
-        creatureId = 15710,
-        displayId = 15671,
-    },
-    [33199] = {
-        creatureId = 32939,
-        displayId = 28397,
-    },
-    [34364] = {
-        creatureId = 29726,
-        displayId = 26452,
-    },
-    [34724] = {
-        creatureId = 38374,
-        displayId = 31073,
-    },
-    [36871] = {
-        creatureId = 32643,
-        displayId = 14273,
-    },
+    -- Visual-only fallback for the last unresolved uncollected pet row.
+    -- Keep this out of authoritative source metadata until a verified summon
+    -- path exists.
     [39148] = {
         creatureId = 24594,
         displayId = 7046,
     },
 }
+
+local function GetWishlistButtonText(isWishlisted)
+    if isWishlisted then
+        return (L and (L["REMOVE_FROM_WISHLIST"] or L["REMOVE_WISHLIST"] or
+            L["ACTION_REMOVE_WISHLIST"])) or "Remove from wishlist"
+    end
+
+    return (L and (L["ADD_TO_WISHLIST"] or L["ACTION_ADD_WISHLIST"] or
+        L["WISHLIST"])) or "Add to wishlist"
+end
 
 local function ToPositiveNumber(value)
     local num = tonumber(value)
@@ -87,15 +65,22 @@ local function GetPetPreviewFields(def)
     end
 
     local creatureId = ToPositiveNumber(
-        def.creatureId or def.creature_id or def.creatureEntry or
-        def.creature_entry or def.petEntry or def.pet_entry or
-        def.npcId or def.npc_id or def.entryId or def.entry_id)
+        def.previewCreatureId or def.preview_creature_id or
+        def.creatureId or def.creature_id or def.creatureID or
+        def.creatureEntry or def.creature_entry or
+        def.petEntry or def.pet_entry or
+        def.npcId or def.npc_id or
+        def.entryId or def.entry_id or def.entry)
 
     local displayId = ToPositiveNumber(
+        def.previewDisplayId or def.previewDisplayID or
+        def.preview_display_id or
+        def.creatureDisplayId or def.creatureDisplayID or
+        def.creature_display_id or
         def.displayId or def.displayID or def.display_id or
-        def.creatureDisplayId or def.creature_display_id or
-        def.modelId or def.model_id or
-        def.modelDisplayId or def.model_display_id)
+        def.modelId or def.modelID or def.model_id or
+        def.modelDisplayId or def.modelDisplayID or
+        def.model_display_id)
 
     return creatureId, displayId
 end
@@ -152,6 +137,35 @@ local function FindDefinitionPreviewFallbackByName(petId, petName)
     end
 
     return bestFallback
+end
+
+local function ReportPetPreviewIssue(petData, def, reason, displayId, creatureId)
+    if not DC or type(petData) ~= "table" then
+        return
+    end
+
+    local key = string.format(
+        "%s:%s",
+        tostring(ToPositiveNumber(petData.id) or "?"),
+        tostring(reason or "unknown"))
+    DC._petPreviewIssueSeen = DC._petPreviewIssueSeen or {}
+    if DC._petPreviewIssueSeen[key] then
+        return
+    end
+    DC._petPreviewIssueSeen[key] = true
+
+    if type(DC.Debug) == "function" then
+        DC:Debug(string.format(
+            "Pet preview issue (%s): id=%s name=%s displayId=%s creatureId=%s spellId=%s",
+            tostring(reason or "unknown"),
+            tostring(ToPositiveNumber(petData.id) or "?"),
+            tostring((petData.name and petData.name ~= "" and petData.name) or
+                (def and def.name) or "?"),
+            tostring(ToPositiveNumber(displayId) or "0"),
+            tostring(ToPositiveNumber(creatureId) or "0"),
+            tostring(ToPositiveNumber(def and (def.spellId or def.spell_id)) or "0")
+        ))
+    end
 end
 
 -- ============================================================================
@@ -300,9 +314,7 @@ function PetJournal:CreateModelPreview(parent)
     bg:SetAllPoints()
     bg:SetTexture(0.05, 0.05, 0.1, 0.8)
 
-    -- Use DressUpModel for parity with the mount journal and more reliable
-    -- creature/display preview rendering on 3.3.5a clients.
-    local model = CreateFrame("DressUpModel", "DCPetJournalModel", modelFrame)
+    local model = CreateFrame("PlayerModel", "DCPetJournalModel", modelFrame)
     model:SetPoint("TOPLEFT", modelFrame, "TOPLEFT", 10, -60)
     model:SetPoint("BOTTOMRIGHT", modelFrame, "BOTTOMRIGHT", -10, 10)
 
@@ -388,6 +400,32 @@ function PetJournal:CreateModelPreview(parent)
     favBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     infoFrame.favBtn = favBtn
 
+    local wishlistBtn = CreateFrame("Button", nil, infoFrame, "UIPanelButtonTemplate")
+    wishlistBtn:SetSize(120, 22)
+    wishlistBtn:SetPoint("RIGHT", favBtn, "LEFT", -10, 0)
+    wishlistBtn:SetText(GetWishlistButtonText(false))
+    wishlistBtn:SetScript("OnClick", function()
+        local selectedPet = PetJournal.selectedPet
+        if not selectedPet or selectedPet.collected then
+            return
+        end
+
+        local isWishlisted = DC.IsInWishlist and DC:IsInWishlist("pets", selectedPet.id) or false
+        if isWishlisted then
+            DC:RequestRemoveWishlist("pets", selectedPet.id)
+        else
+            DC:RequestAddWishlist("pets", selectedPet.id)
+        end
+    end)
+    wishlistBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self:GetText())
+        GameTooltip:Show()
+    end)
+    wishlistBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    wishlistBtn:Hide()
+    infoFrame.wishlistBtn = wishlistBtn
+
     modelFrame.infoFrame = infoFrame
     parent.modelFrame = modelFrame
 end
@@ -403,12 +441,25 @@ function PetJournal:CreateActionBar(parent)
     actionBar:SetHeight(35)
 
     local summonBtn = CreateFrame("Button", nil, actionBar, "UIPanelButtonTemplate")
-    summonBtn:SetSize(120, 28)
+    summonBtn:SetSize(140, 28)
     summonBtn:SetPoint("LEFT", actionBar, "LEFT", 5, 0)
     summonBtn:SetText(L["SUMMON"] or "Summon")
     summonBtn:SetScript("OnClick", function()
-        if PetJournal.selectedPet and PetJournal.selectedPet.collected then
-            DC.PetModule:SummonPet(PetJournal.selectedPet.id)
+        local selectedPet = PetJournal.selectedPet
+        if not selectedPet then
+            return
+        end
+
+        if selectedPet.collected then
+            DC.PetModule:SummonPet(selectedPet.id)
+            return
+        end
+
+        local isWishlisted = DC.IsInWishlist and DC:IsInWishlist("pets", selectedPet.id) or false
+        if isWishlisted then
+            DC:RequestRemoveWishlist("pets", selectedPet.id)
+        else
+            DC:RequestAddWishlist("pets", selectedPet.id)
         end
     end)
     actionBar.summonBtn = summonBtn
@@ -763,6 +814,16 @@ function PetJournal:SelectPet(petData)
     local model = self.frame.modelFrame.model
 
     local def = petData.definition or {}
+    if DC and DC.PetModule and type(DC.PetModule.GetPetDefinition) == "function" then
+        local canonicalDef = DC.PetModule:GetPetDefinition(petData.id)
+        if not canonicalDef and type(def) == "table" then
+            canonicalDef = DC.PetModule:GetPetDefinition(def.itemId or def.item_id)
+        end
+        if type(canonicalDef) == "table" then
+            def = canonicalDef
+            petData.definition = canonicalDef
+        end
+    end
     infoFrame.icon:SetTexture(GetPetIcon(def.spellId or def.spell_id, def))
     infoFrame.name:SetText((petData.name and petData.name ~= "" and petData.name) or def.name or "Unknown")
 
@@ -772,13 +833,42 @@ function PetJournal:SelectPet(petData)
     local sourceText = DC:FormatSource(petData.source)
     infoFrame.source:SetText(sourceText or "")
 
-    local favTex = infoFrame.favBtn:GetNormalTexture()
-    if favTex then
-        if petData.is_favorite then
-            favTex:SetVertexColor(1, 0.8, 0)
-        else
-            favTex:SetVertexColor(0.5, 0.5, 0.5)
+    if infoFrame.favBtn then
+        local favTex = infoFrame.favBtn:GetNormalTexture()
+        if favTex then
+            if petData.is_favorite then
+                favTex:SetVertexColor(1, 0.8, 0)
+            else
+                favTex:SetVertexColor(0.5, 0.5, 0.5)
+            end
         end
+    end
+
+    if infoFrame.wishlistBtn then
+        if petData.collected then
+            infoFrame.wishlistBtn:Hide()
+            if infoFrame.favBtn then
+                infoFrame.favBtn:Show()
+            end
+        else
+            infoFrame.wishlistBtn:SetText(GetWishlistButtonText(
+                DC.IsInWishlist and DC:IsInWishlist("pets", petData.id) or false))
+            infoFrame.wishlistBtn:Show()
+            if infoFrame.favBtn then
+                infoFrame.favBtn:Hide()
+            end
+        end
+    end
+
+    if type(DC.Debug) == "function" then
+        DC:Debug(string.format(
+            "Pet preview select: id=%s name=%s collected=%s displayId=%s creatureId=%s",
+            tostring(ToPositiveNumber(petData.id) or "?"),
+            tostring((petData.name and petData.name ~= "" and petData.name) or
+                (def and def.name) or "?"),
+            tostring(petData.collected and true or false),
+            tostring(ToPositiveNumber(select(2, GetPetPreviewFields(def))) or 0),
+            tostring(ToPositiveNumber(select(1, GetPetPreviewFields(def))) or 0)))
     end
 
     -- Display 3D model.
@@ -788,6 +878,10 @@ function PetJournal:SelectPet(petData)
         if model.SetFacing then model:SetFacing(0) end
         model.rotation = 0
         model.zoom = 0
+        if model.SetPortraitZoom then model:SetPortraitZoom(0) end
+        if model.SetCamDistanceScale then model:SetCamDistanceScale(1.0) end
+        if model.SetCamera then model:SetCamera(0) end
+        if model.SetModelScale then model:SetModelScale(1.0) end
         if model.SetPosition then model:SetPosition(0, 0, 0) end
     end
 
@@ -870,10 +964,10 @@ function PetJournal:SelectPet(petData)
     end
 
     -- Priority rules:
-    -- 1) Prefer creature/template ids when available; this matches the mount
-    --    preview path and frames critter models more reliably than SetDisplayInfo.
-    -- 2) Keep displayId as a fallback for rows that do not have a usable
-    --    creature/template id.
+    -- 1) Not-collected pets should prefer displayId first. On 3.3.5a,
+    --    SetCreature can "succeed" for some ids yet still render blank.
+    -- 2) Collected pets can still prefer companion creature ids first, then
+    --    fall back through display and definition creature ids.
     local resolvedCompanionCreatureId = nil
     if petData.collected then
         resolvedCompanionCreatureId = FindCollectedCompanionCreatureIdBySpellId(spellId)
@@ -898,6 +992,12 @@ function PetJournal:SelectPet(petData)
 
         local ok = pcall(model.SetCreature, model, modelId)
         if ok then
+            if type(model.Show) == "function" then
+                model:Show()
+            end
+            if type(model.SetAlpha) == "function" then
+                model:SetAlpha(1)
+            end
             ResetModelPose()
             return true
         end
@@ -912,6 +1012,12 @@ function PetJournal:SelectPet(petData)
 
         local ok = pcall(model.SetDisplayInfo, model, displayInfoId)
         if ok then
+            if type(model.Show) == "function" then
+                model:Show()
+            end
+            if type(model.SetAlpha) == "function" then
+                model:SetAlpha(1)
+            end
             ResetModelPose()
             return true
         end
@@ -922,27 +1028,84 @@ function PetJournal:SelectPet(petData)
     if type(model.ClearModel) == "function" then
         model:ClearModel()
     end
-    local modelShown = false
 
-    -- Prefer creature path first; some critter displayIds report success while
-    -- still rendering off-camera or invisible on 3.3.5a clients.
-    if fallbackCreatureId and fallbackCreatureId > 0 then
-        modelShown = TrySetCreature(fallbackCreatureId)
+    local function TryApplyModelPath(kind, value)
+        if kind == "display" then
+            if not TrySetDisplay(value) then
+                return false
+            end
+        else
+            if not TrySetCreature(value) then
+                return false
+            end
+        end
+
+        -- Accept API-level success and let async verification handle delayed loads.
+        return true
     end
 
-    if not modelShown and resolvedDisplayId and resolvedDisplayId > 0 then
-        modelShown = TrySetDisplay(resolvedDisplayId)
-
-        -- Some clients support only SetCreature for display-like IDs.
-        if not modelShown then
-            modelShown = TrySetCreature(resolvedDisplayId)
+    local attempts = {}
+    local function PushAttempt(kind, value, allowDuplicate)
+        value = ToPositiveNumber(value)
+        if not value then
+            return
         end
+
+        local key = kind .. ":" .. tostring(value)
+        if not allowDuplicate and attempts[key] then
+            return
+        end
+
+        if not allowDuplicate then
+            attempts[key] = true
+        end
+        attempts[#attempts + 1] = { kind = kind, value = value }
+    end
+
+    if petData.collected then
+        PushAttempt("creature", resolvedCompanionCreatureId)
+        PushAttempt("display", resolvedDisplayId)
+        PushAttempt("creature", resolvedDefinitionCreatureId)
+        -- End on collected companion creature where possible.
+        PushAttempt("creature", resolvedCompanionCreatureId, true)
+    else
+        PushAttempt("display", resolvedDisplayId)
+        PushAttempt("creature", resolvedDefinitionCreatureId)
+        -- End on display for uncollected pets; this path is usually most stable.
+        PushAttempt("display", resolvedDisplayId, true)
+    end
+
+    -- Some clients accept SetCreature with display-like ids as a fallback.
+    PushAttempt("creature", resolvedDisplayId)
+
+    local attemptIndex = 1
+    local function ApplyNextAttempt()
+        while attemptIndex <= #attempts do
+            local attempt = attempts[attemptIndex]
+            attemptIndex = attemptIndex + 1
+            if TryApplyModelPath(attempt.kind, attempt.value) then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    local modelShown = ApplyNextAttempt()
+
+    if not modelShown then
+        ReportPetPreviewIssue(
+            petData,
+            def,
+            "model_apply_failed",
+            resolvedDisplayId,
+            fallbackCreatureId or resolvedDefinitionCreatureId)
     end
 
     local verifyToken = (self._modelVerifyToken or 0) + 1
     self._modelVerifyToken = verifyToken
 
-    local function VerifyModelLoaded()
+    local function VerifyModelLoaded(retriesLeft)
         if self._modelVerifyToken ~= verifyToken then
             return
         end
@@ -951,33 +1114,74 @@ function PetJournal:SelectPet(petData)
             return
         end
 
+        -- Keep walking fallbacks first; API-level success can still result in
+        -- a blank frame on some clients.
+        if retriesLeft and retriesLeft > 0 then
+            ApplyNextAttempt()
+            if DC and type(DC.After) == "function" then
+                DC.After(0.12, function()
+                    VerifyModelLoaded(retriesLeft - 1)
+                end)
+                return
+            end
+        end
+
         if HasLoadedModel() then
+            if type(DC.Debug) == "function" then
+                local loadedKey = tostring(ToPositiveNumber(petData.id) or "?")
+                DC._petPreviewLoadedSeen = DC._petPreviewLoadedSeen or {}
+                if not DC._petPreviewLoadedSeen[loadedKey] then
+                    DC._petPreviewLoadedSeen[loadedKey] = true
+                    local modelPath = "n/a"
+                    if type(model.GetModel) == "function" then
+                        local raw = model:GetModel()
+                        modelPath = (raw and raw ~= "" and tostring(raw)) or "<empty>"
+                    end
+                    DC:Debug(string.format(
+                        "Pet preview model loaded: id=%s path=%s attempts=%d/%d",
+                        loadedKey,
+                        modelPath,
+                        math.max(0, math.min((attemptIndex - 1), #attempts)),
+                        #attempts))
+                end
+            end
             return
         end
 
         local recovered = false
 
-        if fallbackCreatureId and fallbackCreatureId > 0 then
-            recovered = TrySetCreature(fallbackCreatureId)
-        end
-
-        if not recovered and resolvedDisplayId and resolvedDisplayId > 0 then
-            recovered = TrySetDisplay(resolvedDisplayId)
-            if not recovered then
-                recovered = TrySetCreature(resolvedDisplayId)
+        while attemptIndex <= #attempts do
+            if ApplyNextAttempt() then
+                recovered = true
+                break
             end
         end
 
         if not recovered and type(model.SetUnit) == "function" then
+            ReportPetPreviewIssue(
+                petData,
+                def,
+                "model_async_load_failed",
+                resolvedDisplayId,
+                fallbackCreatureId or resolvedDefinitionCreatureId)
+
             model:SetUnit("player")
+            if type(model.Show) == "function" then
+                model:Show()
+            end
+            if type(model.SetAlpha) == "function" then
+                model:SetAlpha(1)
+            end
             ResetModelPose()
         end
     end
 
     if DC and type(DC.After) == "function" then
-        DC.After(0.12, VerifyModelLoaded)
+        DC.After(0.12, function()
+            VerifyModelLoaded(2)
+        end)
     else
-        VerifyModelLoaded()
+        VerifyModelLoaded(0)
     end
 
     local summonBtn = self.frame.actionBar.summonBtn
@@ -985,8 +1189,9 @@ function PetJournal:SelectPet(petData)
         summonBtn:Enable()
         summonBtn:SetText(L["SUMMON"] or "Summon")
     else
-        summonBtn:Disable()
-        summonBtn:SetText(L["NOT_COLLECTED"] or "Not Collected")
+        summonBtn:Enable()
+        summonBtn:SetText(GetWishlistButtonText(
+            DC.IsInWishlist and DC:IsInWishlist("pets", petData.id) or false))
     end
 
     self:RefreshList()
@@ -1035,11 +1240,23 @@ function PetJournal:Show()
         DC.PetModule:SeedFromClientKnownPets()
     end
 
-    if DC.RequestDefinitions then
-        DC:RequestDefinitions("pets")
-    end
-    if DC.RequestCollection then
-        DC:RequestCollection("pets")
+    do
+        local now = (type(GetTime) == "function" and GetTime()) or
+            (type(time) == "function" and time()) or 0
+        local last = tonumber(self._lastPetsRefreshAt or 0) or 0
+        local hasLocalPets = DC and DC.collections and
+            type(DC.collections.pets) == "table" and
+            next(DC.collections.pets) ~= nil
+
+        if (not hasLocalPets) or now <= 0 or (now - last) >= 20 then
+            self._lastPetsRefreshAt = now
+            if DC.RequestDefinitions then
+                DC:RequestDefinitions("pets")
+            end
+            if DC.RequestCollection then
+                DC:RequestCollection("pets")
+            end
+        end
     end
 
     self.frame:Show()

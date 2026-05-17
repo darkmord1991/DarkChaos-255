@@ -1,4 +1,4 @@
-Minimal example showing the insertion point in the stock 3.3.5a GlueParent.xml layout:
+Legacy sidecar example showing the old insertion point in the stock 3.3.5a GlueParent.xml layout:
 
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -12,5 +12,5 @@ Minimal example showing the insertion point in the stock 3.3.5a GlueParent.xml l
 </Ui>
 
 Notes:
-- The important part is that DarkChaosBreakingNews.xml is loaded from GlueParent.xml.
-- GlueParent.lua stays unchanged.
+- This example documents the older sidecar include path only.
+- The current branch's canonical package edits `GlueParent.lua` directly and uses the root `GlueParent.xml` `OnUpdate` hook instead of relying on this include as the primary path.

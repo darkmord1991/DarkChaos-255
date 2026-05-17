@@ -21,6 +21,9 @@ local Tooltips = {
 -- ============================================================
 local GameLocale = GetLocale()
 local colorBlindMode = GetCVar("colorblindMode")
+local protocolCapabilityHookRegistered = false
+local QueueSpellEnrichmentPrefetch
+local lastNativeBridgeSync
 
 -- Match DC-Leaderboards UI style across DC addons
 local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
@@ -78,6 +81,10 @@ local telemetry = {
     spell = {
         requestsSent = 0,
         requestSendFailures = 0,
+        nativeRequestsSent = 0,
+        nativeResponsesReady = 0,
+        nativeErrors = 0,
+        nativeFallbacks = 0,
         clientDescriptionMissingExport = 0,
         clientDescriptionCallError = 0,
         clientDescriptionNilReturn = 0,
@@ -98,11 +105,19 @@ local telemetry = {
         requestsSent = 0,
         responsesReceived = 0,
         pendingTimeoutRecoveries = 0,
+        nativeRequestsSent = 0,
+        nativeResponsesReady = 0,
+        nativeErrors = 0,
+        nativeFallbacks = 0,
     },
     npc = {
         requestsSent = 0,
         responsesReceived = 0,
         pendingTimeoutRecoveries = 0,
+        nativeRequestsSent = 0,
+        nativeResponsesReady = 0,
+        nativeErrors = 0,
+        nativeFallbacks = 0,
     },
 }
 
@@ -213,9 +228,70 @@ local function RequestUpgradeInfo(bag, slot, itemLink)
     pendingUpgradeRequests[locationKey] = now
     lastUpgradeRequest = now
     TelemetryInc("upgrade", "requestsSent")
-    
-    -- Request via protocol
+
+    if ShouldUseNativeItemUpgradeBridge() then
+        local ok, nativeErr = pcall(RequestNativeItemUpgradeTooltip,
+            serverBag, serverSlot)
+        if ok then
+            TelemetryInc("upgrade", "nativeRequestsSent")
+            return
+        end
+
+        TelemetryInc("upgrade", "nativeErrors")
+        TelemetryInc("upgrade", "nativeFallbacks")
+        addon:Debug("Native item-upgrade request failed: " .. tostring(nativeErr))
+    end
+
     addon.protocol:RequestItemUpgradeInfo(serverBag, serverSlot)
+end
+
+local function TryConsumeNativeUpgradeInfo(serverBag, serverSlot)
+    local locationKey = BuildLocationKey(serverBag, serverSlot)
+    if not pendingUpgradeRequests[locationKey]
+        or type(GetNativeItemUpgradeTooltipData) ~= "function" then
+        return false
+    end
+
+    local ok,
+        itemId,
+        tier,
+        upgradeLevel,
+        maxUpgrade,
+        statMultiplier,
+        baseEntry,
+        currentEntry,
+        baseIlvl,
+        upgradedIlvl,
+        errorMessage = pcall(GetNativeItemUpgradeTooltipData,
+            serverBag, serverSlot)
+
+    if not ok then
+        TelemetryInc("upgrade", "nativeErrors")
+        addon:Debug("Native item-upgrade poll failed: " .. tostring(itemId))
+        return false
+    end
+
+    if itemId == nil then
+        return false
+    end
+
+    TelemetryInc("upgrade", "nativeResponsesReady")
+    addon:FireEvent("ITEM_UPGRADE_INFO_RECEIVED", {
+        bag = serverBag,
+        slot = serverSlot,
+        itemId = tonumber(itemId) or 0,
+        tier = tonumber(tier) or 0,
+        upgradeLevel = tonumber(upgradeLevel) or 0,
+        maxUpgrade = tonumber(maxUpgrade) or 0,
+        statMultiplier = tonumber(statMultiplier) or 1.0,
+        baseEntry = tonumber(baseEntry) or 0,
+        currentEntry = tonumber(currentEntry) or 0,
+        baseIlvl = tonumber(baseIlvl) or 0,
+        upgradedIlvl = tonumber(upgradedIlvl) or 0,
+        error = type(errorMessage) == "string" and errorMessage ~= ""
+            and errorMessage or nil,
+    })
+    return true
 end
 
 -- Handle upgrade info from server
@@ -275,6 +351,10 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
     local serverBag = GetServerBagFromClient(bag)
     local serverSlot = GetServerSlotFromClient(bag, slot)
     local locationKey = BuildLocationKey(serverBag, serverSlot)
+
+    if ShouldUseNativeItemUpgradeBridge() then
+        TryConsumeNativeUpgradeInfo(serverBag, serverSlot)
+    end
     
     -- Check cache
     local cached = itemUpgradeCache[locationKey]
@@ -551,6 +631,21 @@ local SPELL_TOOLTIP_ENRICHMENT_PENDING_TTL = 4.0
 local SPELL_TOOLTIP_ENRICHMENT_MIN_SEND_INTERVAL = 0.35
 local SPELL_TOOLTIP_TRACKING_PRUNE_INTERVAL = 20
 local SPELL_TOOLTIP_TRACKING_STALE_TTL = 120
+local SPELL_ENRICH_CACHE_TTL = 180
+local SPELL_ENRICH_CACHE_MAX_SPELLS = 1200
+local SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL = 8
+local SPELL_ENRICH_CACHE_PRUNE_INTERVAL = 20
+local NATIVE_TOOLTIP_CAPABILITY = 0x00000100
+local NATIVE_ITEM_UPGRADE_CAPABILITY = 0x00000400
+local NATIVE_NPC_TOOLTIP_CAPABILITY = 0x00000800
+local NATIVE_TOOLTIP_TIMEOUT_MS = math.floor(SPELL_TOOLTIP_ENRICHMENT_PENDING_TTL * 1000)
+local NATIVE_TOOLTIP_MIN_INTERVAL_MS = math.floor(SPELL_TOOLTIP_ENRICHMENT_MIN_SEND_INTERVAL * 1000)
+local NATIVE_TOOLTIP_MAX_TIMEOUTS = 3
+local NATIVE_SPELL_TOOLTIP_STATUS_UNAVAILABLE = 0
+local NATIVE_SPELL_TOOLTIP_STATUS_PENDING = 1
+local NATIVE_SPELL_TOOLTIP_STATUS_READY = 2
+local NATIVE_SPELL_TOOLTIP_STATUS_TIMED_OUT = 3
+local NATIVE_SPELL_TOOLTIP_STATUS_DISABLED = 4
 
 local spellEnrichmentRequestCounter = 0
 local pendingSpellEnrichment = {}
@@ -558,6 +653,574 @@ local pendingSpellEnrichmentByRequestId = {}
 local lastSpellEnrichmentAttemptAt = {}
 local lastSpellEnrichmentSendAt = 0
 local lastSpellEnrichmentPruneAt = 0
+local lastSpellEnrichCachePruneAt = 0
+
+local function PruneSpellEnrichmentCache(now)
+    if not addon.tooltipCache or type(addon.tooltipCache.spellEnrichment) ~= "table" then
+        return
+    end
+
+    now = tonumber(now) or 0
+    if now <= 0 then
+        return
+    end
+
+    if lastSpellEnrichCachePruneAt > 0
+        and (now - lastSpellEnrichCachePruneAt) < SPELL_ENRICH_CACHE_PRUNE_INTERVAL then
+        return
+    end
+
+    local buckets = addon.tooltipCache.spellEnrichment
+    local spellCount = 0
+    local spellIds = {}
+
+    for spellId, contextBucket in pairs(buckets) do
+        if type(contextBucket) ~= "table" then
+            buckets[spellId] = nil
+        else
+            spellCount = spellCount + 1
+            spellIds[#spellIds + 1] = spellId
+
+            local contextEntries = {}
+            for contextHash, enrichment in pairs(contextBucket) do
+                local receivedAt = enrichment and tonumber(enrichment.receivedAt) or 0
+                local age = (receivedAt > 0) and (now - receivedAt)
+                    or (SPELL_ENRICH_CACHE_TTL + 1)
+                if age > SPELL_ENRICH_CACHE_TTL then
+                    contextBucket[contextHash] = nil
+                else
+                    contextEntries[#contextEntries + 1] = {
+                        contextHash = contextHash,
+                        receivedAt = receivedAt,
+                    }
+                end
+            end
+
+            if #contextEntries == 0 then
+                buckets[spellId] = nil
+                spellCount = spellCount - 1
+            elseif #contextEntries > SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL then
+                table.sort(contextEntries, function(a, b)
+                    return (a.receivedAt or 0) > (b.receivedAt or 0)
+                end)
+
+                for i = SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL + 1, #contextEntries do
+                    contextBucket[contextEntries[i].contextHash] = nil
+                end
+            end
+        end
+    end
+
+    if spellCount > SPELL_ENRICH_CACHE_MAX_SPELLS then
+        local keep = {}
+        for _, spellId in ipairs(spellIds) do
+            local bucket = buckets[spellId]
+            if type(bucket) == "table" then
+                local newest = 0
+                for _, enrichment in pairs(bucket) do
+                    newest = math.max(newest,
+                        tonumber(enrichment and enrichment.receivedAt) or 0)
+                end
+                keep[#keep + 1] = { spellId = spellId, newest = newest }
+            end
+        end
+
+        table.sort(keep, function(a, b)
+            return (a.newest or 0) > (b.newest or 0)
+        end)
+
+        for i = SPELL_ENRICH_CACHE_MAX_SPELLS + 1, #keep do
+            buckets[keep[i].spellId] = nil
+        end
+    end
+
+    lastSpellEnrichCachePruneAt = now
+end
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+
+    if capability <= 0 then
+        return false
+    end
+
+    if bit and bit.band then
+        return bit.band(mask, capability) ~= 0
+    end
+
+    return (mask % (capability * 2)) >= capability
+end
+
+local function GetClientCapabilityMask()
+    local protocol = type(DCAddonProtocol) == "table" and DCAddonProtocol or nil
+    if protocol and type(protocol.GetClientCapabilities) == "function" then
+        local ok, capabilities = pcall(protocol.GetClientCapabilities, protocol)
+        if ok then
+            return tonumber(capabilities) or 0
+        end
+    end
+
+    return 0
+end
+
+local function GetProtocolCapabilitySnapshot()
+    local protocol = type(DCAddonProtocol) == "table" and DCAddonProtocol or nil
+    if not protocol or type(protocol.GetCapabilitySnapshot) ~= "function" then
+        return nil
+    end
+
+    local ok, snapshot = pcall(protocol.GetCapabilitySnapshot, protocol)
+    if not ok or type(snapshot) ~= "table" then
+        return nil
+    end
+
+    return snapshot
+end
+
+local function IsCapabilityNegotiated(capability)
+    local snapshot = GetProtocolCapabilitySnapshot()
+    if not snapshot or not snapshot.connected then
+        return false
+    end
+
+    return HasCapabilityBit(tonumber(snapshot.negotiatedCaps) or 0,
+        capability)
+end
+
+local function HasNativeSpellTooltipBridge()
+    if type(SetSpellTooltipEnrichmentEnabled) ~= "function"
+        or type(ConfigureSpellTooltipEnrichment) ~= "function"
+        or type(GetSpellTooltipEnrichmentStats) ~= "function" then
+        return false
+    end
+
+    local capabilities = GetClientCapabilityMask()
+    if capabilities > 0 then
+        return HasCapabilityBit(capabilities, NATIVE_TOOLTIP_CAPABILITY)
+    end
+
+    return true
+end
+
+local function IsNativeSpellTooltipNegotiated()
+    return IsCapabilityNegotiated(NATIVE_TOOLTIP_CAPABILITY)
+end
+
+local function HasNativeSpellTooltipAddonBridge()
+    if type(RequestNativeSpellTooltipEnrichment) ~= "function"
+        or type(PollNativeSpellTooltipEnrichment) ~= "function" then
+        return false
+    end
+
+    local capabilities = GetClientCapabilityMask()
+    if capabilities > 0 then
+        return HasCapabilityBit(capabilities, NATIVE_TOOLTIP_CAPABILITY)
+    end
+
+    return true
+end
+
+local function HasNativeItemUpgradeBridge()
+    if type(RequestNativeItemUpgradeTooltip) ~= "function"
+        or type(GetNativeItemUpgradeTooltipData) ~= "function" then
+        return false
+    end
+
+    local capabilities = GetClientCapabilityMask()
+    if capabilities > 0 then
+        return HasCapabilityBit(capabilities, NATIVE_ITEM_UPGRADE_CAPABILITY)
+    end
+
+    return true
+end
+
+local function NormalizeTooltipGuid(guid)
+    if type(guid) ~= "string" or guid == "" then
+        return nil
+    end
+
+    if string.sub(guid, 1, 2) ~= "0x" then
+        return "0x" .. guid
+    end
+
+    return guid
+end
+
+local function HasNativeNpcTooltipBridge()
+    if type(RequestNativeNpcTooltipInfo) ~= "function"
+        or type(GetNativeNpcTooltipInfo) ~= "function" then
+        return false
+    end
+
+    local capabilities = GetClientCapabilityMask()
+    if capabilities > 0 then
+        return HasCapabilityBit(capabilities, NATIVE_NPC_TOOLTIP_CAPABILITY)
+    end
+
+    return true
+end
+
+local function CoerceNativeBoolean(value)
+    local valueType = type(value)
+
+    if valueType == "boolean" then
+        return value
+    end
+
+    if valueType == "number" then
+        return value ~= 0
+    end
+
+    if valueType == "string" then
+        local numeric = tonumber(value)
+        if numeric ~= nil then
+            return numeric ~= 0
+        end
+
+        local normalized = string.lower(value)
+        if normalized == "true" then
+            return true
+        end
+        if normalized == "false" then
+            return false
+        end
+    end
+
+    return value ~= nil and value ~= false
+end
+
+local function CaptureNativeSpellTooltipStats()
+    if type(GetSpellTooltipEnrichmentStats) ~= "function" then
+        return nil, "missing-native-stats-export"
+    end
+
+    local ok,
+        enabled,
+        sessionDisabled,
+        timeoutMs,
+        minRequestIntervalMs,
+        maxConsecutiveTimeouts,
+        consecutiveTimeouts,
+        totalTimeouts,
+        staleResponses,
+        acceptedResponses,
+        rejectedResponses = pcall(GetSpellTooltipEnrichmentStats)
+
+    if not ok then
+        return nil, tostring(enabled)
+    end
+
+    return {
+        enabled = CoerceNativeBoolean(enabled),
+        sessionDisabled = CoerceNativeBoolean(sessionDisabled),
+        timeoutMs = tonumber(timeoutMs) or 0,
+        minRequestIntervalMs = tonumber(minRequestIntervalMs) or 0,
+        maxConsecutiveTimeouts = tonumber(maxConsecutiveTimeouts) or 0,
+        consecutiveTimeouts = tonumber(consecutiveTimeouts) or 0,
+        totalTimeouts = tonumber(totalTimeouts) or 0,
+        staleResponses = tonumber(staleResponses) or 0,
+        acceptedResponses = tonumber(acceptedResponses) or 0,
+        rejectedResponses = tonumber(rejectedResponses) or 0,
+    }, nil
+end
+
+local function ShouldUseNativeSpellTooltipBridge()
+    if not HasNativeSpellTooltipBridge() then
+        return false
+    end
+
+    if not IsNativeSpellTooltipNegotiated() then
+        return false
+    end
+
+    local stats = CaptureNativeSpellTooltipStats()
+    if stats ~= nil then
+        if not stats.enabled or stats.sessionDisabled then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function ShouldUseNativeSpellTooltipAddonBridge()
+    if not HasNativeSpellTooltipAddonBridge() then
+        return false
+    end
+
+    if not IsNativeSpellTooltipNegotiated() then
+        return false
+    end
+
+    local stats = CaptureNativeSpellTooltipStats()
+    if stats ~= nil and (not stats.enabled or stats.sessionDisabled) then
+        return false
+    end
+
+    return true
+end
+
+local function ShouldUseNativeItemUpgradeBridge()
+    return HasNativeItemUpgradeBridge()
+        and IsCapabilityNegotiated(NATIVE_ITEM_UPGRADE_CAPABILITY)
+end
+
+local function ShouldUseNativeNpcTooltipBridge()
+    return HasNativeNpcTooltipBridge()
+        and IsCapabilityNegotiated(NATIVE_NPC_TOOLTIP_CAPABILITY)
+end
+
+local function CaptureNativeSpellTooltipRawState()
+    if type(GetSpellTooltipEnrichmentRawState) ~= "function" then
+        return nil, "missing-native-raw-export"
+    end
+
+    local ok,
+        enabled,
+        sessionDisabled,
+        pendingTimedOut,
+        hasResult,
+        cachedResultCount,
+        pendingRequestId,
+        pendingSpellId,
+        pendingContextHash,
+        consecutiveTimeouts,
+        totalTimeouts,
+        staleResponses,
+        acceptedResponses,
+        rejectedResponses = pcall(GetSpellTooltipEnrichmentRawState)
+
+    if not ok then
+        return nil, tostring(enabled)
+    end
+
+    return {
+        enabled = CoerceNativeBoolean(enabled),
+        sessionDisabled = CoerceNativeBoolean(sessionDisabled),
+        pendingTimedOut = CoerceNativeBoolean(pendingTimedOut),
+        hasResult = CoerceNativeBoolean(hasResult),
+        cachedResultCount = tonumber(cachedResultCount) or 0,
+        pendingRequestId = tonumber(pendingRequestId) or 0,
+        pendingSpellId = tonumber(pendingSpellId) or 0,
+        pendingContextHash = tonumber(pendingContextHash) or 0,
+        consecutiveTimeouts = tonumber(consecutiveTimeouts) or 0,
+        totalTimeouts = tonumber(totalTimeouts) or 0,
+        staleResponses = tonumber(staleResponses) or 0,
+        acceptedResponses = tonumber(acceptedResponses) or 0,
+        rejectedResponses = tonumber(rejectedResponses) or 0,
+    }, nil
+end
+
+local function CaptureNativeSpellTooltipDebugString()
+    if type(GetSpellTooltipEnrichmentDebugString) ~= "function" then
+        return nil, "missing-native-debug-string-export"
+    end
+
+    local ok, debugString = pcall(GetSpellTooltipEnrichmentDebugString)
+    if not ok then
+        return nil, tostring(debugString)
+    end
+
+    if type(debugString) ~= "string" or debugString == "" then
+        return nil, "empty-native-debug-string"
+    end
+
+    return debugString, nil
+end
+
+local function SyncNativeSpellTooltipBridge(reason)
+    reason = tostring(reason or "sync")
+
+    if not HasNativeSpellTooltipBridge() then
+        lastNativeBridgeSync = {
+            reason = reason,
+            attemptedAt = time() or 0,
+            desiredEnabled = false,
+            tooltipsEnabled = false,
+            communicationEnabled = false,
+            negotiated = false,
+            configureOk = false,
+            toggleOk = false,
+            readbackError = "missing-native-bridge-exports",
+        }
+        return false
+    end
+
+    local tooltipsEnabled = addon.settings
+        and addon.settings.tooltips
+        and addon.settings.tooltips.enabled
+        and true or false
+    local communicationEnabled = addon.settings
+        and addon.settings.communication
+        and addon.settings.communication.enabled
+        and true or false
+    local negotiated = IsNativeSpellTooltipNegotiated()
+    local enabled = tooltipsEnabled
+        and communicationEnabled
+        and negotiated
+
+    local configureOk, configureErr = pcall(ConfigureSpellTooltipEnrichment,
+        NATIVE_TOOLTIP_TIMEOUT_MS,
+        NATIVE_TOOLTIP_MIN_INTERVAL_MS,
+        NATIVE_TOOLTIP_MAX_TIMEOUTS)
+
+    local resetOk = true
+    local resetErr = nil
+    local toggleOk = true
+    local toggleErr = nil
+
+    if enabled then
+        resetOk, resetErr = pcall(SetSpellTooltipEnrichmentEnabled, false)
+        toggleOk, toggleErr = pcall(SetSpellTooltipEnrichmentEnabled, true)
+    else
+        toggleOk, toggleErr = pcall(SetSpellTooltipEnrichmentEnabled, false)
+    end
+
+    local stats, statsError = CaptureNativeSpellTooltipStats()
+    local readbackEnabled = nil
+    local readbackSessionDisabled = nil
+
+    if stats ~= nil then
+        readbackEnabled = stats.enabled and true or false
+        readbackSessionDisabled = stats.sessionDisabled and true or false
+    end
+
+    lastNativeBridgeSync = {
+        reason = reason,
+        attemptedAt = time() or 0,
+        desiredEnabled = enabled and true or false,
+        tooltipsEnabled = tooltipsEnabled,
+        communicationEnabled = communicationEnabled,
+        negotiated = negotiated and true or false,
+        configureOk = configureOk and true or false,
+        configureError = configureOk and nil or tostring(configureErr),
+        resetOk = resetOk and true or false,
+        resetError = resetOk and nil or tostring(resetErr),
+        toggleOk = toggleOk and true or false,
+        toggleError = toggleOk and nil or tostring(toggleErr),
+        readbackEnabled = readbackEnabled,
+        readbackSessionDisabled = readbackSessionDisabled,
+        readbackAcceptedResponses = stats and stats.acceptedResponses or nil,
+        readbackRejectedResponses = stats and stats.rejectedResponses or nil,
+        readbackStaleResponses = stats and stats.staleResponses or nil,
+        readbackError = statsError,
+    }
+
+    return configureOk and toggleOk
+end
+
+local function RegisterProtocolCapabilityHook()
+    if protocolCapabilityHookRegistered then
+        return
+    end
+
+    local protocol = type(DCAddonProtocol) == "table" and DCAddonProtocol or nil
+    if not protocol or type(protocol.RegisterCrossEventHandler) ~= "function" then
+        return
+    end
+
+    protocol:RegisterCrossEventHandler(function(eventData)
+        if type(eventData) ~= "table" or eventData.type ~= "core-handshake" then
+            return
+        end
+
+        SyncNativeSpellTooltipBridge("core-handshake")
+
+        if HasCapabilityBit(tonumber(eventData.negotiatedCaps) or 0,
+            NATIVE_TOOLTIP_CAPABILITY) then
+            QueueSpellEnrichmentPrefetch(1)
+        end
+    end)
+    protocolCapabilityHookRegistered = true
+end
+
+local function GetNativeSpellTooltipBridgeSnapshot()
+    local exportsPresent = type(SetSpellTooltipEnrichmentEnabled) == "function"
+        and type(ConfigureSpellTooltipEnrichment) == "function"
+        and type(GetSpellTooltipEnrichmentStats) == "function"
+    local capabilitySnapshot = nil
+    local protocol = type(DCAddonProtocol) == "table" and DCAddonProtocol or nil
+
+    if protocol and type(protocol.GetCapabilitySnapshot) == "function" then
+        local ok, snapshot = pcall(protocol.GetCapabilitySnapshot, protocol)
+        if ok and type(snapshot) == "table" then
+            capabilitySnapshot = snapshot
+        end
+    end
+
+    local clientMask = tonumber((capabilitySnapshot and capabilitySnapshot.clientCaps)
+        or GetClientCapabilityMask()) or 0
+    local negotiatedMask = tonumber(capabilitySnapshot
+        and capabilitySnapshot.negotiatedCaps) or 0
+
+    local stats = nil
+    local statsError = nil
+    if exportsPresent then
+        stats, statsError = CaptureNativeSpellTooltipStats()
+    end
+
+    local rawState = nil
+    local rawStateError = nil
+    if exportsPresent then
+        rawState, rawStateError = CaptureNativeSpellTooltipRawState()
+    end
+
+    local rawDebugString = nil
+    local rawDebugStringError = nil
+    if exportsPresent then
+        rawDebugString, rawDebugStringError =
+            CaptureNativeSpellTooltipDebugString()
+    end
+
+    return {
+        exportsPresent = exportsPresent,
+        addonTransportExportsPresent =
+            type(RequestNativeSpellTooltipEnrichment) == "function"
+            and type(PollNativeSpellTooltipEnrichment) == "function",
+        itemUpgradeExportsPresent =
+            type(RequestNativeItemUpgradeTooltip) == "function"
+            and type(GetNativeItemUpgradeTooltipData) == "function",
+        npcTooltipExportsPresent =
+            type(RequestNativeNpcTooltipInfo) == "function"
+            and type(GetNativeNpcTooltipInfo) == "function",
+        rawExportPresent = type(GetSpellTooltipEnrichmentRawState) == "function",
+        rawDebugStringPresent = type(GetSpellTooltipEnrichmentDebugString) == "function",
+        bridgeAvailable = HasNativeSpellTooltipBridge(),
+        clientMask = clientMask,
+        negotiatedMask = negotiatedMask,
+        clientCapability = HasCapabilityBit(clientMask,
+            NATIVE_TOOLTIP_CAPABILITY),
+        negotiatedCapability = HasCapabilityBit(negotiatedMask,
+            NATIVE_TOOLTIP_CAPABILITY),
+        connected = capabilitySnapshot and capabilitySnapshot.connected and true
+            or false,
+        serverVersion = capabilitySnapshot and capabilitySnapshot.serverVersion,
+        handshakeParserMode = capabilitySnapshot
+            and capabilitySnapshot.lastHandshakeAck
+            and capabilitySnapshot.lastHandshakeAck.parserMode,
+        handshakeRawArg2 = capabilitySnapshot
+            and capabilitySnapshot.lastHandshakeAck
+            and capabilitySnapshot.lastHandshakeAck.rawArg2,
+        handshakeRawArg3 = capabilitySnapshot
+            and capabilitySnapshot.lastHandshakeAck
+            and capabilitySnapshot.lastHandshakeAck.rawArg3,
+        handshakeRawArg4 = capabilitySnapshot
+            and capabilitySnapshot.lastHandshakeAck
+            and capabilitySnapshot.lastHandshakeAck.rawArg4,
+        nativeBuildFingerprint = capabilitySnapshot
+            and capabilitySnapshot.nativeBuildFingerprint,
+        nativeTooltipRuntimeSignature = capabilitySnapshot
+            and capabilitySnapshot.nativeTooltipRuntimeSignature,
+        lastBridgeSync = lastNativeBridgeSync,
+        stats = stats,
+        statsError = statsError,
+        rawState = rawState,
+        rawStateError = rawStateError,
+        rawDebugString = rawDebugString,
+        rawDebugStringError = rawDebugStringError,
+    }
+end
 
 local function BuildSpellEnrichmentKey(spellId, contextHash)
     return tostring(tonumber(spellId) or 0) .. ":" .. tostring(tonumber(contextHash) or 0)
@@ -955,6 +1618,101 @@ local function PruneSpellEnrichmentTracking(now)
     lastSpellEnrichmentPruneAt = now
 end
 
+local function StoreSpellTooltipEnrichmentResult(data)
+    local requestId = tonumber(data and data.requestId) or 0
+    local spellId = tonumber(data and data.spellId) or 0
+    local contextHash = tonumber(data and data.contextHash) or 0
+    local status = tonumber(data and data.status) or 0
+    local line = tostring(data and data.line or "")
+
+    local enrichment = {
+        requestId = requestId,
+        spellId = spellId,
+        contextHash = contextHash,
+        status = status,
+        line = line,
+        lines = type(data and data.lines) == "table" and data.lines or nil,
+        title = data and data.title,
+        source = data and data.source,
+        receivedAt = GetTime(),
+    }
+
+    if status == 0 and (type(enrichment.lines) ~= "table" or #enrichment.lines == 0)
+        and line ~= "" then
+        enrichment.lines = {
+            { left = line, kind = "body" }
+        }
+    end
+
+    if addon.tooltipCache and spellId > 0 and contextHash > 0 then
+        PruneSpellEnrichmentCache(GetTime())
+        addon.tooltipCache.spellEnrichment = addon.tooltipCache.spellEnrichment or {}
+        addon.tooltipCache.spellEnrichment[spellId] = addon.tooltipCache.spellEnrichment[spellId] or {}
+        addon.tooltipCache.spellEnrichment[spellId][contextHash] = enrichment
+    end
+
+    return enrichment
+end
+
+local function TryConsumeNativeSpellTooltipEnrichment(spellId, contextHash)
+    if type(PollNativeSpellTooltipEnrichment) ~= "function" then
+        return false
+    end
+
+    local sid = tonumber(spellId) or 0
+    local ctx = tonumber(contextHash) or 0
+    if sid <= 0 or ctx <= 0 then
+        return false
+    end
+
+    local key = BuildSpellEnrichmentKey(sid, ctx)
+    local pending = pendingSpellEnrichment[key]
+    if not pending then
+        return false
+    end
+
+    local ok, nativeStatus, line, structuredLines =
+        pcall(PollNativeSpellTooltipEnrichment, sid, ctx)
+    if not ok then
+        TelemetryInc("spell", "nativeErrors")
+        addon:Debug("Native spell tooltip poll failed: " .. tostring(nativeStatus))
+        return false
+    end
+
+    nativeStatus = tonumber(nativeStatus) or NATIVE_SPELL_TOOLTIP_STATUS_UNAVAILABLE
+    if nativeStatus == NATIVE_SPELL_TOOLTIP_STATUS_PENDING
+        or nativeStatus == NATIVE_SPELL_TOOLTIP_STATUS_UNAVAILABLE then
+        return false
+    end
+
+    if nativeStatus == NATIVE_SPELL_TOOLTIP_STATUS_READY then
+        TelemetryInc("spell", "nativeResponsesReady")
+        addon:FireEvent("SPELL_TOOLTIP_ENRICHMENT_RECEIVED",
+            StoreSpellTooltipEnrichmentResult({
+                requestId = pending.requestId,
+                spellId = sid,
+                contextHash = ctx,
+                status = 0,
+                line = type(line) == "string" and line or "",
+                lines = type(structuredLines) == "table" and structuredLines or nil,
+                source = "native-v2",
+            }))
+        return true
+    end
+
+    TelemetryInc("spell", "nativeErrors")
+    addon:FireEvent("SPELL_TOOLTIP_ENRICHMENT_RECEIVED",
+        StoreSpellTooltipEnrichmentResult({
+            requestId = pending.requestId,
+            spellId = sid,
+            contextHash = ctx,
+            status = 1,
+            line = type(line) == "string" and line or "",
+            source = "native-v2-error",
+        }))
+    return true
+end
+
 local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
     if not tooltip or type(enrichment) ~= "table" or type(tooltip.AddLine) ~= "function" then
         return false
@@ -1029,6 +1787,14 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
 
     local sid = tonumber(spellId)
     if not sid or sid <= 0 then return false end
+
+    local tooltipSource = ResolveSpellTooltipSource(tooltip)
+    local useNativeAddonTransport = tooltipSource ~= "spellbook"
+        and ShouldUseNativeSpellTooltipAddonBridge()
+
+    if tooltipSource == "spellbook" and ShouldUseNativeSpellTooltipBridge() then
+        return false
+    end
 
     local contextHash = BuildSpellTooltipContextHash(sid)
     local key = BuildSpellEnrichmentKey(sid, contextHash)
@@ -1124,7 +1890,23 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
         lastSpellEnrichmentSendAt = now
         TelemetryInc("spell", "requestsSent")
 
-        local ok = addon:RequestSpellTooltipEnrichment(requestId, sid, contextHash, false)
+        local ok = false
+        if useNativeAddonTransport then
+            local nativeOk, nativeErr = pcall(RequestNativeSpellTooltipEnrichment,
+                sid, contextHash)
+            if nativeOk then
+                TelemetryInc("spell", "nativeRequestsSent")
+                ok = true
+            else
+                TelemetryInc("spell", "nativeErrors")
+                TelemetryInc("spell", "nativeFallbacks")
+                addon:Debug("Native spell tooltip request failed: " .. tostring(nativeErr))
+            end
+        end
+
+        if not ok then
+            ok = addon:RequestSpellTooltipEnrichment(requestId, sid, contextHash, false)
+        end
         if not ok then
             pendingSpellEnrichment[key] = nil
             pendingSpellEnrichmentByRequestId[requestId] = nil
@@ -1230,7 +2012,11 @@ local spellPrefetchFrame = nil
 local lastSpellPrefetchQueuedAt = 0
 local StartSpellEnrichmentPrefetch
 
-local function QueueSpellEnrichmentPrefetch(delay)
+QueueSpellEnrichmentPrefetch = function(delay)
+    if ShouldUseNativeSpellTooltipBridge() then
+        return
+    end
+
     local now = GetTime and GetTime() or 0
     if now > 0 and lastSpellPrefetchQueuedAt > 0 and (now - lastSpellPrefetchQueuedAt) < 2.0 then
         return
@@ -1242,6 +2028,7 @@ local function QueueSpellEnrichmentPrefetch(delay)
 end
 
 StartSpellEnrichmentPrefetch = function()
+    if ShouldUseNativeSpellTooltipBridge() then return end
     if not addon.settings or not addon.settings.tooltips or not addon.settings.tooltips.enabled then return end
     if not addon.settings.communication or not addon.settings.communication.enabled then return end
     if type(GetNumSpellTabs) ~= "function" or type(GetSpellTabInfo) ~= "function"
@@ -1548,6 +2335,8 @@ end
 -- Request NPC info from server
 local function RequestNpcInfo(guid)
     if not guid then return end
+    guid = NormalizeTooltipGuid(guid)
+    if not guid then return end
     local now = GetTime()
 
     local pendingAt = tonumber(pendingNpcRequests[guid]) or 0
@@ -1569,11 +2358,53 @@ local function RequestNpcInfo(guid)
     
     pendingNpcRequests[guid] = now
     TelemetryInc("npc", "requestsSent")
-    
-    -- Use DC-QoS protocol to request NPC info
+
     if addon.protocol and addon.protocol.connected then
+        if ShouldUseNativeNpcTooltipBridge() then
+            local ok, nativeErr = pcall(RequestNativeNpcTooltipInfo, guid)
+            if ok then
+                TelemetryInc("npc", "nativeRequestsSent")
+                return
+            end
+
+            TelemetryInc("npc", "nativeErrors")
+            TelemetryInc("npc", "nativeFallbacks")
+            addon:Debug("Native NPC tooltip request failed: " .. tostring(nativeErr))
+        end
+
         addon.protocol:RequestNpcInfo(guid)
     end
+end
+
+local function TryConsumeNativeNpcInfo(guid)
+    guid = NormalizeTooltipGuid(guid)
+    if not guid or not pendingNpcRequests[guid]
+        or type(GetNativeNpcTooltipInfo) ~= "function" then
+        return false
+    end
+
+    local ok, entry, spawnId, dbGuid, errorMessage =
+        pcall(GetNativeNpcTooltipInfo, guid)
+    if not ok then
+        TelemetryInc("npc", "nativeErrors")
+        addon:Debug("Native NPC tooltip poll failed: " .. tostring(entry))
+        return false
+    end
+
+    if entry == nil then
+        return false
+    end
+
+    TelemetryInc("npc", "nativeResponsesReady")
+    addon:FireEvent("NPC_INFO_RECEIVED", {
+        guid = guid,
+        entry = tonumber(entry) or 0,
+        spawnId = tonumber(spawnId) or 0,
+        dbGuid = tonumber(dbGuid) or 0,
+        error = type(errorMessage) == "string" and errorMessage ~= ""
+            and errorMessage or nil,
+    })
+    return true
 end
 
 -- Handle NPC info received from server
@@ -1628,6 +2459,10 @@ local function AddNpcId(tooltip, unit)
     end
     
     -- Check server cache for more accurate info
+    if ShouldUseNativeNpcTooltipBridge() then
+        TryConsumeNativeNpcInfo(guid)
+    end
+
     local cachedInfo = npcInfoCache[guid]
     local dbGuid = nil
     
@@ -1687,6 +2522,109 @@ local function AddNpcKillCount(tooltip, unit)
 
     tooltip:AddDoubleLine("Kills (Char):", "|cffffffff" .. tostring(charCount or 0) .. "|r", 0.5, 0.5, 0.5)
     tooltip:AddDoubleLine("Kills (Account):", "|cffffffff" .. tostring(acctCount or 0) .. "|r", 0.5, 0.5, 0.5)
+end
+
+local nativeTooltipPollFrame = nil
+local nativeTooltipPollElapsed = 0
+local NATIVE_TOOLTIP_POLL_INTERVAL = 0.05
+
+local function RefreshTrackedTooltip(tooltip)
+    if not tooltip or tooltip ~= GameTooltip or not tooltip.IsShown or not tooltip:IsShown() then
+        return false
+    end
+
+    local refreshKind = tooltip._dcqosRefreshKind
+    if refreshKind == "bag" and tooltip.SetBagItem then
+        local bag = tonumber(tooltip._dcqosRefreshBag)
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if bag ~= nil and slot ~= nil then
+            tooltip:SetBagItem(bag, slot)
+            return true
+        end
+    elseif refreshKind == "inventory" and tooltip.SetInventoryItem then
+        local unit = tooltip._dcqosRefreshUnit
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if unit and slot ~= nil and UnitExists(unit) then
+            tooltip:SetInventoryItem(unit, slot)
+            return true
+        end
+    elseif refreshKind == "unit" and tooltip.SetUnit then
+        local unit = tooltip._dcqosRefreshUnit
+        if unit and UnitExists(unit) then
+            tooltip:SetUnit(unit)
+            return true
+        end
+    end
+
+    return false
+end
+
+local function PollActiveNativeTooltipData(tooltip)
+    if not tooltip or tooltip ~= GameTooltip or not tooltip.IsShown or not tooltip:IsShown() then
+        return false
+    end
+
+    local refreshed = false
+    local refreshKind = tooltip._dcqosRefreshKind
+
+    if refreshKind == "bag" and ShouldUseNativeItemUpgradeBridge() then
+        local bag = tonumber(tooltip._dcqosRefreshBag)
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if bag ~= nil and slot ~= nil then
+            local serverBag = GetServerBagFromClient(bag)
+            local serverSlot = GetServerSlotFromClient(bag, slot)
+            if TryConsumeNativeUpgradeInfo(serverBag, serverSlot) then
+                refreshed = RefreshTrackedTooltip(tooltip) or refreshed
+            end
+        end
+    elseif refreshKind == "inventory" and ShouldUseNativeItemUpgradeBridge() then
+        local unit = tooltip._dcqosRefreshUnit
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if unit == "player" and slot ~= nil then
+            local serverBag = GetServerBagFromClient(-2)
+            local serverSlot = GetServerSlotFromClient(-2, slot)
+            if TryConsumeNativeUpgradeInfo(serverBag, serverSlot) then
+                refreshed = RefreshTrackedTooltip(tooltip) or refreshed
+            end
+        end
+    elseif refreshKind == "unit" and ShouldUseNativeNpcTooltipBridge() then
+        local unit = tooltip._dcqosRefreshUnit
+        local guid = unit and UnitExists(unit) and UnitGUID(unit) or nil
+        if guid and TryConsumeNativeNpcInfo(guid) then
+            refreshed = RefreshTrackedTooltip(tooltip) or refreshed
+        end
+    end
+
+    if ShouldUseNativeSpellTooltipAddonBridge() then
+        local key = tooltip._dcqosActiveSpellKey
+        local spellId, contextHash = nil, nil
+        if type(key) == "string" then
+            spellId, contextHash = string.match(key, "^(%d+):(%d+)$")
+        end
+        if spellId and contextHash and pendingSpellEnrichment[key]
+            and TryConsumeNativeSpellTooltipEnrichment(tonumber(spellId), tonumber(contextHash)) then
+            refreshed = true
+        end
+    end
+
+    return refreshed
+end
+
+local function EnsureNativeTooltipPollFrame()
+    if nativeTooltipPollFrame then
+        return
+    end
+
+    nativeTooltipPollFrame = CreateFrame("Frame")
+    nativeTooltipPollFrame:SetScript("OnUpdate", function(_, elapsed)
+        nativeTooltipPollElapsed = nativeTooltipPollElapsed + (tonumber(elapsed) or 0)
+        if nativeTooltipPollElapsed < NATIVE_TOOLTIP_POLL_INTERVAL then
+            return
+        end
+
+        nativeTooltipPollElapsed = 0
+        PollActiveNativeTooltipData(GameTooltip)
+    end)
 end
 
 -- ============================================================
@@ -1783,6 +2721,10 @@ local function HookItemTooltips()
     end
 
     HookTooltipMethodOnce("_dcqosHookedSetBagItem", "SetBagItem", function(self, bag, slot, ...)
+        self._dcqosRefreshKind = "bag"
+        self._dcqosRefreshBag = bag
+        self._dcqosRefreshSlot = slot
+        self._dcqosRefreshUnit = nil
         local itemLink = GetContainerItemLink(bag, slot)
         if itemLink then
             AddItemTooltipDetails(self, itemLink)
@@ -1791,6 +2733,10 @@ local function HookItemTooltips()
     end)
 
     HookTooltipMethodOnce("_dcqosHookedSetInventoryItem", "SetInventoryItem", function(self, unit, slot, ...)
+        self._dcqosRefreshKind = "inventory"
+        self._dcqosRefreshUnit = unit
+        self._dcqosRefreshBag = nil
+        self._dcqosRefreshSlot = slot
         local itemLink = GetInventoryItemLink(unit, slot)
         if itemLink then
             AddItemTooltipDetails(self, itemLink)
@@ -1854,6 +2800,10 @@ local function HookUnitTooltips()
     local function ResetTooltipTransientState(self)
         self._dcqosNpcGuid = nil
         self._dcqosUpgradeShown = nil
+        self._dcqosRefreshKind = nil
+        self._dcqosRefreshBag = nil
+        self._dcqosRefreshSlot = nil
+        self._dcqosRefreshUnit = nil
         self._dcqosResolvedSpellId = nil
         self._dcqosSpellSource = nil
         self._dcqosSpellSourceAt = nil
@@ -1893,6 +2843,10 @@ local function HookUnitTooltips()
             end
             
             if unit then
+                self._dcqosRefreshKind = "unit"
+                self._dcqosRefreshUnit = unit
+                self._dcqosRefreshBag = nil
+                self._dcqosRefreshSlot = nil
                 EnhanceUnitTooltip(self, unit)
             end
         end)
@@ -3215,6 +4169,7 @@ end
 
 function Tooltips.OnEnable()
     addon:Debug("Tooltips module enabling")
+    RegisterProtocolCapabilityHook()
     
     -- Setup tooltip anchor positioning
     SetTooltipAnchor()
@@ -3238,6 +4193,10 @@ function Tooltips.OnEnable()
     
     -- Hook spell tooltips
     HookSpellTooltips()
+
+    EnsureNativeTooltipPollFrame()
+
+    SyncNativeSpellTooltipBridge("module-enable")
     
     -- Setup health bar hiding
     SetupHealthBarHiding()
@@ -3261,18 +4220,22 @@ function Tooltips.OnEnable()
     addon:RegisterEvent("SETTING_CHANGED", function(path, value)
         if path == "tooltips.scale" then
             SetTooltipScale()
+        elseif path == "tooltips.enabled" or path == "communication.enabled" then
+            SyncNativeSpellTooltipBridge("setting-changed:" .. tostring(path))
         end
     end)
 
     -- Pre-warm spell enrichment cache after zone-in so first hovers are instant.
     -- Delay 5 s to allow the server addon-protocol connection to establish.
     addon:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+        SyncNativeSpellTooltipBridge("player-entering-world")
         QueueSpellEnrichmentPrefetch(5)
     end)
 
     -- Also prefetch as soon as the protocol connects (no hover needed).
     addon:RegisterEvent("PROTOCOL_CONNECTED", function(moduleId)
         if moduleId == "QOS" then
+            SyncNativeSpellTooltipBridge("protocol-connected:" .. tostring(moduleId))
             QueueSpellEnrichmentPrefetch(1)
         end
     end)
@@ -3281,6 +4244,9 @@ end
 function Tooltips.OnDisable()
     addon:Debug("Tooltips module disabling")
     -- Note: Hooks cannot be removed, but we check enabled state in each hook
+    if type(SetSpellTooltipEnrichmentEnabled) == "function" then
+        pcall(SetSpellTooltipEnrichmentEnabled, false)
+    end
     if killTrackerFrame then
         killTrackerFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     end
@@ -3307,6 +4273,10 @@ function Tooltips.GetTelemetrySnapshot()
         upgrade = copyTable(telemetry.upgrade),
         npc = copyTable(telemetry.npc),
     }
+end
+
+function Tooltips.GetNativeBridgeSnapshot()
+    return GetNativeSpellTooltipBridgeSnapshot()
 end
 
 -- ============================================================

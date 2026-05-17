@@ -36,64 +36,11 @@ local state = {
     refreshQueued = {},
     eventFrame = nil,
     availableByMap = nil,
+    worldMapRefreshListener = nil,
 }
 
 local function GetSettings()
     return addon.settings and addon.settings.questMapPins or addon.defaults.questMapPins
-end
-
-local function EnsureSharedWorldMapRefreshDebounce()
-    if type(addon.QueueWorldMapRefreshCycle) == "function" then
-        return
-    end
-
-    function addon:QueueWorldMapRefreshCycle(callback)
-        local bucket = self.__dcqosWorldMapRefreshCycle
-        if type(bucket) ~= "table" then
-            bucket = {
-                pending = false,
-                callbacks = {},
-            }
-            self.__dcqosWorldMapRefreshCycle = bucket
-        end
-
-        if type(callback) == "function" then
-            table.insert(bucket.callbacks, callback)
-        end
-
-        if bucket.pending then
-            return
-        end
-
-        bucket.pending = true
-
-        local function Flush()
-            bucket.pending = false
-
-            local callbacks = bucket.callbacks
-            bucket.callbacks = {}
-
-            for i = 1, #callbacks do
-                pcall(callbacks[i])
-            end
-        end
-
-        if type(self.DelayedCall) == "function" then
-            self:DelayedCall(0, Flush)
-        else
-            Flush()
-        end
-    end
-end
-
-local function QueueSharedWorldMapRefreshCycle(callback)
-    EnsureSharedWorldMapRefreshDebounce()
-
-    if type(addon.QueueWorldMapRefreshCycle) == "function" then
-        addon:QueueWorldMapRefreshCycle(callback)
-    elseif type(callback) == "function" then
-        callback()
-    end
 end
 
 local function QueueRefresh(delaySeconds)
@@ -654,44 +601,27 @@ local function PositionButton(button, marker)
 end
 
 local function InstallHooks()
-    if state.hooksInstalled or type(hooksecurefunc) ~= "function" then
+    if state.hooksInstalled then
         return
     end
 
     local function RequestRefresh()
-        QueueSharedWorldMapRefreshCycle(function()
-            QueueRefresh(0)
-            QueueRefresh(0.06)
-        end)
+        QueueRefresh(0)
+        QueueRefresh(0.06)
     end
 
-    local hookNames = {
-        "WorldMapFrame_DisplayQuests",
-        "WorldMapFrame_DisplayQuestPOI",
-        "WorldMapFrame_UpdateQuests",
-        "WorldMapFrame_SelectQuestFrame",
-    }
-
-    for i = 1, #hookNames do
-        local name = hookNames[i]
-        if type(_G[name]) == "function" then
-            hooksecurefunc(name, RequestRefresh)
-        end
+    state.worldMapRefreshListener = RequestRefresh
+    if type(addon.RegisterWorldMapRefreshListener) == "function" then
+        addon:RegisterWorldMapRefreshListener("QuestMapPinsWorldMap", RequestRefresh)
     end
 
     if WorldMapFrame and type(WorldMapFrame.HookScript) == "function" then
-        WorldMapFrame:HookScript("OnShow", RequestRefresh)
         WorldMapFrame:HookScript("OnHide", function()
             if state.overlay then
                 state.overlay:Hide()
             end
             HideUnusedButtons(1)
         end)
-    end
-
-    if WorldMapButton and type(WorldMapButton.HookScript) == "function" then
-        WorldMapButton:HookScript("OnShow", RequestRefresh)
-        WorldMapButton:HookScript("OnSizeChanged", RequestRefresh)
     end
 
     state.hooksInstalled = true
@@ -769,6 +699,10 @@ end
 function QuestMapPins.OnEnable()
     InstallHooks()
 
+    if state.worldMapRefreshListener and type(addon.RegisterWorldMapRefreshListener) == "function" then
+        addon:RegisterWorldMapRefreshListener("QuestMapPinsWorldMap", state.worldMapRefreshListener)
+    end
+
     if not state.eventFrame then
         state.eventFrame = CreateFrame("Frame")
         state.eventFrame:SetScript("OnEvent", function()
@@ -787,6 +721,10 @@ function QuestMapPins.OnEnable()
 end
 
 function QuestMapPins.OnDisable()
+    if type(addon.UnregisterWorldMapRefreshListener) == "function" then
+        addon:UnregisterWorldMapRefreshListener("QuestMapPinsWorldMap")
+    end
+
     if state.eventFrame then
         state.eventFrame:UnregisterAllEvents()
     end

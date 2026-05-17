@@ -691,12 +691,7 @@ function DarkChaos_ItemUpgrade_UpdateStatPackageSelector()
 	DarkChaos_ItemUpgrade_CreateChangePackageButton(frame);
 	
 	-- Check if we're in heirloom mode with item 300365
-	local isHeirloomShirt = false;
-	local detectedItemID = nil;
-	if DC.uiMode == "HEIRLOOM" and DC.currentItem and DC.currentItem.link then
-		detectedItemID = tonumber(DC.currentItem.link:match("item:(%d+)"));
-		isHeirloomShirt = (detectedItemID == 300365);
-	end
+	local isHeirloomShirt = (DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) or false;
 	
 	-- Only process if we actually have the heirloom shirt selected
 	-- Skip this function entirely if no item is selected yet

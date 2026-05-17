@@ -1014,13 +1014,16 @@ function MyCollection:Show()
         return
     end
 
-    -- Request fresh stats from server
-    if DC and type(DC.RequestInitialDataWithRetry) == "function" then
-        DC:RequestInitialDataWithRetry(8, 1)
-    elseif DC and DC.RequestStats then
+    -- The main collection frame already owns the unified startup sync path.
+    -- When the overview tab is shown as part of that open flow, requesting
+    -- initial data again just duplicates the cache-fresh lightweight sync.
+    local requestedStats = false
+    if DC and DC.RequestStats then
         DC:RequestStats()
+        requestedStats = true
     end
-    if DC and DC.RequestRecentAdditions then
+
+    if not requestedStats and DC and DC.RequestRecentAdditions then
         DC:RequestRecentAdditions()
     end
 
@@ -1034,22 +1037,18 @@ function MyCollection:Hide()
     end
 end
 
--- ============================================================================
--- REQUEST FUNCTIONS (Protocol integration)
--- ============================================================================
-
-function DC:RequestStats()
-    if self.SendMessage then
-        self:SendMessage(self.Opcodes.CMSG_GET_STATS, {})
-    end
-end
-
 function DC:RequestRecentAdditions()
-    -- This could be a new opcode or part of stats response
-    -- For now, we'll use local cache or request via stats
-    if self.SendMessage then
-        self:SendMessage(self.Opcodes.CMSG_GET_STATS, { includeRecent = true })
+    -- The collection stats payload already includes recent additions by default
+    -- on the current server contract, so reuse the normal stats request path.
+    if type(self.RequestStats) == "function" then
+        return self:RequestStats()
     end
+
+    if self.SendMessage then
+        return self:SendMessage(self.Opcodes.CMSG_GET_STATS, { includeRecent = true })
+    end
+
+    return false
 end
 
 -- ============================================================================

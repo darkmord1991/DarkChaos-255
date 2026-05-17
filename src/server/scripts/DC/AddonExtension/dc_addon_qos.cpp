@@ -91,15 +91,45 @@ namespace DCQoS
     {
         enum : uint16
         {
-            CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = 1313,
-            SMSG_SPELL_TOOLTIP_ENRICHMENT = 1314,
+            CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT = ::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT,
+            SMSG_SPELL_TOOLTIP_ENRICHMENT = ::SMSG_SPELL_TOOLTIP_ENRICHMENT,
+            CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP = ::CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP,
+            SMSG_ITEM_UPGRADE_TOOLTIP = ::SMSG_ITEM_UPGRADE_TOOLTIP,
+            CMSG_REQUEST_NPC_TOOLTIP_INFO = ::CMSG_REQUEST_NPC_TOOLTIP_INFO,
+            SMSG_NPC_TOOLTIP_INFO = ::SMSG_NPC_TOOLTIP_INFO,
+            CMSG_REQUEST_PING_RELAY = ::CMSG_REQUEST_QOS_PING_RELAY,
+            SMSG_PING_RELAY = ::SMSG_QOS_PING_RELAY,
         };
     }
+
+    enum class SpellTooltipTransport
+    {
+        AddonJson,
+        NativeBridge,
+    };
+
+    enum class SpellTooltipTransportPreference
+    {
+        Auto,
+        ForceNativeBridge,
+    };
+
+    static CreatureData const* ResolveNpcTooltipSpawnData(Player* player,
+        ObjectGuid const& guid, uint32 entry, uint32& spawnId);
+    static void HandleItemUpgradeTooltipNativeRequest(Player* player,
+        uint8 bag, uint8 slot);
+    static void HandleNpcTooltipInfoNativeRequest(Player* player,
+        std::string const& guidStr);
+    static void HandlePingRelayNativeRequest(Player* player,
+        std::string const& requestedDistribution,
+        std::string const& payload);
 
     // Configuration keys
     namespace Config
     {
         constexpr const char* ENABLED = "DC.AddonProtocol.QoS.Enable";
+        constexpr const char* TOOLTIP_TRANSPORT_DEBUG =
+            "DC.QoS.TooltipTransport.Debug";
     }
 
     // =======================================================================
@@ -155,6 +185,309 @@ namespace DCQoS
     static bool IsEnabled()
     {
         return sConfigMgr->GetOption<bool>(Config::ENABLED, true);
+    }
+
+    static bool IsTooltipTransportDebugEnabled()
+    {
+        return sConfigMgr->GetOption<bool>(Config::TOOLTIP_TRANSPORT_DEBUG,
+            false);
+    }
+
+    struct SpellTooltipTransportDecision
+    {
+        SpellTooltipTransport transport = SpellTooltipTransport::AddonJson;
+        char const* reason = "default-addon";
+        DCAddon::SessionCapabilityState capabilityState;
+        bool hasCapabilityState = false;
+    };
+
+    static char const* ToString(SpellTooltipTransport transport)
+    {
+        switch (transport)
+        {
+            case SpellTooltipTransport::NativeBridge:
+                return "native-bridge";
+            case SpellTooltipTransport::AddonJson:
+            default:
+                return "addon-json";
+        }
+    }
+
+    static SpellTooltipTransportDecision ResolveSpellTooltipTransportDecision(
+        Player* player,
+        std::string const& protocolRequestId,
+        SpellTooltipTransportPreference preference =
+            SpellTooltipTransportPreference::Auto)
+    {
+        SpellTooltipTransportDecision decision;
+        decision.hasCapabilityState =
+            DCAddon::TryGetSessionCapabilityState(player,
+                decision.capabilityState);
+
+        if (preference == SpellTooltipTransportPreference::ForceNativeBridge)
+        {
+            decision.transport = SpellTooltipTransport::NativeBridge;
+            decision.reason = "forced-native";
+            return decision;
+        }
+
+        // Native tooltip responses are only safe once the request did not come
+        // through the addon RID path; otherwise the addon transport would keep
+        // a client-side request slot pending and create false timeouts.
+        if (!protocolRequestId.empty())
+        {
+            decision.transport = SpellTooltipTransport::AddonJson;
+            decision.reason = "addon-request-id";
+            return decision;
+        }
+
+        if (!decision.hasCapabilityState)
+        {
+            decision.transport = SpellTooltipTransport::AddonJson;
+            decision.reason = "no-capability-state";
+            return decision;
+        }
+
+        if (decision.capabilityState.HasNegotiatedCapability(
+                DCAddon::ProtocolVersion::Capability::TOOLTIP_NATIVE_RESPONSE))
+        {
+            decision.transport = SpellTooltipTransport::NativeBridge;
+            decision.reason = "negotiated-native";
+            return decision;
+        }
+
+        decision.transport = SpellTooltipTransport::AddonJson;
+        decision.reason = decision.capabilityState.versionCompatible
+            ? "native-capability-missing"
+            : "version-incompatible";
+        return decision;
+    }
+
+    static void SendSpellTooltipEnrichmentNative(Player* player,
+        uint32 requestId, uint32 spellId, uint32 contextHash, uint8 status,
+        std::string const& line,
+        DCAddon::JsonValue const* structuredLines = nullptr)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        std::size_t lineCount = structuredLines && structuredLines->IsArray()
+            ? structuredLines->Size()
+            : 0;
+        WorldPacket data(BridgeOpcode::SMSG_SPELL_TOOLTIP_ENRICHMENT,
+            line.size() + 28 + (lineCount * 64));
+        data << int32(requestId);
+        data << int32(spellId);
+        data << int32(contextHash);
+        data << int32(status);
+        data << line;
+
+        data << int32(lineCount);
+        for (std::size_t index = 0; index < lineCount; ++index)
+        {
+            DCAddon::JsonValue const& entry = (*structuredLines)[index];
+            std::string left = entry.IsObject() && entry.HasKey("left")
+                && entry["left"].IsString()
+                    ? entry["left"].AsString()
+                    : "";
+            std::string right = entry.IsObject() && entry.HasKey("right")
+                && entry["right"].IsString()
+                    ? entry["right"].AsString()
+                    : "";
+            std::string kind = entry.IsObject() && entry.HasKey("kind")
+                && entry["kind"].IsString()
+                    ? entry["kind"].AsString()
+                    : "";
+            data << left;
+            data << right;
+            data << kind;
+        }
+
+        player->GetSession()->SendPacket(&data);
+    }
+
+    static void SendItemUpgradeInfoNativeError(Player* player, uint8 bag,
+        uint8 slot, std::string const& error)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_ITEM_UPGRADE_TOOLTIP,
+            error.size() + 48);
+        data << int32(bag);
+        data << int32(slot);
+        data << int32(0);
+        data << int32(0);
+        data << int32(0);
+        data << int32(0);
+        data << int32(10000);
+        data << int32(0);
+        data << int32(0);
+        data << int32(0);
+        data << int32(0);
+        data << error;
+        player->GetSession()->SendPacket(&data);
+    }
+
+    static void SendItemUpgradeInfoNative(Player* player, Item* item,
+        uint8 bag, uint8 slot)
+    {
+        if (!player || !player->GetSession() || !item)
+            return;
+
+        ObjectGuid itemGuid = item->GetGUID();
+        uint32 baseEntry = item->GetEntry();
+        uint32 itemId = baseEntry;
+        uint32 tierId = 0;
+        uint32 upgradeLevel = 0;
+        uint32 maxUpgrade = 0;
+        uint32 statMultiplierBasisPoints = 10000;
+        uint32 baseIlvl = 0;
+        uint32 upgradedIlvl = 0;
+        uint32 currentEntry = 0;
+        uint32 baseEntryOut = 0;
+        ItemTemplate const* itemTemplate = item->GetTemplate();
+
+        QueryResult upgradeResult = CharacterDatabase.Query(
+            "SELECT tier_id, upgrade_level FROM dc_item_upgrades WHERE item_guid = {}",
+            itemGuid.GetCounter());
+
+        if (upgradeResult)
+        {
+            Field* fields = upgradeResult->Fetch();
+            tierId = fields[0].Get<uint32>();
+            upgradeLevel = fields[1].Get<uint32>();
+
+            QueryResult tierResult = WorldDatabase.Query(
+                "SELECT max_upgrade_level, stat_multiplier_max FROM dc_item_upgrade_tiers WHERE tier_id = {}",
+                tierId);
+
+            if (tierResult)
+            {
+                Field* tierFields = tierResult->Fetch();
+                maxUpgrade = tierFields[0].Get<uint32>();
+                float statMultiplierMax = tierFields[1].Get<float>();
+                float statMultiplier = 1.0f;
+                if (maxUpgrade > 0)
+                {
+                    statMultiplier = 1.0f +
+                        (static_cast<float>(upgradeLevel) *
+                            (statMultiplierMax - 1.0f) /
+                            static_cast<float>(maxUpgrade));
+                }
+
+                statMultiplierBasisPoints = static_cast<uint32>(
+                    std::lround(statMultiplier * 10000.0f));
+            }
+            else
+            {
+                maxUpgrade = 15;
+                float statMultiplier = 1.0f +
+                    (static_cast<float>(upgradeLevel) * 0.02f);
+                statMultiplierBasisPoints = static_cast<uint32>(
+                    std::lround(statMultiplier * 10000.0f));
+            }
+
+            if (itemTemplate)
+            {
+                baseIlvl = itemTemplate->ItemLevel;
+                upgradedIlvl = baseIlvl + (upgradeLevel * 5);
+            }
+
+            if (currentEntry != baseEntry)
+            {
+                currentEntry = item->GetEntry();
+                baseEntryOut = baseEntry;
+            }
+        }
+        else if (itemTemplate)
+        {
+            bool canUpgrade =
+                (itemTemplate->Class == ITEM_CLASS_WEAPON ||
+                    itemTemplate->Class == ITEM_CLASS_ARMOR) &&
+                (itemTemplate->Quality >= ITEM_QUALITY_UNCOMMON);
+
+            maxUpgrade = canUpgrade ? 15 : 0;
+        }
+
+        WorldPacket data(BridgeOpcode::SMSG_ITEM_UPGRADE_TOOLTIP, 64);
+        data << int32(bag);
+        data << int32(slot);
+        data << int32(itemId);
+        data << int32(tierId);
+        data << int32(upgradeLevel);
+        data << int32(maxUpgrade);
+        data << int32(statMultiplierBasisPoints);
+        data << int32(baseEntryOut);
+        data << int32(currentEntry);
+        data << int32(baseIlvl);
+        data << int32(upgradedIlvl);
+        data << std::string();
+        player->GetSession()->SendPacket(&data);
+    }
+
+    static void SendNpcTooltipInfoNativeError(Player* player,
+        std::string const& guidStr, std::string const& error)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_NPC_TOOLTIP_INFO,
+            guidStr.size() + error.size() + 24);
+        data << guidStr;
+        data << int32(0);
+        data << int32(0);
+        data << int32(0);
+        data << error;
+        player->GetSession()->SendPacket(&data);
+    }
+
+    static void SendNpcTooltipInfoNative(Player* player,
+        std::string const& guidStr)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        ObjectGuid guid;
+        try
+        {
+            uint64 guidRaw = std::stoull(guidStr, nullptr, 16);
+            guid = ObjectGuid(guidRaw);
+        }
+        catch (...)
+        {
+            SendNpcTooltipInfoNativeError(player, guidStr,
+                "Invalid GUID format");
+            return;
+        }
+
+        uint32 entry = guid.GetEntry();
+        CreatureTemplate const* creatureTemplate =
+            sObjectMgr->GetCreatureTemplate(entry);
+        if (!creatureTemplate)
+        {
+            SendNpcTooltipInfoNativeError(player, guidStr,
+                "Creature template not found");
+            return;
+        }
+
+        uint32 spawnId = 0;
+        CreatureData const* spawnData = ResolveNpcTooltipSpawnData(player,
+            guid, entry, spawnId);
+        uint32 dbGuid = 0;
+        if (spawnData)
+            dbGuid = spawnData->spawnId;
+        else if (spawnId > 0)
+            dbGuid = spawnId;
+
+        WorldPacket data(BridgeOpcode::SMSG_NPC_TOOLTIP_INFO,
+            guidStr.size() + 32);
+        data << guidStr;
+        data << int32(entry);
+        data << int32(spawnId);
+        data << int32(dbGuid);
+        data << std::string();
+        player->GetSession()->SendPacket(&data);
     }
 
     static std::string NormalizeRelayDistribution(std::string distribution, bool isRaidGroup)
@@ -221,6 +554,134 @@ namespace DCQoS
         }
 
         return true;
+    }
+
+    static bool SupportsNativePingRelayTransport(Player* player)
+    {
+        return player && DCAddon::SessionSupportsCapability(player,
+            DCAddon::ProtocolVersion::Capability::PING_RELAY_NATIVE);
+    }
+
+    static void SendNativePingRelayPayload(Player* player,
+        std::string const& payload)
+    {
+        if (!player || !player->GetSession() || payload.empty())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_PING_RELAY,
+            payload.size() + 1);
+        data << payload;
+        player->GetSession()->SendPacket(&data);
+    }
+
+    static void SendPingRelayAck(Player* player, bool ok,
+        std::string const& resolvedDistribution, uint32 recipients,
+        std::string const& error)
+    {
+        if (!player)
+            return;
+
+        if (SupportsNativePingRelayTransport(player))
+        {
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("feature", std::string("ping_relay_ack"));
+            payload.Set("action", std::string("relay_ack"));
+            payload.Set("ok", ok);
+            payload.Set("distribution", resolvedDistribution);
+            payload.Set("recipients", recipients);
+            if (!error.empty())
+                payload.Set("error", error);
+
+            SendNativePingRelayPayload(player, payload.Encode());
+            return;
+        }
+
+        DCAddon::JsonMessage ack(MODULE, Opcode::SMSG_FEATURE_DATA);
+        ack.Set("feature", "ping_relay_ack");
+        ack.Set("action", "relay_ack");
+        ack.Set("ok", ok);
+        ack.Set("distribution", resolvedDistribution);
+        ack.Set("recipients", recipients);
+        if (!error.empty())
+            ack.Set("error", error);
+        ack.Send(player);
+    }
+
+    static void SendPingRelayMessage(Player* recipient, Player* sender,
+        std::string const& resolvedDistribution,
+        std::string const& payload)
+    {
+        if (!recipient || payload.empty())
+            return;
+
+        std::string source = sender ? sender->GetName() : "";
+        uint32 sourceGuid = sender
+            ? static_cast<uint32>(sender->GetGUID().GetCounter())
+            : 0;
+        uint32 timestamp = static_cast<uint32>(time(nullptr));
+
+        if (SupportsNativePingRelayTransport(recipient))
+        {
+            DCAddon::JsonValue nativePayload;
+            nativePayload.SetObject();
+            nativePayload.Set("feature", std::string("ping"));
+            nativePayload.Set("action", std::string("relay"));
+            nativePayload.Set("distribution", resolvedDistribution);
+            nativePayload.Set("payload", payload);
+            nativePayload.Set("syncPayload", payload);
+            nativePayload.Set("source", source);
+            nativePayload.Set("sourceGuid", sourceGuid);
+            nativePayload.Set("timestamp", timestamp);
+
+            SendNativePingRelayPayload(recipient, nativePayload.Encode());
+            return;
+        }
+
+        DCAddon::JsonMessage relay(MODULE, Opcode::SMSG_FEATURE_DATA);
+        relay.Set("feature", "ping");
+        relay.Set("action", "relay");
+        relay.Set("distribution", resolvedDistribution);
+        relay.Set("payload", payload);
+        relay.Set("syncPayload", payload);
+        relay.Set("source", source);
+        relay.Set("sourceGuid", sourceGuid);
+        relay.Set("timestamp", timestamp);
+        relay.Send(recipient);
+    }
+
+    static void RelayPingPayload(Player* player,
+        std::string const& requestedDistribution,
+        std::string const& payload)
+    {
+        if (!player)
+            return;
+
+        if (payload.empty())
+        {
+            SendPingRelayAck(player, false, "", 0,
+                "Missing ping relay payload.");
+            return;
+        }
+
+        std::string resolvedDistribution;
+        std::vector<Player*> recipients;
+        std::string relayError;
+
+        if (!CollectRelayRecipients(player, requestedDistribution,
+                resolvedDistribution, recipients, relayError))
+        {
+            SendPingRelayAck(player, false, resolvedDistribution, 0,
+                relayError);
+            return;
+        }
+
+        for (Player* recipient : recipients)
+            SendPingRelayMessage(recipient, player, resolvedDistribution,
+                payload);
+
+        SendPingRelayAck(player, true, resolvedDistribution,
+            static_cast<uint32>(recipients.size()), "");
     }
 
     // =======================================================================
@@ -567,7 +1028,7 @@ namespace DCQoS
     }
 
     static CreatureData const* ResolveNpcTooltipSpawnData(Player* player,
-        ObjectGuid guid,
+        ObjectGuid const& guid,
         uint32 entry,
         uint32& spawnId)
     {
@@ -2024,10 +2485,55 @@ namespace DCQoS
                                     std::string const& line,
                                     std::string const& protocolRequestId,
                                     SpellInfo const* spellInfo = nullptr,
-                                    bool includeFamilyMetadata = false)
+                                    bool includeFamilyMetadata = false,
+                                    SpellTooltipTransportPreference
+                                        transportPreference =
+                                            SpellTooltipTransportPreference::Auto)
     {
         if (!player || !player->GetSession())
             return;
+
+        SpellTooltipTransportDecision transportDecision =
+            ResolveSpellTooltipTransportDecision(player, protocolRequestId,
+                transportPreference);
+        DCAddon::JsonValue structuredLines;
+        DCAddon::JsonValue const* structuredLinesPtr = nullptr;
+
+        if (status == 0 && spellInfo)
+        {
+            structuredLines = BuildSpellTooltipEnrichmentLines(player, spellId,
+                contextHash, spellInfo, line, includeFamilyMetadata);
+            structuredLinesPtr = &structuredLines;
+        }
+
+        if (IsTooltipTransportDebugEnabled())
+        {
+            LOG_INFO("module.dc",
+                "QoS tooltip transport account={} player='{}' spellId={} requestId={} contextHash={} protocolRid='{}' status={} transport={} reason={} clientCaps=0x{:X} negotiatedCaps=0x{:X} compatible={}",
+                player->GetSession()->GetAccountId(), player->GetName(),
+                spellId, requestId, contextHash,
+                protocolRequestId.empty() ? "<none>" : protocolRequestId,
+                status, ToString(transportDecision.transport),
+                transportDecision.reason,
+                transportDecision.hasCapabilityState
+                    ? transportDecision.capabilityState.clientCapabilities
+                    : 0,
+                transportDecision.hasCapabilityState
+                    ? transportDecision.capabilityState.negotiatedCapabilities
+                    : 0,
+                transportDecision.hasCapabilityState
+                    ? transportDecision.capabilityState.versionCompatible
+                    : false);
+        }
+
+        if (transportDecision.transport == SpellTooltipTransport::NativeBridge)
+        {
+            // Keep the legacy `line` field first for existing native render
+            // paths, then append structured lines for Lua-driven tooltips.
+            SendSpellTooltipEnrichmentNative(player, requestId, spellId,
+                contextHash, status, line, structuredLinesPtr);
+            return;
+        }
 
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SPELL_TOOLTIP_ENRICHMENT);
         if (!protocolRequestId.empty())
@@ -2039,13 +2545,65 @@ namespace DCQoS
         msg.Set("status", static_cast<uint32>(status));
         msg.Set("line", line);
 
-        if (status == 0 && spellInfo)
+        if (structuredLinesPtr)
         {
             msg.Set("source", "server-v2");
-            msg.Set("lines", BuildSpellTooltipEnrichmentLines(player, spellId, contextHash, spellInfo, line, includeFamilyMetadata));
+            msg.Set("lines", structuredLines);
         }
 
         msg.Send(player);
+    }
+
+    void HandleSpellTooltipEnrichmentRequest(Player* player,
+                                             uint32 requestId,
+                                             uint32 spellId,
+                                             uint32 contextHash,
+                                             std::string const& protocolRequestId,
+                                             SpellTooltipTransportPreference
+                                                 transportPreference =
+                                                     SpellTooltipTransportPreference::Auto)
+    {
+        if (!player)
+            return;
+
+        // Status map (matches client expectations):
+        // 0 = success (line present)
+        // 1 = spell not found
+        // 2 = invalid request payload
+        // 3 = no enrichment data available
+        if (requestId == 0 || spellId == 0 || contextHash == 0)
+        {
+            SendSpellTooltipEnrichment(player, requestId, spellId,
+                contextHash, 2, "invalid-request", protocolRequestId,
+                nullptr, false, transportPreference);
+            return;
+        }
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!spellInfo)
+        {
+            SendSpellTooltipEnrichment(player, requestId, spellId,
+                contextHash, 1, "spell-not-found", protocolRequestId,
+                nullptr, false, transportPreference);
+            return;
+        }
+
+        std::string line = BuildSpellTooltipEnrichmentLine(player, spellId,
+            spellInfo);
+        if (line.empty())
+        {
+            SendSpellTooltipEnrichment(player, requestId, spellId,
+                contextHash, 3, "no-enrichment-data", protocolRequestId,
+                nullptr, false, transportPreference);
+            return;
+        }
+
+        QoSSettings settings = GetPlayerSettingsCached(player);
+        bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
+
+        SendSpellTooltipEnrichment(player, requestId, spellId, contextHash,
+            0, line, protocolRequestId, spellInfo, includeFamilyMetadata,
+            transportPreference);
     }
 
     static std::string BuildSpellTooltipEnrichmentLine(Player* player,
@@ -2239,6 +2797,39 @@ namespace DCQoS
         }
     }
 
+    static void HandleItemUpgradeTooltipNativeRequest(Player* player,
+        uint8 bag, uint8 slot)
+    {
+        if (!player)
+            return;
+
+        Item* item = player->GetItemByPos(bag, slot);
+        if (!item)
+        {
+            SendItemUpgradeInfoNativeError(player, bag, slot,
+                "Item not found at location");
+            return;
+        }
+
+        SendItemUpgradeInfoNative(player, item, bag, slot);
+    }
+
+    static void HandleNpcTooltipInfoNativeRequest(Player* player,
+        std::string const& guidStr)
+    {
+        if (!player || guidStr.empty())
+            return;
+
+        SendNpcTooltipInfoNative(player, guidStr);
+    }
+
+    static void HandlePingRelayNativeRequest(Player* player,
+        std::string const& requestedDistribution,
+        std::string const& payload)
+    {
+        RelayPingPayload(player, requestedDistribution, payload);
+    }
+
     void HandleGetSpellInfo(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player)
@@ -2301,35 +2892,8 @@ namespace DCQoS
             contextHash = msg.GetUInt32(dataIndex + 2);
         }
 
-        // Status map (matches client expectations):
-        // 0 = success (line present)
-        // 1 = spell not found
-        // 2 = invalid request payload
-        // 3 = no enrichment data available
-        if (requestId == 0 || spellId == 0 || contextHash == 0)
-        {
-            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 2, "invalid-request", protocolRequestId);
-            return;
-        }
-
-        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-        if (!spellInfo)
-        {
-            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 1, "spell-not-found", protocolRequestId);
-            return;
-        }
-
-        std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, spellInfo);
-        if (line.empty())
-        {
-            SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 3, "no-enrichment-data", protocolRequestId);
-            return;
-        }
-
-        QoSSettings settings = GetPlayerSettingsCached(player);
-        bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
-
-        SendSpellTooltipEnrichment(player, requestId, spellId, contextHash, 0, line, protocolRequestId, spellInfo, includeFamilyMetadata);
+        HandleSpellTooltipEnrichmentRequest(player, requestId, spellId,
+            contextHash, protocolRequestId);
     }
 
     void HandleRequestFeature(Player* player, const DCAddon::ParsedMessage& msg)
@@ -2347,15 +2911,10 @@ namespace DCQoS
         {
             std::string action = json.HasKey("action") ? json["action"].AsString() : "";
 
-            DCAddon::JsonMessage ack(MODULE, Opcode::SMSG_FEATURE_DATA);
-            ack.Set("feature", "ping_relay_ack");
-
             if (action != "relay")
             {
-                ack.Set("action", "relay_ack");
-                ack.Set("ok", false);
-                ack.Set("error", "Unsupported ping feature action.");
-                ack.Send(player);
+                SendPingRelayAck(player, false, "", 0,
+                    "Unsupported ping feature action.");
                 return;
             }
 
@@ -2363,51 +2922,8 @@ namespace DCQoS
             if (payload.empty() && json.HasKey("syncPayload"))
                 payload = json["syncPayload"].AsString();
 
-            if (payload.empty())
-            {
-                ack.Set("action", "relay_ack");
-                ack.Set("ok", false);
-                ack.Set("error", "Missing ping relay payload.");
-                ack.Send(player);
-                return;
-            }
-
             std::string requestedDistribution = json.HasKey("distribution") ? json["distribution"].AsString() : "AUTO";
-            std::string resolvedDistribution;
-            std::vector<Player*> recipients;
-            std::string relayError;
-
-            if (!CollectRelayRecipients(player, requestedDistribution, resolvedDistribution, recipients, relayError))
-            {
-                ack.Set("action", "relay_ack");
-                ack.Set("ok", false);
-                ack.Set("error", relayError);
-                ack.Send(player);
-                return;
-            }
-
-            DCAddon::JsonMessage relay(MODULE, Opcode::SMSG_FEATURE_DATA);
-            relay.Set("feature", "ping");
-            relay.Set("action", "relay");
-            relay.Set("distribution", resolvedDistribution);
-            relay.Set("payload", payload);
-            relay.Set("syncPayload", payload);
-            relay.Set("source", player->GetName());
-            relay.Set("sourceGuid", static_cast<uint32>(player->GetGUID().GetCounter()));
-            relay.Set("timestamp", static_cast<uint32>(time(nullptr)));
-            for (Player* recipient : recipients)
-            {
-                if (!recipient || !recipient->GetSession())
-                    continue;
-
-                relay.Send(recipient);
-            }
-
-            ack.Set("action", "relay_ack");
-            ack.Set("ok", true);
-            ack.Set("distribution", resolvedDistribution);
-            ack.Set("recipients", static_cast<uint32>(recipients.size()));
-            ack.Send(player);
+            RelayPingPayload(player, requestedDistribution, payload);
             return;
         }
 
@@ -2631,6 +3147,140 @@ public:
     }
 };
 
+class DCQoSServerScript : public ServerScript
+{
+public:
+    DCQoSServerScript()
+        : ServerScript("DCQoSServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        uint16 opcode = packet.GetOpcode();
+        if (opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT &&
+            opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP &&
+            opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_NPC_TOOLTIP_INFO &&
+            opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_PING_RELAY)
+            return true;
+
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        if (opcode == DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP)
+        {
+            uint32 bag = 0;
+            uint32 slot = 0;
+
+            if (packet.size() >= sizeof(uint32) * 2)
+            {
+                WorldPacket nativePacket(packet);
+                nativePacket.rpos(0);
+
+                try
+                {
+                    nativePacket >> bag;
+                    nativePacket >> slot;
+                }
+                catch (ByteBufferException const&)
+                {
+                    bag = 0;
+                    slot = 0;
+                }
+            }
+
+            DCQoS::HandleItemUpgradeTooltipNativeRequest(player,
+                static_cast<uint8>(bag), static_cast<uint8>(slot));
+            return false;
+        }
+
+        if (opcode == DCQoS::BridgeOpcode::CMSG_REQUEST_NPC_TOOLTIP_INFO)
+        {
+            std::string guidStr;
+
+            if (packet.size() > 0)
+            {
+                WorldPacket nativePacket(packet);
+                nativePacket.rpos(0);
+
+                try
+                {
+                    nativePacket >> guidStr;
+                }
+                catch (ByteBufferException const&)
+                {
+                    guidStr.clear();
+                }
+            }
+
+            DCQoS::HandleNpcTooltipInfoNativeRequest(player, guidStr);
+            return false;
+        }
+
+        if (opcode == DCQoS::BridgeOpcode::CMSG_REQUEST_PING_RELAY)
+        {
+            std::string distribution;
+            std::string payload;
+
+            if (packet.size() > 0)
+            {
+                WorldPacket nativePacket(packet);
+                nativePacket.rpos(0);
+
+                try
+                {
+                    nativePacket >> distribution;
+                    nativePacket >> payload;
+                }
+                catch (ByteBufferException const&)
+                {
+                    distribution.clear();
+                    payload.clear();
+                }
+            }
+
+            DCQoS::HandlePingRelayNativeRequest(player, distribution,
+                payload);
+            return false;
+        }
+
+        uint32 requestId = 0;
+        uint32 spellId = 0;
+        uint32 contextHash = 0;
+
+        if (packet.size() >= sizeof(uint32) * 3)
+        {
+            WorldPacket nativePacket(packet);
+            nativePacket.rpos(0);
+
+            try
+            {
+                nativePacket >> requestId;
+                nativePacket >> spellId;
+                nativePacket >> contextHash;
+            }
+            catch (ByteBufferException const&)
+            {
+                requestId = 0;
+                spellId = 0;
+                contextHash = 0;
+            }
+        }
+
+        DCQoS::HandleSpellTooltipEnrichmentRequest(player, requestId,
+            spellId, contextHash, "",
+            DCQoS::SpellTooltipTransportPreference::ForceNativeBridge);
+        return false;
+    }
+};
+
 // Message handler registration - called from dc_addon_protocol.cpp
 namespace DCAddon
 {
@@ -2675,4 +3325,5 @@ void AddDCQoSScripts()
     }
 
     new DCQoSPlayerScript();
+    new DCQoSServerScript();
 }

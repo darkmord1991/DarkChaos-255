@@ -37,6 +37,21 @@
 
 namespace DCCollection
 {
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_TRANSMOG_STATE =
+                ::CMSG_REQUEST_COLLECTION_TRANSMOG_STATE,
+            SMSG_TRANSMOG_STATE =
+                ::SMSG_COLLECTION_TRANSMOG_STATE,
+            CMSG_REQUEST_ITEM_SETS =
+                ::CMSG_REQUEST_COLLECTION_ITEM_SETS,
+            SMSG_ITEM_SETS =
+                ::SMSG_COLLECTION_ITEM_SETS,
+        };
+    }
+
     // =======================================================================
     // Configuration
     // =======================================================================
@@ -957,6 +972,107 @@ namespace DCCollection
     // Handlers
     // =======================================================================
 
+    namespace
+    {
+        bool SupportsNativeTransmogStateTransport(Player* player)
+        {
+            return player && DCAddon::SessionSupportsCapability(player,
+                DCAddon::ProtocolVersion::Capability::
+                    COLLECTION_TRANSMOG_STATE_NATIVE);
+        }
+
+        bool SupportsNativeItemSetsTransport(Player* player)
+        {
+            return player && DCAddon::SessionSupportsCapability(player,
+                DCAddon::ProtocolVersion::Capability::
+                    COLLECTION_ITEM_SETS_NATIVE);
+        }
+
+        void SendNativeTransmogState(Player* player,
+            std::string const& payload)
+        {
+            if (!player || !player->GetSession() || payload.empty())
+                return;
+
+            WorldPacket data(BridgeOpcode::SMSG_TRANSMOG_STATE,
+                payload.size() + 1);
+            data << payload;
+            player->GetSession()->SendPacket(&data);
+        }
+
+        void SendNativeItemSetsPayload(Player* player,
+            std::string const& payload)
+        {
+            if (!player || !player->GetSession() || payload.empty())
+                return;
+
+            WorldPacket data(BridgeOpcode::SMSG_ITEM_SETS,
+                payload.size() + 1);
+            data << payload;
+            player->GetSession()->SendPacket(&data);
+        }
+
+        void SendAddonItemSetsPayload(Player* player,
+            std::string const& payload)
+        {
+            if (!player || payload.empty())
+                return;
+
+            DCAddon::Message res(DCAddon::Module::COLLECTION,
+                DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
+            res.Add("J");
+            res.Add(payload);
+            res.Send(player);
+        }
+
+        void SendItemSetsPayload(Player* player,
+            std::string const& payload, bool useNativeResponse)
+        {
+            if (useNativeResponse && SupportsNativeItemSetsTransport(player))
+            {
+                SendNativeItemSetsPayload(player, payload);
+                return;
+            }
+
+            SendAddonItemSetsPayload(player, payload);
+        }
+
+        void BuildTransmogStatePayload(Player* player, DCAddon::JsonValue& state,
+            DCAddon::JsonValue& itemIds)
+        {
+            state.SetObject();
+            itemIds.SetObject();
+
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}",
+                player->GetGUID().GetCounter());
+
+            if (!result)
+                return;
+
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 slot = fields[0].Get<uint32>();
+                uint32 fakeEntry = fields[1].Get<uint32>();
+                uint32 displayId = 0;
+                ItemTemplate const* fakeProto =
+                    sObjectMgr->GetItemTemplate(fakeEntry);
+                if (fakeProto)
+                    displayId = fakeProto->DisplayInfoID;
+
+                state.Set(std::to_string(slot), displayId);
+                itemIds.Set(std::to_string(slot), fakeEntry);
+
+                // Re-apply the appearance so the visible slots stay correct
+                // across login/map changes before the UI refreshes.
+                if (fakeEntry > 0)
+                    player->SetUInt32Value(
+                        PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+            } while (result->NextRow());
+        }
+    }
+
     void SendTransmogState(Player* player)
     {
         if (!player || !player->GetSession()) return;
@@ -964,45 +1080,72 @@ namespace DCCollection
         EnsureCharacterTransmogTable();
 
         DCAddon::JsonValue state;
-        state.SetObject();
-
-        // Also send itemIds (fakeEntry) for outfit preview TryOn
         DCAddon::JsonValue itemIds;
-        itemIds.SetObject();
+        BuildTransmogStatePayload(player, state, itemIds);
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}",
-            player->GetGUID().GetCounter());
-
-        if (result)
+        if (SupportsNativeTransmogStateTransport(player))
         {
-            do
-            {
-                Field* fields = result->Fetch();
-                uint32 slot = fields[0].Get<uint32>();
-                uint32 fakeEntry = fields[1].Get<uint32>();
-                uint32 displayId = 0;
-                ItemTemplate const* fakeProto = sObjectMgr->GetItemTemplate(fakeEntry);
-                if (fakeProto)
-                    displayId = fakeProto->DisplayInfoID;
-
-                // Report the stored/derived displayId even if the definitions cache is currently empty.
-                state.Set(std::to_string(slot), displayId);
-                // Also send the item entry for outfit preview TryOn
-                itemIds.Set(std::to_string(slot), fakeEntry);
-
-                // --- DC-Collection Transmog Persistence Fix ---
-                // Re-apply the appearance to the player immediately when sending state.
-                // This ensures transmog is restored natively on login and map changes, overriding the equipped item.
-                if (fakeEntry > 0)
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
-            } while (result->NextRow());
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("state", state);
+            payload.Set("itemIds", itemIds);
+            SendNativeTransmogState(player, payload.Encode());
+            return;
         }
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_TRANSMOG_STATE);
         msg.Set("state", state);
         msg.Set("itemIds", itemIds);
         msg.Send(player);
+    }
+
+    uint32 NormalizeSavedOutfitSlotValue(uint32 rawValue)
+    {
+        if (!rawValue)
+            return 0;
+
+        auto const& idx = GetTransmogAppearanceIndexCached();
+        if (idx.find(rawValue) != idx.end())
+            return rawValue;
+
+        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(rawValue))
+        {
+            uint32 displayId = proto->DisplayInfoID;
+            if (displayId)
+                return displayId;
+        }
+
+        return rawValue;
+    }
+
+    std::string NormalizeSavedOutfitItemsJson(std::string const& items)
+    {
+        if (items.empty())
+            return "{}";
+
+        DCAddon::JsonValue parsed = DCAddon::JsonParser::Parse(items);
+        if (!parsed.IsObject())
+            return items;
+
+        std::vector<std::pair<std::string, uint32>> updates;
+        for (auto const& [slotKey, value] : parsed.AsObject())
+        {
+            if (!value.IsNumber())
+                continue;
+
+            uint32 rawValue = value.AsUInt32();
+            uint32 normalizedValue = NormalizeSavedOutfitSlotValue(rawValue);
+            if (normalizedValue != rawValue)
+                updates.emplace_back(slotKey, normalizedValue);
+        }
+
+        if (updates.empty())
+            return items;
+
+        for (auto const& [slotKey, normalizedValue] : updates)
+            parsed.Set(slotKey, normalizedValue);
+
+        return parsed.Encode();
     }
 
     void HandleSetTransmogMessage(Player* player, const DCAddon::ParsedMessage& msg)
@@ -2066,41 +2209,11 @@ namespace DCCollection
 
      // Get correct Item IDs for Item Sets
     // This assumes ItemSet.dbc is loaded on server
-    void HandleGetItemSets(Player* player, const DCAddon::ParsedMessage& msg)
+    void SendItemSetsPage(Player* player, uint32 offset, uint32 limit,
+        uint32 clientSyncVersion, bool wantPacked, bool useNativeResponse)
     {
         if (!player || !player->GetSession())
             return;
-
-        uint32 offset = 0;
-        uint32 limit = 50;
-        uint32 clientSyncVersion = 0;
-        bool wantPacked = false;
-        if (DCAddon::IsJsonMessage(msg))
-        {
-            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
-
-            if (json.HasKey("offset") && json["offset"].IsNumber())
-                offset = json["offset"].AsUInt32();
-            if (json.HasKey("limit") && json["limit"].IsNumber())
-                limit = json["limit"].AsUInt32();
-
-            if (json.HasKey("syncVersion") && json["syncVersion"].IsNumber())
-                clientSyncVersion = json["syncVersion"].AsUInt32();
-            else if (json.HasKey("version") && json["version"].IsNumber())
-                clientSyncVersion = json["version"].AsUInt32();
-
-            // Optional: request packed payload to reduce JSON overhead.
-            // Accept 1/true.
-            if (json.HasKey("packed"))
-            {
-                if (json["packed"].IsBool())
-                    wantPacked = json["packed"].AsBool();
-                else if (json["packed"].IsNumber())
-                    wantPacked = (json["packed"].AsUInt32() != 0);
-                else if (json["packed"].IsString())
-                    wantPacked = (json["packed"].AsString() == "1" || json["packed"].AsString() == "true");
-            }
-        }
 
         // Clamp paging parameters.
         if (limit < 10)
@@ -2311,10 +2424,7 @@ namespace DCCollection
                    << ",\"hasMore\":0,\"upToDate\":1,\"syncVersion\":" << payload.syncVersion << "}";
             }
 
-            DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
-            res.Add("J");
-            res.Add(ss.str());
-            res.Send(player);
+            SendItemSetsPayload(player, ss.str(), useNativeResponse);
             return;
         }
 
@@ -2350,10 +2460,53 @@ namespace DCCollection
                << ",\"hasMore\":" << (hasMore ? 1 : 0) << ",\"syncVersion\":" << payload.syncVersion << "}";
         }
 
-        DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
-        res.Add("J");
-        res.Add(ss.str());
-        res.Send(player);
+        SendItemSetsPayload(player, ss.str(), useNativeResponse);
+    }
+
+    void HandleGetItemSets(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 offset = 0;
+        uint32 limit = 50;
+        uint32 clientSyncVersion = 0;
+        bool wantPacked = false;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+
+            if (json.HasKey("offset") && json["offset"].IsNumber())
+                offset = json["offset"].AsUInt32();
+            if (json.HasKey("limit") && json["limit"].IsNumber())
+                limit = json["limit"].AsUInt32();
+
+            if (json.HasKey("syncVersion") && json["syncVersion"].IsNumber())
+                clientSyncVersion = json["syncVersion"].AsUInt32();
+            else if (json.HasKey("version") && json["version"].IsNumber())
+                clientSyncVersion = json["version"].AsUInt32();
+
+            if (json.HasKey("packed"))
+            {
+                if (json["packed"].IsBool())
+                    wantPacked = json["packed"].AsBool();
+                else if (json["packed"].IsNumber())
+                    wantPacked = (json["packed"].AsUInt32() != 0);
+                else if (json["packed"].IsString())
+                    wantPacked = (json["packed"].AsString() == "1" ||
+                        json["packed"].AsString() == "true");
+            }
+        }
+
+        SendItemSetsPage(player, offset, limit, clientSyncVersion,
+            wantPacked, false);
+    }
+
+    static void HandleNativeItemSetsRequest(Player* player, uint32 offset,
+        uint32 limit, uint32 clientSyncVersion, bool wantPacked)
+    {
+        SendItemSetsPage(player, offset, limit, clientSyncVersion,
+            wantPacked, true);
     }
 
     // =======================================================================
@@ -2385,6 +2538,7 @@ namespace DCCollection
         std::string name = json["name"].AsString();
         std::string icon = json["icon"].AsString();
         std::string items = json["items"].IsString() ? json["items"].AsString() : json["items"].Encode();
+        items = NormalizeSavedOutfitItemsJson(items);
         uint32 accountId = player->GetSession()->GetAccountId();
 
         LOG_INFO("module.dc", "[DCWardrobe] HandleSaveOutfit: player={}, accountId={}, clientId={}, name='{}', itemsLen={}",
@@ -2540,8 +2694,7 @@ namespace DCCollection
                     return res;
                 };
 
-                if (items.empty())
-                    items = "{}";
+                items = NormalizeSavedOutfitItemsJson(items);
 
                 if (!first)
                     ss << ",";
@@ -2742,11 +2895,98 @@ namespace DCCollection
 
 } // namespace DCCollection
 
+class CollectionTransmogNativeServerScript : public ServerScript
+{
+public:
+    CollectionTransmogNativeServerScript()
+        : ServerScript("CollectionTransmogNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode() !=
+            DCCollection::BridgeOpcode::CMSG_REQUEST_TRANSMOG_STATE)
+            return true;
+
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        DCCollection::SendTransmogState(player);
+        return false;
+    }
+};
+
+class CollectionItemSetsNativeServerScript : public ServerScript
+{
+public:
+    CollectionItemSetsNativeServerScript()
+        : ServerScript("CollectionItemSetsNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode() !=
+            DCCollection::BridgeOpcode::CMSG_REQUEST_ITEM_SETS)
+            return true;
+
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        uint32 offset = 0;
+        uint32 limit = 50;
+        uint32 clientSyncVersion = 0;
+        uint32 packedFlag = 1;
+
+        if (packet.size() > 0)
+        {
+            WorldPacket nativePacket(packet);
+            nativePacket.rpos(0);
+
+            try
+            {
+                nativePacket >> offset;
+                nativePacket >> limit;
+                nativePacket >> clientSyncVersion;
+                nativePacket >> packedFlag;
+            }
+            catch (ByteBufferException const&)
+            {
+                offset = 0;
+                limit = 50;
+                clientSyncVersion = 0;
+                packedFlag = 1;
+            }
+        }
+
+        DCCollection::HandleNativeItemSetsRequest(player, offset, limit,
+            clientSyncVersion, packedFlag != 0);
+        return false;
+    }
+};
+
 // Registration
 void AddSC_dc_addon_wardrobe()
 {
     new DCCollection::WardrobePlayerScript();
     new DCCollection::WardrobeMiscScript();
+    new CollectionTransmogNativeServerScript();
+    new CollectionItemSetsNativeServerScript();
 
     using namespace DCAddon;
     using namespace DCCollection;

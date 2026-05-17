@@ -79,10 +79,9 @@ COMMENT='Final boss definitions for dungeon completion tracking';
 -- SEED DATA: Sample entrances for WotLK dungeons
 -- ========================================================================
 INSERT INTO `dc_dungeon_entrances` (`dungeon_map`, `entrance_map`, `entrance_x`, `entrance_y`, `entrance_z`, `entrance_o`) VALUES
--- WotLK Dungeons - Updated coordinates from game data
 (574, 571, 1206.940, -4868.050, 41.249, 0.280), -- Utgarde Keep
 (575, 571, 1256.960, -4852.940, 215.550, 3.447), -- Utgarde Pinnacle (Utgarde Tower)
-(576, 571, 5705.190, 517.960, 649.780, 4.031), -- The Nexus (Violet Citadel)
+(576, 571, 3893.0447, 6985.55, 69.48786, 0.10817455), -- The Nexus
 (578, 571, 3782.89, 6965.23, 105.088, 6.14), -- The Oculus (using old coordinates - not in update)
 (595, 571, 8922.12, -1005.4, 1039.02, 1.57), -- Culling of Stratholme (using old coordinates - not in update)
 (599, 571, 8922.450, -1012.960, 1039.590, 1.563), -- Halls of Stone

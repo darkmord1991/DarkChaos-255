@@ -34,6 +34,31 @@ local function NormalizeTitleName(name)
     return normalized
 end
 
+local function RefreshNativeTitleUI()
+    if CharacterFrame and CharacterFrame.IsShown and not CharacterFrame:IsShown() then
+        return
+    end
+
+    if type(PlayerTitleFrame_UpdateTitles) == "function" then
+        pcall(PlayerTitleFrame_UpdateTitles)
+    end
+
+    if type(PlayerTitlePickerScrollFrame_Update) == "function" then
+        pcall(PlayerTitlePickerScrollFrame_Update)
+    end
+end
+
+local function HasUsableTitleName(def)
+    if type(def) ~= "table" then
+        return false
+    end
+
+    local displayName = tostring(def.displayName or def.name or "")
+    displayName = string.gsub(displayName, "^%s+", "")
+    displayName = string.gsub(displayName, "%s+$", "")
+    return displayName ~= ""
+end
+
 -- ============================================================================
 -- INITIALIZATION
 -- ============================================================================
@@ -58,8 +83,6 @@ function TitleModule:SeedFromClientKnownTitles()
 
     DC.definitions = DC.definitions or {}
     DC.definitions.titles = DC.definitions.titles or {}
-    DC.collections = DC.collections or {}
-    DC.collections.titles = DC.collections.titles or {}
 
     local defsByName = {}
     for defId, def in pairs(DC.definitions.titles) do
@@ -87,19 +110,10 @@ function TitleModule:SeedFromClientKnownTitles()
             }
             added = added + 1
         end
-        
-        -- Mark as collected
-        if not DC.collections.titles[titleId] then
-            DC.collections.titles[titleId] = {
-                obtained_date = time(),
-                is_favorite = false,
-                is_active = false,
-            }
-        end
     end
     
     if added > 0 then
-        DC:Debug("Seeded " .. added .. " titles from client")
+        DC:Debug("Seeded " .. added .. " title definitions from client")
     end
 
     self:RefreshStatsCache()
@@ -139,16 +153,16 @@ function TitleModule:BuildKnownTitleLookup()
 
     local titleCount = tonumber(GetNumTitles()) or 0
     for i = 1, titleCount do
-        local name = GetTitleName(i)
-        if name then
-            local key = NormalizeTitleName(name)
-            if key ~= "" and indexByName[key] == nil then
-                indexByName[key] = i
-            end
-        end
-
         if IsTitleKnown(i) then
             knownByIndex[i] = true
+
+            local name = GetTitleName(i)
+            if name then
+                local key = NormalizeTitleName(name)
+                if key ~= "" and indexByName[key] == nil then
+                    indexByName[key] = i
+                end
+            end
         end
     end
 
@@ -232,6 +246,7 @@ function TitleModule:GetFilteredTitles(filters)
     local knownByIndex, knownByName = self:BuildKnownTitleLookup()
     
     for titleId, def in pairs(definitions) do
+        if HasUsableTitleName(def) then
         local collData = self:GetCollectionDataForTitle(titleId, def, knownByName)
         local collected = self:IsTitleCollected(titleId, def, knownByIndex, knownByName)
         
@@ -281,6 +296,7 @@ function TitleModule:GetFilteredTitles(filters)
                 is_active = collData and collData.is_active,
                 definition = def,
             })
+        end
         end
     end
     
@@ -348,6 +364,7 @@ function TitleModule:SetTitle(titleId)
 
     if knownIndex and type(SetCurrentTitle) == "function" then
         pcall(SetCurrentTitle, knownIndex)
+        RefreshNativeTitleUI()
     end
 end
 
@@ -357,6 +374,7 @@ function TitleModule:ClearTitle()
     end
     if type(SetCurrentTitle) == "function" then
         pcall(SetCurrentTitle, 0)
+        RefreshNativeTitleUI()
     end
 end
 
@@ -462,6 +480,10 @@ function TitleModule:RefreshStatsCache()
     if DC.MyCollection and type(DC.MyCollection.Update) == "function" then
         DC.MyCollection:Update()
     end
+end
+
+function TitleModule:OnAuthoritativeCollectionUpdated()
+    RefreshNativeTitleUI()
 end
 
 -- ============================================================================
