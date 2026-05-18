@@ -19,6 +19,11 @@ local SPECTATOR_PRIVACY = {
     PRIVATE = 4,     -- No spectators allowed
 }
 
+local NATIVE_SPECTATOR_LIVE_CAPABILITY = 0x00040000
+local NATIVE_SPECTATOR_LIVE_POLL_INTERVAL = 0.10
+local lastNativeSpectatorRevision = 0
+local nativeSpectatorPollFrame
+
 -- Sample live runs
 local mockLiveRuns = {
     {
@@ -112,6 +117,121 @@ local function NormalizeRunEntry(run)
         spectators = tonumber(run.spectators or run.viewerCount or run.watchers) or 0,
         maxSpectators = tonumber(run.maxSpectators or run.max_spectators) or 10,
     }
+end
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+
+    if capability <= 0 then
+        return false
+    end
+
+    if bit and bit.band then
+        return bit.band(mask, capability) ~= 0
+    end
+
+    return (mask % (capability * 2)) >= capability
+end
+
+local function HasNativeSpectatorBridge()
+    if type(RequestNativeSpectatorLiveSnapshot) ~= "function"
+        or type(GetNativeSpectatorLiveSnapshot) ~= "function" then
+        return false
+    end
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and type(DC.GetClientCapabilities) == "function" then
+        local ok, capabilities = pcall(DC.GetClientCapabilities, DC)
+        if ok then
+            return HasCapabilityBit(capabilities,
+                NATIVE_SPECTATOR_LIVE_CAPABILITY)
+        end
+    end
+
+    return true
+end
+
+local function ShouldUseNativeSpectatorBridge()
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not HasNativeSpectatorBridge() or not DC
+        or type(DC.GetCapabilitySnapshot) ~= "function" then
+        return false
+    end
+
+    local ok, snapshot = pcall(DC.GetCapabilitySnapshot, DC)
+    if not ok or type(snapshot) ~= "table" or not snapshot.connected then
+        return false
+    end
+
+    return HasCapabilityBit(snapshot.negotiatedCaps,
+        NATIVE_SPECTATOR_LIVE_CAPABILITY)
+end
+
+local function DecodeNativeSpectatorPayload(payload)
+    if type(payload) ~= "string" or payload == "" then
+        return nil
+    end
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not DC or type(DC.DecodeJSON) ~= "function" then
+        return nil
+    end
+
+    local ok, data = pcall(DC.DecodeJSON, DC, payload)
+    if not ok or type(data) ~= "table" then
+        return nil
+    end
+
+    return data
+end
+
+local function ConsumeNativeSpectatorSnapshot()
+    if not GF._spectatorSessionActive or not ShouldUseNativeSpectatorBridge() then
+        return false
+    end
+
+    local ok, revision, payload = pcall(GetNativeSpectatorLiveSnapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    if revision <= 0 or revision == lastNativeSpectatorRevision then
+        return false
+    end
+
+    lastNativeSpectatorRevision = revision
+
+    local data = DecodeNativeSpectatorPayload(payload)
+    if type(data) ~= "table" then
+        return false
+    end
+
+    GF:UpdateSpectatorHUD(data)
+    return true
+end
+
+local function EnsureNativeSpectatorPollFrame()
+    if nativeSpectatorPollFrame then
+        return
+    end
+
+    nativeSpectatorPollFrame = CreateFrame("Frame")
+    nativeSpectatorPollFrame.elapsed = 0
+    nativeSpectatorPollFrame:SetScript("OnUpdate", function(self, elapsed)
+        if not GF._spectatorSessionActive then
+            return
+        end
+
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_SPECTATOR_LIVE_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativeSpectatorSnapshot()
+    end)
 end
 
 -- =====================================================================
@@ -619,25 +739,64 @@ function GF:CreateSpectatorHUD()
 end
 
 function GF:ShowSpectatorHUD(runData)
+    self._spectatorSessionActive = true
+
+    local normalized = NormalizeRunEntry(runData) or runData or {}
     local hud = self:CreateSpectatorHUD()
     
-    if runData then
-        hud.dungeonText:SetText(string.format("%s |cff32c4ff+%d|r", runData.dungeon or "Unknown", runData.level or 0))
-        hud.timerText:SetText("Timer: " .. (runData.timer or "00:00"))
-        hud.progressText:SetText(string.format("Progress: %s  |  Deaths: %d", runData.progress or "0%", runData.deaths or 0))
+    if normalized then
+        hud.dungeonText:SetText(string.format("%s |cff32c4ff+%d|r", normalized.dungeon or "Unknown", normalized.level or 0))
+        hud.timerText:SetText("Timer: " .. (normalized.timer or "00:00"))
+        hud.progressText:SetText(string.format("Progress: %s  |  Deaths: %d", normalized.progress or "0%", normalized.deaths or 0))
     end
     
     hud:Show()
 end
 
 function GF:UpdateSpectatorHUD(runData)
-    if not self.spectatorHUD or not self.spectatorHUD:IsShown() then return end
-    
-    if runData.timer then
-        self.spectatorHUD.timerText:SetText("Timer: " .. runData.timer)
+    local normalized = NormalizeRunEntry(runData)
+    if not normalized then
+        return
     end
-    if runData.progress then
-        self.spectatorHUD.progressText:SetText(string.format("Progress: %s  |  Deaths: %d", runData.progress, runData.deaths or 0))
+
+    if not self.spectatorHUD or not self.spectatorHUD:IsShown() then
+        self:ShowSpectatorHUD(normalized)
+        return
+    end
+
+    self._spectatorSessionActive = true
+
+    if normalized.dungeon then
+        self.spectatorHUD.dungeonText:SetText(string.format("%s |cff32c4ff+%d|r", normalized.dungeon or "Unknown", normalized.level or 0))
+    end
+    if normalized.timer then
+        self.spectatorHUD.timerText:SetText("Timer: " .. normalized.timer)
+    end
+    if normalized.progress then
+        self.spectatorHUD.progressText:SetText(string.format("Progress: %s  |  Deaths: %d", normalized.progress, normalized.deaths or 0))
+    end
+end
+
+function GF:BeginSpectateSession(data)
+    self._spectatorSessionActive = true
+
+    if ShouldUseNativeSpectatorBridge() then
+        EnsureNativeSpectatorPollFrame()
+        lastNativeSpectatorRevision = 0
+        pcall(RequestNativeSpectatorLiveSnapshot, "spectate-start")
+        return
+    end
+
+    if type(data) == "table" and (data.dungeon or data.dungeonName) then
+        self:ShowSpectatorHUD(data)
+    end
+end
+
+function GF:EndSpectateSession()
+    self._spectatorSessionActive = false
+
+    if self.spectatorHUD then
+        self.spectatorHUD:Hide()
     end
 end
 
@@ -654,9 +813,7 @@ function GF:LeaveSpectate()
         end
     end
     
-    if self.spectatorHUD then
-        self.spectatorHUD:Hide()
-    end
+    self:EndSpectateSession()
 end
 
 -- =====================================================================

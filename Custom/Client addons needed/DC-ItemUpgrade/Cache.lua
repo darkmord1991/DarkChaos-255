@@ -95,6 +95,43 @@ function DC.GetServerBagFromClient(bag)
 	return bag;
 end
 
+function DC.GetClientLocationFromServer(serverBag, serverSlot)
+	if serverBag == nil or serverSlot == nil then
+		return nil, nil;
+	end
+
+	local INVENTORY_SLOT_ITEM_START = _G.INVENTORY_SLOT_ITEM_START or 23;
+	local INVENTORY_SLOT_ITEM_END = _G.INVENTORY_SLOT_ITEM_END or 39;
+	local BANK_SLOT_ITEM_START = _G.BANK_SLOT_ITEM_START or 39;
+	local BANK_SLOT_ITEM_END = _G.BANK_SLOT_ITEM_END or 67;
+	local INVENTORY_SLOT_BAG_START = _G.INVENTORY_SLOT_BAG_START or 19;
+	local INVENTORY_SLOT_BAG_END = _G.INVENTORY_SLOT_BAG_END or 23;
+	local BANK_SLOT_BAG_START = _G.BANK_SLOT_BAG_START or 67;
+	local BANK_SLOT_BAG_END = _G.BANK_SLOT_BAG_END or 74;
+
+	if serverBag == BAG_EQUIPPED then
+		if serverSlot >= INVENTORY_SLOT_ITEM_START and serverSlot < INVENTORY_SLOT_ITEM_END then
+			return BAG_BACKPACK, (serverSlot - INVENTORY_SLOT_ITEM_START) + 1;
+		end
+
+		if serverSlot >= BANK_SLOT_ITEM_START and serverSlot < BANK_SLOT_ITEM_END then
+			return BAG_BANK, (serverSlot - BANK_SLOT_ITEM_START) + 1;
+		end
+
+		return BAG_EQUIPPED, serverSlot + 1;
+	end
+
+	if serverBag >= INVENTORY_SLOT_BAG_START and serverBag < INVENTORY_SLOT_BAG_END then
+		return (serverBag - INVENTORY_SLOT_BAG_START) + 1, serverSlot + 1;
+	end
+
+	if serverBag >= BANK_SLOT_BAG_START and serverBag < BANK_SLOT_BAG_END then
+		return (serverBag - BANK_SLOT_BAG_START) + 5, serverSlot + 1;
+	end
+
+	return serverBag, serverSlot + 1;
+end
+
 function DC.BuildLocationKey(bag, slot)
 	return string.format("%d:%d", bag or -1, slot or -1);
 end

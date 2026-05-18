@@ -642,6 +642,10 @@ function Wardrobe:CreateLeftPanel(parent)
     local model = CreateFrame("DressUpModel", "DCWardrobeModel", modelFrame)
     model:SetAllPoints()
     model:SetUnit("player")
+    model._dcPreviewSequence = Wardrobe.PREVIEW_IDLE_SEQUENCE or 0
+    if type(Wardrobe.StabilizePreviewModel) == "function" then
+        Wardrobe:StabilizePreviewModel(model, model._dcPreviewSequence)
+    end
 
     model:EnableMouse(true)
     model.rotating = false
@@ -1588,6 +1592,10 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
         btn.model:SetPoint("TOPLEFT", 8, -30)
         btn.model:SetPoint("BOTTOMRIGHT", -8, 8)
         btn.model:SetUnit("player")
+        btn.model._dcPreviewSequence = Wardrobe.PREVIEW_IDLE_SEQUENCE or 0
+        if type(Wardrobe.StabilizePreviewModel) == "function" then
+            Wardrobe:StabilizePreviewModel(btn.model, btn.model._dcPreviewSequence)
+        end
         btn.model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
         
         -- Fallback Icon (if model is heavy or disabled)
@@ -1729,6 +1737,10 @@ function Wardrobe:ShowTooltipPreview(itemId)
         model:SetPoint("TOPLEFT", 12, -12)
         model:SetPoint("BOTTOMRIGHT", -12, 12)
         model:SetUnit("player")
+        model._dcPreviewSequence = Wardrobe.PREVIEW_IDLE_SEQUENCE or 0
+        if type(Wardrobe.StabilizePreviewModel) == "function" then
+            Wardrobe:StabilizePreviewModel(model, model._dcPreviewSequence)
+        end
         model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
         
         frame.model = model
@@ -1757,12 +1769,18 @@ function Wardrobe:ShowTooltipPreview(itemId)
     frame.model:Show()
     frame.model:SetUnit("player")
     frame.model:Undress()
+    if type(self.StabilizePreviewModel) == "function" then
+        self:StabilizePreviewModel(frame.model, frame.model._dcPreviewSequence)
+    end
     
     -- Try on item with error protection
     pcall(function()
         local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
         frame.model:TryOn(link)
     end)
+    if type(self.StabilizePreviewModel) == "function" then
+        self:StabilizePreviewModel(frame.model, frame.model._dcPreviewSequence)
+    end
     
     -- Apply camera based on preview mode
     if self.previewMode == "grid" then

@@ -43,10 +43,13 @@ namespace MythicPlus
     {
         constexpr uint32 WEEK_SECONDS = 7u * 24u * 60u * 60u;
 
-        bool SupportsNativeHudTransport(Player* player)
+        DCAddon::TransportPolicyDecision ResolveHudTransport(Player* player)
         {
-            return player && DCAddon::SessionSupportsCapability(player,
-                DCAddon::ProtocolVersion::Capability::MYTHICPLUS_HUD_NATIVE);
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "mythicplus-hud";
+            request.nativeCapability =
+                DCAddon::ProtocolVersion::Capability::MYTHICPLUS_HUD_NATIVE;
+            return DCAddon::ResolveTransportPolicy(player, request);
         }
 
         void SendNativeHudSnapshot(Player* player,
@@ -74,7 +77,7 @@ namespace MythicPlus
 
         void SendHudSnapshot(Player* player, std::string const& payload)
         {
-            if (SupportsNativeHudTransport(player))
+            if (ResolveHudTransport(player).UsesNative())
             {
                 SendNativeHudSnapshot(player, payload);
                 return;

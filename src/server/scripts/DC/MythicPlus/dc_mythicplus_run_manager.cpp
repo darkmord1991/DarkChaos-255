@@ -23,6 +23,7 @@
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_constants.h"
 #include "dc_mythicplus_affixes.h"
+#include "dc_mythicplus_spectator.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -455,6 +456,10 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
 
     InitializeHud(state, map);
 
+    // Lock in Mythic+ scaling as soon as the keystone is committed so loaded
+    // mobs are already refreshed during the visible start countdown.
+    ApplyKeystoneScaling(map, state->keystoneLevel);
+
     // Start the run countdown only after the prep work above has completed so
     // chat announcements and HUD countdowns share the same zero-point.
     uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
@@ -761,6 +766,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
         }
     }
 
+    sMythicSpectator.UnregisterActiveRun(state->instanceId);
     ClearHudSnapshot(state);
     _instanceStates.erase(state->instanceKey);
 }
@@ -774,6 +780,7 @@ void MythicPlusRunManager::HandleInstanceReset(Map* map)
     auto itr = _instanceStates.find(key);
     if (itr != _instanceStates.end())
     {
+        sMythicSpectator.UnregisterActiveRun(itr->second.instanceId);
         ClearHudSnapshot(&itr->second);
         _instanceStates.erase(itr);
     }
@@ -1273,6 +1280,7 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
     }
 
     RecordRunResult(state, false, 0);
+    sMythicSpectator.UnregisterActiveRun(state->instanceId);
     ClearHudSnapshot(state);
     _instanceStates.erase(state->instanceKey);
 
@@ -2542,6 +2550,48 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DUNGEON_ID, state->mapId);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, GetTotalBossesForDungeon(state->mapId));
     UpdateHud(state, map, true, "start");
+
+    std::string leaderName = activator->GetName();
+    if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
+        leaderName = owner->GetName();
+
+    std::string dungeonName = GetMapDisplayName(state->mapId);
+    sMythicSpectator.RegisterActiveRun(state->instanceId, state->mapId,
+        state->keystoneLevel, leaderName, true, state->instanceId,
+        dungeonName);
+
+    if (DCMythicSpectator::SpectateableRun* liveRun =
+            sMythicSpectator.GetRunMutable(state->instanceId))
+    {
+        uint64 now = GameTime::GetGameTime().count();
+        liveRun->runId = state->instanceId;
+        liveRun->startedAt = static_cast<uint32>(state->startedAt);
+        liveRun->timerRemaining = state->timerEndsAt > now
+            ? static_cast<uint32>(state->timerEndsAt - now)
+            : 0;
+        liveRun->bossesKilled = state->bossesKilled;
+        liveRun->bossesTotal = GetTotalBossesForDungeon(state->mapId);
+        liveRun->deaths = state->deaths;
+        liveRun->leaderName = leaderName;
+        liveRun->dungeonName = dungeonName;
+        liveRun->participantNames.clear();
+
+        Map::PlayerList const& players = map->GetPlayers();
+        for (auto const& ref : players)
+        {
+            Player* player = ref.GetSource();
+            if (!player)
+                continue;
+
+            if (state->participants.find(player->GetGUID().GetCounter()) ==
+                state->participants.end())
+            {
+                continue;
+            }
+
+            liveRun->participantNames.push_back(player->GetName());
+        }
+    }
 
     AnnounceToInstance(map, "|cff00ff00Mythic+ timer started! Good luck!|r");
 

@@ -47,6 +47,9 @@ DCAddonProtocol = {
         COLLECTION_TRANSMOG_STATE_NATIVE = 0x00002000,
         COLLECTION_ITEM_SETS_NATIVE = 0x00004000,
         PING_RELAY_NATIVE = 0x00008000,
+        CLIENT_METADATA = 0x00010000,
+        HLBG_LIVE_NATIVE = 0x00020000,
+        SPECTATOR_LIVE_NATIVE = 0x00040000,
     },
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
     BASE_CAPABILITIES = 3,
@@ -521,6 +524,24 @@ function DC:GetNativeExtensionCapabilities()
             self.Capability.PING_RELAY_NATIVE)
     end
 
+    if type(RequestNativeHLBGLiveSnapshot) == "function"
+        and type(GetNativeHLBGLiveSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.HLBG_LIVE_NATIVE)
+    end
+
+    if type(RequestNativeSpectatorLiveSnapshot) == "function"
+        and type(GetNativeSpectatorLiveSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.SPECTATOR_LIVE_NATIVE)
+    end
+
+    if self:GetNativeExtensionBuildFingerprint()
+        or type(self:GetNativeExtensionDataRevisions()) == "table" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.CLIENT_METADATA)
+    end
+
     return capabilities
 end
 
@@ -530,6 +551,18 @@ function DC:GetNativeExtensionBuildFingerprint()
         local ok, fingerprint = pcall(getter)
         if ok and type(fingerprint) == "string" and fingerprint ~= "" then
             return fingerprint
+        end
+    end
+
+    return nil
+end
+
+function DC:GetNativeExtensionDataRevisions()
+    local getter = rawget(_G, "GetDCClientDataRevisions")
+    if type(getter) == "function" then
+        local ok, revisions = pcall(getter)
+        if ok and type(revisions) == "table" then
+            return revisions
         end
     end
 
@@ -603,12 +636,83 @@ function DC:DescribeCapabilities(mask)
             self.Capability.PING_RELAY_NATIVE) then
         table.insert(parts, "NativePingRelay")
     end
+    if HasCapabilityBit(capabilities,
+            self.Capability.HLBG_LIVE_NATIVE) then
+        table.insert(parts, "NativeHLBGLive")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.SPECTATOR_LIVE_NATIVE) then
+        table.insert(parts, "NativeSpectatorLive")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.CLIENT_METADATA) then
+        table.insert(parts, "ClientMetadata")
+    end
 
     if #parts == 0 then
         return "None"
     end
 
     return table.concat(parts, ", ")
+end
+
+local function SanitizeHandshakeText(value, maxLen)
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    value = string.gsub(value, "|", "/")
+    value = string.gsub(value, "%c", "")
+    if value == "" then
+        return nil
+    end
+
+    if maxLen and #value > maxLen then
+        value = string.sub(value, 1, maxLen)
+    end
+
+    return value
+end
+
+function DC:GetHandshakeMetadataPayload()
+    local metadata = { v = 1 }
+    local hasFields = false
+
+    local fingerprint = SanitizeHandshakeText(
+        self:GetNativeExtensionBuildFingerprint(), 96)
+    if fingerprint then
+        metadata.b = fingerprint
+        hasFields = true
+    end
+
+    local revisions = self:GetNativeExtensionDataRevisions()
+    if type(revisions) == "table" then
+        local compact = {}
+        local function addRevision(compactKey, longKey)
+            local value = tonumber(revisions[compactKey])
+                or tonumber(revisions[longKey])
+            if value and value > 0 then
+                compact[compactKey] = value
+            end
+        end
+
+        addRevision("cc", "collectionCategories")
+        addRevision("cs", "collectionSources")
+        addRevision("shop", "collectionShop")
+        addRevision("set", "collectionSets")
+        addRevision("xmog", "collectionTransmog")
+
+        if next(compact) ~= nil then
+            metadata.d = compact
+            hasFields = true
+        end
+    end
+
+    if not hasFields then
+        return nil
+    end
+
+    return self:EncodeJSON(metadata)
 end
 
 function DC:GetHandshakeVersionString()
@@ -623,10 +727,12 @@ function DC:GetCapabilitySnapshot()
     return {
         nativeCaps = nativeCaps,
         nativeBuildFingerprint = self:GetNativeExtensionBuildFingerprint(),
+        nativeDataRevisions = self:GetNativeExtensionDataRevisions(),
         nativeTooltipRuntimeSignature = self:GetNativeTooltipRuntimeSignature(),
         clientCaps = clientCaps,
         negotiatedCaps = negotiatedCaps,
         handshake = tostring(self.VERSION) .. "|" .. tostring(clientCaps),
+        handshakeMetadata = self:GetHandshakeMetadataPayload(),
         connected = self._connected and true or false,
         serverVersion = self._serverVersion,
         lastHandshakeAck = self._lastHandshakeAck,
@@ -648,6 +754,15 @@ function DC:PrintCapabilityStatus()
             "  Native Build: |cff00ccff"
             .. tostring(snapshot.nativeBuildFingerprint)
             .. "|r")
+    end
+    if type(snapshot.nativeDataRevisions) == "table" then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "  Native Data Revisions: |cff00ccffcat=%s src=%s shop=%s set=%s xmog=%s|r",
+            tostring(snapshot.nativeDataRevisions.collectionCategories or snapshot.nativeDataRevisions.cc or 0),
+            tostring(snapshot.nativeDataRevisions.collectionSources or snapshot.nativeDataRevisions.cs or 0),
+            tostring(snapshot.nativeDataRevisions.collectionShop or snapshot.nativeDataRevisions.shop or 0),
+            tostring(snapshot.nativeDataRevisions.collectionSets or snapshot.nativeDataRevisions.set or 0),
+            tostring(snapshot.nativeDataRevisions.collectionTransmog or snapshot.nativeDataRevisions.xmog or 0)))
     end
     if snapshot.nativeTooltipRuntimeSignature then
         DEFAULT_CHAT_FRAME:AddMessage(
@@ -687,13 +802,21 @@ end
 function DC:SendHandshake(reason)
     local snapshot = self:GetCapabilitySnapshot()
     local why = tostring(reason or "manual")
+    local metadataBytes = snapshot.handshakeMetadata and #snapshot.handshakeMetadata or 0
 
     self:LogNetEvent("info", "handshake", string.format(
-        "send reason=%s native=0x%X client=0x%X payload=%s",
+        "send reason=%s native=0x%X client=0x%X payload=%s metadataBytes=%d",
         why,
         snapshot.nativeCaps,
         snapshot.clientCaps,
-        snapshot.handshake))
+        snapshot.handshake,
+        metadataBytes))
+
+    if snapshot.handshakeMetadata then
+        self:Send("CORE", 1, snapshot.handshake, snapshot.handshakeMetadata)
+        return
+    end
+
     self:Send("CORE", 1, snapshot.handshake)
 end
 

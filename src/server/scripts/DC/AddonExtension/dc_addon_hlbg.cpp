@@ -55,6 +55,15 @@ namespace DCAddon
 {
 namespace HLBG
 {
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_LIVE_SNAPSHOT = ::CMSG_REQUEST_HLBG_LIVE_SNAPSHOT,
+            SMSG_LIVE_SNAPSHOT = ::SMSG_HLBG_LIVE_SNAPSHOT,
+        };
+    }
+
     namespace
     {
         constexpr uint64 HLBG_RESPONSE_CACHE_TTL_MS = 1000;
@@ -243,6 +252,130 @@ namespace HLBG
         {
             OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
             return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
+        }
+
+        TransportPolicyDecision ResolveLiveSnapshotTransport(Player* player)
+        {
+            TransportPolicyRequest request;
+            request.featureName = "hlbg-live";
+            request.nativeCapability =
+                ProtocolVersion::Capability::HLBG_LIVE_NATIVE;
+            request.allowAddonFallback = false;
+            return ResolveTransportPolicy(player, request);
+        }
+        void AuditAddonUiTransport(Player* player)
+        {
+            if (!player)
+                return;
+
+            SessionCapabilityState capabilityState;
+            if (!TryGetSessionCapabilityState(player, capabilityState))
+                return;
+
+            TransportPolicyRequest request;
+            request.featureName = "hlbg-ui";
+            request.forceAddon = true;
+            request.forceAddonReason = "addon-ui-request";
+            ResolveTransportPolicy(player, request);
+        }
+
+        void SendNativeLiveSnapshot(Player* player, std::string const& payload)
+        {
+            if (!player || !player->GetSession() || payload.empty())
+                return;
+
+            WorldPacket data(BridgeOpcode::SMSG_LIVE_SNAPSHOT,
+                payload.size() + 1);
+            data << payload;
+            player->GetSession()->SendPacket(&data);
+        }
+
+        std::string BuildNativeLiveSnapshotPayload(OutdoorPvPHL* hl,
+            uint32 limit = 40)
+        {
+            JsonValue payload;
+            payload.SetObject();
+
+            JsonValue players;
+            players.SetArray();
+
+            if (!hl)
+            {
+                payload.Set("matchStart", 0);
+                payload.Set("A", 0);
+                payload.Set("H", 0);
+                payload.Set("APC", 0);
+                payload.Set("HPC", 0);
+                payload.Set("affix", 0);
+                payload.Set("players", players);
+                return payload.Encode();
+            }
+
+            struct LiveRow
+            {
+                std::string name;
+                std::string team;
+                uint32 score = 0;
+                uint32 hk = 0;
+                uint8 cls = 0;
+                int8 subgroup = 0;
+            };
+
+            std::vector<LiveRow> rows;
+            uint32 alliancePlayers = 0;
+            uint32 hordePlayers = 0;
+
+            hl->ForEachPlayerInZone([&](Player* zonePlayer)
+            {
+                if (!zonePlayer)
+                    return;
+
+                if (zonePlayer->GetTeamId() == TEAM_ALLIANCE)
+                    ++alliancePlayers;
+                else if (zonePlayer->GetTeamId() == TEAM_HORDE)
+                    ++hordePlayers;
+
+                LiveRow row;
+                row.name = zonePlayer->GetName();
+                row.team = zonePlayer->GetTeamId() == TEAM_ALLIANCE ? "A" : "H";
+                row.score = hl->GetPlayerScore(zonePlayer->GetGUID());
+                row.hk = hl->GetPlayerHKDelta(zonePlayer);
+                row.cls = zonePlayer->getClass();
+                row.subgroup = zonePlayer->GetSubGroup();
+                rows.push_back(row);
+            });
+
+            std::sort(rows.begin(), rows.end(), [](LiveRow const& left,
+                LiveRow const& right)
+            {
+                return left.score > right.score;
+            });
+
+            if (rows.size() > limit)
+                rows.resize(limit);
+
+            for (LiveRow const& row : rows)
+            {
+                JsonValue playerRow;
+                playerRow.SetObject();
+                playerRow.Set("name", row.name);
+                playerRow.Set("team", row.team);
+                playerRow.Set("score", static_cast<int32>(row.score));
+                playerRow.Set("hk", static_cast<int32>(row.hk));
+                playerRow.Set("class", static_cast<int32>(row.cls));
+                playerRow.Set("sub", static_cast<int32>(row.subgroup));
+                players.Push(playerRow);
+            }
+
+            payload.Set("matchStart",
+                static_cast<int32>(hl->GetMatchStartEpoch()));
+            payload.Set("A", static_cast<int32>(hl->GetResources(TEAM_ALLIANCE)));
+            payload.Set("H", static_cast<int32>(hl->GetResources(TEAM_HORDE)));
+            payload.Set("APC", static_cast<int32>(alliancePlayers));
+            payload.Set("HPC", static_cast<int32>(hordePlayers));
+            payload.Set("affix", static_cast<int32>(hl->GetActiveAffixCode()));
+            payload.Set("players", players);
+            return payload.Encode();
         }
     }
 
@@ -1038,6 +1171,8 @@ namespace HLBG
     {
         if (!player) return;
 
+        AuditAddonUiTransport(player);
+
         OutdoorPvPHL* hl = GetHL();
         uint32 mapId = player->GetMapId();
         uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
@@ -1062,6 +1197,8 @@ namespace HLBG
     {
         if (!player) return;
 
+        AuditAddonUiTransport(player);
+
         OutdoorPvPHL* hl = GetHL();
         if (!hl)
         {
@@ -1078,6 +1215,9 @@ namespace HLBG
     static void HandleRequestObjective(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
+
+        AuditAddonUiTransport(player);
+
         Message response(Module::HINTERLAND, SMSG_ERROR);
         response.Add(std::string("Objectives not implemented for HLBG"));
         response.Send(player);
@@ -1086,6 +1226,9 @@ namespace HLBG
     static void HandleQuickQueue(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
+
+        AuditAddonUiTransport(player);
+
         if (IsRateLimited(player, 800))
         {
             SendRateLimitedError(player);
@@ -1103,6 +1246,9 @@ namespace HLBG
     static void HandleLeaveQueue(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
+
+        AuditAddonUiTransport(player);
+
         if (IsRateLimited(player, 800))
         {
             SendRateLimitedError(player);
@@ -1121,6 +1267,8 @@ namespace HLBG
     static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
     {
         if (!player) return;
+
+        AuditAddonUiTransport(player);
 
         if (IsRateLimited(player, 800))
         {
@@ -1195,6 +1343,8 @@ namespace HLBG
     {
         if (!player) return;
 
+        AuditAddonUiTransport(player);
+
         if (IsRateLimited(player, 800))
         {
             SendRateLimitedError(player);
@@ -1246,6 +1396,8 @@ namespace HLBG
     {
         if (!player) return;
 
+        AuditAddonUiTransport(player);
+
         if (IsRateLimited(player, 800))
         {
             SendRateLimitedError(player);
@@ -1266,6 +1418,18 @@ namespace HLBG
         Message msg(Module::HINTERLAND, SMSG_ALLTIME_STATS);
         msg.Add(statsJson);
         msg.Send(player);
+    }
+
+    static void HandleNativeLiveSnapshotRequest(Player* player)
+    {
+        if (!player)
+            return;
+
+        if (!ResolveLiveSnapshotTransport(player).UsesNative())
+            return;
+
+        SendNativeLiveSnapshot(player,
+            BuildNativeLiveSnapshotPayload(GetHL()));
     }
 
     // =====================================================================
@@ -1300,6 +1464,34 @@ namespace HLBG
             "real-time + leaderboards + unified schema");
     }
 
+    class HLBGLiveNativeServerScript : public ServerScript
+    {
+    public:
+        HLBGLiveNativeServerScript()
+            : ServerScript("HLBGLiveNativeServerScript",
+                { SERVERHOOK_CAN_PACKET_RECEIVE })
+        {
+        }
+
+    private:
+        bool CanPacketReceive(WorldSession* session,
+            WorldPacket const& packet) override
+        {
+            if (packet.GetOpcode() != BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT)
+                return true;
+
+            if (!session)
+                return false;
+
+            Player* player = session->GetPlayer();
+            if (!player || !player->IsInWorld())
+                return false;
+
+            HandleNativeLiveSnapshotRequest(player);
+            return false;
+        }
+    };
+
 }  // namespace HLBG
 }  // namespace DCAddon
 
@@ -1307,6 +1499,7 @@ namespace HLBG
 void AddSC_dc_addon_hlbg()
 {
     DCAddon::HLBG::RegisterHandlers();
+    new DCAddon::HLBG::HLBGLiveNativeServerScript();
 }
 
 // Compatibility wrapper for legacy loader symbol

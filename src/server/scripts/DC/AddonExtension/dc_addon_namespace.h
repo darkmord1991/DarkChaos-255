@@ -612,6 +612,9 @@ namespace DCAddon
             constexpr uint32 COLLECTION_TRANSMOG_STATE_NATIVE = 0x00002000; // Native collection transmog-state snapshot bridge
             constexpr uint32 COLLECTION_ITEM_SETS_NATIVE = 0x00004000; // Native collection item-set paging bridge
             constexpr uint32 PING_RELAY_NATIVE = 0x00008000; // Native QoS ping relay bridge
+            constexpr uint32 CLIENT_METADATA = 0x00010000; // Client reports native build fingerprint and data revisions during handshake
+            constexpr uint32 HLBG_LIVE_NATIVE = 0x00020000; // Native HLBG live snapshot bridge
+            constexpr uint32 SPECTATOR_LIVE_NATIVE = 0x00040000; // Native Mythic+ spectator live snapshot bridge
 
             // Default capabilities for current server version
             constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES |
@@ -620,7 +623,10 @@ namespace DCAddon
                 MYTHICPLUS_HUD_NATIVE |
                 COLLECTION_TRANSMOG_STATE_NATIVE |
                 COLLECTION_ITEM_SETS_NATIVE |
-                PING_RELAY_NATIVE;
+                PING_RELAY_NATIVE |
+                CLIENT_METADATA |
+                HLBG_LIVE_NATIVE |
+                SPECTATOR_LIVE_NATIVE;
         }
 
         // Version info structure for handshake
@@ -683,6 +689,34 @@ namespace DCAddon
         }
     }
 
+    struct ClientDataRevisionState
+    {
+        uint32 collectionCategories = 0;
+        uint32 collectionSources = 0;
+        uint32 collectionShop = 0;
+        uint32 collectionSets = 0;
+        uint32 collectionTransmog = 0;
+
+        bool HasAny() const
+        {
+            return collectionCategories != 0 || collectionSources != 0
+                || collectionShop != 0 || collectionSets != 0
+                || collectionTransmog != 0;
+        }
+    };
+
+    struct ClientHandshakeMetadata
+    {
+        std::string nativeBuildFingerprint;
+        ClientDataRevisionState dataRevisions;
+        std::string metadataJson;
+
+        bool HasAny() const
+        {
+            return !nativeBuildFingerprint.empty() || dataRevisions.HasAny();
+        }
+    };
+
     struct SessionCapabilityState
     {
         std::string clientVersionString;
@@ -693,6 +727,9 @@ namespace DCAddon
         uint64 lastCharacterGuid = 0;
         std::string lastCharacterName;
         uint64 lastSeenUnix = 0;
+        std::string nativeBuildFingerprint;
+        ClientDataRevisionState dataRevisions;
+        std::string metadataJson;
 
         bool HasClientCapability(uint32 cap) const
         {
@@ -702,6 +739,53 @@ namespace DCAddon
         bool HasNegotiatedCapability(uint32 cap) const
         {
             return versionCompatible && (negotiatedCapabilities & cap) != 0;
+        }
+    };
+
+    enum class TransportMode
+    {
+        AddonProtocol,
+        NativeBridge,
+        Unavailable,
+    };
+
+    struct TransportPolicyRequest
+    {
+        char const* featureName = nullptr;
+        uint32 nativeCapability = 0;
+        bool allowAddonFallback = true;
+        bool forceNative = false;
+        bool forceAddon = false;
+        bool nativeEligible = true;
+        std::string forceNativeReason = "forced-native";
+        std::string forceAddonReason = "forced-addon";
+        std::string noCapabilityStateReason = "no-capability-state";
+        std::string versionIncompatibleReason = "version-incompatible";
+        std::string clientCapabilityMissingReason =
+            "client-capability-missing";
+        std::string negotiatedCapabilityMissingReason =
+            "native-capability-missing";
+        std::string nativeIneligibleReason = "native-ineligible";
+        std::string nativeReadyReason = "negotiated-native";
+    };
+
+    struct TransportPolicyDecision
+    {
+        TransportMode transport = TransportMode::AddonProtocol;
+        std::string reason = "default-addon";
+        SessionCapabilityState capabilityState;
+        bool hasCapabilityState = false;
+        bool capabilityFromPersistedFallback = false;
+        std::string capabilitySource = "none";
+
+        bool UsesNative() const
+        {
+            return transport == TransportMode::NativeBridge;
+        }
+
+        bool UsesAddon() const
+        {
+            return transport == TransportMode::AddonProtocol;
         }
     };
 
@@ -715,6 +799,9 @@ namespace DCAddon
         uint64 characterGuid = 0;
         std::string characterName;
         uint64 seenUnix = 0;
+        std::string nativeBuildFingerprint;
+        ClientDataRevisionState dataRevisions;
+        std::string metadataJson;
     };
 
     inline bool IsSafeRequestId(const std::string& id)
@@ -1098,7 +1185,8 @@ namespace DCAddon
         uint32 processingTimeMs);
     void SetSessionCapabilityState(Player* player,
         const std::string& clientVersionStr, uint32 clientCaps,
-        uint32 negotiatedCaps, bool versionCompatible);
+        uint32 negotiatedCaps, bool versionCompatible,
+        ClientHandshakeMetadata const& metadata = ClientHandshakeMetadata());
     bool TryGetLiveSessionCapabilityState(uint32 accountId,
         SessionCapabilityState& out);
     bool TryGetPersistedCapabilityState(uint32 accountId,
@@ -1116,6 +1204,13 @@ namespace DCAddon
     uint32 GetSessionNegotiatedCapabilities(WorldSession* session);
     bool SessionSupportsCapability(Player* player, uint32 capability);
     bool SessionSupportsCapability(WorldSession* session, uint32 capability);
+    TransportPolicyDecision ResolveTransportPolicy(Player* player,
+        TransportPolicyRequest const& request);
+    TransportPolicyDecision ResolveTransportPolicy(WorldSession* session,
+        TransportPolicyRequest const& request);
+    TransportPolicyDecision ResolveTransportPolicy(
+        SessionCapabilityState const* capabilityState,
+        TransportPolicyRequest const& request);
 
     // Quick permission helper: ensure module enabled and player has minimum security
     // (Moved below MessageRouter declaration to avoid forward-declare/ordering issues)

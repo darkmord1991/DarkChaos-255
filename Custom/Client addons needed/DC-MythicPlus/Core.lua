@@ -1530,7 +1530,7 @@ local function BuildStatus(data)
     end
     local countdown = tonumber(data.countdown or 0) or 0
     if countdown > 0 then
-        return string.format("Status: |cffffff78Countdown %ss|r", countdown)
+        return "Status: |cffffff78Preparing|r"
     end
     return "Status: |cff78beffIn progress|r"
 end
@@ -2320,7 +2320,7 @@ local function UpdateCountdown(data)
 
     local countdown = tonumber(data and data.countdown or 0) or 0
     if countdown > 0 then
-        countdownText:SetText(string.format("Countdown: %ss", countdown))
+        countdownText:SetText("")
         local color = countdown <= 3 and "|cffff4040" or "|cffffff00"
         centerCountdownText:SetText(string.format("%s%d|r", color, countdown))
         centerCountdownText:Show()
@@ -3990,6 +3990,30 @@ if DC then
             local data = args[1]
             if namespace.GroupFinder then
                 namespace.GroupFinder:PopulateLiveRuns(data.runs or {})
+            end
+        end
+    end)
+
+    -- SMSG_SPECTATE_STARTED (0x48) - Spectating started successfully
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SPECTATE_STARTED or 0x48, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            PrintGroupFinder(data.message or "Now spectating the run", false)
+            if namespace.GroupFinder and namespace.GroupFinder.BeginSpectateSession then
+                namespace.GroupFinder:BeginSpectateSession(data)
+            end
+        end
+    end)
+
+    -- SMSG_SPECTATE_ENDED (0x49) - Spectating ended or was cancelled
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SPECTATE_ENDED or 0x49, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            PrintGroupFinder(data.message or "Stopped spectating", false)
+            if namespace.GroupFinder and namespace.GroupFinder.EndSpectateSession then
+                namespace.GroupFinder:EndSpectateSession(data)
             end
         end
     end)

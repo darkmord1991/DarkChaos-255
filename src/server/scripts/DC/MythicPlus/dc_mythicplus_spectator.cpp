@@ -19,6 +19,7 @@
 #include "MapMgr.h"
 #include "InstanceScript.h"
 #include "Log.h"
+#include "WorldPacket.h"
 #include "dc_mythicplus_run_manager.h"
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
@@ -32,6 +33,139 @@ using namespace Acore::ChatCommands;
 
 namespace DCMythicSpectator
 {
+
+namespace
+{
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_LIVE_SNAPSHOT = ::CMSG_REQUEST_SPECTATOR_LIVE_SNAPSHOT,
+            SMSG_LIVE_SNAPSHOT = ::SMSG_SPECTATOR_LIVE_SNAPSHOT,
+        };
+    }
+
+    DCAddon::TransportPolicyDecision ResolveLiveTransport(Player* player)
+    {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "spectator-live";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::SPECTATOR_LIVE_NATIVE;
+        return DCAddon::ResolveTransportPolicy(player, request);
+    }
+
+    std::string FormatTimerText(uint32 seconds)
+    {
+        std::ostringstream ss;
+        uint32 minutes = seconds / 60;
+        uint32 remainingSeconds = seconds % 60;
+
+        if (minutes >= 60)
+        {
+            uint32 hours = minutes / 60;
+            minutes %= 60;
+            ss << hours << ":" << std::setw(2) << std::setfill('0')
+               << minutes << ":" << std::setw(2) << remainingSeconds;
+            return ss.str();
+        }
+
+        ss << std::setw(2) << std::setfill('0') << minutes
+           << ":" << std::setw(2) << remainingSeconds;
+        return ss.str();
+    }
+
+    DCAddon::JsonValue BuildLiveSnapshotPayload(SpectateableRun const& run)
+    {
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+
+        uint32 progressPercent = 0;
+        if (run.bossesTotal > 0)
+        {
+            progressPercent = std::min<uint32>(100u,
+                (static_cast<uint32>(run.bossesKilled) * 100u)
+                    / static_cast<uint32>(run.bossesTotal));
+        }
+
+        std::ostringstream progress;
+        progress << static_cast<uint32>(run.bossesKilled) << "/"
+                 << static_cast<uint32>(run.bossesTotal) << " bosses";
+
+        payload.Set("runId", static_cast<int32>(run.runId));
+        payload.Set("instanceId", static_cast<int32>(run.instanceId));
+        payload.Set("mapId", static_cast<int32>(run.mapId));
+        payload.Set("dungeon", run.dungeonName.empty()
+            ? std::string("Unknown Dungeon")
+            : run.dungeonName);
+        payload.Set("level", static_cast<int32>(run.keystoneLevel));
+        payload.Set("timer", FormatTimerText(run.timerRemaining));
+        payload.Set("timerRemaining", static_cast<int32>(run.timerRemaining));
+        payload.Set("bossesKilled", static_cast<int32>(run.bossesKilled));
+        payload.Set("bossesTotal", static_cast<int32>(run.bossesTotal));
+        payload.Set("progress", progress.str());
+        payload.Set("progressPercent", static_cast<int32>(progressPercent));
+        payload.Set("deaths", static_cast<int32>(run.deaths));
+        payload.Set("leader", run.leaderName);
+        payload.Set("spectators",
+            static_cast<int32>(run.spectators.size()));
+        payload.Set("maxSpectators", static_cast<int32>(
+            MythicSpectatorManager::Get().GetConfig().maxSpectatorsPerRun));
+        payload.Set("active", true);
+        return payload;
+    }
+
+    void SendNativeLiveSnapshot(Player* spectator,
+        DCAddon::JsonValue const& payload)
+    {
+        if (!spectator || !spectator->GetSession())
+            return;
+
+        std::string encoded = payload.Encode();
+        if (encoded.empty())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_LIVE_SNAPSHOT,
+            encoded.size() + 1);
+        data << encoded;
+        spectator->GetSession()->SendPacket(&data);
+    }
+
+    void SendAddonLiveSnapshot(Player* spectator,
+        DCAddon::JsonValue const& payload)
+    {
+        if (!spectator)
+            return;
+
+        DCAddon::JsonMessage(DCAddon::Module::GROUP_FINDER,
+            DCAddon::Opcode::GroupFinder::SMSG_SPECTATE_DATA, payload)
+            .Send(spectator);
+    }
+
+    void SendLiveSnapshot(Player* spectator, SpectateableRun const& run)
+    {
+        DCAddon::JsonValue payload = BuildLiveSnapshotPayload(run);
+        if (ResolveLiveTransport(spectator).UsesNative())
+        {
+            SendNativeLiveSnapshot(spectator, payload);
+            return;
+        }
+
+        SendAddonLiveSnapshot(spectator, payload);
+    }
+
+    void HandleNativeLiveSnapshotRequest(Player* player)
+    {
+        if (!player || !ResolveLiveTransport(player).UsesNative())
+            return;
+
+        if (SpectatorState* state = MythicSpectatorManager::Get()
+            .GetSpectatorState(player->GetGUID()))
+        {
+            MythicSpectatorManager::Get().SendRunSnapshot(player,
+                state->targetInstanceId);
+        }
+    }
+}
 
 // ============================================================
 // Replay Event Implementation
@@ -179,8 +313,9 @@ std::string MythicSpectatorManager::GenerateRandomCode(uint32 length)
 // ============================================================
 // Run Management
 // ============================================================
-void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId, uint32 mapId, uint8 keystoneLevel,
-                                                std::string const& leaderName, bool allowSpectators)
+void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId,
+    uint32 mapId, uint8 keystoneLevel, std::string const& leaderName,
+    bool allowSpectators, uint32 runId, std::string const& dungeonName)
 {
     if (!_config.enabled)
         return;
@@ -189,6 +324,7 @@ void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId, uint32 mapId, 
         return;
 
     SpectateableRun run;
+    run.runId = runId;
     run.instanceId = instanceId;
     run.mapId = mapId;
     run.keystoneLevel = keystoneLevel;
@@ -197,6 +333,7 @@ void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId, uint32 mapId, 
     run.bossesKilled = 0;
     run.bossesTotal = 0;
     run.deaths = 0;
+    run.dungeonName = dungeonName;
     run.leaderName = leaderName;
     run.allowsSpectators = allowSpectators && _config.allowPublicListing;
     run.streamMode = _config.defaultStreamMode;
@@ -677,8 +814,15 @@ void MythicSpectatorManager::BroadcastRunUpdate(uint32 instanceId)
     if (runIt == _activeRuns.end())
         return;
 
-    std::string data = FormatRunData(runIt->second, runIt->second.streamMode);
-    BroadcastToSpectators(instanceId, data);
+    Map* runMap = sMapMgr->FindMap(runIt->second.mapId, instanceId);
+    for (ObjectGuid guid : runIt->second.spectators)
+    {
+        if (!runMap)
+            continue;
+
+        if (Player* spectator = ObjectAccessor::GetPlayer(runMap, guid))
+            SendLiveSnapshot(spectator, runIt->second);
+    }
 }
 
 void MythicSpectatorManager::SendRunSnapshot(Player* spectator, uint32 instanceId)
@@ -687,14 +831,7 @@ void MythicSpectatorManager::SendRunSnapshot(Player* spectator, uint32 instanceI
     if (runIt == _activeRuns.end())
         return;
 
-    auto stateIt = _spectators.find(spectator->GetGUID());
-    uint32 streamMode = (stateIt != _spectators.end()) ? stateIt->second.streamMode : 0;
-
-    std::string data = FormatRunData(runIt->second, streamMode);
-
-    WorldPacket packet;
-    CreatePacket(packet, data);
-    spectator->SendDirectMessage(&packet);
+    SendLiveSnapshot(spectator, runIt->second);
 }
 
 void MythicSpectatorManager::CreatePacket(WorldPacket& data, std::string const& message)
@@ -1705,10 +1842,39 @@ public:
     }
 };
 
+class DCMythicSpectatorNativeServerScript : public ServerScript
+{
+public:
+    DCMythicSpectatorNativeServerScript()
+        : ServerScript("DCMythicSpectatorNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode() != BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT)
+            return true;
+
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        HandleNativeLiveSnapshotRequest(player);
+        return false;
+    }
+};
+
 void AddSC_dc_mythic_spectator()
 {
     sMythicSpectator.LoadConfig();
     new DCMythicSpectatorCommandScript();
     new DCMythicSpectatorPlayerScript();
     new DCMythicSpectatorWorldScript();
+    new DCMythicSpectatorNativeServerScript();
 }

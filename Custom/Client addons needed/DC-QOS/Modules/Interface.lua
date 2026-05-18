@@ -39,6 +39,7 @@ local worldMapState = {
     questLogFrameHooked = false,
     questLogSuppressUntil = 0,
     reassertingSelection = false,
+    refreshingObjectiveDisplay = false,
     lastObjectiveQuestLogIndex = nil,
     seededSelection = false,
     lastObjectiveReassertAt = nil,
@@ -1158,9 +1159,30 @@ local function RefreshQuestDetailAndPoiDisplays(questLogIndex, reason)
         pcall(WatchFrame_Update)
     end
 
-    if addon and addon.EnsureQuestMinimapTrackingEnabled then
-        addon:EnsureQuestMinimapTrackingEnabled(reason or "Interface.RefreshQuestDetailAndPoiDisplays")
+end
+
+local function RefreshVisibleWorldMapObjectiveState(reason)
+    if worldMapState.refreshingObjectiveDisplay then
+        return
     end
+
+    worldMapState.refreshingObjectiveDisplay = true
+
+    local questLogIndex = ResolveSelectedQuestLogIndex()
+    if not IsValidQuestLogIndex(questLogIndex) then
+        questLogIndex = worldMapState.lastObjectiveQuestLogIndex
+    end
+
+    RefreshQuestDetailAndPoiDisplays(
+        questLogIndex,
+        reason or "Interface.RefreshVisibleWorldMapObjectiveState"
+    )
+
+    if ShouldSuppressStandaloneQuestLogPanels() then
+        SuppressStandaloneQuestLogPanels()
+    end
+
+    worldMapState.refreshingObjectiveDisplay = false
 end
 
 local function ReassertWorldMapObjectiveState(questLogIndex)
@@ -1392,14 +1414,20 @@ local function ApplyMapsterLikeCombinedMapLayout()
         pcall(WorldMapQuestShowObjectives_Toggle)
     end
 
-    if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
-        pcall(WorldMapFrame_SetPOIMaxBounds)
-    end
-    if type(WorldMapFrame_DisplayQuests) == "function" then
-        pcall(WorldMapFrame_DisplayQuests)
-    end
-    if type(WorldMapFrame_UpdateQuests) == "function" then
-        pcall(WorldMapFrame_UpdateQuests)
+    local worldMapShown = WorldMapFrame
+        and type(WorldMapFrame.IsShown) == "function"
+        and WorldMapFrame:IsShown()
+
+    if worldMapShown then
+        if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
+            pcall(WorldMapFrame_SetPOIMaxBounds)
+        end
+        if type(WorldMapFrame_DisplayQuests) == "function" then
+            pcall(WorldMapFrame_DisplayQuests)
+        end
+        if type(WorldMapFrame_UpdateQuests) == "function" then
+            pcall(WorldMapFrame_UpdateQuests)
+        end
     end
 
     local preferredQuestLogIndex = ResolveSelectedQuestLogIndex()
@@ -1407,7 +1435,11 @@ local function ApplyMapsterLikeCombinedMapLayout()
         preferredQuestLogIndex = worldMapState.lastObjectiveQuestLogIndex
     end
 
-    ReassertWorldMapObjectiveState(preferredQuestLogIndex)
+    if worldMapShown then
+        ReassertWorldMapObjectiveState(preferredQuestLogIndex)
+    elseif IsValidQuestLogIndex(preferredQuestLogIndex) then
+        worldMapState.lastObjectiveQuestLogIndex = preferredQuestLogIndex
+    end
 end
 
 ApplyStandaloneWorldMapWindowState = function()
@@ -2124,12 +2156,17 @@ local function InstallMapsterSelectionHooks()
     end
 
     local function ApplySelectionFromFrame(frame)
-        if worldMapState.reassertingSelection then
+        if worldMapState.reassertingSelection or worldMapState.refreshingObjectiveDisplay then
             return
         end
 
         local questLogIndex = ResolveQuestLogIndexFromQuestFrame(frame)
-        ReassertWorldMapObjectiveState(questLogIndex)
+        if IsValidQuestLogIndex(questLogIndex) then
+            worldMapState.lastObjectiveQuestLogIndex = questLogIndex
+            worldMapState.seededSelection = true
+        end
+
+        RefreshVisibleWorldMapObjectiveState("Interface.ApplySelectionFromFrame")
     end
 
     local function TryInstallSelectionFunctionHooks()
@@ -2208,11 +2245,8 @@ local function InstallMapsterSelectionHooks()
             end
             worldMapState.lastObjectiveReassertAt = now
 
-            ReassertWorldMapObjectiveState()
-            SuppressStandaloneQuestLogPanels()
+            RefreshVisibleWorldMapObjectiveState("Interface.MapsterSelectionEvent." .. tostring(event))
             if addon and addon.DelayedCall then
-                addon:DelayedCall(0, ReassertWorldMapObjectiveState)
-                addon:DelayedCall(0.05, ReassertWorldMapObjectiveState)
                 addon:DelayedCall(0.05, SuppressStandaloneQuestLogPanels)
             end
         end)

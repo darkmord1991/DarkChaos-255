@@ -291,11 +291,88 @@ function Markers.EnsureWorldMapQuestPoiChrome(button, options)
             end
         end
 
-        local function HandleSelect()
+        local function HideStandaloneQuestDetailPanels()
+            for _, frame in ipairs({ QuestLogDetailFrame, QuestLogFrame }) do
+                if frame and frame.IsShown and frame:IsShown() then
+                    if type(HideUIPanel) == "function" then
+                        pcall(HideUIPanel, frame)
+                    elseif frame.Hide then
+                        frame:Hide()
+                    end
+
+                    if frame.IsShown and frame:IsShown() and frame.Hide then
+                        frame:Hide()
+                    end
+                end
+            end
+        end
+
+        local function HandleSelect(mouseButton)
+            if mouseButton and mouseButton ~= "LeftButton" then
+                return false
+            end
+
+            local now = (type(GetTime) == "function" and GetTime()) or 0
+            if (now - (button.__dcqosWorldQuestPoiSelectAt or 0)) < 0.05 then
+                return true
+            end
+            button.__dcqosWorldQuestPoiSelectAt = now
+
             if type(selectQuest) == "function" then
                 selectQuest(button)
             end
+
+            HideStandaloneQuestDetailPanels()
+            if addon and type(addon.DelayedCall) == "function" then
+                addon:DelayedCall(0, HideStandaloneQuestDetailPanels)
+                addon:DelayedCall(0.05, HideStandaloneQuestDetailPanels)
+            end
+
+            return true
         end
+
+        local function WrapSelectClick(frame, scriptName)
+            if not frame
+                or type(frame.GetScript) ~= "function"
+                or type(frame.SetScript) ~= "function" then
+                return false
+            end
+
+            local okGetScript, original = pcall(frame.GetScript, frame, scriptName)
+            if not okGetScript then
+                return false
+            end
+            if type(original) ~= "function" then
+                return false
+            end
+
+            local wrappedKey = "__dcqosWorldQuestPoiWrapped" .. scriptName
+            if frame[wrappedKey] then
+                return true
+            end
+
+            local okSetScript = pcall(frame.SetScript, frame, scriptName, function(self, ...)
+                local mouseButton = select(1, ...)
+                if HandleSelect(mouseButton) then
+                    return
+                end
+
+                return original(self, ...)
+            end)
+            if not okSetScript then
+                return false
+            end
+
+            frame[wrappedKey] = true
+            frame[wrappedKey .. "Original"] = original
+
+            return true
+        end
+
+        local wrappedMouseUp = WrapSelectClick(button, "OnMouseUp")
+        local wrappedIconMouseUp = WrapSelectClick(poiIcon, "OnMouseUp")
+        local wrappedClick = wrappedMouseUp or WrapSelectClick(button, "OnClick")
+        local wrappedIconClick = wrappedIconMouseUp or WrapSelectClick(poiIcon, "OnClick")
 
         if type(button.HookScript) == "function" then
             button:HookScript("OnEnter", HandleEnter)
@@ -306,7 +383,9 @@ function Markers.EnsureWorldMapQuestPoiChrome(button, options)
             poiIcon:HookScript("OnEnter", HandleEnter)
             poiIcon:HookScript("OnLeave", HandleLeave)
             poiIcon:HookScript("OnHide", HandleHide)
-            pcall(poiIcon.HookScript, poiIcon, "OnMouseUp", HandleSelect)
+            if not wrappedClick and not wrappedMouseUp and not wrappedIconClick and not wrappedIconMouseUp then
+                pcall(poiIcon.HookScript, poiIcon, "OnMouseUp", HandleSelect)
+            end
         end
     end
 

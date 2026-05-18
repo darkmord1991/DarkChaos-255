@@ -69,6 +69,22 @@ namespace Upgrade
                 DarkChaos::ItemUpgrade::CachePlayerMapContext(player);
         }
 
+        inline void AuditUpgradeUiTransport(Player* player)
+        {
+            if (!player)
+                return;
+
+            SessionCapabilityState capabilityState;
+            if (!TryGetSessionCapabilityState(player, capabilityState))
+                return;
+
+            TransportPolicyRequest request;
+            request.featureName = "item-upgrade-ui";
+            request.forceAddon = true;
+            request.forceAddonReason = "addon-ui-request";
+            ResolveTransportPolicy(player, request);
+        }
+
         inline void SendUpgradeResult(Player* player, const std::string& requestId, bool success,
             uint32 itemGuid, uint32 newLevel, uint32 newEntry, uint32 errorCode,
             const std::string& errorMsg, uint32 tier = 0, uint32 maxUpgrade = 0,
@@ -125,6 +141,7 @@ namespace Upgrade
     // Handler: Get item upgrade info
     static void HandleGetItemInfo(Player* player, const ParsedMessage& msg)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
         uint32 extBag = 0;
         uint32 extSlot = 0;
@@ -341,6 +358,7 @@ namespace Upgrade
     // Handler: Get upgrade costs
     static void HandleGetCosts(Player* player, const ParsedMessage& msg)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
         uint32 tier = 0;
         uint32 fromLevel = 0;
@@ -391,6 +409,7 @@ namespace Upgrade
     // Handler: List upgradeable items in inventory
     static void HandleListUpgradeable(Player* player, const ParsedMessage& msg)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
         // Scan player inventory for upgradeable items
         std::vector<std::string> items;
@@ -467,6 +486,7 @@ namespace Upgrade
     // Handler: Perform upgrade (Unified Native Logic)
     static void HandleDoUpgrade(Player* player, const ParsedMessage& msg)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
         uint32 extBag = 0;
         uint32 extSlot = 0;
@@ -588,6 +608,22 @@ namespace Upgrade
 
         uint32 targetEntry = (*targetCloneRes)[0].Get<uint32>();
 
+        bool const originalWasEquipped = Player::IsEquipmentPos(bag, slot);
+        uint16 replacementEquipPos = 0;
+
+        if (originalWasEquipped)
+        {
+            InventoryResult replacementResult = player->CanEquipNewItem(slot, replacementEquipPos, targetEntry, true);
+            if (replacementResult != EQUIP_ERR_OK)
+            {
+                LOG_WARN("dc.addon.upgrade", "Upgrade failed: unable to place upgraded item back into bag={}, slot={} (targetEntry={}, result={}) for player {}",
+                    bag, slot, targetEntry, uint32(replacementResult), player->GetName());
+                SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
+                    UPGRADE_ERR_NONE, "Upgraded item could not be placed back into its original slot");
+                return;
+            }
+        }
+
         uint32 maxLevel = 15;
         QueryResult tierResult = WorldDatabase.Query(
             "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
@@ -614,17 +650,31 @@ namespace Upgrade
         if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
         if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
 
-        // Perform Swap
+        // Replace the item in-place so repeated upgrades keep using the same location.
         player->DestroyItem(bag, slot, true);
 
-        ItemPosCountVec dest;
         Item* newItem = nullptr;
-        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, targetEntry, 1) == EQUIP_ERR_OK)
-            newItem = player->StoreNewItem(dest, targetEntry, true);
+        if (originalWasEquipped)
+        {
+            newItem = player->EquipNewItem(replacementEquipPos, targetEntry, true);
+        }
+        else
+        {
+            ItemPosCountVec dest;
+            if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, targetEntry, 1) == EQUIP_ERR_OK)
+                newItem = player->StoreNewItem(dest, targetEntry, true);
+        }
 
          if (newItem)
         {
             uint32 newGuid = newItem->GetGUID().GetCounter();
+            uint32 newBag = newItem->GetBagSlot();
+            uint32 newSlot = newItem->GetSlot();
+            if (originalWasEquipped && (newBag != bag || newSlot != slot))
+            {
+                LOG_WARN("dc.addon.upgrade", "Upgrade placed equipped replacement into unexpected location for player {}: requested {}:{}, actual {}:{} (targetEntry={})",
+                    player->GetName(), bag, slot, newBag, newSlot, targetEntry);
+            }
             DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
             if (mgr)
             {
@@ -652,11 +702,13 @@ namespace Upgrade
             // Send success
               SendUpgradeResult(player, msg.GetRequestId(), true, newGuid, targetLevel,
                   targetEntry, UPGRADE_ERR_NONE, "", tier, maxLevel, nextTokenCost,
-                  nextEssenceCost, extBag, extSlot);
+                  nextEssenceCost, newBag, newSlot);
             SendCurrencyUpdate(player);
         }
         else
         {
+            LOG_ERROR("dc.addon.upgrade", "Upgrade failed after destroying original item: could not create replacement targetEntry={} for player {} at bag={}, slot={}",
+                targetEntry, player->GetName(), bag, slot);
                SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NONE, "Inventory full");
         }
     }
@@ -664,6 +716,7 @@ namespace Upgrade
     // Handler: Package selection (migrated from itemupgrade_communication.lua)
     static void HandlePackageSelect(Player* player, const ParsedMessage& msg)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
         uint32 packageId = 0;
         if (!TryGetJsonUInt(msg, "packageId", packageId))
@@ -700,6 +753,7 @@ namespace Upgrade
 
     static void HandleHeirloomQuery(Player* player, const ParsedMessage& msg)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
         uint32 extBag = 0;
         uint32 extSlot = 0;
@@ -755,6 +809,7 @@ namespace Upgrade
 
     static void HandleGetPackages(Player* player, const ParsedMessage& /*msg*/)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
          // DCHEIRLOOM_PACKAGES format equivalent
          // ID|Name|Description
@@ -781,6 +836,7 @@ namespace Upgrade
 
     static void HandleHeirloomUpgrade(Player* player, const ParsedMessage& msg)
     {
+        AuditUpgradeUiTransport(player);
         CacheContext(player);
          uint32 extBag = 0;
          uint32 extSlot = 0;

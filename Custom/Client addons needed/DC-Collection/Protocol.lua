@@ -4660,9 +4660,12 @@ function DC:HandleCollectedAppearances(data)
         end
     end
 
-    if self.Wardrobe and self.Wardrobe.frame and self.Wardrobe.frame:IsShown() and
-       type(self.Wardrobe.RefreshGrid) == "function" then
-        self.Wardrobe:RefreshGrid()
+    if self.Wardrobe and self.Wardrobe.frame and self.Wardrobe.frame:IsShown() then
+        if type(self.Wardrobe.RequestDataRefreshDebounced) == "function" then
+            self.Wardrobe:RequestDataRefreshDebounced("collected_appearances")
+        elseif type(self.Wardrobe.RefreshGrid) == "function" then
+            self.Wardrobe:RefreshGrid()
+        end
     end
 
     if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
@@ -4871,7 +4874,9 @@ function DC:HandleDefinitions(data)
     
     -- Notify Wardrobe if open (transmog or itemSets data)
     if (collType == "transmog" or collType == "itemsets" or collType == "itemSets") and DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown() then
-        if DC.Wardrobe.currentTab == "sets" then
+        if type(DC.Wardrobe.RequestDataRefreshDebounced) == "function" then
+            DC.Wardrobe:RequestDataRefreshDebounced("definitions_" .. tostring(collType))
+        elseif DC.Wardrobe.currentTab == "sets" then
             DC.Wardrobe:RefreshSetsGrid()
         else
             DC.Wardrobe:RefreshGrid()
@@ -5207,7 +5212,11 @@ function DC:HandleCollection(data)
     
     -- Notify Wardrobe if open (transmog data)
     if collType == "transmog" and DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown() then
-        DC.Wardrobe:RefreshGrid()
+        if type(DC.Wardrobe.RequestDataRefreshDebounced) == "function" then
+            DC.Wardrobe:RequestDataRefreshDebounced("collection_" .. tostring(collType))
+        else
+            DC.Wardrobe:RefreshGrid()
+        end
     end
     
     self:Debug(string.format("Received %d items for %s collection", 

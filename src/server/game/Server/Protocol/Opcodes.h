@@ -1354,7 +1354,11 @@ enum Opcodes : uint16
     SMSG_COLLECTION_ITEM_SETS                      = 0x52D,
     CMSG_REQUEST_QOS_PING_RELAY                    = 0x52E,
     SMSG_QOS_PING_RELAY                            = 0x52F,
-    NUM_MSG_TYPES                                   = 0x530
+    CMSG_REQUEST_HLBG_LIVE_SNAPSHOT                = 0x530,
+    SMSG_HLBG_LIVE_SNAPSHOT                        = 0x531,
+    CMSG_REQUEST_SPECTATOR_LIVE_SNAPSHOT           = 0x532,
+    SMSG_SPECTATOR_LIVE_SNAPSHOT                   = 0x533,
+    NUM_MSG_TYPES                                   = 0x534
 };
 
 enum OpcodeMisc : uint16

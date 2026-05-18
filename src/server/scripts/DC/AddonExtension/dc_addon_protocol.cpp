@@ -43,10 +43,18 @@ namespace
 {
     constexpr char const* CONFIG_CAPABILITY_DEBUG =
         "DC.Addon.CapabilityDebug.Enable";
+    constexpr char const* TABLE_CLIENT_CAPS =
+        "dc_addon_client_caps";
     constexpr char const* TABLE_CAPABILITY_HISTORY =
         "dc_addon_client_caps_history";
+    constexpr char const* TABLE_FEATURE_TRANSPORT_AUDIT =
+        "dc_addon_feature_transport_audit";
     constexpr char const* TABLE_PROTOCOL_ERRORS =
         "dc_addon_protocol_errors";
+    constexpr char const* COLUMN_NATIVE_BUILD_FINGERPRINT =
+        "native_build_fingerprint";
+    constexpr char const* COLUMN_DATA_REVISIONS_JSON =
+        "data_revisions_json";
     constexpr uint32 MAX_CAPABILITY_HISTORY_ENTRIES = 12;
 
     // Resiliency fallback for tooltip enrichment requests.
@@ -94,6 +102,255 @@ namespace
             "SELECT 1 FROM information_schema.TABLES "
             "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
             tableName) != nullptr;
+    }
+
+    bool DoesCharacterColumnExist(char const* tableName,
+        char const* columnName)
+    {
+        if (!tableName || !*tableName || !columnName || !*columnName)
+            return false;
+
+        return CharacterDatabase.Query(
+            "SELECT 1 FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' "
+            "AND COLUMN_NAME = '{}' LIMIT 1",
+            tableName, columnName) != nullptr;
+    }
+
+    bool HasFeatureTransportAuditTable()
+    {
+        static std::once_flag once;
+        static bool exists = false;
+
+        std::call_once(once, []()
+        {
+            exists = DoesCharacterTableExist(TABLE_FEATURE_TRANSPORT_AUDIT);
+            if (!exists)
+            {
+                LOG_WARN("dc.addon",
+                    "Feature transport audit table '{}' not found; "
+                    "transport-fallback telemetry will stay disabled until "
+                    "the SQL migration is applied.",
+                    TABLE_FEATURE_TRANSPORT_AUDIT);
+            }
+        });
+
+        return exists;
+    }
+
+    std::string SanitizeTransportAuditLabel(std::string value,
+        std::size_t maxLength)
+    {
+        value.erase(std::remove_if(value.begin(), value.end(),
+            [](unsigned char c)
+            {
+                return !(std::isalnum(c) || c == '-' || c == '_'
+                    || c == '.');
+            }), value.end());
+
+        if (value.empty())
+            value = "unknown";
+
+        if (value.size() > maxLength)
+            value.resize(maxLength);
+
+        return value;
+    }
+
+    char const* ToTransportModeLabel(DCAddon::TransportMode transport)
+    {
+        switch (transport)
+        {
+            case DCAddon::TransportMode::NativeBridge:
+                return "native";
+            case DCAddon::TransportMode::Unavailable:
+                return "unavailable";
+            case DCAddon::TransportMode::AddonProtocol:
+            default:
+                return "addon";
+        }
+    }
+
+    struct SessionTransportFeatureObservation
+    {
+        std::string transport;
+        std::string reason;
+        std::string capabilitySource;
+        bool capabilityFromPersistedFallback = false;
+    };
+
+    static std::unordered_map<uint32,
+        std::unordered_map<std::string, SessionTransportFeatureObservation>>
+        s_SessionTransportFeatureObservations;
+    static std::mutex s_SessionTransportFeatureObservationsMutex;
+
+    bool ShouldRecordTransportObservation(
+        DCAddon::TransportPolicyRequest const& request,
+        DCAddon::TransportPolicyDecision const& decision)
+    {
+        if (!request.featureName || !*request.featureName)
+            return false;
+
+        if (!decision.hasCapabilityState
+            && decision.reason == request.noCapabilityStateReason)
+            return false;
+
+        return true;
+    }
+
+    void RecordTransportObservation(Player* player,
+        DCAddon::TransportPolicyRequest const& request,
+        DCAddon::TransportPolicyDecision const& decision)
+    {
+        if (!player || !player->GetSession() || !ShouldRecordTransportObservation(
+                request, decision) || !HasFeatureTransportAuditTable())
+            return;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+        uint32 guid = player->GetGUID().GetCounter();
+        if (accountId == 0 || guid == 0)
+            return;
+
+        std::string featureName = SanitizeTransportAuditLabel(
+            request.featureName, 64);
+        SessionTransportFeatureObservation observation;
+        observation.transport = ToTransportModeLabel(decision.transport);
+        observation.reason = SanitizeTransportAuditLabel(decision.reason, 64);
+        observation.capabilitySource = SanitizeTransportAuditLabel(
+            decision.capabilitySource, 32);
+        observation.capabilityFromPersistedFallback =
+            decision.capabilityFromPersistedFallback;
+
+        {
+            std::lock_guard<std::mutex> lock(
+                s_SessionTransportFeatureObservationsMutex);
+            auto& byFeature = s_SessionTransportFeatureObservations[accountId];
+            auto itr = byFeature.find(featureName);
+            if (itr != byFeature.end()
+                && itr->second.transport == observation.transport
+                && itr->second.reason == observation.reason
+                && itr->second.capabilitySource == observation.capabilitySource
+                && itr->second.capabilityFromPersistedFallback
+                    == observation.capabilityFromPersistedFallback)
+                return;
+
+            byFeature[featureName] = observation;
+        }
+
+        uint32 nativeObservations =
+            decision.transport == DCAddon::TransportMode::NativeBridge ? 1 : 0;
+        uint32 addonObservations =
+            decision.transport == DCAddon::TransportMode::AddonProtocol ? 1 : 0;
+        uint32 unavailableObservations =
+            decision.transport == DCAddon::TransportMode::Unavailable ? 1 : 0;
+        uint32 clientCaps = decision.hasCapabilityState
+            ? decision.capabilityState.clientCapabilities
+            : 0;
+        uint32 negotiatedCaps = decision.hasCapabilityState
+            ? decision.capabilityState.negotiatedCapabilities
+            : 0;
+        std::string buildFingerprint = decision.hasCapabilityState
+            ? SanitizeTransportAuditLabel(
+                decision.capabilityState.nativeBuildFingerprint, 96)
+            : std::string();
+        std::string escapedName = EscapeSQLString(player->GetName());
+        std::string escapedFeature = EscapeSQLString(featureName);
+        std::string escapedTransport = EscapeSQLString(observation.transport);
+        std::string escapedReason = EscapeSQLString(observation.reason);
+        std::string escapedCapabilitySource =
+            EscapeSQLString(observation.capabilitySource);
+        std::string escapedFingerprint = EscapeSQLString(buildFingerprint);
+
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_addon_feature_transport_audit "
+            "(guid, account_id, character_name, feature_name, "
+            "native_observations, addon_observations, "
+            "unavailable_observations, last_transport, last_reason, "
+            "last_capability_source, last_client_caps, "
+            "last_negotiated_caps, last_native_build_fingerprint, "
+            "capability_from_persisted_fallback) "
+            "VALUES ({}, {}, '{}', '{}', {}, {}, {}, '{}', '{}', '{}', "
+            "{}, {}, '{}', {}) "
+            "ON DUPLICATE KEY UPDATE "
+            "account_id = VALUES(account_id), "
+            "character_name = VALUES(character_name), "
+            "native_observations = native_observations + {}, "
+            "addon_observations = addon_observations + {}, "
+            "unavailable_observations = unavailable_observations + {}, "
+            "last_transport = VALUES(last_transport), "
+            "last_reason = VALUES(last_reason), "
+            "last_capability_source = VALUES(last_capability_source), "
+            "last_client_caps = VALUES(last_client_caps), "
+            "last_negotiated_caps = VALUES(last_negotiated_caps), "
+            "last_native_build_fingerprint = "
+            "VALUES(last_native_build_fingerprint), "
+            "capability_from_persisted_fallback = "
+            "VALUES(capability_from_persisted_fallback), "
+            "last_seen = CURRENT_TIMESTAMP",
+            guid, accountId, escapedName, escapedFeature,
+            nativeObservations, addonObservations, unavailableObservations,
+            escapedTransport, escapedReason, escapedCapabilitySource,
+            clientCaps, negotiatedCaps, escapedFingerprint,
+            decision.capabilityFromPersistedFallback ? 1 : 0,
+            nativeObservations, addonObservations, unavailableObservations);
+    }
+
+    void ClearTransportObservations(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+        if (accountId == 0)
+            return;
+
+        std::lock_guard<std::mutex> lock(
+            s_SessionTransportFeatureObservationsMutex);
+        s_SessionTransportFeatureObservations.erase(accountId);
+    }
+
+    bool HasClientCapsMetadataColumns()
+    {
+        static std::once_flag once;
+        static bool exists = false;
+
+        std::call_once(once, []()
+        {
+            exists = DoesCharacterColumnExist(TABLE_CLIENT_CAPS,
+                COLUMN_NATIVE_BUILD_FINGERPRINT)
+                && DoesCharacterColumnExist(TABLE_CLIENT_CAPS,
+                    COLUMN_DATA_REVISIONS_JSON);
+            if (!exists)
+            {
+                LOG_WARN("module.dc",
+                    "DC capability metadata columns missing on '{}'; native build fingerprints and data revisions will stay session-only until the SQL migration is applied.",
+                    TABLE_CLIENT_CAPS);
+            }
+        });
+
+        return exists;
+    }
+
+    bool HasCapabilityHistoryMetadataColumns()
+    {
+        static std::once_flag once;
+        static bool exists = false;
+
+        std::call_once(once, []()
+        {
+            exists = DoesCharacterColumnExist(TABLE_CAPABILITY_HISTORY,
+                COLUMN_NATIVE_BUILD_FINGERPRINT)
+                && DoesCharacterColumnExist(TABLE_CAPABILITY_HISTORY,
+                    COLUMN_DATA_REVISIONS_JSON);
+            if (!exists)
+            {
+                LOG_WARN("module.dc",
+                    "DC capability metadata columns missing on '{}'; handshake metadata history will stay session-only until the SQL migration is applied.",
+                    TABLE_CAPABILITY_HISTORY);
+            }
+        });
+
+        return exists;
     }
 
     bool HasCapabilityHistoryTable()
@@ -190,10 +447,206 @@ static std::string NormalizeHandshakeVersionString(const DCAddon::ParsedMessage&
     return version;
 }
 
-static void StoreClientCaps(Player* player, const std::string& clientVersionStr, uint32 clientCaps, uint32 negotiatedCaps)
+static uint32 ParseHandshakeRevisionValue(DCAddon::JsonValue const& value)
+{
+    if (value.IsNumber())
+    {
+        double parsed = value.AsNumber();
+        return parsed > 0 ? static_cast<uint32>(parsed) : 0;
+    }
+
+    if (value.IsString())
+    {
+        std::string const raw = value.AsString();
+        if (raw.empty())
+            return 0;
+
+        try
+        {
+            unsigned long parsed = std::stoul(raw);
+            return parsed > 0 ? static_cast<uint32>(parsed) : 0;
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+static DCAddon::ClientDataRevisionState ParseDataRevisionsJson(
+    std::string const& revisionsJson)
+{
+    DCAddon::ClientDataRevisionState revisions;
+    if (revisionsJson.empty() || revisionsJson.front() != '{')
+        return revisions;
+
+    DCAddon::JsonValue parsed = DCAddon::JsonParser::Parse(revisionsJson);
+    if (!parsed.IsObject())
+        return revisions;
+
+    revisions.collectionCategories =
+        ParseHandshakeRevisionValue(parsed["cc"]);
+    revisions.collectionSources =
+        ParseHandshakeRevisionValue(parsed["cs"]);
+    revisions.collectionShop =
+        ParseHandshakeRevisionValue(parsed["shop"]);
+    revisions.collectionSets =
+        ParseHandshakeRevisionValue(parsed["set"]);
+    revisions.collectionTransmog =
+        ParseHandshakeRevisionValue(parsed["xmog"]);
+
+    if (revisions.collectionCategories == 0)
+        revisions.collectionCategories =
+            ParseHandshakeRevisionValue(parsed["collectionCategories"]);
+    if (revisions.collectionSources == 0)
+        revisions.collectionSources =
+            ParseHandshakeRevisionValue(parsed["collectionSources"]);
+    if (revisions.collectionShop == 0)
+        revisions.collectionShop =
+            ParseHandshakeRevisionValue(parsed["collectionShop"]);
+    if (revisions.collectionSets == 0)
+        revisions.collectionSets =
+            ParseHandshakeRevisionValue(parsed["collectionSets"]);
+    if (revisions.collectionTransmog == 0)
+        revisions.collectionTransmog =
+            ParseHandshakeRevisionValue(parsed["collectionTransmog"]);
+
+    return revisions;
+}
+
+static std::string EncodeDataRevisionsJson(
+    DCAddon::ClientDataRevisionState const& revisions)
+{
+    if (!revisions.HasAny())
+        return std::string();
+
+    DCAddon::JsonValue json;
+    json.SetObject();
+    if (revisions.collectionCategories != 0)
+        json.Set("cc", static_cast<double>(revisions.collectionCategories));
+    if (revisions.collectionSources != 0)
+        json.Set("cs", static_cast<double>(revisions.collectionSources));
+    if (revisions.collectionShop != 0)
+        json.Set("shop", static_cast<double>(revisions.collectionShop));
+    if (revisions.collectionSets != 0)
+        json.Set("set", static_cast<double>(revisions.collectionSets));
+    if (revisions.collectionTransmog != 0)
+        json.Set("xmog", static_cast<double>(revisions.collectionTransmog));
+    return json.Encode();
+}
+
+static std::string EncodeHandshakeMetadataJson(
+    std::string const& nativeBuildFingerprint,
+    DCAddon::ClientDataRevisionState const& revisions)
+{
+    if (nativeBuildFingerprint.empty() && !revisions.HasAny())
+        return std::string();
+
+    DCAddon::JsonValue json;
+    json.SetObject();
+    json.Set("v", 1.0);
+
+    if (!nativeBuildFingerprint.empty())
+        json.Set("b", nativeBuildFingerprint);
+
+    if (revisions.HasAny())
+    {
+        DCAddon::JsonValue data;
+        data.SetObject();
+        if (revisions.collectionCategories != 0)
+            data.Set("cc", static_cast<double>(revisions.collectionCategories));
+        if (revisions.collectionSources != 0)
+            data.Set("cs", static_cast<double>(revisions.collectionSources));
+        if (revisions.collectionShop != 0)
+            data.Set("shop", static_cast<double>(revisions.collectionShop));
+        if (revisions.collectionSets != 0)
+            data.Set("set", static_cast<double>(revisions.collectionSets));
+        if (revisions.collectionTransmog != 0)
+            data.Set("xmog", static_cast<double>(revisions.collectionTransmog));
+        json.Set("d", std::move(data));
+    }
+
+    return json.Encode();
+}
+
+static DCAddon::ClientHandshakeMetadata ParseHandshakeMetadataJson(
+    std::string const& metadataJson)
+{
+    DCAddon::ClientHandshakeMetadata metadata;
+    if (metadataJson.empty() || metadataJson.front() != '{')
+        return metadata;
+
+    DCAddon::JsonValue parsed = DCAddon::JsonParser::Parse(metadataJson);
+    if (!parsed.IsObject())
+        return metadata;
+
+    metadata.metadataJson = metadataJson;
+
+    DCAddon::JsonValue const& fingerprint = parsed["b"];
+    if (fingerprint.IsString())
+        metadata.nativeBuildFingerprint = fingerprint.AsString();
+    else if (parsed["nativeBuildFingerprint"].IsString())
+        metadata.nativeBuildFingerprint =
+            parsed["nativeBuildFingerprint"].AsString();
+
+    DCAddon::JsonValue const& dataRevisions = parsed["d"];
+    if (dataRevisions.IsObject())
+        metadata.dataRevisions = ParseDataRevisionsJson(dataRevisions.Encode());
+
+    return metadata;
+}
+
+static DCAddon::ClientHandshakeMetadata ParseHandshakeMetadata(
+    DCAddon::ParsedMessage const& msg)
+{
+    if (msg.GetDataCount() < 2)
+        return DCAddon::ClientHandshakeMetadata();
+
+    for (size_t index = 1; index < msg.GetDataCount(); ++index)
+    {
+        std::string metadataJson = msg.GetString(index);
+        if (!metadataJson.empty() && metadataJson.front() == '{')
+            return ParseHandshakeMetadataJson(metadataJson);
+    }
+
+    return DCAddon::ClientHandshakeMetadata();
+}
+
+static void StoreClientCaps(Player* player, const std::string& clientVersionStr,
+    uint32 clientCaps, uint32 negotiatedCaps,
+    DCAddon::ClientHandshakeMetadata const& metadata)
 {
     if (!player || !player->GetSession())
         return;
+
+    if (HasClientCapsMetadataColumns())
+    {
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_addon_client_caps "
+            "(account_id, addon_name, version_string, capabilities, negotiated_caps, native_build_fingerprint, data_revisions_json, last_character_guid, last_character_name, last_seen) "
+            "VALUES ({}, 'DC', '{}', {}, {}, '{}', '{}', {}, '{}', NOW()) "
+            "ON DUPLICATE KEY UPDATE "
+            "version_string = VALUES(version_string), "
+            "capabilities = VALUES(capabilities), "
+            "negotiated_caps = VALUES(negotiated_caps), "
+            "native_build_fingerprint = VALUES(native_build_fingerprint), "
+            "data_revisions_json = VALUES(data_revisions_json), "
+            "last_character_guid = VALUES(last_character_guid), "
+            "last_character_name = VALUES(last_character_name), "
+            "last_seen = NOW()",
+            player->GetSession()->GetAccountId(),
+            EscapeSQLString(clientVersionStr),
+            clientCaps,
+            negotiatedCaps,
+            EscapeSQLString(metadata.nativeBuildFingerprint),
+            EscapeSQLString(EncodeDataRevisionsJson(metadata.dataRevisions)),
+            player->GetGUID().GetCounter(),
+            EscapeSQLString(player->GetName())
+        );
+        return;
+    }
 
     CharacterDatabase.Execute(
         "INSERT INTO dc_addon_client_caps "
@@ -217,7 +670,8 @@ static void StoreClientCaps(Player* player, const std::string& clientVersionStr,
 
 static void StoreCapabilityHistory(Player* player,
     std::string const& clientVersionStr, uint32 clientCaps,
-    uint32 negotiatedCaps, bool versionCompatible, char const* source)
+    uint32 negotiatedCaps, bool versionCompatible, char const* source,
+    DCAddon::ClientHandshakeMetadata const& metadata)
 {
     if (!player || !player->GetSession() || !HasCapabilityHistoryTable())
         return;
@@ -227,11 +681,17 @@ static void StoreCapabilityHistory(Player* player,
     std::string const characterName = player->GetName();
 
     QueryResult latestResult = CharacterDatabase.Query(
-        "SELECT version_string, capabilities, negotiated_caps, compatible, "
-        "character_guid, character_name "
-        "FROM dc_addon_client_caps_history "
-        "WHERE account_id = {} AND addon_name = 'DC' "
-        "ORDER BY seen_at DESC, id DESC LIMIT 1",
+        HasCapabilityHistoryMetadataColumns()
+            ? "SELECT version_string, capabilities, negotiated_caps, compatible, "
+              "character_guid, character_name, native_build_fingerprint, data_revisions_json "
+              "FROM dc_addon_client_caps_history "
+              "WHERE account_id = {} AND addon_name = 'DC' "
+              "ORDER BY seen_at DESC, id DESC LIMIT 1"
+            : "SELECT version_string, capabilities, negotiated_caps, compatible, "
+              "character_guid, character_name "
+              "FROM dc_addon_client_caps_history "
+              "WHERE account_id = {} AND addon_name = 'DC' "
+              "ORDER BY seen_at DESC, id DESC LIMIT 1",
         accountId);
     if (latestResult)
     {
@@ -241,24 +701,49 @@ static void StoreCapabilityHistory(Player* player,
             latestFields[2].Get<uint32>() == negotiatedCaps &&
             (latestFields[3].Get<uint8>() != 0) == versionCompatible &&
             latestFields[4].Get<uint64>() == characterGuid &&
-            latestFields[5].Get<std::string>() == characterName)
+            latestFields[5].Get<std::string>() == characterName &&
+            (!HasCapabilityHistoryMetadataColumns()
+                || (latestFields[6].Get<std::string>()
+                        == metadata.nativeBuildFingerprint
+                    && latestFields[7].Get<std::string>()
+                        == EncodeDataRevisionsJson(metadata.dataRevisions))))
         {
             return;
         }
     }
 
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_addon_client_caps_history "
-        "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name) "
-        "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}')",
-        accountId,
-        EscapeSQLString(source ? source : "unknown"),
-        EscapeSQLString(clientVersionStr),
-        clientCaps,
-        negotiatedCaps,
-        versionCompatible ? 1 : 0,
-        characterGuid,
-        EscapeSQLString(characterName));
+    if (HasCapabilityHistoryMetadataColumns())
+    {
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_addon_client_caps_history "
+            "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name, native_build_fingerprint, data_revisions_json) "
+            "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}', '{}', '{}')",
+            accountId,
+            EscapeSQLString(source ? source : "unknown"),
+            EscapeSQLString(clientVersionStr),
+            clientCaps,
+            negotiatedCaps,
+            versionCompatible ? 1 : 0,
+            characterGuid,
+            EscapeSQLString(characterName),
+            EscapeSQLString(metadata.nativeBuildFingerprint),
+            EscapeSQLString(EncodeDataRevisionsJson(metadata.dataRevisions)));
+    }
+    else
+    {
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_addon_client_caps_history "
+            "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name) "
+            "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}')",
+            accountId,
+            EscapeSQLString(source ? source : "unknown"),
+            EscapeSQLString(clientVersionStr),
+            clientCaps,
+            negotiatedCaps,
+            versionCompatible ? 1 : 0,
+            characterGuid,
+            EscapeSQLString(characterName));
+    }
 
     CharacterDatabase.Execute(
         "DELETE FROM dc_addon_client_caps_history "
@@ -316,12 +801,19 @@ namespace
             return false;
 
         QueryResult result = CharacterDatabase.Query(
-            "SELECT version_string, capabilities, negotiated_caps, "
-            "last_character_guid, last_character_name, "
-            "UNIX_TIMESTAMP(last_seen) "
-            "FROM dc_addon_client_caps "
-            "WHERE account_id = {} AND addon_name = 'DC' "
-            "ORDER BY last_seen DESC LIMIT 1",
+            HasClientCapsMetadataColumns()
+                ? "SELECT version_string, capabilities, negotiated_caps, "
+                  "last_character_guid, last_character_name, "
+                  "UNIX_TIMESTAMP(last_seen), native_build_fingerprint, data_revisions_json "
+                  "FROM dc_addon_client_caps "
+                  "WHERE account_id = {} AND addon_name = 'DC' "
+                  "ORDER BY last_seen DESC LIMIT 1"
+                : "SELECT version_string, capabilities, negotiated_caps, "
+                  "last_character_guid, last_character_name, "
+                  "UNIX_TIMESTAMP(last_seen) "
+                  "FROM dc_addon_client_caps "
+                  "WHERE account_id = {} AND addon_name = 'DC' "
+                  "ORDER BY last_seen DESC LIMIT 1",
             accountId);
         if (!result)
             return false;
@@ -339,6 +831,14 @@ namespace
                 DCAddon::ProtocolVersion::ParseClientVersion(
                     out.clientVersionString));
         out.loadedFromPersistedFallback = true;
+        if (HasClientCapsMetadataColumns())
+        {
+            out.nativeBuildFingerprint = fields[6].Get<std::string>();
+            out.dataRevisions = ParseDataRevisionsJson(
+                fields[7].Get<std::string>());
+            out.metadataJson = EncodeHandshakeMetadataJson(
+                out.nativeBuildFingerprint, out.dataRevisions);
+        }
         return true;
     }
 }
@@ -347,7 +847,8 @@ namespace DCAddon
 {
     void SetSessionCapabilityState(Player* player,
         const std::string& clientVersionStr, uint32 clientCaps,
-        uint32 negotiatedCaps, bool versionCompatible)
+        uint32 negotiatedCaps, bool versionCompatible,
+        ClientHandshakeMetadata const& metadata)
     {
         uint32 key = GetSessionCapabilityRegistryKey(player);
         if (key == 0)
@@ -362,6 +863,9 @@ namespace DCAddon
         state.lastCharacterGuid = player->GetGUID().GetCounter();
         state.lastCharacterName = player->GetName();
         state.lastSeenUnix = GameTime::GetGameTime().count();
+        state.nativeBuildFingerprint = metadata.nativeBuildFingerprint;
+        state.dataRevisions = metadata.dataRevisions;
+        state.metadataJson = metadata.metadataJson;
 
         std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
         s_SessionCapabilityRegistry[key] = std::move(state);
@@ -388,12 +892,18 @@ namespace DCAddon
             return false;
 
         QueryResult result = CharacterDatabase.Query(
-            "SELECT source, version_string, capabilities, negotiated_caps, compatible, "
-            "character_guid, character_name, UNIX_TIMESTAMP(seen_at) "
-            "FROM dc_addon_client_caps_history "
-            "WHERE account_id = {} AND addon_name = 'DC' "
-            "ORDER BY seen_at DESC, id DESC LIMIT {}",
-            accountId, std::min(limit, MAX_CAPABILITY_HISTORY_ENTRIES));
+                        HasCapabilityHistoryMetadataColumns()
+                                ? "SELECT source, version_string, capabilities, negotiated_caps, compatible, "
+                                    "character_guid, character_name, UNIX_TIMESTAMP(seen_at), native_build_fingerprint, data_revisions_json "
+                                    "FROM dc_addon_client_caps_history "
+                                    "WHERE account_id = {} AND addon_name = 'DC' "
+                                    "ORDER BY seen_at DESC, id DESC LIMIT {}"
+                                : "SELECT source, version_string, capabilities, negotiated_caps, compatible, "
+                                    "character_guid, character_name, UNIX_TIMESTAMP(seen_at) "
+                                    "FROM dc_addon_client_caps_history "
+                                    "WHERE account_id = {} AND addon_name = 'DC' "
+                                    "ORDER BY seen_at DESC, id DESC LIMIT {}",
+                        accountId, std::min(limit, MAX_CAPABILITY_HISTORY_ENTRIES));
         if (!result)
             return true;
 
@@ -409,6 +919,14 @@ namespace DCAddon
             entry.characterGuid = fields[5].Get<uint64>();
             entry.characterName = fields[6].Get<std::string>();
             entry.seenUnix = fields[7].Get<uint64>();
+            if (HasCapabilityHistoryMetadataColumns())
+            {
+                entry.nativeBuildFingerprint = fields[8].Get<std::string>();
+                entry.dataRevisions = ParseDataRevisionsJson(
+                    fields[9].Get<std::string>());
+                entry.metadataJson = EncodeHandshakeMetadataJson(
+                    entry.nativeBuildFingerprint, entry.dataRevisions);
+            }
             out.push_back(std::move(entry));
         } while (result->NextRow());
 
@@ -498,6 +1016,126 @@ namespace DCAddon
         SessionCapabilityState state;
         return TryGetSessionCapabilityState(session, state)
             && state.HasNegotiatedCapability(capability);
+    }
+
+    TransportPolicyDecision ResolveTransportPolicy(
+        SessionCapabilityState const* capabilityState,
+        TransportPolicyRequest const& request)
+    {
+        TransportPolicyDecision decision;
+
+        if (capabilityState)
+        {
+            decision.hasCapabilityState = true;
+            decision.capabilityState = *capabilityState;
+            decision.capabilityFromPersistedFallback =
+                capabilityState->loadedFromPersistedFallback;
+            decision.capabilitySource =
+                capabilityState->loadedFromPersistedFallback
+                ? "db-fallback"
+                : "session-registry";
+        }
+
+        if (request.forceNative)
+        {
+            decision.transport = TransportMode::NativeBridge;
+            decision.reason = request.forceNativeReason;
+            return decision;
+        }
+
+        if (request.forceAddon)
+        {
+            decision.transport = request.allowAddonFallback
+                ? TransportMode::AddonProtocol
+                : TransportMode::Unavailable;
+            decision.reason = request.allowAddonFallback
+                ? request.forceAddonReason
+                : "addon-fallback-disabled";
+            return decision;
+        }
+
+        if (!decision.hasCapabilityState)
+        {
+            decision.transport = request.allowAddonFallback
+                ? TransportMode::AddonProtocol
+                : TransportMode::Unavailable;
+            decision.reason = request.noCapabilityStateReason;
+            return decision;
+        }
+
+        if (!decision.capabilityState.versionCompatible)
+        {
+            decision.transport = request.allowAddonFallback
+                ? TransportMode::AddonProtocol
+                : TransportMode::Unavailable;
+            decision.reason = request.versionIncompatibleReason;
+            return decision;
+        }
+
+        if (!decision.capabilityState.HasClientCapability(
+                request.nativeCapability))
+        {
+            decision.transport = request.allowAddonFallback
+                ? TransportMode::AddonProtocol
+                : TransportMode::Unavailable;
+            decision.reason = request.clientCapabilityMissingReason;
+            return decision;
+        }
+
+        if (!decision.capabilityState.HasNegotiatedCapability(
+                request.nativeCapability))
+        {
+            decision.transport = request.allowAddonFallback
+                ? TransportMode::AddonProtocol
+                : TransportMode::Unavailable;
+            decision.reason = request.negotiatedCapabilityMissingReason;
+            return decision;
+        }
+
+        if (!request.nativeEligible)
+        {
+            decision.transport = request.allowAddonFallback
+                ? TransportMode::AddonProtocol
+                : TransportMode::Unavailable;
+            decision.reason = request.nativeIneligibleReason;
+            return decision;
+        }
+
+        decision.transport = TransportMode::NativeBridge;
+        decision.reason = request.nativeReadyReason;
+        return decision;
+    }
+
+    TransportPolicyDecision ResolveTransportPolicy(Player* player,
+        TransportPolicyRequest const& request)
+    {
+        SessionCapabilityState capabilityState;
+        TransportPolicyDecision decision;
+        if (TryGetSessionCapabilityState(player, capabilityState))
+            decision = ResolveTransportPolicy(&capabilityState, request);
+        else
+            decision = ResolveTransportPolicy(
+                static_cast<SessionCapabilityState const*>(nullptr), request);
+
+        RecordTransportObservation(player, request, decision);
+        return decision;
+    }
+
+    TransportPolicyDecision ResolveTransportPolicy(WorldSession* session,
+        TransportPolicyRequest const& request)
+    {
+        SessionCapabilityState capabilityState;
+        TransportPolicyDecision decision;
+        if (TryGetSessionCapabilityState(session, capabilityState))
+            decision = ResolveTransportPolicy(&capabilityState, request);
+        else
+            decision = ResolveTransportPolicy(
+                static_cast<SessionCapabilityState const*>(nullptr), request);
+
+        if (session)
+            RecordTransportObservation(session->GetPlayer(), request, decision);
+
+        return decision;
     }
 }
 
@@ -1380,6 +2018,8 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
 {
     // Client says hello with version string: "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|capabilities"
     std::string clientVersionStr = NormalizeHandshakeVersionString(msg);
+    DCAddon::ClientHandshakeMetadata metadata =
+        ParseHandshakeMetadata(msg);
 
     // Parse client version with capability flags
     auto clientVersion = DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
@@ -1406,12 +2046,13 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
         .Send(player);
 
     // Store client addon caps/version per account
-    StoreClientCaps(player, clientVersionStr, clientVersion.capabilities, negotiatedCaps);
+    StoreClientCaps(player, clientVersionStr, clientVersion.capabilities,
+        negotiatedCaps, metadata);
     DCAddon::SetSessionCapabilityState(player, clientVersionStr,
-        clientVersion.capabilities, negotiatedCaps, compatible);
+        clientVersion.capabilities, negotiatedCaps, compatible, metadata);
     StoreCapabilityHistory(player, clientVersionStr,
         clientVersion.capabilities, negotiatedCaps, compatible,
-        "core-handshake");
+        "core-handshake", metadata);
     LogCapabilityState(player, "core-handshake", clientVersionStr,
         clientVersion.capabilities, negotiatedCaps, compatible);
 
@@ -1854,6 +2495,7 @@ public:
             s_PendingRequests.erase(accountId);
         }
 
+        ClearTransportObservations(player);
         DCAddon::ClearSessionCapabilityState(player);
 
         // FLUSH STATS for this player and remove from buffer
@@ -2134,14 +2776,17 @@ public:
             bool compatible = serverVersion.IsCompatible(clientVersion);
             uint32 negotiatedCaps =
                 clientVersion.capabilities & serverVersion.capabilities;
+            DCAddon::ClientHandshakeMetadata metadata =
+                ParseHandshakeMetadata(parsed);
 
             StoreClientCaps(player, clientVersionStr,
-                clientVersion.capabilities, negotiatedCaps);
+                clientVersion.capabilities, negotiatedCaps, metadata);
             DCAddon::SetSessionCapabilityState(player, clientVersionStr,
-                clientVersion.capabilities, negotiatedCaps, compatible);
+                clientVersion.capabilities, negotiatedCaps, compatible,
+                metadata);
             StoreCapabilityHistory(player, clientVersionStr,
                 clientVersion.capabilities, negotiatedCaps, compatible,
-                "pre-router-fallback");
+                "pre-router-fallback", metadata);
             LogCapabilityState(player, "pre-router-fallback",
                 clientVersionStr, clientVersion.capabilities,
                 negotiatedCaps, compatible);

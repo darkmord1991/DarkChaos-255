@@ -132,6 +132,88 @@ local function HighlightURLs(msg)
     return msg
 end
 
+local function GetInlineTextureTargetSize(frame)
+    if frame and type(frame.GetFont) == "function" then
+        local _, size = frame:GetFont()
+        size = tonumber(size)
+        if size and size > 0 then
+            return math.max(8, math.floor(size + 0.5))
+        end
+    end
+
+    return 14
+end
+
+local function NormalizeTextureTagPayload(payload, targetSize)
+    if type(payload) ~= "string" or type(targetSize) ~= "number" or targetSize <= 0 then
+        return payload
+    end
+
+    local path, width, height, suffix = payload:match("^(.-):(%-?%d+):(%-?%d+)(:.*)$")
+    if path then
+        local newWidth = math.min(tonumber(width) or targetSize, targetSize)
+        local newHeight = math.min(tonumber(height) or targetSize, targetSize)
+        if newWidth ~= tonumber(width) or newHeight ~= tonumber(height) then
+            return path .. ":" .. newWidth .. ":" .. newHeight .. suffix
+        end
+
+        return payload
+    end
+
+    path, width, height = payload:match("^(.-):(%-?%d+):(%-?%d+)$")
+    if path then
+        local newWidth = math.min(tonumber(width) or targetSize, targetSize)
+        local newHeight = math.min(tonumber(height) or targetSize, targetSize)
+        if newWidth ~= tonumber(width) or newHeight ~= tonumber(height) then
+            return path .. ":" .. newWidth .. ":" .. newHeight
+        end
+
+        return payload
+    end
+
+    path, width, suffix = payload:match("^(.-):(%-?%d+)(:.*)$")
+    if path then
+        local newSize = math.min(tonumber(width) or targetSize, targetSize)
+        if newSize ~= tonumber(width) then
+            return path .. ":" .. newSize .. ":" .. newSize .. suffix
+        end
+
+        return payload
+    end
+
+    path, width = payload:match("^(.-):(%-?%d+)$")
+    if path then
+        local newSize = math.min(tonumber(width) or targetSize, targetSize)
+        if newSize ~= tonumber(width) then
+            return path .. ":" .. newSize .. ":" .. newSize
+        end
+
+        return payload
+    end
+
+    return payload
+end
+
+local function NormalizeInlineTextureTags(msg, targetSize)
+    if type(msg) ~= "string" or not msg:find("|T", 1, true) then
+        return msg
+    end
+
+    return msg:gsub("|T(.-)|t", function(payload)
+        return "|T" .. NormalizeTextureTagPayload(payload, targetSize) .. "|t"
+    end)
+end
+
+local function StripInlineTextureTags(msg)
+    if type(msg) ~= "string" or not msg:find("|T", 1, true) then
+        return msg
+    end
+
+    msg = msg:gsub("|T.-|t", " ")
+    msg = msg:gsub("%s%s+", " ")
+    return msg
+end
+
 -- URL Click Handler
 local function SetupURLHandler()
     -- Hook SetItemRef to handle our custom url links
@@ -533,6 +615,8 @@ local function SetupChatFrameHooks()
                     if settings.detectURLs then
                         msg = HighlightURLs(msg)
                     end
+
+                    msg = NormalizeInlineTextureTags(msg, GetInlineTextureTargetSize(self))
                 end
                 
                 return origAddMessage(self, msg, r, g, b, ...)
@@ -814,6 +898,7 @@ local function ShowChatCopy(chatFrame)
             line = line:gsub("|r", "")
             line = line:gsub("|H.-|h", "")
             line = line:gsub("|h", "")
+            line = StripInlineTextureTags(line)
             text = text .. line .. "\n"
         end
     end

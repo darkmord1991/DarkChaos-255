@@ -133,6 +133,7 @@ namespace DCMythicSpectator
     // ============================================================
     struct SpectateableRun
     {
+        uint32 runId;
         uint32 instanceId;
         uint32 mapId;
         uint8 keystoneLevel;
@@ -141,6 +142,7 @@ namespace DCMythicSpectator
         uint8 bossesKilled;
         uint8 bossesTotal;
         uint8 deaths;
+        std::string dungeonName;
         std::string leaderName;
         std::vector<std::string> participantNames;
         bool allowsSpectators;
@@ -198,7 +200,9 @@ namespace DCMythicSpectator
 
         // Run Management
         void RegisterActiveRun(uint32 instanceId, uint32 mapId, uint8 keystoneLevel,
-                               std::string const& leaderName, bool allowSpectators = true);
+                       std::string const& leaderName, bool allowSpectators = true,
+                       uint32 runId = 0,
+                       std::string const& dungeonName = "");
         void UnregisterActiveRun(uint32 instanceId);
         void UpdateRunStatus(uint32 instanceId, uint32 timerRemaining, uint8 bossesKilled,
                              uint8 bossesTotal, uint8 deaths);

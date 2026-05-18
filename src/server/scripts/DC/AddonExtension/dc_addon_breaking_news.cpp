@@ -394,28 +394,22 @@ namespace DCBreakingNews
                 return decision;
             }
 
-            if (!capabilityState->versionCompatible)
-            {
-                decision.reason = "incompatible-version";
-                return decision;
-            }
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "breaking-news";
+            request.nativeCapability =
+                DCAddon::ProtocolVersion::Capability::BREAKING_NEWS_NATIVE;
+            request.noCapabilityStateReason = missingCapabilityReason
+                ? missingCapabilityReason
+                : "no-capability-state";
+            request.versionIncompatibleReason = "incompatible-version";
+            request.clientCapabilityMissingReason = "client-cap-missing";
+            request.negotiatedCapabilityMissingReason = "not-negotiated";
+            request.nativeReadyReason = "native-ready";
 
-            if (!capabilityState->HasClientCapability(
-                DCAddon::ProtocolVersion::Capability::BREAKING_NEWS_NATIVE))
-            {
-                decision.reason = "client-cap-missing";
-                return decision;
-            }
-
-            if (!capabilityState->HasNegotiatedCapability(
-                DCAddon::ProtocolVersion::Capability::BREAKING_NEWS_NATIVE))
-            {
-                decision.reason = "not-negotiated";
-                return decision;
-            }
-
-            decision.willSend = true;
-            decision.reason = "native-ready";
+            DCAddon::TransportPolicyDecision transport =
+                DCAddon::ResolveTransportPolicy(capabilityState, request);
+            decision.willSend = transport.UsesNative();
+            decision.reason = transport.reason;
             return decision;
         }
     }

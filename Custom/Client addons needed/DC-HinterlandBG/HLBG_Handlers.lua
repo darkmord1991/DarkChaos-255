@@ -8,6 +8,296 @@ end
 -- Shared live resources state. Initialize to avoid nil indexing when STATUS messages arrive.
 RES = RES or {}
 HLBG.RES = HLBG.RES or RES
+local NATIVE_HLBG_LIVE_CAPABILITY = 0x00020000
+local NATIVE_HLBG_LIVE_POLL_INTERVAL = 0.20
+local NATIVE_HLBG_LIVE_REQUEST_INTERVAL = 3.00
+local lastNativeHLBGLiveRevision = 0
+local lastNativeHLBGLiveRequestAt = 0
+local nativeHLBGLivePollFrame = nil
+local nativeHLBGLiveWasViewActive = false
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+    if capability <= 0 then return false end
+    if bit and bit.band then
+        return bit.band(mask, capability) ~= 0
+    end
+    return (mask % (capability * 2)) >= capability
+end
+
+local function GetHLBGProtocol()
+    return rawget(_G, 'DCAddonProtocol')
+end
+
+local function GetHLBGProtocolCapabilitySnapshot()
+    local protocol = GetHLBGProtocol()
+    if not protocol or type(protocol.GetCapabilitySnapshot) ~= 'function' then
+        return nil
+    end
+
+    local ok, snapshot = pcall(protocol.GetCapabilitySnapshot, protocol)
+    if not ok or type(snapshot) ~= 'table' then
+        return nil
+    end
+
+    return snapshot
+end
+
+local function HasNativeHLBGLiveBridge()
+    if type(rawget(_G, 'RequestNativeHLBGLiveSnapshot')) ~= 'function'
+        or type(rawget(_G, 'GetNativeHLBGLiveSnapshot')) ~= 'function' then
+        return false
+    end
+
+    local protocol = GetHLBGProtocol()
+    if protocol and type(protocol.GetClientCapabilities) == 'function' then
+        local ok, capabilities = pcall(protocol.GetClientCapabilities, protocol)
+        capabilities = ok and tonumber(capabilities) or 0
+        if capabilities > 0 then
+            return HasCapabilityBit(capabilities, NATIVE_HLBG_LIVE_CAPABILITY)
+        end
+    end
+
+    return true
+end
+
+local function ShouldUseNativeHLBGLiveBridge()
+    local snapshot = GetHLBGProtocolCapabilitySnapshot()
+    if not snapshot or not snapshot.connected then
+        return false
+    end
+
+    return HasNativeHLBGLiveBridge()
+        and HasCapabilityBit(snapshot.negotiatedCaps,
+            NATIVE_HLBG_LIVE_CAPABILITY)
+end
+
+local function TryDecodeHLBGJson(payload)
+    if type(payload) == 'table' then
+        return payload
+    end
+
+    if type(payload) ~= 'string' or payload == '' then
+        return nil
+    end
+
+    local protocol = GetHLBGProtocol()
+    if protocol and type(protocol.DecodeJSON) == 'function' then
+        local ok, decoded = pcall(protocol.DecodeJSON, protocol, payload)
+        if ok and type(decoded) == 'table' then
+            return decoded
+        end
+    end
+
+    if type(HLBG.tryDecodeJson) == 'function' then
+        local ok, decoded = pcall(HLBG.tryDecodeJson, payload)
+        if ok and type(decoded) == 'table' then
+            return decoded
+        end
+    end
+
+    if type(HLBG.json_decode) == 'function' then
+        local ok, decoded = pcall(HLBG.json_decode, payload)
+        if ok and type(decoded) == 'table' then
+            return decoded
+        end
+    end
+
+    if type(json_decode) == 'function' then
+        local ok, decoded = pcall(json_decode, payload)
+        if ok and type(decoded) == 'table' then
+            return decoded
+        end
+    end
+
+    return nil
+end
+
+local function NormalizeNativeHLBGLiveRows(rows)
+    if type(rows) ~= 'table' then
+        return {}
+    end
+
+    local normalized = {}
+    for index, row in ipairs(rows) do
+        if type(row) == 'table' then
+            normalized[#normalized + 1] = {
+                id = row.id or index,
+                ts = row.ts or '',
+                name = row.name or '',
+                team = row.team or '',
+                score = tonumber(row.score or 0) or 0,
+                hk = tonumber(row.hk or 0) or 0,
+                class = tonumber(row.class or row.classId or 0) or 0,
+                sub = tonumber(row.sub or row.subgroup or 0) or 0,
+            }
+        end
+    end
+
+    return normalized
+end
+
+local function ApplyNativeHLBGLiveSnapshot(payload)
+    local decoded = TryDecodeHLBGJson(payload)
+    if type(decoded) ~= 'table' then
+        return false
+    end
+
+    RES = RES or {}
+    HLBG._lastStatus = HLBG._lastStatus or {}
+
+    RES.A = tonumber(decoded.A or decoded.alliance or RES.A or 0) or 0
+    RES.H = tonumber(decoded.H or decoded.horde or RES.H or 0) or 0
+
+    HLBG._lastStatus.A = RES.A
+    HLBG._lastStatus.H = RES.H
+    HLBG._lastStatus.allianceResources = RES.A
+    HLBG._lastStatus.hordeResources = RES.H
+    HLBG._lastStatus.matchStart = tonumber(decoded.matchStart or 0) or 0
+
+    local alliancePlayers = tonumber(decoded.APC or decoded.alliancePlayers
+        or decoded.APlayers or decoded.AllyCount)
+    local hordePlayers = tonumber(decoded.HPC or decoded.hordePlayers
+        or decoded.HPlayers or decoded.HordeCount)
+
+    if alliancePlayers ~= nil then
+        HLBG._lastStatus.APC = alliancePlayers
+        HLBG._lastStatus.APlayers = alliancePlayers
+        HLBG._lastStatus.AllyCount = alliancePlayers
+    end
+    if hordePlayers ~= nil then
+        HLBG._lastStatus.HPC = hordePlayers
+        HLBG._lastStatus.HPlayers = hordePlayers
+        HLBG._lastStatus.HordeCount = hordePlayers
+    end
+
+    local affixValue = tonumber(decoded.affix or decoded.affixId
+        or decoded.affixCode)
+    if affixValue and affixValue > 0 then
+        HLBG._lastStatus.affix = affixValue
+        if type(HLBG.GetAffixName) == 'function' then
+            local ok, affixName = pcall(HLBG.GetAffixName, affixValue)
+            if ok and type(affixName) == 'string' and affixName ~= '' then
+                HLBG._affixText = affixName
+            else
+                HLBG._affixText = tostring(affixValue)
+            end
+        else
+            HLBG._affixText = tostring(affixValue)
+        end
+    elseif type(decoded.affixText) == 'string' and decoded.affixText ~= '' then
+        HLBG._affixText = decoded.affixText
+    end
+
+    HLBG._lastStatusTime = GetTime()
+
+    local rows = NormalizeNativeHLBGLiveRows(decoded.players or decoded.rows
+        or decoded.liveRows)
+    if type(HLBG.Live) == 'function' then
+        pcall(HLBG.Live, rows)
+    end
+    if type(HLBG.UpdateHUD) == 'function' then
+        pcall(HLBG.UpdateHUD)
+    end
+
+    return true
+end
+
+local function ConsumeNativeHLBGLiveSnapshot()
+    if not ShouldUseNativeHLBGLiveBridge() then
+        return false
+    end
+
+    local getter = rawget(_G, 'GetNativeHLBGLiveSnapshot')
+    if type(getter) ~= 'function' then
+        return false
+    end
+
+    local ok, revision, payload = pcall(getter)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    if revision <= 0 or revision == lastNativeHLBGLiveRevision then
+        return false
+    end
+
+    lastNativeHLBGLiveRevision = revision
+    return ApplyNativeHLBGLiveSnapshot(payload)
+end
+
+local function IsNativeHLBGLiveViewActive()
+    if not ShouldUseNativeHLBGLiveBridge() then
+        return false
+    end
+
+    if not (HLBG.UI and HLBG.UI.Frame and HLBG.UI.Frame.IsShown
+        and HLBG.UI.Frame:IsShown()) then
+        return false
+    end
+
+    return tonumber(DCHLBGDB and DCHLBGDB.lastInnerTab or 0) == 2
+end
+
+local function SendNativeHLBGLiveSnapshotRequest(reason, bypassCooldown)
+    local requestFn = rawget(_G, 'RequestNativeHLBGLiveSnapshot')
+    if type(requestFn) ~= 'function' or not ShouldUseNativeHLBGLiveBridge() then
+        return false
+    end
+
+    local now = (type(GetTime) == 'function' and GetTime()) or 0
+    if not bypassCooldown and now > 0 and lastNativeHLBGLiveRequestAt > 0
+        and (now - lastNativeHLBGLiveRequestAt) < 1.0 then
+        return false
+    end
+
+    if now > 0 then
+        lastNativeHLBGLiveRequestAt = now
+    end
+
+    local ok = pcall(requestFn, reason or 'client')
+    return ok
+end
+
+function HLBG.RequestLiveSnapshot(reason, bypassCooldown)
+    return SendNativeHLBGLiveSnapshotRequest(reason, bypassCooldown)
+end
+
+local function EnsureNativeHLBGLivePollFrame()
+    if nativeHLBGLivePollFrame then
+        return
+    end
+
+    nativeHLBGLivePollFrame = CreateFrame('Frame')
+    nativeHLBGLivePollFrame.elapsed = 0
+    nativeHLBGLivePollFrame.requestElapsed = 0
+    nativeHLBGLivePollFrame:SetScript('OnUpdate', function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        self.requestElapsed = (self.requestElapsed or 0) + elapsed
+
+        if self.elapsed >= NATIVE_HLBG_LIVE_POLL_INTERVAL then
+            self.elapsed = 0
+            ConsumeNativeHLBGLiveSnapshot()
+        end
+
+        local viewActive = IsNativeHLBGLiveViewActive()
+        if viewActive and not nativeHLBGLiveWasViewActive then
+            SendNativeHLBGLiveSnapshotRequest('view_active', true)
+            self.requestElapsed = 0
+        elseif viewActive and self.requestElapsed >= NATIVE_HLBG_LIVE_REQUEST_INTERVAL then
+            self.requestElapsed = 0
+            SendNativeHLBGLiveSnapshotRequest('ui_poll', true)
+        elseif not viewActive then
+            self.requestElapsed = 0
+        end
+
+        nativeHLBGLiveWasViewActive = viewActive
+    end)
+end
+
+EnsureNativeHLBGLivePollFrame()
 -- Debug buffer: SavedVariables-backed ring buffer for developer diagnostics
 DCHLBG_DebugLog = DCHLBG_DebugLog or {}
 HLBG.DebugBuffer = HLBG.DebugBuffer or DCHLBG_DebugLog
@@ -238,6 +528,11 @@ local function OpenHLBGFromPVP()
     end
 
     -- chat fallbacks (use raw dot to server)
+    if type(HLBG.RequestLiveSnapshot) == 'function'
+        and HLBG.RequestLiveSnapshot('pvp_open', true) then
+        return
+    end
+
     local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
     if type(sendDot) == 'function' then
         sendDot('.hlbg live players')

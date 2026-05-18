@@ -225,9 +225,13 @@ function Wardrobe:SelectSlot(slotDef)
                 model.rotation = cameraPos.facing
             end
             
-            -- Apply animation sequence if defined
-            if cameraPos.sequence and model.SetAnimation then
-                model:SetAnimation(cameraPos.sequence)
+            if cameraPos.sequence then
+                model._dcPreviewSequence = cameraPos.sequence
+            else
+                model._dcPreviewSequence = self.PREVIEW_IDLE_SEQUENCE or 0
+            end
+            if type(self.StabilizePreviewModel) == "function" then
+                self:StabilizePreviewModel(model, model._dcPreviewSequence)
             end
         end
     end
@@ -1059,6 +1063,9 @@ function Wardrobe:UpdateModel()
 
     if self.transmogDisabled then
         model:Undress()
+        if type(self.StabilizePreviewModel) == "function" then
+            self:StabilizePreviewModel(model, model._dcPreviewSequence)
+        end
         return
     end
 
@@ -1084,6 +1091,10 @@ function Wardrobe:UpdateModel()
                 end
             end
         end
+    end
+
+    if type(self.StabilizePreviewModel) == "function" then
+        self:StabilizePreviewModel(model, model._dcPreviewSequence)
     end
 end
 

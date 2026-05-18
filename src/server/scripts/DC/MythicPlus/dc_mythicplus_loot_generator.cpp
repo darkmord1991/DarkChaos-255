@@ -132,7 +132,10 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
         return;
 
     bool suppressNativeLoot = ShouldSuppressLoot(boss);
+    boss->SetLootRecipient(nullptr);
     boss->loot.clear();
+    boss->loot.gold = 0;
+    boss->ResetLootMode();
     boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
 
     if (suppressNativeLoot)

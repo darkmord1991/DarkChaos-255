@@ -304,6 +304,38 @@ local function ApplyAllSavedPositions()
     end
 end
 
+local function ShouldRefreshAnchors()
+    local settings = addon.settings and addon.settings.frameMover
+    return isUnlocked or (settings and settings.editorMode)
+end
+
+local function RefreshAnchor(frameName)
+    local anchor = anchorFrames[frameName]
+    if not anchor or not anchor.Update then return end
+
+    anchor:Update()
+    if isUnlocked then
+        anchor:Show()
+    end
+end
+
+local function RefreshAnchors(...)
+    if not ShouldRefreshAnchors() then return end
+
+    local count = select("#", ...)
+    if count > 0 then
+        for index = 1, count do
+            local frameName = select(index, ...)
+            RefreshAnchor(frameName)
+        end
+        return
+    end
+
+    for frameName in pairs(anchorFrames) do
+        RefreshAnchor(frameName)
+    end
+end
+
 -- ============================================================
 -- Anchor Frame Creation
 -- ============================================================
@@ -351,7 +383,13 @@ local function CreateAnchorFrame(frameInfo)
     
     -- Update function
     local function UpdateAnchor()
-        if not targetFrame:IsShown() and not addon.settings.frameMover.showAnchors then
+        local frameMoverSettings = addon.settings and addon.settings.frameMover
+        local targetVisible = targetFrame:IsShown()
+        local shouldShowHiddenAnchor = isUnlocked
+            or (frameMoverSettings and frameMoverSettings.editorMode)
+            or (frameMoverSettings and frameMoverSettings.showAnchors)
+
+        if not targetVisible and not shouldShowHiddenAnchor then
             anchor:Hide()
             return
         end
@@ -365,6 +403,16 @@ local function CreateAnchorFrame(frameInfo)
         anchor:SetSize(width, height)
         anchor:ClearAllPoints()
         anchor:SetPoint("CENTER", targetFrame, "CENTER", 0, 0)
+
+        if targetVisible then
+            bg:SetTexture(0.1, 0.6, 0.1, 0.8)
+            anchor:SetBackdropBorderColor(0.2, 1, 0.2, 1)
+            label:SetText(frameInfo.displayName)
+        else
+            bg:SetTexture(0.6, 0.4, 0.1, 0.75)
+            anchor:SetBackdropBorderColor(1, 0.75, 0.2, 1)
+            label:SetText((frameInfo.displayName or frameInfo.name) .. " (Hidden)")
+        end
         
         local scale = targetFrame:GetScale()
         scaleText:SetText(string.format("Scale: %.0f%%", scale * 100))
@@ -946,9 +994,27 @@ function FrameMover.OnEnable()
     ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
     ev:RegisterEvent("UNIT_EXITED_VEHICLE")
     ev:RegisterEvent("GROUP_ROSTER_UPDATE")
+    ev:RegisterEvent("PLAYER_TARGET_CHANGED")
+    ev:RegisterEvent("PLAYER_FOCUS_CHANGED")
+    ev:RegisterEvent("UNIT_TARGET")
     ev:SetScript("OnEvent", function(_, event, unit)
         if event == "PLAYER_REGEN_ENABLED" then
             ApplyPendingPositions()
+            RefreshAnchors()
+            return
+        end
+        if event == "PLAYER_TARGET_CHANGED" then
+            RefreshAnchors("TargetFrame", "TargetFrameToT")
+            return
+        end
+        if event == "PLAYER_FOCUS_CHANGED" then
+            RefreshAnchors("FocusFrame")
+            return
+        end
+        if event == "UNIT_TARGET" then
+            if unit == "target" then
+                RefreshAnchors("TargetFrameToT")
+            end
             return
         end
         if unit and unit ~= "player" then return end
@@ -956,6 +1022,7 @@ function FrameMover.OnEnable()
             ApplyAllSavedPositions()
             ApplyPendingPositions()
             ApplySettingsToFrames()
+            RefreshAnchors()
             if addon.settings.frameMover.editorMode then
                 UpdateGridOverlay()
             end

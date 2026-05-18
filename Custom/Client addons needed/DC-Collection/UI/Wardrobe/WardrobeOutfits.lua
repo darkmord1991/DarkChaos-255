@@ -334,6 +334,9 @@ function Wardrobe:_UpdateSlotButtonsFromOutfit(slots)
         for _, itemId in ipairs(itemsToTryOn) do
             pcall(function() model:TryOn(itemId) end)
         end
+        if type(self.StabilizePreviewModel) == "function" then
+            self:StabilizePreviewModel(model, model._dcPreviewSequence)
+        end
     end
 
     -- Schedule delayed refresh if some items weren't cached
@@ -540,6 +543,10 @@ function Wardrobe:_EnsureOutfitPreviewQueue()
                 if numId and numId > 0 then
                     pcall(function() model:TryOn(numId) end)
                 end
+            end
+
+            if type(owner.StabilizePreviewModel) == "function" then
+                owner:StabilizePreviewModel(model, model._dcPreviewSequence)
             end
 
             return true

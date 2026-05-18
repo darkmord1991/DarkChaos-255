@@ -719,8 +719,10 @@ public:
 
         if (sMythicRuns->ShouldSuppressLoot(creature))
         {
+            creature->SetLootRecipient(nullptr);
             creature->loot.clear();
             creature->loot.gold = 0;
+            creature->ResetLootMode();
             creature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
         }
 

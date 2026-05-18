@@ -196,7 +196,7 @@ namespace DCQoS
     struct SpellTooltipTransportDecision
     {
         SpellTooltipTransport transport = SpellTooltipTransport::AddonJson;
-        char const* reason = "default-addon";
+        std::string reason = "default-addon";
         DCAddon::SessionCapabilityState capabilityState;
         bool hasCapabilityState = false;
     };
@@ -219,47 +219,30 @@ namespace DCQoS
         SpellTooltipTransportPreference preference =
             SpellTooltipTransportPreference::Auto)
     {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "tooltip-native-response";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::TOOLTIP_NATIVE_RESPONSE;
+        request.forceNative =
+            preference == SpellTooltipTransportPreference::ForceNativeBridge;
+        request.forceNativeReason = "forced-native";
+        request.forceAddon = !protocolRequestId.empty();
+        request.forceAddonReason = "addon-request-id";
+        request.versionIncompatibleReason = "version-incompatible";
+        request.negotiatedCapabilityMissingReason =
+            "native-capability-missing";
+        request.nativeReadyReason = "negotiated-native";
+
+        DCAddon::TransportPolicyDecision policy =
+            DCAddon::ResolveTransportPolicy(player, request);
+
         SpellTooltipTransportDecision decision;
-        decision.hasCapabilityState =
-            DCAddon::TryGetSessionCapabilityState(player,
-                decision.capabilityState);
-
-        if (preference == SpellTooltipTransportPreference::ForceNativeBridge)
-        {
-            decision.transport = SpellTooltipTransport::NativeBridge;
-            decision.reason = "forced-native";
-            return decision;
-        }
-
-        // Native tooltip responses are only safe once the request did not come
-        // through the addon RID path; otherwise the addon transport would keep
-        // a client-side request slot pending and create false timeouts.
-        if (!protocolRequestId.empty())
-        {
-            decision.transport = SpellTooltipTransport::AddonJson;
-            decision.reason = "addon-request-id";
-            return decision;
-        }
-
-        if (!decision.hasCapabilityState)
-        {
-            decision.transport = SpellTooltipTransport::AddonJson;
-            decision.reason = "no-capability-state";
-            return decision;
-        }
-
-        if (decision.capabilityState.HasNegotiatedCapability(
-                DCAddon::ProtocolVersion::Capability::TOOLTIP_NATIVE_RESPONSE))
-        {
-            decision.transport = SpellTooltipTransport::NativeBridge;
-            decision.reason = "negotiated-native";
-            return decision;
-        }
-
-        decision.transport = SpellTooltipTransport::AddonJson;
-        decision.reason = decision.capabilityState.versionCompatible
-            ? "native-capability-missing"
-            : "version-incompatible";
+        decision.transport = policy.UsesNative()
+            ? SpellTooltipTransport::NativeBridge
+            : SpellTooltipTransport::AddonJson;
+        decision.reason = policy.reason;
+        decision.capabilityState = policy.capabilityState;
+        decision.hasCapabilityState = policy.hasCapabilityState;
         return decision;
     }
 
@@ -558,8 +541,11 @@ namespace DCQoS
 
     static bool SupportsNativePingRelayTransport(Player* player)
     {
-        return player && DCAddon::SessionSupportsCapability(player,
-            DCAddon::ProtocolVersion::Capability::PING_RELAY_NATIVE);
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "ping-relay";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::PING_RELAY_NATIVE;
+        return DCAddon::ResolveTransportPolicy(player, request).UsesNative();
     }
 
     static void SendNativePingRelayPayload(Player* player,

@@ -974,18 +974,26 @@ namespace DCCollection
 
     namespace
     {
-        bool SupportsNativeTransmogStateTransport(Player* player)
+        DCAddon::TransportPolicyDecision ResolveTransmogStateTransport(
+            Player* player)
         {
-            return player && DCAddon::SessionSupportsCapability(player,
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "collection-transmog-state";
+            request.nativeCapability =
                 DCAddon::ProtocolVersion::Capability::
-                    COLLECTION_TRANSMOG_STATE_NATIVE);
+                    COLLECTION_TRANSMOG_STATE_NATIVE;
+            return DCAddon::ResolveTransportPolicy(player, request);
         }
 
-        bool SupportsNativeItemSetsTransport(Player* player)
+        DCAddon::TransportPolicyDecision ResolveItemSetsTransport(
+            Player* player)
         {
-            return player && DCAddon::SessionSupportsCapability(player,
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "collection-item-sets";
+            request.nativeCapability =
                 DCAddon::ProtocolVersion::Capability::
-                    COLLECTION_ITEM_SETS_NATIVE);
+                    COLLECTION_ITEM_SETS_NATIVE;
+            return DCAddon::ResolveTransportPolicy(player, request);
         }
 
         void SendNativeTransmogState(Player* player,
@@ -1028,7 +1036,7 @@ namespace DCCollection
         void SendItemSetsPayload(Player* player,
             std::string const& payload, bool useNativeResponse)
         {
-            if (useNativeResponse && SupportsNativeItemSetsTransport(player))
+            if (useNativeResponse && ResolveItemSetsTransport(player).UsesNative())
             {
                 SendNativeItemSetsPayload(player, payload);
                 return;
@@ -1083,7 +1091,7 @@ namespace DCCollection
         DCAddon::JsonValue itemIds;
         BuildTransmogStatePayload(player, state, itemIds);
 
-        if (SupportsNativeTransmogStateTransport(player))
+        if (ResolveTransmogStateTransport(player).UsesNative())
         {
             DCAddon::JsonValue payload;
             payload.SetObject();

@@ -2811,7 +2811,7 @@ local function IsWorldMapQuestSectionHeaderText(text)
     return trimmed:find(":$") ~= nil and trimmed:find("^%d") == nil
 end
 
-local function StyleWorldMapQuestDetailTextRecursive(root, depth, selectedTitle, isTracked, isComplete)
+local function StyleWorldMapQuestDetailTextRecursive(root, depth, selectedTitle, isTracked, isComplete, useBodyColorForSecondaryText)
     if not root or depth > 4 then
         return
     end
@@ -2828,9 +2828,11 @@ local function StyleWorldMapQuestDetailTextRecursive(root, depth, selectedTitle,
             local strippedText = StripQuestLevelPrefix(text)
             if selectedTitle and strippedText == StripQuestLevelPrefix(selectedTitle) then
                 ApplyFontStyle(root, 11, 1, titleR, titleG, titleB)
+            elseif useBodyColorForSecondaryText and (text:find("^%s*[%-%d]", 1) or text:find("^%s*%d+/%d+")) then
+                ApplyFontStyle(root, 10, 1, bodyR, bodyG, bodyB)
             elseif text:find("^%s*[%-%d]", 1) or text:find("^%s*%d+/%d+") then
                 ApplyFontStyle(root, 10, 1, objectiveR, objectiveG, objectiveB)
-            elseif IsWorldMapQuestSectionHeaderText(text) then
+            elseif IsWorldMapQuestSectionHeaderText(text) and not useBodyColorForSecondaryText then
                 ApplyFontStyle(root, 10, 1, sectionR, sectionG, sectionB)
             else
                 ApplyFontStyle(root, 10, 1, bodyR, bodyG, bodyB)
@@ -2841,14 +2843,14 @@ local function StyleWorldMapQuestDetailTextRecursive(root, depth, selectedTitle,
     if type(root.GetRegions) == "function" then
         local regions = { root:GetRegions() }
         for i = 1, #regions do
-            StyleWorldMapQuestDetailTextRecursive(regions[i], depth + 1, selectedTitle, isTracked, isComplete)
+            StyleWorldMapQuestDetailTextRecursive(regions[i], depth + 1, selectedTitle, isTracked, isComplete, useBodyColorForSecondaryText)
         end
     end
 
     if type(root.GetChildren) == "function" then
         local children = { root:GetChildren() }
         for i = 1, #children do
-            StyleWorldMapQuestDetailTextRecursive(children[i], depth + 1, selectedTitle, isTracked, isComplete)
+            StyleWorldMapQuestDetailTextRecursive(children[i], depth + 1, selectedTitle, isTracked, isComplete, useBodyColorForSecondaryText)
         end
     end
 end
@@ -3127,7 +3129,7 @@ local function StyleWorldMapQuestPanels()
         local isTracked = IsQuestTracked(selectedQuestInfo)
         local isComplete = selectedQuestInfo.isComplete or false
         StyleWorldMapQuestDetailTextRecursive(WorldMapQuestDetailScrollFrame, 0, selectedQuestInfo.title, isTracked, isComplete)
-        StyleWorldMapQuestDetailTextRecursive(WorldMapQuestRewardScrollFrame, 0, selectedQuestInfo.title, isTracked, isComplete)
+        StyleWorldMapQuestDetailTextRecursive(WorldMapQuestRewardScrollFrame, 0, selectedQuestInfo.title, isTracked, isComplete, true)
     end
 end
 

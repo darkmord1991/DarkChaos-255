@@ -24,6 +24,7 @@
 #include "../MythicPlus/dc_mythicplus_spectator.h"
 
 #include <mutex>
+#include <sstream>
 #include <unordered_map>
 
 namespace DCAddon
@@ -132,6 +133,55 @@ namespace GroupFinder
         {
             std::lock_guard<std::mutex> lock(sSearchListingsCacheMutex);
             sSearchListingsPayloads.clear();
+        }
+
+        void SendSpectateListEmpty(Player* player)
+        {
+            JsonMessage(Module::GROUP_FINDER,
+                Opcode::GroupFinder::SMSG_SPECTATE_LIST)
+                .Set("runs", "[]")
+                .Set("count", 0)
+                .Send(player);
+        }
+
+        uint32 GetPublicSpectateRunId(DCMythicSpectator::SpectateableRun const& run)
+        {
+            return run.runId != 0 ? run.runId : run.instanceId;
+        }
+
+        std::string FormatSpectateTimer(uint32 seconds)
+        {
+            uint32 minutes = seconds / 60;
+            uint32 remainingSeconds = seconds % 60;
+
+            std::ostringstream ss;
+            if (minutes >= 60)
+            {
+                uint32 hours = minutes / 60;
+                minutes %= 60;
+                ss << hours << ":";
+            }
+
+            ss << std::setw(2) << std::setfill('0') << minutes
+                << ":" << std::setw(2) << remainingSeconds;
+            return ss.str();
+        }
+
+        bool ResolveRuntimeSpectateRun(uint32 publicRunId,
+            DCMythicSpectator::SpectateableRun& outRun)
+        {
+            auto runs = DCMythicSpectator::MythicSpectatorManager::Get().GetSpectateableRuns();
+            for (DCMythicSpectator::SpectateableRun const& run : runs)
+            {
+                uint32 runtimeRunId = GetPublicSpectateRunId(run);
+                if (runtimeRunId == publicRunId || run.instanceId == publicRunId)
+                {
+                    outRun = run;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         std::string BuildSearchListingsJson(
@@ -938,34 +988,59 @@ namespace GroupFinder
     // Get list of spectatable runs
     static void HandleGetSpectateList(Player* player, const ParsedMessage& /*msg*/)
     {
-        // Query active M+ runs that allow spectating
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT r.run_id, r.map_id, r.key_level, r.start_time, r.leader_guid, "
-            "d.dungeon_name, c.name AS leader_name "
-            "FROM dc_mplus_runs r "
-            "LEFT JOIN dc_mplus_dungeons d ON r.map_id = d.map_id "
-            "LEFT JOIN characters c ON r.leader_guid = c.guid "
-            "WHERE r.status = 1 AND r.allow_spectate = 1 "
-            "ORDER BY r.key_level DESC LIMIT 20");
+        auto& spectatorMgr = DCMythicSpectator::MythicSpectatorManager::Get();
+        if (!spectatorMgr.GetConfig().enabled)
+        {
+            SendSpectateListEmpty(player);
+            return;
+        }
+        std::vector<DCMythicSpectator::SpectateableRun> runs = spectatorMgr.GetSpectateableRuns();
 
         JsonValue runsArray;
         runsArray.SetArray();
 
-        if (result)
+        uint32 count = 0;
+        for (DCMythicSpectator::SpectateableRun const& liveRun : runs)
         {
-            do
-            {
-                JsonValue run;
-                run.SetObject();
-                run.Set("runId", JsonValue((*result)[0].Get<int32>()));
-                run.Set("mapId", JsonValue((*result)[1].Get<int32>()));
-                run.Set("keyLevel", JsonValue((*result)[2].Get<int32>()));
-                run.Set("startTime", JsonValue((*result)[3].Get<int32>()));
-                run.Set("leaderGuid", JsonValue((*result)[4].Get<int32>()));
-                run.Set("dungeonName", JsonValue((*result)[5].Get<std::string>()));
-                run.Set("leaderName", JsonValue((*result)[6].Get<std::string>()));
-                runsArray.Push(run);
-            } while (result->NextRow());
+            if (count >= 20)
+                break;
+
+            uint32 publicRunId = GetPublicSpectateRunId(liveRun);
+            if (publicRunId == 0)
+                continue;
+
+            JsonValue run;
+            run.SetObject();
+            run.Set("runId", JsonValue(static_cast<int32>(publicRunId)));
+            run.Set("instanceId", JsonValue(static_cast<int32>(liveRun.instanceId)));
+            run.Set("mapId", JsonValue(static_cast<int32>(liveRun.mapId)));
+            run.Set("keyLevel", JsonValue(static_cast<int32>(liveRun.keystoneLevel)));
+            run.Set("level", JsonValue(static_cast<int32>(liveRun.keystoneLevel)));
+            run.Set("startTime", JsonValue(static_cast<int32>(liveRun.startedAt)));
+            run.Set("dungeonName", JsonValue(liveRun.dungeonName.empty()
+                ? std::string("Unknown Dungeon")
+                : liveRun.dungeonName));
+            run.Set("dungeon", JsonValue(liveRun.dungeonName.empty()
+                ? std::string("Unknown Dungeon")
+                : liveRun.dungeonName));
+            run.Set("leaderName", JsonValue(liveRun.leaderName.empty()
+                ? std::string("Unknown")
+                : liveRun.leaderName));
+            run.Set("leader", JsonValue(liveRun.leaderName.empty()
+                ? std::string("Unknown")
+                : liveRun.leaderName));
+            run.Set("timerRemaining", JsonValue(static_cast<int32>(liveRun.timerRemaining)));
+            run.Set("timer", JsonValue(FormatSpectateTimer(liveRun.timerRemaining)));
+            run.Set("bossesKilled", JsonValue(static_cast<int32>(liveRun.bossesKilled)));
+            run.Set("bossesTotal", JsonValue(static_cast<int32>(liveRun.bossesTotal)));
+            run.Set("progress", JsonValue(Acore::StringFormat("{}/{} bosses",
+                static_cast<uint32>(liveRun.bossesKilled),
+                static_cast<uint32>(liveRun.bossesTotal))));
+            run.Set("deaths", JsonValue(static_cast<int32>(liveRun.deaths)));
+            run.Set("spectators", JsonValue(static_cast<int32>(liveRun.spectators.size())));
+            run.Set("maxSpectators", JsonValue(static_cast<int32>(spectatorMgr.GetConfig().maxSpectatorsPerRun)));
+            runsArray.Push(run);
+            ++count;
         }
 
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SPECTATE_LIST)
@@ -1377,14 +1452,8 @@ namespace GroupFinder
 
         auto& spectatorMgr = DCMythicSpectator::MythicSpectatorManager::Get();
 
-        QueryResult runResult = CharacterDatabase.Query(
-            "SELECT map_id, instance_id, key_level, allow_spectate, c.name "
-            "FROM dc_mplus_runs r "
-            "LEFT JOIN characters c ON c.guid = r.leader_guid "
-            "WHERE r.run_id = {} AND r.status = 1",
-            runId);
-
-        if (!runResult)
+        DCMythicSpectator::SpectateableRun liveRun;
+        if (!ResolveRuntimeSpectateRun(runId, liveRun))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Run not found or spectating not allowed")
@@ -1392,25 +1461,16 @@ namespace GroupFinder
             return;
         }
 
-        uint32 mapId = (*runResult)[0].Get<uint32>();
-        uint32 instanceId = (*runResult)[1].Get<uint32>();
-        uint8 keyLevel = (*runResult)[2].Get<uint8>();
-        bool allowSpectate = (*runResult)[3].Get<bool>();
-        std::string leaderName = (*runResult)[4].IsNull()
-            ? std::string("Unknown")
-            : (*runResult)[4].Get<std::string>();
+        uint32 instanceId = liveRun.instanceId;
+        uint32 publicRunId = GetPublicSpectateRunId(liveRun);
 
-        if (instanceId == 0 || !allowSpectate)
+        if (instanceId == 0)
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
                 .Set("error", "Run not found or spectating not allowed")
                 .Send(player);
             return;
         }
-
-        if (!spectatorMgr.GetRun(instanceId))
-            spectatorMgr.RegisterActiveRun(instanceId, mapId, keyLevel,
-                leaderName, allowSpectate);
 
         if (!spectatorMgr.StartSpectating(player, instanceId))
         {
@@ -1422,9 +1482,11 @@ namespace GroupFinder
 
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SPECTATE_STARTED)
             .Set("success", true)
-            .Set("runId", static_cast<int32>(runId))
+            .Set("runId", static_cast<int32>(publicRunId))
             .Set("message", "Now spectating the run")
             .Send(player);
+
+        spectatorMgr.SendRunSnapshot(player, instanceId);
     }
 
     // Stop spectating a run
@@ -1457,12 +1519,10 @@ namespace GroupFinder
 
         if (runId == 0 && instanceId > 0)
         {
-            QueryResult runResult = CharacterDatabase.Query(
-                "SELECT run_id FROM dc_mplus_runs WHERE instance_id = {} "
-                "AND status = 1 ORDER BY run_id DESC LIMIT 1",
-                instanceId);
-            if (runResult)
-                runId = (*runResult)[0].Get<uint32>();
+            if (DCMythicSpectator::SpectateableRun const* run = spectatorMgr.GetRun(instanceId))
+                runId = GetPublicSpectateRunId(*run);
+            else
+                runId = instanceId;
         }
 
         spectatorMgr.StopSpectating(player);

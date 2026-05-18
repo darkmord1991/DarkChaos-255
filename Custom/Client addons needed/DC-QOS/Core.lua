@@ -1133,8 +1133,14 @@ function addon:EnsureQuestMinimapTrackingEnabled(reason)
     local questTrackingFound = false
     local questTrackingActive = false
     local reasonText = reason and tostring(reason) or "unspecified"
+    local refreshActive = self.__dcqosQuestPoiRefreshActive == true
 
     local function RefreshQuestPoiDisplays()
+        if refreshActive or self.__dcqosQuestPoiRefreshActive == true then
+            return
+        end
+
+        self.__dcqosQuestPoiRefreshActive = true
         if type(SetMapToCurrentZone) == "function" then
             local worldMapShown = WorldMapFrame
                 and type(WorldMapFrame.IsShown) == "function"
@@ -1162,6 +1168,8 @@ function addon:EnsureQuestMinimapTrackingEnabled(reason)
         if type(MiniMapWorldMapButton_Update) == "function" then
             pcall(MiniMapWorldMapButton_Update)
         end
+
+        self.__dcqosQuestPoiRefreshActive = false
     end
 
     -- Keep quest objective systems enabled globally so both world map and

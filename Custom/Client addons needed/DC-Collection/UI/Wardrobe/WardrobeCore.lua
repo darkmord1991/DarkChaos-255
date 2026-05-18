@@ -110,6 +110,7 @@ Wardrobe.CAMERA_ZOOM_MIN = 0.3
 Wardrobe.CAMERA_ZOOM_MAX = 3.0
 Wardrobe.CAMERA_ZOOM_STEP = 0.1
 Wardrobe.CAMERA_ROTATION_SPEED = 0.01
+Wardrobe.PREVIEW_IDLE_SEQUENCE = 0
 
 Wardrobe.EQUIPMENT_SLOTS = {
     -- Left column (top to bottom)
@@ -178,6 +179,28 @@ Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0  -- 0 = all
 Wardrobe.currentPage = Wardrobe.currentPage or 1
 Wardrobe.totalPages = Wardrobe.totalPages or 1
 Wardrobe.searchText = Wardrobe.searchText or ""
+
+function Wardrobe:StabilizePreviewModel(model, sequence)
+    if not model then
+        return
+    end
+
+    local previewSequence = tonumber(sequence)
+    if previewSequence == nil then
+        previewSequence = tonumber(model._dcPreviewSequence)
+    end
+    if previewSequence == nil then
+        previewSequence = self.PREVIEW_IDLE_SEQUENCE or 0
+    end
+
+    model._dcPreviewSequence = previewSequence
+
+    if type(model.SetAnimation) == "function" then
+        pcall(function()
+            model:SetAnimation(previewSequence)
+        end)
+    end
+end
 Wardrobe.appearanceList = Wardrobe.appearanceList or {}
 Wardrobe.collectedCount = Wardrobe.collectedCount or 0
 Wardrobe.totalCount = Wardrobe.totalCount or 0
@@ -622,6 +645,74 @@ function Wardrobe:RequestTransmogStateDebounced(reason)
     if not f then
         f = CreateFrame("Frame")
         self._transmogStateDebounceFrame = f
+    end
+    f.elapsed = 0
+    f:Show()
+    f:SetScript("OnUpdate", function(frame, elapsed)
+        frame.elapsed = (frame.elapsed or 0) + (elapsed or 0)
+        if frame.elapsed < 0.20 then
+            return
+        end
+        frame:Hide()
+        frame:SetScript("OnUpdate", nil)
+        fire()
+    end)
+end
+
+function Wardrobe:RequestDataRefreshDebounced(reason)
+    if not (self.frame and self.frame:IsShown()) then
+        return
+    end
+
+    self._dataRefreshDebouncePending = true
+    self._dataRefreshDebounceReason = reason
+
+    if self._dataRefreshDebounceActive then
+        return
+    end
+    self._dataRefreshDebounceActive = true
+
+    local function fire()
+        self._dataRefreshDebounceActive = nil
+        if not self._dataRefreshDebouncePending then
+            return
+        end
+
+        local refreshReason = self._dataRefreshDebounceReason
+        self._dataRefreshDebouncePending = nil
+        self._dataRefreshDebounceReason = nil
+
+        if not (self.frame and self.frame:IsShown()) then
+            return
+        end
+
+        if refreshReason == "definitions_transmog" and DC and DC._transmogDefLoading then
+            return
+        end
+
+        if self.currentTab == "sets" then
+            if type(self.RefreshSetsGrid) == "function" then
+                self:RefreshSetsGrid()
+            end
+            return
+        end
+
+        if not self.currentTab or self.currentTab == "items" then
+            if type(self.RefreshGrid) == "function" then
+                self:RefreshGrid()
+            end
+        end
+    end
+
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(0.20, fire)
+        return
+    end
+
+    local f = self._dataRefreshDebounceFrame
+    if not f then
+        f = CreateFrame("Frame")
+        self._dataRefreshDebounceFrame = f
     end
     f.elapsed = 0
     f:Show()

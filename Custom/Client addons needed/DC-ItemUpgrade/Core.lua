@@ -762,6 +762,14 @@ function DC.RegisterDCProtocolHandlers()
 					if resultServerSlot ~= nil then
 						DC.currentItem.serverSlot = resultServerSlot
 					end
+					if DC.GetClientLocationFromServer and resultServerBag ~= nil and resultServerSlot ~= nil then
+						local clientBag, clientSlot = DC.GetClientLocationFromServer(resultServerBag, resultServerSlot)
+						if clientBag ~= nil and clientSlot ~= nil then
+							DC.currentItem.bag = clientBag
+							DC.currentItem.slot = clientSlot
+							DC.currentItem.isEquipped = DC.IsEquippedBag and DC.IsEquippedBag(clientBag) or false
+						end
+					end
 					if itemId then
 						DC.currentItem.guid = itemId
 						DC.itemLocationCache = DC.itemLocationCache or {}

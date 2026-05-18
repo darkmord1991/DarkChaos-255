@@ -1,5 +1,7 @@
 -- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
+local HUD_TIMER_REFRESH_INTERVAL = 0.20
+local HUD_TIMER_EXTENSION_GRACE_SECONDS = 3
 -- Initialize HUD settings with defaults (telemetry disabled by default to prevent blinking)
 -- migrate to a DC-prefixed saved vars table so addon appears as "DC HLBG Addon"
 DCHLBGDB = DCHLBGDB or {}
@@ -248,6 +250,80 @@ local function formatTime(seconds)
         return string.format("%d:%02d", m, s)
     end
 end
+
+local function ComputeSyncedTimeLeft(currentTime)
+    if not HLBG._timerSync then
+        return 0
+    end
+
+    local endTime = tonumber(HLBG._timerSync.lastServerEnd) or 0
+    if endTime <= 0 then
+        return 0
+    end
+
+    local now = tonumber(currentTime) or time()
+    local timeLeft = endTime - now + (tonumber(HLBG._timerSync.clientOffset) or 0)
+    if timeLeft < 0 then
+        return 0
+    end
+
+    local maxTime = 2 * 3600
+    if timeLeft > maxTime then
+        return maxTime
+    end
+
+    return timeLeft
+end
+
+local function RefreshHUDTimerText(currentTime)
+    if not HUD or not HUD.timerText then
+        return
+    end
+
+    local displaySeconds = math.ceil(ComputeSyncedTimeLeft(currentTime))
+    if displaySeconds < 0 then
+        displaySeconds = 0
+    end
+
+    if HUD._lastDisplayedTimerSeconds == displaySeconds then
+        return
+    end
+
+    HUD._lastDisplayedTimerSeconds = displaySeconds
+    HUD.timerText:SetText("Time: " .. formatTime(displaySeconds))
+end
+
+local function StartHUDTimerTicker()
+    if C_Timer and type(C_Timer.NewTicker) == 'function' then
+        if HLBG._hudTimerTicker and HLBG._hudTimerTicker.Cancel then
+            pcall(function() HLBG._hudTimerTicker:Cancel() end)
+        end
+
+        HLBG._hudTimerTicker = C_Timer.NewTicker(HUD_TIMER_REFRESH_INTERVAL, function()
+            if HUD and HUD.IsVisible and HUD:IsVisible() then
+                RefreshHUDTimerText()
+            end
+        end)
+        return
+    end
+
+    if HLBG._hudTimerFrame then
+        return
+    end
+
+    HLBG._hudTimerFrame = CreateFrame("Frame")
+    HLBG._hudTimerFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + (elapsed or 0)
+        if self.elapsed < HUD_TIMER_REFRESH_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        if HUD and HUD.IsVisible and HUD:IsVisible() then
+            RefreshHUDTimerText()
+        end
+    end)
+end
 -- Update HUD data with throttling to prevent blinking
 function HLBG.UpdateModernHUD(data)
     -- Debug: Log function entry (only when devMode enabled)
@@ -329,6 +405,14 @@ function HLBG.UpdateModernHUD(data)
     local endTime = rawTime
     if rawTime > 0 and rawTime < 1000000000 then
         endTime = currentTime + rawTime
+
+        local lastServerEnd = tonumber(HLBG._timerSync.lastServerEnd) or 0
+        if lastServerEnd > 0 and endTime > lastServerEnd
+            and (endTime - lastServerEnd) <= HUD_TIMER_EXTENSION_GRACE_SECONDS then
+            -- Repeated relative countdown values can arrive without a fresh timer sync.
+            -- Keep the older server end time so the local countdown does not jump backward.
+            endTime = lastServerEnd
+        end
     end
     -- If we have a new END timestamp from server, resync
     if endTime > 0 and endTime ~= HLBG._timerSync.lastServerEnd then
@@ -361,7 +445,7 @@ function HLBG.UpdateModernHUD(data)
             endTime, currentTime, timeLeft, HLBG._timerSync.clientOffset))
         HLBG._lastTimerDebug = currentTime
     end
-    HUD.timerText:SetText("Time: " .. formatTime(timeLeft))
+    RefreshHUDTimerText(currentTime)
     -- Update phase
     if phase == "WARMUP" then
         HUD.phaseText:SetText("WARMUP")
@@ -483,6 +567,7 @@ end
 function HLBG.InitializeModernHUD()
     -- Apply saved settings
     HLBG.ApplyHUDSettings()
+    StartHUDTimerTicker()
     -- Set up event handlers
     HUD:RegisterEvent("PLAYER_ENTERING_WORLD")
     HUD:RegisterEvent("ZONE_CHANGED_NEW_AREA")
