@@ -18,35 +18,12 @@ if not HLBG.UI.ModernHUD or not _G['HLBG_ModernHUD'] then
 end
 local HUD = HLBG.UI.ModernHUD
 
--- Shared zone predicate for the Hinterland BG area (NOT the entire Hinterlands zone).
--- Only returns true when the player is in the specific BG sub-area (6738),
--- or when the server is actively sending HLBG status updates.
+-- Shared visibility predicate for the HLBG map.
+-- Visibility is driven only by the recent server-reported HLBG map id so
+-- the HUD follows map 1411 directly instead of client zone/subzone text.
 local function IsInHLBGZone()
-    local zone = (type(GetRealZoneText) == "function" and GetRealZoneText()) or ""
-    local subzone = (type(GetSubZoneText) == "function" and GetSubZoneText()) or ""
-
-    -- Normalize to lowercase for robust matching.
-    local z = tostring(zone or ""):lower()
-    local sz = tostring(subzone or ""):lower()
-
-    -- Check subzone first — the custom area 6738 has its own subzone name
-    -- (e.g. "Hinterland Defence", "Hinterland BG", or similar BG-specific subzone).
-    -- We intentionally do NOT match on the parent zone "The Hinterlands" alone,
-    -- as that would show the HUD everywhere in zone 47.
-    if sz:find("hinterland", 1, true) or sz:find("azshara crater", 1, true) then
-        return true
-    end
-
-    -- Also match if the main zone itself is changed to a BG-specific name
-    -- (e.g. "Hinterland Defence"), but NOT "The Hinterlands" which is the parent zone.
-    if z:find("hinterland", 1, true) and z ~= "the hinterlands" then
-        return true
-    end
-
-    -- Fallback: trust recent active HLBG status only when it points at the
-    -- custom battleground map, not merely because some status packet arrived.
-    if HLBG and type(HLBG.HasRecentPresenceStatus) == "function" then
-        if HLBG.HasRecentPresenceStatus(60) then
+    if HLBG and type(HLBG.HasRecentMapPresence) == "function" then
+        if HLBG.HasRecentMapPresence(60) then
             return true
         end
     end
@@ -106,7 +83,7 @@ local function DebugPrint(msg)
     end
 end
 -- HUD Setup
-HUD:SetSize(400, 120)
+HUD:SetSize(400, 136)
 HUD:SetPoint("TOP", UIParent, "TOP", 0, -100)
 HUD:SetMovable(true)
 HUD:EnableMouse(true)
@@ -169,7 +146,7 @@ HUD.content:SetPoint("BOTTOMRIGHT", HUD, "BOTTOMRIGHT", -8, 8)
 -- Alliance section
 HUD.allianceFrame = CreateFrame("Frame", nil, HUD.content)
 HUD.allianceFrame:SetPoint("TOPLEFT", HUD.content, "TOPLEFT", 0, 0)
-HUD.allianceFrame:SetSize(180, 35)
+HUD.allianceFrame:SetSize(180, 50)
 -- Alliance icon
 HUD.allianceIcon = HUD.allianceFrame:CreateTexture(nil, "ARTWORK")
 HUD.allianceIcon:SetSize(28, 28)
@@ -185,10 +162,14 @@ HUD.alliancePlayers = HUD.allianceFrame:CreateFontString(nil, "OVERLAY", "GameFo
 HUD.alliancePlayers:SetPoint("TOPLEFT", HUD.allianceText, "BOTTOMLEFT", 0, -2)
 HUD.alliancePlayers:SetText("Players: 0")
 HUD.alliancePlayers:SetTextColor(0.8, 0.8, 0.8, 1)
+HUD.allianceKills = HUD.allianceFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+HUD.allianceKills:SetPoint("TOPLEFT", HUD.alliancePlayers, "BOTTOMLEFT", 0, -2)
+HUD.allianceKills:SetText("Kills P/N: 0/0")
+HUD.allianceKills:SetTextColor(0.8, 0.8, 0.8, 1)
 -- Horde section
 HUD.hordeFrame = CreateFrame("Frame", nil, HUD.content)
 HUD.hordeFrame:SetPoint("TOPRIGHT", HUD.content, "TOPRIGHT", 0, 0)
-HUD.hordeFrame:SetSize(180, 35)
+HUD.hordeFrame:SetSize(180, 50)
 -- Horde icon
 HUD.hordeIcon = HUD.hordeFrame:CreateTexture(nil, "ARTWORK")
 HUD.hordeIcon:SetSize(28, 28)
@@ -206,6 +187,11 @@ HUD.hordePlayers:SetPoint("TOPRIGHT", HUD.hordeText, "BOTTOMRIGHT", 0, -2)
 HUD.hordePlayers:SetText("Players: 0")
 HUD.hordePlayers:SetTextColor(0.8, 0.8, 0.8, 1)
 HUD.hordePlayers:SetJustifyH("RIGHT")
+HUD.hordeKills = HUD.hordeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+HUD.hordeKills:SetPoint("TOPRIGHT", HUD.hordePlayers, "BOTTOMRIGHT", 0, -2)
+HUD.hordeKills:SetText("Kills P/N: 0/0")
+HUD.hordeKills:SetTextColor(0.8, 0.8, 0.8, 1)
+HUD.hordeKills:SetJustifyH("RIGHT")
 -- Timer section (center bottom)
 HUD.timerFrame = CreateFrame("Frame", nil, HUD.content)
 HUD.timerFrame:SetPoint("BOTTOM", HUD.content, "BOTTOM", 0, 0)
@@ -249,6 +235,39 @@ local function formatTime(seconds)
         local s = seconds % 60
         return string.format("%d:%02d", m, s)
     end
+end
+
+local function NormalizeHUDPhaseToken(phase)
+    local token = tostring(phase or ""):upper()
+
+    if token == "WARMUP" then
+        return "WARMUP"
+    end
+
+    if token == "BATTLE" or token == "LIVE" or token == "ACTIVE"
+        or token == "IN_PROGRESS" then
+        return "BATTLE"
+    end
+
+    if token == "ENDED" or token == "FINISHED" then
+        return "ENDED"
+    end
+
+    return "IDLE"
+end
+
+local function ResolveHUDPhase(hudPhase, statusPhase, battleState)
+    local normalizedHudPhase = NormalizeHUDPhaseToken(hudPhase)
+    if normalizedHudPhase ~= "IDLE" then
+        return normalizedHudPhase
+    end
+
+    local normalizedStatusPhase = NormalizeHUDPhaseToken(statusPhase)
+    if normalizedStatusPhase ~= "IDLE" then
+        return normalizedStatusPhase
+    end
+
+    return NormalizeHUDPhaseToken(battleState)
 end
 
 local function ComputeSyncedTimeLeft(currentTime)
@@ -379,8 +398,18 @@ function HLBG.UpdateModernHUD(data)
         -- Update player counts (optional). If not provided, show '-' instead of 0.
         local alliancePlayers = tonumber(data.alliancePlayers or data.APC or "")
         local hordePlayers = tonumber(data.hordePlayers or data.HPC or "")
+        local alliancePlayerKills = tonumber(data.alliancePlayerKills or data.allianceKills or data.aKills or "")
+        local hordePlayerKills = tonumber(data.hordePlayerKills or data.hordeKills or data.hKills or "")
+        local allianceNpcKills = tonumber(data.allianceNpcKills or data.aNpcKills or "")
+        local hordeNpcKills = tonumber(data.hordeNpcKills or data.hNpcKills or "")
         HUD.alliancePlayers:SetText("Players: " .. (alliancePlayers ~= nil and tostring(alliancePlayers) or "-"))
         HUD.hordePlayers:SetText("Players: " .. (hordePlayers ~= nil and tostring(hordePlayers) or "-"))
+        HUD.allianceKills:SetText(string.format("Kills P/N: %s/%s",
+            alliancePlayerKills ~= nil and tostring(alliancePlayerKills) or "-",
+            allianceNpcKills ~= nil and tostring(allianceNpcKills) or "-"))
+        HUD.hordeKills:SetText(string.format("Kills P/N: %s/%s",
+            hordePlayerKills ~= nil and tostring(hordePlayerKills) or "-",
+            hordeNpcKills ~= nil and tostring(hordeNpcKills) or "-"))
         DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%s Horde=%s (APC=%s HPC=%s)",
             tostring(alliancePlayers), tostring(hordePlayers), tostring(data.APC), tostring(data.HPC)))
 
@@ -699,9 +728,14 @@ HLBG.UpdateHUD = function()
         -- Player counts are optional; do not default to 0.
         alliancePlayers = hudData.alliancePlayers or status.APC or status.APlayers,
         hordePlayers = hudData.hordePlayers or status.HPC or status.HPlayers,
+        alliancePlayerKills = status.alliancePlayerKills or status.allianceKills,
+        hordePlayerKills = status.hordePlayerKills or status.hordeKills,
+        allianceNpcKills = status.allianceNpcKills,
+        hordeNpcKills = status.hordeNpcKills,
         affixName = hudData.affixName or status.AFF or status.affixName or HLBG._affixText or "None",
-        -- Use a phase token UpdateModernHUD understands.
-        phase = hudData.phase or status.phase or "BATTLE"
+        -- Resolve to a renderer token, falling back to the queue state when
+        -- worldstates do not expose warmup explicitly.
+        phase = ResolveHUDPhase(hudData.phase, status.phase, HLBG.BattleState)
     }
     -- EXTENSIVE DEBUG: Log final combined data
     if dev then
@@ -715,6 +749,10 @@ HLBG.UpdateHUD = function()
     HLBG._lastStatus.DURATION = finalData.timeLeft
     if finalData.alliancePlayers ~= nil then HLBG._lastStatus.APC = finalData.alliancePlayers end
     if finalData.hordePlayers ~= nil then HLBG._lastStatus.HPC = finalData.hordePlayers end
+    if finalData.alliancePlayerKills ~= nil then HLBG._lastStatus.alliancePlayerKills = finalData.alliancePlayerKills end
+    if finalData.hordePlayerKills ~= nil then HLBG._lastStatus.hordePlayerKills = finalData.hordePlayerKills end
+    if finalData.allianceNpcKills ~= nil then HLBG._lastStatus.allianceNpcKills = finalData.allianceNpcKills end
+    if finalData.hordeNpcKills ~= nil then HLBG._lastStatus.hordeNpcKills = finalData.hordeNpcKills end
     -- Update the HUD with stable, non-blinking data
     if type(HLBG.UpdateModernHUD) == 'function' then
         if dev then DebugPrint("|cFF00FFAA[UpdateHUD]|r Calling UpdateModernHUD with finalData") end

@@ -288,6 +288,48 @@ namespace HLBG
                 payload.size() + 1);
             data << payload;
             player->GetSession()->SendPacket(&data);
+            std::string preview = "bytes=" + std::to_string(payload.size());
+            DCAddon::LogNativeS2CMessage(player, Module::HINTERLAND, 0,
+                BridgeOpcode::SMSG_LIVE_SNAPSHOT, data.size(), preview, true,
+                0);
+        }
+
+        struct LiveHudMetrics
+        {
+            uint32 alliancePlayers = 0;
+            uint32 hordePlayers = 0;
+            uint32 alliancePlayerKills = 0;
+            uint32 hordePlayerKills = 0;
+            uint32 allianceNpcKills = 0;
+            uint32 hordeNpcKills = 0;
+        };
+
+        LiveHudMetrics CollectLiveHudMetrics(OutdoorPvPHL const* hl)
+        {
+            LiveHudMetrics metrics;
+            if (!hl)
+                return metrics;
+
+            hl->ForEachPlayerInZone([&](Player* zonePlayer)
+            {
+                if (!zonePlayer)
+                    return;
+
+                if (zonePlayer->GetTeamId() == TEAM_ALLIANCE)
+                {
+                    ++metrics.alliancePlayers;
+                    metrics.alliancePlayerKills += hl->GetPlayerHKDelta(zonePlayer);
+                }
+                else if (zonePlayer->GetTeamId() == TEAM_HORDE)
+                {
+                    ++metrics.hordePlayers;
+                    metrics.hordePlayerKills += hl->GetPlayerHKDelta(zonePlayer);
+                }
+            });
+
+            metrics.allianceNpcKills = hl->GetNpcKillCount(TEAM_ALLIANCE);
+            metrics.hordeNpcKills = hl->GetNpcKillCount(TEAM_HORDE);
+            return metrics;
         }
 
         std::string BuildNativeLiveSnapshotPayload(OutdoorPvPHL* hl,
@@ -459,13 +501,22 @@ namespace HLBG
     }
 
     void SendResources(Player* player, uint32 allianceRes, uint32 hordeRes,
-                       uint32 allianceBases, uint32 hordeBases)
+                       uint32 allianceBases, uint32 hordeBases,
+                       uint32 alliancePlayers, uint32 hordePlayers,
+                       uint32 alliancePlayerKills, uint32 hordePlayerKills,
+                       uint32 allianceNpcKills, uint32 hordeNpcKills)
     {
         Message msg(Module::HINTERLAND, SMSG_RESOURCES);
         msg.Add(allianceRes);
         msg.Add(hordeRes);
         msg.Add(allianceBases);
         msg.Add(hordeBases);
+        msg.Add(alliancePlayers);
+        msg.Add(hordePlayers);
+        msg.Add(alliancePlayerKills);
+        msg.Add(hordePlayerKills);
+        msg.Add(allianceNpcKills);
+        msg.Add(hordeNpcKills);
         msg.Send(player);
     }
 
@@ -1202,14 +1253,18 @@ namespace HLBG
         OutdoorPvPHL* hl = GetHL();
         if (!hl)
         {
-            SendResources(player, 0, 0, 0, 0);
+            SendResources(player, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
             return;
         }
 
         uint32 a = hl->GetResources(TEAM_ALLIANCE);
         uint32 h = hl->GetResources(TEAM_HORDE);
+        LiveHudMetrics metrics = CollectLiveHudMetrics(hl);
         // HLBG doesn't track bases like AB; keep fields for forward-compat.
-        SendResources(player, a, h, 0, 0);
+        SendResources(player, a, h, 0, 0,
+            metrics.alliancePlayers, metrics.hordePlayers,
+            metrics.alliancePlayerKills, metrics.hordePlayerKills,
+            metrics.allianceNpcKills, metrics.hordeNpcKills);
     }
 
     static void HandleRequestObjective(Player* player, const ParsedMessage& /*msg*/)
@@ -1420,16 +1475,17 @@ namespace HLBG
         msg.Send(player);
     }
 
-    static void HandleNativeLiveSnapshotRequest(Player* player)
+    static bool HandleNativeLiveSnapshotRequest(Player* player)
     {
         if (!player)
-            return;
+            return false;
 
         if (!ResolveLiveSnapshotTransport(player).UsesNative())
-            return;
+            return false;
 
         SendNativeLiveSnapshot(player,
             BuildNativeLiveSnapshotPayload(GetHL()));
+        return true;
     }
 
     // =====================================================================
@@ -1487,7 +1543,13 @@ namespace HLBG
             if (!player || !player->IsInWorld())
                 return false;
 
-            HandleNativeLiveSnapshotRequest(player);
+            bool handled = HandleNativeLiveSnapshotRequest(player);
+            DCAddon::AuditNativeC2SRequest(player, Module::HINTERLAND, 0,
+                BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT, packet.size(),
+                "request", handled,
+                handled ? std::string() : "Native HLBG live snapshot unavailable",
+                handled ? std::string() : "native_transport_denied",
+                handled ? std::string() : "Native HLBG live snapshot request rejected");
             return false;
         }
     };

@@ -129,8 +129,8 @@
         _initialResourcesAlliance = HL_RESOURCES_A;
         _initialResourcesHorde = HL_RESOURCES_H;
         // Default base coordinates
-        _baseAlliance = { /*map*/OutdoorPvPHLMapId, /*x*/62.083f, /*y*/-4714.99f, /*z*/11.7937f, /*o*/2.50765f };
-    _baseHorde    = { /*map*/OutdoorPvPHLMapId, /*x*/-628.484f, /*y*/-4684.51f, /*z*/5.14442f, /*o*/1.12528f };
+        _baseAlliance = { /*map*/OutdoorPvPHLMapId, /*x*/197.165f, /*y*/-4808.544f, /*z*/7.848f, /*o*/3.046f };
+    _baseHorde    = { /*map*/OutdoorPvPHLMapId, /*x*/-628.484f, /*y*/-4684.510f, /*z*/5.144f, /*o*/1.125f };
         _rewardMatchHonor = 1500;
         _rewardMatchHonorDepletion = 1500;
         _rewardMatchHonorTiebreaker = 750;
@@ -226,6 +226,8 @@
         _LastWin = 0;
         _matchEndTime = 0;
     _matchStartTime = 0;
+    _allianceNpcKills = 0;
+    _hordeNpcKills = 0;
         // Persistence and lock defaults
         // State machine initialization
         _bgState = BG_STATE_CLEANUP;  // Start in cleanup state waiting for players
@@ -1243,8 +1245,15 @@
     void OutdoorPvPHL::ForEachPlayerInZone(std::function<void(Player*)> f) const
     {
         // Fast path: locally tracked players.
-        uint32 emitted = 0;
+        // Use a snapshot because callbacks may teleport players, which can
+        // synchronously trigger zone-leave handling and mutate the tracked set.
+        std::vector<ObjectGuid> trackedPlayers;
+        trackedPlayers.reserve(_playersInHinterlands.size());
         for (ObjectGuid const& guid : _playersInHinterlands)
+            trackedPlayers.push_back(guid);
+
+        uint32 emitted = 0;
+        for (ObjectGuid const& guid : trackedPlayers)
         {
             if (Player* p = ObjectAccessor::FindPlayer(guid))
             {

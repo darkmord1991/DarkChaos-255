@@ -1006,6 +1006,11 @@ namespace DCCollection
                 payload.size() + 1);
             data << payload;
             player->GetSession()->SendPacket(&data);
+            std::string preview = "bytes=" + std::to_string(payload.size());
+            DCAddon::LogNativeS2CMessage(player, MODULE,
+                DCAddon::Opcode::Collection::SMSG_TRANSMOG_STATE,
+                BridgeOpcode::SMSG_TRANSMOG_STATE, data.size(), preview, true,
+                0);
         }
 
         void SendNativeItemSetsPayload(Player* player,
@@ -1018,6 +1023,10 @@ namespace DCCollection
                 payload.size() + 1);
             data << payload;
             player->GetSession()->SendPacket(&data);
+            std::string preview = "bytes=" + std::to_string(payload.size());
+            DCAddon::LogNativeS2CMessage(player, MODULE,
+                DCAddon::Opcode::Collection::SMSG_ITEM_SETS,
+                BridgeOpcode::SMSG_ITEM_SETS, data.size(), preview, true, 0);
         }
 
         void SendAddonItemSetsPayload(Player* player,
@@ -2928,6 +2937,11 @@ private:
             return false;
 
         DCCollection::SendTransmogState(player);
+        DCAddon::AuditNativeC2SRequest(player,
+            DCAddon::Module::COLLECTION,
+            DCAddon::Opcode::Collection::CMSG_GET_TRANSMOG_STATE,
+            DCCollection::BridgeOpcode::CMSG_REQUEST_TRANSMOG_STATE,
+            packet.size(), "request");
         return false;
     }
 };
@@ -2960,6 +2974,7 @@ private:
         uint32 limit = 50;
         uint32 clientSyncVersion = 0;
         uint32 packedFlag = 1;
+        bool parseOk = true;
 
         if (packet.size() > 0)
         {
@@ -2975,6 +2990,7 @@ private:
             }
             catch (ByteBufferException const&)
             {
+                parseOk = false;
                 offset = 0;
                 limit = 50;
                 clientSyncVersion = 0;
@@ -2982,8 +2998,19 @@ private:
             }
         }
 
+        std::string preview = "offset=" + std::to_string(offset)
+            + "|limit=" + std::to_string(limit)
+            + "|sync=" + std::to_string(clientSyncVersion)
+            + "|packed=" + std::to_string(packedFlag);
         DCCollection::HandleNativeItemSetsRequest(player, offset, limit,
             clientSyncVersion, packedFlag != 0);
+        DCAddon::AuditNativeC2SRequest(player,
+            DCAddon::Module::COLLECTION,
+            DCAddon::Opcode::Collection::CMSG_GET_ITEM_SETS,
+            DCCollection::BridgeOpcode::CMSG_REQUEST_ITEM_SETS, packet.size(),
+            preview, true, "",
+            parseOk ? "" : "native_bad_format",
+            parseOk ? "" : "Malformed native collection item-sets request");
         return false;
     }
 };

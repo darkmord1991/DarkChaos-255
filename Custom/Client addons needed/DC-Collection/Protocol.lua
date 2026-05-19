@@ -1427,6 +1427,23 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
     local progressKey = "defs:" .. tostring(normalizedType)
     local progressLabel = "definitions: " .. tostring(normalizedType)
 
+    if normalizedType == "transmog" and
+       type(self.GetCollectionDataFeaturePolicy) == "function" then
+        local policy = self:GetCollectionDataFeaturePolicy("transmog")
+        if type(policy) == "table" and
+           (policy.state == "DISABLED_STALE_CLIENT_DATA" or
+            policy.state == "DISABLED_UNSUPPORTED_CLIENT") then
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(progressKey,
+                    progressLabel .. " (disabled)")
+            end
+            self:Print(string.format(
+                "[Collection] Transmog definitions disabled (%s).",
+                tostring(policy.reason or policy.state)))
+            return false
+        end
+    end
+
     if type(self.HasLocalCollectionDefinitions) == "function" and
        self:HasLocalCollectionDefinitions(normalizedType) then
         if type(self._syncProgress) == "table" then
@@ -2068,6 +2085,12 @@ function DC:RequestItemSets(force)
     if defs then
         if type(defs.itemsets) ~= "table" and type(defs.itemSets) == "table" then defs.itemsets = defs.itemSets end
         if type(defs.itemSets) ~= "table" and type(defs.itemsets) == "table" then defs.itemSets = defs.itemsets end
+    end
+
+    if not force and type(self.HasLocalCollectionItemSets) == "function" and
+       self:HasLocalCollectionItemSets() then
+        self.itemSetsLoaded = true
+        return true
     end
 
     if self.itemSetsLoaded and not force then
@@ -5642,6 +5665,13 @@ end
 function DC:OnMsg_ItemSets(data)
     if not data then
         return
+    end
+
+    local staticState = self._localCollectionCDBC
+    if type(staticState) == "table" then
+        staticState.itemSetsSource = "runtime"
+        staticState.authoritativeItemSets = false
+        staticState.setsLoaded = true
     end
 
     DC.definitions = DC.definitions or {}

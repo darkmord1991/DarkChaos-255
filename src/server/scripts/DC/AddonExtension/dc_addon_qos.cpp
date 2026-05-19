@@ -220,7 +220,7 @@ namespace DCQoS
             SpellTooltipTransportPreference::Auto)
     {
         DCAddon::TransportPolicyRequest request;
-        request.featureName = "tooltip-native-response";
+        request.featureName = "spell-tooltip";
         request.nativeCapability =
             DCAddon::ProtocolVersion::Capability::TOOLTIP_NATIVE_RESPONSE;
         request.forceNative =
@@ -244,6 +244,47 @@ namespace DCQoS
         decision.capabilityState = policy.capabilityState;
         decision.hasCapabilityState = policy.hasCapabilityState;
         return decision;
+    }
+
+    static void AuditNpcTooltipTransport(Player* player, bool forceNative)
+    {
+        if (!player)
+            return;
+
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "npc-tooltip";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::NPC_TOOLTIP_NATIVE;
+        request.forceNative = forceNative;
+        request.forceNativeReason = "forced-native";
+        request.forceAddon = !forceNative;
+        request.forceAddonReason = "addon-tooltip-request";
+        request.versionIncompatibleReason = "version-incompatible";
+        request.negotiatedCapabilityMissingReason =
+            "native-capability-missing";
+        request.nativeReadyReason = "negotiated-native";
+        DCAddon::ResolveTransportPolicy(player, request);
+    }
+
+    static void AuditItemUpgradeTooltipTransport(Player* player,
+        bool forceNative)
+    {
+        if (!player)
+            return;
+
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "item-upgrade-tooltip";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::ITEM_UPGRADE_NATIVE;
+        request.forceNative = forceNative;
+        request.forceNativeReason = "forced-native";
+        request.forceAddon = !forceNative;
+        request.forceAddonReason = "addon-tooltip-request";
+        request.versionIncompatibleReason = "version-incompatible";
+        request.negotiatedCapabilityMissingReason =
+            "native-capability-missing";
+        request.nativeReadyReason = "negotiated-native";
+        DCAddon::ResolveTransportPolicy(player, request);
     }
 
     static void SendSpellTooltipEnrichmentNative(Player* player,
@@ -287,6 +328,15 @@ namespace DCQoS
         }
 
         player->GetSession()->SendPacket(&data);
+        std::string preview = "req=" + std::to_string(requestId)
+            + "|spell=" + std::to_string(spellId)
+            + "|ctx=" + std::to_string(contextHash)
+            + "|status=" + std::to_string(status)
+            + "|lines=" + std::to_string(lineCount);
+        DCAddon::LogNativeS2CMessage(player, MODULE,
+            Opcode::SMSG_SPELL_TOOLTIP_ENRICHMENT,
+            BridgeOpcode::SMSG_SPELL_TOOLTIP_ENRICHMENT, data.size(),
+            preview, true, 0);
     }
 
     static void SendItemUpgradeInfoNativeError(Player* player, uint8 bag,
@@ -310,6 +360,12 @@ namespace DCQoS
         data << int32(0);
         data << error;
         player->GetSession()->SendPacket(&data);
+        std::string preview = "bag=" + std::to_string(bag)
+            + "|slot=" + std::to_string(slot)
+            + "|error=" + error;
+        DCAddon::LogNativeS2CMessage(player, MODULE, Opcode::SMSG_ITEM_INFO,
+            BridgeOpcode::SMSG_ITEM_UPGRADE_TOOLTIP, data.size(), preview,
+            true, 0);
     }
 
     static void SendItemUpgradeInfoNative(Player* player, Item* item,
@@ -407,6 +463,15 @@ namespace DCQoS
         data << int32(upgradedIlvl);
         data << std::string();
         player->GetSession()->SendPacket(&data);
+        std::string preview = "bag=" + std::to_string(bag)
+            + "|slot=" + std::to_string(slot)
+            + "|item=" + std::to_string(itemId)
+            + "|tier=" + std::to_string(tierId)
+            + "|upgrade=" + std::to_string(upgradeLevel)
+            + "|max=" + std::to_string(maxUpgrade);
+        DCAddon::LogNativeS2CMessage(player, MODULE, Opcode::SMSG_ITEM_INFO,
+            BridgeOpcode::SMSG_ITEM_UPGRADE_TOOLTIP, data.size(), preview,
+            true, 0);
     }
 
     static void SendNpcTooltipInfoNativeError(Player* player,
@@ -423,6 +488,10 @@ namespace DCQoS
         data << int32(0);
         data << error;
         player->GetSession()->SendPacket(&data);
+        std::string preview = "guid=" + guidStr + "|error=" + error;
+        DCAddon::LogNativeS2CMessage(player, MODULE, Opcode::SMSG_NPC_INFO,
+            BridgeOpcode::SMSG_NPC_TOOLTIP_INFO, data.size(), preview, true,
+            0);
     }
 
     static void SendNpcTooltipInfoNative(Player* player,
@@ -471,6 +540,13 @@ namespace DCQoS
         data << int32(dbGuid);
         data << std::string();
         player->GetSession()->SendPacket(&data);
+        std::string preview = "guid=" + guidStr
+            + "|entry=" + std::to_string(entry)
+            + "|spawn=" + std::to_string(spawnId)
+            + "|dbGuid=" + std::to_string(dbGuid);
+        DCAddon::LogNativeS2CMessage(player, MODULE, Opcode::SMSG_NPC_INFO,
+            BridgeOpcode::SMSG_NPC_TOOLTIP_INFO, data.size(), preview, true,
+            0);
     }
 
     static std::string NormalizeRelayDistribution(std::string distribution, bool isRaidGroup)
@@ -558,6 +634,9 @@ namespace DCQoS
             payload.size() + 1);
         data << payload;
         player->GetSession()->SendPacket(&data);
+        std::string preview = "bytes=" + std::to_string(payload.size());
+        DCAddon::LogNativeS2CMessage(player, MODULE, 0,
+            BridgeOpcode::SMSG_PING_RELAY, data.size(), preview, true, 0);
     }
 
     static void SendPingRelayAck(Player* player, bool ok,
@@ -2725,6 +2804,8 @@ namespace DCQoS
             uint8 bag = static_cast<uint8>(rawBag);
             uint8 slot = static_cast<uint8>(rawSlot);
 
+            AuditItemUpgradeTooltipTransport(player, false);
+
             // Get item from player's inventory
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
@@ -2779,6 +2860,7 @@ namespace DCQoS
 
         if (!guidStr.empty())
         {
+            AuditNpcTooltipTransport(player, false);
             SendNpcInfo(player, guidStr);
         }
     }
@@ -2788,6 +2870,8 @@ namespace DCQoS
     {
         if (!player)
             return;
+
+        AuditItemUpgradeTooltipTransport(player, true);
 
         Item* item = player->GetItemByPos(bag, slot);
         if (!item)
@@ -2806,6 +2890,7 @@ namespace DCQoS
         if (!player || guidStr.empty())
             return;
 
+        AuditNpcTooltipTransport(player, true);
         SendNpcTooltipInfoNative(player, guidStr);
     }
 
@@ -3029,15 +3114,18 @@ namespace DCQoS
     }
 
     // Replicates client-side BuildSpellTooltipContextHash(spellId) at login.
-    // shapeshiftForm = 0 on login (no active form yet).
     // activeTalentGroup is 1-indexed on the client (GetActiveTalentGroup returns 1 or 2).
-    static uint32 BuildSpellTooltipContextHashForPlayer(uint32 spellId, uint8 level, uint8 classId, uint8 activeTalentGroup)
+        static uint32 BuildSpellTooltipContextHashForPlayer(uint32 spellId,
+                                                            uint8 level,
+                                                            uint8 classId,
+                                                            uint8 shapeshiftForm,
+                                                            uint8 activeTalentGroup)
     {
         uint32 hash = 2166136261U;
         hash = MixSpellTooltipContext(hash, spellId);
         hash = MixSpellTooltipContext(hash, level);
         hash = MixSpellTooltipContext(hash, classId);
-        hash = MixSpellTooltipContext(hash, 0u); // shapeshiftForm = 0 at login
+            hash = MixSpellTooltipContext(hash, shapeshiftForm);
         hash = MixSpellTooltipContext(hash, activeTalentGroup);
         if (hash == 0) hash = 1;
         return hash;
@@ -3055,6 +3143,7 @@ namespace DCQoS
 
         uint8 level            = static_cast<uint8>(player->GetLevel());
         uint8 classId          = static_cast<uint8>(player->getClass());
+        uint8 shapeshiftForm   = static_cast<uint8>(player->GetShapeshiftForm());
         // Client GetActiveTalentGroup() is 1-indexed; server GetActiveSpec() is 0-indexed.
         uint8 activeTalentGroup = static_cast<uint8>(player->GetActiveSpec() + 1);
 
@@ -3068,7 +3157,8 @@ namespace DCQoS
             if (!spellInfo || spellInfo->IsPassive())
                 continue;
 
-            uint32 contextHash = BuildSpellTooltipContextHashForPlayer(spellId, level, classId, activeTalentGroup);
+            uint32 contextHash = BuildSpellTooltipContextHashForPlayer(spellId,
+                level, classId, shapeshiftForm, activeTalentGroup);
 
             std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, spellInfo);
             if (line.empty())
@@ -3164,6 +3254,7 @@ private:
         {
             uint32 bag = 0;
             uint32 slot = 0;
+            bool parseOk = true;
 
             if (packet.size() >= sizeof(uint32) * 2)
             {
@@ -3177,19 +3268,29 @@ private:
                 }
                 catch (ByteBufferException const&)
                 {
+                    parseOk = false;
                     bag = 0;
                     slot = 0;
                 }
             }
 
+            std::string preview = "bag=" + std::to_string(bag)
+                + "|slot=" + std::to_string(slot);
             DCQoS::HandleItemUpgradeTooltipNativeRequest(player,
                 static_cast<uint8>(bag), static_cast<uint8>(slot));
+            DCAddon::AuditNativeC2SRequest(player, DCQoS::MODULE,
+                DCQoS::Opcode::CMSG_GET_ITEM_INFO,
+                DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP,
+                packet.size(), preview, true, "",
+                parseOk ? "" : "native_bad_format",
+                parseOk ? "" : "Malformed native item-upgrade tooltip request");
             return false;
         }
 
         if (opcode == DCQoS::BridgeOpcode::CMSG_REQUEST_NPC_TOOLTIP_INFO)
         {
             std::string guidStr;
+            bool parseOk = true;
 
             if (packet.size() > 0)
             {
@@ -3202,11 +3303,19 @@ private:
                 }
                 catch (ByteBufferException const&)
                 {
+                    parseOk = false;
                     guidStr.clear();
                 }
             }
 
+            std::string preview = "guid=" + guidStr;
             DCQoS::HandleNpcTooltipInfoNativeRequest(player, guidStr);
+            DCAddon::AuditNativeC2SRequest(player, DCQoS::MODULE,
+                DCQoS::Opcode::CMSG_GET_NPC_INFO,
+                DCQoS::BridgeOpcode::CMSG_REQUEST_NPC_TOOLTIP_INFO,
+                packet.size(), preview, true, "",
+                parseOk ? "" : "native_bad_format",
+                parseOk ? "" : "Malformed native NPC tooltip request");
             return false;
         }
 
@@ -3214,6 +3323,7 @@ private:
         {
             std::string distribution;
             std::string payload;
+            bool parseOk = true;
 
             if (packet.size() > 0)
             {
@@ -3227,19 +3337,28 @@ private:
                 }
                 catch (ByteBufferException const&)
                 {
+                    parseOk = false;
                     distribution.clear();
                     payload.clear();
                 }
             }
 
+            std::string preview = "distribution=" + distribution
+                + "|bytes=" + std::to_string(payload.size());
             DCQoS::HandlePingRelayNativeRequest(player, distribution,
                 payload);
+            DCAddon::AuditNativeC2SRequest(player, DCQoS::MODULE, 0,
+                DCQoS::BridgeOpcode::CMSG_REQUEST_PING_RELAY, packet.size(),
+                preview, true, "",
+                parseOk ? "" : "native_bad_format",
+                parseOk ? "" : "Malformed native ping relay request");
             return false;
         }
 
         uint32 requestId = 0;
         uint32 spellId = 0;
         uint32 contextHash = 0;
+        bool parseOk = true;
 
         if (packet.size() >= sizeof(uint32) * 3)
         {
@@ -3254,15 +3373,25 @@ private:
             }
             catch (ByteBufferException const&)
             {
+                parseOk = false;
                 requestId = 0;
                 spellId = 0;
                 contextHash = 0;
             }
         }
 
+        std::string preview = "req=" + std::to_string(requestId)
+            + "|spell=" + std::to_string(spellId)
+            + "|ctx=" + std::to_string(contextHash);
         DCQoS::HandleSpellTooltipEnrichmentRequest(player, requestId,
             spellId, contextHash, "",
             DCQoS::SpellTooltipTransportPreference::ForceNativeBridge);
+        DCAddon::AuditNativeC2SRequest(player, DCQoS::MODULE,
+            DCQoS::Opcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT,
+            DCQoS::BridgeOpcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT,
+            packet.size(), preview, true, "",
+            parseOk ? "" : "native_bad_format",
+            parseOk ? "" : "Malformed native spell-tooltip request");
         return false;
     }
 };

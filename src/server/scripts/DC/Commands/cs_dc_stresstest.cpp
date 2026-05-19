@@ -4110,7 +4110,7 @@ namespace DCPerfTest
                     return false;
 
                 CharacterDatabase.Query(
-                    "SELECT guid, module, total_requests, total_responses, avg_response_time_ms, max_response_time_ms "
+                    "SELECT guid, module, transport, total_requests, total_responses, avg_response_time_ms, max_response_time_ms "
                     "FROM dc_addon_protocol_stats ORDER BY last_request DESC LIMIT 50");
                 return true;
             }

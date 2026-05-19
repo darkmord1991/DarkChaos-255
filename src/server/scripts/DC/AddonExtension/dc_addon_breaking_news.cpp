@@ -514,6 +514,16 @@ namespace DCBreakingNews
         {
             RecordDeliveryDecision(session, source, decision, false);
 
+            if (session && !decision.snapshotError.empty())
+            {
+                std::string preview = std::string("source=")
+                    + (source ? source : "unknown");
+                DCAddon::LogNativeProtocolError(session,
+                    DCAddon::ProtocolLogDirection::ServerToClient, "NEWS", 0,
+                    ::SMSG_BREAKING_NEWS, "snapshot_error",
+                    decision.snapshotError, preview);
+            }
+
             if (IsTransportDebugEnabled())
             {
                 LOG_INFO("module.dc",
@@ -551,6 +561,14 @@ namespace DCBreakingNews
         data << snapshot.title;
         data << snapshot.body;
         session->SendPacket(&data);
+        std::string preview = std::string("source=")
+            + (source ? source : "unknown")
+            + "|revision=" + std::to_string(snapshot.revision)
+            + "|updated=" + std::to_string(snapshot.updatedAt)
+            + "|format=" + snapshot.format
+            + "|bodyBytes=" + std::to_string(snapshot.body.size());
+        DCAddon::LogNativeS2CMessage(session, "NEWS", 0,
+            ::SMSG_BREAKING_NEWS, data.size(), preview, 0);
         RecordDeliveryDecision(session, source, decision, true);
 
         if (sConfigMgr->GetOption<bool>(CONFIG_VERBOSE, false)

@@ -586,9 +586,56 @@ function Wardrobe:InferInventoryTypeFromItemId(itemId)
 end
 
 function Wardrobe:BuildAppearanceList()
+    local defsRev = (type(DC.GetDefinitionsRevision) == "function") and
+        (DC:GetDefinitionsRevision("transmog") or 0) or 0
+    local collRev = (type(DC.GetCollectionsRevision) == "function") and
+        (DC:GetCollectionsRevision("transmog") or 0) or 0
+
+    local slotFilterKey = ""
+    if type(self.selectedSlotFilter) == "table" then
+        slotFilterKey = tostring(self.selectedSlotFilter.key
+            or self.selectedSlotFilter.label
+            or self.selectedSlotFilter.text
+            or "")
+        if slotFilterKey == "" and type(self.selectedSlotFilter.invTypes) == "table" then
+            local invTypes = {}
+            for invType in pairs(self.selectedSlotFilter.invTypes) do
+                table.insert(invTypes, tonumber(invType) or tostring(invType))
+            end
+            table.sort(invTypes)
+            slotFilterKey = table.concat(invTypes, ",")
+        end
+    end
+
+    local search = self.searchText
+    if search and search ~= "" then
+        search = string.lower(search)
+    else
+        search = ""
+    end
+
+    local cacheKey = table.concat({
+        tostring(defsRev),
+        tostring(collRev),
+        slotFilterKey,
+        tostring(tonumber(self.selectedQualityFilter) or 0),
+        tostring(self.showUncollected and 1 or 0),
+        search,
+    }, "|")
+
+    self._appearanceListCache = self._appearanceListCache or {}
+    local cacheEntry = self._appearanceListCache.transmog
+    if cacheEntry and cacheEntry.key == cacheKey and
+       type(cacheEntry.results) == "table" then
+        self.totalCount = tonumber(cacheEntry.totalCount) or 0
+        self.collectedCount = tonumber(cacheEntry.collectedCount) or 0
+        return cacheEntry.results
+    end
+
     local results = {}
     local defs = (DC.definitions and (DC.definitions.transmog or DC.definitions.wardrobe)) or {}
     local col = (DC.collections and (DC.collections.transmog or DC.collections.wardrobe)) or {}
+    local hasPendingItemInfo = false
 
     -- For transmog we want to show unique appearances, not one entry per item.
     -- Servers can send multiple items sharing the same appearance (displayId) and
@@ -596,10 +643,8 @@ function Wardrobe:BuildAppearanceList()
     -- per appearance so we don't end up showing only low-level/low-quality items.
     local byKey = {}
 
-    local search = self.searchText
     local searchNum = nil
-    if search and search ~= "" then
-        search = string.lower(search)
+    if search ~= "" then
         searchNum = tonumber(search)
     else
         search = nil
@@ -612,6 +657,9 @@ function Wardrobe:BuildAppearanceList()
             return 0, 0
         end
         local _, _, quality, itemLevel = GetItemInfo(itemId)
+        if quality == nil and itemLevel == nil then
+            hasPendingItemInfo = true
+        end
         return tonumber(quality) or 0, tonumber(itemLevel) or 0
     end
 
@@ -699,6 +747,12 @@ function Wardrobe:BuildAppearanceList()
 
         -- Fallback: if server didn't send inventoryType, infer it from the item.
         if invType == 0 and itemId then
+            if type(GetItemInfo) == "function" then
+                local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemId)
+                if not equipLoc or equipLoc == "" then
+                    hasPendingItemInfo = true
+                end
+            end
             invType = self:InferInventoryTypeFromItemId(itemId) or invType
         end
 
@@ -720,6 +774,8 @@ function Wardrobe:BuildAppearanceList()
                 local _, _, itemQuality = GetItemInfo(itemId)
                 if itemQuality then
                     quality = tonumber(itemQuality) or quality
+                else
+                    hasPendingItemInfo = true
                 end
             end
             if quality < self.selectedQualityFilter then
@@ -831,6 +887,17 @@ function Wardrobe:BuildAppearanceList()
         if b.collected and not a.collected then return false end
         return (a.name or "") < (b.name or "")
     end)
+
+    if not hasPendingItemInfo then
+        self._appearanceListCache.transmog = {
+            key = cacheKey,
+            results = results,
+            totalCount = totalMatched,
+            collectedCount = collectedMatched,
+        }
+    elseif cacheEntry and cacheEntry.key ~= cacheKey then
+        self._appearanceListCache.transmog = nil
+    end
 
     return results
 end

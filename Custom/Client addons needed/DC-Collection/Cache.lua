@@ -957,6 +957,10 @@ local function ParseLocalTransmogItemIds(rawValue)
 end
 
 function DC:GetShopFilterButtons()
+    if type(self.ApplyCollectionDataFeaturePolicies) == "function" then
+        self:ApplyCollectionDataFeaturePolicies()
+    end
+
     local byKey = self.collectionCategoriesByKey or {}
     local filters = {}
 
@@ -972,7 +976,271 @@ function DC:GetShopFilterButtons()
     return filters
 end
 
+local HANDSHAKE_COLLECTION_FEATURE_KEYS = {
+    categories = "collectionCategories",
+    mounts = "collectionSources",
+    pets = "collectionSources",
+    heirlooms = "collectionSources",
+    titles = "collectionSources",
+    shop = "collectionShop",
+    itemsets = "collectionSets",
+    sets = "collectionSets",
+    transmog = "collectionTransmog",
+}
+
+local SOURCE_COLLECTION_TYPES = {
+    mounts = true,
+    pets = true,
+    heirlooms = true,
+    titles = true,
+}
+
+local function ReadBooleanish(value)
+    if value == true or value == 1 then
+        return true
+    end
+    if value == false or value == 0 or value == nil then
+        return false
+    end
+    if type(value) == "string" then
+        local lowered = string.lower(value)
+        return lowered == "1" or lowered == "true" or lowered == "yes"
+            or lowered == "on"
+    end
+    return false
+end
+
+local function ClearLocalDefinitionType(self, state, typeName)
+    if type(state) ~= "table" or
+       type(state.definitionSources) ~= "table" or
+       state.definitionSources[typeName] ~= "local-cdbc" then
+        return false
+    end
+
+    self.definitions = self.definitions or {}
+    self.definitions[typeName] = {}
+    state.definitionTypes[typeName] = false
+    state.definitionSources[typeName] = nil
+    state.authoritativeDefinitionTypes[typeName] = false
+
+    if typeName == "transmog" then
+        self._transmogDefinitions = self.definitions[typeName]
+        self._transmogDefinitionsSource = nil
+        self._transmogDefTotal = 0
+        if type(self._InvalidateTransmogDefinitionLookup) == "function" then
+            self:_InvalidateTransmogDefinitionLookup()
+        end
+        self.definitionsLoaded = false
+        if self.Wardrobe then
+            self.Wardrobe.definitionsLoaded = false
+        end
+    end
+
+    if type(self.SetSyncVersion) == "function" then
+        self:SetSyncVersion(typeName, 0)
+    end
+    if type(self._BumpDefinitionsRevision) == "function" then
+        self:_BumpDefinitionsRevision(typeName)
+    end
+    if self.stats and self.stats[typeName] then
+        self.stats[typeName].total = 0
+    end
+
+    return true
+end
+
+local function ClearLocalItemSets(self, state)
+    if type(state) ~= "table" or state.itemSetsSource ~= "local-cdbc" then
+        return false
+    end
+
+    self.definitions = self.definitions or {}
+    self.definitions.itemsets = {}
+    self.definitions.itemSets = self.definitions.itemsets
+    self.definitions.sets = self.definitions.itemsets
+    self.itemSetsLoaded = false
+    state.setsLoaded = false
+
+    if type(self.SetSyncVersion) == "function" then
+        self:SetSyncVersion("itemsets", 0)
+    end
+    if type(self._BumpDefinitionsRevision) == "function" then
+        self:_BumpDefinitionsRevision("itemsets")
+    end
+
+    state.itemSetsSource = nil
+    state.authoritativeItemSets = false
+    return true
+end
+
+local function ClearLocalShopMetadata(self, state)
+    if type(state) ~= "table" or not state.shopMetadataSource then
+        return false
+    end
+
+    state.shopMetadataById = {}
+    state.shopMetadataByTypeEntry = {}
+    state.shopMetadataAuthoritative = false
+    state.shopMetadataSource = nil
+    self.localShopMetadataById = {}
+    self.localShopMetadataByTypeEntry = {}
+    return true
+end
+
+local function ClearLocalCategories(self, state)
+    if type(state) ~= "table" or state.categoriesSource ~= "local-cdbc" then
+        return false
+    end
+
+    self.collectionCategories = {}
+    self.collectionCategoriesById = {}
+    self.collectionCategoriesByKey = {}
+    state.categoriesLoaded = false
+    state.categoriesAuthoritative = false
+    state.categoriesSource = nil
+    return true
+end
+
+function DC:GetCollectionDataFeaturePolicy(collectionType)
+    local featureKey = HANDSHAKE_COLLECTION_FEATURE_KEYS[
+        NormalizeType(self, collectionType)]
+    if not featureKey then
+        return nil
+    end
+
+    local central = rawget(_G, "DCAddonProtocol")
+    if type(central) ~= "table" or
+       type(central.GetCapabilitySnapshot) ~= "function" then
+        return nil
+    end
+
+    local ok, snapshot = pcall(function()
+        return central:GetCapabilitySnapshot()
+    end)
+    if not ok or type(snapshot) ~= "table" or
+       type(snapshot.serverDataFeatureStates) ~= "table" then
+        return nil
+    end
+
+    local entry = snapshot.serverDataFeatureStates[featureKey]
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local stateName = tostring(entry.state or entry.s or "")
+    if stateName == "" then
+        return nil
+    end
+
+    return {
+        featureKey = featureKey,
+        state = stateName,
+        requiredRevision = tonumber(entry.requiredRevision or entry.rr) or 0,
+        installedRevision = tonumber(entry.installedRevision or entry.ir) or 0,
+        fallbackAllowed = ReadBooleanish(
+            entry.fallbackAllowed or entry.fa),
+        reason = tostring(entry.reason or entry.r or ""),
+    }
+end
+
+function DC:ApplyCollectionDataFeaturePolicies()
+    local state = self._localCollectionCDBC
+    if type(state) ~= "table" then
+        return nil
+    end
+
+    local appliedPolicies = {}
+
+    local categoriesPolicy = self:GetCollectionDataFeaturePolicy("categories")
+    if type(categoriesPolicy) == "table" then
+        state.categoriesAuthoritative =
+            categoriesPolicy.state == "OK_NATIVE_DBC" and
+            state.categoriesLoaded == true
+
+        if categoriesPolicy.state ~= "OK_NATIVE_DBC" then
+            ClearLocalCategories(self, state)
+        end
+
+        appliedPolicies.categories = categoriesPolicy
+    end
+
+    local sourcesPolicy = self:GetCollectionDataFeaturePolicy("mounts")
+    if type(sourcesPolicy) == "table" then
+        for typeName in pairs(SOURCE_COLLECTION_TYPES) do
+            local nativeEligible =
+                type(state.nativeEligibleDefinitionTypes) == "table" and
+                state.nativeEligibleDefinitionTypes[typeName] == true
+
+            state.authoritativeDefinitionTypes[typeName] =
+                sourcesPolicy.state == "OK_NATIVE_DBC" and
+                state.definitionTypes[typeName] == true and
+                nativeEligible
+
+            if sourcesPolicy.state ~= "OK_NATIVE_DBC" then
+                ClearLocalDefinitionType(self, state, typeName)
+            end
+        end
+
+        appliedPolicies.sources = sourcesPolicy
+    end
+
+    local transmogPolicy = self:GetCollectionDataFeaturePolicy("transmog")
+    if type(transmogPolicy) == "table" then
+        local nativeEligible =
+            type(state.nativeEligibleDefinitionTypes) == "table" and
+            state.nativeEligibleDefinitionTypes.transmog == true
+
+        state.authoritativeDefinitionTypes.transmog =
+            transmogPolicy.state == "OK_NATIVE_DBC" and
+            state.definitionTypes.transmog == true and
+            nativeEligible
+
+        if transmogPolicy.state ~= "OK_NATIVE_DBC" then
+            ClearLocalDefinitionType(self, state, "transmog")
+        end
+
+        appliedPolicies.transmog = transmogPolicy
+    end
+
+    local setsPolicy = self:GetCollectionDataFeaturePolicy("itemsets")
+    if type(setsPolicy) == "table" then
+        state.authoritativeItemSets =
+            setsPolicy.state == "OK_NATIVE_DBC" and
+            state.setsLoaded == true and
+            state.nativeEligibleItemSets == true
+
+        if setsPolicy.state ~= "OK_NATIVE_DBC" then
+            ClearLocalItemSets(self, state)
+        end
+
+        appliedPolicies.itemsets = setsPolicy
+    end
+
+    local shopPolicy = self:GetCollectionDataFeaturePolicy("shop")
+    if type(shopPolicy) == "table" then
+        state.shopMetadataAuthoritative =
+            shopPolicy.state == "OK_NATIVE_DBC" and
+            state.nativeEligibleShopMetadata == true
+
+        if shopPolicy.state ~= "OK_NATIVE_DBC" then
+            ClearLocalShopMetadata(self, state)
+        end
+
+        appliedPolicies.shop = shopPolicy
+    end
+
+    if next(appliedPolicies) == nil then
+        return nil
+    end
+
+    return appliedPolicies
+end
+
 function DC:HasLocalCollectionDefinitions(collectionType)
+    if type(self.ApplyCollectionDataFeaturePolicies) == "function" then
+        self:ApplyCollectionDataFeaturePolicies()
+    end
+
     local state = self._localCollectionCDBC
     if type(state) ~= "table" or
        type(state.definitionTypes) ~= "table" or
@@ -993,11 +1261,19 @@ function DC:HasLocalCollectionDefinitions(collectionType)
 end
 
 function DC:HasLocalCollectionItemSets()
+    if type(self.ApplyCollectionDataFeaturePolicies) == "function" then
+        self:ApplyCollectionDataFeaturePolicies()
+    end
+
     local state = self._localCollectionCDBC
-    return type(state) == "table" and state.setsLoaded == true
+    return type(state) == "table" and state.authoritativeItemSets == true
 end
 
 function DC:ShouldUseLocalCollectionShopMetadata()
+    if type(self.ApplyCollectionDataFeaturePolicies) == "function" then
+        self:ApplyCollectionDataFeaturePolicies()
+    end
+
     local state = self._localCollectionCDBC
     return type(state) == "table" and
         state.shopMetadataAuthoritative == true
@@ -1031,6 +1307,10 @@ function DC:GetLocalCollectionCompleteness(collectionType)
 end
 
 function DC:GetLocalShopMetadata(shopId, collectionType, entryId)
+    if type(self.ApplyCollectionDataFeaturePolicies) == "function" then
+        self:ApplyCollectionDataFeaturePolicies()
+    end
+
     local state = self._localCollectionCDBC
     if type(state) ~= "table" then
         return nil
@@ -1065,10 +1345,17 @@ function DC:BootstrapLocalCollectionCDBC(force)
     local state = {
         available = false,
         categoriesLoaded = false,
+        categoriesAuthoritative = false,
+        categoriesSource = nil,
         sourcesLoaded = false,
         setsLoaded = false,
+        authoritativeItemSets = false,
+        nativeEligibleItemSets = false,
+        itemSetsSource = nil,
         definitionTypes = {},
+        definitionSources = {},
         authoritativeDefinitionTypes = {},
+        nativeEligibleDefinitionTypes = {},
         previewIncompleteDefinitionTypes = {},
         previewIncompleteDefinitionCounts = {},
         signatures = {},
@@ -1077,6 +1364,7 @@ function DC:BootstrapLocalCollectionCDBC(force)
         shopMetadataById = {},
         shopMetadataByTypeEntry = {},
         shopMetadataAuthoritative = false,
+        nativeEligibleShopMetadata = false,
         shopMetadataSource = nil,
     }
 
@@ -1115,6 +1403,8 @@ function DC:BootstrapLocalCollectionCDBC(force)
             self.collectionCategoriesById = byId
             self.collectionCategoriesByKey = byKey
             state.categoriesLoaded = true
+            state.categoriesAuthoritative = true
+            state.categoriesSource = "local-cdbc"
             state.available = true
         end
     end
@@ -1269,6 +1559,9 @@ function DC:BootstrapLocalCollectionCDBC(force)
                     elseif typeName == "titles" then
                         state.authoritativeDefinitionTypes[typeName] = true
                     end
+                    state.nativeEligibleDefinitionTypes[typeName] =
+                        state.authoritativeDefinitionTypes[typeName] == true
+                    state.definitionSources[typeName] = "local-cdbc"
                     state.signatures[typeName] = signatures[typeName]
                 end
             end
@@ -1345,9 +1638,14 @@ function DC:BootstrapLocalCollectionCDBC(force)
             if next(defs) ~= nil then
                 self.definitions.transmog = defs
                 self._transmogDefinitions = defs
+                self._transmogDefinitionsSource = "local-cdbc"
                 self._transmogDefTotal = self:CountDefinitions("transmog")
                 self:SetSyncVersion("transmog", signature)
                 state.definitionTypes.transmog = true
+                state.definitionSources.transmog = "local-cdbc"
+                state.nativeEligibleDefinitionTypes.transmog =
+                    type(manifestEntry) == "table" and
+                    manifestEntry.requestSkip == true
                 if type(manifestEntry) == "table" and manifestEntry.requestSkip == true then
                     state.authoritativeDefinitionTypes.transmog = true
                 end
@@ -1431,6 +1729,9 @@ function DC:BootstrapLocalCollectionCDBC(force)
                     self:SetSyncVersion("itemsets", signature)
                 end
                 state.setsLoaded = true
+                state.nativeEligibleItemSets = true
+                state.authoritativeItemSets = false
+                state.itemSetsSource = "local-cdbc"
                 state.signatures.itemsets = signature
                 state.available = true
 
@@ -1527,9 +1828,11 @@ function DC:BootstrapLocalCollectionCDBC(force)
         if loaded > 0 then
             state.shopMetadataById = byShopId
             state.shopMetadataByTypeEntry = byTypeEntry
-            state.shopMetadataAuthoritative =
+            state.nativeEligibleShopMetadata =
                 type(manifestShop) == "table" and
                 manifestShop.authoritative == true
+            state.shopMetadataAuthoritative =
+                state.nativeEligibleShopMetadata == true
             state.shopMetadataSource = shopMetadataSource
             state.signatures.shop = signature
             state.available = true
@@ -1652,6 +1955,12 @@ function DC:CacheMergeDefinitions(collectionType, definitions)
         else
             self._transmogDefinitions = self.definitions[typeName]
         end
+        self._transmogDefinitionsSource = "runtime"
+    end
+
+    local state = self._localCollectionCDBC
+    if type(state) == "table" and type(state.definitionSources) == "table" then
+        state.definitionSources[typeName] = "runtime"
     end
     
     local added = 0

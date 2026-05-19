@@ -719,6 +719,76 @@ function DC:GetHandshakeVersionString()
     return tostring(self.VERSION) .. "|" .. tostring(self:GetClientCapabilities())
 end
 
+local function ParseServerHandshakeBoolean(value)
+    if value == true or value == 1 then
+        return true
+    end
+    if value == false or value == 0 or value == nil then
+        return false
+    end
+    if type(value) == "string" then
+        local lowered = string.lower(value)
+        return lowered == "1" or lowered == "true" or lowered == "yes"
+            or lowered == "on"
+    end
+    return false
+end
+
+local function NormalizeServerDataFeatureStateEntry(entry)
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local state = tostring(entry.state or entry.s or "")
+    if state == "" then
+        return nil
+    end
+
+    return {
+        state = state,
+        requiredRevision = tonumber(entry.requiredRevision or entry.rr) or 0,
+        installedRevision = tonumber(entry.installedRevision or entry.ir) or 0,
+        fallbackAllowed = ParseServerHandshakeBoolean(
+            entry.fallbackAllowed or entry.fa),
+        reason = tostring(entry.reason or entry.r or ""),
+    }
+end
+
+local function ParseServerHandshakeMetadataPayload(payload)
+    local decoded = nil
+    if type(payload) == "table" then
+        decoded = payload
+    elseif type(payload) == "string" and payload ~= "" then
+        local ok, parsed = pcall(function()
+            return DC:DecodeJSON(payload)
+        end)
+        if ok and type(parsed) == "table" then
+            decoded = parsed
+        end
+    end
+
+    if type(decoded) ~= "table" then
+        return nil
+    end
+
+    local normalizedStates = {}
+    local featureStates = decoded.dataFeatureStates or decoded.f
+    if type(featureStates) == "table" then
+        for featureKey, entry in pairs(featureStates) do
+            local normalized = NormalizeServerDataFeatureStateEntry(entry)
+            if normalized then
+                normalizedStates[tostring(featureKey)] = normalized
+            end
+        end
+    end
+
+    return {
+        version = tonumber(decoded.v) or 0,
+        dataFeatureStates = next(normalizedStates) and normalizedStates or nil,
+        raw = type(payload) == "string" and payload or nil,
+    }
+end
+
 function DC:GetCapabilitySnapshot()
     local nativeCaps = tonumber(self:GetNativeExtensionCapabilities()) or 0
     local clientCaps = tonumber(self:GetClientCapabilities()) or 0
@@ -735,6 +805,8 @@ function DC:GetCapabilitySnapshot()
         handshakeMetadata = self:GetHandshakeMetadataPayload(),
         connected = self._connected and true or false,
         serverVersion = self._serverVersion,
+        serverHandshakeMetadata = self._serverHandshakeMetadata,
+        serverDataFeatureStates = self._serverDataFeatureStates,
         lastHandshakeAck = self._lastHandshakeAck,
     }
 end
@@ -780,6 +852,35 @@ function DC:PrintCapabilityStatus()
         self:DescribeCapabilities(snapshot.negotiatedCaps)))
     if snapshot.serverVersion then
         DEFAULT_CHAT_FRAME:AddMessage("  Server Version: |cff00ccff" .. tostring(snapshot.serverVersion) .. "|r")
+    end
+    if type(snapshot.serverDataFeatureStates) == "table" then
+        local policyParts = {}
+
+        local function addPolicy(label, key)
+            local state = snapshot.serverDataFeatureStates[key]
+            if type(state) ~= "table" then
+                return
+            end
+
+            policyParts[#policyParts + 1] = string.format(
+                "%s=%s(req=%s installed=%s fallback=%s)",
+                label,
+                tostring(state.state or "unknown"),
+                tostring(state.requiredRevision or 0),
+                tostring(state.installedRevision or 0),
+                tostring(state.fallbackAllowed == true))
+        end
+
+        addPolicy("cat", "collectionCategories")
+        addPolicy("src", "collectionSources")
+        addPolicy("shop", "collectionShop")
+        addPolicy("set", "collectionSets")
+        addPolicy("xmog", "collectionTransmog")
+
+        if #policyParts > 0 then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                "  Data Policy: |cff00ccff" .. table.concat(policyParts, " | ") .. "|r")
+        end
     end
     if snapshot.lastHandshakeAck then
         DEFAULT_CHAT_FRAME:AddMessage(string.format(
@@ -3997,6 +4098,7 @@ end
 DC:RegisterHandler("CORE", 0x10, function(...)
     local arg1, arg2, arg3, arg4 = ...
     local parserMode = "unknown"
+    local serverHandshakeMetadata = nil
 
     -- Handle both JSON format (arg1 = table) and pipe format (arg1 = version string)
     local version, compatible, negotiatedCaps, features
@@ -4012,6 +4114,8 @@ DC:RegisterHandler("CORE", 0x10, function(...)
             or arg1.caps
             or arg1.capabilities
             or 0) or 0
+        serverHandshakeMetadata = ParseServerHandshakeMetadataPayload(
+            arg1.handshakeMetadata or arg1.metadata or arg1.m or arg1)
     else
         version = arg1 or "1.0.0"
         local hasArg2CompatibleFlag, parsedArg2Compatible = ParseBooleanLike(arg2)
@@ -4037,10 +4141,14 @@ DC:RegisterHandler("CORE", 0x10, function(...)
             negotiatedCaps = 0
             features = arg2
         end
+        serverHandshakeMetadata = ParseServerHandshakeMetadataPayload(arg4)
     end
 
     DC._serverVersion = tostring(version)
     DC._serverCaps = negotiatedCaps or 0
+    DC._serverHandshakeMetadata = serverHandshakeMetadata
+    DC._serverDataFeatureStates = serverHandshakeMetadata
+        and serverHandshakeMetadata.dataFeatureStates or nil
     DC._lastHandshakeAck = {
         parserMode = parserMode,
         rawArg1 = DescribeHandshakeArg(arg1),
@@ -4049,6 +4157,7 @@ DC:RegisterHandler("CORE", 0x10, function(...)
         rawArg4 = DescribeHandshakeArg(arg4),
         compatible = compatible and true or false,
         negotiatedCaps = tonumber(negotiatedCaps) or 0,
+        serverHandshakeMetadata = serverHandshakeMetadata,
         receivedAt = time() or 0,
     }
 
@@ -4094,6 +4203,7 @@ DC:RegisterHandler("CORE", 0x10, function(...)
         clientCaps = tonumber(DC:GetClientCapabilities()) or 0,
         negotiatedCaps = tonumber(DC._serverCaps) or 0,
         parserMode = parserMode,
+        serverDataFeatureStates = DC._serverDataFeatureStates,
         rawArg2 = DC._lastHandshakeAck.rawArg2,
         rawArg3 = DC._lastHandshakeAck.rawArg3,
         rawArg4 = DC._lastHandshakeAck.rawArg4,

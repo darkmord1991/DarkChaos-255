@@ -55,6 +55,43 @@ constexpr uint32 COUNTDOWN_BARRIER_EARLY_DESPAWN_SECONDS = 1;
 constexpr std::string_view HUD_REASON_PERIODIC = "tick";
 constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
 
+struct ParticipantPresence
+{
+    bool hasTrackedParticipant = false;
+    bool hasLivingParticipant = false;
+};
+
+ParticipantPresence GetParticipantPresence(
+    MythicPlusRunManager::InstanceState const* state, Map* map)
+{
+    ParticipantPresence presence;
+    if (!state || !map)
+        return presence;
+
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        Player* player = ref.GetSource();
+        if (!player || !player->GetSession())
+            continue;
+
+        if (state->participants.find(player->GetGUID().GetCounter()) ==
+            state->participants.end())
+        {
+            continue;
+        }
+
+        presence.hasTrackedParticipant = true;
+        if (player->IsAlive())
+        {
+            presence.hasLivingParticipant = true;
+            break;
+        }
+    }
+
+    return presence;
+}
+
 uint32 GetCountdownRemainingSeconds(uint64 countdownStartedMs,
     uint32 countdownDurationSeconds, uint64 nowMs)
 {
@@ -611,6 +648,23 @@ void MythicPlusRunManager::HandleBossEvade(Creature* creature)
     // Ignore boss resets that occur before the countdown has finished
     if (state->startedAt == 0)
         return;
+
+    ParticipantPresence presence = GetParticipantPresence(state, map);
+    if (!presence.hasTrackedParticipant)
+    {
+        LOG_DEBUG("mythic.run",
+            "Ignoring boss evade for {} in instance {} because no tracked participants are present",
+            creature->GetEntry(), state->instanceId);
+        return;
+    }
+
+    if (presence.hasLivingParticipant)
+    {
+        LOG_DEBUG("mythic.run",
+            "Ignoring boss evade for {} in instance {} because tracked participants are still alive",
+            creature->GetEntry(), state->instanceId);
+        return;
+    }
 
     uint32 graceWindow = sConfigMgr->GetOption<uint32>("MythicPlus.WipeBudget.GraceWindow", 5);
     if (graceWindow > 0)
@@ -2514,14 +2568,11 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     if (!state || !map || !activator)
         return;
 
-    // Mark run as officially started
-    state->startedAt = GameTime::GetGameTime().count();
     state->countdownActive = false;
     state->countdownStarted = 0;
     DespawnCountdownBarrier(state, map);
     if (state->hudTimerDuration == 0)
         state->hudTimerDuration = GetHudTimerDuration(state->mapId, state->keystoneLevel);
-    state->timerEndsAt = state->hudTimerDuration ? state->startedAt + state->hudTimerDuration : 0;
 
     ResetDungeonForRunStart(map);
 
@@ -2541,6 +2592,12 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     }
 
     ApplyEntryBarrier(map);
+
+    // Mark the run as started only after reset/scaling prep completes so
+    // timer math and boss-evade wipe checks do not include setup work.
+    state->startedAt = GameTime::GetGameTime().count();
+    state->timerEndsAt = state->hudTimerDuration ?
+        state->startedAt + state->hudTimerDuration : 0;
 
     SetHudWorldState(state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, 0);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_DURATION, state->hudTimerDuration);

@@ -61,6 +61,25 @@ function HLBG.TrackStatusSignal(statusValue, mapId)
     end
 end
 
+function HLBG.HasRecentMapPresence(maxAgeSeconds)
+    local lastStatusTime = tonumber(HLBG._lastStatusTime)
+    if not lastStatusTime then
+        return false
+    end
+
+    local ttl = tonumber(maxAgeSeconds) or 60
+    if type(GetTime) == 'function' and (GetTime() - lastStatusTime) >= ttl then
+        return false
+    end
+
+    local mapId = tonumber(HLBG._lastStatusMapId)
+    if mapId == nil and type(HLBG._lastStatus) == 'table' then
+        mapId = tonumber(HLBG._lastStatus.mapId)
+    end
+
+    return mapId == HLBG.MAP_ID
+end
+
 function HLBG.HasRecentPresenceStatus(maxAgeSeconds)
     local lastStatusTime = tonumber(HLBG._lastStatusTime)
     if not lastStatusTime then

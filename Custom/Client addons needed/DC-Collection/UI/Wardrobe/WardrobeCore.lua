@@ -745,6 +745,10 @@ function Wardrobe:Show()
         DC.MainFrame:Hide()
     end
 
+    if DC and type(DC.ApplyCollectionDataFeaturePolicies) == "function" then
+        DC:ApplyCollectionDataFeaturePolicies()
+    end
+
     -- Only request definitions on first open or if explicitly refreshing
     if not Wardrobe.definitionsLoaded and DC and DC.RequestDefinitions then
         Wardrobe.definitionsLoaded = true
@@ -786,6 +790,10 @@ function Wardrobe:ShowEmbedded(host)
             frame:ClearAllPoints()
             frame:SetAllPoints(host)
         end
+    end
+
+    if DC and type(DC.ApplyCollectionDataFeaturePolicies) == "function" then
+        DC:ApplyCollectionDataFeaturePolicies()
     end
 
     -- Only request definitions on first open or if explicitly refreshing
@@ -888,6 +896,38 @@ function Wardrobe:RefreshTransmogDefinitions()
 
     if type(DC.BootstrapLocalCollectionCDBC) == "function" then
         DC:BootstrapLocalCollectionCDBC(true)
+    end
+
+    if type(DC.ApplyCollectionDataFeaturePolicies) == "function" then
+        DC:ApplyCollectionDataFeaturePolicies()
+    end
+
+    if type(DC.GetCollectionDataFeaturePolicy) == "function" then
+        local policy = DC:GetCollectionDataFeaturePolicy("transmog")
+        if type(policy) == "table" and
+           (policy.state == "DISABLED_STALE_CLIENT_DATA" or
+            policy.state == "DISABLED_UNSUPPORTED_CLIENT") then
+            self.isRefreshing = false
+            self.definitionsLoaded = false
+            DC.definitionsLoaded = false
+            if self.frame and self.frame.refreshBtn then
+                if type(self.UpdateRefreshButtonForTab) == "function" then
+                    self:UpdateRefreshButtonForTab()
+                else
+                    self.frame.refreshBtn:SetText("Refresh Data")
+                    self.frame.refreshBtn:Enable()
+                end
+            end
+            if self.frame and self.frame.refreshStatus then
+                self.frame.refreshStatus:SetText(
+                    "Transmog static data disabled for this client")
+                self.frame.refreshStatus:Show()
+            end
+            if type(self.UpdateTransmogLoadingProgressUI) == "function" then
+                self:UpdateTransmogLoadingProgressUI(false)
+            end
+            return
+        end
     end
 
     if type(DC.HasLocalCollectionDefinitions) == "function" and

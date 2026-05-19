@@ -2114,8 +2114,11 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	item.currentUpgrade = data.currentUpgrade or 0;
 	item.tokenCost = tonumber(data.tokenCost) or item.tokenCost or 0;
 	item.essenceCost = tonumber(data.essenceCost) or item.essenceCost or 0;
+	local preserveBackgroundRefresh = item.allowBackgroundRefresh == true and item.hasAuthoritativeState == true;
 	item.hasAuthoritativeState = true;
-	item.allowBackgroundRefresh = false;
+	if not preserveBackgroundRefresh then
+		item.allowBackgroundRefresh = false;
+	end
 	DC.Debug("ApplyQueryData: data.maxUpgrade=" .. tostring(data.maxUpgrade) .. ", item.tier=" .. tostring(item.tier) .. ", final item.maxUpgrade=" .. tostring(item.maxUpgrade));
 	item.baseLevel = data.baseItemLevel or item.baseLevel or 0;
 	local calculatedLevel = data.upgradedItemLevel or GetUpgradedItemLevel(item.baseLevel, item.currentUpgrade, item.tier);

@@ -6232,7 +6232,7 @@ end
 
 local function ClearMarker()
     ClearPrimaryMarker()
-    ClearLiveGroupMarkers()
+        Navigation._ClearLiveGroupMarkers()
 end
 
 local function MaybeClearManualOnArrival(target, distanceYards)

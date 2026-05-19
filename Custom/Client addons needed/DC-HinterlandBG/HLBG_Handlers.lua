@@ -424,32 +424,10 @@ function HLBG.ShowDebugWindow()
         frame:Show()
     end)
 end
--- Zone watcher: show/hide HUD when entering Hinterland BG area (NOT the entire Hinterlands zone)
+-- Zone watcher: show/hide HUD when the server reports the player on HLBG map 1411.
 local function InHinterlands()
-    local z = (type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function')
-        and HLBG.safeGetRealZoneText()
-        or (GetRealZoneText and GetRealZoneText() or "")
-    local sz = (GetSubZoneText and GetSubZoneText() or "")
-
-    local zl = tostring(z or ""):lower()
-    local szl = tostring(sz or ""):lower()
-
-    -- Check subzone first — the custom BG area (6738) has its own subzone name.
-    -- Do NOT match broadly on the parent zone "The Hinterlands" (zone 47)
-    -- as that would activate the HUD outside the BG area.
-    if szl:find("hinterland", 1, true) or szl:find("azshara crater", 1, true) then
-        return true
-    end
-
-    -- Match BG-specific zone names (e.g. "Hinterland Defence") but NOT "The Hinterlands".
-    if zl:find("hinterland", 1, true) and zl ~= "the hinterlands" then
-        return true
-    end
-
-    -- Fallback: trust recent active HLBG status only when it points at the
-    -- custom battleground map, not merely because some status packet arrived.
-    if type(HLBG) == 'table' and type(HLBG.HasRecentPresenceStatus) == 'function' then
-        if HLBG.HasRecentPresenceStatus(60) then
+    if type(HLBG) == 'table' and type(HLBG.HasRecentMapPresence) == 'function' then
+        if HLBG.HasRecentMapPresence(60) then
             return true
         end
     end
@@ -2005,8 +1983,25 @@ if DC then
                 HLBG._lastStatus.H = RES.H
                 HLBG._lastStatus.allianceBases = json.aBases or 0
                 HLBG._lastStatus.hordeBases = json.hBases or 0
-                HLBG._lastStatus.allianceKills = json.aKills or 0
-                HLBG._lastStatus.hordeKills = json.hKills or 0
+                HLBG._lastStatus.allianceKills = json.aPlayerKills or json.aKills or 0
+                HLBG._lastStatus.hordeKills = json.hPlayerKills or json.hKills or 0
+                HLBG._lastStatus.alliancePlayerKills = HLBG._lastStatus.allianceKills
+                HLBG._lastStatus.hordePlayerKills = HLBG._lastStatus.hordeKills
+                HLBG._lastStatus.allianceNpcKills = json.aNpcKills or 0
+                HLBG._lastStatus.hordeNpcKills = json.hNpcKills or 0
+
+                local alliancePlayers = tonumber(json.APC or json.alliancePlayers or json.APlayers)
+                local hordePlayers = tonumber(json.HPC or json.hordePlayers or json.HPlayers)
+                if alliancePlayers ~= nil then
+                    RES.APC = alliancePlayers
+                    HLBG._lastStatus.APC = alliancePlayers
+                    HLBG._lastStatus.APlayers = alliancePlayers
+                end
+                if hordePlayers ~= nil then
+                    RES.HPC = hordePlayers
+                    HLBG._lastStatus.HPC = hordePlayers
+                    HLBG._lastStatus.HPlayers = hordePlayers
+                end
                 HLBG._lastStatusTime = GetTime()
                 
                 if type(HLBG.UpdateHUD) == 'function' then
@@ -2016,9 +2011,46 @@ if DC then
         else
             -- Pipe-delimited format
             local allianceRes, hordeRes, aBases, hBases = args[1], args[2], args[3], args[4]
+            local alliancePlayers, hordePlayers = args[5], args[6]
+            local alliancePlayerKills, hordePlayerKills = args[7], args[8]
+            local allianceNpcKills, hordeNpcKills = args[9], args[10]
             RES = RES or {}
             RES.A = tonumber(allianceRes) or RES.A or 0
             RES.H = tonumber(hordeRes) or RES.H or 0
+
+            HLBG._lastStatus = HLBG._lastStatus or {}
+            HLBG._lastStatus.A = RES.A
+            HLBG._lastStatus.H = RES.H
+            HLBG._lastStatus.allianceBases = tonumber(aBases) or HLBG._lastStatus.allianceBases or 0
+            HLBG._lastStatus.hordeBases = tonumber(hBases) or HLBG._lastStatus.hordeBases or 0
+
+            if alliancePlayers ~= nil then
+                RES.APC = tonumber(alliancePlayers) or RES.APC or 0
+                HLBG._lastStatus.APC = RES.APC
+                HLBG._lastStatus.APlayers = RES.APC
+            end
+            if hordePlayers ~= nil then
+                RES.HPC = tonumber(hordePlayers) or RES.HPC or 0
+                HLBG._lastStatus.HPC = RES.HPC
+                HLBG._lastStatus.HPlayers = RES.HPC
+            end
+
+            if alliancePlayerKills ~= nil then
+                HLBG._lastStatus.allianceKills = tonumber(alliancePlayerKills) or 0
+                HLBG._lastStatus.alliancePlayerKills = HLBG._lastStatus.allianceKills
+            end
+            if hordePlayerKills ~= nil then
+                HLBG._lastStatus.hordeKills = tonumber(hordePlayerKills) or 0
+                HLBG._lastStatus.hordePlayerKills = HLBG._lastStatus.hordeKills
+            end
+            if allianceNpcKills ~= nil then
+                HLBG._lastStatus.allianceNpcKills = tonumber(allianceNpcKills) or 0
+            end
+            if hordeNpcKills ~= nil then
+                HLBG._lastStatus.hordeNpcKills = tonumber(hordeNpcKills) or 0
+            end
+
+            HLBG._lastStatusTime = GetTime()
             if type(HLBG.UpdateHUD) == 'function' then
                 pcall(HLBG.UpdateHUD)
             end

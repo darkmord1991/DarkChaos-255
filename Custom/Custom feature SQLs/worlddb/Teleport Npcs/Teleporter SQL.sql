@@ -144,8 +144,8 @@ INSERT INTO `eluna_teleporter` (`id`, `parent`, `type`, `faction`, `icon`, `name
 	(503, 500, 2, -1, 2, 'Expisland', 1405, 6010.440, 1518.270, 36.525, 1.714),
 	(504, 500, 2, -1, 2, 'Jadeforest', 745, 900.498, -2649.940, 185.017, 1.289),
 	(600, 0, 1, -1, 2, 'Hinterland BG', NULL, NULL, NULL, NULL, NULL),
-	(601, 600, 2, 1, 2, 'Hinterland Outdoor BG Horde', 0, -628.484, -4684.510, 5.144, 1.125),
-	(602, 600, 2, 0, 2, 'Hinterland Outdoor BG Alliance', 0, 62.083, -4714.990, 11.794, 2.508),
+	(601, 600, 2, 1, 2, 'Hinterland Outdoor BG Horde', 1411, -628.484, -4684.510, 5.144, 1.125),
+	(602, 600, 2, 0, 2, 'Hinterland Outdoor BG Alliance', 1411, 197.165, -4808.544, 7.848, 3.046),
 	(700, 0, 1, -1, 2, 'Custom Dungeons', NULL, NULL, NULL, NULL, NULL);
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;

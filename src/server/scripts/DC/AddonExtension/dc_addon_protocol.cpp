@@ -9,6 +9,7 @@
  */
 
 #include "Common.h"
+#include "dc_addon_collection.h"
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
@@ -28,14 +29,16 @@
 #include <unordered_map>
 #include <algorithm>
 #include <cctype>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <ctime>
 
 // Forward declaration for S2C logging (defined later in file)
 static bool g_S2CLoggingEnabled = false;
 static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs = 0);
 static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message);
-static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
+static void UpdateProtocolStats(Player* player, const std::string& moduleCode, const std::string& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
 static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& requestId);
 static std::string EscapeSQLString(std::string s);
 
@@ -51,6 +54,14 @@ namespace
         "dc_addon_feature_transport_audit";
     constexpr char const* TABLE_PROTOCOL_ERRORS =
         "dc_addon_protocol_errors";
+    constexpr char const* STATS_TRANSPORT_ADDON =
+        "ADDON";
+    constexpr char const* STATS_TRANSPORT_NATIVE =
+        "NATIVE";
+    constexpr char const* STATS_TRANSPORT_LEGACY_MIXED =
+        "LEGACY_MIXED";
+    constexpr char const* REQUEST_TYPE_NATIVE =
+        "NATIVE";
     constexpr char const* COLUMN_NATIVE_BUILD_FINGERPRINT =
         "native_build_fingerprint";
     constexpr char const* COLUMN_DATA_REVISIONS_JSON =
@@ -569,6 +580,133 @@ static std::string EncodeHandshakeMetadataJson(
     }
 
     return json.Encode();
+}
+
+struct HandshakeDataFeatureDecision
+{
+    char const* state = "OK_RUNTIME_CACHE";
+    char const* reason = "runtime-fallback";
+    uint32 requiredRevision = 0;
+    uint32 installedRevision = 0;
+    bool fallbackAllowed = true;
+};
+
+static HandshakeDataFeatureDecision EvaluateRevisionedDataFeature(
+    uint32 installedRevision, uint32 requiredRevision, bool fallbackAllowed)
+{
+    HandshakeDataFeatureDecision decision;
+    decision.requiredRevision = requiredRevision;
+    decision.installedRevision = installedRevision;
+    decision.fallbackAllowed = fallbackAllowed;
+
+    if (requiredRevision != 0 && installedRevision == requiredRevision)
+    {
+        decision.state = "OK_NATIVE_DBC";
+        decision.reason = "revision-match";
+        return decision;
+    }
+
+    if (fallbackAllowed)
+    {
+        decision.state = "OK_RUNTIME_CACHE";
+        decision.reason = installedRevision != 0
+            ? "runtime-fallback-revision-mismatch"
+            : "runtime-fallback-no-client-revision";
+        return decision;
+    }
+
+    if (installedRevision != 0)
+    {
+        decision.state = "DISABLED_STALE_CLIENT_DATA";
+        decision.reason = "revision-mismatch";
+        return decision;
+    }
+
+    decision.state = "DISABLED_UNSUPPORTED_CLIENT";
+    decision.reason = "client-revision-missing";
+    return decision;
+}
+
+static HandshakeDataFeatureDecision ForceRuntimeDataFeature(
+    uint32 installedRevision, uint32 requiredRevision, char const* reason)
+{
+    HandshakeDataFeatureDecision decision;
+    decision.state = "OK_RUNTIME_CACHE";
+    decision.reason = reason;
+    decision.requiredRevision = requiredRevision;
+    decision.installedRevision = installedRevision;
+    decision.fallbackAllowed = true;
+    return decision;
+}
+
+static std::string EncodeHandshakeAckMetadataJson(
+    DCAddon::ClientHandshakeMetadata const& metadata)
+{
+    HandshakeDataFeatureDecision categoriesDecision =
+        EvaluateRevisionedDataFeature(
+            metadata.dataRevisions.collectionCategories,
+            DCCollection::GetCollectionCategoriesRevisionCached(), false);
+
+    HandshakeDataFeatureDecision sourcesDecision =
+        EvaluateRevisionedDataFeature(
+            metadata.dataRevisions.collectionSources,
+            DCCollection::GetCollectionSourcesRevisionCached(), true);
+
+    HandshakeDataFeatureDecision shopDecision =
+        EvaluateRevisionedDataFeature(
+            metadata.dataRevisions.collectionShop,
+            DCCollection::GetCollectionShopRevisionCached(), true);
+
+    uint32 setsRequiredRevision =
+        DCCollection::GetCollectionSetsRevisionCached();
+    bool virtualSetsEnabled = sConfigMgr->GetOption<bool>(
+        "DCCollection.Transmog.VirtualSets.Enabled", true);
+    HandshakeDataFeatureDecision setsDecision = virtualSetsEnabled
+        ? ForceRuntimeDataFeature(
+            metadata.dataRevisions.collectionSets,
+            setsRequiredRevision,
+            "runtime-fallback-virtual-sets-enabled")
+        : EvaluateRevisionedDataFeature(
+            metadata.dataRevisions.collectionSets,
+            setsRequiredRevision, true);
+
+    HandshakeDataFeatureDecision transmogDecision =
+        EvaluateRevisionedDataFeature(
+            metadata.dataRevisions.collectionTransmog,
+            DCCollection::GetTransmogDefinitionsSyncVersionCached(), true);
+
+    DCAddon::JsonValue featureStates;
+    featureStates.SetObject();
+
+    auto addFeatureState = [&featureStates](char const* key,
+        HandshakeDataFeatureDecision const& decision)
+    {
+        DCAddon::JsonValue featureEntry;
+        featureEntry.SetObject();
+        featureEntry.Set("state", decision.state);
+        featureEntry.Set("requiredRevision",
+            static_cast<double>(decision.requiredRevision));
+        if (decision.installedRevision != 0)
+        {
+            featureEntry.Set("installedRevision",
+                static_cast<double>(decision.installedRevision));
+        }
+        featureEntry.Set("fallbackAllowed", decision.fallbackAllowed);
+        featureEntry.Set("reason", decision.reason);
+        featureStates.Set(key, std::move(featureEntry));
+    };
+
+    addFeatureState("collectionCategories", categoriesDecision);
+    addFeatureState("collectionSources", sourcesDecision);
+    addFeatureState("collectionShop", shopDecision);
+    addFeatureState("collectionSets", setsDecision);
+    addFeatureState("collectionTransmog", transmogDecision);
+
+    DCAddon::JsonValue root;
+    root.SetObject();
+    root.Set("v", 1.0);
+    root.Set("dataFeatureStates", std::move(featureStates));
+    return root.Encode();
 }
 
 static DCAddon::ClientHandshakeMetadata ParseHandshakeMetadataJson(
@@ -1431,7 +1569,8 @@ static void CleanupExpiredRequests(Player* player)
                 DCAddon::DELIMITER + "RID:" + reqIt->second.requestId;
 
             LogProtocolErrorEvent(player, payload, "timeout", "Addon request timed out");
-            UpdateProtocolStats(player, reqIt->second.module, true, true, false);
+            UpdateProtocolStats(player, reqIt->second.module,
+                STATS_TRANSPORT_ADDON, true, true, false);
             reqIt = pendingMap.erase(reqIt);
         }
         else
@@ -1495,7 +1634,8 @@ namespace DCAddon
         uint32 responseTimeMs = getMSTimeDiff(reqIt->second.startTimeMs, nowMs);
         if (responseTimeMs == 0)
             responseTimeMs = 1;
-        UpdateProtocolStats(player, reqIt->second.module, false, false, false, responseTimeMs);
+        UpdateProtocolStats(player, reqIt->second.module,
+            STATS_TRANSPORT_ADDON, false, false, false, responseTimeMs);
         pendingMap.erase(reqIt);
 
         if (pendingMap.empty())
@@ -1661,6 +1801,152 @@ static std::string DetectRequestType(const std::string& payload)
     return "STANDARD";
 }
 
+struct ProtocolLogContext
+{
+    uint32 guid = 0;
+    uint32 accountId = 0;
+    std::string characterName;
+};
+
+static ProtocolLogContext BuildProtocolLogContext(Player* player)
+{
+    ProtocolLogContext context;
+    if (!player || !player->GetSession())
+        return context;
+
+    context.guid = player->GetGUID().GetCounter();
+    context.accountId = player->GetSession()->GetAccountId();
+    context.characterName = player->GetName();
+    return context;
+}
+
+static ProtocolLogContext BuildProtocolLogContext(WorldSession* session)
+{
+    ProtocolLogContext context;
+    if (!session)
+        return context;
+
+    context.accountId = session->GetAccountId();
+    if (Player* player = session->GetPlayer())
+    {
+        context.guid = player->GetGUID().GetCounter();
+        context.characterName = player->GetName();
+    }
+
+    return context;
+}
+
+static std::string SanitizeModuleCode(std::string moduleCode)
+{
+    moduleCode.erase(std::remove_if(moduleCode.begin(), moduleCode.end(),
+        [](char c) { return !isalnum(c) && c != '_'; }),
+        moduleCode.end());
+
+    if (moduleCode.empty())
+        moduleCode = "UNKN";
+
+    if (moduleCode.length() > 16)
+        moduleCode = moduleCode.substr(0, 16);
+
+    return moduleCode;
+}
+
+static std::string FormatNativePayloadPreview(uint16 nativeOpcode,
+    std::string const& payloadPreview)
+{
+    std::ostringstream stream;
+    stream << "native=0x" << std::uppercase << std::hex
+        << std::setw(4) << std::setfill('0') << nativeOpcode;
+    if (!payloadPreview.empty())
+        stream << '|' << payloadPreview;
+
+    std::string preview = stream.str();
+    if (preview.length() > 255)
+        preview.resize(255);
+    return preview;
+}
+
+static uint8 GetLoggedOpcode(uint8 logicalOpcode, uint16 nativeOpcode)
+{
+    return logicalOpcode != 0
+        ? logicalOpcode
+        : static_cast<uint8>(nativeOpcode & 0xFF);
+}
+
+static char const* ToDirectionLabel(DCAddon::ProtocolLogDirection direction)
+{
+    return direction == DCAddon::ProtocolLogDirection::ServerToClient
+        ? "S2C"
+        : "C2S";
+}
+
+static void InsertProtocolErrorRow(ProtocolLogContext const& context,
+    char const* direction, std::string const& requestType,
+    std::string const& moduleCode, uint8 opcode,
+    std::string const& eventType, std::string const& message,
+    std::string const& payloadPreview)
+{
+    if (context.accountId == 0 && context.guid == 0
+        && context.characterName.empty())
+        return;
+
+    std::string safeEventType = eventType;
+    safeEventType.erase(std::remove_if(safeEventType.begin(),
+        safeEventType.end(), [](char c)
+        {
+            return !isalnum(c) && c != '_' && c != '-';
+        }), safeEventType.end());
+    if (safeEventType.length() > 32)
+        safeEventType = safeEventType.substr(0, 32);
+
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_addon_protocol_errors "
+        "(guid, account_id, character_name, direction, request_type, "
+        "module, opcode, event_type, message, payload_preview) "
+        "VALUES ({}, {}, '{}', '{}', '{}', '{}', {}, '{}', '{}', '{}')",
+        context.guid,
+        context.accountId,
+        EscapeSQLString(context.characterName),
+        EscapeSQLString(direction ? direction : "C2S"),
+        EscapeSQLString(requestType),
+        EscapeSQLString(moduleCode),
+        opcode,
+        EscapeSQLString(safeEventType),
+        EscapeSQLString(message),
+        EscapeSQLString(payloadPreview));
+}
+
+static void InsertProtocolLogRow(ProtocolLogContext const& context,
+    char const* direction, std::string const& requestType,
+    std::string const& moduleCode, uint8 opcode, size_t dataSize,
+    std::string const& payloadPreview, std::string const& status,
+    std::string const& errorMessage, uint32 processingTimeMs)
+{
+    if (context.accountId == 0 && context.guid == 0
+        && context.characterName.empty())
+        return;
+
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_addon_protocol_log "
+        "(guid, account_id, character_name, direction, request_type, "
+        "module, opcode, data_size, data_preview, status, error_message, "
+        "processing_time_ms) "
+        "VALUES ({}, {}, '{}', '{}', '{}', '{}', {}, {}, '{}', '{}', '{}', "
+        "NULLIF({}, 0))",
+        context.guid,
+        context.accountId,
+        EscapeSQLString(context.characterName),
+        EscapeSQLString(direction ? direction : "C2S"),
+        EscapeSQLString(requestType),
+        EscapeSQLString(moduleCode),
+        opcode,
+        dataSize,
+        EscapeSQLString(payloadPreview),
+        EscapeSQLString(status),
+        EscapeSQLString(errorMessage),
+        processingTimeMs);
+}
+
 static std::string EscapeSQLString(std::string s)
 {
     std::string escaped;
@@ -1703,6 +1989,16 @@ static std::string EscapeSQLString(std::string s)
     return escaped;
 }
 
+static std::string SanitizeStatsTransport(std::string transport)
+{
+    if (transport == STATS_TRANSPORT_ADDON
+        || transport == STATS_TRANSPORT_NATIVE
+        || transport == STATS_TRANSPORT_LEGACY_MIXED)
+        return transport;
+
+    return STATS_TRANSPORT_ADDON;
+}
+
 // Buffered Stats System to reduce DB IO
 struct StatsEntry
 {
@@ -1717,9 +2013,13 @@ struct StatsEntry
     bool dirty = false;
 };
 
-// Map: Guid -> Module -> StatsEntry
-static std::unordered_map<uint32, std::unordered_map<std::string, StatsEntry>> s_StatsBuffer;
+using StatsByTransport = std::unordered_map<std::string, StatsEntry>;
+using StatsByModule = std::unordered_map<std::string, StatsByTransport>;
+
+// Map: Guid -> Module -> Transport -> StatsEntry
+static std::unordered_map<uint32, StatsByModule> s_StatsBuffer;
 static std::mutex s_StatsMutex;
+static constexpr uint32 STATS_FLUSH_INTERVAL_MS = 30 * IN_MILLISECONDS;
 
 static void FlushStats(uint32 guid = 0)
 {
@@ -1740,38 +2040,46 @@ static void FlushStats(uint32 guid = 0)
             continue;
         }
 
-        for (auto& [module, stats] : it->second)
+        for (auto& [module, statsByTransport] : it->second)
         {
-            if (!stats.dirty) continue;
+            for (auto& [transport, stats] : statsByTransport)
+            {
+                if (!stats.dirty)
+                    continue;
 
-            // To avoid SQL injection risks on Module, sanitize it strictly or use parameters.
-            // Since we can't define new PreparedStatements in core enum dynamically, we will simulate it safely.
+                // To avoid SQL injection risks on Module/transport, sanitize
+                // them strictly or use parameters. Since we can't define new
+                // PreparedStatements in core enum dynamically, we will simulate
+                // it safely.
 
-            trans->Append("INSERT INTO dc_addon_protocol_stats "
-                "(guid, module, total_requests, total_responses, total_timeouts, total_errors, avg_response_time_ms, max_response_time_ms, first_request, last_request) "
-                "VALUES ({}, '{}', {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}), FROM_UNIXTIME({})) "
-                "ON DUPLICATE KEY UPDATE "
-                "total_requests = total_requests + {}, "
-                "total_responses = total_responses + {}, "
-                "total_timeouts = total_timeouts + {}, "
-                "total_errors = total_errors + {}, "
-                "avg_response_time_ms = (avg_response_time_ms * total_responses + {}) / GREATEST(1, total_responses + {}), "
-                "max_response_time_ms = GREATEST(max_response_time_ms, {}), "
-                "first_request = COALESCE(first_request, FROM_UNIXTIME({})), "
-                "last_request = FROM_UNIXTIME({})",
-                currentGuid, module,
-                stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors,
-                (stats.totalResponses > 0 ? stats.sumResponseTime / stats.totalResponses : 0),
-                stats.maxResponseTime, stats.firstRequest, stats.lastRequest,
-                // Update part
-                stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors,
-                stats.sumResponseTime, stats.totalResponses,
-                stats.firstRequest,
-                stats.maxResponseTime,
-                stats.lastRequest
-            );
+                trans->Append("INSERT INTO dc_addon_protocol_stats "
+                    "(guid, module, transport, total_requests, total_responses, total_timeouts, total_errors, avg_response_time_ms, max_response_time_ms, first_request, last_request) "
+                    "VALUES ({}, '{}', '{}', {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({}), FROM_UNIXTIME({})) "
+                    "ON DUPLICATE KEY UPDATE "
+                    "total_requests = total_requests + {}, "
+                    "total_responses = total_responses + {}, "
+                    "total_timeouts = total_timeouts + {}, "
+                    "total_errors = total_errors + {}, "
+                    "avg_response_time_ms = (avg_response_time_ms * total_responses + {}) / GREATEST(1, total_responses + {}), "
+                    "max_response_time_ms = GREATEST(max_response_time_ms, {}), "
+                    "first_request = COALESCE(first_request, FROM_UNIXTIME({})), "
+                    "last_request = FROM_UNIXTIME({})",
+                    currentGuid, module, transport,
+                    stats.totalRequests, stats.totalResponses,
+                    stats.totalTimeouts, stats.totalErrors,
+                    (stats.totalResponses > 0 ? stats.sumResponseTime / stats.totalResponses : 0),
+                    stats.maxResponseTime, stats.firstRequest,
+                    stats.lastRequest,
+                    stats.totalRequests, stats.totalResponses,
+                    stats.totalTimeouts, stats.totalErrors,
+                    stats.sumResponseTime, stats.totalResponses,
+                    stats.maxResponseTime,
+                    stats.firstRequest,
+                    stats.lastRequest
+                );
 
-            stats = StatsEntry(); // Reset delta stats
+                stats = StatsEntry(); // Reset delta stats
+            }
         }
 
         // If flushing specific player, remove them from memory
@@ -1781,7 +2089,7 @@ static void FlushStats(uint32 guid = 0)
 }
 
 // Update player statistics in buffer
-static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs)
+static void UpdateProtocolStats(Player* player, const std::string& moduleCode, const std::string& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs)
 {
     if (!s_AddonConfig.EnableProtocolLogging || !player) return;
 
@@ -1790,9 +2098,11 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
     safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(),
         [](char c) { return !isalnum(c) && c != '_'; }), safeModule.end());
     if (safeModule.length() > 16) safeModule = safeModule.substr(0, 16);
+    std::string safeTransport = SanitizeStatsTransport(transport);
 
     std::lock_guard<std::mutex> lock(s_StatsMutex);
-    auto& stats = s_StatsBuffer[player->GetGUID().GetCounter()][safeModule];
+    auto& stats =
+        s_StatsBuffer[player->GetGUID().GetCounter()][safeModule][safeTransport];
 
     time_t now = time(nullptr);
 
@@ -1823,77 +2133,35 @@ static void LogProtocolErrorEvent(Player* player, const std::string& payload, co
     if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
         return;
 
-    std::string moduleCode = ExtractModuleCode(payload);
+    std::string moduleCode = SanitizeModuleCode(ExtractModuleCode(payload));
     uint8 opcode = ExtractOpcode(payload);
     std::string requestType = DetectRequestType(payload);
     std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
 
-    moduleCode.erase(std::remove_if(moduleCode.begin(), moduleCode.end(), [](char c) { return !isalnum(c) && c != '_'; }), moduleCode.end());
-    if (moduleCode.length() > 16) moduleCode = moduleCode.substr(0, 16);
-
-    std::string safeEventType = eventType;
-    safeEventType.erase(std::remove_if(safeEventType.begin(), safeEventType.end(), [](char c) { return !isalnum(c) && c != '_' && c != '-'; }), safeEventType.end());
-    if (safeEventType.length() > 32) safeEventType = safeEventType.substr(0, 32);
-
-    uint32 guidCounter = player ? player->GetGUID().GetCounter() : 0;
-    uint32 accountId = (player && player->GetSession()) ? player->GetSession()->GetAccountId() : 0;
-    std::string name = player ? player->GetName() : std::string();
-
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_addon_protocol_errors "
-        "(guid, account_id, character_name, direction, request_type, module, opcode, event_type, message, payload_preview) "
-        "VALUES ({}, {}, '{}', 'C2S', '{}', '{}', {}, '{}', '{}', '{}')",
-        guidCounter,
-        accountId,
-        EscapeSQLString(name),
-        requestType,
-        moduleCode,
-        opcode,
-        EscapeSQLString(safeEventType),
-        EscapeSQLString(message),
-        EscapeSQLString(preview)
-    );
+    InsertProtocolErrorRow(BuildProtocolLogContext(player), "C2S",
+        requestType, moduleCode, opcode, eventType, message, preview);
 }
 
 static void LogC2SMessage(Player* player, const std::string& payload, bool handled, const std::string& errorMsg = "")
 {
     if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession()) return;
 
-    std::string moduleCode = ExtractModuleCode(payload);
+    std::string moduleCode = SanitizeModuleCode(ExtractModuleCode(payload));
     uint8 opcode = ExtractOpcode(payload);
     std::string requestType = DetectRequestType(payload);
     std::string status = handled ? "completed" : (errorMsg.empty() ? "pending" : "error");
     std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
 
-    // Sanitize inputs for raw query safety (as we can't add PreparedStatements)
-    // For module: alphanumeric only
-    moduleCode.erase(std::remove_if(moduleCode.begin(), moduleCode.end(), [](char c) { return !isalnum(c) && c != '_'; }), moduleCode.end());
-    if (moduleCode.length() > 16) moduleCode = moduleCode.substr(0, 16);
-
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_addon_protocol_log "
-        "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status, error_message) "
-        "VALUES ({}, {}, '{}', 'C2S', '{}', '{}', {}, {}, '{}', '{}', '{}')",
-        player->GetGUID().GetCounter(),
-        player->GetSession()->GetAccountId(),
-        EscapeSQLString(player->GetName()),
-        EscapeSQLString(requestType),
-        moduleCode,
-        opcode,
-        payload.length(),
-        EscapeSQLString(preview),
-        EscapeSQLString(status),
-        EscapeSQLString(errorMsg)
-    );
+    InsertProtocolLogRow(BuildProtocolLogContext(player), "C2S",
+        requestType, moduleCode, opcode, payload.length(), preview, status,
+        errorMsg, 0);
 }
 
 static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs)
 {
     if (!player || !player->GetSession()) return;
 
-    std::string safeModule = module;
-    safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(), [](char c) { return !isalnum(c) && c != '_'; }), safeModule.end());
-    if (safeModule.length() > 16) safeModule = safeModule.substr(0, 16);
+    std::string safeModule = SanitizeModuleCode(module);
 
     std::string preview = payloadPreview.length() > 255 ? payloadPreview.substr(0, 255) : payloadPreview;
     std::string requestType = DetectRequestType(preview);
@@ -1901,23 +2169,137 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
     if (processingTimeMs == 0)
         processingTimeMs = 1;
 
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_addon_protocol_log "
-        "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status, processing_time_ms) "
-        "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed', {})",
-        player->GetGUID().GetCounter(),
-        player->GetSession()->GetAccountId(),
-        EscapeSQLString(player->GetName()),
-        EscapeSQLString(requestType),
-        safeModule,
-        opcode,
-        dataSize,
-        EscapeSQLString(preview),
-        processingTimeMs
-    );
+    InsertProtocolLogRow(BuildProtocolLogContext(player), "S2C",
+        requestType, safeModule, opcode, dataSize, preview, "completed", "",
+        processingTimeMs);
 
     if (updateStats)
-        UpdateProtocolStats(player, safeModule, false, false, false, processingTimeMs); // isResponse=true implicit
+        UpdateProtocolStats(player, safeModule, STATS_TRANSPORT_ADDON,
+            false, false, false, processingTimeMs); // isResponse=true implicit
+}
+
+namespace DCAddon
+{
+    void LogNativeC2SMessage(Player* player, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, bool handled,
+        const std::string& errorMsg)
+    {
+        if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
+            return;
+
+        std::string safeModule = SanitizeModuleCode(module);
+        std::string status = handled
+            ? "completed"
+            : (errorMsg.empty() ? "pending" : "error");
+        InsertProtocolLogRow(BuildProtocolLogContext(player), "C2S",
+            REQUEST_TYPE_NATIVE, safeModule,
+            GetLoggedOpcode(logicalOpcode, nativeOpcode), dataSize,
+            FormatNativePayloadPreview(nativeOpcode, payloadPreview), status,
+            errorMsg, 0);
+        UpdateProtocolStats(player, safeModule, STATS_TRANSPORT_NATIVE,
+            true, false, !handled);
+    }
+
+    void LogNativeS2CMessage(Player* player, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, bool updateStats,
+        uint32 processingTimeMs)
+    {
+        if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
+            return;
+
+        std::string safeModule = SanitizeModuleCode(module);
+        if (processingTimeMs == 0)
+            processingTimeMs = 1;
+
+        InsertProtocolLogRow(BuildProtocolLogContext(player), "S2C",
+            REQUEST_TYPE_NATIVE, safeModule,
+            GetLoggedOpcode(logicalOpcode, nativeOpcode), dataSize,
+            FormatNativePayloadPreview(nativeOpcode, payloadPreview),
+            "completed", "", processingTimeMs);
+
+        if (updateStats)
+            UpdateProtocolStats(player, safeModule, STATS_TRANSPORT_NATIVE,
+                false, false, false,
+                processingTimeMs);
+    }
+
+    void LogNativeS2CMessage(WorldSession* session,
+        const std::string& module, uint8 logicalOpcode, uint16 nativeOpcode,
+        size_t dataSize, const std::string& payloadPreview,
+        uint32 processingTimeMs)
+    {
+        if (!s_AddonConfig.EnableProtocolLogging || !session)
+            return;
+
+        std::string safeModule = SanitizeModuleCode(module);
+        if (processingTimeMs == 0)
+            processingTimeMs = 1;
+
+        InsertProtocolLogRow(BuildProtocolLogContext(session), "S2C",
+            REQUEST_TYPE_NATIVE, safeModule,
+            GetLoggedOpcode(logicalOpcode, nativeOpcode), dataSize,
+            FormatNativePayloadPreview(nativeOpcode, payloadPreview),
+            "completed", "", processingTimeMs);
+
+        if (Player* player = session->GetPlayer())
+            UpdateProtocolStats(player, safeModule, STATS_TRANSPORT_NATIVE,
+                false, false, false, processingTimeMs);
+    }
+
+    void LogNativeProtocolError(Player* player,
+        ProtocolLogDirection direction, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode,
+        const std::string& eventType, const std::string& message,
+        const std::string& payloadPreview)
+    {
+        if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
+            return;
+
+        InsertProtocolErrorRow(BuildProtocolLogContext(player),
+            ToDirectionLabel(direction), REQUEST_TYPE_NATIVE,
+            SanitizeModuleCode(module),
+            GetLoggedOpcode(logicalOpcode, nativeOpcode), eventType, message,
+            FormatNativePayloadPreview(nativeOpcode, payloadPreview));
+    }
+
+    void LogNativeProtocolError(WorldSession* session,
+        ProtocolLogDirection direction, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode,
+        const std::string& eventType, const std::string& message,
+        const std::string& payloadPreview)
+    {
+        if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
+            return;
+
+        InsertProtocolErrorRow(BuildProtocolLogContext(session),
+            ToDirectionLabel(direction), REQUEST_TYPE_NATIVE,
+            SanitizeModuleCode(module),
+            GetLoggedOpcode(logicalOpcode, nativeOpcode), eventType, message,
+            FormatNativePayloadPreview(nativeOpcode, payloadPreview));
+    }
+
+    void AuditNativeC2SRequest(Player* player, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, bool handled,
+        const std::string& errorMsg, const std::string& eventType,
+        const std::string& eventMessage)
+    {
+        std::string issueMessage = !eventMessage.empty()
+            ? eventMessage
+            : errorMsg;
+        if (!eventType.empty() && !issueMessage.empty())
+        {
+            LogNativeProtocolError(player,
+                ProtocolLogDirection::ClientToServer, module,
+                logicalOpcode, nativeOpcode, eventType, issueMessage,
+                payloadPreview);
+        }
+
+        LogNativeC2SMessage(player, module, logicalOpcode, nativeOpcode,
+            dataSize, payloadPreview, handled, errorMsg);
+    }
 }
 
 // ============================================================================
@@ -2035,6 +2417,9 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
 
     // Negotiate capabilities (intersection of client and server)
     uint32 negotiatedCaps = clientVersion.capabilities & serverVersion.capabilities;
+    std::string handshakeAckMetadata = compatible
+        ? EncodeHandshakeAckMetadataJson(metadata)
+        : std::string();
 
     // Send acknowledgment with server version and negotiated capabilities
     DCAddon::Message ackMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_HANDSHAKE_ACK);
@@ -2042,8 +2427,10 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
         ackMsg.SetRequestId(msg.GetRequestId());
     ackMsg.Add(DCAddon::ProtocolVersion::BuildVersionString(serverVersion))
         .Add(compatible)
-        .Add(negotiatedCaps)  // Negotiated capability flags
-        .Send(player);
+        .Add(negotiatedCaps);  // Negotiated capability flags
+    if (!handshakeAckMetadata.empty())
+        ackMsg.Add(handshakeAckMetadata);
+    ackMsg.Send(player);
 
     // Store client addon caps/version per account
     StoreClientCaps(player, clientVersionStr, clientVersion.capabilities,
@@ -2478,7 +2865,8 @@ public:
                 EscapeSQLString(player->GetName())
             );
 
-            UpdateProtocolStats(player, "CHUNK", true, true, false);
+            UpdateProtocolStats(player, "CHUNK", STATS_TRANSPORT_ADDON,
+                true, true, false);
         }
 
         {
@@ -2683,7 +3071,8 @@ public:
             if (s_AddonConfig.EnableProtocolLogging)
             {
                 LogProtocolErrorEvent(player, payload, "payload_too_large", "Payload exceeds configured size limit");
-                UpdateProtocolStats(player, "CORE", true, false, true);
+                UpdateProtocolStats(player, "CORE", STATS_TRANSPORT_ADDON,
+                    true, false, true);
             }
 
             if (player && player->GetSession())
@@ -2742,7 +3131,8 @@ public:
             if (s_AddonConfig.EnableProtocolLogging)
             {
                 LogProtocolErrorEvent(player, payload, "bad_format", "Malformed addon message");
-                UpdateProtocolStats(player, moduleStr, true, false, true);
+                UpdateProtocolStats(player, moduleStr, STATS_TRANSPORT_ADDON,
+                    true, false, true);
                 LogC2SMessage(player, payload, false, "Malformed addon message");
             }
 
@@ -2850,7 +3240,9 @@ public:
                 errorMsg = "No handler for module/opcode";
 
             LogC2SMessage(player, payload, handled, errorMsg);
-            UpdateProtocolStats(player, moduleStr, true, false, (handlerException || !handled));  // request-side errors are tracked
+            UpdateProtocolStats(player, moduleStr, STATS_TRANSPORT_ADDON,
+                true, false, (handlerException || !handled));
+                // request-side errors are tracked
 
             if (!handled && !handlerException && moduleEnabled && !hadRegisteredHandler)
                 LogProtocolErrorEvent(player, payload, "unhandled", errorMsg);
@@ -2874,6 +3266,16 @@ class DCAddonWorldScript : public WorldScript
 {
 public:
     DCAddonWorldScript() : WorldScript("DCAddonWorldScript") {}
+
+    void OnUpdate(uint32 diff) override
+    {
+        _statsFlushTimer += diff;
+        if (_statsFlushTimer < STATS_FLUSH_INTERVAL_MS)
+            return;
+
+        _statsFlushTimer = 0;
+        FlushStats();
+    }
 
     void OnShutdown() override
     {
@@ -2923,6 +3325,9 @@ public:
     {
         LoadAddonConfig();
     }
+
+private:
+    uint32 _statsFlushTimer = 0;
 };
 
 // ============================================================================

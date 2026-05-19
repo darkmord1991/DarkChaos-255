@@ -45,7 +45,7 @@ void OutdoorPvPHL::ClearPlayerScores()
     _playerScores.clear();
 }
 
-uint32 OutdoorPvPHL::GetPlayerHKDelta(Player* player)
+uint32 OutdoorPvPHL::GetPlayerHKDelta(Player* player) const
 {
     if (!player)
         return 0u;
@@ -59,6 +59,19 @@ uint32 OutdoorPvPHL::GetPlayerHKDelta(Player* player)
     }
     uint32 base = it->second;
     return (current > base) ? (current - base) : 0u;
+}
+
+uint32 OutdoorPvPHL::GetNpcKillCount(TeamId teamId) const
+{
+    switch (teamId)
+    {
+        case TEAM_ALLIANCE:
+            return _allianceNpcKills;
+        case TEAM_HORDE:
+            return _hordeNpcKills;
+        default:
+            return 0u;
+    }
 }
 
 // Resource adjustments are configurable via hinterlandbg.conf
@@ -382,6 +395,11 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             // Award random honor when a configured NPC type is killed
             if (isBoss || isNormal)
             {
+                if (player->GetTeamId() == TEAM_ALLIANCE)
+                    ++_allianceNpcKills;
+                else if (player->GetTeamId() == TEAM_HORDE)
+                    ++_hordeNpcKills;
+
                 Randomizer(player);
                 // Record resources captured for leaderboards
                 if (resourcesGained > 0)

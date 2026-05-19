@@ -1183,6 +1183,39 @@ namespace DCAddon
     void LogS2CMessage(Player* player, const std::string& module, uint8 opcode,
         size_t dataSize, bool updateStats, const std::string& payloadPreview,
         uint32 processingTimeMs);
+    enum class ProtocolLogDirection : uint8
+    {
+        ClientToServer = 0,
+        ServerToClient = 1,
+    };
+    void LogNativeC2SMessage(Player* player, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, bool handled = true,
+        const std::string& errorMsg = "");
+    void LogNativeS2CMessage(Player* player, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, bool updateStats,
+        uint32 processingTimeMs);
+    void LogNativeS2CMessage(WorldSession* session,
+        const std::string& module, uint8 logicalOpcode, uint16 nativeOpcode,
+        size_t dataSize, const std::string& payloadPreview,
+        uint32 processingTimeMs);
+    void LogNativeProtocolError(Player* player,
+        ProtocolLogDirection direction, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode,
+        const std::string& eventType, const std::string& message,
+        const std::string& payloadPreview = "");
+    void LogNativeProtocolError(WorldSession* session,
+        ProtocolLogDirection direction, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode,
+        const std::string& eventType, const std::string& message,
+        const std::string& payloadPreview = "");
+    void AuditNativeC2SRequest(Player* player, const std::string& module,
+        uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, bool handled = true,
+        const std::string& errorMsg = "",
+        const std::string& eventType = "",
+        const std::string& eventMessage = "");
     void SetSessionCapabilityState(Player* player,
         const std::string& clientVersionStr, uint32 clientCaps,
         uint32 negotiatedCaps, bool versionCompatible,

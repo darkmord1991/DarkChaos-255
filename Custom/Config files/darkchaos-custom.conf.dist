@@ -270,7 +270,7 @@ DC.AddonProtocol.Core.Enable = 1
 #        Description: Enable debug logging for all addon protocol messages
 #        Default:     0 (Disabled)
 #
-DC.AddonProtocol.Debug.Enable = 0
+DC.AddonProtocol.Debug.Enable = 1
 
 #
 #    DC.Addon.CapabilityDebug.Enable
@@ -282,7 +282,7 @@ DC.AddonProtocol.Debug.Enable = 0
 #                     .dccaps errors for row-level transition/error browsing.
 #        Default:     0 (Disabled)
 #
-DC.Addon.CapabilityDebug.Enable = 0
+DC.Addon.CapabilityDebug.Enable = 1
 
 #
 #    DC.AddonProtocol.Logging.Enable
@@ -1333,6 +1333,16 @@ DCCollection.Accountwide.Enable = 1
 DCCollection.TitleDebug.Enable = 0
 
 #
+#    DCCollection.StaticDataRevision.CacheTtlSeconds
+#        Description: TTL (seconds) for cached collection static-data revision
+#                     hashes used to decide whether local CDBC/static data is
+#                     still current.
+#                     Set to 0 to disable caching entirely.
+#        Default:     600 (10 minutes)
+#
+DCCollection.StaticDataRevision.CacheTtlSeconds = 600
+
+#
 #    DCCollection.Definitions.CacheTtlSeconds
 #        Description: TTL (seconds) for the server-side curated-definitions
 #                     cache used by SMSG_DEFINITIONS responses (mounts, pets,
@@ -2312,18 +2322,18 @@ HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810000,600008
 # -----------------------------------------------------------------------------
 
 # Alliance Base
-HinterlandBG.Base.Alliance.Map = 0
-HinterlandBG.Base.Alliance.X = 62.083
-HinterlandBG.Base.Alliance.Y = -4714.99
-HinterlandBG.Base.Alliance.Z = 11.7937
-HinterlandBG.Base.Alliance.O = 2.50765
+HinterlandBG.Base.Alliance.Map = 1411
+HinterlandBG.Base.Alliance.X = 197.165
+HinterlandBG.Base.Alliance.Y = -4808.544
+HinterlandBG.Base.Alliance.Z = 7.848
+HinterlandBG.Base.Alliance.O = 3.046
 
 # Horde Base
-HinterlandBG.Base.Horde.Map = 0
+HinterlandBG.Base.Horde.Map = 1411
 HinterlandBG.Base.Horde.X = -628.484
-HinterlandBG.Base.Horde.Y = -4684.51
-HinterlandBG.Base.Horde.Z = 5.14442
-HinterlandBG.Base.Horde.O = 1.12528
+HinterlandBG.Base.Horde.Y = -4684.510
+HinterlandBG.Base.Horde.Z = 5.144
+HinterlandBG.Base.Horde.O = 1.125
 
 # -----------------------------------------------------------------------------
 # Rewards

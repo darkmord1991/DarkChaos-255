@@ -259,7 +259,8 @@
             // Current competitive season for HLBG (from config)
             uint32 GetSeason() const { return _season; }
             // Per-player session metrics (computed since match start)
-            uint32 GetPlayerHKDelta(Player* player);
+            uint32 GetPlayerHKDelta(Player* player) const;
+            uint32 GetNpcKillCount(TeamId teamId) const;
             // Affix/weather inspection helpers for UI/commands
             bool IsAffixEnabled() const { return _affixEnabled; }
             bool IsAffixWeatherEnabled() const { return _affixWeatherEnabled; }
@@ -609,6 +610,8 @@ public:
     uint32 _allianceScore;
     uint32 _hordeScore;
     uint32 _matchTimeRemaining; // ms
+    uint32 _allianceNpcKills;
+    uint32 _hordeNpcKills;
 
     // Group management: track battleground raid groups per faction
     std::vector<ObjectGuid> _teamRaidGroups[2];
@@ -618,7 +621,7 @@ public:
     // std::map is used for portability without relying on a custom hasher for ObjectGuid.
     std::map<ObjectGuid, uint32> _playerScores;
     // Baseline of lifetime honorable kills at first sighting during a match (to compute per-match HKs)
-    std::map<ObjectGuid, uint32> _playerHKBaseline;
+    mutable std::map<ObjectGuid, uint32> _playerHKBaseline;
     // Efficient optimization: track players locally by zone hooks to avoid Map iteration
     std::unordered_set<ObjectGuid> _playersInHinterlands;
     };

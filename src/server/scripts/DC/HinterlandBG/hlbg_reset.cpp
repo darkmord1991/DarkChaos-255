@@ -133,6 +133,8 @@ void OutdoorPvPHL::HandleReset()
     // Clear per-player scoreboard for new match
     _playerScores.clear();
     _playerHKBaseline.clear();
+    _allianceNpcKills = 0;
+    _hordeNpcKills = 0;
     LOG_INFO("misc", "[OutdoorPvPHL]: Reset Hinterland BG");
     _winnerRecorded = false; // allow new winner recording for next match
     // If configured, pick a random affix for the new battle immediately

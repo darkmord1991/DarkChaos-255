@@ -128,6 +128,10 @@ namespace
             encoded.size() + 1);
         data << encoded;
         spectator->GetSession()->SendPacket(&data);
+        std::string preview = "bytes=" + std::to_string(encoded.size());
+        DCAddon::LogNativeS2CMessage(spectator, DCAddon::Module::SPECTATOR,
+            0, BridgeOpcode::SMSG_LIVE_SNAPSHOT, data.size(), preview, true,
+            0);
     }
 
     void SendAddonLiveSnapshot(Player* spectator,
@@ -153,17 +157,20 @@ namespace
         SendAddonLiveSnapshot(spectator, payload);
     }
 
-    void HandleNativeLiveSnapshotRequest(Player* player)
+    bool HandleNativeLiveSnapshotRequest(Player* player)
     {
         if (!player || !ResolveLiveTransport(player).UsesNative())
-            return;
+            return false;
 
         if (SpectatorState* state = MythicSpectatorManager::Get()
             .GetSpectatorState(player->GetGUID()))
         {
             MythicSpectatorManager::Get().SendRunSnapshot(player,
                 state->targetInstanceId);
+            return true;
         }
+
+        return false;
     }
 }
 
@@ -1865,7 +1872,16 @@ private:
         if (!player || !player->IsInWorld())
             return false;
 
-        HandleNativeLiveSnapshotRequest(player);
+        bool handled = HandleNativeLiveSnapshotRequest(player);
+        DCAddon::AuditNativeC2SRequest(player,
+            DCAddon::Module::SPECTATOR, 0,
+            BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT, packet.size(),
+            "request", handled,
+            handled ? std::string()
+                : "Native spectator live snapshot unavailable",
+            handled ? std::string() : "native_transport_denied",
+            handled ? std::string()
+                : "Native spectator live snapshot request rejected");
         return false;
     }
 };

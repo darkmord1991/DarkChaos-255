@@ -62,6 +62,11 @@ namespace MythicPlus
                 payload.size() + 1);
             data << payload;
             player->GetSession()->SendPacket(&data);
+            std::string preview = "bytes=" + std::to_string(payload.size());
+            DCAddon::LogNativeS2CMessage(player, Module::MYTHIC_PLUS,
+                Opcode::MPlus::SMSG_TIMER_UPDATE,
+                BridgeOpcode::SMSG_HUD_SNAPSHOT, data.size(), preview, true,
+                0);
         }
 
         void SendAddonHudSnapshot(Player* player,
@@ -1801,6 +1806,7 @@ private:
             return false;
 
         std::string reason;
+        bool parseOk = true;
         if (packet.size() > 0)
         {
             WorldPacket nativePacket(packet);
@@ -1812,11 +1818,20 @@ private:
             }
             catch (ByteBufferException const&)
             {
+                parseOk = false;
                 reason.clear();
             }
         }
 
+        std::string preview = "reason=" + reason;
         DCAddon::MythicPlus::HandleNativeHudRequest(player, reason);
+        DCAddon::AuditNativeC2SRequest(player,
+            DCAddon::Module::MYTHIC_PLUS,
+            DCAddon::Opcode::MPlus::CMSG_REQUEST_HUD,
+            DCAddon::MythicPlus::BridgeOpcode::CMSG_REQUEST_HUD_SNAPSHOT,
+            packet.size(), preview, true, "",
+            parseOk ? "" : "native_bad_format",
+            parseOk ? "" : "Malformed native Mythic+ HUD request");
         return false;
     }
 };

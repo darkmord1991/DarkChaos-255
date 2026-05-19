@@ -21,7 +21,10 @@ namespace DCAddon
         void SendStatus(Player* player, HLBGStatus status, uint32 mapId, uint32 timeRemaining);
 
         void SendResources(Player* player, uint32 allianceRes, uint32 hordeRes,
-                           uint32 allianceBases, uint32 hordeBases);
+                   uint32 allianceBases, uint32 hordeBases,
+                   uint32 alliancePlayers, uint32 hordePlayers,
+                   uint32 alliancePlayerKills, uint32 hordePlayerKills,
+                   uint32 allianceNpcKills, uint32 hordeNpcKills);
 
         void SendQueueUpdate(Player* player, uint8 queueStatus, uint32 position, uint32 estimatedTime,
                              uint32 totalQueued, uint32 allianceQueued, uint32 hordeQueued,

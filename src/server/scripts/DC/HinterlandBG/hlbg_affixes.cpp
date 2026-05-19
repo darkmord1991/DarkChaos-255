@@ -16,6 +16,75 @@
 
 using namespace HinterlandBGConstants;
 
+namespace
+{
+    struct HLBGHudMetrics
+    {
+        uint32 alliancePlayers = 0;
+        uint32 hordePlayers = 0;
+        uint32 alliancePlayerKills = 0;
+        uint32 hordePlayerKills = 0;
+        uint32 allianceNpcKills = 0;
+        uint32 hordeNpcKills = 0;
+    };
+
+    HLBGHudMetrics CollectHudMetrics(OutdoorPvPHL const* hl)
+    {
+        HLBGHudMetrics metrics;
+        if (!hl)
+            return metrics;
+
+        hl->ForEachPlayerInZone([&](Player* zonePlayer)
+        {
+            if (!zonePlayer)
+                return;
+
+            if (zonePlayer->GetTeamId() == TEAM_ALLIANCE)
+            {
+                ++metrics.alliancePlayers;
+                metrics.alliancePlayerKills += hl->GetPlayerHKDelta(zonePlayer);
+            }
+            else if (zonePlayer->GetTeamId() == TEAM_HORDE)
+            {
+                ++metrics.hordePlayers;
+                metrics.hordePlayerKills += hl->GetPlayerHKDelta(zonePlayer);
+            }
+        });
+
+        metrics.allianceNpcKills = hl->GetNpcKillCount(TEAM_ALLIANCE);
+        metrics.hordeNpcKills = hl->GetNpcKillCount(TEAM_HORDE);
+        return metrics;
+    }
+
+    void SendStatusSnapshotToPlayer(OutdoorPvPHL const* hl, Player* player,
+        HLBGHudMetrics const& metrics)
+    {
+        if (!hl || !player)
+            return;
+
+        DCAddon::HLBG::HLBGStatus status = DCAddon::HLBG::STATUS_NONE;
+        if (hl->GetBGState() == OutdoorPvPHL::BG_STATE_WARMUP)
+            status = DCAddon::HLBG::STATUS_PREP;
+        else if (hl->GetBGState() == OutdoorPvPHL::BG_STATE_IN_PROGRESS)
+            status = DCAddon::HLBG::STATUS_ACTIVE;
+        else if (hl->GetBGState() == OutdoorPvPHL::BG_STATE_FINISHED)
+            status = DCAddon::HLBG::STATUS_ENDED;
+
+        DCAddon::HLBG::SendStatus(player, status, player->GetMapId(),
+            hl->GetTimeRemainingSeconds());
+        DCAddon::HLBG::SendResources(player,
+            hl->GetResources(TEAM_ALLIANCE),
+            hl->GetResources(TEAM_HORDE),
+            0, 0,
+            metrics.alliancePlayers,
+            metrics.hordePlayers,
+            metrics.alliancePlayerKills,
+            metrics.hordePlayerKills,
+            metrics.allianceNpcKills,
+            metrics.hordeNpcKills);
+    }
+}
+
 // Return a short code for affix to show via worldstate or announcements
 static const char* HL_AffixName(OutdoorPvPHL::AffixType a)
 {
@@ -92,42 +161,16 @@ void OutdoorPvPHL::SendAffixAddonToZone() const
 // Redirect legacy method: use new DCAddon::HLBG messages for status/resources
 void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player, [[maybe_unused]] uint32 apc, [[maybe_unused]] uint32 hpc) const
 {
-    if (!player)
-        return;
-
-    // Determine status
-    DCAddon::HLBG::HLBGStatus status = DCAddon::HLBG::STATUS_NONE;
-    if (GetBGState() == BG_STATE_WARMUP)
-        status = DCAddon::HLBG::STATUS_PREP;
-    else if (GetBGState() == BG_STATE_IN_PROGRESS)
-        status = DCAddon::HLBG::STATUS_ACTIVE;
-    else if (GetBGState() == BG_STATE_FINISHED)
-        status = DCAddon::HLBG::STATUS_ENDED;
-
-    // Map ID and Time Remaining
-    uint32 mapId = player->GetMapId();
-    uint32 timeRemaining = GetTimeRemainingSeconds();
-
-    // Send Status Packet
-    DCAddon::HLBG::SendStatus(player, status, mapId, timeRemaining);
-
-    // Send Resources Packet
-    DCAddon::HLBG::SendResources(player, _ally_gathered, _horde_gathered, 0, 0);
-
-    // Note: apc/hpc (player counts) are not currently sent in the new compact packets.
-    // If needed, we can add a new SMSG_PLAYER_COUNTS or extend Resources.
-    // For now, we omit them as they were mostly for debug/overlay.
+    SendStatusSnapshotToPlayer(this, player, CollectHudMetrics(this));
 }
 
 void OutdoorPvPHL::SendStatusAddonToZone() const
 {
-    // Calculation of APC/HPC is preserved if we restore sending them later,
-    // or we can simplify this loop.
-    uint32 apc = 0;
-    uint32 hpc = 0;
-
-    // Just reuse the per-player logic
-    ForEachPlayerInZone([&](Player* p){ SendStatusAddonToPlayer(p, apc, hpc); });
+    HLBGHudMetrics metrics = CollectHudMetrics(this);
+    ForEachPlayerInZone([&](Player* p)
+    {
+        SendStatusSnapshotToPlayer(this, p, metrics);
+    });
 }
 
 // Compute effective spells/weather, preferring per-affix overrides

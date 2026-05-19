@@ -68,6 +68,10 @@ namespace DCCollection
     std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached();
     uint32 GetTransmogDefinitionsSyncVersionCached();
     uint32 GetCollectedAppearancesSyncVersion(uint32 accountId);
+    uint32 GetCollectionCategoriesRevisionCached();
+    uint32 GetCollectionSourcesRevisionCached();
+    uint32 GetCollectionShopRevisionCached();
+    uint32 GetCollectionSetsRevisionCached();
     std::map<uint32, std::vector<TransmogAppearanceVariant>> const& GetTransmogAppearanceIndexCached();
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId);
     bool IsAppearanceCompatible(uint8 slot, ItemTemplate const* proto, TransmogAppearanceVariant const& variant);

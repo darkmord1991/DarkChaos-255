@@ -59,6 +59,9 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 
 namespace DCCollection
 {
+    uint32 FindCompanionSpellIdForItem(uint32 itemId);
+    uint32 ResolveCompanionSummonSpellFromSpell(uint32 spellId);
+
     namespace
     {
         constexpr std::size_t kCollectionTypeSlotCount =
@@ -182,6 +185,969 @@ namespace DCCollection
             out += ",\"total\":";
             AppendUnsignedJsonNumber(out, total);
             out.push_back('}');
+        }
+
+        inline uint32 MixLocalRevision(uint32 hash, int64 value)
+        {
+            int64 mixed =
+                ((static_cast<int64>(hash) * 131) + value + 17) %
+                2147483647LL;
+            if (mixed <= 0)
+                mixed += 2147483646LL;
+            return static_cast<uint32>(mixed);
+        }
+
+        inline uint32 MixLocalRevisionString(uint32 hash,
+            std::string const& value)
+        {
+            for (unsigned char ch : value)
+                hash = MixLocalRevision(hash, ch);
+            return hash;
+        }
+
+        struct StaticDataRevisionCache
+        {
+            uint32 revision = 0;
+            uint32 builtAtMs = 0;
+            std::mutex mutex;
+        };
+
+        static uint32 GetStaticDataRevisionCacheTtlMs()
+        {
+            uint32 seconds = sConfigMgr->GetOption<uint32>(
+                "DCCollection.StaticDataRevision.CacheTtlSeconds", 600);
+            if (seconds < 30)
+                seconds = 30;
+            if (seconds > 86400)
+                seconds = 86400;
+            return seconds * 1000u;
+        }
+
+        template <typename Builder>
+        uint32 GetCachedStaticDataRevision(StaticDataRevisionCache& cache,
+            Builder&& builder)
+        {
+            std::lock_guard<std::mutex> lock(cache.mutex);
+
+            uint32 nowMs = getMSTime();
+            uint32 ttlMs = GetStaticDataRevisionCacheTtlMs();
+            if (cache.revision != 0 && (nowMs - cache.builtAtMs) < ttlMs)
+                return cache.revision;
+
+            cache.revision = builder();
+            cache.builtAtMs = nowMs;
+            return cache.revision;
+        }
+
+        static StaticDataRevisionCache& GetCategoriesRevisionCache()
+        {
+            static StaticDataRevisionCache cache;
+            return cache;
+        }
+
+        static StaticDataRevisionCache& GetSourcesRevisionCache()
+        {
+            static StaticDataRevisionCache cache;
+            return cache;
+        }
+
+        static StaticDataRevisionCache& GetShopRevisionCache()
+        {
+            static StaticDataRevisionCache cache;
+            return cache;
+        }
+
+        static StaticDataRevisionCache& GetSetsRevisionCache()
+        {
+            static StaticDataRevisionCache cache;
+            return cache;
+        }
+
+        static std::string ToLowerAscii(std::string value)
+        {
+            std::transform(value.begin(), value.end(), value.begin(),
+                [](unsigned char ch)
+                {
+                    return static_cast<char>(std::tolower(ch));
+                });
+            return value;
+        }
+
+        static bool StartsWith(std::string const& text,
+            char const* prefix)
+        {
+            std::size_t prefixLen = std::strlen(prefix);
+            return text.size() >= prefixLen &&
+                text.compare(0, prefixLen, prefix) == 0;
+        }
+
+        static bool IsDigitsOnly(std::string const& text)
+        {
+            if (text.empty())
+                return false;
+
+            for (unsigned char ch : text)
+                if (ch < '0' || ch > '9')
+                    return false;
+
+            return true;
+        }
+
+        static std::string NormalizeIconPath(std::string value)
+        {
+            if (value.empty())
+                return value;
+
+            std::replace(value.begin(), value.end(), '/', '\\');
+            if (value.find('\\') != std::string::npos ||
+                IsDigitsOnly(value))
+                return value;
+
+            return std::string("Interface\\Icons\\") + value;
+        }
+
+        static std::string JoinWithDetails(std::string const& base,
+            std::vector<std::string> const& details)
+        {
+            std::vector<std::string> filtered;
+            filtered.reserve(details.size());
+
+            for (std::string const& detail : details)
+                if (!detail.empty())
+                    filtered.push_back(detail);
+
+            if (filtered.empty())
+                return base;
+
+            std::ostringstream stream;
+            if (!base.empty())
+                stream << base << " (";
+
+            for (std::size_t index = 0; index < filtered.size(); ++index)
+            {
+                if (index > 0)
+                    stream << ", ";
+                stream << filtered[index];
+            }
+
+            if (!base.empty())
+                stream << ')';
+
+            return stream.str();
+        }
+
+        static std::string FirstJsonText(DCAddon::JsonValue const& json,
+            std::initializer_list<char const*> keys)
+        {
+            for (char const* key : keys)
+            {
+                DCAddon::JsonValue const& value = json[key];
+                if (value.IsString())
+                    return value.AsString();
+                if (value.IsNumber())
+                    return std::to_string(value.AsUInt32());
+            }
+
+            return "";
+        }
+
+        static uint32 FirstJsonUInt(DCAddon::JsonValue const& json,
+            std::initializer_list<char const*> keys)
+        {
+            for (char const* key : keys)
+            {
+                DCAddon::JsonValue const& value = json[key];
+                if (value.IsNumber())
+                    return value.AsUInt32();
+                if (value.IsString())
+                {
+                    std::string const text = value.AsString();
+                    if (!text.empty() && IsDigitsOnly(text))
+                        return static_cast<uint32>(std::stoul(text));
+                }
+            }
+
+            return 0;
+        }
+
+        struct RevisionSourceFields
+        {
+            std::string sourceType;
+            std::string sourceName;
+            std::string sourceText;
+            uint32 itemId = 0;
+            uint32 creatureId = 0;
+        };
+
+        static RevisionSourceFields ParseRevisionSourceFields(
+            std::string const& rawSource)
+        {
+            RevisionSourceFields fields;
+            if (rawSource.empty())
+                return fields;
+
+            if (rawSource.front() != '{')
+            {
+                fields.sourceText = rawSource;
+                return fields;
+            }
+
+            DCAddon::JsonValue parsed = DCAddon::JsonParser::Parse(rawSource);
+            if (!parsed.IsObject())
+            {
+                fields.sourceText = rawSource;
+                return fields;
+            }
+
+            fields.itemId = FirstJsonUInt(parsed, { "itemId", "item_id" });
+            fields.creatureId = FirstJsonUInt(parsed,
+                { "creatureEntry", "creature_entry" });
+
+            std::string sourceType = ToLowerAscii(
+                FirstJsonText(parsed, { "type", "Type" }));
+
+            if (sourceType == "vendor")
+            {
+                std::string base = FirstJsonText(parsed, { "npc", "vendor" });
+                std::string cost = FirstJsonText(parsed, { "cost" });
+                std::vector<std::string> details = {
+                    FirstJsonText(parsed, { "zone" }),
+                    FirstJsonText(parsed, { "rep" }),
+                    FirstJsonText(parsed, { "repLevel", "level" }),
+                    cost.empty() ? std::string() : std::string("Cost: ") + cost,
+                };
+
+                fields.sourceType = "vendor";
+                fields.sourceName = JoinWithDetails(base, details);
+                return fields;
+            }
+
+            if (sourceType == "drop")
+            {
+                std::string base = FirstJsonText(parsed,
+                    { "boss", "mob", "source" });
+                std::vector<std::string> details = {
+                    FirstJsonText(parsed, { "instance" }),
+                    FirstJsonText(parsed, { "zone" }),
+                    FirstJsonText(parsed, { "mode" }),
+                };
+
+                fields.sourceType = "drop";
+                fields.sourceName = JoinWithDetails(base, details);
+                return fields;
+            }
+
+            if (sourceType == "achievement")
+            {
+                fields.sourceType = "achievement";
+                fields.sourceName = FirstJsonText(parsed, { "achievement" });
+                return fields;
+            }
+
+            if (sourceType == "profession")
+            {
+                std::string profession =
+                    FirstJsonText(parsed, { "profession" });
+                uint32 skill = FirstJsonUInt(parsed, { "skill" });
+
+                fields.sourceType = "profession";
+                fields.sourceName = JoinWithDetails(profession,
+                    { skill > 0 ? std::to_string(skill) : std::string() });
+                return fields;
+            }
+
+            if (sourceType == "reputation")
+            {
+                std::string faction =
+                    FirstJsonText(parsed, { "faction", "rep" });
+                fields.sourceType = "reputation";
+                fields.sourceName = JoinWithDetails(faction,
+                    { FirstJsonText(parsed, { "repLevel", "level" }) });
+                return fields;
+            }
+
+            if (sourceType == "unknown")
+            {
+                fields.sourceType = "unknown";
+                return fields;
+            }
+
+            if (sourceType == "quest")
+            {
+                fields.sourceType = "quest";
+                fields.sourceName = FirstJsonText(parsed,
+                    { "quest", "questline" });
+                if (!fields.sourceName.empty())
+                    return fields;
+            }
+
+            fields.sourceText = rawSource;
+            return fields;
+        }
+
+        static std::array<uint32, 28> const& GetDisabledLocalPetEntryIds()
+        {
+            static constexpr std::array<uint32, 28> entries = {
+                13342u, 13343u, 22200u, 28326u, 33817u, 34495u, 35227u,
+                37460u, 38234u, 38299u, 38612u, 40355u, 44820u, 44823u,
+                44824u, 44825u, 44826u, 44827u, 44828u, 44829u, 46890u,
+                46891u, 46894u, 49659u, 49660u, 49664u, 49911u, 50151u,
+            };
+            return entries;
+        }
+
+        static std::unordered_map<uint32, std::array<uint32, 3>> const&
+            GetCuratedPetPreviewOverrides()
+        {
+            static const std::unordered_map<uint32, std::array<uint32, 3>>
+                overrides = {
+                    { 4055u, { 61855u, 16189u, 32841u } },
+                    { 7544u, { 15067u, 6294u, 9662u } },
+                    { 10673u, { 15048u, 9656u, 8909u } },
+                    { 15186u, { 26010u, 15671u, 15710u } },
+                    { 18963u, { 23428u, 14661u, 14633u } },
+                    { 18965u, { 23432u, 14660u, 14632u } },
+                    { 18966u, { 23431u, 14658u, 14630u } },
+                    { 18967u, { 23430u, 14659u, 14631u } },
+                    { 19462u, { 23811u, 14938u, 14878u } },
+                    { 33199u, { 43461u, 28397u, 32939u } },
+                    { 34364u, { 44369u, 26452u, 29726u } },
+                    { 34724u, { 71840u, 31073u, 38374u } },
+                    { 36871u, { 61472u, 14273u, 32643u } },
+                };
+            return overrides;
+        }
+
+        static void ApplyCuratedPetPreviewOverride(uint32 key, uint32& spellId,
+            uint32& displayId, uint32& creatureId)
+        {
+            auto const& overrides = GetCuratedPetPreviewOverrides();
+            auto const it = overrides.find(key);
+            if (it == overrides.end())
+                return;
+
+            if (spellId == 0)
+                spellId = it->second[0];
+            if (displayId == 0)
+                displayId = it->second[1];
+            if (creatureId == 0)
+                creatureId = it->second[2];
+        }
+
+        static void MixSourceRevisionRow(uint32& hash, uint32 collectionType,
+            uint32 entryId, uint32 rarity, uint32 itemId, uint32 spellId,
+            uint32 displayId, uint32 creatureId, std::string const& name,
+            std::string const& icon,
+            RevisionSourceFields const& sourceFields)
+        {
+            hash = MixLocalRevision(hash, collectionType);
+            hash = MixLocalRevision(hash, entryId);
+            hash = MixLocalRevision(hash, rarity);
+            hash = MixLocalRevision(hash, itemId);
+            hash = MixLocalRevision(hash, spellId);
+            hash = MixLocalRevision(hash, displayId);
+            hash = MixLocalRevision(hash, creatureId);
+            hash = MixLocalRevisionString(hash, name);
+            hash = MixLocalRevisionString(hash, icon);
+            hash = MixLocalRevisionString(hash, sourceFields.sourceType);
+            hash = MixLocalRevisionString(hash, sourceFields.sourceName);
+            hash = MixLocalRevisionString(hash, sourceFields.sourceText);
+        }
+
+        static uint32 BuildCollectionCategoriesRevision()
+        {
+            struct CategoryRow
+            {
+                int32 id;
+                int32 collectionType;
+                int32 parentId;
+                int32 sortOrder;
+                int32 flags;
+                char const* key;
+                char const* name;
+                char const* icon;
+            };
+
+            static constexpr std::array<CategoryRow, 7> rows = {{
+                { 1, 0, -1, 10, 0, "bonus", "Bonuses",
+                    "Interface\\Icons\\INV_Misc_Coin_02" },
+                { 2, 1, -1, 20, 0, "mount", "Mounts",
+                    "Interface\\Icons\\Ability_Mount_RidingHorse" },
+                { 3, 2, -1, 30, 0, "pet", "Pets",
+                    "Interface\\Icons\\INV_Box_PetCarrier_01" },
+                { 4, 4, -1, 40, 0, "heirloom", "Heirlooms",
+                    "Interface\\Icons\\INV_Chest_Chain_17" },
+                { 5, 5, -1, 50, 0, "title", "Titles",
+                    "Interface\\Icons\\INV_Scroll_11" },
+                { 6, 6, -1, 60, 0, "transmog", "Appearances",
+                    "Interface\\Icons\\INV_Chest_Cloth_17" },
+                { 7, 7, -1, 70, 0, "itemset", "Item Sets",
+                    "Interface\\Icons\\INV_Chest_Chain_17" },
+            }};
+
+            uint32 hash = 5381;
+            for (CategoryRow const& row : rows)
+            {
+                hash = MixLocalRevision(hash, row.id);
+                hash = MixLocalRevision(hash, row.collectionType);
+                hash = MixLocalRevision(hash, row.parentId);
+                hash = MixLocalRevision(hash, row.sortOrder);
+                hash = MixLocalRevision(hash, row.flags);
+                hash = MixLocalRevisionString(hash, row.key);
+                hash = MixLocalRevisionString(hash, row.name);
+                hash = MixLocalRevisionString(hash, row.icon);
+            }
+
+            return hash;
+        }
+
+        static uint32 BuildCollectionSetsRevision()
+        {
+            uint32 hash = 5381;
+            bool any = false;
+
+            for (uint32 entryId = 0; entryId < sItemSetStore.GetNumRows(); ++entryId)
+            {
+                ItemSetEntry const* setEntry = sItemSetStore.LookupEntry(entryId);
+                if (!setEntry)
+                    continue;
+
+                std::string name = setEntry->name[0] ? setEntry->name[0] : "";
+                if (name.empty())
+                    continue;
+
+                bool hasItems = false;
+                for (uint32 index = 0; index < MAX_ITEM_SET_ITEMS; ++index)
+                {
+                    uint32 itemId = setEntry->itemId[index];
+                    if (!itemId)
+                        continue;
+
+                    if (!hasItems)
+                    {
+                        hash = MixLocalRevision(hash, entryId);
+                        hasItems = true;
+                    }
+
+                    hash = MixLocalRevision(hash, itemId);
+                }
+
+                if (!hasItems)
+                    continue;
+
+                hash = MixLocalRevisionString(hash, name);
+                hash = MixLocalRevisionString(hash, "");
+                any = true;
+            }
+
+            return any ? hash : 0;
+        }
+
+        static uint32 BuildCollectionSourcesRevision()
+        {
+            uint32 hash = 5381;
+            bool any = false;
+
+            if (WorldTableExists("dc_mount_definitions"))
+            {
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT spell_id, name, icon, rarity, source, display_id "
+                    "FROM dc_mount_definitions ORDER BY spell_id");
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 entryId = fields[0].Get<uint32>();
+                        std::string name = fields[1].Get<std::string>();
+                        std::string icon = NormalizeIconPath(
+                            fields[2].Get<std::string>());
+                        uint32 rarity = fields[3].Get<uint32>();
+                        RevisionSourceFields sourceFields =
+                            ParseRevisionSourceFields(fields[4].Get<std::string>());
+                        uint32 displayId = fields[5].Get<uint32>();
+
+                        MixSourceRevisionRow(hash, 1, entryId, rarity,
+                            sourceFields.itemId, entryId, displayId, 0, name,
+                            icon, sourceFields);
+                        any = true;
+                    } while (result->NextRow());
+                }
+            }
+
+            if (WorldTableExists("dc_pet_definitions"))
+            {
+                std::string entryCol =
+                    WorldColumnExists("dc_pet_definitions", "pet_entry")
+                        ? "pet_entry"
+                        : "";
+                if (entryCol.empty() &&
+                    WorldColumnExists("dc_pet_definitions", "item_id"))
+                    entryCol = "item_id";
+
+                std::string spellCol;
+                if (WorldColumnExists("dc_pet_definitions", "pet_spell_id"))
+                    spellCol = "pet_spell_id";
+                else if (WorldColumnExists("dc_pet_definitions", "spell_id"))
+                    spellCol = "spell_id";
+                else if (WorldColumnExists("dc_pet_definitions", "spellId"))
+                    spellCol = "spellId";
+
+                std::string displayCol;
+                if (WorldColumnExists("dc_pet_definitions", "display_id"))
+                    displayCol = "display_id";
+                else if (WorldColumnExists("dc_pet_definitions", "displayId"))
+                    displayCol = "displayId";
+
+                if (entryCol.empty())
+                {
+                    if (!spellCol.empty())
+                        entryCol = spellCol;
+                    else
+                        entryCol = "pet_entry";
+                }
+
+                bool entryIsItemId =
+                    (entryCol == "pet_entry" || entryCol == "item_id");
+                bool hasSpellCol = !spellCol.empty() && spellCol != entryCol;
+                bool hasDisplayCol = !displayCol.empty();
+
+                std::string query =
+                    "SELECT " + entryCol + ", name, icon, rarity, source";
+                if (hasSpellCol)
+                    query += ", " + spellCol;
+                if (hasDisplayCol)
+                    query += ", " + displayCol;
+                query += " FROM dc_pet_definitions ORDER BY " + entryCol;
+
+                QueryResult result = WorldDatabase.Query(query);
+                if (result)
+                {
+                    auto const& disabledEntries = GetDisabledLocalPetEntryIds();
+
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 rawEntry = fields[0].Get<uint32>();
+                        std::string name = fields[1].Get<std::string>();
+                        if (std::find(disabledEntries.begin(),
+                                disabledEntries.end(), rawEntry) !=
+                                disabledEntries.end() ||
+                            StartsWith(name, "NPC Equip "))
+                            continue;
+
+                        std::string icon = NormalizeIconPath(
+                            fields[2].Get<std::string>());
+                        uint32 rarity = fields[3].Get<uint32>();
+                        RevisionSourceFields sourceFields =
+                            ParseRevisionSourceFields(fields[4].Get<std::string>());
+
+                        uint32 spellId = 0;
+                        uint32 displayId = 0;
+                        std::size_t index = 5;
+                        if (hasSpellCol)
+                            spellId = fields[index++].Get<uint32>();
+                        if (hasDisplayCol)
+                            displayId = fields[index++].Get<uint32>();
+
+                        uint32 itemId = 0;
+                        if (entryIsItemId)
+                            itemId = rawEntry;
+                        else if (sObjectMgr->GetItemTemplate(rawEntry))
+                            itemId = rawEntry;
+
+                        if (sourceFields.itemId > 0)
+                            itemId = sourceFields.itemId;
+
+                        if (!spellId && itemId)
+                            spellId = FindCompanionSpellIdForItem(itemId);
+                        if (spellId)
+                        {
+                            if (uint32 resolved =
+                                    ResolveCompanionSummonSpellFromSpell(spellId))
+                                spellId = resolved;
+                        }
+
+                        uint32 creatureId = sourceFields.creatureId;
+                        if (!creatureId && spellId)
+                        {
+                            if (SpellInfo const* spellInfo =
+                                    sSpellMgr->GetSpellInfo(spellId))
+                            {
+                                for (uint8 effectIndex = 0;
+                                     effectIndex < MAX_SPELL_EFFECTS;
+                                     ++effectIndex)
+                                {
+                                    SpellEffectInfo const& effect =
+                                        spellInfo->Effects[effectIndex];
+                                    if (effect.Effect != SPELL_EFFECT_SUMMON &&
+                                        effect.Effect != SPELL_EFFECT_SUMMON_PET)
+                                        continue;
+
+                                    creatureId =
+                                        static_cast<uint32>(effect.MiscValue);
+                                    SummonPropertiesEntry const* properties =
+                                        sSummonPropertiesStore.LookupEntry(
+                                            effect.MiscValueB);
+                                    if (properties &&
+                                        properties->Type ==
+                                            SUMMON_TYPE_MINIPET)
+                                        break;
+                                }
+                            }
+                        }
+
+                        if (!displayId && creatureId)
+                        {
+                            if (CreatureTemplate const* creature =
+                                    sObjectMgr->GetCreatureTemplate(creatureId))
+                            {
+                                if (CreatureModel const* model =
+                                        creature->GetFirstValidModel())
+                                    displayId = model->CreatureDisplayID;
+                            }
+                        }
+
+                        ApplyCuratedPetPreviewOverride(itemId ? itemId : rawEntry,
+                            spellId, displayId, creatureId);
+                        if (itemId && itemId != rawEntry)
+                        {
+                            ApplyCuratedPetPreviewOverride(rawEntry, spellId,
+                                displayId, creatureId);
+                        }
+
+                        MixSourceRevisionRow(hash, 2, rawEntry, rarity, itemId,
+                            spellId, displayId, creatureId, name, icon,
+                            sourceFields);
+                        any = true;
+                    } while (result->NextRow());
+                }
+            }
+
+            if (WorldTableExists("dc_heirloom_definitions"))
+            {
+                bool hasRarity =
+                    WorldColumnExists("dc_heirloom_definitions", "rarity");
+                bool hasSource =
+                    WorldColumnExists("dc_heirloom_definitions", "source");
+
+                std::string query =
+                    "SELECT item_id, name, icon";
+                if (hasRarity)
+                    query += ", rarity";
+                if (hasSource)
+                    query += ", source";
+                query +=
+                    " FROM dc_heirloom_definitions ORDER BY item_id";
+
+                QueryResult result = WorldDatabase.Query(query);
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 itemId = fields[0].Get<uint32>();
+                        std::string name = fields[1].Get<std::string>();
+                        std::string icon = NormalizeIconPath(
+                            fields[2].Get<std::string>());
+
+                        std::size_t index = 3;
+                        uint32 rarity = hasRarity
+                            ? fields[index++].Get<uint32>() : 0;
+                        RevisionSourceFields sourceFields = hasSource
+                            ? ParseRevisionSourceFields(
+                                fields[index++].Get<std::string>())
+                            : RevisionSourceFields();
+
+                        uint32 displayId = 0;
+                        if (ItemTemplate const* proto =
+                                sObjectMgr->GetItemTemplate(itemId))
+                            displayId = proto->DisplayInfoID;
+
+                        MixSourceRevisionRow(hash, 4, itemId, rarity, itemId,
+                            0, displayId, 0, name, icon, sourceFields);
+                        any = true;
+                    } while (result->NextRow());
+                }
+            }
+
+            std::unordered_map<uint32, std::pair<uint32, std::string>>
+                titleMetadata;
+            if (WorldTableExists("dc_title_definitions"))
+            {
+                std::string entryCol =
+                    GetWorldEntryColumn("dc_title_definitions");
+                bool hasRarity =
+                    WorldColumnExists("dc_title_definitions", "rarity");
+                bool hasSource =
+                    WorldColumnExists("dc_title_definitions", "source");
+
+                if (!entryCol.empty())
+                {
+                    std::string query = "SELECT " + entryCol;
+                    if (hasRarity)
+                        query += ", rarity";
+                    if (hasSource)
+                        query += ", source";
+                    query +=
+                        " FROM dc_title_definitions ORDER BY " + entryCol;
+
+                    QueryResult result = WorldDatabase.Query(query);
+                    if (result)
+                    {
+                        do
+                        {
+                            Field* fields = result->Fetch();
+                            uint32 titleId = fields[0].Get<uint32>();
+                            std::size_t index = 1;
+                            uint32 rarity = hasRarity
+                                ? fields[index++].Get<uint32>() : 1;
+                            std::string source = hasSource
+                                ? fields[index++].Get<std::string>()
+                                : std::string();
+
+                            titleMetadata[titleId] =
+                                std::make_pair(rarity, source);
+                        } while (result->NextRow());
+                    }
+                }
+            }
+
+            for (uint32 titleId = 1; titleId < sCharTitlesStore.GetNumRows(); ++titleId)
+            {
+                CharTitlesEntry const* titleEntry =
+                    sCharTitlesStore.LookupEntry(titleId);
+                if (!titleEntry)
+                    continue;
+
+                std::string name = titleEntry->nameMale[0]
+                    ? titleEntry->nameMale[0]
+                    : (titleEntry->nameFemale[0]
+                        ? titleEntry->nameFemale[0] : "");
+                if (name.empty())
+                    continue;
+
+                uint32 rarity = 1;
+                RevisionSourceFields sourceFields;
+                auto const metadataIt = titleMetadata.find(titleId);
+                if (metadataIt != titleMetadata.end())
+                {
+                    rarity = metadataIt->second.first;
+                    sourceFields = ParseRevisionSourceFields(
+                        metadataIt->second.second);
+                }
+
+                MixSourceRevisionRow(hash, 5, titleId, rarity, 0, 0, 0, 0,
+                    name, "Interface\\Icons\\INV_Scroll_11", sourceFields);
+                any = true;
+            }
+
+            return any ? hash : 0;
+        }
+
+        static uint32 BuildCollectionShopRevision()
+        {
+            std::unordered_map<uint32, std::pair<std::string, std::string>>
+                mountDefs;
+            if (WorldTableExists("dc_mount_definitions"))
+            {
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT spell_id, name, icon FROM dc_mount_definitions");
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        mountDefs.emplace(fields[0].Get<uint32>(),
+                            std::make_pair(fields[1].Get<std::string>(),
+                                NormalizeIconPath(
+                                    fields[2].Get<std::string>())));
+                    } while (result->NextRow());
+                }
+            }
+
+            std::unordered_map<uint32, std::pair<std::string, std::string>>
+                petDefs;
+            if (WorldTableExists("dc_pet_definitions"))
+            {
+                std::string entryCol =
+                    WorldColumnExists("dc_pet_definitions", "pet_entry")
+                        ? "pet_entry"
+                        : "";
+                if (entryCol.empty() &&
+                    WorldColumnExists("dc_pet_definitions", "item_id"))
+                    entryCol = "item_id";
+                if (entryCol.empty())
+                    entryCol = "pet_entry";
+
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT " + entryCol + ", name, icon "
+                    "FROM dc_pet_definitions");
+                if (result)
+                {
+                    auto const& disabledEntries = GetDisabledLocalPetEntryIds();
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 entryId = fields[0].Get<uint32>();
+                        std::string name = fields[1].Get<std::string>();
+                        if (std::find(disabledEntries.begin(),
+                                disabledEntries.end(), entryId) !=
+                                disabledEntries.end() ||
+                            StartsWith(name, "NPC Equip "))
+                            continue;
+
+                        petDefs.emplace(entryId,
+                            std::make_pair(name,
+                                NormalizeIconPath(
+                                    fields[2].Get<std::string>())));
+                    } while (result->NextRow());
+                }
+            }
+
+            std::unordered_map<uint32, std::pair<std::string, std::string>>
+                heirloomDefs;
+            if (WorldTableExists("dc_heirloom_definitions"))
+            {
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT item_id, name, icon FROM dc_heirloom_definitions");
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        heirloomDefs.emplace(fields[0].Get<uint32>(),
+                            std::make_pair(fields[1].Get<std::string>(),
+                                NormalizeIconPath(
+                                    fields[2].Get<std::string>())));
+                    } while (result->NextRow());
+                }
+            }
+
+            std::unordered_map<uint32, std::pair<std::string, std::string>>
+                titleDefs;
+            for (uint32 titleId = 1; titleId < sCharTitlesStore.GetNumRows(); ++titleId)
+            {
+                CharTitlesEntry const* titleEntry =
+                    sCharTitlesStore.LookupEntry(titleId);
+                if (!titleEntry)
+                    continue;
+
+                std::string name = titleEntry->nameMale[0]
+                    ? titleEntry->nameMale[0]
+                    : (titleEntry->nameFemale[0]
+                        ? titleEntry->nameFemale[0] : "");
+                if (name.empty())
+                    continue;
+
+                titleDefs.emplace(titleId,
+                    std::make_pair(name,
+                        std::string("Interface\\Icons\\INV_Scroll_11")));
+            }
+
+            bool useCharacterShop = CharacterTableExists("dc_collection_shop") &&
+                CharacterColumnExists("dc_collection_shop", "id") &&
+                CharacterColumnExists("dc_collection_shop", "collection_type") &&
+                CharacterColumnExists("dc_collection_shop", "price_tokens") &&
+                CharacterColumnExists("dc_collection_shop", "price_emblems") &&
+                CharacterColumnExists("dc_collection_shop", "discount_percent") &&
+                CharacterColumnExists("dc_collection_shop", "featured") &&
+                CharacterColumnExists("dc_collection_shop", "enabled");
+
+            std::string shopEntryCol;
+            if (useCharacterShop)
+            {
+                if (CharacterColumnExists("dc_collection_shop", "entry_id"))
+                    shopEntryCol = "entry_id";
+                else if (CharacterColumnExists("dc_collection_shop", "entry"))
+                    shopEntryCol = "entry";
+
+                if (shopEntryCol.empty())
+                    useCharacterShop = false;
+            }
+
+            if (!useCharacterShop)
+                shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+            if (shopEntryCol.empty())
+                return 0;
+
+            std::string query =
+                "SELECT id, collection_type, " + shopEntryCol +
+                ", price_tokens, price_emblems, discount_percent, featured "
+                "FROM dc_collection_shop ORDER BY id";
+
+            QueryResult result = useCharacterShop
+                ? CharacterDatabase.Query(query)
+                : WorldDatabase.Query(query);
+            if (!result)
+                return 0;
+
+            uint32 hash = 5381;
+            bool any = false;
+
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 shopId = fields[0].Get<uint32>();
+                uint32 collectionType = fields[1].Get<uint32>();
+                uint32 entryId = fields[2].Get<uint32>();
+                uint32 priceTokens = fields[3].Get<uint32>();
+                uint32 priceEmblems = fields[4].Get<uint32>();
+                uint32 discount = fields[5].Get<uint32>();
+                bool featured = fields[6].Get<bool>();
+
+                std::string name;
+                std::string icon;
+                if (collectionType == 1)
+                {
+                    auto const it = mountDefs.find(entryId);
+                    if (it != mountDefs.end())
+                    {
+                        name = it->second.first;
+                        icon = it->second.second;
+                    }
+                }
+                else if (collectionType == 2)
+                {
+                    auto const it = petDefs.find(entryId);
+                    if (it != petDefs.end())
+                    {
+                        name = it->second.first;
+                        icon = it->second.second;
+                    }
+                }
+                else if (collectionType == 4)
+                {
+                    auto const it = heirloomDefs.find(entryId);
+                    if (it != heirloomDefs.end())
+                    {
+                        name = it->second.first;
+                        icon = it->second.second;
+                    }
+                }
+                else if (collectionType == 5)
+                {
+                    auto const it = titleDefs.find(entryId);
+                    if (it != titleDefs.end())
+                    {
+                        name = it->second.first;
+                        icon = it->second.second;
+                    }
+                }
+
+                hash = MixLocalRevision(hash, shopId);
+                hash = MixLocalRevision(hash, collectionType);
+                hash = MixLocalRevision(hash, entryId);
+                hash = MixLocalRevision(hash, priceTokens);
+                hash = MixLocalRevision(hash, priceEmblems);
+                hash = MixLocalRevision(hash, discount);
+                hash = MixLocalRevision(hash, featured ? 1 : 0);
+                hash = MixLocalRevisionString(hash, name);
+                hash = MixLocalRevisionString(hash, icon);
+                any = true;
+            } while (result->NextRow());
+
+            return any ? hash : 0;
         }
 
         std::string BuildFullCollectionDataJson(CollectionBuckets const& loaded,
@@ -2614,6 +3580,42 @@ namespace DCCollection
         entry.syncVersion = 0;
         entry.builtAtMs = 0;
         entry.defs = DCAddon::JsonValue();
+    }
+
+    uint32 GetCollectionCategoriesRevisionCached()
+    {
+        return GetCachedStaticDataRevision(GetCategoriesRevisionCache(),
+            []() -> uint32
+            {
+                return BuildCollectionCategoriesRevision();
+            });
+    }
+
+    uint32 GetCollectionSourcesRevisionCached()
+    {
+        return GetCachedStaticDataRevision(GetSourcesRevisionCache(),
+            []() -> uint32
+            {
+                return BuildCollectionSourcesRevision();
+            });
+    }
+
+    uint32 GetCollectionShopRevisionCached()
+    {
+        return GetCachedStaticDataRevision(GetShopRevisionCache(),
+            []() -> uint32
+            {
+                return BuildCollectionShopRevision();
+            });
+    }
+
+    uint32 GetCollectionSetsRevisionCached()
+    {
+        return GetCachedStaticDataRevision(GetSetsRevisionCache(),
+            []() -> uint32
+            {
+                return BuildCollectionSetsRevision();
+            });
     }
 
     // =======================================================================
