@@ -41,22 +41,12 @@ void OutdoorPvPHL::BroadcastStatusToZone()
     uint32 h = GetResources(TEAM_HORDE);
 
     // Compose strings
-    if (Map* m = GetMap())
-        m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + "|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cffffd700Hinterland BG status|r").c_str());
-    char line1[128];
-    snprintf(line1, sizeof(line1), "|TInterface\\Icons\\INV_Misc_PocketWatch_01:14|t |cffffff00Time remaining:|r |cffffffff%02u:%02u|r", (unsigned)min, (unsigned)sec);
-    if (Map* m = GetMap())
-        m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line1)).c_str());
-    char line2[160];
-    snprintf(line2, sizeof(line2), "|TInterface\\Icons\\INV_Misc_Coin_01:14|t |cffffff00Resources:|r |cff1e90ffAlliance|r=%u, |cffff2020Horde|r=%u", (unsigned)a, (unsigned)h);
-    if (Map* m = GetMap())
-        m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line2)).c_str());
+    BroadcastToZone("Hinterland BG status");
+    BroadcastToZone("Time remaining: %02u:%02u", (unsigned)min, (unsigned)sec);
+    BroadcastToZone("Resources: Alliance=%u, Horde=%u", (unsigned)a, (unsigned)h);
     if (_affixAnnounce && _affixEnabled)
     {
         const char* aff = GetAffixName(_activeAffix);
-        char line3[160];
-        snprintf(line3, sizeof(line3), "|TInterface\\Icons\\Spell_Nature_Cyclone:14|t |cffffff00Affix:|r |cff98fb98%s|r", aff);
-        if (Map* m = GetMap())
-            m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line3)).c_str());
+        BroadcastToZone("Affix: %s", aff);
     }
 }

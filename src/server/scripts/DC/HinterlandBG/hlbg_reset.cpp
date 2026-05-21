@@ -162,12 +162,7 @@ void OutdoorPvPHL::HandleReset()
         if (_affixAnnounce)
         {
             const char* aff = GetAffixName(_activeAffix);
-            if (Map* m = GetMap())
-            {
-                char line[224];
-                snprintf(line, sizeof(line), "%s|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cffffd700Battle restarted|r |cffffff00Current affix:|r |cff98fb98%s|r", GetBgChatPrefix().c_str(), aff);
-                m->SendZoneText(OutdoorPvPHLBuffZones[0], line);
-            }
+            BroadcastToZone("Battle restarted. Current affix: %s", aff);
             // Global start-of-run announcement with affix
             {
                 char gmsg[224];
@@ -195,7 +190,6 @@ void OutdoorPvPHL::HandleReset()
 // Teleport all players currently inside the Hinterlands to their faction bases.
 void OutdoorPvPHL::TeleportPlayersToStart()
 {
-    uint32 const zoneId = OutdoorPvPHLBuffZones[0];
     uint32 countA = 0, countH = 0, skippedGm = 0, candidates = 0;
 
     // Robust scan: use live sessions in the battle area instead of tracked sets.
@@ -232,17 +226,13 @@ void OutdoorPvPHL::TeleportPlayersToStart()
     LOG_INFO("outdoorpvp.hl", "[HL][ResetDebug] TeleportPlayersToStart: candidates={}, teleportedA={}, teleportedH={}, skippedGM={}, trackedSet={}, playersInZoneCounter={}",
         candidates, countA, countH, skippedGm, _playersInHinterlands.size(), _playersInZone);
 
-    char msg[224];
-    snprintf(msg, sizeof(msg), "|TInterface\\Icons\\Spell_Arcane_TeleportOrgrimmar:16|t |cff00ccffHinterland BG|r: |cffff8080Resetting|r |cffffff00sent|r |cff1e90ff%u Alliance|r |cffffff00and|r |cffff2020%u Horde|r |cffffff00to their bases.|r", (unsigned)countA, (unsigned)countH);
     uint32 now = NowSec();
-    if (Map* m = GetMap())
+    // Throttle zone-level reset text to once per second to avoid spam from concurrent resets
+    if (now - _lastZoneAnnounceEpoch >= 1)
     {
-        // Throttle zone-level reset text to once per second to avoid spam from concurrent resets
-        if (now - _lastZoneAnnounceEpoch >= 1)
-        {
-            m->SendZoneText(zoneId, msg);
-            _lastZoneAnnounceEpoch = now;
-        }
+        BroadcastToZone("Resetting. Sent %u Alliance and %u Horde to their bases.",
+            static_cast<unsigned>(countA), static_cast<unsigned>(countH));
+        _lastZoneAnnounceEpoch = now;
     }
     // Optional global heads-up for the reset start (affix is chosen during HandleReset)
     // Throttle global messages to once every few seconds to avoid duplicate broadcasts

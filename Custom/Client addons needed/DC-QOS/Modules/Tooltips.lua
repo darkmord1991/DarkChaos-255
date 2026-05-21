@@ -3496,7 +3496,7 @@ local function ResolveShapeshiftSpellId(formIndex)
         return nil
     end
 
-    local _, formName = GetShapeshiftFormInfo(idx)
+    local formTexture, formName = GetShapeshiftFormInfo(idx)
     local sid = ResolveSpellIdFromTooltipName(nil, formName)
     sid = tonumber(sid)
     if sid and sid > 0 then
@@ -3515,10 +3515,25 @@ local function ResolveShapeshiftSpellId(formIndex)
         numSlots = tonumber(numSlots) or 0
         for slot = offset + 1, offset + numSlots do
             local name = GetSpellBookItemName(slot, BOOKTYPE_SPELL)
+            local bookSid = GetSpellIdFromBookSlot(slot, BOOKTYPE_SPELL)
+            bookSid = tonumber(bookSid)
             if name and formName and name == formName then
-                local bookSid = GetSpellIdFromBookSlot(slot, BOOKTYPE_SPELL)
-                bookSid = tonumber(bookSid)
                 if bookSid and bookSid > 0 then
+                    return bookSid
+                end
+            end
+
+            if formTexture and bookSid and bookSid > 0 then
+                local bookTexture = nil
+                if type(GetSpellBookItemTexture) == "function" then
+                    bookTexture = GetSpellBookItemTexture(slot, BOOKTYPE_SPELL)
+                end
+                if (not bookTexture or bookTexture == "")
+                    and type(GetSpellTexture) == "function" then
+                    bookTexture = GetSpellTexture(bookSid)
+                end
+
+                if bookTexture and bookTexture == formTexture then
                     return bookSid
                 end
             end
@@ -4133,6 +4148,30 @@ local function SetFallbackShapeshiftTooltip(button)
         spellId = ResolveSpellIdFromTooltipName(GameTooltip)
     end
     if spellId and spellId > 0 then
+        local contextHash = BuildSpellTooltipContextHash(spellId)
+        local key = BuildSpellEnrichmentKey(spellId, contextHash)
+        local nativeRows = GetNativeClientSpellTooltipRows(GameTooltip,
+            spellId, contextHash)
+        local renderedNativeRows = nativeRows
+            and RenderNativeClientSpellTooltipRows(GameTooltip, nativeRows)
+            or false
+
+        GameTooltip._dcqosClientDescriptionShownKey = nil
+        GameTooltip._dcqosSpellEnrichmentShownKey = nil
+        GameTooltip._dcqosNativeDescriptionStrippedKey = nil
+        GameTooltip._dcqosPendingSpellIdForBottom = nil
+        GameTooltip._dcqosSpellIdShown = nil
+
+        if renderedNativeRows then
+            GameTooltip._dcqosSpellEnrichmentShownKey = key
+        else
+            local description = GetClientSpellDescription(spellId)
+            if type(description) == "string" and description ~= "" then
+                AddClientSpellDescriptionLines(GameTooltip, description)
+                GameTooltip._dcqosClientDescriptionShownKey = key
+            end
+        end
+
         TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(spellId))
         GameTooltip._dcqosResolvedSpellId = spellId
         EnhanceSpellTooltip(GameTooltip, spellId)
@@ -4224,6 +4263,31 @@ local function SafeShapeshiftButtonOnEnter(self)
                 spellId = ResolveSpellIdFromTooltipName(GameTooltip)
             end
             if spellId and spellId > 0 then
+                local contextHash = BuildSpellTooltipContextHash(spellId)
+                local key = BuildSpellEnrichmentKey(spellId, contextHash)
+                local nativeRows = GetNativeClientSpellTooltipRows(
+                    GameTooltip, spellId, contextHash)
+                local renderedNativeRows = nativeRows
+                    and RenderNativeClientSpellTooltipRows(GameTooltip,
+                        nativeRows) or false
+
+                GameTooltip._dcqosClientDescriptionShownKey = nil
+                GameTooltip._dcqosSpellEnrichmentShownKey = nil
+                GameTooltip._dcqosNativeDescriptionStrippedKey = nil
+                GameTooltip._dcqosPendingSpellIdForBottom = nil
+                GameTooltip._dcqosSpellIdShown = nil
+
+                if renderedNativeRows then
+                    GameTooltip._dcqosSpellEnrichmentShownKey = key
+                else
+                    local description = GetClientSpellDescription(spellId)
+                    if type(description) == "string" and description ~= "" then
+                        AddClientSpellDescriptionLines(GameTooltip,
+                            description)
+                        GameTooltip._dcqosClientDescriptionShownKey = key
+                    end
+                end
+
                 TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(spellId))
                 GameTooltip._dcqosResolvedSpellId = spellId
                 EnhanceSpellTooltip(GameTooltip, spellId)

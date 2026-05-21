@@ -1286,7 +1286,7 @@ public:
         s_guildHouseCostPortal = sConfigMgr->GetOption<int32>("GuildHousePortal", 500000);
         s_guildHouseCostProfession = sConfigMgr->GetOption<int32>("GuildHouseProf", 500000);
         s_guildHouseCostSpirit = sConfigMgr->GetOption<int32>("GuildHouseSpirit", 100000);
-        s_guildHouseBuyRank = sConfigMgr->GetOption<int32>("GuildHouseBuyRank", 4);
+        s_guildHouseBuyRank = sConfigMgr->GetOption<int32>("GuildHouseBuyRank", 0);
     }
 };
 

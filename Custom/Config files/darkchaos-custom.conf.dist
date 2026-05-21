@@ -1310,13 +1310,6 @@ DC.RandomEnchants.Debug = 0
 DCCollection.Enable = 1
 
 #
-#    DCCollection.Debug
-#        Description: Enable debug logging for the Collection System
-#        Default:     0 (Disabled)
-#
-DCCollection.Debug = 0
-
-#
 #    DCCollection.Accountwide.Enable
 #        Description: Master toggle for account-wide collection data paths
 #                     (shared unlock ownership across characters).
