@@ -615,6 +615,7 @@ namespace DCAddon
             constexpr uint32 CLIENT_METADATA = 0x00010000; // Client reports native build fingerprint and data revisions during handshake
             constexpr uint32 HLBG_LIVE_NATIVE = 0x00020000; // Native HLBG live snapshot bridge
             constexpr uint32 SPECTATOR_LIVE_NATIVE = 0x00040000; // Native Mythic+ spectator live snapshot bridge
+            constexpr uint32 COLLECTION_WAVE1_NATIVE = 0x00080000; // Native collection wave-1 sync bridge (handshake/full/stats/bonuses/base collections)
 
             // Default capabilities for current server version
             constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES |
@@ -626,7 +627,8 @@ namespace DCAddon
                 PING_RELAY_NATIVE |
                 CLIENT_METADATA |
                 HLBG_LIVE_NATIVE |
-                SPECTATOR_LIVE_NATIVE;
+                SPECTATOR_LIVE_NATIVE |
+                COLLECTION_WAVE1_NATIVE;
         }
 
         // Version info structure for handshake
@@ -1192,6 +1194,11 @@ namespace DCAddon
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
         const std::string& payloadPreview, bool handled = true,
         const std::string& errorMsg = "");
+    void LogNativeC2SMessageWithStatus(Player* player,
+        const std::string& module, uint8 logicalOpcode,
+        uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, const std::string& status,
+        const std::string& errorMsg = "", bool countAsError = false);
     void LogNativeS2CMessage(Player* player, const std::string& module,
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
         const std::string& payloadPreview, bool updateStats,

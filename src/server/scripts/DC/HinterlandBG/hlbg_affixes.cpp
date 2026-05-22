@@ -161,6 +161,15 @@ void OutdoorPvPHL::SendAffixAddonToZone() const
 // Redirect legacy method: use new DCAddon::HLBG messages for status/resources
 void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player, [[maybe_unused]] uint32 apc, [[maybe_unused]] uint32 hpc) const
 {
+    if (!player)
+        return;
+
+    if (IsPlayerAfkFlagged(player) || !IsPlayerInOutdoorPvPHLArea(player))
+    {
+        DCAddon::HLBG::SendStatus(player, DCAddon::HLBG::STATUS_NONE, 0, 0);
+        return;
+    }
+
     SendStatusSnapshotToPlayer(this, player, CollectHudMetrics(this));
 }
 
@@ -169,6 +178,15 @@ void OutdoorPvPHL::SendStatusAddonToZone() const
     HLBGHudMetrics metrics = CollectHudMetrics(this);
     ForEachPlayerInZone([&](Player* p)
     {
+        if (!p)
+            return;
+
+        if (IsPlayerAfkFlagged(p) || !IsPlayerInOutdoorPvPHLArea(p))
+        {
+            DCAddon::HLBG::SendStatus(p, DCAddon::HLBG::STATUS_NONE, 0, 0);
+            return;
+        }
+
         SendStatusSnapshotToPlayer(this, p, metrics);
     });
 }

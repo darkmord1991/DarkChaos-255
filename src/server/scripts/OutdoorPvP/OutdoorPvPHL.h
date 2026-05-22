@@ -292,6 +292,11 @@
             // Public wrapper to check if a player is queued (avoids exposing private helper)
             bool IsPlayerQueued(Player* player) { return IsPlayerInQueue(player); }
 
+            bool IsPlayerAfkFlagged(Player* player) const
+            {
+                return player && _afkFlagged.count(player->GetGUID().GetCounter()) > 0;
+            }
+
             // State machine interface
             BGState GetBGState() const { return _bgState; }
             bool IsInWarmup() const { return _bgState == BG_STATE_WARMUP; }

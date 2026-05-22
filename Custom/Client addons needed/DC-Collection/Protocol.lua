@@ -170,6 +170,10 @@ DC.isConnected = false
 DC.lastPing = 0
 DC.callbacks = DC.callbacks or {}
 
+local COLLECTION_WAVE1_NATIVE_CAPABILITY = 0x00080000
+local NATIVE_COLLECTION_WAVE1_POLL_INTERVAL = 0.10
+local lastNativeCollectionWave1Revision = 0
+local nativeCollectionWave1PollFrame = nil
 local COLLECTION_TRANSMOG_STATE_NATIVE_CAPABILITY = 0x00002000
 local NATIVE_TRANSMOG_STATE_POLL_INTERVAL = 0.10
 local lastNativeTransmogStateRevision = 0
@@ -223,6 +227,178 @@ local function GetCollectionCapabilitySnapshot()
     end
 
     return snapshot
+end
+
+local function HasNativeCollectionWave1Bridge()
+    return type(RequestNativeCollectionWave1) == "function"
+        and type(GetNativeCollectionWave1Snapshot) == "function"
+end
+
+local function ShouldUseNativeCollectionWave1Bridge()
+    if not HasNativeCollectionWave1Bridge() then
+        return false
+    end
+
+    local snapshot = GetCollectionCapabilitySnapshot()
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    return HasCapabilityBit(snapshot.clientCaps,
+            COLLECTION_WAVE1_NATIVE_CAPABILITY)
+        and HasCapabilityBit(snapshot.negotiatedCaps,
+            COLLECTION_WAVE1_NATIVE_CAPABILITY)
+end
+
+local function EncodeNativeCollectionWave1Payload(data)
+    local payload = data
+    if payload == nil then
+        payload = {}
+    end
+
+    local central = GetCollectionCentralProtocol()
+    if not central or type(central.EncodeJSON) ~= "function" then
+        return nil
+    end
+
+    local ok, encoded = pcall(function()
+        return central:EncodeJSON(payload)
+    end)
+    if not ok or type(encoded) ~= "string" then
+        return nil
+    end
+
+    return encoded
+end
+
+local function DecodeNativeCollectionWave1Payload(payload)
+    if type(payload) ~= "string" or payload == "" then
+        return nil
+    end
+
+    local central = GetCollectionCentralProtocol()
+    if not central or type(central.DecodeJSON) ~= "function" then
+        return nil
+    end
+
+    local ok, decoded = pcall(function()
+        return central:DecodeJSON(payload)
+    end)
+    if not ok or type(decoded) ~= "table" then
+        return nil
+    end
+
+    return decoded
+end
+
+local function DispatchNativeCollectionWave1Message(logicalOpcode, data)
+    if logicalOpcode == DC.Opcodes.SMSG_HANDSHAKE_ACK then
+        DC:HandleHandshakeAck(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_FULL_COLLECTION then
+        DC:HandleFullCollection(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_DELTA_SYNC then
+        DC:HandleDeltaSync(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_STATS then
+        DC:HandleStats(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_BONUSES then
+        DC:HandleBonuses(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_COLLECTION then
+        DC:HandleCollection(data)
+        return true
+    end
+
+    if type(DC.Debug) == "function" then
+        DC:Debug("Ignoring unsupported native collection wave1 opcode: "
+            .. tostring(logicalOpcode))
+    end
+
+    return false
+end
+
+local function ConsumeNativeCollectionWave1Snapshot()
+    if not ShouldUseNativeCollectionWave1Bridge() then
+        return false
+    end
+
+    local ok, revision, logicalOpcode, payload =
+        pcall(GetNativeCollectionWave1Snapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    logicalOpcode = tonumber(logicalOpcode) or 0
+    if revision <= 0 or revision == lastNativeCollectionWave1Revision
+        or logicalOpcode <= 0 then
+        return false
+    end
+
+    lastNativeCollectionWave1Revision = revision
+
+    local decoded = DecodeNativeCollectionWave1Payload(payload)
+    if type(decoded) ~= "table" then
+        return false
+    end
+
+    return DispatchNativeCollectionWave1Message(logicalOpcode, decoded)
+end
+
+local function EnsureNativeCollectionWave1PollFrame()
+    if nativeCollectionWave1PollFrame then
+        return
+    end
+
+    nativeCollectionWave1PollFrame = CreateFrame("Frame")
+    nativeCollectionWave1PollFrame.elapsed = 0
+    nativeCollectionWave1PollFrame:SetScript("OnUpdate", function(self,
+        elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_COLLECTION_WAVE1_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativeCollectionWave1Snapshot()
+    end)
+end
+
+local function SendCollectionWave1Request(logicalOpcode, data)
+    if ShouldUseNativeCollectionWave1Bridge() then
+        EnsureNativeCollectionWave1PollFrame()
+
+        local payload = EncodeNativeCollectionWave1Payload(data or {})
+        if type(payload) == "string" then
+            local ok, err = pcall(RequestNativeCollectionWave1,
+                logicalOpcode, payload)
+            if ok then
+                return true
+            end
+
+            if type(DC.Debug) == "function" then
+                DC:Debug("RequestNativeCollectionWave1 failed: "
+                    .. tostring(err))
+            end
+        elseif type(DC.Debug) == "function" then
+            DC:Debug("Failed to encode native collection wave1 request payload")
+        end
+    end
+
+    return DC:SendMessage(logicalOpcode, data or {})
 end
 
 local function HasNativeCollectionTransmogStateBridge()
@@ -1312,7 +1488,7 @@ function DC:RequestHandshake()
         self:StartSyncProgressStep("handshake", "handshake")
     end
 
-    local ok = self:SendMessage(self.Opcodes.CMSG_HANDSHAKE, {
+    local ok = SendCollectionWave1Request(self.Opcodes.CMSG_HANDSHAKE, {
         hash = hash,
     })
     if not ok and type(self._syncProgress) == "table" then
@@ -1323,13 +1499,14 @@ end
 
 -- Request full collection data
 function DC:RequestFullCollection()
-    return self:SendMessage(self.Opcodes.CMSG_GET_FULL_COLLECTION, {})
+    return SendCollectionWave1Request(self.Opcodes.CMSG_GET_FULL_COLLECTION,
+        {})
 end
 
 -- Request delta sync (server will compare hashes)
 function DC:RequestSyncCollection()
     local hash = self:ComputeCollectionHash()
-    return self:SendMessage(self.Opcodes.CMSG_SYNC_COLLECTION, {
+    return SendCollectionWave1Request(self.Opcodes.CMSG_SYNC_COLLECTION, {
         hash = hash,
     })
 end
@@ -1361,7 +1538,8 @@ function DC:RequestStats()
             self:StartSyncProgressStep(progressKey, progressLabel)
         end
         self:_MarkInflight(key, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_STATS, {})
+        local ok = SendCollectionWave1Request(self.Opcodes.CMSG_GET_STATS,
+            {})
         if not ok then
             self:_MarkInflight(key, nil)
             if type(self._syncProgress) == "table" then
@@ -1385,7 +1563,8 @@ function DC:RequestBonuses()
             return
         end
         self:_MarkInflight(key, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_BONUSES, {})
+        local ok = SendCollectionWave1Request(self.Opcodes.CMSG_GET_BONUSES,
+            {})
         if not ok then
             self:_MarkInflight(key, nil)
         end
@@ -1781,7 +1960,8 @@ function DC:RequestCollection(collType)
         end
         self:_MarkInflight(reqKey, true)
 
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = serverType })
+        local ok = SendCollectionWave1Request(
+            self.Opcodes.CMSG_GET_COLLECTION, { type = serverType })
         if not ok then
             self:_MarkInflight(reqKey, nil)
             if type(self._syncProgress) == "table" then
@@ -3049,6 +3229,9 @@ function DC:HandleHandshakeAck(data)
     self.isConnected = true
     self._handshakeAcked = true
 
+    if ShouldUseNativeCollectionWave1Bridge() then
+        EnsureNativeCollectionWave1PollFrame()
+    end
     if ShouldUseNativeCollectionTransmogStateBridge() then
         EnsureNativeCollectionTransmogStatePollFrame()
     end

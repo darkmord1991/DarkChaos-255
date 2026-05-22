@@ -2185,20 +2185,31 @@ namespace DCAddon
         const std::string& payloadPreview, bool handled,
         const std::string& errorMsg)
     {
+        std::string status = handled
+            ? "completed"
+            : (errorMsg.empty() ? "pending" : "error");
+        LogNativeC2SMessageWithStatus(player, module, logicalOpcode,
+            nativeOpcode, dataSize, payloadPreview, status, errorMsg,
+            !handled);
+    }
+
+    void LogNativeC2SMessageWithStatus(Player* player,
+        const std::string& module, uint8 logicalOpcode,
+        uint16 nativeOpcode, size_t dataSize,
+        const std::string& payloadPreview, const std::string& status,
+        const std::string& errorMsg, bool countAsError)
+    {
         if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
             return;
 
         std::string safeModule = SanitizeModuleCode(module);
-        std::string status = handled
-            ? "completed"
-            : (errorMsg.empty() ? "pending" : "error");
         InsertProtocolLogRow(BuildProtocolLogContext(player), "C2S",
             REQUEST_TYPE_NATIVE, safeModule,
             GetLoggedOpcode(logicalOpcode, nativeOpcode), dataSize,
             FormatNativePayloadPreview(nativeOpcode, payloadPreview), status,
             errorMsg, 0);
         UpdateProtocolStats(player, safeModule, STATS_TRANSPORT_NATIVE,
-            true, false, !handled);
+            true, false, countAsError);
     }
 
     void LogNativeS2CMessage(Player* player, const std::string& module,

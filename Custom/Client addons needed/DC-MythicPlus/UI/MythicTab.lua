@@ -84,7 +84,7 @@ local DEFAULT_DUNGEONS = {
     { id = 574, name = "Utgarde Keep", short = "UK", mapId = 574 },
     { id = 576, name = "The Nexus", short = "NEX", mapId = 576 },
     { id = 601, name = "Azjol-Nerub", short = "AN", mapId = 601 },
-    { id = 619, name = "Ahn'kahet", short = "OK", mapId = 619 },
+    { id = 619, name = "Ahn'kahet: The Old Kingdom", short = "OK", mapId = 619 },
     { id = 600, name = "Drak'Tharon Keep", short = "DTK", mapId = 600 },
     { id = 608, name = "Violet Hold", short = "VH", mapId = 608 },
     { id = 604, name = "Gundrak", short = "GD", mapId = 604 },
@@ -92,20 +92,54 @@ local DEFAULT_DUNGEONS = {
     { id = 602, name = "Halls of Lightning", short = "HOL", mapId = 602 },
     { id = 578, name = "The Oculus", short = "OCC", mapId = 578 },
     { id = 575, name = "Utgarde Pinnacle", short = "UP", mapId = 575 },
-    { id = 595, name = "Culling of Stratholme", short = "COS", mapId = 595 },
+    { id = 595, name = "The Culling of Stratholme", short = "COS", mapId = 595 },
     { id = 650, name = "Trial of the Champion", short = "TOC", mapId = 650 },
-    { id = 632, name = "Forge of Souls", short = "FOS", mapId = 632 },
+    { id = 632, name = "The Forge of Souls", short = "FOS", mapId = 632 },
     { id = 658, name = "Pit of Saron", short = "POS", mapId = 658 },
     { id = 668, name = "Halls of Reflection", short = "HOR", mapId = 668 },
 }
 
+local function CopyDungeonRecord(source)
+    return {
+        id = source.id or source.mapId or source.map_id or 0,
+        name = source.name or source.dungeon_name or "Unknown",
+        short = source.short or source.shortName or source.short_name or "",
+        timer = source.timer or source.timeLimit or source.baseTimer
+            or source.base_timer or source.timer_seconds or 1800,
+        bosses = source.bosses or source.boss_count or 0,
+        difficulty = source.difficulty or source.difficulty_rating or 5,
+        mapId = source.mapId or source.map_id or source.id or 0,
+        artKey = source.artKey,
+    }
+end
+
+local function LoadLocalDungeonFallbackList()
+    if type(namespace.GetMythicPlusDungeonList) ~= "function" then
+        return false
+    end
+
+    local rows = namespace.GetMythicPlusDungeonList()
+    if type(rows) ~= "table" or #rows <= 0 then
+        return false
+    end
+
+    for _, row in ipairs(rows) do
+        table.insert(DUNGEON_LIST, CopyDungeonRecord(row))
+    end
+
+    return true
+end
+
 -- Initialize dungeon list with defaults
 local function InitializeDungeonList()
     if dungeonListLoaded then return end
-    -- Copy defaults
-    for _, d in ipairs(DEFAULT_DUNGEONS) do
-        table.insert(DUNGEON_LIST, d)
+
+    if not LoadLocalDungeonFallbackList() then
+        for _, d in ipairs(DEFAULT_DUNGEONS) do
+            table.insert(DUNGEON_LIST, CopyDungeonRecord(d))
+        end
     end
+
     dungeonListLoaded = true
 end
 
@@ -134,14 +168,23 @@ function GF:UpdateDungeonList(dungeonData)
     
     wipe(DUNGEON_LIST)
     for _, d in ipairs(dungeonData) do
+        local merged = d
+        if type(namespace.ApplyMythicPlusDungeonDescriptor) == "function" then
+            merged = namespace.ApplyMythicPlusDungeonDescriptor(d)
+        end
+
         table.insert(DUNGEON_LIST, {
-            id = d.id or d.dungeon_id or 0,
-            name = d.name or d.dungeon_name or "Unknown",
-            short = d.short or d.short_name or "",
-            timer = d.timer or d.base_timer or 1800,
-            bosses = d.bosses or d.boss_count or 0,
-            difficulty = d.difficulty or d.difficulty_rating or 5,
-            mapId = d.mapId or d.map_id or 0,
+            id = merged.id or merged.mapId or merged.map_id
+                or merged.dungeon_id or 0,
+            name = merged.name or merged.dungeon_name or "Unknown",
+            short = merged.short or merged.shortName
+                or merged.short_name or "",
+            timer = merged.timer or merged.timeLimit or merged.baseTimer
+                or merged.base_timer or 1800,
+            bosses = merged.bosses or merged.boss_count or 0,
+            difficulty = merged.difficulty or merged.difficulty_rating or 5,
+            mapId = merged.mapId or merged.map_id or merged.id or 0,
+            artKey = merged.artKey,
         })
     end
     

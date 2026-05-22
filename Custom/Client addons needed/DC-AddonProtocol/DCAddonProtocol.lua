@@ -50,6 +50,7 @@ DCAddonProtocol = {
         CLIENT_METADATA = 0x00010000,
         HLBG_LIVE_NATIVE = 0x00020000,
         SPECTATOR_LIVE_NATIVE = 0x00040000,
+        COLLECTION_WAVE1_NATIVE = 0x00080000,
     },
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
     BASE_CAPABILITIES = 3,
@@ -536,6 +537,12 @@ function DC:GetNativeExtensionCapabilities()
             self.Capability.SPECTATOR_LIVE_NATIVE)
     end
 
+    if type(RequestNativeCollectionWave1) == "function"
+        and type(GetNativeCollectionWave1Snapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.COLLECTION_WAVE1_NATIVE)
+    end
+
     if self:GetNativeExtensionBuildFingerprint()
         or type(self:GetNativeExtensionDataRevisions()) == "table" then
         capabilities = CombineCapabilities(capabilities,
@@ -643,6 +650,10 @@ function DC:DescribeCapabilities(mask)
     if HasCapabilityBit(capabilities,
             self.Capability.SPECTATOR_LIVE_NATIVE) then
         table.insert(parts, "NativeSpectatorLive")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.COLLECTION_WAVE1_NATIVE) then
+        table.insert(parts, "NativeCollectionWave1")
     end
     if HasCapabilityBit(capabilities,
             self.Capability.CLIENT_METADATA) then

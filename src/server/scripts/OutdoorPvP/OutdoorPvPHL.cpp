@@ -810,11 +810,13 @@
                     {
                         Whisper(p, "|cffff0000AFK detected due to inactivity. You will not receive rewards.|r You'll be moved back to your base.");
                         TeleportToTeamBase(p);
+                        SendStatusAddonToPlayer(p);
                     }
                     else if (count >= 2)
                     {
                         Whisper(p, "|cffff0000Repeated AFK detected. You will be teleported to your capital and will not receive rewards.|r");
                         TeleportToCapital(p);
+                        SendStatusAddonToPlayer(p);
                     }
                 }
             }
@@ -841,6 +843,7 @@
                 {
                     Whisper(p, "|cffff0000Repeated AFK detected. You will be teleported to your capital and will not receive rewards.|r");
                     TeleportToCapital(p);
+                    SendStatusAddonToPlayer(p);
                 }
             }
             else if (!nowAfkChat && wasAfk)

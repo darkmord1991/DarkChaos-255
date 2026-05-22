@@ -43,6 +43,40 @@ local state = {
 local ICON_BASE = "Interface\\AddOns\\DC-MythicPlus\\Media\\Teleporter\\"
 local ICONS_DUNGEONS_BASE = "Interface\\AddOns\\Icons\\dungeons\\"
 
+local function iconCandidatesForDungeonArtKey(artKey)
+    if type(artKey) ~= "string" or artKey == "" then
+        return nil
+    end
+
+    if artKey == "AhnKahet" then
+        return {
+            ICON_BASE .. "AhnKahet.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.png",
+            ICON_BASE .. "AzjolNerub.blp",
+        }
+    end
+
+    if artKey == "GundrakDungeon" then
+        return {
+            ICON_BASE .. "GundrakDungeon.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.png",
+        }
+    end
+
+    if artKey == "TheNexus" then
+        return {
+            ICON_BASE .. "TheNexus.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.png",
+            ICON_BASE .. "EyeOfEternity.blp",
+        }
+    end
+
+    return { ICON_BASE .. artKey .. ".blp" }
+end
+
 local function iconCandidatesForDungeonName(name)
     if type(name) ~= "string" then
         return nil
@@ -138,6 +172,16 @@ local function iconPathForDungeonName(name)
         return nil
     end
     return { ICON_BASE .. key .. ".blp" }
+end
+
+local function iconPathForDungeonDescriptor(dungeon)
+    if type(dungeon) == "table" and type(dungeon.artKey) == "string"
+        and dungeon.artKey ~= "" then
+        return iconCandidatesForDungeonArtKey(dungeon.artKey)
+    end
+
+    local name = type(dungeon) == "table" and dungeon.name or dungeon
+    return iconPathForDungeonName(name)
 end
 
 local iconExistsCache = {}
@@ -407,7 +451,7 @@ local function rebuildGrid()
             b.mapId = d.mapId
 
             -- Use the dungeon image as the button background if available.
-            local iconPaths = iconPathForDungeonName(label)
+            local iconPaths = iconPathForDungeonDescriptor(d)
             local hasIcon = false
             if iconPaths then
                 for _, iconPath in ipairs(iconPaths) do
@@ -479,7 +523,17 @@ local function RegisterProtocolHandlers()
         if type(payload) ~= "table" then return end
 
         state.seasonId = payload.seasonId or 0
-        state.dungeons = payload.dungeons or {}
+        state.dungeons = {}
+
+        for _, dungeon in ipairs(payload.dungeons or {}) do
+            local merged = dungeon
+            if type(namespace.ApplyMythicPlusDungeonDescriptor) == "function" then
+                merged = namespace.ApplyMythicPlusDungeonDescriptor(dungeon)
+            end
+
+            table.insert(state.dungeons, merged)
+        end
+
         state.page = 1
 
         ensureFrame()

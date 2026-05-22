@@ -156,21 +156,59 @@ local function ApplyNativeHLBGLiveSnapshot(payload)
     HLBG._lastStatus.hordeResources = RES.H
     HLBG._lastStatus.matchStart = tonumber(decoded.matchStart or 0) or 0
 
+    local statusValue = decoded.status or decoded.hlbgStatus or decoded.state
+    local mapId = tonumber(decoded.mapId or decoded.map)
+    local timeRemaining = tonumber(decoded.timeRemaining or decoded.duration
+        or decoded.elapsed)
+
+    if statusValue ~= nil then
+        HLBG._lastStatus.status = tonumber(statusValue) or statusValue
+    end
+    if mapId ~= nil then
+        HLBG._lastStatus.mapId = mapId
+    end
+    if timeRemaining ~= nil then
+        RES.END = timeRemaining
+        HLBG._lastStatus.DURATION = timeRemaining
+        HLBG._lastStatus.timeRemaining = timeRemaining
+    end
+
     local alliancePlayers = tonumber(decoded.APC or decoded.alliancePlayers
         or decoded.APlayers or decoded.AllyCount)
     local hordePlayers = tonumber(decoded.HPC or decoded.hordePlayers
         or decoded.HPlayers or decoded.HordeCount)
 
     if alliancePlayers ~= nil then
+        RES.APC = alliancePlayers
         HLBG._lastStatus.APC = alliancePlayers
         HLBG._lastStatus.APlayers = alliancePlayers
         HLBG._lastStatus.AllyCount = alliancePlayers
     end
     if hordePlayers ~= nil then
+        RES.HPC = hordePlayers
         HLBG._lastStatus.HPC = hordePlayers
         HLBG._lastStatus.HPlayers = hordePlayers
         HLBG._lastStatus.HordeCount = hordePlayers
     end
+
+    HLBG._lastStatus.allianceBases = tonumber(decoded.aBases
+        or decoded.allianceBases or 0) or 0
+    HLBG._lastStatus.hordeBases = tonumber(decoded.hBases
+        or decoded.hordeBases or 0) or 0
+
+    local alliancePlayerKills = tonumber(decoded.aPlayerKills
+        or decoded.aKills or decoded.alliancePlayerKills or 0) or 0
+    local hordePlayerKills = tonumber(decoded.hPlayerKills
+        or decoded.hKills or decoded.hordePlayerKills or 0) or 0
+
+    HLBG._lastStatus.allianceKills = alliancePlayerKills
+    HLBG._lastStatus.hordeKills = hordePlayerKills
+    HLBG._lastStatus.alliancePlayerKills = alliancePlayerKills
+    HLBG._lastStatus.hordePlayerKills = hordePlayerKills
+    HLBG._lastStatus.allianceNpcKills = tonumber(decoded.aNpcKills
+        or decoded.allianceNpcKills or 0) or 0
+    HLBG._lastStatus.hordeNpcKills = tonumber(decoded.hNpcKills
+        or decoded.hordeNpcKills or 0) or 0
 
     local affixValue = tonumber(decoded.affix or decoded.affixId
         or decoded.affixCode)
@@ -188,6 +226,11 @@ local function ApplyNativeHLBGLiveSnapshot(payload)
         end
     elseif type(decoded.affixText) == 'string' and decoded.affixText ~= '' then
         HLBG._affixText = decoded.affixText
+    end
+
+    if type(HLBG.TrackStatusSignal) == 'function' then
+        pcall(HLBG.TrackStatusSignal, HLBG._lastStatus.status,
+            HLBG._lastStatus.mapId)
     end
 
     HLBG._lastStatusTime = GetTime()
@@ -263,6 +306,20 @@ end
 
 function HLBG.RequestLiveSnapshot(reason, bypassCooldown)
     return SendNativeHLBGLiveSnapshotRequest(reason, bypassCooldown)
+end
+
+local function RequestNativeHLBGLiveSnapshotForUi(reason)
+    if not IsNativeHLBGLiveViewActive() then
+        return false
+    end
+
+    if SendNativeHLBGLiveSnapshotRequest(reason, false) then
+        return true
+    end
+
+    local now = (type(GetTime) == 'function' and GetTime()) or 0
+    return now > 0 and lastNativeHLBGLiveRequestAt > 0
+        and (now - lastNativeHLBGLiveRequestAt) < 1.0
 end
 
 local function EnsureNativeHLBGLivePollFrame()
@@ -2287,15 +2344,29 @@ if DC then
     
     -- Helper functions to send requests via DC protocol
     HLBG.RequestStatus = function()
+        if RequestNativeHLBGLiveSnapshotForUi('status_request') then
+            return true
+        end
+
         if DC then
             DC:Send("HLBG", 0x01)  -- CMSG_REQUEST_STATUS
+            return true
         end
+
+        return false
     end
     
     HLBG.RequestResources = function()
+        if RequestNativeHLBGLiveSnapshotForUi('resources_request') then
+            return true
+        end
+
         if DC then
             DC:Send("HLBG", 0x02)  -- CMSG_REQUEST_RESOURCES
+            return true
         end
+
+        return false
     end
     
     HLBG.QuickQueue = function()

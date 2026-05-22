@@ -54,6 +54,13 @@ namespace
         return DCAddon::ResolveTransportPolicy(player, request);
     }
 
+    enum class NativeLiveSnapshotRequestOutcome : uint8
+    {
+        Handled,
+        TransportUnavailable,
+        OutsideActiveSession,
+    };
+
     std::string FormatTimerText(uint32 seconds)
     {
         std::ostringstream ss;
@@ -157,20 +164,21 @@ namespace
         SendAddonLiveSnapshot(spectator, payload);
     }
 
-    bool HandleNativeLiveSnapshotRequest(Player* player)
+    NativeLiveSnapshotRequestOutcome HandleNativeLiveSnapshotRequest(
+        Player* player)
     {
         if (!player || !ResolveLiveTransport(player).UsesNative())
-            return false;
+            return NativeLiveSnapshotRequestOutcome::TransportUnavailable;
 
         if (SpectatorState* state = MythicSpectatorManager::Get()
             .GetSpectatorState(player->GetGUID()))
         {
             MythicSpectatorManager::Get().SendRunSnapshot(player,
                 state->targetInstanceId);
-            return true;
+            return NativeLiveSnapshotRequestOutcome::Handled;
         }
 
-        return false;
+        return NativeLiveSnapshotRequestOutcome::OutsideActiveSession;
     }
 }
 
@@ -1872,16 +1880,34 @@ private:
         if (!player || !player->IsInWorld())
             return false;
 
-        bool handled = HandleNativeLiveSnapshotRequest(player);
-        DCAddon::AuditNativeC2SRequest(player,
-            DCAddon::Module::SPECTATOR, 0,
-            BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT, packet.size(),
-            "request", handled,
-            handled ? std::string()
-                : "Native spectator live snapshot unavailable",
-            handled ? std::string() : "native_transport_denied",
-            handled ? std::string()
-                : "Native spectator live snapshot request rejected");
+        NativeLiveSnapshotRequestOutcome outcome =
+            HandleNativeLiveSnapshotRequest(player);
+        switch (outcome)
+        {
+            case NativeLiveSnapshotRequestOutcome::Handled:
+                DCAddon::AuditNativeC2SRequest(player,
+                    DCAddon::Module::SPECTATOR, 0,
+                    BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT,
+                    packet.size(), "request", true);
+                break;
+            case NativeLiveSnapshotRequestOutcome::TransportUnavailable:
+                DCAddon::AuditNativeC2SRequest(player,
+                    DCAddon::Module::SPECTATOR, 0,
+                    BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT,
+                    packet.size(), "request", false,
+                    "Native spectator live snapshot unavailable",
+                    "native_transport_denied",
+                    "Native spectator live snapshot request rejected");
+                break;
+            case NativeLiveSnapshotRequestOutcome::OutsideActiveSession:
+                DCAddon::LogNativeC2SMessageWithStatus(player,
+                    DCAddon::Module::SPECTATOR, 0,
+                    BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT,
+                    packet.size(), "request|outside-session", "ignored",
+                    "Native spectator live snapshot requested without active spectator session",
+                    false);
+                break;
+        }
         return false;
     }
 };

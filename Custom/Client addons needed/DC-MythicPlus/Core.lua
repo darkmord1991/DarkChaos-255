@@ -189,6 +189,306 @@ DCMythicPlusHUDDB.cache.dungeonsTime = DCMythicPlusHUDDB.cache.dungeonsTime or 0
 local CACHE_TTL_AFFIXES = 86400    -- 24 hours (affixes change weekly)
 local CACHE_TTL_DUNGEONS = 604800  -- 1 week (dungeons are seasonal)
 
+local localMythicPlusStaticState = {
+    loaded = false,
+    affixesById = {},
+    dungeonsByMapId = {},
+    dungeonsByName = {},
+    dungeonList = {},
+}
+
+local function CopySimpleTable(source)
+    local result = {}
+
+    if type(source) ~= "table" then
+        return result
+    end
+
+    for key, value in pairs(source) do
+        result[key] = value
+    end
+
+    return result
+end
+
+local function NormalizeDungeonLookupKey(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+
+    local normalized = string.lower(name)
+    normalized = normalized:gsub("[^%w]+", "")
+    if normalized == "" then
+        return nil
+    end
+
+    return normalized
+end
+
+local function NormalizeLocalMythicPlusAffixRow(row)
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    local affixId = tonumber(row.id or row.affixId or row.affix_id) or 0
+    if affixId <= 0 then
+        return nil
+    end
+
+    local descriptor = {
+        id = affixId,
+        spellId = tonumber(row.spellId or row.spellID or row.spell_id or 0)
+            or 0,
+        enabled = tonumber(row.enabled or 0) or 0,
+        type = row.type,
+        token = row.token,
+        name = row.name,
+        description = row.description,
+        icon = row.icon,
+    }
+
+    if (not descriptor.icon or descriptor.icon == "")
+        and descriptor.spellId > 0 and type(GetSpellTexture) == "function" then
+        descriptor.icon = GetSpellTexture(descriptor.spellId)
+    end
+
+    return descriptor
+end
+
+local function NormalizeLocalMythicPlusDungeonRow(row, defaultSortOrder)
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    local mapId = tonumber(row.mapId or row.map_id or row.id) or 0
+    if mapId <= 0 then
+        return nil
+    end
+
+    local shortName = row.shortName or row.short or row.short_name or ""
+    local timeLimit = tonumber(
+        row.timeLimit or row.baseTimer or row.timer or row.timer_seconds or 0)
+        or 0
+
+    return {
+        id = mapId,
+        mapId = mapId,
+        name = row.name or row.dungeonName or row.dungeon_name
+            or ("Map " .. tostring(mapId)),
+        shortName = shortName,
+        short = shortName,
+        timeLimit = timeLimit,
+        baseTimer = timeLimit,
+        difficulty = tonumber(row.difficulty or row.difficulty_rating or 0)
+            or 0,
+        minLevel = tonumber(row.minLevel or row.min_level or 0) or 0,
+        enabled = tonumber(row.enabled or 0) or 0,
+        sortOrder = tonumber(row.sortOrder or defaultSortOrder or 0) or 0,
+        artKey = row.artKey,
+    }
+end
+
+local function LoadLocalMythicPlusStaticData()
+    if localMythicPlusStaticState.loaded then
+        return
+    end
+
+    wipe(localMythicPlusStaticState.affixesById)
+    wipe(localMythicPlusStaticState.dungeonsByMapId)
+    wipe(localMythicPlusStaticState.dungeonsByName)
+    wipe(localMythicPlusStaticState.dungeonList)
+
+    if type(GetDCMythicPlusAffixes) == "function" then
+        local ok, rows = pcall(GetDCMythicPlusAffixes)
+        if ok and type(rows) == "table" then
+            for _, row in ipairs(rows) do
+                local descriptor = NormalizeLocalMythicPlusAffixRow(row)
+                if descriptor then
+                    localMythicPlusStaticState.affixesById[descriptor.id] =
+                        descriptor
+                end
+            end
+        end
+    end
+
+    if type(GetDCMythicPlusDungeons) == "function" then
+        local ok, rows = pcall(GetDCMythicPlusDungeons)
+        if ok and type(rows) == "table" then
+            for index, row in ipairs(rows) do
+                local descriptor = NormalizeLocalMythicPlusDungeonRow(row,
+                    index)
+                if descriptor then
+                    localMythicPlusStaticState.dungeonsByMapId[
+                        descriptor.mapId] = descriptor
+
+                    local key = NormalizeDungeonLookupKey(descriptor.name)
+                    if key then
+                        localMythicPlusStaticState.dungeonsByName[key] =
+                            descriptor
+                    end
+
+                    table.insert(localMythicPlusStaticState.dungeonList,
+                        descriptor)
+                end
+            end
+
+            table.sort(localMythicPlusStaticState.dungeonList,
+                function(left, right)
+                    local leftOrder = tonumber(left.sortOrder) or 0
+                    local rightOrder = tonumber(right.sortOrder) or 0
+                    if leftOrder ~= rightOrder then
+                        return leftOrder < rightOrder
+                    end
+
+                    return (tonumber(left.mapId) or 0)
+                        < (tonumber(right.mapId) or 0)
+                end)
+        end
+    end
+
+    localMythicPlusStaticState.loaded = true
+end
+
+local function GetLocalMythicPlusAffixDescriptor(affixId)
+    LoadLocalMythicPlusStaticData()
+
+    local descriptor = localMythicPlusStaticState.affixesById[
+        tonumber(affixId) or 0]
+    if not descriptor then
+        return nil
+    end
+
+    return CopySimpleTable(descriptor)
+end
+
+local function GetLocalMythicPlusDungeonDescriptor(mapId, name)
+    LoadLocalMythicPlusStaticData()
+
+    local numericMapId = tonumber(mapId) or 0
+    if numericMapId > 0 then
+        local descriptor = localMythicPlusStaticState.dungeonsByMapId[
+            numericMapId]
+        if descriptor then
+            return CopySimpleTable(descriptor)
+        end
+    end
+
+    local key = NormalizeDungeonLookupKey(name)
+    if not key then
+        return nil
+    end
+
+    local descriptor = localMythicPlusStaticState.dungeonsByName[key]
+    if not descriptor then
+        return nil
+    end
+
+    return CopySimpleTable(descriptor)
+end
+
+local function GetLocalMythicPlusDungeonList()
+    LoadLocalMythicPlusStaticData()
+
+    local result = {}
+    for index, descriptor in ipairs(localMythicPlusStaticState.dungeonList) do
+        result[index] = CopySimpleTable(descriptor)
+    end
+
+    return result
+end
+
+local function NormalizeMythicPlusAffixPayload(affix)
+    if type(affix) == "table" then
+        local affixId = tonumber(affix.id or affix.affixId or affix.affix_id)
+            or 0
+        local descriptor = affixId > 0
+            and GetLocalMythicPlusAffixDescriptor(affixId)
+            or nil
+        local normalized = descriptor or {}
+
+        normalized.id = affixId > 0 and affixId or normalized.id
+        normalized.spellId = tonumber(
+            affix.spellId or affix.spellID or affix.spell_id
+            or normalized.spellId or 0) or 0
+        normalized.enabled = tonumber(affix.enabled or normalized.enabled or 0)
+            or 0
+        normalized.type = affix.type or normalized.type
+        normalized.token = affix.token or normalized.token
+        normalized.name = normalized.name or affix.name or affix.affixName
+            or affix.spellName
+        normalized.description = normalized.description
+            or affix.description or affix.desc or affix.affixDesc
+        normalized.icon = affix.icon or normalized.icon
+
+        if (not normalized.icon or normalized.icon == "")
+            and normalized.spellId > 0
+            and type(GetSpellTexture) == "function" then
+            normalized.icon = GetSpellTexture(normalized.spellId)
+        end
+
+        return normalized
+    end
+
+    if type(affix) == "number" then
+        local descriptor = GetLocalMythicPlusAffixDescriptor(affix)
+        if descriptor then
+            return descriptor
+        end
+    end
+
+    return affix
+end
+
+local function ApplyMythicPlusDungeonDescriptor(data)
+    if type(data) ~= "table" then
+        return data
+    end
+
+    local descriptor = GetLocalMythicPlusDungeonDescriptor(
+        data.mapId or data.map_id or data.id,
+        data.name or data.dungeonName or data.dungeon or data.dungeon_name)
+    if not descriptor then
+        return data
+    end
+
+    local merged = CopySimpleTable(descriptor)
+    for key, value in pairs(data) do
+        if value ~= nil and value ~= "" then
+            merged[key] = value
+        end
+    end
+
+    merged.id = tonumber(merged.id or descriptor.id or merged.mapId or 0) or 0
+    merged.mapId = tonumber(merged.mapId or descriptor.mapId or 0) or 0
+    merged.name = descriptor.name
+    merged.dungeonName = descriptor.name
+    merged.dungeon = descriptor.name
+    merged.shortName = descriptor.shortName or merged.shortName or merged.short
+    merged.short = descriptor.shortName or merged.short or merged.shortName
+    merged.timeLimit = tonumber(
+        merged.timeLimit or merged.baseTimer or descriptor.timeLimit or 0)
+        or 0
+    merged.baseTimer = tonumber(
+        merged.baseTimer or merged.timeLimit or descriptor.baseTimer or 0)
+        or 0
+    merged.difficulty = tonumber(
+        merged.difficulty or descriptor.difficulty or 0) or 0
+    merged.minLevel = tonumber(
+        merged.minLevel or descriptor.minLevel or 0) or 0
+    merged.enabled = tonumber(merged.enabled or descriptor.enabled or 0) or 0
+    merged.sortOrder = tonumber(
+        merged.sortOrder or descriptor.sortOrder or 0) or 0
+    merged.artKey = merged.artKey or descriptor.artKey
+
+    return merged
+end
+
+namespace.GetMythicPlusAffixDescriptor = GetLocalMythicPlusAffixDescriptor
+namespace.GetMythicPlusDungeonDescriptor = GetLocalMythicPlusDungeonDescriptor
+namespace.GetMythicPlusDungeonList = GetLocalMythicPlusDungeonList
+namespace.NormalizeMythicPlusAffixPayload = NormalizeMythicPlusAffixPayload
+namespace.ApplyMythicPlusDungeonDescriptor = ApplyMythicPlusDungeonDescriptor
+
 local activeState
 local frame
 local countdownText
@@ -3522,9 +3822,13 @@ if DC then
             if json.affixes and type(json.affixes) == "table" then
                 local affixNames = {}
                 for _, affix in ipairs(json.affixes) do
-                    if type(affix) == "table" and affix.name then
-                        table.insert(affixNames, affix.name)
-                        table.insert(affixesToCache, affix)
+                    local normalizedAffix =
+                        NormalizeMythicPlusAffixPayload(affix)
+
+                    if type(normalizedAffix) == "table"
+                        and normalizedAffix.name then
+                        table.insert(affixNames, normalizedAffix.name)
+                        table.insert(affixesToCache, normalizedAffix)
                     elseif type(affix) == "string" then
                         table.insert(affixNames, affix)
                         table.insert(affixesToCache, { name = affix })

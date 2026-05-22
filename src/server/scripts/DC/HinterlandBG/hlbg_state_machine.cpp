@@ -149,7 +149,13 @@ void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
     {
         // Warmup finished, start battle (only if someone is still present)
         if (_playersInZone > 0)
+        {
+            if (_autoResetTeleport)
+                TeleportPlayersToStart();
+
+            HandleReset();
             TransitionToState(BG_STATE_IN_PROGRESS);
+        }
         else
             TransitionToState(BG_STATE_CLEANUP);
     }

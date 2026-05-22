@@ -159,19 +159,40 @@ end
 
 local function ResolveAffixInfo(affix)
     if type(affix) == "table" then
-        local id = affix.id or affix.affixId or affix.spellId or affix.spellID
-        local name = affix.name or affix.affixName or affix.spellName
-        local desc = affix.description or affix.desc or affix.affixDesc
-        local icon = affix.icon
-        if not icon and id and type(GetSpellTexture) == "function" then
-            icon = GetSpellTexture(id)
+        local id = tonumber(affix.id or affix.affixId or affix.affix_id) or 0
+        local descriptor = nil
+        if id > 0 and type(namespace.GetMythicPlusAffixDescriptor)
+            == "function" then
+            descriptor = namespace.GetMythicPlusAffixDescriptor(id)
         end
-        return id, name, desc, icon
+
+        local spellId = tonumber(
+            affix.spellId or affix.spellID or affix.spell_id
+            or (descriptor and descriptor.spellId) or 0) or 0
+        local name = (descriptor and descriptor.name) or affix.name
+            or affix.affixName or affix.spellName
+        local desc = (descriptor and descriptor.description)
+            or affix.description or affix.desc or affix.affixDesc
+        local icon = affix.icon or (descriptor and descriptor.icon)
+        if not icon and spellId > 0 and type(GetSpellTexture) == "function" then
+            icon = GetSpellTexture(spellId)
+        end
+        return id > 0 and id or spellId, name, desc, icon
     end
 
     if type(affix) == "number" then
-        local icon = type(GetSpellTexture) == "function" and GetSpellTexture(affix) or nil
-        local name = type(GetSpellInfo) == "function" and GetSpellInfo(affix) or nil
+        if type(namespace.GetMythicPlusAffixDescriptor) == "function" then
+            local descriptor = namespace.GetMythicPlusAffixDescriptor(affix)
+            if descriptor then
+                return descriptor.id, descriptor.name, descriptor.description,
+                    descriptor.icon
+            end
+        end
+
+        local icon = type(GetSpellTexture) == "function"
+            and GetSpellTexture(affix) or nil
+        local name = type(GetSpellInfo) == "function"
+            and GetSpellInfo(affix) or nil
         return affix, name, nil, icon
     end
 
@@ -287,6 +308,36 @@ local function normalizeDungeonNameToIconKey(name)
     return table.concat(parts, "")
 end
 
+local function iconCandidatesForDungeonArtKey(artKey)
+    if type(artKey) ~= "string" or artKey == "" then
+        return nil
+    end
+
+    if artKey == "AhnKahet" then
+        return {
+            ICON_BASE .. "AhnKahet.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.png",
+        }
+    end
+    if artKey == "GundrakDungeon" then
+        return {
+            ICON_BASE .. "GundrakDungeon.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.png",
+        }
+    end
+    if artKey == "TheNexus" then
+        return {
+            ICON_BASE .. "TheNexus.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.png",
+        }
+    end
+
+    return { ICON_BASE .. artKey .. ".blp" }
+end
+
 local function iconCandidatesForDungeonName(name)
     if type(name) ~= "string" then
         return nil
@@ -328,6 +379,13 @@ local function ResolveDungeonArtCandidates(data)
 
     if type(data) == "table" then
         addCandidate(data.iconPath)
+
+        local keyed = iconCandidatesForDungeonArtKey(data.artKey)
+        if keyed then
+            for _, path in ipairs(keyed) do
+                addCandidate(path)
+            end
+        end
 
         local named = iconCandidatesForDungeonName(data.dungeonName)
         if named then
@@ -1759,20 +1817,31 @@ end
 
 function KUI:SetKeystoneData(data)
     data = data or {}
+    local resolvedData = data
+    if type(namespace.ApplyMythicPlusDungeonDescriptor) == "function" then
+        resolvedData = namespace.ApplyMythicPlusDungeonDescriptor(data)
+    end
+
     self.keystoneData = {
-        dungeonName = data.dungeonName or data.dungeon or "",
-        shortName = data.shortName,
-        mapId = tonumber(data.mapId or 0) or 0,
-        level = tonumber(data.level or data.keyLevel or 0) or 0,
-        timeLimit = tonumber(data.timeLimit or data.baseTimer or 0) or 0,
-        countdown = tonumber(data.countdown or data.timeout or 10) or 10,
-        healthPct = tonumber(data.healthPct or 0) or 0,
-        damagePct = tonumber(data.damagePct or 0) or 0,
-        iconPath = data.iconPath,
-        readyCount = tonumber(data.readyCount or 0) or 0,
-        totalCount = tonumber(data.totalCount or 0) or 0,
-        allReady = Truthy(data.allReady),
-        affixes = DecodePayloadTable(data.affixes) or {},
+        dungeonName = resolvedData.dungeonName or resolvedData.name
+            or resolvedData.dungeon or "",
+        shortName = resolvedData.shortName or resolvedData.short,
+        mapId = tonumber(resolvedData.mapId or resolvedData.id or 0) or 0,
+        level = tonumber(resolvedData.level or resolvedData.keyLevel or 0)
+            or 0,
+        timeLimit = tonumber(
+            resolvedData.timeLimit or resolvedData.baseTimer or 0) or 0,
+        countdown = tonumber(resolvedData.countdown or resolvedData.timeout
+            or 10) or 10,
+        healthPct = tonumber(resolvedData.healthPct or 0) or 0,
+        damagePct = tonumber(resolvedData.damagePct or 0) or 0,
+        iconPath = resolvedData.iconPath,
+        artKey = resolvedData.artKey,
+        readyCount = tonumber(resolvedData.readyCount or 0) or 0,
+        totalCount = tonumber(resolvedData.totalCount or 0) or 0,
+        allReady = Truthy(resolvedData.allReady),
+        affixes = DecodePayloadTable(resolvedData.affixes or data.affixes)
+            or {},
     }
 
     local displayedKeystone = ResolveDisplayedKeystone(self.keystoneData.level)

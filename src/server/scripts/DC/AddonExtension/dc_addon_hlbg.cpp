@@ -332,8 +332,8 @@ namespace HLBG
             return metrics;
         }
 
-        std::string BuildNativeLiveSnapshotPayload(OutdoorPvPHL* hl,
-            uint32 limit = 40)
+        std::string BuildNativeLiveSnapshotPayload(Player* player,
+            OutdoorPvPHL* hl, uint32 limit = 40)
         {
             JsonValue payload;
             payload.SetObject();
@@ -341,13 +341,40 @@ namespace HLBG
             JsonValue players;
             players.SetArray();
 
+            uint32 mapId = player ? player->GetMapId() : 0u;
+            uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
+            HLBGStatus status = STATUS_NONE;
+
+            if (player && hl)
+            {
+                if (hl->IsPlayerAfkFlagged(player))
+                {
+                    mapId = 0;
+                    timeRemaining = 0u;
+                }
+                else if (IsPlayerInOutdoorPvPHLArea(player))
+                    status = STATUS_ACTIVE;
+                else if (hl->IsPlayerQueued(player))
+                    status = STATUS_QUEUED;
+            }
+
             if (!hl)
             {
+                payload.Set("status", static_cast<int32>(status));
+                payload.Set("mapId", static_cast<int32>(mapId));
+                payload.Set("timeRemaining", static_cast<int32>(timeRemaining));
+                payload.Set("duration", static_cast<int32>(timeRemaining));
                 payload.Set("matchStart", 0);
                 payload.Set("A", 0);
                 payload.Set("H", 0);
                 payload.Set("APC", 0);
                 payload.Set("HPC", 0);
+                payload.Set("aBases", 0);
+                payload.Set("hBases", 0);
+                payload.Set("aPlayerKills", 0);
+                payload.Set("hPlayerKills", 0);
+                payload.Set("aNpcKills", 0);
+                payload.Set("hNpcKills", 0);
                 payload.Set("affix", 0);
                 payload.Set("players", players);
                 return payload.Encode();
@@ -409,12 +436,28 @@ namespace HLBG
                 players.Push(playerRow);
             }
 
+            LiveHudMetrics metrics = CollectLiveHudMetrics(hl);
+
+            payload.Set("status", static_cast<int32>(status));
+            payload.Set("mapId", static_cast<int32>(mapId));
+            payload.Set("timeRemaining", static_cast<int32>(timeRemaining));
+            payload.Set("duration", static_cast<int32>(timeRemaining));
             payload.Set("matchStart",
                 static_cast<int32>(hl->GetMatchStartEpoch()));
             payload.Set("A", static_cast<int32>(hl->GetResources(TEAM_ALLIANCE)));
             payload.Set("H", static_cast<int32>(hl->GetResources(TEAM_HORDE)));
             payload.Set("APC", static_cast<int32>(alliancePlayers));
             payload.Set("HPC", static_cast<int32>(hordePlayers));
+            payload.Set("aBases", 0);
+            payload.Set("hBases", 0);
+            payload.Set("aPlayerKills",
+                static_cast<int32>(metrics.alliancePlayerKills));
+            payload.Set("hPlayerKills",
+                static_cast<int32>(metrics.hordePlayerKills));
+            payload.Set("aNpcKills",
+                static_cast<int32>(metrics.allianceNpcKills));
+            payload.Set("hNpcKills",
+                static_cast<int32>(metrics.hordeNpcKills));
             payload.Set("affix", static_cast<int32>(hl->GetActiveAffixCode()));
             payload.Set("players", players);
             return payload.Encode();
@@ -1231,7 +1274,12 @@ namespace HLBG
         HLBGStatus status = STATUS_NONE;
         if (hl)
         {
-            if (IsPlayerInOutdoorPvPHLArea(player))
+            if (hl->IsPlayerAfkFlagged(player))
+            {
+                mapId = 0;
+                timeRemaining = 0u;
+            }
+            else if (IsPlayerInOutdoorPvPHLArea(player))
                 status = STATUS_ACTIVE;
             else if (hl->IsPlayerQueued(player))
                 status = STATUS_QUEUED;
@@ -1484,7 +1532,7 @@ namespace HLBG
             return false;
 
         SendNativeLiveSnapshot(player,
-            BuildNativeLiveSnapshotPayload(GetHL()));
+            BuildNativeLiveSnapshotPayload(player, GetHL()));
         return true;
     }
 

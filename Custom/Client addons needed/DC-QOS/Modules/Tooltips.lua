@@ -2056,10 +2056,14 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
     if not sid or sid <= 0 then return false end
 
     local tooltipSource = ResolveSpellTooltipSource(tooltip)
+    local nativeSpellTooltipNegotiated = IsNativeSpellTooltipNegotiated()
+    local nativeSpellTooltipAddonAvailable = tooltipSource ~= "spellbook"
+        and nativeSpellTooltipNegotiated
+        and HasNativeSpellTooltipAddonBridge()
     local useNativeAddonTransport = tooltipSource ~= "spellbook"
         and ShouldUseNativeSpellTooltipAddonBridge()
 
-    if tooltipSource == "spellbook" and ShouldUseNativeSpellTooltipBridge()
+    if tooltipSource == "spellbook" and nativeSpellTooltipNegotiated
         and not hasNativeRowsExport then
         return false
     end
@@ -2177,12 +2181,11 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
                 ok = true
             else
                 TelemetryInc("spell", "nativeErrors")
-                TelemetryInc("spell", "nativeFallbacks")
                 addon:Debug("Native spell tooltip request failed: " .. tostring(nativeErr))
             end
         end
 
-        if not ok then
+        if not ok and not nativeSpellTooltipAddonAvailable then
             ok = addon:RequestSpellTooltipEnrichment(requestId, sid, contextHash, false)
         end
         if not ok then
@@ -2291,7 +2294,7 @@ local lastSpellPrefetchQueuedAt = 0
 local StartSpellEnrichmentPrefetch
 
 QueueSpellEnrichmentPrefetch = function(delay)
-    if ShouldUseNativeSpellTooltipBridge() or HasNativeSpellTooltipRowsExport() then
+    if IsNativeSpellTooltipNegotiated() or HasNativeSpellTooltipRowsExport() then
         return
     end
 
@@ -2306,7 +2309,7 @@ QueueSpellEnrichmentPrefetch = function(delay)
 end
 
 StartSpellEnrichmentPrefetch = function()
-    if ShouldUseNativeSpellTooltipBridge() or HasNativeSpellTooltipRowsExport() then return end
+    if IsNativeSpellTooltipNegotiated() or HasNativeSpellTooltipRowsExport() then return end
     if not addon.settings or not addon.settings.tooltips or not addon.settings.tooltips.enabled then return end
     if not addon.settings.communication or not addon.settings.communication.enabled then return end
     if type(GetNumSpellTabs) ~= "function" or type(GetSpellTabInfo) ~= "function"

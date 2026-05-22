@@ -62,6 +62,15 @@ namespace DCCollection
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
     uint32 ResolveCompanionSummonSpellFromSpell(uint32 spellId);
 
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_WAVE1 = ::CMSG_REQUEST_COLLECTION_WAVE1,
+            SMSG_WAVE1 = ::SMSG_COLLECTION_WAVE1,
+        };
+    }
+
     namespace
     {
         constexpr std::size_t kCollectionTypeSlotCount =
@@ -3622,6 +3631,81 @@ namespace DCCollection
     // Handler Functions - Send Data
     // =======================================================================
 
+    namespace
+    {
+        DCAddon::TransportPolicyDecision ResolveCollectionWave1Transport(
+            Player* player)
+        {
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "collection-wave1";
+            request.nativeCapability =
+                DCAddon::ProtocolVersion::Capability::
+                    COLLECTION_WAVE1_NATIVE;
+            return DCAddon::ResolveTransportPolicy(player, request);
+        }
+
+        void SendNativeCollectionWave1Payload(Player* player,
+            uint8 logicalOpcode, std::string const& payload)
+        {
+            if (!player || !player->GetSession() || payload.empty())
+                return;
+
+            WorldPacket data(BridgeOpcode::SMSG_WAVE1,
+                sizeof(uint32) + payload.size() + 1);
+            data << uint32(logicalOpcode);
+            data << payload;
+            player->GetSession()->SendPacket(&data);
+
+            std::string preview = "logical="
+                + std::to_string(static_cast<uint32>(logicalOpcode))
+                + "|bytes=" + std::to_string(payload.size());
+            DCAddon::LogNativeS2CMessage(player, MODULE, logicalOpcode,
+                BridgeOpcode::SMSG_WAVE1, data.size(), preview, true, 0);
+        }
+
+        void SendAddonCollectionWave1Payload(Player* player,
+            uint8 logicalOpcode, std::string const& payload)
+        {
+            if (!player)
+                return;
+
+            DCAddon::JsonMessage msg(MODULE, logicalOpcode);
+            msg.SetPreEncodedJson(payload.empty() ? "{}" : payload);
+            msg.Send(player);
+        }
+
+        void SendCollectionWave1Payload(Player* player,
+            uint8 logicalOpcode, std::string const& payload)
+        {
+            if (ResolveCollectionWave1Transport(player).UsesNative())
+            {
+                SendNativeCollectionWave1Payload(player, logicalOpcode,
+                    payload);
+                return;
+            }
+
+            SendAddonCollectionWave1Payload(player, logicalOpcode, payload);
+        }
+
+        void SendSyncCollectionUpToDateAck(Player* player,
+            uint32 serverHash)
+        {
+            DCAddon::JsonValue emptyCollections;
+            emptyCollections.SetObject();
+
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("collections", emptyCollections);
+            payload.Set("hash", serverHash);
+            payload.Set("upToDate", true);
+            payload.Set("timestamp", static_cast<uint32>(std::time(nullptr)));
+
+            SendCollectionWave1Payload(player,
+                DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION,
+                payload.Encode());
+        }
+    }
+
     void SendHandshakeAck(Player* player, uint32 clientHash)
     {
         if (!player || !player->GetSession())
@@ -3635,10 +3719,11 @@ namespace DCCollection
         uint32 serverHash = GenerateCollectionHashFromSortedBuckets(buckets);
         bool needsSync = (serverHash != clientHash);
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_HANDSHAKE_ACK);
-        msg.Set("serverHash", serverHash);
-        msg.Set("needsSync", needsSync);
-        msg.Set("totalItems", totalOwnedItems);
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("serverHash", serverHash);
+        payload.Set("needsSync", needsSync);
+        payload.Set("totalItems", totalOwnedItems);
 
         // Publish per-type curated definitions syncVersions so the client can
         // skip CMSG_GET_DEFINITIONS entirely for types where its cached copy
@@ -3650,14 +3735,16 @@ namespace DCCollection
         syncVersions.Set("pets", GetCuratedDefinitionsSyncVersion(CollectionType::PET));
         syncVersions.Set("heirlooms", GetCuratedDefinitionsSyncVersion(CollectionType::HEIRLOOM));
         syncVersions.Set("titles", GetCuratedDefinitionsSyncVersion(CollectionType::TITLE));
-        msg.Set("syncVersions", syncVersions);
+        payload.Set("syncVersions", syncVersions);
 
         DCAddon::JsonValue ownedSyncVersions;
         ownedSyncVersions.SetObject();
         ownedSyncVersions.Set("transmog", GetCollectedAppearancesSyncVersion(accountId));
-        msg.Set("ownedSyncVersions", ownedSyncVersions);
+        payload.Set("ownedSyncVersions", ownedSyncVersions);
 
-        msg.Send(player);
+        SendCollectionWave1Payload(player,
+            DCAddon::Opcode::Collection::SMSG_HANDSHAKE_ACK,
+            payload.Encode());
     }
 
     void SendFullCollection(Player* player)
@@ -3690,10 +3777,9 @@ namespace DCCollection
             serverHash, timestamp, mountSpeedBonus, nextThreshold,
             mountsToNext, totalOwnedItems, transmogOwnedSyncVersion);
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
-        msg.SetPreEncodedJson(std::move(rawData));
-
-        msg.Send(player);
+        SendCollectionWave1Payload(player,
+            DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION,
+            rawData);
     }
 
     void SendStats(Player* player, bool includeRecent = false)
@@ -3736,8 +3822,9 @@ namespace DCCollection
         stats.Set("totalPercent", totalAvailable > 0 ?
             static_cast<double>(totalOwned * 100) / totalAvailable : 0.0);
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_STATS);
-        msg.Set("stats", stats);
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("stats", stats);
 
         if (includeRecent)
         {
@@ -3838,10 +3925,12 @@ namespace DCCollection
                 recent.Push(entry);
             }
 
-            msg.Set("recent", recent);
+            payload.Set("recent", recent);
         }
 
-        msg.Send(player);
+        SendCollectionWave1Payload(player,
+            DCAddon::Opcode::Collection::SMSG_STATS,
+            payload.Encode());
     }
 
     void SendBonuses(Player* player)
@@ -3853,18 +3942,21 @@ namespace DCCollection
         auto counts = LoadCollectionCounts(accountId);
         uint32 mountCount = counts[CollectionType::MOUNT];
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_BONUSES);
-        msg.Set("mountSpeedBonus", GetMountSpeedBonusPercent(mountCount));
-        msg.Set("mountCount", mountCount);
-        msg.Set("nextThreshold", GetNextMountThreshold(mountCount));
-        msg.Set("mountsToNext", GetNextMountThreshold(mountCount) > 0 ?
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("mountSpeedBonus", GetMountSpeedBonusPercent(mountCount));
+        payload.Set("mountCount", mountCount);
+        payload.Set("nextThreshold", GetNextMountThreshold(mountCount));
+        payload.Set("mountsToNext", GetNextMountThreshold(mountCount) > 0 ?
             static_cast<int32>(GetNextMountThreshold(mountCount) - mountCount) : 0);
 
         // Future bonuses can be added here
-        msg.Set("petBonusActive", false);  // Placeholder for pet battle bonus
-        msg.Set("toyBonusActive", false);  // Placeholder for toy cooldown reduction
+        payload.Set("petBonusActive", false);  // Placeholder for pet battle bonus
+        payload.Set("toyBonusActive", false);  // Placeholder for toy cooldown reduction
 
-        msg.Send(player);
+        SendCollectionWave1Payload(player,
+            DCAddon::Opcode::Collection::SMSG_BONUSES,
+            payload.Encode());
     }
 
     void SendCurrencies(Player* player)
@@ -5351,15 +5443,7 @@ namespace DCCollection
             if (serverHash == clientHash)
             {
                 // Up to date -- avoid the (expensive) full payload rebuild.
-                DCAddon::JsonValue emptyCollections;
-                emptyCollections.SetObject();
-
-                DCAddon::JsonMessage ack(MODULE, DCAddon::Opcode::Collection::SMSG_FULL_COLLECTION);
-                ack.Set("collections", emptyCollections);
-                ack.Set("hash", serverHash);
-                ack.Set("upToDate", true);
-                ack.Set("timestamp", static_cast<uint32>(std::time(nullptr)));
-                ack.Send(player);
+                SendSyncCollectionUpToDateAck(player, serverHash);
                 return;
             }
         }
@@ -6719,10 +6803,13 @@ namespace DCCollection
             items.Set(std::to_string(id), entry);
         }
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_COLLECTION);
-        msg.Set("type", typeName);
-        msg.Set("items", items);
-        msg.Send(player);
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("type", typeName);
+        payload.Set("items", items);
+        SendCollectionWave1Payload(player,
+            DCAddon::Opcode::Collection::SMSG_COLLECTION,
+            payload.Encode());
     }
 
     void HandleGetDefinitionsMessage(Player* player, const DCAddon::ParsedMessage& msg)
@@ -7570,6 +7657,130 @@ namespace DCCollection
 
 }  // namespace DCCollection
 
+class CollectionWave1NativeServerScript : public ServerScript
+{
+public:
+    CollectionWave1NativeServerScript()
+        : ServerScript("CollectionWave1NativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode() != DCCollection::BridgeOpcode::CMSG_REQUEST_WAVE1)
+            return true;
+
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        uint32 logicalOpcodeValue = 0;
+        std::string payload;
+        bool parseOk = packet.size() > 0;
+
+        if (parseOk)
+        {
+            WorldPacket nativePacket(packet);
+            nativePacket.rpos(0);
+
+            try
+            {
+                nativePacket >> logicalOpcodeValue;
+                if (nativePacket.rpos() < nativePacket.size())
+                    nativePacket >> payload;
+            }
+            catch (ByteBufferException const&)
+            {
+                parseOk = false;
+                logicalOpcodeValue = 0;
+                payload.clear();
+            }
+        }
+
+        bool handled = false;
+        std::string errorMsg;
+        std::string eventType;
+        std::string eventMessage;
+
+        if (!parseOk || logicalOpcodeValue > std::numeric_limits<uint8>::max())
+        {
+            eventType = "native_bad_format";
+            eventMessage = "Malformed native collection wave1 request";
+        }
+        else
+        {
+            uint8 logicalOpcode = static_cast<uint8>(logicalOpcodeValue);
+            std::string raw = std::string(DCCollection::MODULE)
+                + "|" + std::to_string(static_cast<uint32>(logicalOpcode))
+                + "|J|" + (payload.empty() ? "{}" : payload);
+            DCAddon::ParsedMessage parsed(raw);
+
+            if (!parsed.IsValid())
+            {
+                eventType = "native_bad_format";
+                eventMessage =
+                    "Malformed native collection wave1 JSON payload";
+            }
+            else
+            {
+                switch (logicalOpcode)
+                {
+                    case DCAddon::Opcode::Collection::CMSG_HANDSHAKE:
+                        DCCollection::HandleHandshake(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_FULL_COLLECTION:
+                        DCCollection::HandleGetFullCollection(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_SYNC_COLLECTION:
+                        DCCollection::HandleSyncCollection(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_STATS:
+                        DCCollection::HandleGetStats(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_BONUSES:
+                        DCCollection::HandleGetBonuses(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_COLLECTION:
+                        DCCollection::HandleGetCollectionMessage(player,
+                            parsed);
+                        handled = true;
+                        break;
+                    default:
+                        eventType = "native_unknown_logical_opcode";
+                        eventMessage =
+                            "Unsupported native collection wave1 logical opcode";
+                        break;
+                }
+            }
+        }
+
+        uint8 auditedLogicalOpcode = 0;
+        if (logicalOpcodeValue <= std::numeric_limits<uint8>::max())
+            auditedLogicalOpcode = static_cast<uint8>(logicalOpcodeValue);
+
+        std::string preview = "logical="
+            + std::to_string(logicalOpcodeValue)
+            + "|payloadBytes=" + std::to_string(payload.size());
+        DCAddon::AuditNativeC2SRequest(player, DCCollection::MODULE,
+            auditedLogicalOpcode,
+            DCCollection::BridgeOpcode::CMSG_REQUEST_WAVE1,
+            packet.size(), preview, handled, errorMsg, eventType,
+            eventMessage);
+        return false;
+    }
+};
+
 // =======================================================================
 // =======================================================================
 // Script Registration
@@ -7606,6 +7817,7 @@ void AddSC_dc_addon_collection()
     new CollectionPlayerScript();
     new CollectionMiscScript();
     new CollectionWorldScript();
+    new CollectionWave1NativeServerScript();
 
     AddSC_dc_addon_wardrobe(); // Call Wardrobe registration
 

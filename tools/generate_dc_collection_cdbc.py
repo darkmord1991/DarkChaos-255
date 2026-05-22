@@ -323,6 +323,34 @@ TRANSMOG_SCHEMA = (
     ("ItemIDs", "string"),
 )
 
+MYTHICPLUS_AFFIX_SCHEMA = (
+    ("ID", "int"),
+    ("SpellID", "int"),
+    ("Enabled", "int"),
+    ("Type", "string"),
+    ("Token", "string"),
+    ("Name", "string"),
+    ("Description", "string"),
+    ("Icon", "string"),
+)
+
+MYTHICPLUS_DUNGEON_SCHEMA = (
+    ("ID", "int"),
+    ("SortOrder", "int"),
+    ("TimeLimit", "int"),
+    ("Difficulty", "int"),
+    ("MinLevel", "int"),
+    ("Enabled", "int"),
+    ("Name", "string"),
+    ("ShortName", "string"),
+    ("ArtKey", "string"),
+)
+
+PASSTHROUGH_CDBC_OUTPUTS = (
+    ("DCMythicPlusAffix", MYTHICPLUS_AFFIX_SCHEMA),
+    ("DCMythicPlusDungeon", MYTHICPLUS_DUNGEON_SCHEMA),
+)
+
 TITLE_ICON = "Interface\\Icons\\INV_Scroll_11"
 TRANSMOG_CANONICAL_ITEMID_THRESHOLD = 200000
 
@@ -413,6 +441,15 @@ def parse_args() -> argparse.Namespace:
         "--skip-patch-copy",
         action="store_true",
         help="Do not mirror generated CDBCs into the patch bundle path.",
+    )
+    parser.add_argument(
+        "--only",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional basenames to generate, for example "
+            "DCCollectionCategory DCMythicPlusAffix. Defaults to all outputs."
+        ),
     )
     return parser.parse_args()
 
@@ -2181,9 +2218,43 @@ def write_text_if_changed(path: Path, content: str) -> bool:
     return True
 
 
+def read_schema_csv_rows(path: Path, schema: tuple[tuple[str, str], ...]) -> list[dict[str, Any]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames:
+            raise ValueError(f"CSV file has no header: {path}")
+
+        expected_fields = [field_name for field_name, _ in schema]
+        missing_fields = [
+            field_name
+            for field_name in expected_fields
+            if field_name not in reader.fieldnames
+        ]
+        if missing_fields:
+            raise ValueError(
+                f"CSV file {path} is missing required columns: "
+                + ", ".join(missing_fields)
+            )
+
+        rows: list[dict[str, Any]] = []
+        for row in reader:
+            normalized_row = {
+                field_name: row.get(field_name, "")
+                for field_name in expected_fields
+            }
+            rows.append(normalized_row)
+
+    return rows
+
+
 def main() -> int:
     args = parse_args()
     repo_root = args.repo_root.resolve()
+    selected_outputs = (
+        {name.strip().lower() for name in args.only if name.strip()}
+        if args.only
+        else None
+    )
 
     csv_output_dir = (
         args.csv_output_dir.resolve()
@@ -2260,13 +2331,26 @@ def main() -> int:
         ),
     )
 
+    passthrough_outputs = tuple(
+        (
+            basename,
+            read_schema_csv_rows(csv_output_dir / f"{basename}.csv", schema),
+            schema,
+        )
+        for basename, schema in PASSTHROUGH_CDBC_OUTPUTS
+    )
+
     changed_paths: list[Path] = []
-    for basename, rows, schema in outputs:
+    for basename, rows, schema in outputs + passthrough_outputs:
+        if selected_outputs is not None and basename.lower() not in selected_outputs:
+            continue
+
         csv_path = csv_output_dir / f"{basename}.csv"
         cdbc_path = cdbc_output_dir / f"{basename}.cdbc"
 
-        if write_text_if_changed(csv_path, build_csv_content(rows, schema)):
-            changed_paths.append(csv_path)
+        if basename.lower().startswith("dccollection"):
+            if write_text_if_changed(csv_path, build_csv_content(rows, schema)):
+                changed_paths.append(csv_path)
 
         cdbc_bytes = build_wdbc_bytes(rows, schema)
         if write_if_changed(cdbc_path, cdbc_bytes):

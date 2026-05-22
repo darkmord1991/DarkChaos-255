@@ -1459,6 +1459,8 @@ void OpcodeTable::Initialize()
     /*0x531*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_HLBG_LIVE_SNAPSHOT,                                 STATUS_NEVER);
     /*0x532*/ DEFINE_HANDLER(CMSG_REQUEST_SPECTATOR_LIVE_SNAPSHOT,                                  STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
     /*0x533*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_SPECTATOR_LIVE_SNAPSHOT,                            STATUS_NEVER);
+    /*0x534*/ DEFINE_HANDLER(CMSG_REQUEST_COLLECTION_WAVE1,                                         STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x535*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COLLECTION_WAVE1,                                   STATUS_NEVER);
 
 #undef DEFINE_HANDLER
 #undef DEFINE_SERVER_OPCODE_HANDLER
