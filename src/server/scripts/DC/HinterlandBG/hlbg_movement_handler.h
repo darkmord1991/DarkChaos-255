@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ScriptDefines/MovementHandlerScript.h"
+#include "BattlegroundHLBG.h"
 #include "hlbg.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 
@@ -20,6 +21,17 @@ public:
     {
         if (!player)
             return;
+
+        if (Battleground* battleground = player->GetBattleground())
+        {
+            if (battleground->GetBgTypeID(true) == BATTLEGROUND_HLBG)
+            {
+                if (auto* hlbg = dynamic_cast<BattlegroundHLBG*>(battleground))
+                    hlbg->NotePlayerMovement(player);
+                return;
+            }
+        }
+
         OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
         if (!opvp)
             return;

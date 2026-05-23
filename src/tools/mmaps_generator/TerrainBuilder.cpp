@@ -245,10 +245,21 @@ namespace MMAP
             // hole data
             if (fheader.holesSize != 0)
             {
-                memset(holes, 0, fheader.holesSize);
-                fseek(mapFile, fheader.holesOffset, SEEK_SET);
-                if (fread(holes, fheader.holesSize, 1, mapFile) != 1)
-                    printf("TerrainBuilder::loadMap: Failed to read some data expected 1, read 0\n");
+                if (fheader.holesSize > sizeof(holes))
+                {
+                    printf(
+                        "TerrainBuilder::loadMap: Ignoring invalid hole data in %s (holesSize=%u, max=%zu)\n",
+                        mapFileName.c_str(),
+                        fheader.holesSize,
+                        sizeof(holes)
+                    );
+                }
+                else
+                {
+                    fseek(mapFile, fheader.holesOffset, SEEK_SET);
+                    if (fread(holes, fheader.holesSize, 1, mapFile) != 1)
+                        printf("TerrainBuilder::loadMap: Failed to read some data expected 1, read 0\n");
+                }
             }
 
             int count = meshData.solidVerts.size() / 3;

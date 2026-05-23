@@ -158,6 +158,10 @@ local function DecodePayloadTable(value)
 end
 
 local function ResolveAffixInfo(affix)
+    if type(namespace.ResolveMythicPlusAffixInfo) == "function" then
+        return namespace.ResolveMythicPlusAffixInfo(affix)
+    end
+
     if type(affix) == "table" then
         local id = tonumber(affix.id or affix.affixId or affix.affix_id) or 0
         local descriptor = nil
@@ -369,6 +373,11 @@ local function iconCandidatesForDungeonName(name)
 end
 
 local function ResolveDungeonArtCandidates(data)
+    if type(namespace.ResolveMythicPlusDungeonArtCandidates) == "function" then
+        return namespace.ResolveMythicPlusDungeonArtCandidates(data,
+            BG_FELLEATHER)
+    end
+
     local candidates = {}
 
     local function addCandidate(path)
@@ -620,9 +629,16 @@ local function ResolveKeystoneItemTexture(itemId, itemLink, bag, slot)
         end
     end
 
-    local _, resolvedLink, _, _, _, _, _, _, _, texture = GetItemInfo(itemLink or itemId)
-    if texture then
-        return texture, resolvedLink or itemLink
+    local itemQuery = itemLink
+    if itemQuery == nil or itemQuery == "" then
+        itemQuery = tonumber(itemId)
+    end
+
+    if itemQuery ~= nil then
+        local _, resolvedLink, _, _, _, _, _, _, _, texture = GetItemInfo(itemQuery)
+        if texture then
+            return texture, resolvedLink or itemLink
+        end
     end
 
     if itemId and type(GetItemIcon) == "function" then
@@ -1894,6 +1910,28 @@ function KUI:Show(data, isLeader)
     if shouldAnimate then
         self:PlayInsertAnimation()
     end
+end
+
+function KUI:Preview(data, isLeader)
+    local payload = type(data) == "table" and data or {}
+
+    if not payload.partyMembers then
+        payload.partyMembers = {
+            {
+                name = UnitName and UnitName("player") or "Player",
+                role = "DPS",
+                ready = 1,
+                leader = 1,
+            },
+            {
+                name = "Companion",
+                role = "HEALER",
+                ready = 0,
+            },
+        }
+    end
+
+    self:Show(payload, isLeader ~= false)
 end
 
 function KUI:Hide()

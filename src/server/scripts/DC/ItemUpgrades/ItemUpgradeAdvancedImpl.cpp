@@ -112,6 +112,9 @@ public:
             (essence_invested * config.refund_percent) / 100,
             (tokens_invested * config.refund_percent) / 100);
 
+        if (UpgradeManager* mgr = GetUpgradeManager())
+            mgr->InvalidateItemCaches(item_guid);
+
         return true;
     }
 

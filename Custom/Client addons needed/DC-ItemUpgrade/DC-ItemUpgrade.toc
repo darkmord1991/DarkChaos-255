@@ -9,6 +9,8 @@
 
 ## Load Order: Core modules first, then main file, then XML
 Core.lua
+Data/TierStatic.lua
+Data/TierItemStatic.lua
 Costs.lua
 Cache.lua
 Heirloom.lua

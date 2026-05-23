@@ -10,16 +10,19 @@
 
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeMechanics.h"
+#include "Bag.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
-#include "Player.h"
-#include "Item.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
+#include "Item.h"
 #include "Log.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
+#include "Player.h"
+#include "ScriptMgr.h"
 #include "StringFormat.h"
 #include "Config.h"
 #include "World.h"
@@ -27,6 +30,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <sstream>
+#include <cmath>
 
 namespace
 {
@@ -174,11 +178,321 @@ namespace DarkChaos
 
             // Caches
             LRUCache<uint32, ItemUpgradeState> item_state_cache{20000}; // Cache last 20k items
+            LRUCache<uint32, ItemUpgradeTooltipSnapshot> tooltip_snapshot_cache{20000};
+            std::unordered_map<uint32, uint32> tooltip_revision_by_item;
             // Currency Cache: Key is (High: PlayerGUID, Low: Type|Season) or similar.
             // Simplified: We don't cache currency heavily yet as it's critical to be fresh,
             // but we could. For now, let's stick to Item State caching as that's the heavy lifter.
 
             UpgradeStatistics stats;
+
+            struct LegacyCloneNormalizationData
+            {
+                uint32 clone_item_id = 0;
+                uint32 base_item_id = 0;
+                uint8 tier_id = TIER_INVALID;
+                uint8 upgrade_level = 0;
+                uint32 season = 1;
+                uint32 tokens_invested = 0;
+                uint32 essence_invested = 0;
+                float stat_multiplier = 1.0f;
+                uint16 base_item_level = 0;
+                uint16 upgraded_item_level = 0;
+                std::string base_item_name;
+            };
+
+            bool PersistItemUpgradeState(ItemUpgradeState& state)
+            {
+                if (state.item_guid == 0)
+                    return false;
+
+                std::string baseName = state.base_item_name;
+                CharacterDatabase.EscapeString(baseName);
+                EscapeFmtBraces(baseName);
+
+                CharacterDatabase.Execute(
+                    "INSERT INTO {} (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "
+                    "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
+                    "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
+                    "ON DUPLICATE KEY UPDATE "
+                    "player_guid = {}, base_item_name = '{}', tier_id = {}, upgrade_level = {}, "
+                    "tokens_invested = {}, essence_invested = {}, stat_multiplier = {}, "
+                    "first_upgraded_at = {}, last_upgraded_at = {}, season = {}",
+                    ITEM_UPGRADES_TABLE,
+                    state.item_guid, state.player_guid, baseName,
+                    static_cast<uint32>(state.tier_id),
+                    static_cast<uint32>(state.upgrade_level),
+                    state.tokens_invested,
+                    state.essence_invested,
+                    state.stat_multiplier,
+                    static_cast<uint32>(state.first_upgraded_at),
+                    static_cast<uint32>(state.last_upgraded_at),
+                    state.season,
+                    state.player_guid,
+                    baseName,
+                    static_cast<uint32>(state.tier_id),
+                    static_cast<uint32>(state.upgrade_level),
+                    state.tokens_invested,
+                    state.essence_invested,
+                    state.stat_multiplier,
+                    static_cast<uint32>(state.first_upgraded_at),
+                    static_cast<uint32>(state.last_upgraded_at),
+                    state.season);
+
+                state.has_persisted_state = true;
+                ++stats.db_writes;
+                return true;
+            }
+
+            bool LoadLegacyCloneNormalizationData(uint32 clone_item_id,
+                LegacyCloneNormalizationData& out)
+            {
+                QueryResult cloneResult = WorldDatabase.Query(
+                    "SELECT clones.base_item_id, clones.tier_id, clones.upgrade_level, clones.stat_multiplier, "
+                    "base_map.tier_id, COALESCE(base_map.season, 1) "
+                    "FROM dc_item_upgrade_clones clones "
+                    "LEFT JOIN dc_item_templates_upgrade base_map "
+                    "ON base_map.item_id = clones.base_item_id AND base_map.is_active = 1 "
+                    "WHERE clones.clone_item_id = {} LIMIT 1",
+                    clone_item_id);
+
+                if (!cloneResult)
+                    return false;
+
+                Field* fields = cloneResult->Fetch();
+                out.clone_item_id = clone_item_id;
+                out.base_item_id = fields[0].Get<uint32>();
+                uint8 cloneTier = fields[1].Get<uint8>();
+                out.upgrade_level = fields[2].Get<uint8>();
+                out.stat_multiplier = fields[3].Get<float>();
+
+                bool hasMappedTier = !fields[4].IsNull();
+                uint8 mappedTier = hasMappedTier
+                    ? fields[4].Get<uint8>()
+                    : static_cast<uint8>(TIER_INVALID);
+                out.season = fields[5].Get<uint32>();
+
+                if (hasMappedTier && mappedTier != TIER_INVALID && mappedTier != cloneTier)
+                {
+                    LOG_WARN("scripts.dc",
+                        "ItemUpgrade: refusing legacy clone normalization for clone entry {} because base tier {} mismatches clone tier {}",
+                        clone_item_id, static_cast<uint32>(mappedTier),
+                        static_cast<uint32>(cloneTier));
+                    return false;
+                }
+
+                out.tier_id = hasMappedTier && mappedTier != TIER_INVALID
+                    ? mappedTier
+                    : cloneTier;
+
+                if (out.tier_id == TIER_INVALID)
+                    out.tier_id = GetItemTier(out.base_item_id);
+
+                if (out.tier_id == TIER_INVALID)
+                {
+                    LOG_WARN("scripts.dc",
+                        "ItemUpgrade: refusing legacy clone normalization for clone entry {} because no valid tier could be resolved for base item {}",
+                        clone_item_id, out.base_item_id);
+                    return false;
+                }
+
+                ItemTemplate const* baseTemplate =
+                    sObjectMgr->GetItemTemplate(out.base_item_id);
+                if (!baseTemplate)
+                {
+                    LOG_WARN("scripts.dc",
+                        "ItemUpgrade: refusing legacy clone normalization for clone entry {} because base item template {} is missing",
+                        clone_item_id, out.base_item_id);
+                    return false;
+                }
+
+                out.base_item_level = baseTemplate->ItemLevel;
+                out.base_item_name = !baseTemplate->Name1.empty()
+                    ? baseTemplate->Name1
+                    : (std::string("Item ") + std::to_string(out.base_item_id));
+
+                if (out.upgrade_level > 0)
+                {
+                    QueryResult costResult = WorldDatabase.Query(
+                        "SELECT COALESCE(SUM(token_cost), 0), COALESCE(SUM(essence_cost), 0) "
+                        "FROM dc_item_upgrade_costs "
+                        "WHERE tier_id = {} AND season = {} AND upgrade_level <= {}",
+                        static_cast<uint32>(out.tier_id), out.season,
+                        static_cast<uint32>(out.upgrade_level));
+
+                    if (costResult)
+                    {
+                        Field* costFields = costResult->Fetch();
+                        out.tokens_invested = costFields[0].Get<uint32>();
+                        out.essence_invested = costFields[1].Get<uint32>();
+                    }
+                }
+
+                out.upgraded_item_level = out.base_item_level;
+                for (uint8 level = 1; level <= out.upgrade_level; ++level)
+                    out.upgraded_item_level += GetIlvlIncrease(out.tier_id, level);
+
+                if (out.stat_multiplier <= 0.0f)
+                {
+                    float maxMult = STAT_MULTIPLIER_MAX_REGULAR;
+                    if (TierDefinition const* def = GetTierDefinition(out.tier_id))
+                        maxMult = def->stat_multiplier_max;
+                    else if (out.tier_id == TIER_HEIRLOOM)
+                        maxMult = STAT_MULTIPLIER_MAX_HEIRLOOM;
+
+                    uint8 maxLevel = GetTierMaxLevel(out.tier_id);
+                    float progress = maxLevel > 0
+                        ? static_cast<float>(out.upgrade_level) /
+                            static_cast<float>(maxLevel)
+                        : 0.0f;
+                    if (progress > 1.0f)
+                        progress = 1.0f;
+
+                    out.stat_multiplier = 1.0f +
+                        progress * (maxMult - 1.0f);
+                }
+
+                return true;
+            }
+
+            bool RewriteLoadedLegacyCloneItem(Player* player, Item* item,
+                LegacyCloneNormalizationData const& data)
+            {
+                if (!player || !item)
+                    return false;
+
+                if (item->GetEntry() == data.base_item_id)
+                    return true;
+
+                uint16 originalPos = item->GetPos();
+                bool isEquipped = item->IsEquipped();
+
+                player->RemoveItem(item->GetBagSlot(), item->GetSlot(), true);
+
+                item->SetEntry(data.base_item_id);
+                if (ItemTemplate const* baseTemplate =
+                        sObjectMgr->GetItemTemplate(data.base_item_id))
+                {
+                    item->SetUInt32Value(ITEM_FIELD_MAXDURABILITY,
+                        baseTemplate->MaxDurability);
+
+                    if (baseTemplate->MaxDurability != 0 &&
+                        item->GetUInt32Value(ITEM_FIELD_DURABILITY) >
+                            baseTemplate->MaxDurability)
+                    {
+                        item->SetUInt32Value(ITEM_FIELD_DURABILITY,
+                            baseTemplate->MaxDurability);
+                    }
+                }
+
+                if (isEquipped)
+                {
+                    player->EquipItem(originalPos, item, true);
+                }
+                else
+                {
+                    ItemPosCountVec dest;
+                    dest.emplace_back(originalPos, item->GetCount());
+                    if (Item* storedItem = player->StoreItem(dest, item, true))
+                        item = storedItem;
+                }
+
+                item->SaveToDB(nullptr);
+                return true;
+            }
+
+            uint32 EnsureTooltipRevision(uint32 item_guid)
+            {
+                if (item_guid == 0)
+                    return 0;
+
+                uint32& revision = tooltip_revision_by_item[item_guid];
+                if (revision == 0)
+                    revision = 1;
+
+                return revision;
+            }
+
+            uint32 BumpTooltipRevision(uint32 item_guid)
+            {
+                if (item_guid == 0)
+                    return 0;
+
+                uint32& revision = tooltip_revision_by_item[item_guid];
+                if (revision == 0)
+                    revision = 1;
+                else
+                    ++revision;
+
+                return revision;
+            }
+
+            bool BuildTooltipSnapshotUncached(Item* item,
+                ItemUpgradeTooltipSnapshot& snapshot)
+            {
+                snapshot = ItemUpgradeTooltipSnapshot{};
+
+                if (!item)
+                    return false;
+
+                uint32 item_guid = item->GetGUID().GetCounter();
+                snapshot.item_guid = item_guid;
+                snapshot.revision = EnsureTooltipRevision(item_guid);
+                snapshot.item_entry = item->GetEntry();
+                snapshot.base_entry = snapshot.item_entry;
+                snapshot.current_entry = snapshot.item_entry;
+
+                ItemTemplate const* item_template = item->GetTemplate();
+                if (item_template)
+                    snapshot.base_ilvl = item_template->ItemLevel;
+
+                if (ItemUpgradeState* state = GetItemUpgradeState(item_guid))
+                {
+                    snapshot.has_persisted_state = state->has_persisted_state;
+                    if (snapshot.has_persisted_state)
+                    {
+                        snapshot.tier_id = state->tier_id;
+                        snapshot.upgrade_level = state->upgrade_level;
+                        snapshot.max_upgrade = GetTierMaxLevel(state->tier_id);
+                        if (snapshot.max_upgrade == 0)
+                            snapshot.max_upgrade = 15;
+
+                        float stat_multiplier = 1.0f;
+                        if (state->stat_multiplier > 0.0f)
+                            stat_multiplier = state->stat_multiplier;
+                        else if (state->upgrade_level > 0)
+                            stat_multiplier = 1.0f +
+                                (static_cast<float>(state->upgrade_level) * 0.02f);
+
+                        snapshot.stat_multiplier_basis_points = static_cast<uint32>(
+                            std::lround(stat_multiplier * 10000.0f));
+
+                        if (state->base_item_level != 0)
+                            snapshot.base_ilvl = state->base_item_level;
+
+                        snapshot.upgraded_ilvl = state->upgraded_item_level != 0
+                            ? state->upgraded_item_level
+                            : GetUpgradedItemLevel(item_guid,
+                                static_cast<uint16>(snapshot.base_ilvl));
+                        snapshot.can_upgrade = snapshot.max_upgrade > 0 &&
+                            snapshot.upgrade_level < snapshot.max_upgrade;
+                    }
+                }
+
+                if (!snapshot.has_persisted_state && item_template)
+                {
+                    snapshot.can_upgrade =
+                        (item_template->Class == ITEM_CLASS_WEAPON ||
+                            item_template->Class == ITEM_CLASS_ARMOR) &&
+                        (item_template->Quality >= ITEM_QUALITY_UNCOMMON);
+
+                    snapshot.max_upgrade = snapshot.can_upgrade ? 15 : 0;
+                    snapshot.base_ilvl = 0;
+                    snapshot.upgraded_ilvl = 0;
+                }
+
+                return true;
+            }
 
             void EnsureStateMetadata(ItemUpgradeState& state, uint32 owner_hint = 0)
             {
@@ -319,6 +633,113 @@ namespace DarkChaos
             void ClearCache() override
             {
                 item_state_cache.Clear();
+                tooltip_snapshot_cache.Clear();
+                tooltip_revision_by_item.clear();
+            }
+
+            bool NormalizeLegacyCloneItem(Player* player, Item* item)
+            {
+                if (!player || !item)
+                    return false;
+
+                uint32 cloneItemEntry = item->GetEntry();
+                if (!IsUpgradeCloneItemId(cloneItemEntry))
+                    return false;
+
+                LegacyCloneNormalizationData data;
+                if (!LoadLegacyCloneNormalizationData(cloneItemEntry, data))
+                    return false;
+
+                CachePlayerMapContext(player);
+
+                uint32 itemGuid = item->GetGUID().GetCounter();
+                ItemUpgradeState state;
+                state.LoadFromDatabase(itemGuid);
+
+                if (state.item_guid == 0)
+                    state.item_guid = itemGuid;
+                if (state.player_guid == 0)
+                    state.player_guid = player->GetGUID().GetCounter();
+
+                time_t now = static_cast<time_t>(GameTime::GetGameTime().count());
+                if (state.first_upgraded_at == 0 && data.upgrade_level > 0)
+                    state.first_upgraded_at = now;
+                if (data.upgrade_level > 0)
+                    state.last_upgraded_at = now;
+
+                state.item_entry = data.base_item_id;
+                state.base_item_name = data.base_item_name;
+                state.tier_id = data.tier_id;
+                state.upgrade_level = data.upgrade_level;
+                state.tokens_invested = data.tokens_invested;
+                state.essence_invested = data.essence_invested;
+                state.base_item_level = data.base_item_level;
+                state.upgraded_item_level = data.upgraded_item_level;
+                state.stat_multiplier = data.stat_multiplier;
+                state.season = data.season;
+
+                if (!PersistItemUpgradeState(state))
+                    return false;
+
+                if (!RewriteLoadedLegacyCloneItem(player, item, data))
+                    return false;
+
+                item_state_cache.Set(itemGuid, state);
+                InvalidateTooltipSnapshot(itemGuid);
+
+                LOG_DEBUG("scripts.dc",
+                    "ItemUpgrade: normalized legacy clone item {} (guid {}) to base item {} at upgrade level {}",
+                    cloneItemEntry, itemGuid, data.base_item_id,
+                    static_cast<uint32>(data.upgrade_level));
+
+                return true;
+            }
+
+            uint32 NormalizeLegacyCloneItems(Player* player)
+            {
+                if (!player)
+                    return 0;
+
+                uint32 normalizedCount = 0;
+
+                for (uint8 slot = EQUIPMENT_SLOT_START;
+                    slot < CURRENCYTOKEN_SLOT_END; ++slot)
+                {
+                    if (Item* item =
+                            player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                    {
+                        normalizedCount +=
+                            NormalizeLegacyCloneItem(player, item) ? 1u : 0u;
+                    }
+                }
+
+                auto normalizeBagContents =
+                    [&](uint8 startSlot, uint8 endSlot)
+                {
+                    for (uint8 bagSlot = startSlot; bagSlot < endSlot; ++bagSlot)
+                    {
+                        if (Bag* bag = player->GetBagByPos(bagSlot))
+                        {
+                            for (uint32 itemSlot = 0;
+                                itemSlot < bag->GetBagSize(); ++itemSlot)
+                            {
+                                if (Item* item = bag->GetItemByPos(itemSlot))
+                                {
+                                    normalizedCount +=
+                                        NormalizeLegacyCloneItem(player, item)
+                                        ? 1u
+                                        : 0u;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                normalizeBagContents(INVENTORY_SLOT_BAG_START,
+                    INVENTORY_SLOT_BAG_END);
+                normalizeBagContents(BANK_SLOT_BAG_START, BANK_SLOT_BAG_END);
+
+                return normalizedCount;
             }
 
             bool UpgradeItem(uint32 player_guid, uint32 item_guid) override
@@ -623,6 +1044,7 @@ namespace DarkChaos
 
                     ItemUpgradeState default_state;
                     default_state.item_guid = item_guid;
+                    default_state.has_persisted_state = false;
                     EnsureStateMetadata(default_state);
                     if (default_state.tier_id == 0 || default_state.tier_id == TIER_INVALID)
                         default_state.tier_id = TIER_LEVELING;
@@ -644,12 +1066,59 @@ namespace DarkChaos
                 state.first_upgraded_at = fields[8].Get<time_t>();
                 state.last_upgraded_at = fields[9].Get<time_t>();
                 state.season = fields[10].Get<uint32>();
+                state.has_persisted_state = true;
 
                 EnsureStateMetadata(state, state.player_guid);
 
                 // Cache and return
                 item_state_cache.Set(item_guid, state);
                 return item_state_cache.Get(item_guid);
+            }
+
+            bool BuildTooltipSnapshot(Item* item,
+                ItemUpgradeTooltipSnapshot& out) override
+            {
+                out = ItemUpgradeTooltipSnapshot{};
+
+                if (!item)
+                    return false;
+
+                uint32 item_guid = item->GetGUID().GetCounter();
+                if (ItemUpgradeTooltipSnapshot* cached =
+                        tooltip_snapshot_cache.Get(item_guid))
+                {
+                    out = *cached;
+                    return true;
+                }
+
+                if (!BuildTooltipSnapshotUncached(item, out))
+                    return false;
+
+                tooltip_snapshot_cache.Set(item_guid, out);
+                return true;
+            }
+
+            uint32 GetTooltipRevision(uint32 item_guid) override
+            {
+                return EnsureTooltipRevision(item_guid);
+            }
+
+            void InvalidateTooltipSnapshot(uint32 item_guid) override
+            {
+                if (item_guid == 0)
+                    return;
+
+                BumpTooltipRevision(item_guid);
+                tooltip_snapshot_cache.Invalidate(item_guid);
+            }
+
+            void InvalidateItemCaches(uint32 item_guid) override
+            {
+                if (item_guid == 0)
+                    return;
+
+                item_state_cache.Invalidate(item_guid);
+                InvalidateTooltipSnapshot(item_guid);
             }
 
             bool SetItemUpgradeLevel(uint32 item_guid, uint8 level) override
@@ -1237,27 +1706,8 @@ namespace DarkChaos
                 if (state->base_item_name.empty())
                     EnsureStateMetadata(*state, state->player_guid);
 
-                std::string baseName = state->base_item_name;
-                CharacterDatabase.EscapeString(baseName);
-                EscapeFmtBraces(baseName);
-
-                CharacterDatabase.Execute(
-                    "INSERT INTO {} (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "
-                    "tokens_invested, essence_invested, stat_multiplier, first_upgraded_at, last_upgraded_at, season) "
-                    "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}) "
-                    "ON DUPLICATE KEY UPDATE "
-                    "base_item_name = VALUES(base_item_name), upgrade_level = {}, tokens_invested = {}, essence_invested = {}, "
-                    "stat_multiplier = {}, last_upgraded_at = {}",
-                    ITEM_UPGRADES_TABLE,
-                    state->item_guid, state->player_guid, baseName,
-                    static_cast<uint32>(state->tier_id), static_cast<uint32>(state->upgrade_level), state->tokens_invested,
-                    state->essence_invested, state->stat_multiplier,
-                    static_cast<uint32>(state->first_upgraded_at), static_cast<uint32>(state->last_upgraded_at), state->season,
-                    static_cast<uint32>(state->upgrade_level), state->tokens_invested,
-                    static_cast<uint32>(state->upgrade_level), state->tokens_invested,
-                    state->essence_invested, state->stat_multiplier, static_cast<uint32>(state->last_upgraded_at));
-
-                stats.db_writes++;
+                if (PersistItemUpgradeState(*state))
+                    InvalidateTooltipSnapshot(item_guid);
             }
 
             void SavePlayerCurrency(uint32 player_guid, uint32 season) override
@@ -1303,5 +1753,49 @@ namespace DarkChaos
             return sUpgradeManager();
         }
 
+        namespace
+        {
+            class ItemUpgradeLegacyCloneLoginScript : public PlayerScript
+            {
+            public:
+                ItemUpgradeLegacyCloneLoginScript()
+                    : PlayerScript("ItemUpgradeLegacyCloneLoginScript")
+                {
+                }
+
+                void OnPlayerLogin(Player* player) override
+                {
+                    if (!player)
+                        return;
+
+                    CachePlayerMapContext(player);
+
+                    auto* mgr = static_cast<UpgradeManagerImpl*>(
+                        GetUpgradeManager());
+                    uint32 normalizedCount =
+                        mgr->NormalizeLegacyCloneItems(player);
+                    if (normalizedCount == 0)
+                        return;
+
+                    ForcePlayerStatUpdate(player);
+
+                    LOG_INFO("scripts.dc",
+                        "ItemUpgrade: normalized {} legacy clone items for player {} ({}) on login",
+                        normalizedCount, player->GetGUID().GetCounter(),
+                        player->GetName());
+                }
+            };
+        }
+
+        void AddSC_ItemUpgradeManager()
+        {
+            new ItemUpgradeLegacyCloneLoginScript();
+        }
+
     } // namespace ItemUpgrade
 } // namespace DarkChaos
+
+void AddSC_ItemUpgradeManager()
+{
+    DarkChaos::ItemUpgrade::AddSC_ItemUpgradeManager();
+}

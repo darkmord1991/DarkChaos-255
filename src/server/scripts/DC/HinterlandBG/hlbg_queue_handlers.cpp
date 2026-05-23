@@ -13,93 +13,6 @@
 #include "ObjectAccessor.h"
 #include "Group.h"
 
-// Player command handlers
-void OutdoorPvPHL::HandleQueueJoinCommand(Player* player)
-{
-    if (!player)
-        return;
-
-    // Basic eligibility checks
-    if (!IsMaxLevel(player))
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Requires level|r |cffffffff{}|r |cffff8080to join.|r", _minLevel);
-        return;
-    }
-
-    if (player->HasAura(HinterlandBGConstants::BG_DESERTER_SPELL)) // Deserter debuff
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Shadow_Possession:16|t |cff00ccff[HLBG Queue]|r |cffff8080You cannot join while flagged as deserter.|r");
-        return;
-    }
-
-    if (!player->IsAlive())
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Holy_Resurrection:16|t |cff00ccff[HLBG Queue]|r |cffff8080You must be alive to join the queue.|r");
-        return;
-    }
-
-    if (player->IsInCombat())
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_DualWield:16|t |cff00ccff[HLBG Queue]|r |cffff8080You cannot join while in combat.|r");
-        return;
-    }
-
-    // Check if queue is enabled
-    if (!_queueEnabled)
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Queue system is currently disabled.|r");
-        return;
-    }
-
-    // Add player to queue
-    AddPlayerToQueue(player);
-}
-
-void OutdoorPvPHL::HandleQueueLeaveCommand(Player* player)
-{
-    if (!player)
-        return;
-
-    RemovePlayerFromQueue(player);
-}
-
-void OutdoorPvPHL::HandleQueueStatusCommand(Player* player)
-{
-    if (!player)
-        return;
-
-    ShowQueueStatus(player);
-}
-
-void OutdoorPvPHL::HandleGroupQueueJoinCommand(Player* player)
-{
-    if (!player)
-        return;
-
-    // Basic eligibility checks first
-    if (!IsMaxLevel(player))
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Requires level|r |cffffffff{}|r |cffff8080to join.|r", _minLevel);
-        return;
-    }
-
-    if (!_queueEnabled)
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Queue system is currently disabled.|r");
-        return;
-    }
-
-    AddGroupToQueue(player);
-}
-
-void OutdoorPvPHL::HandleGroupQueueLeaveCommand(Player* player)
-{
-    if (!player)
-        return;
-
-    RemoveGroupFromQueue(player);
-}
-
 // Admin command helpers
 void OutdoorPvPHL::HandleAdminQueueClear(Player* admin)
 {
@@ -230,45 +143,6 @@ void OutdoorPvPHL::HandleAdminQueueConfig(Player* admin, const char* setting, co
     {
         ch.PSendSysMessage("HLBG Admin: Available settings: enabled, minplayers, maxgroupsize");
     }
-}
-
-// Integration with existing command system
-bool OutdoorPvPHL::HandlePlayerCommand(Player* player, const std::string& command, const std::string& args)
-{
-    if (!player)
-        return false;
-
-    // Handle queue-related commands
-    if (command == "queue")
-    {
-        if (args == "join")
-        {
-            HandleQueueJoinCommand(player);
-            return true;
-        }
-        else if (args == "leave")
-        {
-            HandleQueueLeaveCommand(player);
-            return true;
-        }
-        else if (args == "status" || args.empty())
-        {
-            HandleQueueStatusCommand(player);
-            return true;
-        }
-        else if (args == "group_join")
-        {
-            HandleGroupQueueJoinCommand(player);
-            return true;
-        }
-        else if (args == "group_leave")
-        {
-            HandleGroupQueueLeaveCommand(player);
-            return true;
-        }
-    }
-
-    return false; // Command not handled
 }
 
 bool OutdoorPvPHL::HandleAdminCommand(Player* admin, const std::string& command, const std::string& args)

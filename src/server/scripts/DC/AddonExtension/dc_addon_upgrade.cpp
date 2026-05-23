@@ -20,6 +20,7 @@
 #include "Chat.h"
 #include "Spell.h"
 #include "SpellMgr.h"
+#include "ObjectMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeMechanics.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
@@ -183,11 +184,12 @@ namespace Upgrade
 
         uint32 itemGUID = item->GetGUID().GetCounter();
         uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
-        uint32 currentEntry = item->GetEntry();
-        uint32 baseEntry = currentEntry;
+        uint32 baseEntry = item->GetEntry();
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr =
+            DarkChaos::ItemUpgrade::GetUpgradeManager();
 
         // Special Case: Heirloom Shirt
-        if (currentEntry == DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+        if (baseEntry == DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
         {
              QueryResult heirloomResult = CharacterDatabase.Query(
                 "SELECT upgrade_level FROM dc_heirloom_upgrades WHERE item_guid = {}",
@@ -199,14 +201,6 @@ namespace Upgrade
 
             float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                 static_cast<uint8>(upgradeLevel), static_cast<uint8>(DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER));
-
-            // Heirloom doesn't use clones, but client expects clone map
-            std::string cloneMap;
-            for (uint32 i = 0; i <= DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL; ++i)
-            {
-                if (i > 0) cloneMap += ",";
-                cloneMap += std::to_string(i) + "-" + std::to_string(DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY);
-            }
 
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
                 .SetRequestId(msg.GetRequestId())
@@ -220,8 +214,6 @@ namespace Upgrade
                 .Set("tokenCost", 0u)
                 .Set("essenceCost", 0u)
                 .Set("baseEntry", DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
-                .Set("currentEntry", DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
-                .Set("cloneMap", cloneMap)
                 .Set("baseIlvl", baseItemLevel)
                 .Set("upgradedIlvl", baseItemLevel)
                 .Set("statMultiplier", statMultiplier)
@@ -229,56 +221,60 @@ namespace Upgrade
             return;
         }
 
-        // Check if clone
-        QueryResult baseResult = WorldDatabase.Query(
-            "SELECT base_item_id, upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
-            currentEntry);
+        uint32 upgradeLevel = 0;
+        uint8 tier = DarkChaos::ItemUpgrade::TIER_LEVELING;
 
-        uint32 cloneDetectedLevel = 0;
-        if (baseResult)
+        DarkChaos::ItemUpgrade::ItemUpgradeState* state =
+            mgr ? mgr->GetItemUpgradeState(itemGUID) : nullptr;
+
+        if (state)
         {
-            baseEntry = (*baseResult)[0].Get<uint32>();
-            cloneDetectedLevel = (*baseResult)[1].Get<uint32>();
+            upgradeLevel = state->upgrade_level;
+
+            if (state->base_item_level != 0)
+                baseItemLevel = state->base_item_level;
+
+            if (state->tier_id != 0 &&
+                state->tier_id != DarkChaos::ItemUpgrade::TIER_INVALID)
+            {
+                tier = state->tier_id;
+            }
         }
 
-        // Get upgrade state
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT upgrade_level FROM dc_item_upgrades WHERE item_guid = {}",
-            itemGUID);
+        if (mgr)
+        {
+            uint8 mappedTier = mgr->GetItemTier(baseEntry);
+            if (mappedTier != 0 &&
+                mappedTier != DarkChaos::ItemUpgrade::TIER_INVALID)
+            {
+                tier = mappedTier;
+            }
+        }
 
-        uint32 upgradeLevel = 0;
-        uint32 tier = 1;
-
-        // Get tier from database
-        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-            tier = mgr->GetItemTier(baseEntry);
         // Fallback or override from table if mgr fails (redundant but safe)
-        if (tier == 0)
+        if (tier == 0 || tier == DarkChaos::ItemUpgrade::TIER_INVALID)
         {
              QueryResult tierLookup = WorldDatabase.Query(
                 "SELECT tier_id FROM dc_item_templates_upgrade WHERE item_id = {} AND season = 1 AND is_active = 1",
                 baseEntry);
              if (tierLookup)
-                 tier = (*tierLookup)[0].Get<uint32>();
+                 tier = (*tierLookup)[0].Get<uint8>();
              else
-                 tier = 1;
-        }
-
-        if (result)
-        {
-            upgradeLevel = (*result)[0].Get<uint32>();
-        }
-        else if (cloneDetectedLevel > 0)
-        {
-            upgradeLevel = cloneDetectedLevel;
+                 tier = DarkChaos::ItemUpgrade::TIER_LEVELING;
         }
 
         // Calculate stat multiplier and ilvl
         float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
-                    static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+                    static_cast<uint8>(upgradeLevel), tier);
+
+        if (state && state->stat_multiplier > 0.0f)
+            statMultiplier = state->stat_multiplier;
 
         uint16 upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
-                    static_cast<uint16>(baseItemLevel), static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
+                    static_cast<uint16>(baseItemLevel), static_cast<uint8>(upgradeLevel), tier);
+
+        if (state && state->upgraded_item_level != 0)
+            upgradedIlvl = state->upgraded_item_level;
 
         // Get tier max level
         uint32 maxLevel = 15;
@@ -303,37 +299,6 @@ namespace Upgrade
             }
         }
 
-        // Build clone map
-        std::string cloneMap;
-        QueryResult cloneResult = WorldDatabase.Query(
-            "SELECT upgrade_level, clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {}",
-            baseEntry, tier);
-
-        cloneMap = "0-" + std::to_string(baseEntry);
-        std::map<uint32, uint32> clones;
-        if (cloneResult)
-        {
-            do
-            {
-                uint32 level = (*cloneResult)[0].Get<uint32>();
-                uint32 entry = (*cloneResult)[1].Get<uint32>();
-                clones[level] = entry;
-            } while (cloneResult->NextRow());
-        }
-        // Ensure current is in map
-        clones[upgradeLevel] = currentEntry;
-
-        std::ostringstream ss;
-        bool first = true;
-        for (auto const& pair : clones)
-        {
-            if (first) first = false;
-            else ss << ",";
-            ss << pair.first << "-" << pair.second;
-        }
-        if (ss.str().length() > 2) // more than just base
-             cloneMap = ss.str();
-
         // Send response
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
             .SetRequestId(msg.GetRequestId())
@@ -347,8 +312,6 @@ namespace Upgrade
             .Set("tokenCost", nextTokenCost)
             .Set("essenceCost", nextEssenceCost)
             .Set("baseEntry", baseEntry)
-            .Set("currentEntry", currentEntry)
-            .Set("cloneMap", cloneMap)
             .Set("baseIlvl", baseItemLevel)
             .Set("upgradedIlvl", upgradedIlvl)
             .Set("statMultiplier", statMultiplier)
@@ -533,7 +496,8 @@ namespace Upgrade
              baseEntry = (*baseResult)[0].Get<uint32>();
 
         uint32 tier = 1;
-        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (mgr)
              tier = mgr->GetItemTier(baseEntry);
 
         // Disallow tier 3 (heirloom tier) in standard item upgrade flow
@@ -544,18 +508,32 @@ namespace Upgrade
             return;
         }
 
-        QueryResult stateResult = CharacterDatabase.Query(
-             "SELECT upgrade_level FROM dc_item_upgrades WHERE item_guid = {}", itemGUID);
-
         uint32 currentLevel = 0;
-        if (stateResult)
-             currentLevel = (*stateResult)[0].Get<uint32>();
+        DarkChaos::ItemUpgrade::ItemUpgradeState* upgradeState = mgr
+            ? mgr->GetItemUpgradeState(itemGUID)
+            : nullptr;
+        if (upgradeState && upgradeState->has_persisted_state)
+            currentLevel = upgradeState->upgrade_level;
         else if (baseResult)
         {
              // Check if it's a pre-dropped clone
              QueryResult cloneLevelCheck = WorldDatabase.Query("SELECT upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
              if (cloneLevelCheck)
                  currentLevel = (*cloneLevelCheck)[0].Get<uint32>();
+        }
+
+        uint32 maxLevel = 15;
+        QueryResult tierResult = WorldDatabase.Query(
+            "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
+            tier);
+        if (tierResult)
+            maxLevel = (*tierResult)[0].Get<uint32>();
+
+        if (targetLevel > maxLevel)
+        {
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
+                UPGRADE_ERR_MAX_LEVEL, "Target level exceeds max upgrade");
+            return;
         }
 
            if (targetLevel <= currentLevel)
@@ -593,124 +571,105 @@ namespace Upgrade
              return;
         }
 
-        // Get target clone
-        QueryResult targetCloneRes = WorldDatabase.Query(
-              "SELECT clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {} AND upgrade_level = {}",
-              baseEntry, tier, targetLevel);
-
-        if (!targetCloneRes)
+        if (!mgr || !upgradeState)
         {
-               std::ostringstream err;
-               err << "Target clone not found (tier=" << tier << ", level=" << targetLevel << ")";
-            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NOT_UPGRADEABLE, err.str());
-             return;
+            LOG_ERROR("dc.addon.upgrade", "Upgrade failed: upgrade manager unavailable for player {} item {}",
+                player->GetName(), itemGUID);
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
+                UPGRADE_ERR_NOT_UPGRADEABLE, "Upgrade manager unavailable");
+            return;
         }
 
-        uint32 targetEntry = (*targetCloneRes)[0].Get<uint32>();
+        ItemTemplate const* baseTemplate = item->GetTemplate();
+        if (baseEntry != currentEntry)
+            baseTemplate = sObjectMgr->GetItemTemplate(baseEntry);
 
-        bool const originalWasEquipped = Player::IsEquipmentPos(bag, slot);
-        uint16 replacementEquipPos = 0;
-
-        if (originalWasEquipped)
+        if (!baseTemplate)
         {
-            InventoryResult replacementResult = player->CanEquipNewItem(slot, replacementEquipPos, targetEntry, true);
-            if (replacementResult != EQUIP_ERR_OK)
-            {
-                LOG_WARN("dc.addon.upgrade", "Upgrade failed: unable to place upgraded item back into bag={}, slot={} (targetEntry={}, result={}) for player {}",
-                    bag, slot, targetEntry, uint32(replacementResult), player->GetName());
-                SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
-                    UPGRADE_ERR_NONE, "Upgraded item could not be placed back into its original slot");
-                return;
-            }
+            LOG_ERROR("dc.addon.upgrade", "Upgrade failed: missing base template {} for player {} item {}",
+                baseEntry, player->GetName(), itemGUID);
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry,
+                UPGRADE_ERR_NOT_UPGRADEABLE, "Base item template not found");
+            return;
         }
-
-        uint32 maxLevel = 15;
-        QueryResult tierResult = WorldDatabase.Query(
-            "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
-            tier);
-        if (tierResult)
-            maxLevel = (*tierResult)[0].Get<uint32>();
 
         uint32 nextTokenCost = 0;
         uint32 nextEssenceCost = 0;
         if (targetLevel < maxLevel)
         {
-            if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-            {
-                uint8 nextLevel = static_cast<uint8>(targetLevel + 1);
-                if (nextLevel > maxLevel)
-                    nextLevel = static_cast<uint8>(maxLevel);
+            uint8 nextLevel = static_cast<uint8>(targetLevel + 1);
+            if (nextLevel > maxLevel)
+                nextLevel = static_cast<uint8>(maxLevel);
 
-                nextTokenCost = mgr->GetUpgradeCost(static_cast<uint8>(tier), nextLevel);
-                nextEssenceCost = mgr->GetEssenceCost(static_cast<uint8>(tier), nextLevel);
-            }
+            nextTokenCost = mgr->GetUpgradeCost(static_cast<uint8>(tier), nextLevel);
+            nextEssenceCost = mgr->GetEssenceCost(static_cast<uint8>(tier), nextLevel);
         }
 
         // Consume currency
         if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
         if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
 
-        // Replace the item in-place so repeated upgrades keep using the same location.
-        player->DestroyItem(bag, slot, true);
+        auto loadInvestedCostsThroughLevel = [&](uint32 throughLevel, uint32& outTokens, uint32& outEssence)
+        {
+            outTokens = 0;
+            outEssence = 0;
+            if (throughLevel == 0)
+                return;
 
-        Item* newItem = nullptr;
-        if (originalWasEquipped)
+            QueryResult investedResult = WorldDatabase.Query(
+                "SELECT COALESCE(SUM(token_cost), 0), COALESCE(SUM(essence_cost), 0) FROM dc_item_upgrade_costs "
+                "WHERE tier_id = {} AND season = 1 AND upgrade_level <= {}",
+                tier, throughLevel);
+            if (!investedResult)
+                return;
+
+            if (!(*investedResult)[0].IsNull())
+                outTokens = (*investedResult)[0].Get<uint32>();
+            if (!(*investedResult)[1].IsNull())
+                outEssence = (*investedResult)[1].Get<uint32>();
+        };
+
+        uint32 investedTokens = upgradeState->tokens_invested;
+        uint32 investedEssence = upgradeState->essence_invested;
+        if (!upgradeState->has_persisted_state && currentLevel > 0 &&
+            investedTokens == 0 && investedEssence == 0)
         {
-            newItem = player->EquipNewItem(replacementEquipPos, targetEntry, true);
-        }
-        else
-        {
-            ItemPosCountVec dest;
-            if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, targetEntry, 1) == EQUIP_ERR_OK)
-                newItem = player->StoreNewItem(dest, targetEntry, true);
+            loadInvestedCostsThroughLevel(currentLevel, investedTokens,
+                investedEssence);
         }
 
-         if (newItem)
-        {
-            uint32 newGuid = newItem->GetGUID().GetCounter();
-            uint32 newBag = newItem->GetBagSlot();
-            uint32 newSlot = newItem->GetSlot();
-            if (originalWasEquipped && (newBag != bag || newSlot != slot))
-            {
-                LOG_WARN("dc.addon.upgrade", "Upgrade placed equipped replacement into unexpected location for player {}: requested {}:{}, actual {}:{} (targetEntry={})",
-                    player->GetName(), bag, slot, newBag, newSlot, targetEntry);
-            }
-            DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-            if (mgr)
-            {
-                 DarkChaos::ItemUpgrade::ItemUpgradeState* state = mgr->GetItemUpgradeState(newGuid);
-                 if (state)
-                 {
-                      state->player_guid = player->GetGUID().GetCounter();
-                      state->item_guid = newGuid;
-                      state->item_entry = targetEntry;
-                      state->tier_id = tier;
-                      state->upgrade_level = targetLevel;
-                      state->tokens_invested += tokensNeeded;
-                      state->essence_invested += essenceNeeded;
-                      state->season = 1; // Default season 1
-                      state->last_upgraded_at = time(nullptr);
-                      // Recalc stats for storage
-                      state->stat_multiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
-                          static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
-                      state->upgraded_item_level = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
-                          static_cast<uint16>(newItem->GetTemplate()->ItemLevel), static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
+        time_t const now = time(nullptr);
+        upgradeState->player_guid = player->GetGUID().GetCounter();
+        upgradeState->item_guid = itemGUID;
+        upgradeState->item_entry = baseEntry;
+        upgradeState->base_item_name = !baseTemplate->Name1.empty()
+            ? baseTemplate->Name1
+            : (std::string("Item ") + std::to_string(baseEntry));
+        upgradeState->tier_id = static_cast<uint8>(tier);
+        upgradeState->upgrade_level = static_cast<uint8>(targetLevel);
+        upgradeState->tokens_invested = investedTokens + tokensNeeded;
+        upgradeState->essence_invested = investedEssence + essenceNeeded;
+        upgradeState->season = 1;
+        upgradeState->base_item_level = baseTemplate->ItemLevel;
+        upgradeState->upgraded_item_level =
+            DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
+                static_cast<uint16>(baseTemplate->ItemLevel),
+                static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
+        upgradeState->stat_multiplier =
+            DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
+        if (upgradeState->first_upgraded_at == 0 && targetLevel > 0)
+            upgradeState->first_upgraded_at = now;
+        upgradeState->last_upgraded_at = now;
 
-                      mgr->SaveItemUpgrade(newGuid);
-                 }
-            }
-            // Send success
-              SendUpgradeResult(player, msg.GetRequestId(), true, newGuid, targetLevel,
-                  targetEntry, UPGRADE_ERR_NONE, "", tier, maxLevel, nextTokenCost,
-                  nextEssenceCost, newBag, newSlot);
-            SendCurrencyUpdate(player);
-        }
-        else
-        {
-            LOG_ERROR("dc.addon.upgrade", "Upgrade failed after destroying original item: could not create replacement targetEntry={} for player {} at bag={}, slot={}",
-                targetEntry, player->GetName(), bag, slot);
-               SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NONE, "Inventory full");
-        }
+        mgr->SaveItemUpgrade(itemGUID);
+        DarkChaos::ItemUpgrade::ForcePlayerStatUpdate(player);
+
+        SendUpgradeResult(player, msg.GetRequestId(), true, itemGUID,
+            targetLevel, item->GetEntry(), UPGRADE_ERR_NONE, "", tier,
+            maxLevel, nextTokenCost, nextEssenceCost, item->GetBagSlot(),
+            item->GetSlot());
+        SendCurrencyUpdate(player);
     }
 
     // Handler: Package selection (migrated from itemupgrade_communication.lua)

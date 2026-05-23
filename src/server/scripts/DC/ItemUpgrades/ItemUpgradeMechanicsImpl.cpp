@@ -299,6 +299,7 @@ bool ItemUpgradeState::LoadFromDatabase(uint32 item_guid)
     this->first_upgraded_at = fields[8].Get<time_t>();
     this->last_upgraded_at = fields[9].Get<time_t>();
     this->season = fields[10].Get<uint32>();
+    this->has_persisted_state = true;
 
     return true;
 }
@@ -324,6 +325,8 @@ bool ItemUpgradeState::SaveToDatabase() const
         ITEM_UPGRADES_TABLE,
         item_guid, player_guid, baseName, static_cast<uint32>(tier_id), static_cast<uint32>(upgrade_level), essence_invested, tokens_invested,
         stat_multiplier, static_cast<uint32>(first_upgraded_at), static_cast<uint32>(last_upgraded_at), season);
+
+    has_persisted_state = true;
 
     return true;
 }

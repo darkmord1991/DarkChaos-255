@@ -112,26 +112,10 @@ function DC.Debug(msg)
 	end
 end
 
--- Tier icon textures
-DC.TIER_ICONS = {
-	[1] = "Interface\\Icons\\INV_Misc_Coin_01",        -- Leveling (Copper coin)
-	[2] = "Interface\\Icons\\INV_Misc_Coin_02",        -- Heroic (Silver coin)
-	[3] = "Interface\\Icons\\INV_Misc_Coin_03",        -- Raid (Gold coin)
-	[4] = "Interface\\Icons\\INV_Misc_Coin_04",        -- Mythic (Platinum coin)
-	[5] = "Interface\\Icons\\INV_Misc_Gem_Amethyst_01", -- Artifact (Gem)
-};
-
--- Tier colors for progress bars and indicators
-DC.TIER_COLORS = {
-	[1] = { r = 0.6, g = 0.6, b = 0.6 },    -- Leveling (Gray)
-	[2] = { r = 0.2, g = 0.8, b = 0.2 },    -- Heroic (Green)
-	[3] = { r = 0.2, g = 0.2, b = 1.0 },    -- Raid (Blue)
-	[4] = { r = 0.8, g = 0.2, b = 0.8 },    -- Mythic (Purple)
-	[5] = { r = 1.0, g = 0.5, b = 0.0 },    -- Artifact (Orange)
-};
+DC.BootstrapTierDefinitions();
 
 -- Cost colors for indicators
-DC.COST_COLORS = {
+DC.COST_COLORS = DC.COST_COLORS or {
 	cheap = { r = 0.2, g = 0.8, b = 0.2 },      -- Green (affordable)
 	moderate = { r = 0.8, g = 0.8, b = 0.2 },   -- Yellow (somewhat affordable)
 	expensive = { r = 0.8, g = 0.2, b = 0.2 },  -- Red (expensive)
@@ -214,6 +198,22 @@ local function ParseCloneMap(mapString)
 	return nil;
 end
 
+local function GetCanonicalItemEntry(item)
+	if not item then
+		return nil;
+	end
+
+	local entry = tonumber(item.itemEntry)
+		or tonumber(item.baseEntry)
+		or tonumber(item.currentEntry)
+		or tonumber(item.itemID);
+	if entry and entry > 0 then
+		return entry;
+	end
+
+	return nil;
+end
+
 local function GetCloneEntryForLevel(item, level)
 	if not item then
 		return nil;
@@ -222,12 +222,8 @@ local function GetCloneEntryForLevel(item, level)
 	if item.cloneEntries and item.cloneEntries[level] then
 		return item.cloneEntries[level];
 	end
-	local currentUpgrade = item.currentUpgrade or 0;
-	if level == currentUpgrade then
-		return item.currentEntry or item.itemID;
-	end
 	if level == 0 then
-		return item.baseEntry or item.itemID;
+		return GetCanonicalItemEntry(item);
 	end
 	return nil;
 end
@@ -281,7 +277,8 @@ function DarkChaos_ItemUpgrade_UpdateProgressBar(currentLevel, maxLevel, tier)
 	local barWidth = math.max(1, math.floor(fullWidth * fraction + 0.5));
 	fill:SetWidth(barWidth);
 
-	local tierColor = DC.TIER_COLORS[tier] or DC.TIER_COLORS[1];
+	local tierColor = DC.GetTierColor and DC.GetTierColor(tier)
+		or (DC.TIER_COLORS[tier] or DC.TIER_COLORS[1]);
 	if type(fill.SetColorTexture) == "function" then
 		fill:SetColorTexture(tierColor.r, tierColor.g, tierColor.b, 1);
 	else
@@ -311,9 +308,7 @@ function DC.IsHeirloomItem(item)
 		return false;
 	end
 
-	local trackedItemId = tonumber(item.itemID)
-		or tonumber(item.baseEntry)
-		or tonumber(item.currentEntry);
+	local trackedItemId = GetCanonicalItemEntry(item);
 	if trackedItemId == DC.HEIRLOOM_SHIRT_ENTRY then
 		return true;
 	end
@@ -1010,6 +1005,7 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu celebrate|r - Toggle celebration effects");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu autoequip|r - Toggle auto-equip");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu status|r - Show current settings status");
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu tiers|r - Open the tier browser");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu reset|r - Reset all settings to defaults");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu cache clear|r - Clear item cache");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu help|r - Show this help");
@@ -1145,6 +1141,13 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 			DEFAULT_CHAT_FRAME:AddMessage(string.format("Stat Package: |cff%s%s|r (%s)", colorHex, pkg.name, table.concat(pkg.stats, ", ")));
 		else
 			DEFAULT_CHAT_FRAME:AddMessage("Stat Package: |cff888888None selected|r");
+		end
+
+	elseif subcmd == "tiers" then
+		if DC.ToggleTierBrowser then
+			DC.ToggleTierBrowser(true);
+		else
+			DC.PrintTierDefinitions();
 		end
 		
 	elseif subcmd == "reset" then
@@ -1550,12 +1553,13 @@ end
 
 -- Helper function to get max upgrade level for a specific tier
 function DC.GetMaxUpgradeLevelForTier(tier)
-	if not tier or not DC.MAX_UPGRADE_LEVELS_BY_TIER[tier] then
+	local definition = DC.GetTierDefinition and DC.GetTierDefinition(tier);
+	if not definition or not definition.maxUpgradeLevel then
 		local fallback = DC.MAX_UPGRADE_LEVEL or 15;
 		DC.Debug("GetMaxUpgradeLevelForTier: tier=" .. tostring(tier) .. " returned fallback=" .. fallback);
 		return fallback;  -- fallback to global max
 	end
-	return DC.MAX_UPGRADE_LEVELS_BY_TIER[tier];
+	return tonumber(definition.maxUpgradeLevel) or (DC.MAX_UPGRADE_LEVEL or 15);
 end
 
 -- Quality colors (Wrath palette)
@@ -1568,24 +1572,7 @@ DC.ITEM_QUALITY_COLORS = DC.ITEM_QUALITY_COLORS or {
 	[5] = { r = 1.00, g = 0.50, b = 0.00 },
 };
 
--- Tier labels matching retail naming
-DC.TIER_NAMES = DC.TIER_NAMES or {
-	[1] = "Veteran",
-	[2] = "Adventurer",
-	[3] = "Champion",
-	[4] = "Hero",
-	[5] = "Legendary",
-};
-
--- Maximum upgrade levels by tier (lower tiers have lower caps)
--- NOTE: Always reset to ensure correct values (don't use "or" which would preserve old saved data)
-DC.MAX_UPGRADE_LEVELS_BY_TIER = {
-	[1] = 6,   -- Veteran: 6 upgrades
-	[2] = 15,  -- Adventurer: 15 upgrades (full upgrades)
-	[3] = 15,  -- Champion: 15 upgrades (heirloom tier)
-	[4] = 8,   -- Hero: 8 upgrades (mythic tier)
-	[5] = 12,  -- Legendary: 12 upgrades (artifact tier)
-};
+DC.BootstrapTierDefinitions();
 
 -- Runtime state defaults
 DC.upgradeCosts = DC.upgradeCosts or {};
@@ -1991,22 +1978,22 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 	end
 
 	local existing = (DC.itemUpgradeCache and DC.itemUpgradeCache[guid]) or nil;
-	local cloneEntries = info.cloneEntries or DC.ParseCloneMap and DC.ParseCloneMap(info.cloneMap) or nil;
+	local itemEntry = tonumber(info.itemEntry or info.baseEntry or info.currentEntry) or 0;
 	local data = {
 		guid = guid,
 		tier = tonumber(info.tier) or 0,
 		baseItemLevel = tonumber(info.baseIlvl or info.baseItemLevel) or 0,
 		upgradedItemLevel = tonumber(info.upgradedIlvl or info.upgradedItemLevel) or 0,
 		statMultiplier = tonumber(info.statMultiplier) or 1.0,
-		baseEntry = tonumber(info.baseEntry) or 0,
-		currentEntry = tonumber(info.currentEntry) or 0,
+		itemEntry = itemEntry,
+		baseEntry = itemEntry,
+		currentEntry = itemEntry,
 		currentUpgrade = tonumber(info.currentUpgrade) or 0,
 		maxUpgrade = tonumber(info.maxUpgrade) or 0,
 		tokenCost = tonumber(info.tokenCost) or 0,
 		essenceCost = tonumber(info.essenceCost) or 0,
 		serverBag = tonumber(info.serverBag),
 		serverSlot = tonumber(info.serverSlot),
-		cloneEntries = cloneEntries,
 		timestamp = GetTime and GetTime() or 0,
 	};
 
@@ -2065,7 +2052,7 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 			local link = GetInventoryItemLink("player", slotID);
 			if link then
 				local itemId = tonumber(string.match(link, "item:(%d+)"));
-				if itemId == data.currentEntry or itemId == data.baseEntry then
+				if itemId == itemEntry then
 					DC.itemLocationCache = DC.itemLocationCache or {};
 					DC.itemLocationCache["255:" .. (slotID - 1)] = guid;
 					break;
@@ -2078,7 +2065,7 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 				local link = GetContainerItemLink(bag, slot);
 				if link then
 					local itemId = tonumber(string.match(link, "item:(%d+)"));
-					if itemId == data.currentEntry or itemId == data.baseEntry then
+					if itemId == itemEntry then
 						DC.itemLocationCache = DC.itemLocationCache or {};
 						DC.itemLocationCache[bag .. ":" .. (slot - 1)] = guid;
 						return;
@@ -2126,30 +2113,25 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	item.level = calculatedLevel;
 	item.statMultiplier = data.statMultiplier or GetStatMultiplierForLevel(item.currentUpgrade, item.tier);
 	item.guid = data.guid or item.guid;
-	if data.baseEntry then
-		item.baseEntry = data.baseEntry;
-	elseif not item.baseEntry then
-		item.baseEntry = item.itemID;
-	end
-	if data.currentEntry then
-		item.currentEntry = data.currentEntry;
-		item.itemID = data.currentEntry;
-	elseif not item.currentEntry then
-		item.currentEntry = item.itemID;
+	local itemEntry = tonumber(data.itemEntry or data.baseEntry or data.currentEntry)
+		or tonumber(item.itemEntry)
+		or tonumber(item.baseEntry)
+		or tonumber(item.currentEntry)
+		or tonumber(item.itemID)
+		or 0;
+	if itemEntry > 0 then
+		item.itemEntry = itemEntry;
+		item.baseEntry = itemEntry;
+		item.currentEntry = itemEntry;
+		item.itemID = itemEntry;
 	end
 	if data.cloneEntries then
 		item.cloneEntries = {};
 		for level, entry in pairs(data.cloneEntries) do
 			item.cloneEntries[level] = entry;
 		end
-	elseif not item.cloneEntries then
-		item.cloneEntries = {};
-	end
-	if item.baseEntry and not item.cloneEntries[0] then
-		item.cloneEntries[0] = item.baseEntry;
-	end
-	if item.currentEntry then
-		item.cloneEntries[item.currentUpgrade or 0] = item.currentEntry;
+	else
+		item.cloneEntries = nil;
 	end
 	if data.serverBag then
 		item.serverBag = data.serverBag;
@@ -3084,6 +3066,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 
 	ApplyLeaderboardsStyle(_G["DarkChaos_ItemUpgrade_DebugFrame"]);
 	ApplyLeaderboardsStyle(_G["DarkChaos_ItemBrowserFrame"]);
+	ApplyLeaderboardsStyle(_G["DarkChaos_TierBrowserFrame"]);
 
 	self:RegisterForDrag("LeftButton");
 	self:SetMovable(true);
@@ -3201,6 +3184,10 @@ function DarkChaos_ItemUpgrade_OnHide(self)
 
 	if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
 		DarkChaos_ItemBrowserFrame:Hide();
+	end
+
+	if DarkChaos_TierBrowserFrame and DarkChaos_TierBrowserFrame:IsShown() then
+		DarkChaos_TierBrowserFrame:Hide();
 	end
 
 	if GameTooltip and GameTooltip:IsShown() then
@@ -3463,6 +3450,380 @@ end
 --[[=====================================================
 	ITEM BROWSER
 =======================================================]]
+
+local TIER_BROWSER_BUTTON_HEIGHT = 44;
+local TIER_BROWSER_VISIBLE_ROWS = 5;
+
+local function GetTierBrowserRows()
+	if DC.GetSortedTierDefinitions then
+		return DC.GetSortedTierDefinitions();
+	end
+
+	local definitions = DC.BootstrapTierDefinitions and DC.BootstrapTierDefinitions()
+		or {};
+	local rows = {};
+
+	for tierId, definition in pairs(definitions) do
+		local row = {};
+		for key, value in pairs(definition) do
+			row[key] = value;
+		end
+		row.tierId = tonumber(row.tierId) or tonumber(tierId) or 0;
+		row.sortOrder = tonumber(row.sortOrder) or (row.tierId * 10);
+		table.insert(rows, row);
+	end
+
+	table.sort(rows, function(left, right)
+		if left.sortOrder ~= right.sortOrder then
+			return left.sortOrder < right.sortOrder;
+		end
+		return (left.tierId or 0) < (right.tierId or 0);
+	end);
+
+	return rows;
+end
+
+local function FindTierBrowserRowById(rows, tierId)
+	tierId = tonumber(tierId);
+	if not tierId then
+		return nil;
+	end
+
+	for _, row in ipairs(rows) do
+		if tonumber(row.tierId) == tierId then
+			return row;
+		end
+	end
+
+	return nil;
+end
+
+local function GetPreferredTierBrowserTierId(rows)
+	local selected = FindTierBrowserRowById(rows, DC.selectedTierBrowserTierId);
+	if selected then
+		return tonumber(selected.tierId);
+	end
+
+	if DC.currentItem and DC.currentItem.tier then
+		local current = FindTierBrowserRowById(rows, DC.currentItem.tier);
+		if current then
+			return tonumber(current.tierId);
+		end
+	end
+
+	if rows[1] then
+		return tonumber(rows[1].tierId);
+	end
+
+	return nil;
+end
+
+local function GetTierBrowserItemRows(row)
+	if not row or not DC.GetTierItemsForTier then
+		return {};
+	end
+
+	return DC.GetTierItemsForTier(row.tierId) or {};
+end
+
+local function BuildTierBrowserItemPreview(row)
+	local itemRows = GetTierBrowserItemRows(row);
+	local itemCount = #itemRows;
+	if itemCount == 0 then
+		return "No base-item browse rows are available for this tier yet.";
+	end
+
+	local preview = {};
+	local previewCount = math.min(itemCount, 5);
+	for index = 1, previewCount do
+		local itemRow = itemRows[index];
+		local itemName = GetItemInfo(itemRow.itemId);
+		if not itemName or itemName == "" then
+			itemName = string.format("Item %d", tonumber(itemRow.itemId) or 0);
+		end
+		table.insert(preview, itemName);
+	end
+
+	local text = string.format("Static browse rows: %d base items.", itemCount);
+	if #preview > 0 then
+		text = text .. "\nPreview: " .. table.concat(preview, ", ");
+		if itemCount > previewCount then
+			text = text .. string.format(", and %d more.", itemCount - previewCount);
+		end
+	end
+
+	return text;
+end
+
+local function FormatTierBrowserSummary(row)
+	local parts = { string.format("Tier %d", tonumber(row.tierId) or 0) };
+	local season = tonumber(row.season) or 0;
+
+	if season > 0 then
+		table.insert(parts, string.format("Season %d", season));
+	end
+	if tonumber(row.isArtifact) and tonumber(row.isArtifact) > 0 then
+		table.insert(parts, "Artifact");
+	end
+	if tonumber(row.enabled or 1) <= 0 then
+		table.insert(parts, "Disabled");
+	end
+
+	return table.concat(parts, "  |  ");
+end
+
+local function FormatTierBrowserRange(row)
+	local parts = {
+		string.format(
+			"Item Level %d-%d",
+			tonumber(row.minItemLevel) or 0,
+			tonumber(row.maxItemLevel) or 0),
+	};
+	local maxUpgradeLevel = tonumber(row.maxUpgradeLevel) or 0;
+	local statMultiplierMax = tonumber(row.statMultiplierMax);
+	local upgradeCostPerLevel = tonumber(row.upgradeCostPerLevel) or 0;
+
+	if maxUpgradeLevel > 0 then
+		table.insert(parts, string.format("Max %d upgrades", maxUpgradeLevel));
+	end
+	if statMultiplierMax and statMultiplierMax > 0 then
+		table.insert(parts, string.format("Stat x%.1f", statMultiplierMax));
+	end
+	if upgradeCostPerLevel > 0 then
+		table.insert(parts, string.format("%d cost/level", upgradeCostPerLevel));
+	end
+
+	return table.concat(parts, "  |  ");
+end
+
+local function FormatTierBrowserFooter(row)
+	local parts = {};
+	local sourceContent = row.sourceContent and tostring(row.sourceContent) or "";
+	if sourceContent ~= "" then
+		table.insert(parts, sourceContent);
+	end
+
+	local itemCount = DC.GetTierItemCount and DC.GetTierItemCount(row.tierId) or 0;
+	if itemCount > 0 then
+		table.insert(parts, string.format("Items %d", itemCount));
+	end
+
+	table.insert(parts, string.format(
+		"Tiers %s r%s",
+		tostring(DC.activeTierDataSource or "default"),
+		tostring(DC.activeTierDataRevision or 0)));
+	table.insert(parts, string.format(
+		"TierItems %s r%s",
+		tostring(DC.activeTierItemDataSource or "none"),
+		tostring(DC.activeTierItemDataRevision or 0)));
+
+	return table.concat(parts, "  |  ");
+end
+
+local function UpdateTierBrowserDetail(frame, row)
+	local detail = frame and frame.DetailPanel;
+	if not detail then
+		return;
+	end
+
+	if not row then
+		detail.Icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark");
+		detail.NameText:SetText("No tier data available");
+		detail.NameText:SetTextColor(1, 1, 1);
+		detail.SummaryText:SetText("Static tier browser data is currently unavailable.");
+		detail.RangeText:SetText("");
+		detail.DescriptionText:SetText("");
+		detail.FooterText:SetText("");
+		return;
+	end
+
+	local color = DC.GetTierColor and DC.GetTierColor(row.tierId)
+		or { r = 1, g = 1, b = 1 };
+	local description = row.description;
+	if not description or description == "" then
+		description = "Static browser metadata mirrored from the active item-upgrade tier definitions.";
+	end
+	local itemPreview = BuildTierBrowserItemPreview(row);
+	if itemPreview ~= "" then
+		description = description .. "\n\n" .. itemPreview;
+	end
+
+	detail.Icon:SetTexture(row.icon or "Interface\\Icons\\INV_Misc_QuestionMark");
+	detail.NameText:SetText(row.name or string.format("Tier %d", tonumber(row.tierId) or 0));
+	detail.NameText:SetTextColor(color.r, color.g, color.b);
+	detail.SummaryText:SetText(FormatTierBrowserSummary(row));
+	detail.RangeText:SetText(FormatTierBrowserRange(row));
+	detail.DescriptionText:SetText(description);
+	detail.FooterText:SetText(FormatTierBrowserFooter(row));
+end
+
+function DarkChaos_TierBrowser_OnLoad(self)
+	tinsert(UISpecialFrames, self:GetName());
+	self:RegisterForDrag("LeftButton");
+	self:SetMovable(true);
+	self:EnableMouse(true);
+	self:SetClampedToScreen(true);
+	self:SetScript("OnDragStart", function(frame)
+		frame:StartMoving();
+	end);
+	self:SetScript("OnDragStop", function(frame)
+		frame:StopMovingOrSizing();
+	end);
+
+	local scrollFrame = self.ScrollFrame;
+	scrollFrame.buttons = {};
+
+	for index = 1, TIER_BROWSER_VISIBLE_ROWS do
+		local button = CreateFrame("Button", "DarkChaos_TierBrowserButton" .. index, self);
+		button:SetWidth(300);
+		button:SetHeight(TIER_BROWSER_BUTTON_HEIGHT);
+		button:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", 0,
+			-(index - 1) * TIER_BROWSER_BUTTON_HEIGHT);
+
+		button.Background = button:CreateTexture(nil, "BACKGROUND");
+		button.Background:SetAllPoints();
+		button.Background:SetTexture("Interface\\Buttons\\WHITE8X8");
+		button.Background:SetVertexColor(0.1, 0.1, 0.1, 0.35);
+
+		button.Selection = button:CreateTexture(nil, "BORDER");
+		button.Selection:SetAllPoints();
+		button.Selection:SetTexture("Interface\\Buttons\\WHITE8X8");
+		button.Selection:SetVertexColor(0.12, 0.32, 0.58, 0.35);
+		button.Selection:Hide();
+
+		button.Icon = button:CreateTexture(nil, "ARTWORK");
+		button.Icon:SetWidth(30);
+		button.Icon:SetHeight(30);
+		button.Icon:SetPoint("LEFT", 4, 0);
+		button.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92);
+
+		button.Name = button:CreateFontString(nil, "ARTWORK", "GameFontNormal");
+		button.Name:SetPoint("TOPLEFT", button.Icon, "TOPRIGHT", 8, -2);
+		button.Name:SetPoint("RIGHT", button, "RIGHT", -8, 0);
+		button.Name:SetJustifyH("LEFT");
+		button.Name:SetWordWrap(false);
+
+		button.Meta = button:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall");
+		button.Meta:SetPoint("TOPLEFT", button.Name, "BOTTOMLEFT", 0, -3);
+		button.Meta:SetPoint("RIGHT", button, "RIGHT", -8, 0);
+		button.Meta:SetJustifyH("LEFT");
+		button.Meta:SetTextColor(0.74, 0.78, 0.84);
+		button.Meta:SetWordWrap(false);
+
+		button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight");
+		button:GetHighlightTexture():SetBlendMode("ADD");
+		button:EnableMouse(true);
+		button:SetScript("OnClick", DarkChaos_TierBrowserButton_OnClick);
+		button:SetScript("OnEnter", function(browserButton)
+			if not browserButton.tierRow then
+				return;
+			end
+
+			GameTooltip:SetOwner(browserButton, "ANCHOR_RIGHT");
+			GameTooltip:SetText(
+				browserButton.tierRow.name
+					or string.format("Tier %d", tonumber(browserButton.tierRow.tierId) or 0),
+				1, 1, 1);
+			GameTooltip:AddLine(FormatTierBrowserSummary(browserButton.tierRow),
+				0.82, 0.82, 0.9, true);
+			GameTooltip:AddLine(FormatTierBrowserRange(browserButton.tierRow),
+				0.82, 0.82, 0.82, true);
+			local itemCount = DC.GetTierItemCount
+				and DC.GetTierItemCount(browserButton.tierRow.tierId)
+				or 0;
+			if itemCount > 0 then
+				GameTooltip:AddLine(
+					string.format("Base browse items: %d", itemCount),
+					0.72, 0.86, 0.72, true);
+			end
+			if browserButton.tierRow.description
+				and browserButton.tierRow.description ~= "" then
+				GameTooltip:AddLine(browserButton.tierRow.description,
+					0.72, 0.72, 0.82, true);
+			end
+			GameTooltip:Show();
+		end);
+		button:SetScript("OnLeave", function()
+			GameTooltip:Hide();
+		end);
+		button:Hide();
+
+		scrollFrame.buttons[index] = button;
+	end
+end
+
+function DarkChaos_TierBrowser_OnShow(self)
+	DarkChaos_TierBrowser_Update();
+end
+
+function DarkChaos_TierBrowser_Update()
+	local frame = DarkChaos_TierBrowserFrame;
+	if not frame or not frame.ScrollFrame or not frame.ScrollFrame.buttons then
+		return;
+	end
+
+	local rows = GetTierBrowserRows();
+	frame.rows = rows;
+	DC.selectedTierBrowserTierId = GetPreferredTierBrowserTierId(rows);
+
+	if frame.StatusText then
+		local tierItemRows = DC.GetTierItemRows and DC.GetTierItemRows() or {};
+		frame.StatusText:SetText(string.format(
+			"Tiers: %s r%s (%d)  |  Items: %s r%s (%d)",
+			tostring(DC.activeTierDataSource or "default"),
+			tostring(DC.activeTierDataRevision or 0),
+			#rows,
+			tostring(DC.activeTierItemDataSource or "none"),
+			tostring(DC.activeTierItemDataRevision or 0),
+			tonumber(DC.activeTierItemRowCount) or #tierItemRows));
+	end
+
+	local scrollFrame = frame.ScrollFrame;
+	FauxScrollFrame_Update(scrollFrame, #rows, TIER_BROWSER_VISIBLE_ROWS,
+		TIER_BROWSER_BUTTON_HEIGHT);
+
+	local offset = FauxScrollFrame_GetOffset(scrollFrame);
+	local selectedTierId = tonumber(DC.selectedTierBrowserTierId);
+
+	for index = 1, TIER_BROWSER_VISIBLE_ROWS do
+		local row = rows[offset + index];
+		local button = scrollFrame.buttons[index];
+
+		if row then
+			local color = DC.GetTierColor and DC.GetTierColor(row.tierId)
+				or { r = 1, g = 1, b = 1 };
+			local isSelected = (tonumber(row.tierId) == selectedTierId);
+
+			button.tierRow = row;
+			button.Icon:SetTexture(row.icon or "Interface\\Icons\\INV_Misc_QuestionMark");
+			button.Name:SetText(row.name or string.format("Tier %d", tonumber(row.tierId) or 0));
+			button.Name:SetTextColor(color.r, color.g, color.b);
+			button.Meta:SetText(FormatTierBrowserRange(row));
+			button.Selection:SetShown(isSelected);
+			if isSelected then
+				button.Background:SetVertexColor(0.16, 0.22, 0.30, 0.75);
+			else
+				button.Background:SetVertexColor(0.1, 0.1, 0.1, 0.35);
+			end
+			button:Show();
+		else
+			button.tierRow = nil;
+			button:Hide();
+		end
+	end
+
+	UpdateTierBrowserDetail(frame,
+		FindTierBrowserRowById(rows, DC.selectedTierBrowserTierId));
+end
+
+function DarkChaos_TierBrowserButton_OnClick(self)
+	if not self.tierRow then
+		return;
+	end
+
+	DC.selectedTierBrowserTierId = tonumber(self.tierRow.tierId);
+	DarkChaos_TierBrowser_Update();
+end
 
 function DarkChaos_ItemBrowser_OnLoad(self)
 	tinsert(UISpecialFrames, self:GetName());
@@ -3901,7 +4262,12 @@ end
 
 function DarkChaos_ItemUpgrade_CancelButton_OnClick(self)
 	-- Close item browser
-	DarkChaos_ItemBrowserFrame:Hide();
+	if DarkChaos_ItemBrowserFrame then
+		DarkChaos_ItemBrowserFrame:Hide();
+	end
+	if DarkChaos_TierBrowserFrame then
+		DarkChaos_TierBrowserFrame:Hide();
+	end
 end
 
 function DarkChaos_ItemUpgrade_BrowseButton_OnClick(self)
@@ -3909,8 +4275,65 @@ function DarkChaos_ItemUpgrade_BrowseButton_OnClick(self)
 	if DarkChaos_ItemBrowserFrame:IsShown() then
 		DarkChaos_ItemBrowserFrame:Hide();
 	else
+		if DarkChaos_TierBrowserFrame and DarkChaos_TierBrowserFrame:IsShown() then
+			DarkChaos_TierBrowserFrame:Hide();
+		end
 		DarkChaos_ItemBrowserFrame:Show();
 	end
+end
+
+function DarkChaos_ItemUpgrade_TierBrowseButton_OnClick(self)
+	if not DarkChaos_TierBrowserFrame then
+		if DC.PrintTierDefinitions then
+			DC.PrintTierDefinitions();
+		end
+		return;
+	end
+
+	if DarkChaos_TierBrowserFrame:IsShown() then
+		DarkChaos_TierBrowserFrame:Hide();
+		return;
+	end
+
+	if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
+		DarkChaos_ItemBrowserFrame:Hide();
+	end
+
+	DarkChaos_TierBrowserFrame:Show();
+end
+
+function DC.ToggleTierBrowser(forceShow)
+	if not DarkChaos_TierBrowserFrame then
+		DC.PrintTierDefinitions();
+		return;
+	end
+
+	if forceShow == false then
+		DarkChaos_TierBrowserFrame:Hide();
+		return;
+	end
+
+	if forceShow == true then
+		if DarkChaos_ItemUpgradeFrame and not DarkChaos_ItemUpgradeFrame:IsShown() then
+			DarkChaos_ItemUpgradeFrame:Show();
+			if DarkChaos_ItemUpgradeFrame.TitleText then
+				if DC.uiMode == "HEIRLOOM" then
+					DarkChaos_ItemUpgradeFrame.TitleText:SetText("Heirloom Upgrade");
+				else
+					DarkChaos_ItemUpgradeFrame.TitleText:SetText("Item Upgrade");
+				end
+			end
+		end
+
+		if not DarkChaos_TierBrowserFrame:IsShown() then
+			DarkChaos_ItemUpgrade_TierBrowseButton_OnClick();
+		else
+			DarkChaos_TierBrowser_Update();
+		end
+		return;
+	end
+
+	DarkChaos_ItemUpgrade_TierBrowseButton_OnClick();
 end
 
 --[[=====================================================
@@ -4049,11 +4472,10 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	pooledItem.statMultiplier = GetStatMultiplierForLevel(0, pooledItem.tier);
 	pooledItem.ilevelStep = GetItemLevelBonus(1, pooledItem.tier);
 	pooledItem.statPerLevel = GetStatBonusPercent(1, pooledItem.tier) - GetStatBonusPercent(0, pooledItem.tier);
+	pooledItem.itemEntry = itemID;
 	pooledItem.baseEntry = itemID;
 	pooledItem.currentEntry = itemID;
-	pooledItem.cloneEntries = {
-		[0] = itemID,
-	};
+	pooledItem.cloneEntries = nil;
 	pooledItem.awaitingServerInfo = true;
 	pooledItem.hasAuthoritativeState = false;
 	pooledItem.allowBackgroundRefresh = false;
@@ -4251,7 +4673,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	local item = DC.currentItem;
 	local currentUpgrade = item.currentUpgrade or 0;
 	local maxUpgrade = item.maxUpgrade or DC.GetMaxUpgradeLevelForTier(item.tier);
-	local tierName = DC.TIER_NAMES[item.tier] or string.format("Tier %d", item.tier or 0);
+	local tierName = DC.GetTierDisplayName and DC.GetTierDisplayName(item.tier)
+		or (DC.TIER_NAMES[item.tier] or string.format("Tier %d", item.tier or 0));
 	local baseLevel = ResolveBaseItemLevel(item);
 	item.baseLevel = baseLevel;
 

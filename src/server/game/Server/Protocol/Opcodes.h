@@ -1360,7 +1360,10 @@ enum Opcodes : uint16
     SMSG_SPECTATOR_LIVE_SNAPSHOT                   = 0x533,
     CMSG_REQUEST_COLLECTION_WAVE1                  = 0x534,
     SMSG_COLLECTION_WAVE1                          = 0x535,
-    NUM_MSG_TYPES                                   = 0x536
+    SMSG_DC_NATIVE_ENVELOPE                        = 0x536,
+    CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT             = 0x537,
+    SMSG_ITEM_TOOLTIP_SNAPSHOT                     = 0x538,
+    NUM_MSG_TYPES                                   = 0x539
 };
 
 enum OpcodeMisc : uint16

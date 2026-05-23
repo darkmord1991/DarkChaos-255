@@ -1,18 +1,18 @@
 /*
  * Hinterlands BG Battlemaster NPC
  *
- * This NPC is a thin UI wrapper around the HLBG queue system implemented by
- * OutdoorPvPHL (not the core BattlegroundMgr queues).
+ * HLBG queueing is fully routed through the standard BattlegroundMgr list.
  */
 
-#include "hlbg.h"
+#include "BattlegroundHLBG.h"
+#include "BattlegroundMgr.h"
 #include "CreatureScript.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
-#include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "Chat.h"
 #include "ObjectMgr.h"
+#include "WorldSession.h"
 #include "../QOL/dc_questgiver_status_override.h"
 
 namespace
@@ -26,16 +26,14 @@ namespace
     enum HLBGGossipActions : uint32
     {
         ACTION_QUEUE_JOIN  = GOSSIP_ACTION_INFO_DEF + 1,
-        ACTION_QUEUE_LEAVE = GOSSIP_ACTION_INFO_DEF + 2,
-        ACTION_INFO        = GOSSIP_ACTION_INFO_DEF + 3,
-        ACTION_QUEST_PROGRESS = GOSSIP_ACTION_INFO_DEF + 4,
-        ACTION_BACK_MAIN   = GOSSIP_ACTION_INFO_DEF + 5,
+        ACTION_INFO        = GOSSIP_ACTION_INFO_DEF + 2,
+        ACTION_QUEST_PROGRESS = GOSSIP_ACTION_INFO_DEF + 3,
+        ACTION_BACK_MAIN   = GOSSIP_ACTION_INFO_DEF + 4,
     };
 
-    OutdoorPvPHL* GetHL()
+    bool IsBattlegroundQueueAvailable()
     {
-        OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
+        return sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_HLBG) != nullptr;
     }
 }
 
@@ -93,8 +91,7 @@ public:
         if (!player || !creature)
             return false;
 
-        OutdoorPvPHL* hl = GetHL();
-        if (!hl)
+        if (!IsBattlegroundQueueAvailable())
         {
             ChatHandler(player->GetSession()).SendNotification("HLBG system is not available right now.");
             return true;
@@ -102,14 +99,9 @@ public:
 
         ClearGossipMenuFor(player);
 
-        if (hl->IsPlayerQueued(player))
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-                MakeLargeGossipText("Interface\\Icons\\Ability_Whirlwind", "Leave Hinterlands BG Queue"),
-                GOSSIP_SENDER_MAIN, ACTION_QUEUE_LEAVE);
-        else
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-                MakeLargeGossipText("Interface\\Icons\\Ability_Whirlwind", "Join Hinterlands BG Queue"),
-                GOSSIP_SENDER_MAIN, ACTION_QUEUE_JOIN);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+            MakeLargeGossipText("Interface\\Icons\\Ability_Whirlwind", "Open Hinterlands BG Queue"),
+            GOSSIP_SENDER_MAIN, ACTION_QUEUE_JOIN);
 
         AddQuestOption(player, HLBG_QUEST_DAILY, "Daily Quest: Claim Victory");
         AddQuestOption(player, HLBG_QUEST_WEEKLY, "Weekly Quest: Frontline Duty");
@@ -145,8 +137,7 @@ public:
             return true;
         }
 
-        OutdoorPvPHL* hl = GetHL();
-        if (!hl)
+        if (!IsBattlegroundQueueAvailable())
         {
             ChatHandler(player->GetSession()).SendNotification("HLBG system is not available right now.");
             CloseGossipMenuFor(player);
@@ -156,12 +147,8 @@ public:
         switch (action)
         {
             case ACTION_QUEUE_JOIN: // Join
-                hl->QueueCommandFromAddon(player, "queue", "join");
                 CloseGossipMenuFor(player);
-                return true;
-            case ACTION_QUEUE_LEAVE: // Leave
-                hl->QueueCommandFromAddon(player, "queue", "leave");
-                CloseGossipMenuFor(player);
+                player->GetSession()->SendBattleGroundList(creature->GetGUID(), BATTLEGROUND_HLBG);
                 return true;
             case ACTION_INFO: // Info
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT,

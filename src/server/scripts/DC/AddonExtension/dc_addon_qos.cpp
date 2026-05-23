@@ -39,11 +39,16 @@
 #include "Creature.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
+#include "ObjectAccessor.h"
 #include "SpellMgr.h"
 #include "SpellInfo.h"
 #include "DBCStores.h"
 #include "ItemTemplate.h"
 #include "Group.h"
+#include "Map.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include <atomic>
+#include <chrono>
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -55,6 +60,7 @@
 #include <unordered_map>
 #include <vector>
 #include "Mail.h"
+#include "TradeData.h"
 
 namespace DCQoS
 {
@@ -95,12 +101,47 @@ namespace DCQoS
             SMSG_SPELL_TOOLTIP_ENRICHMENT = ::SMSG_SPELL_TOOLTIP_ENRICHMENT,
             CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP = ::CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP,
             SMSG_ITEM_UPGRADE_TOOLTIP = ::SMSG_ITEM_UPGRADE_TOOLTIP,
+            CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT = ::CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT,
+            SMSG_ITEM_TOOLTIP_SNAPSHOT = ::SMSG_ITEM_TOOLTIP_SNAPSHOT,
             CMSG_REQUEST_NPC_TOOLTIP_INFO = ::CMSG_REQUEST_NPC_TOOLTIP_INFO,
             SMSG_NPC_TOOLTIP_INFO = ::SMSG_NPC_TOOLTIP_INFO,
             CMSG_REQUEST_PING_RELAY = ::CMSG_REQUEST_QOS_PING_RELAY,
             SMSG_PING_RELAY = ::SMSG_QOS_PING_RELAY,
         };
     }
+
+    namespace NativeEnvelopeFeature
+    {
+        constexpr char PING[] = "ping";
+        constexpr char GRAPHICS_PROFILE[] = "graphics_profile";
+        constexpr char GRAPHICS_PROFILE_STATE[] = "graphics_profile_state";
+        constexpr char SERVER_TIME[] = "server_time";
+        constexpr char PLAYER_STATS[] = "player_stats";
+        constexpr char ACTION_RELAY[] = "relay";
+        constexpr char ACTION_RELAY_ACK[] = "relay_ack";
+        constexpr char ACTION_APPLY[] = "apply";
+        constexpr char ACTION_INVALIDATE[] = "invalidate";
+        constexpr char ACTION_RESPONSE[] = "response";
+    }
+
+    namespace RuntimeProfile
+    {
+        constexpr char SAFE[] = "SAFE";
+        constexpr char WORLD[] = "WORLD";
+        constexpr char RAID[] = "RAID";
+        constexpr char BATTLEGROUND[] = "BATTLEGROUND";
+    }
+
+    struct RuntimeProfileSelection
+    {
+        std::string profileKey;
+        std::string context;
+    };
+
+    static std::atomic<uint32> s_RuntimeProfileRevision{0};
+    static std::atomic<uint32> s_FeatureResponseRevision{0};
+    static std::unordered_map<uint32, std::string> s_LastRuntimeProfileByGuid;
+    static std::mutex s_RuntimeProfileMutex;
 
     enum class SpellTooltipTransport
     {
@@ -118,11 +159,258 @@ namespace DCQoS
         ObjectGuid const& guid, uint32 entry, uint32& spawnId);
     static void HandleItemUpgradeTooltipNativeRequest(Player* player,
         uint8 bag, uint8 slot);
+    static void HandleItemTooltipSnapshotNativeRequest(Player* player,
+        uint32 requestId, uint32 itemGuidLow, uint32 knownRevision,
+        uint32 itemEntry, uint32 contextHash, uint32 ownerGuidLow,
+        uint8 contextKind, uint8 bag, uint8 slot, uint8 flags);
     static void HandleNpcTooltipInfoNativeRequest(Player* player,
         std::string const& guidStr);
     static void HandlePingRelayNativeRequest(Player* player,
         std::string const& requestedDistribution,
         std::string const& payload);
+
+    static bool SupportsNativeEnvelopeTransport(Player* player)
+    {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "dc-native-envelope";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::GENERIC_NATIVE_ENVELOPE;
+        return DCAddon::ResolveTransportPolicy(player, request).UsesNative();
+    }
+
+    static uint32 NextRuntimeProfileRevision()
+    {
+        uint32 revision = ++s_RuntimeProfileRevision;
+        if (revision == 0)
+            revision = ++s_RuntimeProfileRevision;
+        return revision;
+    }
+
+    static uint32 NextFeatureResponseRevision()
+    {
+        uint32 revision = ++s_FeatureResponseRevision;
+        if (revision == 0)
+            revision = ++s_FeatureResponseRevision;
+        return revision;
+    }
+
+    static RuntimeProfileSelection SelectRuntimeProfile(Player* player)
+    {
+        RuntimeProfileSelection selection;
+        selection.profileKey = RuntimeProfile::SAFE;
+        selection.context = "fallback";
+
+        if (!player)
+            return selection;
+
+        Map* map = player->GetMap();
+        if (!map)
+        {
+            selection.context = "missing-map";
+            return selection;
+        }
+
+        if (map->IsBattlegroundOrArena())
+        {
+            selection.profileKey = RuntimeProfile::BATTLEGROUND;
+            selection.context = "battleground";
+            return selection;
+        }
+
+        if (map->IsRaid())
+        {
+            selection.profileKey = RuntimeProfile::RAID;
+            selection.context = "raid";
+            return selection;
+        }
+
+        if (map->IsDungeon())
+        {
+            selection.profileKey = RuntimeProfile::WORLD;
+            selection.context = "dungeon";
+            return selection;
+        }
+
+        selection.profileKey = RuntimeProfile::WORLD;
+        selection.context = "world";
+        return selection;
+    }
+
+    static DCAddon::JsonValue BuildRuntimeProfileStatePayload(Player* player,
+        RuntimeProfileSelection const& selection)
+    {
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("profile", selection.profileKey);
+        payload.Set("profileContext", selection.context);
+
+        if (!player)
+            return payload;
+
+        payload.Set("level", static_cast<int32>(player->GetLevel()));
+        payload.Set("areaId", static_cast<int32>(player->GetAreaId()));
+        payload.Set("zoneId", static_cast<int32>(player->GetZoneId()));
+
+        Group* group = player->GetGroup();
+        payload.Set("inGroup", group != nullptr);
+        payload.Set("inRaidGroup", group && group->isRaidGroup());
+
+        Map* map = player->GetMap();
+        payload.Set("hasMap", map != nullptr);
+        if (!map)
+            return payload;
+
+        payload.Set("mapId", static_cast<int32>(map->GetId()));
+        payload.Set("instanceId", static_cast<int32>(map->GetInstanceId()));
+        payload.Set("isDungeon", map->IsDungeon());
+        payload.Set("isRaid", map->IsRaid());
+        payload.Set("isBattleground", map->IsBattlegroundOrArena());
+        payload.Set("isWorldMap",
+            !map->IsDungeon() && !map->IsRaid()
+                && !map->IsBattlegroundOrArena());
+
+        return payload;
+    }
+
+    static void SendRuntimeProfileFallback(Player* player,
+        std::string const& action, RuntimeProfileSelection const& selection,
+        uint32 revision)
+    {
+        if (!player)
+            return;
+
+        DCAddon::JsonMessage message(MODULE, Opcode::SMSG_FEATURE_DATA);
+        message.Set("feature", NativeEnvelopeFeature::GRAPHICS_PROFILE);
+        message.Set("action", action);
+        message.Set("profile", selection.profileKey);
+        message.Set("context", selection.context);
+        message.Set("revision", static_cast<int32>(revision));
+        message.Send(player);
+    }
+
+    static void SendRuntimeProfileNative(Player* player,
+        std::string const& action, RuntimeProfileSelection const& selection,
+        uint32 revision)
+    {
+        DCAddon::SendNativeEnvelope(player, MODULE, Opcode::SMSG_FEATURE_DATA,
+            NativeEnvelopeFeature::GRAPHICS_PROFILE, action, revision,
+            selection.profileKey, selection.context);
+    }
+
+    static void SendRuntimeProfileMessage(Player* player,
+        std::string const& action, RuntimeProfileSelection const& selection,
+        uint32 revision)
+    {
+        if (!player)
+            return;
+
+        if (SupportsNativeEnvelopeTransport(player))
+        {
+            SendRuntimeProfileNative(player, action, selection, revision);
+            return;
+        }
+
+        SendRuntimeProfileFallback(player, action, selection, revision);
+    }
+
+    static DCAddon::JsonValue BuildFeatureResponseEnvelope(
+        std::string const& feature, DCAddon::JsonValue const& payload)
+    {
+        DCAddon::JsonValue envelope;
+        envelope.SetObject();
+        envelope.Set("feature", feature);
+
+        if (payload.IsObject())
+        {
+            for (auto const& [key, value] : payload.AsObject())
+                envelope.Set(key, value);
+            return envelope;
+        }
+
+        envelope.Set("data", payload);
+        return envelope;
+    }
+
+    static void SendFeatureResponseFallback(Player* player,
+        std::string const& feature, DCAddon::JsonValue const& payload)
+    {
+        if (!player)
+            return;
+
+        DCAddon::JsonMessage(MODULE, Opcode::SMSG_FEATURE_DATA,
+            BuildFeatureResponseEnvelope(feature, payload)).Send(player);
+    }
+
+    static void SendFeatureResponseNative(Player* player,
+        std::string const& feature, DCAddon::JsonValue const& payload,
+        std::string const& context)
+    {
+        if (!player)
+            return;
+
+        DCAddon::SendNativeEnvelope(player, MODULE, Opcode::SMSG_FEATURE_DATA,
+            feature, NativeEnvelopeFeature::ACTION_RESPONSE,
+            NextFeatureResponseRevision(), payload.Encode(), context);
+    }
+
+    static void SendFeatureResponse(Player* player,
+        std::string const& feature, DCAddon::JsonValue const& payload,
+        std::string const& context)
+    {
+        if (!player)
+            return;
+
+        if (SupportsNativeEnvelopeTransport(player))
+        {
+            SendFeatureResponseNative(player, feature, payload, context);
+            return;
+        }
+
+        SendFeatureResponseFallback(player, feature, payload);
+    }
+
+    static void PushRuntimeProfile(Player* player, bool forceResend,
+        std::string const& triggerContext)
+    {
+        if (!player)
+            return;
+
+        RuntimeProfileSelection selection = SelectRuntimeProfile(player);
+        if (!triggerContext.empty())
+            selection.context = triggerContext + ":" + selection.context;
+
+        uint32 guidLow = player->GetGUID().GetCounter();
+        std::string previousProfile;
+        bool shouldSend = forceResend;
+
+        {
+            std::lock_guard<std::mutex> lock(s_RuntimeProfileMutex);
+            auto itr = s_LastRuntimeProfileByGuid.find(guidLow);
+            if (itr != s_LastRuntimeProfileByGuid.end())
+                previousProfile = itr->second;
+
+            if (!shouldSend)
+                shouldSend = previousProfile != selection.profileKey;
+
+            s_LastRuntimeProfileByGuid[guidLow] = selection.profileKey;
+        }
+
+        if (!shouldSend)
+            return;
+
+        if (!previousProfile.empty() && previousProfile != selection.profileKey)
+        {
+            RuntimeProfileSelection invalidation;
+            invalidation.profileKey = previousProfile;
+            invalidation.context = triggerContext + ":profile-changed";
+            SendRuntimeProfileMessage(player,
+                NativeEnvelopeFeature::ACTION_INVALIDATE,
+                invalidation, NextRuntimeProfileRevision());
+        }
+
+        SendRuntimeProfileMessage(player, NativeEnvelopeFeature::ACTION_APPLY,
+            selection, NextRuntimeProfileRevision());
+    }
 
     // Configuration keys
     namespace Config
@@ -287,6 +575,27 @@ namespace DCQoS
         DCAddon::ResolveTransportPolicy(player, request);
     }
 
+    static void AuditItemTooltipSnapshotTransport(Player* player,
+        bool forceNative)
+    {
+        if (!player)
+            return;
+
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "item-tooltip-snapshot";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::ITEM_TOOLTIP_REPLACEMENT_NATIVE;
+        request.forceNative = forceNative;
+        request.forceNativeReason = "forced-native";
+        request.forceAddon = !forceNative;
+        request.forceAddonReason = "addon-tooltip-request";
+        request.versionIncompatibleReason = "version-incompatible";
+        request.negotiatedCapabilityMissingReason =
+            "native-capability-missing";
+        request.nativeReadyReason = "negotiated-native";
+        DCAddon::ResolveTransportPolicy(player, request);
+    }
+
     static void SendSpellTooltipEnrichmentNative(Player* player,
         uint32 requestId, uint32 spellId, uint32 contextHash, uint8 status,
         std::string const& line,
@@ -368,107 +677,1035 @@ namespace DCQoS
             true, 0);
     }
 
+    namespace ItemTooltipSnapshotStatus
+    {
+        constexpr uint32 OK = 0;
+        constexpr uint32 NOT_MODIFIED = 1;
+        constexpr uint32 ITEM_NOT_FOUND = 2;
+        constexpr uint32 NOT_VISIBLE = 3;
+        constexpr uint32 UNSUPPORTED_CONTEXT = 4;
+        constexpr uint32 SERVER_ERROR = 5;
+    }
+
+    namespace ItemTooltipSnapshotContextKind
+    {
+        constexpr uint8 BAG = 0;
+        constexpr uint8 EQUIPPED = 1;
+        constexpr uint8 COMPARE = 2;
+        constexpr uint8 INSPECT = 3;
+        constexpr uint8 TRADE = 4;
+        constexpr uint8 MAIL = 5;
+        constexpr uint8 LINK = 6;
+    }
+
+    struct ItemTooltipSnapshotNativeRequest
+    {
+        uint32 requestId = 0;
+        uint32 itemGuidLow = 0;
+        uint32 knownRevision = 0;
+        uint32 itemEntry = 0;
+        uint32 contextHash = 0;
+        uint32 ownerGuidLow = 0;
+        uint8 contextKind = ItemTooltipSnapshotContextKind::BAG;
+        uint8 bag = 0;
+        uint8 slot = 0;
+        uint8 flags = 0;
+    };
+
+    struct ItemTooltipSnapshotRow
+    {
+        std::string left;
+        std::string right;
+        std::string kind;
+        std::string classification;
+    };
+
+    static std::string GetSpellDescriptionTemplate(uint32 spellId);
+    static std::string RenderSpellDescriptionTemplate(Player* player,
+        SpellInfo const* spellInfo, std::string const& sourceTemplate);
+
+    static void AppendItemTooltipSnapshotRow(
+        std::vector<ItemTooltipSnapshotRow>& rows,
+        std::string const& left, std::string const& right,
+        char const* kind, char const* classification)
+    {
+        if (left.empty() && right.empty())
+            return;
+
+        rows.push_back({ left, right, kind ? kind : "",
+            classification ? classification : "" });
+    }
+
+    static std::string FormatItemSellPrice(uint32 copper)
+    {
+        uint32 gold = copper / 10000;
+        uint32 silver = (copper % 10000) / 100;
+        uint32 copperRemainder = copper % 100;
+        std::ostringstream price;
+        bool hasValue = false;
+
+        if (gold > 0)
+        {
+            price << gold << "g";
+            hasValue = true;
+        }
+
+        if (silver > 0 || (hasValue && copperRemainder > 0))
+        {
+            if (hasValue)
+                price << ' ';
+
+            price << silver << "s";
+            hasValue = true;
+        }
+
+        if (copperRemainder > 0 || !hasValue)
+        {
+            if (hasValue)
+                price << ' ';
+
+            price << copperRemainder << "c";
+        }
+
+        return price.str();
+    }
+
+    static bool BuildAllowableClassText(uint32 allowableClass,
+        std::string& outText)
+    {
+        if (allowableClass == 0 || allowableClass == uint32(-1)
+            || allowableClass == CLASSMASK_ALL_PLAYABLE)
+        {
+            return false;
+        }
+
+        std::ostringstream text;
+        bool foundAny = false;
+        text << "Classes: ";
+
+        for (uint32 classId = CLASS_WARRIOR; classId < MAX_CLASSES; ++classId)
+        {
+            uint32 classMask = 1u << (classId - 1);
+            if ((allowableClass & classMask) == 0)
+                continue;
+
+            ChrClassesEntry const* classEntry =
+                sChrClassesStore.LookupEntry(classId);
+            if (foundAny)
+                text << ", ";
+
+            if (classEntry && classEntry->name[0] && *classEntry->name[0])
+                text << classEntry->name[0];
+            else
+                text << "Class " << classId;
+
+            foundAny = true;
+        }
+
+        if (!foundAny)
+            return false;
+
+        outText = text.str();
+        return true;
+    }
+
+    static bool BuildAllowableRaceText(uint32 allowableRace,
+        std::string& outText)
+    {
+        if (allowableRace == 0 || allowableRace == uint32(-1))
+            return false;
+
+        std::ostringstream text;
+        bool foundAny = false;
+        text << "Races: ";
+
+        for (auto const* raceEntry : sChrRacesStore)
+        {
+            if (!raceEntry || raceEntry->RaceID == 0 || raceEntry->RaceID > 32)
+                continue;
+
+            uint32 raceMask = 1u << (raceEntry->RaceID - 1);
+            if ((allowableRace & raceMask) == 0)
+                continue;
+
+            if (foundAny)
+                text << ", ";
+
+            if (raceEntry->name[0] && *raceEntry->name[0])
+                text << raceEntry->name[0];
+            else
+                text << "Race " << raceEntry->RaceID;
+
+            foundAny = true;
+        }
+
+        if (!foundAny)
+            return false;
+
+        outText = text.str();
+        return true;
+    }
+
+    static char const* GetItemStatLabel(uint32 statType)
+    {
+        switch (statType)
+        {
+            case ITEM_MOD_MANA: return "Mana";
+            case ITEM_MOD_HEALTH: return "Health";
+            case ITEM_MOD_AGILITY: return "Agility";
+            case ITEM_MOD_STRENGTH: return "Strength";
+            case ITEM_MOD_INTELLECT: return "Intellect";
+            case ITEM_MOD_SPIRIT: return "Spirit";
+            case ITEM_MOD_STAMINA: return "Stamina";
+            case ITEM_MOD_DEFENSE_SKILL_RATING: return "Defense Rating";
+            case ITEM_MOD_DODGE_RATING: return "Dodge Rating";
+            case ITEM_MOD_PARRY_RATING: return "Parry Rating";
+            case ITEM_MOD_BLOCK_RATING: return "Block Rating";
+            case ITEM_MOD_HIT_RATING: return "Hit Rating";
+            case ITEM_MOD_CRIT_RATING: return "Crit Rating";
+            case ITEM_MOD_RESILIENCE_RATING: return "Resilience Rating";
+            case ITEM_MOD_HASTE_RATING: return "Haste Rating";
+            case ITEM_MOD_EXPERTISE_RATING: return "Expertise Rating";
+            case ITEM_MOD_ATTACK_POWER: return "Attack Power";
+            case ITEM_MOD_RANGED_ATTACK_POWER: return "Ranged Attack Power";
+            case ITEM_MOD_MANA_REGENERATION: return "Mana per 5 sec";
+            case ITEM_MOD_ARMOR_PENETRATION_RATING:
+                return "Armor Penetration Rating";
+            case ITEM_MOD_SPELL_POWER: return "Spell Power";
+            case ITEM_MOD_HEALTH_REGEN: return "Health per 5 sec";
+            case ITEM_MOD_SPELL_PENETRATION: return "Spell Penetration";
+            case ITEM_MOD_BLOCK_VALUE: return "Block Value";
+            case ITEM_MOD_HIT_MELEE_RATING: return "Hit Rating (Melee)";
+            case ITEM_MOD_HIT_RANGED_RATING: return "Hit Rating (Ranged)";
+            case ITEM_MOD_HIT_SPELL_RATING: return "Hit Rating (Spell)";
+            case ITEM_MOD_CRIT_MELEE_RATING: return "Crit Rating (Melee)";
+            case ITEM_MOD_CRIT_RANGED_RATING: return "Crit Rating (Ranged)";
+            case ITEM_MOD_CRIT_SPELL_RATING: return "Crit Rating (Spell)";
+            case ITEM_MOD_HASTE_MELEE_RATING:
+                return "Haste Rating (Melee)";
+            case ITEM_MOD_HASTE_RANGED_RATING:
+                return "Haste Rating (Ranged)";
+            case ITEM_MOD_HASTE_SPELL_RATING:
+                return "Haste Rating (Spell)";
+            default:
+                return nullptr;
+        }
+    }
+
+    static std::string FormatSignedItemStat(int32 value, char const* label)
+    {
+        if (!label || value == 0)
+            return "";
+
+        std::ostringstream out;
+        if (value > 0)
+            out << '+';
+        out << value << ' ' << label;
+        return out.str();
+    }
+
+    static std::string FormatUpgradeBonusPercent(uint32 basisPoints)
+    {
+        double bonusPercent =
+            (static_cast<double>(basisPoints) - 10000.0) / 100.0;
+        std::ostringstream out;
+        out << std::fixed;
+        if (std::fabs(std::round(bonusPercent) - bonusPercent) < 0.01)
+            out << std::setprecision(0);
+        else
+            out << std::setprecision(1);
+        out << '+' << bonusPercent << '%';
+        return out.str();
+    }
+
+    static char const* GetReputationRankLabel(uint32 rank)
+    {
+        switch (rank)
+        {
+            case REP_HATED: return "Hated";
+            case REP_HOSTILE: return "Hostile";
+            case REP_UNFRIENDLY: return "Unfriendly";
+            case REP_NEUTRAL: return "Neutral";
+            case REP_FRIENDLY: return "Friendly";
+            case REP_HONORED: return "Honored";
+            case REP_REVERED: return "Revered";
+            case REP_EXALTED: return "Exalted";
+            default: return "Unknown";
+        }
+    }
+
+    static std::string GetSocketColorLabel(uint32 socketColor)
+    {
+        switch (socketColor)
+        {
+            case SOCKET_COLOR_META: return "Meta Socket";
+            case SOCKET_COLOR_RED: return "Red Socket";
+            case SOCKET_COLOR_YELLOW: return "Yellow Socket";
+            case SOCKET_COLOR_BLUE: return "Blue Socket";
+            default: return "Socket";
+        }
+    }
+
+    static std::string GetSocketGemName(Item* item,
+        EnchantmentSlot socketSlot)
+    {
+        if (!item)
+            return "";
+
+        uint32 enchantId = item->GetEnchantmentId(socketSlot);
+        if (!enchantId)
+            return "";
+
+        SpellItemEnchantmentEntry const* enchant =
+            sSpellItemEnchantmentStore.LookupEntry(enchantId);
+        if (!enchant || !enchant->GemID)
+            return "";
+
+        if (ItemTemplate const* gemTemplate =
+                sObjectMgr->GetItemTemplate(enchant->GemID))
+        {
+            return gemTemplate->Name1;
+        }
+
+        return "";
+    }
+
+    static char const* GetItemSpellTriggerPrefix(uint32 trigger)
+    {
+        switch (trigger)
+        {
+            case ITEM_SPELLTRIGGER_ON_USE:
+            case ITEM_SPELLTRIGGER_ON_NO_DELAY_USE:
+            case ITEM_SPELLTRIGGER_SOULSTONE:
+                return "Use: ";
+            case ITEM_SPELLTRIGGER_ON_EQUIP:
+                return "Equip: ";
+            case ITEM_SPELLTRIGGER_CHANCE_ON_HIT:
+                return "Chance on hit: ";
+            case ITEM_SPELLTRIGGER_LEARN_SPELL_ID:
+                return "Teaches: ";
+            default:
+                return "";
+        }
+    }
+
+    static std::string BuildItemSpellTooltipText(Player* player,
+        int32 spellId, uint32 trigger)
+    {
+        if (spellId <= 0)
+            return "";
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(uint32(spellId));
+        if (!spellInfo)
+            return "";
+
+        std::string rendered = RenderSpellDescriptionTemplate(player,
+            spellInfo, GetSpellDescriptionTemplate(uint32(spellId)));
+        if (rendered.empty() && spellInfo->SpellName[0]
+            && *spellInfo->SpellName[0])
+        {
+            rendered = spellInfo->SpellName[0];
+        }
+
+        if (rendered.empty())
+            return "";
+
+        return std::string(GetItemSpellTriggerPrefix(trigger)) + rendered;
+    }
+
+    static uint32 CountItemSetPiecesEquipped(Player* player, uint32 itemSetId)
+    {
+        if (!player || !itemSetId)
+            return 0;
+
+        uint32 equippedPieces = 0;
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END;
+             ++slot)
+        {
+            Item* equippedItem =
+                player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!equippedItem)
+                continue;
+
+            ItemTemplate const* equippedTemplate = equippedItem->GetTemplate();
+            if (!equippedTemplate || equippedTemplate->ItemSet != itemSetId)
+                continue;
+
+            ++equippedPieces;
+        }
+
+        return equippedPieces;
+    }
+
+    static uint32 CountItemSetPieces(ItemSetEntry const* itemSet)
+    {
+        if (!itemSet)
+            return 0;
+
+        uint32 totalPieces = 0;
+        for (uint32 itemId : itemSet->itemId)
+        {
+            if (itemId != 0)
+                ++totalPieces;
+        }
+
+        return totalPieces;
+    }
+
+    static std::vector<ItemTooltipSnapshotRow> BuildItemTooltipSnapshotRows(
+        Player* player,
+        Item* item,
+        DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot const& snapshot)
+    {
+        std::vector<ItemTooltipSnapshotRow> rows;
+        if (!item)
+            return rows;
+
+        ItemTemplate const* itemTemplate = item->GetTemplate();
+        if (!snapshot.has_persisted_state)
+        {
+            if (snapshot.max_upgrade > 0)
+            {
+                AppendItemTooltipSnapshotRow(rows, "Upgrade",
+                    "0/" + std::to_string(snapshot.max_upgrade),
+                    "append-meta", "upgrade");
+            }
+
+            return rows;
+        }
+
+        double multiplier =
+            static_cast<double>(snapshot.stat_multiplier_basis_points) / 10000.0;
+
+        if (snapshot.upgraded_ilvl > 0)
+        {
+            AppendItemTooltipSnapshotRow(rows, "Item Level",
+                std::to_string(snapshot.upgraded_ilvl), "replace-stat",
+                "item-level");
+        }
+
+        if (itemTemplate)
+        {
+            if (itemTemplate->Armor > 0)
+            {
+                uint32 scaledArmor = static_cast<uint32>(std::max<int64>(0,
+                    static_cast<int64>(std::lround(
+                        static_cast<double>(itemTemplate->Armor) * multiplier))));
+                AppendItemTooltipSnapshotRow(rows,
+                    std::to_string(scaledArmor) + " Armor", "",
+                    "replace-stat", "armor");
+            }
+
+            if (itemTemplate->Block > 0)
+            {
+                uint32 scaledBlock = static_cast<uint32>(std::max<int64>(0,
+                    static_cast<int64>(std::lround(
+                        static_cast<double>(itemTemplate->Block) * multiplier))));
+                AppendItemTooltipSnapshotRow(rows,
+                    std::to_string(scaledBlock) + " Block", "",
+                    "replace-stat", "armor");
+            }
+
+            struct ResistanceRow
+            {
+                int32 value;
+                char const* label;
+            };
+
+            ResistanceRow const resistances[] =
+            {
+                { itemTemplate->HolyRes, "Holy Resistance" },
+                { itemTemplate->FireRes, "Fire Resistance" },
+                { itemTemplate->NatureRes, "Nature Resistance" },
+                { itemTemplate->FrostRes, "Frost Resistance" },
+                { itemTemplate->ShadowRes, "Shadow Resistance" },
+                { itemTemplate->ArcaneRes, "Arcane Resistance" },
+            };
+
+            for (ResistanceRow const& resistance : resistances)
+            {
+                if (resistance.value == 0)
+                    continue;
+
+                int32 scaledValue = static_cast<int32>(std::lround(
+                    static_cast<double>(resistance.value) * multiplier));
+                std::string line =
+                    FormatSignedItemStat(scaledValue, resistance.label);
+                if (!line.empty())
+                    AppendItemTooltipSnapshotRow(rows, line, "",
+                        "replace-stat", "resistance");
+            }
+
+            for (uint32 damageIndex = 0;
+                 damageIndex < MAX_ITEM_PROTO_DAMAGES; ++damageIndex)
+            {
+                _Damage const& damage = itemTemplate->Damage[damageIndex];
+                if (damage.DamageMax <= 0.0f)
+                    continue;
+
+                int32 scaledMin = static_cast<int32>(std::lround(
+                    static_cast<double>(damage.DamageMin) * multiplier));
+                int32 scaledMax = static_cast<int32>(std::lround(
+                    static_cast<double>(damage.DamageMax) * multiplier));
+
+                std::ostringstream left;
+                left << scaledMin << " - " << scaledMax << " Damage";
+
+                std::ostringstream right;
+                if (itemTemplate->Delay > 0)
+                    right << "Speed " << std::fixed << std::setprecision(2)
+                        << (static_cast<double>(itemTemplate->Delay) / 1000.0);
+
+                AppendItemTooltipSnapshotRow(rows, left.str(), right.str(),
+                    "replace-stat", "weapon-damage");
+            }
+
+            uint32 statCount =
+                std::min<uint32>(itemTemplate->StatsCount, MAX_ITEM_PROTO_STATS);
+            for (uint32 statIndex = 0; statIndex < statCount; ++statIndex)
+            {
+                _ItemStat const& stat = itemTemplate->ItemStat[statIndex];
+                if (stat.ItemStatValue == 0)
+                    continue;
+
+                char const* label = GetItemStatLabel(stat.ItemStatType);
+                if (!label)
+                    continue;
+
+                int32 scaledValue = static_cast<int32>(std::lround(
+                    static_cast<double>(stat.ItemStatValue) * multiplier));
+                std::string line = FormatSignedItemStat(scaledValue, label);
+                if (!line.empty())
+                    AppendItemTooltipSnapshotRow(rows, line, "",
+                        "replace-stat", "stat");
+            }
+
+            EnchantmentSlot const socketEnchantSlots[MAX_GEM_SOCKETS] =
+            {
+                SOCK_ENCHANTMENT_SLOT,
+                SOCK_ENCHANTMENT_SLOT_2,
+                SOCK_ENCHANTMENT_SLOT_3,
+            };
+
+            for (uint32 socketIndex = 0;
+                 socketIndex < MAX_ITEM_PROTO_SOCKETS; ++socketIndex)
+            {
+                _Socket const& socket = itemTemplate->Socket[socketIndex];
+                if (socket.Color == 0)
+                    continue;
+
+                std::string right =
+                    GetSocketGemName(item, socketEnchantSlots[socketIndex]);
+                AppendItemTooltipSnapshotRow(rows,
+                    GetSocketColorLabel(socket.Color), right,
+                    "append-body",
+                    right.empty() ? "socket-empty" : "socket-filled");
+            }
+
+            if (item->GetEnchantmentId(PRISMATIC_ENCHANTMENT_SLOT) != 0)
+            {
+                AppendItemTooltipSnapshotRow(rows, "Prismatic Socket", "",
+                    "append-body", "socket-empty");
+            }
+
+            if (itemTemplate->socketBonus != 0)
+            {
+                SpellItemEnchantmentEntry const* socketBonus =
+                    sSpellItemEnchantmentStore.LookupEntry(
+                        itemTemplate->socketBonus);
+
+                std::string socketBonusText = "Socket Bonus";
+                if (socketBonus && socketBonus->description[0]
+                    && *socketBonus->description[0])
+                {
+                    socketBonusText += ": ";
+                    socketBonusText += socketBonus->description[0];
+                }
+
+                AppendItemTooltipSnapshotRow(rows, socketBonusText, "",
+                    "append-body",
+                    item->GemsFitSockets()
+                        ? "socket-bonus-active"
+                        : "socket-bonus-inactive");
+            }
+
+            if (itemTemplate->MaxDurability > 0)
+            {
+                uint32 currentDurability =
+                    item->GetUInt32Value(ITEM_FIELD_DURABILITY);
+                uint32 maxDurability =
+                    item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY);
+                if (maxDurability == 0)
+                    maxDurability = itemTemplate->MaxDurability;
+
+                std::ostringstream durability;
+                durability << "Durability " << currentDurability << " / "
+                    << maxDurability;
+                AppendItemTooltipSnapshotRow(rows, durability.str(), "",
+                    "append-body",
+                    item->IsBroken() ? "requirement-unmet" : "durability");
+            }
+
+            if (itemTemplate->RequiredLevel > 1)
+            {
+                AppendItemTooltipSnapshotRow(rows,
+                    "Requires Level "
+                        + std::to_string(itemTemplate->RequiredLevel),
+                    "", "append-body",
+                    (!player || player->GetLevel() >= itemTemplate->RequiredLevel)
+                        ? "requirement"
+                        : "requirement-unmet");
+            }
+
+            if (itemTemplate->RequiredSkill != 0
+                && itemTemplate->RequiredSkillRank > 0)
+            {
+                std::ostringstream requirement;
+                requirement << "Requires ";
+
+                SkillLineEntry const* skill =
+                    sSkillLineStore.LookupEntry(itemTemplate->RequiredSkill);
+                if (skill && skill->name[0] && *skill->name[0])
+                    requirement << skill->name[0];
+                else
+                    requirement << "Skill " << itemTemplate->RequiredSkill;
+
+                requirement << " (" << itemTemplate->RequiredSkillRank << ')';
+                AppendItemTooltipSnapshotRow(rows, requirement.str(), "",
+                    "append-body",
+                    (!player || player->GetSkillValue(itemTemplate->RequiredSkill)
+                            >= itemTemplate->RequiredSkillRank)
+                        ? "requirement"
+                        : "requirement-unmet");
+            }
+
+            if (itemTemplate->RequiredSpell != 0)
+            {
+                std::string requiredSpell = "Requires Spell";
+                SpellInfo const* spellInfo =
+                    sSpellMgr->GetSpellInfo(itemTemplate->RequiredSpell);
+                if (spellInfo && spellInfo->SpellName[0]
+                    && *spellInfo->SpellName[0])
+                {
+                    requiredSpell += ": ";
+                    requiredSpell += spellInfo->SpellName[0];
+                }
+
+                AppendItemTooltipSnapshotRow(rows, requiredSpell, "",
+                    "append-body",
+                    (!player || player->HasSpell(itemTemplate->RequiredSpell))
+                        ? "requirement"
+                        : "requirement-unmet");
+            }
+
+            if (itemTemplate->RequiredReputationFaction != 0)
+            {
+                std::ostringstream reputation;
+                reputation << "Requires ";
+
+                FactionEntry const* faction = sFactionStore.LookupEntry(
+                    itemTemplate->RequiredReputationFaction);
+                if (faction && faction->name[0] && *faction->name[0])
+                    reputation << faction->name[0];
+                else
+                    reputation << "Faction "
+                        << itemTemplate->RequiredReputationFaction;
+
+                reputation << " - " << GetReputationRankLabel(
+                    itemTemplate->RequiredReputationRank);
+                AppendItemTooltipSnapshotRow(rows, reputation.str(), "",
+                    "append-body",
+                    (!player || uint32(player->GetReputationRank(
+                            itemTemplate->RequiredReputationFaction))
+                            >= itemTemplate->RequiredReputationRank)
+                        ? "requirement"
+                        : "requirement-unmet");
+            }
+
+            std::string allowableClassText;
+            if (BuildAllowableClassText(itemTemplate->AllowableClass,
+                allowableClassText))
+            {
+                bool const meetsClassRequirement = !player
+                    || (itemTemplate->AllowableClass
+                        & (1u << (player->getClass() - 1))) != 0;
+                AppendItemTooltipSnapshotRow(rows, allowableClassText, "",
+                    "append-body",
+                    meetsClassRequirement
+                        ? "requirement"
+                        : "requirement-unmet");
+            }
+
+            std::string allowableRaceText;
+            if (BuildAllowableRaceText(itemTemplate->AllowableRace,
+                allowableRaceText))
+            {
+                bool const meetsRaceRequirement = !player
+                    || (itemTemplate->AllowableRace
+                        & (1u << (player->getRace() - 1))) != 0;
+                AppendItemTooltipSnapshotRow(rows, allowableRaceText, "",
+                    "append-body",
+                    meetsRaceRequirement
+                        ? "requirement"
+                        : "requirement-unmet");
+            }
+
+            if (itemTemplate->ItemSet != 0)
+            {
+                ItemSetEntry const* itemSet =
+                    sItemSetStore.LookupEntry(itemTemplate->ItemSet);
+                if (itemSet)
+                {
+                    uint32 equippedPieces =
+                        CountItemSetPiecesEquipped(player, itemTemplate->ItemSet);
+                    uint32 totalPieces = CountItemSetPieces(itemSet);
+
+                    std::string setName = "Item Set";
+                    if (itemSet->name[0] && *itemSet->name[0])
+                        setName = itemSet->name[0];
+
+                    std::string setCount;
+                    if (totalPieces > 0)
+                    {
+                        setCount = std::to_string(equippedPieces) + "/"
+                            + std::to_string(totalPieces);
+                    }
+
+                    AppendItemTooltipSnapshotRow(rows, setName, setCount,
+                        "append-body", "set-name");
+
+                    for (uint32 setIndex = 0; setIndex < MAX_ITEM_SET_SPELLS;
+                         ++setIndex)
+                    {
+                        uint32 spellId = itemSet->spells[setIndex];
+                        uint32 threshold =
+                            itemSet->items_to_triggerspell[setIndex];
+                        if (spellId == 0 || threshold == 0)
+                            continue;
+
+                        std::string text = BuildItemSpellTooltipText(player,
+                            int32(spellId), ITEM_SPELLTRIGGER_ON_EQUIP);
+                        if (text.empty())
+                            continue;
+
+                        std::ostringstream bonus;
+                        bonus << '(' << threshold << ") Set: " << text;
+                        AppendItemTooltipSnapshotRow(rows, bonus.str(), "",
+                            "append-body",
+                            equippedPieces >= threshold
+                                ? "set-bonus-active"
+                                : "set-bonus-inactive");
+                    }
+                }
+            }
+
+            for (uint32 spellIndex = 0; spellIndex < MAX_ITEM_PROTO_SPELLS;
+                 ++spellIndex)
+            {
+                _Spell const& itemSpell = itemTemplate->Spells[spellIndex];
+                if (itemSpell.SpellId <= 0
+                    || itemSpell.SpellTrigger >= MAX_ITEM_SPELLTRIGGER)
+                {
+                    continue;
+                }
+
+                std::string text = BuildItemSpellTooltipText(player,
+                    itemSpell.SpellId, itemSpell.SpellTrigger);
+                if (text.empty())
+                    continue;
+
+                char const* classification = "spell";
+                switch (itemSpell.SpellTrigger)
+                {
+                    case ITEM_SPELLTRIGGER_ON_USE:
+                    case ITEM_SPELLTRIGGER_ON_NO_DELAY_USE:
+                    case ITEM_SPELLTRIGGER_SOULSTONE:
+                        classification = "spell-use";
+                        break;
+                    case ITEM_SPELLTRIGGER_ON_EQUIP:
+                        classification = "spell-equip";
+                        break;
+                    case ITEM_SPELLTRIGGER_CHANCE_ON_HIT:
+                        classification = "spell-proc";
+                        break;
+                    case ITEM_SPELLTRIGGER_LEARN_SPELL_ID:
+                        classification = "spell-learn";
+                        break;
+                    default:
+                        break;
+                }
+
+                AppendItemTooltipSnapshotRow(rows, text, "", "append-body",
+                    classification);
+            }
+
+            if (!itemTemplate->Description.empty())
+            {
+                AppendItemTooltipSnapshotRow(rows,
+                    std::string("\"") + itemTemplate->Description + "\"",
+                    "", "append-body", "description");
+            }
+
+            if (itemTemplate->SellPrice > 0)
+            {
+                AppendItemTooltipSnapshotRow(rows, "Sell Price",
+                    FormatItemSellPrice(itemTemplate->SellPrice),
+                    "append-body", "sell-price");
+            }
+        }
+
+        AppendItemTooltipSnapshotRow(rows, "Upgrade",
+            std::to_string(snapshot.upgrade_level) + "/"
+                + std::to_string(snapshot.max_upgrade),
+            "append-meta", "upgrade");
+
+        if (snapshot.stat_multiplier_basis_points > 10000)
+        {
+            AppendItemTooltipSnapshotRow(rows, "Bonus",
+                FormatUpgradeBonusPercent(
+                    snapshot.stat_multiplier_basis_points),
+                "append-meta", "upgrade");
+        }
+
+        return rows;
+    }
+
+    static Player* ResolveItemTooltipSnapshotOwner(Player* player,
+        ItemTooltipSnapshotNativeRequest const& request, uint32& outStatus)
+    {
+        if (!player)
+        {
+            outStatus = ItemTooltipSnapshotStatus::NOT_VISIBLE;
+            return nullptr;
+        }
+
+        if (request.ownerGuidLow == 0
+            || request.ownerGuidLow == player->GetGUID().GetCounter())
+        {
+            return player;
+        }
+
+        Player* owner = ObjectAccessor::FindConnectedPlayer(
+            ObjectGuid::Create<HighGuid::Player>(request.ownerGuidLow));
+        if (!owner)
+        {
+            outStatus = ItemTooltipSnapshotStatus::NOT_VISIBLE;
+            return nullptr;
+        }
+
+        return owner;
+    }
+
+    static Item* ResolveItemTooltipSnapshotTradeItem(Player* player,
+        ItemTooltipSnapshotNativeRequest const& request)
+    {
+        if (!player)
+            return nullptr;
+
+        TradeData* tradeData = player->GetTradeData();
+        if (!tradeData)
+            return nullptr;
+
+        auto resolveFromTradeSide = [&](TradeData* sideData,
+            uint32 ownerGuidLow) -> Item*
+        {
+            if (!sideData)
+                return nullptr;
+
+            if (request.ownerGuidLow != 0
+                && request.ownerGuidLow != ownerGuidLow)
+            {
+                return nullptr;
+            }
+
+            if (request.itemGuidLow == 0)
+                return nullptr;
+
+            TradeSlots tradeSlot = sideData->GetTradeSlotForItem(
+                ObjectGuid::Create<HighGuid::Item>(request.itemGuidLow));
+            if (tradeSlot == TRADE_SLOT_INVALID)
+                return nullptr;
+
+            return sideData->GetItem(tradeSlot);
+        };
+
+        if (Item* item = resolveFromTradeSide(tradeData,
+                player->GetGUID().GetCounter()))
+        {
+            return item;
+        }
+
+        Player* trader = tradeData->GetTrader();
+        if (!trader)
+            return nullptr;
+
+        return resolveFromTradeSide(tradeData->GetTraderData(),
+            trader->GetGUID().GetCounter());
+    }
+
+    static Item* ResolveItemTooltipSnapshotItemFromOwner(Player* owner,
+        ItemTooltipSnapshotNativeRequest const& request)
+    {
+        if (!owner)
+            return nullptr;
+
+        if (request.itemGuidLow != 0)
+        {
+            if (Item* item = owner->GetItemByGuid(
+                    ObjectGuid::Create<HighGuid::Item>(request.itemGuidLow)))
+            {
+                return item;
+            }
+
+            if (Item* mailItem = owner->GetMItem(request.itemGuidLow))
+                return mailItem;
+        }
+
+        if (request.bag != 0 || request.slot != 0)
+            return owner->GetItemByPos(request.bag, request.slot);
+
+        return nullptr;
+    }
+
+    static Item* ResolveItemTooltipSnapshotItem(Player* player,
+        ItemTooltipSnapshotNativeRequest const& request, uint32& outStatus)
+    {
+        outStatus = ItemTooltipSnapshotStatus::ITEM_NOT_FOUND;
+        if (!player)
+        {
+            outStatus = ItemTooltipSnapshotStatus::NOT_VISIBLE;
+            return nullptr;
+        }
+
+        if (request.contextKind > ItemTooltipSnapshotContextKind::LINK)
+        {
+            outStatus = ItemTooltipSnapshotStatus::UNSUPPORTED_CONTEXT;
+            return nullptr;
+        }
+
+        if (Item* item = ResolveItemTooltipSnapshotTradeItem(player, request))
+            return item;
+
+        Player* owner = ResolveItemTooltipSnapshotOwner(player, request,
+            outStatus);
+        if (!owner)
+            return nullptr;
+
+        if (Item* item = ResolveItemTooltipSnapshotItemFromOwner(owner,
+                request))
+        {
+            return item;
+        }
+
+        switch (request.contextKind)
+        {
+            case ItemTooltipSnapshotContextKind::BAG:
+            case ItemTooltipSnapshotContextKind::EQUIPPED:
+            case ItemTooltipSnapshotContextKind::COMPARE:
+            case ItemTooltipSnapshotContextKind::INSPECT:
+            case ItemTooltipSnapshotContextKind::TRADE:
+            case ItemTooltipSnapshotContextKind::MAIL:
+            case ItemTooltipSnapshotContextKind::LINK:
+                outStatus = ItemTooltipSnapshotStatus::ITEM_NOT_FOUND;
+                return nullptr;
+            default:
+                outStatus = ItemTooltipSnapshotStatus::UNSUPPORTED_CONTEXT;
+                return nullptr;
+        }
+    }
+
+    static void SendItemTooltipSnapshotNative(Player* player,
+        ItemTooltipSnapshotNativeRequest const& request,
+        DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot const* snapshot,
+        std::vector<ItemTooltipSnapshotRow> const& rows,
+        uint32 status, std::string const& error)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 responseItemGuid = snapshot ? snapshot->item_guid
+            : request.itemGuidLow;
+        uint32 responseRevision = snapshot ? snapshot->revision : 0;
+        uint32 responseItemEntry = snapshot ? snapshot->item_entry
+            : request.itemEntry;
+        uint32 responseBaseEntry = snapshot ? snapshot->base_entry : 0;
+        uint32 responseCurrentEntry = snapshot ? snapshot->current_entry : 0;
+        uint32 responseTierId = snapshot ? snapshot->tier_id : 0;
+        uint32 responseUpgradeLevel = snapshot ? snapshot->upgrade_level : 0;
+        uint32 responseMaxUpgrade = snapshot ? snapshot->max_upgrade : 0;
+        uint32 responseMultiplier = snapshot
+            ? snapshot->stat_multiplier_basis_points
+            : 10000;
+        uint32 responseBaseIlvl = snapshot ? snapshot->base_ilvl : 0;
+        uint32 responseUpgradedIlvl = snapshot ? snapshot->upgraded_ilvl : 0;
+
+        WorldPacket data(BridgeOpcode::SMSG_ITEM_TOOLTIP_SNAPSHOT,
+            80 + error.size() + (rows.size() * 96));
+        data << int32(request.requestId);
+        data << int32(responseItemGuid);
+        data << int32(responseRevision);
+        data << int32(status);
+        data << int32(responseItemEntry);
+        data << int32(responseBaseEntry);
+        data << int32(responseCurrentEntry);
+        data << int32(responseTierId);
+        data << int32(responseUpgradeLevel);
+        data << int32(responseMaxUpgrade);
+        data << int32(responseMultiplier);
+        data << int32(responseBaseIlvl);
+        data << int32(responseUpgradedIlvl);
+        data << int32(rows.size());
+        for (ItemTooltipSnapshotRow const& row : rows)
+        {
+            data << row.left;
+            data << row.right;
+            data << row.kind;
+            data << row.classification;
+        }
+        data << error;
+
+        player->GetSession()->SendPacket(&data);
+        std::string preview = "req=" + std::to_string(request.requestId)
+            + "|guid=" + std::to_string(responseItemGuid)
+            + "|rev=" + std::to_string(responseRevision)
+            + "|status=" + std::to_string(status)
+            + "|rows=" + std::to_string(rows.size());
+        DCAddon::LogNativeS2CMessage(player, MODULE, Opcode::SMSG_ITEM_INFO,
+            BridgeOpcode::SMSG_ITEM_TOOLTIP_SNAPSHOT, data.size(), preview,
+            true, 0);
+    }
+
     static void SendItemUpgradeInfoNative(Player* player, Item* item,
         uint8 bag, uint8 slot)
     {
         if (!player || !player->GetSession() || !item)
             return;
 
-        ObjectGuid itemGuid = item->GetGUID();
-        uint32 baseEntry = item->GetEntry();
-        uint32 itemId = baseEntry;
-        uint32 tierId = 0;
-        uint32 upgradeLevel = 0;
-        uint32 maxUpgrade = 0;
-        uint32 statMultiplierBasisPoints = 10000;
-        uint32 baseIlvl = 0;
-        uint32 upgradedIlvl = 0;
-        uint32 currentEntry = 0;
-        uint32 baseEntryOut = 0;
-        ItemTemplate const* itemTemplate = item->GetTemplate();
-
-        QueryResult upgradeResult = CharacterDatabase.Query(
-            "SELECT tier_id, upgrade_level FROM dc_item_upgrades WHERE item_guid = {}",
-            itemGuid.GetCounter());
-
-        if (upgradeResult)
-        {
-            Field* fields = upgradeResult->Fetch();
-            tierId = fields[0].Get<uint32>();
-            upgradeLevel = fields[1].Get<uint32>();
-
-            QueryResult tierResult = WorldDatabase.Query(
-                "SELECT max_upgrade_level, stat_multiplier_max FROM dc_item_upgrade_tiers WHERE tier_id = {}",
-                tierId);
-
-            if (tierResult)
-            {
-                Field* tierFields = tierResult->Fetch();
-                maxUpgrade = tierFields[0].Get<uint32>();
-                float statMultiplierMax = tierFields[1].Get<float>();
-                float statMultiplier = 1.0f;
-                if (maxUpgrade > 0)
-                {
-                    statMultiplier = 1.0f +
-                        (static_cast<float>(upgradeLevel) *
-                            (statMultiplierMax - 1.0f) /
-                            static_cast<float>(maxUpgrade));
-                }
-
-                statMultiplierBasisPoints = static_cast<uint32>(
-                    std::lround(statMultiplier * 10000.0f));
-            }
-            else
-            {
-                maxUpgrade = 15;
-                float statMultiplier = 1.0f +
-                    (static_cast<float>(upgradeLevel) * 0.02f);
-                statMultiplierBasisPoints = static_cast<uint32>(
-                    std::lround(statMultiplier * 10000.0f));
-            }
-
-            if (itemTemplate)
-            {
-                baseIlvl = itemTemplate->ItemLevel;
-                upgradedIlvl = baseIlvl + (upgradeLevel * 5);
-            }
-
-            if (currentEntry != baseEntry)
-            {
-                currentEntry = item->GetEntry();
-                baseEntryOut = baseEntry;
-            }
-        }
-        else if (itemTemplate)
-        {
-            bool canUpgrade =
-                (itemTemplate->Class == ITEM_CLASS_WEAPON ||
-                    itemTemplate->Class == ITEM_CLASS_ARMOR) &&
-                (itemTemplate->Quality >= ITEM_QUALITY_UNCOMMON);
-
-            maxUpgrade = canUpgrade ? 15 : 0;
-        }
+        DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot snapshot;
+        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr =
+                DarkChaos::ItemUpgrade::GetUpgradeManager())
+            mgr->BuildTooltipSnapshot(item, snapshot);
 
         WorldPacket data(BridgeOpcode::SMSG_ITEM_UPGRADE_TOOLTIP, 64);
         data << int32(bag);
         data << int32(slot);
-        data << int32(itemId);
-        data << int32(tierId);
-        data << int32(upgradeLevel);
-        data << int32(maxUpgrade);
-        data << int32(statMultiplierBasisPoints);
-        data << int32(baseEntryOut);
-        data << int32(currentEntry);
-        data << int32(baseIlvl);
-        data << int32(upgradedIlvl);
+        data << int32(snapshot.item_entry);
+        data << int32(snapshot.tier_id);
+        data << int32(snapshot.upgrade_level);
+        data << int32(snapshot.max_upgrade);
+        data << int32(snapshot.stat_multiplier_basis_points);
+        data << int32(snapshot.base_entry);
+        data << int32(snapshot.current_entry);
+        data << int32(snapshot.base_ilvl);
+        data << int32(snapshot.upgraded_ilvl);
         data << std::string();
         player->GetSession()->SendPacket(&data);
         std::string preview = "bag=" + std::to_string(bag)
             + "|slot=" + std::to_string(slot)
-            + "|item=" + std::to_string(itemId)
-            + "|tier=" + std::to_string(tierId)
-            + "|upgrade=" + std::to_string(upgradeLevel)
-            + "|max=" + std::to_string(maxUpgrade);
+            + "|item=" + std::to_string(snapshot.item_entry)
+            + "|tier=" + std::to_string(snapshot.tier_id)
+            + "|upgrade=" + std::to_string(snapshot.upgrade_level)
+            + "|max=" + std::to_string(snapshot.max_upgrade);
         DCAddon::LogNativeS2CMessage(player, MODULE, Opcode::SMSG_ITEM_INFO,
             BridgeOpcode::SMSG_ITEM_UPGRADE_TOOLTIP, data.size(), preview,
             true, 0);
@@ -673,6 +1910,27 @@ namespace DCQoS
         ack.Send(player);
     }
 
+    static void SendPingRelayFeatureResponse(Player* player, bool ok,
+        std::string const& resolvedDistribution, uint32 recipients,
+        std::string const& error)
+    {
+        if (!player)
+            return;
+
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("action",
+            std::string(NativeEnvelopeFeature::ACTION_RELAY_ACK));
+        payload.Set("ok", ok);
+        payload.Set("distribution", resolvedDistribution);
+        payload.Set("recipients", recipients);
+        if (!error.empty())
+            payload.Set("error", error);
+
+        SendFeatureResponse(player, NativeEnvelopeFeature::PING, payload,
+            "feature-request:relay_ack");
+    }
+
     static void SendPingRelayMessage(Player* recipient, Player* sender,
         std::string const& resolvedDistribution,
         std::string const& payload)
@@ -690,8 +1948,10 @@ namespace DCQoS
         {
             DCAddon::JsonValue nativePayload;
             nativePayload.SetObject();
-            nativePayload.Set("feature", std::string("ping"));
-            nativePayload.Set("action", std::string("relay"));
+            nativePayload.Set("feature",
+                std::string(NativeEnvelopeFeature::PING));
+            nativePayload.Set("action",
+                std::string(NativeEnvelopeFeature::ACTION_RELAY));
             nativePayload.Set("distribution", resolvedDistribution);
             nativePayload.Set("payload", payload);
             nativePayload.Set("syncPayload", payload);
@@ -704,8 +1964,8 @@ namespace DCQoS
         }
 
         DCAddon::JsonMessage relay(MODULE, Opcode::SMSG_FEATURE_DATA);
-        relay.Set("feature", "ping");
-        relay.Set("action", "relay");
+        relay.Set("feature", NativeEnvelopeFeature::PING);
+        relay.Set("action", NativeEnvelopeFeature::ACTION_RELAY);
         relay.Set("distribution", resolvedDistribution);
         relay.Set("payload", payload);
         relay.Set("syncPayload", payload);
@@ -717,14 +1977,30 @@ namespace DCQoS
 
     static void RelayPingPayload(Player* player,
         std::string const& requestedDistribution,
-        std::string const& payload)
+        std::string const& payload,
+        bool useFeatureResponseAck = false)
     {
         if (!player)
             return;
 
+        auto sendAck = [player, useFeatureResponseAck](bool ok,
+            std::string const& resolvedDistribution, uint32 recipients,
+            std::string const& error)
+        {
+            if (useFeatureResponseAck)
+            {
+                SendPingRelayFeatureResponse(player, ok,
+                    resolvedDistribution, recipients, error);
+                return;
+            }
+
+            SendPingRelayAck(player, ok, resolvedDistribution,
+                recipients, error);
+        };
+
         if (payload.empty())
         {
-            SendPingRelayAck(player, false, "", 0,
+            sendAck(false, "", 0,
                 "Missing ping relay payload.");
             return;
         }
@@ -736,7 +2012,7 @@ namespace DCQoS
         if (!CollectRelayRecipients(player, requestedDistribution,
                 resolvedDistribution, recipients, relayError))
         {
-            SendPingRelayAck(player, false, resolvedDistribution, 0,
+            sendAck(false, resolvedDistribution, 0,
                 relayError);
             return;
         }
@@ -745,7 +2021,7 @@ namespace DCQoS
             SendPingRelayMessage(recipient, player, resolvedDistribution,
                 payload);
 
-        SendPingRelayAck(player, true, resolvedDistribution,
+        sendAck(true, resolvedDistribution,
             static_cast<uint32>(recipients.size()), "");
     }
 
@@ -981,74 +2257,39 @@ namespace DCQoS
             return;
 
         ObjectGuid itemGuid = item->GetGUID();
-        uint32 baseEntry = item->GetEntry();
-        const ItemTemplate* itemTemplate = item->GetTemplate();
+        DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot snapshot;
+        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr =
+                DarkChaos::ItemUpgrade::GetUpgradeManager())
+            mgr->BuildTooltipSnapshot(item, snapshot);
 
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_ITEM_INFO);
         msg.Set("bag", static_cast<int32>(bag));
         msg.Set("slot", static_cast<int32>(slot));
-        msg.Set("itemId", static_cast<int32>(baseEntry));
+        msg.Set("itemId", static_cast<int32>(snapshot.item_entry));
         msg.Set("guid", itemGuid.GetCounter());
 
-        // Query upgrade data from dc_item_upgrades table
-        QueryResult upgradeResult = CharacterDatabase.Query(
-            "SELECT tier_id, upgrade_level FROM dc_item_upgrades WHERE item_guid = {}",
-            itemGuid.GetCounter()
-        );
-
-        if (upgradeResult)
+        if (snapshot.has_persisted_state)
         {
-            Field* fields = upgradeResult->Fetch();
-            uint32 tierId = fields[0].Get<uint32>();
-            uint32 upgradeLevel = fields[1].Get<uint32>();
+            msg.Set("tier", static_cast<int32>(snapshot.tier_id));
+            msg.Set("upgradeLevel", static_cast<int32>(snapshot.upgrade_level));
+            msg.Set("maxUpgrade", static_cast<int32>(snapshot.max_upgrade));
+            msg.Set("statMultiplier",
+                static_cast<double>(snapshot.stat_multiplier_basis_points) /
+                    10000.0);
 
-            msg.Set("tier", static_cast<int32>(tierId));
-            msg.Set("upgradeLevel", static_cast<int32>(upgradeLevel));
-
-            // Get tier max level from dc_item_upgrade_tiers
-            QueryResult tierResult = WorldDatabase.Query(
-                "SELECT max_upgrade_level, stat_multiplier_max FROM dc_item_upgrade_tiers WHERE tier_id = {}",
-                tierId
-            );
-
-            if (tierResult)
+            if (snapshot.base_ilvl > 0)
             {
-                Field* tierFields = tierResult->Fetch();
-                uint32 maxLevel = tierFields[0].Get<uint32>();
-                float statMultiplierMax = tierFields[1].Get<float>();
-
-                msg.Set("maxUpgrade", static_cast<int32>(maxLevel));
-
-                // Calculate stat multiplier: 1.0 + (upgradeLevel * (statMultiplierMax - 1.0) / maxLevel)
-                float statMultiplier = 1.0f;
-                if (maxLevel > 0)
-                {
-                    statMultiplier = 1.0f + (static_cast<float>(upgradeLevel) * (statMultiplierMax - 1.0f) / static_cast<float>(maxLevel));
-                }
-                msg.Set("statMultiplier", statMultiplier);
-            }
-            else
-            {
-                // Default tier values
-                msg.Set("maxUpgrade", 15);
-                msg.Set("statMultiplier", 1.0f + (static_cast<float>(upgradeLevel) * 0.02f));
+                msg.Set("baseIlvl", static_cast<int32>(snapshot.base_ilvl));
+                msg.Set("upgradedIlvl",
+                    static_cast<int32>(snapshot.upgraded_ilvl));
             }
 
-            // Calculate effective item level
-            if (itemTemplate)
+            if (snapshot.current_entry != 0 &&
+                snapshot.current_entry != snapshot.base_entry)
             {
-                uint32 baseIlvl = itemTemplate->ItemLevel;
-                uint32 upgradedIlvl = baseIlvl + (upgradeLevel * 5);  // +5 ilvl per upgrade
-                msg.Set("baseIlvl", static_cast<int32>(baseIlvl));
-                msg.Set("upgradedIlvl", static_cast<int32>(upgradedIlvl));
-            }
-
-            // Check if item entry was changed (cloned for upgrade)
-            uint32 currentEntry = item->GetEntry();
-            if (currentEntry != baseEntry)
-            {
-                msg.Set("currentEntry", static_cast<int32>(currentEntry));
-                msg.Set("baseEntry", static_cast<int32>(baseEntry));
+                msg.Set("currentEntry",
+                    static_cast<int32>(snapshot.current_entry));
+                msg.Set("baseEntry", static_cast<int32>(snapshot.base_entry));
             }
         }
         else
@@ -1056,25 +2297,8 @@ namespace DCQoS
             // No upgrade data - check if item is upgradeable
             msg.Set("upgradeLevel", 0);
             msg.Set("tier", 0);
-
-            // Check if this item type can be upgraded
-            if (itemTemplate)
-            {
-                bool canUpgrade = (itemTemplate->Class == ITEM_CLASS_WEAPON ||
-                                   itemTemplate->Class == ITEM_CLASS_ARMOR) &&
-                                  (itemTemplate->Quality >= ITEM_QUALITY_UNCOMMON);
-
-                if (canUpgrade)
-                {
-                    msg.Set("maxUpgrade", 15);  // Default max upgrade
-                    msg.Set("statMultiplier", 1.0f);
-                }
-                else
-                {
-                    msg.Set("maxUpgrade", 0);
-                    msg.Set("statMultiplier", 1.0f);
-                }
-            }
+            msg.Set("maxUpgrade", static_cast<int32>(snapshot.max_upgrade));
+            msg.Set("statMultiplier", 1.0f);
         }
 
         msg.Send(player);
@@ -2884,6 +4108,73 @@ namespace DCQoS
         SendItemUpgradeInfoNative(player, item, bag, slot);
     }
 
+    static void HandleItemTooltipSnapshotNativeRequest(Player* player,
+        uint32 requestId, uint32 itemGuidLow, uint32 knownRevision,
+        uint32 itemEntry, uint32 contextHash, uint32 ownerGuidLow,
+        uint8 contextKind, uint8 bag, uint8 slot, uint8 flags)
+    {
+        if (!player)
+            return;
+
+        AuditItemTooltipSnapshotTransport(player, true);
+
+        ItemTooltipSnapshotNativeRequest snapshotRequest;
+        snapshotRequest.requestId = requestId;
+        snapshotRequest.itemGuidLow = itemGuidLow;
+        snapshotRequest.knownRevision = knownRevision;
+        snapshotRequest.itemEntry = itemEntry;
+        snapshotRequest.contextHash = contextHash;
+        snapshotRequest.ownerGuidLow = ownerGuidLow;
+        snapshotRequest.contextKind = contextKind;
+        snapshotRequest.bag = bag;
+        snapshotRequest.slot = slot;
+        snapshotRequest.flags = flags;
+
+        uint32 resolveStatus = ItemTooltipSnapshotStatus::ITEM_NOT_FOUND;
+        Item* item = ResolveItemTooltipSnapshotItem(player, snapshotRequest,
+            resolveStatus);
+        if (!item)
+        {
+            SendItemTooltipSnapshotNative(player, snapshotRequest, nullptr, {},
+                resolveStatus,
+                resolveStatus == ItemTooltipSnapshotStatus::UNSUPPORTED_CONTEXT
+                    ? "Tooltip context is not supported yet"
+                    : "Item not found for tooltip snapshot");
+            return;
+        }
+
+        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr =
+                DarkChaos::ItemUpgrade::GetUpgradeManager())
+        {
+            DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot snapshot;
+            if (!mgr->BuildTooltipSnapshot(item, snapshot))
+            {
+                SendItemTooltipSnapshotNative(player, snapshotRequest, nullptr, {},
+                    ItemTooltipSnapshotStatus::SERVER_ERROR,
+                    "Failed to build item tooltip snapshot");
+                return;
+            }
+
+            if (snapshotRequest.knownRevision != 0
+                && snapshotRequest.knownRevision == snapshot.revision)
+            {
+                SendItemTooltipSnapshotNative(player, snapshotRequest,
+                    &snapshot, {},
+                    ItemTooltipSnapshotStatus::NOT_MODIFIED, "");
+                return;
+            }
+
+            SendItemTooltipSnapshotNative(player, snapshotRequest, &snapshot,
+                BuildItemTooltipSnapshotRows(player, item, snapshot),
+                ItemTooltipSnapshotStatus::OK, "");
+            return;
+        }
+
+        SendItemTooltipSnapshotNative(player, snapshotRequest, nullptr, {},
+            ItemTooltipSnapshotStatus::SERVER_ERROR,
+            "Upgrade manager is unavailable");
+    }
+
     static void HandleNpcTooltipInfoNativeRequest(Player* player,
         std::string const& guidStr)
     {
@@ -2978,13 +4269,13 @@ namespace DCQoS
 
         std::string feature = json["feature"].AsString();
 
-        if (feature == "ping")
+        if (feature == NativeEnvelopeFeature::PING)
         {
             std::string action = json.HasKey("action") ? json["action"].AsString() : "";
 
-            if (action != "relay")
+            if (action != NativeEnvelopeFeature::ACTION_RELAY)
             {
-                SendPingRelayAck(player, false, "", 0,
+                SendPingRelayFeatureResponse(player, false, "", 0,
                     "Unsupported ping feature action.");
                 return;
             }
@@ -2994,7 +4285,43 @@ namespace DCQoS
                 payload = json["syncPayload"].AsString();
 
             std::string requestedDistribution = json.HasKey("distribution") ? json["distribution"].AsString() : "AUTO";
-            RelayPingPayload(player, requestedDistribution, payload);
+            RelayPingPayload(player, requestedDistribution, payload, true);
+            return;
+        }
+
+        if (feature == NativeEnvelopeFeature::GRAPHICS_PROFILE)
+        {
+            PushRuntimeProfile(player, true, "feature-request");
+            return;
+        }
+
+        if (feature == NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE)
+        {
+            RuntimeProfileSelection selection = SelectRuntimeProfile(player);
+            SendFeatureResponse(player, feature,
+                BuildRuntimeProfileStatePayload(player, selection),
+                "feature-request:profile-state");
+            return;
+        }
+
+        if (feature == NativeEnvelopeFeature::SERVER_TIME)
+        {
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("serverTime", static_cast<int32>(time(nullptr)));
+            SendFeatureResponse(player, feature, payload, "feature-request");
+            return;
+        }
+
+        if (feature == NativeEnvelopeFeature::PLAYER_STATS)
+        {
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("level", static_cast<int32>(player->GetLevel()));
+            payload.Set("maxLevel",
+                static_cast<int32>(sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL)));
+            payload.Set("gold", static_cast<int32>(player->GetMoney()));
+            SendFeatureResponse(player, feature, payload, "feature-request");
             return;
         }
 
@@ -3002,18 +4329,8 @@ namespace DCQoS
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_FEATURE_DATA);
         response.Set("feature", feature);
 
-        if (feature == "server_time")
-        {
-            response.Set("serverTime", static_cast<int32>(time(nullptr)));
-        }
-        else if (feature == "player_stats")
-        {
-            // Example: send some player stats
-            response.Set("level", player->GetLevel());
-            response.Set("maxLevel", sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
-            response.Set("gold", static_cast<int32>(player->GetMoney()));
-        }
-        else
+        if (feature != NativeEnvelopeFeature::SERVER_TIME
+            && feature != NativeEnvelopeFeature::PLAYER_STATS)
         {
             response.Set("error", "Unknown feature: " + feature);
         }
@@ -3212,6 +4529,24 @@ public:
             new DCQoS_SpellEnrichmentPushEvent(player->GetGUID()),
             player->m_Events.CalculateTime(3000)
         );
+
+        player->m_Events.AddEventAtOffset([guid = player->GetGUID()]
+        {
+            if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
+                DCQoS::PushRuntimeProfile(online, true, "login");
+        }, std::chrono::milliseconds(4500));
+    }
+
+    void OnPlayerMapChanged(Player* player) override
+    {
+        if (!DCQoS::IsEnabled() || !player)
+            return;
+
+        player->m_Events.AddEventAtOffset([guid = player->GetGUID()]
+        {
+            if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
+                DCQoS::PushRuntimeProfile(online, false, "map-change");
+        }, std::chrono::milliseconds(1250));
     }
 
     void OnPlayerLogout(Player* player) override
@@ -3220,6 +4555,10 @@ public:
             return;
 
         DCQoS::InvalidatePlayerSettingsCache(player->GetGUID().GetCounter());
+
+        std::lock_guard<std::mutex> lock(DCQoS::s_RuntimeProfileMutex);
+        DCQoS::s_LastRuntimeProfileByGuid.erase(
+            player->GetGUID().GetCounter());
     }
 };
 
@@ -3238,6 +4577,7 @@ private:
     {
         uint16 opcode = packet.GetOpcode();
         if (opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT &&
+            opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT &&
             opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP &&
             opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_NPC_TOOLTIP_INFO &&
             opcode != DCQoS::BridgeOpcode::CMSG_REQUEST_PING_RELAY)
@@ -3249,6 +4589,79 @@ private:
         Player* player = session->GetPlayer();
         if (!player || !player->IsInWorld())
             return false;
+
+        if (opcode == DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT)
+        {
+            uint32 requestId = 0;
+            uint32 itemGuidLow = 0;
+            uint32 knownRevision = 0;
+            uint32 itemEntry = 0;
+            uint32 contextHash = 0;
+            uint32 ownerGuidLow = 0;
+            uint8 contextKind = 0;
+            uint8 bag = 0;
+            uint8 slot = 0;
+            uint8 flags = 0;
+            bool parseOk = true;
+
+            if (packet.size() >= (sizeof(uint32) * 6 + sizeof(uint8) * 4))
+            {
+                WorldPacket nativePacket(packet);
+                nativePacket.rpos(0);
+
+                try
+                {
+                    nativePacket >> requestId;
+                    nativePacket >> itemGuidLow;
+                    nativePacket >> knownRevision;
+                    nativePacket >> itemEntry;
+                    nativePacket >> contextHash;
+                    nativePacket >> ownerGuidLow;
+                    nativePacket >> contextKind;
+                    nativePacket >> bag;
+                    nativePacket >> slot;
+                    nativePacket >> flags;
+                }
+                catch (ByteBufferException const&)
+                {
+                    parseOk = false;
+                    requestId = 0;
+                    itemGuidLow = 0;
+                    knownRevision = 0;
+                    itemEntry = 0;
+                    contextHash = 0;
+                    ownerGuidLow = 0;
+                    contextKind = 0;
+                    bag = 0;
+                    slot = 0;
+                    flags = 0;
+                }
+            }
+            else
+            {
+                parseOk = false;
+            }
+
+            std::string preview = "req="
+                + std::to_string(requestId)
+                + "|guid=" + std::to_string(itemGuidLow)
+                + "|rev=" + std::to_string(knownRevision)
+                + "|owner=" + std::to_string(ownerGuidLow)
+                + "|ctx=" + std::to_string(contextKind)
+                + "|bag=" + std::to_string(bag)
+                + "|slot=" + std::to_string(slot);
+            DCQoS::HandleItemTooltipSnapshotNativeRequest(player,
+                requestId, itemGuidLow, knownRevision, itemEntry,
+                contextHash, ownerGuidLow, contextKind, bag, slot, flags);
+            DCAddon::AuditNativeC2SRequest(player, DCQoS::MODULE,
+                DCQoS::Opcode::CMSG_GET_ITEM_INFO,
+                DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT,
+                packet.size(), preview, true, "",
+                parseOk ? "" : "native_bad_format",
+                parseOk ? ""
+                    : "Malformed native item tooltip snapshot request");
+            return false;
+        }
 
         if (opcode == DCQoS::BridgeOpcode::CMSG_REQUEST_ITEM_UPGRADE_TOOLTIP)
         {

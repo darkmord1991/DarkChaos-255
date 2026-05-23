@@ -14,6 +14,9 @@ addon.protocol = {
     MODULE_ID = "QOS",
     connected = false,
     DC = nil,  -- DCAddonProtocol reference
+    featureHandlers = {},
+    nativeEnvelopeFrame = nil,
+    nativeEnvelopePollElapsed = 0,
 }
 
 local protocol = addon.protocol
@@ -22,6 +25,8 @@ local SPELL_ENRICH_CACHE_TTL = 180
 local SPELL_ENRICH_CACHE_MAX_SPELLS = 1200
 local SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL = 8
 local SPELL_ENRICH_CACHE_PRUNE_INTERVAL = 20
+local NATIVE_ENVELOPE_POLL_INTERVAL = 0.10
+local NATIVE_ENVELOPE_ACTION_RESPONSE = "response"
 local lastSpellEnrichCachePruneAt = 0
 
 local SERVER_SETTINGS_PATH_MAP = {
@@ -207,6 +212,7 @@ function protocol:Initialize()
     self.DC = DC
     self:RegisterHandlers()
     self.connected = true
+    self:EnsureNativeEnvelopeDispatcher()
     addon:FireEvent("PROTOCOL_CONNECTED", self.MODULE_ID)
     
     addon:Debug("Protocol initialized - Module: " .. self.MODULE_ID)
@@ -258,6 +264,124 @@ function protocol:RegisterHandlers()
     addon:Debug("Registered " .. self.MODULE_ID .. " protocol handlers")
 end
 
+local function NormalizeNativeEnvelopePayload(self, feature, action, revision,
+    payload, context)
+    local data = {
+        feature = tostring(feature or ""),
+        action = tostring(action or ""),
+        revision = tonumber(revision) or 0,
+        context = context,
+        payload = payload,
+        transport = "native-envelope",
+    }
+
+    if data.action == NATIVE_ENVELOPE_ACTION_RESPONSE
+        and type(payload) == "string"
+        and payload ~= ""
+        and self.DC
+        and type(self.DC.DecodeJSON) == "function" then
+        local ok, decoded = pcall(self.DC.DecodeJSON, self.DC, payload)
+        if ok and type(decoded) == "table" then
+            data.data = decoded
+            for key, value in pairs(decoded) do
+                if data[key] == nil then
+                    data[key] = value
+                end
+            end
+        end
+    end
+
+    return data
+end
+
+function protocol:HandleNativeEnvelope(moduleId, feature, action, revision,
+    payload, context)
+    if tostring(moduleId or "") ~= self.MODULE_ID then
+        return false
+    end
+
+    local featureKey = tostring(feature or "")
+    if featureKey == "" then
+        return false
+    end
+
+    local data = NormalizeNativeEnvelopePayload(self, featureKey, action,
+        revision, payload, context)
+    local handlers = self.featureHandlers[featureKey]
+
+    if type(handlers) == "table" then
+        for _, handler in ipairs(handlers) do
+            pcall(handler, data)
+        end
+    end
+
+    addon:FireEvent("QOS_FEATURE_DATA_RECEIVED", featureKey, data)
+    return true
+end
+
+function protocol:EnsureNativeEnvelopeDispatcher()
+    if self.nativeEnvelopeFrame or type(PollDCNativeEnvelope) ~= "function" then
+        return self.nativeEnvelopeFrame ~= nil
+    end
+
+    local frame = CreateFrame("Frame")
+    frame:SetScript("OnUpdate", function(_, elapsed)
+        self.nativeEnvelopePollElapsed = (self.nativeEnvelopePollElapsed or 0)
+            + (elapsed or 0)
+        if self.nativeEnvelopePollElapsed < NATIVE_ENVELOPE_POLL_INTERVAL then
+            return
+        end
+
+        self.nativeEnvelopePollElapsed = 0
+
+        for _ = 1, 8 do
+            local ok, moduleId, feature, action, revision, payload, context =
+                pcall(PollDCNativeEnvelope)
+            if not ok or moduleId == nil then
+                return
+            end
+
+            self:HandleNativeEnvelope(moduleId, feature, action, revision,
+                payload, context)
+        end
+    end)
+    frame:Show()
+
+    self.nativeEnvelopeFrame = frame
+    return true
+end
+
+function protocol:RegisterFeatureHandler(feature, handler)
+    if type(feature) ~= "string" or feature == ""
+        or type(handler) ~= "function" then
+        return false
+    end
+
+    self.featureHandlers[feature] = self.featureHandlers[feature] or {}
+    table.insert(self.featureHandlers[feature], handler)
+    self:EnsureNativeEnvelopeDispatcher()
+    return true
+end
+
+function protocol:UnregisterFeatureHandler(feature, handler)
+    local handlers = self.featureHandlers[feature]
+    if type(handlers) ~= "table" or type(handler) ~= "function" then
+        return false
+    end
+
+    for index = #handlers, 1, -1 do
+        if handlers[index] == handler then
+            table.remove(handlers, index)
+        end
+    end
+
+    if #handlers == 0 then
+        self.featureHandlers[feature] = nil
+    end
+
+    return true
+end
+
 -- ============================================================
 -- Message Sending
 -- ============================================================
@@ -291,6 +415,16 @@ function protocol:SendJson(opcode, data)
         return false
     end
     return true
+end
+
+function protocol:RequestFeature(feature, payload)
+    if type(feature) ~= "string" or feature == "" then
+        return false
+    end
+
+    local request = type(payload) == "table" and payload or {}
+    request.feature = feature
+    return self:SendJson(self.Opcodes.CMSG_REQUEST_FEATURE, request)
 end
 
 -- Request settings sync from server
@@ -606,6 +740,18 @@ end
 
 function addon:RequestSpellInfo(spellId)
     return protocol:RequestSpellInfo(spellId)
+end
+
+function addon:RequestFeature(feature, payload)
+    return protocol:RequestFeature(feature, payload)
+end
+
+function addon:RegisterFeatureHandler(feature, handler)
+    return protocol:RegisterFeatureHandler(feature, handler)
+end
+
+function addon:UnregisterFeatureHandler(feature, handler)
+    return protocol:UnregisterFeatureHandler(feature, handler)
 end
 
 function addon:RequestSpellTooltipEnrichment(requestId, spellId, contextHash, useJson)

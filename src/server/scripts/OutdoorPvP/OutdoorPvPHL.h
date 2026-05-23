@@ -277,20 +277,8 @@
             void TeleportPlayersToStart(); // sends players to faction base locations
             void TeleportToTeamBase(Player* player) const; // helper used by resets/AFK
 
-            // Addon integration helper: allow external code (addons/command scripts)
-            // to request the same command dispatch as internal callers. This is a
-            // thin public wrapper that forwards to the private HandlePlayerCommand
-            // implementation without exposing internal helpers.
-            bool QueueCommandFromAddon(Player* player, const std::string& command, const std::string& args)
-            {
-                return HandlePlayerCommand(player, command, args);
-            }
-
             // Public wrapper for level check (configured by HLBG controller)
             bool IsPlayerMaxLevel(Player* player) const { return IsMaxLevel(player); }
-
-            // Public wrapper to check if a player is queued (avoids exposing private helper)
-            bool IsPlayerQueued(Player* player) { return IsPlayerInQueue(player); }
 
             bool IsPlayerAfkFlagged(Player* player) const
             {
@@ -455,16 +443,10 @@ public:
             bool RemoveGroupFromQueue(Player* leader);
 
             // Command handlers
-            void HandleQueueJoinCommand(Player* player);
-            void HandleQueueLeaveCommand(Player* player);
-            void HandleQueueStatusCommand(Player* player);
-            void HandleGroupQueueJoinCommand(Player* player);
-            void HandleGroupQueueLeaveCommand(Player* player);
             void HandleAdminQueueClear(Player* admin);
             void HandleAdminQueueList(Player* admin);
             void HandleAdminForceWarmup(Player* admin);
             void HandleAdminQueueConfig(Player* admin, const char* setting, const char* value);
-            bool HandlePlayerCommand(Player* player, const std::string& command, const std::string& args);
             bool HandleAdminCommand(Player* admin, const std::string& command, const std::string& args);
 
             // Performance optimizations

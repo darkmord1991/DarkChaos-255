@@ -105,6 +105,7 @@ void AddSC_dc_achievements();                 // Achievements/dc_achievements.cp
 void AddSC_GOMove_commandscript();            // GOMove/GOMoveScripts.cpp
 
 // --- Item upgrade system ---
+void AddSC_ItemUpgradeManager();              // ItemUpgrades/ItemUpgradeManager.cpp
 void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
 void AddSC_ItemUpgradeVendor();               // ItemUpgrades/ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator();              // ItemUpgrades/ItemUpgradeNPC_Curator.cpp
@@ -314,6 +315,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_achievements);
 
     LogSection("Item Upgrade System");
+    DC_LOAD(AddSC_ItemUpgradeManager);
     DC_LOAD(AddSC_ItemUpgradeMechanicsImpl);
     DC_LOAD(AddSC_ItemUpgradeVendor);
     DC_LOAD(AddSC_ItemUpgradeCurator);

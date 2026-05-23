@@ -1,4 +1,5 @@
 #include "ScriptMgr.h"
+#include "BattlegroundMgr.h"
 #include "Chat.h"
 #include "CommandScript.h"
 #include <string>
@@ -7,6 +8,7 @@
 #include "Player.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "OutdoorPvP/OutdoorPvPHL.h"
+#include "../HinterlandBG/BattlegroundHLBG.h"
 #include "../HinterlandBG/hlbg_constants.h"
 #include <sstream>
 #include <algorithm>
@@ -16,16 +18,18 @@
 /*
  * hlbg_commandscript
  * ------------------
- * Provides GM/admin commands to inspect and manage the Hinterland battle area (6738)
- * outdoor battleground state.
+ * Provides GM/admin commands to inspect and manage HLBG runtime state.
+ * When a live BattlegroundHLBG instance exists, commands prefer that instance;
+ * otherwise they fall back to the legacy OutdoorPvPHL controller.
  *
  * Commands (quick reference):
  *   .hlbg status               Show timer/resources + raid groups
  *   .hlbg get <alliance|horde> Show resources for a team
  *   .hlbg set <team> <amt>     Set resources for a team (GM-only); action is audited
  *   .hlbg reset                Force-reset the Hinterland match; action is audited
+ *   .hlbg finish <winner>      Force-end an in-progress battleground match for testing
  *
- * Audit logging: administrative actions (.hlbg set/.hlbg reset) are logged to
+ * Audit logging: administrative actions (.hlbg set/.hlbg reset/.hlbg finish) are logged to
  * the server log under the `admin.hlbg` category with the GM name and GUID.
  * Log format: "[ADMIN] <name> (GUID:<low>) <action>". This is intended for
  * lightweight operational audit trails; maintainers may redirect or persist
@@ -47,6 +51,125 @@ bool HandleHLBGStatsUI(ChatHandler* handler, char const* args);
 bool HandleHLBGQueueJoin(ChatHandler* handler, char const* args);
 bool HandleHLBGQueueLeave(ChatHandler* handler, char const* args);
 bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args);
+
+namespace
+{
+    OutdoorPvPHL* GetOutdoorHLBGController()
+    {
+        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+            return dynamic_cast<OutdoorPvPHL*>(out);
+
+        return nullptr;
+    }
+
+    BattlegroundHLBG* GetPlayerHLBGBattleground(Player* player)
+    {
+        if (!player)
+            return nullptr;
+
+        Battleground* battleground = player->GetBattleground();
+        if (!battleground || battleground->GetBgTypeID() != BATTLEGROUND_HLBG)
+            return nullptr;
+
+        return dynamic_cast<BattlegroundHLBG*>(battleground);
+    }
+
+    BattlegroundHLBG* ResolveHLBGBattleground(ChatHandler* handler)
+    {
+        Player* player = handler && handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (BattlegroundHLBG* battleground = GetPlayerHLBGBattleground(player))
+            return battleground;
+
+        BattlegroundHLBG* selected = nullptr;
+        uint32 matches = 0;
+
+        for (Battleground const* battleground : sBattlegroundMgr->GetActiveBattlegrounds())
+        {
+            if (!battleground || battleground->GetBgTypeID() != BATTLEGROUND_HLBG)
+                continue;
+
+            auto* hlbg = const_cast<BattlegroundHLBG*>(dynamic_cast<BattlegroundHLBG const*>(battleground));
+            if (!hlbg)
+                continue;
+
+            ++matches;
+            if (!selected || hlbg->GetStatus() == STATUS_IN_PROGRESS)
+                selected = hlbg;
+        }
+
+        if (matches > 1 && handler && selected)
+        {
+            handler->PSendSysMessage(
+                "Multiple active HLBG battlegrounds found. Using instance {}. Stand inside the battleground to target a specific one.",
+                selected->GetInstanceID());
+        }
+
+        return selected;
+    }
+
+    bool TryParsePlayableTeam(std::string teamToken, TeamId& teamId)
+    {
+        std::transform(teamToken.begin(), teamToken.end(), teamToken.begin(), ::tolower);
+        if (teamToken == "alliance" || teamToken == "a")
+        {
+            teamId = TEAM_ALLIANCE;
+            return true;
+        }
+
+        if (teamToken == "horde" || teamToken == "h")
+        {
+            teamId = TEAM_HORDE;
+            return true;
+        }
+
+        return false;
+    }
+
+    bool TryParseWinnerTeam(std::string teamToken, TeamId& teamId)
+    {
+        if (TryParsePlayableTeam(teamToken, teamId))
+            return true;
+
+        std::transform(teamToken.begin(), teamToken.end(), teamToken.begin(), ::tolower);
+        if (teamToken == "draw" || teamToken == "neutral" || teamToken == "tie")
+        {
+            teamId = TEAM_NEUTRAL;
+            return true;
+        }
+
+        return false;
+    }
+
+    char const* GetTeamLabel(TeamId teamId)
+    {
+        switch (teamId)
+        {
+            case TEAM_ALLIANCE:
+                return "|cff1e90ffAlliance|r";
+            case TEAM_HORDE:
+                return "|cffff0000Horde|r";
+            default:
+                return "Draw";
+        }
+    }
+
+    char const* GetBattlegroundStatusLabel(BattlegroundStatus status)
+    {
+        switch (status)
+        {
+            case STATUS_WAIT_JOIN:
+                return "wait_join";
+            case STATUS_IN_PROGRESS:
+                return "in_progress";
+            case STATUS_WAIT_LEAVE:
+                return "wait_leave";
+            case STATUS_WAIT_QUEUE:
+                return "wait_queue";
+            default:
+                return "none";
+        }
+    }
+}
 
 class hlbg_commandscript : public CommandScript
 {
@@ -91,6 +214,8 @@ public:
             { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No },
             { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No },
             { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No },
+            { "finish", HandleHLBGFinishCommand, SEC_GAMEMASTER, Console::No },
+            { "end",    HandleHLBGFinishCommand, SEC_GAMEMASTER, Console::No },
             { "history",HandleHLBGHistoryCommand,SEC_GAMEMASTER, Console::No },
             { "statsmanual",HandleHLBGStatsManualCommand,SEC_GAMEMASTER, Console::No },
             { "affix",  HandleHLBGAffixCommand,  SEC_GAMEMASTER, Console::No },
@@ -123,14 +248,11 @@ public:
             std::transform(v.begin(), v.end(), v.begin(), ::tolower);
             set = (v == "on" || v == "1" || v == "true");
         }
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
         {
-            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-            {
-                hl->SetStatsIncludeManualResets(set);
-                handler->PSendSysMessage("Stats will {}include manual resets.", set ? "" : "not ");
-                return true;
-            }
+            hl->SetStatsIncludeManualResets(set);
+            handler->PSendSysMessage("Stats will {}include manual resets.", set ? "" : "not ");
+            return true;
         }
         handler->PSendSysMessage("Hinterland BG instance not found.");
         return false;
@@ -143,18 +265,51 @@ public:
 
     handler->PSendSysMessage("|cffffd700Hinterland BG status:|r");
 
-        // Fetch the HL controller
-        OutdoorPvPHL* hl = nullptr;
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
-            hl = dynamic_cast<OutdoorPvPHL*>(out);
+        if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
+        {
+            Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            uint32 secs = bg->GetTimeRemainingSeconds();
+            uint32 min = secs / 60u;
+            uint32 sec = secs % 60u;
+            handler->PSendSysMessage("  Mode: battleground");
+            handler->PSendSysMessage("  Instance: {}  Status: {}  Map: {}", bg->GetInstanceID(), GetBattlegroundStatusLabel(bg->GetStatus()), bg->GetMapId());
+            handler->PSendSysMessage("  Time remaining: {:02}:{:02}", min, sec);
+            handler->PSendSysMessage("  Resources: {}={}, {}={}", GetTeamLabel(TEAM_ALLIANCE), bg->GetResources(TEAM_ALLIANCE), GetTeamLabel(TEAM_HORDE), bg->GetResources(TEAM_HORDE));
+            handler->PSendSysMessage("  Players: {}={}, {}={}, Total={}", GetTeamLabel(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_ALLIANCE), GetTeamLabel(TEAM_HORDE), bg->GetPlayersCountByTeam(TEAM_HORDE), bg->GetPlayersSize());
 
-        if (hl)
+            if (admin && GetPlayerHLBGBattleground(admin) == bg)
+            {
+                handler->PSendSysMessage(
+                    "  You: afk={} contribution={} hkDelta={}",
+                    bg->IsPlayerAfkFlagged(admin) ? "yes" : "no",
+                    bg->GetPlayerContributionScore(admin->GetGUID()),
+                    bg->GetPlayerHKDelta(admin));
+            }
+
+            handler->PSendSysMessage("  Raid groups:");
+            for (TeamId teamId : { TEAM_ALLIANCE, TEAM_HORDE })
+            {
+                Group* raid = bg->GetBgRaid(teamId);
+                if (!raid)
+                {
+                    handler->PSendSysMessage("    {}: (no battleground raid)", GetTeamLabel(teamId));
+                    continue;
+                }
+
+                handler->PSendSysMessage("    {}: group={} members={}", GetTeamLabel(teamId), raid->GetGUID().GetCounter(), raid->GetMembersCount());
+            }
+
+            return true;
+        }
+
+        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
         {
             uint32 secs = hl->GetTimeRemainingSeconds();
             uint32 min = secs / 60u;
             uint32 sec = secs % 60u;
             uint32 a = hl->GetResources(TEAM_ALLIANCE);
             uint32 h = hl->GetResources(TEAM_HORDE);
+            handler->PSendSysMessage("  Mode: outdoor-controller fallback");
             handler->PSendSysMessage("  Time remaining: {:02}:{:02}", min, sec);
             handler->PSendSysMessage("  Resources: |cff1e90ffAlliance|r={}, |cffff0000Horde|r={}", a, h);
             // Show current affix for clarity regardless of announcement toggles
@@ -183,10 +338,9 @@ public:
             // The dynamic_cast ensures we only call HL-specific helpers when
             // the zone script is present and matches the expected type.
             std::vector<ObjectGuid> const* groupsPtr = nullptr;
-            if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+            if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
             {
-                if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-                    groupsPtr = &hl->GetBattlegroundGroupGUIDs((TeamId)team);
+                groupsPtr = &hl->GetBattlegroundGroupGUIDs((TeamId)team);
             }
 
             if (!groupsPtr || groupsPtr->empty())
@@ -218,13 +372,10 @@ public:
         if (!admin)
             return false;
 
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
         {
-            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-            {
-                if (hl->HandleAdminCommand(admin, "queue_admin", "list"))
-                    return true;
-            }
+            if (hl->HandleAdminCommand(admin, "queue_admin", "list"))
+                return true;
         }
 
         handler->PSendSysMessage("Hinterland BG instance not found.");
@@ -242,20 +393,26 @@ public:
 
         if (!args || !*args)
         {
-        handler->PSendSysMessage("Usage: .hlbg get alliance|horde");
+            handler->PSendSysMessage("Usage: .hlbg get alliance|horde");
             return false;
         }
         std::string team(args);
-        std::transform(team.begin(), team.end(), team.begin(), ::tolower);
-        TeamId tid = (team == "alliance") ? TEAM_ALLIANCE : TEAM_HORDE;
-        uint32 res = 0;
-            if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+        TeamId tid = TEAM_NEUTRAL;
+        if (!TryParsePlayableTeam(team, tid))
         {
-            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-                res = hl->GetResources(tid);
+            handler->PSendSysMessage("Usage: .hlbg get alliance|horde");
+            return false;
         }
-        std::string colored = (tid == TEAM_ALLIANCE) ? "|cff1e90ffAlliance|r" : "|cffff0000Horde|r";
-        handler->PSendSysMessage("{} resources: {}", colored, res);
+
+        uint32 res = 0;
+        if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
+            res = bg->GetResources(tid);
+        else if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
+        {
+            res = hl->GetResources(tid);
+        }
+
+        handler->PSendSysMessage("{} resources: {}", GetTeamLabel(tid), res);
         return true;
     }
 
@@ -279,29 +436,39 @@ public:
         std::string in(args);
         std::istringstream iss(in);
         std::string teamStr;
-        uint32 amount;
+        uint32 amount = 0;
         iss >> teamStr >> amount;
-        std::transform(teamStr.begin(), teamStr.end(), teamStr.begin(), ::tolower);
-        TeamId tid = (teamStr == "alliance") ? TEAM_ALLIANCE : TEAM_HORDE;
-        uint32 prev = 0;
-    if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+        TeamId tid = TEAM_NEUTRAL;
+        if (!iss || !TryParsePlayableTeam(teamStr, tid))
         {
-            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-            {
-                // Capture previous value for audit trail, then set new amount.
-                prev = hl->GetResources(tid);
-                hl->SetResources(tid, amount);
-            }
+            handler->PSendSysMessage("Usage: .hlbg set alliance|horde <amount>");
+            return false;
         }
-        // Audit log with previous value
-        // Record the administrative action to the server log. The category
-        // `admin.hlbg` is used to make it easy to filter these entries for
-        // operational auditing. The message includes the GM name and low GUID
-        // as a compact identity marker.
+
+        uint32 prev = 0;
+        if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
+        {
+            prev = bg->GetResources(tid);
+            bg->AdminSetResources(tid, amount);
+            if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+            {
+                LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) set battleground instance {} {} resources from {} -> {}",
+                    admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID(), teamStr, prev, amount);
+            }
+
+            handler->PSendSysMessage("Set battleground instance {} {} resources to {}", bg->GetInstanceID(), GetTeamLabel(tid), amount);
+            return true;
+        }
+
+        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
+        {
+            prev = hl->GetResources(tid);
+            hl->SetResources(tid, amount);
+        }
+
         if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
             LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) set {} resources from {} -> {}", admin->GetName(), admin->GetGUID().GetCounter(), teamStr, prev, amount);
-        std::string colored = (tid == TEAM_ALLIANCE) ? "|cff1e90ffAlliance|r" : "|cffff0000Horde|r";
-        handler->PSendSysMessage("Set {} resources to {}", colored, amount);
+        handler->PSendSysMessage("Set {} resources to {}", GetTeamLabel(tid), amount);
         return true;
     }
 
@@ -314,22 +481,67 @@ public:
         // Inputs: no args; acts on the Hinterland OutdoorPvP instance if present.
         // Outputs: calls `ForceReset()` on the HL instance and logs the action.
 
-    if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+	if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
+	{
+		bg->AdminResetMatch();
+		if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+			LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced HLBG battleground reset for instance {}", admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID());
+		handler->PSendSysMessage("HLBG battleground instance {} reset and players relocated.", bg->GetInstanceID());
+		return true;
+	}
+
+	if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
         {
-            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
-            {
-                hl->ForceReset();
-                // Teleport players back to start positions configured in the OutdoorPvP script
-                hl->TeleportPlayersToStart();
-                // Audit log
-                if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-                    LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced a Hinterland BG reset", admin->GetName(), admin->GetGUID().GetCounter());
-                handler->PSendSysMessage("Hinterland BG forced reset executed.");
-                return true;
-            }
+            hl->ForceReset();
+            // Teleport players back to start positions configured in the OutdoorPvP script
+            hl->TeleportPlayersToStart();
+            // Audit log
+            if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+                LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced a Hinterland BG reset", admin->GetName(), admin->GetGUID().GetCounter());
+            handler->PSendSysMessage("Hinterland BG forced reset executed.");
+            return true;
         }
         handler->PSendSysMessage("Hinterland BG instance not found.");
         return false;
+    }
+
+    static bool HandleHLBGFinishCommand(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+        {
+            handler->PSendSysMessage("Usage: .hlbg finish alliance|horde|draw");
+            return false;
+        }
+
+        TeamId winnerTeamId = TEAM_NEUTRAL;
+        if (!TryParseWinnerTeam(args, winnerTeamId))
+        {
+            handler->PSendSysMessage("Usage: .hlbg finish alliance|horde|draw");
+            return false;
+        }
+
+        BattlegroundHLBG* bg = ResolveHLBGBattleground(handler);
+        if (!bg)
+        {
+            handler->PSendSysMessage("No active HLBG battleground instance found.");
+            return false;
+        }
+
+        if (bg->GetStatus() != STATUS_IN_PROGRESS)
+        {
+            handler->PSendSysMessage("HLBG battleground instance {} is not in progress.", bg->GetInstanceID());
+            return false;
+        }
+
+        bg->AdminFinishMatch(winnerTeamId);
+        if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+        {
+            LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) finished HLBG battleground instance {} with winner {}",
+                admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID(), args);
+        }
+
+        handler->PSendSysMessage("Finished HLBG battleground instance {} with result {}.", bg->GetInstanceID(), GetTeamLabel(winnerTeamId));
+        return true;
     }
 
     static bool HandleHLBGHistoryCommand(ChatHandler* handler, char const* args)
@@ -366,9 +578,7 @@ public:
 
     static bool HandleHLBGAffixCommand(ChatHandler* handler, char const* /*args*/)
     {
-        OutdoorPvPHL* hl = nullptr;
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
-            hl = dynamic_cast<OutdoorPvPHL*>(out);
+        OutdoorPvPHL* hl = GetOutdoorHLBGController();
         if (!hl)
         {
             handler->PSendSysMessage("Hinterland BG instance not found.");

@@ -616,6 +616,8 @@ namespace DCAddon
             constexpr uint32 HLBG_LIVE_NATIVE = 0x00020000; // Native HLBG live snapshot bridge
             constexpr uint32 SPECTATOR_LIVE_NATIVE = 0x00040000; // Native Mythic+ spectator live snapshot bridge
             constexpr uint32 COLLECTION_WAVE1_NATIVE = 0x00080000; // Native collection wave-1 sync bridge (handshake/full/stats/bonuses/base collections)
+            constexpr uint32 GENERIC_NATIVE_ENVELOPE = 0x00100000; // Generic DC native push/invalidate envelope bridge
+            constexpr uint32 ITEM_TOOLTIP_REPLACEMENT_NATIVE = 0x00200000; // Native item tooltip snapshot bridge for full stat-line replacement
 
             // Default capabilities for current server version
             constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES |
@@ -628,7 +630,9 @@ namespace DCAddon
                 CLIENT_METADATA |
                 HLBG_LIVE_NATIVE |
                 SPECTATOR_LIVE_NATIVE |
-                COLLECTION_WAVE1_NATIVE;
+                COLLECTION_WAVE1_NATIVE |
+                GENERIC_NATIVE_ENVELOPE |
+                ITEM_TOOLTIP_REPLACEMENT_NATIVE;
         }
 
         // Version info structure for handshake
@@ -1223,6 +1227,11 @@ namespace DCAddon
         const std::string& errorMsg = "",
         const std::string& eventType = "",
         const std::string& eventMessage = "");
+    bool SendNativeEnvelope(Player* player, const std::string& module,
+        uint8 logicalOpcode, const std::string& feature,
+        const std::string& action, uint32 revision,
+        const std::string& payload = "",
+        const std::string& context = "");
     void SetSessionCapabilityState(Player* player,
         const std::string& clientVersionStr, uint32 clientCaps,
         uint32 negotiatedCaps, bool versionCompatible,

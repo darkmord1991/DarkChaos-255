@@ -26,6 +26,71 @@ local GraphicsPlus = {
 
 local eventFrame
 local applyGeneration = 0
+local state = {
+    protocolHooked = false,
+    protocolModule = nil,
+    protocolOpcode = nil,
+    protocolHandler = nil,
+    nativeFeatureHandler = nil,
+    nativeStateFeatureHandler = nil,
+    nativeFeatureHandlerRegistered = false,
+    activeServerProfile = nil,
+    activeServerRevision = 0,
+    activeServerContext = nil,
+    serverProfileState = nil,
+    profileStateRequestPending = false,
+    profileStateRequestGeneration = 0,
+    profileStateLastRequestAt = nil,
+    profileStateLastRequestReason = nil,
+    profileStateLastResponseAt = nil,
+    profileStateLastResponseSource = nil,
+    profileStateLastCompletedGeneration = 0,
+    profileStateLastFailure = nil,
+    settingsStatusUpdater = nil,
+}
+
+local NATIVE_ENVELOPE_CAPABILITY = 0x00100000
+local SERVER_PROFILE_FEATURE = "graphics_profile"
+local SERVER_PROFILE_STATE_FEATURE = "graphics_profile_state"
+
+local SERVER_PROFILE_PRESETS = {
+    SAFE = {
+        farclip = 1400,
+        cameraDistance = 70,
+        horizonScale = 4.5,
+        environmentDetail = 1.2,
+        fogOverride = false,
+        applyQualityPreset = false,
+        nameplateDistance = 20,
+    },
+    WORLD = {
+        farclip = 2200,
+        cameraDistance = 120,
+        horizonScale = 8.0,
+        environmentDetail = 2.0,
+        fogOverride = false,
+        applyQualityPreset = true,
+        nameplateDistance = 41,
+    },
+    RAID = {
+        farclip = 1800,
+        cameraDistance = 95,
+        horizonScale = 6.0,
+        environmentDetail = 1.5,
+        fogOverride = false,
+        applyQualityPreset = true,
+        nameplateDistance = 35,
+    },
+    BATTLEGROUND = {
+        farclip = 2600,
+        cameraDistance = 150,
+        horizonScale = 7.0,
+        environmentDetail = 2.4,
+        fogOverride = false,
+        applyQualityPreset = true,
+        nameplateDistance = 41,
+    },
+}
 
 local function GetSliderRoundedValue(slider)
     if not slider or type(slider.GetValue) ~= "function" then
@@ -37,6 +102,75 @@ end
 
 local function GetSettings()
     return addon.settings.graphicsPlus
+end
+
+local function HasCapabilityBit(mask, capability)
+    mask = tonumber(mask) or 0
+    capability = tonumber(capability) or 0
+
+    if capability <= 0 then
+        return false
+    end
+
+    if bit and bit.band then
+        return bit.band(mask, capability) ~= 0
+    end
+
+    return (mask % (capability * 2)) >= capability
+end
+
+local function GetClientCapabilityMask()
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and type(DC.GetClientCapabilities) == "function" then
+        local ok, capabilities = pcall(DC.GetClientCapabilities, DC)
+        if ok then
+            return tonumber(capabilities) or 0
+        end
+    end
+
+    return 0
+end
+
+local function GetProtocolCapabilitySnapshot()
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not DC or type(DC.GetCapabilitySnapshot) ~= "function" then
+        return nil
+    end
+
+    local ok, snapshot = pcall(DC.GetCapabilitySnapshot, DC)
+    if not ok or type(snapshot) ~= "table" then
+        return nil
+    end
+
+    return snapshot
+end
+
+local function IsCapabilityNegotiated(capability)
+    local snapshot = GetProtocolCapabilitySnapshot()
+    if not snapshot or not snapshot.connected then
+        return false
+    end
+
+    return HasCapabilityBit(tonumber(snapshot.negotiatedCaps) or 0,
+        capability)
+end
+
+local function HasNativeEnvelopeBridge()
+    if type(PollDCNativeEnvelope) ~= "function" then
+        return false
+    end
+
+    local capabilities = GetClientCapabilityMask()
+    if capabilities > 0 then
+        return HasCapabilityBit(capabilities, NATIVE_ENVELOPE_CAPABILITY)
+    end
+
+    return true
+end
+
+local function ShouldUseNativeEnvelopeBridge()
+    return HasNativeEnvelopeBridge()
+        and IsCapabilityNegotiated(NATIVE_ENVELOPE_CAPABILITY)
 end
 
 local function HasNativeGraphicsApi()
@@ -62,9 +196,37 @@ local function CallNative(func, ...)
     return result ~= false
 end
 
-local function ApplyGraphicsSettings(reason)
-    local settings = GetSettings()
-    if not settings or not settings.enabled then
+local function ApplyNameplateDistance(distance)
+    distance = tonumber(distance)
+    if not distance or distance <= 0 then
+        return true
+    end
+
+    local applied = true
+
+    if type(SetNameplateDistance) == "function" then
+        applied = CallNative(SetNameplateDistance, distance) and applied
+    end
+
+    if type(SetCVar) == "function" then
+        local ok = pcall(SetCVar, "nameplateMaxDistance", tostring(distance))
+        applied = ok and applied
+    end
+
+    return applied
+end
+
+local function ApplyGraphicsSettings(reason, overrideSettings)
+    local settings = overrideSettings or GetSettings()
+    if not settings then
+        return false, "missing-settings"
+    end
+
+    if not overrideSettings and state.activeServerProfile then
+        return false, "server-profile-active"
+    end
+
+    if not overrideSettings and not settings.enabled then
         return false, "disabled"
     end
 
@@ -88,11 +250,33 @@ local function ApplyGraphicsSettings(reason)
         applied = CallNative(SetFogDistance, -10000, 10000) and applied
     end
 
-    if settings.showChatFeedback and reason and reason ~= "slider" then
+    if settings.nameplateDistance then
+        applied = ApplyNameplateDistance(settings.nameplateDistance) and applied
+    end
+
+    local localSettings = GetSettings()
+    if localSettings and localSettings.showChatFeedback and reason
+        and reason ~= "slider" then
         addon:Print("Graphics+ applied (" .. tostring(reason) .. ").", true)
     end
 
     return applied, applied and "ok" or "call-failed"
+end
+
+local function ScheduleLocalReapply(reason, delay)
+    local function Reapply()
+        if state.activeServerProfile then
+            return
+        end
+
+        ApplyGraphicsSettings(reason)
+    end
+
+    if addon.DelayedCall then
+        addon:DelayedCall(delay or 0, Reapply)
+    else
+        Reapply()
+    end
 end
 
 local function ScheduleApply(reason, delay)
@@ -114,6 +298,447 @@ local function ScheduleApply(reason, delay)
     end
 end
 
+local function RequestCurrentServerProfile(reason)
+    local request = {
+        reason = reason or "client-request",
+    }
+
+    if type(addon.RequestFeature) == "function" then
+        return addon:RequestFeature(SERVER_PROFILE_FEATURE, request)
+    end
+
+    if not addon.protocol or type(addon.protocol.RequestFeature) ~= "function" then
+        return false
+    end
+
+    return addon.protocol:RequestFeature(SERVER_PROFILE_FEATURE, request)
+end
+
+local function RequestCurrentServerProfileState(reason)
+    local requestReason = reason or "client-request"
+    local request = {
+        reason = requestReason,
+    }
+    local sent = false
+
+    state.profileStateRequestPending = true
+    state.profileStateRequestGeneration = state.profileStateRequestGeneration + 1
+    state.profileStateLastRequestAt = GetProfileStateTimestamp()
+    state.profileStateLastRequestReason = requestReason
+    state.profileStateLastFailure = nil
+    RefreshSettingsStatusText()
+
+    if type(addon.RequestFeature) == "function" then
+        sent = addon:RequestFeature(SERVER_PROFILE_STATE_FEATURE, request)
+    elseif addon.protocol and type(addon.protocol.RequestFeature) == "function" then
+        sent = addon.protocol:RequestFeature(SERVER_PROFILE_STATE_FEATURE, request)
+    end
+
+    if sent then
+        addon:Debug("Graphics+ server profile state requested: reason="
+            .. tostring(requestReason) .. " request="
+            .. tostring(state.profileStateRequestGeneration))
+        return true
+    end
+
+    state.profileStateRequestPending = false
+    state.profileStateLastFailure = string.format("request failed at %s",
+        GetProfileStateTimestamp())
+    RefreshSettingsStatusText()
+
+    addon:Debug("Graphics+ server profile state request failed: reason="
+        .. tostring(requestReason))
+    return false
+end
+
+local function ScheduleProfileRequest(reason, delay)
+    local function ExecuteRequest()
+        RequestCurrentServerProfile(reason)
+    end
+
+    if addon.DelayedCall then
+        addon:DelayedCall(delay or 0, ExecuteRequest)
+    else
+        ExecuteRequest()
+    end
+end
+
+local function ScheduleProfileStateRequest(reason, delay)
+    local function ExecuteRequest()
+        RequestCurrentServerProfileState(reason)
+    end
+
+    if addon.DelayedCall then
+        addon:DelayedCall(delay or 0, ExecuteRequest)
+    else
+        ExecuteRequest()
+    end
+end
+
+local function FormatStatusValue(value, fallback)
+    if value == nil then
+        return fallback or "?"
+    end
+
+    local text = tostring(value)
+    if text == "" then
+        return fallback or "?"
+    end
+
+    return text
+end
+
+local function GetProfileStateTimestamp()
+    if type(date) == "function" then
+        return date("%H:%M:%S")
+    end
+
+    if type(GetTime) == "function" then
+        return string.format("%.1fs", GetTime())
+    end
+
+    return "now"
+end
+
+local function GetProfileStateGroupLabel(snapshot)
+    if type(snapshot) ~= "table" then
+        return "unknown"
+    end
+
+    if snapshot.inRaidGroup == true then
+        return "raid"
+    end
+
+    if snapshot.inGroup == true then
+        return "party"
+    end
+
+    return "solo"
+end
+
+local function BuildActiveServerProfileStatusText()
+    if state.activeServerProfile then
+        return string.format(
+            "|cff00ff00Server Override: %s|r (rev=%s, context=%s)",
+            FormatStatusValue(state.activeServerProfile, "?"),
+            FormatStatusValue(state.activeServerRevision, "0"),
+            FormatStatusValue(state.activeServerContext, "unknown"))
+    end
+
+    if (tonumber(state.activeServerRevision) or 0) > 0 then
+        return string.format(
+            "|cffffff00Server Override: none|r (last rev=%s, context=%s)",
+            FormatStatusValue(state.activeServerRevision, "0"),
+            FormatStatusValue(state.activeServerContext, "unknown"))
+    end
+
+    return "|cffccccccServer Override: no active server profile seen yet.|r"
+end
+
+local function BuildServerProfileStateText()
+    local snapshot = state.serverProfileState
+    if type(snapshot) ~= "table" then
+        return "|cffccccccServer Snapshot: request pending or not received yet.|r"
+    end
+
+    local mapSummary = snapshot.hasMap and string.format(
+        "map=%s zone=%s area=%s",
+        FormatStatusValue(snapshot.mapId, "?"),
+        FormatStatusValue(snapshot.zoneId, "?"),
+        FormatStatusValue(snapshot.areaId, "?")) or "no map"
+
+    return string.format(
+        "Server Snapshot: %s/%s, %s, group=%s, response=%s, rev=%s",
+        FormatStatusValue(snapshot.profile, "?"),
+        FormatStatusValue(snapshot.profileContext, "?"),
+        mapSummary,
+        GetProfileStateGroupLabel(snapshot),
+        FormatStatusValue(snapshot.context, "feature-request"),
+        FormatStatusValue(snapshot.revision, "0"))
+end
+
+local function BuildServerProfileRefreshText()
+    local requestId = tostring(state.profileStateRequestGeneration or 0)
+    local requestReason = FormatStatusValue(state.profileStateLastRequestReason,
+        "client-request")
+
+    if state.profileStateRequestPending then
+        return string.format(
+            "|cffffff00State Refresh: pending|r (#%s at %s, reason=%s)",
+            requestId,
+            FormatStatusValue(state.profileStateLastRequestAt, "now"),
+            requestReason)
+    end
+
+    if state.profileStateLastFailure then
+        return string.format(
+            "|cffff5555State Refresh: %s|r (reason=%s)",
+            state.profileStateLastFailure,
+            requestReason)
+    end
+
+    if state.profileStateLastResponseAt then
+        return string.format(
+            "|cff00ff00State Refresh: updated|r (#%s at %s via %s, reason=%s)",
+            tostring(state.profileStateLastCompletedGeneration or requestId),
+            FormatStatusValue(state.profileStateLastResponseAt, "?"),
+            FormatStatusValue(state.profileStateLastResponseSource, "unknown"),
+            requestReason)
+    end
+
+    return "|cffccccccState Refresh: no request sent yet.|r"
+end
+
+local function RefreshSettingsStatusText()
+    if type(state.settingsStatusUpdater) == "function" then
+        state.settingsStatusUpdater()
+    end
+end
+
+local function HandleServerProfileApply(profileKey, revision, context, source)
+    local preset = SERVER_PROFILE_PRESETS[profileKey]
+    if type(preset) ~= "table" then
+        return
+    end
+
+    revision = tonumber(revision) or 0
+    if state.activeServerProfile == profileKey
+        and revision > 0
+        and revision <= (state.activeServerRevision or 0) then
+        return
+    end
+
+    state.activeServerProfile = profileKey
+    state.activeServerRevision = revision
+    state.activeServerContext = context
+
+    ApplyGraphicsSettings("server profile " .. tostring(profileKey), preset)
+
+    addon:Debug("Graphics+ server profile applied: " .. tostring(profileKey)
+        .. " source=" .. tostring(source)
+        .. " context=" .. tostring(context))
+
+    RefreshSettingsStatusText()
+end
+
+local function HandleServerProfileInvalidate(context, revision, source)
+    state.activeServerProfile = nil
+    state.activeServerRevision = tonumber(revision) or 0
+    state.activeServerContext = context
+
+    addon:Debug("Graphics+ server profile invalidated: source="
+        .. tostring(source) .. " context=" .. tostring(context))
+
+    RefreshSettingsStatusText()
+    ScheduleLocalReapply("server invalidate", 0.05)
+end
+
+local function NormalizeFeaturePayload(rawPayload)
+    if type(rawPayload) ~= "table" then
+        return nil
+    end
+
+    local payload = rawPayload
+    if type(rawPayload.data) == "table" then
+        payload = {}
+        for key, value in pairs(rawPayload.data) do
+            payload[key] = value
+        end
+
+        if not payload.feature and rawPayload.feature then
+            payload.feature = rawPayload.feature
+        end
+        if payload.action == nil and rawPayload.action ~= nil then
+            payload.action = rawPayload.action
+        end
+        if payload.revision == nil and rawPayload.revision ~= nil then
+            payload.revision = rawPayload.revision
+        end
+        if payload.context == nil and rawPayload.context ~= nil then
+            payload.context = rawPayload.context
+        end
+        if payload.transport == nil and rawPayload.transport ~= nil then
+            payload.transport = rawPayload.transport
+        end
+    end
+
+    return payload
+end
+
+local function HandleServerProfileStateResponse(payload, source)
+    payload = NormalizeFeaturePayload(payload)
+    if not payload or payload.feature ~= SERVER_PROFILE_STATE_FEATURE then
+        return
+    end
+
+    if tostring(payload.action or "response") ~= "response" then
+        return
+    end
+
+    state.profileStateRequestPending = false
+    state.profileStateLastResponseAt = GetProfileStateTimestamp()
+    state.profileStateLastResponseSource = source
+    state.profileStateLastCompletedGeneration =
+        state.profileStateRequestGeneration
+
+    state.serverProfileState = {
+        revision = tonumber(payload.revision) or 0,
+        profile = payload.profile,
+        profileContext = payload.profileContext,
+        mapId = payload.mapId,
+        zoneId = payload.zoneId,
+        areaId = payload.areaId,
+        inGroup = payload.inGroup,
+        inRaidGroup = payload.inRaidGroup,
+        hasMap = payload.hasMap,
+        context = payload.context,
+        source = source,
+    }
+
+    addon:Debug("Graphics+ server profile state received: profile="
+        .. tostring(payload.profile) .. " profileContext="
+        .. tostring(payload.profileContext) .. " mapId="
+        .. tostring(payload.mapId) .. " zoneId="
+        .. tostring(payload.zoneId) .. " areaId="
+        .. tostring(payload.areaId) .. " group="
+        .. GetProfileStateGroupLabel(payload) .. " source="
+        .. tostring(source) .. " context=" .. tostring(payload.context))
+
+    RefreshSettingsStatusText()
+end
+
+local function HandleProfileMessage(payload, source)
+    payload = NormalizeFeaturePayload(payload)
+    if not payload then
+        return
+    end
+
+    if payload.feature == SERVER_PROFILE_STATE_FEATURE then
+        HandleServerProfileStateResponse(payload, source)
+        return
+    end
+
+    if payload.feature ~= SERVER_PROFILE_FEATURE then
+        return
+    end
+
+    local action = tostring(payload.action or "")
+    if action == "apply" then
+        HandleServerProfileApply(
+            tostring(payload.profile or payload.payload or ""),
+            payload.revision, payload.context, source)
+    elseif action == "invalidate" then
+        HandleServerProfileInvalidate(payload.context, payload.revision,
+            source)
+    end
+end
+
+local function RegisterNativeFeatureHandler()
+    if state.nativeFeatureHandlerRegistered then
+        return true
+    end
+
+    if not addon.protocol
+        or type(addon.protocol.RegisterFeatureHandler) ~= "function" then
+        return false
+    end
+
+    state.nativeFeatureHandler = function(payload)
+        HandleProfileMessage(payload, "native")
+    end
+
+    state.nativeStateFeatureHandler = function(payload)
+        HandleProfileMessage(payload, "native")
+    end
+
+    if not addon.protocol:RegisterFeatureHandler(SERVER_PROFILE_FEATURE,
+            state.nativeFeatureHandler) then
+        state.nativeFeatureHandler = nil
+        return false
+    end
+
+    if not addon.protocol:RegisterFeatureHandler(SERVER_PROFILE_STATE_FEATURE,
+            state.nativeStateFeatureHandler) then
+        addon.protocol:UnregisterFeatureHandler(SERVER_PROFILE_FEATURE,
+            state.nativeFeatureHandler)
+        state.nativeFeatureHandler = nil
+        state.nativeStateFeatureHandler = nil
+        return false
+    end
+
+    state.nativeFeatureHandlerRegistered = true
+    return true
+end
+
+local function UnregisterNativeFeatureHandler()
+    if not state.nativeFeatureHandlerRegistered then
+        return
+    end
+
+    if addon.protocol
+        and type(addon.protocol.UnregisterFeatureHandler) == "function"
+        and state.nativeFeatureHandler then
+        addon.protocol:UnregisterFeatureHandler(SERVER_PROFILE_FEATURE,
+            state.nativeFeatureHandler)
+    end
+
+    if addon.protocol
+        and type(addon.protocol.UnregisterFeatureHandler) == "function"
+        and state.nativeStateFeatureHandler then
+        addon.protocol:UnregisterFeatureHandler(SERVER_PROFILE_STATE_FEATURE,
+            state.nativeStateFeatureHandler)
+    end
+
+    state.nativeFeatureHandler = nil
+    state.nativeStateFeatureHandler = nil
+    state.nativeFeatureHandlerRegistered = false
+end
+
+local function InstallProtocolHandler()
+    if state.protocolHooked then
+        return true
+    end
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not DC or type(DC.RegisterHandler) ~= "function" then
+        return false
+    end
+
+    local moduleId = (addon.protocol and addon.protocol.MODULE_ID) or "QOS"
+    local opcode = (addon.protocol and addon.protocol.Opcodes and addon.protocol.Opcodes.SMSG_FEATURE_DATA) or 0x15
+
+    state.protocolHandler = function(...)
+        local payload = select(1, ...)
+        HandleProfileMessage(payload, "addon")
+    end
+
+    DC:RegisterHandler(moduleId, opcode, state.protocolHandler)
+    state.protocolHooked = true
+    state.protocolModule = moduleId
+    state.protocolOpcode = opcode
+
+    addon:Debug("Graphics+ protocol hook registered: "
+        .. tostring(moduleId) .. " op=" .. tostring(opcode))
+    return true
+end
+
+local function UninstallProtocolHandler()
+    if not state.protocolHooked then
+        return
+    end
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and type(DC.UnregisterHandler) == "function" and state.protocolHandler then
+        pcall(DC.UnregisterHandler, DC, state.protocolModule,
+            state.protocolOpcode, state.protocolHandler)
+    end
+
+    state.protocolHooked = false
+    state.protocolModule = nil
+    state.protocolOpcode = nil
+    state.protocolHandler = nil
+end
+
 local function EnsureEventFrame()
     if eventFrame then
         return eventFrame
@@ -128,8 +753,10 @@ local function EnsureEventFrame()
 
         if event == "PLAYER_ENTERING_WORLD" and settings.autoApplyOnLogin then
             ScheduleApply("login", 1.0)
+            ScheduleProfileRequest("login", 1.3)
         elseif event == "ZONE_CHANGED_NEW_AREA" and settings.autoApplyOnZoneChange then
             ScheduleApply("zone change", 0.75)
+            ScheduleProfileRequest("zone change", 0.95)
         end
     end)
 
@@ -154,7 +781,25 @@ function GraphicsPlus.OnEnable()
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
+    if not RegisterNativeFeatureHandler() and addon.DelayedCall then
+        addon:DelayedCall(1.0, function()
+            if GraphicsPlus:IsEnabled() then
+                RegisterNativeFeatureHandler()
+            end
+        end)
+    end
+
+    if not InstallProtocolHandler() and addon.DelayedCall then
+        addon:DelayedCall(1.0, function()
+            if GraphicsPlus:IsEnabled() then
+                InstallProtocolHandler()
+            end
+        end)
+    end
+
     ScheduleApply("startup", 1.0)
+    ScheduleProfileRequest("startup", 1.2)
+    ScheduleProfileStateRequest("startup", 1.4)
 end
 
 function GraphicsPlus.OnDisable()
@@ -163,6 +808,22 @@ function GraphicsPlus.OnDisable()
     if eventFrame then
         eventFrame:UnregisterAllEvents()
     end
+
+    UnregisterNativeFeatureHandler()
+    UninstallProtocolHandler()
+    state.activeServerProfile = nil
+    state.activeServerRevision = 0
+    state.activeServerContext = nil
+    state.serverProfileState = nil
+    state.profileStateRequestPending = false
+    state.profileStateRequestGeneration = 0
+    state.profileStateLastRequestAt = nil
+    state.profileStateLastRequestReason = nil
+    state.profileStateLastResponseAt = nil
+    state.profileStateLastResponseSource = nil
+    state.profileStateLastCompletedGeneration = 0
+    state.profileStateLastFailure = nil
+    RefreshSettingsStatusText()
 end
 
 function GraphicsPlus.CreateSettings(parent)
@@ -183,6 +844,19 @@ function GraphicsPlus.CreateSettings(parent)
     status:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     status:SetJustifyH("LEFT")
 
+    local serverStateStatus = parent:CreateFontString(nil, "ARTWORK",
+        "GameFontHighlightSmall")
+    serverStateStatus:SetPoint("TOPLEFT", status, "BOTTOMLEFT", 0, -8)
+    serverStateStatus:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+    serverStateStatus:SetJustifyH("LEFT")
+
+    local refreshStateBtn = CreateFrame("Button", nil, parent,
+        "UIPanelButtonTemplate")
+    refreshStateBtn:SetSize(160, 22)
+    refreshStateBtn:SetPoint("TOPLEFT", serverStateStatus, "BOTTOMLEFT", 0,
+        -8)
+    refreshStateBtn:SetText("Refresh Server State")
+
     local function UpdateStatusText()
         if HasNativeGraphicsApi() then
             status:SetText("|cff00ff00Native Graphics+ API detected.|r")
@@ -191,9 +865,38 @@ function GraphicsPlus.CreateSettings(parent)
         end
     end
 
-    UpdateStatusText()
+    local function UpdateServerStateText()
+        serverStateStatus:SetText(BuildActiveServerProfileStatusText()
+            .. "\n" .. BuildServerProfileStateText()
+            .. "\n" .. BuildServerProfileRefreshText())
 
-    local yOffset = -100
+        if HasNativeGraphicsApi() then
+            refreshStateBtn:Enable()
+        else
+            refreshStateBtn:Disable()
+        end
+    end
+
+    state.settingsStatusUpdater = function()
+        UpdateStatusText()
+        UpdateServerStateText()
+    end
+
+    refreshStateBtn:SetScript("OnClick", function()
+        if not RequestCurrentServerProfileState("settings-refresh") then
+            addon:Print("Graphics+ could not request the current server profile state.", true)
+        end
+    end)
+
+    UpdateStatusText()
+    UpdateServerStateText()
+
+    parent:HookScript("OnShow", function()
+        RefreshSettingsStatusText()
+        ScheduleProfileStateRequest("settings-open", 0.05)
+    end)
+
+    local yOffset = -175
 
     local enabledCb = addon:CreateCheckbox(parent)
     enabledCb:SetPoint("TOPLEFT", 16, yOffset)
@@ -412,9 +1115,13 @@ function GraphicsPlus.CreateSettings(parent)
             return
         end
 
-        local ok = ApplyGraphicsSettings("manual")
+        local ok, reason = ApplyGraphicsSettings("manual")
         if not ok then
-            addon:Print("Graphics+ apply failed. Check that the graphics patch is enabled in the client DLL.", true)
+            if reason == "server-profile-active" then
+                addon:Print("A server graphics profile is currently active. Wait for it to clear before applying local settings.", true)
+            else
+                addon:Print("Graphics+ apply failed. Check that the graphics patch is enabled in the client DLL.", true)
+            end
         end
     end)
 

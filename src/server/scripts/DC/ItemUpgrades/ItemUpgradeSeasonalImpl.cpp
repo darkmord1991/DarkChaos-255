@@ -57,6 +57,21 @@ public:
                 "stat_multiplier = 1.0 "
                 "WHERE player_guid = {}",
                 ITEM_UPGRADES_TABLE, player_guid);
+
+            if (UpgradeManager* mgr = GetUpgradeManager())
+            {
+                QueryResult item_result = CharacterDatabase.Query(
+                    "SELECT item_guid FROM {} WHERE player_guid = {}",
+                    ITEM_UPGRADES_TABLE, player_guid);
+                if (item_result)
+                {
+                    do
+                    {
+                        mgr->InvalidateItemCaches(
+                            item_result->Fetch()[0].Get<uint32>());
+                    } while (item_result->NextRow());
+                }
+            }
         }
 
         // Calculate carryover currencies using item-based system

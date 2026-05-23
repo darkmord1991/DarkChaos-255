@@ -17,6 +17,8 @@
  */
 
 #include "Scripting/ScriptMgr.h"
+#include "Battlegrounds/BattlegroundMgr.h"
+#include "Battlegrounds/BattlegroundQueue.h"
 #include "Player.h"
 #include "Chat.h"
 #include "Config.h"
@@ -28,7 +30,10 @@
 #include "dc_addon_namespace.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "OutdoorPvP/OutdoorPvPHL.h"
+#include "Server/WorldSession.h"
+#include "Server/WorldPacket.h"
 #include "../HinterlandBG/hlbg_constants.h"
+#include "../HinterlandBG/BattlegroundHLBG.h"
 #include "Time/GameTime.h"
 #include <algorithm>
 #include <cctype>
@@ -254,6 +259,146 @@ namespace HLBG
             return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
         }
 
+        static BattlegroundHLBG* GetHLBGBattleground(Player* player)
+        {
+            if (!player)
+                return nullptr;
+
+            if (Battleground* battleground = player->GetBattleground())
+            {
+                if (battleground->GetBgTypeID(true) == BATTLEGROUND_HLBG)
+                    return dynamic_cast<BattlegroundHLBG*>(battleground);
+            }
+
+            return nullptr;
+        }
+
+        struct QueueSnapshot
+        {
+            uint8 queueStatus = 0;
+            uint32 position = 0;
+            uint32 estimatedTime = 0;
+            uint32 totalQueued = 0;
+            uint32 allianceQueued = 0;
+            uint32 hordeQueued = 0;
+            uint32 minPlayers = 10;
+            uint8 state = 0;
+        };
+
+        static bool IsBattlegroundBootstrapAvailable()
+        {
+            return sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_HLBG) != nullptr;
+        }
+
+        static bool IsPlayerQueuedForHLBG(Player* player)
+        {
+            return player && player->InBattlegroundQueueForBattlegroundQueueType(BATTLEGROUND_QUEUE_HLBG);
+        }
+
+        static bool IsPlayerQueuedForAddon(Player* player)
+        {
+            return IsPlayerQueuedForHLBG(player);
+        }
+
+        static QueueSnapshot BuildBattlegroundQueueSnapshot(Player* player)
+        {
+            QueueSnapshot snapshot;
+            snapshot.state = 4;
+
+            Battleground* bgTemplate = sBattlegroundMgr->GetBattlegroundTemplate(BATTLEGROUND_HLBG);
+            if (!bgTemplate)
+                return snapshot;
+
+            snapshot.minPlayers = std::max(1u, bgTemplate->GetMinPlayersPerTeam()) * 2u;
+            snapshot.queueStatus = IsPlayerQueuedForHLBG(player) ? 1 : 0;
+
+            BattlegroundQueue& queue = sBattlegroundMgr->GetBattlegroundQueue(BATTLEGROUND_QUEUE_HLBG);
+            for (auto const& queuedPlayer : queue.m_QueuedPlayers)
+            {
+                GroupQueueInfo* info = queuedPlayer.second;
+                if (!info || info->BgTypeId != BATTLEGROUND_HLBG)
+                    continue;
+
+                ++snapshot.totalQueued;
+                switch (info->RealTeamID)
+                {
+                    case TEAM_ALLIANCE:
+                        ++snapshot.allianceQueued;
+                        break;
+                    case TEAM_HORDE:
+                        ++snapshot.hordeQueued;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (player && snapshot.queueStatus)
+            {
+                GroupQueueInfo info;
+                if (queue.GetPlayerGroupInfoData(player->GetGUID(), &info))
+                    snapshot.estimatedTime = queue.GetAverageQueueWaitTime(&info) / IN_MILLISECONDS;
+
+                if (player->IsInvitedForBattlegroundQueueType(BATTLEGROUND_QUEUE_HLBG))
+                    snapshot.state = 0;
+            }
+
+            if (BattlegroundHLBG* bg = GetHLBGBattleground(player))
+            {
+                switch (bg->GetStatus())
+                {
+                    case STATUS_WAIT_JOIN:
+                        snapshot.state = 0;
+                        break;
+                    case STATUS_IN_PROGRESS:
+                        snapshot.state = 1;
+                        break;
+                    case STATUS_WAIT_LEAVE:
+                        snapshot.state = 3;
+                        break;
+                    default:
+                        snapshot.state = 4;
+                        break;
+                }
+            }
+
+            return snapshot;
+        }
+
+        static QueueSnapshot BuildQueueSnapshot(Player* player)
+        {
+            return BuildBattlegroundQueueSnapshot(player);
+        }
+
+        static bool TryQueueViaBattlemasterOpcode(Player* player)
+        {
+            if (!player || !player->GetSession() || !IsBattlegroundBootstrapAvailable())
+                return false;
+
+            WorldPacket packet;
+            packet << ObjectGuid::Empty;
+            packet << uint32(BATTLEGROUND_HLBG);
+            packet << uint32(0);
+            packet << uint8(0);
+            player->GetSession()->HandleBattlemasterJoinOpcode(packet);
+            return true;
+        }
+
+        static bool TryLeaveViaBattlefieldPortOpcode(Player* player)
+        {
+            if (!player || !player->GetSession() || !IsBattlegroundBootstrapAvailable() || !IsPlayerQueuedForHLBG(player))
+                return false;
+
+            WorldPacket packet;
+            packet << uint8(0);
+            packet << uint8(0);
+            packet << uint32(BATTLEGROUND_HLBG);
+            packet << uint16(0);
+            packet << uint8(0);
+            player->GetSession()->HandleBattleFieldPortOpcode(packet);
+            return true;
+        }
+
         TransportPolicyDecision ResolveLiveSnapshotTransport(Player* player)
         {
             TransportPolicyRequest request;
@@ -332,6 +477,53 @@ namespace HLBG
             return metrics;
         }
 
+        LiveHudMetrics CollectLiveHudMetrics(BattlegroundHLBG const* bg)
+        {
+            LiveHudMetrics metrics;
+            if (!bg)
+                return metrics;
+
+            for (auto const& playerEntry : bg->GetPlayers())
+            {
+                Player* player = playerEntry.second;
+                if (!player || !player->IsInWorld())
+                    continue;
+
+                if (player->GetBgTeamId() == TEAM_ALLIANCE)
+                {
+                    ++metrics.alliancePlayers;
+                    metrics.alliancePlayerKills += bg->GetPlayerHKDelta(player);
+                }
+                else if (player->GetBgTeamId() == TEAM_HORDE)
+                {
+                    ++metrics.hordePlayers;
+                    metrics.hordePlayerKills += bg->GetPlayerHKDelta(player);
+                }
+            }
+
+            metrics.allianceNpcKills = bg->GetNpcKillCount(TEAM_ALLIANCE);
+            metrics.hordeNpcKills = bg->GetNpcKillCount(TEAM_HORDE);
+            return metrics;
+        }
+
+        HLBGStatus GetBattlegroundStatus(BattlegroundHLBG const* bg)
+        {
+            if (!bg)
+                return STATUS_NONE;
+
+            switch (bg->GetStatus())
+            {
+                case STATUS_WAIT_JOIN:
+                    return STATUS_PREP;
+                case STATUS_IN_PROGRESS:
+                    return STATUS_ACTIVE;
+                case STATUS_WAIT_LEAVE:
+                    return STATUS_ENDED;
+                default:
+                    return STATUS_NONE;
+            }
+        }
+
         std::string BuildNativeLiveSnapshotPayload(Player* player,
             OutdoorPvPHL* hl, uint32 limit = 40)
         {
@@ -343,7 +535,8 @@ namespace HLBG
 
             uint32 mapId = player ? player->GetMapId() : 0u;
             uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
-            HLBGStatus status = STATUS_NONE;
+            HLBGStatus status = IsPlayerQueuedForAddon(player)
+                ? STATUS_QUEUED : STATUS_NONE;
 
             if (player && hl)
             {
@@ -351,11 +544,10 @@ namespace HLBG
                 {
                     mapId = 0;
                     timeRemaining = 0u;
+                    status = STATUS_NONE;
                 }
                 else if (IsPlayerInOutdoorPvPHLArea(player))
                     status = STATUS_ACTIVE;
-                else if (hl->IsPlayerQueued(player))
-                    status = STATUS_QUEUED;
             }
 
             if (!hl)
@@ -459,6 +651,126 @@ namespace HLBG
             payload.Set("hNpcKills",
                 static_cast<int32>(metrics.hordeNpcKills));
             payload.Set("affix", static_cast<int32>(hl->GetActiveAffixCode()));
+            payload.Set("players", players);
+            return payload.Encode();
+        }
+
+        std::string BuildNativeLiveSnapshotPayload(Player* player,
+            BattlegroundHLBG* bg, uint32 limit = 40)
+        {
+            JsonValue payload;
+            payload.SetObject();
+
+            JsonValue players;
+            players.SetArray();
+
+            uint32 mapId = player ? player->GetMapId() : 0u;
+            uint32 timeRemaining = bg ? bg->GetTimeRemainingSeconds() : 0u;
+            HLBGStatus status = bg ? GetBattlegroundStatus(bg) : STATUS_NONE;
+
+            if (player && bg && bg->IsPlayerAfkFlagged(player))
+            {
+                mapId = 0u;
+                timeRemaining = 0u;
+                status = STATUS_NONE;
+            }
+
+            if (!bg)
+            {
+                payload.Set("status", static_cast<int32>(status));
+                payload.Set("mapId", static_cast<int32>(mapId));
+                payload.Set("timeRemaining", static_cast<int32>(timeRemaining));
+                payload.Set("duration", static_cast<int32>(timeRemaining));
+                payload.Set("matchStart", 0);
+                payload.Set("A", 0);
+                payload.Set("H", 0);
+                payload.Set("APC", 0);
+                payload.Set("HPC", 0);
+                payload.Set("aBases", 0);
+                payload.Set("hBases", 0);
+                payload.Set("aPlayerKills", 0);
+                payload.Set("hPlayerKills", 0);
+                payload.Set("aNpcKills", 0);
+                payload.Set("hNpcKills", 0);
+                payload.Set("affix", 0);
+                payload.Set("players", players);
+                return payload.Encode();
+            }
+
+            struct LiveRow
+            {
+                std::string name;
+                std::string team;
+                uint32 score = 0;
+                uint32 hk = 0;
+                uint8 cls = 0;
+                int8 subgroup = 0;
+            };
+
+            std::vector<LiveRow> rows;
+            uint32 alliancePlayers = 0;
+            uint32 hordePlayers = 0;
+
+            for (auto const& playerEntry : bg->GetPlayers())
+            {
+                Player* bgPlayer = playerEntry.second;
+                if (!bgPlayer || !bgPlayer->IsInWorld())
+                    continue;
+
+                if (bgPlayer->GetBgTeamId() == TEAM_ALLIANCE)
+                    ++alliancePlayers;
+                else if (bgPlayer->GetBgTeamId() == TEAM_HORDE)
+                    ++hordePlayers;
+
+                LiveRow row;
+                row.name = bgPlayer->GetName();
+                row.team = bgPlayer->GetBgTeamId() == TEAM_ALLIANCE ? "A" : "H";
+                row.score = bg->GetPlayerContributionScore(bgPlayer->GetGUID());
+                row.hk = bg->GetPlayerHKDelta(bgPlayer);
+                row.cls = bgPlayer->getClass();
+                row.subgroup = bgPlayer->GetSubGroup();
+                rows.push_back(row);
+            }
+
+            std::sort(rows.begin(), rows.end(), [](LiveRow const& left, LiveRow const& right)
+            {
+                return left.score > right.score;
+            });
+
+            if (rows.size() > limit)
+                rows.resize(limit);
+
+            for (LiveRow const& row : rows)
+            {
+                JsonValue playerRow;
+                playerRow.SetObject();
+                playerRow.Set("name", row.name);
+                playerRow.Set("team", row.team);
+                playerRow.Set("score", static_cast<int32>(row.score));
+                playerRow.Set("hk", static_cast<int32>(row.hk));
+                playerRow.Set("class", static_cast<int32>(row.cls));
+                playerRow.Set("sub", static_cast<int32>(row.subgroup));
+                players.Push(playerRow);
+            }
+
+            LiveHudMetrics metrics = CollectLiveHudMetrics(bg);
+
+            payload.Set("status", static_cast<int32>(status));
+            payload.Set("mapId", static_cast<int32>(mapId));
+            payload.Set("timeRemaining", static_cast<int32>(timeRemaining));
+            payload.Set("duration", static_cast<int32>(timeRemaining));
+            payload.Set("matchStart", static_cast<int32>(bg->GetMatchStartEpoch()));
+            payload.Set("A", static_cast<int32>(bg->GetResources(TEAM_ALLIANCE)));
+            payload.Set("H", static_cast<int32>(bg->GetResources(TEAM_HORDE)));
+            payload.Set("APC", static_cast<int32>(alliancePlayers));
+            payload.Set("HPC", static_cast<int32>(hordePlayers));
+            payload.Set("aBases", 0);
+            payload.Set("hBases", 0);
+            payload.Set("aPlayerKills", static_cast<int32>(metrics.alliancePlayerKills));
+            payload.Set("hPlayerKills", static_cast<int32>(metrics.hordePlayerKills));
+            payload.Set("aNpcKills", static_cast<int32>(metrics.allianceNpcKills));
+            payload.Set("hNpcKills", static_cast<int32>(metrics.hordeNpcKills));
+            payload.Set("affix", 0);
             payload.Set("players", players);
             return payload.Encode();
         }
@@ -582,27 +894,40 @@ namespace HLBG
     // Helper to gather queue stats and send update
     void SendQueueInfo(Player* player)
     {
-        if (!player) return;
-
-        OutdoorPvPHL* hl = GetHL();
-        if (!hl)
-        {
-            SendQueueUpdate(player, 0, 0, 0, 0, 0, 0, 10, 0);
+        if (!player)
             return;
-        }
 
-        uint8 queueStatus = hl->IsPlayerQueued(player) ? 1 : 0;
-        uint32 position = 0; // Position logic not yet exposed
-        uint32 estimatedTime = 0;
+        QueueSnapshot snapshot = BuildQueueSnapshot(player);
+        SendQueueUpdate(player, snapshot.queueStatus, snapshot.position,
+            snapshot.estimatedTime, snapshot.totalQueued,
+            snapshot.allianceQueued, snapshot.hordeQueued,
+            snapshot.minPlayers, snapshot.state);
+    }
 
-        uint32 totalQueued = hl->GetQueuedPlayerCount();
-        uint32 allianceQueued = hl->GetQueuedPlayerCountByTeam(TEAM_ALLIANCE);
-        uint32 hordeQueued = hl->GetQueuedPlayerCountByTeam(TEAM_HORDE);
-        uint32 minPlayers = hl->GetMinPlayersToStart();
-        uint8 state = static_cast<uint8>(hl->GetBGState());
+    bool QueueViaBattlemasterForAddon(Player* player)
+    {
+        return TryQueueViaBattlemasterOpcode(player);
+    }
 
-        SendQueueUpdate(player, queueStatus, position, estimatedTime,
-                        totalQueued, allianceQueued, hordeQueued, minPlayers, state);
+    bool LeaveViaBattlegroundQueueForAddon(Player* player)
+    {
+        return TryLeaveViaBattlefieldPortOpcode(player);
+    }
+
+    bool IsBattlegroundQueueActiveForAddon()
+    {
+        return IsBattlegroundBootstrapAvailable();
+    }
+
+    std::string BuildQueueStatusSummary(Player* player)
+    {
+        QueueSnapshot snapshot = BuildQueueSnapshot(player);
+        return Acore::StringFormat(
+            "HLBG queue: queued={}, total={}, alliance={}, horde={}, min={}, est={}s, state={}",
+            snapshot.queueStatus ? "yes" : "no", snapshot.totalQueued,
+            snapshot.allianceQueued, snapshot.hordeQueued,
+            snapshot.minPlayers, snapshot.estimatedTime,
+            snapshot.state);
     }
 
     static void SendRateLimitedError(Player* player)
@@ -1267,22 +1592,38 @@ namespace HLBG
 
         AuditAddonUiTransport(player);
 
+        if (BattlegroundHLBG* bg = GetHLBGBattleground(player))
+        {
+            uint32 mapId = player->GetMapId();
+            uint32 timeRemaining = bg->GetTimeRemainingSeconds();
+            HLBGStatus status = GetBattlegroundStatus(bg);
+            if (bg->IsPlayerAfkFlagged(player))
+            {
+                mapId = 0u;
+                timeRemaining = 0u;
+                status = STATUS_NONE;
+            }
+
+            SendStatus(player, status, mapId, timeRemaining);
+            SendQueueInfo(player);
+            return;
+        }
+
         OutdoorPvPHL* hl = GetHL();
         uint32 mapId = player->GetMapId();
         uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
 
-        HLBGStatus status = STATUS_NONE;
+        HLBGStatus status = IsPlayerQueuedForAddon(player) ? STATUS_QUEUED : STATUS_NONE;
         if (hl)
         {
             if (hl->IsPlayerAfkFlagged(player))
             {
                 mapId = 0;
                 timeRemaining = 0u;
+                status = STATUS_NONE;
             }
             else if (IsPlayerInOutdoorPvPHLArea(player))
                 status = STATUS_ACTIVE;
-            else if (hl->IsPlayerQueued(player))
-                status = STATUS_QUEUED;
         }
 
         SendStatus(player, status, mapId, timeRemaining);
@@ -1297,6 +1638,28 @@ namespace HLBG
         if (!player) return;
 
         AuditAddonUiTransport(player);
+
+        if (BattlegroundHLBG* bg = GetHLBGBattleground(player))
+        {
+            if (bg->IsPlayerAfkFlagged(player))
+            {
+                SendResources(player, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                return;
+            }
+
+            LiveHudMetrics metrics = CollectLiveHudMetrics(bg);
+            SendResources(player,
+                bg->GetResources(TEAM_ALLIANCE),
+                bg->GetResources(TEAM_HORDE),
+                0, 0,
+                metrics.alliancePlayers,
+                metrics.hordePlayers,
+                metrics.alliancePlayerKills,
+                metrics.hordePlayerKills,
+                metrics.allianceNpcKills,
+                metrics.hordeNpcKills);
+            return;
+        }
 
         OutdoorPvPHL* hl = GetHL();
         if (!hl)
@@ -1338,10 +1701,8 @@ namespace HLBG
             return;
         }
 
-        if (OutdoorPvPHL* hl = GetHL())
-            hl->QueueCommandFromAddon(player, "queue", "join");
-        else
-            ChatHandler(player->GetSession()).ParseCommands(".hlbg queue join");
+        if (!TryQueueViaBattlemasterOpcode(player))
+            ChatHandler(player->GetSession()).SendNotification("HLBG battleground queue is unavailable.");
 
         SendQueueInfo(player);
     }
@@ -1358,10 +1719,8 @@ namespace HLBG
             return;
         }
 
-        if (OutdoorPvPHL* hl = GetHL())
-                hl->QueueCommandFromAddon(player, "queue", "leave");
-        else
-            ChatHandler(player->GetSession()).ParseCommands(".hlbg queue leave");
+        if (!TryLeaveViaBattlefieldPortOpcode(player))
+            ChatHandler(player->GetSession()).SendNotification("HLBG battleground queue is unavailable.");
 
         SendQueueInfo(player);
     }
@@ -1530,6 +1889,13 @@ namespace HLBG
 
         if (!ResolveLiveSnapshotTransport(player).UsesNative())
             return false;
+
+        if (BattlegroundHLBG* bg = GetHLBGBattleground(player))
+        {
+            SendNativeLiveSnapshot(player,
+                BuildNativeLiveSnapshotPayload(player, bg));
+            return true;
+        }
 
         SendNativeLiveSnapshot(player,
             BuildNativeLiveSnapshotPayload(player, GetHL()));
@@ -1845,35 +2211,10 @@ bool HandleHLBGQueueJoin(ChatHandler* handler, char const* /*args*/)
     if (!player)
         return false;
 
-    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
-    if (!hl)
-    {
-        handler->SendSysMessage("HLBG: system not available");
+    if (DCAddon::HLBG::QueueViaBattlemasterForAddon(player))
         return true;
-    }
 
-    if (!hl->IsPlayerMaxLevel(player))
-    {
-        handler->PSendSysMessage("HLBG: You must be at least level {}.", hl->GetMinLevel());
-        return true;
-    }
-
-    if (player->HasAura(26013))
-    {
-        handler->SendSysMessage("HLBG: You cannot join while deserter.");
-        return true;
-    }
-
-    if (!player->IsAlive() || player->IsInCombat())
-    {
-        handler->SendSysMessage("HLBG: You must be alive and out of combat.");
-        return true;
-    }
-
-    // Queue join is allowed during warmup (to participate immediately) and also during an active match
-    // (queueing for the next match). The underlying HLBG queue logic enforces final eligibility.
-
-    hl->QueueCommandFromAddon(player, "queue", "join");
+    handler->SendSysMessage("HLBG: battleground queue unavailable");
     return true;
 }
 
@@ -1884,8 +2225,11 @@ bool HandleHLBGQueueLeave(ChatHandler* handler, char const* /*args*/)
     Player* player = handler->GetSession()->GetPlayer();
     if (!player)
         return false;
-    if (OutdoorPvPHL* hl = HLBGAddonFallback::GetHL())
-        hl->QueueCommandFromAddon(player, "queue", "leave");
+
+    if (DCAddon::HLBG::LeaveViaBattlegroundQueueForAddon(player))
+        return true;
+
+    handler->SendSysMessage("HLBG: battleground queue unavailable");
     return true;
 }
 
@@ -1896,7 +2240,13 @@ bool HandleHLBGQueueStatus(ChatHandler* handler, char const* /*args*/)
     Player* player = handler->GetSession()->GetPlayer();
     if (!player)
         return false;
-    if (OutdoorPvPHL* hl = HLBGAddonFallback::GetHL())
-        hl->QueueCommandFromAddon(player, "queue", "status");
+
+    if (DCAddon::HLBG::IsBattlegroundQueueActiveForAddon())
+    {
+        handler->SendSysMessage(DCAddon::HLBG::BuildQueueStatusSummary(player).c_str());
+        return true;
+    }
+
+    handler->SendSysMessage("HLBG: battleground queue unavailable");
     return true;
 }

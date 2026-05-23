@@ -445,6 +445,18 @@
                 </Scripts>
             </Button>
 
+            <Button name="$parentTierBrowseButton" parentKey="TierBrowseButton" inherits="UIPanelButtonTemplate" text="Browse Tiers">
+                <Size x="120" y="22"/>
+                <Anchors>
+                    <Anchor point="LEFT" relativeKey="$parent.BrowseButton" relativePoint="RIGHT" x="6" y="0"/>
+                </Anchors>
+                <Scripts>
+                    <OnClick>
+                        DarkChaos_ItemUpgrade_TierBrowseButton_OnClick(this);
+                    </OnClick>
+                </Scripts>
+            </Button>
+
             <Frame parentKey="DropdownContainer">
                 <Size x="180" y="32"/>
                 <Anchors>
@@ -574,6 +586,121 @@
             </OnLoad>
             <OnShow>
                 DarkChaos_ItemBrowser_OnShow(this);
+            </OnShow>
+        </Scripts>
+    </Frame>
+
+    <Frame name="DarkChaos_TierBrowserFrame" parent="UIParent" enableMouse="true" movable="true" hidden="true" toplevel="true">
+        <Size x="340" y="420"/>
+        <Anchors>
+            <Anchor point="LEFT" relativeTo="DarkChaos_ItemUpgradeFrame" relativePoint="RIGHT" x="10" y="0"/>
+        </Anchors>
+        <Backdrop bgFile="Interface\DialogFrame\UI-DialogBox-Background" edgeFile="Interface\DialogFrame\UI-DialogBox-Border" tile="true">
+            <BackgroundInsets>
+                <AbsInset left="11" right="12" top="12" bottom="11"/>
+            </BackgroundInsets>
+            <TileSize>
+                <AbsValue val="32"/>
+            </TileSize>
+            <EdgeSize>
+                <AbsValue val="32"/>
+            </EdgeSize>
+        </Backdrop>
+        <Layers>
+            <Layer level="ARTWORK">
+                <FontString name="$parentTitle" inherits="GameFontNormal" text="Upgrade Tiers">
+                    <Anchors>
+                        <Anchor point="TOP" x="0" y="-15"/>
+                    </Anchors>
+                </FontString>
+                <FontString parentKey="StatusText" inherits="GameFontHighlightSmall" justifyH="CENTER">
+                    <Size x="280" y="0"/>
+                    <Anchors>
+                        <Anchor point="TOP" x="0" y="-33"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Frames>
+            <Button name="$parentCloseButton" inherits="UIPanelCloseButton">
+                <Anchors>
+                    <Anchor point="TOPRIGHT" x="-3" y="-3"/>
+                </Anchors>
+            </Button>
+            <ScrollFrame name="$parentScrollFrame" parentKey="ScrollFrame" inherits="FauxScrollFrameTemplate">
+                <Size x="300" y="220"/>
+                <Anchors>
+                    <Anchor point="TOP" x="-8" y="-54"/>
+                </Anchors>
+                <Scripts>
+                    <OnVerticalScroll>
+                        FauxScrollFrame_OnVerticalScroll(this, offset, 44, DarkChaos_TierBrowser_Update);
+                    </OnVerticalScroll>
+                </Scripts>
+            </ScrollFrame>
+            <Frame parentKey="DetailPanel">
+                <Size x="300" y="110"/>
+                <Anchors>
+                    <Anchor point="TOP" x="-8" y="-286"/>
+                </Anchors>
+                <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
+                    <EdgeSize>
+                        <AbsValue val="16"/>
+                    </EdgeSize>
+                    <BackgroundInsets>
+                        <AbsInset left="5" right="5" top="5" bottom="5"/>
+                    </BackgroundInsets>
+                </Backdrop>
+                <BackdropColor r="0.11" g="0.13" b="0.19" a="0.5"/>
+                <BackdropBorderColor r="0.26" g="0.32" b="0.42" a="0.5"/>
+                <Layers>
+                    <Layer level="ARTWORK">
+                        <Texture parentKey="Icon" file="Interface\Icons\INV_Misc_QuestionMark">
+                            <Size x="34" y="34"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" x="12" y="-12"/>
+                            </Anchors>
+                        </Texture>
+                        <FontString parentKey="NameText" inherits="GameFontNormalLarge" justifyH="LEFT">
+                            <Size x="230" y="0"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.Icon" relativePoint="TOPRIGHT" x="10" y="-2"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="SummaryText" inherits="GameFontHighlightSmall" justifyH="LEFT">
+                            <Size x="230" y="0"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.NameText" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="RangeText" inherits="GameFontNormalSmall" justifyH="LEFT">
+                            <Size x="276" y="0"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.Icon" relativePoint="BOTTOMLEFT" x="0" y="-10"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="DescriptionText" inherits="GameFontHighlightSmall" justifyH="LEFT">
+                            <Size x="276" y="0"/>
+                            <Anchors>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.RangeText" relativePoint="BOTTOMLEFT" x="0" y="-8"/>
+                            </Anchors>
+                        </FontString>
+                        <FontString parentKey="FooterText" inherits="GameFontDisableSmall" justifyH="LEFT">
+                            <Size x="276" y="0"/>
+                            <Anchors>
+                                <Anchor point="BOTTOMLEFT" x="12" y="12"/>
+                            </Anchors>
+                        </FontString>
+                    </Layer>
+                </Layers>
+            </Frame>
+        </Frames>
+        <Scripts>
+            <OnLoad>
+                DarkChaos_TierBrowser_OnLoad(this);
+            </OnLoad>
+            <OnShow>
+                DarkChaos_TierBrowser_OnShow(this);
             </OnShow>
         </Scripts>
     </Frame>

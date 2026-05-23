@@ -24,6 +24,7 @@
 #include "BattlegroundDS.h"
 #include "BattlegroundEY.h"
 #include "BattlegroundIC.h"
+#include "../../scripts/DC/HinterlandBG/BattlegroundHLBG.h"
 #include "../../scripts/DC/Gilneas/BattlegroundBFG.h"
 #include "BattlegroundNA.h"
 #include "BattlegroundQueue.h"
@@ -988,6 +989,7 @@ std::unordered_map<int, BattlegroundQueueTypeId> BattlegroundMgr::bgToQueue =
     { BATTLEGROUND_SA, BATTLEGROUND_QUEUE_SA},
     { BATTLEGROUND_IC, BATTLEGROUND_QUEUE_IC},
     { BATTLEGROUND_RB, BATTLEGROUND_QUEUE_RB},
+    { 20, BattlegroundQueueTypeId(14) }, // Hinterland BG (custom)
     { 120, BattlegroundQueueTypeId(13) }, // Battle for Gilneas (custom) (was BATTLEGROUND_BFG)
     // Arena Battlegrounds
     { BATTLEGROUND_NA, BattlegroundQueueTypeId(0)},        // Nagrand Arena
@@ -1008,6 +1010,7 @@ std::unordered_map<int, BattlegroundTypeId> BattlegroundMgr::queueToBg =
     { BATTLEGROUND_QUEUE_SA,    BATTLEGROUND_SA },
     { BATTLEGROUND_QUEUE_IC,    BATTLEGROUND_IC },
     { BATTLEGROUND_QUEUE_RB,    BATTLEGROUND_RB },
+    { 14,   BattlegroundTypeId(20) }, // Hinterland BG (custom)
     { 13,   BattlegroundTypeId(120) }, // map template id for BFG (was BATTLEGROUND_QUEUE_BFG -> 13)
     { BATTLEGROUND_QUEUE_2v2,   BATTLEGROUND_AA },
     { BATTLEGROUND_QUEUE_3v3,   BATTLEGROUND_AA },
@@ -1027,6 +1030,7 @@ std::unordered_map<int, Battleground*> BattlegroundMgr::bgtypeToBattleground =
     { BATTLEGROUND_DS, new BattlegroundDS },
     { BATTLEGROUND_RV, new BattlegroundRV },
     { BATTLEGROUND_IC, new BattlegroundIC },
+    { 20, new BattlegroundHLBG },
     { 120, new BattlegroundBFG }, // was BATTLEGROUND_BFG
     { BATTLEGROUND_AA, new Battleground },
     { BATTLEGROUND_RB, new Battleground },
@@ -1045,6 +1049,8 @@ std::unordered_map<int, bgRef> BattlegroundMgr::bgTypeToTemplate =
     { BATTLEGROUND_DS, [](Battleground * bg_t) -> Battleground* { return new BattlegroundDS(*(BattlegroundDS*)bg_t); } },
     { BATTLEGROUND_RV, [](Battleground * bg_t) -> Battleground* { return new BattlegroundRV(*(BattlegroundRV*)bg_t); } },
     { BATTLEGROUND_IC, [](Battleground * bg_t) -> Battleground* { return new BattlegroundIC(*(BattlegroundIC*)bg_t); } },
+
+    { 20, [](Battleground * bg_t) -> Battleground* { return new BattlegroundHLBG(*(BattlegroundHLBG*)bg_t); } },
 
     { BATTLEGROUND_BFG, [](Battleground * bg_t) -> Battleground* { return new BattlegroundBFG(*(BattlegroundBFG*)bg_t); } },
 

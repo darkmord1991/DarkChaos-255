@@ -51,6 +51,7 @@ DCAddonProtocol = {
         HLBG_LIVE_NATIVE = 0x00020000,
         SPECTATOR_LIVE_NATIVE = 0x00040000,
         COLLECTION_WAVE1_NATIVE = 0x00080000,
+        GENERIC_NATIVE_ENVELOPE = 0x00100000,
     },
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
     BASE_CAPABILITIES = 3,
@@ -543,6 +544,11 @@ function DC:GetNativeExtensionCapabilities()
             self.Capability.COLLECTION_WAVE1_NATIVE)
     end
 
+    if type(PollDCNativeEnvelope) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.GENERIC_NATIVE_ENVELOPE)
+    end
+
     if self:GetNativeExtensionBuildFingerprint()
         or type(self:GetNativeExtensionDataRevisions()) == "table" then
         capabilities = CombineCapabilities(capabilities,
@@ -656,6 +662,10 @@ function DC:DescribeCapabilities(mask)
         table.insert(parts, "NativeCollectionWave1")
     end
     if HasCapabilityBit(capabilities,
+            self.Capability.GENERIC_NATIVE_ENVELOPE) then
+        table.insert(parts, "GenericNativeEnvelope")
+    end
+    if HasCapabilityBit(capabilities,
             self.Capability.CLIENT_METADATA) then
         table.insert(parts, "ClientMetadata")
     end
@@ -712,6 +722,7 @@ function DC:GetHandshakeMetadataPayload()
         addRevision("shop", "collectionShop")
         addRevision("set", "collectionSets")
         addRevision("xmog", "collectionTransmog")
+        addRevision("iut", "itemUpgradeTiers")
 
         if next(compact) ~= nil then
             metadata.d = compact
@@ -840,12 +851,13 @@ function DC:PrintCapabilityStatus()
     end
     if type(snapshot.nativeDataRevisions) == "table" then
         DEFAULT_CHAT_FRAME:AddMessage(string.format(
-            "  Native Data Revisions: |cff00ccffcat=%s src=%s shop=%s set=%s xmog=%s|r",
+            "  Native Data Revisions: |cff00ccffcat=%s src=%s shop=%s set=%s xmog=%s tiers=%s|r",
             tostring(snapshot.nativeDataRevisions.collectionCategories or snapshot.nativeDataRevisions.cc or 0),
             tostring(snapshot.nativeDataRevisions.collectionSources or snapshot.nativeDataRevisions.cs or 0),
             tostring(snapshot.nativeDataRevisions.collectionShop or snapshot.nativeDataRevisions.shop or 0),
             tostring(snapshot.nativeDataRevisions.collectionSets or snapshot.nativeDataRevisions.set or 0),
-            tostring(snapshot.nativeDataRevisions.collectionTransmog or snapshot.nativeDataRevisions.xmog or 0)))
+            tostring(snapshot.nativeDataRevisions.collectionTransmog or snapshot.nativeDataRevisions.xmog or 0),
+            tostring(snapshot.nativeDataRevisions.itemUpgradeTiers or snapshot.nativeDataRevisions.iut or 0)))
     end
     if snapshot.nativeTooltipRuntimeSignature then
         DEFAULT_CHAT_FRAME:AddMessage(

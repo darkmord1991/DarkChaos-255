@@ -92,21 +92,545 @@ DC.batchQueryTimer = 0;
 	TIER ICONS & COLORS
 =======================================================]]
 
-DC.TIER_ICONS = {
-	[1] = "Interface\\Icons\\INV_Misc_Coin_01",        -- Leveling (Copper coin)
-	[2] = "Interface\\Icons\\INV_Misc_Coin_02",        -- Heroic (Silver coin)
-	[3] = "Interface\\Icons\\INV_Misc_Coin_03",        -- Raid (Gold coin)
-	[4] = "Interface\\Icons\\INV_Misc_Coin_04",        -- Mythic (Platinum coin)
-	[5] = "Interface\\Icons\\INV_Misc_Gem_Amethyst_01", -- Artifact (Gem)
+local TIER_COLOR_MODULUS = 4294967296;
+
+local function CopyColor(color)
+	if type(color) ~= "table" then
+		return nil;
+	end
+
+	return {
+		r = tonumber(color.r) or 1.0,
+		g = tonumber(color.g) or 1.0,
+		b = tonumber(color.b) or 1.0,
+	};
+end
+
+local function CopyTierDefinition(source)
+	if type(source) ~= "table" then
+		return nil;
+	end
+
+	local copy = {};
+	for key, value in pairs(source) do
+		if type(value) == "table" then
+			local nested = {};
+			for nestedKey, nestedValue in pairs(value) do
+				nested[nestedKey] = nestedValue;
+			end
+			copy[key] = nested;
+		else
+			copy[key] = value;
+		end
+	end
+
+	return copy;
+end
+
+local function NormalizeTierText(value)
+	if type(value) ~= "string" or value == "" then
+		return nil;
+	end
+
+	return value;
+end
+
+local function NormalizeTierColorARGB(value)
+	local color = tonumber(value) or 0;
+	if color < 0 then
+		color = color + TIER_COLOR_MODULUS;
+	end
+	if color < 0 then
+		color = 0;
+	end
+
+	return math.floor(color);
+end
+
+local function BuildTierColor(colorARGB, fallbackColor)
+	local normalized = NormalizeTierColorARGB(colorARGB);
+	if normalized == 0 then
+		return CopyColor(fallbackColor) or { r = 1.0, g = 1.0, b = 1.0 };
+	end
+
+	local red = math.floor(normalized / 65536) % 256;
+	local green = math.floor(normalized / 256) % 256;
+	local blue = normalized % 256;
+
+	return {
+		r = red / 255,
+		g = green / 255,
+		b = blue / 255,
+	};
+end
+
+local function GetTierDataRevision()
+	if type(GetDCClientDataRevisions) ~= "function" then
+		return 0;
+	end
+
+	local ok, revisions = pcall(GetDCClientDataRevisions);
+	if not ok or type(revisions) ~= "table" then
+		return 0;
+	end
+
+	return tonumber(revisions.itemUpgradeTiers or revisions.iut) or 0;
+end
+
+local function GetTierItemDataRevision()
+	if type(GetDCClientDataRevisions) ~= "function" then
+		return 0;
+	end
+
+	local ok, revisions = pcall(GetDCClientDataRevisions);
+	if not ok or type(revisions) ~= "table" then
+		return 0;
+	end
+
+	return tonumber(revisions.itemUpgradeTierItems or revisions.iuti) or 0;
+end
+
+function DC.GetNativeTierRows()
+	if type(GetDCItemUpgradeTiers) ~= "function" then
+		return nil;
+	end
+
+	local ok, rows = pcall(GetDCItemUpgradeTiers);
+	if not ok or type(rows) ~= "table" or #rows == 0 then
+		return nil;
+	end
+
+	return rows;
+end
+
+function DC.GetNativeTierItemRows()
+	if type(GetDCItemUpgradeTierItems) ~= "function" then
+		return nil;
+	end
+
+	local ok, rows = pcall(GetDCItemUpgradeTierItems);
+	if not ok or type(rows) ~= "table" or #rows == 0 then
+		return nil;
+	end
+
+	return rows;
+end
+
+function DC.NormalizeTierDefinition(row)
+	if type(row) ~= "table" then
+		return nil;
+	end
+
+	local tierId = tonumber(
+		row.tierId or row.TierID or row.tier or row.ID or row.id);
+	if not tierId or tierId <= 0 then
+		return nil;
+	end
+
+	local colorARGB = NormalizeTierColorARGB(
+		row.colorARGB or row.ColorARGB or 0);
+
+	return {
+		id = tonumber(row.id or row.ID) or tierId,
+		tierId = tierId,
+		season = tonumber(row.season or row.Season) or 0,
+		sortOrder = tonumber(row.sortOrder or row.SortOrder) or (tierId * 10),
+		flags = tonumber(row.flags or row.Flags) or 0,
+		minItemLevel = tonumber(row.minItemLevel or row.MinItemLevel) or 0,
+		maxItemLevel = tonumber(row.maxItemLevel or row.MaxItemLevel) or 0,
+		maxUpgradeLevel = tonumber(
+			row.maxUpgradeLevel or row.MaxUpgradeLevel),
+		statMultiplierMax = tonumber(
+			row.statMultiplierMax or row.StatMultiplierMax),
+		upgradeCostPerLevel = tonumber(
+			row.upgradeCostPerLevel or row.UpgradeCostPerLevel) or 0,
+		isArtifact = tonumber(row.isArtifact or row.IsArtifact) or 0,
+		enabled = tonumber(row.enabled or row.Enabled) or 0,
+		colorARGB = colorARGB,
+		name = NormalizeTierText(row.name or row.Name),
+		description = NormalizeTierText(row.description or row.Description),
+		sourceContent = NormalizeTierText(
+			row.sourceContent or row.SourceContent),
+		icon = NormalizeTierText(row.icon or row.Icon),
+	};
+end
+
+function DC.NormalizeTierItemRow(row)
+	if type(row) ~= "table" then
+		return nil;
+	end
+
+	local tierId = tonumber(row.tierId or row.TierID or row.tier);
+	local itemId = tonumber(row.itemId or row.ItemID or row.itemID);
+	if not tierId or tierId <= 0 or not itemId or itemId <= 0 then
+		return nil;
+	end
+
+	return {
+		id = tonumber(row.id or row.ID) or itemId,
+		tierId = tierId,
+		itemId = itemId,
+		sortOrder = tonumber(row.sortOrder or row.SortOrder) or 0,
+		flags = tonumber(row.flags or row.Flags) or 0,
+		quality = tonumber(row.quality or row.Quality) or 0,
+		inventoryType = tonumber(row.inventoryType or row.InventoryType) or 0,
+		itemLevel = tonumber(row.itemLevel or row.ItemLevel) or 0,
+	};
+end
+
+DC.DEFAULT_TIER_DEFINITIONS = DC.DEFAULT_TIER_DEFINITIONS or {
+	[1] = {
+		id = 1,
+		tierId = 1,
+		sortOrder = 10,
+		minItemLevel = 1,
+		maxItemLevel = 212,
+		maxUpgradeLevel = 6,
+		statMultiplierMax = 2.0,
+		upgradeCostPerLevel = 50,
+		enabled = 1,
+		name = "Leveling",
+		sourceContent = "Vanilla/TBC/WotLK",
+		icon = "Interface\\Icons\\INV_Misc_Coin_01",
+		color = { r = 0.6, g = 0.6, b = 0.6 },
+	},
+	[2] = {
+		id = 2,
+		tierId = 2,
+		sortOrder = 20,
+		minItemLevel = 213,
+		maxItemLevel = 226,
+		maxUpgradeLevel = 15,
+		statMultiplierMax = 1.5,
+		upgradeCostPerLevel = 100,
+		enabled = 1,
+		name = "Heroic",
+		sourceContent = "All Content",
+		icon = "Interface\\Icons\\INV_Misc_Coin_02",
+		color = { r = 0.2, g = 0.8, b = 0.2 },
+	},
+	[3] = {
+		id = 3,
+		tierId = 3,
+		sortOrder = 30,
+		minItemLevel = 227,
+		maxItemLevel = 264,
+		maxUpgradeLevel = 15,
+		statMultiplierMax = 1.5,
+		upgradeCostPerLevel = 150,
+		enabled = 1,
+		name = "Raid",
+		sourceContent = "Raids",
+		icon = "Interface\\Icons\\INV_Misc_Coin_03",
+		color = { r = 0.2, g = 0.2, b = 1.0 },
+	},
+	[4] = {
+		id = 4,
+		tierId = 4,
+		sortOrder = 40,
+		minItemLevel = 265,
+		maxItemLevel = 500,
+		maxUpgradeLevel = 8,
+		statMultiplierMax = 1.75,
+		upgradeCostPerLevel = 200,
+		enabled = 1,
+		name = "Mythic",
+		sourceContent = "Mythic Content",
+		icon = "Interface\\Icons\\INV_Misc_Coin_04",
+		color = { r = 0.8, g = 0.2, b = 0.8 },
+	},
+	[5] = {
+		id = 5,
+		tierId = 5,
+		sortOrder = 50,
+		minItemLevel = 1,
+		maxItemLevel = 500,
+		maxUpgradeLevel = 12,
+		statMultiplierMax = 2.5,
+		upgradeCostPerLevel = 250,
+		isArtifact = 1,
+		enabled = 1,
+		name = "Artifact",
+		sourceContent = "Artifacts",
+		icon = "Interface\\Icons\\INV_Misc_Gem_Amethyst_01",
+		color = { r = 1.0, g = 0.5, b = 0.0 },
+	},
 };
 
-DC.TIER_COLORS = {
-	[1] = { r = 0.6, g = 0.6, b = 0.6 },    -- Leveling (Gray)
-	[2] = { r = 0.2, g = 0.8, b = 0.2 },    -- Heroic (Green)
-	[3] = { r = 0.2, g = 0.2, b = 1.0 },    -- Raid (Blue)
-	[4] = { r = 0.8, g = 0.2, b = 0.8 },    -- Mythic (Purple)
-	[5] = { r = 1.0, g = 0.5, b = 0.0 },    -- Artifact (Orange)
-};
+function DC.BootstrapTierDefinitions()
+	local definitions = {};
+	for tierId, definition in pairs(DC.DEFAULT_TIER_DEFINITIONS) do
+		definitions[tierId] = CopyTierDefinition(definition);
+	end
+
+	local source = "default";
+	local revision = 0;
+	local sourceRows = nil;
+
+	local nativeRows = DC.GetNativeTierRows();
+	if type(nativeRows) == "table" and #nativeRows > 0 then
+		source = "native";
+		revision = GetTierDataRevision();
+		sourceRows = nativeRows;
+	elseif type(DC.TIER_STATIC_DATA) == "table" and #DC.TIER_STATIC_DATA > 0 then
+		source = "static";
+		revision = tonumber(DC.TIER_STATIC_DATA_VERSION) or 0;
+		sourceRows = DC.TIER_STATIC_DATA;
+	end
+
+	if type(sourceRows) == "table" then
+		for _, row in ipairs(sourceRows) do
+			local normalized = DC.NormalizeTierDefinition(row);
+			if normalized then
+				local merged = definitions[normalized.tierId] or {
+					tierId = normalized.tierId,
+				};
+				for key, value in pairs(normalized) do
+					if type(value) == "string" then
+						if value ~= "" then
+							merged[key] = value;
+						end
+					elseif value ~= nil then
+						merged[key] = value;
+					end
+				end
+
+				if normalized.colorARGB and normalized.colorARGB > 0 then
+					merged.color = BuildTierColor(
+						normalized.colorARGB,
+						merged.color);
+				elseif type(merged.color) ~= "table" then
+					merged.color = { r = 1.0, g = 1.0, b = 1.0 };
+				end
+
+				if not merged.name or merged.name == "" then
+					merged.name = string.format(
+						"Tier %d",
+						normalized.tierId);
+				end
+				if not merged.icon or merged.icon == "" then
+					merged.icon = "Interface\\Icons\\INV_Misc_QuestionMark";
+				end
+				if merged.enabled == nil then
+					merged.enabled = 1;
+				end
+
+				definitions[normalized.tierId] = merged;
+			end
+		end
+	end
+
+	DC.TIER_DEFINITIONS = definitions;
+	DC.TIER_NAMES = {};
+	DC.TIER_ICONS = {};
+	DC.TIER_COLORS = {};
+	DC.MAX_UPGRADE_LEVELS_BY_TIER = {};
+
+	for tierId, definition in pairs(definitions) do
+		definition.tierId = tonumber(definition.tierId) or tierId;
+		if type(definition.color) ~= "table" then
+			definition.color = { r = 1.0, g = 1.0, b = 1.0 };
+		end
+		if not definition.name or definition.name == "" then
+			definition.name = string.format("Tier %d", tierId);
+		end
+		if not definition.icon or definition.icon == "" then
+			definition.icon = "Interface\\Icons\\INV_Misc_QuestionMark";
+		end
+		if not definition.maxUpgradeLevel then
+			definition.maxUpgradeLevel = DC.MAX_UPGRADE_LEVEL or 15;
+		end
+
+		DC.TIER_NAMES[tierId] = definition.name;
+		DC.TIER_ICONS[tierId] = definition.icon;
+		DC.TIER_COLORS[tierId] = CopyColor(definition.color)
+			or { r = 1.0, g = 1.0, b = 1.0 };
+		DC.MAX_UPGRADE_LEVELS_BY_TIER[tierId] =
+			tonumber(definition.maxUpgradeLevel) or (DC.MAX_UPGRADE_LEVEL or 15);
+	end
+
+	DC.activeTierDataSource = source;
+	DC.activeTierDataRevision = revision;
+	DC.activeTierRowCount = type(sourceRows) == "table" and #sourceRows or 0;
+
+	return definitions;
+end
+
+function DC.BootstrapTierItemData()
+	local rows = {};
+	local byTier = {};
+	local source = "none";
+	local revision = 0;
+	local sourceRows = nil;
+
+	local nativeRows = DC.GetNativeTierItemRows();
+	if type(nativeRows) == "table" and #nativeRows > 0 then
+		source = "native";
+		revision = GetTierItemDataRevision();
+		sourceRows = nativeRows;
+	elseif type(DC.TIER_ITEM_STATIC_DATA) == "table"
+		and #DC.TIER_ITEM_STATIC_DATA > 0 then
+		source = "static";
+		revision = tonumber(DC.TIER_ITEM_STATIC_DATA_VERSION) or 0;
+		sourceRows = DC.TIER_ITEM_STATIC_DATA;
+	end
+
+	if type(sourceRows) == "table" then
+		for _, row in ipairs(sourceRows) do
+			local normalized = DC.NormalizeTierItemRow(row);
+			if normalized then
+				table.insert(rows, normalized);
+			end
+		end
+	end
+
+	table.sort(rows, function(left, right)
+		if (left.tierId or 0) ~= (right.tierId or 0) then
+			return (left.tierId or 0) < (right.tierId or 0);
+		end
+		if (left.sortOrder or 0) ~= (right.sortOrder or 0) then
+			return (left.sortOrder or 0) < (right.sortOrder or 0);
+		end
+		if (left.itemLevel or 0) ~= (right.itemLevel or 0) then
+			return (left.itemLevel or 0) > (right.itemLevel or 0);
+		end
+		return (left.itemId or 0) < (right.itemId or 0);
+	end);
+
+	for _, row in ipairs(rows) do
+		local tierId = tonumber(row.tierId) or 0;
+		if not byTier[tierId] then
+			byTier[tierId] = {};
+		end
+		table.insert(byTier[tierId], row);
+	end
+
+	DC.TIER_ITEM_ROWS = rows;
+	DC.TIER_ITEMS_BY_TIER = byTier;
+	DC.activeTierItemDataSource = source;
+	DC.activeTierItemDataRevision = revision;
+	DC.activeTierItemRowCount = #rows;
+
+	return rows;
+end
+
+function DC.GetTierItemRows()
+	if type(DC.TIER_ITEM_ROWS) ~= "table" then
+		DC.BootstrapTierItemData();
+	end
+
+	return DC.TIER_ITEM_ROWS or {};
+end
+
+function DC.GetTierItemsForTier(tier)
+	if type(DC.TIER_ITEMS_BY_TIER) ~= "table" then
+		DC.BootstrapTierItemData();
+	end
+
+	local tierId = tonumber(tier) or 0;
+	return DC.TIER_ITEMS_BY_TIER[tierId] or {};
+end
+
+function DC.GetTierItemCount(tier)
+	local rows = DC.GetTierItemsForTier(tier);
+	return rows and #rows or 0;
+end
+
+function DC.GetTierDefinition(tier)
+	if type(DC.TIER_DEFINITIONS) ~= "table" or not next(DC.TIER_DEFINITIONS) then
+		DC.BootstrapTierDefinitions();
+	end
+
+	local tierId = tonumber(tier) or 1;
+	return DC.TIER_DEFINITIONS[tierId] or DC.TIER_DEFINITIONS[1];
+end
+
+function DC.GetTierDisplayName(tier)
+	local definition = DC.GetTierDefinition(tier);
+	if definition and definition.name then
+		return definition.name;
+	end
+
+	return string.format("Tier %d", tonumber(tier) or 0);
+end
+
+function DC.GetTierIcon(tier)
+	local definition = DC.GetTierDefinition(tier);
+	if definition and definition.icon then
+		return definition.icon;
+	end
+
+	return "Interface\\Icons\\INV_Misc_QuestionMark";
+end
+
+function DC.GetTierColor(tier)
+	local definition = DC.GetTierDefinition(tier);
+	if definition and type(definition.color) == "table" then
+		return definition.color;
+	end
+
+	return { r = 1.0, g = 1.0, b = 1.0 };
+end
+
+function DC.GetMaxUpgradeLevelForTier(tier)
+	local definition = DC.GetTierDefinition(tier);
+	if not definition or not definition.maxUpgradeLevel then
+		local fallback = DC.MAX_UPGRADE_LEVEL or 15;
+		DC.Debug(
+			"GetMaxUpgradeLevelForTier: tier=" .. tostring(tier)
+			.. " returned fallback=" .. fallback);
+		return fallback;
+	end
+
+	return tonumber(definition.maxUpgradeLevel) or (DC.MAX_UPGRADE_LEVEL or 15);
+end
+
+function DC.GetSortedTierDefinitions()
+	local definitions = DC.BootstrapTierDefinitions();
+	local rows = {};
+
+	for tierId, definition in pairs(definitions) do
+		local row = CopyTierDefinition(definition) or {};
+		row.tierId = tonumber(row.tierId) or tonumber(tierId) or 0;
+		row.sortOrder = tonumber(row.sortOrder) or (row.tierId * 10);
+		table.insert(rows, row);
+	end
+
+	table.sort(rows, function(left, right)
+		if left.sortOrder ~= right.sortOrder then
+			return left.sortOrder < right.sortOrder;
+		end
+		return (left.tierId or 0) < (right.tierId or 0);
+	end);
+
+	return rows;
+end
+
+function DC.PrintTierDefinitions()
+	local rows = DC.GetSortedTierDefinitions();
+
+	DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== DC ItemUpgrade Tier Data ===|r");
+	DEFAULT_CHAT_FRAME:AddMessage(string.format(
+		"Source: |cffffcc00%s|r  Revision: |cffffcc00%s|r  Rows: |cffffcc00%s|r",
+		tostring(DC.activeTierDataSource or "default"),
+		tostring(DC.activeTierDataRevision or 0),
+		tostring(DC.activeTierRowCount or 0)));
+
+	for _, definition in ipairs(rows) do
+		local tierId = tonumber(definition.tierId) or 0;
+		DEFAULT_CHAT_FRAME:AddMessage(string.format(
+			"  Tier %d: |cff00ff00%s|r | max=%s | ilvl=%s-%s | src=%s",
+			tierId,
+			tostring(definition.name or ("Tier " .. tierId)),
+			tostring(definition.maxUpgradeLevel or 0),
+			tostring(definition.minItemLevel or 0),
+			tostring(definition.maxItemLevel or 0),
+			tostring(definition.sourceContent or "n/a")));
+	end
+end
+
+DC.BootstrapTierDefinitions();
+DC.BootstrapTierItemData();
 
 DC.COST_COLORS = {
 	cheap = { r = 0.2, g = 0.8, b = 0.2 },      -- Green (affordable)
@@ -539,6 +1063,7 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu settings|r - Open settings panel");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu debug|r - Toggle debug mode");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu status|r - Show current settings status");
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu tiers|r - Open the tier browser");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu cache clear|r - Clear item cache");
 		
 	elseif subcmd == "heirloom" or subcmd == "h" then
@@ -598,6 +1123,13 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 			local pkg = DC.STAT_PACKAGES[DC.selectedStatPackage];
 			DEFAULT_CHAT_FRAME:AddMessage("Package: " .. pkg.name);
 		end
+
+	elseif subcmd == "tiers" then
+		if DC.ToggleTierBrowser then
+			DC.ToggleTierBrowser(true);
+		else
+			DC.PrintTierDefinitions();
+		end
 		
 	elseif subcmd == "cache" then
 		if args[2] == "clear" then
@@ -652,7 +1184,14 @@ function DC.RegisterDCProtocolHandlers()
 		local info = data
 		info.itemID = info.itemID or info.itemId
 		if info then
-			info.cloneEntries = info.cloneEntries or DC.ParseCloneMap(info.cloneMap)
+			local entry = tonumber(info.baseEntry or info.itemEntry or info.currentEntry)
+			if entry and entry > 0 then
+				info.baseEntry = entry
+				info.currentEntry = entry
+				info.itemEntry = entry
+			end
+			info.cloneEntries = nil
+			info.cloneMap = nil
 		end
 		if DarkChaos_ItemUpgrade_HandleJsonItemInfo then
 			DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)

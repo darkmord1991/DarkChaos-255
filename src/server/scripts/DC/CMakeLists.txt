@@ -92,6 +92,7 @@ set(SCRIPTS_DC_AC
 
 # DC HinterlandBG split implementations (config, rewards, reset, afk)
 set(SCRIPTS_DC_HinterlandBG
+    HinterlandBG/BattlegroundHLBG.cpp
     HinterlandBG/hlbg_config.cpp
     HinterlandBG/hlbg_rewards.cpp
     HinterlandBG/hlbg_reset.cpp

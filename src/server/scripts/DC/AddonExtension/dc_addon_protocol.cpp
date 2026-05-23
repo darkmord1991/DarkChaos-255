@@ -2311,6 +2311,37 @@ namespace DCAddon
         LogNativeC2SMessage(player, module, logicalOpcode, nativeOpcode,
             dataSize, payloadPreview, handled, errorMsg);
     }
+
+    bool SendNativeEnvelope(Player* player, const std::string& module,
+        uint8 logicalOpcode, const std::string& feature,
+        const std::string& action, uint32 revision,
+        const std::string& payload, const std::string& context)
+    {
+        if (!player || !player->GetSession())
+            return false;
+
+        WorldPacket data(::SMSG_DC_NATIVE_ENVELOPE,
+            module.size() + feature.size() + action.size() + payload.size()
+                + context.size() + 5);
+        data << module;
+        data << feature;
+        data << action;
+        data << revision;
+        data << payload;
+        data << context;
+        player->GetSession()->SendPacket(&data);
+
+        std::string preview = "feature=" + feature
+            + "|action=" + action
+            + "|revision=" + std::to_string(revision)
+            + "|bytes=" + std::to_string(payload.size());
+        if (!context.empty())
+            preview += "|context=" + context;
+
+        LogNativeS2CMessage(player, module, logicalOpcode,
+            ::SMSG_DC_NATIVE_ENVELOPE, data.size(), preview, true, 0);
+        return true;
+    }
 }
 
 // ============================================================================

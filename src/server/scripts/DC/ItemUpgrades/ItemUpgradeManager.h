@@ -16,6 +16,8 @@
 #include <memory>
 #include <string>
 
+class Item;
+
 namespace DarkChaos
 {
     namespace ItemUpgrade
@@ -110,13 +112,14 @@ namespace DarkChaos
             time_t first_upgraded_at;            // When first upgraded
             time_t last_upgraded_at;             // When this item was last upgraded
             uint32 season;                       // Season this upgrade belongs to
+            mutable bool has_persisted_state;    // True when loaded from or saved to dc_item_upgrades
 
             ItemUpgradeState() : item_guid(0), player_guid(0), item_entry(0), base_item_name(), tier_id(0), upgrade_level(0),
                                  essence_invested(0), tokens_invested(0),
                                  base_item_level(0), upgraded_item_level(0),
                                  stat_multiplier(1.0f),
                                  first_upgraded_at(0), last_upgraded_at(0),
-                                 season(1) {}
+                                 season(1), has_persisted_state(false) {}
 
             // Persistence helpers
             bool LoadFromDatabase(uint32 item_guid);
@@ -129,6 +132,23 @@ namespace DarkChaos
 
             bool IsMaxUpgraded() const { return upgrade_level >= MAX_UPGRADE_LEVEL; }
             bool CanUpgrade() const { return upgrade_level < MAX_UPGRADE_LEVEL; }
+        };
+
+        struct ItemUpgradeTooltipSnapshot
+        {
+            uint32 item_guid = 0;
+            uint32 item_entry = 0;
+            uint32 base_entry = 0;
+            uint32 current_entry = 0;
+            uint32 tier_id = 0;
+            uint32 upgrade_level = 0;
+            uint32 max_upgrade = 0;
+            uint32 stat_multiplier_basis_points = 10000;
+            uint32 base_ilvl = 0;
+            uint32 upgraded_ilvl = 0;
+            uint32 revision = 0;
+            bool has_persisted_state = false;
+            bool can_upgrade = false;
         };
 
         struct TierDefinition
@@ -192,6 +212,10 @@ namespace DarkChaos
 
             // Item upgrade state functions
             virtual ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) = 0;
+            virtual bool BuildTooltipSnapshot(Item* item, ItemUpgradeTooltipSnapshot& out) = 0;
+            virtual uint32 GetTooltipRevision(uint32 item_guid) = 0;
+            virtual void InvalidateTooltipSnapshot(uint32 item_guid) = 0;
+            virtual void InvalidateItemCaches(uint32 item_guid) = 0;
             virtual bool SetItemUpgradeLevel(uint32 item_guid, uint8 level) = 0;
             virtual float GetStatMultiplier(uint32 item_guid) = 0;
             virtual uint16 GetUpgradedItemLevel(uint32 item_guid, uint16 base_ilvl) = 0;

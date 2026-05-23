@@ -175,6 +175,10 @@ local function iconPathForDungeonName(name)
 end
 
 local function iconPathForDungeonDescriptor(dungeon)
+    if type(namespace.ResolveMythicPlusDungeonArtCandidates) == "function" then
+        return namespace.ResolveMythicPlusDungeonArtCandidates(dungeon)
+    end
+
     if type(dungeon) == "table" and type(dungeon.artKey) == "string"
         and dungeon.artKey ~= "" then
         return iconCandidatesForDungeonArtKey(dungeon.artKey)
@@ -416,6 +420,8 @@ local function ensureFrame()
     frame.result:SetText("")
     frame.result:SetTextColor(1, 0.82, 0, 1)
 
+    UI.frame = frame
+
     return frame
 end
 
@@ -496,6 +502,28 @@ end
 function UI:Show()
     ensureFrame():Show()
     UI:Refresh()
+end
+
+function UI:Preview(payload)
+    payload = type(payload) == "table" and payload or {}
+
+    state.seasonId = tonumber(payload.seasonId) or 0
+    state.difficulty = tonumber(payload.difficulty) or 3
+    state.dungeons = {}
+
+    for _, dungeon in ipairs(payload.dungeons or {}) do
+        local merged = dungeon
+        if type(namespace.ApplyMythicPlusDungeonDescriptor) == "function" then
+            merged = namespace.ApplyMythicPlusDungeonDescriptor(dungeon)
+        end
+
+        table.insert(state.dungeons, merged)
+    end
+
+    state.page = tonumber(payload.page) or 1
+
+    ensureFrame()
+    UI:Show()
 end
 
 function UI:Hide()
