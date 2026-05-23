@@ -410,6 +410,9 @@ public: /* PlayerScript */
     void OnPlayerCustomScalingStatValueBefore(Player* player, ItemTemplate const* proto, uint8 slot, bool apply, uint32& CustomScalingStatValue);
     void OnPlayerCustomScalingStatValue(Player* player, ItemTemplate const* proto, uint32& statType, int32& val, uint8 itemProtoStatNumber, uint32 ScalingStatValue, ScalingStatValuesEntry const* ssv);
     void OnPlayerApplyItemModsBefore(Player* player, uint8 slot, bool apply, uint8 itemProtoStatNumber, uint32 statType, int32& val);
+    void OnPlayerApplyItemArmorBefore(Player* player, uint8 slot, ItemTemplate const* proto, bool apply, uint32& amount, bool isBonusArmor);
+    void OnPlayerApplyItemBlockValueBefore(Player* player, uint8 slot, ItemTemplate const* proto, bool apply, uint32& amount);
+    void OnPlayerApplyItemResistanceBefore(Player* player, uint8 slot, ItemTemplate const* proto, bool apply, uint8 school, uint32& amount);
     void OnPlayerApplyEnchantmentItemModsBefore(Player* player, Item* item, EnchantmentSlot slot, bool apply, uint32 enchant_spell_id, uint32& enchant_amount);
     void OnPlayerApplyWeaponDamage(Player* player, uint8 slot, ItemTemplate const* proto, float& minDamage, float& maxDamage, uint8 damageIndex);
     bool OnPlayerCanArmorDamageModifier(Player* player);

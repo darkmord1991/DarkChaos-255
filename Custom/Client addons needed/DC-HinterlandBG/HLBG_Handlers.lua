@@ -574,6 +574,111 @@ local function OpenHLBGFromPVP()
     end
 end
 
+local HLBG_BATTLEGROUND_TYPE_ID = 20
+local HLBG_PVP_DESCRIPTION =
+    "Hinterland BG is a 25v25 battleground with rotating affixes that can alter damage, movement, and resource pressure each match. " ..
+    "Teams compete for map control and resource advantage while adapting to the active affix."
+
+local function GetHLBGBattlegroundIndex()
+    if type(GetNumBattlegroundTypes) ~= "function" or type(GetBattlegroundInfo) ~= "function" then
+        return nil
+    end
+
+    for i = 1, GetNumBattlegroundTypes() do
+        local localizedName, canEnter, _, _, battlegroundTypeId = GetBattlegroundInfo(i)
+        if localizedName and canEnter and (tonumber(battlegroundTypeId) == HLBG_BATTLEGROUND_TYPE_ID or localizedName == "Hinterland BG") then
+            return i
+        end
+    end
+
+    return nil
+end
+
+local function TryJoinHLBGViaBlizzardQueue(joinAsGroup)
+    if type(JoinBattlefield) ~= "function" then
+        return false
+    end
+
+    local bgIndex = GetHLBGBattlegroundIndex()
+    if not bgIndex then
+        return false
+    end
+
+    if PVPBattlegroundFrame then
+        PVPBattlegroundFrame.selectedBG = bgIndex
+    end
+
+    if type(RequestBattlegroundInstanceInfo) == "function" then
+        pcall(RequestBattlegroundInstanceInfo, bgIndex)
+    end
+
+    local ok = pcall(JoinBattlefield, 0, joinAsGroup and true or false)
+    if ok and type(HLBG.RequestQueueStatus) == "function" then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.25, function()
+                pcall(HLBG.RequestQueueStatus)
+            end)
+        else
+            pcall(HLBG.RequestQueueStatus)
+        end
+    end
+
+    return ok
+end
+
+local function UpdateHLBGPvPDescription(BGindex)
+    if type(GetBattlegroundInfo) ~= "function" then
+        return
+    end
+
+    local selectedIndex = tonumber(BGindex) or (PVPBattlegroundFrame and PVPBattlegroundFrame.selectedBG) or nil
+    if not selectedIndex then
+        return
+    end
+
+    local _, _, _, _, battlegroundTypeId = GetBattlegroundInfo(selectedIndex)
+    if tonumber(battlegroundTypeId) ~= HLBG_BATTLEGROUND_TYPE_ID then
+        return
+    end
+
+    local description = _G["PVPBattlegroundFrameInfoScrollFrameChildFrameDescription"]
+    if not description or type(description.GetText) ~= "function" or type(description.SetText) ~= "function" then
+        return
+    end
+
+    local currentText = description:GetText()
+    if type(currentText) ~= "string" or currentText == "" then
+        description:SetText(HLBG_PVP_DESCRIPTION)
+        if PVPBattlegroundFrameInfoScrollFrame and type(PVPBattlegroundFrameInfoScrollFrame.SetVerticalScroll) == "function" then
+            PVPBattlegroundFrameInfoScrollFrame:SetVerticalScroll(0)
+        end
+    end
+end
+
+local function EnsureHLBGPvPDescriptionHook()
+    if HLBG._pvpDescriptionHooked then
+        return
+    end
+
+    if type(PVPBattleground_UpdateInfo) ~= "function" then
+        return
+    end
+
+    if type(hooksecurefunc) == "function" then
+        hooksecurefunc("PVPBattleground_UpdateInfo", UpdateHLBGPvPDescription)
+    else
+        local originalUpdateInfo = PVPBattleground_UpdateInfo
+        PVPBattleground_UpdateInfo = function(BGindex)
+            originalUpdateInfo(BGindex)
+            UpdateHLBGPvPDescription(BGindex)
+        end
+    end
+
+    HLBG._pvpDescriptionHooked = true
+    HLBG.GetHLBGBattlegroundIndex = GetHLBGBattlegroundIndex
+    HLBG.TryJoinViaBlizzardQueue = TryJoinHLBGViaBlizzardQueue
+end
+
 -- Ensure PvP tab/button helpers (lazy creation)
 local function EnsurePvPTab()
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
@@ -639,13 +744,171 @@ local function EnsurePvPHeaderButton()
         end)
     end
 end
+
+local function FormatPvPQueueWait(seconds)
+    seconds = tonumber(seconds) or 0
+    if seconds <= 0 then
+        return "starting soon"
+    end
+
+    if seconds >= 60 then
+        return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+    end
+
+    return string.format("%ds", seconds)
+end
+
+local function RefreshPvPBattlegroundEntry()
+    local entry = _G["PVPFrameHLBGEntry"]
+    if not entry then
+        return
+    end
+
+    local totalQueued = tonumber(HLBG.QueueTotal) or 0
+    local minPlayers = tonumber(HLBG.MinPlayersToStart) or 10
+    local playersNeeded = math.max(0, minPlayers - totalQueued)
+    local inQueue = HLBG.IsInQueue and true or false
+    local state = tostring(HLBG.BattleState or "WAITING")
+
+    if entry.StatusText then
+        local summary
+        if inQueue then
+            summary = string.format(
+                "|cFF00FF00Queued|r: %d/%d players. Est. wait %s.",
+                totalQueued,
+                minPlayers,
+                FormatPvPQueueWait(HLBG.EstimatedWaitSeconds))
+        elseif state == "IN_PROGRESS" then
+            summary = string.format(
+                "|cFFFF5555Battle in progress|r. %d player(s) are already waiting for the next match.",
+                totalQueued)
+        elseif totalQueued > 0 then
+            summary = string.format(
+                "%d/%d queued. Need %d more to start.",
+                totalQueued,
+                minPlayers,
+                playersNeeded)
+        else
+            summary = "Custom battleground queue. Open HLBG or join directly from here."
+        end
+
+        entry.StatusText:SetText(summary)
+    end
+
+    if entry.QueueButton then
+        entry.QueueButton:SetText(inQueue and "Leave Queue" or "Join Queue")
+    end
+end
+
+local function EnsurePvPBattlegroundEntry()
+    local parent = _G["PVPFrameRight"] or _G["PVPBattlegroundFrame"]
+    if not parent then
+        return
+    end
+
+    EnsureHLBGPvPDescriptionHook()
+
+    local entry = _G["PVPFrameHLBGEntry"]
+    if not entry then
+        entry = CreateFrame("Frame", "PVPFrameHLBGEntry", parent)
+        entry:SetSize(260, 72)
+        entry:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, -18)
+        entry:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 12,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        entry:SetBackdropColor(0.03, 0.03, 0.03, 0.9)
+        entry:SetBackdropBorderColor(0.72, 0.58, 0.12, 0.9)
+
+        local title = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        title:SetPoint("TOPLEFT", 12, -10)
+        title:SetJustifyH("LEFT")
+        title:SetText("Hinterland BG")
+        entry.TitleText = title
+
+        local status = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        status:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+        status:SetPoint("RIGHT", entry, "RIGHT", -88, 0)
+        status:SetJustifyH("LEFT")
+        status:SetJustifyV("TOP")
+        status:SetText("Custom battleground queue. Open HLBG or join directly from here.")
+        entry.StatusText = status
+
+        local openButton = CreateFrame("Button", nil, entry, "UIPanelButtonTemplate")
+        openButton:SetSize(68, 22)
+        openButton:SetPoint("TOPRIGHT", entry, "TOPRIGHT", -12, -10)
+        openButton:SetText("Open")
+        openButton:SetScript("OnClick", function()
+            OpenHLBGFromPVP()
+        end)
+        entry.OpenButton = openButton
+
+        local queueButton = CreateFrame("Button", nil, entry, "UIPanelButtonTemplate")
+        queueButton:SetSize(68, 22)
+        queueButton:SetPoint("TOPRIGHT", openButton, "BOTTOMRIGHT", 0, -6)
+        queueButton:SetText("Join Queue")
+        queueButton:SetScript("OnClick", function()
+            if HLBG.IsInQueue then
+                if type(HLBG.LeaveQueue) == "function" then
+                    pcall(HLBG.LeaveQueue)
+                end
+            elseif type(HLBG.JoinQueue) == "function" then
+                pcall(HLBG.JoinQueue)
+            else
+                OpenHLBGFromPVP()
+            end
+
+            if type(HLBG.RequestQueueStatus) == "function" then
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0.2, function()
+                        pcall(HLBG.RequestQueueStatus)
+                    end)
+                else
+                    pcall(HLBG.RequestQueueStatus)
+                end
+            end
+
+            RefreshPvPBattlegroundEntry()
+        end)
+        entry.QueueButton = queueButton
+    end
+
+    if not parent._hlbgEntryRefreshHooked then
+        parent._hlbgEntryRefreshHooked = true
+        parent:HookScript("OnShow", function()
+            RefreshPvPBattlegroundEntry()
+
+            if type(HLBG.RequestQueueStatus) == "function" then
+                local now = GetTime and GetTime() or 0
+                local lastRequest = tonumber(HLBG._lastPvPEntryStatusRequestAt) or 0
+                if (now - lastRequest) >= 5 then
+                    HLBG._lastPvPEntryStatusRequestAt = now
+                    if C_Timer and C_Timer.After then
+                        C_Timer.After(0.2, function()
+                            pcall(HLBG.RequestQueueStatus)
+                        end)
+                    else
+                        pcall(HLBG.RequestQueueStatus)
+                    end
+                end
+            end
+        end)
+    end
+
+    HLBG.RefreshPvPEntry = RefreshPvPBattlegroundEntry
+    RefreshPvPBattlegroundEntry()
+end
 -- pvp watcher: create PvP tab/header when frames are ready
 local pvpWatcher = CreateFrame("Frame")
 pvpWatcher:RegisterEvent("PLAYER_LOGIN")
 pvpWatcher:RegisterEvent("ADDON_LOADED")
 pvpWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 pvpWatcher:SetScript("OnEvent", function(_, ev, name)
-    EnsurePvPTab(); EnsurePvPHeaderButton()
+    EnsurePvPTab(); EnsurePvPHeaderButton(); EnsurePvPBattlegroundEntry()
 end)
 -- Also retry a few times after login in case of delayed creation
 do
@@ -654,8 +917,8 @@ do
     fr:SetScript("OnUpdate", function(self, elapsed)
         t = t + (elapsed or 0)
         if t > 1.0 then
-            t = 0; tries = tries + 1; EnsurePvPTab(); EnsurePvPHeaderButton()
-            if _G["PVPFrameTabHLBG"] or _G["PVPFrameHLBGButton"] or tries > 5 then self:SetScript("OnUpdate", nil) end
+            t = 0; tries = tries + 1; EnsurePvPTab(); EnsurePvPHeaderButton(); EnsurePvPBattlegroundEntry()
+            if (_G["PVPFrameTabHLBG"] and _G["PVPFrameHLBGButton"] and _G["PVPFrameHLBGEntry"]) or tries > 5 then self:SetScript("OnUpdate", nil) end
         end
     end)
 end
@@ -2370,9 +2633,16 @@ if DC then
     end
     
     HLBG.QuickQueue = function()
+        if type(HLBG.TryJoinViaBlizzardQueue) == 'function' and HLBG.TryJoinViaBlizzardQueue(false) then
+            return true
+        end
+
         if DC then
             DC:Send("HLBG", 0x04)  -- CMSG_QUICK_QUEUE
+            return true
         end
+
+        return false
     end
     
     HLBG.LeaveQueue = function()

@@ -632,6 +632,21 @@ void ScriptMgr::OnPlayerApplyItemModsBefore(Player* player, uint8 slot, bool app
     CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_APPLY_ITEM_MODS_BEFORE, script->OnPlayerApplyItemModsBefore(player, slot, apply, itemProtoStatNumber, statType, val));
 }
 
+void ScriptMgr::OnPlayerApplyItemArmorBefore(Player* player, uint8 slot, ItemTemplate const* proto, bool apply, uint32& amount, bool isBonusArmor)
+{
+    CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_APPLY_ITEM_ARMOR_BEFORE, script->OnPlayerApplyItemArmorBefore(player, slot, proto, apply, amount, isBonusArmor));
+}
+
+void ScriptMgr::OnPlayerApplyItemBlockValueBefore(Player* player, uint8 slot, ItemTemplate const* proto, bool apply, uint32& amount)
+{
+    CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_APPLY_ITEM_BLOCK_VALUE_BEFORE, script->OnPlayerApplyItemBlockValueBefore(player, slot, proto, apply, amount));
+}
+
+void ScriptMgr::OnPlayerApplyItemResistanceBefore(Player* player, uint8 slot, ItemTemplate const* proto, bool apply, uint8 school, uint32& amount)
+{
+    CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_APPLY_ITEM_RESISTANCE_BEFORE, script->OnPlayerApplyItemResistanceBefore(player, slot, proto, apply, school, amount));
+}
+
 void ScriptMgr::OnPlayerApplyEnchantmentItemModsBefore(Player* player, Item* item, EnchantmentSlot slot, bool apply, uint32 enchant_spell_id, uint32& enchant_amount)
 {
     CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ON_APPLY_ENCHANTMENT_ITEM_MODS_BEFORE, script->OnPlayerApplyEnchantmentItemModsBefore(player, item, slot, apply, enchant_spell_id, enchant_amount));

@@ -1605,6 +1605,54 @@ local INVENTORY_SLOT_ITEM_END = _G.INVENTORY_SLOT_ITEM_END or 39;
 local BANK_SLOT_ITEM_START = _G.BANK_SLOT_ITEM_START or 39;
 local BANK_SLOT_ITEM_END = _G.BANK_SLOT_ITEM_END or 67;
 local TOOLTIP_CACHE_LIFETIME = 30; -- seconds
+local NATIVE_ITEM_UPGRADE_CAPABILITY = (DCProtocol and DCProtocol.Capability and DCProtocol.Capability.ITEM_UPGRADE_NATIVE) or 0x00000400;
+local NATIVE_ITEM_TOOLTIP_REPLACEMENT_CAPABILITY = 0x00200000;
+
+local function DarkChaos_ItemUpgrade_HasCapabilityBit(mask, capability)
+	mask = tonumber(mask) or 0;
+	capability = tonumber(capability) or 0;
+
+	if capability <= 0 then
+		return false;
+	end
+
+	if bit and bit.band then
+		return bit.band(mask, capability) ~= 0;
+	end
+
+	return (mask % (capability * 2)) >= capability;
+end
+
+local function DarkChaos_ItemUpgrade_HasNativeTooltipCapability(mask)
+	return DarkChaos_ItemUpgrade_HasCapabilityBit(mask, NATIVE_ITEM_UPGRADE_CAPABILITY)
+		or DarkChaos_ItemUpgrade_HasCapabilityBit(mask, NATIVE_ITEM_TOOLTIP_REPLACEMENT_CAPABILITY);
+end
+
+local function DarkChaos_ItemUpgrade_ShouldUseNativeTooltipReplacement()
+	local protocol = rawget(_G, "DCAddonProtocol") or DCProtocol;
+	if protocol and type(protocol.GetCapabilitySnapshot) == "function" then
+		local ok, snapshot = pcall(protocol.GetCapabilitySnapshot, protocol);
+		if ok and type(snapshot) == "table" then
+			local negotiatedCaps = tonumber(snapshot.negotiatedCaps) or 0;
+			local clientCaps = tonumber(snapshot.clientCaps) or 0;
+			if (snapshot.connected and DarkChaos_ItemUpgrade_HasNativeTooltipCapability(negotiatedCaps))
+				or DarkChaos_ItemUpgrade_HasNativeTooltipCapability(clientCaps) then
+				return true;
+			end
+		end
+	end
+
+	local getCapabilities = rawget(_G, "GetDCClientCapabilities");
+	if type(getCapabilities) == "function" then
+		local ok, capabilities = pcall(getCapabilities);
+		if ok and DarkChaos_ItemUpgrade_HasNativeTooltipCapability(capabilities) then
+			return true;
+		end
+	end
+
+	return type(RequestNativeItemUpgradeTooltip) == "function"
+		and type(GetNativeItemUpgradeTooltipData) == "function";
+end
 
 local function GetItemLinkForLocation(bag, slot)
 	if bag == nil or slot == nil then
@@ -1756,6 +1804,8 @@ local function DarkChaos_ItemUpgrade_TooltipHasUpgradeLine(tooltip)
 	return false;
 end
 
+local DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines;
+
 local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	if not tooltip or not data then
 		return;
@@ -1831,9 +1881,30 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 			progressColor = "|cff00ff00"; -- Green for maxed
 		end
 		tooltip:AddLine(string.format("%sUpgrade Level %d / %d Tier %d|r", progressColor, current, maxUpgrade, tier));
-		
-		-- Show stat bonus if upgraded
-		if totalBonus > 0 then
+
+		local baseItemLevel = tonumber(data.baseItemLevel) or 0;
+		local upgradedItemLevel = tonumber(data.upgradedItemLevel) or 0;
+		if upgradedItemLevel <= 0 and baseItemLevel > 0 and DC.GetUpgradedItemLevel then
+			upgradedItemLevel = tonumber(DC.GetUpgradedItemLevel(baseItemLevel, current, tier)) or 0;
+		end
+		if upgradedItemLevel > 0 then
+			local ilvlDiff = upgradedItemLevel - baseItemLevel;
+			if baseItemLevel > 0 and ilvlDiff ~= 0 then
+				tooltip:AddLine(string.format("|cff71d5ffUpgraded Item Level: %d|r |cff00ff00(%+d)|r",
+					upgradedItemLevel, ilvlDiff));
+			else
+				tooltip:AddLine(string.format("|cff71d5ffUpgraded Item Level: %d|r", upgradedItemLevel));
+			end
+		end
+
+		local previewLines = DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines
+			and DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines(itemLink, data);
+		if previewLines and #previewLines > 0 then
+			tooltip:AddLine("|cff71d5ffUpgraded Values|r");
+			for _, line in ipairs(previewLines) do
+				tooltip:AddLine(line);
+			end
+		elseif totalBonus > 0 then
 			tooltip:AddLine(string.format("|cff00ff00+%.1f%% All Stats|r", totalBonus));
 		end
 		
@@ -2232,18 +2303,18 @@ local function DarkChaos_ItemUpgrade_ResetTooltip(tooltip)
 	end
 end
 
-local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBag, serverSlot, cached)
+local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBag, serverSlot, cached, allowChatFallback)
 	if not itemLink or serverBag == nil or serverSlot == nil then
-		return;
+		return false;
 	end
 
 	local itemId = tonumber(itemLink:match("item:(%d+)")) or 0;
 	if itemId ~= 300365 then
-		return;
+		return false;
 	end
 
 	if cached and cached.heirloomPackageId and cached.heirloomPackageId > 0 then
-		return;
+		return false;
 	end
 
 	DC.heirloomQueryStamps = DC.heirloomQueryStamps or {};
@@ -2251,14 +2322,23 @@ local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBa
 	local now = GetTime and GetTime() or 0;
 	local lastStamp = DC.heirloomQueryStamps[locationKey] or 0;
 	if (now - lastStamp) < 3 then
-		return;
+		return false;
 	end
 	DC.heirloomQueryStamps[locationKey] = now;
 
 	local DCProtocol = rawget(_G, "DCAddonProtocol");
-	if DCProtocol and DCProtocol.Request then
+	if DCProtocol and DC.useDCProtocol and DCProtocol.Request then
 		DCProtocol:Request("UPG", 0x06, { bag = serverBag, slot = serverSlot }); -- CMSG_HEIRLOOM_QUERY
+		return true;
 	end
+
+	if allowChatFallback then
+		local heirloomCmd = string.format(".dcheirloom query %d %d", serverBag, serverSlot);
+		SendChatMessage(heirloomCmd, "SAY");
+		return true;
+	end
+
+	return false;
 end
 
 function DarkChaos_ItemUpgrade_OnTooltipSetBagItem(tooltip, bag, slot)
@@ -2273,6 +2353,11 @@ function DarkChaos_ItemUpgrade_OnTooltipSetBagItem(tooltip, bag, slot)
 
 	local serverBag = GetServerBagFromClient(bag);
 	local serverSlot = GetServerSlotFromClient(bag, slot);
+	if DarkChaos_ItemUpgrade_ShouldUseNativeTooltipReplacement() then
+		DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, nil);
+		return;
+	end
+
 	local cached = DarkChaos_ItemUpgrade_GetCachedDataForLocation(serverBag, serverSlot);
 	if cached then
 		DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, cached);
@@ -2311,6 +2396,11 @@ function DarkChaos_ItemUpgrade_OnTooltipSetInventoryItem(tooltip, unit, slot)
 
 	local serverBag = GetServerBagFromClient(bag);
 	local serverSlot = GetServerSlotFromClient(bag, bagSlot);
+	if DarkChaos_ItemUpgrade_ShouldUseNativeTooltipReplacement() then
+		DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, nil);
+		return;
+	end
+
 	local cached = DarkChaos_ItemUpgrade_GetCachedDataForLocation(serverBag, serverSlot);
 	if cached then
 		DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, cached);
@@ -2542,6 +2632,9 @@ end
 -- Handle inspecting other players' items
 function DarkChaos_ItemUpgrade_OnTooltipSetInspectItem(tooltip, unit, slot)
 	if not tooltip or not unit or not slot then return; end
+	if DarkChaos_ItemUpgrade_ShouldUseNativeTooltipReplacement() then
+		return;
+	end
 	
 	-- Check if tooltips are enabled
 	if not (DC_ItemUpgrade_Settings and DC_ItemUpgrade_Settings.showTooltips) then
@@ -3013,6 +3106,77 @@ local function DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel)
 	end);
 
 	return comparison;
+end
+
+DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines = function(itemLink, data)
+	if not itemLink or not data then
+		return nil;
+	end
+
+	local statMultiplier = tonumber(data.statMultiplier) or 1.0;
+	if statMultiplier <= 1.0 then
+		return nil;
+	end
+
+	local stats = GetItemStatsSafe(itemLink);
+	if not stats or not next(stats) then
+		return nil;
+	end
+
+	local comparison = {};
+	for statKey, value in pairs(stats) do
+		if value ~= 0 and not ShouldSkipStatKey(statKey) then
+			local label = ResolveStatLabel(statKey);
+			if label then
+				local baseValue = tonumber(value) or 0;
+				local upgradedValue = RoundStatValue(baseValue * statMultiplier);
+				local diff = upgradedValue - RoundStatValue(baseValue);
+				if upgradedValue ~= 0 and diff ~= 0 then
+					comparison[#comparison + 1] = {
+						key = statKey,
+						label = label,
+						value = upgradedValue,
+						diff = diff,
+					};
+				end
+			end
+		end
+	end
+
+	if #comparison == 0 then
+		return nil;
+	end
+
+	table.sort(comparison, function(a, b)
+		local aIndex = STAT_ORDER_INDEX[a.key] or 1000;
+		local bIndex = STAT_ORDER_INDEX[b.key] or 1000;
+		if aIndex == bIndex then
+			return a.label < b.label;
+		end
+		return aIndex < bIndex;
+	end);
+
+	local lines = {};
+	local maxLines = 8;
+	for index, stat in ipairs(comparison) do
+		if index > maxLines then
+			break;
+		end
+
+		local line = FormatStatLine(stat.label, stat.value, stat.diff);
+		if line then
+			lines[#lines + 1] = line;
+		end
+	end
+
+	local remaining = #comparison - #lines;
+	if remaining > 0 then
+		lines[#lines + 1] = string.format("|cff888888+%d more upgraded stat%s|r",
+			remaining,
+			remaining == 1 and "" or "s");
+	end
+
+	return lines;
 end
 
 function DarkChaos_ItemUpgrade_OnLoad(self)
@@ -4495,21 +4659,23 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 		end
 	end
 
+	if DC.currentItem.heirloomPackageId and DC.currentItem.heirloomPackageId > 0 then
+		DC.selectedStatPackage = DC.currentItem.heirloomPackageId;
+	end
+
 	DC.Debug(string.format("SelectItemBySlot bag=%d slot=%d serverSlot=%d", serverBag or -1, slot or -1, serverSlot));
 	DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, {
 		type = "selection",
 		locationKey = locationKey,
 	});
 	
-	-- For heirloom items, also send a heirloom-specific query
+	-- For heirloom items, only request package state when cache does not
+	-- already have it; selection reuses the same throttled query path as tooltips.
 	local HEIRLOOM_SHIRT_ID = 300365;
 	if itemID == HEIRLOOM_SHIRT_ID then
-		DC.Debug("SelectItemBySlot: Sending heirloom query for item 300365");
-		if DCProtocol and DC.useDCProtocol then
-			DCProtocol:Request("UPG", 0x06, { bag = serverBag, slot = serverSlot }) -- CMSG_HEIRLOOM_QUERY
-		else
-			local heirloomCmd = string.format(".dcheirloom query %d %d", serverBag, serverSlot);
-			SendChatMessage(heirloomCmd, "SAY");
+		if DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag,
+				serverSlot, DC.currentItem, true) then
+			DC.Debug("SelectItemBySlot: Requested heirloom info for item 300365");
 		end
 	end
 	

@@ -271,14 +271,24 @@
 
     OutdoorPvPHL::~OutdoorPvPHL() = default;
 
-    // Basic OutdoorPvP setup: register managed zones and bind the controller
-    // to the custom HLBG map instead of the parent world map behind zone 47.
+    // Basic OutdoorPvP setup: register managed zones. The legacy OutdoorPvP
+    // controller cannot own an instanceable battleground map, so when HLBG is
+    // running on map 1411 under BattlegroundHLBG we leave the legacy map
+    // binding unset and let the battleground runtime own map-scoped behavior.
     bool OutdoorPvPHL::SetupOutdoorPvP()
     {
         for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
             RegisterZone(OutdoorPvPHLBuffZones[i]);
-        _map = sMapMgr->CreateBaseMap(OutdoorPvPHLMapId);
-        ASSERT(_map && !_map->Instanceable());
+
+        _map = nullptr;
+        if (Map* map = sMapMgr->CreateBaseMap(OutdoorPvPHLMapId))
+        {
+            if (!map->Instanceable())
+                _map = map;
+            else
+                LOG_WARN("outdoorpvp.hl", "OutdoorPvPHL: skipping legacy map binding for instanceable HLBG map {}", OutdoorPvPHLMapId);
+        }
+
         // Re-load configuration on setup and restore persisted state if enabled
         LoadConfig();
     if (_persistenceEnabled)

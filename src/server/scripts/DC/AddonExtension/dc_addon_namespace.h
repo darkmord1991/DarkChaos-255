@@ -60,6 +60,9 @@ namespace DCAddon
     // Message delimiter
     constexpr char DELIMITER = '|';
 
+    // JSON marker for detecting JSON payloads
+    constexpr const char* JSON_MARKER = "J";
+
     // WoW 3.3.5a message limits
     constexpr uint32 MAX_CLIENT_MSG_SIZE = 255;
     constexpr uint32 MAX_SERVER_MSG_SIZE = 2560;
@@ -958,9 +961,27 @@ namespace DCAddon
             }
 
             // Remaining tokens are data
-            for (size_t i = dataStart; i < tokens.size(); ++i)
+            if (dataStart < tokens.size() && tokens[dataStart] == JSON_MARKER)
             {
-                _data.push_back(tokens[i]);
+                _data.push_back(tokens[dataStart]);
+
+                std::string jsonPayload;
+                for (size_t i = dataStart + 1; i < tokens.size(); ++i)
+                {
+                    if (!jsonPayload.empty())
+                        jsonPayload.push_back(DELIMITER);
+
+                    jsonPayload += tokens[i];
+                }
+
+                _data.push_back(std::move(jsonPayload));
+            }
+            else
+            {
+                for (size_t i = dataStart; i < tokens.size(); ++i)
+                {
+                    _data.push_back(tokens[i]);
+                }
             }
 
             _valid = true;
@@ -1542,9 +1563,6 @@ namespace DCAddon
     // ========================================================================
     // JSON SUPPORT
     // ========================================================================
-
-    // JSON marker for detecting JSON payloads
-    constexpr const char* JSON_MARKER = "J";
 
     // Simple JSON value class for addon communication
     class JsonValue

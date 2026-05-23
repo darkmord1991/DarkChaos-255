@@ -564,6 +564,13 @@ end
 local function AddItemId(tooltip, itemLink)
     if not addon.settings.tooltips.showItemId then return end
     if not itemLink then return end
+
+    -- On patched native clients, item IDs are rendered from C++ tooltip code.
+    -- Appending a second Lua-owned line here can visibly blink when the native
+    -- async item snapshot path redraws the tooltip without re-entering these hooks.
+    if type(GetDCClientCapabilities) == "function" then
+        return
+    end
     
     -- Extract item ID from link
     local itemId = itemLink:match("item:(%d+)")

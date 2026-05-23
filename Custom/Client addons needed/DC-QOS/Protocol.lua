@@ -29,6 +29,18 @@ local NATIVE_ENVELOPE_POLL_INTERVAL = 0.10
 local NATIVE_ENVELOPE_ACTION_RESPONSE = "response"
 local lastSpellEnrichCachePruneAt = 0
 
+local function DispatchFeatureData(self, featureKey, data)
+    local handlers = self.featureHandlers[featureKey]
+
+    if type(handlers) == "table" then
+        for _, handler in ipairs(handlers) do
+            pcall(handler, data)
+        end
+    end
+
+    addon:FireEvent("QOS_FEATURE_DATA_RECEIVED", featureKey, data)
+end
+
 local SERVER_SETTINGS_PATH_MAP = {
     tooltipsEnabled = "tooltips.enabled",
     showItemId = "tooltips.showItemId",
@@ -251,6 +263,11 @@ function protocol:RegisterHandlers()
         self:HandleSpellInfo(...)
     end)
 
+    -- Handle feature-specific response payloads on the addon lane.
+    DC:RegisterHandler(self.MODULE_ID, Ops.SMSG_FEATURE_DATA, function(...)
+        self:HandleFeatureData(...)
+    end)
+
     -- Handle spell tooltip enrichment response
     DC:RegisterHandler(self.MODULE_ID, Ops.SMSG_SPELL_TOOLTIP_ENRICHMENT, function(...)
         self:HandleSpellTooltipEnrichment(...)
@@ -294,6 +311,50 @@ local function NormalizeNativeEnvelopePayload(self, feature, action, revision,
     return data
 end
 
+local function NormalizeAddonFeaturePayload(rawPayload)
+    if type(rawPayload) ~= "table" then
+        return nil
+    end
+
+    local featureKey = tostring(rawPayload.feature or "")
+    if featureKey == "" then
+        return nil
+    end
+
+    local decoded = {}
+    for key, value in pairs(rawPayload) do
+        decoded[key] = value
+    end
+
+    local data = {
+        feature = featureKey,
+        action = tostring(rawPayload.action or ""),
+        revision = tonumber(rawPayload.revision) or 0,
+        context = rawPayload.context,
+        payload = rawPayload.payload,
+        transport = "addon-feature-data",
+        data = decoded,
+    }
+
+    for key, value in pairs(decoded) do
+        if data[key] == nil then
+            data[key] = value
+        end
+    end
+
+    return data
+end
+
+function protocol:HandleFeatureData(...)
+    local args = {...}
+    local data = NormalizeAddonFeaturePayload(args[1])
+    if not data then
+        return
+    end
+
+    DispatchFeatureData(self, data.feature, data)
+end
+
 function protocol:HandleNativeEnvelope(moduleId, feature, action, revision,
     payload, context)
     if tostring(moduleId or "") ~= self.MODULE_ID then
@@ -307,15 +368,7 @@ function protocol:HandleNativeEnvelope(moduleId, feature, action, revision,
 
     local data = NormalizeNativeEnvelopePayload(self, featureKey, action,
         revision, payload, context)
-    local handlers = self.featureHandlers[featureKey]
-
-    if type(handlers) == "table" then
-        for _, handler in ipairs(handlers) do
-            pcall(handler, data)
-        end
-    end
-
-    addon:FireEvent("QOS_FEATURE_DATA_RECEIVED", featureKey, data)
+    DispatchFeatureData(self, featureKey, data)
     return true
 end
 

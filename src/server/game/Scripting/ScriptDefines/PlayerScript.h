@@ -147,6 +147,9 @@ enum PlayerHook
     PLAYERHOOK_ON_CUSTOM_SCALING_STAT_VALUE_BEFORE,
     PLAYERHOOK_ON_CUSTOM_SCALING_STAT_VALUE,
     PLAYERHOOK_ON_APPLY_ITEM_MODS_BEFORE,
+    PLAYERHOOK_ON_APPLY_ITEM_ARMOR_BEFORE,
+    PLAYERHOOK_ON_APPLY_ITEM_BLOCK_VALUE_BEFORE,
+    PLAYERHOOK_ON_APPLY_ITEM_RESISTANCE_BEFORE,
     PLAYERHOOK_ON_APPLY_ENCHANTMENT_ITEM_MODS_BEFORE,
     PLAYERHOOK_ON_APPLY_WEAPON_DAMAGE,
     PLAYERHOOK_CAN_ARMOR_DAMAGE_MODIFIER,
@@ -553,6 +556,12 @@ public:
     virtual void OnPlayerCustomScalingStatValue(Player* /*player*/, ItemTemplate const* /*proto*/, uint32& /*statType*/, int32& /*val*/, uint8 /*itemProtoStatNumber*/, uint32 /*ScalingStatValue*/, ScalingStatValuesEntry const* /*ssv*/) { }
 
     virtual void OnPlayerApplyItemModsBefore(Player* /*player*/, uint8 /*slot*/, bool /*apply*/, uint8 /*itemProtoStatNumber*/, uint32 /*statType*/, int32& /*val*/) { }
+
+    virtual void OnPlayerApplyItemArmorBefore(Player* /*player*/, uint8 /*slot*/, ItemTemplate const* /*proto*/, bool /*apply*/, uint32& /*amount*/, bool /*isBonusArmor*/) { }
+
+    virtual void OnPlayerApplyItemBlockValueBefore(Player* /*player*/, uint8 /*slot*/, ItemTemplate const* /*proto*/, bool /*apply*/, uint32& /*amount*/) { }
+
+    virtual void OnPlayerApplyItemResistanceBefore(Player* /*player*/, uint8 /*slot*/, ItemTemplate const* /*proto*/, bool /*apply*/, uint8 /*school*/, uint32& /*amount*/) { }
 
     virtual void OnPlayerApplyEnchantmentItemModsBefore(Player* /*player*/, Item* /*item*/, EnchantmentSlot /*slot*/, bool /*apply*/, uint32 /*enchant_spell_id*/, uint32& /*enchant_amount*/) { }
 

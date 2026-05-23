@@ -47,6 +47,7 @@
 #include "Group.h"
 #include "Map.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 #include <atomic>
 #include <chrono>
 #include <string>
@@ -113,6 +114,7 @@ namespace DCQoS
     namespace NativeEnvelopeFeature
     {
         constexpr char PING[] = "ping";
+        constexpr char PING_STATE[] = "ping_state";
         constexpr char GRAPHICS_PROFILE[] = "graphics_profile";
         constexpr char GRAPHICS_PROFILE_STATE[] = "graphics_profile_state";
         constexpr char SERVER_TIME[] = "server_time";
@@ -313,60 +315,82 @@ namespace DCQoS
         SendRuntimeProfileFallback(player, action, selection, revision);
     }
 
-    static DCAddon::JsonValue BuildFeatureResponseEnvelope(
-        std::string const& feature, DCAddon::JsonValue const& payload)
+    static DCAddon::JsonValue BuildFeatureEnvelope(
+        std::string const& feature, std::string const& action,
+        uint32 revision, std::string const& context,
+        DCAddon::JsonValue const& payload)
     {
         DCAddon::JsonValue envelope;
         envelope.SetObject();
-        envelope.Set("feature", feature);
 
         if (payload.IsObject())
         {
             for (auto const& [key, value] : payload.AsObject())
                 envelope.Set(key, value);
-            return envelope;
         }
 
-        envelope.Set("data", payload);
+        if (!payload.IsObject())
+            envelope.Set("data", payload);
+
+        envelope.Set("feature", feature);
+        envelope.Set("action", action);
+        envelope.Set("revision", static_cast<int32>(revision));
+        if (!context.empty())
+            envelope.Set("context", context);
         return envelope;
     }
 
-    static void SendFeatureResponseFallback(Player* player,
-        std::string const& feature, DCAddon::JsonValue const& payload)
+    static void SendFeatureFallback(Player* player,
+        std::string const& feature, std::string const& action,
+        uint32 revision, std::string const& context,
+        DCAddon::JsonValue const& payload)
     {
         if (!player)
             return;
 
         DCAddon::JsonMessage(MODULE, Opcode::SMSG_FEATURE_DATA,
-            BuildFeatureResponseEnvelope(feature, payload)).Send(player);
+            BuildFeatureEnvelope(feature, action, revision, context,
+                payload)).Send(player);
     }
 
-    static void SendFeatureResponseNative(Player* player,
-        std::string const& feature, DCAddon::JsonValue const& payload,
+    static void SendFeatureNative(Player* player,
+        std::string const& feature, std::string const& action,
+        uint32 revision, DCAddon::JsonValue const& payload,
         std::string const& context)
     {
         if (!player)
             return;
 
         DCAddon::SendNativeEnvelope(player, MODULE, Opcode::SMSG_FEATURE_DATA,
-            feature, NativeEnvelopeFeature::ACTION_RESPONSE,
-            NextFeatureResponseRevision(), payload.Encode(), context);
+            feature, action, revision, payload.Encode(), context);
+    }
+
+    static void SendFeatureMessage(Player* player,
+        std::string const& feature, std::string const& action,
+        DCAddon::JsonValue const& payload, std::string const& context)
+    {
+        if (!player)
+            return;
+
+        uint32 revision = NextFeatureResponseRevision();
+
+        if (SupportsNativeEnvelopeTransport(player))
+        {
+            SendFeatureNative(player, feature, action, revision, payload,
+                context);
+            return;
+        }
+
+        SendFeatureFallback(player, feature, action, revision, context,
+            payload);
     }
 
     static void SendFeatureResponse(Player* player,
         std::string const& feature, DCAddon::JsonValue const& payload,
         std::string const& context)
     {
-        if (!player)
-            return;
-
-        if (SupportsNativeEnvelopeTransport(player))
-        {
-            SendFeatureResponseNative(player, feature, payload, context);
-            return;
-        }
-
-        SendFeatureResponseFallback(player, feature, payload);
+        SendFeatureMessage(player, feature,
+            NativeEnvelopeFeature::ACTION_RESPONSE, payload, context);
     }
 
     static void PushRuntimeProfile(Player* player, bool forceResend,
@@ -1052,6 +1076,149 @@ namespace DCQoS
         return totalPieces;
     }
 
+    struct HeirloomPackageDefinition
+    {
+        char const* name;
+        char const* statNames[3];
+        uint8 statCount;
+    };
+
+    struct HeirloomPackageTooltipState
+    {
+        uint32 packageId = 0;
+        uint32 upgradeLevel = 0;
+    };
+
+    static bool TryGetHeirloomPackageDefinition(uint32 packageId,
+        HeirloomPackageDefinition& out)
+    {
+        using namespace DarkChaos::ItemUpgrade::UI;
+
+        static HeirloomPackageDefinition const definitions[
+            HEIRLOOM_MAX_PACKAGE_ID + 1] =
+        {
+            { "", { nullptr, nullptr, nullptr }, 0 },
+            { "Fury", { "Crit Rating", "Haste Rating", nullptr }, 2 },
+            { "Precision", { "Hit Rating", "Expertise Rating", nullptr }, 2 },
+            { "Devastation", { "Crit Rating", "Armor Pen", nullptr }, 2 },
+            { "Swiftblade", { "Haste Rating", "Armor Pen", nullptr }, 2 },
+            { "Spellfire", { "Spell Crit", "Spell Haste", "Spell Power" }, 3 },
+            { "Arcane", { "Spell Hit", "Spell Haste", "Spell Power" }, 3 },
+            { "Bulwark", { "Dodge Rating", "Parry Rating", "Block Rating" }, 3 },
+            { "Fortress", { "Defense Rating", "Block Rating", "Stamina" }, 3 },
+            { "Survivor", { "Dodge Rating", "Stamina", nullptr }, 2 },
+            { "Gladiator", { "Resilience", "Crit Rating", nullptr }, 2 },
+            { "Warlord", { "Resilience", "Stamina", nullptr }, 2 },
+            { "Balanced", { "Crit Rating", "Hit Rating", "Haste Rating" }, 3 },
+        };
+
+        if (packageId == 0 || packageId > HEIRLOOM_MAX_PACKAGE_ID)
+            return false;
+
+        out = definitions[packageId];
+        return out.name && *out.name && out.statCount > 0;
+    }
+
+    static uint32 GetHeirloomPackageBudget(uint32 upgradeLevel)
+    {
+        using namespace DarkChaos::ItemUpgrade::UI;
+
+        static uint32 const budgets[HEIRLOOM_MAX_LEVEL + 1] =
+        {
+            0,
+            6,
+            14,
+            22,
+            32,
+            43,
+            55,
+            67,
+            80,
+            95,
+            110,
+            126,
+            142,
+            157,
+            168,
+            168,
+        };
+
+        if (upgradeLevel == 0 || upgradeLevel > HEIRLOOM_MAX_LEVEL)
+            return 0;
+
+        return budgets[upgradeLevel];
+    }
+
+    static HeirloomPackageTooltipState ResolveHeirloomPackageTooltipState(
+        Item* item,
+        DarkChaos::ItemUpgrade::ItemUpgradeTooltipSnapshot const& snapshot)
+    {
+        using namespace DarkChaos::ItemUpgrade::UI;
+
+        HeirloomPackageTooltipState state;
+        if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+            return state;
+
+        uint32 enchantId = item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT);
+        if (enchantId > HEIRLOOM_ENCHANT_BASE_ID)
+        {
+            uint32 encodedState = enchantId - HEIRLOOM_ENCHANT_BASE_ID;
+            uint32 packageId = encodedState / 100;
+            uint32 upgradeLevel = encodedState % 100;
+
+            if (packageId >= 1 && packageId <= HEIRLOOM_MAX_PACKAGE_ID
+                && upgradeLevel >= 1 && upgradeLevel <= HEIRLOOM_MAX_LEVEL)
+            {
+                state.packageId = packageId;
+                state.upgradeLevel = upgradeLevel;
+                return state;
+            }
+        }
+
+        if (snapshot.upgrade_level >= 1
+            && snapshot.upgrade_level <= HEIRLOOM_MAX_LEVEL)
+        {
+            state.upgradeLevel = snapshot.upgrade_level;
+        }
+
+        return state;
+    }
+
+    static void AppendHeirloomPackageTooltipRows(
+        std::vector<ItemTooltipSnapshotRow>& rows,
+        HeirloomPackageTooltipState const& state)
+    {
+        HeirloomPackageDefinition definition{};
+        if (state.packageId == 0 || state.upgradeLevel == 0
+            || !TryGetHeirloomPackageDefinition(state.packageId, definition))
+        {
+            return;
+        }
+
+        uint32 totalBudget = GetHeirloomPackageBudget(state.upgradeLevel);
+        if (totalBudget == 0)
+            return;
+
+        AppendItemTooltipSnapshotRow(rows, "Package", definition.name,
+            "append-body", "set-name");
+        AppendItemTooltipSnapshotRow(rows, "-- Package Stats --", "",
+            "append-body", "meta");
+
+        uint32 perStat = totalBudget / definition.statCount;
+        uint32 remainder = totalBudget - (perStat * definition.statCount);
+
+        for (uint32 statIndex = 0; statIndex < definition.statCount;
+             ++statIndex)
+        {
+            uint32 value = perStat + (statIndex < remainder ? 1u : 0u);
+            std::string line = FormatSignedItemStat(static_cast<int32>(value),
+                definition.statNames[statIndex]);
+            if (!line.empty())
+                AppendItemTooltipSnapshotRow(rows, line, "",
+                    "append-body", "stat");
+        }
+    }
+
     static std::vector<ItemTooltipSnapshotRow> BuildItemTooltipSnapshotRows(
         Player* player,
         Item* item,
@@ -1062,12 +1229,31 @@ namespace DCQoS
             return rows;
 
         ItemTemplate const* itemTemplate = item->GetTemplate();
+        HeirloomPackageTooltipState const heirloomPackageState =
+            ResolveHeirloomPackageTooltipState(item, snapshot);
+
+        uint32 displayUpgradeLevel = snapshot.upgrade_level;
+        if (heirloomPackageState.upgradeLevel > displayUpgradeLevel)
+            displayUpgradeLevel = heirloomPackageState.upgradeLevel;
+
+        uint32 displayMaxUpgrade = snapshot.max_upgrade;
+        if (displayMaxUpgrade == 0
+            && item->GetEntry() == DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+        {
+            displayMaxUpgrade = DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL;
+        }
+        if (displayMaxUpgrade == 0 && displayUpgradeLevel > 0)
+            displayMaxUpgrade = displayUpgradeLevel;
+
         if (!snapshot.has_persisted_state)
         {
-            if (snapshot.max_upgrade > 0)
+            AppendHeirloomPackageTooltipRows(rows, heirloomPackageState);
+
+            if (displayMaxUpgrade > 0)
             {
                 AppendItemTooltipSnapshotRow(rows, "Upgrade",
-                    "0/" + std::to_string(snapshot.max_upgrade),
+                    std::to_string(displayUpgradeLevel) + "/"
+                        + std::to_string(displayMaxUpgrade),
                     "append-meta", "upgrade");
             }
 
@@ -1179,6 +1365,8 @@ namespace DCQoS
                     AppendItemTooltipSnapshotRow(rows, line, "",
                         "replace-stat", "stat");
             }
+
+            AppendHeirloomPackageTooltipRows(rows, heirloomPackageState);
 
             EnchantmentSlot const socketEnchantSlots[MAX_GEM_SOCKETS] =
             {
@@ -1454,10 +1642,13 @@ namespace DCQoS
             }
         }
 
-        AppendItemTooltipSnapshotRow(rows, "Upgrade",
-            std::to_string(snapshot.upgrade_level) + "/"
-                + std::to_string(snapshot.max_upgrade),
-            "append-meta", "upgrade");
+        if (displayMaxUpgrade > 0)
+        {
+            AppendItemTooltipSnapshotRow(rows, "Upgrade",
+                std::to_string(displayUpgradeLevel) + "/"
+                    + std::to_string(displayMaxUpgrade),
+                "append-meta", "upgrade");
+        }
 
         if (snapshot.stat_multiplier_basis_points > 10000)
         {
@@ -1859,6 +2050,169 @@ namespace DCQoS
         request.nativeCapability =
             DCAddon::ProtocolVersion::Capability::PING_RELAY_NATIVE;
         return DCAddon::ResolveTransportPolicy(player, request).UsesNative();
+    }
+
+    static DCAddon::JsonValue BuildPingRelayStatePayload(Player* player,
+        std::string requestedDistribution)
+    {
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+
+        if (requestedDistribution.empty())
+            requestedDistribution = "AUTO";
+
+        std::transform(requestedDistribution.begin(),
+            requestedDistribution.end(), requestedDistribution.begin(),
+            [](unsigned char c) { return std::toupper(c); });
+
+        if (requestedDistribution != "RAID"
+            && requestedDistribution != "PARTY")
+        {
+            requestedDistribution = "AUTO";
+        }
+
+        payload.Set("requestedDistribution", requestedDistribution);
+
+        if (!player)
+        {
+            payload.Set("canRelay", false);
+            payload.Set("inGroup", false);
+            payload.Set("inRaidGroup", false);
+            payload.Set("recipientCount", static_cast<int32>(0));
+            payload.Set("connectedMemberCount", static_cast<int32>(0));
+            payload.Set("nativePingRelayTransport", false);
+            payload.Set("nativeEnvelopeTransport", false);
+            payload.Set("error", std::string("Invalid relay sender."));
+            return payload;
+        }
+
+        payload.Set("nativePingRelayTransport",
+            SupportsNativePingRelayTransport(player));
+        payload.Set("nativeEnvelopeTransport",
+            SupportsNativeEnvelopeTransport(player));
+
+        Group* group = player->GetGroup();
+        payload.Set("inGroup", group != nullptr);
+        payload.Set("inRaidGroup", group && group->isRaidGroup());
+
+        if (!group)
+        {
+            payload.Set("canRelay", false);
+            payload.Set("recipientCount", static_cast<int32>(0));
+            payload.Set("connectedMemberCount", static_cast<int32>(0));
+            payload.Set("error",
+                std::string("You are not in a party or raid."));
+            return payload;
+        }
+
+        bool isRaidGroup = group->isRaidGroup();
+        std::string resolvedDistribution = NormalizeRelayDistribution(
+            requestedDistribution, isRaidGroup);
+        bool sameSubGroupOnly = isRaidGroup
+            && resolvedDistribution == "PARTY";
+        uint8 senderSubGroup = group->GetMemberGroup(player->GetGUID());
+        uint32 connectedMemberCount = 0;
+        uint32 recipientCount = 0;
+
+        payload.Set("resolvedDistribution", resolvedDistribution);
+        payload.Set("subGroupScoped", sameSubGroupOnly);
+        payload.Set("senderSubGroup", static_cast<int32>(senderSubGroup));
+
+        for (GroupReference* ref = group->GetFirstMember(); ref != nullptr;
+             ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->GetSession() || !member->IsInWorld())
+                continue;
+
+            ++connectedMemberCount;
+
+            if (member->GetGUID() == player->GetGUID())
+                continue;
+
+            if (sameSubGroupOnly
+                && group->GetMemberGroup(member->GetGUID())
+                    != senderSubGroup)
+            {
+                continue;
+            }
+
+            ++recipientCount;
+        }
+
+        payload.Set("connectedMemberCount",
+            static_cast<int32>(connectedMemberCount));
+        payload.Set("recipientCount", static_cast<int32>(recipientCount));
+        payload.Set("canRelay", recipientCount > 0);
+
+        if (recipientCount == 0)
+        {
+            payload.Set("error", resolvedDistribution == "RAID"
+                ? std::string("No other raid members available for relay.")
+                : std::string("No other party members available for relay."));
+        }
+
+        return payload;
+    }
+
+    static void SendPingRelayStateInvalidation(Player* player,
+        std::string const& context)
+    {
+        if (!player)
+            return;
+
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        SendFeatureMessage(player, NativeEnvelopeFeature::PING_STATE,
+            NativeEnvelopeFeature::ACTION_INVALIDATE, payload, context);
+    }
+
+    static void SchedulePingRelayStateInvalidation(Player* player,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
+    {
+        if (!player)
+            return;
+
+        ObjectGuid guid = player->GetGUID();
+        player->m_Events.AddEventAtOffset([guid, context]
+        {
+            if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
+                SendPingRelayStateInvalidation(online, context);
+        }, delay);
+    }
+
+    static void SchedulePingRelayStateInvalidation(ObjectGuid guid,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
+    {
+        if (guid.IsEmpty())
+            return;
+
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+            SchedulePingRelayStateInvalidation(player, context, delay);
+    }
+
+    static void SchedulePingRelayStateInvalidationForGroup(Group* group,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250),
+        ObjectGuid skipGuid = ObjectGuid::Empty)
+    {
+        if (!group)
+            return;
+
+        for (GroupReference* ref = group->GetFirstMember(); ref != nullptr;
+             ref = ref->next())
+        {
+            Player* member = ref->GetSource();
+            if (!member || !member->GetSession() || !member->IsInWorld())
+                continue;
+
+            if (!skipGuid.IsEmpty() && member->GetGUID() == skipGuid)
+                continue;
+
+            SchedulePingRelayStateInvalidation(member, context, delay);
+        }
     }
 
     static void SendNativePingRelayPayload(Player* player,
@@ -4289,6 +4643,17 @@ namespace DCQoS
             return;
         }
 
+        if (feature == NativeEnvelopeFeature::PING_STATE)
+        {
+            std::string requestedDistribution = json.HasKey("distribution")
+                ? json["distribution"].AsString()
+                : "AUTO";
+            SendFeatureResponse(player, feature,
+                BuildPingRelayStatePayload(player, requestedDistribution),
+                "feature-request:ping-state");
+            return;
+        }
+
         if (feature == NativeEnvelopeFeature::GRAPHICS_PROFILE)
         {
             PushRuntimeProfile(player, true, "feature-request");
@@ -4533,7 +4898,13 @@ public:
         player->m_Events.AddEventAtOffset([guid = player->GetGUID()]
         {
             if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
+            {
                 DCQoS::PushRuntimeProfile(online, true, "login");
+                DCQoS::SchedulePingRelayStateInvalidation(online, "login");
+                DCQoS::SchedulePingRelayStateInvalidationForGroup(
+                    online->GetGroup(), "group-login",
+                    std::chrono::milliseconds(250), online->GetGUID());
+            }
         }, std::chrono::milliseconds(4500));
     }
 
@@ -4554,11 +4925,52 @@ public:
         if (!player)
             return;
 
+        DCQoS::SchedulePingRelayStateInvalidationForGroup(player->GetGroup(),
+            "group-logout", std::chrono::milliseconds(250),
+            player->GetGUID());
+
         DCQoS::InvalidatePlayerSettingsCache(player->GetGUID().GetCounter());
 
         std::lock_guard<std::mutex> lock(DCQoS::s_RuntimeProfileMutex);
         DCQoS::s_LastRuntimeProfileByGuid.erase(
             player->GetGUID().GetCounter());
+    }
+};
+
+class DCQoSGroupScript : public GroupScript
+{
+public:
+    DCQoSGroupScript() : GroupScript("DCQoSGroupScript") {}
+
+    void OnAddMember(Group* group, ObjectGuid /*guid*/) override
+    {
+        if (!DCQoS::IsEnabled() || !group)
+            return;
+
+        DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
+            "group-add");
+    }
+
+    void OnRemoveMember(Group* group, ObjectGuid guid,
+        RemoveMethod /*method*/, ObjectGuid /*kicker*/, char const* /*reason*/)
+        override
+    {
+        if (!DCQoS::IsEnabled())
+            return;
+
+        DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
+            "group-remove");
+        DCQoS::SchedulePingRelayStateInvalidation(guid,
+            "group-remove:self");
+    }
+
+    void OnDisband(Group* group) override
+    {
+        if (!DCQoS::IsEnabled() || !group)
+            return;
+
+        DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
+            "group-disband");
     }
 };
 
@@ -4853,5 +5265,6 @@ void AddDCQoSScripts()
     }
 
     new DCQoSPlayerScript();
+    new DCQoSGroupScript();
     new DCQoSServerScript();
 }

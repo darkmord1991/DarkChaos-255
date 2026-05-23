@@ -52,6 +52,8 @@ local state = {
 local NATIVE_ENVELOPE_CAPABILITY = 0x00100000
 local SERVER_PROFILE_FEATURE = "graphics_profile"
 local SERVER_PROFILE_STATE_FEATURE = "graphics_profile_state"
+local GetProfileStateTimestamp
+local RefreshSettingsStatusText
 
 local SERVER_PROFILE_PRESETS = {
     SAFE = {
@@ -388,7 +390,7 @@ local function FormatStatusValue(value, fallback)
     return text
 end
 
-local function GetProfileStateTimestamp()
+GetProfileStateTimestamp = function()
     if type(date) == "function" then
         return date("%H:%M:%S")
     end
@@ -489,7 +491,7 @@ local function BuildServerProfileRefreshText()
     return "|cffccccccState Refresh: no request sent yet.|r"
 end
 
-local function RefreshSettingsStatusText()
+RefreshSettingsStatusText = function()
     if type(state.settingsStatusUpdater) == "function" then
         state.settingsStatusUpdater()
     end

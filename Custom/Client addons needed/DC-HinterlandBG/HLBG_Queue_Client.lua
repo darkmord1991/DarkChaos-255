@@ -282,6 +282,13 @@ end
 
 -- Join the battleground queue
 function HLBG.JoinQueue()
+    if type(HLBG.TryJoinViaBlizzardQueue) == "function" and HLBG.TryJoinViaBlizzardQueue(false) then
+        if DEFAULT_CHAT_FRAME then
+            HLBG.QueueMessage("join_blizz")
+        end
+        return
+    end
+
     local DC = _G.DCAddonProtocol
     if SendHLBGRequest(DC, 4) then
         -- CMSG_QUICK_QUEUE = 0x04
@@ -425,6 +432,10 @@ function HLBG.UpdateQueueUI()
                 end
             end
         end
+    end
+
+    if type(HLBG.RefreshPvPEntry) == "function" then
+        HLBG.RefreshPvPEntry()
     end
 end
 

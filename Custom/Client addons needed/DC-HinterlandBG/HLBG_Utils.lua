@@ -158,6 +158,7 @@ HLBG.QueueTextTemplates = HLBG.QueueTextTemplates or {
     request_status_dc = "|cFF33FF99HLBG Queue:|r Requesting status via DC protocol...",
     request_status_aio = "|cFF33FF99HLBG Queue:|r Requesting status via AIO...",
     request_status_cmd = "|cFF33FF99HLBG Queue:|r Requesting status via command...",
+    join_blizz = "|cFF33FF99HLBG Queue:|r Joining via battleground list...",
     join_dc = "|cFF33FF99HLBG Queue:|r Joining via DC protocol...",
     join_aio = "|cFF33FF99HLBG Queue:|r Joining via AIO...",
     leave_dc = "|cFF33FF99HLBG Queue:|r Leaving via DC protocol...",

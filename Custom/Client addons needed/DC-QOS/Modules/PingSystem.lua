@@ -45,6 +45,19 @@ local state = {
     pool = {},
     active = {},
     lastPingAt = 0,
+    relayStateRequestPending = false,
+    relayStateRefreshQueued = false,
+    relayStateQueuedReason = nil,
+    relayStateRequestGeneration = 0,
+    relayStateLastCompletedGeneration = 0,
+    relayStateLastRequestAt = nil,
+    relayStateLastRequestReason = nil,
+    relayStateLastFailure = nil,
+    relayStateLastResponseAt = nil,
+    relayStateLastResponseSource = nil,
+    serverRelayState = nil,
+    settingsStatusUpdater = nil,
+    settingsRefreshButton = nil,
     protocolHooked = false,
     protocolModule = nil,
     protocolOpcode = nil,
@@ -69,8 +82,12 @@ local NATIVE_PING_RELAY_CAPABILITY = 0x00008000
 local NATIVE_PING_RELAY_POLL_INTERVAL = 0.10
 local lastNativePingRelayRevision = 0
 local nativePingRelayPollFrame
+local PING_STATE_FEATURE = "ping_state"
 
 local HandleProtocolFeatureData
+local RefreshSettingsStatusText
+local RequestCurrentPingRelayState
+local SchedulePingRelayStateRequest
 
 local SECURE_PING_EVENT_RADIAL_CREATED = "radialCreated"
 local SECURE_PING_EVENT_PENDING_OFFSCREEN = "pendingOffscreen"
@@ -3446,6 +3463,308 @@ local function SendRelayRequestDirect(moduleId, opcode, request)
     return false, "DCAddonProtocol send failed."
 end
 
+local function GetRelayStateTimestamp()
+    if type(GetTime) == "function" then
+        return tonumber(GetTime()) or 0
+    end
+
+    return 0
+end
+
+local function NormalizeRelayStatePayload(rawPayload)
+    if type(rawPayload) ~= "table" then
+        return nil
+    end
+
+    local payload = rawPayload
+    if type(rawPayload.data) == "table" then
+        payload = {}
+        for key, value in pairs(rawPayload.data) do
+            payload[key] = value
+        end
+
+        if not payload.feature and rawPayload.feature then
+            payload.feature = rawPayload.feature
+        end
+        if payload.action == nil and rawPayload.action ~= nil then
+            payload.action = rawPayload.action
+        end
+        if payload.revision == nil and rawPayload.revision ~= nil then
+            payload.revision = rawPayload.revision
+        end
+        if payload.context == nil and rawPayload.context ~= nil then
+            payload.context = rawPayload.context
+        end
+        if payload.transport == nil and rawPayload.transport ~= nil then
+            payload.transport = rawPayload.transport
+        end
+    end
+
+    return payload
+end
+
+local function FormatRelayStateValue(value, fallback)
+    if value == nil then
+        return fallback or "unknown"
+    end
+
+    local text = tostring(value)
+    if text == "" then
+        return fallback or "unknown"
+    end
+
+    return text
+end
+
+local function BuildClientRelayDistributionLabel()
+    local distribution = ResolveRelayDistribution({})
+    if distribution == "PARTY" or distribution == "RAID" then
+        return distribution
+    end
+
+    return "not in party/raid"
+end
+
+local function BuildServerRelayStateText()
+    local snapshot = state.serverRelayState
+    local clientDistribution = BuildClientRelayDistributionLabel()
+
+    if type(snapshot) ~= "table" then
+        return string.format(
+            "|cffccccccRelay Snapshot: client=%s, server reply pending or not received yet.|r",
+            clientDistribution)
+    end
+
+    local relayLane = snapshot.nativePingRelayTransport and "native"
+        or "addon"
+    local featureLane = snapshot.nativeEnvelopeTransport
+        and "native envelope" or "addon fallback"
+    local responseSummary
+
+    if snapshot.canRelay then
+        local recipientCount = tonumber(snapshot.recipientCount) or 0
+        local recipientSuffix = recipientCount == 1 and "" or "s"
+        local scopeText = snapshot.subGroupScoped and ", subgroup only" or ""
+
+        responseSummary = string.format("%s (%d recipient%s%s)",
+            FormatRelayStateValue(snapshot.resolvedDistribution,
+                FormatRelayStateValue(snapshot.requestedDistribution, "AUTO")),
+            math_floor(recipientCount), recipientSuffix, scopeText)
+    else
+        responseSummary = FormatRelayStateValue(snapshot.error, "unavailable")
+    end
+
+    return string.format(
+        "Relay Snapshot: client=%s, server=%s, connected=%s, relay=%s, feature=%s",
+        clientDistribution,
+        responseSummary,
+        FormatRelayStateValue(snapshot.connectedMemberCount, "0"),
+        relayLane,
+        featureLane)
+end
+
+local function BuildRelayRefreshText()
+    local requestId = tostring(state.relayStateRequestGeneration or 0)
+    local requestReason = FormatRelayStateValue(
+        state.relayStateLastRequestReason, "client-request")
+
+    if state.relayStateRequestPending then
+        local pendingSuffix = state.relayStateRefreshQueued
+            and ", queued refresh" or ""
+        return string.format(
+            "|cffffff00Refresh: pending|r (#%s reason=%s%s)",
+            requestId,
+            requestReason,
+            pendingSuffix)
+    end
+
+    if state.relayStateLastFailure then
+        return string.format(
+            "|cffff5555Refresh: %s|r (reason=%s)",
+            state.relayStateLastFailure,
+            requestReason)
+    end
+
+    if state.relayStateLastResponseAt then
+        local ageSeconds = GetRelayStateTimestamp()
+            - (tonumber(state.relayStateLastResponseAt) or 0)
+        if ageSeconds < 0 then
+            ageSeconds = 0
+        end
+
+        return string.format(
+            "|cff00ff00Refresh: updated|r (#%s %.1fs ago via %s, context=%s)",
+            tostring(state.relayStateLastCompletedGeneration or requestId),
+            ageSeconds,
+            FormatRelayStateValue(state.relayStateLastResponseSource,
+                "unknown"),
+            FormatRelayStateValue(state.serverRelayState
+                and state.serverRelayState.context, "feature-request"))
+    end
+
+    return "|cffccccccRefresh: no request sent yet.|r"
+end
+
+RefreshSettingsStatusText = function()
+    if type(state.settingsStatusUpdater) == "function" then
+        state.settingsStatusUpdater()
+    end
+
+    if state.settingsRefreshButton then
+        state.settingsRefreshButton:SetEnabled(not state.relayStateRequestPending)
+        if state.relayStateRequestPending then
+            state.settingsRefreshButton:SetText("Refreshing...")
+        else
+            state.settingsRefreshButton:SetText("Refresh Relay State")
+        end
+    end
+end
+
+local function HandlePingRelayStateResponse(rawPayload, source)
+    local payload = NormalizeRelayStatePayload(rawPayload)
+    if not payload or payload.feature ~= PING_STATE_FEATURE then
+        return
+    end
+
+    local action = tostring(payload.action or "response")
+    if action == "invalidate" then
+        local refreshReason = "server-invalidate"
+        if payload.context then
+            refreshReason = refreshReason .. ":" .. tostring(payload.context)
+        end
+
+        addon:Debug("Ping System relay state invalidated: source="
+            .. tostring(source) .. " context="
+            .. tostring(payload.context))
+
+        RequestCurrentPingRelayState(refreshReason)
+        return
+    end
+
+    if action ~= "response" then
+        return
+    end
+
+    local queuedReason = state.relayStateRefreshQueued
+        and (state.relayStateQueuedReason or "queued-refresh") or nil
+    state.relayStateRefreshQueued = false
+    state.relayStateQueuedReason = nil
+    state.relayStateRequestPending = false
+    state.relayStateLastResponseAt = GetRelayStateTimestamp()
+    state.relayStateLastResponseSource = source
+    state.relayStateLastCompletedGeneration =
+        state.relayStateRequestGeneration
+
+    state.serverRelayState = {
+        revision = tonumber(payload.revision) or 0,
+        requestedDistribution = tostring(
+            payload.requestedDistribution or "AUTO"),
+        resolvedDistribution = tostring(payload.resolvedDistribution or ""),
+        canRelay = payload.canRelay == true,
+        inGroup = payload.inGroup == true,
+        inRaidGroup = payload.inRaidGroup == true,
+        recipientCount = math_max(0,
+            math_floor(tonumber(payload.recipientCount) or 0)),
+        connectedMemberCount = math_max(0,
+            math_floor(tonumber(payload.connectedMemberCount) or 0)),
+        subGroupScoped = payload.subGroupScoped == true,
+        senderSubGroup = tonumber(payload.senderSubGroup),
+        nativePingRelayTransport = payload.nativePingRelayTransport == true,
+        nativeEnvelopeTransport = payload.nativeEnvelopeTransport == true,
+        error = payload.error,
+        context = payload.context,
+        source = source,
+    }
+
+    addon:Debug("Ping System relay state received: canRelay="
+        .. tostring(state.serverRelayState.canRelay)
+        .. " requested="
+        .. tostring(state.serverRelayState.requestedDistribution)
+        .. " resolved="
+        .. tostring(state.serverRelayState.resolvedDistribution)
+        .. " recipients="
+        .. tostring(state.serverRelayState.recipientCount)
+        .. " connected="
+        .. tostring(state.serverRelayState.connectedMemberCount)
+        .. " source=" .. tostring(source)
+        .. " context=" .. tostring(payload.context))
+
+    RefreshSettingsStatusText()
+
+    if queuedReason then
+        RequestCurrentPingRelayState(queuedReason)
+    end
+end
+
+local function RequestCurrentPingRelayState(reason)
+    local requestReason = reason or "client-request"
+
+    if state.relayStateRequestPending then
+        state.relayStateRefreshQueued = true
+        state.relayStateQueuedReason = requestReason
+        addon:Debug("Ping System relay state refresh queued: reason="
+            .. tostring(requestReason))
+        RefreshSettingsStatusText()
+        return true
+    end
+
+    local request = {
+        distribution = ResolveRelayDistribution({}) or "AUTO",
+        reason = requestReason,
+    }
+    local sent = false
+
+    state.relayStateRequestPending = true
+    state.relayStateRequestGeneration = state.relayStateRequestGeneration + 1
+    state.relayStateLastRequestAt = GetRelayStateTimestamp()
+    state.relayStateLastRequestReason = requestReason
+    state.relayStateLastFailure = nil
+    RefreshSettingsStatusText()
+
+    if type(addon.RequestFeature) == "function" then
+        sent = addon:RequestFeature(PING_STATE_FEATURE, request)
+    elseif addon.protocol and type(addon.protocol.RequestFeature) == "function" then
+        sent = addon.protocol:RequestFeature(PING_STATE_FEATURE, request)
+    end
+
+    if sent then
+        addon:Debug("Ping System relay state requested: reason="
+            .. tostring(requestReason) .. " request="
+            .. tostring(state.relayStateRequestGeneration)
+            .. " distribution=" .. tostring(request.distribution))
+        return true
+    end
+
+    local queuedReason = state.relayStateRefreshQueued
+        and (state.relayStateQueuedReason or requestReason) or nil
+    state.relayStateRefreshQueued = false
+    state.relayStateQueuedReason = nil
+    state.relayStateRequestPending = false
+    state.relayStateLastFailure = "request failed"
+    RefreshSettingsStatusText()
+
+    addon:Debug("Ping System relay state request failed: reason="
+        .. tostring(requestReason))
+
+    if queuedReason then
+        SchedulePingRelayStateRequest(queuedReason, 0.25)
+    end
+
+    return false
+end
+
+local function SchedulePingRelayStateRequest(reason, delay)
+    local function ExecuteRequest()
+        RequestCurrentPingRelayState(reason)
+    end
+
+    if addon.DelayedCall then
+        addon:DelayedCall(delay or 0, ExecuteRequest)
+    else
+        ExecuteRequest()
+    end
+end
+
 local function RememberLocalRelaySequence(sequence, request)
     sequence = tonumber(sequence)
     if not sequence then
@@ -3825,6 +4144,19 @@ local function EnsureFeatureEventBridge()
     end
 
     addon:RegisterEvent("QOS_FEATURE_DATA_RECEIVED", function(feature, payload)
+        if feature == PING_STATE_FEATURE then
+            if type(payload) ~= "table" then
+                payload = {}
+            end
+
+            if not payload.feature then
+                payload.feature = feature
+            end
+
+            HandlePingRelayStateResponse(payload, "feature-event")
+            return
+        end
+
         if not IsEnabled() then
             return
         end
@@ -4577,6 +4909,8 @@ function PingSystem.OnEnable()
             end
         end)
     end
+
+    SchedulePingRelayStateRequest("enable", 1.25)
 end
 
 function PingSystem.OnDisable()
@@ -4599,7 +4933,39 @@ function PingSystem.CreateSettings(parent)
     desc:SetJustifyH("LEFT")
     desc:SetText("On-screen pings anchored to player view. This is separate from map-based hotspots and death markers.")
 
-    local yOffset = -78
+    local relayStateText = parent:CreateFontString(nil, "ARTWORK",
+        "GameFontHighlightSmall")
+    relayStateText:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -10)
+    relayStateText:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+    relayStateText:SetJustifyH("LEFT")
+    relayStateText:SetText(BuildServerRelayStateText() .. "\n"
+        .. BuildRelayRefreshText())
+
+    local relayRefreshBtn = CreateFrame("Button", nil, parent,
+        "UIPanelButtonTemplate")
+    relayRefreshBtn:SetSize(140, 22)
+    relayRefreshBtn:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -56)
+    relayRefreshBtn:SetText("Refresh Relay State")
+    relayRefreshBtn:SetScript("OnClick", function()
+        if not RequestCurrentPingRelayState("settings-refresh") then
+            addon:Print("Ping System: failed to request relay state.", true)
+        end
+    end)
+
+    state.settingsRefreshButton = relayRefreshBtn
+    state.settingsStatusUpdater = function()
+        relayStateText:SetText(BuildServerRelayStateText() .. "\n"
+            .. BuildRelayRefreshText())
+    end
+
+    parent:HookScript("OnShow", function()
+        RefreshSettingsStatusText()
+        RequestCurrentPingRelayState("settings-open")
+    end)
+
+    RefreshSettingsStatusText()
+
+    local yOffset = -146
 
     local enabledCb = addon:CreateCheckbox(parent)
     enabledCb:SetPoint("TOPLEFT", 16, yOffset)
