@@ -2,19 +2,29 @@
 
 #include "Config.h"
 #include "Creature.h"
+#include "Chat.h"
 #include "Group.h"
+#include "Map.h"
+#include "MapMgr.h"
 #include "Player.h"
 #include "Time/GameTime.h"
+#include "Weather.h"
 #include "WorldPacket.h"
 #include "WorldStateDefines.h"
 
 #include "../AddonExtension/dc_addon_hlbg.h"
+#include "HLBGService.h"
 #include "hlbg.h"
+#include "hlbg_constants.h"
+#include "hlbg_reset_worker.h"
 
 #include <algorithm>
+#include <sstream>
 
 BattlegroundTypeId BATTLEGROUND_HLBG = BattlegroundTypeId(20);
 BattlegroundQueueTypeId BATTLEGROUND_QUEUE_HLBG = BattlegroundQueueTypeId(14);
+
+using namespace HinterlandBGConstants;
 
 namespace
 {
@@ -23,6 +33,7 @@ namespace
     constexpr uint32 HLBGDeserterSpell = 26013;
     constexpr uint32 HLBGHudSyncIntervalMs = 1000;
     constexpr uint32 HLBGAfkTickIntervalMs = 2000;
+    constexpr uint32 WORLD_STATE_HL_AFFIX_TEXT = 0xDD1010;
 
     struct BattlegroundHLBGScore final : BattlegroundScore
     {
@@ -161,10 +172,59 @@ namespace
             out.insert(value);
         return out;
     }
+
+    template <typename Worker>
+    void VisitBattlegroundMap(BattlegroundHLBG const* battleground, Worker& worker)
+    {
+        if (!battleground)
+            return;
+
+        Map* map = sMapMgr->FindMap(battleground->GetMapId(), battleground->GetInstanceID());
+        auto* battlegroundMap = dynamic_cast<BattlegroundMap*>(map);
+        if (!battlegroundMap)
+            return;
+
+        TypeContainerVisitor<Worker, MapStoredObjectTypesContainer> visitor(worker);
+        visitor.Visit(battlegroundMap->GetObjectsStore());
+    }
+
+    struct HLBGNpcAuraWorker
+    {
+        uint32 areaId = HLBG_AREA_ID;
+        uint32 spellId = 0u;
+        bool remove = false;
+
+        void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
+        {
+            for (auto const& creatureEntry : creatureMap)
+            {
+                Creature* creature = creatureEntry.second;
+                if (!creature || !creature->IsInWorld() || creature->GetAreaId() != areaId)
+                    continue;
+
+                if (creature->IsPlayer() || creature->IsPet() || creature->IsGuardian()
+                    || creature->IsSummon() || creature->IsTotem())
+                {
+                    continue;
+                }
+
+                if (remove)
+                    creature->RemoveAurasDueToSpell(spellId);
+                else if (!creature->HasAura(spellId))
+                    creature->CastSpell(creature, spellId, true);
+            }
+        }
+
+        template <class T>
+        void Visit(std::unordered_map<ObjectGuid, T*>&)
+        {
+        }
+    };
 }
 
 BattlegroundHLBG::BattlegroundHLBG()
 {
+    InitAffixDefaults();
     _killHonorValues = { 17u, 11u, 19u, 22u };
     _npcRewardEntriesAlliance = {
         Alliance_Boss, Alliance_Healer, Alliance_Infantry, Alliance_Squadleader,
@@ -193,6 +253,17 @@ BattlegroundHLBG::BattlegroundHLBG()
     LoadConfig();
 }
 
+void BattlegroundHLBG::InitAffixDefaults()
+{
+    for (uint8 affixCode = HLBG_AFFIX_NONE; affixCode <= HLBG_AFFIX_FOG; ++affixCode)
+    {
+        _affixPlayerSpell[affixCode] = GetDefaultAffixPlayerSpell(affixCode);
+        _affixNpcSpell[affixCode] = GetDefaultAffixNpcSpell(affixCode);
+        _affixWeatherType[affixCode] = GetDefaultAffixWeatherType(affixCode);
+        _affixWeatherIntensity[affixCode] = GetDefaultAffixWeatherIntensity(affixCode);
+    }
+}
+
 void BattlegroundHLBG::LoadConfig()
 {
     if (!sConfigMgr)
@@ -213,6 +284,51 @@ void BattlegroundHLBG::LoadConfig()
     _resourcesLossPlayerKill = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.PlayerKill", _resourcesLossPlayerKill);
     _resourcesLossNpcNormal = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcNormal", _resourcesLossNpcNormal);
     _resourcesLossNpcBoss = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcBoss", _resourcesLossNpcBoss);
+    _affixEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Enabled", _affixEnabled);
+    _affixWeatherEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Weather.Enabled", _affixWeatherEnabled);
+    _affixPeriodSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Period", _affixPeriodSec);
+    _affixRandomOnStart = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.RandomOnStart", _affixRandomOnStart);
+    _affixAnnounce = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Announce", _affixAnnounce);
+    _affixWorldstateEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Worldstate", _affixWorldstateEnabled);
+
+    _affixPlayerSpell[HLBG_AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.PlayerSpell.Sunlight", _affixPlayerSpell[HLBG_AFFIX_SUNLIGHT]);
+    _affixPlayerSpell[HLBG_AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.PlayerSpell.ClearSkies", _affixPlayerSpell[HLBG_AFFIX_CLEAR_SKIES]);
+    _affixPlayerSpell[HLBG_AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.PlayerSpell.GentleBreeze", _affixPlayerSpell[HLBG_AFFIX_GENTLE_BREEZE]);
+    _affixNpcSpell[HLBG_AFFIX_STORM] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.NpcSpell.Storm", _affixNpcSpell[HLBG_AFFIX_STORM]);
+    _affixNpcSpell[HLBG_AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.NpcSpell.HeavyRain", _affixNpcSpell[HLBG_AFFIX_HEAVY_RAIN]);
+    _affixNpcSpell[HLBG_AFFIX_FOG] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.NpcSpell.Fog", _affixNpcSpell[HLBG_AFFIX_FOG]);
+
+    _affixWeatherType[HLBG_AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherType.Sunlight", _affixWeatherType[HLBG_AFFIX_SUNLIGHT]);
+    _affixWeatherType[HLBG_AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherType.ClearSkies", _affixWeatherType[HLBG_AFFIX_CLEAR_SKIES]);
+    _affixWeatherType[HLBG_AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherType.GentleBreeze", _affixWeatherType[HLBG_AFFIX_GENTLE_BREEZE]);
+    _affixWeatherType[HLBG_AFFIX_STORM] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherType.Storm", _affixWeatherType[HLBG_AFFIX_STORM]);
+    _affixWeatherType[HLBG_AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherType.HeavyRain", _affixWeatherType[HLBG_AFFIX_HEAVY_RAIN]);
+    _affixWeatherType[HLBG_AFFIX_FOG] = sConfigMgr->GetOption<uint32>(
+        "HinterlandBG.Affix.WeatherType.Fog", _affixWeatherType[HLBG_AFFIX_FOG]);
+
+    _affixWeatherIntensity[HLBG_AFFIX_SUNLIGHT] = sConfigMgr->GetOption<float>(
+        "HinterlandBG.Affix.WeatherIntensity.Sunlight", _affixWeatherIntensity[HLBG_AFFIX_SUNLIGHT]);
+    _affixWeatherIntensity[HLBG_AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<float>(
+        "HinterlandBG.Affix.WeatherIntensity.ClearSkies", _affixWeatherIntensity[HLBG_AFFIX_CLEAR_SKIES]);
+    _affixWeatherIntensity[HLBG_AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<float>(
+        "HinterlandBG.Affix.WeatherIntensity.GentleBreeze", _affixWeatherIntensity[HLBG_AFFIX_GENTLE_BREEZE]);
+    _affixWeatherIntensity[HLBG_AFFIX_STORM] = sConfigMgr->GetOption<float>(
+        "HinterlandBG.Affix.WeatherIntensity.Storm", _affixWeatherIntensity[HLBG_AFFIX_STORM]);
+    _affixWeatherIntensity[HLBG_AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<float>(
+        "HinterlandBG.Affix.WeatherIntensity.HeavyRain", _affixWeatherIntensity[HLBG_AFFIX_HEAVY_RAIN]);
+    _affixWeatherIntensity[HLBG_AFFIX_FOG] = sConfigMgr->GetOption<float>(
+        "HinterlandBG.Affix.WeatherIntensity.Fog", _affixWeatherIntensity[HLBG_AFFIX_FOG]);
 
     std::string killHonorCsv = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.KillHonorValues", "");
     if (!killHonorCsv.empty())
@@ -259,16 +375,21 @@ void BattlegroundHLBG::Init()
 
 void BattlegroundHLBG::ResetMatchState()
 {
+    ClearAffixEffects();
     m_TeamScores[TEAM_ALLIANCE] = _initialResourcesAlliance;
     m_TeamScores[TEAM_HORDE] = _initialResourcesHorde;
     _matchStartEpoch = 0;
     _matchEndEpoch = 0;
     _hudSyncTimerMs = 0;
     _afkCheckTimerMs = 0;
+    _affixRotationTimerMs = 0;
+    _affixNextChangeEpoch = 0;
     _allianceNpcKills = 0;
     _hordeNpcKills = 0;
     _endedByDepletion = false;
     _matchRewardsGranted = false;
+    _matchResultRecorded = false;
+    _activeAffix = HLBG_AFFIX_NONE;
     _afkFlagged.clear();
     _playerLastMove.clear();
     _playerWarnedBeforeTeleport.clear();
@@ -290,6 +411,7 @@ void BattlegroundHLBG::StartingEventCloseDoors()
 {
     ResetMatchState();
     UpdateWorldStatesForAll();
+    SendAffixSnapshotToAll();
     SendStatusSnapshotToAll();
 }
 
@@ -299,7 +421,12 @@ void BattlegroundHLBG::StartingEventOpenDoors()
     _matchEndEpoch = _matchStartEpoch + _matchDurationSeconds;
     _endedByDepletion = false;
     _matchRewardsGranted = false;
+    _matchResultRecorded = false;
     _hudSyncTimerMs = 0;
+    SelectAffixForNewBattle();
+    UpdateWorldStatesForAll();
+    SendAffixSnapshotToAll();
+    SendStatusSnapshotToAll();
 }
 
 void BattlegroundHLBG::AddPlayer(Player* player)
@@ -313,6 +440,7 @@ void BattlegroundHLBG::AddPlayer(Player* player)
     ResetPlayerTracking(player);
     HLBGPlayerStats::OnPlayerEnterBG(player);
     UpdateWorldStatesForPlayer(player);
+    SendAffixSnapshotToPlayer(player);
     SendStatusSnapshotToPlayer(player);
 }
 
@@ -442,14 +570,32 @@ void BattlegroundHLBG::AdminSetResources(TeamId teamId, uint32 amount)
     SyncResourceState();
 }
 
-void BattlegroundHLBG::AdminResetMatch()
+void BattlegroundHLBG::ResetMapActors() const
 {
+    HLZoneResetWorker worker;
+    worker.areaId = HLBG_AREA_ID;
+    VisitBattlegroundMap(this, worker);
+}
+
+void BattlegroundHLBG::AdminResetMatch(bool recordManualReset)
+{
+    if (recordManualReset)
+    {
+        HLBGService::Instance().RecordManualReset(GetMapId(),
+            GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE),
+            GetActiveAffixCode(), GetAffixWeatherType(GetActiveAffixCode()),
+            GetAffixWeatherIntensity(GetActiveAffixCode()),
+            GetCurrentMatchDurationSeconds());
+    }
+
+    ResetMapActors();
     ResetMatchState();
 
     if (GetStatus() == STATUS_IN_PROGRESS)
     {
         _matchStartEpoch = NowSec();
         _matchEndEpoch = _matchStartEpoch + _matchDurationSeconds;
+        SelectAffixForNewBattle();
     }
 
     for (auto const& playerEntry : GetPlayers())
@@ -468,10 +614,12 @@ void BattlegroundHLBG::AdminResetMatch()
             TeleportPlayerToTeamStart(player);
 
         UpdateWorldStatesForPlayer(player);
+        SendAffixSnapshotToPlayer(player);
         SendStatusSnapshotToPlayer(player);
     }
 
     UpdateWorldStatesForAll();
+    SendAffixSnapshotToAll();
     SendStatusSnapshotToAll();
 }
 
@@ -493,6 +641,15 @@ uint32 BattlegroundHLBG::GetTimeRemainingSeconds() const
     }
 
     return 0u;
+}
+
+uint32 BattlegroundHLBG::GetCurrentMatchDurationSeconds() const
+{
+    if (_matchStartEpoch == 0u)
+        return 0u;
+
+    uint32 now = NowSec();
+    return now > _matchStartEpoch ? (now - _matchStartEpoch) : 0u;
 }
 
 uint32 BattlegroundHLBG::GetResources(TeamId teamId) const
@@ -535,6 +692,26 @@ uint32 BattlegroundHLBG::GetNpcKillCount(TeamId teamId) const
     }
 }
 
+uint32 BattlegroundHLBG::GetAffixPlayerSpell(uint8 code) const
+{
+    return code < _affixPlayerSpell.size() ? _affixPlayerSpell[code] : 0u;
+}
+
+uint32 BattlegroundHLBG::GetAffixNpcSpell(uint8 code) const
+{
+    return code < _affixNpcSpell.size() ? _affixNpcSpell[code] : 0u;
+}
+
+uint32 BattlegroundHLBG::GetAffixWeatherType(uint8 code) const
+{
+    return code < _affixWeatherType.size() ? _affixWeatherType[code] : 0u;
+}
+
+float BattlegroundHLBG::GetAffixWeatherIntensity(uint8 code) const
+{
+    return code < _affixWeatherIntensity.size() ? _affixWeatherIntensity[code] : 0.0f;
+}
+
 uint32 BattlegroundHLBG::GetHudEndEpoch() const
 {
     if (GetStatus() == STATUS_WAIT_JOIN)
@@ -561,7 +738,7 @@ void BattlegroundHLBG::FillInitialWorldStates(WorldPackets::WorldState::InitWorl
     uint32 allianceResources = GetResources(TEAM_ALLIANCE);
     uint32 maxValue = std::max(hordeResources, allianceResources);
 
-    packet.Worldstates.reserve(11);
+    packet.Worldstates.reserve(12);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
@@ -573,6 +750,8 @@ void BattlegroundHLBG::FillInitialWorldStates(WorldPackets::WorldState::InitWorl
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+    packet.Worldstates.emplace_back(WORLD_STATE_HL_AFFIX_TEXT,
+        _affixWorldstateEnabled ? _activeAffix : 0u);
 }
 
 void BattlegroundHLBG::UpdateWorldStatesForPlayer(Player* player) const
@@ -602,6 +781,8 @@ void BattlegroundHLBG::UpdateWorldStatesForPlayer(Player* player) const
     player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
     player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
     player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+    player->SendUpdateWorldState(WORLD_STATE_HL_AFFIX_TEXT,
+        _affixWorldstateEnabled ? _activeAffix : 0u);
 }
 
 void BattlegroundHLBG::UpdateWorldStatesForAll() const
@@ -618,6 +799,22 @@ void BattlegroundHLBG::SendHudHidden(Player* player) const
     player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
     DCAddon::HLBG::SendStatus(player, DCAddon::HLBG::STATUS_NONE, 0, 0);
     DCAddon::HLBG::SendResources(player, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    DCAddon::HLBG::SendAffixInfo(player, 0, 0, 0, HLBGService::Instance().GetSeason());
+}
+
+void BattlegroundHLBG::SendAffixSnapshotToPlayer(Player* player) const
+{
+    if (!player)
+        return;
+
+    DCAddon::HLBG::SendAffixInfo(player, _activeAffix, 0, 0,
+        HLBGService::Instance().GetSeason());
+}
+
+void BattlegroundHLBG::SendAffixSnapshotToAll() const
+{
+    for (auto const& playerEntry : GetPlayers())
+        SendAffixSnapshotToPlayer(playerEntry.second);
 }
 
 void BattlegroundHLBG::SendStatusSnapshotToPlayer(Player* player) const
@@ -959,14 +1156,166 @@ void BattlegroundHLBG::RewardMatchOutcome(TeamId winnerTeamId)
     }
 
     if (winnerTeamId == TEAM_ALLIANCE || winnerTeamId == TEAM_HORDE)
-        HLBGPlayerStats::OnTeamWin(winnerTeamId, OutdoorPvPHLBuffZones[0]);
+        HLBGPlayerStats::OnTeamWin(winnerTeamId, HLBG_ZONE_ID);
+
+    if (!_matchResultRecorded)
+    {
+        _matchResultRecorded = true;
+        HLBGService::Instance().RecordWinner(winnerTeamId, GetMapId(),
+            GetResources(TEAM_ALLIANCE), GetResources(TEAM_HORDE),
+            _endedByDepletion ? "depletion" : "tiebreaker", _activeAffix,
+            GetAffixWeatherType(_activeAffix), GetAffixWeatherIntensity(_activeAffix),
+            GetCurrentMatchDurationSeconds());
+    }
 }
 
 void BattlegroundHLBG::EndBattleground(TeamId winnerTeamId)
 {
     RewardMatchOutcome(winnerTeamId);
+    ClearAffixEffects();
+    _activeAffix = HLBG_AFFIX_NONE;
+    _affixNextChangeEpoch = 0u;
+    _affixRotationTimerMs = 0u;
+    UpdateWorldStatesForAll();
+    SendAffixSnapshotToAll();
     SendStatusSnapshotToAll();
     Battleground::EndBattleground(winnerTeamId);
+}
+
+void BattlegroundHLBG::ClearAffixEffects()
+{
+    for (auto const& playerEntry : GetPlayers())
+    {
+        Player* player = playerEntry.second;
+        if (!player)
+            continue;
+
+        for (uint32 spellId : _affixPlayerSpell)
+        {
+            if (spellId)
+                player->RemoveAurasDueToSpell(spellId);
+        }
+    }
+
+    for (uint32 spellId : _affixNpcSpell)
+    {
+        if (!spellId)
+            continue;
+
+        HLBGNpcAuraWorker worker;
+        worker.areaId = HLBG_AREA_ID;
+        worker.spellId = spellId;
+        worker.remove = true;
+        VisitBattlegroundMap(this, worker);
+    }
+}
+
+void BattlegroundHLBG::ApplyAffixEffects()
+{
+    uint32 playerSpellId = GetAffixPlayerSpell(_activeAffix);
+    if (playerSpellId)
+    {
+        for (auto const& playerEntry : GetPlayers())
+        {
+            Player* player = playerEntry.second;
+            if (player && player->IsInWorld())
+                player->CastSpell(player, playerSpellId, true);
+        }
+    }
+
+    uint32 npcSpellId = GetAffixNpcSpell(_activeAffix);
+    if (npcSpellId)
+    {
+        HLBGNpcAuraWorker worker;
+        worker.areaId = HLBG_AREA_ID;
+        worker.spellId = npcSpellId;
+        worker.remove = false;
+        VisitBattlegroundMap(this, worker);
+    }
+
+    if (_affixWeatherEnabled)
+        ApplyAffixWeather();
+
+    if (_affixAnnounce && _activeAffix != HLBG_AFFIX_NONE)
+    {
+        std::ostringstream message;
+        message << "HLBG affix active: " << GetAffixName(_activeAffix);
+        if (_affixWeatherEnabled)
+        {
+            message << " (" << GetWeatherName(GetAffixWeatherType(_activeAffix))
+                << ' ' << static_cast<uint32>(
+                    std::lround(GetAffixWeatherIntensity(_activeAffix) * 100.0f))
+                << "%)";
+        }
+
+        for (auto const& playerEntry : GetPlayers())
+        {
+            Player* player = playerEntry.second;
+            if (player && player->GetSession())
+                ChatHandler(player->GetSession()).SendSysMessage(message.str().c_str());
+        }
+    }
+}
+
+void BattlegroundHLBG::ApplyAffixWeather() const
+{
+    Map* map = sMapMgr->FindMap(GetMapId(), GetInstanceID());
+    auto* battlegroundMap = dynamic_cast<BattlegroundMap*>(map);
+    if (!battlegroundMap)
+        return;
+
+    if (Weather* weather = battlegroundMap->GetOrGenerateZoneDefaultWeather(HLBG_ZONE_ID))
+    {
+        weather->SetWeather(
+            static_cast<WeatherType>(GetAffixWeatherType(_activeAffix)),
+            GetAffixWeatherIntensity(_activeAffix));
+    }
+}
+
+void BattlegroundHLBG::SelectAffixForNewBattle()
+{
+    ClearAffixEffects();
+
+    if (!_affixEnabled)
+    {
+        _activeAffix = HLBG_AFFIX_NONE;
+        _affixRotationTimerMs = 0u;
+        _affixNextChangeEpoch = 0u;
+        return;
+    }
+
+    uint8 nextAffix = HLBG_AFFIX_NONE;
+    if (_affixRandomOnStart)
+    {
+        nextAffix = urand(HLBG_AFFIX_SUNLIGHT, HLBG_AFFIX_FOG);
+    }
+    else
+    {
+        uint8 currentAffix = _activeAffix;
+        if (currentAffix < HLBG_AFFIX_SUNLIGHT || currentAffix > HLBG_AFFIX_FOG)
+            currentAffix = HLBG_AFFIX_FOG;
+
+        nextAffix = currentAffix + 1;
+        if (nextAffix > HLBG_AFFIX_FOG)
+            nextAffix = HLBG_AFFIX_SUNLIGHT;
+    }
+
+    if (nextAffix == _activeAffix)
+        nextAffix = (nextAffix == HLBG_AFFIX_FOG) ? HLBG_AFFIX_SUNLIGHT : (nextAffix + 1);
+
+    _activeAffix = nextAffix;
+    if (_affixPeriodSec > 0u)
+    {
+        _affixRotationTimerMs = _affixPeriodSec * IN_MILLISECONDS;
+        _affixNextChangeEpoch = NowSec() + _affixPeriodSec;
+    }
+    else
+    {
+        _affixRotationTimerMs = 0u;
+        _affixNextChangeEpoch = 0u;
+    }
+
+    ApplyAffixEffects();
 }
 
 void BattlegroundHLBG::PostUpdateImpl(uint32 diff)
@@ -980,6 +1329,21 @@ void BattlegroundHLBG::PostUpdateImpl(uint32 diff)
         {
             EndBattleground(GetPrematureWinner());
             return;
+        }
+
+        if (_affixEnabled && _affixPeriodSec > 0u)
+        {
+            if (_affixRotationTimerMs <= diff)
+            {
+                SelectAffixForNewBattle();
+                UpdateWorldStatesForAll();
+                SendAffixSnapshotToAll();
+            }
+            else
+            {
+                _affixRotationTimerMs -= diff;
+                _affixNextChangeEpoch = NowSec() + (_affixRotationTimerMs / IN_MILLISECONDS);
+            }
         }
 
         TickAfk(diff);

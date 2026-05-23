@@ -3,12 +3,10 @@
 #include "Chat.h"
 #include "CommandScript.h"
 #include <string>
-#include "Group.h"
-#include "GroupMgr.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
-#include "OutdoorPvP/OutdoorPvPMgr.h"
-#include "OutdoorPvP/OutdoorPvPHL.h"
 #include "../HinterlandBG/BattlegroundHLBG.h"
+#include "../HinterlandBG/HLBGService.h"
 #include "../HinterlandBG/hlbg_constants.h"
 #include <sstream>
 #include <algorithm>
@@ -19,11 +17,9 @@
  * hlbg_commandscript
  * ------------------
  * Provides GM/admin commands to inspect and manage HLBG runtime state.
- * When a live BattlegroundHLBG instance exists, commands prefer that instance;
- * otherwise they fall back to the legacy OutdoorPvPHL controller.
  *
  * Commands (quick reference):
- *   .hlbg status               Show timer/resources + raid groups
+ *   .hlbg status               Show timer/resources + player counts
  *   .hlbg get <alliance|horde> Show resources for a team
  *   .hlbg set <team> <amt>     Set resources for a team (GM-only); action is audited
  *   .hlbg reset                Force-reset the Hinterland match; action is audited
@@ -35,9 +31,8 @@
  * lightweight operational audit trails; maintainers may redirect or persist
  * these messages to a centralized logging system if desired.
  *
- * Note: On timer expiry the match auto-resets (teleport to start GYs, then respawn and HUD refresh) and restarts. If you’d like a
- * tiebreaker or special rewards for equal resources at expiry, see
- * `OutdoorPvPHL.cpp` for where to inject that logic.
+ * Note: On timer expiry the battleground resolves through the BattlegroundHLBG
+ * implementation.
  */
 
 using namespace Acore::ChatCommands;
@@ -54,14 +49,6 @@ bool HandleHLBGQueueStatus(ChatHandler* handler, char const* args);
 
 namespace
 {
-    OutdoorPvPHL* GetOutdoorHLBGController()
-    {
-        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
-            return dynamic_cast<OutdoorPvPHL*>(out);
-
-        return nullptr;
-    }
-
     BattlegroundHLBG* GetPlayerHLBGBattleground(Player* player)
     {
         if (!player)
@@ -80,22 +67,11 @@ namespace
         if (BattlegroundHLBG* battleground = GetPlayerHLBGBattleground(player))
             return battleground;
 
-        BattlegroundHLBG* selected = nullptr;
+        BattlegroundHLBG* selected = HLBGService::Instance().GetActiveBattleground(player);
         uint32 matches = 0;
-
         for (Battleground const* battleground : sBattlegroundMgr->GetActiveBattlegrounds())
-        {
-            if (!battleground || battleground->GetBgTypeID() != BATTLEGROUND_HLBG)
-                continue;
-
-            auto* hlbg = const_cast<BattlegroundHLBG*>(dynamic_cast<BattlegroundHLBG const*>(battleground));
-            if (!hlbg)
-                continue;
-
-            ++matches;
-            if (!selected || hlbg->GetStatus() == STATUS_IN_PROGRESS)
-                selected = hlbg;
-        }
+            if (battleground && battleground->GetBgTypeID(true) == BATTLEGROUND_HLBG)
+                ++matches;
 
         if (matches > 1 && handler && selected)
         {
@@ -248,19 +224,14 @@ public:
             std::transform(v.begin(), v.end(), v.begin(), ::tolower);
             set = (v == "on" || v == "1" || v == "true");
         }
-        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
-        {
-            hl->SetStatsIncludeManualResets(set);
-            handler->PSendSysMessage("Stats will {}include manual resets.", set ? "" : "not ");
-            return true;
-        }
-        handler->PSendSysMessage("Hinterland BG instance not found.");
-        return false;
+        HLBGService::Instance().SetStatsIncludeManualResets(set);
+        handler->PSendSysMessage("Stats will {}include manual resets.", set ? "" : "not ");
+        return true;
     }
 
     static bool HandleHLBGStatusCommand(ChatHandler* handler, char const* /*args*/)
     {
-        // Show current match timer/resources and active raid groups for both factions.
+        // Show current match timer/resources and active player counts for both factions.
         // This command works from anywhere (no zone restriction).
 
     handler->PSendSysMessage("|cffffd700Hinterland BG status:|r");
@@ -286,80 +257,31 @@ public:
                     bg->GetPlayerHKDelta(admin));
             }
 
-            handler->PSendSysMessage("  Raid groups:");
-            for (TeamId teamId : { TEAM_ALLIANCE, TEAM_HORDE })
-            {
-                Group* raid = bg->GetBgRaid(teamId);
-                if (!raid)
-                {
-                    handler->PSendSysMessage("    {}: (no battleground raid)", GetTeamLabel(teamId));
-                    continue;
-                }
-
-                handler->PSendSysMessage("    {}: group={} members={}", GetTeamLabel(teamId), raid->GetGUID().GetCounter(), raid->GetMembersCount());
-            }
-
             return true;
         }
 
-        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
+        BattlegroundQueue& queue = sBattlegroundMgr->GetBattlegroundQueue(BATTLEGROUND_QUEUE_HLBG);
+        uint32 allianceQueued = 0;
+        uint32 hordeQueued = 0;
+        for (auto const& queuedPlayer : queue.m_QueuedPlayers)
         {
-            uint32 secs = hl->GetTimeRemainingSeconds();
-            uint32 min = secs / 60u;
-            uint32 sec = secs % 60u;
-            uint32 a = hl->GetResources(TEAM_ALLIANCE);
-            uint32 h = hl->GetResources(TEAM_HORDE);
-            handler->PSendSysMessage("  Mode: outdoor-controller fallback");
-            handler->PSendSysMessage("  Time remaining: {:02}:{:02}", min, sec);
-            handler->PSendSysMessage("  Resources: |cff1e90ffAlliance|r={}, |cffff0000Horde|r={}", a, h);
-            // Show current affix for clarity regardless of announcement toggles
-            uint8 aff = hl->GetActiveAffixCode();
-            if (aff > 0)
-            {
-                const char* aname = HinterlandBGConstants::GetAffixName(aff);
-                handler->PSendSysMessage("  Affix: {}", aname);
-            }
-        }
-        else
-        {
-            handler->PSendSysMessage("  (Hinterland controller not active)");
-        }
-
-        handler->PSendSysMessage("  Raid groups:");
-
-        for (uint8 team = TEAM_ALLIANCE; team <= TEAM_HORDE; ++team)
-        {
-            std::string teamName = (team == TEAM_ALLIANCE) ? "|cff1e90ffAlliance|r" : "|cffff0000Horde|r";
-            handler->PSendSysMessage("    Team: {}", teamName);
-
-            // Query the OutdoorPvP manager for the Hinterland instance.
-            // We look it up by the buff-zone constant exported from
-            // `OutdoorPvPHL.h` (the script that implements Hinterland's logic).
-            // The dynamic_cast ensures we only call HL-specific helpers when
-            // the zone script is present and matches the expected type.
-            std::vector<ObjectGuid> const* groupsPtr = nullptr;
-            if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
-            {
-                groupsPtr = &hl->GetBattlegroundGroupGUIDs((TeamId)team);
-            }
-
-            if (!groupsPtr || groupsPtr->empty())
-            {
-                handler->PSendSysMessage("      (no battleground raid groups)");
+            GroupQueueInfo* info = queuedPlayer.second;
+            if (!info || info->BgTypeId != BATTLEGROUND_HLBG)
                 continue;
-            }
 
-            for (auto const& gid : *groupsPtr)
-            {
-                Group* g = sGroupMgr->GetGroupByGUID(gid.GetCounter());
-                if (!g)
-                {
-                    handler->PSendSysMessage("      Group {}: (stale)", gid.GetCounter());
-                    continue;
-                }
-                    handler->PSendSysMessage("      Group {}: members={}", g->GetGUID().GetCounter(), g->GetMembersCount());
-            }
+            if (info->RealTeamID == TEAM_ALLIANCE)
+                ++allianceQueued;
+            else if (info->RealTeamID == TEAM_HORDE)
+                ++hordeQueued;
         }
+
+        handler->PSendSysMessage("  Mode: no active battleground");
+        handler->PSendSysMessage("  Queue: {}={}, {}={}, Total={}",
+            GetTeamLabel(TEAM_ALLIANCE), allianceQueued,
+            GetTeamLabel(TEAM_HORDE), hordeQueued,
+            allianceQueued + hordeQueued);
+        TeamId lastWinner = HLBGService::Instance().GetLastWinnerTeamId();
+        handler->PSendSysMessage("  Last winner: {}", GetTeamLabel(lastWinner));
         return true;
     }
 
@@ -372,14 +294,29 @@ public:
         if (!admin)
             return false;
 
-        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
+        BattlegroundQueue& queue = sBattlegroundMgr->GetBattlegroundQueue(BATTLEGROUND_QUEUE_HLBG);
+        handler->PSendSysMessage("HLBG queue:");
+
+        uint32 count = 0;
+        for (auto const& queuedPlayer : queue.m_QueuedPlayers)
         {
-            if (hl->HandleAdminCommand(admin, "queue_admin", "list"))
-                return true;
+            GroupQueueInfo* info = queuedPlayer.second;
+            if (!info || info->BgTypeId != BATTLEGROUND_HLBG)
+                continue;
+
+            ++count;
+            Player* queued = ObjectAccessor::FindConnectedPlayer(queuedPlayer.first);
+            char const* teamLabel = GetTeamLabel(info->RealTeamID);
+            if (queued)
+                handler->PSendSysMessage("  {} {} ({})", count, queued->GetName(), teamLabel);
+            else
+                handler->PSendSysMessage("  {} GUID:{} ({})", count, queuedPlayer.first.GetCounter(), teamLabel);
         }
 
-        handler->PSendSysMessage("Hinterland BG instance not found.");
-        return false;
+        if (count == 0)
+            handler->PSendSysMessage("  (empty)");
+
+        return true;
     }
 
     static bool HandleHLBGGetCommand(ChatHandler* handler, char const* args)
@@ -404,13 +341,14 @@ public:
             return false;
         }
 
-        uint32 res = 0;
-        if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
-            res = bg->GetResources(tid);
-        else if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
+        BattlegroundHLBG* bg = ResolveHLBGBattleground(handler);
+        if (!bg)
         {
-            res = hl->GetResources(tid);
+            handler->PSendSysMessage("No active HLBG battleground instance found.");
+            return false;
         }
+
+        uint32 res = bg->GetResources(tid);
 
         handler->PSendSysMessage("{} resources: {}", GetTeamLabel(tid), res);
         return true;
@@ -424,8 +362,8 @@ public:
         // Inputs: `args` parsed into team and numeric amount. No further
         // validation is performed here (amount is taken as an unsigned 32-bit
         // value). Consider clamping or validating ranges if needed.
-        // Outputs: sets the resource counter via the `OutdoorPvPHL` API and
-        // emits an audit log line under the `admin.hlbg` category.
+        // Outputs: sets the live battleground resource counter and emits an
+        // audit log line under the `admin.hlbg` category.
         // Error modes: returns false / prints usage when args are missing.
 
         if (!args || !*args)
@@ -460,16 +398,8 @@ public:
             return true;
         }
 
-        if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
-        {
-            prev = hl->GetResources(tid);
-            hl->SetResources(tid, amount);
-        }
-
-        if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-            LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) set {} resources from {} -> {}", admin->GetName(), admin->GetGUID().GetCounter(), teamStr, prev, amount);
-        handler->PSendSysMessage("Set {} resources to {}", GetTeamLabel(tid), amount);
-        return true;
+        handler->PSendSysMessage("No active HLBG battleground instance found.");
+        return false;
     }
 
     static bool HandleHLBGResetCommand(ChatHandler* handler, char const* /*args*/)
@@ -478,8 +408,8 @@ public:
         // powerful operation and is therefore logged to `admin.hlbg`.
         //
         // Usage: .hlbg reset
-        // Inputs: no args; acts on the Hinterland OutdoorPvP instance if present.
-        // Outputs: calls `ForceReset()` on the HL instance and logs the action.
+        // Inputs: no args; acts on the active HLBG battleground instance.
+        // Outputs: resets the live battleground instance and logs the action.
 
 	if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
 	{
@@ -490,17 +420,6 @@ public:
 		return true;
 	}
 
-	if (OutdoorPvPHL* hl = GetOutdoorHLBGController())
-        {
-            hl->ForceReset();
-            // Teleport players back to start positions configured in the OutdoorPvP script
-            hl->TeleportPlayersToStart();
-            // Audit log
-            if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-                LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced a Hinterland BG reset", admin->GetName(), admin->GetGUID().GetCounter());
-            handler->PSendSysMessage("Hinterland BG forced reset executed.");
-            return true;
-        }
         handler->PSendSysMessage("Hinterland BG instance not found.");
         return false;
     }
@@ -578,30 +497,30 @@ public:
 
     static bool HandleHLBGAffixCommand(ChatHandler* handler, char const* /*args*/)
     {
-        OutdoorPvPHL* hl = GetOutdoorHLBGController();
-        if (!hl)
+        BattlegroundHLBG* bg = ResolveHLBGBattleground(handler);
+        if (!bg)
         {
-            handler->PSendSysMessage("Hinterland BG instance not found.");
+            handler->PSendSysMessage("No active HLBG battleground instance found.");
             return false;
         }
 
-        uint8 code = hl->GetActiveAffixCode();
+        uint8 code = bg->GetActiveAffixCode();
         const char* name = HinterlandBGConstants::GetAffixName(code);
         handler->PSendSysMessage("|cffffd700Hinterland BG affix:|r {} ({})", name, (unsigned)code);
         handler->PSendSysMessage("  Enabled: {}  Weather: {}  Worldstate: {}  Announce: {}",
-            hl->IsAffixEnabled()?"on":"off",
-            hl->IsAffixWeatherEnabled()?"on":"off",
-            hl->IsAffixWorldstateEnabled()?"on":"off",
-            hl->IsAffixAnnounceEnabled()?"on":"off");
+            bg->IsAffixEnabled()?"on":"off",
+            bg->IsAffixWeatherEnabled()?"on":"off",
+            bg->IsAffixWorldstateEnabled()?"on":"off",
+            bg->IsAffixAnnounceEnabled()?"on":"off");
         handler->PSendSysMessage("  Random on start: {}  Periodic rotation: {}s  Next change at epoch: {}",
-            hl->IsAffixRandomOnStart()?"on":"off", (unsigned)hl->GetAffixPeriodSec(), (unsigned)hl->GetAffixNextChangeEpoch());
+            bg->IsAffixRandomOnStart()?"on":"off", (unsigned)bg->GetAffixPeriodSec(), (unsigned)bg->GetAffixNextChangeEpoch());
         // Show configured spells and weather for the current code
         if (code > 0)
         {
-            uint32 pspell = hl->GetAffixPlayerSpell(code);
-            uint32 nspell = hl->GetAffixNpcSpell(code);
-            uint32 wtype  = hl->GetAffixWeatherType(code);
-            float  wint   = hl->GetAffixWeatherIntensity(code);
+            uint32 pspell = bg->GetAffixPlayerSpell(code);
+            uint32 nspell = bg->GetAffixNpcSpell(code);
+            uint32 wtype  = bg->GetAffixWeatherType(code);
+            float  wint   = bg->GetAffixWeatherIntensity(code);
             // Friendly weather label (0 Fine, 1 Rain, 2 Snow, 3 Storm); default intensity 0.50 when unset
             const char* wname = "Fine";
             switch (wtype)

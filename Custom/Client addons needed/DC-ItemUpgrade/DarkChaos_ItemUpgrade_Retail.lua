@@ -170,34 +170,6 @@ local function GetUpgradedItemLevel(baseLevel, level, tier)
 	return baseLevel + GetItemLevelBonus(level, tier);
 end
 
-local function CopyCloneEntries(source)
-	if not source then
-		return nil;
-	end
-	local copy = {};
-	for level, entry in pairs(source) do
-		copy[level] = entry;
-	end
-	return copy;
-end
-
-local function ParseCloneMap(mapString)
-	if not mapString or mapString == "" then
-		return nil;
-	end
-	local entries = {};
-	for pair in string.gmatch(mapString, "[^,;]+") do
-		local levelStr, entryStr = string.match(pair, "%s*(%d+)%-(%d+)%s*");
-		if levelStr and entryStr then
-			entries[tonumber(levelStr)] = tonumber(entryStr);
-		end
-	end
-	if next(entries) then
-		return entries;
-	end
-	return nil;
-end
-
 local function GetCanonicalItemEntry(item)
 	if not item then
 		return nil;
@@ -214,38 +186,12 @@ local function GetCanonicalItemEntry(item)
 	return nil;
 end
 
-local function GetCloneEntryForLevel(item, level)
-	if not item then
-		return nil;
-	end
-	level = math.floor(math.max(tonumber(level) or 0, 0));
-	if item.cloneEntries and item.cloneEntries[level] then
-		return item.cloneEntries[level];
-	end
-	if level == 0 then
-		return GetCanonicalItemEntry(item);
-	end
-	return nil;
-end
-
-local function ResolveItemLevelFromClone(item, level, fallback)
-	local entry = GetCloneEntryForLevel(item, level);
-	if entry then
-		local infoLevel = select(4, GetItemInfo(entry));
-		if infoLevel then
-			return infoLevel;
-		end
-	end
-	return fallback;
-end
-
 local function ResolveBaseItemLevel(item)
 	if not item then
 		return 0;
 	end
 
-	local baseGuess = item.baseLevel or item.level or 0;
-	return ResolveItemLevelFromClone(item, 0, baseGuess);
+	return item.baseLevel or item.level or 0;
 end
 
 local function ResolveUpgradeItemLevel(item, upgradeLevel, baseLevel)
@@ -254,8 +200,7 @@ local function ResolveUpgradeItemLevel(item, upgradeLevel, baseLevel)
 	end
 
 	baseLevel = baseLevel or ResolveBaseItemLevel(item);
-	local computed = GetUpgradedItemLevel(baseLevel, upgradeLevel, item.tier);
-	return ResolveItemLevelFromClone(item, upgradeLevel, computed);
+	return GetUpgradedItemLevel(baseLevel, upgradeLevel, item.tier);
 end
 
 --[[=====================================================
@@ -1487,69 +1432,6 @@ function DC.ProcessBatchQueries()
 		DarkChaos_ItemUpgrade_StartNextQuery();
 	end
 end
--- Create simulated item link for upgrade preview
-function DC.CreateUpgradePreviewItemLink(baseItemLink, targetUpgradeLevel, tier)
-	if not baseItemLink or not targetUpgradeLevel then
-		return baseItemLink;
-	end
-	
-	if DC.currentItem then
-		local cloneEntry = GetCloneEntryForLevel(DC.currentItem, targetUpgradeLevel);
-		if cloneEntry then
-			local cloneLink = select(2, GetItemInfo(cloneEntry));
-			if cloneLink and cloneLink ~= "" then
-				return cloneLink;
-			end
-			return "item:" .. tostring(cloneEntry);
-		end
-	end
-
-	-- Parse the base item link
-	local itemString = baseItemLink:match("item:([^|]+)");
-	if not itemString then
-		return baseItemLink;
-	end
-	
-	local parts = {};
-	for part in itemString:gmatch("([^:]+)") do
-		table.insert(parts, part);
-	end
-	
-	if #parts < 9 then
-		return baseItemLink; -- Not enough parts to modify
-	end
-	
-	-- Calculate upgraded item level using shared helpers
-	local currentItem = DC.currentItem;
-	local tierId = ClampTier(tier or (currentItem and currentItem.tier) or 1);
-	local baseItemLevel = 0;
-	if currentItem then
-		local observedLevel = currentItem.upgradedLevel or currentItem.level or 0;
-		local deduction = GetItemLevelBonus(currentItem.currentUpgrade or 0, tierId);
-		local derivedBase = currentItem.baseLevel or (observedLevel - deduction);
-		baseItemLevel = math.max(0, math.floor(derivedBase + 0.5));
-	else
-		baseItemLevel = tonumber(parts[8]) or 0;
-	end
-
-	local upgradedItemLevel = GetUpgradedItemLevel(baseItemLevel, targetUpgradeLevel, tierId);
-	upgradedItemLevel = math.floor(upgradedItemLevel + 0.5);
-	
-	-- Create new item string with upgraded item level
-	local newItemString = string.format("%s:%s:%s:%s:%s:%s:%s:%d:%s",
-		parts[1], -- itemID
-		parts[2] or "0", -- enchant
-		parts[3] or "0", -- gem1
-		parts[4] or "0", -- gem2
-		parts[5] or "0", -- gem3
-		parts[6] or "0", -- suffix
-		parts[7] or "0", -- unique
-		upgradedItemLevel, -- ilevel (modified)
-		parts[9] or "0" -- upgrade level
-	);
-	
-	return "item:" .. newItemString;
-end
 
 -- Helper function to get max upgrade level for a specific tier
 function DC.GetMaxUpgradeLevelForTier(tier)
@@ -1803,9 +1685,6 @@ local function DarkChaos_ItemUpgrade_TooltipHasUpgradeLine(tooltip)
 
 	return false;
 end
-
-local DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines;
-
 local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	if not tooltip or not data then
 		return;
@@ -1856,8 +1735,6 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	if maxUpgrade <= 0 and current <= 0 then
 		return;
 	end
-	local statMultiplier = data.statMultiplier or 1.0;
-	local totalBonus = (statMultiplier - 1.0) * 100;
 	local currentEntry = data.currentEntry or data.baseEntry or 0;
 	-- tier is computed above
 	local HEIRLOOM_SHIRT_ENTRY = 300365;
@@ -1865,13 +1742,6 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 
 	tooltip.__dcUpgradeProcessing = true;
 	tooltip:AddLine(" ");
-	
-	-- Only show Entry if it differs from the base item ID (upgraded items have different entry)
-	-- Item ID is already shown by Core.lua, so we skip redundant display
-	local baseItemId = data.baseEntry or 0;
-	if currentEntry > 0 and currentEntry ~= baseItemId and baseItemId > 0 then
-		tooltip:AddLine(string.format("|cff888888Upgraded Entry: %d|r", currentEntry));
-	end
 	
 	-- Show upgrade info if item has upgrades
 	if current > 0 then
@@ -1895,17 +1765,6 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 			else
 				tooltip:AddLine(string.format("|cff71d5ffUpgraded Item Level: %d|r", upgradedItemLevel));
 			end
-		end
-
-		local previewLines = DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines
-			and DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines(itemLink, data);
-		if previewLines and #previewLines > 0 then
-			tooltip:AddLine("|cff71d5ffUpgraded Values|r");
-			for _, line in ipairs(previewLines) do
-				tooltip:AddLine(line);
-			end
-		elseif totalBonus > 0 then
-			tooltip:AddLine(string.format("|cff00ff00+%.1f%% All Stats|r", totalBonus));
 		end
 		
 		-- For heirlooms, show the installed stat package
@@ -2196,14 +2055,6 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 		item.currentEntry = itemEntry;
 		item.itemID = itemEntry;
 	end
-	if data.cloneEntries then
-		item.cloneEntries = {};
-		for level, entry in pairs(data.cloneEntries) do
-			item.cloneEntries[level] = entry;
-		end
-	else
-		item.cloneEntries = nil;
-	end
 	if data.serverBag then
 		item.serverBag = data.serverBag;
 	end
@@ -2227,21 +2078,7 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	if current < (item.maxUpgrade or DC.MAX_UPGRADE_LEVEL or 15) then
 		nextLevel = GetUpgradedItemLevel(baseLevel, current + 1, item.tier);
 	end
-	local currentCloneEntry = GetCloneEntryForLevel(item, current);
-	if currentCloneEntry then
-		local infoLevel = select(4, GetItemInfo(currentCloneEntry));
-		if infoLevel then
-			currentLevel = infoLevel;
-		end
-	end
 	if nextLevel then
-		local nextCloneEntry = GetCloneEntryForLevel(item, current + 1);
-		if nextCloneEntry then
-			local infoLevel = select(4, GetItemInfo(nextCloneEntry));
-			if infoLevel then
-				nextLevel = infoLevel;
-			end
-		end
 		item.ilevelStep = math.max(0, nextLevel - currentLevel);
 	else
 		item.ilevelStep = 0;
@@ -2303,6 +2140,26 @@ local function DarkChaos_ItemUpgrade_ResetTooltip(tooltip)
 	end
 end
 
+local function DarkChaos_ItemUpgrade_ResolveHeirloomTooltipCache(serverBag, serverSlot, cached)
+	if cached and cached.heirloomPackageId and cached.heirloomPackageId > 0 then
+		return cached;
+	end
+
+	local resolved = DarkChaos_ItemUpgrade_GetCachedDataForLocation(serverBag, serverSlot);
+	if resolved and resolved.heirloomPackageId and resolved.heirloomPackageId > 0 then
+		return resolved;
+	end
+
+	local locationKey = BuildLocationKey(serverBag, serverSlot);
+	if DC.currentItem and DC.currentItem.locationKey == locationKey
+			and DC.currentItem.heirloomPackageId
+			and DC.currentItem.heirloomPackageId > 0 then
+		return DC.currentItem;
+	end
+
+	return cached or resolved;
+end
+
 local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBag, serverSlot, cached, allowChatFallback)
 	if not itemLink or serverBag == nil or serverSlot == nil then
 		return false;
@@ -2313,7 +2170,10 @@ local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBa
 		return false;
 	end
 
-	if cached and cached.heirloomPackageId and cached.heirloomPackageId > 0 then
+	local resolvedCache = DarkChaos_ItemUpgrade_ResolveHeirloomTooltipCache(
+		serverBag, serverSlot, cached);
+	if resolvedCache and resolvedCache.heirloomPackageId
+			and resolvedCache.heirloomPackageId > 0 then
 		return false;
 	end
 
@@ -2354,7 +2214,6 @@ function DarkChaos_ItemUpgrade_OnTooltipSetBagItem(tooltip, bag, slot)
 	local serverBag = GetServerBagFromClient(bag);
 	local serverSlot = GetServerSlotFromClient(bag, slot);
 	if DarkChaos_ItemUpgrade_ShouldUseNativeTooltipReplacement() then
-		DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, nil);
 		return;
 	end
 
@@ -2397,7 +2256,6 @@ function DarkChaos_ItemUpgrade_OnTooltipSetInventoryItem(tooltip, unit, slot)
 	local serverBag = GetServerBagFromClient(bag);
 	local serverSlot = GetServerSlotFromClient(bag, bagSlot);
 	if DarkChaos_ItemUpgrade_ShouldUseNativeTooltipReplacement() then
-		DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, nil);
 		return;
 	end
 
@@ -2661,26 +2519,6 @@ function DarkChaos_ItemUpgrade_OnTooltipSetInspectItem(tooltip, unit, slot)
 			return;
 		end
 	end
-	
-	-- Also check clone entries map for the item
-	for guid, data in pairs(DC.itemUpgradeCache or {}) do
-		if data.cloneEntries then
-			for level, entryId in pairs(data.cloneEntries) do
-				if entryId == itemId then
-					-- Found it - create a synthetic data object for display
-					local displayData = {
-						currentUpgrade = level,
-						maxUpgrade = data.maxUpgrade,
-						baseItemLevel = data.baseItemLevel,
-						upgradedItemLevel = data.baseItemLevel + (level * 2), -- Estimate
-						statMultiplier = 1 + (level * 0.025), -- Estimate based on level
-					};
-					DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, displayData);
-					return;
-				end
-			end
-		end
-	end
 end
 
 -- Handle hyperlink tooltips (item links in chat) - must be defined before hooks
@@ -2746,96 +2584,42 @@ local function GetItemTooltipInfo(link, locationKey)
 	for i = 2, scanTooltip:NumLines() do
 		local text = GetTooltipLine(i);
 		if text then
-			-- Try to match various formats: "Upgrade Level: 0/6", "Upgrade: 0/6", "Upgrade Rank: 0/6"
-			local cur, max = text:match("[Uu]pgrade.-(%d+)%s*/%s*(%d+)");
-			if cur and max then
-				upgradeLevel = tonumber(cur) or upgradeLevel;
-				maxLevel = tonumber(max) or maxLevel;
-				foundUpgrade = true;
-				break;
+		if not item.link then
+			return nil;
+		end
+
+		local currentStats = GetItemStatsSafe(item.link);
+		if not currentStats or not next(currentStats) then
+			return nil;
+		end
+
+		local currentMultiplier = GetStatMultiplierForLevel(currentUpgrade, tier);
+		if currentMultiplier <= 0 then
+			currentMultiplier = 1;
+		end
+		local previewMultiplier = GetStatMultiplierForLevel(targetLevel, tier);
+
+		local comparison = {};
+		for statKey, value in pairs(currentStats) do
+			if value ~= 0 and not ShouldSkipStatKey(statKey) then
+				local label = ResolveStatLabel(statKey);
+				if label then
+					local baseValue = RoundStatValue((value or 0) / math.max(currentMultiplier, 0.0001));
+					local currentValue = RoundStatValue(baseValue * currentMultiplier);
+					local previewValue = RoundStatValue(baseValue * previewMultiplier);
+					local diff = previewValue - currentValue;
+					if currentValue ~= 0 or previewValue ~= 0 then
+						comparison[#comparison + 1] = {
+							key = statKey,
+							label = label,
+							current = currentValue,
+							preview = previewValue,
+							diff = diff,
+						};
+					end
+				end
 			end
 		end
-	end
-
-	local info = {
-		ilevel = itemLevel,
-		upgrade = upgradeLevel,
-		max = maxLevel,
-		found = foundUpgrade,
-		timestamp = now,
-	};
-
-	DC.itemTooltipCache[cacheKey] = info;
-	return info;
-end
-
--- 3.3.5a Compatibility Helper
-local function SetButtonEnabled(button, enabled)
-	if enabled then
-		button:Enable();
-	else
-		button:Disable();
-	end
-end
-
--- 3.3.5a: SetItemButtonQuality replacement
-local function SetItemButtonQuality_335(button, quality)
-	local color = DC.ITEM_QUALITY_COLORS[quality] or DC.ITEM_QUALITY_COLORS[1];
-	if color then
-		local borderTexture = _G[button:GetName().."NormalTexture"];
-		if borderTexture then
-			borderTexture:SetVertexColor(color.r, color.g, color.b);
-		end
-	end
-end
-
-local function RefreshCurrentItemMetadata(link)
-	if not (DC.currentItem and link) then
-		return;
-	end
-
-	if link ~= DC.currentItem.link then
-		DC.currentItem.link = link;
-		local name, _, quality, level = GetItemInfo(link);
-		if name then
-			DC.currentItem.name = name;
-		end
-		if quality then
-			DC.currentItem.quality = quality;
-		end
-		if level then
-			DC.currentItem.baseLevel = level;
-		end
-		local itemID = link:match("item:(%d+)");
-		if itemID then
-			DC.currentItem.itemID = tonumber(itemID) or DC.currentItem.itemID;
-		end
-	end
-end
-
-local function RoundStatValue(value)
-	if not value then
-		return 0;
-	end
-	if value >= 0 then
-		return math.floor(value + 0.5);
-	end
-	return math.ceil(value - 0.5);
-end
-
-local function EnsureHiddenTooltip()
-	if DC.hiddenTooltip then
-		return DC.hiddenTooltip;
-	end
-	local tooltip = CreateFrame("GameTooltip", "DarkChaosItemUpgradeHiddenTooltip", UIParent, "GameTooltipTemplate");
-	tooltip:SetOwner(UIParent, "ANCHOR_NONE");
-	tooltip:Hide();
-	DC.hiddenTooltip = tooltip;
-	return tooltip;
-end
-
-local function GetItemStatsSafe(link)
-	if not link or type(GetItemStats) ~= "function" then
 		return nil;
 	end
 	local stats = GetItemStats(link);
@@ -3001,92 +2785,38 @@ local function DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel)
 
 	local currentUpgrade = item.currentUpgrade or 0;
 	local tier = item.tier or 1;
-	local comparison;
-
-	local currentEntry = GetCloneEntryForLevel(item, currentUpgrade);
-	local targetEntry = GetCloneEntryForLevel(item, targetLevel);
-
-	if currentEntry and targetEntry then
-		GetItemInfo(currentEntry);
-		GetItemInfo(targetEntry);
-		local currentLink = item.link;
-		if not currentLink or not string.find(currentLink, "item:" .. currentEntry, 1, true) then
-			currentLink = "item:" .. tostring(currentEntry);
-		end
-		local previewLink = "item:" .. tostring(targetEntry);
-		local currentStats = GetItemStatsSafe(currentLink);
-		local previewStats = GetItemStatsSafe(previewLink);
-		if currentStats and previewStats then
-			local keys = {};
-			for statKey, value in pairs(currentStats) do
-				if value ~= 0 and not ShouldSkipStatKey(statKey) then
-					keys[statKey] = true;
-				end
-			end
-			for statKey, value in pairs(previewStats) do
-				if value ~= 0 and not ShouldSkipStatKey(statKey) then
-					keys[statKey] = true;
-				end
-			end
-
-			comparison = {};
-			for statKey in pairs(keys) do
-				local label = ResolveStatLabel(statKey);
-				if label then
-					local currentValue = currentStats[statKey] or 0;
-					local previewValue = previewStats[statKey] or 0;
-					local diff = previewValue - currentValue;
-					if math.abs(currentValue) > 0.0005 or math.abs(previewValue) > 0.0005 then
-						comparison[#comparison + 1] = {
-							key = statKey,
-							label = label,
-							current = currentValue,
-							preview = previewValue,
-							diff = diff,
-						};
-					end
-				end
-			end
-
-			if #comparison == 0 then
-				comparison = nil;
-			end
-		end
+	if not item.link then
+		return nil;
 	end
 
-	if not comparison then
-		if not item.link then
-			return nil;
-		end
-		local currentStats = GetItemStatsSafe(item.link);
-		if not currentStats or not next(currentStats) then
-			return nil;
-		end
+	local currentStats = GetItemStatsSafe(item.link);
+	if not currentStats or not next(currentStats) then
+		return nil;
+	end
 
-		local currentMultiplier = GetStatMultiplierForLevel(currentUpgrade, tier);
-		if currentMultiplier <= 0 then
-			currentMultiplier = 1;
-		end
-		local previewMultiplier = GetStatMultiplierForLevel(targetLevel, tier);
+	local currentMultiplier = GetStatMultiplierForLevel(currentUpgrade, tier);
+	if currentMultiplier <= 0 then
+		currentMultiplier = 1;
+	end
+	local previewMultiplier = GetStatMultiplierForLevel(targetLevel, tier);
 
-		comparison = {};
-		for statKey, value in pairs(currentStats) do
-			if value ~= 0 and not ShouldSkipStatKey(statKey) then
-				local label = ResolveStatLabel(statKey);
-				if label then
-					local baseValue = RoundStatValue((value or 0) / math.max(currentMultiplier, 0.0001));
-					local currentValue = RoundStatValue(baseValue * currentMultiplier);
-					local previewValue = RoundStatValue(baseValue * previewMultiplier);
-					local diff = previewValue - currentValue;
-					if currentValue ~= 0 or previewValue ~= 0 then
-						comparison[#comparison + 1] = {
-							key = statKey,
-							label = label,
-							current = currentValue,
-							preview = previewValue,
-							diff = diff,
-						};
-					end
+	local comparison = {};
+	for statKey, value in pairs(currentStats) do
+		if value ~= 0 and not ShouldSkipStatKey(statKey) then
+			local label = ResolveStatLabel(statKey);
+			if label then
+				local baseValue = RoundStatValue((value or 0) / math.max(currentMultiplier, 0.0001));
+				local currentValue = RoundStatValue(baseValue * currentMultiplier);
+				local previewValue = RoundStatValue(baseValue * previewMultiplier);
+				local diff = previewValue - currentValue;
+				if currentValue ~= 0 or previewValue ~= 0 then
+					comparison[#comparison + 1] = {
+						key = statKey,
+						label = label,
+						current = currentValue,
+						preview = previewValue,
+						diff = diff,
+					};
 				end
 			end
 		end
@@ -3106,77 +2836,6 @@ local function DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel)
 	end);
 
 	return comparison;
-end
-
-DarkChaos_ItemUpgrade_BuildTooltipUpgradePreviewLines = function(itemLink, data)
-	if not itemLink or not data then
-		return nil;
-	end
-
-	local statMultiplier = tonumber(data.statMultiplier) or 1.0;
-	if statMultiplier <= 1.0 then
-		return nil;
-	end
-
-	local stats = GetItemStatsSafe(itemLink);
-	if not stats or not next(stats) then
-		return nil;
-	end
-
-	local comparison = {};
-	for statKey, value in pairs(stats) do
-		if value ~= 0 and not ShouldSkipStatKey(statKey) then
-			local label = ResolveStatLabel(statKey);
-			if label then
-				local baseValue = tonumber(value) or 0;
-				local upgradedValue = RoundStatValue(baseValue * statMultiplier);
-				local diff = upgradedValue - RoundStatValue(baseValue);
-				if upgradedValue ~= 0 and diff ~= 0 then
-					comparison[#comparison + 1] = {
-						key = statKey,
-						label = label,
-						value = upgradedValue,
-						diff = diff,
-					};
-				end
-			end
-		end
-	end
-
-	if #comparison == 0 then
-		return nil;
-	end
-
-	table.sort(comparison, function(a, b)
-		local aIndex = STAT_ORDER_INDEX[a.key] or 1000;
-		local bIndex = STAT_ORDER_INDEX[b.key] or 1000;
-		if aIndex == bIndex then
-			return a.label < b.label;
-		end
-		return aIndex < bIndex;
-	end);
-
-	local lines = {};
-	local maxLines = 8;
-	for index, stat in ipairs(comparison) do
-		if index > maxLines then
-			break;
-		end
-
-		local line = FormatStatLine(stat.label, stat.value, stat.diff);
-		if line then
-			lines[#lines + 1] = line;
-		end
-	end
-
-	local remaining = #comparison - #lines;
-	if remaining > 0 then
-		lines[#lines + 1] = string.format("|cff888888+%d more upgraded stat%s|r",
-			remaining,
-			remaining == 1 and "" or "s");
-	end
-
-	return lines;
 end
 
 function DarkChaos_ItemUpgrade_OnLoad(self)
@@ -4639,7 +4298,6 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	pooledItem.itemEntry = itemID;
 	pooledItem.baseEntry = itemID;
 	pooledItem.currentEntry = itemID;
-	pooledItem.cloneEntries = nil;
 	pooledItem.awaitingServerInfo = true;
 	pooledItem.hasAuthoritativeState = false;
 	pooledItem.allowBackgroundRefresh = false;
@@ -5165,64 +4823,34 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 	end
 	
 	-- Handle query response
-	-- Format: DCUPGRADE_QUERY:guid:upgradeLevel:tier:baseItemLevel:upgradedItemLevel:statMultiplier:baseEntry:currentEntry:cloneMap
-	-- Example: DCUPGRADE_QUERY:190251:7:2:312:312:1.166:48228:2541151:0-48228,1-2541145,...,15-2541159
+	-- Legacy chat fallback still carries an unused trailing field; the dynamic path ignores it.
+	-- Format: DCUPGRADE_QUERY:guid:upgradeLevel:tier:baseItemLevel:upgradedItemLevel:statMultiplier:baseEntry:currentEntry:legacyTail
 	if string.find(message, "^DCUPGRADE_QUERY") then
 		local pattern = "^DCUPGRADE_QUERY:(%d+):(%d+):(%d+):(%d+):(%d+):([%d%.]+):(%d+):(%d+):(.*)$";
-		local _, _, guid, serverUpgradeLevel, tier, baseLevel, upgradedLevel, statMult, baseEntry, currentEntry, cloneMapStr = string.find(message, pattern);
+		local _, _, guid, serverUpgradeLevel, tier, baseLevel, upgradedLevel, statMult, baseEntry, currentEntry = string.find(message, pattern);
 		
 		if guid then
 			guid = tonumber(guid);
-			serverUpgradeLevel = tonumber(serverUpgradeLevel);  -- This is the upgrade level from server DB
+			serverUpgradeLevel = tonumber(serverUpgradeLevel);
 			tier = tonumber(tier);
 			baseLevel = tonumber(baseLevel);
 			upgradedLevel = tonumber(upgradedLevel);
 			statMult = tonumber(statMult);
 			baseEntry = tonumber(baseEntry);
 			currentEntry = tonumber(currentEntry);
-			
-			-- Parse the clone map and determine current upgrade level and max upgrade level
-			local cloneEntries = {};
-			local currentUpgrade = 0;
-			local maxUpgrade = 0;
+
+			local existing = DC.itemUpgradeCache[guid];
+			local currentUpgrade = math.max(0, serverUpgradeLevel or 0);
+			local maxUpgrade = math.max(
+				tonumber(DC.GetMaxUpgradeLevelForTier(tier)) or 0,
+				currentUpgrade,
+				tonumber(existing and existing.maxUpgrade) or 0);
 			local HEIRLOOM_SHIRT_ENTRY = 300365;
 			local isHeirloom = (baseEntry == HEIRLOOM_SHIRT_ENTRY);
 			
-			if cloneMapStr and cloneMapStr ~= "" then
-				for pair in string.gmatch(cloneMapStr, "[^,]+") do
-					local levelStr, entryStr = string.match(pair, "(%d+)%-(%d+)");
-					if levelStr and entryStr then
-						local level = tonumber(levelStr);
-						local entry = tonumber(entryStr);
-						cloneEntries[level] = entry;
-						if level > maxUpgrade then
-							maxUpgrade = level;
-						end
-						-- For heirlooms, all entries are the same, so use serverUpgradeLevel instead
-						-- For normal items, current upgrade is the level where the entry matches currentEntry
-						if not isHeirloom and entry == currentEntry then
-							currentUpgrade = level;
-						end
-					end
-				end
-			end
-			
-			-- For heirlooms, always use the serverUpgradeLevel since clone entries are all the same
-			if isHeirloom then
-				currentUpgrade = serverUpgradeLevel or 0;
-				DC.Debug("Heirloom: Using serverUpgradeLevel as currentUpgrade: " .. tostring(currentUpgrade));
-			end
-			
-			DC.Debug(string.format("ParseQueryResponse: guid=%d, tier=%d, currentUpgrade=%d, maxUpgrade=%d, baseEntry=%d, currentEntry=%d, serverUpgradeLevel=%d",
-				guid, tier, currentUpgrade, maxUpgrade, baseEntry, currentEntry, serverUpgradeLevel or 0));
-			
-			-- Use server's upgrade level if clone map didn't give us one (fallback)
-			if currentUpgrade == 0 and serverUpgradeLevel and serverUpgradeLevel > 0 then
-				currentUpgrade = serverUpgradeLevel;
-				DC.Debug("Using serverUpgradeLevel as currentUpgrade: " .. tostring(currentUpgrade));
-			end
-			
-			local existing = DC.itemUpgradeCache[guid];
+			DC.Debug(string.format("ParseQueryResponse: guid=%d, tier=%d, currentUpgrade=%d, maxUpgrade=%d, baseEntry=%d, currentEntry=%d",
+				guid, tier, currentUpgrade, maxUpgrade, baseEntry, currentEntry));
+
 			-- Build the cached data object
 			local data = {
 				guid = guid,
@@ -5234,7 +4862,6 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				currentEntry = currentEntry,
 				currentUpgrade = currentUpgrade,
 				maxUpgrade = maxUpgrade,
-				cloneEntries = cloneEntries,
 				timestamp = GetTime and GetTime() or 0,
 			};
 			

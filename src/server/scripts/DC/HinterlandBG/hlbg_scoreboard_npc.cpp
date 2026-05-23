@@ -9,6 +9,8 @@
 #include "Player.h"
 #include "GossipDef.h"
 #include "Chat.h"
+#include "BattlegroundHLBG.h"
+#include "HLBGService.h"
 #include "hlbg.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
@@ -21,12 +23,24 @@
 // Expose constants at file scope to allow usage inside classes (avoid in-class using namespace)
 using namespace HinterlandBGConstants;
 
-// Use centralized utility function
-namespace HLBGUtils { OutdoorPvPHL* GetHinterlandBG(); }
-
-static OutdoorPvPHL* GetHL()
+static BattlegroundHLBG* GetHLBG(Player* preferredPlayer = nullptr)
 {
-    return HLBGUtils::GetHinterlandBG();
+    return HLBGService::Instance().GetActiveBattleground(preferredPlayer);
+}
+
+static const char* GetWeatherDisplayName(uint32 weatherType)
+{
+    switch (weatherType)
+    {
+        case 1:
+            return "Rain";
+        case 2:
+            return "Snow";
+        case 3:
+            return "Storm";
+        default:
+            return "Fine";
+    }
 }
 
 static bool TryConsumeGossipCooldown(Player* player, uint32 cooldownMs)
@@ -117,7 +131,7 @@ public:
                 char wbuf[48] = {0};
                 if (r.affix > 0)
                 {
-                    if (OutdoorPvPHL* hlx = GetHL())
+                    if (BattlegroundHLBG* hlx = GetHLBG(player))
                     {
                         if (hlx->IsAffixWeatherEnabled())
                         {
@@ -125,13 +139,7 @@ public:
                             float wint = hlx->GetAffixWeatherIntensity(r.affix);
                             if (wint <= 0.0f) wint = 0.50f;
                             uint32 ipct = (uint32)std::lround(wint * 100.0f);
-                            const char* wname = "Fine";
-                            switch (wtype) {
-                                case 1: wname = "Rain"; break;
-                                case 2: wname = "Snow"; break;
-                                case 3: wname = "Storm"; break;
-                                default: wname = "Fine"; break;
-                            }
+                            const char* wname = GetWeatherDisplayName(wtype);
                             snprintf(wbuf, sizeof(wbuf), ", weather: %s %u%%", wname, (unsigned)ipct);
                         }
                     }
@@ -183,8 +191,7 @@ public:
             return supported;
         }();
 
-    bool includeManual = true;
-    if (OutdoorPvPHL* hl = GetHL()) includeManual = hl->GetStatsIncludeManualResets();
+    bool includeManual = HLBGService::Instance().GetStatsIncludeManualResets();
     // Build a generic condition that can be AND-ed with other filters
     // Important: older rows may have NULL win_reason; excluding manual must keep those (use IS NULL OR <> 'manual')
     std::string cond = includeManual ? std::string("1=1") : std::string("(win_reason IS NULL OR win_reason <> 'manual')");
@@ -613,7 +620,7 @@ public:
         }
         if (action == ACTION_STATUS)
         {
-            if (OutdoorPvPHL* hl = GetHL())
+            if (BattlegroundHLBG* hl = GetHLBG(player))
             {
                 uint32 a = hl->GetResources(TEAM_ALLIANCE);
                 uint32 h = hl->GetResources(TEAM_HORDE);
@@ -621,12 +628,18 @@ public:
                 uint32 mm = sec / 60u;
                 uint32 ss = sec % 60u;
                 uint8 aff = hl->GetActiveAffixCode();
-                // Compute current players per team using the raid group GUID sets
-                auto const& aRaid = hl->GetBattlegroundGroupGUIDs(TEAM_ALLIANCE);
-                auto const& hRaid = hl->GetBattlegroundGroupGUIDs(TEAM_HORDE);
                 uint32 aCount = 0, hCount = 0;
-                for (ObjectGuid const& g : aRaid) if (!g.IsEmpty()) ++aCount;
-                for (ObjectGuid const& g : hRaid) if (!g.IsEmpty()) ++hCount;
+                for (auto const& playerEntry : hl->GetPlayers())
+                {
+                    Player* member = playerEntry.second;
+                    if (!member || !member->IsInWorld())
+                        continue;
+
+                    if (member->GetBgTeamId() == TEAM_ALLIANCE)
+                        ++aCount;
+                    else if (member->GetBgTeamId() == TEAM_HORDE)
+                        ++hCount;
+                }
 
                 ClearGossipMenuFor(player);
                 // Header (non-interactive info lines)
@@ -644,25 +657,14 @@ public:
                     snprintf(line, sizeof(line), "Affix: %s", AffixName(aff));
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                     // Weather label for the current affix (friendly name + percent)
-                    if (OutdoorPvPHL* hlx = GetHL())
+                    if (hl->IsAffixWeatherEnabled())
                     {
-                        if (hlx->IsAffixWeatherEnabled())
-                        {
-                            uint32 wtype = hlx->GetAffixWeatherType(aff);
-                            float wint = hlx->GetAffixWeatherIntensity(aff);
-                            if (wint <= 0.0f) wint = 0.50f;
-                            const char* wname = "Fine";
-                            switch (wtype)
-                            {
-                                case 1: wname = "Rain"; break;
-                                case 2: wname = "Snow"; break;
-                                case 3: wname = "Storm"; break;
-                                default: wname = "Fine"; break;
-                            }
-                            uint32 ipct = (uint32)std::lround(wint * 100.0f);
-                            snprintf(line, sizeof(line), "Weather: %s (%u%%)", wname, (unsigned)ipct);
-                            AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
-                        }
+                        uint32 wtype = hl->GetAffixWeatherType(aff);
+                        float wint = hl->GetAffixWeatherIntensity(aff);
+                        if (wint <= 0.0f) wint = 0.50f;
+                        uint32 ipct = (uint32)std::lround(wint * 100.0f);
+                        snprintf(line, sizeof(line), "Weather: %s (%u%%)", GetWeatherDisplayName(wtype), (unsigned)ipct);
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                     }
                 }
 
@@ -688,7 +690,7 @@ public:
                 }
                 if (rows.empty())
                 {
-                    auto recent = hl->GetRecentWinners(5);
+                    auto recent = HLBGService::Instance().GetRecentWinners(5);
                     for (auto const& t : recent)
                         rows.push_back(HistRow{t, 0u, 0u, std::string(), std::string()});
                 }
@@ -720,7 +722,7 @@ public:
                 else
                 {
                     // Fallback to last persisted winner if any; helps after server restarts
-                    TeamId last = hl->GetLastWinnerTeamId();
+                    TeamId last = HLBGService::Instance().GetLastWinnerTeamId();
                     if (last == TEAM_ALLIANCE || last == TEAM_HORDE)
                     {
                         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Last result:", GOSSIP_SENDER_MAIN, 1);

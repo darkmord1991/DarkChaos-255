@@ -1266,9 +1266,10 @@ void Battleground::AddPlayer(Player* player)
     // Xinef: reset all map criterias on map enter
     player->ResetAchievementCriteria(ACHIEVEMENT_CRITERIA_CONDITION_BG_MAP, GetMapId(), true);
 
-    // setup BG group membership
+    // setup optional BG group membership
     PlayerAddedToBGCheckIfBGIsRunning(player);
-    AddOrSetPlayerToCorrectBgGroup(player, teamId);
+    if (ShouldUseBattlegroundRaid())
+        AddOrSetPlayerToCorrectBgGroup(player, teamId);
 
     sScriptMgr->OnBattlegroundAddPlayer(this, player);
 

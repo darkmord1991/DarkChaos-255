@@ -879,57 +879,6 @@ function DC.GetUpgradedItemLevel(baseLevel, level, tier)
 	baseLevel = tonumber(baseLevel) or 0;
 	return baseLevel + DC.GetItemLevelBonus(level, tier);
 end
-
---[[=====================================================
-	CLONE MAP UTILITIES
-=======================================================]]
-
-function DC.CopyCloneEntries(source)
-	if not source then
-		return nil;
-	end
-	local copy = {};
-	for level, entry in pairs(source) do
-		copy[level] = entry;
-	end
-	return copy;
-end
-
-function DC.ParseCloneMap(mapString)
-	if not mapString or mapString == "" then
-		return nil;
-	end
-	local entries = {};
-	for pair in string.gmatch(mapString, "[^,;]+") do
-		local levelStr, entryStr = string.match(pair, "%s*(%d+)%-(%d+)%s*");
-		if levelStr and entryStr then
-			entries[tonumber(levelStr)] = tonumber(entryStr);
-		end
-	end
-	if next(entries) then
-		return entries;
-	end
-	return nil;
-end
-
-function DC.GetCloneEntryForLevel(item, level)
-	if not item then
-		return nil;
-	end
-	level = math.floor(math.max(tonumber(level) or 0, 0));
-	if item.cloneEntries and item.cloneEntries[level] then
-		return item.cloneEntries[level];
-	end
-	local currentUpgrade = item.currentUpgrade or 0;
-	if level == currentUpgrade then
-		return item.currentEntry or item.itemID;
-	end
-	if level == 0 then
-		return item.baseEntry or item.itemID;
-	end
-	return nil;
-end
-
 --[[=====================================================
 	SETTINGS PANEL
 =======================================================]]
@@ -1190,8 +1139,6 @@ function DC.RegisterDCProtocolHandlers()
 				info.currentEntry = entry
 				info.itemEntry = entry
 			end
-			info.cloneEntries = nil
-			info.cloneMap = nil
 		end
 		if DarkChaos_ItemUpgrade_HandleJsonItemInfo then
 			DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)

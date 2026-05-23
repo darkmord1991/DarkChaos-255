@@ -12,8 +12,8 @@
 #include "Player.h"
 #include "World.h"
 #include "Map.h"
-#include "OutdoorPvP/OutdoorPvPMgr.h"
-#include "OutdoorPvP/OutdoorPvPHL.h"
+#include "BattlegroundHLBG.h"
+#include "HLBGService.h"
 #include <string>
 #include <sstream>
 #include <ctime>
@@ -92,17 +92,10 @@ public:
         if (!player)
             return false;
 
-        OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        if (!out)
+        BattlegroundHLBG* hlbg = HLBGService::Instance().GetActiveBattleground(player);
+        if (!hlbg)
         {
-            handler->PSendSysMessage("Hinterland BG controller not active.");
-            return true;
-        }
-
-        auto* hl = dynamic_cast<OutdoorPvPHL*>(out);
-        if (!hl)
-        {
-            handler->PSendSysMessage("Hinterland BG controller not available.");
+            handler->PSendSysMessage("Hinterland BG battleground not active.");
             return true;
         }
 
@@ -120,8 +113,8 @@ public:
         std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
         std::string ts(buf);
 
-        uint32 a = hl->GetResources(TEAM_ALLIANCE);
-        uint32 h = hl->GetResources(TEAM_HORDE);
+        uint32 a = hlbg->GetResources(TEAM_ALLIANCE);
+        uint32 h = hlbg->GetResources(TEAM_HORDE);
 
         rows.emplace_back("A", ts, "Alliance", "Alliance", static_cast<int>(a));
         rows.emplace_back("H", ts, "Horde", "Horde", static_cast<int>(h));

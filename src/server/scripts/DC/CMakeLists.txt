@@ -83,31 +83,18 @@ set(SCRIPTS_DC_AC
     AC/ac_quest_npc_800009.cpp
     HinterlandBG/hlbg_npc_thrall_warchief.cpp
     HinterlandBG/hlbg_npc_varian.cpp
-    HinterlandBG/outdoorpvp_hl_registration.cpp
     HinterlandBG/hlbg_npc_battlemaster.cpp
     HinterlandBG/hlbg_battlemaster_hook.cpp
+    HinterlandBG/hlbg_movement_handler.cpp
     HinterlandBG/hlbg_native_broadcast.cpp
     HinterlandBG/hlbg_scoreboard_npc.cpp
 )
 
-# DC HinterlandBG split implementations (config, rewards, reset, afk)
+# DC HinterlandBG battleground implementation
 set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/BattlegroundHLBG.cpp
-    HinterlandBG/hlbg_config.cpp
-    HinterlandBG/hlbg_rewards.cpp
-    HinterlandBG/hlbg_reset.cpp
-    HinterlandBG/hlbg_afk.cpp
-    HinterlandBG/hlbg_announce.cpp
-    HinterlandBG/hlbg_groups.cpp
-    HinterlandBG/hlbg_join_leave.cpp
-    HinterlandBG/hlbg_thresholds.cpp
-    HinterlandBG/hlbg_admin.cpp
-    HinterlandBG/hlbg_queue.cpp
-    HinterlandBG/hlbg_queue_handlers.cpp
-    HinterlandBG/hlbg_state_machine.cpp
+    HinterlandBG/HLBGService.cpp
     HinterlandBG/hlbg_utils.cpp
-    HinterlandBG/hlbg_performance.cpp
-    HinterlandBG/hlbg_affixes.cpp
 )
 
 # DC Gilneas Battle for Gilneas implementation

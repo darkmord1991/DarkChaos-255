@@ -3,7 +3,9 @@
 
 #include "Battleground.h"
 #include "Position.h"
+#include "hlbg_constants.h"
 
+#include <array>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -18,6 +20,7 @@ public:
     BattlegroundHLBG();
     ~BattlegroundHLBG() override = default;
 
+    [[nodiscard]] bool ShouldUseBattlegroundRaid() const override { return false; }
     void AddPlayer(Player* player) override;
     void RemovePlayer(Player* player) override;
     void HandleKillPlayer(Player* player, Player* killer) override;
@@ -32,22 +35,37 @@ public:
 
     void NotePlayerMovement(Player* player);
     void AdminSetResources(TeamId teamId, uint32 amount);
-    void AdminResetMatch();
+    void AdminResetMatch(bool recordManualReset = true);
     void AdminFinishMatch(TeamId winnerTeamId);
 
     bool IsPlayerAfkFlagged(Player* player) const;
     uint32 GetTimeRemainingSeconds() const;
     uint32 GetMatchStartEpoch() const { return _matchStartEpoch; }
+    uint32 GetCurrentMatchDurationSeconds() const;
     uint32 GetResources(TeamId teamId) const;
     uint32 GetPlayerContributionScore(ObjectGuid const& guid) const;
     uint32 GetPlayerHKDelta(Player* player) const;
     uint32 GetNpcKillCount(TeamId teamId) const;
+    uint8 GetActiveAffixCode() const { return _activeAffix; }
+    bool IsAffixEnabled() const { return _affixEnabled; }
+    bool IsAffixWeatherEnabled() const { return _affixWeatherEnabled; }
+    bool IsAffixWorldstateEnabled() const { return _affixWorldstateEnabled; }
+    bool IsAffixAnnounceEnabled() const { return _affixAnnounce; }
+    bool IsAffixRandomOnStart() const { return _affixRandomOnStart; }
+    uint32 GetAffixPeriodSec() const { return _affixPeriodSec; }
+    uint32 GetAffixNextChangeEpoch() const { return _affixNextChangeEpoch; }
+    uint32 GetAffixPlayerSpell(uint8 code) const;
+    uint32 GetAffixNpcSpell(uint8 code) const;
+    uint32 GetAffixWeatherType(uint8 code) const;
+    float GetAffixWeatherIntensity(uint8 code) const;
 
 private:
     void PostUpdateImpl(uint32 diff) override;
 
     void LoadConfig();
+    void InitAffixDefaults();
     void ResetMatchState();
+    void ResetMapActors() const;
     void SetTeamResources(TeamId teamId, uint32 amount);
     void ModifyTeamResources(TeamId teamId, int32 delta);
     bool TryEndOnDepletedResources();
@@ -58,6 +76,12 @@ private:
     void SendStatusSnapshotToPlayer(Player* player) const;
     void SendStatusSnapshotToAll() const;
     void SendHudHidden(Player* player) const;
+    void SendAffixSnapshotToPlayer(Player* player) const;
+    void SendAffixSnapshotToAll() const;
+    void ClearAffixEffects();
+    void ApplyAffixEffects();
+    void ApplyAffixWeather() const;
+    void SelectAffixForNewBattle();
     void RewardMatchOutcome(TeamId winnerTeamId);
     void RewardRandomKillHonor(Player* player) const;
     void RewardPlayerKill(Player* killer, Player* victim, uint32 scorePoints);
@@ -93,8 +117,18 @@ private:
     uint32 _afkCheckTimerMs = 0u;
     uint32 _allianceNpcKills = 0u;
     uint32 _hordeNpcKills = 0u;
+    uint32 _affixRotationTimerMs = 0u;
+    uint32 _affixNextChangeEpoch = 0u;
     bool _endedByDepletion = false;
     bool _matchRewardsGranted = false;
+    bool _matchResultRecorded = false;
+    bool _affixEnabled = true;
+    bool _affixWeatherEnabled = true;
+    bool _affixWorldstateEnabled = true;
+    bool _affixAnnounce = true;
+    bool _affixRandomOnStart = true;
+    uint32 _affixPeriodSec = 0u;
+    uint8 _activeAffix = 0u;
 
     std::unordered_set<uint32> _afkFlagged;
     std::unordered_map<uint32, uint8> _afkInfractions;
@@ -112,6 +146,10 @@ private:
     std::unordered_set<uint32> _npcBossEntriesHorde;
     std::unordered_set<uint32> _npcNormalEntriesAlliance;
     std::unordered_set<uint32> _npcNormalEntriesHorde;
+    std::array<uint32, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixPlayerSpell{};
+    std::array<uint32, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixNpcSpell{};
+    std::array<uint32, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixWeatherType{};
+    std::array<float, HinterlandBGConstants::HLBG_AFFIX_STORAGE_SIZE> _affixWeatherIntensity{};
 };
 
 #endif

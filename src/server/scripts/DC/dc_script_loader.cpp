@@ -80,8 +80,8 @@ void AddSC_hl_scoreboard();                   // HinterlandBG/hlbg_scoreboard_np
 void AddSC_hlbg_addon();                      // AddonExtension/dc_addon_hlbg.cpp
 void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG/hlbg_npc_battlemaster.cpp
 void AddSC_hlbg_battlemaster_hook();          // HinterlandBG/hlbg_battlemaster_hook.cpp
+void AddSC_hlbg_movement_handler();           // HinterlandBG/hlbg_movement_handler.cpp
 void AddSC_hlbg_native_broadcast();           // HinterlandBG/hlbg_native_broadcast.cpp
-void AddSC_outdoorpvp_hl_dc();                // HinterlandBG/outdoorpvp_hl_registration.cpp
 
 // --- Prestige system ---
 void AddSC_dc_prestige_system();              // Progression/Prestige/dc_prestige_system.cpp
@@ -294,8 +294,8 @@ void AddDCScripts()
     DC_LOAD(AddSC_hlbg_addon);
     DC_LOAD(AddSC_npc_hinterlands_battlemaster);
     DC_LOAD(AddSC_hlbg_battlemaster_hook);
+    DC_LOAD(AddSC_hlbg_movement_handler);
     DC_LOAD(AddSC_hlbg_native_broadcast);
-    DC_LOAD(AddSC_outdoorpvp_hl_dc);
 
     LogSection("Challenge Mode System");
     DC_LOAD(AddSC_dc_challenge_modes);

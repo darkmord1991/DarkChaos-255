@@ -526,6 +526,7 @@ public:
     // Death related
     virtual GraveyardStruct const* GetClosestGraveyard(Player* player);
 
+    [[nodiscard]] virtual bool ShouldUseBattlegroundRaid() const { return true; }
     virtual void AddPlayer(Player* player);                // must be implemented in BG subclass
 
     void AddOrSetPlayerToCorrectBgGroup(Player* player, TeamId teamId);

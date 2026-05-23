@@ -2,14 +2,12 @@
 // hlbg_movement_handler.h
 // -----------------------------------------------------------------------------
 // MovementHandlerScript hook that forwards player movement events to the
-// OutdoorPvPHL AFK tracker (NotePlayerMovement) when in the Hinterlands zone.
+// battleground-owned AFK tracker.
 // -----------------------------------------------------------------------------
 #pragma once
 
 #include "ScriptDefines/MovementHandlerScript.h"
 #include "BattlegroundHLBG.h"
-#include "hlbg.h"
-#include "OutdoorPvP/OutdoorPvPMgr.h"
 
 class HLMovementHandlerScript : public MovementHandlerScript
 {
@@ -28,14 +26,7 @@ public:
             {
                 if (auto* hlbg = dynamic_cast<BattlegroundHLBG*>(battleground))
                     hlbg->NotePlayerMovement(player);
-                return;
             }
         }
-
-        OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        if (!opvp)
-            return;
-        if (auto* hl = dynamic_cast<OutdoorPvPHL*>(opvp))
-            hl->NotePlayerMovement(player);
     }
 };

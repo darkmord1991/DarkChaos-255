@@ -2218,20 +2218,6 @@ VerySlowXpGain.ItemRewards = ""
 HinterlandBG.MatchDuration = 3600
 
 #
-#    HinterlandBG.WarmupDuration
-#        Description: Warmup phase duration (seconds)
-#        Default:     120
-#
-HinterlandBG.WarmupDuration = 120
-
-#
-#    HinterlandBG.MinLevel
-#        Description: Minimum level required to enter
-#        Default:     80
-#
-HinterlandBG.MinLevel = 80
-
-#
 #    HinterlandBG.Season
 #        Description: Current season number for persistent stats
 #        Default:     1
@@ -2239,29 +2225,15 @@ HinterlandBG.MinLevel = 80
 HinterlandBG.Season = 1
 
 # -----------------------------------------------------------------------------
-# Queue System
+# Queue & Grouping
 # -----------------------------------------------------------------------------
 
+# HLBG now uses the stock battleground queue/template path.
+# Queue sizing, entry requirements, and start locations come from battleground
+# data instead of custom HLBG config keys.
 #
-#    HinterlandBG.Queue.Enabled
-#        Description: Enable the queue system
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Queue.Enabled = 1
-
-#
-#    HinterlandBG.Queue.MinPlayers
-#        Description: Minimum players required to start
-#        Default:     4
-#
-HinterlandBG.Queue.MinPlayers = 4
-
-#
-#    HinterlandBG.Queue.MaxGroupSize
-#        Description: Maximum group size allowed to queue together
-#        Default:     5
-#
-HinterlandBG.Queue.MaxGroupSize = 5
+# Players keep their original party membership on entry; HLBG does not create
+# battleground raid groups automatically.
 
 # -----------------------------------------------------------------------------
 # AFK System
@@ -2311,29 +2283,10 @@ HinterlandBG.ResourcesLoss.NPCBossEntriesHorde = 810002
 HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810000,600008
 
 # -----------------------------------------------------------------------------
-# Base Coordinates
-# -----------------------------------------------------------------------------
-
-# Alliance Base
-HinterlandBG.Base.Alliance.Map = 1411
-HinterlandBG.Base.Alliance.X = 197.165
-HinterlandBG.Base.Alliance.Y = -4808.544
-HinterlandBG.Base.Alliance.Z = 7.848
-HinterlandBG.Base.Alliance.O = 3.046
-
-# Horde Base
-HinterlandBG.Base.Horde.Map = 1411
-HinterlandBG.Base.Horde.X = -628.484
-HinterlandBG.Base.Horde.Y = -4684.510
-HinterlandBG.Base.Horde.Z = 5.144
-HinterlandBG.Base.Horde.O = 1.125
-
-# -----------------------------------------------------------------------------
 # Rewards
 # -----------------------------------------------------------------------------
 
-# Match Participation Honor
-HinterlandBG.Reward.MatchHonor = 1500
+# Match Outcome Honor
 HinterlandBG.Reward.MatchHonorDepletion = 120
 HinterlandBG.Reward.MatchHonorTiebreaker = 70
 HinterlandBG.Reward.MatchHonorLoser = 20
@@ -2351,76 +2304,16 @@ HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810000,810002
 HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
 HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810000:3
 
-# Per-Kill Spell Feedback (0 = disabled)
-HinterlandBG.KillSpell.PlayerKillAlliance = 0
-HinterlandBG.KillSpell.PlayerKillHorde = 0
-HinterlandBG.KillSpell.NpcKill = 0
-
 # -----------------------------------------------------------------------------
-# Broadcasts & Announcements
+# Persistent Stats
 # -----------------------------------------------------------------------------
-
-#
-#    HinterlandBG.Broadcast.Enabled
-#        Description: Enable periodic status broadcasts
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Broadcast.Enabled = 1
-
-#
-#    HinterlandBG.Broadcast.Period
-#        Description: Seconds between status broadcasts
-#        Default:     180
-#
-HinterlandBG.Broadcast.Period = 180
-
-HinterlandBG.Announce.ExpiryWorld = 1
-HinterlandBG.Announce.DepletionWorld = 1
-
-# -----------------------------------------------------------------------------
-# Match End Behavior
-# -----------------------------------------------------------------------------
-
-#
-#    HinterlandBG.AutoReset.Teleport
-#        Description: Teleport players to faction graveyards on reset
-#        Default:     1 (Enabled)
-#
-HinterlandBG.AutoReset.Teleport = 1
-
-#
-#    HinterlandBG.Expiry.Tiebreaker
-#        Description: Declare winner by higher resources at timer expiry
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Expiry.Tiebreaker = 1
-
-# -----------------------------------------------------------------------------
-# Persistence
-# -----------------------------------------------------------------------------
-
-#
-#    HinterlandBG.Persistence.Enabled
-#        Description: Save/restore state across server restarts
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Persistence.Enabled = 1
 
 #
 #    HinterlandBG.Stats.IncludeManual
-#        Description: Include manual resets in statistics
+#        Description: Include manual admin resets in persisted HLBG statistics
 #        Default:     1 (Enabled)
 #
 HinterlandBG.Stats.IncludeManual = 1
-
-# -----------------------------------------------------------------------------
-# Lock Window (After Win)
-# -----------------------------------------------------------------------------
-
-HinterlandBG.Lock.Enabled = 0
-HinterlandBG.Lock.Duration = 0
-HinterlandBG.Lock.Duration.Expiry = 0
-HinterlandBG.Lock.Duration.Depletion = 0
 
 # -----------------------------------------------------------------------------
 # Affix System
@@ -2454,7 +2347,18 @@ HinterlandBG.Affix.Period = 0
 #
 HinterlandBG.Affix.RandomOnStart = 1
 
+#
+#    HinterlandBG.Affix.Announce
+#        Description: Announce the active affix to players when it changes
+#        Default:     0 (Disabled)
+#
 HinterlandBG.Affix.Announce = 0
+
+#
+#    HinterlandBG.Affix.Worldstate
+#        Description: Mirror the active affix through the HLBG worldstate text slot
+#        Default:     0 (Disabled)
+#
 HinterlandBG.Affix.Worldstate = 0
 
 # Player-Affecting Affix Spells

@@ -28,12 +28,11 @@
 #include "StringFormat.h"
 #include "Common.h"
 #include "dc_addon_namespace.h"
-#include "OutdoorPvP/OutdoorPvPMgr.h"
-#include "OutdoorPvP/OutdoorPvPHL.h"
 #include "Server/WorldSession.h"
 #include "Server/WorldPacket.h"
 #include "../HinterlandBG/hlbg_constants.h"
 #include "../HinterlandBG/BattlegroundHLBG.h"
+#include "../HinterlandBG/HLBGService.h"
 #include "Time/GameTime.h"
 #include <algorithm>
 #include <cctype>
@@ -253,10 +252,9 @@ namespace HLBG
             return false;
         }
 
-        static OutdoorPvPHL* GetHL()
+        static BattlegroundHLBG* GetActiveHLBG(Player* preferredPlayer = nullptr)
         {
-            OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-            return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
+            return HLBGService::Instance().GetActiveBattleground(preferredPlayer);
         }
 
         static BattlegroundHLBG* GetHLBGBattleground(Player* player)
@@ -449,34 +447,6 @@ namespace HLBG
             uint32 hordeNpcKills = 0;
         };
 
-        LiveHudMetrics CollectLiveHudMetrics(OutdoorPvPHL const* hl)
-        {
-            LiveHudMetrics metrics;
-            if (!hl)
-                return metrics;
-
-            hl->ForEachPlayerInZone([&](Player* zonePlayer)
-            {
-                if (!zonePlayer)
-                    return;
-
-                if (zonePlayer->GetTeamId() == TEAM_ALLIANCE)
-                {
-                    ++metrics.alliancePlayers;
-                    metrics.alliancePlayerKills += hl->GetPlayerHKDelta(zonePlayer);
-                }
-                else if (zonePlayer->GetTeamId() == TEAM_HORDE)
-                {
-                    ++metrics.hordePlayers;
-                    metrics.hordePlayerKills += hl->GetPlayerHKDelta(zonePlayer);
-                }
-            });
-
-            metrics.allianceNpcKills = hl->GetNpcKillCount(TEAM_ALLIANCE);
-            metrics.hordeNpcKills = hl->GetNpcKillCount(TEAM_HORDE);
-            return metrics;
-        }
-
         LiveHudMetrics CollectLiveHudMetrics(BattlegroundHLBG const* bg)
         {
             LiveHudMetrics metrics;
@@ -525,137 +495,6 @@ namespace HLBG
         }
 
         std::string BuildNativeLiveSnapshotPayload(Player* player,
-            OutdoorPvPHL* hl, uint32 limit = 40)
-        {
-            JsonValue payload;
-            payload.SetObject();
-
-            JsonValue players;
-            players.SetArray();
-
-            uint32 mapId = player ? player->GetMapId() : 0u;
-            uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
-            HLBGStatus status = IsPlayerQueuedForAddon(player)
-                ? STATUS_QUEUED : STATUS_NONE;
-
-            if (player && hl)
-            {
-                if (hl->IsPlayerAfkFlagged(player))
-                {
-                    mapId = 0;
-                    timeRemaining = 0u;
-                    status = STATUS_NONE;
-                }
-                else if (IsPlayerInOutdoorPvPHLArea(player))
-                    status = STATUS_ACTIVE;
-            }
-
-            if (!hl)
-            {
-                payload.Set("status", static_cast<int32>(status));
-                payload.Set("mapId", static_cast<int32>(mapId));
-                payload.Set("timeRemaining", static_cast<int32>(timeRemaining));
-                payload.Set("duration", static_cast<int32>(timeRemaining));
-                payload.Set("matchStart", 0);
-                payload.Set("A", 0);
-                payload.Set("H", 0);
-                payload.Set("APC", 0);
-                payload.Set("HPC", 0);
-                payload.Set("aBases", 0);
-                payload.Set("hBases", 0);
-                payload.Set("aPlayerKills", 0);
-                payload.Set("hPlayerKills", 0);
-                payload.Set("aNpcKills", 0);
-                payload.Set("hNpcKills", 0);
-                payload.Set("affix", 0);
-                payload.Set("players", players);
-                return payload.Encode();
-            }
-
-            struct LiveRow
-            {
-                std::string name;
-                std::string team;
-                uint32 score = 0;
-                uint32 hk = 0;
-                uint8 cls = 0;
-                int8 subgroup = 0;
-            };
-
-            std::vector<LiveRow> rows;
-            uint32 alliancePlayers = 0;
-            uint32 hordePlayers = 0;
-
-            hl->ForEachPlayerInZone([&](Player* zonePlayer)
-            {
-                if (!zonePlayer)
-                    return;
-
-                if (zonePlayer->GetTeamId() == TEAM_ALLIANCE)
-                    ++alliancePlayers;
-                else if (zonePlayer->GetTeamId() == TEAM_HORDE)
-                    ++hordePlayers;
-
-                LiveRow row;
-                row.name = zonePlayer->GetName();
-                row.team = zonePlayer->GetTeamId() == TEAM_ALLIANCE ? "A" : "H";
-                row.score = hl->GetPlayerScore(zonePlayer->GetGUID());
-                row.hk = hl->GetPlayerHKDelta(zonePlayer);
-                row.cls = zonePlayer->getClass();
-                row.subgroup = zonePlayer->GetSubGroup();
-                rows.push_back(row);
-            });
-
-            std::sort(rows.begin(), rows.end(), [](LiveRow const& left,
-                LiveRow const& right)
-            {
-                return left.score > right.score;
-            });
-
-            if (rows.size() > limit)
-                rows.resize(limit);
-
-            for (LiveRow const& row : rows)
-            {
-                JsonValue playerRow;
-                playerRow.SetObject();
-                playerRow.Set("name", row.name);
-                playerRow.Set("team", row.team);
-                playerRow.Set("score", static_cast<int32>(row.score));
-                playerRow.Set("hk", static_cast<int32>(row.hk));
-                playerRow.Set("class", static_cast<int32>(row.cls));
-                playerRow.Set("sub", static_cast<int32>(row.subgroup));
-                players.Push(playerRow);
-            }
-
-            LiveHudMetrics metrics = CollectLiveHudMetrics(hl);
-
-            payload.Set("status", static_cast<int32>(status));
-            payload.Set("mapId", static_cast<int32>(mapId));
-            payload.Set("timeRemaining", static_cast<int32>(timeRemaining));
-            payload.Set("duration", static_cast<int32>(timeRemaining));
-            payload.Set("matchStart",
-                static_cast<int32>(hl->GetMatchStartEpoch()));
-            payload.Set("A", static_cast<int32>(hl->GetResources(TEAM_ALLIANCE)));
-            payload.Set("H", static_cast<int32>(hl->GetResources(TEAM_HORDE)));
-            payload.Set("APC", static_cast<int32>(alliancePlayers));
-            payload.Set("HPC", static_cast<int32>(hordePlayers));
-            payload.Set("aBases", 0);
-            payload.Set("hBases", 0);
-            payload.Set("aPlayerKills",
-                static_cast<int32>(metrics.alliancePlayerKills));
-            payload.Set("hPlayerKills",
-                static_cast<int32>(metrics.hordePlayerKills));
-            payload.Set("aNpcKills",
-                static_cast<int32>(metrics.allianceNpcKills));
-            payload.Set("hNpcKills",
-                static_cast<int32>(metrics.hordeNpcKills));
-            payload.Set("affix", static_cast<int32>(hl->GetActiveAffixCode()));
-            payload.Set("players", players);
-            return payload.Encode();
-        }
-
-        std::string BuildNativeLiveSnapshotPayload(Player* player,
             BattlegroundHLBG* bg, uint32 limit = 40)
         {
             JsonValue payload;
@@ -664,9 +503,10 @@ namespace HLBG
             JsonValue players;
             players.SetArray();
 
-            uint32 mapId = player ? player->GetMapId() : 0u;
+            uint32 mapId = bg ? bg->GetMapId() : (player ? player->GetMapId() : 0u);
             uint32 timeRemaining = bg ? bg->GetTimeRemainingSeconds() : 0u;
-            HLBGStatus status = bg ? GetBattlegroundStatus(bg) : STATUS_NONE;
+            HLBGStatus status = bg ? GetBattlegroundStatus(bg)
+                : (IsPlayerQueuedForAddon(player) ? STATUS_QUEUED : STATUS_NONE);
 
             if (player && bg && bg->IsPlayerAfkFlagged(player))
             {
@@ -770,7 +610,7 @@ namespace HLBG
             payload.Set("hPlayerKills", static_cast<int32>(metrics.hordePlayerKills));
             payload.Set("aNpcKills", static_cast<int32>(metrics.allianceNpcKills));
             payload.Set("hNpcKills", static_cast<int32>(metrics.hordeNpcKills));
-            payload.Set("affix", 0);
+            payload.Set("affix", static_cast<int32>(bg->GetActiveAffixCode()));
             payload.Set("players", players);
             return payload.Encode();
         }
@@ -1609,22 +1449,9 @@ namespace HLBG
             return;
         }
 
-        OutdoorPvPHL* hl = GetHL();
         uint32 mapId = player->GetMapId();
-        uint32 timeRemaining = hl ? hl->GetTimeRemainingSeconds() : 0u;
-
+        uint32 timeRemaining = 0u;
         HLBGStatus status = IsPlayerQueuedForAddon(player) ? STATUS_QUEUED : STATUS_NONE;
-        if (hl)
-        {
-            if (hl->IsPlayerAfkFlagged(player))
-            {
-                mapId = 0;
-                timeRemaining = 0u;
-                status = STATUS_NONE;
-            }
-            else if (IsPlayerInOutdoorPvPHLArea(player))
-                status = STATUS_ACTIVE;
-        }
 
         SendStatus(player, status, mapId, timeRemaining);
 
@@ -1661,21 +1488,7 @@ namespace HLBG
             return;
         }
 
-        OutdoorPvPHL* hl = GetHL();
-        if (!hl)
-        {
-            SendResources(player, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-            return;
-        }
-
-        uint32 a = hl->GetResources(TEAM_ALLIANCE);
-        uint32 h = hl->GetResources(TEAM_HORDE);
-        LiveHudMetrics metrics = CollectLiveHudMetrics(hl);
-        // HLBG doesn't track bases like AB; keep fields for forward-compat.
-        SendResources(player, a, h, 0, 0,
-            metrics.alliancePlayers, metrics.hordePlayers,
-            metrics.alliancePlayerKills, metrics.hordePlayerKills,
-            metrics.allianceNpcKills, metrics.hordeNpcKills);
+        SendResources(player, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     static void HandleRequestObjective(Player* player, const ParsedMessage& /*msg*/)
@@ -1779,8 +1592,7 @@ namespace HLBG
         }
 
         if (season == 0)
-            if (OutdoorPvPHL* hl = GetHL())
-                season = hl->GetSeason();
+            season = HLBGService::Instance().GetSeason();
 
         limit = std::min<uint32>(limit, 200u);
 
@@ -1835,8 +1647,7 @@ namespace HLBG
         }
 
         if (season == 0)
-            if (OutdoorPvPHL* hl = GetHL())
-                season = hl->GetSeason();
+            season = HLBGService::Instance().GetSeason();
 
         std::string statsJson;
         std::string error;
@@ -1898,7 +1709,7 @@ namespace HLBG
         }
 
         SendNativeLiveSnapshot(player,
-            BuildNativeLiveSnapshotPayload(player, GetHL()));
+            BuildNativeLiveSnapshotPayload(player, GetActiveHLBG(player)));
         return true;
     }
 
@@ -2012,10 +1823,9 @@ namespace HLBGAddonFallback
         return out;
     }
 
-    static OutdoorPvPHL* GetHL()
+    static BattlegroundHLBG* GetActiveHLBG(Player* preferredPlayer = nullptr)
     {
-        OutdoorPvP* opvp = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]);
-        return opvp ? dynamic_cast<OutdoorPvPHL*>(opvp) : nullptr;
+        return HLBGService::Instance().GetActiveBattleground(preferredPlayer);
     }
 
     static std::string NowTimestamp()
@@ -2040,26 +1850,27 @@ namespace HLBGAddonFallback
 
     // (History/stats helpers removed; use DC-Leaderboards instead.)
 
-    static std::string BuildLivePlayersJson(OutdoorPvPHL* hl, uint32 limit = 40)
+    static std::string BuildLivePlayersJson(BattlegroundHLBG* bg, uint32 limit = 40)
     {
-        if (!hl)
+        if (!bg)
             return "[]";
 
         struct Row { std::string name; std::string team; uint32 score; uint32 hk; uint8 cls; int8 subgroup; };
         std::vector<Row> rows;
-        hl->ForEachPlayerInZone([&](Player* p)
+        for (auto const& playerEntry : bg->GetPlayers())
         {
+            Player* p = playerEntry.second;
             if (!p)
-                return;
+                continue;
             Row r;
             r.name = p->GetName();
-            r.team = (p->GetTeamId() == TEAM_ALLIANCE) ? "A" : "H";
-            r.score = hl->GetPlayerScore(p->GetGUID());
-            r.hk = hl->GetPlayerHKDelta(p);
+            r.team = (p->GetBgTeamId() == TEAM_ALLIANCE) ? "A" : "H";
+            r.score = bg->GetPlayerContributionScore(p->GetGUID());
+            r.hk = bg->GetPlayerHKDelta(p);
             r.cls = p->getClass();
             r.subgroup = p->GetSubGroup();
             rows.push_back(r);
-        });
+        }
 
         std::sort(rows.begin(), rows.end(), [](Row const& a, Row const& b) { return a.score > b.score; });
         if (rows.size() > limit)
@@ -2069,7 +1880,7 @@ namespace HLBGAddonFallback
         ss << '[';
         bool first = true;
         std::string ts = EscapeJson(NowTimestamp());
-        uint32 mid = hl->GetMatchStartEpoch();
+        uint32 mid = bg->GetMatchStartEpoch();
         for (Row const& r : rows)
         {
             if (!first)
@@ -2099,16 +1910,16 @@ bool HandleHLBGLive(ChatHandler* handler, char const* args)
     if (!player)
         return false;
 
-    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
-    if (!hl)
+    BattlegroundHLBG* bg = HLBGAddonFallback::GetActiveHLBG(player);
+    if (!bg)
     {
         ChatHandler(player->GetSession()).SendSysMessage("[HLBG_LIVE_JSON] {\"A\":0,\"H\":0,\"matchStart\":0}");
         return true;
     }
 
-    uint32 a = hl->GetResources(TEAM_ALLIANCE);
-    uint32 h = hl->GetResources(TEAM_HORDE);
-    uint32 ms = hl->GetMatchStartEpoch();
+    uint32 a = bg->GetResources(TEAM_ALLIANCE);
+    uint32 h = bg->GetResources(TEAM_HORDE);
+    uint32 ms = bg->GetMatchStartEpoch();
     std::string jsonAH = HLBGAddonFallback::BuildLiveJson(ms, a, h);
     ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_LIVE_JSON] ") + jsonAH).c_str());
 
@@ -2121,7 +1932,7 @@ bool HandleHLBGLive(ChatHandler* handler, char const* args)
     }
     if (wantPlayers)
     {
-        std::string rows = HLBGAddonFallback::BuildLivePlayersJson(hl);
+        std::string rows = HLBGAddonFallback::BuildLivePlayersJson(bg);
         ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_LIVE_PLAYERS_JSON] ") + rows).c_str());
     }
     return true;
@@ -2150,17 +1961,17 @@ bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
     if (!player)
         return false;
 
-    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
+    BattlegroundHLBG* bg = HLBGAddonFallback::GetActiveHLBG(player);
     std::string winner = "Draw";
     uint32 a = 0, h = 0, dur = 0, affix = 0;
-    if (hl)
+    TeamId w = HLBGService::Instance().GetLastWinnerTeamId();
+    winner = (w == TEAM_ALLIANCE) ? "Alliance" : ((w == TEAM_HORDE) ? "Horde" : "Draw");
+    if (bg)
     {
-        TeamId w = hl->GetLastWinnerTeamId();
-        winner = (w == TEAM_ALLIANCE) ? "Alliance" : ((w == TEAM_HORDE) ? "Horde" : "Draw");
-        a = hl->GetResources(TEAM_ALLIANCE);
-        h = hl->GetResources(TEAM_HORDE);
-        dur = hl->GetCurrentMatchDurationSeconds();
-        affix = hl->GetActiveAffixCode();
+        a = bg->GetResources(TEAM_ALLIANCE);
+        h = bg->GetResources(TEAM_HORDE);
+        dur = bg->GetCurrentMatchDurationSeconds();
+        affix = bg->GetActiveAffixCode();
     }
 
     std::ostringstream ss;
