@@ -39,6 +39,8 @@ local state = {
     activeServerContext = nil,
     serverProfileState = nil,
     profileStateRequestPending = false,
+    profileStateRefreshQueued = false,
+    profileStateQueuedReason = nil,
     profileStateRequestGeneration = 0,
     profileStateLastRequestAt = nil,
     profileStateLastRequestReason = nil,
@@ -54,6 +56,8 @@ local SERVER_PROFILE_FEATURE = "graphics_profile"
 local SERVER_PROFILE_STATE_FEATURE = "graphics_profile_state"
 local GetProfileStateTimestamp
 local RefreshSettingsStatusText
+local RequestCurrentServerProfileState
+local ScheduleProfileStateRequest
 
 local SERVER_PROFILE_PRESETS = {
     SAFE = {
@@ -316,8 +320,18 @@ local function RequestCurrentServerProfile(reason)
     return addon.protocol:RequestFeature(SERVER_PROFILE_FEATURE, request)
 end
 
-local function RequestCurrentServerProfileState(reason)
+RequestCurrentServerProfileState = function(reason)
     local requestReason = reason or "client-request"
+
+    if state.profileStateRequestPending then
+        state.profileStateRefreshQueued = true
+        state.profileStateQueuedReason = requestReason
+        addon:Debug("Graphics+ server profile state refresh queued: reason="
+            .. tostring(requestReason))
+        RefreshSettingsStatusText()
+        return true
+    end
+
     local request = {
         reason = requestReason,
     }
@@ -343,6 +357,10 @@ local function RequestCurrentServerProfileState(reason)
         return true
     end
 
+    local queuedReason = state.profileStateRefreshQueued
+        and (state.profileStateQueuedReason or requestReason) or nil
+    state.profileStateRefreshQueued = false
+    state.profileStateQueuedReason = nil
     state.profileStateRequestPending = false
     state.profileStateLastFailure = string.format("request failed at %s",
         GetProfileStateTimestamp())
@@ -350,6 +368,11 @@ local function RequestCurrentServerProfileState(reason)
 
     addon:Debug("Graphics+ server profile state request failed: reason="
         .. tostring(requestReason))
+
+    if queuedReason then
+        ScheduleProfileStateRequest(queuedReason, 0.25)
+    end
+
     return false
 end
 
@@ -365,7 +388,7 @@ local function ScheduleProfileRequest(reason, delay)
     end
 end
 
-local function ScheduleProfileStateRequest(reason, delay)
+ScheduleProfileStateRequest = function(reason, delay)
     local function ExecuteRequest()
         RequestCurrentServerProfileState(reason)
     end
@@ -465,11 +488,14 @@ local function BuildServerProfileRefreshText()
         "client-request")
 
     if state.profileStateRequestPending then
+        local pendingSuffix = state.profileStateRefreshQueued
+            and ", queued refresh" or ""
         return string.format(
-            "|cffffff00State Refresh: pending|r (#%s at %s, reason=%s)",
+            "|cffffff00State Refresh: pending|r (#%s at %s, reason=%s%s)",
             requestId,
             FormatStatusValue(state.profileStateLastRequestAt, "now"),
-            requestReason)
+            requestReason,
+            pendingSuffix)
     end
 
     if state.profileStateLastFailure then
@@ -573,10 +599,29 @@ local function HandleServerProfileStateResponse(payload, source)
         return
     end
 
-    if tostring(payload.action or "response") ~= "response" then
+    local action = tostring(payload.action or "response")
+    if action == "invalidate" then
+        local refreshReason = "server-invalidate"
+        if payload.context then
+            refreshReason = refreshReason .. ":" .. tostring(payload.context)
+        end
+
+        addon:Debug("Graphics+ server profile state invalidated: source="
+            .. tostring(source) .. " context="
+            .. tostring(payload.context))
+
+        RequestCurrentServerProfileState(refreshReason)
         return
     end
 
+    if action ~= "response" then
+        return
+    end
+
+    local queuedReason = state.profileStateRefreshQueued
+        and (state.profileStateQueuedReason or "queued-refresh") or nil
+    state.profileStateRefreshQueued = false
+    state.profileStateQueuedReason = nil
     state.profileStateRequestPending = false
     state.profileStateLastResponseAt = GetProfileStateTimestamp()
     state.profileStateLastResponseSource = source
@@ -607,6 +652,10 @@ local function HandleServerProfileStateResponse(payload, source)
         .. tostring(source) .. " context=" .. tostring(payload.context))
 
     RefreshSettingsStatusText()
+
+    if queuedReason then
+        RequestCurrentServerProfileState(queuedReason)
+    end
 end
 
 local function HandleProfileMessage(payload, source)
@@ -818,6 +867,8 @@ function GraphicsPlus.OnDisable()
     state.activeServerContext = nil
     state.serverProfileState = nil
     state.profileStateRequestPending = false
+    state.profileStateRefreshQueued = false
+    state.profileStateQueuedReason = nil
     state.profileStateRequestGeneration = 0
     state.profileStateLastRequestAt = nil
     state.profileStateLastRequestReason = nil

@@ -160,13 +160,6 @@ namespace HLBG
             return hasView;
         }
 
-        static bool HasSeasonalSummaryTable()
-        {
-            static bool const hasTable =
-                CharacterTableExists("dc_hlbg_player_season_data");
-            return hasTable;
-        }
-
         static AllTimeViewColumns DetectAllTimeViewColumns()
         {
             AllTimeViewColumns columns;
@@ -838,58 +831,7 @@ namespace HLBG
     {
         std::string query;
 
-        if (HasSeasonalSummaryTable() && leaderboardType <= 4)
-        {
-            switch (leaderboardType)
-            {
-                case 1:  // RATING
-                    query = Acore::StringFormat(
-                        "SELECT s.player_guid, COALESCE(c.name, ''), s.rating, s.wins "
-                        "FROM `dc_hlbg_player_season_data` s "
-                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
-                        "WHERE s.season_id = %u "
-                        "ORDER BY s.rating DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 2:  // WINS
-                    query = Acore::StringFormat(
-                        "SELECT s.player_guid, COALESCE(c.name, ''), s.wins, s.completed_games "
-                        "FROM `dc_hlbg_player_season_data` s "
-                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
-                        "WHERE s.season_id = %u "
-                        "ORDER BY s.wins DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 3:  // WINRATE
-                    query = Acore::StringFormat(
-                        "SELECT s.player_guid, COALESCE(c.name, ''), "
-                        "CAST(ROUND((s.wins * 10000.0) / NULLIF(s.completed_games, 0), 0) AS UNSIGNED), "
-                        "s.completed_games "
-                        "FROM `dc_hlbg_player_season_data` s "
-                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
-                        "WHERE s.season_id = %u AND s.completed_games >= 5 "
-                        "ORDER BY (s.wins / NULLIF(s.completed_games, 0)) DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                case 4:  // GAMES PLAYED
-                    query = Acore::StringFormat(
-                        "SELECT s.player_guid, COALESCE(c.name, ''), s.completed_games, s.wins "
-                        "FROM `dc_hlbg_player_season_data` s "
-                        "LEFT JOIN `characters` c ON s.player_guid = c.guid "
-                        "WHERE s.season_id = %u "
-                        "ORDER BY s.completed_games DESC LIMIT %u",
-                        season, limit);
-                    break;
-
-                default:
-                    outError = "Invalid leaderboard type";
-                    return false;
-            }
-        }
-        else if (HasSeasonalStatView())
+        if (HasSeasonalStatView())
         {
             switch (leaderboardType)
             {

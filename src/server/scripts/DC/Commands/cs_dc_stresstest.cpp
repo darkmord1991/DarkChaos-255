@@ -1841,7 +1841,6 @@ namespace DCPerfTest
         bool hasMplusBestRuns = false;
         bool hasMplusDungeons = false;
         bool hasWardrobeOutfits = false;
-        bool hasHLBGSeasonData = false;
         bool hasHLBGSeasonal = false;
         bool hasHLBGAllTime = false;
         bool hasHLBGParticipants = false;
@@ -1894,7 +1893,7 @@ namespace DCPerfTest
 
         bool HasHLBGSurface() const
         {
-            return hasHLBGSeasonData || HasHLBGUnifiedTables() || hasHLBGSeasonal || (hasHLBGAllTime
+            return HasHLBGUnifiedTables() || hasHLBGSeasonal || (hasHLBGAllTime
                 && hlbgAllTimeGamesColumn != nullptr
                 && hlbgAllTimeWinsColumn != nullptr
                 && hlbgAllTimeLossesColumn != nullptr
@@ -2301,8 +2300,7 @@ namespace DCPerfTest
             case AddonSurface::HLBG:
                 return availability.HasHLBGSurface();
             case AddonSurface::HLBGSeasonal:
-                return availability.hasHLBGSeasonData
-                    || availability.HasHLBGUnifiedTables()
+                return availability.HasHLBGUnifiedTables()
                     || availability.hasHLBGSeasonal;
             case AddonSurface::HLBGAllTime:
                 return availability.HasHLBGUnifiedTables()
@@ -2346,7 +2344,6 @@ namespace DCPerfTest
         availability.hasMplusBestRuns = CharacterTableExists("dc_mplus_best_runs");
         availability.hasMplusDungeons = CharacterTableExists("dc_mplus_dungeons");
         availability.hasWardrobeOutfits = CharacterTableExists("dc_collection_community_outfits");
-        availability.hasHLBGSeasonData = CharacterTableExists("dc_hlbg_player_season_data");
         availability.hasHLBGSeasonal = CharacterTableExists("v_hlbg_player_seasonal_stats");
         availability.hasHLBGAllTime = CharacterTableExists("v_hlbg_player_alltime_stats");
         availability.hasHLBGParticipants = CharacterTableExists("dc_hlbg_match_participants");
@@ -2712,8 +2709,7 @@ namespace DCPerfTest
         if (availability.HasHLBGSurface())
         {
             (void)GetHLBGParticipantSampleGuids();
-            if (availability.hasHLBGSeasonData || availability.hasHLBGSeasonal
-                || availability.HasHLBGUnifiedTables())
+            if (availability.hasHLBGSeasonal || availability.HasHLBGUnifiedTables())
             {
                 (void)GetCachedHLBGSeasonalPayloadForStress(availability);
             }
@@ -3894,16 +3890,7 @@ namespace DCPerfTest
     {
         QueryResult result;
 
-        if (availability.hasHLBGSeasonData)
-        {
-            result = CharacterDatabase.Query(
-                "SELECT s.player_guid, COALESCE(c.name, ''), s.rating, s.wins "
-                "FROM dc_hlbg_player_season_data s "
-                "LEFT JOIN characters c ON s.player_guid = c.guid "
-                "WHERE s.season_id = {} ORDER BY s.rating DESC LIMIT 25",
-                1u);
-        }
-        else if (availability.hasHLBGSeasonal)
+        if (availability.hasHLBGSeasonal)
         {
             result = CharacterDatabase.Query(
                 "SELECT guid, player_name, current_rating, wins "
@@ -4715,7 +4702,7 @@ namespace DCPerfTest
 
             case AddonSurface::HLBGSeasonal:
             {
-                if (!availability.hasHLBGSeasonData && !availability.hasHLBGSeasonal
+                if (!availability.hasHLBGSeasonal
                     && !availability.HasHLBGUnifiedTables())
                     return false;
 

@@ -6,8 +6,8 @@ if not HLBG then HLBG = {} end
 -- Store server config data
 HLBG.ServerConfig = HLBG.ServerConfig or {}
 
--- Parse CONFIG_INFO protocol message from server
--- Format: "CONFIG_INFO|MATCH_DURATION=1800|MIN_LEVEL=1|RESOURCES_ALLIANCE=500|..."
+-- Parse optional CONFIG_INFO protocol message from server.
+-- Some realms no longer publish this payload; the info panel degrades gracefully.
 function HLBG.ParseConfigInfo(message)
     if not message or not message:find("CONFIG_INFO") then return end
     HLBG.DebugPrint("Parsing CONFIG_INFO: " .. message)
@@ -43,8 +43,6 @@ local function BuildInfoText()
     local lines = {}
 
     local matchDuration = tonumber(cfg.MATCH_DURATION) or 0
-    local warmupDuration = tonumber(cfg.WARMUP_DURATION) or 0
-    local minLevel = tonumber(cfg.MIN_LEVEL) or 1
     local resourcesAlliance = tonumber(cfg.RESOURCES_ALLIANCE) or 0
     local resourcesHorde = tonumber(cfg.RESOURCES_HORDE) or 0
     local season = tonumber(cfg.SEASON) or 1
@@ -65,7 +63,9 @@ local function BuildInfoText()
     table.insert(lines,
         "- Addon settings: |cFFFFFFFF/hlbgconfig|r or Esc -> Interface -> AddOns -> DC HLBG Addon")
     table.insert(lines,
-        "- Queue controls: Queue tab, |cFFFFFFFF/hlbg queue join|r, |cFFFFFFFF/hlbg queue leave|r")
+        "- Queue controls: Queue tab, |cFFFFFFFF/hlbgq join|r, |cFFFFFFFF/hlbgq leave|r, |cFFFFFFFF/hlbgq status|r")
+    table.insert(lines,
+        "- Chat command fallback: |cFFFFFFFF.hlbg queue join|r, |cFFFFFFFF.hlbg queue leave|r, |cFFFFFFFF.hlbg queue status|r")
     table.insert(lines, "")
 
     table.insert(lines, "|cFFFFD700Battleground Overview|r")
@@ -83,43 +83,48 @@ local function BuildInfoText()
             durationText = string.format("%d minutes", math.floor(matchDuration / 60))
         end
 
-        local warmupText = (warmupDuration > 0)
-            and string.format("%d seconds", warmupDuration)
-            or "Not provided"
-        local affixText = (affixEnabled == 1) and "Enabled" or "Disabled"
-
         table.insert(lines,
             string.format("- Match duration: |cFFFFFFFF%s|r", durationText))
-        table.insert(lines,
-            string.format("- Warmup duration: |cFFFFFFFF%s|r", warmupText))
-        table.insert(lines,
-            string.format("- Minimum level: |cFFFFFFFF%d|r", minLevel))
-        table.insert(lines,
-            string.format("- Starting resources: |cFFFFFFFFAlliance %d|r / |cFFFFFFFFHorde %d|r",
-                resourcesAlliance, resourcesHorde))
-        table.insert(lines,
-            string.format("- Current season: |cFFFFFFFF%d|r", season))
-        table.insert(lines,
-            string.format("- Affix system: |cFFFFFFFF%s|r", affixText))
-        table.insert(lines,
-            string.format("- Honor rewards: |cFFFFFFFFMatch %d|r / |cFFFFFFFFDepletion %d|r",
-                rewardHonor, rewardHonorDepletion))
+        if cfg.RESOURCES_ALLIANCE ~= nil or cfg.RESOURCES_HORDE ~= nil then
+            table.insert(lines,
+                string.format("- Starting resources: |cFFFFFFFFAlliance %d|r / |cFFFFFFFFHorde %d|r",
+                    resourcesAlliance, resourcesHorde))
+        end
+        if cfg.SEASON ~= nil then
+            table.insert(lines,
+                string.format("- Current season: |cFFFFFFFF%d|r", season))
+        end
+        if cfg.AFFIX_ENABLED ~= nil then
+            local affixText = (affixEnabled == 1) and "Enabled" or "Disabled"
+            table.insert(lines,
+                string.format("- Affix system: |cFFFFFFFF%s|r", affixText))
+        end
+        if cfg.REWARD_HONOR ~= nil or cfg.REWARD_HONOR_DEPLETION ~= nil then
+            table.insert(lines,
+                string.format("- Honor rewards: |cFFFFFFFFMatch %d|r / |cFFFFFFFFDepletion %d|r",
+                    rewardHonor, rewardHonorDepletion))
+        end
     else
-        table.insert(lines, "Waiting for server CONFIG_INFO payload...")
+        table.insert(lines,
+            "This realm does not publish an HLBG CONFIG_INFO payload. Use the Queue tab, |cFFFFFFFF/hlbgq|r, |cFFFFFFFF.hlbg live|r, or |cFFFFFFFF/leaderboard|r for current data.")
     end
     table.insert(lines, "")
 
     table.insert(lines, "|cFFFFD700Slash Commands|r")
     table.insert(lines, "- |cFFFFFFFF/hlbg|r: open main window")
     table.insert(lines, "- |cFFFFFFFF/hlbgconfig|r: open HLBG addon settings")
-    table.insert(lines, "- |cFFFFFFFF/hlbg queue join|r: join queue")
-    table.insert(lines, "- |cFFFFFFFF/hlbg queue leave|r: leave queue")
+    table.insert(lines, "- |cFFFFFFFF/hlbgq join|r: join queue")
+    table.insert(lines, "- |cFFFFFFFF/hlbgq leave|r: leave queue")
+    table.insert(lines, "- |cFFFFFFFF/hlbgq status|r: request queue status")
     table.insert(lines, "- |cFFFFFFFF/hlbg devmode on|off|r: toggle debug mode")
     table.insert(lines,
         "- |cFFFFFFFF/hlbg season <n>|r: set season filter (0 = all/current)")
     table.insert(lines, "")
 
-    table.insert(lines, "|cFFAAAAAAIf queue APIs are unavailable on your realm, queue via Battlemaster NPC 900001.|r")
+    table.insert(lines, "|cFFFFD700Server Chat Fallback|r")
+    table.insert(lines, "- |cFFFFFFFF.hlbg queue join|r: join queue via chat command")
+    table.insert(lines, "- |cFFFFFFFF.hlbg queue leave|r: leave queue via chat command")
+    table.insert(lines, "- |cFFFFFFFF.hlbg queue status|r: request queue status via chat command")
 
     return table.concat(lines, "\n")
 end

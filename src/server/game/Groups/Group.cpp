@@ -312,6 +312,8 @@ void Group::ConvertToRaid()
         if (Player* player = ObjectAccessor::FindPlayer(citr->guid))
             player->UpdateForQuestWorldObjects();
 
+    sScriptMgr->OnGroupConvertToRaid(this);
+
     // pussywizard: client automatically clears df "eye" near minimap, so remove from raid browser
     if (sLFGMgr->GetState(GetLeaderGUID()) == lfg::LFG_STATE_RAIDBROWSER)
         sLFGMgr->LeaveLfg(GetLeaderGUID());
@@ -1881,6 +1883,8 @@ void Group::ChangeMembersGroup(ObjectGuid guid, uint8 group)
 
     // Broadcast the changes to the group
     SendUpdate();
+
+    sScriptMgr->OnGroupChangeMemberSubGroup(this, guid, prevSubGroup, group);
 }
 
 // Retrieve the next Round-Roubin player for the group

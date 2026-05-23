@@ -1,5 +1,6 @@
 #include "HLBGService.h"
 
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "BattlegroundHLBG.h"
 #include "Battlegrounds/BattlegroundMgr.h"
 #include "Config.h"
@@ -62,7 +63,7 @@ void HLBGService::ReloadConfig()
         return;
 
     std::lock_guard<std::mutex> lock(_mutex);
-    _season = sConfigMgr->GetOption<uint32>("HinterlandBG.Season", _season);
+    _season = DarkChaos::GetActiveSeasonId();
     _statsIncludeManualResets = sConfigMgr->GetOption<bool>(
         "HinterlandBG.Stats.IncludeManual", _statsIncludeManualResets);
 }

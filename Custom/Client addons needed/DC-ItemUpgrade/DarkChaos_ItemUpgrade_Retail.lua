@@ -176,8 +176,6 @@ local function GetCanonicalItemEntry(item)
 	end
 
 	local entry = tonumber(item.itemEntry)
-		or tonumber(item.baseEntry)
-		or tonumber(item.currentEntry)
 		or tonumber(item.itemID);
 	if entry and entry > 0 then
 		return entry;
@@ -552,66 +550,6 @@ end
 
 function DarkChaos_ItemUpgrade_GetCost(tier, level)
 	local numericTier = tonumber(tier);
-	local numericLevel = tonumber(level);
-	if numericTier == 3 and DarkChaos_ItemUpgrade_GetHeirloomCost then
-		local heirloomCost = DarkChaos_ItemUpgrade_GetHeirloomCost(numericLevel);
-		if heirloomCost then
-			return {
-				tokens = 0,
-				essence = heirloomCost.essence or 0,
-			};
-		end
-	end
-
-	if DC.GetCachedCostInfo and numericTier and numericLevel and numericLevel > 0 then
-		local liveCost = DC.GetCachedCostInfo(numericTier, numericLevel - 1, numericLevel);
-		if liveCost then
-			return {
-				tokens = liveCost.tokens or 0,
-				essence = liveCost.essence or 0,
-			};
-		end
-	end
-
-	if not DC.upgradeCosts[tier] or not DC.upgradeCosts[tier][level] then
-		return nil;
-	end
-	return DC.upgradeCosts[tier][level];
-end
-
-DarkChaos_ItemUpgrade_ComputeCostTotals = function(tier, currentLevel, targetLevel)
-	local totals = { tokens = 0, essence = 0 };
-	if not tier or not targetLevel or not currentLevel or targetLevel <= currentLevel then
-		return totals, nil;
-	end
-
-	local missingLevel = nil;
-
-	for level = currentLevel + 1, targetLevel do
-		local cost = DarkChaos_ItemUpgrade_GetCost(tier, level);
-		if not cost then
-			missingLevel = level;
-			break;
-		end
-		totals.tokens = totals.tokens + (cost.tokens or 0);
-		totals.essence = totals.essence + (cost.essence or 0);
-	end
-
-	return totals, missingLevel;
-end
-
-local function DarkChaos_ItemUpgrade_CopyCostTotals(tokens, essence)
-	return {
-		tokens = tonumber(tokens) or 0,
-		essence = tonumber(essence) or 0,
-	};
-end
-
-function DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, targetLevel)
-	local totals = { tokens = 0, essence = 0 };
-	if not tier or not targetLevel or not currentLevel or targetLevel <= currentLevel then
-		return totals, nil, false;
-	end
 
 	if tonumber(tier) == 3 or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
 		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentLevel, targetLevel);
@@ -1735,10 +1673,10 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	if maxUpgrade <= 0 and current <= 0 then
 		return;
 	end
-	local currentEntry = data.currentEntry or data.baseEntry or 0;
+	local itemEntry = GetCanonicalItemEntry(data) or 0;
 	-- tier is computed above
 	local HEIRLOOM_SHIRT_ENTRY = 300365;
-	local isHeirloom = (currentEntry == HEIRLOOM_SHIRT_ENTRY) or (data.baseEntry == HEIRLOOM_SHIRT_ENTRY);
+	local isHeirloom = (itemEntry == HEIRLOOM_SHIRT_ENTRY);
 
 	tooltip.__dcUpgradeProcessing = true;
 	tooltip:AddLine(" ");
@@ -1908,7 +1846,7 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 	end
 
 	local existing = (DC.itemUpgradeCache and DC.itemUpgradeCache[guid]) or nil;
-	local itemEntry = tonumber(info.itemEntry or info.baseEntry or info.currentEntry) or 0;
+	local itemEntry = tonumber(info.itemEntry) or 0;
 	local data = {
 		guid = guid,
 		tier = tonumber(info.tier) or 0,
@@ -1916,8 +1854,6 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 		upgradedItemLevel = tonumber(info.upgradedIlvl or info.upgradedItemLevel) or 0,
 		statMultiplier = tonumber(info.statMultiplier) or 1.0,
 		itemEntry = itemEntry,
-		baseEntry = itemEntry,
-		currentEntry = itemEntry,
 		currentUpgrade = tonumber(info.currentUpgrade) or 0,
 		maxUpgrade = tonumber(info.maxUpgrade) or 0,
 		tokenCost = tonumber(info.tokenCost) or 0,
@@ -2014,9 +1950,8 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	-- SPECIAL HANDLING: Heirloom Adventurer's Shirt (300365)
 	-- Force tier 3 (HEIRLOOM) and 15 max levels regardless of server response
 	local HEIRLOOM_SHIRT_ENTRY = 300365;
-	local isHeirloomShirt = (item.itemID == HEIRLOOM_SHIRT_ENTRY) or 
-	                        (item.baseEntry == HEIRLOOM_SHIRT_ENTRY) or
-	                        (data.baseEntry == HEIRLOOM_SHIRT_ENTRY);
+	local isHeirloomShirt = (GetCanonicalItemEntry(item) == HEIRLOOM_SHIRT_ENTRY)
+		or (GetCanonicalItemEntry(data) == HEIRLOOM_SHIRT_ENTRY);
 	
 	if isHeirloomShirt then
 		DC.uiMode = "HEIRLOOM";
@@ -2043,16 +1978,12 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	item.level = calculatedLevel;
 	item.statMultiplier = data.statMultiplier or GetStatMultiplierForLevel(item.currentUpgrade, item.tier);
 	item.guid = data.guid or item.guid;
-	local itemEntry = tonumber(data.itemEntry or data.baseEntry or data.currentEntry)
+	local itemEntry = tonumber(data.itemEntry)
 		or tonumber(item.itemEntry)
-		or tonumber(item.baseEntry)
-		or tonumber(item.currentEntry)
 		or tonumber(item.itemID)
 		or 0;
 	if itemEntry > 0 then
 		item.itemEntry = itemEntry;
-		item.baseEntry = itemEntry;
-		item.currentEntry = itemEntry;
 		item.itemID = itemEntry;
 	end
 	if data.serverBag then
@@ -2514,7 +2445,7 @@ function DarkChaos_ItemUpgrade_OnTooltipSetInspectItem(tooltip, unit, slot)
 	
 	-- Check if this item ID matches any upgraded item in our cache
 	for guid, data in pairs(DC.itemUpgradeCache or {}) do
-		if data.currentEntry == itemId then
+		if GetCanonicalItemEntry(data) == itemId then
 			DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data);
 			return;
 		end
@@ -2542,7 +2473,7 @@ function DarkChaos_ItemUpgrade_OnTooltipSetHyperlink(tooltip, link)
 	
 	-- Check if this is a known upgraded item in our cache
 	for guid, data in pairs(DC.itemUpgradeCache or {}) do
-		if data.currentEntry == itemId or data.baseEntry == itemId then
+		if GetCanonicalItemEntry(data) == itemId then
 			DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data);
 			return;
 		end
@@ -4296,8 +4227,6 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	pooledItem.ilevelStep = GetItemLevelBonus(1, pooledItem.tier);
 	pooledItem.statPerLevel = GetStatBonusPercent(1, pooledItem.tier) - GetStatBonusPercent(0, pooledItem.tier);
 	pooledItem.itemEntry = itemID;
-	pooledItem.baseEntry = itemID;
-	pooledItem.currentEntry = itemID;
 	pooledItem.awaitingServerInfo = true;
 	pooledItem.hasAuthoritativeState = false;
 	pooledItem.allowBackgroundRefresh = false;
@@ -4718,64 +4647,6 @@ end
 function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 	if not message then return end
 	
-	local function MaybeLogStandardUpgradeFromQuery(locationKey, data)
-		if not locationKey or type(data) ~= "table" then
-			return;
-		end
-		-- If DCAddonProtocol is active, Core.lua already logs via UPG 0x11
-		if DCProtocol and DC.useDCProtocol then
-			return;
-		end
-
-		-- Ignore heirloom shirt (handled by DCHEIRLOOM_SUCCESS)
-		if tonumber(data.baseEntry) == 300365 then
-			return;
-		end
-
-		local pending = DC.pendingUpgrade;
-		if not pending or pending.isHeirloom then
-			return;
-		end
-
-		local pendingKey = tostring(pending.bag) .. ":" .. tostring(pending.serverSlot);
-		if pendingKey ~= locationKey then
-			return;
-		end
-
-		local newLevel = tonumber(data.currentUpgrade);
-		if not newLevel then
-			return;
-		end
-
-		local target = tonumber(pending.target);
-		if target and newLevel < target then
-			return;
-		end
-
-		local baseEntry = tonumber(data.baseEntry) or tonumber(data.currentEntry);
-		local itemName, itemLink = nil, nil;
-		if baseEntry then
-			itemName, itemLink = GetItemInfo(baseEntry);
-		end
-
-		if DC.AddUpgradeHistoryEntry then
-			DC.AddUpgradeHistoryEntry({
-				source = "chat_query",
-				mode = "STANDARD",
-				itemId = baseEntry,
-				itemName = itemName,
-				itemLink = itemLink,
-				guid = data.guid,
-				fromLevel = pending.startLevel,
-				toLevel = newLevel,
-				tier = tonumber(data.tier) or pending.tier,
-				maxUpgrade = data.maxUpgrade,
-			});
-		end
-
-		DC.pendingUpgrade = nil;
-	end
-	
 	-- Debug: Log all incoming messages that might be ours
 	if string.find(message, "^DCUPGRADE_") or string.find(message, "^DCHEIRLOOM_") then
 		DC.Debug("OnChatMessage received: " .. string.sub(message, 1, 80) .. "...");
@@ -4819,185 +4690,6 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 		
 		DarkChaos_ItemUpgrade_UpdatePlayerCurrencies();
 		DarkChaos_ItemUpgrade_UpdateUI();
-		return;
-	end
-	
-	-- Handle query response
-	-- Legacy chat fallback still carries an unused trailing field; the dynamic path ignores it.
-	-- Format: DCUPGRADE_QUERY:guid:upgradeLevel:tier:baseItemLevel:upgradedItemLevel:statMultiplier:baseEntry:currentEntry:legacyTail
-	if string.find(message, "^DCUPGRADE_QUERY") then
-		local pattern = "^DCUPGRADE_QUERY:(%d+):(%d+):(%d+):(%d+):(%d+):([%d%.]+):(%d+):(%d+):(.*)$";
-		local _, _, guid, serverUpgradeLevel, tier, baseLevel, upgradedLevel, statMult, baseEntry, currentEntry = string.find(message, pattern);
-		
-		if guid then
-			guid = tonumber(guid);
-			serverUpgradeLevel = tonumber(serverUpgradeLevel);
-			tier = tonumber(tier);
-			baseLevel = tonumber(baseLevel);
-			upgradedLevel = tonumber(upgradedLevel);
-			statMult = tonumber(statMult);
-			baseEntry = tonumber(baseEntry);
-			currentEntry = tonumber(currentEntry);
-
-			local existing = DC.itemUpgradeCache[guid];
-			local currentUpgrade = math.max(0, serverUpgradeLevel or 0);
-			local maxUpgrade = math.max(
-				tonumber(DC.GetMaxUpgradeLevelForTier(tier)) or 0,
-				currentUpgrade,
-				tonumber(existing and existing.maxUpgrade) or 0);
-			local HEIRLOOM_SHIRT_ENTRY = 300365;
-			local isHeirloom = (baseEntry == HEIRLOOM_SHIRT_ENTRY);
-			
-			DC.Debug(string.format("ParseQueryResponse: guid=%d, tier=%d, currentUpgrade=%d, maxUpgrade=%d, baseEntry=%d, currentEntry=%d",
-				guid, tier, currentUpgrade, maxUpgrade, baseEntry, currentEntry));
-
-			-- Build the cached data object
-			local data = {
-				guid = guid,
-				tier = tier,
-				baseItemLevel = baseLevel,
-				upgradedItemLevel = upgradedLevel,
-				statMultiplier = statMult,
-				baseEntry = baseEntry,
-				currentEntry = currentEntry,
-				currentUpgrade = currentUpgrade,
-				maxUpgrade = maxUpgrade,
-				timestamp = GetTime and GetTime() or 0,
-			};
-			
-			-- For heirlooms, include the selected package ID (will be updated by DCHEIRLOOM_QUERY later)
-			if isHeirloom then
-				data.heirloomPackageId = (existing and existing.heirloomPackageId) or DC.selectedStatPackage or 0;
-			end
-			
-			-- Store in cache
-			DC.itemUpgradeCache[guid] = data;
-			
-			-- Try to match this response to the correct location
-			-- First, check if we have an in-flight query AND it matches this item
-			local matchedInFlight = false;
-			
-			DC.Debug(string.format("Processing DCUPGRADE_QUERY: guid=%d, baseEntry=%d, currentEntry=%d", 
-				guid, baseEntry, currentEntry));
-			
-			if DC.queryInFlight then
-				local locationKey = DC.queryInFlight.key;
-				-- Get the item at this location and check if it matches the response
-				local bagStr, slotStr = string.match(locationKey, "(%d+):(%d+)");
-				local queryBag = tonumber(bagStr);
-				local querySlot = tonumber(slotStr);
-				local queryLink = nil;
-				
-				DC.Debug("In-flight query for location: " .. locationKey .. " (bag=" .. tostring(queryBag) .. ", slot=" .. tostring(querySlot) .. ")");
-				
-				if queryBag == 255 then
-					-- Equipped item (slot is 0-indexed, need to add 1 for API)
-					queryLink = GetInventoryItemLink("player", querySlot + 1);
-				else
-					-- Bag item (slot is 0-indexed, need to add 1 for API)
-					queryLink = GetContainerItemLink(queryBag, querySlot + 1);
-				end
-				
-				if queryLink then
-					local queryItemId = tonumber(string.match(queryLink, "item:(%d+)"));
-					DC.Debug("Query location has item: " .. tostring(queryItemId) .. ", response has: " .. tostring(currentEntry) .. "/" .. tostring(baseEntry));
-					
-					-- Check if the queried item matches the response (by entry ID)
-					if queryItemId == currentEntry or queryItemId == baseEntry then
-						-- This response IS for our in-flight query
-						DC.itemLocationCache[locationKey] = guid;
-						DC.Debug("In-flight query matched: " .. locationKey .. " -> guid " .. tostring(guid));
-						MaybeLogStandardUpgradeFromQuery(locationKey, data);
-						matchedInFlight = true;
-						
-						-- Apply to current item if it matches
-						if DC.currentItem and DC.currentItem.locationKey == locationKey then
-							DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
-							local current = DC.currentItem.currentUpgrade or 0;
-							local itemMaxUpgrade = DC.currentItem.maxUpgrade or DC.GetMaxUpgradeLevelForTier(DC.currentItem.tier);
-							DC.Debug(string.format("After ApplyQueryData: tier=%d, currentUpgrade=%d, maxUpgrade=%d", 
-								DC.currentItem.tier or 0, current, itemMaxUpgrade));
-							if itemMaxUpgrade > 0 and current < itemMaxUpgrade then
-								DC.targetUpgradeLevel = current + 1;
-							else
-								DC.targetUpgradeLevel = math.max(current, 1);
-							end
-							DC.Debug("Set targetUpgradeLevel to: " .. tostring(DC.targetUpgradeLevel));
-							DarkChaos_ItemUpgrade_UpdateUI();
-						end
-						
-						-- Notify any waiting contexts and start next query
-						local finished = DarkChaos_ItemUpgrade_CompleteQuery();
-						if finished and finished.contexts then
-							for _, ctx in ipairs(finished.contexts) do
-								if ctx.callback then
-									ctx.callback(data);
-								end
-							end
-						end
-					else
-						DC.Debug("In-flight query does NOT match response: queryItemId=" .. tostring(queryItemId) .. 
-							", responseEntry=" .. tostring(currentEntry) .. "/" .. tostring(baseEntry));
-					end
-				end
-			end
-			
-			-- If we didn't match an in-flight query, try to match by scanning items
-			if not matchedInFlight then
-				DC.Debug("No in-flight match, scanning items for entry: " .. tostring(currentEntry) .. " or base: " .. tostring(baseEntry));
-				local matched = false;
-				
-				-- Scan equipped items to find which slot has this entry
-				for slotID = 1, 19 do
-					local link = GetInventoryItemLink("player", slotID);
-					if link then
-						local itemId = tonumber(string.match(link, "item:(%d+)"));
-						DC.Debug("  Slot " .. slotID .. " has itemId: " .. tostring(itemId));
-						if itemId == currentEntry or itemId == baseEntry then
-							-- Found matching slot!
-							local serverBag = 255;
-							local serverSlot = slotID - 1;
-							local locationKey = serverBag .. ":" .. serverSlot;
-							DC.itemLocationCache[locationKey] = guid;
-							DC.Debug("Matched entry " .. tostring(currentEntry) .. " to slot " .. slotID .. " (key: " .. locationKey .. ")");
-							MaybeLogStandardUpgradeFromQuery(locationKey, data);
-							matched = true;
-							break;
-						end
-					end
-				end
-				
-				-- Also scan bags
-				if not matched then
-					for bag = 0, 4 do
-						local numSlots = GetContainerNumSlots(bag);
-						for slot = 1, numSlots do
-							local link = GetContainerItemLink(bag, slot);
-							if link then
-								local itemId = tonumber(string.match(link, "item:(%d+)"));
-								if itemId == currentEntry or itemId == baseEntry then
-									local serverSlot = slot - 1;
-									local locationKey = bag .. ":" .. serverSlot;
-									DC.itemLocationCache[locationKey] = guid;
-									DC.Debug("Matched entry " .. tostring(currentEntry) .. " to bag " .. bag .. " slot " .. slot .. " (key: " .. locationKey .. ")");
-									MaybeLogStandardUpgradeFromQuery(locationKey, data);
-									matched = true;
-									break;
-								end
-							end
-						end
-						if matched then break; end
-					end
-				end
-				
-				if not matched then
-					DC.Debug("Could not match entry to any location");
-				end
-				
-				-- If we have an in-flight query that didn't match, DON'T consume it
-				-- The query is still waiting for its response
-			end
-		end
 		return;
 	end
 

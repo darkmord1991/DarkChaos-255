@@ -7,7 +7,8 @@
  * LOGIC:
  * 1. On startup, indexes only upgrade-eligible base ItemTemplates to build
  *    a `SpellID -> [ItemID]` map.
- * 2. Hooks Unit::ModifySpellDamageTaken and Unit::ModifyHealReceived.
+ * 2. Hooks Unit::ModifySpellDamageTaken, Unit::ModifyPeriodicDamageAurasTick,
+ *    and Unit::ModifyHealReceived.
  * 3. When a registered proc spell is cast:
  *    a. Checks if the caster has the source item equipped.
  *    b. Fetches the specific item's upgrade level.
@@ -21,6 +22,7 @@
 #include "Player.h"
 #include "Item.h"
 #include "ItemTemplate.h"
+#include "SpellAuraEffects.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Unit.h"
@@ -31,6 +33,7 @@
 #include "Log.h"
 #include "Chat.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <algorithm>
 #include <sstream>
@@ -40,11 +43,6 @@ namespace DarkChaos
 {
 namespace ItemUpgrade
 {
-    namespace
-    {
-        constexpr uint32 UPGRADE_CLONE_ITEM_ID_MIN = 2000000;
-    }
-
     // =====================================================================
     // Proc Spell Registry
     // =====================================================================
@@ -56,6 +54,64 @@ namespace ItemUpgrade
         // Map: SpellID -> List of ItemIDs that use this spell
         static std::unordered_map<uint32, std::vector<uint32>> _procSpellMap;
         static bool _initialized;
+
+        static bool AddSpellAssociation(uint32 spellId, uint32 itemId)
+        {
+            std::vector<uint32>& items = _procSpellMap[spellId];
+            if (std::find(items.begin(), items.end(), itemId) != items.end())
+                return false;
+
+            items.push_back(itemId);
+            return true;
+        }
+
+        static bool ShouldFollowTriggeredSpell(SpellEffectInfo const& effect)
+        {
+            switch (effect.ApplyAuraName)
+            {
+                case SPELL_AURA_PROC_TRIGGER_SPELL:
+                case SPELL_AURA_PROC_TRIGGER_DAMAGE:
+                case SPELL_AURA_PERIODIC_TRIGGER_SPELL:
+                case SPELL_AURA_PERIODIC_TRIGGER_SPELL_FROM_CLIENT:
+                case SPELL_AURA_PERIODIC_TRIGGER_SPELL_WITH_VALUE:
+                case SPELL_AURA_PROC_TRIGGER_SPELL_WITH_VALUE:
+                    return true;
+                default:
+                    break;
+            }
+
+            switch (effect.Effect)
+            {
+                case SPELL_EFFECT_TRIGGER_SPELL:
+                case SPELL_EFFECT_TRIGGER_SPELL_WITH_VALUE:
+                case SPELL_EFFECT_TRIGGER_SPELL_2:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        static void IndexSpellPayloads(uint32 spellId, uint32 itemId, uint32& count,
+            std::unordered_set<uint32>& visited)
+        {
+            if (spellId == 0 || !visited.insert(spellId).second)
+                return;
+
+            if (AddSpellAssociation(spellId, itemId))
+                ++count;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+                return;
+
+            for (SpellEffectInfo const& effect : spellInfo->Effects)
+            {
+                if (!effect.TriggerSpell || !ShouldFollowTriggeredSpell(effect))
+                    continue;
+
+                IndexSpellPayloads(effect.TriggerSpell, itemId, count, visited);
+            }
+        }
 
     public:
         static void Initialize()
@@ -71,8 +127,8 @@ namespace ItemUpgrade
             std::vector<uint32> eligibleEntries;
             QueryResult eligibleResult = WorldDatabase.Query(
                 "SELECT item_id FROM dc_item_templates_upgrade "
-                "WHERE season = {} AND is_active = 1 AND item_id < {}",
-                season, UPGRADE_CLONE_ITEM_ID_MIN);
+                "WHERE season = {} AND is_active = 1",
+                season);
 
             if (eligibleResult)
             {
@@ -124,8 +180,8 @@ namespace ItemUpgrade
                         if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
                             continue;
 
-                        _procSpellMap[itemSpell.SpellId].push_back(itemTemplate.ItemId);
-                        count++;
+                        std::unordered_set<uint32> visited;
+                        IndexSpellPayloads(itemSpell.SpellId, itemTemplate.ItemId, count, visited);
                     }
                 }
             }
@@ -176,6 +232,69 @@ namespace ItemUpgrade
         }
 
         return nullptr;
+    }
+
+    static bool IsPeriodicDamageAuraSpell(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return false;
+
+        for (SpellEffectInfo const& effect : spellInfo->Effects)
+        {
+            switch (effect.ApplyAuraName)
+            {
+                case SPELL_AURA_PERIODIC_DAMAGE:
+                case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
+                    return true;
+                default:
+                    break;
+            }
+        }
+
+        return false;
+    }
+
+    static float GetProcScalingMultiplier(Player* player, uint32 spellId)
+    {
+        if (!player)
+            return 1.0f;
+
+        Item* sourceItem = FindSourceItem(player, spellId);
+        if (!sourceItem)
+            return 1.0f;
+
+        UpgradeManager* mgr = GetUpgradeManager();
+        if (!mgr)
+            return 1.0f;
+
+        ItemUpgradeState* state = mgr->GetItemUpgradeState(sourceItem->GetGUID().GetCounter());
+        if (!state || state->upgrade_level == 0 || state->stat_multiplier <= 1.0f)
+            return 1.0f;
+
+        return state->stat_multiplier;
+    }
+
+    static bool IsDirectProcAura(AuraType auraType)
+    {
+        switch (auraType)
+        {
+            case SPELL_AURA_PERIODIC_DAMAGE:
+            case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
+            case SPELL_AURA_PERIODIC_HEAL:
+            case SPELL_AURA_PERIODIC_LEECH:
+            case SPELL_AURA_PERIODIC_HEALTH_FUNNEL:
+            case SPELL_AURA_PERIODIC_MANA_LEECH:
+            case SPELL_AURA_PERIODIC_ENERGIZE:
+            case SPELL_AURA_PROC_TRIGGER_SPELL:
+            case SPELL_AURA_PROC_TRIGGER_DAMAGE:
+            case SPELL_AURA_PERIODIC_TRIGGER_SPELL_FROM_CLIENT:
+            case SPELL_AURA_PERIODIC_TRIGGER_SPELL:
+            case SPELL_AURA_PERIODIC_TRIGGER_SPELL_WITH_VALUE:
+            case SPELL_AURA_PROC_TRIGGER_SPELL_WITH_VALUE:
+                return true;
+            default:
+                return false;
+        }
     }
 
     // =====================================================================
@@ -254,34 +373,30 @@ namespace ItemUpgrade
             if (!player)
                 return;
 
-            // 1. Check if this spell is a known item proc
-            Item* sourceItem = FindSourceItem(player, spellInfo->Id);
-            if (!sourceItem)
-                return;
-
-            // 2. Check if the item is upgraded
-            UpgradeManager* mgr = GetUpgradeManager();
-            if (!mgr)
-                return;
-
-            ItemUpgradeState* state = mgr->GetItemUpgradeState(sourceItem->GetGUID().GetCounter());
-            if (!state || state->upgrade_level == 0)
-                return;
-
-            // 3. Apply scaling
-            // We use the item's stat multiplier (e.g., 1.05x, 1.10x)
-            // This scales the proc damage exactly as much as the stats are scaled.
-            float multiplier = state->stat_multiplier;
+            float multiplier = GetProcScalingMultiplier(player, spellInfo->Id);
 
             if (multiplier > 1.0f)
             {
-                // int32 oldDamage = damage;
                 damage = static_cast<int32>(damage * multiplier);
-
-                // Debug log (optional, can be spammy)
-                // LOG_DEBUG("scripts.dc", "ItemUpgrade: Scaled proc {} from item {} by {:.2f}x ({} -> {})",
-                //     spellInfo->Id, sourceItem->GetEntry(), multiplier, oldDamage, damage);
             }
+        }
+
+        void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* spellInfo) override
+        {
+            (void)target;
+            if (!attacker || !spellInfo || damage == 0)
+                return;
+
+            if (!IsPeriodicDamageAuraSpell(spellInfo))
+                return;
+
+            Player* player = attacker->ToPlayer();
+            if (!player)
+                return;
+
+            float multiplier = GetProcScalingMultiplier(player, spellInfo->Id);
+            if (multiplier > 1.0f)
+                damage = static_cast<uint32>(damage * multiplier);
         }
 
         // Hook: Healing Calculation
@@ -295,24 +410,31 @@ namespace ItemUpgrade
             if (!player)
                 return;
 
-            Item* sourceItem = FindSourceItem(player, spellInfo->Id);
-            if (!sourceItem)
-                return;
-
-            UpgradeManager* mgr = GetUpgradeManager();
-            if (!mgr)
-                return;
-
-            ItemUpgradeState* state = mgr->GetItemUpgradeState(sourceItem->GetGUID().GetCounter());
-            if (!state || state->upgrade_level == 0)
-                return;
-
-            float multiplier = state->stat_multiplier;
+            float multiplier = GetProcScalingMultiplier(player, spellInfo->Id);
 
             if (multiplier > 1.0f)
             {
                 gain = static_cast<uint32>(gain * multiplier);
             }
+        }
+
+        void ModifyAuraEffectAmount(Unit* target, Unit* caster, AuraEffect const* aurEff, int32& amount, bool& canBeRecalculated) override
+        {
+            (void)target;
+            (void)canBeRecalculated;
+            if (!caster || !aurEff || amount == 0)
+                return;
+
+            if (IsDirectProcAura(aurEff->GetAuraType()))
+                return;
+
+            Player* player = caster->ToPlayer();
+            if (!player)
+                return;
+
+            float multiplier = GetProcScalingMultiplier(player, aurEff->GetId());
+            if (multiplier > 1.0f)
+                amount = static_cast<int32>(amount * multiplier);
         }
     };
 

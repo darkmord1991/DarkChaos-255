@@ -158,7 +158,6 @@ set(SCRIPTS_DC_RandomEnchants
 set(SCRIPTS_DC_SeasonalSystem
     Seasons/SeasonalSystem.h
     Seasons/SeasonalSystem.cpp
-    Seasons/HLBGSeasonalParticipant.cpp
 )
 
 # DC Seasonal Reward System - C++ Core Implementation

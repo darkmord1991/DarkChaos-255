@@ -130,7 +130,7 @@ LB.Categories = {
         icon = "Interface\\Icons\\Achievement_BG_WinWSG",
         color = "c41f3b",
         subcats = {
-            -- Seasonal stats (from dc_hlbg_player_season_data)
+            -- Seasonal stats (from v_hlbg_player_seasonal_stats)
             { id = "hlbg_rating", name = "Season Rating" },
             { id = "hlbg_wins", name = "Season Wins" },
             { id = "hlbg_winrate", name = "Win Rate %" },

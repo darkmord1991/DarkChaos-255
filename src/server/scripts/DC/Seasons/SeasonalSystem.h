@@ -248,13 +248,13 @@ namespace DarkChaos
  *    - Systems handle their specific logic (resets, carryover, etc.)
  *    - Player data updated atomically
  *
- * 5. Example Usage for HLBG:
- *    class HLBGSeasonalParticipant : public SeasonalParticipant {
+ * 5. Example Usage for a Seasonal System:
+ *    class ExampleSeasonalParticipant : public SeasonalParticipant {
  *        void OnSeasonStart(uint32 season_id) override {
- *            // Reset HLBG resources, clear scores, etc.
+ *            // Reset system state for the new season.
  *        }
  *        void OnSeasonEnd(uint32 season_id) override {
- *            // Calculate final rankings, distribute rewards
+ *            // Calculate final rankings, distribute rewards.
  *        }
  *    };
  */

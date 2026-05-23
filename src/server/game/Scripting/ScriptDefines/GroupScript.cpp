@@ -54,6 +54,20 @@ void ScriptMgr::OnGroupDisband(Group* group)
     CALL_ENABLED_HOOKS(GroupScript, GROUPHOOK_ON_DISBAND, script->OnDisband(group));
 }
 
+void ScriptMgr::OnGroupConvertToRaid(Group* group)
+{
+    ASSERT(group);
+
+    CALL_ENABLED_HOOKS(GroupScript, GROUPHOOK_ON_CONVERT_TO_RAID, script->OnConvertToRaid(group));
+}
+
+void ScriptMgr::OnGroupChangeMemberSubGroup(Group* group, ObjectGuid guid, uint8 oldSubGroup, uint8 newSubGroup)
+{
+    ASSERT(group);
+
+    CALL_ENABLED_HOOKS(GroupScript, GROUPHOOK_ON_CHANGE_MEMBER_SUB_GROUP, script->OnChangeMemberSubGroup(group, guid, oldSubGroup, newSubGroup));
+}
+
 bool ScriptMgr::CanGroupJoinBattlegroundQueue(Group const* group, Player* member, Battleground const* bgTemplate, uint32 MinPlayerCount, bool isRated, uint32 arenaSlot)
 {
     CALL_ENABLED_BOOLEAN_HOOKS(GroupScript, GROUPHOOK_CAN_GROUP_JOIN_BATTLEGROUND_QUEUE, !script->CanGroupJoinBattlegroundQueue(group, member, bgTemplate, MinPlayerCount, isRated, arenaSlot));

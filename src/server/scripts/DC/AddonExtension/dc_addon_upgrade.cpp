@@ -87,7 +87,7 @@ namespace Upgrade
         }
 
         inline void SendUpgradeResult(Player* player, const std::string& requestId, bool success,
-            uint32 itemGuid, uint32 newLevel, uint32 newEntry, uint32 errorCode,
+            uint32 itemGuid, uint32 newLevel, uint32 /*legacyEntry*/, uint32 errorCode,
             const std::string& errorMsg, uint32 tier = 0, uint32 maxUpgrade = 0,
             uint32 tokenCost = 0, uint32 essenceCost = 0, uint32 serverBag = 0,
             uint32 serverSlot = 0)
@@ -97,7 +97,6 @@ namespace Upgrade
                 .Set("success", success)
                 .Set("itemId", itemGuid)
                 .Set("newLevel", newLevel)
-                .Set("newEntry", newEntry)
                 .Set("errorCode", errorCode)
                 .Set("errorMsg", errorMsg)
                 .Set("tier", tier)
@@ -206,6 +205,7 @@ namespace Upgrade
                 .SetRequestId(msg.GetRequestId())
                 .Set("success", true)
                 .Set("itemID", itemGUID)
+                .Set("itemEntry", DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
                 .Set("serverBag", extBag)
                 .Set("serverSlot", extSlot)
                 .Set("currentUpgrade", upgradeLevel)
@@ -213,7 +213,6 @@ namespace Upgrade
                 .Set("tier", DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
                 .Set("tokenCost", 0u)
                 .Set("essenceCost", 0u)
-                .Set("baseEntry", DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
                 .Set("baseIlvl", baseItemLevel)
                 .Set("upgradedIlvl", baseItemLevel)
                 .Set("statMultiplier", statMultiplier)
@@ -304,6 +303,7 @@ namespace Upgrade
             .SetRequestId(msg.GetRequestId())
             .Set("success", true)
             .Set("itemID", itemGUID)
+            .Set("itemEntry", baseEntry)
             .Set("serverBag", extBag)
             .Set("serverSlot", extSlot)
             .Set("currentUpgrade", upgradeLevel)
@@ -311,7 +311,6 @@ namespace Upgrade
             .Set("tier", tier)
             .Set("tokenCost", nextTokenCost)
             .Set("essenceCost", nextEssenceCost)
-            .Set("baseEntry", baseEntry)
             .Set("baseIlvl", baseItemLevel)
             .Set("upgradedIlvl", upgradedIlvl)
             .Set("statMultiplier", statMultiplier)
@@ -381,7 +380,6 @@ namespace Upgrade
              if (!item) return;
 
              uint32 entry = item->GetEntry();
-             uint32 baseEntry = entry;
 
              // Check for Heirloom
              if (entry == HEIRLOOM_SHIRT_ENTRY)
@@ -396,15 +394,9 @@ namespace Upgrade
                  return;
              }
 
-             QueryResult baseResult = WorldDatabase.Query(
-                 "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
-                 entry);
-             if (baseResult)
-                 baseEntry = (*baseResult)[0].Get<uint32>();
-
              if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
              {
-                 uint32 tier = mgr->GetItemTier(baseEntry);
+                 uint32 tier = mgr->GetItemTier(entry);
                  if (tier > 0 && tier != DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
                  {
                      std::ostringstream ss;
@@ -488,17 +480,12 @@ namespace Upgrade
 
         uint32 itemGUID = item->GetGUID().GetCounter();
         uint32 currentEntry = item->GetEntry();
-        uint32 baseEntry = currentEntry;
-
-        QueryResult baseResult = WorldDatabase.Query(
-             "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
-        if (baseResult)
-             baseEntry = (*baseResult)[0].Get<uint32>();
+       uint32 baseEntry = currentEntry;
 
         uint32 tier = 1;
         DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (mgr)
-             tier = mgr->GetItemTier(baseEntry);
+           tier = mgr->GetItemTier(currentEntry);
 
         // Disallow tier 3 (heirloom tier) in standard item upgrade flow
         if (tier == DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
@@ -514,13 +501,6 @@ namespace Upgrade
             : nullptr;
         if (upgradeState && upgradeState->has_persisted_state)
             currentLevel = upgradeState->upgrade_level;
-        else if (baseResult)
-        {
-             // Check if it's a pre-dropped clone
-             QueryResult cloneLevelCheck = WorldDatabase.Query("SELECT upgrade_level FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
-             if (cloneLevelCheck)
-                 currentLevel = (*cloneLevelCheck)[0].Get<uint32>();
-        }
 
         uint32 maxLevel = 15;
         QueryResult tierResult = WorldDatabase.Query(

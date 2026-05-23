@@ -130,19 +130,6 @@ namespace DarkChaos
             // Ensures client gets updated unit data
             player->UpdateObjectVisibility();
 
-            // Method 5: Trigger item stat update for all equipped items
-            // This ensures the item upgrade changes are reflected
-            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-            {
-                Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (item)
-                {
-                    // Update item display/tooltip by re-applying item enchantments
-                    player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
-                    player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
-                }
-            }
-
             // Optional: Send debug message if enabled
             // ChatHandler(player->GetSession()).SendSysMessage("Stats updated!");
         }

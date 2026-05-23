@@ -2219,10 +2219,13 @@ HinterlandBG.MatchDuration = 3600
 
 #
 #    HinterlandBG.Season
-#        Description: Current season number for persistent stats
+#        Description: Legacy-only season override.
+#                     Current HLBG runtime uses DarkChaos.ActiveSeasonID.
 #        Default:     1
+#        Note:        Ignored by the current HLBG scripts. Keep only for
+#                     backward-compatible reference on older realm configs.
 #
-HinterlandBG.Season = 1
+# HinterlandBG.Season = 1
 
 # -----------------------------------------------------------------------------
 # Queue & Grouping

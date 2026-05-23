@@ -29,6 +29,8 @@ enum GroupHook
     GROUPHOOK_ON_REMOVE_MEMBER,
     GROUPHOOK_ON_CHANGE_LEADER,
     GROUPHOOK_ON_DISBAND,
+    GROUPHOOK_ON_CONVERT_TO_RAID,
+    GROUPHOOK_ON_CHANGE_MEMBER_SUB_GROUP,
     GROUPHOOK_CAN_GROUP_JOIN_BATTLEGROUND_QUEUE,
     GROUPHOOK_ON_CREATE,
     GROUPHOOK_END
@@ -58,6 +60,12 @@ public:
 
     // Called when a group is disbanded.
     virtual void OnDisband(Group* /*group*/) { }
+
+    // Called when a party converts into a raid.
+    virtual void OnConvertToRaid(Group* /*group*/) { }
+
+    // Called when a raid member moves to another subgroup.
+    virtual void OnChangeMemberSubGroup(Group* /*group*/, ObjectGuid /*guid*/, uint8 /*oldSubGroup*/, uint8 /*newSubGroup*/) { }
 
     [[nodiscard]] virtual bool CanGroupJoinBattlegroundQueue(Group const* /*group*/, Player* /*member*/, Battleground const* /*bgTemplate*/, uint32 /*MinPlayerCount*/, bool /*isRated*/, uint32 /*arenaSlot*/) { return true; }
 

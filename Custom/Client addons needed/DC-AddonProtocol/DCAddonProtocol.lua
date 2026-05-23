@@ -3470,7 +3470,7 @@ local function CreateTestingPanel()
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetWidth(560)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Test server communication, send custom JSON messages, and debug protocol handlers.")
+    desc:SetText("Test server communication, send custom JSON messages, and debug protocol handlers. Item Upgrade presets use server bag/slot values; equipped items use bag 255 with zero-based slots.")
 
     local yPos = -70
 
@@ -3684,6 +3684,10 @@ local function CreateTestingPanel()
         { label = "Get Hotspot List", module = "SPOT", opcode = 1, json = '{"action":"list"}' },
         { label = "Get Season Info", module = "SEAS", opcode = 1, json = '{}' },
         { label = "Get M+ Key", module = "MPLUS", opcode = 1, json = '{}' },
+        { label = "UPG Currency", module = "UPG", opcode = 4, json = '{}' },
+        { label = "UPG List", module = "UPG", opcode = 3, json = '{}' },
+        { label = "UPG ItemInfo", module = "UPG", opcode = 1, json = '{"bag":255,"slot":15}' },
+        { label = "UPG Upgrade", module = "UPG", opcode = 2, json = '{"bag":255,"slot":15,"targetLevel":1}' },
     }
 
     local xOffset = 0

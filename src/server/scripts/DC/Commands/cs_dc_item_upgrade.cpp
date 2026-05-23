@@ -121,17 +121,6 @@ namespace
         return mgr->GetTierMaxLevel(tier);
     }
 
-    uint32 ResolveBaseUpgradeItemId(uint32 itemId)
-    {
-        QueryResult result = WorldDatabase.Query(
-            "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {} LIMIT 1",
-            itemId);
-        if (!result)
-            return itemId;
-
-        return result->Fetch()[0].Get<uint32>();
-    }
-
     std::string BuildEquippedUpgradeSummary(Item* item, UpgradeManager* mgr,
                                             uint8 slot)
     {
@@ -184,8 +173,6 @@ namespace
         if (!player)
             return nullptr;
 
-        uint32 requestedBaseItemId = ResolveBaseUpgradeItemId(itemId);
-
         for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
         {
             Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
@@ -193,7 +180,7 @@ namespace
                 continue;
 
             uint32 equippedEntry = item->GetEntry();
-            if (equippedEntry != itemId && ResolveBaseUpgradeItemId(equippedEntry) != requestedBaseItemId)
+            if (equippedEntry != itemId)
                 continue;
 
             outSlot = slot;
@@ -834,7 +821,6 @@ public:
             return true;
         }
 
-        uint32 baseItemId = ResolveBaseUpgradeItemId(itemId);
         uint8 tier = mgr->GetItemTier(itemId);
         uint8 maxLevel = ResolveTierMaxLevel(mgr, tier);
         uint32 firstUpgradeTokens = maxLevel > 0 ? mgr->GetUpgradeCost(tier, 1) : 0;
@@ -843,8 +829,6 @@ public:
         handler->PSendSysMessage("=== Item Info ===");
         handler->SendSysMessage(("Item: " + std::string(itemTemplate->Name1)).c_str());
         handler->PSendSysMessage("Item Entry: %u", itemId);
-        if (baseItemId != itemId)
-            handler->PSendSysMessage("Base Item Entry: %u", baseItemId);
         handler->PSendSysMessage("Item Level: %u", itemTemplate->ItemLevel);
         handler->PSendSysMessage("Upgrade Tier: %u", tier);
         handler->PSendSysMessage("Max Upgrade Level: %u", maxLevel);

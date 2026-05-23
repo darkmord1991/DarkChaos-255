@@ -547,14 +547,14 @@ namespace
     }
 
     // Get Hinterland BG leaderboard
-    // Tables:
-    //   - dc_hlbg_player_season_data: player_guid, season_id, rating, wins, losses, completed_games (seasonal)
-    //   - dc_hlbg_player_stats: player_guid, player_name, battles_won, total_kills, total_deaths, resources_captured (overall)
+    // Sources:
+    //   - v_hlbg_player_seasonal_stats: unified seasonal aggregation
+    //   - dc_hlbg_player_stats: all-time kill/win/resource counters
     std::vector<LeaderboardEntry> GetHLBGLeaderboard(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
 
-        // Check if we need overall stats (dc_hlbg_player_stats) or seasonal (dc_hlbg_player_season_data)
+        // Check if we need overall stats (dc_hlbg_player_stats) or seasonal view data.
         bool useOverallStats = (subcat == "hlbg_kills" || subcat == "hlbg_alltime_wins" || subcat == "hlbg_resources");
 
         if (useOverallStats)

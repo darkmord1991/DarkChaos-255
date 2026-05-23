@@ -476,7 +476,7 @@ public:
         QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT {}", count);
         if (!res)
         {
-            handler->PSendSysMessage("No history found (apply Custom/Hinterland BG/CharDB/dc_hlbg_winner_history.sql to the characters DB)");
+            handler->PSendSysMessage("No history found. Ensure the characters DB includes the dc_hlbg_winner_history HLBG schema.");
             return true;
         }
         handler->PSendSysMessage("|cffffd700Hinterland BG recent results (latest {}):|r", count);

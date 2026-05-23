@@ -689,8 +689,6 @@ namespace DCQoS
         data << int32(10000);
         data << int32(0);
         data << int32(0);
-        data << int32(0);
-        data << int32(0);
         data << error;
         player->GetSession()->SendPacket(&data);
         std::string preview = "bag=" + std::to_string(bag)
@@ -1819,8 +1817,6 @@ namespace DCQoS
         uint32 responseRevision = snapshot ? snapshot->revision : 0;
         uint32 responseItemEntry = snapshot ? snapshot->item_entry
             : request.itemEntry;
-        uint32 responseBaseEntry = snapshot ? snapshot->base_entry : 0;
-        uint32 responseCurrentEntry = snapshot ? snapshot->current_entry : 0;
         uint32 responseTierId = snapshot ? snapshot->tier_id : 0;
         uint32 responseUpgradeLevel = snapshot ? snapshot->upgrade_level : 0;
         uint32 responseMaxUpgrade = snapshot ? snapshot->max_upgrade : 0;
@@ -1837,8 +1833,6 @@ namespace DCQoS
         data << int32(responseRevision);
         data << int32(status);
         data << int32(responseItemEntry);
-        data << int32(responseBaseEntry);
-        data << int32(responseCurrentEntry);
         data << int32(responseTierId);
         data << int32(responseUpgradeLevel);
         data << int32(responseMaxUpgrade);
@@ -1885,8 +1879,6 @@ namespace DCQoS
         data << int32(snapshot.upgrade_level);
         data << int32(snapshot.max_upgrade);
         data << int32(snapshot.stat_multiplier_basis_points);
-        data << int32(snapshot.base_entry);
-        data << int32(snapshot.current_entry);
         data << int32(snapshot.base_ilvl);
         data << int32(snapshot.upgraded_ilvl);
         data << std::string();
@@ -2155,46 +2147,46 @@ namespace DCQoS
         return payload;
     }
 
-    static void SendPingRelayStateInvalidation(Player* player,
-        std::string const& context)
+    static void SendFeatureInvalidation(Player* player,
+        std::string const& feature, std::string const& context)
     {
         if (!player)
             return;
 
         DCAddon::JsonValue payload;
         payload.SetObject();
-        SendFeatureMessage(player, NativeEnvelopeFeature::PING_STATE,
+        SendFeatureMessage(player, feature,
             NativeEnvelopeFeature::ACTION_INVALIDATE, payload, context);
     }
 
-    static void SchedulePingRelayStateInvalidation(Player* player,
-        std::string const& context,
+    static void ScheduleFeatureInvalidation(Player* player,
+        std::string const& feature, std::string const& context,
         std::chrono::milliseconds delay = std::chrono::milliseconds(250))
     {
         if (!player)
             return;
 
         ObjectGuid guid = player->GetGUID();
-        player->m_Events.AddEventAtOffset([guid, context]
+        player->m_Events.AddEventAtOffset([guid, feature, context]
         {
             if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
-                SendPingRelayStateInvalidation(online, context);
+                SendFeatureInvalidation(online, feature, context);
         }, delay);
     }
 
-    static void SchedulePingRelayStateInvalidation(ObjectGuid guid,
-        std::string const& context,
+    static void ScheduleFeatureInvalidation(ObjectGuid guid,
+        std::string const& feature, std::string const& context,
         std::chrono::milliseconds delay = std::chrono::milliseconds(250))
     {
         if (guid.IsEmpty())
             return;
 
         if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
-            SchedulePingRelayStateInvalidation(player, context, delay);
+            ScheduleFeatureInvalidation(player, feature, context, delay);
     }
 
-    static void SchedulePingRelayStateInvalidationForGroup(Group* group,
-        std::string const& context,
+    static void ScheduleFeatureInvalidationForGroup(Group* group,
+        std::string const& feature, std::string const& context,
         std::chrono::milliseconds delay = std::chrono::milliseconds(250),
         ObjectGuid skipGuid = ObjectGuid::Empty)
     {
@@ -2211,8 +2203,59 @@ namespace DCQoS
             if (!skipGuid.IsEmpty() && member->GetGUID() == skipGuid)
                 continue;
 
-            SchedulePingRelayStateInvalidation(member, context, delay);
+            ScheduleFeatureInvalidation(member, feature, context, delay);
         }
+    }
+
+    static void SchedulePingRelayStateInvalidation(Player* player,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
+    {
+        ScheduleFeatureInvalidation(player, NativeEnvelopeFeature::PING_STATE,
+            context, delay);
+    }
+
+    static void SchedulePingRelayStateInvalidation(ObjectGuid guid,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
+    {
+        ScheduleFeatureInvalidation(guid, NativeEnvelopeFeature::PING_STATE,
+            context, delay);
+    }
+
+    static void SchedulePingRelayStateInvalidationForGroup(Group* group,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250),
+        ObjectGuid skipGuid = ObjectGuid::Empty)
+    {
+        ScheduleFeatureInvalidationForGroup(group,
+            NativeEnvelopeFeature::PING_STATE, context, delay, skipGuid);
+    }
+
+    static void ScheduleRuntimeProfileStateInvalidation(Player* player,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
+    {
+        ScheduleFeatureInvalidation(player,
+            NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE, context, delay);
+    }
+
+    static void ScheduleRuntimeProfileStateInvalidation(ObjectGuid guid,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250))
+    {
+        ScheduleFeatureInvalidation(guid,
+            NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE, context, delay);
+    }
+
+    static void ScheduleRuntimeProfileStateInvalidationForGroup(Group* group,
+        std::string const& context,
+        std::chrono::milliseconds delay = std::chrono::milliseconds(250),
+        ObjectGuid skipGuid = ObjectGuid::Empty)
+    {
+        ScheduleFeatureInvalidationForGroup(group,
+            NativeEnvelopeFeature::GRAPHICS_PROFILE_STATE, context, delay,
+            skipGuid);
     }
 
     static void SendNativePingRelayPayload(Player* player,
@@ -2636,14 +2679,6 @@ namespace DCQoS
                 msg.Set("baseIlvl", static_cast<int32>(snapshot.base_ilvl));
                 msg.Set("upgradedIlvl",
                     static_cast<int32>(snapshot.upgraded_ilvl));
-            }
-
-            if (snapshot.current_entry != 0 &&
-                snapshot.current_entry != snapshot.base_entry)
-            {
-                msg.Set("currentEntry",
-                    static_cast<int32>(snapshot.current_entry));
-                msg.Set("baseEntry", static_cast<int32>(snapshot.base_entry));
             }
         }
         else
@@ -4900,6 +4935,8 @@ public:
             if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
             {
                 DCQoS::PushRuntimeProfile(online, true, "login");
+                DCQoS::ScheduleRuntimeProfileStateInvalidation(online,
+                    "login");
                 DCQoS::SchedulePingRelayStateInvalidation(online, "login");
                 DCQoS::SchedulePingRelayStateInvalidationForGroup(
                     online->GetGroup(), "group-login",
@@ -4916,8 +4953,22 @@ public:
         player->m_Events.AddEventAtOffset([guid = player->GetGUID()]
         {
             if (Player* online = ObjectAccessor::FindConnectedPlayer(guid))
+            {
                 DCQoS::PushRuntimeProfile(online, false, "map-change");
+                DCQoS::ScheduleRuntimeProfileStateInvalidation(online,
+                    "map-change");
+            }
         }, std::chrono::milliseconds(1250));
+    }
+
+    void OnPlayerUpdateZone(Player* player, uint32 /*newZone*/,
+        uint32 /*newArea*/) override
+    {
+        if (!DCQoS::IsEnabled() || !player)
+            return;
+
+        DCQoS::ScheduleRuntimeProfileStateInvalidation(player,
+            "zone-change", std::chrono::milliseconds(350));
     }
 
     void OnPlayerLogout(Player* player) override
@@ -4947,6 +4998,8 @@ public:
         if (!DCQoS::IsEnabled() || !group)
             return;
 
+        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
+            "group-add");
         DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
             "group-add");
     }
@@ -4958,6 +5011,10 @@ public:
         if (!DCQoS::IsEnabled())
             return;
 
+        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
+            "group-remove");
+        DCQoS::ScheduleRuntimeProfileStateInvalidation(guid,
+            "group-remove:self");
         DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
             "group-remove");
         DCQoS::SchedulePingRelayStateInvalidation(guid,
@@ -4969,8 +5026,33 @@ public:
         if (!DCQoS::IsEnabled() || !group)
             return;
 
+        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
+            "group-disband");
         DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
             "group-disband");
+    }
+
+    void OnConvertToRaid(Group* group) override
+    {
+        if (!DCQoS::IsEnabled() || !group)
+            return;
+
+        DCQoS::ScheduleRuntimeProfileStateInvalidationForGroup(group,
+            "group-convert-raid");
+        DCQoS::SchedulePingRelayStateInvalidationForGroup(group,
+            "group-convert-raid");
+    }
+
+    void OnChangeMemberSubGroup(Group* group, ObjectGuid /*guid*/,
+        uint8 previousSubGroup, uint8 newSubGroup) override
+    {
+        if (!DCQoS::IsEnabled() || !group)
+            return;
+
+        std::string context = "group-subgroup:"
+            + std::to_string(previousSubGroup) + "-"
+            + std::to_string(newSubGroup);
+        DCQoS::SchedulePingRelayStateInvalidationForGroup(group, context);
     }
 };
 

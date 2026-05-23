@@ -233,9 +233,9 @@ if not HLBG.UI.Queue.Content then
                 if HLBG.UI.Queue.StatusText and HLBG.UI.Queue.StatusText:GetText():match("Requesting") then
                     HLBG.UI.Queue.StatusText:SetText(
                         "|cFFFF5555No response from server|r\n\n" ..
-                        "Queue system may not be implemented yet.\n" ..
-                        "Try talking to Battlemaster NPC 900001 instead.\n\n" ..
-                        "|cFFAAAA00Note:|r Queue commands (.hlbgq) are in development.")
+                        "Queue status did not update.\n" ..
+                        "Try the Queue tab again, use /hlbgq status, or run .hlbg queue status.\n\n" ..
+                        "|cFFAAAA00Note:|r The addon can fall back to chat commands when direct transport is unavailable.")
                     if type(HLBG.QueueMessage) == 'function' then
                         HLBG.QueueMessage("no_response")
                     end
@@ -249,12 +249,13 @@ if not HLBG.UI.Queue.Content then
     infoText:SetWidth(500)
     infoText:SetJustifyH("LEFT")
     infoText:SetText([[|cFFFFD700How to Join Hinterland BG:|r
-To participate in Hinterland Battleground, currently you need to:
-1. Travel to the Hinterland BG entrance
-2. Talk to Battlemaster NPC 900001 to queue
-3. Alternatively, use the PvP UI if queue system is enabled
-|cFFAAAAAANote: You can also use queue commands (/hlbgq join, /hlbgq leave, /hlbgq status).
-Check with server administrators for the currently enabled queue method.|r]])
+1. Open this Queue tab and press Join
+2. Or use the addon slash commands: /hlbgq join, /hlbgq leave, /hlbgq status
+3. If addon transport is unavailable, use chat commands:
+   .hlbg queue join
+   .hlbg queue leave
+   .hlbg queue status
+|cFFAAAAAANote: History and leaderboard views are provided through DC-Leaderboards (/leaderboard).|r]])
     HLBG.UI.Queue.InfoText = infoText
     -- Auto-request queue status when tab is shown
     HLBG.UI.Queue:SetScript("OnShow", function()

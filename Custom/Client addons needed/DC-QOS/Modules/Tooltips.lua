@@ -258,8 +258,6 @@ local function TryConsumeNativeUpgradeInfo(serverBag, serverSlot)
         upgradeLevel,
         maxUpgrade,
         statMultiplier,
-        baseEntry,
-        currentEntry,
         baseIlvl,
         upgradedIlvl,
         errorMessage = pcall(GetNativeItemUpgradeTooltipData,
@@ -284,8 +282,6 @@ local function TryConsumeNativeUpgradeInfo(serverBag, serverSlot)
         upgradeLevel = tonumber(upgradeLevel) or 0,
         maxUpgrade = tonumber(maxUpgrade) or 0,
         statMultiplier = tonumber(statMultiplier) or 1.0,
-        baseEntry = tonumber(baseEntry) or 0,
-        currentEntry = tonumber(currentEntry) or 0,
         baseIlvl = tonumber(baseIlvl) or 0,
         upgradedIlvl = tonumber(upgradedIlvl) or 0,
         error = type(errorMessage) == "string" and errorMessage ~= ""
@@ -313,8 +309,6 @@ local function OnUpgradeInfoReceived(data)
         maxUpgrade = data.maxUpgrade or 0,
         tier = data.tier or 0,
         statMultiplier = data.statMultiplier or 1.0,
-        baseEntry = data.baseEntry,
-        currentEntry = data.currentEntry,
         baseIlvl = data.baseIlvl,
         upgradedIlvl = data.upgradedIlvl,
     }
@@ -406,11 +400,6 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
     -- Show item level difference if available
     if cached.baseIlvl and cached.upgradedIlvl and cached.upgradedIlvl > cached.baseIlvl then
         tooltip:AddLine(string.format("|cff888888Base iLvl: %d -> Upgraded: %d|r", cached.baseIlvl, cached.upgradedIlvl))
-    end
-    
-    -- Show current entry if different from base (indicates modified item)
-    if cached.currentEntry and cached.baseEntry and cached.currentEntry ~= cached.baseEntry then
-        tooltip:AddLine(string.format("|cff666666Upgraded Entry: %d|r", cached.currentEntry))
     end
 end
 
@@ -4623,18 +4612,7 @@ local function HookSpellTooltips()
         local originalShapeshiftButtonOnEnter = ShapeshiftButton_OnEnter
         addon._dcqosOriginalShapeshiftButtonOnEnter = originalShapeshiftButtonOnEnter
         ShapeshiftButton_OnEnter = function(...)
-            EnsureGameTooltipActionMethods()
-            local ok, result = pcall(originalShapeshiftButtonOnEnter, ...)
-            if ok then
-                return result
-            end
-
-            addon:Debug("ShapeshiftButton_OnEnter failed; using fallback: " .. tostring(result))
-            local button = select(1, ...)
-            if type(button) ~= "table" then
-                button = this
-            end
-            SetFallbackShapeshiftTooltip(button)
+            return SafeShapeshiftButtonOnEnter(...)
         end
     end
 

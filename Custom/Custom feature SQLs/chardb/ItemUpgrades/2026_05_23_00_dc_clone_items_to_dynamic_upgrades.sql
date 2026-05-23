@@ -15,8 +15,13 @@
 -- Preconditions:
 --   1. worldserver and authserver must be stopped.
 --   2. Take full backups of `acore_chars` and `acore_world` first.
---   3. Do not run this before the server-side in-place dynamic runtime exists.
---      The current standard upgrade flow still clone-swaps items.
+--   3. Run this before deploying a server build that removes live clone
+--      compatibility paths. After that cutover, clone entries left in
+--      `item_instance` are no longer normalized at login.
+--   4. The required deployment hard gate after this script is:
+--        SELECT COUNT(*) FROM `acore_chars`.`item_instance`
+--        WHERE `itemEntry` >= 2000000;
+--      The result must be 0 before the cutover build goes live.
 --
 -- Safety model:
 --   * Builds a staging table first.
@@ -372,5 +377,5 @@ WHERE `guid` IN (
 -- ───────────────────────────────────────────────────────────────────────────────
 SELECT 'NEXT STEPS' AS status;
 SELECT
-    'If gate_ok=1 and remaining_clone_instances=0, the character DB portion is complete. Keep the backup/stage tables until the server-side lazy clone normalizer and dynamic runtime rollout are validated.'
+    'If gate_ok=1 and remaining_clone_instances=0, the character DB portion is complete. Keep the backup/stage tables until the dynamic cutover build is validated, and block deployment unless SELECT COUNT(*) FROM acore_chars.item_instance WHERE itemEntry >= 2000000 returns 0.'
     AS note;

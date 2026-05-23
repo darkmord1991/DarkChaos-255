@@ -1133,10 +1133,8 @@ function DC.RegisterDCProtocolHandlers()
 		local info = data
 		info.itemID = info.itemID or info.itemId
 		if info then
-			local entry = tonumber(info.baseEntry or info.itemEntry or info.currentEntry)
+			local entry = tonumber(info.itemEntry)
 			if entry and entry > 0 then
-				info.baseEntry = entry
-				info.currentEntry = entry
 				info.itemEntry = entry
 			end
 		end
@@ -1177,7 +1175,6 @@ function DC.RegisterDCProtocolHandlers()
 		local success = data.success
 		local itemId = data.itemId or data.itemID
 		local newLevel = data.newLevel or 0
-		local newEntry = data.newEntry
 		local errorCode = data.errorCode or 0
 		local errorMsg = data.errorMsg
 		local resultTier = tonumber(data.tier) or 0
@@ -1207,9 +1204,6 @@ function DC.RegisterDCProtocolHandlers()
 			DC.itemUpgradeCache = DC.itemUpgradeCache or {}
 			DC.itemUpgradeCache[itemId] = DC.itemUpgradeCache[itemId] or {}
 			DC.itemUpgradeCache[itemId].currentUpgrade = newLevel;
-			if newEntry then
-				DC.itemUpgradeCache[itemId].currentEntry = newEntry;
-			end
 			if resultTier > 0 then
 				DC.itemUpgradeCache[itemId].tier = resultTier;
 			end
@@ -1238,10 +1232,6 @@ function DC.RegisterDCProtocolHandlers()
 					end
 					DC.currentItem.tokenCost = nextTokenCost
 					DC.currentItem.essenceCost = nextEssenceCost
-					if newEntry then
-						DC.currentItem.currentEntry = newEntry
-						DC.currentItem.itemID = newEntry
-					end
 					if resultServerBag ~= nil then
 						DC.currentItem.serverBag = resultServerBag
 					end
