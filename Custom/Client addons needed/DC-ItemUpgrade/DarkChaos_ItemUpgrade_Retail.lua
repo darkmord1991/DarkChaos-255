@@ -550,8 +550,47 @@ end
 
 function DarkChaos_ItemUpgrade_GetCost(tier, level)
 	local numericTier = tonumber(tier);
+	local numericLevel = tonumber(level);
+	if not numericTier or not numericLevel then
+		return nil;
+	end
 
-	if tonumber(tier) == 3 or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
+	if numericTier == 3 or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
+		local heirloomCost = DarkChaos_ItemUpgrade_GetHeirloomCost(numericLevel);
+		if not heirloomCost then
+			return nil;
+		end
+		return { tokens = 0, essence = tonumber(heirloomCost.essence) or 0 };
+	end
+
+	if not DC.upgradeCosts[numericTier] or not DC.upgradeCosts[numericTier][numericLevel] then
+		return nil;
+	end
+
+	local cost = DC.upgradeCosts[numericTier][numericLevel];
+	return {
+		tokens = tonumber(cost.tokens) or 0,
+		essence = tonumber(cost.essence) or 0,
+	};
+end
+
+local function DarkChaos_ItemUpgrade_CopyCostTotals(tokens, essence)
+	return {
+		tokens = tonumber(tokens) or 0,
+		essence = tonumber(essence) or 0,
+	};
+end
+
+function DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, targetLevel)
+	tier = tonumber(tier) or 0;
+	currentLevel = tonumber(currentLevel) or 0;
+	targetLevel = tonumber(targetLevel) or 0;
+
+	if targetLevel <= currentLevel then
+		return DarkChaos_ItemUpgrade_CopyCostTotals(0, 0), nil, false;
+	end
+
+	if tier == 3 or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
 		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentLevel, targetLevel);
 		return DarkChaos_ItemUpgrade_CopyCostTotals(0, (heirloomTotals and heirloomTotals.essence) or 0), nil, false;
 	end
@@ -577,7 +616,10 @@ function DarkChaos_ItemUpgrade_GetCost(tier, level)
 	end
 
 	local fallbackTotals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
-	return fallbackTotals, missingLevel, false;
+	return DarkChaos_ItemUpgrade_CopyCostTotals(
+		(fallbackTotals and fallbackTotals.tokens) or 0,
+		(fallbackTotals and fallbackTotals.essence) or 0
+	), missingLevel, false;
 end
 
 local lastCurrencyRequestTime = 0;
@@ -2494,6 +2536,7 @@ end
 
 local function GetItemTooltipInfo(link, locationKey)
 	if not link then return nil; end
+	DC.itemTooltipCache = DC.itemTooltipCache or {};
 
 	-- Use locationKey for cache to differentiate multiple copies of same item
 	local cacheKey = locationKey or link;
@@ -2509,64 +2552,68 @@ local function GetItemTooltipInfo(link, locationKey)
 
 	local itemLevel = select(4, GetItemInfo(link)) or 0;
 	local upgradeLevel = 0;
-	local maxLevel = DC.MAX_UPGRADE_LEVEL;  -- Fallback for tooltip parsing, tier-specific handled elsewhere
+	local maxLevel = DC.MAX_UPGRADE_LEVEL or 15;
 	local foundUpgrade = false;
 
 	for i = 2, scanTooltip:NumLines() do
 		local text = GetTooltipLine(i);
 		if text then
-		if not item.link then
-			return nil;
-		end
-
-		local currentStats = GetItemStatsSafe(item.link);
-		if not currentStats or not next(currentStats) then
-			return nil;
-		end
-
-		local currentMultiplier = GetStatMultiplierForLevel(currentUpgrade, tier);
-		if currentMultiplier <= 0 then
-			currentMultiplier = 1;
-		end
-		local previewMultiplier = GetStatMultiplierForLevel(targetLevel, tier);
-
-		local comparison = {};
-		for statKey, value in pairs(currentStats) do
-			if value ~= 0 and not ShouldSkipStatKey(statKey) then
-				local label = ResolveStatLabel(statKey);
-				if label then
-					local baseValue = RoundStatValue((value or 0) / math.max(currentMultiplier, 0.0001));
-					local currentValue = RoundStatValue(baseValue * currentMultiplier);
-					local previewValue = RoundStatValue(baseValue * previewMultiplier);
-					local diff = previewValue - currentValue;
-					if currentValue ~= 0 or previewValue ~= 0 then
-						comparison[#comparison + 1] = {
-							key = statKey,
-							label = label,
-							current = currentValue,
-							preview = previewValue,
-							diff = diff,
-						};
-					end
-				end
+			local parsedUpgrade, parsedMax = string.match(text,
+				"Upgrade Level%s+(%d+)%s*/%s*(%d+)");
+			if parsedUpgrade and parsedMax then
+				upgradeLevel = tonumber(parsedUpgrade) or 0;
+				maxLevel = tonumber(parsedMax) or maxLevel;
+				foundUpgrade = true;
+				break;
 			end
+		end
+	end
+
+	scanTooltip:Hide();
+
+	cache = {
+		timestamp = now,
+		itemLevel = itemLevel,
+		upgrade = upgradeLevel,
+		max = maxLevel,
+		foundUpgrade = foundUpgrade,
+	};
+
+	DC.itemTooltipCache[cacheKey] = cache;
+	return cache;
+end
+
+local function GetItemStatsSafe(link)
+	if not link or type(GetItemStats) ~= "function" then
+		return nil;
+	end
+
+	local function TryGetStats()
+		local stats = {};
+		local ok, result = pcall(GetItemStats, link, stats);
+		if not ok then
+			return nil;
+		end
+		if type(result) == "table" and next(result) then
+			return result;
+		end
+		if next(stats) then
+			return stats;
 		end
 		return nil;
 	end
-	local stats = GetItemStats(link);
-	if stats and next(stats) then
+
+	local stats = TryGetStats();
+	if stats then
 		return stats;
 	end
-	local tooltip = EnsureHiddenTooltip();
-	tooltip:SetOwner(UIParent, "ANCHOR_NONE");
-	tooltip:ClearLines();
-	tooltip:SetHyperlink(link);
-	tooltip:Hide();
-	stats = GetItemStats(link);
-	if stats and next(stats) then
-		return stats;
-	end
-	return nil;
+
+	scanTooltip:SetOwner(UIParent, "ANCHOR_NONE");
+	scanTooltip:ClearLines();
+	scanTooltip:SetHyperlink(link);
+	scanTooltip:Hide();
+
+	return TryGetStats();
 end
 
 local STAT_LABEL_OVERRIDES = {
@@ -2634,6 +2681,14 @@ local function ResolveStatLabel(statKey)
 		return statKey:gsub("_SHORT", ""):gsub("_", " ");
 	end
 	return statKey;
+end
+
+local function RoundStatValue(value)
+	value = tonumber(value) or 0;
+	if value >= 0 then
+		return math.floor(value + 0.5);
+	end
+	return math.ceil(value - 0.5);
 end
 
 local function FormatNumberWithSeparators(value)
@@ -3411,7 +3466,12 @@ local function UpdateTierBrowserDetail(frame, row)
 	detail.FooterText:SetText(FormatTierBrowserFooter(row));
 end
 
-function DarkChaos_TierBrowser_OnLoad(self)
+DC.TierBrowser_OnLoad = function(self)
+	if not self or self.__dcTierBrowserInitialized then
+		return;
+	end
+
+	self.__dcTierBrowserInitialized = true;
 	tinsert(UISpecialFrames, self:GetName());
 	self:RegisterForDrag("LeftButton");
 	self:SetMovable(true);
@@ -3506,11 +3566,11 @@ function DarkChaos_TierBrowser_OnLoad(self)
 	end
 end
 
-function DarkChaos_TierBrowser_OnShow(self)
+DC.TierBrowser_OnShow = function(self)
 	DarkChaos_TierBrowser_Update();
 end
 
-function DarkChaos_TierBrowser_Update()
+DC.TierBrowser_Update = function()
 	local frame = DarkChaos_TierBrowserFrame;
 	if not frame or not frame.ScrollFrame or not frame.ScrollFrame.buttons then
 		return;
@@ -3568,7 +3628,7 @@ function DarkChaos_TierBrowser_Update()
 
 	UpdateTierBrowserDetail(frame,
 		FindTierBrowserRowById(rows, DC.selectedTierBrowserTierId));
-end
+	end
 
 function DarkChaos_TierBrowserButton_OnClick(self)
 	if not self.tierRow then
@@ -3579,7 +3639,18 @@ function DarkChaos_TierBrowserButton_OnClick(self)
 	DarkChaos_TierBrowser_Update();
 end
 
-function DarkChaos_ItemBrowser_OnLoad(self)
+if DarkChaos_TierBrowserFrame
+	and not DarkChaos_TierBrowserFrame.__dcTierBrowserInitialized
+	and type(DC.TierBrowser_OnLoad) == "function" then
+	DC.TierBrowser_OnLoad(DarkChaos_TierBrowserFrame);
+end
+
+DC.ItemBrowser_OnLoad = function(self)
+	if not self or self.__dcItemBrowserInitialized then
+		return;
+	end
+
+	self.__dcItemBrowserInitialized = true;
 	tinsert(UISpecialFrames, self:GetName());
 	self:RegisterForDrag("LeftButton");
 	
@@ -3645,7 +3716,7 @@ function DarkChaos_ItemBrowser_OnLoad(self)
 	print("[DC-ItemUpgrade] ItemBrowser_OnLoad: Created " .. #scrollFrame.buttons .. " buttons");
 end
 
-function DarkChaos_ItemBrowser_OnShow(self)
+DC.ItemBrowser_OnShow = function(self)
 	DarkChaos_ItemBrowser_Update();
 end
 
@@ -3719,7 +3790,7 @@ local function IsUpgradeableItem(link)
 	end
 end
 
-function DarkChaos_ItemBrowser_Update()
+DC.ItemBrowser_Update = function()
 	local items = {};
 	
 	DC.Debug("ItemBrowser_Update called");
@@ -3830,6 +3901,12 @@ function DarkChaos_ItemBrowserButton_OnClick(self)
 	end
 end
 
+if DarkChaos_ItemBrowserFrame
+	and not DarkChaos_ItemBrowserFrame.__dcItemBrowserInitialized
+	and type(DC.ItemBrowser_OnLoad) == "function" then
+	DC.ItemBrowser_OnLoad(DarkChaos_ItemBrowserFrame);
+end
+
 --[[=====================================================
 	ITEM SLOT HANDLERS
 =======================================================]]
@@ -3866,6 +3943,27 @@ function DarkChaos_ItemUpgrade_ItemSlot_OnDrag(self)
 		if itemType == "item" then
 			DarkChaos_ItemUpgrade_SelectItemFromLink(itemLink);
 			ClearCursor();
+		end
+	end
+end
+
+local function SetButtonEnabled(button, enabled)
+	if not button then
+		return;
+	end
+
+	if button.SetEnabled then
+		button:SetEnabled(enabled and true or false);
+		return;
+	end
+
+	if enabled then
+		if button.Enable then
+			button:Enable();
+		end
+	else
+		if button.Disable then
+			button:Disable();
 		end
 	end
 end
@@ -4761,10 +4859,29 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			
 			-- Update UI
 			if DC.currentItem then
+				DC.currentItem.awaitingServerInfo = false;
+				DC.currentItem.hasAuthoritativeState = true;
+				DC.currentItem.allowBackgroundRefresh = true;
 				DC.currentItem.currentUpgrade = newLevel;
 				DC.currentItem.heirloomPackageId = packageId;
 				DC.currentItem.heirloomPackageLevel = newLevel;
+				DC.currentItem.tier = 3;
+				if packageId and packageId > 0 then
+					DC.selectedStatPackage = packageId;
+					if DarkChaos_ItemUpgrade_SaveCharSettings then
+						DarkChaos_ItemUpgrade_SaveCharSettings();
+					end
+				end
 				DC.targetUpgradeLevel = math.min(newLevel + 1, DC.currentItem.maxUpgrade or 15);
+			end
+
+			DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+			DC.itemUpgradeCache[itemGUID] = DC.itemUpgradeCache[itemGUID] or {};
+			DC.itemUpgradeCache[itemGUID].currentUpgrade = newLevel;
+			DC.itemUpgradeCache[itemGUID].heirloomPackageId = packageId;
+			DC.itemUpgradeCache[itemGUID].tier = 3;
+			if DC.currentItem and DC.currentItem.maxUpgrade then
+				DC.itemUpgradeCache[itemGUID].maxUpgrade = DC.currentItem.maxUpgrade;
 			end
 			
 			-- Re-enable upgrade button

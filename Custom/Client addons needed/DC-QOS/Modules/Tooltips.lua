@@ -1383,7 +1383,11 @@ local function GetClientSpellDescription(spellId)
         return nil
     end
 
-    if HasUnresolvedSpellPlaceholder(description) then
+    -- This client export can return raw Blizzard-style placeholders like $s1
+    -- or $d for stance/presence/stealth spells. Showing that body is better
+    -- than dropping the tooltip text entirely; only reject transport-only
+    -- placeholder payloads such as $<percent>.
+    if description:find("%$<[^>]+>") then
         TelemetryInc("spell", "clientDescriptionPlaceholderRejected")
         return nil
     end
@@ -3489,13 +3493,36 @@ local function ResolveSpellIdFromTooltipName(tooltip, fallbackName)
     return nil
 end
 
-local function ResolveShapeshiftSpellId(formIndex)
+local function ResolveShapeshiftSpellId(formIndex, button)
     local idx = tonumber(formIndex)
     if not idx or idx <= 0 or type(GetShapeshiftFormInfo) ~= "function" then
         return nil
     end
 
-    local formTexture, formName = GetShapeshiftFormInfo(idx)
+    local buttonSpellId = type(button) == "table"
+        and tonumber(button.spellId or button.spellID) or nil
+    if buttonSpellId and buttonSpellId > 0 then
+        return buttonSpellId
+    end
+
+    local actionSlot = type(button) == "table" and tonumber(button.action) or nil
+    if actionSlot and actionSlot > 0 and type(GetActionInfo) == "function" then
+        local actionType, actionValue, _, actionSpellId = GetActionInfo(actionSlot)
+        if actionType == "spell" then
+            local resolvedActionSpellId = tonumber(actionSpellId)
+                or tonumber(actionValue)
+            if resolvedActionSpellId and resolvedActionSpellId > 0 then
+                return resolvedActionSpellId
+            end
+        end
+    end
+
+    local formTexture, formName, _, _, directSpellId = GetShapeshiftFormInfo(idx)
+    directSpellId = tonumber(directSpellId)
+    if directSpellId and directSpellId > 0 then
+        return directSpellId
+    end
+
     local sid = ResolveSpellIdFromTooltipName(nil, formName)
     sid = tonumber(sid)
     if sid and sid > 0 then
@@ -4115,6 +4142,11 @@ local function SetFallbackShapeshiftTooltip(button)
         return
     end
 
+    if type(button) == "table" then
+        button.UpdateTooltip = nil
+        button.updateTooltip = nil
+    end
+
     local formIndex
     if button and type(button.GetID) == "function" then
         formIndex = button:GetID()
@@ -4138,7 +4170,7 @@ local function SetFallbackShapeshiftTooltip(button)
 
     MarkSpellTooltipSource(GameTooltip, "action")
     SetNativeSpellRowsRequestContext(GameTooltip, "shapeshift", formIndex)
-    local spellId = ResolveShapeshiftSpellId(formIndex)
+    local spellId = ResolveShapeshiftSpellId(formIndex, button)
     if (not spellId or spellId <= 0) and type(GameTooltip.GetSpell) == "function" then
         local _, _, directSpellId = GameTooltip:GetSpell()
         spellId = tonumber(directSpellId)
@@ -4253,7 +4285,7 @@ local function SafeShapeshiftButtonOnEnter(self)
             MarkSpellTooltipSource(GameTooltip, "action")
             SetNativeSpellRowsRequestContext(GameTooltip, "shapeshift",
                 formIndex)
-            local spellId = ResolveShapeshiftSpellId(formIndex)
+            local spellId = ResolveShapeshiftSpellId(formIndex, button)
             if (not spellId or spellId <= 0) and GameTooltip and type(GameTooltip.GetSpell) == "function" then
                 local _, _, directSpellId = GameTooltip:GetSpell()
                 spellId = tonumber(directSpellId)
@@ -4330,10 +4362,7 @@ local function InstallShapeshiftOnEnterGuards()
                 button:SetScript("OnEnter", SafeShapeshiftButtonOnEnter)
             end
 
-            if button.UpdateTooltip == SafeShapeshiftButtonOnEnter then
-                button.UpdateTooltip = nil
-            end
-
+            button.UpdateTooltip = nil
             button.updateTooltip = nil
 
             button._dcqosSafeOnEnterInstalled = true

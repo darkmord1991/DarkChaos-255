@@ -1712,6 +1712,7 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
         DC:Print("  /dcc debug - Toggle debug mode")
         DC:Print("  /dcc netlog [N] - Show last N net events")
         DC:Print("  /dcc netclear - Clear net event log")
+        DC:Print("  /dcc transport [refresh] - Show transport diagnostics or issue one-shot native refreshes")
         DC:Print("  /dcc cdbcprobe - Print static manifest and native loader probe")
     else
         DC:Print("Unknown command. Type /dcc help for a list of commands.")

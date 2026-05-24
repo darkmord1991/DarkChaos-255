@@ -3611,7 +3611,16 @@ RefreshSettingsStatusText = function()
     end
 
     if state.settingsRefreshButton then
-        state.settingsRefreshButton:SetEnabled(not state.relayStateRequestPending)
+        if state.relayStateRequestPending then
+            state.settingsRefreshButton:Disable()
+        elseif type(state.settingsRefreshButton.Enable) == "function" then
+            state.settingsRefreshButton:Enable()
+        elseif type(state.settingsRefreshButton.SetEnabled) == "function" then
+            state.settingsRefreshButton:SetEnabled(true)
+        else
+            state.settingsRefreshButton:Disable()
+        end
+
         if state.relayStateRequestPending then
             state.settingsRefreshButton:SetText("Refreshing...")
         else
@@ -3696,7 +3705,7 @@ local function HandlePingRelayStateResponse(rawPayload, source)
     end
 end
 
-local function RequestCurrentPingRelayState(reason)
+RequestCurrentPingRelayState = function(reason)
     local requestReason = reason or "client-request"
 
     if state.relayStateRequestPending then
@@ -3753,7 +3762,7 @@ local function RequestCurrentPingRelayState(reason)
     return false
 end
 
-local function SchedulePingRelayStateRequest(reason, delay)
+SchedulePingRelayStateRequest = function(reason, delay)
     local function ExecuteRequest()
         RequestCurrentPingRelayState(reason)
     end

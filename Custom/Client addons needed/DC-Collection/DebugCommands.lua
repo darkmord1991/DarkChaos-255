@@ -101,6 +101,109 @@ local function PrintNativeCollectionProbe()
     end
 end
 
+local function FormatTransportAge(timestamp)
+    timestamp = tonumber(timestamp) or 0
+    if timestamp <= 0 or type(time) ~= "function" then
+        return "never"
+    end
+
+    local age = time() - timestamp
+    if age < 0 then
+        age = 0
+    end
+
+    return string.format("%ds ago", age)
+end
+
+local function PrintCollectionTransportStatus()
+    if type(DC.GetCollectionTransportDiagnostics) ~= "function" then
+        DC:Print("Collection transport diagnostics: unavailable")
+        return
+    end
+
+    local diagnostics = DC:GetCollectionTransportDiagnostics()
+    if type(DC.GetCollectionTransportSummary) == "function" then
+        DC:Print(DC:GetCollectionTransportSummary())
+    end
+
+    local function FormatState(channel)
+        local key = channel.statusKey or "idle"
+        if key == "pending" then
+            return "awaiting_reply"
+        end
+        if key == "observed" then
+            return "observed_reply"
+        end
+        if key == "cached" then
+            return "cached_snapshot"
+        end
+        if key == "reply" then
+            return "reply_received"
+        end
+        return "not_requested"
+    end
+
+    local function FormatRequest(channel)
+        if not channel.hasRequest then
+            return "not requested"
+        end
+
+        return string.format("%s via %s (%s)",
+            tostring(channel.lastRequestLabel or "-"),
+            tostring(channel.lastRequestTransport or "-"),
+            FormatTransportAge(channel.lastRequestAt))
+    end
+
+    local function FormatReply(channel)
+        local key = channel.statusKey or "idle"
+        if key == "pending" then
+            return "awaiting reply"
+        end
+
+        if channel.hasReply then
+            return string.format("%s via %s (%s)",
+                tostring(channel.lastReplyLabel or "-"),
+                tostring(channel.lastReplyTransport or "-"),
+                FormatTransportAge(channel.lastReplyAt))
+        end
+
+        if key == "cached" then
+            return "cached snapshot present"
+        end
+
+        return "no reply yet"
+    end
+
+    local function PrintChannel(label, channel)
+        channel = type(channel) == "table" and channel or {}
+        local revision = tonumber(channel.revision) or tonumber(channel.lastReplyRevision)
+            or tonumber(channel.lastRevision) or 0
+        local snapshotState = (channel.hasCachedSnapshot or channel.hasReply
+            or revision > 0) and "present" or "none"
+
+        DC:Print(string.format(
+            "  %s: available=%s negotiated=%s state=%s req=%s reply=%s snapshot=%s rev=%s",
+            label,
+            tostring(channel.available == true),
+            tostring(channel.negotiated == true),
+            FormatState(channel),
+            FormatRequest(channel),
+            FormatReply(channel),
+            snapshotState,
+            revision > 0 and tostring(revision) or "-"))
+
+        if type(channel.lastError) == "string" and channel.lastError ~= "" then
+            DC:Print("    lastError=" .. channel.lastError)
+        end
+    end
+
+    PrintChannel("wave1", diagnostics.collectionWave1)
+    PrintChannel("saved_outfits", diagnostics.savedOutfits)
+    PrintChannel("community", diagnostics.community)
+    PrintChannel("transmog_state", diagnostics.transmogState)
+    PrintChannel("item_sets", diagnostics.itemSets)
+end
+
 -- Add to existing slash command handler
 local originalHandler = SlashCmdList["DCCOLLECTION"]
 
@@ -175,6 +278,24 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
         else
             DC:Print("[NetLog] Not available")
         end
+    elseif cmd == "transport" or cmd == "bridge" then
+        local subcmd = string.lower((rest or ""):match("^%s*(.-)%s*$") or "")
+        if subcmd == "refresh" then
+            if type(DC.RefreshCollectionTransport) ~= "function" then
+                DC:Print("Collection transport refresh: unavailable")
+                return
+            end
+
+            local results = DC:RefreshCollectionTransport() or {}
+            DC:Print(string.format(
+                "Collection transport refresh queued: wave1=%s community=%s transmog_state=%s item_sets=%s",
+                tostring(results.collectionWave1 == true),
+                tostring(results.community == true),
+                tostring(results.transmogState == true),
+                tostring(results.itemSets == true)))
+        end
+
+        PrintCollectionTransportStatus()
     elseif cmd == "cdbcprobe" or cmd == "staticprobe" then
         PrintNativeCollectionProbe()
     else

@@ -1503,8 +1503,66 @@ struct PendingAddonRequest
     uint32 startTimeMs = 0;
 };
 
+struct CompletedAddonRequestTiming
+{
+    uint32 responseTimeMs = 0;
+    uint32 completedAtMs = 0;
+};
+
 static std::unordered_map<uint32, std::unordered_map<std::string, PendingAddonRequest>> s_PendingRequests;
+static std::unordered_map<uint32, std::unordered_map<std::string, CompletedAddonRequestTiming>> s_CompletedRequestTimings;
 static std::mutex s_PendingRequestsMutex;
+
+static void CleanupCompletedRequestTimingsLocked(uint32 accountId,
+    uint32 nowMs)
+{
+    auto accountIt = s_CompletedRequestTimings.find(accountId);
+    if (accountIt == s_CompletedRequestTimings.end())
+        return;
+
+    auto& completedMap = accountIt->second;
+    uint32 retentionMs = std::max<uint32>(s_AddonConfig.RequestTimeoutMs, 1000);
+    for (auto timingIt = completedMap.begin(); timingIt != completedMap.end(); )
+    {
+        if (getMSTimeDiff(timingIt->second.completedAtMs, nowMs) > retentionMs)
+            timingIt = completedMap.erase(timingIt);
+        else
+            ++timingIt;
+    }
+
+    if (completedMap.empty())
+        s_CompletedRequestTimings.erase(accountIt);
+}
+
+static uint32 TakeCompletedRequestElapsedMs(Player* player,
+    const std::string& requestId)
+{
+    if (!player || !player->GetSession() || requestId.empty())
+        return 0;
+
+    uint32 accountId = player->GetSession()->GetAccountId();
+    uint32 nowMs = getMSTime();
+
+    std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
+    CleanupCompletedRequestTimingsLocked(accountId, nowMs);
+
+    auto accountIt = s_CompletedRequestTimings.find(accountId);
+    if (accountIt == s_CompletedRequestTimings.end())
+        return 0;
+
+    auto& completedMap = accountIt->second;
+    auto reqIt = completedMap.find(requestId);
+    if (reqIt == completedMap.end())
+        return 0;
+
+    uint32 responseTimeMs = reqIt->second.responseTimeMs;
+    completedMap.erase(reqIt);
+
+    if (completedMap.empty())
+        s_CompletedRequestTimings.erase(accountIt);
+
+    return responseTimeMs;
+}
 
 static bool ShouldTrackPendingRequest(const DCAddon::ParsedMessage& msg)
 {
@@ -1610,6 +1668,24 @@ static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& req
     return delta;
 }
 
+static uint32 ResolveC2SLogProcessingTimeMs(Player* player,
+    const std::string& payload)
+{
+    if (!player || !player->GetSession())
+        return 0;
+
+    DCAddon::ParsedMessage parsed(payload);
+    if (!parsed.IsValid() || !ShouldTrackPendingRequest(parsed))
+        return 0;
+
+    uint32 processingTimeMs =
+        TakeCompletedRequestElapsedMs(player, parsed.GetRequestId());
+    if (processingTimeMs != 0)
+        return processingTimeMs;
+
+    return PeekPendingRequestElapsedMs(player, parsed.GetRequestId());
+}
+
 namespace DCAddon
 {
     void NotifyResponseSent(Player* player, const std::string& requestId)
@@ -1634,6 +1710,17 @@ namespace DCAddon
         uint32 responseTimeMs = getMSTimeDiff(reqIt->second.startTimeMs, nowMs);
         if (responseTimeMs == 0)
             responseTimeMs = 1;
+
+        if (s_AddonConfig.EnableProtocolLogging)
+        {
+            CleanupCompletedRequestTimingsLocked(accountId, nowMs);
+            s_CompletedRequestTimings[accountId][requestId] =
+            {
+                responseTimeMs,
+                nowMs,
+            };
+        }
+
         UpdateProtocolStats(player, reqIt->second.module,
             STATS_TRANSPORT_ADDON, false, false, false, responseTimeMs);
         pendingMap.erase(reqIt);
@@ -2151,10 +2238,11 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
     std::string requestType = DetectRequestType(payload);
     std::string status = handled ? "completed" : (errorMsg.empty() ? "pending" : "error");
     std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
+    uint32 processingTimeMs = ResolveC2SLogProcessingTimeMs(player, payload);
 
     InsertProtocolLogRow(BuildProtocolLogContext(player), "C2S",
         requestType, moduleCode, opcode, payload.length(), preview, status,
-        errorMsg, 0);
+        errorMsg, processingTimeMs);
 }
 
 static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs)

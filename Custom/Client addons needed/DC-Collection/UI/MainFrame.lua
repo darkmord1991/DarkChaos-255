@@ -675,6 +675,10 @@ function DC:CreateHeader(parent)
     header.totalStatsText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     header.totalStatsText:SetPoint("TOPLEFT", header.statsText, "BOTTOMLEFT", 0, -2)
     header.totalStatsText:SetJustifyH("LEFT")
+
+    header.transportText = header:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    header.transportText:SetPoint("TOPLEFT", header.totalStatsText, "BOTTOMLEFT", 0, -2)
+    header.transportText:SetJustifyH("LEFT")
     
     -- Currency display
     header.emblemsText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2488,6 +2492,14 @@ function DC:UpdateHeader()
         header.totalStatsText:SetText(string.format("Total  Collected: %d / %d (%.1f%%)", o or 0, t or 0, pct))
     else
         header.totalStatsText:SetText("")
+    end
+
+    if header.transportText then
+        if type(self.GetCollectionTransportSummary) == "function" then
+            header.transportText:SetText(self:GetCollectionTransportSummary())
+        else
+            header.transportText:SetText("")
+        end
     end
     
     -- Update mount speed bonus

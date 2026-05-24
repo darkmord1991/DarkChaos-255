@@ -30,6 +30,37 @@ DC.verboseProtocol = false;
 DC.liveCostCache = DC.liveCostCache or {};
 DC.pendingCostRequests = DC.pendingCostRequests or {};
 
+local function DispatchBrowserHandler(handlerName, ...)
+	local handler = DC[handlerName];
+	if type(handler) == "function" then
+		return handler(...);
+	end
+end
+
+function DarkChaos_TierBrowser_OnLoad(self)
+	return DispatchBrowserHandler("TierBrowser_OnLoad", self);
+end
+
+function DarkChaos_TierBrowser_OnShow(self)
+	return DispatchBrowserHandler("TierBrowser_OnShow", self);
+end
+
+function DarkChaos_TierBrowser_Update()
+	return DispatchBrowserHandler("TierBrowser_Update");
+end
+
+function DarkChaos_ItemBrowser_OnLoad(self)
+	return DispatchBrowserHandler("ItemBrowser_OnLoad", self);
+end
+
+function DarkChaos_ItemBrowser_OnShow(self)
+	return DispatchBrowserHandler("ItemBrowser_OnShow", self);
+end
+
+function DarkChaos_ItemBrowser_Update()
+	return DispatchBrowserHandler("ItemBrowser_Update");
+end
+
 --[[=====================================================
 	QUALITY COLOR FIX & ITEM ID TOOLTIPS
 	Fixes "attempt to index local 'color' (a nil value)" for quality 7+ items
@@ -66,6 +97,74 @@ DC.ESSENCE_ITEM_ID = nil;
 
 -- UI Mode: "STANDARD" or "HEIRLOOM"
 DC.uiMode = "STANDARD";
+
+local function CanOpenItemUpgradeFrame()
+	if UnitAffectingCombat("player") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in combat!|r");
+		return false;
+	end
+
+	local inInstance, instanceType = IsInInstance();
+	if inInstance and (instanceType == "party" or instanceType == "raid" or instanceType == "arena" or instanceType == "pvp") then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffff0000You cannot upgrade items while in an instance!|r");
+		return false;
+	end
+
+	return true;
+end
+
+function DC.ToggleUpgradeFrame(mode)
+	if not CanOpenItemUpgradeFrame() then
+		return false;
+	end
+
+	mode = (mode == "HEIRLOOM") and "HEIRLOOM" or "STANDARD";
+	DC.uiMode = mode;
+
+	if not DarkChaos_ItemUpgradeFrame then
+		return false;
+	end
+
+	if DarkChaos_ItemUpgradeFrame:IsShown() then
+		DarkChaos_ItemUpgradeFrame:Hide();
+		return true;
+	end
+
+	DarkChaos_ItemUpgradeFrame:Show();
+	if DarkChaos_ItemUpgradeFrame.TitleText then
+		if mode == "HEIRLOOM" then
+			DarkChaos_ItemUpgradeFrame.TitleText:SetText("Heirloom Upgrade");
+		else
+			DarkChaos_ItemUpgradeFrame.TitleText:SetText("Item Upgrade");
+		end
+	end
+
+	if mode == "HEIRLOOM" and type(DarkChaos_ItemUpgrade_AutoSelectHeirloomShirt) == "function" then
+		DarkChaos_ItemUpgrade_AutoSelectHeirloomShirt();
+	end
+
+	return true;
+end
+
+function DC_ItemUpgrade_CharFrameButton_OnLoad(self)
+	if self and self.RegisterForClicks then
+		self:RegisterForClicks("LeftButtonUp");
+	end
+end
+
+function DC_ItemUpgrade_CharFrameButton_OnClick(self)
+	DC.ToggleUpgradeFrame("STANDARD");
+end
+
+function DC_ItemUpgrade_HeirloomButton_OnLoad(self)
+	if self and self.RegisterForClicks then
+		self:RegisterForClicks("LeftButtonUp");
+	end
+end
+
+function DC_ItemUpgrade_HeirloomButton_OnClick(self)
+	DC.ToggleUpgradeFrame("HEIRLOOM");
+end
 
 -- Player currency
 DC.playerTokens = 0;

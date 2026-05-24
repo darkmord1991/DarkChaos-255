@@ -174,6 +174,12 @@ local COLLECTION_WAVE1_NATIVE_CAPABILITY = 0x00080000
 local NATIVE_COLLECTION_WAVE1_POLL_INTERVAL = 0.10
 local lastNativeCollectionWave1Revision = 0
 local nativeCollectionWave1PollFrame = nil
+local NATIVE_SAVED_OUTFITS_POLL_INTERVAL = 0.10
+local lastNativeSavedOutfitsRevision = 0
+local nativeSavedOutfitsPollFrame = nil
+local NATIVE_COMMUNITY_POLL_INTERVAL = 0.10
+local lastNativeCommunityRevision = 0
+local nativeCommunityPollFrame = nil
 local COLLECTION_TRANSMOG_STATE_NATIVE_CAPABILITY = 0x00002000
 local NATIVE_TRANSMOG_STATE_POLL_INTERVAL = 0.10
 local lastNativeTransmogStateRevision = 0
@@ -182,6 +188,262 @@ local COLLECTION_ITEM_SETS_NATIVE_CAPABILITY = 0x00004000
 local NATIVE_ITEM_SETS_POLL_INTERVAL = 0.10
 local lastNativeItemSetsRevision = 0
 local nativeItemSetsPollFrame = nil
+
+DC._collectionTransportDiagnostics = DC._collectionTransportDiagnostics or {}
+
+local function GetTransportTimestamp()
+    if type(time) == "function" then
+        return time()
+    end
+
+    return 0
+end
+
+local function EnsureCollectionTransportDiagnostics()
+    local diagnostics = DC._collectionTransportDiagnostics
+    if type(diagnostics) ~= "table" then
+        diagnostics = {}
+        DC._collectionTransportDiagnostics = diagnostics
+    end
+
+    diagnostics.collectionWave1 = diagnostics.collectionWave1 or {}
+    diagnostics.savedOutfits = diagnostics.savedOutfits or {}
+    diagnostics.community = diagnostics.community or {}
+    diagnostics.transmogState = diagnostics.transmogState or {}
+    diagnostics.itemSets = diagnostics.itemSets or {}
+    return diagnostics
+end
+
+local function RefreshCollectionTransportUi()
+    if DC.MainFrame and type(DC.MainFrame.IsShown) == "function"
+        and DC.MainFrame:IsShown()
+        and type(DC.UpdateHeader) == "function" then
+        DC:UpdateHeader()
+    end
+end
+
+local function GetCollectionOpcodeLabel(opcode)
+    opcode = tonumber(opcode) or 0
+
+    if opcode == DC.Opcodes.CMSG_HANDSHAKE
+        or opcode == DC.Opcodes.SMSG_HANDSHAKE_ACK then
+        return "handshake"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_FULL_COLLECTION
+        or opcode == DC.Opcodes.SMSG_FULL_COLLECTION then
+        return "full"
+    end
+    if opcode == DC.Opcodes.CMSG_SYNC_COLLECTION
+        or opcode == DC.Opcodes.SMSG_DELTA_SYNC then
+        return "sync"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_STATS
+        or opcode == DC.Opcodes.SMSG_STATS then
+        return "stats"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_BONUSES
+        or opcode == DC.Opcodes.SMSG_BONUSES then
+        return "bonuses"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_COLLECTION
+        or opcode == DC.Opcodes.SMSG_COLLECTION then
+        return "collection"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_TRANSMOG_STATE
+        or opcode == DC.Opcodes.SMSG_TRANSMOG_STATE then
+        return "transmog_state"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_ITEM_SETS
+        or opcode == DC.Opcodes.SMSG_ITEM_SETS then
+        return "item_sets"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_SAVED_OUTFITS then
+        return "get_saved_outfits"
+    end
+    if opcode == DC.Opcodes.SMSG_SAVED_OUTFITS then
+        return "saved_outfits"
+    end
+    if opcode == DC.Opcodes.CMSG_COMMUNITY_GET_LIST then
+        return "community_get_list"
+    end
+    if opcode == DC.Opcodes.SMSG_COMMUNITY_LIST then
+        return "community_list"
+    end
+    if opcode == DC.Opcodes.CMSG_COMMUNITY_PUBLISH then
+        return "community_publish"
+    end
+    if opcode == DC.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT then
+        return "community_publish_result"
+    end
+    if opcode == DC.Opcodes.CMSG_COMMUNITY_RATE then
+        return "community_rate"
+    end
+    if opcode == DC.Opcodes.CMSG_COMMUNITY_FAVORITE then
+        return "community_favorite"
+    end
+    if opcode == DC.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT then
+        return "community_favorite_result"
+    end
+    if opcode == DC.Opcodes.CMSG_COMMUNITY_VIEW then
+        return "community_view"
+    end
+    if opcode == DC.Opcodes.CMSG_COPY_COMMUNITY_OUTFIT then
+        return "community_copy_outfit"
+    end
+    if opcode == DC.Opcodes.CMSG_COMMUNITY_UPDATE then
+        return "community_update"
+    end
+    if opcode == DC.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT then
+        return "community_update_result"
+    end
+    if opcode == DC.Opcodes.CMSG_COMMUNITY_DELETE then
+        return "community_delete"
+    end
+    if opcode == DC.Opcodes.SMSG_COMMUNITY_DELETE_RESULT then
+        return "community_delete_result"
+    end
+
+    return string.format("0x%02X", opcode)
+end
+
+local function UpdateCollectionTransportChannel(channelKey, updater)
+    local diagnostics = EnsureCollectionTransportDiagnostics()
+    local channel = diagnostics[channelKey]
+    updater(channel)
+    RefreshCollectionTransportUi()
+end
+
+local function RecordCollectionTransportRequest(channelKey, transport, opcode,
+    payloadBytes, options)
+    options = options or {}
+
+    UpdateCollectionTransportChannel(channelKey, function(channel)
+        channel.lastRequestAt = GetTransportTimestamp()
+        channel.lastRequestTransport = tostring(transport or "addon")
+        channel.lastRequestOpcode = tonumber(opcode) or 0
+        channel.lastRequestLabel = GetCollectionOpcodeLabel(opcode)
+        channel.lastRequestPayloadBytes = tonumber(payloadBytes) or 0
+        channel.awaitingReply = options.expectsReply ~= false
+        channel.lastError = nil
+    end)
+end
+
+local function RecordCollectionTransportReply(channelKey, transport, opcode,
+    revision, payloadBytes, options)
+    options = options or {}
+
+    UpdateCollectionTransportChannel(channelKey, function(channel)
+        local matchedRequest = options.matchedRequest
+        if matchedRequest == nil then
+            matchedRequest = channel.awaitingReply == true
+                and (tonumber(channel.lastRequestAt) or 0) > 0
+        end
+
+        channel.lastReplyAt = GetTransportTimestamp()
+        channel.lastReplyTransport = tostring(transport or "addon")
+        channel.lastReplyOpcode = tonumber(opcode) or 0
+        channel.lastReplyLabel = GetCollectionOpcodeLabel(opcode)
+        channel.lastReplyRevision = tonumber(revision) or 0
+        channel.lastReplyPayloadBytes = tonumber(payloadBytes) or 0
+        channel.lastReplyMatchedRequest = matchedRequest == true
+        channel.awaitingReply = false
+        channel.lastError = nil
+    end)
+end
+
+local function RecordCollectionTransportError(channelKey, phase, reason)
+    UpdateCollectionTransportChannel(channelKey, function(channel)
+        channel.awaitingReply = false
+        channel.lastError = string.format("%s: %s", tostring(phase or "error"),
+            tostring(reason or "unknown"))
+        channel.lastErrorAt = GetTransportTimestamp()
+    end)
+end
+
+local function GetCollectionTransportChannelRevision(channel)
+    channel = type(channel) == "table" and channel or {}
+
+    return tonumber(channel.lastReplyRevision)
+        or tonumber(channel.lastRevision) or 0
+end
+
+local function ClassifyCollectionTransportChannel(channel)
+    channel = type(channel) == "table" and channel or {}
+
+    local requestAt = tonumber(channel.lastRequestAt) or 0
+    local replyAt = tonumber(channel.lastReplyAt) or 0
+    local revision = GetCollectionTransportChannelRevision(channel)
+    local awaitingReply = channel.awaitingReply == true
+
+    if awaitingReply and requestAt > 0
+        and (replyAt <= 0 or replyAt < requestAt) then
+        return "pending", "request sent; awaiting reply"
+    end
+
+    if replyAt > 0 then
+        if channel.lastReplyMatchedRequest == false then
+            return "observed", "reply observed without local request"
+        end
+
+        return "reply", "reply received"
+    end
+
+    if revision > 0 then
+        return "cached", "cached snapshot present"
+    end
+
+    return "idle", "not requested yet"
+end
+
+local function LogCollectionTransportEvent(level, channel, message, extra)
+    if type(DC.LogNetEvent) ~= "function" then
+        return
+    end
+
+    extra = extra or {}
+    extra.channel = channel
+    DC:LogNetEvent(level, "bridge", message, extra)
+end
+
+local function TrackAddonCollectionProtocolReply(opcode)
+    opcode = tonumber(opcode) or 0
+
+    if opcode == DC.Opcodes.SMSG_HANDSHAKE_ACK
+        or opcode == DC.Opcodes.SMSG_FULL_COLLECTION
+        or opcode == DC.Opcodes.SMSG_DELTA_SYNC
+        or opcode == DC.Opcodes.SMSG_STATS
+        or opcode == DC.Opcodes.SMSG_BONUSES
+        or opcode == DC.Opcodes.SMSG_COLLECTION then
+        RecordCollectionTransportReply("collectionWave1", "addon", opcode, 0,
+            0)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_TRANSMOG_STATE then
+        RecordCollectionTransportReply("transmogState", "addon", opcode, 0,
+            0)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_ITEM_SETS then
+        RecordCollectionTransportReply("itemSets", "addon", opcode, 0, 0)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_SAVED_OUTFITS then
+        RecordCollectionTransportReply("savedOutfits", "addon", opcode, 0,
+            0)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_COMMUNITY_LIST
+        or opcode == DC.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT
+        or opcode == DC.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT
+        or opcode == DC.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT
+        or opcode == DC.Opcodes.SMSG_COMMUNITY_DELETE_RESULT then
+        RecordCollectionTransportReply("community", "addon", opcode, 0, 0)
+    end
+end
 
 local function HasCapabilityBit(mask, capability)
     mask = tonumber(mask) or 0
@@ -248,6 +510,60 @@ local function ShouldUseNativeCollectionWave1Bridge()
             COLLECTION_WAVE1_NATIVE_CAPABILITY)
         and HasCapabilityBit(snapshot.negotiatedCaps,
             COLLECTION_WAVE1_NATIVE_CAPABILITY)
+end
+
+local function HasNativeCollectionSavedOutfitsBridge()
+    return type(RequestNativeCollectionSavedOutfits) == "function"
+        and type(GetNativeCollectionSavedOutfitsSnapshot) == "function"
+end
+
+local function ShouldUseNativeCollectionSavedOutfitsBridge()
+    return HasNativeCollectionSavedOutfitsBridge()
+        and ShouldUseNativeCollectionWave1Bridge()
+end
+
+local function HasNativeCollectionCommunityBridge()
+    return type(RequestNativeCollectionCommunity) == "function"
+        and type(GetNativeCollectionCommunitySnapshot) == "function"
+end
+
+local function ShouldUseNativeCollectionCommunityBridge()
+    return HasNativeCollectionCommunityBridge()
+        and ShouldUseNativeCollectionWave1Bridge()
+end
+
+local function IsNativeCollectionCommunityResponse(logicalOpcode)
+    logicalOpcode = tonumber(logicalOpcode) or 0
+
+    return logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_LIST
+        or logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT
+        or logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT
+        or logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT
+        or logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_DELETE_RESULT
+end
+
+local function IsMatchingNativeCollectionCommunityResponse(requestOpcode,
+    logicalOpcode)
+    requestOpcode = tonumber(requestOpcode) or 0
+    logicalOpcode = tonumber(logicalOpcode) or 0
+
+    if requestOpcode == DC.Opcodes.CMSG_COMMUNITY_GET_LIST then
+        return logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_LIST
+    end
+    if requestOpcode == DC.Opcodes.CMSG_COMMUNITY_PUBLISH then
+        return logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT
+    end
+    if requestOpcode == DC.Opcodes.CMSG_COMMUNITY_FAVORITE then
+        return logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT
+    end
+    if requestOpcode == DC.Opcodes.CMSG_COMMUNITY_UPDATE then
+        return logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT
+    end
+    if requestOpcode == DC.Opcodes.CMSG_COMMUNITY_DELETE then
+        return logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_DELETE_RESULT
+    end
+
+    return false
 end
 
 local function EncodeNativeCollectionWave1Payload(data)
@@ -322,6 +638,34 @@ local function DispatchNativeCollectionWave1Message(logicalOpcode, data)
         return true
     end
 
+    if logicalOpcode == DC.Opcodes.SMSG_SAVED_OUTFITS then
+        DC:OnMsg_SavedOutfits(data)
+        return true
+    end
+
+    if IsNativeCollectionCommunityResponse(logicalOpcode) then
+        if logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_LIST then
+            DC:HandleCommunityList(data)
+            return true
+        end
+        if logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT then
+            DC:HandleCommunityPublishResult(data)
+            return true
+        end
+        if logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT then
+            DC:HandleCommunityFavoriteResult(data)
+            return true
+        end
+        if logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT then
+            DC:HandleCommunityUpdateResult(data)
+            return true
+        end
+        if logicalOpcode == DC.Opcodes.SMSG_COMMUNITY_DELETE_RESULT then
+            DC:HandleCommunityDeleteResult(data)
+            return true
+        end
+    end
+
     if type(DC.Debug) == "function" then
         DC:Debug("Ignoring unsupported native collection wave1 opcode: "
             .. tostring(logicalOpcode))
@@ -343,6 +687,7 @@ local function ConsumeNativeCollectionWave1Snapshot()
 
     revision = tonumber(revision) or 0
     logicalOpcode = tonumber(logicalOpcode) or 0
+    local payloadBytes = type(payload) == "string" and string.len(payload) or 0
     if revision <= 0 or revision == lastNativeCollectionWave1Revision
         or logicalOpcode <= 0 then
         return false
@@ -352,10 +697,85 @@ local function ConsumeNativeCollectionWave1Snapshot()
 
     local decoded = DecodeNativeCollectionWave1Payload(payload)
     if type(decoded) ~= "table" then
+        RecordCollectionTransportError("collectionWave1", "decode",
+            "invalid native payload")
+        LogCollectionTransportEvent("error", "collection-wave1",
+            "Collection wave1 native snapshot decode failed",
+            { opcode = logicalOpcode, revision = revision })
         return false
     end
 
-    return DispatchNativeCollectionWave1Message(logicalOpcode, decoded)
+    if logicalOpcode == DC.Opcodes.SMSG_SAVED_OUTFITS then
+        if type(DC._nativeSavedOutfitsLastRequest) == "table" then
+            return true
+        end
+
+        RecordCollectionTransportReply("savedOutfits", "native",
+            logicalOpcode, revision, payloadBytes,
+            { matchedRequest = false })
+        LogCollectionTransportEvent("info", "saved-outfits",
+            "Collection saved-outfits native snapshot observed <- saved_outfits",
+            {
+                opcode = logicalOpcode,
+                revision = revision,
+                payloadBytes = payloadBytes,
+            })
+
+        local handled = DispatchNativeCollectionWave1Message(logicalOpcode,
+            decoded)
+        if not handled then
+            RecordCollectionTransportError("savedOutfits", "dispatch",
+                "unsupported opcode " .. tostring(logicalOpcode))
+        end
+
+        return handled
+    end
+
+    if IsNativeCollectionCommunityResponse(logicalOpcode) then
+        if type(DC._nativeCommunityLastRequest) == "table" then
+            return true
+        end
+
+        RecordCollectionTransportReply("community", "native",
+            logicalOpcode, revision, payloadBytes,
+            { matchedRequest = false })
+        LogCollectionTransportEvent("info", "community",
+            "Collection community native snapshot observed <- "
+                .. GetCollectionOpcodeLabel(logicalOpcode),
+            {
+                opcode = logicalOpcode,
+                revision = revision,
+                payloadBytes = payloadBytes,
+            })
+
+        local handled = DispatchNativeCollectionWave1Message(logicalOpcode,
+            decoded)
+        if not handled then
+            RecordCollectionTransportError("community", "dispatch",
+                "unsupported opcode " .. tostring(logicalOpcode))
+        end
+
+        return handled
+    end
+
+    RecordCollectionTransportReply("collectionWave1", "native",
+        logicalOpcode, revision, payloadBytes)
+    LogCollectionTransportEvent("info", "collection-wave1",
+        "Collection wave1 native response <- "
+            .. GetCollectionOpcodeLabel(logicalOpcode),
+        {
+            opcode = logicalOpcode,
+            revision = revision,
+            payloadBytes = payloadBytes,
+        })
+
+    local handled = DispatchNativeCollectionWave1Message(logicalOpcode, decoded)
+    if not handled then
+        RecordCollectionTransportError("collectionWave1", "dispatch",
+            "unsupported opcode " .. tostring(logicalOpcode))
+    end
+
+    return handled
 end
 
 local function EnsureNativeCollectionWave1PollFrame()
@@ -377,28 +797,453 @@ local function EnsureNativeCollectionWave1PollFrame()
     end)
 end
 
-local function SendCollectionWave1Request(logicalOpcode, data)
+local function ConsumeNativeCollectionSavedOutfitsSnapshot()
+    if not ShouldUseNativeCollectionSavedOutfitsBridge() then
+        return false
+    end
+
+    local nativeReq = DC._nativeSavedOutfitsLastRequest
+    if type(nativeReq) ~= "table" then
+        return false
+    end
+
+    local ok, revision, payload = pcall(GetNativeCollectionSavedOutfitsSnapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    local payloadBytes = type(payload) == "string" and string.len(payload) or 0
+    if revision <= 0 or revision == lastNativeSavedOutfitsRevision then
+        return false
+    end
+
+    lastNativeSavedOutfitsRevision = revision
+
+    local decoded = DecodeNativeCollectionWave1Payload(payload)
+    if type(decoded) ~= "table" then
+        RecordCollectionTransportError("savedOutfits", "decode",
+            "invalid native payload")
+        LogCollectionTransportEvent("error", "saved-outfits",
+            "Collection saved-outfits native snapshot decode failed",
+            { opcode = DC.Opcodes.SMSG_SAVED_OUTFITS, revision = revision })
+        DC._nativeSavedOutfitsLastRequest = nil
+        return false
+    end
+
+    RecordCollectionTransportReply("savedOutfits", "native",
+        DC.Opcodes.SMSG_SAVED_OUTFITS, revision, payloadBytes)
+    LogCollectionTransportEvent("info", "saved-outfits",
+        "Collection saved-outfits native response <- saved_outfits",
+        {
+            opcode = DC.Opcodes.SMSG_SAVED_OUTFITS,
+            revision = revision,
+            payloadBytes = payloadBytes,
+        })
+    DC._nativeSavedOutfitsLastRequest = nil
+    DC:OnMsg_SavedOutfits(decoded)
+    return true
+end
+
+local function EnsureNativeCollectionSavedOutfitsPollFrame()
+    if nativeSavedOutfitsPollFrame then
+        return
+    end
+
+    nativeSavedOutfitsPollFrame = CreateFrame("Frame")
+    nativeSavedOutfitsPollFrame.elapsed = 0
+    nativeSavedOutfitsPollFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_SAVED_OUTFITS_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativeCollectionSavedOutfitsSnapshot()
+    end)
+end
+
+local function ConsumeNativeCollectionCommunitySnapshot()
+    if not ShouldUseNativeCollectionCommunityBridge() then
+        return false
+    end
+
+    local nativeReq = DC._nativeCommunityLastRequest
+    if type(nativeReq) ~= "table" then
+        return false
+    end
+
+    local ok, revision, logicalOpcode, payload =
+        pcall(GetNativeCollectionCommunitySnapshot)
+    if not ok or revision == nil then
+        return false
+    end
+
+    revision = tonumber(revision) or 0
+    logicalOpcode = tonumber(logicalOpcode) or 0
+    local payloadBytes = type(payload) == "string" and string.len(payload) or 0
+    if revision <= 0 or revision == lastNativeCommunityRevision
+        or logicalOpcode <= 0 then
+        return false
+    end
+
+    lastNativeCommunityRevision = revision
+
+    local decoded = DecodeNativeCollectionWave1Payload(payload)
+    if type(decoded) ~= "table" then
+        RecordCollectionTransportError("community", "decode",
+            "invalid native payload")
+        LogCollectionTransportEvent("error", "community",
+            "Collection community native snapshot decode failed",
+            { opcode = logicalOpcode, revision = revision })
+        DC._nativeCommunityLastRequest = nil
+        return false
+    end
+
+    local requestOpcode = tonumber(nativeReq.requestOpcode) or 0
+    local matchedRequest = IsMatchingNativeCollectionCommunityResponse(
+        requestOpcode, logicalOpcode)
+    local requestOwner = tostring(nativeReq.owner or "collection")
+
+    if matchedRequest then
+        RecordCollectionTransportReply("community", "native",
+            logicalOpcode, revision, payloadBytes)
+        LogCollectionTransportEvent("info", "community",
+            "Collection community native response <- "
+                .. GetCollectionOpcodeLabel(logicalOpcode),
+            {
+                opcode = logicalOpcode,
+                revision = revision,
+                payloadBytes = payloadBytes,
+            })
+
+        DC._nativeCommunityLastRequest = nil
+        if requestOwner == "transport-refresh" then
+            return true
+        end
+    else
+        RecordCollectionTransportReply("community", "native",
+            logicalOpcode, revision, payloadBytes,
+            { matchedRequest = false })
+        LogCollectionTransportEvent("info", "community",
+            "Collection community native snapshot observed <- "
+                .. GetCollectionOpcodeLabel(logicalOpcode),
+            {
+                opcode = logicalOpcode,
+                revision = revision,
+                payloadBytes = payloadBytes,
+            })
+    end
+
+    local handled = DispatchNativeCollectionWave1Message(logicalOpcode,
+        decoded)
+    if not handled then
+        RecordCollectionTransportError("community", "dispatch",
+            "unsupported opcode " .. tostring(logicalOpcode))
+    end
+
+    return handled
+end
+
+local function EnsureNativeCollectionCommunityPollFrame()
+    if nativeCommunityPollFrame then
+        return
+    end
+
+    nativeCommunityPollFrame = CreateFrame("Frame")
+    nativeCommunityPollFrame.elapsed = 0
+    nativeCommunityPollFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = (self.elapsed or 0) + elapsed
+        if self.elapsed < NATIVE_COMMUNITY_POLL_INTERVAL then
+            return
+        end
+
+        self.elapsed = 0
+        ConsumeNativeCollectionCommunitySnapshot()
+    end)
+end
+
+local function SendCollectionCommunityRequest(logicalOpcode, data, options)
+    options = options or {}
+    local allowAddonFallback = options.allowAddonFallback ~= false
+    local requestOwner = tostring(options.owner or "collection")
+    local responseOpcode = tonumber(options.responseOpcode) or 0
+    local expectsReply = responseOpcode > 0
+    local sentAt = tonumber(options.sentAt) or 0
+    if sentAt == 0 and type(GetTime) == "function" then
+        sentAt = GetTime() or 0
+    end
+
+    if ShouldUseNativeCollectionCommunityBridge() then
+        EnsureNativeCollectionCommunityPollFrame()
+
+        local payload = EncodeNativeCollectionWave1Payload(data or {})
+        if type(payload) == "string" then
+            RecordCollectionTransportRequest("community", "native",
+                logicalOpcode, string.len(payload),
+                { expectsReply = expectsReply })
+            local ok, err = pcall(RequestNativeCollectionCommunity,
+                logicalOpcode, payload)
+            if ok then
+                if expectsReply then
+                    DC._nativeCommunityLastRequest = {
+                        requestOpcode = logicalOpcode,
+                        owner = requestOwner,
+                    }
+                else
+                    DC._nativeCommunityLastRequest = nil
+                end
+                LogCollectionTransportEvent("info", "community",
+                    "Collection community native request -> "
+                        .. GetCollectionOpcodeLabel(logicalOpcode),
+                    {
+                        opcode = logicalOpcode,
+                        payloadBytes = string.len(payload),
+                    })
+                return true, "native"
+            end
+
+            DC._nativeCommunityLastRequest = nil
+            RecordCollectionTransportError("community", "request",
+                tostring(err))
+            LogCollectionTransportEvent("error", "community",
+                "Collection community native request failed",
+                { opcode = logicalOpcode, err = tostring(err) })
+
+            if type(DC.Debug) == "function" then
+                DC:Debug("RequestNativeCollectionCommunity failed: "
+                    .. tostring(err))
+            end
+
+            if not allowAddonFallback then
+                return false
+            end
+        else
+            RecordCollectionTransportError("community", "encode",
+                "payload encode failed")
+            LogCollectionTransportEvent("error", "community",
+                "Collection community native payload encode failed",
+                { opcode = logicalOpcode })
+
+            if not allowAddonFallback then
+                return false
+            end
+        end
+    elseif not allowAddonFallback then
+        RecordCollectionTransportError("community", "request",
+            "native bridge unavailable")
+        return false
+    end
+
+    RecordCollectionTransportRequest("community", "addon",
+        logicalOpcode, 0, { expectsReply = expectsReply })
+    LogCollectionTransportEvent("info", "community",
+        "Collection community addon request -> "
+            .. GetCollectionOpcodeLabel(logicalOpcode),
+        { opcode = logicalOpcode })
+    local ok = DC:SendMessage(logicalOpcode, data or {})
+
+    if ok and responseOpcode > 0 then
+        local opcodeHex = string.format("0x%02X", responseOpcode)
+        ScheduleAwaitResponseDiagnostic(DC, {
+            requestOpcode = logicalOpcode,
+            responseOpcode = responseOpcode,
+            sentAt = sentAt,
+            timeoutSec = 2.0,
+            awaitMessage = "Awaiting community response (" .. opcodeHex
+                .. ")",
+            timeoutMessage = "[Net] Await timeout for community response ("
+                .. opcodeHex .. "); request may have been dropped or rate-limited",
+        })
+    end
+
+    return ok, "addon"
+end
+
+local function SendCommunityCopyOutfitRequest(communityOutfitId, options)
+    options = options or {}
+
+    local ok, transport = SendCollectionCommunityRequest(
+        DC.Opcodes.CMSG_COPY_COMMUNITY_OUTFIT,
+        { id = communityOutfitId },
+        {
+            allowAddonFallback = options.allowAddonFallback,
+            owner = "community-copy",
+        })
+    if not ok then
+        return false
+    end
+
+    RecordCollectionTransportRequest("savedOutfits",
+        transport or "addon",
+        DC.Opcodes.CMSG_COPY_COMMUNITY_OUTFIT, 0)
+    if ShouldUseNativeCollectionSavedOutfitsBridge() then
+        EnsureNativeCollectionSavedOutfitsPollFrame()
+        DC._nativeSavedOutfitsLastRequest = {
+            owner = "community-copy",
+        }
+    else
+        DC._nativeSavedOutfitsLastRequest = nil
+    end
+
+    return true
+end
+
+local function SendCollectionWave1Request(logicalOpcode, data, options)
+    options = options or {}
+    local allowAddonFallback = options.allowAddonFallback ~= false
+
     if ShouldUseNativeCollectionWave1Bridge() then
         EnsureNativeCollectionWave1PollFrame()
 
         local payload = EncodeNativeCollectionWave1Payload(data or {})
         if type(payload) == "string" then
+            RecordCollectionTransportRequest("collectionWave1", "native",
+                logicalOpcode, string.len(payload))
             local ok, err = pcall(RequestNativeCollectionWave1,
                 logicalOpcode, payload)
             if ok then
+                LogCollectionTransportEvent("info", "collection-wave1",
+                    "Collection wave1 native request -> "
+                        .. GetCollectionOpcodeLabel(logicalOpcode),
+                    {
+                        opcode = logicalOpcode,
+                        payloadBytes = string.len(payload),
+                    })
                 return true
             end
+
+            RecordCollectionTransportError("collectionWave1", "request",
+                tostring(err))
+            LogCollectionTransportEvent("error", "collection-wave1",
+                "Collection wave1 native request failed",
+                { opcode = logicalOpcode, err = tostring(err) })
 
             if type(DC.Debug) == "function" then
                 DC:Debug("RequestNativeCollectionWave1 failed: "
                     .. tostring(err))
             end
+
+            if not allowAddonFallback then
+                return false
+            end
         elseif type(DC.Debug) == "function" then
+            RecordCollectionTransportError("collectionWave1", "encode",
+                "payload encode failed")
+            LogCollectionTransportEvent("error", "collection-wave1",
+                "Collection wave1 native payload encode failed",
+                { opcode = logicalOpcode })
             DC:Debug("Failed to encode native collection wave1 request payload")
+
+            if not allowAddonFallback then
+                return false
+            end
         end
+    elseif not allowAddonFallback then
+        RecordCollectionTransportError("collectionWave1", "request",
+            "native bridge unavailable")
+        return false
     end
 
+    RecordCollectionTransportRequest("collectionWave1", "addon",
+        logicalOpcode, 0)
+    LogCollectionTransportEvent("info", "collection-wave1",
+        "Collection wave1 addon request -> "
+            .. GetCollectionOpcodeLabel(logicalOpcode),
+        { opcode = logicalOpcode })
     return DC:SendMessage(logicalOpcode, data or {})
+end
+
+local function SendCollectionSavedOutfitsRequest(offset, limit, options)
+    options = options or {}
+
+    local allowAddonFallback = options.allowAddonFallback ~= false
+    local requestOwner = tostring(options.owner or "collection")
+    local sentAt = tonumber(options.sentAt) or 0
+    if sentAt == 0 and type(GetTime) == "function" then
+        sentAt = GetTime() or 0
+    end
+
+    offset = tonumber(offset) or 0
+    limit = tonumber(limit) or 6
+    if offset < 0 then
+        offset = 0
+    end
+    if limit < 1 then
+        limit = 1
+    elseif limit > 50 then
+        limit = 50
+    end
+
+    local payload = {
+        offset = offset,
+        limit = limit,
+    }
+
+    if ShouldUseNativeCollectionSavedOutfitsBridge() then
+        EnsureNativeCollectionSavedOutfitsPollFrame()
+
+        local encodedPayload = EncodeNativeCollectionWave1Payload(payload)
+        local payloadBytes = type(encodedPayload) == "string"
+            and string.len(encodedPayload) or 0
+        RecordCollectionTransportRequest("savedOutfits", "native",
+            DC.Opcodes.CMSG_GET_SAVED_OUTFITS, payloadBytes)
+        local ok, err = pcall(RequestNativeCollectionSavedOutfits, offset,
+            limit)
+        if ok then
+            DC._nativeSavedOutfitsLastRequest = {
+                offset = offset,
+                limit = limit,
+                owner = requestOwner,
+            }
+            LogCollectionTransportEvent("info", "saved-outfits",
+                "Collection saved-outfits native request -> saved_outfits",
+                { opcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS })
+            return true
+        end
+
+        DC._nativeSavedOutfitsLastRequest = nil
+        RecordCollectionTransportError("savedOutfits", "request",
+            tostring(err))
+        LogCollectionTransportEvent("error", "saved-outfits",
+            "Collection saved-outfits native request failed",
+            {
+                opcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS,
+                err = tostring(err),
+            })
+        if type(DC.Debug) == "function" then
+            DC:Debug("RequestNativeCollectionSavedOutfits failed: "
+                .. tostring(err))
+        end
+
+        if not allowAddonFallback then
+            return false
+        end
+    elseif not allowAddonFallback then
+        RecordCollectionTransportError("savedOutfits", "request",
+            "native bridge unavailable")
+        return false
+    end
+
+    RecordCollectionTransportRequest("savedOutfits", "addon",
+        DC.Opcodes.CMSG_GET_SAVED_OUTFITS, 0)
+    LogCollectionTransportEvent("info", "saved-outfits",
+        "Collection saved-outfits addon request -> saved_outfits",
+        { opcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS })
+    local ok = DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, payload)
+
+    if ok then
+        ScheduleAwaitResponseDiagnostic(DC, {
+            requestOpcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS,
+            responseOpcode = DC.Opcodes.SMSG_SAVED_OUTFITS,
+            sentAt = sentAt,
+            timeoutSec = 2.0,
+            awaitMessage = "Awaiting outfits response (0x4C)",
+            timeoutMessage = "[Net] Await timeout for outfits response (0x4C); request may have been dropped or rate-limited",
+        })
+    end
+
+    return ok
 end
 
 local function HasNativeCollectionTransmogStateBridge()
@@ -453,6 +1298,7 @@ local function ConsumeNativeCollectionTransmogStateSnapshot()
     end
 
     revision = tonumber(revision) or 0
+    local payloadBytes = type(payload) == "string" and string.len(payload) or 0
     if revision <= 0 or revision == lastNativeTransmogStateRevision then
         return false
     end
@@ -461,7 +1307,36 @@ local function ConsumeNativeCollectionTransmogStateSnapshot()
 
     local decoded = DecodeNativeCollectionTransmogState(payload)
     if type(decoded) ~= "table" then
+        RecordCollectionTransportError("transmogState", "decode",
+            "invalid native payload")
+        LogCollectionTransportEvent("error", "transmog-state",
+            "Collection transmog-state native snapshot decode failed",
+            { opcode = DC.Opcodes.SMSG_TRANSMOG_STATE, revision = revision })
+        DC._nativeTransmogStateLastRequest = nil
         return false
+    end
+
+    local matchedRequest = type(DC._nativeTransmogStateLastRequest) == "table"
+    RecordCollectionTransportReply("transmogState", "native",
+        DC.Opcodes.SMSG_TRANSMOG_STATE, revision, payloadBytes,
+        { matchedRequest = matchedRequest })
+    if matchedRequest then
+        LogCollectionTransportEvent("info", "transmog-state",
+            "Collection transmog-state native response <- transmog_state",
+            {
+                opcode = DC.Opcodes.SMSG_TRANSMOG_STATE,
+                revision = revision,
+                payloadBytes = payloadBytes,
+            })
+        DC._nativeTransmogStateLastRequest = nil
+    else
+        LogCollectionTransportEvent("info", "transmog-state",
+            "Collection transmog-state native snapshot observed <- transmog_state",
+            {
+                opcode = DC.Opcodes.SMSG_TRANSMOG_STATE,
+                revision = revision,
+                payloadBytes = payloadBytes,
+            })
     end
 
     DC:HandleTransmogState(decoded)
@@ -484,6 +1359,60 @@ local function EnsureNativeCollectionTransmogStatePollFrame()
         self.elapsed = 0
         ConsumeNativeCollectionTransmogStateSnapshot()
     end)
+end
+
+local function SendCollectionTransmogStateRequest(reason, options)
+    options = options or {}
+    local allowAddonFallback = options.allowAddonFallback ~= false
+    local requestReason = tostring(reason or "collection_transmog_state")
+
+    if ShouldUseNativeCollectionTransmogStateBridge() then
+        EnsureNativeCollectionTransmogStatePollFrame()
+
+        RecordCollectionTransportRequest("transmogState", "native",
+            DC.Opcodes.CMSG_GET_TRANSMOG_STATE, 0)
+        local ok, err = pcall(RequestNativeCollectionTransmogState,
+            requestReason)
+        if ok then
+            DC._nativeTransmogStateLastRequest = {
+                reason = requestReason,
+            }
+            LogCollectionTransportEvent("info", "transmog-state",
+                "Collection transmog-state native request -> transmog_state",
+                { opcode = DC.Opcodes.CMSG_GET_TRANSMOG_STATE })
+            return ok
+        end
+
+        DC._nativeTransmogStateLastRequest = nil
+        RecordCollectionTransportError("transmogState", "request",
+            tostring(err))
+        LogCollectionTransportEvent("error", "transmog-state",
+            "Collection transmog-state native request failed",
+            {
+                opcode = DC.Opcodes.CMSG_GET_TRANSMOG_STATE,
+                err = tostring(err),
+            })
+        if type(DC.Debug) == "function" then
+            DC:Debug("RequestNativeCollectionTransmogState failed: "
+                .. tostring(err))
+        end
+
+        if not allowAddonFallback then
+            return false
+        end
+    elseif not allowAddonFallback then
+        RecordCollectionTransportError("transmogState", "request",
+            "native bridge unavailable")
+        return false
+    end
+
+    RecordCollectionTransportRequest("transmogState", "addon",
+        DC.Opcodes.CMSG_GET_TRANSMOG_STATE, 0)
+    DC._nativeTransmogStateLastRequest = nil
+    LogCollectionTransportEvent("info", "transmog-state",
+        "Collection transmog-state addon request -> transmog_state",
+        { opcode = DC.Opcodes.CMSG_GET_TRANSMOG_STATE })
+    return DC:SendMessage(DC.Opcodes.CMSG_GET_TRANSMOG_STATE, {})
 end
 
 local function HasNativeCollectionItemSetsBridge()
@@ -538,6 +1467,7 @@ local function ConsumeNativeCollectionItemSetsSnapshot()
     end
 
     revision = tonumber(revision) or 0
+    local payloadBytes = type(payload) == "string" and string.len(payload) or 0
     if revision <= 0 or revision == lastNativeItemSetsRevision then
         return false
     end
@@ -546,7 +1476,48 @@ local function ConsumeNativeCollectionItemSetsSnapshot()
 
     local decoded = DecodeNativeCollectionItemSets(payload)
     if type(decoded) ~= "table" then
+        RecordCollectionTransportError("itemSets", "decode",
+            "invalid native payload")
+        LogCollectionTransportEvent("error", "item-sets",
+            "Collection item-sets native snapshot decode failed",
+            { opcode = DC.Opcodes.SMSG_ITEM_SETS, revision = revision })
         return false
+    end
+
+    local nativeReq = DC._nativeItemSetsLastRequest
+    local isOwnedSnapshot = DC._itemSetsLoading
+        or (type(nativeReq) == "table"
+            and (nativeReq.owner == "collection"
+                or nativeReq.owner == "transport-refresh"))
+    if not isOwnedSnapshot then
+        RecordCollectionTransportReply("itemSets", "native",
+            DC.Opcodes.SMSG_ITEM_SETS, revision, payloadBytes,
+            { matchedRequest = false })
+        LogCollectionTransportEvent("info", "item-sets",
+            "Collection item-sets native snapshot observed <- item_sets",
+            {
+                opcode = DC.Opcodes.SMSG_ITEM_SETS,
+                revision = revision,
+                payloadBytes = payloadBytes,
+            })
+        DC:OnMsg_ItemSets(decoded)
+        return true
+    end
+
+    RecordCollectionTransportReply("itemSets", "native",
+        DC.Opcodes.SMSG_ITEM_SETS, revision, payloadBytes)
+    LogCollectionTransportEvent("info", "item-sets",
+        "Collection item-sets native response <- item_sets",
+        {
+            opcode = DC.Opcodes.SMSG_ITEM_SETS,
+            revision = revision,
+            payloadBytes = payloadBytes,
+        })
+
+    if type(nativeReq) == "table" and nativeReq.owner == "transport-refresh"
+        and not DC._itemSetsLoading then
+        DC._nativeItemSetsLastRequest = nil
+        return true
     end
 
     DC:OnMsg_ItemSets(decoded)
@@ -571,8 +1542,12 @@ local function EnsureNativeCollectionItemSetsPollFrame()
     end)
 end
 
-local function SendItemSetsRequest(payload)
+local function SendItemSetsRequest(payload, options)
     payload = payload or {}
+    options = options or {}
+
+    local allowAddonFallback = options.allowAddonFallback ~= false
+    local requestOwner = tostring(options.owner or "collection")
 
     if ShouldUseNativeCollectionItemSetsBridge() then
         local offset = tonumber(payload.offset) or 0
@@ -589,20 +1564,201 @@ local function SendItemSetsRequest(payload)
             limit = limit,
             syncVersion = syncVersion,
             packed = packedFlag,
+            owner = requestOwner,
         }
 
         EnsureNativeCollectionItemSetsPollFrame()
 
+        RecordCollectionTransportRequest("itemSets", "native",
+            DC.Opcodes.CMSG_GET_ITEM_SETS, 0)
         local ok, err = pcall(RequestNativeCollectionItemSets,
             offset, limit, syncVersion, packedFlag)
+        if ok then
+            LogCollectionTransportEvent("info", "item-sets",
+                "Collection item-sets native request -> item_sets",
+                {
+                    opcode = DC.Opcodes.CMSG_GET_ITEM_SETS,
+                    offset = offset,
+                    limit = limit,
+                    syncVersion = syncVersion,
+                })
+            return ok
+        end
+
+        RecordCollectionTransportError("itemSets", "request", tostring(err))
+        LogCollectionTransportEvent("error", "item-sets",
+            "Collection item-sets native request failed",
+            {
+                opcode = DC.Opcodes.CMSG_GET_ITEM_SETS,
+                err = tostring(err),
+                offset = offset,
+                limit = limit,
+                syncVersion = syncVersion,
+            })
         if not ok and type(DC.Debug) == "function" then
             DC:Debug("RequestNativeCollectionItemSets failed: "
                 .. tostring(err))
         end
-        return ok
+
+        DC._nativeItemSetsLastRequest = nil
+        if not allowAddonFallback then
+            return false
+        end
+    elseif not allowAddonFallback then
+        RecordCollectionTransportError("itemSets", "request",
+            "native bridge unavailable")
+        return false
     end
 
+    RecordCollectionTransportRequest("itemSets", "addon",
+        DC.Opcodes.CMSG_GET_ITEM_SETS, 0)
+    LogCollectionTransportEvent("info", "item-sets",
+        "Collection item-sets addon request -> item_sets",
+        { opcode = DC.Opcodes.CMSG_GET_ITEM_SETS })
     return DC:SendMessage(DC.Opcodes.CMSG_GET_ITEM_SETS, payload)
+end
+
+function DC:RefreshCollectionTransport()
+    local itemSetsLimit = tonumber(self._itemSetsLimit) or 50
+    if itemSetsLimit < 10 then
+        itemSetsLimit = 10
+    elseif itemSetsLimit > 200 then
+        itemSetsLimit = 200
+    end
+
+    local collectionHash = 0
+    if type(self.ComputeCollectionHash) == "function" then
+        collectionHash = tonumber(self:ComputeCollectionHash()) or 0
+    else
+        collectionHash = tonumber(self.collectionHash) or 0
+    end
+
+    local results = {
+        collectionWave1 = SendCollectionWave1Request(
+            self.Opcodes.CMSG_HANDSHAKE,
+            { hash = collectionHash },
+            { allowAddonFallback = false }),
+        community = SendCollectionCommunityRequest(
+            self.Opcodes.CMSG_COMMUNITY_GET_LIST,
+            {
+                offset = 0,
+                limit = 1,
+                filter = "all",
+                sort = "newest",
+            },
+            {
+                allowAddonFallback = false,
+                owner = "transport-refresh",
+                responseOpcode = self.Opcodes.SMSG_COMMUNITY_LIST,
+            }),
+        transmogState = SendCollectionTransmogStateRequest(
+            "collection_transport_refresh",
+            { allowAddonFallback = false }),
+        itemSets = SendItemSetsRequest({
+            offset = 0,
+            limit = itemSetsLimit,
+            syncVersion = 0,
+            packed = 1,
+        }, {
+            allowAddonFallback = false,
+            owner = "transport-refresh",
+        }),
+    }
+
+    RefreshCollectionTransportUi()
+    return results
+end
+
+function DC:GetCollectionTransportDiagnostics()
+    local diagnostics = EnsureCollectionTransportDiagnostics()
+
+    local function CopyChannel(channelKey, available, negotiated, revision)
+        local source = diagnostics[channelKey] or {}
+        local copy = {}
+        for key, value in pairs(source) do
+            copy[key] = value
+        end
+
+        copy.available = available and true or false
+        copy.negotiated = negotiated and true or false
+        copy.lastRevision = tonumber(revision) or 0
+        copy.revision = GetCollectionTransportChannelRevision(copy)
+        copy.hasRequest = (tonumber(copy.lastRequestAt) or 0) > 0
+        copy.hasReply = (tonumber(copy.lastReplyAt) or 0) > 0
+        copy.hasCachedSnapshot = copy.revision > 0 and not copy.hasReply
+        copy.statusKey, copy.statusLabel =
+            ClassifyCollectionTransportChannel(copy)
+        return copy
+    end
+
+    return {
+        collectionWave1 = CopyChannel("collectionWave1",
+            HasNativeCollectionWave1Bridge(),
+            ShouldUseNativeCollectionWave1Bridge(),
+            lastNativeCollectionWave1Revision),
+        savedOutfits = CopyChannel("savedOutfits",
+            HasNativeCollectionSavedOutfitsBridge(),
+            ShouldUseNativeCollectionSavedOutfitsBridge(),
+            lastNativeSavedOutfitsRevision),
+        community = CopyChannel("community",
+            HasNativeCollectionCommunityBridge(),
+            ShouldUseNativeCollectionCommunityBridge(),
+            lastNativeCommunityRevision),
+        transmogState = CopyChannel("transmogState",
+            HasNativeCollectionTransmogStateBridge(),
+            ShouldUseNativeCollectionTransmogStateBridge(),
+            lastNativeTransmogStateRevision),
+        itemSets = CopyChannel("itemSets",
+            HasNativeCollectionItemSetsBridge(),
+            ShouldUseNativeCollectionItemSetsBridge(),
+            lastNativeItemSetsRevision),
+    }
+end
+
+function DC:GetCollectionTransportSummary()
+    local diagnostics = self:GetCollectionTransportDiagnostics()
+
+    local function Summarize(label, channel)
+        channel = channel or {}
+        local mode = channel.negotiated and "N" or "A"
+        local text = label .. ":" .. mode
+
+        local statusKey = channel.statusKey or "idle"
+        if statusKey == "pending" then
+            text = text .. "/pending"
+        elseif statusKey == "observed" then
+            text = text .. "/observed"
+        elseif statusKey == "cached" then
+            text = text .. "/cached"
+        elseif statusKey == "idle" then
+            text = text .. "/idle"
+        else
+            local lastLabel = channel.lastReplyLabel or channel.lastRequestLabel
+            if type(lastLabel) == "string" and lastLabel ~= "" then
+                text = text .. "/" .. lastLabel
+            else
+                text = text .. "/reply"
+            end
+        end
+
+        local revision = GetCollectionTransportChannelRevision(channel)
+        if revision > 0 then
+            text = text .. " r" .. tostring(revision)
+        end
+
+        if type(channel.lastError) == "string" and channel.lastError ~= "" then
+            text = text .. " !"
+        end
+
+        return text
+    end
+
+    return "Bridge  "
+        .. Summarize("W1", diagnostics.collectionWave1) .. "  "
+        .. Summarize("Outfits", diagnostics.savedOutfits) .. "  "
+        .. Summarize("Community", diagnostics.community) .. "  "
+        .. Summarize("TS", diagnostics.transmogState) .. "  "
+        .. Summarize("Sets", diagnostics.itemSets)
 end
 
 local function ClearPagingDelayFrame(frame)
@@ -2241,23 +3397,8 @@ function DC.Protocol:RequestSavedOutfitsPage(offset, limit)
     DC._pauseTransmogPagingUntil = now + 3.0
     ResetPagingDelayTimer(DC, "_transmogPagingDelayFrame")
 
-    local ok = DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {
-        offset = offset or 0,
-        limit = limit or 6,
-    })
-
-    if ok then
-        ScheduleAwaitResponseDiagnostic(DC, {
-            requestOpcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS,
-            responseOpcode = DC.Opcodes.SMSG_SAVED_OUTFITS,
-            sentAt = sentAt,
-            timeoutSec = 2.0,
-            awaitMessage = "Awaiting outfits response (0x4C)",
-            timeoutMessage = "[Net] Await timeout for outfits response (0x4C); request may have been dropped or rate-limited",
-        })
-    end
-
-    return ok
+    return SendCollectionSavedOutfitsRequest(offset or 0, limit or 6,
+        { sentAt = sentAt })
 end
 
 function DC:RequestItemSets(force)
@@ -2313,7 +3454,7 @@ end
 
 -- Copy a community outfit to the player's personal account collection
 function DC.Protocol:CopyCommunityOutfitToAccount(communityOutfitId)
-    return DC:SendMessage(DC.Opcodes.CMSG_COPY_COMMUNITY_OUTFIT, { id = communityOutfitId })
+    return SendCommunityCopyOutfitRequest(communityOutfitId)
 end
 
 function DC:OnMsg_SavedOutfits(data)
@@ -2340,7 +3481,7 @@ function DC:OnMsg_SavedOutfits(data)
     -- Paging metadata (optional). Some servers do not echo offset/limit in the response;
     -- in that case, fall back to the last request parameters.
     local req = self.pendingRequests and self.pendingRequests[self.Opcodes.CMSG_GET_SAVED_OUTFITS]
-    local reqData = req and req.data
+    local reqData = (req and req.data) or self._nativeSavedOutfitsLastRequest
     local respOffset = tonumber(data.offset)
     local respLimit = tonumber(data.limit)
     local offset = respOffset
@@ -2437,6 +3578,7 @@ function DC:OnMsg_SavedOutfits(data)
     end
 
     -- Allow transmog paging to continue after we get a response.
+    self._nativeSavedOutfitsLastRequest = nil
     self._pauseTransmogPagingUntil = nil
 end
 
@@ -2451,31 +3593,28 @@ function DC:RequestCommunityList(offset, limit, filter, sort)
     self._pauseTransmogPagingUntil = now + 3.0
     ResetPagingDelayTimer(self, "_transmogPagingDelayFrame")
 
-    local ok = self:SendMessage(self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
+    local ok = SendCollectionCommunityRequest(
+        self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
         offset = offset or 0,
         limit = limit or 50,
         filter = filter or "all",
         sort = sort or "newest",
-    })
-
-    if ok then
-        ScheduleAwaitResponseDiagnostic(self, {
-            requestOpcode = self.Opcodes.CMSG_COMMUNITY_GET_LIST,
+        }, {
+            owner = "collection",
             responseOpcode = self.Opcodes.SMSG_COMMUNITY_LIST,
             sentAt = sentAt,
-            timeoutSec = 2.0,
-            awaitMessage = "Awaiting community response (0x63)",
-            timeoutMessage = "[Net] Await timeout for community response (0x63); request may have been dropped or rate-limited",
         })
-    end
 
     return ok
 end
 
 function DC:RequestCommunityFavorite(outfitId, add)
-    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_FAVORITE, {
+    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_FAVORITE, {
         id = outfitId,
         add = add
+    }, {
+        owner = "collection",
+        responseOpcode = self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT,
     })
 end
 
@@ -2487,7 +3626,11 @@ function DC:RequestCommunityPublish(name, items, tags)
     if tags and tags ~= "" then
         payload.tags = tags
     end
-    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_PUBLISH, payload)
+    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_PUBLISH,
+        payload, {
+            owner = "collection",
+            responseOpcode = self.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT,
+        })
 end
 
 function DC:RequestCommunityRate(id, value)
@@ -2498,9 +3641,11 @@ function DC:RequestCommunityRate(id, value)
         voteValue = -1
     end
 
-    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_RATE, {
+    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_RATE, {
         id = id,
         value = voteValue,
+    }, {
+        owner = "collection",
     })
 end
 
@@ -2513,12 +3658,19 @@ function DC:RequestCommunityUpdate(id, name, items, tags)
     if tags and tags ~= "" then
         payload.tags = tags
     end
-    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_UPDATE, payload)
+    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_UPDATE,
+        payload, {
+            owner = "collection",
+            responseOpcode = self.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT,
+        })
 end
 
 function DC:RequestCommunityDelete(id)
-    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_DELETE, {
+    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_DELETE, {
         id = id
+    }, {
+        owner = "collection",
+        responseOpcode = self.Opcodes.SMSG_COMMUNITY_DELETE_RESULT,
     })
 end
 
@@ -2716,19 +3868,7 @@ end
 
 -- Request current transmog state for all slots
 function DC:RequestTransmogState()
-    if ShouldUseNativeCollectionTransmogStateBridge() then
-        EnsureNativeCollectionTransmogStatePollFrame()
-
-        local ok, err = pcall(RequestNativeCollectionTransmogState,
-            "collection_transmog_state")
-        if not ok and type(self.Debug) == "function" then
-            self:Debug("RequestNativeCollectionTransmogState failed: "
-                .. tostring(err))
-        end
-        return ok
-    end
-
-    return self:SendMessage(self.Opcodes.CMSG_GET_TRANSMOG_STATE, {})
+    return SendCollectionTransmogStateRequest("collection_transmog_state")
 end
 
 -- Apply multiple transmog changes at once (preview table: { [visualSlot] = itemId, ... })
@@ -2787,6 +3927,8 @@ function DC.OnProtocolMessage(payload)
     if type(self.LogNetEvent) == "function" then
         self:LogNetEvent("info", "recv", string.format("Received opcode 0x%02X", tonumber(opcode) or 0), { opcode = opcode })
     end
+
+    TrackAddonCollectionProtocolReply(opcode)
 
     -- Diagnostics: if we ever receive our OWN request opcodes, the server did not handle the message
     -- and it got echoed back as a normal addon whisper.
@@ -2880,17 +4022,23 @@ end
 
 -- Request to toggle favorite status
 function DC:RequestCommunityFavorite(outfitID, add)
-    local msg = DC.Message(DC.Opcodes.CMSG_COMMUNITY_FAVORITE)
-    msg:Add("id", outfitID)
-    msg:Add("add", add)
-    msg:Send()
+    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_FAVORITE,
+        {
+            id = outfitID,
+            add = add,
+        }, {
+            owner = "collection",
+            responseOpcode = self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT,
+        })
 end
 
 -- Request to view (increment view count)
 function DC:RequestCommunityView(outfitID)
-    local msg = DC.Message(DC.Opcodes.CMSG_COMMUNITY_VIEW)
-    msg:Add("id", outfitID)
-    msg:Send()
+    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_VIEW, {
+        id = outfitID,
+    }, {
+        owner = "collection",
+    })
 end
 
 function DC:RequestInspectTarget(unitToken)
@@ -5863,7 +7011,21 @@ function DC:OnMsg_ItemSets(data)
 
     -- Some servers do not echo offset/limit; fall back to the last request parameters.
     local req = self.pendingRequests and self.pendingRequests[self.Opcodes.CMSG_GET_ITEM_SETS]
-    local reqData = (req and req.data) or self._nativeItemSetsLastRequest
+    local nativeReq = self._nativeItemSetsLastRequest
+    if type(nativeReq) ~= "table" or nativeReq.owner ~= "collection" then
+        nativeReq = nil
+    end
+
+    local reqData = (req and req.data) or nativeReq
+    if self.pendingRequests then
+        self.pendingRequests[self.Opcodes.CMSG_GET_ITEM_SETS] = nil
+    end
+
+    if not self._itemSetsLoading and reqData == nil then
+        self:Debug("Ignoring unsolicited item sets response (no active paging run)")
+        return
+    end
+
     local offset = tonumber(data.offset)
     local limit = tonumber(data.limit)
     if reqData then
@@ -5900,6 +7062,7 @@ function DC:OnMsg_ItemSets(data)
         end
 
         self._itemSetsLoading = nil
+        self._nativeItemSetsLastRequest = nil
         self.itemSetsLoaded = true
         return
     end
@@ -6007,6 +7170,7 @@ function DC:OnMsg_ItemSets(data)
     end
 
     self._itemSetsLoading = nil
+    self._nativeItemSetsLastRequest = nil
     self.itemSetsLoaded = true -- Mark as loaded to prevent re-requesting
 
     if self._pendingSyncVersions and self._pendingSyncVersions.itemsets ~= nil and type(self.SetSyncVersion) == "function" then
@@ -6077,7 +7241,9 @@ end
 function DC:HandleCommunityFavoriteResult(data)
     local outfitId = data.id
     local isAdd = data.add
-    local success = true -- Assume success if we got the result back
+    if isAdd == nil then
+        isAdd = data.is_favorite
+    end
     
     if self.CommunityUI and self.CommunityUI.OnFavoriteResult then
         self.CommunityUI:OnFavoriteResult(outfitId, isAdd)

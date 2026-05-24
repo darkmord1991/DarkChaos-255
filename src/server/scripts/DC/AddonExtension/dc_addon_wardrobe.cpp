@@ -1771,6 +1771,13 @@ namespace DCCollection
     // Community Outfits Platform Handlers
     // =======================================================================
 
+    namespace
+    {
+        std::string ExtractJsonPayload(DCAddon::JsonMessage const& message);
+        void SendCommunityPayload(Player* player, uint8 logicalOpcode,
+            std::string const& payload);
+    }
+
     void HandleCommunityGetList(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player)
@@ -1897,7 +1904,9 @@ namespace DCCollection
 
         DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
         response.Set("outfits", outfits);
-        response.Send(player);
+        SendCommunityPayload(player,
+            DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST,
+            ExtractJsonPayload(response));
     }
 
     void HandleCommunityPublish(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1932,7 +1941,9 @@ namespace DCCollection
 
         DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT);
         res.Set("success", true);
-        res.Send(player);
+        SendCommunityPayload(player,
+            DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT,
+            ExtractJsonPayload(res));
     }
 
     void HandleCommunityRate(Player* player, const DCAddon::ParsedMessage& msg)
@@ -2027,8 +2038,11 @@ namespace DCCollection
             {
                 DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_FAVORITE_RESULT);
                 res.Set("id", id);
+                res.Set("add", add);
                 res.Set("is_favorite", add);
-                res.Send(player);
+                SendCommunityPayload(player,
+                    DCAddon::Opcode::Collection::SMSG_COMMUNITY_FAVORITE_RESULT,
+                    ExtractJsonPayload(res));
             }
         });
     }
@@ -2077,7 +2091,9 @@ namespace DCCollection
         {
             res.Set("success", false);
             res.Set("error", "Outfit not found");
-            res.Send(player);
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
+                ExtractJsonPayload(res));
             return;
         }
 
@@ -2089,7 +2105,9 @@ namespace DCCollection
         {
             res.Set("success", false);
             res.Set("error", "You are not the owner of this outfit");
-            res.Send(player);
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
+                ExtractJsonPayload(res));
             return;
         }
 
@@ -2105,7 +2123,9 @@ namespace DCCollection
 
         res.Set("success", true);
         res.Set("id", id);
-        res.Send(player);
+        SendCommunityPayload(player,
+            DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
+            ExtractJsonPayload(res));
 
         LOG_INFO("module.dc", "[DCWardrobe] Player {} updated community outfit id={}",
             player->GetName(), id);
@@ -2139,7 +2159,9 @@ namespace DCCollection
         {
             res.Set("success", false);
             res.Set("error", "Outfit not found");
-            res.Send(player);
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
+                ExtractJsonPayload(res));
             return;
         }
 
@@ -2151,7 +2173,9 @@ namespace DCCollection
         {
             res.Set("success", false);
             res.Set("error", "You are not the owner of this outfit");
-            res.Send(player);
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
+                ExtractJsonPayload(res));
             return;
         }
 
@@ -2169,7 +2193,9 @@ namespace DCCollection
 
         res.Set("success", true);
         res.Set("id", id);
-        res.Send(player);
+        SendCommunityPayload(player,
+            DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
+            ExtractJsonPayload(res));
 
         LOG_INFO("module.dc", "[DCWardrobe] Player {} deleted community outfit id={}",
             player->GetName(), id);
@@ -2638,6 +2664,74 @@ namespace DCCollection
         });
     }
 
+    namespace
+    {
+        std::string ExtractJsonPayload(DCAddon::JsonMessage const& message)
+        {
+            std::string built = message.Build();
+            std::string marker;
+            marker.push_back(DCAddon::DELIMITER);
+            marker += DCAddon::JSON_MARKER;
+            marker.push_back(DCAddon::DELIMITER);
+
+            std::size_t const markerPos = built.find(marker);
+            if (markerPos == std::string::npos)
+                return "{}";
+
+            return built.substr(markerPos + marker.size());
+        }
+
+        void SendCollectionWave1Payload(Player* player, uint8 logicalOpcode,
+            std::string const& payload)
+        {
+            if (!player || payload.empty())
+                return;
+
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "collection-wave1";
+            request.nativeCapability =
+                DCAddon::ProtocolVersion::Capability::COLLECTION_WAVE1_NATIVE;
+
+            if (DCAddon::ResolveTransportPolicy(player, request).UsesNative())
+            {
+                if (!player->GetSession())
+                    return;
+
+                WorldPacket data(::SMSG_COLLECTION_WAVE1,
+                    sizeof(uint32) + payload.size() + 1);
+                data << uint32(logicalOpcode);
+                data << payload;
+                player->GetSession()->SendPacket(&data);
+
+                std::string preview = "logical="
+                    + std::to_string(static_cast<uint32>(
+                        logicalOpcode))
+                    + "|bytes=" + std::to_string(payload.size());
+                DCAddon::LogNativeS2CMessage(player, MODULE,
+                    logicalOpcode,
+                    ::SMSG_COLLECTION_WAVE1, data.size(), preview, true, 0);
+                return;
+            }
+
+            DCAddon::JsonMessage res(DCAddon::Module::COLLECTION,
+                logicalOpcode);
+            res.SetPreEncodedJson(payload);
+            res.Send(player);
+        }
+
+        void SendSavedOutfitsPayload(Player* player, std::string const& payload)
+        {
+            SendCollectionWave1Payload(player,
+                DCAddon::Opcode::Collection::SMSG_SAVED_OUTFITS, payload);
+        }
+
+        void SendCommunityPayload(Player* player, uint8 logicalOpcode,
+            std::string const& payload)
+        {
+            SendCollectionWave1Payload(player, logicalOpcode, payload);
+        }
+    }
+
     void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player) return;
@@ -2742,11 +2836,8 @@ namespace DCCollection
         LOG_INFO("module.dc", "[DCWardrobe] Loaded {} saved outfits for account (Sync) offset={} limit={} total={} payloadBytes={}",
             outfitCount, pageOffset, limit, total, ss.str().size());
 
-        DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_SAVED_OUTFITS);
-        res.Add("J");
-        res.Add(ss.str());
         LOG_INFO("module.dc", "[DCWardrobe] Sending SMSG_SAVED_OUTFITS to {} (bytes={})", player->GetName(), ss.str().size());
-        res.Send(player);
+        SendSavedOutfitsPayload(player, ss.str());
     }
     void HandleCopyCommunityOutfit(Player* player, const DCAddon::ParsedMessage& msg)
     {

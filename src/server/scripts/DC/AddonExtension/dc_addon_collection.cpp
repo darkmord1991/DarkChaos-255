@@ -61,6 +61,24 @@ namespace DCCollection
 {
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
     uint32 ResolveCompanionSummonSpellFromSpell(uint32 spellId);
+    void HandleGetSavedOutfits(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCommunityGetList(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCommunityPublish(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCommunityRate(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCommunityFavorite(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCommunityView(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCommunityUpdate(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCommunityDelete(Player* player,
+        DCAddon::ParsedMessage const& msg);
+    void HandleCopyCommunityOutfit(Player* player,
+        DCAddon::ParsedMessage const& msg);
 
     namespace BridgeOpcode
     {
@@ -7754,6 +7772,43 @@ private:
                     case DCAddon::Opcode::Collection::CMSG_GET_COLLECTION:
                         DCCollection::HandleGetCollectionMessage(player,
                             parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_SAVED_OUTFITS:
+                        DCCollection::HandleGetSavedOutfits(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COMMUNITY_GET_LIST:
+                        DCCollection::HandleCommunityGetList(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COMMUNITY_PUBLISH:
+                        DCCollection::HandleCommunityPublish(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COMMUNITY_RATE:
+                        DCCollection::HandleCommunityRate(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COMMUNITY_FAVORITE:
+                        DCCollection::HandleCommunityFavorite(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COMMUNITY_VIEW:
+                        DCCollection::HandleCommunityView(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COPY_COMMUNITY_OUTFIT:
+                        DCCollection::HandleCopyCommunityOutfit(player,
+                            parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COMMUNITY_UPDATE:
+                        DCCollection::HandleCommunityUpdate(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_COMMUNITY_DELETE:
+                        DCCollection::HandleCommunityDelete(player, parsed);
                         handled = true;
                         break;
                     default:

@@ -618,7 +618,7 @@ namespace DCAddon
             constexpr uint32 CLIENT_METADATA = 0x00010000; // Client reports native build fingerprint and data revisions during handshake
             constexpr uint32 HLBG_LIVE_NATIVE = 0x00020000; // Native HLBG live snapshot bridge
             constexpr uint32 SPECTATOR_LIVE_NATIVE = 0x00040000; // Native Mythic+ spectator live snapshot bridge
-            constexpr uint32 COLLECTION_WAVE1_NATIVE = 0x00080000; // Native collection wave-1 sync bridge (handshake/full/stats/bonuses/base collections)
+            constexpr uint32 COLLECTION_WAVE1_NATIVE = 0x00080000; // Native collection wave-1 sync bridge (handshake/full/stats/bonuses/base collections/saved outfits/community responses)
             constexpr uint32 GENERIC_NATIVE_ENVELOPE = 0x00100000; // Generic DC native push/invalidate envelope bridge
             constexpr uint32 ITEM_TOOLTIP_REPLACEMENT_NATIVE = 0x00200000; // Native item tooltip snapshot bridge for full stat-line replacement
 
