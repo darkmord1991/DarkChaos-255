@@ -137,25 +137,29 @@ DC.selectedStatPackage = nil;
 -- Use value from Heirloom.lua or default
 DC.STAT_PERCENT_PER_LEVEL = DC.STAT_PERCENT_PER_LEVEL or 2.5;
 
-local BASE_STAT_INCREMENT = 0.025; -- 2.5% per level baseline
-local TIER_STAT_MULTIPLIERS = { 0.9, 0.95, 1.0, 1.15, 1.25 };
 local TIER_ILVL_PER_LEVEL = { 1.0, 1.0, 1.5, 2.0, 2.5 };
 
 local function ClampTier(tier)
 	tier = math.floor(tonumber(tier) or 1);
 	if tier < 1 then return 1; end
-	if tier > #TIER_STAT_MULTIPLIERS then return #TIER_STAT_MULTIPLIERS; end
+	if tier > #TIER_ILVL_PER_LEVEL then return #TIER_ILVL_PER_LEVEL; end
 	return tier;
 end
 
 local function GetStatMultiplierForLevel(level, tier)
+	if DC.GetStatMultiplierForLevel then
+		return DC.GetStatMultiplierForLevel(level, tier);
+	end
+
 	level = math.max(tonumber(level) or 0, 0);
-	local base = 1.0 + (BASE_STAT_INCREMENT * level);
-	local tierMult = TIER_STAT_MULTIPLIERS[ClampTier(tier)] or 1.0;
-	return ((base - 1.0) * tierMult) + 1.0;
+	return 1.0 + (level * 0.025);
 end
 
 local function GetStatBonusPercent(level, tier)
+	if DC.GetStatBonusPercent then
+		return DC.GetStatBonusPercent(level, tier);
+	end
+
 	return (GetStatMultiplierForLevel(level, tier) - 1.0) * 100.0;
 end
 
@@ -272,6 +276,7 @@ end
 
 local lastUpdateCostDebugState = nil;
 local lastUpdateCostDebugCost = nil;
+local ITEM_UPGRADE_FINISHED_ANIMATION_DURATION = 2.6;
 
 local function DebugUpdateCostState(message)
 	if lastUpdateCostDebugState == message then
@@ -290,46 +295,282 @@ local function DebugUpdateCostRequiredValue(totalCost, useEssence)
 	DC.Debug("UpdateCost: Required value is " .. tostring(totalCost));
 end
 
+local function DarkChaos_ItemUpgrade_GetUpgradeButton(frame)
+	if not frame then
+		return nil;
+	end
+
+	if frame.UpgradeButton then
+		return frame.UpgradeButton;
+	end
+
+	local upgradeButton = nil;
+	if frame.ButtonFrame and frame.ButtonFrame.UpgradeButton then
+		upgradeButton = frame.ButtonFrame.UpgradeButton;
+	elseif frame.GetName then
+		upgradeButton = _G[frame:GetName() .. "UpgradeButton"];
+	end
+
+	if upgradeButton then
+		frame.UpgradeButton = upgradeButton;
+	end
+
+	return upgradeButton;
+end
+
+local function DarkChaos_ItemUpgrade_ShouldShowCelebration()
+	if DC_ItemUpgrade_Settings and DC_ItemUpgrade_Settings.showCelebration ~= nil then
+		return DC_ItemUpgrade_Settings.showCelebration == true;
+	end
+
+	if DC.Settings and DC.Settings.enableCelebration ~= nil then
+		return DC.Settings.enableCelebration == true;
+	end
+
+	return true;
+end
+
+local function DarkChaos_ItemUpgrade_ResetFinishedVisuals(frame)
+	if not frame then
+		return;
+	end
+
+	if frame.FinishedGlow then
+		if frame.FinishedGlow.FinishedAnim then
+			frame.FinishedGlow.FinishedAnim:Stop();
+		end
+		frame.FinishedGlow:SetAlpha(0);
+		frame.FinishedGlow:Hide();
+	end
+
+	if frame.ItemUpgradedNotification then
+		if frame.ItemUpgradedNotification.FinishedAnim then
+			frame.ItemUpgradedNotification.FinishedAnim:Stop();
+		end
+		frame.ItemUpgradedNotification:SetAlpha(0);
+		frame.ItemUpgradedNotification:Hide();
+	end
+end
+
+local function DarkChaos_ItemUpgrade_PlayFinishedVisuals(itemId, newLevel)
+	local frame = DarkChaos_ItemUpgradeFrame;
+	if not frame or not frame:IsShown() then
+		DC.upgradeAnimationTime = 0;
+		return;
+	end
+
+	DarkChaos_ItemUpgrade_ResetFinishedVisuals(frame);
+
+	if frame.ItemUpgradedNotification then
+		local notificationText = frame.ItemUpgradedNotification.defaultText
+			or _G.ITEM_UPGRADE_ITEM_UPGRADED_NOTIFICATION
+			or "Item Upgraded!";
+		frame.ItemUpgradedNotification:SetText(notificationText);
+		frame.ItemUpgradedNotification:Show();
+		if frame.ItemUpgradedNotification.FinishedAnim then
+			frame.ItemUpgradedNotification.FinishedAnim:Play();
+		end
+	end
+
+	if frame.FinishedGlow then
+		frame.FinishedGlow:SetAlpha(0);
+		frame.FinishedGlow:Show();
+		if frame.FinishedGlow.FinishedAnim then
+			frame.FinishedGlow.FinishedAnim:Play();
+		end
+	end
+
+	DC.upgradeAnimationTime = ITEM_UPGRADE_FINISHED_ANIMATION_DURATION;
+	DC.Debug(string.format("Playing finished celebration for item=%s level=%s",
+		tostring(itemId or "nil"),
+		tostring(newLevel or "nil")));
+end
+
+function DC.ShowUpgradeCelebration(itemId, newLevel)
+	if not DarkChaos_ItemUpgrade_ShouldShowCelebration() then
+		return;
+	end
+
+	DarkChaos_ItemUpgrade_PlayFinishedVisuals(itemId, newLevel);
+end
+
+local function DarkChaos_ItemUpgrade_HideRetailCostDisplays(frame)
+	if not frame then
+		return;
+	end
+
+	local function ClearCurrencyWidget(widget)
+		if not widget then
+			return;
+		end
+
+		if widget.count then
+			widget.count:SetText("");
+		end
+		if widget.icon then
+			widget.icon:Hide();
+		end
+
+		widget.currencyItemID = nil;
+		widget.amountText = nil;
+		widget.amountValue = nil;
+		widget:Hide();
+	end
+
+	local costFrame = frame.CostFrame;
+	if costFrame then
+		ClearCurrencyWidget(costFrame.TokenCurrency);
+		ClearCurrencyWidget(costFrame.EssenceCurrency);
+		costFrame:Hide();
+	end
+
+	if frame.PlayerCurrencies then
+		frame.PlayerCurrencies:Hide();
+	end
+end
+
+local function DarkChaos_ItemUpgrade_SetCurrencyWidget(widget, amountValue, itemID, red, green, blue)
+	if not widget then
+		return;
+	end
+
+	local iconTexture = (widget.icon and widget.icon:GetTexture()) or "Interface\\Icons\\INV_Misc_Coin_01";
+	local itemIcon = itemID and GetItemIcon(itemID);
+	if itemIcon then
+		iconTexture = itemIcon;
+	end
+
+	if widget.count then
+		widget.count:SetText(tostring(amountValue or 0));
+		widget.count:SetTextColor(red or 1, green or 1, blue or 1);
+	end
+	if widget.icon then
+		widget.icon:SetTexture(iconTexture);
+		widget.icon:Show();
+	end
+
+	widget.currencyItemID = itemID;
+	widget.amountText = tostring(amountValue or 0);
+	widget.amountValue = amountValue;
+	widget:Show();
+end
+
+local function DarkChaos_ItemUpgrade_ShouldShowCostCurrency(amountValue)
+	if type(amountValue) == "string" then
+		return amountValue ~= "";
+	end
+
+	return (tonumber(amountValue) or 0) > 0;
+end
+
+local function DarkChaos_ItemUpgrade_SetRetailCostDisplay(frame, tokenAmount, essenceAmount, tokenColor, essenceColor)
+	local costFrame = frame and frame.CostFrame;
+	if not costFrame then
+		return;
+	end
+
+	local showToken = DarkChaos_ItemUpgrade_ShouldShowCostCurrency(tokenAmount);
+	local showEssence = DarkChaos_ItemUpgrade_ShouldShowCostCurrency(essenceAmount);
+
+	if showToken then
+		DarkChaos_ItemUpgrade_SetCurrencyWidget(
+			costFrame.TokenCurrency,
+			tokenAmount or 0,
+			DC.TOKEN_ITEM_ID,
+			(tokenColor and tokenColor.r) or 1,
+			(tokenColor and tokenColor.g) or 1,
+			(tokenColor and tokenColor.b) or 1);
+	else
+		costFrame.TokenCurrency:Hide();
+	end
+
+	if showEssence then
+		DarkChaos_ItemUpgrade_SetCurrencyWidget(
+			costFrame.EssenceCurrency,
+			essenceAmount or 0,
+			DC.ESSENCE_ITEM_ID,
+			(essenceColor and essenceColor.r) or 1,
+			(essenceColor and essenceColor.g) or 1,
+			(essenceColor and essenceColor.b) or 1);
+	else
+		costFrame.EssenceCurrency:Hide();
+	end
+
+	if costFrame.TokenCurrency then
+		costFrame.TokenCurrency:ClearAllPoints();
+	end
+	if costFrame.EssenceCurrency then
+		costFrame.EssenceCurrency:ClearAllPoints();
+	end
+	if costFrame.Label then
+		costFrame.Label:ClearAllPoints();
+	end
+
+	if showToken and showEssence then
+		costFrame.Label:SetPoint("LEFT", costFrame, "LEFT", 44, 0);
+		costFrame.TokenCurrency:SetPoint("LEFT", costFrame, "LEFT", 134, 0);
+		costFrame.EssenceCurrency:SetPoint("LEFT", costFrame, "LEFT", 224, 0);
+	elseif showToken then
+		costFrame.Label:SetPoint("LEFT", costFrame, "LEFT", 72, 0);
+		costFrame.TokenCurrency:SetPoint("LEFT", costFrame, "LEFT", 184, 0);
+	elseif showEssence then
+		costFrame.Label:SetPoint("LEFT", costFrame, "LEFT", 72, 0);
+		costFrame.EssenceCurrency:SetPoint("LEFT", costFrame, "LEFT", 184, 0);
+	elseif costFrame.Label then
+		costFrame.Label:SetPoint("CENTER", costFrame, "CENTER", 0, 0);
+	end
+
+	if showToken or showEssence then
+		costFrame:Show();
+	else
+		costFrame:Hide();
+	end
+end
+
+local function DarkChaos_ItemUpgrade_SetRetailMoneyDisplay(frame, tokenAmount, essenceAmount, red, green, blue)
+	local moneyFrame = frame and frame.ButtonFrame and frame.ButtonFrame.MoneyFrame;
+	if not moneyFrame then
+		return;
+	end
+
+	DarkChaos_ItemUpgrade_SetCurrencyWidget(moneyFrame.TokenCurrency, tokenAmount or 0, DC.TOKEN_ITEM_ID, red or 1, green or 1, blue or 1);
+	DarkChaos_ItemUpgrade_SetCurrencyWidget(moneyFrame.EssenceCurrency, essenceAmount or 0, DC.ESSENCE_ITEM_ID, red or 1, green or 1, blue or 1);
+	moneyFrame:Show();
+end
+
+local function DarkChaos_ItemUpgrade_GetCurrencyCostColor(requiredAmount, ownedAmount)
+	requiredAmount = tonumber(requiredAmount) or 0;
+	ownedAmount = tonumber(ownedAmount) or 0;
+
+	if requiredAmount <= 0 then
+		return { r = 1, g = 1, b = 1 };
+	end
+
+	if requiredAmount <= ownedAmount then
+		return DC.COST_COLORS.cheap;
+	end
+
+	if requiredAmount <= ownedAmount * 2 then
+		return DC.COST_COLORS.moderate;
+	end
+
+	return DC.COST_COLORS.expensive;
+end
+
 function DarkChaos_ItemUpgrade_UpdateCost()
 	local frame = DarkChaos_ItemUpgradeFrame;
 	if not frame then 
 		DC.Debug("UpdateCost: frame is nil!");
 		return 
 	end
+
+	DarkChaos_ItemUpgrade_HideRetailCostDisplays(frame);
 	
 	-- Determine which currency to display based on UI mode
 	local isHeirloomMode = (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem))
 		or (DC.uiMode == "HEIRLOOM");
 	
-	-- Always update owned currency display (even without an item selected)
-	local playerTokens = DC.playerTokens or 0;
-	local playerEssence = DC.playerEssence or 0;
-	
-	-- Default display (may be adjusted after cost calc)
-	local displayCurrency = isHeirloomMode and playerEssence or playerTokens;
-	local displayCurrencyItemID = isHeirloomMode and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID;
-	
-	if frame.CostFrame then
-		-- Update Owned currency display
-		if frame.CostFrame.OwnedValue then
-			frame.CostFrame.OwnedValue:SetText(tostring(displayCurrency));
-			frame.CostFrame.OwnedValue:Show();
-		end
-		if frame.CostFrame.OwnedIcon then
-			frame.CostFrame.OwnedIcon:Show();
-			if displayCurrencyItemID then
-				local icon = GetItemIcon(displayCurrencyItemID);
-				if icon then
-					frame.CostFrame.OwnedIcon:SetTexture(icon);
-				end
-			end
-		end
-		if frame.CostFrame.OwnedLabel then
-			frame.CostFrame.OwnedLabel:Show();
-		end
-	end
-	
-	-- Early return if no item selected - but owned currency is already updated above
+	-- Early return if no item selected
 	if not DC.currentItem then 
 		DebugUpdateCostState("UpdateCost: No item selected");
 		return 
@@ -338,10 +579,11 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	local currentLevel = DC.currentItem.currentUpgrade or 0;
 	local targetLevel = DC.targetUpgradeLevel or currentLevel;
 	local tier = DC.currentItem.tier or 1;
+	local playerTokens = DC.playerTokens or 0;
+	local playerEssence = DC.playerEssence or 0;
 
 	if targetLevel <= currentLevel then 
 		DebugUpdateCostState(string.format("UpdateCost: currentLevel=%d targetLevel=%d tier=%d cost hidden", currentLevel, targetLevel, tier));
-		if frame.CostFrame then frame.CostFrame:Hide() end
 		return 
 	end
 	DebugUpdateCostState(string.format(
@@ -352,7 +594,6 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 		playerTokens,
 		playerEssence,
 		tostring(DC.uiMode)));
-	if frame.CostFrame then frame.CostFrame:Show() end
 
 	-- Calculate total cost for the upgrade
 	local totals, missingLevel, costPending
@@ -366,6 +607,7 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 		if totalEssence == 0 then
 			totals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
 			if missingLevel then
+				DarkChaos_ItemUpgrade_HideRetailCostDisplays(frame);
 				return;
 			end
 			totalTokens = (totals and totals.tokens) or 0
@@ -378,6 +620,7 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 			totalTokens = 0
 			totalEssence = 0
 		elseif missingLevel then
+			DarkChaos_ItemUpgrade_HideRetailCostDisplays(frame);
 			return;
 		else
 			totalTokens = (totals and totals.tokens) or 0;
@@ -385,109 +628,24 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 		end
 	end
 
-	local playerTokens = DC.playerTokens or 0;
-	local playerEssence = DC.playerEssence or 0;
-
 	-- Pick currency based on computed cost
-	local useEssence = isHeirloomMode and totalEssence > 0
-	local totalCost = useEssence and totalEssence or totalTokens;
-	local playerCurrency = useEssence and playerEssence or playerTokens;
-	local costCurrencyItemID = useEssence and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID;
-
-	-- Update Owned display to match cost currency
-	displayCurrency = useEssence and playerEssence or playerTokens
-	displayCurrencyItemID = useEssence and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID
-	if frame.CostFrame and frame.CostFrame.OwnedValue then
-		frame.CostFrame.OwnedValue:SetText(tostring(displayCurrency))
-		frame.CostFrame.OwnedValue:Show()
-	end
-	if frame.CostFrame and frame.CostFrame.OwnedIcon then
-		frame.CostFrame.OwnedIcon:Show()
-		if displayCurrencyItemID then
-			local icon = GetItemIcon(displayCurrencyItemID)
-			if icon then
-				frame.CostFrame.OwnedIcon:SetTexture(icon)
-			end
-		end
-	end
+	DarkChaos_ItemUpgrade_SetRetailMoneyDisplay(frame, playerTokens, playerEssence, 1, 1, 1);
 
 	if costPending then
-		if frame.CostFrame and frame.CostFrame.RequiredValue then
-			frame.CostFrame.RequiredValue:SetText("...")
-			frame.CostFrame.RequiredValue:SetTextColor(0.85, 0.85, 0.85)
-			frame.CostFrame.RequiredValue:Show()
-		end
-		if frame.CostFrame and frame.CostFrame.RequiredLabel then
-			frame.CostFrame.RequiredLabel:Show()
-		end
-		if frame.CostFrame and frame.CostFrame.RequiredIcon then
-			frame.CostFrame.RequiredIcon:Show()
-			if costCurrencyItemID then
-				local icon = GetItemIcon(costCurrencyItemID)
-				if icon then
-					frame.CostFrame.RequiredIcon:SetTexture(icon)
-				end
-			end
-		end
-		if frame.CostFrame and frame.CostFrame.RequiredEssenceValue then
-			frame.CostFrame.RequiredEssenceValue:Hide();
-			if frame.CostFrame.RequiredEssenceIcon then
-				frame.CostFrame.RequiredEssenceIcon:Hide();
-			end
-		end
-		if frame.CostFrame and frame.CostFrame.OwnedEssenceValue then
-			frame.CostFrame.OwnedEssenceValue:Hide();
-			if frame.CostFrame.OwnedEssenceIcon then
-				frame.CostFrame.OwnedEssenceIcon:Hide();
-			end
-		end
+		local pendingColor = { r = 0.85, g = 0.85, b = 0.85 };
+		DarkChaos_ItemUpgrade_SetRetailCostDisplay(frame, "...", "...", pendingColor, pendingColor);
 		return
 	end
 
-	-- Determine cost color based on affordability
-	local costColor;
-	if totalCost <= playerCurrency then
-		costColor = DC.COST_COLORS.cheap; -- Can afford
-	elseif totalCost <= playerCurrency * 2 then
-		costColor = DC.COST_COLORS.moderate; -- Can afford with some effort
-	else
-		costColor = DC.COST_COLORS.expensive; -- Expensive
-	end
+	local tokenColor = DarkChaos_ItemUpgrade_GetCurrencyCostColor(totalTokens, playerTokens);
+	local essenceColor = DarkChaos_ItemUpgrade_GetCurrencyCostColor(totalEssence, playerEssence);
 
-	-- Update Required Cost
-	if frame.CostFrame and frame.CostFrame.RequiredValue then
-		frame.CostFrame.RequiredValue:SetText(tostring(totalCost));
-		frame.CostFrame.RequiredValue:SetTextColor(costColor.r, costColor.g, costColor.b);
-		frame.CostFrame.RequiredValue:Show();
-		DebugUpdateCostRequiredValue(totalCost, useEssence);
+	DarkChaos_ItemUpgrade_SetRetailCostDisplay(frame, totalTokens, totalEssence, tokenColor, essenceColor);
+	if totalTokens > 0 then
+		DebugUpdateCostRequiredValue(totalTokens, false);
 	end
-	if frame.CostFrame and frame.CostFrame.RequiredLabel then
-		frame.CostFrame.RequiredLabel:Show();
-	end
-	if frame.CostFrame and frame.CostFrame.RequiredIcon then
-		frame.CostFrame.RequiredIcon:Show();
-		if costCurrencyItemID then
-			local icon = GetItemIcon(costCurrencyItemID);
-			if icon then
-				frame.CostFrame.RequiredIcon:SetTexture(icon);
-			end
-		end
-	end
-
-	-- Update Required Essence (hide for now since we're using single currency display)
-	if frame.CostFrame and frame.CostFrame.RequiredEssenceValue then
-		frame.CostFrame.RequiredEssenceValue:Hide();
-		if frame.CostFrame.RequiredEssenceIcon then 
-			frame.CostFrame.RequiredEssenceIcon:Hide();
-		end
-	end
-	
-	-- Hide the second currency row (OwnedEssence) since we're using single currency display
-	if frame.CostFrame and frame.CostFrame.OwnedEssenceValue then
-		frame.CostFrame.OwnedEssenceValue:Hide();
-		if frame.CostFrame.OwnedEssenceIcon then 
-			frame.CostFrame.OwnedEssenceIcon:Hide();
-		end
+	if totalEssence > 0 then
+		DebugUpdateCostRequiredValue(totalEssence, true);
 	end
 end
 
@@ -2764,7 +2922,243 @@ local function FormatStatLine(label, value, diff)
 	return line;
 end
 
-local function DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel)
+local ITEM_UPGRADE_MAX_STAT_ROWS = 10;
+
+local function FormatStatRowValue(value)
+	return FormatNumericValue(value, false) or "0";
+end
+
+local function FormatStatRowDelta(value)
+	if value == nil or math.abs(value) < 0.0005 then
+		return "";
+	end
+
+	return FormatNumericValue(value, true) or "";
+end
+
+local DarkChaos_ItemUpgrade_BuildStatComparison;
+
+local function DarkChaos_ItemUpgrade_BuildDisplayRows(item, targetLevel)
+	local rows = {};
+	local comparison = DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel);
+
+	if comparison then
+		for _, stat in ipairs(comparison) do
+			rows[#rows + 1] = stat;
+		end
+	end
+
+	local isHeirloom = (DC.IsHeirloomItem and DC.IsHeirloomItem(item)) or false;
+	local packageId = isHeirloom and (item.heirloomPackageId or DC.selectedStatPackage) or nil;
+	if isHeirloom and packageId and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel then
+		local currentLevel = tonumber(item.currentUpgrade) or 0;
+		local currentPackageStats = (currentLevel > 0)
+			and (DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, currentLevel) or {})
+			or {};
+		local previewPackageStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, targetLevel) or {};
+
+		for index, previewStat in ipairs(previewPackageStats) do
+			local currentStat = currentPackageStats[index];
+			local currentValue = currentStat and tonumber(currentStat.value) or 0;
+			local previewValue = tonumber(previewStat.value) or 0;
+			rows[#rows + 1] = {
+				key = string.format("pkg_%d", index),
+				label = previewStat.name or string.format("Package %d", index),
+				current = currentValue,
+				preview = previewValue,
+				diff = previewValue - currentValue,
+				isPackage = true,
+			};
+		end
+	end
+
+	if #rows == 0 then
+		return nil;
+	end
+
+	return rows;
+end
+
+local function DarkChaos_ItemUpgrade_GetStatRow(panel, side, index)
+	if not panel then
+		return nil;
+	end
+
+	local storageKey = (side == "right") and "__dcRightStatRows" or "__dcLeftStatRows";
+	local template = (side == "right") and "DC_ItemUpgradeStatRowRightTemplate"
+		or "DC_ItemUpgradeStatRowLeftTemplate";
+	panel[storageKey] = panel[storageKey] or {};
+
+	local rows = panel[storageKey];
+	if rows[index] then
+		return rows[index];
+	end
+
+	local row = CreateFrame("Frame", nil, panel, template);
+	if index == 1 then
+		row:SetPoint("TOPLEFT", panel.RowsAnchor, "TOPLEFT", 0, 0);
+	else
+		row:SetPoint("TOPLEFT", rows[index - 1], "BOTTOMLEFT", 0, -1);
+	end
+
+	rows[index] = row;
+	return row;
+end
+
+local function DarkChaos_ItemUpgrade_HideStatRows(panel, side)
+	if not panel then
+		return;
+	end
+
+	local storageKey = (side == "right") and "__dcRightStatRows" or "__dcLeftStatRows";
+	local rows = panel[storageKey];
+	if not rows then
+		return;
+	end
+
+	for _, row in ipairs(rows) do
+		row:Hide();
+	end
+end
+
+local function DarkChaos_ItemUpgrade_ClearComparisonColumns(frame)
+	if not frame then
+		return;
+	end
+
+	for _, panel in ipairs({ frame.CurrentPanel, frame.UpgradePanel }) do
+		if panel then
+			if panel.StatsText then
+				panel.StatsText:SetText("");
+				panel.StatsText:Hide();
+			end
+			if panel.ItemLevelRow then
+				panel.ItemLevelRow:Hide();
+			end
+		end
+	end
+
+	DarkChaos_ItemUpgrade_HideStatRows(frame.CurrentPanel, "left");
+	DarkChaos_ItemUpgrade_HideStatRows(frame.UpgradePanel, "right");
+end
+
+local function DarkChaos_ItemUpgrade_UpdateItemLevelRows(frame, currentLevel, previewLevel)
+	if frame.CurrentPanel and frame.CurrentPanel.ItemLevelRow then
+		frame.CurrentPanel.ItemLevelRow.ValueText:SetText(FormatStatRowValue(currentLevel));
+		frame.CurrentPanel.ItemLevelRow.LabelText:SetText("Item Level");
+		frame.CurrentPanel.ItemLevelRow:Show();
+	end
+
+	if frame.UpgradePanel and frame.UpgradePanel.ItemLevelRow then
+		local diff = (tonumber(previewLevel) or 0) - (tonumber(currentLevel) or 0);
+		frame.UpgradePanel.ItemLevelRow.DiffText:SetText(FormatStatRowDelta(diff));
+		if diff > 0 then
+			frame.UpgradePanel.ItemLevelRow.DiffText:SetTextColor(0.1, 1.0, 0.1);
+		elseif diff < 0 then
+			frame.UpgradePanel.ItemLevelRow.DiffText:SetTextColor(1.0, 0.25, 0.25);
+		else
+			frame.UpgradePanel.ItemLevelRow.DiffText:SetTextColor(0.75, 0.75, 0.75);
+		end
+		frame.UpgradePanel.ItemLevelRow.ValueText:SetText(FormatStatRowValue(previewLevel));
+		frame.UpgradePanel.ItemLevelRow.LabelText:SetText("Item Level");
+		frame.UpgradePanel.ItemLevelRow:Show();
+	end
+end
+
+local function DarkChaos_ItemUpgrade_UpdateStatRows(frame, rows)
+	if not frame then
+		return 0;
+	end
+
+	DarkChaos_ItemUpgrade_HideStatRows(frame.CurrentPanel, "left");
+	DarkChaos_ItemUpgrade_HideStatRows(frame.UpgradePanel, "right");
+
+	if not rows then
+		return 0;
+	end
+
+	local visibleRows = math.min(#rows, ITEM_UPGRADE_MAX_STAT_ROWS);
+	for index = 1, visibleRows do
+		local rowData = rows[index];
+		local leftRow = DarkChaos_ItemUpgrade_GetStatRow(frame.CurrentPanel, "left", index);
+		local rightRow = DarkChaos_ItemUpgrade_GetStatRow(frame.UpgradePanel, "right", index);
+		local showAlternate = (index % 2) == 1;
+		local labelColor = rowData.isPackage and { 0.62, 0.88, 1.0 } or { 1.0, 1.0, 1.0 };
+
+		if leftRow then
+			if showAlternate then
+				leftRow.BG:Show();
+			else
+				leftRow.BG:Hide();
+			end
+			leftRow.ValueText:SetText(FormatStatRowValue(rowData.current));
+			leftRow.LabelText:SetText(rowData.label or "");
+			leftRow.LabelText:SetTextColor(labelColor[1], labelColor[2], labelColor[3]);
+			leftRow:Show();
+		end
+
+		if rightRow then
+			if showAlternate then
+				rightRow.BG:Show();
+			else
+				rightRow.BG:Hide();
+			end
+			rightRow.DiffText:SetText(FormatStatRowDelta(rowData.diff));
+			if (rowData.diff or 0) > 0 then
+				rightRow.DiffText:SetTextColor(0.1, 1.0, 0.1);
+			elseif (rowData.diff or 0) < 0 then
+				rightRow.DiffText:SetTextColor(1.0, 0.25, 0.25);
+			else
+				rightRow.DiffText:SetTextColor(0.75, 0.75, 0.75);
+			end
+			rightRow.ValueText:SetText(FormatStatRowValue(rowData.preview));
+			rightRow.LabelText:SetText(rowData.label or "");
+			rightRow.LabelText:SetTextColor(labelColor[1], labelColor[2], labelColor[3]);
+			rightRow:Show();
+		end
+	end
+
+	return visibleRows;
+end
+
+local function DarkChaos_ItemUpgrade_UpdateBrowserStrip()
+	local frame = DarkChaos_ItemUpgradeFrame;
+	if not frame then
+		return;
+	end
+
+	local itemBrowserShown = DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown();
+	local tierBrowserShown = DarkChaos_TierBrowserFrame and DarkChaos_TierBrowserFrame:IsShown();
+
+	if frame.BrowseButton then
+		frame.BrowseButton:SetAlpha(itemBrowserShown and 1.0 or 0.78);
+	end
+
+	if frame.TierBrowseButton then
+		frame.TierBrowseButton:SetAlpha(tierBrowserShown and 1.0 or 0.78);
+	end
+
+	local strip = frame.ButtonFrame and frame.ButtonFrame.SecondaryStrip;
+	if strip then
+		local active = itemBrowserShown or tierBrowserShown;
+		if strip.Border then
+			if active then
+				strip.Border:SetVertexColor(0.74, 0.62, 0.18, 0.46);
+			else
+				strip.Border:SetVertexColor(0.74, 0.62, 0.18, 0.22);
+			end
+		end
+		if strip.Background then
+			if active then
+				strip.Background:SetVertexColor(0.02, 0.02, 0.03, 0.82);
+			else
+				strip.Background:SetVertexColor(0.02, 0.02, 0.03, 0.70);
+			end
+		end
+	end
+end
+
+DarkChaos_ItemUpgrade_BuildStatComparison = function(item, targetLevel)
 	if not item then
 		return nil;
 	end
@@ -2846,33 +3240,6 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		tint:SetTexture(0, 0, 0, BG_TINT_ALPHA);
 	end
 
-	local function ApplyLeaderboardsInsetPanel(frame)
-		if not frame then
-			return;
-		end
-		if frame.SetBackdrop then
-			frame:SetBackdrop({
-				bgFile = "Interface\\Buttons\\WHITE8X8",
-				edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-				tile = true,
-				tileSize = 32,
-				edgeSize = 32,
-				insets = { left = 11, right = 12, top = 12, bottom = 11 },
-			});
-		end
-		if frame.SetBackdropColor then
-			frame:SetBackdropColor(0, 0, 0, 0);
-		end
-		if frame.SetBackdropBorderColor then
-			frame:SetBackdropBorderColor(1, 1, 1, 1);
-		end
-		ApplyLeaderboardsStyle(frame);
-	end
-
-	ApplyLeaderboardsStyle(self);
-	ApplyLeaderboardsInsetPanel(self.CurrentPanel);
-	ApplyLeaderboardsInsetPanel(self.UpgradePanel);
-
 	ApplyLeaderboardsStyle(_G["DarkChaos_ItemUpgrade_DebugFrame"]);
 	ApplyLeaderboardsStyle(_G["DarkChaos_ItemBrowserFrame"]);
 	ApplyLeaderboardsStyle(_G["DarkChaos_TierBrowserFrame"]);
@@ -2890,13 +3257,45 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		frame:StopMovingOrSizing();
 	end);
 	
-	-- SetPortraitToTexture(self.portrait, "Interface\\Icons\\Trade_BlackSmithing"); -- Removed as portrait is not used
+	if self.portrait then
+		self.portrait:SetTexture("Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Icons\\ItemUpgrade_64.tga");
+	end
 	self:RegisterEvent("PLAYER_LOGIN");
 	
 	-- Initialize UI elements
 	if self.TitleText then
-		self.TitleText:SetText("Item Upgrade");
+		self.TitleText:SetText(_G.ITEM_UPGRADE or "Item Upgrade");
 	end
+	if self.HorzBar then
+		self.HorzBar:Hide();
+	end
+	if self.CurrentHeader then
+		self.CurrentHeader:SetText(_G.REFORGE_CURRENT or "Current");
+		self.CurrentHeader:Hide();
+	end
+	if self.UpgradeHeader then
+		self.UpgradeHeader:SetText(_G.UPGRADE or "Upgrade");
+		self.UpgradeHeader:Hide();
+	end
+	if self.UpgradeStatus then
+		self.UpgradeStatus:Hide();
+	end
+	if self.NoMoreUpgrades then
+		self.NoMoreUpgrades:SetText(_G.ITEM_UPGRADE_NO_MORE_UPGRADES or "No more upgrades");
+		self.NoMoreUpgrades:Hide();
+	end
+	if self.ItemInfo and self.ItemInfo.MissingItemText and _G.UPGRADE_MISSING_ITEM then
+		self.ItemInfo.MissingItemText:SetText(_G.UPGRADE_MISSING_ITEM);
+	end
+	if self.ItemUpgradedNotification then
+		self.ItemUpgradedNotification.defaultText = _G.ITEM_UPGRADE_ITEM_UPGRADED_NOTIFICATION
+			or self.ItemUpgradedNotification:GetText()
+			or "Item Upgraded!";
+		self.ItemUpgradedNotification:SetText(self.ItemUpgradedNotification.defaultText);
+	end
+	DarkChaos_ItemUpgrade_GetUpgradeButton(self);
+	DarkChaos_ItemUpgrade_HideRetailCostDisplays(self);
+	DarkChaos_ItemUpgrade_ResetFinishedVisuals(self);
 	
 	-- Hide deprecated PlayerCurrencies frame completely
 	if self.PlayerCurrencies then
@@ -2909,10 +3308,36 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	-- Initialize the dropdown using global name for WoW 3.3.5 compatibility
 	local dropdown = _G["DarkChaos_ItemUpgradeFrameDropdown"] or (self.DropdownContainer and self.DropdownContainer.Dropdown);
 	if dropdown then
-		UIDropDownMenu_SetWidth(dropdown, 120);
+		UIDropDownMenu_SetWidth(dropdown, 118);
 		UIDropDownMenu_Initialize(dropdown, DarkChaos_ItemUpgrade_Dropdown_Initialize);
 		dropdown:Show(); -- Ensure dropdown frame is visible
 	end
+
+	local function AttachCurrencyTooltip(button, anchorPoint, label)
+		if not button then
+			return;
+		end
+
+		button:SetScript("OnEnter", function(widget)
+			if not widget.currencyItemID then
+				return;
+			end
+			GameTooltip:SetOwner(widget, anchorPoint);
+			GameTooltip:SetHyperlink("item:" .. tostring(widget.currencyItemID));
+			if widget.amountText and widget.amountText ~= "" then
+				GameTooltip:AddLine(label .. ": " .. tostring(widget.amountText), 1, 1, 1);
+			end
+			GameTooltip:Show();
+		end);
+		button:SetScript("OnLeave", function()
+			GameTooltip:Hide();
+		end);
+	end
+
+	AttachCurrencyTooltip(self.CostFrame and self.CostFrame.TokenCurrency, "ANCHOR_BOTTOMRIGHT", "Required");
+	AttachCurrencyTooltip(self.CostFrame and self.CostFrame.EssenceCurrency, "ANCHOR_BOTTOMRIGHT", "Required");
+	AttachCurrencyTooltip(self.ButtonFrame and self.ButtonFrame.MoneyFrame and self.ButtonFrame.MoneyFrame.TokenCurrency, "ANCHOR_TOPLEFT", "Owned");
+	AttachCurrencyTooltip(self.ButtonFrame and self.ButtonFrame.MoneyFrame and self.ButtonFrame.MoneyFrame.EssenceCurrency, "ANCHOR_TOPLEFT", "Owned");
 	
 	-- Create settings button in the title bar area (next to close button)
 	local settingsBtn = CreateFrame("Button", "DarkChaos_ItemUpgradeSettingsBtn", self);
@@ -2990,6 +3415,8 @@ function DarkChaos_ItemUpgrade_OnHide(self)
 	if self.RightTooltip then
 		self.RightTooltip:Hide();
 	end
+
+	DarkChaos_ItemUpgrade_ResetFinishedVisuals(self);
 
 	if DarkChaos_ItemBrowserFrame and DarkChaos_ItemBrowserFrame:IsShown() then
 		DarkChaos_ItemBrowserFrame:Hide();
@@ -3082,6 +3509,9 @@ function DarkChaos_ItemUpgrade_OnEvent(self, event, ...)
 		DarkChaos_ItemUpgrade_InitializeCosts();
 		DC.pendingUpgrade = nil;
 		DarkChaos_ItemUpgrade_RequestCurrencies();
+		if DC.RequestTierConfigSync then
+			DC.RequestTierConfigSync();
+		end
 		DarkChaos_ItemUpgrade_UpdateUI();
 		-- Create and register settings panel
 		if DC.CreateSettingsPanel then
@@ -3208,21 +3638,14 @@ function DarkChaos_ItemUpgrade_OnUpdate(self, elapsed)
 	-- Arrow animation (bounce left-right)
 	if self.Arrow and self.Arrow:IsShown() then
 		DC.arrowAnimationTime = (DC.arrowAnimationTime or 0) + elapsed;
-		local cycle = DC.arrowAnimationTime % 2.0; -- 2 second cycle
-		local anchorFrame = self.CurrentPanel or self.LeftTooltip or self;
-		local offset = math.min(cycle, 1.0) * 30;
+		local phase = DC.arrowAnimationTime * 2.6;
+		local offset = math.sin(phase) * 7;
+		local pulse = 0.82 + math.sin(phase) * 0.12;
 		self.Arrow:ClearAllPoints();
-		self.Arrow:SetPoint("CENTER", anchorFrame, "RIGHT", 20 + offset, -20);
-		
-		if cycle < 1.0 then
-			-- Move right, fade in
-			local alpha = math.min(1.0, cycle * 2);
-			self.Arrow.Texture:SetAlpha(alpha);
-		else
-			-- Fade out
-			local progress = cycle - 1.0;
-			local alpha = math.max(0, 1.0 - progress * 2);
-			self.Arrow.Texture:SetAlpha(alpha);
+		self.Arrow:SetPoint("CENTER", self, "CENTER", offset, -18);
+		self.Arrow.Texture:SetAlpha(pulse);
+		if self.Arrow.Glow then
+			self.Arrow.Glow:SetAlpha(0.24 + math.sin(phase) * 0.06);
 		end
 	end
 	
@@ -3238,10 +3661,7 @@ function DarkChaos_ItemUpgrade_OnUpdate(self, elapsed)
 		DC.upgradeAnimationTime = DC.upgradeAnimationTime - elapsed;
 		if DC.upgradeAnimationTime <= 0 then
 			DC.upgradeAnimationTime = 0;
-			local tooltip = self.RightTooltip;
-			if tooltip and tooltip.UpgradeGlow then
-				tooltip.UpgradeGlow:Hide();
-			end
+			DarkChaos_ItemUpgrade_ResetFinishedVisuals(self);
 			DarkChaos_ItemUpgrade_UpdateUI();
 		end
 	end
@@ -3613,7 +4033,11 @@ DC.TierBrowser_Update = function()
 			button.Name:SetText(row.name or string.format("Tier %d", tonumber(row.tierId) or 0));
 			button.Name:SetTextColor(color.r, color.g, color.b);
 			button.Meta:SetText(FormatTierBrowserRange(row));
-			button.Selection:SetShown(isSelected);
+			if isSelected then
+				button.Selection:Show();
+			else
+				button.Selection:Hide();
+			end
 			if isSelected then
 				button.Background:SetVertexColor(0.16, 0.22, 0.30, 0.75);
 			else
@@ -3954,16 +4378,40 @@ local function SetButtonEnabled(button, enabled)
 
 	if button.SetEnabled then
 		button:SetEnabled(enabled and true or false);
-		return;
+	else
+		if enabled then
+			if button.Enable then
+				button:Enable();
+			end
+		else
+			if button.Disable then
+				button:Disable();
+			end
+		end
 	end
 
-	if enabled then
-		if button.Enable then
-			button:Enable();
+	if button.Fill then
+		if enabled then
+			button.Fill:SetVertexColor(0.55, 0.08, 0.05, 1);
+		else
+			button.Fill:SetVertexColor(0.22, 0.08, 0.07, 0.95);
 		end
-	else
-		if button.Disable then
-			button:Disable();
+	end
+	if button.Sheen then
+		button.Sheen:SetAlpha(enabled and 0.75 or 0.28);
+	end
+	if button.Text then
+		if enabled then
+			button.Text:SetTextColor(1.0, 0.95, 0.82);
+		else
+			button.Text:SetTextColor(0.62, 0.56, 0.52);
+		end
+	end
+	if button.Glow then
+		if enabled then
+			button.Glow:Show();
+		else
+			button.Glow:Hide();
 		end
 	end
 end
@@ -4132,6 +4580,7 @@ function DarkChaos_ItemUpgrade_BrowseButton_OnClick(self)
 		end
 		DarkChaos_ItemBrowserFrame:Show();
 	end
+	DarkChaos_ItemUpgrade_UpdateBrowserStrip();
 end
 
 function DarkChaos_ItemUpgrade_TierBrowseButton_OnClick(self)
@@ -4144,6 +4593,7 @@ function DarkChaos_ItemUpgrade_TierBrowseButton_OnClick(self)
 
 	if DarkChaos_TierBrowserFrame:IsShown() then
 		DarkChaos_TierBrowserFrame:Hide();
+		DarkChaos_ItemUpgrade_UpdateBrowserStrip();
 		return;
 	end
 
@@ -4152,6 +4602,7 @@ function DarkChaos_ItemUpgrade_TierBrowseButton_OnClick(self)
 	end
 
 	DarkChaos_TierBrowserFrame:Show();
+	DarkChaos_ItemUpgrade_UpdateBrowserStrip();
 end
 
 function DC.ToggleTierBrowser(forceShow)
@@ -4437,10 +4888,12 @@ function DarkChaos_ItemUpgrade_UpdatePlayerCurrencies()
 	DC.playerTokens = DC.playerTokens or 0
 	DC.playerEssence = DC.playerEssence or 0
 	
-	-- PlayerCurrencies is deprecated - keep it hidden, CostFrame handles display now
+	-- PlayerCurrencies is deprecated - the retail clone uses the bottom money frame instead.
 	if frame.PlayerCurrencies then
 		frame.PlayerCurrencies:Hide();
 	end
+
+	DarkChaos_ItemUpgrade_SetRetailMoneyDisplay(frame, DC.playerTokens or 0, DC.playerEssence or 0, 1, 1, 1);
 end
 
 --[[=====================================================
@@ -4451,6 +4904,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	local frame = DarkChaos_ItemUpgradeFrame;
 	if not frame then return end
 	if not (frame.ItemSlot and frame.ItemInfo) then return end
+	local upgradeButton = DarkChaos_ItemUpgrade_GetUpgradeButton(frame);
 	-- Use global dropdown name for WoW 3.3.5 compatibility
 	local dropdown = _G["DarkChaos_ItemUpgradeFrameDropdown"] or (frame.DropdownContainer and frame.DropdownContainer.Dropdown) or frame.Dropdown;
 
@@ -4459,8 +4913,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	DarkChaos_ItemUpgrade_UpdateCost();
 
 	-- Clear celebration overlay when idle
-	if frame.RightTooltip and frame.RightTooltip.UpgradeGlow and DC.upgradeAnimationTime <= 0 then
-		frame.RightTooltip.UpgradeGlow:Hide();
+	if DC.upgradeAnimationTime <= 0 then
+		DarkChaos_ItemUpgrade_ResetFinishedVisuals(frame);
 	end
 	
 	-- If in package selection mode, don't update the main UI elements
@@ -4472,7 +4926,10 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		-- Ensure key UI elements are visible (they may have been hidden by package selection mode)
 		if frame.ItemSlot then frame.ItemSlot:Show(); end
 		if frame.ItemInfo then frame.ItemInfo:Show(); end
-		if frame.UpgradeButton then frame.UpgradeButton:Show(); end
+		if frame.ButtonFrame then frame.ButtonFrame:Show(); end
+		if frame.BrowseButton then frame.BrowseButton:Show(); end
+		if frame.TierBrowseButton then frame.TierBrowseButton:Show(); end
+		if upgradeButton then upgradeButton:Show(); end
 		
 		frame.ItemSlot.EmptyGlow:Show();
 		SetItemButtonTexture(frame.ItemSlot, nil);
@@ -4483,9 +4940,12 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		end
 		frame.ItemInfo.MissingItemText:Show();
 		frame.ItemInfo.ItemName:Hide();
+		if frame.ItemInfo.BoundStatus then frame.ItemInfo.BoundStatus:Hide(); end
+		if frame.ItemInfo.UpgradeToLabel then frame.ItemInfo.UpgradeToLabel:Hide(); end
 		if frame.ItemInfo.ItemLevelSummary then frame.ItemInfo.ItemLevelSummary:Hide(); end
-		frame.ItemInfo.UpgradeProgress:Hide();
+		if frame.ItemInfo.UpgradeProgress then frame.ItemInfo.UpgradeProgress:Hide(); end
 		if frame.ItemInfo.ProgressBar then frame.ItemInfo.ProgressBar:Hide(); end
+		if frame.ItemInfo.Cost then frame.ItemInfo.Cost:Hide(); end
 		if frame.UpgradeSelector then frame.UpgradeSelector:Hide(); end
 		if dropdown then
 			dropdown:Hide();
@@ -4503,20 +4963,28 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 			if frame.UpgradePanel.CostHeader then frame.UpgradePanel.CostHeader:Hide(); end
 			if frame.UpgradePanel.CostDetail then frame.UpgradePanel.CostDetail:Hide(); end
 		end
+		if frame.HorzBar then frame.HorzBar:Hide(); end
+		if frame.CurrentHeader then frame.CurrentHeader:Hide(); end
+		if frame.UpgradeHeader then frame.UpgradeHeader:Hide(); end
+		if frame.UpgradeStatus then frame.UpgradeStatus:Hide(); end
+		if frame.NoMoreUpgrades then frame.NoMoreUpgrades:Hide(); end
+		if frame.MissingFadeOut then frame.MissingFadeOut:Show(); end
 		if frame.DropdownContainer then frame.DropdownContainer:Hide(); end
 		frame.LeftTooltip:Hide();
 		frame.RightTooltip:Hide();
 		if frame.Arrow then frame.Arrow:Hide(); end
-		if frame.CostFrame then frame.CostFrame:Show(); end
+		DarkChaos_ItemUpgrade_HideRetailCostDisplays(frame);
 		frame.ErrorText:Hide();
 		frame.MissingDescription:Show();
 		if frame.PlayerCurrencies then frame.PlayerCurrencies:Hide(); end
 		if frame.StatPackageSelector then frame.StatPackageSelector:Hide(); end
 		if frame.PackageIndicator then frame.PackageIndicator:Hide(); end
 		if frame.ChangePackageButton then frame.ChangePackageButton:Hide(); end
-		SetButtonEnabled(frame.UpgradeButton, false);
-		frame.UpgradeButton.Glow:Hide();
-		frame.UpgradeButton.disabledTooltip = nil;
+		DarkChaos_ItemUpgrade_ClearComparisonColumns(frame);
+		SetButtonEnabled(upgradeButton, false);
+		if upgradeButton and upgradeButton.Glow then upgradeButton.Glow:Hide(); end
+		if upgradeButton then upgradeButton.disabledTooltip = nil; end
+		DarkChaos_ItemUpgrade_UpdateBrowserStrip();
 		DarkChaos_ItemUpgrade_UpdateCost();
 		return;
 	end
@@ -4531,14 +4999,25 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 
 	local currentLevel = ResolveUpgradeItemLevel(item, currentUpgrade, baseLevel);
 	local maxPotential = ResolveUpgradeItemLevel(item, maxUpgrade, baseLevel);
+	local previewLevel = ResolveUpgradeItemLevel(item, DC.targetUpgradeLevel or currentUpgrade, baseLevel);
 
 	currentLevel = math.max(baseLevel, currentLevel);
+	previewLevel = math.max(currentLevel, previewLevel);
 	
 	-- Ensure key UI elements are visible (they may have been hidden by package selection mode or other states)
 	if frame.ItemSlot then frame.ItemSlot:Show(); end
 	if frame.ItemInfo then frame.ItemInfo:Show(); end
-	if frame.UpgradeButton then frame.UpgradeButton:Show(); end
-	if frame.CostFrame then frame.CostFrame:Show(); end
+	if frame.ButtonFrame then frame.ButtonFrame:Show(); end
+	if frame.BrowseButton then frame.BrowseButton:Show(); end
+	if frame.TierBrowseButton then frame.TierBrowseButton:Show(); end
+	if upgradeButton then upgradeButton:Show(); end
+	if frame.CostFrame then frame.CostFrame:Hide(); end
+	if frame.HorzBar then frame.HorzBar:Show(); end
+	if frame.CurrentHeader then frame.CurrentHeader:Show(); end
+	if frame.UpgradeHeader then frame.UpgradeHeader:Show(); end
+	if frame.NoMoreUpgrades then frame.NoMoreUpgrades:Hide(); end
+	if frame.MissingDescription then frame.MissingDescription:Hide(); end
+	if frame.MissingFadeOut then frame.MissingFadeOut:Hide(); end
 	
 	-- Update Item Slot
 	frame.ItemSlot.EmptyGlow:Hide();
@@ -4557,33 +5036,45 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	frame.ItemInfo.MissingItemText:Hide();
 	frame.ItemInfo.ItemName:SetText(item.link or item.name or "Unknown Item");
 	frame.ItemInfo.ItemName:Show();
-	
-	if frame.ItemInfo.ItemLevelSummary then
-		frame.ItemInfo.ItemLevelSummary:SetText(string.format("Item Level: %d", currentLevel));
-		frame.ItemInfo.ItemLevelSummary:Show();
+	if frame.ItemInfo.BoundStatus then
+		frame.ItemInfo.BoundStatus:Hide();
 	end
-	
 	if frame.ItemInfo.UpgradeProgress then
-		frame.ItemInfo.UpgradeProgress:SetText(string.format("Upgrade Level: %d / %d", currentUpgrade, maxUpgrade));
+		frame.ItemInfo.UpgradeProgress:SetText(string.format("%s %d/%d  %d (%d-%d)", tierName, currentUpgrade, maxUpgrade, currentLevel, currentLevel, maxPotential));
 		frame.ItemInfo.UpgradeProgress:Show();
 	end
+	if frame.ItemInfo.UpgradeToLabel then
+		frame.ItemInfo.UpgradeToLabel:Show();
+	end
 	
-	DarkChaos_ItemUpgrade_UpdateProgressBar(currentUpgrade, maxUpgrade, item.tier);
+	if frame.ItemInfo.ItemLevelSummary then
+		frame.ItemInfo.ItemLevelSummary:Hide();
+	end
+	if frame.UpgradeStatus then
+		frame.UpgradeStatus:SetText(string.format("%d/%d", currentUpgrade, maxUpgrade));
+		frame.UpgradeStatus:Show();
+	end
+	if frame.ItemInfo.ProgressBar then
+		frame.ItemInfo.ProgressBar:Hide();
+	end
+	if frame.Arrow then
+		frame.Arrow:Show();
+	end
 
 	-- Update Dropdown
 	if frame.DropdownContainer then
 		frame.DropdownContainer:Show();
 		if dropdown then
 			dropdown:Show(); -- Explicitly show the dropdown frame
-			UIDropDownMenu_SetWidth(dropdown, 120);
+			UIDropDownMenu_SetWidth(dropdown, 118);
 			UIDropDownMenu_Initialize(dropdown, DarkChaos_ItemUpgrade_Dropdown_Initialize);
 			UIDropDownMenu_SetSelectedValue(dropdown, DC.targetUpgradeLevel);
-			UIDropDownMenu_SetText(dropdown, "Level " .. DC.targetUpgradeLevel .. " / " .. maxUpgrade);
+			UIDropDownMenu_SetText(dropdown, string.format("%s %d/%d", tierName, DC.targetUpgradeLevel, maxUpgrade));
 		end
 	end
 
 	-- Update Panels
-	local comparison = DarkChaos_ItemUpgrade_BuildStatComparison(item, DC.targetUpgradeLevel);
+	local displayRows = DarkChaos_ItemUpgrade_BuildDisplayRows(item, DC.targetUpgradeLevel);
 	
 	-- Check if this is the heirloom shirt for special package stat display
 	local isHeirloomShirt = false;
@@ -4596,7 +5087,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	-- Create or update package indicator for heirloom mode
 	if not frame.PackageIndicator then
 		local indicator = frame:CreateFontString("DarkChaos_PackageIndicator", "ARTWORK", "GameFontNormal");
-		indicator:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -50, -15);
+		indicator:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -84, -42);
 		indicator:SetJustifyH("RIGHT");
 		frame.PackageIndicator = indicator;
 	end
@@ -4613,79 +5104,32 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	if frame.CurrentPanel then
 		frame.CurrentPanel:Show();
 		if frame.CurrentPanel.StatsText then
-			local text = "";
-			if comparison then
-				for _, stat in ipairs(comparison) do
-					local line = FormatStatLine(stat.label, stat.current);
-					if line then
-						text = text .. line .. "|n";
-					end
-				end
-			else
-				text = "|cff808080No stats available|r";
-			end
-			
-			-- Add current package stats for heirloom shirt
-			if isHeirloomShirt and activePackageId and currentUpgrade > 0 then
-				text = text .. "|n|cff00ccff-- Package Stats --|r|n";
-				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(activePackageId, currentUpgrade);
-				if pkgStats then
-					for _, pstat in ipairs(pkgStats) do
-						text = text .. string.format("|cffffffff%s: %d|r|n", pstat.name, pstat.value);
-					end
-				end
-			end
-			
-			frame.CurrentPanel.StatsText:SetText(text);
+			frame.CurrentPanel.StatsText:Hide();
 		end
 	end
 	
 	if frame.UpgradePanel then
 		frame.UpgradePanel:Show();
 		if frame.UpgradePanel.StatsText then
-			local text = "";
-			if comparison then
-				for _, stat in ipairs(comparison) do
-					local line = FormatStatLine(stat.label, stat.preview, stat.diff);
-					if line then
-						text = text .. line .. "|n";
-					end
-				end
-			else
-				text = "|cff808080No preview available|r";
-			end
-			
-			-- Add preview package stats for heirloom shirt
-			if isHeirloomShirt and activePackageId then
-				local targetLevel = DC.targetUpgradeLevel or (currentUpgrade + 1);
-				text = text .. "|n|cff00ccff-- Package Stats --|r|n";
-				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(activePackageId, targetLevel);
-				local currentPkgStats = (currentUpgrade > 0) and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(activePackageId, currentUpgrade) or nil;
-				
-				if pkgStats then
-					for i, pstat in ipairs(pkgStats) do
-						local currentVal = (currentPkgStats and currentPkgStats[i]) and currentPkgStats[i].value or 0;
-						local diff = pstat.value - currentVal;
-						local diffStr = "";
-						if diff > 0 then
-							diffStr = string.format(" |cff00ff00(+%d)|r", diff);
-						elseif diff < 0 then
-							diffStr = string.format(" |cffff0000(%d)|r", diff);
-						end
-						text = text .. string.format("|cff00ff00%s: %d%s|r|n", pstat.name, pstat.value, diffStr);
-					end
-				end
-			elseif isHeirloomShirt and not activePackageId then
-				text = text .. "|n|cffff8800Select a stat package above|r|n";
-			end
-			
-			frame.UpgradePanel.StatsText:SetText(text);
+			frame.UpgradePanel.StatsText:Hide();
 		end
 	end
-	
-	-- Hide redundant UpgradeProgress text if bar is shown
-	if frame.ItemInfo.UpgradeProgress then
-		frame.ItemInfo.UpgradeProgress:Hide();
+
+	DarkChaos_ItemUpgrade_UpdateItemLevelRows(frame, currentLevel, previewLevel);
+	local renderedRowCount = DarkChaos_ItemUpgrade_UpdateStatRows(frame, displayRows);
+	if renderedRowCount == 0 then
+		if frame.CurrentPanel and frame.CurrentPanel.StatsText then
+			frame.CurrentPanel.StatsText:SetText("|cff808080No stats available|r");
+			frame.CurrentPanel.StatsText:Show();
+		end
+		if frame.UpgradePanel and frame.UpgradePanel.StatsText then
+			if isHeirloomShirt and not activePackageId then
+				frame.UpgradePanel.StatsText:SetText("|cffff8800Select a stat package above.|r");
+			else
+				frame.UpgradePanel.StatsText:SetText("|cff808080No preview available|r");
+			end
+			frame.UpgradePanel.StatsText:Show();
+		end
 	end
 	
 	-- Update Upgrade Button
@@ -4719,25 +5163,34 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	end
 	
 	if canUpgrade and not itemSyncPending and canAfford and (not needsPackage or hasPackage) then
-		SetButtonEnabled(frame.UpgradeButton, true);
-		frame.UpgradeButton.disabledTooltip = nil;
+		SetButtonEnabled(upgradeButton, true);
+		if upgradeButton then upgradeButton.disabledTooltip = nil; end
 	else
-		SetButtonEnabled(frame.UpgradeButton, false);
+		SetButtonEnabled(upgradeButton, false);
 		if not canUpgrade then
-			frame.UpgradeButton.disabledTooltip = "Item is fully upgraded.";
+			if upgradeButton then upgradeButton.disabledTooltip = "Item is fully upgraded."; end
 		elseif itemSyncPending then
-			frame.UpgradeButton.disabledTooltip = "Item data is syncing.";
+			if upgradeButton then upgradeButton.disabledTooltip = "Item data is syncing."; end
 		elseif costPending then
-			frame.UpgradeButton.disabledTooltip = "Upgrade cost is syncing.";
+			if upgradeButton then upgradeButton.disabledTooltip = "Upgrade cost is syncing."; end
 		elseif needsPackage and not hasPackage then
-			frame.UpgradeButton.disabledTooltip = "Select a stat package first.";
+			if upgradeButton then upgradeButton.disabledTooltip = "Select a stat package first."; end
 		else
-			frame.UpgradeButton.disabledTooltip = "Not enough currency.";
+			if upgradeButton then upgradeButton.disabledTooltip = "Not enough currency."; end
+		end
+	end
+
+	if frame.NoMoreUpgrades then
+		if not canUpgrade then
+			frame.NoMoreUpgrades:Show();
+		else
+			frame.NoMoreUpgrades:Hide();
 		end
 	end
 	
 	-- Update stat package selector for heirloom mode
 	DarkChaos_ItemUpgrade_UpdateStatPackageSelector();
+	DarkChaos_ItemUpgrade_UpdateBrowserStrip();
 	
 	DarkChaos_ItemUpgrade_UpdateCost();
 end
@@ -4852,9 +5305,8 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				PlaySound(888); -- SOUNDKIT.LEVEL_UP
 			end
 			
-			-- Trigger celebration animation
-			if DC.Settings and DC.Settings.enableCelebration then
-				DC.upgradeAnimationTime = 2.0;
+			if DC.ShowUpgradeCelebration then
+				DC.ShowUpgradeCelebration(heirloomItemId, newLevel);
 			end
 			
 			-- Update UI

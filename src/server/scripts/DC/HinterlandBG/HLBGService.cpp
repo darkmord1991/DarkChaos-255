@@ -126,24 +126,29 @@ void HLBGService::LoadRecentWinners()
 
 void HLBGService::RecordWinner(TeamId winnerTeamId, uint32 mapId,
     uint32 allianceScore, uint32 hordeScore, char const* reason,
-    uint8 affixCode, uint32 weatherType, float weatherIntensity,
+    uint8 affixCodePrimary, uint8 affixCodeSecondary,
+    uint8 affixCodeTertiary, uint32 weatherType, float weatherIntensity,
     uint32 durationSeconds)
 {
     RecordResult(winnerTeamId, mapId, allianceScore, hordeScore, reason,
-        affixCode, weatherType, weatherIntensity, durationSeconds);
+        affixCodePrimary, affixCodeSecondary, affixCodeTertiary,
+        weatherType, weatherIntensity, durationSeconds);
 }
 
 void HLBGService::RecordManualReset(uint32 mapId, uint32 allianceScore,
-    uint32 hordeScore, uint8 affixCode, uint32 weatherType,
+    uint32 hordeScore, uint8 affixCodePrimary, uint8 affixCodeSecondary,
+    uint8 affixCodeTertiary, uint32 weatherType,
     float weatherIntensity, uint32 durationSeconds)
 {
     RecordResult(TEAM_NEUTRAL, mapId, allianceScore, hordeScore, "manual",
-        affixCode, weatherType, weatherIntensity, durationSeconds);
+        affixCodePrimary, affixCodeSecondary, affixCodeTertiary,
+        weatherType, weatherIntensity, durationSeconds);
 }
 
 void HLBGService::RecordResult(TeamId winnerTeamId, uint32 mapId,
     uint32 allianceScore, uint32 hordeScore, char const* reason,
-    uint8 affixCode, uint32 weatherType, float weatherIntensity,
+    uint8 affixCodePrimary, uint8 affixCodeSecondary,
+    uint8 affixCodeTertiary, uint32 weatherType, float weatherIntensity,
     uint32 durationSeconds)
 {
     uint8 persistedWinner = winnerTeamId == TEAM_ALLIANCE
@@ -169,9 +174,11 @@ void HLBGService::RecordResult(TeamId winnerTeamId, uint32 mapId,
     stmt->SetData(4, allianceScore);
     stmt->SetData(5, hordeScore);
     stmt->SetData(6, std::string(reason ? reason : "unknown"));
-    stmt->SetData(7, affixCode);
-    stmt->SetData(8, weatherType);
-    stmt->SetData(9, weatherIntensity);
-    stmt->SetData(10, durationSeconds);
+    stmt->SetData(7, affixCodePrimary);
+    stmt->SetData(8, affixCodeSecondary);
+    stmt->SetData(9, affixCodeTertiary);
+    stmt->SetData(10, weatherType);
+    stmt->SetData(11, weatherIntensity);
+    stmt->SetData(12, durationSeconds);
     CharacterDatabase.Execute(stmt);
 }

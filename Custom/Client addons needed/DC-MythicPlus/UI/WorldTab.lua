@@ -335,7 +335,9 @@ function GF:RefreshWorldContent()
     end
 
     if groupCategory then
-        DC:Request("GRPF", 0x11, { category = groupCategory })
+        if not GF.SearchCustomCategory or not GF:SearchCustomCategory(groupCategory) then
+            DC:Request("GRPF", 0x11, { category = groupCategory })
+        end
     end
     
     Print("Refreshing world content...")
@@ -433,6 +435,10 @@ function GF:UpdateWorldGroups(groups, category)
             end
         end
         groups = normalized
+    end
+
+    if self.compactMode and self.CompactPopulateGroups then
+        self:CompactPopulateGroups(groups, category == "quest" and "quest" or "other")
     end
 
     if category == "quest" then
@@ -607,17 +613,13 @@ function GF:ShowWorldGroupCreateDialog()
         createBtn:SetPoint("BOTTOMLEFT", 40, 20)
         createBtn:SetText("Create")
         createBtn:SetScript("OnClick", function()
-            local DC = rawget(_G, "DCAddonProtocol")
-            if DC and DC.GroupFinder then
-                DC.GroupFinder.CreateListing({
-                    category = frame.category,
-                    listingType = frame.listingType,
+            if GF.CreateCustomListing and GF:CreateCustomListing(frame.category, {
                     dungeonName = frame.listingName,
                     note = frame.noteBox:GetText() or "",
                     needTank = 1,
                     needHealer = 1,
                     needDps = 3,
-                })
+                }) then
                 frame:Hide()
                 C_Timer.After(0.5, function()
                     GF:RefreshWorldContent()

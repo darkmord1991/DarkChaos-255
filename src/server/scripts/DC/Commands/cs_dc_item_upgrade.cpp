@@ -336,17 +336,17 @@ public:
         }
 
         std::string tier_names[] = { "", "Common", "Uncommon", "Rare", "Epic", "Legendary" };
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        uint8 max_level = ResolveTierMaxLevel(mgr, tier);
+        if (max_level == 0)
+            max_level = 15;
 
-        float base_mult = StatScalingCalculator::GetStatMultiplier(level);
-        float tier_mult = StatScalingCalculator::GetTierMultiplier(tier);
         float final_mult = StatScalingCalculator::GetFinalMultiplier(level, tier);
 
         std::ostringstream oss;
         oss << "|cffffd700===== Stat Scaling: " << tier_names[tier] << " Level " << (int)level << " =====|r\n";
         oss << std::fixed << std::setprecision(3);
-        oss << "|cff00ff00Base Multiplier:|r " << base_mult << "x ("
-            << ((base_mult - 1.0f) * 100.0f) << "% bonus)\n";
-        oss << "|cff00ff00Tier Multiplier:|r " << tier_mult << "x\n";
+        oss << "|cff00ff00Max Level:|r " << static_cast<int>(max_level) << "\n";
         oss << "|cff00ff00Final Multiplier:|r " << final_mult << "x ("
             << ((final_mult - 1.0f) * 100.0f) << "% bonus)\n";
 

@@ -422,6 +422,10 @@ function GF:PopulateRaidGroups(groups)
         groups = normalized
     end
 
+    if self.compactMode and self.CompactPopulateGroups then
+        self:CompactPopulateGroups(groups, "raid")
+    end
+
     local panel = self.RaidBrowsePanel
     if not panel or not panel.scrollChild then return end
     
@@ -535,9 +539,8 @@ end
 
 function GF:RefreshRaidGroups()
     GF.Print("Refreshing raid list...")
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC and DC.GroupFinder then
-        DC.GroupFinder.Search({ category = "raid", listingType = 2 })
+    if GF.SearchCustomCategory and GF:SearchCustomCategory("raid") then
+        return
     else
         GF:PopulateRaidGroups(mockRaidGroups)
     end
@@ -788,20 +791,16 @@ function GF:CreateRaidGroup(raidId, raid, difficultyId, difficulty, progress, no
     
     local playerName = UnitName("player") or "You"
     
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC and DC.GroupFinder then
-        local combinedNote = progress or ""
-        if note and note ~= "" then
-            if combinedNote ~= "" then
-                combinedNote = combinedNote .. " | " .. note
-            else
-                combinedNote = note
-            end
+    local combinedNote = progress or ""
+    if note and note ~= "" then
+        if combinedNote ~= "" then
+            combinedNote = combinedNote .. " | " .. note
+        else
+            combinedNote = note
         end
+    end
 
-        DC.GroupFinder.CreateListing({
-            category = "raid",
-            listingType = 2,
+    if GF.CreateCustomListing and GF:CreateCustomListing("raid", {
             dungeonId = raidId or 0,
             dungeonName = raid,
             difficultyId = difficultyId or 1,
@@ -809,7 +808,7 @@ function GF:CreateRaidGroup(raidId, raid, difficultyId, difficulty, progress, no
             needHealer = 5,
             needDps = 18,
             note = combinedNote
-        })
+        }) then
 
         -- Switch to browse tab after short delay and refresh from server
         C_Timer.After(0.5, function()
@@ -821,7 +820,7 @@ function GF:CreateRaidGroup(raidId, raid, difficultyId, difficulty, progress, no
             id = #mockRaidGroups + 100,
             raid = raid,
             difficulty = difficulty,
-            progress = progress,
+            progress = combinedNote,
             leader = playerName,
             spots = 20,
             note = note,

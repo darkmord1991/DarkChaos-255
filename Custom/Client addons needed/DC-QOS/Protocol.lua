@@ -15,6 +15,7 @@ addon.protocol = {
     connected = false,
     DC = nil,  -- DCAddonProtocol reference
     featureHandlers = {},
+    lastFeatureData = {},
     nativeEnvelopeFrame = nil,
     nativeEnvelopePollElapsed = 0,
 }
@@ -27,9 +28,16 @@ local SPELL_ENRICH_CACHE_MAX_CONTEXTS_PER_SPELL = 8
 local SPELL_ENRICH_CACHE_PRUNE_INTERVAL = 20
 local NATIVE_ENVELOPE_POLL_INTERVAL = 0.10
 local NATIVE_ENVELOPE_ACTION_RESPONSE = "response"
+local FEATURE_SERVER_TIME = "server_time"
+local FEATURE_PLAYER_STATS = "player_stats"
 local lastSpellEnrichCachePruneAt = 0
 
 local function DispatchFeatureData(self, featureKey, data)
+    if type(self.lastFeatureData) ~= "table" then
+        self.lastFeatureData = {}
+    end
+    self.lastFeatureData[featureKey] = data
+
     local handlers = self.featureHandlers[featureKey]
 
     if type(handlers) == "table" then
@@ -345,6 +353,31 @@ local function NormalizeAddonFeaturePayload(rawPayload)
     return data
 end
 
+local function GetLastNativeEnvelopeFeatureData(self, feature)
+    local getter = rawget(_G, "GetLastDCNativeEnvelope")
+    if type(getter) ~= "function" then
+        return nil
+    end
+
+    local ok, moduleId, cachedFeature, action, revision, payload, context =
+        pcall(getter, self.MODULE_ID, feature)
+    if not ok or moduleId == nil then
+        return nil
+    end
+
+    if tostring(moduleId or "") ~= self.MODULE_ID then
+        return nil
+    end
+
+    local featureKey = tostring(cachedFeature or feature or "")
+    if featureKey == "" then
+        return nil
+    end
+
+    return NormalizeNativeEnvelopePayload(self, featureKey, action,
+        revision, payload, context)
+end
+
 function protocol:HandleFeatureData(...)
     local args = {...}
     local data = NormalizeAddonFeaturePayload(args[1])
@@ -478,6 +511,48 @@ function protocol:RequestFeature(feature, payload)
     local request = type(payload) == "table" and payload or {}
     request.feature = feature
     return self:SendJson(self.Opcodes.CMSG_REQUEST_FEATURE, request)
+end
+
+function protocol:GetFeatureData(feature)
+    if type(feature) ~= "string" or feature == "" then
+        return nil
+    end
+
+    if type(self.lastFeatureData) ~= "table" then
+        self.lastFeatureData = {}
+    end
+
+    local cache = self.lastFeatureData
+    local cached = cache[feature]
+    local nativeCached = GetLastNativeEnvelopeFeatureData(self, feature)
+
+    if nativeCached then
+        local cachedRevision = tonumber(cached and cached.revision) or 0
+        local nativeRevision = tonumber(nativeCached.revision) or 0
+
+        if not cached or nativeRevision >= cachedRevision then
+            cache[feature] = nativeCached
+            return nativeCached
+        end
+    end
+
+    return cached
+end
+
+function protocol:RequestServerTime(payload)
+    return self:RequestFeature(FEATURE_SERVER_TIME, payload)
+end
+
+function protocol:GetServerTimeState()
+    return self:GetFeatureData(FEATURE_SERVER_TIME)
+end
+
+function protocol:RequestPlayerStats(payload)
+    return self:RequestFeature(FEATURE_PLAYER_STATS, payload)
+end
+
+function protocol:GetPlayerStatsState()
+    return self:GetFeatureData(FEATURE_PLAYER_STATS)
 end
 
 -- Request settings sync from server
@@ -797,6 +872,26 @@ end
 
 function addon:RequestFeature(feature, payload)
     return protocol:RequestFeature(feature, payload)
+end
+
+function addon:GetFeatureData(feature)
+    return protocol:GetFeatureData(feature)
+end
+
+function addon:RequestServerTime(payload)
+    return protocol:RequestServerTime(payload)
+end
+
+function addon:GetServerTimeState()
+    return protocol:GetServerTimeState()
+end
+
+function addon:RequestPlayerStats(payload)
+    return protocol:RequestPlayerStats(payload)
+end
+
+function addon:GetPlayerStatsState()
+    return protocol:GetPlayerStatsState()
 end
 
 function addon:RegisterFeatureHandler(feature, handler)

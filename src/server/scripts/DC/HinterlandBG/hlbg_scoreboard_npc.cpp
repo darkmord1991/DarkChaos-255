@@ -18,6 +18,7 @@
 #include "Timer.h"
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <unordered_map>
 
 // Expose constants at file scope to allow usage inside classes (avoid in-class using namespace)
@@ -81,13 +82,34 @@ public:
         return GetAffixName(a);
     }
 
+    static std::string BuildAffixDisplay(uint8 affixPrimary,
+        uint8 affixSecondary = 0, uint8 affixTertiary = 0)
+    {
+        std::ostringstream out;
+        bool first = true;
+
+        for (uint8 affixCode : { affixPrimary, affixSecondary, affixTertiary })
+        {
+            if (!affixCode)
+                continue;
+
+            if (!first)
+                out << ", ";
+
+            first = false;
+            out << AffixName(affixCode);
+        }
+
+        return first ? std::string("None") : out.str();
+    }
+
     void ShowHistoryPage(Player* player, Creature* creature, uint32 page)
     {
         using namespace HinterlandBGConstants;
         ClearGossipMenuFor(player);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Recent results:", GOSSIP_SENDER_MAIN, ACTION_HISTORY_PAGE_BASE + page);
 
-        struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; std::string ts; uint8 affix; };
+        struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; std::string ts; uint8 affix; uint8 affixSecondary; uint8 affixTertiary; };
         std::vector<HistRow> rows;
         uint32 limit = PAGE_SIZE + 1; // fetch one extra to detect next page
         uint32 offset = page * PAGE_SIZE;
@@ -108,11 +130,13 @@ public:
                 r.h = f[3].Get<uint32>();
                 r.reason = f[4].Get<std::string>();
                 r.affix = f[5].Get<uint8>();
+                r.affixSecondary = f[6].Get<uint8>();
+                r.affixTertiary = f[7].Get<uint8>();
                 rows.push_back(std::move(r));
             } while (res->NextRow());
         }
 
-        char line[200];
+        char line[256];
         bool hasNext = rows.size() > PAGE_SIZE;
         if (hasNext)
             rows.resize(PAGE_SIZE);
@@ -127,6 +151,8 @@ public:
             for (auto const& r : rows)
             {
                 const char* name = (r.tid == TEAM_ALLIANCE ? "Alliance" : (r.tid == TEAM_HORDE ? "Horde" : "Draw"));
+                bool hasAffix = r.affix || r.affixSecondary || r.affixTertiary;
+                std::string affixDisplay = BuildAffixDisplay(r.affix, r.affixSecondary, r.affixTertiary);
                 // Optional friendly weather label if affix weather is enabled
                 char wbuf[48] = {0};
                 if (r.affix > 0)
@@ -146,7 +172,7 @@ public:
                 }
                 if (!r.reason.empty())
                     snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u  (%s%s%s%s)", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h,
-                        r.reason.c_str(), r.affix ? ", affix: " : "", r.affix ? AffixName(r.affix) : "", wbuf);
+                        r.reason.c_str(), hasAffix ? ", affixes: " : "", hasAffix ? affixDisplay.c_str() : "", wbuf);
                 else
                     snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u%s", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h, wbuf);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_HISTORY_PAGE_BASE + page);
@@ -169,33 +195,57 @@ public:
         ClearGossipMenuFor(player);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Hinterland BG statistics:", GOSSIP_SENDER_MAIN, ACTION_STATS);
 
-        // Detect (once per call) whether DB supports window functions for median
-        static bool sWindowFns = [](){
-            bool supported = false;
-            if (QueryResult v = CharacterDatabase.Query("SELECT VERSION()"))
-            {
-                std::string ver = v->Fetch()[0].Get<std::string>();
-                // crude check: MySQL 8.x or MariaDB 10.2+
-                if (ver.find("MariaDB") != std::string::npos)
-                {
-                    // find 10.x
-                    size_t p = ver.find("10.");
-                    if (p != std::string::npos)
-                        supported = true; // window functions since 10.2
-                }
-                else if (!ver.empty() && ver[0] >= '8')
-                {
-                    supported = true;
-                }
-            }
-            return supported;
-        }();
+        bool includeManual = HLBGService::Instance().GetStatsIncludeManualResets();
+        // Build a generic condition that can be AND-ed with other filters
+        // Important: older rows may have NULL win_reason; excluding manual must keep those (use IS NULL OR <> 'manual')
+        std::string cond = includeManual ? std::string("1=1") : std::string("(win_reason IS NULL OR win_reason <> 'manual')");
 
-    bool includeManual = HLBGService::Instance().GetStatsIncludeManualResets();
-    // Build a generic condition that can be AND-ed with other filters
-    // Important: older rows may have NULL win_reason; excluding manual must keep those (use IS NULL OR <> 'manual')
-    std::string cond = includeManual ? std::string("1=1") : std::string("(win_reason IS NULL OR win_reason <> 'manual')");
-    uint64 aWins = 0, hWins = 0, draws = 0, depWins = 0, tieWins = 0, manual = 0, total = 0;
+        struct AffixAggregate
+        {
+            uint64 totalCount = 0;
+            uint64 allianceWins = 0;
+            uint64 hordeWins = 0;
+            uint64 draws = 0;
+            uint64 depletionCount = 0;
+            uint64 tiebreakerCount = 0;
+            double allianceScoreTotal = 0.0;
+            double hordeScoreTotal = 0.0;
+            double marginTotal = 0.0;
+            double durationTotal = 0.0;
+            uint64 durationCount = 0;
+            std::vector<uint32> margins;
+        };
+
+        struct OutcomeEntry
+        {
+            uint8 affix = 0;
+            TeamId outcome = TEAM_NEUTRAL;
+            uint64 count = 0;
+        };
+
+        struct AffixCountEntry
+        {
+            uint8 affix = 0;
+            uint64 count = 0;
+        };
+
+        struct AffixValueEntry
+        {
+            uint8 affix = 0;
+            double value = 0.0;
+            uint64 count = 0;
+        };
+
+        std::string affixStatsQuery =
+            "SELECT winner_tid, win_reason, score_alliance, score_horde, duration_seconds, affix AS affix_code "
+            "FROM dc_hlbg_winner_history WHERE " + cond + " AND affix > 0 "
+            "UNION ALL "
+            "SELECT winner_tid, win_reason, score_alliance, score_horde, duration_seconds, affix_secondary AS affix_code "
+            "FROM dc_hlbg_winner_history WHERE " + cond + " AND affix_secondary > 0 "
+            "UNION ALL "
+            "SELECT winner_tid, win_reason, score_alliance, score_horde, duration_seconds, affix_tertiary AS affix_code "
+            "FROM dc_hlbg_winner_history WHERE " + cond + " AND affix_tertiary > 0";
+        uint64 aWins = 0, hWins = 0, draws = 0, depWins = 0, tieWins = 0, manual = 0, total = 0;
 
     // Note: cond is either "1=1" or a safe constant string - no user input
     std::string query1 = "SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual'), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond;
@@ -219,7 +269,7 @@ public:
         uint64 aLoss = hWins; // alliance losses = horde wins
         uint64 hLoss = aWins;
 
-        char line[200];
+        char line[256];
         snprintf(line, sizeof(line), "Total records: %llu", static_cast<unsigned long long>(total));
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
         snprintf(line, sizeof(line), "Alliance wins: %llu  (losses: %llu)", static_cast<unsigned long long>(aWins), static_cast<unsigned long long>(aLoss));
@@ -344,233 +394,294 @@ public:
             LOG_ERROR("hlbg", "Failed to query largest margin win");
         }
 
-        // Top N most frequent winners by affix (Alliance/Horde only)
-        std::string query4 = "SELECT winner_tid, affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " AND winner_tid IN (0,1) GROUP BY winner_tid, affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
-        QueryResult rt = CharacterDatabase.Query(query4);
-        if (rt)
+        QueryResult rAffixStats = CharacterDatabase.Query(affixStatsQuery);
+        if (rAffixStats)
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Top winners by affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+            std::unordered_map<uint8, AffixAggregate> affixStats;
             do
             {
-                Field* f = rt->Fetch();
-                uint8 tid = f[0].Get<uint8>();
-                uint8 aff = f[1].Get<uint8>();
-                uint64 c  = f[2].Get<uint64>();
-                const char* wname = (tid == TEAM_ALLIANCE ? "Alliance" : "Horde");
-                snprintf(line, sizeof(line), "- %s: %s wins x%llu", AffixName(aff), wname, (unsigned long long)c);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (rt->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query top winners by affix");
-        }
+                Field* f = rAffixStats->Fetch();
+                TeamId outcome = static_cast<TeamId>(f[0].Get<uint8>());
+                std::string reason = f[1].Get<std::string>();
+                uint32 allianceScore = f[2].Get<uint32>();
+                uint32 hordeScore = f[3].Get<uint32>();
+                uint32 durationSeconds = f[4].Get<uint32>();
+                uint8 affix = f[5].Get<uint8>();
+                if (!affix)
+                    continue;
 
-        // Draws by affix (separate list for clarity)
-        std::string query5 = "SELECT affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " AND winner_tid=2 GROUP BY affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
-        QueryResult rdraw = CharacterDatabase.Query(query5);
-        if (rdraw)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Draws by affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+                AffixAggregate& stats = affixStats[affix];
+                ++stats.totalCount;
+                stats.allianceScoreTotal += static_cast<double>(allianceScore);
+                stats.hordeScoreTotal += static_cast<double>(hordeScore);
+
+                uint32 margin = allianceScore > hordeScore ? (allianceScore - hordeScore) : (hordeScore - allianceScore);
+                stats.marginTotal += static_cast<double>(margin);
+                stats.margins.push_back(margin);
+
+                if (durationSeconds > 0)
+                {
+                    stats.durationTotal += static_cast<double>(durationSeconds);
+                    ++stats.durationCount;
+                }
+
+                if (outcome == TEAM_ALLIANCE)
+                    ++stats.allianceWins;
+                else if (outcome == TEAM_HORDE)
+                    ++stats.hordeWins;
+                else if (outcome == TEAM_NEUTRAL)
+                    ++stats.draws;
+
+                if (reason == "depletion")
+                    ++stats.depletionCount;
+                else if (reason == "tiebreaker")
+                    ++stats.tiebreakerCount;
+            } while (rAffixStats->NextRow());
+
+            std::vector<uint8> orderedAffixes;
+            orderedAffixes.reserve(affixStats.size());
+            for (auto const& affixEntry : affixStats)
+                orderedAffixes.push_back(affixEntry.first);
+
+            std::sort(orderedAffixes.begin(), orderedAffixes.end());
+
+            auto outcomeLabel = [](TeamId outcome) -> char const*
             {
-                Field* f = rdraw->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                uint64 c  = f[1].Get<uint64>();
-                snprintf(line, sizeof(line), "- %s: draws x%llu", AffixName(aff), (unsigned long long)c);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (rdraw->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query draws by affix");
-        }
+                return outcome == TEAM_ALLIANCE ? "Alliance"
+                    : (outcome == TEAM_HORDE ? "Horde" : "Draw");
+            };
 
-        // Top N outcomes by affix (includes draws); excludes manual resets
-        std::string query6 = "SELECT winner_tid, affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY winner_tid, affix ORDER BY c DESC LIMIT " + std::to_string(TOP_N);
-        QueryResult rtd = CharacterDatabase.Query(query6);
-        if (rtd)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Top outcomes by affix (incl. draws):", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            std::vector<OutcomeEntry> topWinnerEntries;
+            topWinnerEntries.reserve(orderedAffixes.size() * 2u);
+            for (uint8 affix : orderedAffixes)
             {
-                Field* f = rtd->Fetch();
-                uint8 tid = f[0].Get<uint8>();
-                uint8 aff = f[1].Get<uint8>();
-                uint64 c  = f[2].Get<uint64>();
-                const char* oname = (tid == TEAM_ALLIANCE ? "Alliance" : (tid == TEAM_HORDE ? "Horde" : "Draw"));
-                snprintf(line, sizeof(line), "- %s: %s x%llu", AffixName(aff), oname, (unsigned long long)c);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (rtd->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query top outcomes by affix");
-        }
+                AffixAggregate const& stats = affixStats.at(affix);
+                if (stats.allianceWins > 0)
+                    topWinnerEntries.push_back({ affix, TEAM_ALLIANCE, stats.allianceWins });
+                if (stats.hordeWins > 0)
+                    topWinnerEntries.push_back({ affix, TEAM_HORDE, stats.hordeWins });
+            }
 
-        // Top N affixes by overall frequency (any outcome); excludes manual resets
-        std::string query7 = "SELECT affix, COUNT(*) AS c FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY c DESC, affix ASC LIMIT " + std::to_string(TOP_N);
-        QueryResult raf = CharacterDatabase.Query(query7);
-        if (raf)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Top affixes by matches:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            std::sort(topWinnerEntries.begin(), topWinnerEntries.end(), [](OutcomeEntry const& left, OutcomeEntry const& right)
             {
-                Field* f = raf->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                uint64 c  = f[1].Get<uint64>();
-                snprintf(line, sizeof(line), "- %s: matches x%llu", AffixName(aff), (unsigned long long)c);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (raf->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query top affixes by matches");
-        }
+                if (left.count != right.count)
+                    return left.count > right.count;
+                if (left.affix != right.affix)
+                    return left.affix < right.affix;
+                return left.outcome < right.outcome;
+            });
 
-        // Average scores per affix (exclude manual resets)
-        std::string query8 = "SELECT affix, AVG(score_alliance), AVG(score_horde), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
-        QueryResult ra = CharacterDatabase.Query(query8);
-        if (ra)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Average score per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            if (!topWinnerEntries.empty())
             {
-                Field* f = ra->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                double avga = f[1].Get<double>();
-                double avgh = f[2].Get<double>();
-                uint64 n     = f[3].Get<uint64>();
-                snprintf(line, sizeof(line), "- %s: A:%.1f H:%.1f (n=%llu)", AffixName(aff), avga, avgh, (unsigned long long)n);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (ra->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query average scores per affix");
-        }
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Top winners by affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                std::size_t limit = std::min<std::size_t>(static_cast<std::size_t>(TOP_N), topWinnerEntries.size());
+                for (std::size_t index = 0; index < limit; ++index)
+                {
+                    OutcomeEntry const& entry = topWinnerEntries[index];
+                    snprintf(line, sizeof(line), "- %s: %s wins x%llu", AffixName(entry.affix), outcomeLabel(entry.outcome), static_cast<unsigned long long>(entry.count));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
 
-        // Per-affix win rates (Alliance/Horde/Draw percentage); excludes manual resets
-        std::string query9 = "SELECT affix, SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
-        QueryResult rr = CharacterDatabase.Query(query9);
-        if (rr)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Win rates per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            std::vector<AffixCountEntry> drawEntries;
+            drawEntries.reserve(orderedAffixes.size());
+            for (uint8 affix : orderedAffixes)
             {
-                Field* f = rr->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                double a = static_cast<double>(f[1].Get<uint64>());
-                double h = static_cast<double>(f[2].Get<uint64>());
-                double d = static_cast<double>(f[3].Get<uint64>());
-                double n = static_cast<double>(f[4].Get<uint64>());
-                if (n < 1.0) continue;
-                double ap = (a * 100.0) / n;
-                double hp = (h * 100.0) / n;
-                double dp = (d * 100.0) / n;
-                snprintf(line, sizeof(line), "- %s: A:%.1f%% H:%.1f%% D:%.1f%% (n=%u)", AffixName(aff), ap, hp, dp, (unsigned)n);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (rr->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query win rates per affix");
-        }
+                AffixAggregate const& stats = affixStats.at(affix);
+                if (stats.draws > 0)
+                    drawEntries.push_back({ affix, stats.draws });
+            }
 
-        // Per-affix average margin (exclude manual resets)
-        std::string query10 = "SELECT affix, AVG(ABS(score_alliance - score_horde)) AS am, COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY am DESC";
-        QueryResult ram = CharacterDatabase.Query(query10);
-        if (ram)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Average margin per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            std::sort(drawEntries.begin(), drawEntries.end(), [](AffixCountEntry const& left, AffixCountEntry const& right)
             {
-                Field* f = ram->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                double avgm = f[1].Get<double>();
-                uint64 n    = f[2].Get<uint64>();
-                snprintf(line, sizeof(line), "- %s: %.1f (n=%llu)", AffixName(aff), avgm, (unsigned long long)n);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (ram->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query average margin per affix");
-        }
+                if (left.count != right.count)
+                    return left.count > right.count;
+                return left.affix < right.affix;
+            });
 
-        // Per-affix reason breakdown (exclude manual resets)
-        std::string query11 = "SELECT affix, SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " GROUP BY affix ORDER BY affix";
-        QueryResult rrb = CharacterDatabase.Query(query11);
-        if (rrb)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Reason breakdown per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            if (!drawEntries.empty())
             {
-                Field* f = rrb->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                uint64 dep = f[1].Get<uint64>();
-                uint64 tie = f[2].Get<uint64>();
-                uint64 n   = f[3].Get<uint64>();
-                snprintf(line, sizeof(line), "- %s: depletion %llu, tiebreaker %llu (n=%llu)", AffixName(aff), (unsigned long long)dep, (unsigned long long)tie, (unsigned long long)n);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (rrb->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query reason breakdown per affix");
-        }
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Draws by affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                std::size_t limit = std::min<std::size_t>(static_cast<std::size_t>(TOP_N), drawEntries.size());
+                for (std::size_t index = 0; index < limit; ++index)
+                {
+                    AffixCountEntry const& entry = drawEntries[index];
+                    snprintf(line, sizeof(line), "- %s: draws x%llu", AffixName(entry.affix), static_cast<unsigned long long>(entry.count));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
 
-        // Median margin per affix using window functions (guarded by DB capability)
-        if (sWindowFns)
-        {
-            std::string query12 =
-                "WITH ranked AS (\n"
-                "  SELECT affix, ABS(score_alliance - score_horde) AS m,\n"
-                "         ROW_NUMBER() OVER (PARTITION BY affix ORDER BY ABS(score_alliance - score_horde)) AS rn,\n"
-                "         COUNT(*)     OVER (PARTITION BY affix) AS cnt\n"
-                "  FROM dc_hlbg_winner_history WHERE " + cond + "\n"
-                ")\n"
-                "SELECT affix, AVG(m) AS med FROM ranked\n"
-                "WHERE rn IN (FLOOR((cnt+1)/2), FLOOR((cnt+2)/2))\n"
-                "GROUP BY affix ORDER BY med DESC";
-            QueryResult rmed = CharacterDatabase.Query(query12);
-            if (rmed)
+            std::vector<OutcomeEntry> topOutcomeEntries;
+            topOutcomeEntries.reserve(orderedAffixes.size() * 3u);
+            for (uint8 affix : orderedAffixes)
+            {
+                AffixAggregate const& stats = affixStats.at(affix);
+                if (stats.allianceWins > 0)
+                    topOutcomeEntries.push_back({ affix, TEAM_ALLIANCE, stats.allianceWins });
+                if (stats.hordeWins > 0)
+                    topOutcomeEntries.push_back({ affix, TEAM_HORDE, stats.hordeWins });
+                if (stats.draws > 0)
+                    topOutcomeEntries.push_back({ affix, TEAM_NEUTRAL, stats.draws });
+            }
+
+            std::sort(topOutcomeEntries.begin(), topOutcomeEntries.end(), [](OutcomeEntry const& left, OutcomeEntry const& right)
+            {
+                if (left.count != right.count)
+                    return left.count > right.count;
+                if (left.affix != right.affix)
+                    return left.affix < right.affix;
+                return left.outcome < right.outcome;
+            });
+
+            if (!topOutcomeEntries.empty())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Top outcomes by affix (incl. draws):", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                std::size_t limit = std::min<std::size_t>(static_cast<std::size_t>(TOP_N), topOutcomeEntries.size());
+                for (std::size_t index = 0; index < limit; ++index)
+                {
+                    OutcomeEntry const& entry = topOutcomeEntries[index];
+                    snprintf(line, sizeof(line), "- %s: %s x%llu", AffixName(entry.affix), outcomeLabel(entry.outcome), static_cast<unsigned long long>(entry.count));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
+
+            std::vector<AffixCountEntry> topAffixEntries;
+            topAffixEntries.reserve(orderedAffixes.size());
+            for (uint8 affix : orderedAffixes)
+                topAffixEntries.push_back({ affix, affixStats.at(affix).totalCount });
+
+            std::sort(topAffixEntries.begin(), topAffixEntries.end(), [](AffixCountEntry const& left, AffixCountEntry const& right)
+            {
+                if (left.count != right.count)
+                    return left.count > right.count;
+                return left.affix < right.affix;
+            });
+
+            if (!topAffixEntries.empty())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Top affixes by matches:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                std::size_t limit = std::min<std::size_t>(static_cast<std::size_t>(TOP_N), topAffixEntries.size());
+                for (std::size_t index = 0; index < limit; ++index)
+                {
+                    AffixCountEntry const& entry = topAffixEntries[index];
+                    snprintf(line, sizeof(line), "- %s: matches x%llu", AffixName(entry.affix), static_cast<unsigned long long>(entry.count));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
+
+            if (!orderedAffixes.empty())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Average score per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                for (uint8 affix : orderedAffixes)
+                {
+                    AffixAggregate const& stats = affixStats.at(affix);
+                    double averageAlliance = stats.allianceScoreTotal / static_cast<double>(stats.totalCount);
+                    double averageHorde = stats.hordeScoreTotal / static_cast<double>(stats.totalCount);
+                    snprintf(line, sizeof(line), "- %s: A:%.1f H:%.1f (n=%llu)", AffixName(affix), averageAlliance, averageHorde, static_cast<unsigned long long>(stats.totalCount));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Win rates per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                for (uint8 affix : orderedAffixes)
+                {
+                    AffixAggregate const& stats = affixStats.at(affix);
+                    double totalMatches = static_cast<double>(stats.totalCount);
+                    double alliancePct = (static_cast<double>(stats.allianceWins) * 100.0) / totalMatches;
+                    double hordePct = (static_cast<double>(stats.hordeWins) * 100.0) / totalMatches;
+                    double drawPct = (static_cast<double>(stats.draws) * 100.0) / totalMatches;
+                    snprintf(line, sizeof(line), "- %s: A:%.1f%% H:%.1f%% D:%.1f%% (n=%llu)", AffixName(affix), alliancePct, hordePct, drawPct, static_cast<unsigned long long>(stats.totalCount));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
+
+            std::vector<AffixValueEntry> averageMarginEntries;
+            averageMarginEntries.reserve(orderedAffixes.size());
+            for (uint8 affix : orderedAffixes)
+            {
+                AffixAggregate const& stats = affixStats.at(affix);
+                averageMarginEntries.push_back({ affix, stats.marginTotal / static_cast<double>(stats.totalCount), stats.totalCount });
+            }
+
+            std::sort(averageMarginEntries.begin(), averageMarginEntries.end(), [](AffixValueEntry const& left, AffixValueEntry const& right)
+            {
+                if (left.value != right.value)
+                    return left.value > right.value;
+                return left.affix < right.affix;
+            });
+
+            if (!averageMarginEntries.empty())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Average margin per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                for (AffixValueEntry const& entry : averageMarginEntries)
+                {
+                    snprintf(line, sizeof(line), "- %s: %.1f (n=%llu)", AffixName(entry.affix), entry.value, static_cast<unsigned long long>(entry.count));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
+
+            if (!orderedAffixes.empty())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Reason breakdown per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                for (uint8 affix : orderedAffixes)
+                {
+                    AffixAggregate const& stats = affixStats.at(affix);
+                    snprintf(line, sizeof(line), "- %s: depletion %llu, tiebreaker %llu (n=%llu)", AffixName(affix), static_cast<unsigned long long>(stats.depletionCount), static_cast<unsigned long long>(stats.tiebreakerCount), static_cast<unsigned long long>(stats.totalCount));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
+
+            std::vector<AffixValueEntry> medianEntries;
+            medianEntries.reserve(orderedAffixes.size());
+            for (uint8 affix : orderedAffixes)
+            {
+                AffixAggregate const& stats = affixStats.at(affix);
+                std::vector<uint32> sortedMargins = stats.margins;
+                std::sort(sortedMargins.begin(), sortedMargins.end());
+
+                std::size_t middle = sortedMargins.size() / 2u;
+                double median = sortedMargins.size() % 2u == 0u
+                    ? (static_cast<double>(sortedMargins[middle - 1u]) + static_cast<double>(sortedMargins[middle])) / 2.0
+                    : static_cast<double>(sortedMargins[middle]);
+                medianEntries.push_back({ affix, median, static_cast<uint64>(sortedMargins.size()) });
+            }
+
+            std::sort(medianEntries.begin(), medianEntries.end(), [](AffixValueEntry const& left, AffixValueEntry const& right)
+            {
+                if (left.value != right.value)
+                    return left.value > right.value;
+                return left.affix < right.affix;
+            });
+
+            if (!medianEntries.empty())
             {
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Median margin per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-                do
+                for (AffixValueEntry const& entry : medianEntries)
                 {
-                    Field* f = rmed->Fetch();
-                    uint8 aff = f[0].Get<uint8>();
-                    double med = f[1].Get<double>();
-                    snprintf(line, sizeof(line), "- %s: median %.1f", AffixName(aff), med);
+                    snprintf(line, sizeof(line), "- %s: median %.1f", AffixName(entry.affix), entry.value);
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-                } while (rmed->NextRow());
+                }
             }
-            else
-            {
-                LOG_ERROR("hlbg", "Failed to query median margin per affix");
-            }
-        }
 
-        // Average duration per affix (if populated)
-        std::string query13 = "SELECT affix, AVG(duration_seconds), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond + " AND duration_seconds > 0 GROUP BY affix ORDER BY affix";
-        QueryResult rdur = CharacterDatabase.Query(query13);
-        if (rdur)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Average duration per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
-            do
+            std::vector<AffixValueEntry> durationEntries;
+            durationEntries.reserve(orderedAffixes.size());
+            for (uint8 affix : orderedAffixes)
             {
-                Field* f = rdur->Fetch();
-                uint8 aff = f[0].Get<uint8>();
-                double avgd = f[1].Get<double>();
-                uint64 n    = f[2].Get<uint64>();
-                snprintf(line, sizeof(line), "- %s: %.1f s (n=%llu)", AffixName(aff), avgd, (unsigned long long)n);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
-            } while (rdur->NextRow());
-        }
-        else
-        {
-            LOG_ERROR("hlbg", "Failed to query average duration per affix");
+                AffixAggregate const& stats = affixStats.at(affix);
+                if (stats.durationCount == 0)
+                    continue;
+
+                durationEntries.push_back({ affix, stats.durationTotal / static_cast<double>(stats.durationCount), stats.durationCount });
+            }
+
+            if (!durationEntries.empty())
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Average duration per affix:", GOSSIP_SENDER_MAIN, ACTION_STATS);
+                for (AffixValueEntry const& entry : durationEntries)
+                {
+                    snprintf(line, sizeof(line), "- %s: %.1f s (n=%llu)", AffixName(entry.affix), entry.value, static_cast<unsigned long long>(entry.count));
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, ACTION_STATS);
+                }
+            }
         }
 
         // Navigation
@@ -628,6 +739,8 @@ public:
                 uint32 mm = sec / 60u;
                 uint32 ss = sec % 60u;
                 uint8 aff = hl->GetActiveAffixCode();
+                std::string affixDisplay = BuildAffixDisplay(
+                    hl->GetActiveAffixCode(0u), hl->GetActiveAffixCode(1u), hl->GetActiveAffixCode(2u));
                 uint32 aCount = 0, hCount = 0;
                 for (auto const& playerEntry : hl->GetPlayers())
                 {
@@ -643,7 +756,7 @@ public:
 
                 ClearGossipMenuFor(player);
                 // Header (non-interactive info lines)
-                char line[128];
+                char line[256];
                 snprintf(line, sizeof(line), "Alliance: %u", (unsigned)a);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                 snprintf(line, sizeof(line), "Horde: %u", (unsigned)h);
@@ -654,7 +767,7 @@ public:
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                 if (aff)
                 {
-                    snprintf(line, sizeof(line), "Affix: %s", AffixName(aff));
+                    snprintf(line, sizeof(line), "Affixes: %s", affixDisplay.c_str());
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                     // Weather label for the current affix (friendly name + percent)
                     if (hl->IsAffixWeatherEnabled())
@@ -669,10 +782,10 @@ public:
                 }
 
                 // Recent history (last 5 winners): prefer DB history, fallback to in-memory
-                struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; std::string ts; };
+                struct HistRow { TeamId tid; uint32 a; uint32 h; std::string reason; std::string ts; uint8 affix; uint8 affixSecondary; uint8 affixTertiary; };
                 std::vector<HistRow> rows;
                 {
-                    QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT 5");
+                    QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason, affix, affix_secondary, affix_tertiary FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT 5");
                     if (res)
                     {
                         do
@@ -684,6 +797,9 @@ public:
                             r.a = f[2].Get<uint32>();
                             r.h = f[3].Get<uint32>();
                             r.reason = f[4].Get<std::string>();
+                            r.affix = f[5].Get<uint8>();
+                            r.affixSecondary = f[6].Get<uint8>();
+                            r.affixTertiary = f[7].Get<uint8>();
                             rows.push_back(std::move(r));
                         } while (res->NextRow());
                     }
@@ -692,7 +808,7 @@ public:
                 {
                     auto recent = HLBGService::Instance().GetRecentWinners(5);
                     for (auto const& t : recent)
-                        rows.push_back(HistRow{t, 0u, 0u, std::string(), std::string()});
+                        rows.push_back(HistRow{t, 0u, 0u, std::string(), std::string(), 0u, 0u, 0u});
                 }
                 if (!rows.empty())
                 {
@@ -702,19 +818,21 @@ public:
                     {
                         const char* name = (r.tid == TEAM_ALLIANCE ? "Alliance" : (r.tid == TEAM_HORDE ? "Horde" : "Draw"));
                         bool hasTs = !r.ts.empty();
+                        bool hasAffix = r.affix || r.affixSecondary || r.affixTertiary;
+                        std::string recentAffixDisplay = BuildAffixDisplay(r.affix, r.affixSecondary, r.affixTertiary);
                         if (!r.reason.empty())
                         {
                             if (hasTs)
-                                snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u  (%s)", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str());
+                                snprintf(line, sizeof(line), "%u) [%s] %s  A:%u H:%u  (%s%s%s)", (unsigned)idx++, r.ts.c_str(), name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str(), hasAffix ? ", affixes: " : "", hasAffix ? recentAffixDisplay.c_str() : "");
                             else
-                                snprintf(line, sizeof(line), "%u) %s  A:%u H:%u  (%s)", (unsigned)idx++, name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str());
+                                snprintf(line, sizeof(line), "%u) %s  A:%u H:%u  (%s%s%s)", (unsigned)idx++, name, (unsigned)r.a, (unsigned)r.h, r.reason.c_str(), hasAffix ? ", affixes: " : "", hasAffix ? recentAffixDisplay.c_str() : "");
                         }
                         else
                         {
                             if (hasTs)
-                                snprintf(line, sizeof(line), "%u) [%s] %s", (unsigned)idx++, r.ts.c_str(), name);
+                                snprintf(line, sizeof(line), "%u) [%s] %s%s%s%s", (unsigned)idx++, r.ts.c_str(), name, hasAffix ? "  (affixes: " : "", hasAffix ? recentAffixDisplay.c_str() : "", hasAffix ? ")" : "");
                             else
-                                snprintf(line, sizeof(line), "%u) %s", (unsigned)idx++, name);
+                                snprintf(line, sizeof(line), "%u) %s%s%s%s", (unsigned)idx++, name, hasAffix ? "  (affixes: " : "", hasAffix ? recentAffixDisplay.c_str() : "", hasAffix ? ")" : "");
                         }
                         AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 1);
                     }

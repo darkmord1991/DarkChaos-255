@@ -36,6 +36,35 @@ local Adapter = {
 
 local DC = DCAddonProtocol
 
+-- =====================================================================
+-- NATIVE ENVELOPE BRIDGE (SMSG_DC_NATIVE_ENVELOPE)
+-- =====================================================================
+-- Server-side `dc_addon_hlbg.cpp` additionally publishes leaderboard /
+-- player_stats / alltime_stats responses through the generic native
+-- envelope cache. We opportunistically consume those envelopes on a
+-- polling tick so the addon UI is driven by the native data plane when
+-- the client capability is present, while the legacy DCAddonProtocol
+-- callback path remains intact as a fallback for older clients.
+local NATIVE_MODULE_ID           = "HINTERLAND"
+local NATIVE_POLL_INTERVAL       = 0.25
+local NATIVE_FEATURE_LEADERBOARD = "leaderboard"
+local NATIVE_FEATURE_PLAYER      = "player_stats"
+local NATIVE_FEATURE_ALLTIME     = "alltime_stats"
+
+local NATIVE_FEATURES = {
+    NATIVE_FEATURE_LEADERBOARD,
+    NATIVE_FEATURE_PLAYER,
+    NATIVE_FEATURE_ALLTIME,
+}
+
+local function BuildHLBGRequestToken(label)
+    Adapter._requestTokenCounter = (Adapter._requestTokenCounter or 0) + 1
+    return string.format("hlbgstats-%s-%d-%d",
+        tostring(label or "req"),
+        math.floor((GetTime() or 0) * 1000),
+        Adapter._requestTokenCounter)
+end
+
 --[[ =====================================================================
      REQUEST METHODS
      ===================================================================== ]]
@@ -59,12 +88,21 @@ function Adapter:RequestLeaderboard(leaderboardType, season, limit, callback)
     end
     
     -- Request from server
+    local requestToken = BuildHLBGRequestToken("leaderboard")
     local requestData = {
         leaderboardType = leaderboardType,
         season = season,
-        limit = limit
+        limit = limit,
+        requestToken = requestToken,
     }
-    
+
+    -- Track expected token for native-envelope correlation
+    self._pendingTokens = self._pendingTokens or {}
+    self._pendingTokens[NATIVE_FEATURE_LEADERBOARD] = {
+        token = requestToken,
+        cacheKey = cacheKey,
+    }
+
     -- Send request via DCAddonProtocol
     DC:Request("HLBG", 0x01, requestData)
     
@@ -91,7 +129,13 @@ function Adapter:RequestPlayerStats(season, callback)
         return
     end
     
-    DC:Request("HLBG", 0x02, { season = season })
+    local requestToken = BuildHLBGRequestToken("playerstats")
+    self._pendingTokens = self._pendingTokens or {}
+    self._pendingTokens[NATIVE_FEATURE_PLAYER] = {
+        token = requestToken,
+        cacheKey = cacheKey,
+    }
+    DC:Request("HLBG", 0x02, { season = season, requestToken = requestToken })
     
     if not self._statsCallbacks then
         self._statsCallbacks = {}
@@ -106,7 +150,13 @@ function Adapter:RequestAllTimeStats(callback)
         return
     end
     
-    DC:Request("HLBG", 0x03, {})
+    local requestToken = BuildHLBGRequestToken("alltime")
+    self._pendingTokens = self._pendingTokens or {}
+    self._pendingTokens[NATIVE_FEATURE_ALLTIME] = {
+        token = requestToken,
+        cacheKey = "alltime",
+    }
+    DC:Request("HLBG", 0x03, { requestToken = requestToken })
     
     if not self._allTimeCallbacks then
         self._allTimeCallbacks = {}
@@ -287,6 +337,113 @@ function Adapter:Initialize()
     end
 end
 
+--[[ =====================================================================
+     NATIVE ENVELOPE POLL / DISPATCH
+     ===================================================================== ]]
+
+local function GetNativeEnvelopeJsonDecoder()
+    if DC and type(DC.DecodeJSON) == "function" then
+        return function(payload) return DC:DecodeJSON(payload) end
+    end
+    if _G.HLBG and type(_G.HLBG.tryDecodeJson) == "function" then
+        return function(payload) return _G.HLBG.tryDecodeJson(payload) end
+    end
+    return nil
+end
+
+local function DispatchNativeEnvelope(adapter, feature, payload, context)
+    if type(payload) ~= "string" or payload == "" then
+        return false
+    end
+
+    local decoder = GetNativeEnvelopeJsonDecoder()
+    if not decoder then
+        return false
+    end
+
+    local ok, decoded = pcall(decoder, payload)
+    if not ok or type(decoded) ~= "table" then
+        return false
+    end
+
+    -- Token-echo correlation: prefer the context slot, fall back to a
+    -- requestToken embedded in the decoded payload.
+    local echoedToken = nil
+    if type(context) == "string" and context ~= "" then
+        echoedToken = context
+    elseif type(decoded.requestToken) == "string" then
+        echoedToken = decoded.requestToken
+    end
+
+    if _G.HLBG then
+        _G.HLBG._lastNativeRequestToken = echoedToken
+    end
+
+    local pending = adapter._pendingTokens and adapter._pendingTokens[feature]
+    if pending and pending.token and echoedToken
+        and pending.token ~= echoedToken then
+        -- Stale or mismatched envelope; ignore to avoid double dispatch.
+        return false
+    end
+
+    if feature == NATIVE_FEATURE_LEADERBOARD then
+        adapter:OnLeaderboardData(decoded)
+    elseif feature == NATIVE_FEATURE_PLAYER then
+        adapter:OnPlayerStats(decoded)
+    elseif feature == NATIVE_FEATURE_ALLTIME then
+        adapter:OnAllTimeStats(decoded)
+    else
+        return false
+    end
+
+    if pending and adapter._pendingTokens then
+        adapter._pendingTokens[feature] = nil
+    end
+    return true
+end
+
+function Adapter:PollNativeEnvelopes()
+    local getter = rawget(_G, "GetLastDCNativeEnvelope")
+    if type(getter) ~= "function" then
+        return
+    end
+
+    self._nativeRevisions = self._nativeRevisions or {}
+
+    for _, feature in ipairs(NATIVE_FEATURES) do
+        local ok, moduleId, cachedFeature, _action, revision, payload, context =
+            pcall(getter, NATIVE_MODULE_ID, feature)
+        if ok and moduleId and tostring(moduleId) == NATIVE_MODULE_ID then
+            local featureKey = tostring(cachedFeature or feature)
+            local rev = tonumber(revision) or 0
+            if rev > 0 and rev ~= self._nativeRevisions[featureKey] then
+                self._nativeRevisions[featureKey] = rev
+                DispatchNativeEnvelope(self, featureKey, payload, context)
+            end
+        end
+    end
+end
+
+function Adapter:EnsureNativeEnvelopePoller()
+    if self._envelopeFrame then
+        return
+    end
+
+    local frame = CreateFrame("Frame")
+    frame:Hide()
+    frame:SetScript("OnUpdate", function(_, elapsed)
+        Adapter._envelopePollElapsed =
+            (Adapter._envelopePollElapsed or 0) + (elapsed or 0)
+        if Adapter._envelopePollElapsed < NATIVE_POLL_INTERVAL then
+            return
+        end
+        Adapter._envelopePollElapsed = 0
+        Adapter:PollNativeEnvelopes()
+    end)
+    frame:Show()
+    self._envelopeFrame = frame
+end
+
 -- =====================================================================
 -- GLOBAL EXPORT
 -- =====================================================================
@@ -295,3 +452,4 @@ _G.HLBG_LeaderboardAdapter = Adapter
 
 -- Auto-initialize when this module loads
 Adapter:Initialize()
+Adapter:EnsureNativeEnvelopePoller()

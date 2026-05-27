@@ -468,12 +468,32 @@ public:
         // Usage: .hlbg history [count]
         // Default count = 10, max = 50
         uint32 count = 10;
+        auto buildAffixDisplay = [](uint8 affixPrimary, uint8 affixSecondary, uint8 affixTertiary)
+        {
+            std::ostringstream out;
+            bool first = true;
+
+            for (uint8 affixCode : { affixPrimary, affixSecondary, affixTertiary })
+            {
+                if (!affixCode)
+                    continue;
+
+                if (!first)
+                    out << ", ";
+
+                first = false;
+                out << HinterlandBGConstants::GetAffixName(affixCode);
+            }
+
+            return out.str();
+        };
+
         if (args && *args)
         {
             uint32 v = Acore::StringTo<uint32>(args).value_or(10);
             count = std::max<uint32>(1, std::min<uint32>(50, v));
         }
-        QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT {}", count);
+        QueryResult res = CharacterDatabase.Query("SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason, affix, affix_secondary, affix_tertiary FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT {}", count);
         if (!res)
         {
             handler->PSendSysMessage("No history found. Ensure the characters DB includes the dc_hlbg_winner_history HLBG schema.");
@@ -488,6 +508,10 @@ public:
             uint32 a = f[2].Get<uint32>();
             uint32 h = f[3].Get<uint32>();
             std::string reason = f[4].Get<std::string>();
+            std::string affixDisplay = buildAffixDisplay(
+                f[5].Get<uint8>(), f[6].Get<uint8>(), f[7].Get<uint8>());
+            if (!affixDisplay.empty())
+                reason += ", affixes: " + affixDisplay;
             const char* name = (tid == TEAM_ALLIANCE ? "Alliance" : (tid == TEAM_HORDE ? "Horde" : "Draw"));
             handler->PSendSysMessage("  [{}] {}  A:{} H:{}  ({})", ts, name, a, h, reason);
         }
@@ -505,8 +529,24 @@ public:
         }
 
         uint8 code = bg->GetActiveAffixCode();
-        const char* name = HinterlandBGConstants::GetAffixName(code);
-        handler->PSendSysMessage("|cffffd700Hinterland BG affix:|r {} ({})", name, (unsigned)code);
+        std::ostringstream affixStream;
+        bool first = true;
+        for (uint32 slot = 0; slot < 3u; ++slot)
+        {
+            uint8 affixCode = bg->GetActiveAffixCode(slot);
+            if (!affixCode)
+                continue;
+
+            if (!first)
+                affixStream << ", ";
+
+            first = false;
+            affixStream << HinterlandBGConstants::GetAffixName(affixCode)
+                << " (" << static_cast<unsigned>(affixCode) << ")";
+        }
+
+        handler->PSendSysMessage("|cffffd700Hinterland BG affixes:|r {}",
+            first ? "None" : affixStream.str());
         handler->PSendSysMessage("  Enabled: {}  Weather: {}  Worldstate: {}  Announce: {}",
             bg->IsAffixEnabled()?"on":"off",
             bg->IsAffixWeatherEnabled()?"on":"off",

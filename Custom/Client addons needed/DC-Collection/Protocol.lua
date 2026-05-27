@@ -207,6 +207,11 @@ local function EnsureCollectionTransportDiagnostics()
     end
 
     diagnostics.collectionWave1 = diagnostics.collectionWave1 or {}
+    diagnostics.shop = diagnostics.shop or {}
+    diagnostics.currencies = diagnostics.currencies or {}
+    diagnostics.shopHistory = diagnostics.shopHistory or {}
+    diagnostics.wishlist = diagnostics.wishlist or {}
+    diagnostics.purchaseResult = diagnostics.purchaseResult or {}
     diagnostics.savedOutfits = diagnostics.savedOutfits or {}
     diagnostics.community = diagnostics.community or {}
     diagnostics.transmogState = diagnostics.transmogState or {}
@@ -248,6 +253,38 @@ local function GetCollectionOpcodeLabel(opcode)
     if opcode == DC.Opcodes.CMSG_GET_COLLECTION
         or opcode == DC.Opcodes.SMSG_COLLECTION then
         return "collection"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_SHOP
+        or opcode == DC.Opcodes.SMSG_SHOP_DATA then
+        return "shop"
+    end
+    if opcode == DC.Opcodes.CMSG_BUY_ITEM
+        or opcode == DC.Opcodes.SMSG_PURCHASE_RESULT then
+        return "purchase"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_CURRENCIES
+        or opcode == DC.Opcodes.SMSG_CURRENCIES then
+        return "currencies"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_SHOP_HISTORY
+        or opcode == DC.Opcodes.SMSG_SHOP_HISTORY then
+        return "shop_history"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_WISHLIST
+        or opcode == DC.Opcodes.SMSG_WISHLIST_DATA then
+        return "wishlist"
+    end
+    if opcode == DC.Opcodes.CMSG_ADD_WISHLIST then
+        return "wishlist_add"
+    end
+    if opcode == DC.Opcodes.CMSG_REMOVE_WISHLIST then
+        return "wishlist_remove"
+    end
+    if opcode == DC.Opcodes.SMSG_WISHLIST_AVAILABLE then
+        return "wishlist_available"
+    end
+    if opcode == DC.Opcodes.SMSG_WISHLIST_UPDATED then
+        return "wishlist_updated"
     end
     if opcode == DC.Opcodes.CMSG_GET_TRANSMOG_STATE
         or opcode == DC.Opcodes.SMSG_TRANSMOG_STATE then
@@ -346,7 +383,9 @@ local function RecordCollectionTransportReply(channelKey, transport, opcode,
         channel.lastReplyRevision = tonumber(revision) or 0
         channel.lastReplyPayloadBytes = tonumber(payloadBytes) or 0
         channel.lastReplyMatchedRequest = matchedRequest == true
-        channel.awaitingReply = false
+        if matchedRequest == true or channel.awaitingReply ~= true then
+            channel.awaitingReply = false
+        end
         channel.lastError = nil
     end)
 end
@@ -395,6 +434,103 @@ local function ClassifyCollectionTransportChannel(channel)
     return "idle", "not requested yet"
 end
 
+local function GetCollectionTransportLastRequestOpcode(channelKey)
+    local diagnostics = EnsureCollectionTransportDiagnostics()
+    local channel = diagnostics[channelKey]
+    if type(channel) ~= "table" then
+        return 0
+    end
+
+    return tonumber(channel.lastRequestOpcode) or 0
+end
+
+local function GetCollectionWave1ResponseChannelKey(logicalOpcode)
+    logicalOpcode = tonumber(logicalOpcode) or 0
+
+    if logicalOpcode == DC.Opcodes.SMSG_SHOP_DATA then
+        return "shop"
+    end
+    if logicalOpcode == DC.Opcodes.SMSG_CURRENCIES then
+        return "currencies"
+    end
+    if logicalOpcode == DC.Opcodes.SMSG_SHOP_HISTORY then
+        return "shopHistory"
+    end
+    if logicalOpcode == DC.Opcodes.SMSG_PURCHASE_RESULT then
+        return "purchaseResult"
+    end
+    if logicalOpcode == DC.Opcodes.SMSG_WISHLIST_DATA
+        or logicalOpcode == DC.Opcodes.SMSG_WISHLIST_AVAILABLE
+        or logicalOpcode == DC.Opcodes.SMSG_WISHLIST_UPDATED then
+        return "wishlist"
+    end
+
+    return nil
+end
+
+local function IsMatchingCollectionWave1ChannelResponse(channelKey,
+    requestOpcode, logicalOpcode)
+    channelKey = tostring(channelKey or "")
+    requestOpcode = tonumber(requestOpcode) or 0
+    logicalOpcode = tonumber(logicalOpcode) or 0
+
+    if channelKey == "shop" then
+        return requestOpcode == DC.Opcodes.CMSG_GET_SHOP
+            and logicalOpcode == DC.Opcodes.SMSG_SHOP_DATA
+    end
+
+    if channelKey == "currencies" then
+        return requestOpcode == DC.Opcodes.CMSG_GET_CURRENCIES
+            and logicalOpcode == DC.Opcodes.SMSG_CURRENCIES
+    end
+
+    if channelKey == "shopHistory" then
+        return requestOpcode == DC.Opcodes.CMSG_GET_SHOP_HISTORY
+            and logicalOpcode == DC.Opcodes.SMSG_SHOP_HISTORY
+    end
+
+    if channelKey == "purchaseResult" then
+        return requestOpcode == DC.Opcodes.CMSG_BUY_ITEM
+            and logicalOpcode == DC.Opcodes.SMSG_PURCHASE_RESULT
+    end
+
+    if channelKey == "wishlist" then
+        if requestOpcode == DC.Opcodes.CMSG_GET_WISHLIST then
+            return logicalOpcode == DC.Opcodes.SMSG_WISHLIST_DATA
+        end
+
+        if requestOpcode == DC.Opcodes.CMSG_ADD_WISHLIST
+            or requestOpcode == DC.Opcodes.CMSG_REMOVE_WISHLIST then
+            return logicalOpcode == DC.Opcodes.SMSG_WISHLIST_UPDATED
+        end
+    end
+
+    return false
+end
+
+local function GetCollectionTransportLogChannel(channelKey)
+    if channelKey == "shopHistory" then
+        return "shop-history"
+    end
+    if channelKey == "purchaseResult" then
+        return "purchase-result"
+    end
+
+    return tostring(channelKey or "collection-wave1")
+end
+
+local function RecordAddonCollectionChannelReply(channelKey, opcode, options)
+    options = options or {}
+    if options.matchedRequest == nil then
+        options.matchedRequest = IsMatchingCollectionWave1ChannelResponse(
+            channelKey, GetCollectionTransportLastRequestOpcode(channelKey),
+            opcode)
+    end
+
+    RecordCollectionTransportReply(channelKey, "addon", opcode, 0, 0,
+        options)
+end
+
 local function LogCollectionTransportEvent(level, channel, message, extra)
     if type(DC.LogNetEvent) ~= "function" then
         return
@@ -433,6 +569,38 @@ local function TrackAddonCollectionProtocolReply(opcode)
     if opcode == DC.Opcodes.SMSG_SAVED_OUTFITS then
         RecordCollectionTransportReply("savedOutfits", "addon", opcode, 0,
             0)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_SHOP_DATA then
+        RecordAddonCollectionChannelReply("shop", opcode)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_CURRENCIES then
+        RecordAddonCollectionChannelReply("currencies", opcode)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_SHOP_HISTORY then
+        RecordAddonCollectionChannelReply("shopHistory", opcode)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_PURCHASE_RESULT then
+        RecordAddonCollectionChannelReply("purchaseResult", opcode)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_WISHLIST_DATA
+        or opcode == DC.Opcodes.SMSG_WISHLIST_UPDATED then
+        RecordAddonCollectionChannelReply("wishlist", opcode)
+        return
+    end
+
+    if opcode == DC.Opcodes.SMSG_WISHLIST_AVAILABLE then
+        RecordAddonCollectionChannelReply("wishlist", opcode,
+            { matchedRequest = false })
         return
     end
 
@@ -566,6 +734,49 @@ local function IsMatchingNativeCollectionCommunityResponse(requestOpcode,
     return false
 end
 
+local function GetNativeCollectionWave1RequestState(channelKey)
+    if channelKey == "shop" then
+        return DC._nativeShopLastRequest
+    end
+    if channelKey == "currencies" then
+        return DC._nativeCurrenciesLastRequest
+    end
+    if channelKey == "shopHistory" then
+        return DC._nativeShopHistoryLastRequest
+    end
+    if channelKey == "wishlist" then
+        return DC._nativeWishlistLastRequest
+    end
+    if channelKey == "purchaseResult" then
+        return DC._nativePurchaseResultLastRequest
+    end
+
+    return nil
+end
+
+local function SetNativeCollectionWave1RequestState(channelKey, requestState)
+    if channelKey == "shop" then
+        DC._nativeShopLastRequest = requestState
+        return
+    end
+    if channelKey == "currencies" then
+        DC._nativeCurrenciesLastRequest = requestState
+        return
+    end
+    if channelKey == "shopHistory" then
+        DC._nativeShopHistoryLastRequest = requestState
+        return
+    end
+    if channelKey == "wishlist" then
+        DC._nativeWishlistLastRequest = requestState
+        return
+    end
+    if channelKey == "purchaseResult" then
+        DC._nativePurchaseResultLastRequest = requestState
+        return
+    end
+end
+
 local function EncodeNativeCollectionWave1Payload(data)
     local payload = data
     if payload == nil then
@@ -635,6 +846,41 @@ local function DispatchNativeCollectionWave1Message(logicalOpcode, data)
 
     if logicalOpcode == DC.Opcodes.SMSG_COLLECTION then
         DC:HandleCollection(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_SHOP_DATA then
+        DC:HandleShopData(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_PURCHASE_RESULT then
+        DC:HandlePurchaseResult(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_CURRENCIES then
+        DC:HandleCurrencies(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_SHOP_HISTORY then
+        DC:HandleShopHistory(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_WISHLIST_DATA then
+        DC:HandleWishlistData(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_WISHLIST_AVAILABLE then
+        DC:HandleWishlistAvailable(data)
+        return true
+    end
+
+    if logicalOpcode == DC.Opcodes.SMSG_WISHLIST_UPDATED then
+        DC:HandleWishlistUpdated(data)
         return true
     end
 
@@ -752,6 +998,54 @@ local function ConsumeNativeCollectionWave1Snapshot()
             decoded)
         if not handled then
             RecordCollectionTransportError("community", "dispatch",
+                "unsupported opcode " .. tostring(logicalOpcode))
+        end
+
+        return handled
+    end
+
+    local channelKey = GetCollectionWave1ResponseChannelKey(logicalOpcode)
+    if channelKey then
+        local nativeReq = GetNativeCollectionWave1RequestState(channelKey)
+        local matchedRequest = false
+        if type(nativeReq) == "table" then
+            matchedRequest = IsMatchingCollectionWave1ChannelResponse(
+                channelKey, nativeReq.requestOpcode, logicalOpcode)
+        end
+
+        RecordCollectionTransportReply(channelKey, "native",
+            logicalOpcode, revision, payloadBytes,
+            { matchedRequest = matchedRequest })
+
+        if matchedRequest then
+            SetNativeCollectionWave1RequestState(channelKey, nil)
+            LogCollectionTransportEvent("info",
+                GetCollectionTransportLogChannel(channelKey),
+                "Collection " .. tostring(channelKey)
+                    .. " native response <- "
+                    .. GetCollectionOpcodeLabel(logicalOpcode),
+                {
+                    opcode = logicalOpcode,
+                    revision = revision,
+                    payloadBytes = payloadBytes,
+                })
+        else
+            LogCollectionTransportEvent("info",
+                GetCollectionTransportLogChannel(channelKey),
+                "Collection " .. tostring(channelKey)
+                    .. " native snapshot observed <- "
+                    .. GetCollectionOpcodeLabel(logicalOpcode),
+                {
+                    opcode = logicalOpcode,
+                    revision = revision,
+                    payloadBytes = payloadBytes,
+                })
+        end
+
+        local handled = DispatchNativeCollectionWave1Message(logicalOpcode,
+            decoded)
+        if not handled then
+            RecordCollectionTransportError(channelKey, "dispatch",
                 "unsupported opcode " .. tostring(logicalOpcode))
         end
 
@@ -1152,6 +1446,124 @@ local function SendCollectionWave1Request(logicalOpcode, data, options)
             .. GetCollectionOpcodeLabel(logicalOpcode),
         { opcode = logicalOpcode })
     return DC:SendMessage(logicalOpcode, data or {})
+end
+
+local function SendOwnedCollectionWave1Request(channelKey, logicalOpcode,
+    data, options)
+    options = options or {}
+
+    local allowAddonFallback = options.allowAddonFallback ~= false
+    local responseOpcode = tonumber(options.responseOpcode) or 0
+    local expectsReply = options.expectsReply
+    if expectsReply == nil then
+        expectsReply = responseOpcode > 0
+    end
+
+    local requestOwner = tostring(options.owner or "collection")
+    local sentAt = tonumber(options.sentAt) or 0
+    if sentAt == 0 and type(GetTime) == "function" then
+        sentAt = GetTime() or 0
+    end
+
+    local logChannel = GetCollectionTransportLogChannel(channelKey)
+
+    if ShouldUseNativeCollectionWave1Bridge() then
+        EnsureNativeCollectionWave1PollFrame()
+
+        local payload = EncodeNativeCollectionWave1Payload(data or {})
+        if type(payload) == "string" then
+            RecordCollectionTransportRequest(channelKey, "native",
+                logicalOpcode, string.len(payload),
+                { expectsReply = expectsReply })
+            local ok, err = pcall(RequestNativeCollectionWave1,
+                logicalOpcode, payload)
+            if ok then
+                if expectsReply then
+                    SetNativeCollectionWave1RequestState(channelKey, {
+                        requestOpcode = logicalOpcode,
+                        owner = requestOwner,
+                    })
+                else
+                    SetNativeCollectionWave1RequestState(channelKey, nil)
+                end
+
+                LogCollectionTransportEvent("info", logChannel,
+                    "Collection " .. tostring(channelKey)
+                        .. " native request -> "
+                        .. GetCollectionOpcodeLabel(logicalOpcode),
+                    {
+                        opcode = logicalOpcode,
+                        payloadBytes = string.len(payload),
+                    })
+                return true, "native"
+            end
+
+            SetNativeCollectionWave1RequestState(channelKey, nil)
+            RecordCollectionTransportError(channelKey, "request",
+                tostring(err))
+            LogCollectionTransportEvent("error", logChannel,
+                "Collection " .. tostring(channelKey)
+                    .. " native request failed",
+                { opcode = logicalOpcode, err = tostring(err) })
+
+            if type(DC.Debug) == "function" then
+                DC:Debug("RequestNativeCollectionWave1 failed for "
+                    .. tostring(channelKey) .. ": " .. tostring(err))
+            end
+
+            if not allowAddonFallback then
+                return false
+            end
+        else
+            SetNativeCollectionWave1RequestState(channelKey, nil)
+            RecordCollectionTransportError(channelKey, "encode",
+                "payload encode failed")
+            LogCollectionTransportEvent("error", logChannel,
+                "Collection " .. tostring(channelKey)
+                    .. " native payload encode failed",
+                { opcode = logicalOpcode })
+
+            if not allowAddonFallback then
+                return false
+            end
+        end
+    elseif not allowAddonFallback then
+        SetNativeCollectionWave1RequestState(channelKey, nil)
+        RecordCollectionTransportError(channelKey, "request",
+            "native bridge unavailable")
+        return false
+    end
+
+    RecordCollectionTransportRequest(channelKey, "addon", logicalOpcode, 0,
+        { expectsReply = expectsReply })
+    LogCollectionTransportEvent("info", logChannel,
+        "Collection " .. tostring(channelKey) .. " addon request -> "
+            .. GetCollectionOpcodeLabel(logicalOpcode),
+        { opcode = logicalOpcode })
+    local ok = DC:SendMessage(logicalOpcode, data or {})
+
+    if not ok then
+        RecordCollectionTransportError(channelKey, "request",
+            "addon send failed")
+        return false
+    end
+
+    if expectsReply and responseOpcode > 0 then
+        local opcodeHex = string.format("0x%02X", responseOpcode)
+        ScheduleAwaitResponseDiagnostic(DC, {
+            requestOpcode = logicalOpcode,
+            responseOpcode = responseOpcode,
+            sentAt = sentAt,
+            timeoutSec = 2.0,
+            awaitMessage = "Awaiting " .. tostring(channelKey)
+                .. " response (" .. opcodeHex .. ")",
+            timeoutMessage = "[Net] Await timeout for "
+                .. tostring(channelKey) .. " response (" .. opcodeHex
+                .. "); request may have been dropped or rate-limited",
+        })
+    end
+
+    return true, "addon"
 end
 
 local function SendCollectionSavedOutfitsRequest(offset, limit, options)
@@ -1638,6 +2050,45 @@ function DC:RefreshCollectionTransport()
             self.Opcodes.CMSG_HANDSHAKE,
             { hash = collectionHash },
             { allowAddonFallback = false }),
+        shop = SendOwnedCollectionWave1Request("shop",
+            self.Opcodes.CMSG_GET_SHOP,
+            {
+                category = "all",
+                omitStatic = (type(self.ShouldUseLocalCollectionShopMetadata) == "function"
+                    and self:ShouldUseLocalCollectionShopMetadata()) and 1 or nil,
+            },
+            {
+                allowAddonFallback = false,
+                owner = "transport-refresh",
+                responseOpcode = self.Opcodes.SMSG_SHOP_DATA,
+            }),
+        currencies = SendOwnedCollectionWave1Request("currencies",
+            self.Opcodes.CMSG_GET_CURRENCIES,
+            {},
+            {
+                allowAddonFallback = false,
+                owner = "transport-refresh",
+                responseOpcode = self.Opcodes.SMSG_CURRENCIES,
+            }),
+        shopHistory = SendOwnedCollectionWave1Request("shopHistory",
+            self.Opcodes.CMSG_GET_SHOP_HISTORY,
+            {
+                limit = 1,
+                offset = 0,
+            },
+            {
+                allowAddonFallback = false,
+                owner = "transport-refresh",
+                responseOpcode = self.Opcodes.SMSG_SHOP_HISTORY,
+            }),
+        wishlist = SendOwnedCollectionWave1Request("wishlist",
+            self.Opcodes.CMSG_GET_WISHLIST,
+            {},
+            {
+                allowAddonFallback = false,
+                owner = "transport-refresh",
+                responseOpcode = self.Opcodes.SMSG_WISHLIST_DATA,
+            }),
         community = SendCollectionCommunityRequest(
             self.Opcodes.CMSG_COMMUNITY_GET_LIST,
             {
@@ -1696,6 +2147,26 @@ function DC:GetCollectionTransportDiagnostics()
             HasNativeCollectionWave1Bridge(),
             ShouldUseNativeCollectionWave1Bridge(),
             lastNativeCollectionWave1Revision),
+        shop = CopyChannel("shop",
+            HasNativeCollectionWave1Bridge(),
+            ShouldUseNativeCollectionWave1Bridge(),
+            0),
+        currencies = CopyChannel("currencies",
+            HasNativeCollectionWave1Bridge(),
+            ShouldUseNativeCollectionWave1Bridge(),
+            0),
+        shopHistory = CopyChannel("shopHistory",
+            HasNativeCollectionWave1Bridge(),
+            ShouldUseNativeCollectionWave1Bridge(),
+            0),
+        wishlist = CopyChannel("wishlist",
+            HasNativeCollectionWave1Bridge(),
+            ShouldUseNativeCollectionWave1Bridge(),
+            0),
+        purchaseResult = CopyChannel("purchaseResult",
+            HasNativeCollectionWave1Bridge(),
+            ShouldUseNativeCollectionWave1Bridge(),
+            0),
         savedOutfits = CopyChannel("savedOutfits",
             HasNativeCollectionSavedOutfitsBridge(),
             ShouldUseNativeCollectionSavedOutfitsBridge(),
@@ -1755,6 +2226,11 @@ function DC:GetCollectionTransportSummary()
 
     return "Bridge  "
         .. Summarize("W1", diagnostics.collectionWave1) .. "  "
+        .. Summarize("Shop", diagnostics.shop) .. "  "
+        .. Summarize("Cur", diagnostics.currencies) .. "  "
+        .. Summarize("Hist", diagnostics.shopHistory) .. "  "
+        .. Summarize("Wish", diagnostics.wishlist) .. "  "
+        .. Summarize("Buy", diagnostics.purchaseResult) .. "  "
         .. Summarize("Outfits", diagnostics.savedOutfits) .. "  "
         .. Summarize("Community", diagnostics.community) .. "  "
         .. Summarize("TS", diagnostics.transmogState) .. "  "
@@ -3166,7 +3642,11 @@ function DC:RequestShopItems(category)
             payload.omitStatic = 1
         end
 
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_SHOP, payload)
+        local ok = SendOwnedCollectionWave1Request("shop",
+            self.Opcodes.CMSG_GET_SHOP, payload, {
+                owner = "shop",
+                responseOpcode = self.Opcodes.SMSG_SHOP_DATA,
+            })
         if not ok then
             self:_MarkInflight(reqKey, nil)
             if type(self._syncProgress) == "table" then
@@ -3197,10 +3677,16 @@ function DC:RequestShopHistory(limit, offset)
         end
 
         self:_MarkInflight(reqKey, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_SHOP_HISTORY, {
-            limit = limit,
-            offset = offset,
-        })
+        local ok = SendOwnedCollectionWave1Request("shopHistory",
+            self.Opcodes.CMSG_GET_SHOP_HISTORY,
+            {
+                limit = limit,
+                offset = offset,
+            },
+            {
+                owner = "shop-history",
+                responseOpcode = self.Opcodes.SMSG_SHOP_HISTORY,
+            })
 
         if not ok then
             self:_MarkInflight(reqKey, nil)
@@ -3212,9 +3698,15 @@ end
 
 -- Request shop purchase
 function DC:RequestBuyItem(shopId)
-    return self:SendMessage(self.Opcodes.CMSG_BUY_ITEM, {
-        shopId = shopId,
-    })
+    return SendOwnedCollectionWave1Request("purchaseResult",
+        self.Opcodes.CMSG_BUY_ITEM,
+        {
+            shopId = shopId,
+        },
+        {
+            owner = "shop-purchase",
+            responseOpcode = self.Opcodes.SMSG_PURCHASE_RESULT,
+        })
 end
 
 -- Request currency balance
@@ -3247,7 +3739,11 @@ function DC:RequestCurrencies()
             self:StartSyncProgressStep(progressKey, progressLabel)
         end
 
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_CURRENCIES, {})
+        local ok = SendOwnedCollectionWave1Request("currencies",
+            self.Opcodes.CMSG_GET_CURRENCIES, {}, {
+                owner = "currencies",
+                responseOpcode = self.Opcodes.SMSG_CURRENCIES,
+            })
         if not ok then
             self:_MarkInflight(reqKey, nil)
             if type(self._syncProgress) == "table" then
@@ -3291,7 +3787,11 @@ function DC:RequestWishlist(force)
         end
 
         self:_MarkInflight(reqKey, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_WISHLIST, {})
+        local ok = SendOwnedCollectionWave1Request("wishlist",
+            self.Opcodes.CMSG_GET_WISHLIST, {}, {
+                owner = "wishlist",
+                responseOpcode = self.Opcodes.SMSG_WISHLIST_DATA,
+            })
         if not ok then
             self:_MarkInflight(reqKey, nil)
             if type(self._syncProgress) == "table" then
@@ -3311,10 +3811,16 @@ function DC:RequestAddWishlist(collectionType, entryId)
         return
     end
 
-    return self:SendMessage(self.Opcodes.CMSG_ADD_WISHLIST, {
-        type = typeId,
-        entryId = tonumber(entryId) or entryId,
-    })
+    return SendOwnedCollectionWave1Request("wishlist",
+        self.Opcodes.CMSG_ADD_WISHLIST,
+        {
+            type = typeId,
+            entryId = tonumber(entryId) or entryId,
+        },
+        {
+            owner = "wishlist-update",
+            responseOpcode = self.Opcodes.SMSG_WISHLIST_UPDATED,
+        })
 end
 
 -- Remove from wishlist
@@ -3324,10 +3830,16 @@ function DC:RequestRemoveWishlist(collectionType, entryId)
         return
     end
 
-    return self:SendMessage(self.Opcodes.CMSG_REMOVE_WISHLIST, {
-        type = typeId,
-        entryId = tonumber(entryId) or entryId,
-    })
+    return SendOwnedCollectionWave1Request("wishlist",
+        self.Opcodes.CMSG_REMOVE_WISHLIST,
+        {
+            type = typeId,
+            entryId = tonumber(entryId) or entryId,
+        },
+        {
+            owner = "wishlist-update",
+            responseOpcode = self.Opcodes.SMSG_WISHLIST_UPDATED,
+        })
 end
 
 -- Use/summon collection item (mount, pet, toy)
@@ -4823,6 +5335,7 @@ function DC:HandleShopData(data)
     self._inflightRequests = self._inflightRequests or {}
     self._inflightRequests["req:shop:all"] = nil
     self._inflightRequests["req:shop:default"] = nil
+    self._inflightRequests["req:shop:" .. tostring(data.category or "all")] = nil
     if type(self._syncProgress) == "table" then
         self:CompleteSyncProgressStep("shop", "shop data")
     end
@@ -5400,6 +5913,11 @@ function DC:HandlePurchaseResult(data)
                     card.collected = true
                 end
             end
+        end
+
+        self._currencyLastReceivedAt = 0
+        if type(self.RequestCurrencies) == "function" then
+            self:RequestCurrencies()
         end
 
         if type(self.RequestShopHistory) == "function" then

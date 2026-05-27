@@ -1772,6 +1772,44 @@ local function PrintTooltipTransportStatus(tooltipsModule)
     return true
 end
 
+local function PrintShapeshiftTooltipDebug(tooltipsModule)
+    local snapshot = tooltipsModule
+        and tooltipsModule.GetLastShapeshiftTooltipDebug
+        and tooltipsModule.GetLastShapeshiftTooltipDebug()
+    if not snapshot then
+        addon:Print(
+            "Shapeshift tooltip: no stance/presence/stealth hover captured yet.",
+            true)
+        return false
+    end
+
+    addon:Print(
+        "Shapeshift tooltip: path=" .. tostring(snapshot.path or "<nil>")
+        .. " button=" .. tostring(snapshot.buttonName or "<nil>")
+        .. " formIndex=" .. tostring(snapshot.formIndex or "<nil>")
+        .. " formName=" .. tostring(snapshot.formName or "<nil>")
+        .. " spellId=" .. tostring(snapshot.resolvedSpellId or "<nil>")
+        .. " lines=" .. tostring(snapshot.tooltipLines or "<nil>"),
+        true)
+    addon:Print(
+        "Shapeshift sources: buttonSpellId="
+        .. tostring(snapshot.buttonSpellId or "<nil>")
+        .. " action=" .. tostring(snapshot.actionSlot or "<nil>")
+        .. " actionType=" .. tostring(snapshot.actionType or "<nil>")
+        .. " actionValue=" .. tostring(snapshot.actionValue or "<nil>")
+        .. " actionSpellId=" .. tostring(snapshot.actionSpellId or "<nil>")
+        .. " directSpellId=" .. tostring(snapshot.directSpellId or "<nil>"),
+        true)
+    addon:Print(
+        "Shapeshift render: nativeShape="
+        .. tostring(snapshot.nativeSetShapeshift)
+        .. " nativeSpellByID=" .. tostring(snapshot.nativeSetSpellByID)
+        .. " clientDesc=" .. tostring(snapshot.clientDescriptionShown)
+        .. " clientDescLen=" .. tostring(snapshot.clientDescriptionLength or 0),
+        true)
+    return true
+end
+
 SlashCmdList["DCQOS"] = function(msg)
     msg = msg and strlower(strtrim(msg)) or ""
     
@@ -1880,6 +1918,9 @@ SlashCmdList["DCQOS"] = function(msg)
     elseif msg == "transport" or msg == "tooltiptransport" or msg == "tooltip" then
         local tooltipsModule = addon.modules and addon.modules["Tooltips"]
         PrintTooltipTransportStatus(tooltipsModule)
+    elseif msg == "shapetooltip" or msg == "shapetooltipdebug" then
+        local tooltipsModule = addon.modules and addon.modules["Tooltips"]
+        PrintShapeshiftTooltipDebug(tooltipsModule)
     elseif msg == "telemetry" or msg == "diag" or msg == "diagnostics" then
         local tooltipsModule = addon.modules and addon.modules["Tooltips"]
         local snapshot = tooltipsModule and tooltipsModule.GetTelemetrySnapshot and tooltipsModule.GetTelemetrySnapshot()
@@ -1927,6 +1968,7 @@ SlashCmdList["DCQOS"] = function(msg)
             .. " recv=" .. tostring(tonumber(npc.responsesReceived) or 0)
             .. " pendingRecoveries=" .. tostring(tonumber(npc.pendingTimeoutRecoveries) or 0)
         addon:Print(npcLine, true)
+        PrintShapeshiftTooltipDebug(tooltipsModule)
         PrintTooltipTransportStatus(tooltipsModule)
     elseif msg == "help" then
         addon:Print("Commands:", true)
@@ -1943,6 +1985,7 @@ SlashCmdList["DCQOS"] = function(msg)
         print("  |cffffd700/dcping menu|r - Open ping radial menu (release key/click to confirm)")
         print("  |cffffd700/dcqos telemetry|r - Print tooltip protocol diagnostics")
         print("  |cffffd700/dcqos transport|r - Print native spell-tooltip bridge status")
+        print("  |cffffd700/dcqos shapetooltip|r - Print last stance/presence hover")
         print("  |cffffd700/dcqos profile ...|r - Manage profiles")
         print("  |cffffd700/dcqos reload|r - Reload UI")
         print("  |cffffd700/dcqos help|r - Show this help message")

@@ -115,6 +115,56 @@ namespace
             DCAddon::NotifyResponseSent(player, requestId);
     }
 
+    // Stage 2 native bridge: feature labels exported through
+    // SMSG_DC_NATIVE_ENVELOPE for DC-Leaderboards responses. Mirrors the
+    // existing SMSG_LEADERBOARD_DATA payload byte-for-byte so envelope
+    // consumers can read GetLastDCNativeEnvelope("LBRD", <feature>).
+    namespace StatsFeature
+    {
+        constexpr char LEADERBOARD[]     = "leaderboard";
+        constexpr char ACTION_RESPONSE[] = "response";
+    }
+
+    static bool SupportsLeaderboardsNativeEnvelope(Player* player)
+    {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "leaderboards-stats";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::GENERIC_NATIVE_ENVELOPE;
+        return DCAddon::ResolveTransportPolicy(player, request).UsesNative();
+    }
+
+    static uint32 NextLeaderboardRevision()
+    {
+        static std::atomic<uint32> s_revision{0};
+        uint32 revision = ++s_revision;
+        if (revision == 0)
+            revision = ++s_revision;
+        return revision;
+    }
+
+    static std::string ExtractLeaderboardRequestToken(DCAddon::JsonValue const& json)
+    {
+        if (!json.HasKey("requestToken"))
+            return std::string();
+        auto const& tok = json["requestToken"];
+        if (tok.IsString())
+            return tok.AsString();
+        return std::string();
+    }
+
+    static void SendLeaderboardResponseEnvelope(Player* player, uint8 logicalOpcode,
+        std::string const& feature, std::string const& payload,
+        std::string const& requestToken)
+    {
+        if (!player || !SupportsLeaderboardsNativeEnvelope(player))
+            return;
+
+        DCAddon::SendNativeEnvelope(player, MODULE_LEADERBOARD, logicalOpcode,
+            feature, StatsFeature::ACTION_RESPONSE, NextLeaderboardRevision(),
+            payload, requestToken);
+    }
+
     // Helper to access cache lifetime (for IsValid() checks)
     uint32 GetCacheLifetime() { return s_CacheConfig.lifetimeSeconds; }
     uint32 GetAccountCacheLifetime() { return s_CacheConfig.accountCacheLifetimeSeconds; }
@@ -1493,6 +1543,9 @@ namespace
         fullJson += "}";
 
         SendRawJson(player, Opcode::SMSG_LEADERBOARD_DATA, fullJson);
+        SendLeaderboardResponseEnvelope(player, Opcode::SMSG_LEADERBOARD_DATA,
+            StatsFeature::LEADERBOARD, fullJson,
+            ExtractLeaderboardRequestToken(json));
     }
 
     void HandleGetCategories(Player* player, const DCAddon::ParsedMessage& /*msg*/)

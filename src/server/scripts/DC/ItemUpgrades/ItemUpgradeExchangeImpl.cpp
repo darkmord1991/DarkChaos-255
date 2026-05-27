@@ -10,6 +10,7 @@
  */
 
 #include "ItemUpgradeExchange.h"
+#include "ItemUpgradeMechanics.h"
 #include "ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "../CrossSystem/CrossSystemUtilities.h"
@@ -651,8 +652,8 @@ namespace DarkChaos
                                                           static_cast<uint8>(state->upgrade_level + level_bonus));
                         }
 
-                        float max_mult = (target_tier == TIER_HEIRLOOM) ? STAT_MULTIPLIER_MAX_HEIRLOOM : STAT_MULTIPLIER_MAX_REGULAR;
-                        state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
+                        state->stat_multiplier = StatScalingCalculator::GetFinalMultiplier(
+                            state->upgrade_level, target_tier);
                         mgr->SaveItemUpgrade(item_guid);
 
                         LOG_INFO("scripts.dc", "ItemUpgrade: Successfully converted item {} from tier {} to tier {} for player {}",
@@ -666,8 +667,8 @@ namespace DarkChaos
                             state->upgrade_level = std::max(static_cast<uint8>(0),
                                                           static_cast<uint8>(state->upgrade_level - level_loss));
 
-                            float max_mult = (state->tier_id == TIER_HEIRLOOM) ? STAT_MULTIPLIER_MAX_HEIRLOOM : STAT_MULTIPLIER_MAX_REGULAR;
-                            state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
+                            state->stat_multiplier = StatScalingCalculator::GetFinalMultiplier(
+                                state->upgrade_level, state->tier_id);
                             mgr->SaveItemUpgrade(item_guid);
 
                             LOG_INFO("scripts.dc", "ItemUpgrade: Tier conversion failed for item {} - lost {} upgrade levels",

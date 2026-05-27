@@ -473,6 +473,9 @@ function DarkChaos_ItemUpgrade_EnterPackageSelectionMode(isChanging)
 	if frame.ItemInfo then frame.ItemInfo:Hide(); end
 	if frame.CurrentPanel then frame.CurrentPanel:Hide(); end
 	if frame.UpgradePanel then frame.UpgradePanel:Hide(); end
+	if frame.ButtonFrame then frame.ButtonFrame:Hide(); end
+	if frame.BrowseButton then frame.BrowseButton:Hide(); end
+	if frame.TierBrowseButton then frame.TierBrowseButton:Hide(); end
 	if frame.CostFrame then frame.CostFrame:Hide(); end
 	if frame.UpgradeButton then frame.UpgradeButton:Hide(); end
 	if frame.LeftTooltip then frame.LeftTooltip:Hide(); end
@@ -481,6 +484,7 @@ function DarkChaos_ItemUpgrade_EnterPackageSelectionMode(isChanging)
 	if frame.DropdownContainer then frame.DropdownContainer:Hide(); end
 	if frame.ErrorText then frame.ErrorText:Hide(); end
 	if frame.MissingDescription then frame.MissingDescription:Hide(); end
+	if frame.NoMoreUpgrades then frame.NoMoreUpgrades:Hide(); end
 	if frame.PlayerCurrencies then frame.PlayerCurrencies:Hide(); end
 	if frame.PackageIndicator then frame.PackageIndicator:Hide(); end
 	if frame.ChangePackageButton then frame.ChangePackageButton:Hide(); end
@@ -562,9 +566,12 @@ function DarkChaos_ItemUpgrade_ExitPackageSelectionMode()
 	DC.Debug("ExitPackageSelectionMode: Showing UI elements");
 	if frame.ItemSlot then frame.ItemSlot:Show(); end
 	if frame.ItemInfo then frame.ItemInfo:Show(); end
-	if frame.CostFrame then frame.CostFrame:Show(); end
+	if frame.ButtonFrame then frame.ButtonFrame:Show(); end
+	if frame.BrowseButton then frame.BrowseButton:Show(); end
+	if frame.TierBrowseButton then frame.TierBrowseButton:Show(); end
+	if frame.CostFrame then frame.CostFrame:Hide(); end
 	if frame.UpgradeButton then frame.UpgradeButton:Show(); end
-	if frame.PlayerCurrencies then frame.PlayerCurrencies:Show(); end
+	if frame.PlayerCurrencies then frame.PlayerCurrencies:Hide(); end
 	-- Note: CurrentPanel, UpgradePanel, tooltips, etc. will be shown/hidden by UpdateUI based on state
 	
 	-- Refresh the full UI (this will properly show/hide elements based on current item state)

@@ -66,9 +66,8 @@ namespace DarkChaos
         class StatScalingCalculator
         {
         public:
-            static float GetStatMultiplier(uint8 upgrade_level);
-            static float GetStatMultiplierHeirloom(uint8 upgrade_level);  // Tier 6 (Heirloom) scaling
-            static float GetTierMultiplier(uint8 tier_id);
+            // Authoritative runtime multiplier derived from tier max level +
+            // stat cap definitions. Persisted state should be written from this.
             static float GetFinalMultiplier(uint8 upgrade_level, uint8 tier_id);
             static std::string GetStatBonusDisplay(uint8 upgrade_level, uint8 tier_id);
         };

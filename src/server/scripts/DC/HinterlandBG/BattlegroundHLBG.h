@@ -46,7 +46,8 @@ public:
     uint32 GetPlayerContributionScore(ObjectGuid const& guid) const;
     uint32 GetPlayerHKDelta(Player* player) const;
     uint32 GetNpcKillCount(TeamId teamId) const;
-    uint8 GetActiveAffixCode() const { return _activeAffix; }
+    uint8 GetActiveAffixCode() const { return GetActiveAffixCode(0u); }
+    uint8 GetActiveAffixCode(uint32 slot) const { return slot < _activeAffixes.size() ? _activeAffixes[slot] : 0u; }
     bool IsAffixEnabled() const { return _affixEnabled; }
     bool IsAffixWeatherEnabled() const { return _affixWeatherEnabled; }
     bool IsAffixWorldstateEnabled() const { return _affixWorldstateEnabled; }
@@ -83,9 +84,9 @@ private:
     void ApplyAffixWeather() const;
     void SelectAffixForNewBattle();
     void RewardMatchOutcome(TeamId winnerTeamId);
-    void RewardRandomKillHonor(Player* player) const;
+    void RewardRandomKillHonor(Player* player);
     void RewardPlayerKill(Player* killer, Player* victim, uint32 scorePoints);
-    void RewardNpcKill(Player* killer, Creature* unit, uint32 scorePoints, TeamId victimTeam);
+    void RewardNpcKill(Player* killer, Creature* unit, uint32 scorePoints, TeamId victimTeam, bool isBossKill);
     void AddPlayerContributionScore(ObjectGuid const& guid, uint32 points);
     void TeleportPlayerToTeamStart(Player* player) const;
     void ResetPlayerTracking(Player* player);
@@ -128,7 +129,10 @@ private:
     bool _affixAnnounce = true;
     bool _affixRandomOnStart = true;
     uint32 _affixPeriodSec = 0u;
-    uint8 _activeAffix = 0u;
+    uint32 _affixConcurrentCount = 1u;
+    std::array<uint8, 3> _activeAffixes{};
+    float _affixWeatherIntensityVariance = 0.20f;
+    float _activeAffixWeatherIntensity = 0.0f;
 
     std::unordered_set<uint32> _afkFlagged;
     std::unordered_map<uint32, uint8> _afkInfractions;

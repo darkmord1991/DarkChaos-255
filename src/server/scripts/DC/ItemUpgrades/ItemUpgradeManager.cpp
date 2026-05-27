@@ -58,6 +58,23 @@ namespace
 
     std::unordered_map<uint32, PlayerMapContext> s_PlayerMapContextCache;
     std::mutex s_PlayerMapContextMutex;
+
+    std::string GetTierMaxStatBonusPctConfigKey(uint8 tierId)
+    {
+        return Acore::StringFormat("ItemUpgrade.Tier{}.MaxStatBonusPct", tierId);
+    }
+
+    bool TryGetConfiguredTierMaxStatBonusPct(uint8 tierId, float& outBonusPct)
+    {
+        outBonusPct = sConfigMgr->GetOption<float>(
+            GetTierMaxStatBonusPctConfigKey(tierId), 0.0f);
+        return outBonusPct > 0.0f;
+    }
+
+    float StatBonusPctToMultiplier(float bonusPct)
+    {
+        return 1.0f + (bonusPct / 100.0f);
+    }
 }
 
 namespace DarkChaos
@@ -274,12 +291,9 @@ namespace DarkChaos
                         if (snapshot.max_upgrade == 0)
                             snapshot.max_upgrade = 15;
 
-                        float stat_multiplier = 1.0f;
-                        if (state->stat_multiplier > 0.0f)
-                            stat_multiplier = state->stat_multiplier;
-                        else if (state->upgrade_level > 0)
-                            stat_multiplier = 1.0f +
-                                (static_cast<float>(state->upgrade_level) * 0.02f);
+                        float stat_multiplier =
+                            StatScalingCalculator::GetFinalMultiplier(
+                                state->upgrade_level, state->tier_id);
 
                         snapshot.stat_multiplier_basis_points = static_cast<uint32>(
                             std::lround(stat_multiplier * 10000.0f));
@@ -414,24 +428,11 @@ namespace DarkChaos
                     state.upgraded_item_level = upgraded;
                 }
 
-                float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
-                if (const TierDefinition* def = GetTierDefinition(state.tier_id))
-                    max_mult = def->stat_multiplier_max;
-                else if (state.tier_id == TIER_HEIRLOOM)
-                    max_mult = STAT_MULTIPLIER_MAX_HEIRLOOM;
-
                 if (state.upgrade_level > 0)
-                {
-                    uint8 max_level = GetTierMaxLevel(state.tier_id);
-                    float progress = max_level > 0 ? static_cast<float>(state.upgrade_level) / static_cast<float>(max_level) : 0.0f;
-                    if (progress > 1.0f)
-                        progress = 1.0f;
-                    state.stat_multiplier = 1.0f + progress * (max_mult - 1.0f);
-                }
+                    state.stat_multiplier = StatScalingCalculator::GetFinalMultiplier(
+                        state.upgrade_level, state.tier_id);
                 else
-                {
                     state.stat_multiplier = 1.0f;
-                }
             }
 
         public:
@@ -561,17 +562,8 @@ namespace DarkChaos
                         state->first_upgraded_at = state->last_upgraded_at;
 
                     // Calculate new stat multiplier
-                    float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
-                    if (const TierDefinition* def = GetTierDefinition(tier))
-                        max_mult = def->stat_multiplier_max;
-                    else if (tier == TIER_HEIRLOOM)
-                        max_mult = STAT_MULTIPLIER_MAX_HEIRLOOM;
-
-                    float progress = max_level > 0 ? static_cast<float>(next_level) / static_cast<float>(max_level) : 0.0f;
-                    if (progress > 1.0f)
-                        progress = 1.0f;
-
-                    state->stat_multiplier = 1.0f + progress * (max_mult - 1.0f);
+                    state->stat_multiplier = StatScalingCalculator::GetFinalMultiplier(
+                        next_level, tier);
 
                     if (state->base_item_level == 0)
                         EnsureStateMetadata(*state, player_guid);
@@ -845,18 +837,8 @@ namespace DarkChaos
                     return false;
 
                 state->upgrade_level = level;
-
-                float max_mult = STAT_MULTIPLIER_MAX_REGULAR;
-                if (const TierDefinition* def = GetTierDefinition(state->tier_id))
-                    max_mult = def->stat_multiplier_max;
-                else if (state->tier_id == TIER_HEIRLOOM)
-                    max_mult = STAT_MULTIPLIER_MAX_HEIRLOOM;
-
-                float progress = max_level > 0 ? static_cast<float>(level) / static_cast<float>(max_level) : 0.0f;
-                if (progress > 1.0f)
-                    progress = 1.0f;
-
-                state->stat_multiplier = 1.0f + progress * (max_mult - 1.0f);
+                state->stat_multiplier = StatScalingCalculator::GetFinalMultiplier(
+                    level, state->tier_id);
 
                 if (state->base_item_level != 0)
                 {
@@ -1243,7 +1225,21 @@ namespace DarkChaos
                         uint16 max_ilvl = fields[3].Get<uint16>();
                         uint8 max_upgrade_level = fields[4].Get<uint8>();
                         float stat_multiplier_max = fields[5].Get<float>();
+                        float configuredBonusPct = 0.0f;
                         bool is_artifact = fields[8].Get<bool>();
+
+                        if (TryGetConfiguredTierMaxStatBonusPct(
+                                tier_id, configuredBonusPct))
+                        {
+                            stat_multiplier_max = StatBonusPctToMultiplier(
+                                configuredBonusPct);
+                            LOG_INFO(
+                                "scripts.dc",
+                                "ItemUpgrade: Tier {} stat cap overridden by config to +{}% (x{})",
+                                tier_id,
+                                configuredBonusPct,
+                                stat_multiplier_max);
+                        }
 
                         TierDefinition def;
                         def.tier_id = tier_id;

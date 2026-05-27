@@ -399,6 +399,72 @@ namespace HLBG
             request.allowAddonFallback = false;
             return ResolveTransportPolicy(player, request);
         }
+
+        // Stage 1 native bridge: feature labels exported through
+        // SMSG_DC_NATIVE_ENVELOPE for HLBG seasonal stats. These mirror the
+        // legacy SMSG_LEADERBOARD_DATA / SMSG_PLAYER_STATS /
+        // SMSG_ALLTIME_STATS payloads but are consumed natively via
+        // GetLastDCNativeEnvelope("HINTERLAND", <feature>).
+        namespace StatsFeature
+        {
+            constexpr char LEADERBOARD[]   = "leaderboard";
+            constexpr char PLAYER_STATS[]  = "player_stats";
+            constexpr char ALLTIME_STATS[] = "alltime_stats";
+            constexpr char ACTION_RESPONSE[] = "response";
+        }
+
+        bool SupportsStatsNativeEnvelope(Player* player)
+        {
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "hlbg-stats";
+            request.nativeCapability =
+                DCAddon::ProtocolVersion::Capability::GENERIC_NATIVE_ENVELOPE;
+            return DCAddon::ResolveTransportPolicy(player, request).UsesNative();
+        }
+
+        uint32 NextStatsRevision()
+        {
+            static std::atomic<uint32> s_StatsRevision{0};
+            uint32 revision = ++s_StatsRevision;
+            if (revision == 0)
+                revision = ++s_StatsRevision;
+            return revision;
+        }
+
+        // Extract a quoted "requestToken":"..." value from a JSON request
+        // body, if present. Returns empty string when not found.
+        std::string ExtractStatsRequestToken(std::string const& data)
+        {
+            if (data.empty() || data.find("\"requestToken\"") == std::string::npos)
+                return std::string();
+
+            std::string const needle = "\"requestToken\"";
+            std::string::size_type pos = data.find(needle);
+            if (pos == std::string::npos)
+                return std::string();
+            pos += needle.size();
+            while (pos < data.size() && (data[pos] == ' ' || data[pos] == ':'))
+                ++pos;
+            if (pos >= data.size() || data[pos] != '"')
+                return std::string();
+            ++pos;
+            std::string::size_type const end = data.find('"', pos);
+            if (end == std::string::npos)
+                return std::string();
+            return data.substr(pos, end - pos);
+        }
+
+        void SendStatsResponseEnvelope(Player* player, uint8 logicalOpcode,
+            std::string const& feature, std::string const& payload,
+            std::string const& requestToken)
+        {
+            if (!player || !SupportsStatsNativeEnvelope(player))
+                return;
+
+            DCAddon::SendNativeEnvelope(player, Module::HINTERLAND,
+                logicalOpcode, feature, StatsFeature::ACTION_RESPONSE,
+                NextStatsRevision(), payload, requestToken);
+        }
         void AuditAddonUiTransport(Player* player)
         {
             if (!player)
@@ -488,7 +554,9 @@ namespace HLBG
         }
 
         std::string BuildNativeLiveSnapshotPayload(Player* player,
-            BattlegroundHLBG* bg, uint32 limit = 40)
+            BattlegroundHLBG* bg, uint32 limit = 40,
+            std::string const* requestReason = nullptr,
+            std::string const* requestToken = nullptr)
         {
             JsonValue payload;
             payload.SetObject();
@@ -496,10 +564,43 @@ namespace HLBG
             JsonValue players;
             players.SetArray();
 
+            auto appendRequestContext = [&payload, requestReason, requestToken]()
+            {
+                if (requestReason && !requestReason->empty())
+                    payload.Set("requestReason", *requestReason);
+
+                if (requestToken && !requestToken->empty())
+                    payload.Set("requestToken", *requestToken);
+            };
+
+            auto buildAffixText = [bg]() -> std::string
+            {
+                if (!bg)
+                    return "";
+
+                std::ostringstream out;
+                bool first = true;
+                for (uint32 slot = 0; slot < 3u; ++slot)
+                {
+                    uint8 affixCode = bg->GetActiveAffixCode(slot);
+                    if (!affixCode)
+                        continue;
+
+                    if (!first)
+                        out << ", ";
+
+                    first = false;
+                    out << HinterlandBGConstants::GetAffixName(affixCode);
+                }
+
+                return out.str();
+            };
+
             uint32 mapId = bg ? bg->GetMapId() : (player ? player->GetMapId() : 0u);
             uint32 timeRemaining = bg ? bg->GetTimeRemainingSeconds() : 0u;
             HLBGStatus status = bg ? GetBattlegroundStatus(bg)
                 : (IsPlayerQueuedForAddon(player) ? STATUS_QUEUED : STATUS_NONE);
+            QueueSnapshot queueSnapshot = BuildQueueSnapshot(player);
 
             if (player && bg && bg->IsPlayerAfkFlagged(player))
             {
@@ -526,6 +627,26 @@ namespace HLBG
                 payload.Set("aNpcKills", 0);
                 payload.Set("hNpcKills", 0);
                 payload.Set("affix", 0);
+                payload.Set("affix2", 0);
+                payload.Set("affix3", 0);
+                payload.Set("affixText", "");
+                payload.Set("queueStatus",
+                    static_cast<int32>(queueSnapshot.queueStatus));
+                payload.Set("position",
+                    static_cast<int32>(queueSnapshot.position));
+                payload.Set("estimatedTime",
+                    static_cast<int32>(queueSnapshot.estimatedTime));
+                payload.Set("totalQueued",
+                    static_cast<int32>(queueSnapshot.totalQueued));
+                payload.Set("allianceQueued",
+                    static_cast<int32>(queueSnapshot.allianceQueued));
+                payload.Set("hordeQueued",
+                    static_cast<int32>(queueSnapshot.hordeQueued));
+                payload.Set("minPlayers",
+                    static_cast<int32>(queueSnapshot.minPlayers));
+                payload.Set("queueState",
+                    static_cast<int32>(queueSnapshot.state));
+                appendRequestContext();
                 payload.Set("players", players);
                 return payload.Encode();
             }
@@ -604,6 +725,26 @@ namespace HLBG
             payload.Set("aNpcKills", static_cast<int32>(metrics.allianceNpcKills));
             payload.Set("hNpcKills", static_cast<int32>(metrics.hordeNpcKills));
             payload.Set("affix", static_cast<int32>(bg->GetActiveAffixCode()));
+            payload.Set("affix2", static_cast<int32>(bg->GetActiveAffixCode(1u)));
+            payload.Set("affix3", static_cast<int32>(bg->GetActiveAffixCode(2u)));
+            payload.Set("affixText", buildAffixText());
+            payload.Set("queueStatus",
+                static_cast<int32>(queueSnapshot.queueStatus));
+            payload.Set("position",
+                static_cast<int32>(queueSnapshot.position));
+            payload.Set("estimatedTime",
+                static_cast<int32>(queueSnapshot.estimatedTime));
+            payload.Set("totalQueued",
+                static_cast<int32>(queueSnapshot.totalQueued));
+            payload.Set("allianceQueued",
+                static_cast<int32>(queueSnapshot.allianceQueued));
+            payload.Set("hordeQueued",
+                static_cast<int32>(queueSnapshot.hordeQueued));
+            payload.Set("minPlayers",
+                static_cast<int32>(queueSnapshot.minPlayers));
+            payload.Set("queueState",
+                static_cast<int32>(queueSnapshot.state));
+            appendRequestContext();
             payload.Set("players", players);
             return payload.Encode();
         }
@@ -1538,6 +1679,8 @@ namespace HLBG
 
         limit = std::min<uint32>(limit, 200u);
 
+        std::string const requestToken = ExtractStatsRequestToken(data);
+
         std::string response;
         std::string error;
 
@@ -1553,6 +1696,9 @@ namespace HLBG
         Message packet(Module::HINTERLAND, SMSG_LEADERBOARD_DATA);
         packet.Add(response);
         packet.Send(player);
+
+        SendStatsResponseEnvelope(player, SMSG_LEADERBOARD_DATA,
+            StatsFeature::LEADERBOARD, response, requestToken);
     }
 
     static void HandleGetPlayerStats(Player* player, const ParsedMessage& msg)
@@ -1591,6 +1737,8 @@ namespace HLBG
         if (season == 0)
             season = HLBGService::Instance().GetSeason();
 
+        std::string const requestToken = ExtractStatsRequestToken(data);
+
         std::string statsJson;
         std::string error;
 
@@ -1605,9 +1753,12 @@ namespace HLBG
         Message packet(Module::HINTERLAND, SMSG_PLAYER_STATS);
         packet.Add(statsJson);
         packet.Send(player);
+
+        SendStatsResponseEnvelope(player, SMSG_PLAYER_STATS,
+            StatsFeature::PLAYER_STATS, statsJson, requestToken);
     }
 
-    static void HandleGetAllTimeStats(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetAllTimeStats(Player* player, const ParsedMessage& msg)
     {
         if (!player) return;
 
@@ -1619,23 +1770,100 @@ namespace HLBG
             return;
         }
 
+        // Legacy JSON: data may be {..} or J|{..}; only consulted for an
+        // optional requestToken echo.
+        std::string data = msg.GetString(0);
+        if (data == "J")
+            data = msg.GetString(1);
+        std::string const requestToken = ExtractStatsRequestToken(data);
+
         std::string statsJson;
         std::string error;
 
         if (!GetCachedAllTimeStatsResponse(player, statsJson, error))
         {
-            Message msg(Module::HINTERLAND, SMSG_ERROR);
-            msg.Add(error);
-            msg.Send(player);
+            Message errPacket(Module::HINTERLAND, SMSG_ERROR);
+            errPacket.Add(error);
+            errPacket.Send(player);
             return;
         }
 
-        Message msg(Module::HINTERLAND, SMSG_ALLTIME_STATS);
-        msg.Add(statsJson);
-        msg.Send(player);
+        Message packet(Module::HINTERLAND, SMSG_ALLTIME_STATS);
+        packet.Add(statsJson);
+        packet.Send(player);
+
+        SendStatsResponseEnvelope(player, SMSG_ALLTIME_STATS,
+            StatsFeature::ALLTIME_STATS, statsJson, requestToken);
     }
 
-    static bool HandleNativeLiveSnapshotRequest(Player* player)
+    struct NativeLiveSnapshotRequestContext
+    {
+        std::string action = "client";
+        std::string token;
+        std::string rawReason = "client";
+    };
+
+    static NativeLiveSnapshotRequestContext BuildNativeLiveSnapshotRequestContext(
+        std::string const& rawReason)
+    {
+        NativeLiveSnapshotRequestContext requestContext;
+
+        if (!rawReason.empty())
+        {
+            requestContext.action = rawReason;
+            requestContext.rawReason = rawReason;
+        }
+
+        std::string::size_type const tokenSeparator =
+            requestContext.rawReason.find('|');
+        if (tokenSeparator != std::string::npos)
+        {
+            requestContext.action = tokenSeparator > 0
+                ? requestContext.rawReason.substr(0, tokenSeparator)
+                : "client";
+
+            if (tokenSeparator + 1 < requestContext.rawReason.size())
+                requestContext.token = requestContext.rawReason.substr(
+                    tokenSeparator + 1);
+        }
+
+        if (requestContext.action.empty())
+            requestContext.action = "client";
+
+        return requestContext;
+    }
+
+    static NativeLiveSnapshotRequestContext ParseNativeLiveSnapshotReason(
+        WorldPacket const& packet, bool& parseOk)
+    {
+        parseOk = true;
+
+        if (packet.size() == 0)
+            return BuildNativeLiveSnapshotRequestContext("client");
+
+        WorldPacket nativePacket(packet);
+        nativePacket.rpos(0);
+
+        std::string reason = "client";
+
+        try
+        {
+            nativePacket >> reason;
+        }
+        catch (ByteBufferException const&)
+        {
+            parseOk = false;
+            reason = "client";
+        }
+
+        if (reason.empty())
+            reason = "client";
+
+        return BuildNativeLiveSnapshotRequestContext(reason);
+    }
+
+    static bool HandleNativeLiveSnapshotRequest(Player* player,
+        NativeLiveSnapshotRequestContext const& requestContext)
     {
         if (!player)
             return false;
@@ -1643,16 +1871,52 @@ namespace HLBG
         if (!ResolveLiveSnapshotTransport(player).UsesNative())
             return false;
 
-        if (BattlegroundHLBG* bg = GetHLBGBattleground(player))
+        auto sendSnapshot = [player, &requestContext]()
         {
+            if (BattlegroundHLBG* bg = GetHLBGBattleground(player))
+            {
+                SendNativeLiveSnapshot(player,
+                    BuildNativeLiveSnapshotPayload(player, bg, 40u,
+                        &requestContext.action, &requestContext.token));
+                return true;
+            }
+
             SendNativeLiveSnapshot(player,
-                BuildNativeLiveSnapshotPayload(player, bg));
+                BuildNativeLiveSnapshotPayload(player,
+                    GetActiveHLBG(player), 40u, &requestContext.action,
+                    &requestContext.token));
             return true;
+        };
+
+        if (requestContext.action == "queue_join")
+        {
+            if (IsRateLimited(player, 800))
+            {
+                SendRateLimitedError(player);
+                return sendSnapshot();
+            }
+
+            if (!TryQueueViaBattlemasterOpcode(player))
+                ChatHandler(player->GetSession()).SendNotification("HLBG battleground queue is unavailable.");
+
+            return sendSnapshot();
         }
 
-        SendNativeLiveSnapshot(player,
-            BuildNativeLiveSnapshotPayload(player, GetActiveHLBG(player)));
-        return true;
+        if (requestContext.action == "queue_leave")
+        {
+            if (IsRateLimited(player, 800))
+            {
+                SendRateLimitedError(player);
+                return sendSnapshot();
+            }
+
+            if (!TryLeaveViaBattlefieldPortOpcode(player))
+                ChatHandler(player->GetSession()).SendNotification("HLBG battleground queue is unavailable.");
+
+            return sendSnapshot();
+        }
+
+        return sendSnapshot();
     }
 
     // =====================================================================
@@ -1710,13 +1974,21 @@ namespace HLBG
             if (!player || !player->IsInWorld())
                 return false;
 
-            bool handled = HandleNativeLiveSnapshotRequest(player);
+            bool parseOk = true;
+            NativeLiveSnapshotRequestContext requestContext =
+                ParseNativeLiveSnapshotReason(packet, parseOk);
+            bool handled = HandleNativeLiveSnapshotRequest(player,
+                requestContext);
+            std::string preview = "reason=" + requestContext.rawReason;
             DCAddon::AuditNativeC2SRequest(player, Module::HINTERLAND, 0,
                 BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT, packet.size(),
-                "request", handled,
+                preview, handled,
                 handled ? std::string() : "Native HLBG live snapshot unavailable",
-                handled ? std::string() : "native_transport_denied",
-                handled ? std::string() : "Native HLBG live snapshot request rejected");
+                handled ? (parseOk ? std::string() : "native_bad_format")
+                    : "native_transport_denied",
+                handled ? (parseOk ? std::string()
+                    : "Malformed native HLBG live snapshot request")
+                    : "Native HLBG live snapshot request rejected");
             return false;
         }
     };
@@ -1905,7 +2177,8 @@ bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
 
     BattlegroundHLBG* bg = HLBGAddonFallback::GetActiveHLBG(player);
     std::string winner = "Draw";
-    uint32 a = 0, h = 0, dur = 0, affix = 0;
+    uint32 a = 0, h = 0, dur = 0, affix = 0, affix2 = 0, affix3 = 0;
+    std::string affixText;
     TeamId w = HLBGService::Instance().GetLastWinnerTeamId();
     winner = (w == TEAM_ALLIANCE) ? "Alliance" : ((w == TEAM_HORDE) ? "Horde" : "Draw");
     if (bg)
@@ -1913,7 +2186,22 @@ bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
         a = bg->GetResources(TEAM_ALLIANCE);
         h = bg->GetResources(TEAM_HORDE);
         dur = bg->GetCurrentMatchDurationSeconds();
-        affix = bg->GetActiveAffixCode();
+        affix = bg->GetActiveAffixCode(0u);
+        affix2 = bg->GetActiveAffixCode(1u);
+        affix3 = bg->GetActiveAffixCode(2u);
+
+        bool first = true;
+        for (uint32 affixCode : { affix, affix2, affix3 })
+        {
+            if (!affixCode)
+                continue;
+
+            if (!first)
+                affixText += ", ";
+
+            first = false;
+            affixText += HinterlandBGConstants::GetAffixName(static_cast<uint8>(affixCode));
+        }
     }
 
     std::ostringstream ss;
@@ -1921,6 +2209,9 @@ bool HandleHLBGResults(ChatHandler* handler, char const* /*args*/)
     ss << "\"A\":" << a << ',';
     ss << "\"H\":" << h << ',';
     ss << "\"affix\":" << affix << ',';
+    ss << "\"affix2\":" << affix2 << ',';
+    ss << "\"affix3\":" << affix3 << ',';
+    ss << "\"affixText\":\"" << affixText << "\",";
     ss << "\"duration\":" << dur;
     ss << '}';
     ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_RESULTS_JSON] ") + ss.str()).c_str());

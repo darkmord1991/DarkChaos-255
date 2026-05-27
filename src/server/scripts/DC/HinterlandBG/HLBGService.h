@@ -30,10 +30,12 @@ public:
 
     void RecordWinner(TeamId winnerTeamId, uint32 mapId,
         uint32 allianceScore, uint32 hordeScore, char const* reason,
-        uint8 affixCode, uint32 weatherType, float weatherIntensity,
+        uint8 affixCodePrimary, uint8 affixCodeSecondary,
+        uint8 affixCodeTertiary, uint32 weatherType, float weatherIntensity,
         uint32 durationSeconds);
     void RecordManualReset(uint32 mapId, uint32 allianceScore,
-        uint32 hordeScore, uint8 affixCode, uint32 weatherType,
+        uint32 hordeScore, uint8 affixCodePrimary, uint8 affixCodeSecondary,
+        uint8 affixCodeTertiary, uint32 weatherType,
         float weatherIntensity, uint32 durationSeconds);
 
 private:
@@ -42,7 +44,8 @@ private:
     void LoadRecentWinners();
     void RecordResult(TeamId winnerTeamId, uint32 mapId,
         uint32 allianceScore, uint32 hordeScore, char const* reason,
-        uint8 affixCode, uint32 weatherType, float weatherIntensity,
+        uint8 affixCodePrimary, uint8 affixCodeSecondary,
+        uint8 affixCodeTertiary, uint32 weatherType, float weatherIntensity,
         uint32 durationSeconds);
 
     mutable std::mutex _mutex;

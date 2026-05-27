@@ -421,12 +421,22 @@ function LB:RequestLeaderboard(category, subcategory, page, limit)
     limit = limit or (self:GetSetting("entriesPerPage") or 25)
     local seasonId = self:GetSetting("selectedSeasonId") or 0
     
+    -- Stage 2 native envelope correlation token. Echoed by the server
+    -- through SMSG_DC_NATIVE_ENVELOPE.context so the envelope poller can
+    -- match cached responses to the originating request.
+    self._nativeTokenCounter = (self._nativeTokenCounter or 0) + 1
+    local requestToken = string.format("lbrd-%d-%d",
+        math.floor((GetTime() or 0) * 1000), self._nativeTokenCounter)
+    self._pendingNativeTokens = self._pendingNativeTokens or {}
+    self._pendingNativeTokens.leaderboard = requestToken
+
     local request = {
         category = category,
         subcategory = subcategory,
         page = page,
         limit = limit,
         seasonId = seasonId,
+        requestToken = requestToken,
     }
 
     if category == "mplus" and subcategory == "mplus_history" then
@@ -611,6 +621,113 @@ function LB:RegisterHandlers()
     
     Print("Protocol handlers registered successfully")
     return true
+end
+
+-- =====================================================================
+-- NATIVE ENVELOPE BRIDGE (SMSG_DC_NATIVE_ENVELOPE) — Stage 2
+-- =====================================================================
+-- Server-side `dc_addon_leaderboards.cpp` additionally publishes the
+-- SMSG_LEADERBOARD_DATA payload through the generic native envelope cache
+-- on module "LBRD", feature "leaderboard". Mirroring the HLBG adapter
+-- pattern, we poll the cache and route fresh envelopes back through
+-- LB:OnLeaderboardData with token-echo correlation.
+local NATIVE_ENV_MODULE_ID   = LB.MODULE
+local NATIVE_ENV_POLL_INTERV = 0.25
+local NATIVE_ENV_FEATURE_LB  = "leaderboard"
+
+local function LB_GetEnvelopeJsonDecoder()
+    if DC and type(DC.DecodeJSON) == "function" then
+        return function(payload) return DC:DecodeJSON(payload) end
+    end
+    return nil
+end
+
+local function LB_DispatchNativeEnvelope(self, feature, payload, context)
+    if type(payload) ~= "string" or payload == "" then
+        return false
+    end
+
+    local decoder = LB_GetEnvelopeJsonDecoder()
+    if not decoder then
+        return false
+    end
+
+    local ok, decoded = pcall(decoder, payload)
+    if not ok or type(decoded) ~= "table" then
+        return false
+    end
+
+    local echoedToken = nil
+    if type(context) == "string" and context ~= "" then
+        echoedToken = context
+    elseif type(decoded.requestToken) == "string" then
+        echoedToken = decoded.requestToken
+    end
+
+    self._lastNativeRequestToken = echoedToken
+
+    local pending = self._pendingNativeTokens
+        and self._pendingNativeTokens[feature]
+    if pending and echoedToken and pending ~= echoedToken then
+        -- Stale envelope; ignore.
+        return false
+    end
+
+    if feature == NATIVE_ENV_FEATURE_LB then
+        self:OnLeaderboardData(decoded)
+    else
+        return false
+    end
+
+    if pending and self._pendingNativeTokens then
+        self._pendingNativeTokens[feature] = nil
+    end
+    return true
+end
+
+function LB:PollNativeEnvelopes()
+    local getter = rawget(_G, "GetLastDCNativeEnvelope")
+    if type(getter) ~= "function" then
+        return
+    end
+
+    self._nativeEnvelopeRevisions = self._nativeEnvelopeRevisions or {}
+
+    local features = { NATIVE_ENV_FEATURE_LB }
+    for _, feature in ipairs(features) do
+        local ok, moduleId, cachedFeature, _action, revision, payload, context =
+            pcall(getter, NATIVE_ENV_MODULE_ID, feature)
+        if ok and moduleId
+            and tostring(moduleId) == NATIVE_ENV_MODULE_ID then
+            local featureKey = tostring(cachedFeature or feature)
+            local rev = tonumber(revision) or 0
+            if rev > 0
+                and rev ~= self._nativeEnvelopeRevisions[featureKey] then
+                self._nativeEnvelopeRevisions[featureKey] = rev
+                LB_DispatchNativeEnvelope(self, featureKey, payload, context)
+            end
+        end
+    end
+end
+
+function LB:EnsureNativeEnvelopePoller()
+    if self._nativeEnvelopeFrame then
+        return
+    end
+
+    local frame = CreateFrame("Frame")
+    frame:Hide()
+    frame:SetScript("OnUpdate", function(_, elapsed)
+        LB._nativeEnvelopePollElapsed =
+            (LB._nativeEnvelopePollElapsed or 0) + (elapsed or 0)
+        if LB._nativeEnvelopePollElapsed < NATIVE_ENV_POLL_INTERV then
+            return
+        end
+        LB._nativeEnvelopePollElapsed = 0
+        LB:PollNativeEnvelopes()
+    end)
+    frame:Show()
+    self._nativeEnvelopeFrame = frame
 end
 
 -- Handler for test results
@@ -2698,6 +2815,7 @@ local function Initialize()
     
     if DC then
         LB:RegisterHandlers()
+        LB:EnsureNativeEnvelopePoller()
         
         -- Add module to DC if not exists
         if not DC.Module.LEADERBOARD then

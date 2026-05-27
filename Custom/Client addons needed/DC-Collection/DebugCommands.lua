@@ -198,6 +198,11 @@ local function PrintCollectionTransportStatus()
     end
 
     PrintChannel("wave1", diagnostics.collectionWave1)
+    PrintChannel("shop", diagnostics.shop)
+    PrintChannel("currencies", diagnostics.currencies)
+    PrintChannel("shop_history", diagnostics.shopHistory)
+    PrintChannel("wishlist", diagnostics.wishlist)
+    PrintChannel("purchase", diagnostics.purchaseResult)
     PrintChannel("saved_outfits", diagnostics.savedOutfits)
     PrintChannel("community", diagnostics.community)
     PrintChannel("transmog_state", diagnostics.transmogState)
@@ -288,8 +293,12 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
 
             local results = DC:RefreshCollectionTransport() or {}
             DC:Print(string.format(
-                "Collection transport refresh queued: wave1=%s community=%s transmog_state=%s item_sets=%s",
+                "Collection transport refresh queued: wave1=%s shop=%s currencies=%s shop_history=%s wishlist=%s community=%s transmog_state=%s item_sets=%s",
                 tostring(results.collectionWave1 == true),
+                tostring(results.shop == true),
+                tostring(results.currencies == true),
+                tostring(results.shopHistory == true),
+                tostring(results.wishlist == true),
                 tostring(results.community == true),
                 tostring(results.transmogState == true),
                 tostring(results.itemSets == true)))

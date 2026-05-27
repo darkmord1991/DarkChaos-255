@@ -29,6 +29,7 @@ DC.useDCProtocolJSON = true;
 DC.verboseProtocol = false;
 DC.liveCostCache = DC.liveCostCache or {};
 DC.pendingCostRequests = DC.pendingCostRequests or {};
+DC.TIER_RUNTIME_OVERRIDES = DC.TIER_RUNTIME_OVERRIDES or {};
 
 local function DispatchBrowserHandler(handlerName, ...)
 	local handler = DC[handlerName];
@@ -456,6 +457,56 @@ DC.DEFAULT_TIER_DEFINITIONS = DC.DEFAULT_TIER_DEFINITIONS or {
 	},
 };
 
+local function MergeTierDefinitionRows(definitions, rows)
+	local mergedCount = 0;
+	if type(rows) ~= "table" then
+		return mergedCount;
+	end
+
+	for _, row in ipairs(rows) do
+		local normalized = DC.NormalizeTierDefinition(row);
+		if normalized then
+			local merged = definitions[normalized.tierId] or {
+				tierId = normalized.tierId,
+			};
+			for key, value in pairs(normalized) do
+				if type(value) == "string" then
+					if value ~= "" then
+						merged[key] = value;
+					end
+				elseif value ~= nil then
+					merged[key] = value;
+				end
+			end
+
+			if normalized.colorARGB and normalized.colorARGB > 0 then
+				merged.color = BuildTierColor(
+					normalized.colorARGB,
+					merged.color);
+			elseif type(merged.color) ~= "table" then
+				merged.color = { r = 1.0, g = 1.0, b = 1.0 };
+			end
+
+			if not merged.name or merged.name == "" then
+				merged.name = string.format(
+					"Tier %d",
+					normalized.tierId);
+			end
+			if not merged.icon or merged.icon == "" then
+				merged.icon = "Interface\\Icons\\INV_Misc_QuestionMark";
+			end
+			if merged.enabled == nil then
+				merged.enabled = 1;
+			end
+
+			definitions[normalized.tierId] = merged;
+			mergedCount = mergedCount + 1;
+		end
+	end
+
+	return mergedCount;
+end
+
 function DC.BootstrapTierDefinitions()
 	local definitions = {};
 	for tierId, definition in pairs(DC.DEFAULT_TIER_DEFINITIONS) do
@@ -465,6 +516,7 @@ function DC.BootstrapTierDefinitions()
 	local source = "default";
 	local revision = 0;
 	local sourceRows = nil;
+	local rowCount = 0;
 
 	local nativeRows = DC.GetNativeTierRows();
 	if type(nativeRows) == "table" and #nativeRows > 0 then
@@ -478,44 +530,25 @@ function DC.BootstrapTierDefinitions()
 	end
 
 	if type(sourceRows) == "table" then
-		for _, row in ipairs(sourceRows) do
-			local normalized = DC.NormalizeTierDefinition(row);
-			if normalized then
-				local merged = definitions[normalized.tierId] or {
-					tierId = normalized.tierId,
-				};
-				for key, value in pairs(normalized) do
-					if type(value) == "string" then
-						if value ~= "" then
-							merged[key] = value;
-						end
-					elseif value ~= nil then
-						merged[key] = value;
-					end
-				end
+		rowCount = MergeTierDefinitionRows(definitions, sourceRows);
+	end
 
-				if normalized.colorARGB and normalized.colorARGB > 0 then
-					merged.color = BuildTierColor(
-						normalized.colorARGB,
-						merged.color);
-				elseif type(merged.color) ~= "table" then
-					merged.color = { r = 1.0, g = 1.0, b = 1.0 };
-				end
-
-				if not merged.name or merged.name == "" then
-					merged.name = string.format(
-						"Tier %d",
-						normalized.tierId);
-				end
-				if not merged.icon or merged.icon == "" then
-					merged.icon = "Interface\\Icons\\INV_Misc_QuestionMark";
-				end
-				if merged.enabled == nil then
-					merged.enabled = 1;
-				end
-
-				definitions[normalized.tierId] = merged;
+	local runtimeRows = DC.TIER_RUNTIME_OVERRIDES;
+	if type(runtimeRows) == "table" and #runtimeRows > 0 then
+		local runtimeCount = MergeTierDefinitionRows(definitions, runtimeRows);
+		if runtimeCount > 0 then
+			local runtimeSource = DC.TIER_RUNTIME_SOURCE or "server";
+			if source == "default" then
+				source = runtimeSource;
+			else
+				source = source .. "+" .. runtimeSource;
 			end
+
+			local runtimeRevision = tonumber(DC.TIER_RUNTIME_VERSION) or 0;
+			if runtimeRevision > 0 then
+				revision = runtimeRevision;
+			end
+			rowCount = runtimeCount;
 		end
 	end
 
@@ -550,9 +583,27 @@ function DC.BootstrapTierDefinitions()
 
 	DC.activeTierDataSource = source;
 	DC.activeTierDataRevision = revision;
-	DC.activeTierRowCount = type(sourceRows) == "table" and #sourceRows or 0;
+	DC.activeTierRowCount = rowCount;
 
 	return definitions;
+end
+
+function DC.SetTierRuntimeOverrides(rows, revision, source)
+	local runtimeRows = {};
+	if type(rows) == "table" then
+		for _, row in ipairs(rows) do
+			if type(row) == "table" then
+				table.insert(runtimeRows, row);
+			end
+		end
+	end
+
+	DC.TIER_RUNTIME_OVERRIDES = runtimeRows;
+	DC.TIER_RUNTIME_VERSION = tonumber(revision) or 0;
+	DC.TIER_RUNTIME_SOURCE =
+		(type(source) == "string" and source ~= "" and source) or "server";
+
+	return DC.BootstrapTierDefinitions();
 end
 
 function DC.BootstrapTierItemData()
@@ -669,6 +720,17 @@ function DC.GetTierColor(tier)
 	end
 
 	return { r = 1.0, g = 1.0, b = 1.0 };
+end
+
+function DC.GetTierStatMultiplierMax(tier)
+	local definition = DC.GetTierDefinition(tier);
+	local cap = definition and tonumber(
+		definition.statMultiplierMax or definition.StatMultiplierMax);
+	if cap and cap > 1.0 then
+		return cap;
+	end
+
+	return 1.0;
 end
 
 function DC.GetMaxUpgradeLevelForTier(tier)
@@ -946,22 +1008,31 @@ end
 
 DC.STAT_PERCENT_PER_LEVEL = 2.5;
 
-local BASE_STAT_INCREMENT = 0.025; -- 2.5% per level baseline
-local TIER_STAT_MULTIPLIERS = { 0.9, 0.95, 1.0, 1.15, 1.25 };
 local TIER_ILVL_PER_LEVEL = { 1.0, 1.0, 1.5, 2.0, 2.5 };
 
 function DC.ClampTier(tier)
 	tier = math.floor(tonumber(tier) or 1);
 	if tier < 1 then return 1; end
-	if tier > #TIER_STAT_MULTIPLIERS then return #TIER_STAT_MULTIPLIERS; end
+	if tier > #TIER_ILVL_PER_LEVEL then return #TIER_ILVL_PER_LEVEL; end
 	return tier;
 end
 
 function DC.GetStatMultiplierForLevel(level, tier)
 	level = math.max(tonumber(level) or 0, 0);
-	local base = 1.0 + (BASE_STAT_INCREMENT * level);
-	local tierMult = TIER_STAT_MULTIPLIERS[DC.ClampTier(tier)] or 1.0;
-	return ((base - 1.0) * tierMult) + 1.0;
+	local maxUpgradeLevel = tonumber(
+		DC.GetMaxUpgradeLevelForTier and DC.GetMaxUpgradeLevelForTier(tier)) or 0;
+	if maxUpgradeLevel <= 0 then
+		return 1.0;
+	end
+
+	local clampedLevel = math.min(level, maxUpgradeLevel);
+	local maxMultiplier = tonumber(
+		DC.GetTierStatMultiplierMax and DC.GetTierStatMultiplierMax(tier)) or 1.0;
+	if maxMultiplier <= 1.0 then
+		return 1.0;
+	end
+
+	return 1.0 + ((clampedLevel / maxUpgradeLevel) * (maxMultiplier - 1.0));
 end
 
 function DC.GetStatBonusPercent(level, tier)
@@ -1468,6 +1539,28 @@ function DC.RegisterDCProtocolHandlers()
 			end
 		end
 	end);
+
+	-- SMSG_TIER_CONFIG (0x19) - Authoritative tier cache snapshot
+	DCProtocol:RegisterHandler("UPG", 0x19, function(data)
+		if type(data) ~= "table" then return; end
+
+		local rows = data.tiers or data.rows or data.definitions;
+		if type(rows) ~= "table" then return; end
+
+		DC.SetTierRuntimeOverrides(rows, data.revision, data.source or "server");
+		DC.Debug(string.format(
+			"Received SMSG_TIER_CONFIG: rows=%d revision=%s source=%s",
+			#rows,
+			tostring(DC.activeTierDataRevision or 0),
+			tostring(DC.activeTierDataSource or "server")));
+
+		if DC.RefreshUpgradeFrame then
+			DC.RefreshUpgradeFrame();
+		end
+		if DarkChaos_ItemUpgrade_UpdateUI then
+			DarkChaos_ItemUpgrade_UpdateUI();
+		end
+	end);
 	
 	-- SMSG_BATCH_ITEM_INFO (0x12) - Multiple items info response (for inventory scan)
 	DCProtocol:RegisterHandler("UPG", 0x12, function(data)
@@ -1960,6 +2053,16 @@ function DC.RequestCurrencySync()
 	if DCProtocol and DC.useDCProtocol then
 		return
 	end
+end
+
+function DC.RequestTierConfigSync()
+	if not (DCProtocol and DC.useDCProtocol) then
+		return false;
+	end
+
+	DCProtocol:Request("UPG", 0x09, {});
+	DC.Debug("Sent tier config request via DC protocol");
+	return true;
 end
 
 function DC.RequestBatchItemInfo(itemIds)

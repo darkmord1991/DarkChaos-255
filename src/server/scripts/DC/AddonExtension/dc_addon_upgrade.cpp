@@ -138,6 +138,84 @@ namespace Upgrade
             .Send(player);
     }
 
+    void SendTierConfig(Player* player, std::string const& requestId = std::string())
+    {
+        if (!player)
+            return;
+
+        CacheContext(player);
+
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr =
+            DarkChaos::ItemUpgrade::GetUpgradeManager();
+
+        JsonValue tiers;
+        tiers.SetArray(static_cast<size_t>(DarkChaos::ItemUpgrade::NUM_TIERS));
+
+        uint32 revision = 2166136261u;
+        auto mixRevision = [&](uint32 value)
+        {
+            revision ^= value;
+            revision *= 16777619u;
+        };
+
+        uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+
+        if (mgr)
+        {
+            for (uint8 tierId = 1; tierId <= DarkChaos::ItemUpgrade::NUM_TIERS; ++tierId)
+            {
+                DarkChaos::ItemUpgrade::TierDefinition const* def =
+                    mgr->GetTierDefinition(tierId);
+                if (!def)
+                    continue;
+
+                uint32 upgradeCostPerLevel = mgr->GetUpgradeCost(
+                    tierId, 1);
+                if (upgradeCostPerLevel == 0)
+                    upgradeCostPerLevel = mgr->GetEssenceCost(tierId, 1);
+
+                JsonValue row;
+                row.SetObject();
+                row.Set("tierId", JsonValue(static_cast<uint32>(tierId)));
+                row.Set("season", JsonValue(season));
+                row.Set("sortOrder", JsonValue(static_cast<uint32>(tierId) * 10u));
+                row.Set("flags", JsonValue(0u));
+                row.Set("minItemLevel", JsonValue(static_cast<uint32>(def->min_ilvl)));
+                row.Set("maxItemLevel", JsonValue(static_cast<uint32>(def->max_ilvl)));
+                row.Set("maxUpgradeLevel", JsonValue(static_cast<uint32>(def->max_upgrade_level)));
+                row.Set("statMultiplierMax", JsonValue(static_cast<double>(def->stat_multiplier_max)));
+                row.Set("upgradeCostPerLevel", JsonValue(upgradeCostPerLevel));
+                row.Set("isArtifact", JsonValue(def->is_artifact));
+                row.Set("enabled", JsonValue(1u));
+                tiers.Push(std::move(row));
+
+                mixRevision(static_cast<uint32>(tierId));
+                mixRevision(static_cast<uint32>(def->max_upgrade_level));
+                mixRevision(static_cast<uint32>(def->min_ilvl));
+                mixRevision(static_cast<uint32>(def->max_ilvl));
+                mixRevision(static_cast<uint32>(
+                    (def->stat_multiplier_max * 10000.0f) + 0.5f));
+            }
+        }
+
+        JsonMessage response(Module::UPGRADE, Opcode::Upgrade::SMSG_TIER_CONFIG);
+        if (!requestId.empty())
+            response.SetRequestId(requestId);
+
+        response
+            .Set("source", "server")
+            .Set("revision", revision)
+            .Set("tiers", std::move(tiers))
+            .Send(player);
+    }
+
+    static void HandleGetTierConfig(Player* player, const ParsedMessage& msg)
+    {
+        AuditUpgradeUiTransport(player);
+        CacheContext(player);
+        SendTierConfig(player, msg.GetRequestId());
+    }
+
     // Handler: Get item upgrade info
     static void HandleGetItemInfo(Player* player, const ParsedMessage& msg)
     {
@@ -952,6 +1030,7 @@ namespace Upgrade
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_LIST_UPGRADEABLE, HandleListUpgradeable);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_DO_UPGRADE, HandleDoUpgrade);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_PACKAGE_SELECT, HandlePackageSelect);
+        DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_TIER_CONFIG, HandleGetTierConfig);
 
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_HEIRLOOM_QUERY, HandleHeirloomQuery);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_PACKAGES, HandleGetPackages);
@@ -974,6 +1053,7 @@ namespace Upgrade
         }
 
         SendCurrencyUpdate(player);
+        SendTierConfig(player);
 
         CacheContext(player);
     }

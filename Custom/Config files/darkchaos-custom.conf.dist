@@ -1153,6 +1153,40 @@ ItemUpgrade.Perf.AchievementReward.MinIntervalMs = 3000
 ItemUpgrade.Perf.AchievementReward.SamplePct = 30
 
 # -----------------------------------------------------------------------------
+# Tier Stat Scaling
+# -----------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Tier1.MaxStatBonusPct
+#        Description: Maximum total stat bonus percent for tier 1 items at max
+#                     upgrade level. Set to 0 to keep the value from
+#                     dc_item_upgrade_tiers.stat_multiplier_max.
+#                     The addon caches the resolved tier caps at login/reload.
+#        Default:     7
+#
+ItemUpgrade.Tier1.MaxStatBonusPct = 7
+
+#
+#    ItemUpgrade.Tier2.MaxStatBonusPct
+#        Description: Maximum total stat bonus percent for tier 2 items at max
+#                     upgrade level. Set to 0 to keep the value from
+#                     dc_item_upgrade_tiers.stat_multiplier_max.
+#                     The addon caches the resolved tier caps at login/reload.
+#        Default:     5
+#
+ItemUpgrade.Tier2.MaxStatBonusPct = 5
+
+#
+#    ItemUpgrade.Tier3.MaxStatBonusPct
+#        Description: Maximum total stat bonus percent for tier 3 items at max
+#                     upgrade level. Set to 0 to keep the value from
+#                     dc_item_upgrade_tiers.stat_multiplier_max.
+#                     The addon caches the resolved tier caps at login/reload.
+#        Default:     7
+#
+ItemUpgrade.Tier3.MaxStatBonusPct = 7
+
+# -----------------------------------------------------------------------------
 # Currency Configuration
 # -----------------------------------------------------------------------------
 

@@ -488,6 +488,10 @@ function GF:PopulateMythicGroups(groups)
         groups = normalized
     end
 
+    if self.compactMode and self.CompactPopulateGroups then
+        self:CompactPopulateGroups(groups, "mythic")
+    end
+
     local panel = self.MythicBrowsePanel
     if not panel or not panel.scrollChild then return end
     
@@ -678,9 +682,7 @@ function GF:RefreshMythicGroups()
         panel.loadingText:Show()
     end
     
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC and DC.GroupFinder then
-        DC.GroupFinder.Search({ category = "dungeon", listingType = 1 })
+    if GF.SearchCustomCategory and GF:SearchCustomCategory("mythic") then
         -- Hide loading after timeout if no response
         C_Timer.After(5, function()
             if panel and panel.loadingText and panel.loadingText:IsShown() then
@@ -1244,11 +1246,7 @@ function GF:CreateMythicGroup(dungeonId, dungeonName, level, note)
     
     local playerName = UnitName("player") or "You"
     
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC and DC.GroupFinder then
-        DC.GroupFinder.CreateListing({
-            category = "dungeon",
-            listingType = 1,
+    if GF.CreateCustomListing and GF:CreateCustomListing("mythic", {
             dungeonId = dungeonId,
             dungeonName = dungeonName,
             keyLevel = level,
@@ -1257,7 +1255,7 @@ function GF:CreateMythicGroup(dungeonId, dungeonName, level, note)
             needDps = 3,
             note = note,
             roles = { tank = false, healer = false, dps1 = true, dps2 = false, dps3 = false }
-        })
+        }) then
 
         -- Wait for the server ack before showing success.
         if self.MythicCreatePanel and self.MythicCreatePanel.statusText then

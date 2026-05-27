@@ -3705,6 +3705,88 @@ namespace DCCollection
             SendAddonCollectionWave1Payload(player, logicalOpcode, payload);
         }
 
+        void SendCollectionJsonPayload(Player* player,
+            uint8 logicalOpcode, DCAddon::JsonValue& payload)
+        {
+            SendCollectionWave1Payload(player, logicalOpcode,
+                payload.Encode());
+        }
+
+        void SendPurchaseResultPayload(Player* player, bool success,
+            std::string const& error = "", uint8 type = 0,
+            uint32 entryId = 0, uint32 tokens = 0, uint32 emblems = 0,
+            bool includeItem = false, bool includeBalances = false)
+        {
+            if (!player)
+                return;
+
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("success", success);
+
+            if (!error.empty())
+                payload.Set("error", error);
+
+            if (includeItem)
+            {
+                payload.Set("type", type);
+                payload.Set("entryId", entryId);
+            }
+
+            if (includeBalances)
+            {
+                payload.Set("tokens", tokens);
+                payload.Set("emblems", emblems);
+            }
+
+            SendCollectionJsonPayload(player,
+                DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT, payload);
+        }
+
+        void SendWishlistUpdatedPayload(Player* player, bool success,
+            std::string const& action = "", uint8 type = 0,
+            uint32 entryId = 0, std::string const& error = "")
+        {
+            if (!player)
+                return;
+
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("success", success);
+
+            if (!action.empty())
+                payload.Set("action", action);
+
+            if (type > 0)
+                payload.Set("type", type);
+
+            if (entryId > 0)
+                payload.Set("entryId", entryId);
+
+            if (!error.empty())
+                payload.Set("error", error);
+
+            SendCollectionJsonPayload(player,
+                DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED, payload);
+        }
+
+        void SendWishlistAvailablePayload(Player* player, uint8 type,
+            uint32 entryId, std::string const& message)
+        {
+            if (!player)
+                return;
+
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("type", type);
+            payload.Set("entryId", entryId);
+            payload.Set("message", message);
+
+            SendCollectionJsonPayload(player,
+                DCAddon::Opcode::Collection::SMSG_WISHLIST_AVAILABLE,
+                payload);
+        }
+
         void SendSyncCollectionUpToDateAck(Player* player,
             uint32 serverHash)
         {
@@ -3984,11 +4066,13 @@ namespace DCCollection
 
         auto currencies = LoadCurrencies(player);
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_CURRENCIES);
-        msg.Set("tokens", currencies[CURRENCY_TOKEN]);
-        msg.Set("emblems", currencies[CURRENCY_EMBLEM]);
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("tokens", currencies[CURRENCY_TOKEN]);
+        payload.Set("emblems", currencies[CURRENCY_EMBLEM]);
 
-        msg.Send(player);
+        SendCollectionJsonPayload(player,
+            DCAddon::Opcode::Collection::SMSG_CURRENCIES, payload);
     }
 
     void SendShopData(Player* player, const std::string& category,
@@ -4225,13 +4309,15 @@ namespace DCCollection
         // Get player currencies for display
         auto currencies = LoadCurrencies(player);
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_SHOP_DATA);
-        msg.Set("items", items);
-        msg.Set("category", category);
-        msg.Set("tokens", currencies[CURRENCY_TOKEN]);
-        msg.Set("emblems", currencies[CURRENCY_EMBLEM]);
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("items", items);
+        payload.Set("category", category);
+        payload.Set("tokens", currencies[CURRENCY_TOKEN]);
+        payload.Set("emblems", currencies[CURRENCY_EMBLEM]);
 
-        msg.Send(player);
+        SendCollectionJsonPayload(player,
+            DCAddon::Opcode::Collection::SMSG_SHOP_DATA, payload);
     }
 
     void SendShopHistory(Player* player, uint32 limit = 50, uint32 offset = 0)
@@ -4244,13 +4330,15 @@ namespace DCCollection
             DCAddon::JsonValue items;
             items.SetArray();
 
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY);
-            msg.Set("items", items);
-            msg.Set("count", static_cast<uint32>(0));
-            msg.Set("total", static_cast<uint32>(0));
-            msg.Set("limit", static_cast<uint32>(0));
-            msg.Set("offset", static_cast<uint32>(0));
-            msg.Send(player);
+            DCAddon::JsonValue payload;
+            payload.SetObject();
+            payload.Set("items", items);
+            payload.Set("count", static_cast<uint32>(0));
+            payload.Set("total", static_cast<uint32>(0));
+            payload.Set("limit", static_cast<uint32>(0));
+            payload.Set("offset", static_cast<uint32>(0));
+            SendCollectionJsonPayload(player,
+                DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY, payload);
             return;
         }
 
@@ -4480,13 +4568,15 @@ namespace DCCollection
             } while (result->NextRow());
         }
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY);
-        msg.Set("items", items);
-        msg.Set("count", count);
-        msg.Set("total", total);
-        msg.Set("limit", limit);
-        msg.Set("offset", offset);
-        msg.Send(player);
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("items", items);
+        payload.Set("count", count);
+        payload.Set("total", total);
+        payload.Set("limit", limit);
+        payload.Set("offset", offset);
+        SendCollectionJsonPayload(player,
+            DCAddon::Opcode::Collection::SMSG_SHOP_HISTORY, payload);
     }
 
     void SendWishlistData(Player* player)
@@ -4518,12 +4608,14 @@ namespace DCCollection
 
         uint32 maxItems = sConfigMgr->GetOption<uint32>(Config::WISHLIST_MAX_ITEMS, 25);
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_DATA);
-        msg.Set("items", items);
-        msg.Set("count", static_cast<uint32>(wishlist.size()));
-        msg.Set("maxItems", maxItems);
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("items", items);
+        payload.Set("count", static_cast<uint32>(wishlist.size()));
+        payload.Set("maxItems", maxItems);
 
-        msg.Send(player);
+        SendCollectionJsonPayload(player,
+            DCAddon::Opcode::Collection::SMSG_WISHLIST_DATA, payload);
     }
 
     void SendItemLearned(Player* player, CollectionType type, uint32 entryId)
@@ -4541,11 +4633,9 @@ namespace DCCollection
         uint32 accountId = GetAccountId(player);
         if (IsOnWishlist(accountId, type, entryId))
         {
-            DCAddon::JsonMessage wishMsg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_AVAILABLE);
-            wishMsg.Set("type", static_cast<uint8>(type));
-            wishMsg.Set("entryId", entryId);
-            wishMsg.Set("message", "A wishlist item is now in your collection!");
-            wishMsg.Send(player);
+            SendWishlistAvailablePayload(player,
+                static_cast<uint8>(type), entryId,
+                "A wishlist item is now in your collection!");
 
             // Remove from wishlist
             std::string const& wishIdCol = GetWishlistIdColumn();
@@ -4591,10 +4681,8 @@ namespace DCCollection
         std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Collection table schema mismatch");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Collection table schema mismatch");
             return;
         }
 
@@ -4623,10 +4711,8 @@ namespace DCCollection
 
         if (shopEntryCol.empty())
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Shop table schema mismatch");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Shop table schema mismatch");
             return;
         }
 
@@ -4643,10 +4729,8 @@ namespace DCCollection
 
         if (!result)
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Item not found or unavailable");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Item not found or unavailable");
             return;
         }
 
@@ -4675,10 +4759,8 @@ namespace DCCollection
                 purchasedEntryId = entryId;
                 if (!FindAnyVariant(purchasedEntryId))
                 {
-                    DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-                    msg.Set("success", false);
-                    msg.Set("error", "Invalid transmog appearance");
-                    msg.Send(player);
+                    SendPurchaseResultPayload(player, false,
+                        "Invalid transmog appearance");
                     return;
                 }
             }
@@ -4687,10 +4769,8 @@ namespace DCCollection
         // Check stock
         if (stock == 0)
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Item is out of stock");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Item is out of stock");
             return;
         }
 
@@ -4698,10 +4778,8 @@ namespace DCCollection
         auto owned = LoadPlayerCollection(accountId, static_cast<CollectionType>(collType));
         if (std::find(owned.begin(), owned.end(), purchasedEntryId) != owned.end())
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "You already own this item");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "You already own this item");
             return;
         }
 
@@ -4709,10 +4787,8 @@ namespace DCCollection
         auto currencies = LoadCurrencies(player);
         if (currencies[CURRENCY_TOKEN] < priceTokens || currencies[CURRENCY_EMBLEM] < priceEmblems)
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Insufficient currency");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Insufficient currency");
             return;
         }
 
@@ -4720,10 +4796,8 @@ namespace DCCollection
         DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (!mgr)
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Currency system unavailable");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Currency system unavailable");
             return;
         }
 
@@ -4732,10 +4806,8 @@ namespace DCCollection
 
         if (priceTokens > 0 && !mgr->RemoveCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, priceTokens, season))
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Insufficient currency");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Insufficient currency");
             return;
         }
 
@@ -4744,10 +4816,8 @@ namespace DCCollection
             if (priceTokens > 0)
             mgr->AddCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, priceTokens, season);
 
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Insufficient currency");
-            msg.Send(player);
+            SendPurchaseResultPayload(player, false,
+                "Insufficient currency");
             return;
         }
 
@@ -4804,13 +4874,9 @@ namespace DCCollection
         // Send success response
         auto newCurrencies = LoadCurrencies(player);
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-        msg.Set("success", true);
-        msg.Set("type", collType);
-        msg.Set("entryId", purchasedEntryId);
-        msg.Set("tokens", newCurrencies[CURRENCY_TOKEN]);
-        msg.Set("emblems", newCurrencies[CURRENCY_EMBLEM]);
-        msg.Send(player);
+        SendPurchaseResultPayload(player, true, "", collType,
+            purchasedEntryId, newCurrencies[CURRENCY_TOKEN],
+            newCurrencies[CURRENCY_EMBLEM], true, true);
 
         // Send item learned notification
         SendItemLearned(player, static_cast<CollectionType>(collType), purchasedEntryId);
@@ -4834,10 +4900,8 @@ namespace DCCollection
         std::string const& wishIdCol = GetWishlistIdColumn();
         if (wishIdCol.empty())
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
-            msg.Set("success", false);
-            msg.Set("error", "Wishlist table schema mismatch");
-            msg.Send(player);
+            SendWishlistUpdatedPayload(player, false, "", 0, 0,
+                "Wishlist table schema mismatch");
             return;
         }
 
@@ -4845,20 +4909,17 @@ namespace DCCollection
         auto wishlist = LoadWishlist(accountId);
         if (wishlist.size() >= maxItems)
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
-            msg.Set("success", false);
-            msg.Set("error", "Wishlist is full (max " + std::to_string(maxItems) + " items)");
-            msg.Send(player);
+            SendWishlistUpdatedPayload(player, false, "", 0, 0,
+                "Wishlist is full (max " + std::to_string(maxItems)
+                    + " items)");
             return;
         }
 
         // Check if already on wishlist
         if (IsOnWishlist(accountId, static_cast<CollectionType>(type), entryId))
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
-            msg.Set("success", false);
-            msg.Set("error", "Item is already on your wishlist");
-            msg.Send(player);
+            SendWishlistUpdatedPayload(player, false, "", 0, 0,
+                "Item is already on your wishlist");
             return;
         }
 
@@ -4868,10 +4929,8 @@ namespace DCCollection
             std::string typeStr = WishlistTypeToString(type);
             if (typeStr.empty())
             {
-                DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
-                msg.Set("success", false);
-                msg.Set("error", "Unsupported wishlist type");
-                msg.Send(player);
+                SendWishlistUpdatedPayload(player, false, "", 0, 0,
+                    "Unsupported wishlist type");
                 return;
             }
 
@@ -4888,12 +4947,7 @@ namespace DCCollection
                 wishIdCol, accountId, type, entryId);
         }
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
-        msg.Set("success", true);
-        msg.Set("action", "added");
-        msg.Set("type", type);
-        msg.Set("entryId", entryId);
-        msg.Send(player);
+        SendWishlistUpdatedPayload(player, true, "added", type, entryId);
     }
 
     void HandleRemoveWishlist(Player* player, uint8 type, uint32 entryId)
@@ -4906,10 +4960,8 @@ namespace DCCollection
         std::string const& wishIdCol = GetWishlistIdColumn();
         if (wishIdCol.empty())
         {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
-            msg.Set("success", false);
-            msg.Set("error", "Wishlist table schema mismatch");
-            msg.Send(player);
+            SendWishlistUpdatedPayload(player, false, "", 0, 0,
+                "Wishlist table schema mismatch");
             return;
         }
 
@@ -4930,12 +4982,7 @@ namespace DCCollection
                 accountId, type, wishIdCol, entryId);
         }
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
-        msg.Set("success", true);
-        msg.Set("action", "removed");
-        msg.Set("type", type);
-        msg.Set("entryId", entryId);
-        msg.Send(player);
+        SendWishlistUpdatedPayload(player, true, "removed", type, entryId);
     }
 
     void HandleSetFavorite(Player* player, uint8 type, uint32 entryId, bool favorite)
@@ -7771,6 +7818,36 @@ private:
                         break;
                     case DCAddon::Opcode::Collection::CMSG_GET_COLLECTION:
                         DCCollection::HandleGetCollectionMessage(player,
+                            parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_SHOP:
+                        DCCollection::HandleGetShop(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_BUY_ITEM:
+                        DCCollection::HandleBuyItemMessage(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_CURRENCIES:
+                        DCCollection::HandleGetCurrencies(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_SHOP_HISTORY:
+                        DCCollection::HandleGetShopHistory(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_GET_WISHLIST:
+                        DCCollection::HandleGetWishlist(player, parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_ADD_WISHLIST:
+                        DCCollection::HandleAddWishlistMessage(player,
+                            parsed);
+                        handled = true;
+                        break;
+                    case DCAddon::Opcode::Collection::CMSG_REMOVE_WISHLIST:
+                        DCCollection::HandleRemoveWishlistMessage(player,
                             parsed);
                         handled = true;
                         break;

@@ -238,14 +238,29 @@ local function SendQueueStatusCommandFallback()
     end
 end
 
+local function SendNativeQueueRequest(reason)
+    if type(HLBG.RequestLiveSnapshot) ~= "function" then
+        return false
+    end
+
+    local ok, sent = pcall(HLBG.RequestLiveSnapshot,
+        reason or "queue_status", true)
+    if not ok then
+        return false
+    end
+
+    return sent ~= false
+end
+
 -- Request current queue status from server
 function HLBG.RequestQueueStatus()
     local DC = _G.DCAddonProtocol
-    if SendHLBGRequest(DC, 1) then
+    local usedNative = SendNativeQueueRequest("queue_status")
+    if usedNative or SendHLBGRequest(DC, 1) then
         -- Send via DC Protocol (HLBG module op 0x01 = CMSG_REQUEST_STATUS)
         -- See DCAddonNamespace.h: CMSG_REQUEST_STATUS = 0x01
         if DEFAULT_CHAT_FRAME then
-            HLBG.QueueMessage("request_status_dc")
+            HLBG.QueueMessage(usedNative and "request_status_native" or "request_status_dc")
         end
 
         if C_Timer and C_Timer.After then
@@ -290,7 +305,11 @@ function HLBG.JoinQueue()
     end
 
     local DC = _G.DCAddonProtocol
-    if SendHLBGRequest(DC, 4) then
+    if SendNativeQueueRequest("queue_join") then
+        if DEFAULT_CHAT_FRAME then
+            HLBG.QueueMessage("join_native")
+        end
+    elseif SendHLBGRequest(DC, 4) then
         -- CMSG_QUICK_QUEUE = 0x04
         if DEFAULT_CHAT_FRAME then
             HLBG.QueueMessage("join_dc")
@@ -320,7 +339,11 @@ end
 -- Leave the battleground queue
 function HLBG.LeaveQueue()
     local DC = _G.DCAddonProtocol
-    if SendHLBGRequest(DC, 5) then
+    if SendNativeQueueRequest("queue_leave") then
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
+            HLBG.QueueMessage("leave_native")
+        end
+    elseif SendHLBGRequest(DC, 5) then
         -- CMSG_LEAVE_QUEUE = 0x05
         if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             HLBG.QueueMessage("leave_dc")

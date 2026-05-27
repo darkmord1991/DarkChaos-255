@@ -155,12 +155,15 @@ function HLBG.GetAuthoritativeStatus()
 end
 -- Queue-facing message templates so all queue text stays consistent.
 HLBG.QueueTextTemplates = HLBG.QueueTextTemplates or {
+    request_status_native = "|cFF33FF99HLBG Queue:|r Requesting status via native live snapshot...",
     request_status_dc = "|cFF33FF99HLBG Queue:|r Requesting status via DC protocol...",
     request_status_aio = "|cFF33FF99HLBG Queue:|r Requesting status via AIO...",
     request_status_cmd = "|cFF33FF99HLBG Queue:|r Requesting status via command...",
     join_blizz = "|cFF33FF99HLBG Queue:|r Joining via battleground list...",
+    join_native = "|cFF33FF99HLBG Queue:|r Joining via native live snapshot...",
     join_dc = "|cFF33FF99HLBG Queue:|r Joining via DC protocol...",
     join_aio = "|cFF33FF99HLBG Queue:|r Joining via AIO...",
+    leave_native = "|cFF33FF99HLBG Queue:|r Leaving via native live snapshot...",
     leave_dc = "|cFF33FF99HLBG Queue:|r Leaving via DC protocol...",
     leave_aio = "|cFF33FF99HLBG Queue:|r Leaving via AIO...",
     leave_cmd = "|cFF33FF99HLBG Queue:|r Leaving via command...",

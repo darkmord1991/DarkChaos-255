@@ -138,6 +138,75 @@ local function NormalizeNativeHLBGLiveRows(rows)
     return normalized
 end
 
+local function GetTypedNativeHLBGQueueSnapshot()
+    local getter = rawget(_G, 'GetNativeHLBGQueueSnapshot')
+    if type(getter) ~= 'function' then
+        return nil
+    end
+
+    local ok, snapshot = pcall(getter)
+    if not ok or type(snapshot) ~= 'table' then
+        return nil
+    end
+
+    return snapshot
+end
+
+local function ApplyNativeHLBGQueueSnapshot(decoded)
+    if type(HLBG.HandleQueueStatusRaw) ~= 'function' then
+        return false
+    end
+
+    decoded = type(decoded) == 'table' and decoded or {}
+
+    local typedSnapshot = GetTypedNativeHLBGQueueSnapshot()
+    if type(typedSnapshot) ~= 'table' and next(decoded) == nil then
+        return false
+    end
+
+    local queueSource = type(typedSnapshot) == 'table' and typedSnapshot
+        or decoded
+    local queueStatus = queueSource.queueStatus or decoded.queueStatus
+    local position = queueSource.position or decoded.position
+        or decoded.queuePosition or decoded.pos
+    local estimatedTime = queueSource.estimatedTime or decoded.estimatedTime
+        or decoded.waitTime or decoded.estWait
+    local totalQueued = queueSource.totalQueued or decoded.totalQueued
+        or decoded.total or decoded.queueTotal
+    local allianceQueued = queueSource.allianceQueued
+        or decoded.allianceQueued or decoded.alliance or decoded.aQueued
+    local hordeQueued = queueSource.hordeQueued or decoded.hordeQueued
+        or decoded.horde or decoded.hQueued
+    local minPlayers = queueSource.minPlayers or decoded.minPlayers
+        or decoded.minPlayersToStart
+    local queueState = queueSource.queueState or decoded.queueState
+        or decoded.battleState or decoded.bgState
+
+    if queueStatus == nil and position == nil and estimatedTime == nil
+        and totalQueued == nil and allianceQueued == nil
+        and hordeQueued == nil and minPlayers == nil
+        and queueState == nil then
+        return false
+    end
+
+    if type(typedSnapshot) == 'table' then
+        HLBG._lastNativeQueueSnapshot = typedSnapshot
+        HLBG._lastNativeRequestReason = typedSnapshot.requestReason
+        HLBG._lastNativeRequestToken = typedSnapshot.requestToken
+    end
+
+    pcall(HLBG.HandleQueueStatusRaw,
+        queueStatus,
+        position,
+        estimatedTime,
+        totalQueued,
+        allianceQueued,
+        hordeQueued,
+        minPlayers,
+        queueState)
+    return true
+end
+
 local function ApplyNativeHLBGLiveSnapshot(payload)
     local decoded = TryDecodeHLBGJson(payload)
     if type(decoded) ~= 'table' then
@@ -214,6 +283,11 @@ local function ApplyNativeHLBGLiveSnapshot(payload)
         or decoded.affixCode)
     if affixValue and affixValue > 0 then
         HLBG._lastStatus.affix = affixValue
+    end
+
+    if type(decoded.affixText) == 'string' and decoded.affixText ~= '' then
+        HLBG._affixText = decoded.affixText
+    elseif affixValue and affixValue > 0 then
         if type(HLBG.GetAffixName) == 'function' then
             local ok, affixName = pcall(HLBG.GetAffixName, affixValue)
             if ok and type(affixName) == 'string' and affixName ~= '' then
@@ -224,8 +298,6 @@ local function ApplyNativeHLBGLiveSnapshot(payload)
         else
             HLBG._affixText = tostring(affixValue)
         end
-    elseif type(decoded.affixText) == 'string' and decoded.affixText ~= '' then
-        HLBG._affixText = decoded.affixText
     end
 
     if type(HLBG.TrackStatusSignal) == 'function' then
@@ -234,6 +306,7 @@ local function ApplyNativeHLBGLiveSnapshot(payload)
     end
 
     HLBG._lastStatusTime = GetTime()
+    ApplyNativeHLBGQueueSnapshot(decoded)
 
     local rows = NormalizeNativeHLBGLiveRows(decoded.players or decoded.rows
         or decoded.liveRows)
@@ -2568,7 +2641,36 @@ if DC then
             end
         else
             local affixId1, affixId2, affixId3, seasonId = args[1], args[2], args[3], args[4]
-            -- Handle pipe-delimited affix info
+            local affixNames = {}
+            local affixIds = { tonumber(affixId1), tonumber(affixId2), tonumber(affixId3) }
+
+            HLBG._lastStatus = HLBG._lastStatus or {}
+            HLBG._lastStatus.affix = affixIds[1] or 0
+
+            for _, affixId in ipairs(affixIds) do
+                if affixId and affixId > 0 then
+                    local affixName = nil
+                    if type(HLBG.GetAffixName) == 'function' then
+                        local ok, value = pcall(HLBG.GetAffixName, affixId)
+                        if ok and type(value) == 'string' and value ~= '' then
+                            affixName = value
+                        end
+                    end
+
+                    table.insert(affixNames, affixName or tostring(affixId))
+                end
+            end
+
+            HLBG._affixText = #affixNames > 0 and table.concat(affixNames, ', ') or ''
+            HLBG._currentSeason = tonumber(seasonId) or seasonId
+
+            if type(HLBG.UpdateHUD) == 'function' then
+                pcall(HLBG.UpdateHUD)
+            end
+
+            if HLBG._affixText ~= '' then
+                HLBGPrint('Current affixes: ' .. HLBG._affixText)
+            end
         end
     end)
     

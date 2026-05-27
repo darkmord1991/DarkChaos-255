@@ -185,6 +185,7 @@ namespace DCAddon
             constexpr uint8 CMSG_HEIRLOOM_QUERY    = 0x06;  // Query heirloom state
             constexpr uint8 CMSG_HEIRLOOM_UPGRADE  = 0x07;  // Upgrade heirloom item
             constexpr uint8 CMSG_GET_PACKAGES      = 0x08;  // Request available packages
+            constexpr uint8 CMSG_GET_TIER_CONFIG   = 0x09;  // Request authoritative tier cache data
 
             constexpr uint8 SMSG_ITEM_INFO         = 0x10;
             constexpr uint8 SMSG_UPGRADE_RESULT    = 0x11;
@@ -195,6 +196,7 @@ namespace DCAddon
             constexpr uint8 SMSG_HEIRLOOM_INFO     = 0x16;  // Heirloom state response
             constexpr uint8 SMSG_HEIRLOOM_RESULT   = 0x17;  // Heirloom upgrade result
             constexpr uint8 SMSG_PACKAGE_LIST      = 0x18;  // List of available packages
+            constexpr uint8 SMSG_TIER_CONFIG       = 0x19;  // Authoritative tier cache snapshot
 
             // Transmutation Opcodes
             constexpr uint8 CMSG_GET_TRANSMUTE_INFO = 0x20; // Get recipes and status
@@ -2104,6 +2106,13 @@ namespace DCAddon
             _preEncodedJson = std::move(json);
             _hasPreEncodedJson = true;
             return *this;
+        }
+
+        // Public accessor for the encoded JSON payload, used by dual-send
+        // helpers that emit the same JSON via SMSG_DC_NATIVE_ENVELOPE.
+        std::string Encode() const
+        {
+            return EncodeJson();
         }
 
         std::string Build() const

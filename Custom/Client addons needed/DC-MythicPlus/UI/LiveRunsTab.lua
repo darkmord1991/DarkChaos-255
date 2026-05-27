@@ -534,6 +534,11 @@ function GF:CreateLiveRunsTab()
 end
 
 function GF:PopulateLiveRuns(runs)
+    if self.compactMode and self.CompactPopulateLiveRuns then
+        self:CompactPopulateLiveRuns(runs)
+        if not self.LiveRunsTabContent then return end
+    end
+
     local scrollChild = self.LiveRunsTabContent.scrollChild
     if not scrollChild then return end
 

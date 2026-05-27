@@ -47,13 +47,46 @@ namespace
     {
         if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
         {
-            uint8 maxLevel = mgr->GetTierMaxLevel(tier_id);
-            if (maxLevel > 0)
-                return maxLevel;
+            if (DarkChaos::ItemUpgrade::TierDefinition const* def = mgr->GetTierDefinition(tier_id))
+            {
+                if (def->max_upgrade_level > 0)
+                    return def->max_upgrade_level;
+            }
         }
 
-        // Safe fallback for legacy mechanics helpers.
-        return 15;
+        switch (tier_id)
+        {
+            case DarkChaos::ItemUpgrade::TIER_LEVELING:
+                return 6;
+            case DarkChaos::ItemUpgrade::TIER_HEROIC:
+                return 15;
+            case DarkChaos::ItemUpgrade::TIER_HEIRLOOM:
+                return DarkChaos::ItemUpgrade::MAX_UPGRADE_LEVEL;
+            default:
+                return 15;
+        }
+    }
+
+    float ResolveStatMultiplierCap(uint8 tier_id)
+    {
+        if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+        {
+            if (DarkChaos::ItemUpgrade::TierDefinition const* def = mgr->GetTierDefinition(tier_id))
+            {
+                if (def->stat_multiplier_max > 1.0f)
+                    return def->stat_multiplier_max;
+            }
+        }
+
+        switch (tier_id)
+        {
+            case DarkChaos::ItemUpgrade::TIER_HEIRLOOM:
+                return DarkChaos::ItemUpgrade::STAT_MULTIPLIER_MAX_HEIRLOOM;
+            case DarkChaos::ItemUpgrade::TIER_INVALID:
+                return DarkChaos::ItemUpgrade::STAT_MULTIPLIER_BASE;
+            default:
+                return DarkChaos::ItemUpgrade::STAT_MULTIPLIER_MAX_REGULAR;
+        }
     }
 }
 
@@ -141,60 +174,27 @@ void UpgradeCostCalculator::GetRefundCost(uint8 tier_id, uint8 current_level,
 
 // ========== StatScalingCalculator Implementation ==========
 
-float StatScalingCalculator::GetStatMultiplier(uint8 upgrade_level)
-{
-    // Base formula: 1.0 + (level * 0.025)
-    // Level 0: 1.0x (0% bonus)
-    // Level 5: 1.125x (+12.5% bonus)
-    // Level 10: 1.25x (+25% bonus)
-    // Level 15: 1.375x (+37.5% bonus)
-    //
-    // Note: For Heirlooms (Tier 3), use GetStatMultiplierHeirloom() instead
-    // This function only affects secondary stats added via enchants
-    return 1.0f + (upgrade_level * 0.025f);
-}
-
-float StatScalingCalculator::GetStatMultiplierHeirloom(uint8 upgrade_level)
-{
-    // Heirloom-specific formula: 1.05 + (level * 0.02)
-    // Level 0: 1.05x (+5% bonus)
-    // Level 5: 1.15x (+15% bonus)
-    // Level 10: 1.25x (+25% bonus)
-    // Level 15: 1.35x (+35% bonus)
-    //
-    // IMPORTANT: This ONLY affects secondary stats (Crit/Haste/Hit/Expertise/ArmorPen)
-    // Note: Mastery stat does not exist in WotLK 3.3.5a (was added in Cataclysm 4.0.1)
-    // Primary stats (STR/AGI/INT/STA/SPI) are handled by heirloom_scaling_255.cpp
-    return 1.05f + (upgrade_level * 0.02f);
-}
-
-float StatScalingCalculator::GetTierMultiplier(uint8 tier_id)
-{
-    // Tier-based adjustments to stat scaling
-    static const float tier_multipliers[] = {
-        0.9f,     // Tier 1: Common (reduces scaling)
-        0.95f,    // Tier 2: Uncommon
-        1.0f,     // Tier 3: Heirloom (no adjustment - has own multiplier)
-        1.15f,    // Tier 4: Epic (enhances scaling)
-        1.25f     // Tier 5: Legendary (maximum scaling)
-    };
-
-    if (tier_id < 1 || tier_id > 5)
-        return 1.0f;
-
-    return tier_multipliers[tier_id - 1];
-}
-
 float StatScalingCalculator::GetFinalMultiplier(uint8 upgrade_level, uint8 tier_id)
 {
-    float base_multiplier = GetStatMultiplier(upgrade_level);
-    float tier_multiplier = GetTierMultiplier(tier_id);
+    if (upgrade_level == 0)
+        return STAT_MULTIPLIER_BASE;
 
-    // Combined formula: (base - 1.0) * tier_mult + 1.0
-    // This preserves 1.0 baseline while applying tier adjustments
-    float final_multiplier = (base_multiplier - 1.0f) * tier_multiplier + 1.0f;
+    uint8 maxLevel = ResolveMaxUpgradeLevel(tier_id);
+    if (maxLevel == 0)
+        return STAT_MULTIPLIER_BASE;
 
-    return final_multiplier;
+    uint8 clampedLevel = upgrade_level;
+    if (clampedLevel > maxLevel)
+        clampedLevel = maxLevel;
+
+    float maxMultiplier = ResolveStatMultiplierCap(tier_id);
+    if (maxMultiplier <= STAT_MULTIPLIER_BASE)
+        return STAT_MULTIPLIER_BASE;
+
+    float progress = static_cast<float>(clampedLevel) /
+        static_cast<float>(maxLevel);
+    return STAT_MULTIPLIER_BASE +
+        progress * (maxMultiplier - STAT_MULTIPLIER_BASE);
 }
 
 std::string StatScalingCalculator::GetStatBonusDisplay(uint8 upgrade_level, uint8 tier_id)

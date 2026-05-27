@@ -612,6 +612,25 @@ local function AddSpellId(tooltip, spellId)
     if tooltip._dcqosSpellIdShown == sid then
         return
     end
+
+    if tooltip.GetName and tooltip.NumLines then
+        local tipName = tooltip:GetName()
+        if tipName and tipName ~= "" then
+            for i = 1, tooltip:NumLines() do
+                local left = _G[tipName .. "TextLeft" .. i]
+                local text = left and left.GetText and left:GetText() or nil
+                local normalized = tostring(text or "")
+                normalized = normalized:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                normalized = normalized:gsub("%s+", " ")
+                normalized = normalized:gsub("^%s+", ""):gsub("%s+$", "")
+                if string.lower(normalized) == "spell id:" then
+                    tooltip._dcqosSpellIdShown = sid
+                    return
+                end
+            end
+        end
+    end
+
     tooltip._dcqosSpellIdShown = sid
     
     tooltip:AddLine(" ")
@@ -3529,41 +3548,77 @@ local function ResolveShapeshiftSpellId(formIndex, button)
         return sid
     end
 
-    if type(GetNumSpellTabs) ~= "function" or type(GetSpellTabInfo) ~= "function"
-        or type(GetSpellBookItemName) ~= "function" then
-        return nil
-    end
-
-    local tabCount = tonumber(GetNumSpellTabs()) or 0
-    for tabIndex = 1, tabCount do
-        local _, _, offset, numSlots = GetSpellTabInfo(tabIndex)
-        offset = tonumber(offset) or 0
-        numSlots = tonumber(numSlots) or 0
-        for slot = offset + 1, offset + numSlots do
-            local name = GetSpellBookItemName(slot, BOOKTYPE_SPELL)
-            local bookSid = GetSpellIdFromBookSlot(slot, BOOKTYPE_SPELL)
-            bookSid = tonumber(bookSid)
-            if name and formName and name == formName then
-                if bookSid and bookSid > 0 then
-                    return bookSid
-                end
-            end
-
-            if formTexture and bookSid and bookSid > 0 then
-                local bookTexture = nil
-                if type(GetSpellBookItemTexture) == "function" then
-                    bookTexture = GetSpellBookItemTexture(slot, BOOKTYPE_SPELL)
-                end
-                if (not bookTexture or bookTexture == "")
-                    and type(GetSpellTexture) == "function" then
-                    bookTexture = GetSpellTexture(bookSid)
+    if type(GetNumSpellTabs) == "function"
+        and type(GetSpellTabInfo) == "function"
+        and type(GetSpellBookItemName) == "function" then
+        local tabCount = tonumber(GetNumSpellTabs()) or 0
+        for tabIndex = 1, tabCount do
+            local _, _, offset, numSlots = GetSpellTabInfo(tabIndex)
+            offset = tonumber(offset) or 0
+            numSlots = tonumber(numSlots) or 0
+            for slot = offset + 1, offset + numSlots do
+                local name = GetSpellBookItemName(slot, BOOKTYPE_SPELL)
+                local bookSid = GetSpellIdFromBookSlot(slot, BOOKTYPE_SPELL)
+                bookSid = tonumber(bookSid)
+                if name and formName and name == formName then
+                    if bookSid and bookSid > 0 then
+                        return bookSid
+                    end
                 end
 
-                if bookTexture and bookTexture == formTexture then
-                    return bookSid
+                if formTexture and bookSid and bookSid > 0 then
+                    local bookTexture = nil
+                    if type(GetSpellBookItemTexture) == "function" then
+                        bookTexture = GetSpellBookItemTexture(slot, BOOKTYPE_SPELL)
+                    end
+                    if (not bookTexture or bookTexture == "")
+                        and type(GetSpellTexture) == "function" then
+                        bookTexture = GetSpellTexture(bookSid)
+                    end
+
+                    if bookTexture and bookTexture == formTexture then
+                        return bookSid
+                    end
                 end
             end
         end
+    end
+
+    local lowerFormName = type(formName) == "string" and strlower(formName) or nil
+    local knownFormSpellIds = lowerFormName and {
+        ["stealth"] = {1787, 1786, 1785, 1784},
+        ["battle stance"] = {2457},
+        ["defensive stance"] = {71},
+        ["berserker stance"] = {2458},
+        ["blood presence"] = {48266},
+        ["frost presence"] = {48263},
+        ["unholy presence"] = {48265},
+        ["bear form"] = {5487},
+        ["dire bear form"] = {9634},
+        ["cat form"] = {768},
+        ["prowl"] = {9913, 6783, 5215},
+        ["travel form"] = {783},
+        ["aquatic form"] = {1066},
+        ["moonkin form"] = {24858},
+        ["tree of life"] = {33891},
+        ["flight form"] = {33943},
+        ["swift flight form"] = {40120},
+        ["ghost wolf"] = {2645},
+        ["shadowform"] = {15473},
+        ["metamorphosis"] = {47241},
+    }
+    local candidateIds = knownFormSpellIds and knownFormSpellIds[lowerFormName]
+    if candidateIds then
+        if type(GetSpellInfo) == "function" then
+            for _, candidateId in ipairs(candidateIds) do
+                local candidateName = GetSpellInfo(candidateId)
+                if candidateName and strlower(candidateName) == lowerFormName then
+                    return candidateId
+                end
+            end
+        end
+
+        return candidateIds[1]
     end
 
     return nil
@@ -4139,7 +4194,7 @@ end
 
 local function SetFallbackShapeshiftTooltip(button)
     if not GameTooltip then
-        return
+        return false
     end
 
     if type(button) == "table" then
@@ -4155,7 +4210,27 @@ local function SetFallbackShapeshiftTooltip(button)
     end
 
     if not formIndex or formIndex <= 0 then
-        return
+        Tooltips._lastShapeshiftTooltipDebug = {
+            path = "fallback-shapeshift",
+            reason = "missing-form-index",
+        }
+        return false
+    end
+
+    local formTexture, formName, _, _, directSpellId
+    if type(GetShapeshiftFormInfo) == "function" then
+        formTexture, formName, _, _, directSpellId = GetShapeshiftFormInfo(formIndex)
+    end
+
+    local buttonName
+    if type(button) == "table" and type(button.GetName) == "function" then
+        buttonName = button:GetName()
+    end
+
+    local actionSlot = type(button) == "table" and tonumber(button.action) or nil
+    local actionType, actionValue, actionSubType, actionSpellId
+    if actionSlot and actionSlot > 0 and type(GetActionInfo) == "function" then
+        actionType, actionValue, actionSubType, actionSpellId = GetActionInfo(actionSlot)
     end
 
     if type(GameTooltip.SetOwner) == "function" then
@@ -4166,7 +4241,24 @@ local function SetFallbackShapeshiftTooltip(button)
         end
     end
 
-    SafeFallbackSetShapeshift(GameTooltip, formIndex)
+    if type(GameTooltip.ClearLines) == "function" then
+        GameTooltip:ClearLines()
+    end
+
+    local nativeSetShapeshift = ResolveTooltipMethod(GameTooltip, "SetShapeshift")
+    local nativeSetShapeshiftOk = false
+    if type(nativeSetShapeshift) == "function" then
+        local previousSuppress = GameTooltip._dcqosSuppressSpellHooks
+        GameTooltip._dcqosSuppressSpellHooks = true
+        nativeSetShapeshiftOk = pcall(function()
+            nativeSetShapeshift(GameTooltip, formIndex)
+        end)
+        GameTooltip._dcqosSuppressSpellHooks = previousSuppress
+    end
+
+    if not nativeSetShapeshiftOk then
+        SafeFallbackSetShapeshift(GameTooltip, formIndex)
+    end
 
     MarkSpellTooltipSource(GameTooltip, "action")
     SetNativeSpellRowsRequestContext(GameTooltip, "shapeshift", formIndex)
@@ -4178,7 +4270,28 @@ local function SetFallbackShapeshiftTooltip(button)
     if (not spellId or spellId <= 0) then
         spellId = ResolveSpellIdFromTooltipName(GameTooltip)
     end
+
+    local nativeSetSpellByIdOk = false
+    local clientDescriptionShown = false
+    local clientDescriptionLength = 0
+
     if spellId and spellId > 0 then
+        local nativeSetSpellById = ResolveTooltipMethod(GameTooltip,
+            "SetSpellByID")
+        if type(nativeSetSpellById) == "function" then
+            local previousSuppress = GameTooltip._dcqosSuppressSpellHooks
+            GameTooltip._dcqosSuppressSpellHooks = true
+            nativeSetSpellByIdOk = pcall(function()
+                nativeSetSpellById(GameTooltip, spellId)
+            end)
+            GameTooltip._dcqosSuppressSpellHooks = previousSuppress
+        end
+
+        if (not nativeSetSpellByIdOk)
+            and type(formName) == "string" and formName ~= "" then
+            GameTooltip:SetText(formName)
+        end
+
         local contextHash = BuildSpellTooltipContextHash(spellId)
         local key = BuildSpellEnrichmentKey(spellId, contextHash)
         local nativeRows = GetNativeClientSpellTooltipRows(GameTooltip,
@@ -4198,7 +4311,9 @@ local function SetFallbackShapeshiftTooltip(button)
         else
             local description = GetClientSpellDescription(spellId)
             if type(description) == "string" and description ~= "" then
-                AddClientSpellDescriptionLines(GameTooltip, description)
+                clientDescriptionLength = string.len(description)
+                clientDescriptionShown = AddClientSpellDescriptionLines(
+                    GameTooltip, description)
                 GameTooltip._dcqosClientDescriptionShownKey = key
             end
         end
@@ -4208,7 +4323,36 @@ local function SetFallbackShapeshiftTooltip(button)
         EnhanceSpellTooltip(GameTooltip, spellId)
     end
 
+    local tooltipLines = nil
+    if type(GameTooltip.NumLines) == "function" then
+        tooltipLines = GameTooltip:NumLines()
+    end
+
+    Tooltips._lastShapeshiftTooltipDebug = {
+        path = "fallback-shapeshift",
+        buttonName = buttonName,
+        formIndex = formIndex,
+        formName = formName,
+        formTexture = formTexture,
+        buttonSpellId = type(button) == "table"
+            and tonumber(button.spellId or button.spellID) or nil,
+        actionSlot = actionSlot,
+        actionType = actionType,
+        actionValue = actionValue,
+        actionSubType = actionSubType,
+        actionSpellId = actionSpellId,
+        directSpellId = directSpellId,
+        resolvedSpellId = spellId,
+        nativeSetShapeshift = nativeSetShapeshiftOk,
+        nativeSetSpellByID = nativeSetSpellByIdOk,
+        clientDescriptionShown = clientDescriptionShown,
+        clientDescriptionLength = clientDescriptionLength,
+        tooltipLines = tooltipLines,
+        time = type(GetTime) == "function" and GetTime() or nil,
+    }
+
     GameTooltip:Show()
+    return true
 end
 
 local function SetFallbackCompanionTooltip(button)
@@ -4264,75 +4408,9 @@ local function SafeShapeshiftButtonOnEnter(self)
         return
     end
 
-    local formIndex
-    if type(button.GetID) == "function" then
-        formIndex = button:GetID()
-    end
-
-    if not formIndex or formIndex <= 0 then
-        return
-    end
-
-    local blizzardOnEnter = addon._dcqosOriginalShapeshiftButtonOnEnter
-        or ShapeshiftButton_OnEnter
-
-    if type(blizzardOnEnter) == "function" and blizzardOnEnter ~= SafeShapeshiftButtonOnEnter then
-        local ok, result = pcall(function()
-            return blizzardOnEnter(button)
-        end)
-
-        if ok then
-            MarkSpellTooltipSource(GameTooltip, "action")
-            SetNativeSpellRowsRequestContext(GameTooltip, "shapeshift",
-                formIndex)
-            local spellId = ResolveShapeshiftSpellId(formIndex, button)
-            if (not spellId or spellId <= 0) and GameTooltip and type(GameTooltip.GetSpell) == "function" then
-                local _, _, directSpellId = GameTooltip:GetSpell()
-                spellId = tonumber(directSpellId)
-            end
-            if (not spellId or spellId <= 0) then
-                spellId = ResolveSpellIdFromTooltipName(GameTooltip)
-            end
-            if spellId and spellId > 0 then
-                local contextHash = BuildSpellTooltipContextHash(spellId)
-                local key = BuildSpellEnrichmentKey(spellId, contextHash)
-                local nativeRows = GetNativeClientSpellTooltipRows(
-                    GameTooltip, spellId, contextHash)
-                local renderedNativeRows = nativeRows
-                    and RenderNativeClientSpellTooltipRows(GameTooltip,
-                        nativeRows) or false
-
-                GameTooltip._dcqosClientDescriptionShownKey = nil
-                GameTooltip._dcqosSpellEnrichmentShownKey = nil
-                GameTooltip._dcqosNativeDescriptionStrippedKey = nil
-                GameTooltip._dcqosPendingSpellIdForBottom = nil
-                GameTooltip._dcqosSpellIdShown = nil
-
-                if renderedNativeRows then
-                    GameTooltip._dcqosSpellEnrichmentShownKey = key
-                else
-                    local description = GetClientSpellDescription(spellId)
-                    if type(description) == "string" and description ~= "" then
-                        AddClientSpellDescriptionLines(GameTooltip,
-                            description)
-                        GameTooltip._dcqosClientDescriptionShownKey = key
-                    end
-                end
-
-                TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(spellId))
-                GameTooltip._dcqosResolvedSpellId = spellId
-                EnhanceSpellTooltip(GameTooltip, spellId)
-            end
-            button.UpdateTooltip = nil
-            button.updateTooltip = nil
-            return result
-        end
-
-        addon:Debug("Blizzard shapeshift tooltip failed; using fallback: " .. tostring(result))
-    end
-
     button.UpdateTooltip = nil
-    SetFallbackShapeshiftTooltip(button)
+    button.updateTooltip = nil
+    return SetFallbackShapeshiftTooltip(button)
 end
 
 function SafeSpellButtonOnEnter(self)
@@ -4544,6 +4622,10 @@ local function HookSpellTooltips()
     if not GameTooltip._dcqosHookedSetShapeshift and hooksecurefunc and GameTooltip.SetShapeshift then
         GameTooltip._dcqosHookedSetShapeshift = true
         hooksecurefunc(GameTooltip, "SetShapeshift", function(self, index, ...)
+            if self._dcqosSuppressSpellHooks then
+                return
+            end
+
             MarkSpellTooltipSource(self, "action")
             SetNativeSpellRowsRequestContext(self, "shapeshift", index)
             local spellId = ResolveShapeshiftSpellId(index)
@@ -4554,11 +4636,71 @@ local function HookSpellTooltips()
             if (not spellId or spellId <= 0) then
                 spellId = ResolveSpellIdFromTooltipName(self)
             end
+
+            local nativeSetSpellByIdOk = false
+            local clientDescriptionShown = false
+            local clientDescriptionLength = 0
             if spellId and spellId > 0 then
+                local nativeSetSpellById = ResolveTooltipMethod(self,
+                    "SetSpellByID")
+                if type(nativeSetSpellById) == "function" then
+                    local previousSuppress = self._dcqosSuppressSpellHooks
+                    self._dcqosSuppressSpellHooks = true
+                    nativeSetSpellByIdOk = pcall(function()
+                        nativeSetSpellById(self, spellId)
+                    end)
+                    self._dcqosSuppressSpellHooks = previousSuppress
+                end
+
+                local contextHash = BuildSpellTooltipContextHash(spellId)
+                local key = BuildSpellEnrichmentKey(spellId, contextHash)
+                local nativeRows = GetNativeClientSpellTooltipRows(self,
+                    spellId, contextHash)
+                local renderedNativeRows = nativeRows
+                    and RenderNativeClientSpellTooltipRows(self, nativeRows)
+                    or false
+
+                if renderedNativeRows then
+                    self._dcqosSpellEnrichmentShownKey = key
+                else
+                    local description = GetClientSpellDescription(spellId)
+                    if type(description) == "string" and description ~= "" then
+                        clientDescriptionLength = string.len(description)
+                        clientDescriptionShown = AddClientSpellDescriptionLines(
+                            self, description)
+                        self._dcqosClientDescriptionShownKey = key
+                    end
+                end
+
                 TrySetTooltipHyperlink(self, "spell:" .. tostring(spellId))
                 self._dcqosResolvedSpellId = spellId
                 EnhanceSpellTooltip(self, spellId)
             end
+
+            local formTexture, formName, _, _, directFormSpellId
+            if type(GetShapeshiftFormInfo) == "function" then
+                formTexture, formName, _, _, directFormSpellId =
+                    GetShapeshiftFormInfo(index)
+            end
+
+            local tooltipLines = nil
+            if type(self.NumLines) == "function" then
+                tooltipLines = self:NumLines()
+            end
+
+            Tooltips._lastShapeshiftTooltipDebug = {
+                path = "setshapeshift-hook",
+                formIndex = index,
+                formName = formName,
+                formTexture = formTexture,
+                directSpellId = directFormSpellId,
+                resolvedSpellId = spellId,
+                nativeSetSpellByID = nativeSetSpellByIdOk,
+                clientDescriptionShown = clientDescriptionShown,
+                clientDescriptionLength = clientDescriptionLength,
+                tooltipLines = tooltipLines,
+                time = type(GetTime) == "function" and GetTime() or nil,
+            }
         end)
     end
 
@@ -4671,6 +4813,10 @@ local function HookSpellTooltips()
     if not GameTooltip._dcqosHookedOnTooltipSetSpell then
         GameTooltip._dcqosHookedOnTooltipSetSpell = true
         GameTooltip:HookScript("OnTooltipSetSpell", function(self)
+            if self._dcqosSuppressSpellHooks then
+                return
+            end
+
             local source = ResolveSpellTooltipSource(self)
             local name, rank, spellId = self:GetSpell()
             spellId = tonumber(spellId)
@@ -4708,6 +4854,10 @@ local function HookSpellTooltips()
     if not GameTooltip._dcqosHookedSetSpell and hooksecurefunc and GameTooltip.SetSpell then
         GameTooltip._dcqosHookedSetSpell = true
         hooksecurefunc(GameTooltip, "SetSpell", function(self, spellBook, spellBookType, ...)
+            if self._dcqosSuppressSpellHooks then
+                return
+            end
+
             if spellBookType ~= BOOKTYPE_SPELL and spellBookType ~= BOOKTYPE_PET then
                 return
             end
@@ -4889,6 +5039,19 @@ function Tooltips.GetTelemetrySnapshot()
         upgrade = copyTable(telemetry.upgrade),
         npc = copyTable(telemetry.npc),
     }
+end
+
+function Tooltips.GetLastShapeshiftTooltipDebug()
+    local src = Tooltips._lastShapeshiftTooltipDebug
+    if type(src) ~= "table" then
+        return nil
+    end
+
+    local out = {}
+    for k, v in pairs(src) do
+        out[k] = tonumber(v) or v
+    end
+    return out
 end
 
 function Tooltips.GetNativeBridgeSnapshot()

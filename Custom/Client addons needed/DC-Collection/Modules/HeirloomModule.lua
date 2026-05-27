@@ -18,11 +18,18 @@ local L = DC.L
 local HeirloomModule = {}
 DC.HeirloomModule = HeirloomModule
 
-local HEIRLOOM_ITEMID_MAX = 2000000
-
 local function IsValidHeirloomItemId(itemId)
     itemId = tonumber(itemId)
-    return itemId ~= nil and itemId > 0 and itemId <= HEIRLOOM_ITEMID_MAX
+    if itemId == nil or itemId <= 0 then
+        return false
+    end
+
+    local definitions = DC.definitions and DC.definitions.heirlooms
+    if type(definitions) == "table" and next(definitions) ~= nil then
+        return definitions[itemId] ~= nil or definitions[tostring(itemId)] ~= nil
+    end
+
+    return true
 end
 
 local function GetHeirloomDisplayId(def)

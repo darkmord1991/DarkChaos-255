@@ -52,6 +52,46 @@ namespace MythicPlus
             return DCAddon::ResolveTransportPolicy(player, request);
         }
 
+        // Stage 2 native bridge: feature labels exported via
+        // SMSG_DC_NATIVE_ENVELOPE for Mythic+ stats responses (run history /
+        // best-runs). Mirrors the HLBG/Leaderboards pattern so envelope
+        // consumers can read GetLastDCNativeEnvelope("MPLS", <feature>).
+        namespace StatsFeature
+        {
+            constexpr char BEST_RUNS[]       = "best_runs";
+            constexpr char ACTION_RESPONSE[] = "response";
+        }
+
+        bool SupportsStatsNativeEnvelope(Player* player)
+        {
+            DCAddon::TransportPolicyRequest request;
+            request.featureName = "mythicplus-stats";
+            request.nativeCapability =
+                DCAddon::ProtocolVersion::Capability::GENERIC_NATIVE_ENVELOPE;
+            return DCAddon::ResolveTransportPolicy(player, request).UsesNative();
+        }
+
+        uint32 NextStatsRevision()
+        {
+            static std::atomic<uint32> s_revision{0};
+            uint32 revision = ++s_revision;
+            if (revision == 0)
+                revision = ++s_revision;
+            return revision;
+        }
+
+        void SendStatsResponseEnvelope(Player* player, uint8 logicalOpcode,
+            std::string const& feature, std::string const& payload,
+            std::string const& requestToken)
+        {
+            if (!player || !SupportsStatsNativeEnvelope(player))
+                return;
+
+            DCAddon::SendNativeEnvelope(player, Module::MYTHIC_PLUS,
+                logicalOpcode, feature, StatsFeature::ACTION_RESPONSE,
+                NextStatsRevision(), payload, requestToken);
+        }
+
         void SendNativeHudSnapshot(Player* player,
             std::string const& payload)
         {
@@ -403,12 +443,14 @@ namespace MythicPlus
             guid);
 
         std::string runList;
+        std::string jsonRuns = "[";
         if (result)
         {
             bool first = true;
             do
             {
                 if (!first) runList += ";";
+                if (!first) jsonRuns += ",";
                 first = false;
 
                 uint32 dungeonId = (*result)[0].Get<uint32>();
@@ -420,12 +462,23 @@ namespace MythicPlus
                 runList += std::to_string(dungeonId) + ":" + std::to_string(level) + ":"
                         + std::to_string(time) + ":" + std::to_string(deaths) + ":"
                         + std::to_string(season);
+
+                jsonRuns += "{\"dungeonId\":" + std::to_string(dungeonId)
+                        + ",\"level\":" + std::to_string(level)
+                        + ",\"completionTime\":" + std::to_string(time)
+                        + ",\"deaths\":" + std::to_string(deaths)
+                        + ",\"season\":" + std::to_string(season) + "}";
             } while (result->NextRow());
         }
+        jsonRuns += "]";
 
         Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_BEST_RUNS)
             .Add(runList)
             .Send(player);
+
+        std::string const jsonPayload = std::string("{\"runs\":") + jsonRuns + "}";
+        SendStatsResponseEnvelope(player, Opcode::MPlus::SMSG_BEST_RUNS,
+            StatsFeature::BEST_RUNS, jsonPayload, std::string());
     }
 
     // Handler: Get keystone info

@@ -686,8 +686,8 @@ void CharacterDatabaseConnection::DoPrepareStatements()
 
     // Hinterland Battleground (HLBG)
     PrepareStatement(CHAR_INS_HLBG_WINNER_HISTORY,
-        "INSERT INTO dc_hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, weather, weather_intensity, duration_seconds) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO dc_hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, affix_secondary, affix_tertiary, weather, weather_intensity, duration_seconds) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         CONNECTION_ASYNC);
 
     // HLBG Player Stats
@@ -697,7 +697,7 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_UPD_HLBG_PLAYER_RESOURCES, "UPDATE dc_hlbg_player_stats SET resources_captured = resources_captured + ? WHERE player_guid = ?", CONNECTION_ASYNC);
 
     // HLBG Scoreboard
-    PrepareStatement(CHAR_SEL_HLBG_HISTORY_PAGE, "SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason, affix FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT ? OFFSET ?", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_SEL_HLBG_HISTORY_PAGE, "SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason, affix, affix_secondary, affix_tertiary FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT ? OFFSET ?", CONNECTION_SYNCH);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)
