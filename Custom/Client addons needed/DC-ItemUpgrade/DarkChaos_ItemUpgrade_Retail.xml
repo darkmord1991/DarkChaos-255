@@ -251,7 +251,7 @@
             </Button>
 
             <Frame name="$parentItemCard" parentKey="ItemCard">
-                <Size x="438" y="84"/>
+                <Size x="438" y="105"/>
                 <Anchors>
                     <Anchor point="TOP" x="0" y="-68"/>
                 </Anchors>
@@ -354,7 +354,7 @@
             </Button>
 
             <Frame name="$parentItemInfo" parentKey="ItemInfo">
-                <Size x="300" y="64"/>
+                <Size x="300" y="120"/>
                 <Anchors>
                     <Anchor point="TOPLEFT" relativeTo="DarkChaos_ItemUpgradeFrameItemCard" x="94" y="-14"/>
                 </Anchors>
@@ -391,11 +391,12 @@
                             </Anchors>
                             <Color r="0.94" g="0.82" b="0.34" a="1"/>
                         </FontString>
-                        <!-- name="$parentUpgradeProgress" lets DropdownContainer anchor to this FontString -->
+                        <!-- Explicit y="16" height ensures BOTTOMLEFT is always 16px below TOPLEFT
+                             so that UpgradeToLabel and DropdownContainer anchor correctly. -->
                         <FontString name="$parentUpgradeProgress" parentKey="UpgradeProgress" inherits="GameFontHighlight" justifyH="LEFT" hidden="true">
-                            <Size x="300" y="0"/>
+                            <Size x="300" y="16"/>
                             <Anchors>
-                                <Anchor point="TOPLEFT" relativeKey="$parent.ItemName" relativePoint="BOTTOMLEFT" x="0" y="-3"/>
+                                <Anchor point="TOPLEFT" relativeKey="$parent.ItemName" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
                             </Anchors>
                         </FontString>
                     </Layer>
@@ -414,7 +415,7 @@
             <Frame name="$parentCurrentPanel" parentKey="CurrentPanel" hidden="true">
                 <Size x="234" y="220"/>
                 <Anchors>
-                    <Anchor point="TOPLEFT" x="42" y="-188"/>
+                    <Anchor point="TOPLEFT" x="42" y="-187"/>
                 </Anchors>
                 <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                     <EdgeSize>
@@ -476,7 +477,7 @@
             <Frame name="$parentUpgradePanel" parentKey="UpgradePanel" hidden="true">
                 <Size x="234" y="220"/>
                 <Anchors>
-                    <Anchor point="TOPRIGHT" x="-42" y="-188"/>
+                    <Anchor point="TOPRIGHT" x="-42" y="-187"/>
                 </Anchors>
                 <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                     <EdgeSize>
@@ -679,8 +680,8 @@
             <Frame parentKey="ButtonFrame">
                 <Size x="0" y="82"/>
                 <Anchors>
-                    <Anchor point="BOTTOMLEFT" x="22" y="24"/>
-                    <Anchor point="BOTTOMRIGHT" x="-22" y="24"/>
+                    <Anchor point="BOTTOMLEFT" x="22" y="30"/>
+                    <Anchor point="BOTTOMRIGHT" x="-22" y="30"/>
                 </Anchors>
                 <Frames>
                     <Frame parentKey="MoneyFrame">
@@ -1035,7 +1036,7 @@
     </Frame>
 
     <Frame name="DarkChaos_TierBrowserFrame" parent="UIParent" enableMouse="true" movable="true" hidden="true" toplevel="true">
-        <Size x="340" y="420"/>
+        <Size x="420" y="540"/>
         <Anchors>
             <Anchor point="LEFT" relativeTo="DarkChaos_ItemUpgradeFrame" relativePoint="RIGHT" x="10" y="0"/>
         </Anchors>
@@ -1057,8 +1058,9 @@
                         <Anchor point="TOP" x="0" y="-15"/>
                     </Anchors>
                 </FontString>
+                <!-- StatusText: simplified to just tier/item count (full debug in footer) -->
                 <FontString parentKey="StatusText" inherits="GameFontHighlightSmall" justifyH="CENTER">
-                    <Size x="280" y="0"/>
+                    <Size x="360" y="0"/>
                     <Anchors>
                         <Anchor point="TOP" x="0" y="-33"/>
                     </Anchors>
@@ -1072,7 +1074,7 @@
                 </Anchors>
             </Button>
             <ScrollFrame name="$parentScrollFrame" parentKey="ScrollFrame" inherits="FauxScrollFrameTemplate">
-                <Size x="300" y="220"/>
+                <Size x="376" y="260"/>
                 <Anchors>
                     <Anchor point="TOP" x="-8" y="-54"/>
                 </Anchors>
@@ -1083,9 +1085,9 @@
                 </Scripts>
             </ScrollFrame>
             <Frame parentKey="DetailPanel">
-                <Size x="300" y="110"/>
+                <Size x="376" y="190"/>
                 <Anchors>
-                    <Anchor point="TOP" x="-8" y="-286"/>
+                    <Anchor point="TOP" x="-8" y="-328"/>
                 </Anchors>
                 <Backdrop bgFile="Interface\Tooltips\UI-Tooltip-Background" edgeFile="Interface\Tooltips\UI-Tooltip-Border" tile="true">
                     <EdgeSize>
@@ -1100,39 +1102,39 @@
                 <Layers>
                     <Layer level="ARTWORK">
                         <Texture parentKey="Icon" file="Interface\Icons\INV_Misc_QuestionMark">
-                            <Size x="34" y="34"/>
+                            <Size x="40" y="40"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" x="12" y="-12"/>
                             </Anchors>
                         </Texture>
                         <FontString parentKey="NameText" inherits="GameFontNormalLarge" justifyH="LEFT">
-                            <Size x="230" y="0"/>
+                            <Size x="296" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" relativeKey="$parent.Icon" relativePoint="TOPRIGHT" x="10" y="-2"/>
                             </Anchors>
                         </FontString>
                         <FontString parentKey="SummaryText" inherits="GameFontHighlightSmall" justifyH="LEFT">
-                            <Size x="230" y="0"/>
+                            <Size x="296" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" relativeKey="$parent.NameText" relativePoint="BOTTOMLEFT" x="0" y="-4"/>
                             </Anchors>
                         </FontString>
-                        <FontString parentKey="RangeText" inherits="GameFontNormalSmall" justifyH="LEFT">
-                            <Size x="276" y="0"/>
+                        <FontString parentKey="RangeText" inherits="GameFontNormal" justifyH="LEFT">
+                            <Size x="348" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" relativeKey="$parent.Icon" relativePoint="BOTTOMLEFT" x="0" y="-10"/>
                             </Anchors>
                         </FontString>
                         <FontString parentKey="DescriptionText" inherits="GameFontHighlightSmall" justifyH="LEFT">
-                            <Size x="276" y="0"/>
+                            <Size x="348" y="0"/>
                             <Anchors>
                                 <Anchor point="TOPLEFT" relativeKey="$parent.RangeText" relativePoint="BOTTOMLEFT" x="0" y="-8"/>
                             </Anchors>
                         </FontString>
                         <FontString parentKey="FooterText" inherits="GameFontDisableSmall" justifyH="LEFT">
-                            <Size x="276" y="0"/>
+                            <Size x="348" y="0"/>
                             <Anchors>
-                                <Anchor point="BOTTOMLEFT" x="12" y="12"/>
+                                <Anchor point="BOTTOMLEFT" x="12" y="14"/>
                             </Anchors>
                         </FontString>
                     </Layer>

@@ -13,7 +13,7 @@ local GF = namespace.GroupFinder
 -- =====================================================================
 
 GF.FRAME_WIDTH = 563
-GF.FRAME_HEIGHT = 428
+GF.FRAME_HEIGHT = 512
 GF.TAB_NAMES = { "Mythic+", "Raids", "World", "Live Runs", "Scheduled", "My Queues" }
 GF.TABS = {}
 GF.currentTab = 1
@@ -56,6 +56,89 @@ local LFG_PORTRAIT_TEXTURE = "Interface\\LFGFrame\\UI-LFG-PORTRAIT"
 local LFG_SEPARATOR_TEXTURE = "Interface\\LFGFrame\\UI-LFG-SEPARATOR"
 local LFG_DUNGEON_BACKGROUND = "Interface\\LFGFrame\\UI-LFG-BACKGROUND-DUNGEONWALL"
 local LFG_REWARD_RING = "Interface\\LFGFrame\\UI-LFG-ICON-REWARDRING"
+
+-- ---------------------------------------------------------------------------
+-- LFG list icons (Interface\LFGFrame\lfgicon-<key>.blp), shipped in patch MPQ.
+-- Blizzard's internal art keys do NOT always match the instance display name
+-- (Utgarde Keep -> "utgarde", The Culling of Stratholme -> "oldstratholme",
+-- Trial of the Champion -> "argentdungeon", Zul'Farrak -> "zulfarak"), so the
+-- mapping is resolved explicitly by Map.dbc id. Several wings share one icon
+-- (Hellfire 5-mans, Coilfang, Auchindoun, Tempest Keep, Caverns of Time).
+-- ---------------------------------------------------------------------------
+local LFG_ICON_PATH = "Interface\\LFGFrame\\lfgicon-"
+
+local LFG_ICON_BY_MAP = {
+    -- Classic dungeons
+    [389] = "ragefirechasm", [43]  = "wailingcaverns",  [34]  = "stormwindstockades",
+    [36]  = "deadmines",     [33]  = "shadowfangkeep",  [48]  = "blackfathomdeeps",
+    [90]  = "gnomeregan",    [47]  = "razorfenkraul",   [189] = "scarletmonastery",
+    [129] = "razorfendowns", [209] = "zulfarak",        [70]  = "uldaman",
+    [109] = "sunkentemple",  [229] = "blackrockspire",  [230] = "blackrockdepths",
+    [349] = "maraudon",      [289] = "scholomance",     [329] = "stratholme",
+    [429] = "diremaul",
+    -- Classic raids
+    [409] = "moltencore",    [469] = "blackwinglair",   [309] = "zulgurub",
+    [509] = "aqruins",       [531] = "aqtemple",
+    -- TBC dungeons
+    [540] = "hellfirecitadel5man", [542] = "hellfirecitadel5man", [543] = "hellfirecitadel5man",
+    [545] = "coilfang",            [546] = "coilfang",            [547] = "coilfang",
+    [552] = "tempestkeep",         [553] = "tempestkeep",         [554] = "tempestkeep",
+    [555] = "auchindoun",          [556] = "auchindoun",          [557] = "auchindoun",
+    [558] = "auchindoun",          [269] = "cavernsoftime",       [560] = "cavernsoftime",
+    [585] = "magistersterrace",
+    -- TBC raids
+    [532] = "karazhan",            [534] = "hyjalpast",           [544] = "hellfirecitadelraid",
+    [548] = "serpentshrinecavern", [550] = "tempestkeep",         [564] = "blacktemple",
+    [565] = "gruulslair",          [568] = "zulaman",             [580] = "sunwell",
+    -- WotLK dungeons
+    [574] = "utgarde",          [575] = "utgardepinnacle",  [576] = "thenexus",
+    [578] = "theoculus",        [595] = "oldstratholme",    [599] = "hallsofstone",
+    [600] = "draktharon",       [601] = "azjolnerub",       [602] = "hallsoflightning",
+    [604] = "gundrak",          [608] = "theviolethold",    [619] = "ahnkahet",
+    [632] = "theforgeofsouls",  [650] = "argentdungeon",    [658] = "pitofsaron",
+    [668] = "hallsofreflection",
+    -- WotLK raids
+    [249] = "onyxiaencounter",  [533] = "naxxramas",        [603] = "ulduarraid",
+    [615] = "chamberofaspects", [616] = "malygos",          [624] = "vaultofarchavon",
+    [631] = "icecrowncitadel",  [649] = "argentraid",       [724] = "chamberofaspects",
+}
+
+-- Derive a best-effort icon key from a display name for instances not in the
+-- table above. Non-existent files are skipped safely by ApplyTextureCandidates.
+local function NormalizeLFGKey(name)
+    if type(name) ~= "string" then return nil end
+    local key = name:lower():gsub("^the%s+", ""):gsub("[^a-z0-9]", "")
+    if key == "" then return nil end
+    return key
+end
+
+-- Build LFG list-icon candidates for an instance descriptor (mapId, name, or a
+-- row table). isRaid selects the generic fallback; includeGeneric appends the
+-- catch-all lfgicon-dungeon/raid. Reusable from any UI that wants these icons.
+function namespace.ResolveLFGIconCandidates(descriptor, isRaid, includeGeneric)
+    local out = {}
+    local mapId, name
+    if type(descriptor) == "number" then
+        mapId = descriptor
+    elseif type(descriptor) == "string" then
+        name = descriptor
+    elseif type(descriptor) == "table" then
+        mapId = descriptor.mapId or descriptor.queueMapId or descriptor.dungeonId
+        name = descriptor.dungeonName or descriptor.name
+    end
+
+    if mapId and LFG_ICON_BY_MAP[mapId] then
+        table.insert(out, LFG_ICON_PATH .. LFG_ICON_BY_MAP[mapId])
+    end
+    local key = NormalizeLFGKey(name)
+    if key then
+        table.insert(out, LFG_ICON_PATH .. key)
+    end
+    if includeGeneric then
+        table.insert(out, LFG_ICON_PATH .. (isRaid and "raid" or "dungeon"))
+    end
+    return out
+end
 local RETAIL_TEXTURE_ROOT = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Retail\\"
 local RETAIL_BLUE_MENU_RING = RETAIL_TEXTURE_ROOT .. "bluemenuring_335.tga"
 -- The retail bluemenu-main atlas (256x1024). Texcoords below are the exact
@@ -142,19 +225,44 @@ local function ApplyTextureCandidates(texture, candidates, fallback)
     return false
 end
 
--- Resolve teleporter/dungeon art for a group-finder list entry.
+-- Resolve thumbnail art for a group-finder list entry. Order of preference:
+--   1. the shipped LFG list icon for the map (patch MPQ, lfgicon-<key>.blp)
+--   2. a name-derived LFG icon (covers custom instances not in the table)
+--   3. the teleporter art (large landscape shots) for anything still unmatched
+--   4. the generic lfgicon-dungeon / lfgicon-raid catch-all
 local function GetEntryDungeonArtCandidates(entry)
     if type(entry) ~= "table" then return nil end
     if type(_G.DCMythicPlusHUD) ~= "table" then return nil end
 
-    local resolver = _G.DCMythicPlusHUD.ResolveMythicPlusDungeonArtCandidates
-    if type(resolver) ~= "function" then return nil end
+    local combined = {}
+    local isRaid = (entry.queueCategory == 2) or entry.isRaid
+        or (entry.queueSize ~= nil)
 
+    -- 1 + 2: specific LFG icons (no generic yet, so teleporter art can win).
+    if type(namespace.ResolveLFGIconCandidates) == "function" then
+        for _, p in ipairs(namespace.ResolveLFGIconCandidates(entry, isRaid, false)) do
+            table.insert(combined, p)
+        end
+    end
+
+    -- 3: teleporter art.
+    local resolver = _G.DCMythicPlusHUD.ResolveMythicPlusDungeonArtCandidates
     local descriptor = entry.mapId or entry.dungeonId or entry.dungeon
         or entry.dungeonName or entry.name
-    if not descriptor then return nil end
+    if type(resolver) == "function" and descriptor then
+        local art = resolver(descriptor)
+        if type(art) == "table" then
+            for _, p in ipairs(art) do table.insert(combined, p) end
+        elseif type(art) == "string" then
+            table.insert(combined, art)
+        end
+    end
 
-    return resolver(descriptor)
+    -- 4: generic per-category fallback.
+    table.insert(combined, LFG_ICON_PATH .. (isRaid and "raid" or "dungeon"))
+
+    if #combined == 0 then return nil end
+    return combined
 end
 
 local function SetSolidTexture(texture, red, green, blue, alpha)
@@ -177,12 +285,18 @@ local function SetTextureSlice(texture, primary, coords, fallback)
     end
 end
 
+-- Row background state colours (warm dark / gold to match the DC FelLeather
+-- theme). Named for legacy call sites; no longer the blue bluemenu art.
 local function SetRetailBlueMenuBackground(texture, state)
     if not texture then return end
 
-    SetTextureOrFallback(texture, RETAIL_BLUE_MENU_TEXTURES[state or "normal"] or RETAIL_BLUE_MENU_TEXTURES.normal, LFR_MAIN_TEXTURE)
-    texture:SetTexCoord(0, 1, 0, 1)
-    texture:SetVertexColor(1, 1, 1, 1)
+    if state == "selected" then
+        SetSolidTexture(texture, 0.32, 0.25, 0.10, 0.85)
+    elseif state == "disabled" then
+        SetSolidTexture(texture, 0, 0, 0, 0.2)
+    else
+        SetSolidTexture(texture, 0, 0, 0, 0.35)
+    end
 end
 
 local function UpdateRetailNavButtonArt(button, state)
@@ -776,13 +890,13 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
     self.compactEmptySub:Hide()
 
     local yOffset = 0
-    local rowHeight = 48
+    local rowHeight = 56
     local rowWidth = self.compactRowWidth or 312
 
     -- Dungeon/raid rows show the dungeon teleporter art as a thumbnail.
     local showThumb = (kind == "mythic" or kind == "raid")
-    local textInset = showThumb and 52 or 10
-    local textWidth = showThumb and 90 or 158
+    local textInset = showThumb and 62 or 10
+    local textWidth = showThumb and 110 or 162
 
     for _, entry in ipairs(entries) do
         local row = CreateFrame("Button", nil, scrollChild)
@@ -796,7 +910,7 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
 
         if showThumb then
             local thumb = row:CreateTexture(nil, "ARTWORK")
-            thumb:SetSize(40, 40)
+            thumb:SetSize(48, 48)
             thumb:SetPoint("LEFT", 6, 0)
             local candidates = GetEntryDungeonArtCandidates(entry)
             if not ApplyTextureCandidates(thumb, candidates,
@@ -804,7 +918,7 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
                 thumb:SetTexture("Interface\\Icons\\Achievement_ChallengeMode_Gold")
             end
             -- crop the (often landscape) art to a square cell
-            thumb:SetTexCoord(0.12, 0.88, 0.16, 0.84)
+            thumb:SetTexCoord(0, 1, 0, 1)
             row.thumb = thumb
         end
 
@@ -1039,6 +1153,62 @@ function GF:CompactPrimaryAction()
     end
 end
 
+-- Set the chosen dungeon/raid on the create dialog (called from the dropdown).
+function GF:SetCreateTarget(name, mapId)
+    local dialog = self.compactCreateDialog
+    if not dialog then return end
+    dialog.targetName = name
+    dialog.targetMapId = mapId or 0
+    if dialog.targetDrop then
+        UIDropDownMenu_SetText(dialog.targetDrop, name or "Select...")
+    end
+end
+
+-- Dropdown init: dungeons = flat list; raids = grouped by expansion (submenus
+-- so the long raid list never overflows the screen).
+local function InitCreateTargetDropdown(_, level)
+    local dialog = GF.compactCreateDialog
+    if not dialog then return end
+    level = level or 1
+    local kind = dialog.kind or "mythic"
+
+    if kind == "raid" then
+        if level == 1 then
+            local eras = { [0] = "Classic", [1] = "The Burning Crusade", [2] = "Wrath of the Lich King" }
+            for eraId = 0, 2 do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = eras[eraId]
+                info.value = eraId
+                info.hasArrow = true
+                info.notCheckable = true
+                UIDropDownMenu_AddButton(info, level)
+            end
+        elseif level == 2 then
+            local eraId = UIDROPDOWNMENU_MENU_VALUE
+            local catalog = (GF.GetRaidCatalog and GF:GetRaidCatalog()) or {}
+            for _, r in ipairs(catalog) do
+                if (tonumber(r.era) or 2) == eraId then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = r.name
+                    info.notCheckable = true
+                    info.func = function() GF:SetCreateTarget(r.name, r.mapId) end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end
+        end
+    else
+        -- Dungeon list (flat).
+        local list = namespace.GetMythicPlusDungeonList and namespace.GetMythicPlusDungeonList() or {}
+        for _, d in ipairs(list) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = d.name or ("Map " .. tostring(d.mapId))
+            info.notCheckable = true
+            info.func = function() GF:SetCreateTarget(d.name, d.mapId) end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end
+end
+
 function GF:ShowCompactCreateDialog(kind)
     local option = self.COMPACT_OPTIONS[kind] or self.COMPACT_OPTIONS.mythic
     if not option.create then return end
@@ -1060,23 +1230,32 @@ function GF:ShowCompactCreateDialog(kind)
         title:SetPoint("TOP", 0, -16)
         frame.title = title
 
-        local nameLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        nameLabel:SetPoint("TOPLEFT", 24, -52)
-        nameLabel:SetText("Name:")
+        -- Selector label ("Dungeon:" / "Raid:" / "Name:").
+        local targetLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        targetLabel:SetPoint("TOPLEFT", 24, -52)
+        targetLabel:SetText("Dungeon:")
+        frame.targetLabel = targetLabel
 
+        -- Dungeon/raid dropdown (used for mythic & raid).
+        local targetDrop = CreateFrame("Frame", "DCCreateTargetDrop", frame, "UIDropDownMenuTemplate")
+        targetDrop:SetPoint("TOPLEFT", 70, -48)
+        UIDropDownMenu_SetWidth(targetDrop, 200)
+        frame.targetDrop = targetDrop
+
+        -- Free-text name (used for quest/other categories).
         local nameBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
         nameBox:SetSize(220, 20)
-        nameBox:SetPoint("TOPLEFT", 78, -50)
+        nameBox:SetPoint("TOPLEFT", 90, -54)
         nameBox:SetAutoFocus(false)
         frame.nameBox = nameBox
 
         local levelLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        levelLabel:SetPoint("TOPLEFT", 24, -82)
-        levelLabel:SetText("Level:")
+        levelLabel:SetPoint("TOPLEFT", 24, -90)
+        levelLabel:SetText("Key Level:")
 
         local levelBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
         levelBox:SetSize(60, 20)
-        levelBox:SetPoint("TOPLEFT", 78, -80)
+        levelBox:SetPoint("TOPLEFT", 100, -88)
         levelBox:SetAutoFocus(false)
         levelBox:SetNumeric(true)
         levelBox:SetText("0")
@@ -1084,14 +1263,13 @@ function GF:ShowCompactCreateDialog(kind)
         frame.levelBox = levelBox
 
         local noteLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        noteLabel:SetPoint("TOPLEFT", 24, -112)
+        noteLabel:SetPoint("TOPLEFT", 24, -120)
         noteLabel:SetText("Note:")
 
-        -- Bordered multi-line note box (a thin single-line input renders as
-        -- disconnected end-caps and looks broken).
+        -- Bordered multi-line note box.
         local noteFrame = CreateFrame("Frame", nil, frame)
-        noteFrame:SetSize(222, 46)
-        noteFrame:SetPoint("TOPLEFT", 24, -130)
+        noteFrame:SetSize(290, 46)
+        noteFrame:SetPoint("TOPLEFT", 24, -138)
         noteFrame:SetBackdrop({
             bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
             edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1118,8 +1296,27 @@ function GF:ShowCompactCreateDialog(kind)
         createBtn:SetScript("OnClick", function()
             local dialogKind = frame.kind or "mythic"
             local isRaid = dialogKind == "raid"
+            local usesTarget = (dialogKind == "mythic" or dialogKind == "raid")
+
+            local dungeonName
+            local dungeonId = 0
+            if usesTarget then
+                dungeonName = frame.targetName
+                dungeonId = frame.targetMapId or 0
+                if not dungeonName then
+                    GF:SetStatusMessage("Pick a " .. (isRaid and "raid" or "dungeon") .. " first.")
+                    return
+                end
+            else
+                dungeonName = frame.nameBox:GetText()
+                if not dungeonName or dungeonName == "" then
+                    dungeonName = option.label
+                end
+            end
+
             local payload = {
-                dungeonName = frame.nameBox:GetText() or option.label,
+                dungeonName = dungeonName,
+                dungeonId = dungeonId,
                 keyLevel = tonumber(frame.levelBox:GetText()) or 0,
                 needTank = isRaid and 2 or 1,
                 needHealer = isRaid and 5 or 1,
@@ -1147,10 +1344,29 @@ function GF:ShowCompactCreateDialog(kind)
 
     local dialog = self.compactCreateDialog
     dialog.kind = kind
+    dialog.targetName = nil
+    dialog.targetMapId = 0
     dialog.title:SetText("Create " .. (option.label or "Group"))
-    dialog.nameBox:SetText(option.label or "Group")
     dialog.noteBox:SetText("")
     dialog.levelBox:SetText("0")
+
+    local usesTarget = (kind == "mythic" or kind == "raid")
+    if usesTarget then
+        dialog.targetLabel:SetText(kind == "raid" and "Raid:" or "Dungeon:")
+        dialog.targetLabel:Show()
+        dialog.targetDrop:Show()
+        dialog.nameBox:Hide()
+        UIDropDownMenu_Initialize(dialog.targetDrop, InitCreateTargetDropdown)
+        UIDropDownMenu_SetText(dialog.targetDrop, "Select a " .. (kind == "raid" and "raid" or "dungeon") .. "...")
+    else
+        dialog.targetLabel:SetText("Name:")
+        dialog.targetLabel:Show()
+        dialog.targetDrop:Hide()
+        dialog.nameBox:Show()
+        dialog.nameBox:SetText(option.label or "Group")
+    end
+
+    -- Key level only applies to Mythic+ dungeon listings.
     if kind == "mythic" then
         dialog.levelLabel:Show()
         dialog.levelBox:Show()
@@ -1244,7 +1460,21 @@ function GF:RefreshRetailPremadeSelection()
     local selectedKind = self.premadeSelectedKind or "mythic"
 
     for kind, button in pairs(self.premadeCategoryButtons or {}) do
-        SetRetailBlueMenuBackground(button.bg, kind == selectedKind and "selected" or "normal")
+        local sel = (kind == selectedKind)
+        if button.bg then
+            if sel then
+                SetSolidTexture(button.bg, 0.28, 0.22, 0.10, 0.85)
+            else
+                SetSolidTexture(button.bg, 0, 0, 0, 0.45)
+            end
+        end
+        if button.border then
+            if sel then
+                button.border:SetBackdropBorderColor(1, 0.82, 0, 0.95)
+            else
+                button.border:SetBackdropBorderColor(0.35, 0.40, 0.55, 0.8)
+            end
+        end
     end
 
     local option = self.COMPACT_OPTIONS[selectedKind] or self.COMPACT_OPTIONS.mythic
@@ -1288,7 +1518,7 @@ end
 
 function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onClick)
     local button = CreateFrame("Button", nil, parent)
-    button:SetSize(203, 60)
+    button:SetSize(160, 60)
     button:SetPoint("TOPLEFT", 10, yOffset)
     button.key = key
 
@@ -1304,7 +1534,7 @@ function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onCl
     local hoverOverlay = button:CreateTexture(nil, "BACKGROUND", nil, 1)
     hoverOverlay:SetPoint("TOPLEFT", 36, 0)
     hoverOverlay:SetPoint("BOTTOMRIGHT", 0, 0)
-    SetSolidTexture(hoverOverlay, 0.20, 0.30, 0.45, 0.55)
+    SetSolidTexture(hoverOverlay, 0.35, 0.28, 0.12, 0.55)
     hoverOverlay:Hide()
     button.hoverOverlay = hoverOverlay
 
@@ -1316,30 +1546,22 @@ function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onCl
     selectLine:Hide()
     button.selectOverlay = selectLine
 
-    -- Content icon, drawn BELOW the ring. Sized to ~retail's icon:ring ratio so
-    -- it fills the ring (3.3.5a can't circular-mask, so it reads like retail's
-    -- icon-in-ring rather than a small square floating in a big circle).
-    local icon = button:CreateTexture(nil, "ARTWORK", nil, 0)
-    icon:SetSize(40, 40)
-    button.icon = icon
+    -- Square icon — no border frame, icon fills the full square.
+    local iconFrame = CreateFrame("Frame", nil, button)
+    iconFrame:SetSize(48, 48)
+    iconFrame:SetPoint("LEFT", 4, 0)
+    button.iconFrame = iconFrame
 
-    -- Golden portrait ring (drawn above icon). 58×58 fits the 60px-tall button.
-    local ring = button:CreateTexture(nil, "ARTWORK", nil, 1)
-    ring:SetSize(58, 58)
-    ring:SetPoint("LEFT", 1, 0)
-    SetTextureOrFallback(ring, RETAIL_BLUE_MENU_RING, LFG_REWARD_RING)
-    ring:SetTexCoord(0, 1, 0, 1)
-    button.ring = ring
-
-    icon:SetPoint("CENTER", ring, "CENTER", 0, 0)
+    local icon = iconFrame:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
     SetTextureOrFallback(icon, iconTexture, "Interface\\Icons\\INV_Misc_QuestionMark")
-    -- Light crop to trim the icon's outer border art.
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    button.icon = icon
+    button.ring = nil
 
-    -- Label (starts just right of the ring).
+    -- Label (starts just right of the icon frame).
     local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    text:SetPoint("LEFT", ring, "RIGHT", 8, 0)
-    text:SetWidth(106)
+    text:SetPoint("LEFT", iconFrame, "RIGHT", 8, 0)
+    text:SetWidth(76)
     text:SetJustifyH("LEFT")
     text:SetText(label)
     text:SetTextColor(1, 0.82, 0)
@@ -1368,23 +1590,21 @@ function GF:CreateRetailPremadeCategoryButton(parent, kind, label, yOffset)
     button:SetPoint("TOPLEFT", 0, yOffset)
     button.kind = kind
 
+    -- Clean bordered row (no oval cover / landscape art — those produced the
+    -- "circles" over each entry).
     local bg = button:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     button.bg = bg
-    SetRetailBlueMenuBackground(bg, "normal")
+    SetSolidTexture(bg, 0, 0, 0, 0.45)
 
-    local image = button:CreateTexture(nil, "BORDER")
-    image:SetPoint("TOPLEFT", 5, -5)
-    image:SetPoint("BOTTOMRIGHT", -5, 5)
-    SetTextureOrFallback(image, RETAIL_GROUPFINDER_BACKGROUND_DUNGEONS_TEXTURE, LFG_DUNGEON_BACKGROUND)
-    image:SetTexCoord(0, 1, 0, 1)
-    image:SetVertexColor(1, 1, 1, 0.32)
-
-    local cover = button:CreateTexture(nil, "ARTWORK")
-    cover:SetAllPoints()
-    SetTextureOrFallback(cover, RETAIL_GROUPFINDER_BUTTON_COVER_TEXTURE, LFG_THREE_BUTTON_BLANK)
-    cover:SetTexCoord(0, 1, 0, 1)
-    cover:SetVertexColor(1, 1, 1, 0.68)
+    button.border = CreateFrame("Frame", nil, button)
+    button.border:SetAllPoints()
+    button.border:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    })
+    button.border:SetBackdropBorderColor(0.35, 0.40, 0.55, 0.8)
 
     local labelText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     labelText:SetPoint("LEFT", 18, 0)
@@ -1429,27 +1649,24 @@ function GF:CreateCompactMainFrame()
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    if frame.SetBackdropColor then
-        frame:SetBackdropColor(0.08, 0.10, 0.17, 1)
-    end
+    -- Standard DC addon look: FelLeather dark parchment + tint behind the gold
+    -- dialog border (matches DC-Leaderboards et al.).
+    ApplyLeaderboardsStyle(frame)
 
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    SetSolidTexture(bg, 0.08, 0.10, 0.17, 1)
-
+    -- Small decorative eye kept in the 34px header band (no nav overlap).
     local portraitBackglow = frame:CreateTexture(nil, "ARTWORK", nil, 1)
-    portraitBackglow:SetSize(66, 66)
-    portraitBackglow:SetPoint("TOPLEFT", 8, -10)
+    portraitBackglow:SetSize(32, 32)
+    portraitBackglow:SetPoint("TOPLEFT", 10, -5)
     SetTextureOrFallback(portraitBackglow, RETAIL_GROUPFINDER_EYE_BACKGLOW_TEXTURE, LFG_PORTRAIT_TEXTURE)
-    portraitBackglow:SetVertexColor(1, 1, 1, 0.9)
+    portraitBackglow:SetVertexColor(1, 1, 1, 0.85)
 
     local portraitRing = frame:CreateTexture(nil, "ARTWORK", nil, 2)
-    portraitRing:SetSize(52, 52)
+    portraitRing:SetSize(24, 24)
     portraitRing:SetPoint("CENTER", portraitBackglow, "CENTER", 0, 0)
     SetTextureOrFallback(portraitRing, RETAIL_GROUPFINDER_EYE_FRAME_TEXTURE, LFG_PORTRAIT_TEXTURE)
 
     local portrait = frame:CreateTexture(nil, "ARTWORK")
-    portrait:SetSize(44, 44)
+    portrait:SetSize(18, 18)
     portrait:SetPoint("CENTER", portraitRing, "CENTER", 0, 0)
     SetTextureOrFallback(portrait, RETAIL_GROUPFINDER_EYE_SINGLE_TEXTURE, "Interface\\LFGFrame\\LFG-Eye")
 
@@ -1466,8 +1683,8 @@ function GF:CreateCompactMainFrame()
     local navPanel = CreateFrame("Frame", nil, frame)
     -- Start below the title header band so the "Group Finder" title isn't covered.
     navPanel:SetPoint("TOPLEFT", 4, -34)
-    navPanel:SetPoint("BOTTOMLEFT", 4, 32)
-    navPanel:SetWidth(217)
+    navPanel:SetPoint("BOTTOMLEFT", 4, 14)
+    navPanel:SetWidth(175)
     navPanel:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1475,21 +1692,13 @@ function GF:CreateCompactMainFrame()
         insets = { left = 3, right = 3, top = 3, bottom = 3 }
     })
     if navPanel.SetBackdropColor then
-        navPanel:SetBackdropColor(0.10, 0.13, 0.22, 1)
+        navPanel:SetBackdropColor(0, 0, 0, 0.35)
     end
 
-    -- Solid blue base (fallback / fills behind the textured panel). Matches the
-    -- content panel so both sides are the same blue tone.
+    -- Subtle dark inset so the frame's FelLeather shows through (DC style).
     local navInset = navPanel:CreateTexture(nil, "BACKGROUND")
     navInset:SetAllPoints()
-    SetSolidTexture(navInset, 0.10, 0.13, 0.22, 1)
-
-    -- Retail bluemenu panel art on top (gives the authentic blue gradient look).
-    local navBlue = navPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
-    navBlue:SetAllPoints()
-    navBlue:SetTexture(RETAIL_BLUEMENU_MAIN)
-    navBlue:SetTexCoord(BLUEMENU_BG_COORDS[1], BLUEMENU_BG_COORDS[2],
-        BLUEMENU_BG_COORDS[3], BLUEMENU_BG_COORDS[4])
+    SetSolidTexture(navInset, 0, 0, 0, 0.35)
 
     -- y-offsets within navPanel (starts at frame y=-24).
     -- Button 1 at -46 → absolute frame y=-70, matching retail TOPLEFT(10,-70).
@@ -1511,7 +1720,7 @@ function GF:CreateCompactMainFrame()
 
     local contentPanel = CreateFrame("Frame", nil, frame)
     contentPanel:SetPoint("TOPLEFT", navPanel, "TOPRIGHT", 4, 0)
-    contentPanel:SetPoint("BOTTOMRIGHT", -4, 32)
+    contentPanel:SetPoint("BOTTOMRIGHT", -4, 14)
     contentPanel:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1519,20 +1728,13 @@ function GF:CreateCompactMainFrame()
         insets = { left = 3, right = 3, top = 3, bottom = 3 }
     })
     if contentPanel.SetBackdropColor then
-        contentPanel:SetBackdropColor(0.10, 0.13, 0.22, 1)
+        contentPanel:SetBackdropColor(0, 0, 0, 0.35)
     end
 
-    -- Same bluemenu texture as the left panel so the whole window is one uniform
-    -- blue (a vertical gradient, so horizontal stretch on this wider panel is fine).
+    -- Subtle dark inset so the frame's FelLeather shows through (DC style).
     local contentInset = contentPanel:CreateTexture(nil, "BACKGROUND")
     contentInset:SetAllPoints()
-    SetSolidTexture(contentInset, 0.10, 0.13, 0.22, 1)
-
-    local contentBlue = contentPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
-    contentBlue:SetAllPoints()
-    contentBlue:SetTexture(RETAIL_BLUEMENU_MAIN)
-    contentBlue:SetTexCoord(BLUEMENU_BG_COORDS[1], BLUEMENU_BG_COORDS[2],
-        BLUEMENU_BG_COORDS[3], BLUEMENU_BG_COORDS[4])
+    SetSolidTexture(contentInset, 0, 0, 0, 0.35)
 
     -- The active category is already shown by the left nav button + selection
     -- bar, so retail doesn't repeat it as a content header. Keep the field (so
@@ -1560,12 +1762,12 @@ function GF:CreateCompactMainFrame()
     roleBg:SetPoint("TOPLEFT", 8, -2)
     roleBg:SetPoint("TOPRIGHT", -8, -2)
     roleBg:SetHeight(60)
-    SetSolidTexture(roleBg, 0.08, 0.11, 0.20, 0.92)
+    SetSolidTexture(roleBg, 0, 0, 0, 0.45)
 
     local roleCover = rolePanel:CreateTexture(nil, "BORDER")
     roleCover:SetPoint("TOPLEFT", roleBg, "TOPLEFT", 0, 0)
     roleCover:SetPoint("BOTTOMRIGHT", roleBg, "BOTTOMRIGHT", 0, 0)
-    SetSolidTexture(roleCover, 0.14, 0.18, 0.30, 0.25)
+    SetSolidTexture(roleCover, 0.30, 0.24, 0.12, 0.20)
 
     self.compactRoles = self.compactRoles or { dps = true }
     local canTank, canHeal = GetClassRoleCaps()
@@ -1589,7 +1791,7 @@ function GF:CreateCompactMainFrame()
     self:UpdateCompactRoleButtons()
 
     local typeLabel = browserFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    typeLabel:SetPoint("TOPLEFT", rolePanel, "BOTTOMLEFT", 18, -18)
+    typeLabel:SetPoint("TOPLEFT", rolePanel, "BOTTOMLEFT", 18, -10)
     typeLabel:SetText("Type:")
     typeLabel:SetTextColor(1, 0.82, 0)
 
@@ -1652,7 +1854,7 @@ function GF:CreateCompactMainFrame()
     end
 
     local listFrame = CreateFrame("Frame", nil, browserFrame)
-    listFrame:SetPoint("TOPLEFT", 6, -134)
+    listFrame:SetPoint("TOPLEFT", 6, -116)
     listFrame:SetPoint("BOTTOMRIGHT", -6, 0)
     listFrame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
@@ -1665,20 +1867,20 @@ function GF:CreateCompactMainFrame()
     end
     self.compactListFrame = listFrame
 
-    -- Slightly darker blue inset for the results area (same hue as the panel,
-    -- just recessed) so it reads as one cohesive blue, not a black box.
+    -- Recessed dark inset for the results area (lets the FelLeather read through
+    -- a touch while keeping rows legible).
     local listBg = listFrame:CreateTexture(nil, "BACKGROUND")
     listBg:SetAllPoints()
-    SetSolidTexture(listBg, 0.07, 0.10, 0.18, 0.92)
+    SetSolidTexture(listBg, 0, 0, 0, 0.5)
 
     local scroll = CreateFrame("ScrollFrame", "DCCompactGroupFinderScroll", listFrame, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 8, -8)
     scroll:SetPoint("BOTTOMRIGHT", -28, 28)
     local child = CreateFrame("Frame")
-    child:SetSize(268, 220)
+    child:SetSize(312, 220)
     scroll:SetScrollChild(child)
     self.compactScrollChild = child
-    self.compactRowWidth = 264
+    self.compactRowWidth = 308
 
     local results = listFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     results:SetPoint("BOTTOMLEFT", 10, 8)
@@ -1851,11 +2053,11 @@ function GF:SetActiveBottomTab(activeKey)
         tab.isActive = isActive
         if isActive then
             tab.label:SetTextColor(1, 0.82, 0)
-            tab:SetTabColor(0.10, 0.14, 0.26, 1)
+            tab:SetTabColor(0.20, 0.16, 0.08, 1)
             tab:SetBackdropBorderColor(1, 0.82, 0, 0.95)
         else
             tab.label:SetTextColor(0.8, 0.78, 0.62)
-            tab:SetTabColor(0.04, 0.05, 0.09, 0.95)
+            tab:SetTabColor(0.07, 0.06, 0.04, 0.95)
             tab:SetBackdropBorderColor(0.45, 0.38, 0.18, 0.85)
         end
     end

@@ -40,154 +40,17 @@ local state = {
     page = 1,
 }
 
-local ICON_BASE = "Interface\\AddOns\\DC-MythicPlus\\Media\\Teleporter\\"
-local ICONS_DUNGEONS_BASE = "Interface\\AddOns\\Icons\\dungeons\\"
-
-local function iconCandidatesForDungeonArtKey(artKey)
-    if type(artKey) ~= "string" or artKey == "" then
-        return nil
-    end
-
-    if artKey == "AhnKahet" then
-        return {
-            ICON_BASE .. "AhnKahet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.png",
-            ICON_BASE .. "AzjolNerub.blp",
-        }
-    end
-
-    if artKey == "GundrakDungeon" then
-        return {
-            ICON_BASE .. "GundrakDungeon.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.png",
-        }
-    end
-
-    if artKey == "TheNexus" then
-        return {
-            ICON_BASE .. "TheNexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.png",
-            ICON_BASE .. "EyeOfEternity.blp",
-        }
-    end
-
-    return { ICON_BASE .. artKey .. ".blp" }
-end
-
-local function iconCandidatesForDungeonName(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    local raw = name:gsub("^%s+", ""):gsub("%s+$", "")
-    local lower = string.lower(raw)
-
-    -- Prefer the shared Icons addon backgrounds when available (these were missing for some dungeons).
-    if lower == "ahn'kahet: the old kingdom" or lower == "ahn'kahet the old kingdom" or lower == "ahn'kahet" then
-        return {
-            ICON_BASE .. "AhnKahet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.png",
-            ICON_BASE .. "AzjolNerub.blp", -- fallback
-        }
-    end
-
-    if lower == "gundrak" then
-        return {
-            ICON_BASE .. "GundrakDungeon.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.png",
-        }
-    end
-
-    if lower == "the nexus" or lower == "nexus" then
-        return {
-            ICON_BASE .. "TheNexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.png",
-            ICON_BASE .. "EyeOfEternity.blp", -- allowed replacement
-        }
-    end
-
-    return nil
-end
-
-local function normalizeDungeonNameToIconKey(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    local raw = name:gsub("^%s+", ""):gsub("%s+$", "")
-    local lower = string.lower(raw)
-
-    -- Explicit aliases (preferred over generic normalization)
-    if lower == "ahn'kahet: the old kingdom" or lower == "ahn'kahet the old kingdom" then
-        return "AhnKahet"
-    end
-    if lower == "gundrak" then
-        return "GundrakDungeon"
-    end
-    if lower == "the nexus" or lower == "nexus" then
-        return "TheNexus"
-    end
-    if lower == "the oculus" or lower == "oculus" then
-        return "EyeOfEternity"
-    end
-
-    -- Match existing portal selector naming style:
-    -- e.g. "Halls of Lightning" -> "HallsOfLightning", "Azjol-Nerub" -> "AzjolNerub"
-    local s = raw
-
-    -- Strip leading article if present in DB
-    s = s:gsub("^%s*[Tt]he%s+", "")
-
-    -- Remove everything except letters/numbers/spaces
-    s = s:gsub("[^%w%s]", "")
-
-    -- Title-case chunks and concatenate
-    local parts = {}
-    for word in s:gmatch("%S+") do
-        local first = word:sub(1, 1)
-        local rest = word:sub(2)
-        parts[#parts + 1] = first:upper() .. rest
-    end
-    if #parts == 0 then
-        return nil
-    end
-
-    return table.concat(parts, "")
-end
-
-local function iconPathForDungeonName(name)
-    local candidates = iconCandidatesForDungeonName(name)
-    if candidates and #candidates > 0 then
-        return candidates
-    end
-
-    local key = normalizeDungeonNameToIconKey(name)
-    if not key then
-        return nil
-    end
-    return { ICON_BASE .. key .. ".blp" }
-end
-
+-- Resolve the LFG list icon for a dungeon descriptor (mapId + name table).
+-- Delegates to namespace.ResolveLFGIconCandidates which is defined in
+-- GroupFinderFrame.lua (loaded before this file per the TOC).
 local function iconPathForDungeonDescriptor(dungeon)
-    if type(namespace.ResolveMythicPlusDungeonArtCandidates) == "function" then
-        return namespace.ResolveMythicPlusDungeonArtCandidates(dungeon)
+    if type(namespace.ResolveLFGIconCandidates) == "function" then
+        return namespace.ResolveLFGIconCandidates(dungeon, false, true)
     end
-
-    if type(dungeon) == "table" and type(dungeon.artKey) == "string"
-        and dungeon.artKey ~= "" then
-        return iconCandidatesForDungeonArtKey(dungeon.artKey)
-    end
-
-    local name = type(dungeon) == "table" and dungeon.name or dungeon
-    return iconPathForDungeonName(name)
+    return { "Interface\\LFGFrame\\lfgicon-dungeon" }
 end
 
+-- Session cache so repeated page turns don't retest the same paths.
 local iconExistsCache = {}
 
 local function clamp(n, minV, maxV)
@@ -328,64 +191,73 @@ local function ensureFrame()
         local b = CreateFrame("Button", nil, frame.grid)
         b:SetSize(352, 105)
 
+        -- Card background + 1px border.
         b.bgFrame = b:CreateTexture(nil, "BACKGROUND")
         b.bgFrame:SetAllPoints()
-        b.bgFrame:SetColorTexture(0.1, 0.1, 0.1, 0.8)
-        
+        b.bgFrame:SetColorTexture(0.08, 0.08, 0.10, 0.92)
+
         b.border = b:CreateTexture(nil, "BORDER")
         b.border:SetAllPoints()
         b.border:SetColorTexture(0.3, 0.3, 0.3, 1)
         b.border:SetDrawLayer("BORDER", -1)
-        
+
         local bInner = b:CreateTexture(nil, "BACKGROUND", nil, 1)
         bInner:SetPoint("TOPLEFT", 1, -1)
         bInner:SetPoint("BOTTOMRIGHT", -1, 1)
-        bInner:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+        bInner:SetColorTexture(0.08, 0.08, 0.10, 0.92)
 
+        -- Square LFG icon on the left (88x88, 8px from edge, vertically centred).
         b.bg = b:CreateTexture(nil, "ARTWORK")
-        b.bg:SetPoint("TOPLEFT", 5, -5)
-        b.bg:SetPoint("BOTTOMRIGHT", -5, 5)
+        b.bg:SetSize(88, 88)
+        b.bg:SetPoint("LEFT", 8, 0)
         b.bg:SetTexture(nil)
         b.bg:Hide()
 
+        -- Dark inset behind the icon so unloaded icons don't leave a white square.
+        local iconBg = b:CreateTexture(nil, "ARTWORK", nil, -1)
+        iconBg:SetSize(88, 88)
+        iconBg:SetPoint("LEFT", 8, 0)
+        iconBg:SetColorTexture(0, 0, 0, 0.5)
+
+        -- Gold thin divider between icon area and text column.
+        local divider = b:CreateTexture(nil, "ARTWORK")
+        divider:SetSize(1, 89)
+        divider:SetPoint("LEFT", 100, 0)
+        divider:SetColorTexture(0.5, 0.4, 0.1, 0.6)
+
         b.highlight = b:CreateTexture(nil, "HIGHLIGHT")
-        b.highlight:SetAllPoints(b.bg)
+        b.highlight:SetAllPoints()
         b.highlight:SetTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
         b.highlight:SetBlendMode("ADD")
-        b.highlight:SetAlpha(0.25)
+        b.highlight:SetAlpha(0.18)
 
-        -- Dark banner behind the dungeon name (top of card, readable over art).
-        b.nameStrip = b:CreateTexture(nil, "ARTWORK", nil, 1)
-        b.nameStrip:SetPoint("TOPLEFT", 5, -5)
-        b.nameStrip:SetPoint("TOPRIGHT", -5, -5)
-        b.nameStrip:SetHeight(24)
-        b.nameStrip:SetColorTexture(0, 0, 0, 0.65)
-
+        -- Dungeon name (text column: from icon right edge to card right edge).
         b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        b.text:SetPoint("TOPLEFT", b.nameStrip, "TOPLEFT", 8, -4)
-        b.text:SetPoint("TOPRIGHT", b.nameStrip, "TOPRIGHT", -8, -4)
+        b.text:SetPoint("TOPLEFT", 108, -10)
+        b.text:SetPoint("TOPRIGHT", -8, -10)
         b.text:SetJustifyH("LEFT")
         b.text:SetText("-")
         b.text:SetTextColor(1, 0.82, 0, 1)
 
-        -- Dark info bar at the bottom: timer | best key | rating.
-        b.infoStrip = b:CreateTexture(nil, "ARTWORK", nil, 1)
-        b.infoStrip:SetPoint("BOTTOMLEFT", 5, 5)
-        b.infoStrip:SetPoint("BOTTOMRIGHT", -5, 5)
-        b.infoStrip:SetHeight(22)
-        b.infoStrip:SetColorTexture(0, 0, 0, 0.65)
-
+        -- Stats row: timer / best / rating stacked below the name.
         b.timer = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        b.timer:SetPoint("LEFT", b.infoStrip, "LEFT", 8, 0)
+        b.timer:SetPoint("TOPLEFT", b.text, "BOTTOMLEFT", 0, -8)
         b.timer:SetText("")
 
         b.best = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        b.best:SetPoint("CENTER", b.infoStrip, "CENTER", 0, 0)
+        b.best:SetPoint("TOPLEFT", b.timer, "BOTTOMLEFT", 0, -4)
         b.best:SetText("")
 
         b.rating = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        b.rating:SetPoint("RIGHT", b.infoStrip, "RIGHT", -8, 0)
+        b.rating:SetPoint("TOPLEFT", b.best, "BOTTOMLEFT", 0, -4)
         b.rating:SetText("")
+
+        -- Thin separator at card bottom.
+        b.infoStrip = b:CreateTexture(nil, "ARTWORK", nil, 1)
+        b.infoStrip:SetPoint("BOTTOMLEFT", 5, 5)
+        b.infoStrip:SetPoint("BOTTOMRIGHT", -5, 5)
+        b.infoStrip:SetHeight(1)
+        b.infoStrip:SetColorTexture(0.5, 0.4, 0.1, 0.5)
 
         b:SetScript("OnClick", function(self)
             if not self.mapId then return end

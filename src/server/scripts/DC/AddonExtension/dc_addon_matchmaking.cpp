@@ -99,6 +99,23 @@ namespace Matchmaking
                 return "Map " + std::to_string(m ? m->MapID : 0u);
             }
 
+            // Lowest LFG MinLevel registered for a map (LFGDungeons.dbc), used to
+            // order the dungeon picker by difficulty tier. 0 when the map has no
+            // LFG entry (it then sorts first within its expansion, by name).
+            uint32 LfgLevelForMap(uint32 mapId)
+            {
+                uint32 best = 0;
+                for (uint32 i = 0; i < sLFGDungeonStore.GetNumRows(); ++i)
+                {
+                    LFGDungeonEntry const* e = sLFGDungeonStore.LookupEntry(i);
+                    if (!e || e->MapID != mapId || !e->MinLevel)
+                        continue;
+                    if (best == 0 || e->MinLevel < best)
+                        best = e->MinLevel;
+                }
+                return best;
+            }
+
             void Build()
             {
                 if (g_built)
@@ -123,6 +140,7 @@ namespace Matchmaking
                             d.mapId = m->MapID;
                             d.name = MapName(m);
                             d.expansion = m->Expansion();
+                            d.level = LfgLevelForMap(m->MapID);
                             g_dungeons.push_back(d);
                             g_dungeonMapIds.push_back(m->MapID);
                         }
@@ -133,16 +151,41 @@ namespace Matchmaking
                         r.mapId = m->MapID;
                         r.name = MapName(m);
                         r.expansion = m->Expansion();
+
+                        // WotLK raids carry MapDifficulty rows (10/25 N/H). Classic
+                        // and TBC raids have none, so fall back to Map.dbc maxPlayers
+                        // as a single fixed-size option (covers 40/25/20/10-man).
                         for (uint8 d = 0; d <= 3; ++d)
+                        {
                             if (GetMapDifficultyData(m->MapID, Difficulty(d)))
+                            {
                                 r.difficulties.push_back(d);
-                        if (!r.difficulties.empty())
-                            g_raids.push_back(r);
+                                uint32 size = (d == 1 || d == 3) ? 25u : 10u;
+                                r.options.emplace_back(d, size);
+                            }
+                        }
+
+                        if (r.options.empty())
+                        {
+                            uint32 size = m->maxPlayers > 0 ? m->maxPlayers : 10u;
+                            r.difficulties.push_back(0);
+                            r.options.emplace_back(static_cast<uint8>(0), size);
+                        }
+
+                        g_raids.push_back(r);
                     }
                 }
 
+                // Order the dungeon picker by expansion, then difficulty tier
+                // (LFG min level), then name so the long list reads top-down
+                // Classic -> TBC -> WotLK and low -> high level within each.
                 std::sort(g_dungeons.begin(), g_dungeons.end(),
-                    [](DungeonEntry const& a, DungeonEntry const& b) { return a.name < b.name; });
+                    [](DungeonEntry const& a, DungeonEntry const& b)
+                    {
+                        if (a.expansion != b.expansion) return a.expansion < b.expansion;
+                        if (a.level != b.level) return a.level < b.level;
+                        return a.name < b.name;
+                    });
                 std::sort(g_raids.begin(), g_raids.end(),
                     [](RaidEntry const& a, RaidEntry const& b)
                     {
@@ -180,6 +223,10 @@ namespace Matchmaking
         _proposalTimeoutSec = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Queue.ProposalTimeoutSec", 40);
         _matchIntervalMs    = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Queue.MatchIntervalMs", 3000);
         _statusIntervalMs   = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Queue.StatusIntervalMs", 5000);
+        _maxQueuesPerPlayer = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Queue.MaxPerPlayer", 3);
+        if (_maxQueuesPerPlayer < 1)
+            _maxQueuesPerPlayer = 1;
+        _debugMinPlayers    = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Queue.DebugMinPlayers", 0);
     }
 
     // ========================================================================
@@ -294,13 +341,44 @@ namespace Matchmaking
             return r;
         };
 
+        bool hitLimit = false;
         {
             std::lock_guard<std::mutex> lock(_mutex);
 
             for (Player* m : members)
             {
                 uint32 g = m->GetGUID().GetCounter();
-                RemoveEntry(g);  // refresh, don't duplicate
+
+                if (groupId != 0)
+                {
+                    // A queued party occupies a single queue slot: replace any
+                    // existing entries for the member.
+                    RemoveEntry(g);
+                }
+                else
+                {
+                    // Solo: refresh the same target, and cap distinct queues so a
+                    // player can sit in a few at once (like retail) but not spam.
+                    _queue.erase(std::remove_if(_queue.begin(), _queue.end(),
+                        [&](QueueEntry const& q)
+                        {
+                            return q.guid.GetCounter() == g
+                                && q.category == category
+                                && q.dungeonId == dungeonId
+                                && q.difficulty == difficulty
+                                && q.raidSize == raidSize;
+                        }), _queue.end());
+
+                    uint32 count = 0;
+                    for (QueueEntry const& q : _queue)
+                        if (q.guid.GetCounter() == g)
+                            ++count;
+                    if (count >= _maxQueuesPerPlayer)
+                    {
+                        hitLimit = true;
+                        continue;
+                    }
+                }
 
                 QueueEntry entry;
                 entry.guid        = m->GetGUID();
@@ -316,6 +394,15 @@ namespace Matchmaking
                 entry.groupId     = groupId;
                 _queue.push_back(entry);
             }
+        }
+
+        if (hitLimit)
+        {
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                .Set("error", "You are already in the maximum number of queues ("
+                    + std::to_string(_maxQueuesPerPlayer) + ").")
+                .Send(player);
+            return;
         }
 
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_QUEUE_JOINED)
@@ -639,6 +726,12 @@ namespace Matchmaking
 
         RoleNeed need = GetDungeonNeed();
 
+        // Test aid: pop a dungeon at a smaller player count, ignoring the normal
+        // 1T/1H/3D composition (everyone counts as DPS). Lets a GM verify the full
+        // join -> ready-check -> teleport -> reward flow without 5 real players.
+        if (_debugMinPlayers > 0)
+            need = { 0, 0, static_cast<uint8>(_debugMinPlayers) };
+
         // Bucket eligible dungeon entries by specific dungeon; collect "any" pool.
         std::unordered_map<uint32, std::vector<uint32>> byDungeon;  // dungeonId -> guidLows
         std::vector<uint32> anyPool;
@@ -684,12 +777,31 @@ namespace Matchmaking
             }
 
             // 2) Try a pure "any" group; pick a random mythic-capable dungeon
-            //    from the dynamic MapDifficulty catalog.
+            //    from the dynamic MapDifficulty catalog that every matched
+            //    player meets the level requirement for.
             std::unordered_map<uint32, uint8> assign;
             auto const& anyMaps = InstanceCatalog::GetMythicDungeonMapIds();
             if (!anyMaps.empty() && AssembleGroup(_queue, anyPool, need, assign))
             {
-                uint32 randomMap = anyMaps[urand(0, static_cast<uint32>(anyMaps.size()) - 1)];
+                // Lowest level among the matched players gates valid dungeons.
+                uint8 minLevel = 255;
+                for (auto const& kv : assign)
+                    if (QueueEntry* e = FindEntry(kv.first))
+                        minLevel = std::min<uint8>(minLevel, e->level);
+
+                std::vector<uint32> eligible;
+                for (uint32 mapId : anyMaps)
+                {
+                    DungeonProgressionRequirements const* req =
+                        sObjectMgr->GetAccessRequirement(mapId, DUNGEON_DIFFICULTY_NORMAL);
+                    uint8 reqLevel = req ? req->levelMin : 0;
+                    if (minLevel >= reqLevel)
+                        eligible.push_back(mapId);
+                }
+                if (eligible.empty())
+                    eligible = anyMaps;  // fallback: never block on missing data
+
+                uint32 randomMap = eligible[urand(0, static_cast<uint32>(eligible.size()) - 1)];
                 std::vector<uint32> picks;
                 for (auto const& [g, r] : assign) picks.push_back(g);
                 CreateProposal(picks, assign, QUEUE_CAT_DUNGEON, randomMap, diff, 0);
@@ -750,13 +862,30 @@ namespace Matchmaking
 
         for (uint32 g : picksGuidLow)
         {
-            if (QueueEntry* e = FindEntry(g))
+            // Mark ALL of this player's entries in-proposal so a multi-queued
+            // player can't be pulled into a second proposal at the same time.
+            ObjectGuid memberGuid;
+            bool found = false;
+            for (QueueEntry& e : _queue)
             {
-                e->inProposal = true;
-                prop.members.push_back(e->guid);
+                if (e.guid.GetCounter() == g)
+                {
+                    e.inProposal = true;
+                    if (!found)
+                    {
+                        memberGuid = e.guid;
+                        found = true;
+                    }
+                }
+            }
+
+            if (found)
+            {
+                prop.members.push_back(memberGuid);
                 prop.responses[g] = 0;
                 auto rit = roleAssign.find(g);
-                prop.assignedRoles[g] = rit != roleAssign.end() ? rit->second : QROLE_DPS;
+                prop.assignedRoles[g] = rit != roleAssign.end()
+                    ? rit->second : static_cast<uint8>(QROLE_DPS);
             }
         }
 
@@ -1075,6 +1204,53 @@ namespace Matchmaking
             sMatchmakingQueue.HandleProposalResponse(player, proposalId, accept);
     }
 
+    // Send the dynamic mythic dungeon + raid catalog (from MapDifficulty/Map.dbc)
+    // so the client pickers can list every available instance, grouped by era.
+    static void HandleGetQueueCatalog(Player* player, const ParsedMessage& /*msg*/)
+    {
+        JsonValue dungeons;
+        dungeons.SetArray();
+        for (auto const& d : InstanceCatalog::GetMythicDungeons())
+        {
+            JsonValue o;
+            o.SetObject();
+            o.Set("mapId", JsonValue(static_cast<int32>(d.mapId)));
+            o.Set("name", JsonValue(d.name));
+            o.Set("expansion", JsonValue(static_cast<int32>(d.expansion)));
+            o.Set("level", JsonValue(static_cast<int32>(d.level)));
+            dungeons.Push(o);
+        }
+
+        JsonValue raids;
+        raids.SetArray();
+        for (auto const& r : InstanceCatalog::GetRaids())
+        {
+            JsonValue o;
+            o.SetObject();
+            o.Set("mapId", JsonValue(static_cast<int32>(r.mapId)));
+            o.Set("name", JsonValue(r.name));
+            o.Set("expansion", JsonValue(static_cast<int32>(r.expansion)));
+
+            JsonValue opts;
+            opts.SetArray();
+            for (auto const& pr : r.options)
+            {
+                JsonValue oo;
+                oo.SetObject();
+                oo.Set("d", JsonValue(static_cast<int32>(pr.first)));
+                oo.Set("s", JsonValue(static_cast<int32>(pr.second)));
+                opts.Push(oo);
+            }
+            o.Set("options", opts);
+            raids.Push(o);
+        }
+
+        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_QUEUE_CATALOG)
+            .Set("dungeons", JsonValue(dungeons.Encode()))
+            .Set("raids", JsonValue(raids.Encode()))
+            .Send(player);
+    }
+
     void RegisterMatchmakingHandlers()
     {
         sMatchmakingQueue.LoadConfig();
@@ -1082,6 +1258,7 @@ namespace Matchmaking
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_QUEUE_LEAVE, HandleQueueLeave);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_QUEUE_STATUS_REQUEST, HandleQueueStatusRequest);
         DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_QUEUE_PROPOSAL_RESPONSE, HandleQueueProposalResponse);
+        DC_REGISTER_HANDLER(Module::GROUP_FINDER, Opcode::GroupFinder::CMSG_GET_QUEUE_CATALOG, HandleGetQueueCatalog);
     }
 
 }  // namespace Matchmaking

@@ -1382,6 +1382,7 @@ DC.GroupFinderOpcodes = {
     CMSG_QUEUE_LEAVE             = 0x1A,  -- Leave the matchmaking queue
     CMSG_QUEUE_STATUS_REQUEST    = 0x1B,  -- Request current queue status
     CMSG_QUEUE_PROPOSAL_RESPONSE = 0x1C,  -- Accept/decline a match proposal
+    CMSG_GET_QUEUE_CATALOG       = 0x1D,  -- Request mythic dungeon + raid catalog
 
     -- Client -> Server: Keystone & Difficulty
     CMSG_GET_MY_KEYSTONE     = 0x20,  -- Request player's keystone info
@@ -1418,6 +1419,7 @@ DC.GroupFinderOpcodes = {
     SMSG_QUEUE_PROPOSAL        = 0x39,  -- Match found -> ready check
     SMSG_QUEUE_PROPOSAL_UPDATE = 0x3A,  -- Proposal accept progress
     SMSG_QUEUE_PROPOSAL_FAILED = 0x3B,  -- Proposal failed (declined/timeout)
+    SMSG_QUEUE_CATALOG         = 0x3C,  -- Mythic dungeon + raid catalog
 
     -- Server -> Client: Keystone & Difficulty
     SMSG_KEYSTONE_INFO       = 0x40,  -- Player's keystone data
@@ -2674,6 +2676,11 @@ DC.GroupFinder = {
             proposalId = proposalId,
             accept = accept and true or false,
         })
+    end,
+
+    -- Request the full mythic dungeon + raid catalog (dynamic from MapDifficulty).
+    GetQueueCatalog = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_QUEUE_CATALOG, {})
     end,
 
     -- Difficulty control

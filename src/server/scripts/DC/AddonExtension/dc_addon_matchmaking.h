@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <string>
+#include <utility>
 
 class Player;
 
@@ -44,6 +45,10 @@ namespace Matchmaking
             std::string name;
             uint32 expansion = 0;          // 0=Classic, 1=TBC, 2=WotLK
             std::vector<uint8> difficulties;  // raid difficulty ids that exist
+            // Each queueable option: { difficultyId, raidSize }. Covers single-
+            // difficulty Classic/TBC raids (size from Map.dbc maxPlayers) as well
+            // as WotLK 10/25 N/H.
+            std::vector<std::pair<uint8, uint32>> options;
         };
 
         struct DungeonEntry
@@ -51,6 +56,7 @@ namespace Matchmaking
             uint32 mapId = 0;
             std::string name;
             uint32 expansion = 0;
+            uint32 level = 0;      // LFG min level (for sorting by difficulty tier)
         };
 
         // Lazily build (after DBCs are loaded) and return cached catalogs.
@@ -161,6 +167,8 @@ namespace Matchmaking
         uint32 _proposalTimeoutSec  = 40;
         uint32 _matchIntervalMs     = 3000;
         uint32 _statusIntervalMs    = 5000;
+        uint32 _maxQueuesPerPlayer  = 3;   // solo players may sit in N queues
+        uint32 _debugMinPlayers     = 0;   // >0: dungeon pops at N (any roles) for testing
 
         std::mutex _mutex;
     };

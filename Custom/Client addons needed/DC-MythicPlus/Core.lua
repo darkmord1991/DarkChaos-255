@@ -197,10 +197,8 @@ local localMythicPlusStaticState = {
     dungeonList = {},
 }
 
-local MYTHICPLUS_ICON_BASE =
-    "Interface\\AddOns\\DC-MythicPlus\\Media\\Teleporter\\"
-local MYTHICPLUS_DUNGEON_ICONS_BASE =
-    "Interface\\AddOns\\Icons\\dungeons\\"
+-- (Teleporter art files removed; dungeon icons now come from the patch MPQ
+-- at Interface\LFGFrame\lfgicon-<key>.blp via ResolveLFGIconCandidates.)
 
 local function CopySimpleTable(source)
     local result = {}
@@ -539,176 +537,25 @@ local function ResolveMythicPlusAffixInfo(affix)
     return nil, nil, nil, nil
 end
 
-local function AddUniqueMythicPlusCandidate(candidates, seen, value)
-    if type(value) ~= "string" or value == "" or seen[value] then
-        return
-    end
-
-    seen[value] = true
-    candidates[#candidates + 1] = value
-end
-
-local function BuildDungeonArtCandidatesForArtKey(artKey)
-    if type(artKey) ~= "string" or artKey == "" then
-        return nil
-    end
-
-    if artKey == "AhnKahet" then
-        return {
-            MYTHICPLUS_ICON_BASE .. "AhnKahet.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-ahnkalet.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-ahnkalet.png",
-            MYTHICPLUS_ICON_BASE .. "AzjolNerub.blp",
-        }
-    end
-
-    if artKey == "GundrakDungeon" then
-        return {
-            MYTHICPLUS_ICON_BASE .. "GundrakDungeon.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-gundrak.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-gundrak.png",
-        }
-    end
-
-    if artKey == "TheNexus" then
-        return {
-            MYTHICPLUS_ICON_BASE .. "TheNexus.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-thenexus.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-thenexus.png",
-            MYTHICPLUS_ICON_BASE .. "EyeOfEternity.blp",
-        }
-    end
-
-    return { MYTHICPLUS_ICON_BASE .. artKey .. ".blp" }
-end
-
-local function BuildDungeonArtCandidatesForName(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    local raw = name:gsub("^%s+", ""):gsub("%s+$", "")
-    local lower = string.lower(raw)
-
-    if lower == "ahn'kahet: the old kingdom"
-        or lower == "ahn'kahet the old kingdom"
-        or lower == "ahn'kahet" then
-        return {
-            MYTHICPLUS_ICON_BASE .. "AhnKahet.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-ahnkalet.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-ahnkalet.png",
-            MYTHICPLUS_ICON_BASE .. "AzjolNerub.blp",
-        }
-    end
-
-    if lower == "gundrak" then
-        return {
-            MYTHICPLUS_ICON_BASE .. "GundrakDungeon.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-gundrak.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-gundrak.png",
-        }
-    end
-
-    if lower == "the nexus" or lower == "nexus" then
-        return {
-            MYTHICPLUS_ICON_BASE .. "TheNexus.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-thenexus.blp",
-            MYTHICPLUS_DUNGEON_ICONS_BASE .. "ui-lfg-background-thenexus.png",
-            MYTHICPLUS_ICON_BASE .. "EyeOfEternity.blp",
-        }
-    end
-
-    return nil
-end
-
-local function NormalizeDungeonNameToArtKey(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    local raw = name:gsub("^%s+", ""):gsub("%s+$", "")
-    local lower = string.lower(raw)
-
-    if lower == "ahn'kahet: the old kingdom"
-        or lower == "ahn'kahet the old kingdom" then
-        return "AhnKahet"
-    end
-    if lower == "gundrak" then
-        return "GundrakDungeon"
-    end
-    if lower == "the nexus" or lower == "nexus" then
-        return "TheNexus"
-    end
-    if lower == "the oculus" or lower == "oculus" then
-        return "EyeOfEternity"
-    end
-
-    local normalized = raw:gsub("^%s*[Tt]he%s+", "")
-    normalized = normalized:gsub("[^%w%s]", "")
-
-    local parts = {}
-    for word in normalized:gmatch("%S+") do
-        local first = word:sub(1, 1)
-        local rest = word:sub(2)
-        parts[#parts + 1] = first:upper() .. rest
-    end
-
-    if #parts == 0 then
-        return nil
-    end
-
-    return table.concat(parts, "")
-end
-
+-- Resolve dungeon icon candidates. Delegates to ResolveLFGIconCandidates
+-- (defined in GroupFinderFrame.lua, loaded before any UI that calls this)
+-- which sources icons from Interface\LFGFrame\lfgicon-<key>.blp in the patch
+-- MPQ. fallbackTexture is appended last when provided (e.g. FelLeather bg).
 local function ResolveMythicPlusDungeonArtCandidates(dungeon, fallbackTexture)
-    local resolved = nil
+    local result = {}
 
-    if type(dungeon) == "table" then
-        resolved = ApplyMythicPlusDungeonDescriptor(dungeon)
-    elseif type(dungeon) == "number" then
-        resolved = GetLocalMythicPlusDungeonDescriptor(dungeon)
-    elseif type(dungeon) == "string" then
-        resolved = GetLocalMythicPlusDungeonDescriptor(nil, dungeon)
-            or { name = dungeon, dungeonName = dungeon }
-    end
-
-    if type(resolved) ~= "table" then
-        resolved = {}
-    end
-
-    local candidates = {}
-    local seen = {}
-
-    AddUniqueMythicPlusCandidate(candidates, seen, resolved.iconPath)
-
-    local keyed = BuildDungeonArtCandidatesForArtKey(resolved.artKey)
-    if keyed then
-        for _, path in ipairs(keyed) do
-            AddUniqueMythicPlusCandidate(candidates, seen, path)
+    if type(namespace.ResolveLFGIconCandidates) == "function" then
+        local candidates = namespace.ResolveLFGIconCandidates(dungeon, false, true)
+        for _, p in ipairs(candidates or {}) do
+            result[#result + 1] = p
         end
     end
 
-    local dungeonName = resolved.dungeonName or resolved.name or resolved.dungeon
-    local named = BuildDungeonArtCandidatesForName(dungeonName)
-    if named then
-        for _, path in ipairs(named) do
-            AddUniqueMythicPlusCandidate(candidates, seen, path)
-        end
+    if type(fallbackTexture) == "string" and fallbackTexture ~= "" then
+        result[#result + 1] = fallbackTexture
     end
 
-    local iconKey = NormalizeDungeonNameToArtKey(dungeonName)
-    if iconKey then
-        AddUniqueMythicPlusCandidate(candidates, seen,
-            MYTHICPLUS_ICON_BASE .. iconKey .. ".blp")
-    end
-
-    AddUniqueMythicPlusCandidate(candidates, seen, fallbackTexture)
-
-    if #candidates == 0 then
-        return nil
-    end
-
-    return candidates
+    return #result > 0 and result or nil
 end
 
 namespace.GetMythicPlusAffixDescriptor = GetLocalMythicPlusAffixDescriptor
@@ -4610,6 +4457,15 @@ if DC then
         if type(args[1]) == "table" and namespace.GroupFinder
             and namespace.GroupFinder.OnQueueProposalFailed then
             namespace.GroupFinder:OnQueueProposalFailed(args[1])
+        end
+    end)
+
+    -- SMSG_QUEUE_CATALOG (0x3C) - full mythic dungeon + raid catalog
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_CATALOG or 0x3C, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnQueueCatalog then
+            namespace.GroupFinder:OnQueueCatalog(args[1])
         end
     end)
 

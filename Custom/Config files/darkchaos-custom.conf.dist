@@ -3382,6 +3382,25 @@ DC.GroupFinder.Queue.MatchIntervalMs = 3000
 #
 DC.GroupFinder.Queue.StatusIntervalMs = 5000
 
+#
+#    DC.GroupFinder.Queue.MaxPerPlayer
+#        Description: How many queues a solo player may sit in at once (like
+#                     retail's multi-queue). Parties always count as one.
+#        Default:     3
+#
+DC.GroupFinder.Queue.MaxPerPlayer = 3
+
+#
+#    DC.GroupFinder.Queue.DebugMinPlayers
+#        Description: TESTING ONLY. When > 0, a Dungeon Finder queue pops as soon
+#                     as this many players are queued, ignoring the normal
+#                     1 tank / 1 healer / 3 dps composition (everyone counts as
+#                     DPS). Set to 1 to solo-test the full join -> ready-check ->
+#                     teleport -> reward flow. Leave at 0 in production.
+#        Default:     0
+#
+DC.GroupFinder.Queue.DebugMinPlayers = 0
+
 # -----------------------------------------------------------------------------
 # Rewards
 # -----------------------------------------------------------------------------

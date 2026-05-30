@@ -81,16 +81,7 @@ end
 -- Queue target picker (rows shown in the finder list)
 -- =====================================================================
 
--- era -> diff id -> { size, label }
-local RAID_DIFF_INFO = {
-    [0] = { [0] = { size = 40, label = "40 Man" } },                 -- Classic
-    [1] = { [0] = { size = 10, label = "10 Man" },                   -- TBC
-            [1] = { size = 25, label = "25 Man" } },
-    [2] = { [0] = { size = 10, label = "10 Normal" },                -- WotLK
-            [1] = { size = 25, label = "25 Normal" },
-            [2] = { size = 10, label = "10 Heroic" },
-            [3] = { size = 25, label = "25 Heroic" } },
-}
+local EXP_TAG = { [0] = "|cffffd100[Classic]|r ", [1] = "|cff1eff00[TBC]|r ", [2] = "|cff0070dd[WotLK]|r " }
 
 local function CompositionForSize(size)
     if size >= 40 then return 3, 8, 29 end
@@ -98,65 +89,138 @@ local function CompositionForSize(size)
     return 2, 3, 5  -- 10-man
 end
 
+local function RaidDiffLabel(diff, size)
+    local heroic = (diff == 2 or diff == 3)
+    return string.format("%d %s", size, heroic and "Heroic" or "Normal")
+end
+
+-- Request the full dynamic catalog (mythic dungeons + raids) from the server.
+function GF:RequestQueueCatalog()
+    if self.queueCatalog then return end
+    local DC = GetDC()
+    if DC and DC.GroupFinder and DC.GroupFinder.GetQueueCatalog then
+        DC.GroupFinder.GetQueueCatalog()
+    end
+end
+
+-- Server pushed the catalog (dungeons + raids, sourced from MapDifficulty).
+function GF:OnQueueCatalog(data)
+    local DC = GetDC()
+    local function decode(v)
+        if type(v) == "table" then return v end
+        if type(v) == "string" and DC and DC.DecodeJSON then
+            return DC:DecodeJSON(v) or {}
+        end
+        return {}
+    end
+
+    self.queueCatalog = {
+        dungeons = decode(data and data.dungeons),
+        raids = decode(data and data.raids),
+    }
+
+    -- Refresh the picker if a finder list is currently shown.
+    if self.compactMode and self.retailNavContext ~= "premade"
+        and (self.compactSelectedKind == "mythic" or self.compactSelectedKind == "raid") then
+        self:SelectCompactType(self.compactSelectedKind)
+    end
+end
+
 -- Build the selectable list of queue targets for the current finder category.
+-- Prefers the dynamic server catalog (all dungeons/raids, grouped by expansion);
+-- falls back to the older local lists and requests the catalog if not cached.
 function GF:GetQueueTargets(kind)
     local targets = {}
+    local cat = self.queueCatalog
 
     if kind == "raid" then
-        local catalog = (self.GetRaidCatalog and self:GetRaidCatalog()) or {}
-        for _, raid in ipairs(catalog) do
-            local eraInfo = RAID_DIFF_INFO[raid.era or 2] or RAID_DIFF_INFO[2]
-            local minD = tonumber(raid.minDiff) or 0
-            local maxD = tonumber(raid.maxDiff) or 0
-            for diff = minD, maxD do
-                local info = eraInfo[diff]
-                if info then
-                    local t, h, d = CompositionForSize(info.size)
+        local raids = cat and cat.raids
+        if type(raids) == "table" and #raids > 0 then
+            for _, r in ipairs(raids) do
+                local exp = tonumber(r.expansion) or 2
+                for _, opt in ipairs(r.options or {}) do
+                    local d = tonumber(opt.d) or 0
+                    local s = tonumber(opt.s) or 10
+                    local t, h, dd = CompositionForSize(s)
                     table.insert(targets, {
-                        isQueueTarget = true,
-                        queueCategory = QUEUE_CAT_RAID,
-                        queueMapId = raid.mapId,
-                        queueSize = info.size,
-                        queueDifficulty = diff,
-                        name = raid.name,
-                        dungeonName = raid.name,
-                        mapId = raid.mapId,
-                        difficultyName = info.label,
-                        needTank = t, needHealer = h, needDps = d,
+                        isQueueTarget = true, queueCategory = QUEUE_CAT_RAID,
+                        queueMapId = r.mapId, queueSize = s, queueDifficulty = d,
+                        _exp = exp, _name = r.name or ("Map " .. tostring(r.mapId)),
+                        name = (EXP_TAG[exp] or "") .. (r.name or "Raid"),
+                        dungeonName = r.name, mapId = r.mapId,
+                        difficultyName = RaidDiffLabel(d, s),
+                        needTank = t, needHealer = h, needDps = dd,
                     })
                 end
             end
+            table.sort(targets, function(a, b)
+                if a._exp ~= b._exp then return a._exp < b._exp end
+                if a._name ~= b._name then return a._name < b._name end
+                return (a.queueSize or 0) < (b.queueSize or 0)
+            end)
+        else
+            self:RequestQueueCatalog()
+            -- Fallback: the older RaidTab catalog (WotLK-centric).
+            local catalog = (self.GetRaidCatalog and self:GetRaidCatalog()) or {}
+            for _, raid in ipairs(catalog) do
+                local s = (raid.era == 0 and 40) or 25
+                local t, h, dd = CompositionForSize(s)
+                table.insert(targets, {
+                    isQueueTarget = true, queueCategory = QUEUE_CAT_RAID,
+                    queueMapId = raid.mapId, queueSize = s,
+                    queueDifficulty = tonumber(raid.minDiff) or 0,
+                    name = raid.name, dungeonName = raid.name, mapId = raid.mapId,
+                    difficultyName = RaidDiffLabel(tonumber(raid.minDiff) or 0, s),
+                    needTank = t, needHealer = h, needDps = dd,
+                })
+            end
         end
     else
-        -- Dungeons: an "Any" option plus each Mythic 0 dungeon.
+        -- Dungeons: an "Any" option plus every mythic-capable dungeon.
         table.insert(targets, {
-            isQueueTarget = true,
-            queueCategory = QUEUE_CAT_DUNGEON,
-            queueMapId = 0,
-            queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
-            name = "Any Dungeon",
-            dungeonName = "Any Dungeon",
-            mapId = 0,
-            difficultyName = "Mythic",
-            needTank = 1, needHealer = 1, needDps = 3,
+            isQueueTarget = true, queueCategory = QUEUE_CAT_DUNGEON,
+            queueMapId = 0, queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
+            name = "Any Dungeon", dungeonName = "Any Dungeon", mapId = 0,
+            difficultyName = "Mythic", needTank = 1, needHealer = 1, needDps = 3,
         })
 
-        local list
-        if namespace.GetMythicPlusDungeonList then
-            list = namespace.GetMythicPlusDungeonList()
-        end
-        if type(list) == "table" then
+        local dungeons = cat and cat.dungeons
+        if type(dungeons) == "table" and #dungeons > 0 then
+            local sorted = {}
+            for _, d in ipairs(dungeons) do table.insert(sorted, d) end
+            -- Sort by expansion (addon) -> difficulty tier (LFG level) -> name,
+            -- so the long list reads Classic -> TBC -> WotLK, low -> high level.
+            table.sort(sorted, function(a, b)
+                local ea, eb = tonumber(a.expansion) or 2, tonumber(b.expansion) or 2
+                if ea ~= eb then return ea < eb end
+                local la, lb = tonumber(a.level) or 0, tonumber(b.level) or 0
+                if la ~= lb then return la < lb end
+                return (a.name or "") < (b.name or "")
+            end)
+            for _, d in ipairs(sorted) do
+                local exp = tonumber(d.expansion) or 2
+                local lvl = tonumber(d.level) or 0
+                local diffLabel = lvl > 0 and ("Mythic  -  Lv " .. lvl) or "Mythic"
+                table.insert(targets, {
+                    isQueueTarget = true, queueCategory = QUEUE_CAT_DUNGEON,
+                    queueMapId = d.mapId, queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
+                    _exp = exp, _level = lvl,
+                    name = (EXP_TAG[exp] or "") .. (d.name or ("Map " .. tostring(d.mapId))),
+                    dungeonName = d.name, mapId = d.mapId,
+                    difficultyName = diffLabel, needTank = 1, needHealer = 1, needDps = 3,
+                })
+            end
+        else
+            self:RequestQueueCatalog()
+            -- Fallback: the curated M+ dungeon list until the catalog arrives.
+            local list = namespace.GetMythicPlusDungeonList and namespace.GetMythicPlusDungeonList() or {}
             for _, d in ipairs(list) do
                 table.insert(targets, {
-                    isQueueTarget = true,
-                    queueCategory = QUEUE_CAT_DUNGEON,
-                    queueMapId = d.mapId,
-                    queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
+                    isQueueTarget = true, queueCategory = QUEUE_CAT_DUNGEON,
+                    queueMapId = d.mapId, queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
                     name = d.name or ("Map " .. tostring(d.mapId)),
-                    dungeonName = d.name or ("Map " .. tostring(d.mapId)),
-                    mapId = d.mapId,
-                    difficultyName = "Mythic",
-                    needTank = 1, needHealer = 1, needDps = 3,
+                    dungeonName = d.name, mapId = d.mapId,
+                    difficultyName = "Mythic", needTank = 1, needHealer = 1, needDps = 3,
                 })
             end
         end

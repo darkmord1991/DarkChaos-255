@@ -23,8 +23,7 @@ KUI.countdownValue = 0
 
 local BG_FELLEATHER = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga"
 local KEYSTONE_ICON = "Interface\\Icons\\INV_Misc_Key_14"
-local ICON_BASE = "Interface\\AddOns\\DC-MythicPlus\\Media\\Teleporter\\"
-local ICONS_DUNGEONS_BASE = "Interface\\AddOns\\Icons\\dungeons\\"
+-- (Teleporter art removed; icons come from patch MPQ via ResolveLFGIconCandidates.)
 local RETAIL_ATLAS_ROOT = "Interface\\AddOns\\DC-MythicPlus\\Textures\\RetailAtlas\\"
 local BG_TINT_ALPHA = 0.78
 local ROLE_TEXTURE = "Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES"
@@ -265,155 +264,15 @@ local function FormatTimeLimit(seconds)
     return string.format("%d:%02d", minutes, remain)
 end
 
-local function normalizeDungeonNameToIconKey(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    local raw = name:gsub("^%s+", ""):gsub("%s+$", "")
-    local lower = string.lower(raw)
-
-    if lower == "ahn'kahet: the old kingdom" or lower == "ahn'kahet the old kingdom" then
-        return "AhnKahet"
-    end
-    if lower == "gundrak" then
-        return "GundrakDungeon"
-    end
-    if lower == "the nexus" or lower == "nexus" then
-        return "TheNexus"
-    end
-    if lower == "the forge of souls" or lower == "forge of souls" then
-        return "ForgeOfSouls"
-    end
-    if lower == "pit of saron" then
-        return "PitOfSaron"
-    end
-    if lower == "halls of reflection" then
-        return "HallsOfReflection"
-    end
-    if lower == "trial of the champion" then
-        return "TrialOfTheChampion"
-    end
-    if lower == "drak'tharon keep" or lower == "draktharon keep" then
-        return "DrakTharonKeep"
-    end
-
-    local normalized = raw:gsub("^%s*[Tt]he%s+", "")
-    normalized = normalized:gsub("[^%w%s]", "")
-
-    local parts = {}
-    for word in normalized:gmatch("%S+") do
-        local first = word:sub(1, 1)
-        local rest = word:sub(2)
-        parts[#parts + 1] = first:upper() .. rest
-    end
-
-    if #parts == 0 then
-        return nil
-    end
-
-    return table.concat(parts, "")
-end
-
-local function iconCandidatesForDungeonArtKey(artKey)
-    if type(artKey) ~= "string" or artKey == "" then
-        return nil
-    end
-
-    if artKey == "AhnKahet" then
-        return {
-            ICON_BASE .. "AhnKahet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.png",
-        }
-    end
-    if artKey == "GundrakDungeon" then
-        return {
-            ICON_BASE .. "GundrakDungeon.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.png",
-        }
-    end
-    if artKey == "TheNexus" then
-        return {
-            ICON_BASE .. "TheNexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.png",
-        }
-    end
-
-    return { ICON_BASE .. artKey .. ".blp" }
-end
-
-local function iconCandidatesForDungeonName(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    local lower = string.lower(name)
-    if lower == "ahn'kahet: the old kingdom" or lower == "ahn'kahet the old kingdom" then
-        return {
-            ICON_BASE .. "AhnKahet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.png",
-        }
-    end
-    if lower == "gundrak" then
-        return {
-            ICON_BASE .. "GundrakDungeon.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.png",
-        }
-    end
-    if lower == "the nexus" or lower == "nexus" then
-        return {
-            ICON_BASE .. "TheNexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.blp",
-            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.png",
-        }
-    end
-    return nil
-end
-
+-- Delegates to Core.lua's ResolveMythicPlusDungeonArtCandidates, which now
+-- sources icons from the patch MPQ (Interface\LFGFrame\lfgicon-<key>.blp).
+-- Falls back to the FelLeather background if no specific icon is found.
 local function ResolveDungeonArtCandidates(data)
     if type(namespace.ResolveMythicPlusDungeonArtCandidates) == "function" then
         return namespace.ResolveMythicPlusDungeonArtCandidates(data,
             BG_FELLEATHER)
     end
-
-    local candidates = {}
-
-    local function addCandidate(path)
-        if type(path) == "string" and path ~= "" then
-            candidates[#candidates + 1] = path
-        end
-    end
-
-    if type(data) == "table" then
-        addCandidate(data.iconPath)
-
-        local keyed = iconCandidatesForDungeonArtKey(data.artKey)
-        if keyed then
-            for _, path in ipairs(keyed) do
-                addCandidate(path)
-            end
-        end
-
-        local named = iconCandidatesForDungeonName(data.dungeonName)
-        if named then
-            for _, path in ipairs(named) do
-                addCandidate(path)
-            end
-        end
-
-        local iconKey = normalizeDungeonNameToIconKey(data.dungeonName)
-        if iconKey then
-            addCandidate(ICON_BASE .. iconKey .. ".blp")
-        end
-    end
-
-    addCandidate(BG_FELLEATHER)
-    return candidates
+    return { BG_FELLEATHER }
 end
 
 local function ApplyTextureCandidates(texture, candidates)

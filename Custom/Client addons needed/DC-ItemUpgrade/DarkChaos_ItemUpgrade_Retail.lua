@@ -3268,6 +3268,56 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		self.portrait:SetTexture("Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Icons\\ItemUpgrade_64.tga");
 	end
 
+	-- Apply standard DC dark leather background (same style as browser/debug frames).
+	-- Hide the placeholder WHITE8X8 panels so the leather texture shows through.
+	if self.ShellBackground then self.ShellBackground:SetAlpha(0); end
+	if self.TopPanel       then self.TopPanel:SetAlpha(0); end
+	if self.BottomPanel    then self.BottomPanel:SetAlpha(0); end
+	if self.SetBackdropColor then
+		self:SetBackdropColor(0, 0, 0, 0);
+	end
+	do
+		local felBG = self:CreateTexture(nil, "BACKGROUND", nil, -8);
+		felBG:SetAllPoints();
+		felBG:SetTexture("Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga");
+		local felTint = self:CreateTexture(nil, "BACKGROUND", nil, -7);
+		felTint:SetAllPoints();
+		felTint:SetTexture(0, 0, 0, 0.78);
+	end
+
+	-- Items / Tiers browser buttons: UIPanelButtonTemplate defaults to gold text
+	-- (GameFontNormal) in WoW 3.3.5a; switch to neutral white so they don't look
+	-- like highlighted UI elements.
+	-- Items: opens the bag/equip item list for quick selection.
+	-- Tiers: shows the upgrade-tier reference browser.
+	for _, btnKey in ipairs({ "BrowseButton", "TierBrowseButton" }) do
+		local btn = self[btnKey];
+		if btn then
+			local fs = btn:GetFontString();
+			if fs then
+				fs:SetTextColor(0.90, 0.90, 0.90);
+			end
+		end
+	end
+
+	-- Explicitly pin UpgradeProgress and UpgradeToLabel inside ItemCard so they
+	-- are always visually within the card box, regardless of XML anchor resolution.
+	-- ItemCard TOPLEFT: x=94 aligns with item name; y offsets from card top:
+	--   34 = below item name (16px) + 4px gap
+	--   58 = below UpgradeProgress (16px) + 8px gap
+	if self.ItemCard and self.ItemInfo then
+		local card = self.ItemCard;
+		local info = self.ItemInfo;
+		if info.UpgradeProgress then
+			info.UpgradeProgress:ClearAllPoints();
+			info.UpgradeProgress:SetPoint("TOPLEFT", card, "TOPLEFT", 94, -34);
+		end
+		if info.UpgradeToLabel then
+			info.UpgradeToLabel:ClearAllPoints();
+			info.UpgradeToLabel:SetPoint("TOPLEFT", card, "TOPLEFT", 94, -58);
+		end
+	end
+
 	-- Move MoneyFrame (player currency balance) out of ButtonFrame so it sits
 	-- in the frame's footer strip and never overlaps the Upgrade button.
 	-- Dropdown uses the original XML anchor (right of "Upgrade To:" label).
@@ -3277,22 +3327,37 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		moneyFrame:ClearAllPoints();
 		moneyFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -20, 14);
 		moneyFrame:SetFrameLevel(self:GetFrameLevel() + 5);
+		-- Give the two currency widgets explicit, evenly-spaced positions so they
+		-- don't crowd each other or overlap their icons.
+		if moneyFrame.TokenCurrency then
+			moneyFrame.TokenCurrency:ClearAllPoints();
+			moneyFrame.TokenCurrency:SetWidth(88);
+			moneyFrame.TokenCurrency:SetPoint("RIGHT", moneyFrame, "CENTER", -8, 0);
+		end
+		if moneyFrame.EssenceCurrency then
+			moneyFrame.EssenceCurrency:ClearAllPoints();
+			moneyFrame.EssenceCurrency:SetWidth(88);
+			moneyFrame.EssenceCurrency:SetPoint("RIGHT", moneyFrame, "RIGHT", -2, 0);
+		end
 	end
 
-	-- Replace the TGA-based arrow (may render green on some clients) with a
-	-- FontString arrow so it always displays correctly in WoW 3.3.5a.
+	-- Arrow: custom chevron PNGs (17×45 px each).
+	-- "full"  = item selected and data loaded  (golden amber chevron)
+	-- "empty" = item still syncing / not yet selected (light chevron)
+	DC.ARROW_TEX_FULL  = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-full.png";
+	DC.ARROW_TEX_EMPTY = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-empty.png";
+
 	if self.Arrow then
 		if self.Arrow.Texture then
-			self.Arrow.Texture:SetTexture(nil);
-			self.Arrow.Texture:Hide();
+			self.Arrow.Texture:ClearAllPoints();
+			self.Arrow.Texture:SetPoint("CENTER", self.Arrow, "CENTER", 0, 0);
+			self.Arrow.Texture:SetSize(28, 74);   -- 17×45 displayed at ~1.65×
+			self.Arrow.Texture:SetTexture(DC.ARROW_TEX_EMPTY);
+			self.Arrow.Texture:SetVertexColor(1, 1, 1);
+			self.Arrow.Texture:SetAlpha(0.85);
+			self.Arrow.Texture:Show();
 		end
-		local arrowFont = self.Arrow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge");
-		arrowFont:SetAllPoints(self.Arrow);
-		arrowFont:SetJustifyH("CENTER");
-		arrowFont:SetJustifyV("MIDDLE");
-		arrowFont:SetTextColor(0.95, 0.76, 0.18, 0.9);
-		arrowFont:SetText(">>"); -- ASCII arrow (Unicode ▶ not available in WoW 3.3.5a fonts)
-		self.Arrow.ArrowLabel = arrowFont;
+		self.Arrow.ArrowLabel = nil;
 	end
 	self:RegisterEvent("PLAYER_LOGIN");
 	
@@ -3676,14 +3741,20 @@ function DarkChaos_ItemUpgrade_SaveCharSettings()
 end
 
 function DarkChaos_ItemUpgrade_OnUpdate(self, elapsed)
-	-- Arrow animation (bounce left-right)
+	-- Arrow animation: bounce left-right, centred between the two stat panels.
+	-- Anchoring to CurrentPanel RIGHT CENTER keeps the arrow vertically aligned
+	-- with the panels regardless of where they sit in the frame.
 	if self.Arrow and self.Arrow:IsShown() then
 		DC.arrowAnimationTime = (DC.arrowAnimationTime or 0) + elapsed;
 		local phase = DC.arrowAnimationTime * 2.6;
 		local offset = math.sin(phase) * 7;
 		local pulse = 0.82 + math.sin(phase) * 0.12;
 		self.Arrow:ClearAllPoints();
-		self.Arrow:SetPoint("CENTER", self, "CENTER", offset, -18);
+		if self.CurrentPanel and self.CurrentPanel:IsShown() then
+			self.Arrow:SetPoint("CENTER", self.CurrentPanel, "RIGHT", offset, 0);
+		else
+			self.Arrow:SetPoint("CENTER", self, "CENTER", offset, -22);
+		end
 		if self.Arrow.ArrowLabel then
 			self.Arrow.ArrowLabel:SetAlpha(pulse);
 		elseif self.Arrow.Texture then
@@ -3915,11 +3986,7 @@ local function UpdateTierBrowserDetail(frame, row)
 		or { r = 1, g = 1, b = 1 };
 	local description = row.description;
 	if not description or description == "" then
-		description = "Static browser metadata mirrored from the active item-upgrade tier definitions.";
-	end
-	local itemPreview = BuildTierBrowserItemPreview(row);
-	if itemPreview ~= "" then
-		description = description .. "\n\n" .. itemPreview;
+		description = "";
 	end
 
 	detail.Icon:SetTexture(row.icon or "Interface\\Icons\\INV_Misc_QuestionMark");
@@ -3928,7 +3995,16 @@ local function UpdateTierBrowserDetail(frame, row)
 	detail.SummaryText:SetText(FormatTierBrowserSummary(row));
 	detail.RangeText:SetText(FormatTierBrowserRange(row));
 	detail.DescriptionText:SetText(description);
-	detail.FooterText:SetText(FormatTierBrowserFooter(row));
+	-- Footer: source + item count (compact)
+	local itemCount = DC.GetTierItemCount and DC.GetTierItemCount(row.tierId) or 0;
+	local footerParts = {};
+	if row.sourceContent and row.sourceContent ~= "" then
+		table.insert(footerParts, tostring(row.sourceContent));
+	end
+	if itemCount > 0 then
+		table.insert(footerParts, string.format("%d base items", itemCount));
+	end
+	detail.FooterText:SetText(table.concat(footerParts, "  |  "));
 end
 
 DC.TierBrowser_OnLoad = function(self)
@@ -3954,7 +4030,7 @@ DC.TierBrowser_OnLoad = function(self)
 
 	for index = 1, TIER_BROWSER_VISIBLE_ROWS do
 		local button = CreateFrame("Button", "DarkChaos_TierBrowserButton" .. index, self);
-		button:SetWidth(300);
+		button:SetWidth(376);
 		button:SetHeight(TIER_BROWSER_BUTTON_HEIGHT);
 		button:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", 0,
 			-(index - 1) * TIER_BROWSER_BUTTON_HEIGHT);
@@ -4046,15 +4122,11 @@ DC.TierBrowser_Update = function()
 	DC.selectedTierBrowserTierId = GetPreferredTierBrowserTierId(rows);
 
 	if frame.StatusText then
-		local tierItemRows = DC.GetTierItemRows and DC.GetTierItemRows() or {};
-		frame.StatusText:SetText(string.format(
-			"Tiers: %s r%s (%d)  |  Items: %s r%s (%d)",
-			tostring(DC.activeTierDataSource or "default"),
-			tostring(DC.activeTierDataRevision or 0),
-			#rows,
-			tostring(DC.activeTierItemDataSource or "none"),
-			tostring(DC.activeTierItemDataRevision or 0),
-			tonumber(DC.activeTierItemRowCount) or #tierItemRows));
+		local itemCount = tonumber(DC.activeTierItemRowCount) or 0;
+		if itemCount == 0 and DC.GetTierItemRows then
+			itemCount = #(DC.GetTierItemRows() or {});
+		end
+		frame.StatusText:SetText(string.format("|cff888888%d tiers  |  %d items|r", #rows, itemCount));
 	end
 
 	local scrollFrame = frame.ScrollFrame;
@@ -5057,7 +5129,9 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	if frame.TierBrowseButton then frame.TierBrowseButton:Show(); end
 	if upgradeButton then upgradeButton:Show(); end
 	if frame.CostFrame then frame.CostFrame:Hide(); end
-	if frame.HorzBar then frame.HorzBar:Show(); end
+	-- HorzBar removed: card is now tall enough to contain the level info, so
+	-- the separator line between card and panels is no longer needed.
+	if frame.HorzBar then frame.HorzBar:Hide(); end
 	if frame.CurrentHeader then frame.CurrentHeader:Show(); end
 	if frame.UpgradeHeader then frame.UpgradeHeader:Show(); end
 	if frame.NoMoreUpgrades then frame.NoMoreUpgrades:Hide(); end
@@ -5106,6 +5180,16 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	end
 	if frame.Arrow then
 		frame.Arrow:Show();
+		-- Switch between the two arrow states:
+		-- empty = still loading / awaiting server sync
+		-- full  = data ready, comparison is live
+		if frame.Arrow.Texture then
+			local arrowReady = DC.currentItem
+				and DC.currentItem.hasAuthoritativeState
+				and not DC.currentItem.awaitingServerInfo;
+			local tex = arrowReady and DC.ARROW_TEX_FULL or DC.ARROW_TEX_EMPTY;
+			frame.Arrow.Texture:SetTexture(tex);
+		end
 	end
 
 	-- Update Dropdown

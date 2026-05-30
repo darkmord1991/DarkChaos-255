@@ -393,6 +393,7 @@ namespace DCAddon
             constexpr uint8 CMSG_QUEUE_LEAVE             = 0x1A;  // Leave the matchmaking queue
             constexpr uint8 CMSG_QUEUE_STATUS_REQUEST    = 0x1B;  // Request current queue status
             constexpr uint8 CMSG_QUEUE_PROPOSAL_RESPONSE = 0x1C;  // Accept/decline a proposal
+            constexpr uint8 CMSG_GET_QUEUE_CATALOG       = 0x1D;  // Request mythic dungeon + raid catalog
 
             // Client -> Server: Keystone & Difficulty
             constexpr uint8 CMSG_GET_MY_KEYSTONE     = 0x20;  // Request player's keystone info
@@ -429,6 +430,7 @@ namespace DCAddon
             constexpr uint8 SMSG_QUEUE_PROPOSAL        = 0x39;  // Match found -> ready check
             constexpr uint8 SMSG_QUEUE_PROPOSAL_UPDATE = 0x3A;  // Proposal accept progress
             constexpr uint8 SMSG_QUEUE_PROPOSAL_FAILED = 0x3B;  // Proposal failed (declined/timeout)
+            constexpr uint8 SMSG_QUEUE_CATALOG         = 0x3C;  // Mythic dungeon + raid catalog
 
             // Server -> Client: Keystone & Difficulty
             constexpr uint8 SMSG_KEYSTONE_INFO       = 0x40;  // Player's keystone data
