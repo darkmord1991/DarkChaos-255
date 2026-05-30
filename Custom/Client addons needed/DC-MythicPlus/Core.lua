@@ -2746,7 +2746,9 @@ local function ScanInventoryForKeystone()
 
         if sig ~= lastSig then
             if sig == "none" then
-                if runActive then
+                local kui = namespace.KeystoneUI
+                local activationPending = kui and (kui.currentState or 0) ~= 0
+                if runActive or activationPending then
                     namespace._lastInvKeyAnnouncedSig = sig
                 elseif lastSig and lastSig ~= "none" then
                     Print("No inventory keystone detected")
@@ -4550,6 +4552,64 @@ if DC then
             if namespace.GroupFinder and namespace.GroupFinder.EndSpectateSession then
                 namespace.GroupFinder:EndSpectateSession(data)
             end
+        end
+    end)
+
+    -- =====================================================================
+    -- Auto-matchmaking queue (LFG-style)
+    -- =====================================================================
+
+    -- SMSG_QUEUE_JOINED (0x36)
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_JOINED or 0x36, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnQueueJoined then
+            namespace.GroupFinder:OnQueueJoined(args[1])
+        end
+    end)
+
+    -- SMSG_QUEUE_LEFT (0x37)
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_LEFT or 0x37, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnQueueLeft then
+            namespace.GroupFinder:OnQueueLeft(args[1])
+        end
+    end)
+
+    -- SMSG_QUEUE_STATUS (0x38)
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_STATUS or 0x38, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnQueueStatus then
+            namespace.GroupFinder:OnQueueStatus(args[1])
+        end
+    end)
+
+    -- SMSG_QUEUE_PROPOSAL (0x39) - match found, ready check
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_PROPOSAL or 0x39, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnQueueProposal then
+            namespace.GroupFinder:OnQueueProposal(args[1])
+        end
+    end)
+
+    -- SMSG_QUEUE_PROPOSAL_UPDATE (0x3A) - accept progress
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_PROPOSAL_UPDATE or 0x3A, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnQueueProposalUpdate then
+            namespace.GroupFinder:OnQueueProposalUpdate(args[1])
+        end
+    end)
+
+    -- SMSG_QUEUE_PROPOSAL_FAILED (0x3B) - declined/timed out
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_QUEUE_PROPOSAL_FAILED or 0x3B, function(...)
+        local args = {...}
+        if type(args[1]) == "table" and namespace.GroupFinder
+            and namespace.GroupFinder.OnQueueProposalFailed then
+            namespace.GroupFinder:OnQueueProposalFailed(args[1])
         end
     end)
 

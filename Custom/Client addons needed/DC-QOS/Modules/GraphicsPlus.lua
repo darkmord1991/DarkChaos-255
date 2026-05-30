@@ -802,9 +802,14 @@ local function EnsureEventFrame()
             return
         end
 
-        if event == "PLAYER_ENTERING_WORLD" and settings.autoApplyOnLogin then
-            ScheduleApply("login", 1.0)
-            ScheduleProfileRequest("login", 1.3)
+        if event == "PLAYER_LOGIN" and settings.autoApplyOnLogin then
+            -- Apply before the world renders to prevent flicker
+            ScheduleApply("login", 0)
+            ScheduleProfileRequest("login", 0.5)
+        elseif event == "PLAYER_ENTERING_WORLD" and settings.autoApplyOnLogin then
+            -- Short fallback for portal/loading-screen transitions after login
+            ScheduleApply("zone transition", 0.2)
+            ScheduleProfileRequest("zone transition", 0.5)
         elseif event == "ZONE_CHANGED_NEW_AREA" and settings.autoApplyOnZoneChange then
             ScheduleApply("zone change", 0.75)
             ScheduleProfileRequest("zone change", 0.95)
@@ -829,6 +834,7 @@ function GraphicsPlus.OnEnable()
 
     local frame = EnsureEventFrame()
     frame:UnregisterAllEvents()
+    frame:RegisterEvent("PLAYER_LOGIN")
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
@@ -848,9 +854,7 @@ function GraphicsPlus.OnEnable()
         end)
     end
 
-    ScheduleApply("startup", 1.0)
-    ScheduleProfileRequest("startup", 1.2)
-    ScheduleProfileStateRequest("startup", 1.4)
+    ScheduleProfileStateRequest("startup", 1.0)
 end
 
 function GraphicsPlus.OnDisable()

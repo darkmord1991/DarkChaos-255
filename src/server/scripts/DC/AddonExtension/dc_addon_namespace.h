@@ -388,6 +388,12 @@ namespace DCAddon
             constexpr uint8 CMSG_UPDATE_LISTING      = 0x17;  // Update group listing
             constexpr uint8 CMSG_GET_MY_APPLICATIONS = 0x18;  // Get my active applications
 
+            // Client -> Server: Auto-matchmaking queue (LFG-style)
+            constexpr uint8 CMSG_QUEUE_JOIN              = 0x19;  // Join the matchmaking queue
+            constexpr uint8 CMSG_QUEUE_LEAVE             = 0x1A;  // Leave the matchmaking queue
+            constexpr uint8 CMSG_QUEUE_STATUS_REQUEST    = 0x1B;  // Request current queue status
+            constexpr uint8 CMSG_QUEUE_PROPOSAL_RESPONSE = 0x1C;  // Accept/decline a proposal
+
             // Client -> Server: Keystone & Difficulty
             constexpr uint8 CMSG_GET_MY_KEYSTONE     = 0x20;  // Request player's keystone info
             constexpr uint8 CMSG_SET_DIFFICULTY      = 0x21;  // Request difficulty change
@@ -415,6 +421,14 @@ namespace DCAddon
             constexpr uint8 SMSG_NEW_APPLICATION     = 0x33;  // Leader: new applicant
             constexpr uint8 SMSG_GROUP_UPDATED       = 0x34;  // Group composition changed
             constexpr uint8 SMSG_MY_APPLICATIONS     = 0x35;  // List of my active applications
+
+            // Server -> Client: Auto-matchmaking queue (LFG-style)
+            constexpr uint8 SMSG_QUEUE_JOINED          = 0x36;  // Confirm joined the queue
+            constexpr uint8 SMSG_QUEUE_LEFT            = 0x37;  // Confirm left the queue
+            constexpr uint8 SMSG_QUEUE_STATUS          = 0x38;  // Queue status (counts/role needs)
+            constexpr uint8 SMSG_QUEUE_PROPOSAL        = 0x39;  // Match found -> ready check
+            constexpr uint8 SMSG_QUEUE_PROPOSAL_UPDATE = 0x3A;  // Proposal accept progress
+            constexpr uint8 SMSG_QUEUE_PROPOSAL_FAILED = 0x3B;  // Proposal failed (declined/timeout)
 
             // Server -> Client: Keystone & Difficulty
             constexpr uint8 SMSG_KEYSTONE_INFO       = 0x40;  // Player's keystone data

@@ -21,6 +21,7 @@
 #include "DBCEnums.h"
 #include "CharacterCache.h"
 #include "dc_addon_groupfinder.h"
+#include "dc_addon_matchmaking.h"
 #include "../MythicPlus/dc_mythicplus_spectator.h"
 
 #include <mutex>
@@ -796,7 +797,7 @@ namespace GroupFinder
         QueryResult keyResult = CharacterDatabase.Query(
             "SELECT k.map_id, k.level, d.dungeon_name "
             "FROM dc_mplus_keystones k "
-            "LEFT JOIN dc_mplus_dungeons d ON k.map_id = d.map_id "
+            "LEFT JOIN acore_world.dc_mplus_dungeons d ON k.map_id = d.dungeon_id "
             "WHERE k.character_guid = {}",
             guid);
 
@@ -1594,72 +1595,37 @@ namespace GroupFinder
     // Get raid list from database (all eras)
     static void HandleGetRaidList(Player* player, const ParsedMessage& /*msg*/)
     {
-        // Hardcoded raid list with proper difficulties per era
-        // Era: 0=Classic, 1=TBC, 2=WotLK
-        // Difficulties vary by era:
-        //   Classic: 40-man only (diff 0)
-        //   TBC: 10/25 Normal only (diff 0/1)
-        //   WotLK: 10N/25N/10H/25H (diff 0/1/2/3)
-
-        struct RaidInfo {
-            uint32 id;
-            const char* name;
-            uint32 mapId;
-            uint8 era;          // 0=Classic, 1=TBC, 2=WotLK
-            uint8 bosses;
-            uint8 minDiff;      // Minimum difficulty available
-            uint8 maxDiff;      // Maximum difficulty available
-        };
-
-        static const RaidInfo raids[] = {
-            // Classic Raids (40-man only, difficulty 0)
-            { 101, "Molten Core",            409, 0, 10, 0, 0 },
-            { 102, "Blackwing Lair",         469, 0, 8,  0, 0 },
-            { 103, "Temple of Ahn'Qiraj",    531, 0, 9,  0, 0 },
-            { 104, "Ruins of Ahn'Qiraj",     509, 0, 6,  0, 0 },  // 20-man
-            { 105, "Zul'Gurub",              309, 0, 10, 0, 0 },  // 20-man
-
-            // TBC Raids (10/25 Normal only)
-            { 201, "Karazhan",               532, 1, 12, 0, 0 },  // 10-man only
-            { 202, "Gruul's Lair",           565, 1, 2,  1, 1 },  // 25-man only
-            { 203, "Magtheridon's Lair",     544, 1, 1,  1, 1 },  // 25-man only
-            { 204, "Serpentshrine Cavern",   548, 1, 6,  1, 1 },  // 25-man
-            { 205, "Tempest Keep",           550, 1, 4,  1, 1 },  // 25-man
-            { 206, "Mount Hyjal",            534, 1, 5,  1, 1 },  // 25-man
-            { 207, "Black Temple",           564, 1, 9,  1, 1 },  // 25-man
-            { 208, "Zul'Aman",               568, 1, 6,  0, 0 },  // 10-man
-            { 209, "Sunwell Plateau",        580, 1, 6,  1, 1 },  // 25-man
-
-            // WotLK Raids (10N/25N/10H/25H)
-            { 301, "Naxxramas",              533, 2, 15, 0, 1 },  // 10/25 Normal only
-            { 302, "Obsidian Sanctum",       615, 2, 1,  0, 1 },
-            { 303, "Eye of Eternity",        616, 2, 1,  0, 1 },
-            { 304, "Vault of Archavon",      624, 2, 4,  0, 1 },
-            { 305, "Ulduar",                 603, 2, 14, 0, 1 },  // Hard modes, not heroic diff
-            { 306, "Trial of the Crusader",  649, 2, 5,  0, 3 },  // Full heroic support
-            { 307, "Onyxia's Lair",          249, 2, 1,  0, 1 },
-            { 308, "Icecrown Citadel",       631, 2, 12, 0, 3 },  // Full heroic support
-            { 309, "Ruby Sanctum",           724, 2, 1,  0, 3 },  // Full heroic support
-        };
-
-        static const uint32 raidCount = sizeof(raids) / sizeof(raids[0]);
+        // Dynamic raid list sourced from MapDifficulty.dbc + Map.dbc (no hardcoded
+        // table). Each raid exposes the difficulties it actually has, and the map's
+        // expansion drives the client's era grouping (0=Classic, 1=TBC, 2=WotLK).
+        // minDiff/maxDiff are derived from the available difficulty ids so the
+        // existing client (RaidTab) keeps working unchanged.
+        auto const& raids = DCAddon::Matchmaking::InstanceCatalog::GetRaids();
 
         std::ostringstream raidArray;
         raidArray << "[";
 
-        for (uint32 i = 0; i < raidCount; i++)
+        uint32 raidCount = 0;
+        for (auto const& r : raids)
         {
-            if (i > 0) raidArray << ",";
-            auto const& r = raids[i];
+            if (r.difficulties.empty())
+                continue;
+
+            uint8 minD = r.difficulties.front();
+            uint8 maxD = r.difficulties.back();
+
+            if (raidCount > 0)
+                raidArray << ",";
+            ++raidCount;
 
             raidArray << "{";
-            raidArray << "\"id\":" << r.id << ",";
+            raidArray << "\"id\":" << r.mapId << ",";
             raidArray << "\"name\":\"" << r.name << "\",";
             raidArray << "\"mapId\":" << r.mapId << ",";
-            raidArray << "\"era\":" << static_cast<int>(r.era) << ",";
-            raidArray << "\"bosses\":" << static_cast<int>(r.bosses) << ",";
-            raidArray << "\"minDiff\":" << static_cast<int>(r.minDiff) << ",";
-            raidArray << "\"maxDiff\":" << static_cast<int>(r.maxDiff);
+            raidArray << "\"era\":" << r.expansion << ",";
+            raidArray << "\"bosses\":0,";
+            raidArray << "\"minDiff\":" << static_cast<uint32>(minD) << ",";
+            raidArray << "\"maxDiff\":" << static_cast<uint32>(maxD);
             raidArray << "}";
         }
 

@@ -2342,7 +2342,9 @@ namespace DCPerfTest
         availability.hasGroupFinderSignups = CharacterTableExists("dc_group_finder_event_signups");
         availability.hasMplusKeys = CharacterTableExists("dc_mplus_keystones");
         availability.hasMplusBestRuns = CharacterTableExists("dc_mplus_best_runs");
-        availability.hasMplusDungeons = CharacterTableExists("dc_mplus_dungeons");
+        availability.hasMplusDungeons = WorldDatabase.Query(
+            "SELECT 1 FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_mplus_dungeons'") != nullptr;
         availability.hasWardrobeOutfits = CharacterTableExists("dc_collection_community_outfits");
         availability.hasHLBGSeasonal = CharacterTableExists("v_hlbg_player_seasonal_stats");
         availability.hasHLBGAllTime = CharacterTableExists("v_hlbg_player_alltime_stats");
@@ -4576,21 +4578,12 @@ namespace DCPerfTest
                 if (!availability.hasMplusKeys)
                     return false;
 
-                if (availability.hasMplusDungeons)
-                {
-                    CharacterDatabase.Query(
-                        "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
-                        "FROM dc_mplus_keystones k "
-                        "LEFT JOIN dc_mplus_dungeons d ON k.map_id = d.map_id "
-                        "WHERE k.character_guid = {}",
-                        fakeGuid);
-                }
-                else
-                {
-                    CharacterDatabase.Query(
-                        "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
-                        fakeGuid);
-                }
+                CharacterDatabase.Query(
+                    "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
+                    "FROM dc_mplus_keystones k "
+                    "LEFT JOIN acore_world.dc_mplus_dungeons d ON k.map_id = d.dungeon_id "
+                    "WHERE k.character_guid = {}",
+                    fakeGuid);
 
                 return true;
             }

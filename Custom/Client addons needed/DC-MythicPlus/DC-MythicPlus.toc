@@ -15,6 +15,7 @@ Core.lua
 
 # Group Finder UI
 UI\GroupFinderFrame.lua
+UI\MatchmakingQueue.lua
 UI\MythicTab.lua
 UI\RaidTab.lua
 UI\WorldTab.lua

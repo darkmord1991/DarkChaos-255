@@ -790,32 +790,17 @@ local function EnsurePvPTab()
     end)
 end
 local function EnsurePvPHeaderButton()
+    -- No top-right button; only the bottom tab (PVPFrameTabHLBG) is shown.
+    -- This function only wires the OnHide hook so HLBG closes with the PvP frame.
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
-    if not _pvp or _G["PVPFrameHLBGButton"] then return end
-    local btn = CreateFrame("Button", "PVPFrameHLBGButton", _pvp, "UIPanelButtonTemplate")
-    btn:SetSize(56, 20)
-    btn:SetPoint("TOPRIGHT", _pvp, "TOPRIGHT", -40, -28)
-    btn:SetText("HLBG")
-    btn:SetScript("OnClick", function()
-        OpenHLBGFromPVP()
-    end)
+    if not _pvp then return end
+    if _pvp._hlbgHideHooked then return end
+    _pvp._hlbgHideHooked = true
     _pvp:HookScript("OnHide", function()
         if HLBG.UI and HLBG.UI.Frame then
             HLBG.UI.Frame:Hide()
         end
     end)
-
-    if not _pvp._hlbgAutoOpenHooked then
-        _pvp._hlbgAutoOpenHooked = true
-        _pvp:HookScript("OnShow", function()
-            local targetTab = DCHLBGDB and DCHLBGDB.lastInnerTab or 1
-            if type(HLBG.OpenMainWindow) == 'function' then
-                pcall(HLBG.OpenMainWindow, targetTab)
-            elseif HLBG.UI and HLBG.UI.Frame then
-                HLBG.UI.Frame:Show()
-            end
-        end)
-    end
 end
 
 local function FormatPvPQueueWait(seconds)
@@ -991,7 +976,7 @@ do
         t = t + (elapsed or 0)
         if t > 1.0 then
             t = 0; tries = tries + 1; EnsurePvPTab(); EnsurePvPHeaderButton(); EnsurePvPBattlegroundEntry()
-            if (_G["PVPFrameTabHLBG"] and _G["PVPFrameHLBGButton"] and _G["PVPFrameHLBGEntry"]) or tries > 5 then self:SetScript("OnUpdate", nil) end
+            if (_G["PVPFrameTabHLBG"] and _G["PVPFrameHLBGEntry"]) or tries > 5 then self:SetScript("OnUpdate", nil) end
         end
     end)
 end

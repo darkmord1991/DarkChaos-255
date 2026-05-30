@@ -2933,7 +2933,8 @@ local function FormatStatRowDelta(value)
 		return "";
 	end
 
-	return FormatNumericValue(value, true) or "";
+	local formatted = FormatNumericValue(value, true) or "";
+	return "(" .. formatted .. ")";
 end
 
 local DarkChaos_ItemUpgrade_BuildStatComparison;
@@ -3054,10 +3055,13 @@ local function DarkChaos_ItemUpgrade_UpdateItemLevelRows(frame, currentLevel, pr
 		frame.UpgradePanel.ItemLevelRow.DiffText:SetText(FormatStatRowDelta(diff));
 		if diff > 0 then
 			frame.UpgradePanel.ItemLevelRow.DiffText:SetTextColor(0.1, 1.0, 0.1);
+			frame.UpgradePanel.ItemLevelRow.ValueText:SetTextColor(0.1, 1.0, 0.1);
 		elseif diff < 0 then
 			frame.UpgradePanel.ItemLevelRow.DiffText:SetTextColor(1.0, 0.25, 0.25);
+			frame.UpgradePanel.ItemLevelRow.ValueText:SetTextColor(1.0, 0.25, 0.25);
 		else
-			frame.UpgradePanel.ItemLevelRow.DiffText:SetTextColor(0.75, 0.75, 0.75);
+			frame.UpgradePanel.ItemLevelRow.DiffText:SetTextColor(0.55, 0.55, 0.55);
+			frame.UpgradePanel.ItemLevelRow.ValueText:SetTextColor(0.90, 0.90, 0.90);
 		end
 		frame.UpgradePanel.ItemLevelRow.ValueText:SetText(FormatStatRowValue(previewLevel));
 		frame.UpgradePanel.ItemLevelRow.LabelText:SetText("Item Level");
@@ -3106,10 +3110,13 @@ local function DarkChaos_ItemUpgrade_UpdateStatRows(frame, rows)
 			rightRow.DiffText:SetText(FormatStatRowDelta(rowData.diff));
 			if (rowData.diff or 0) > 0 then
 				rightRow.DiffText:SetTextColor(0.1, 1.0, 0.1);
+				rightRow.ValueText:SetTextColor(0.1, 1.0, 0.1);
 			elseif (rowData.diff or 0) < 0 then
 				rightRow.DiffText:SetTextColor(1.0, 0.25, 0.25);
+				rightRow.ValueText:SetTextColor(1.0, 0.25, 0.25);
 			else
-				rightRow.DiffText:SetTextColor(0.75, 0.75, 0.75);
+				rightRow.DiffText:SetTextColor(0.55, 0.55, 0.55);
+				rightRow.ValueText:SetTextColor(0.90, 0.90, 0.90);
 			end
 			rightRow.ValueText:SetText(FormatStatRowValue(rowData.preview));
 			rightRow.LabelText:SetText(rowData.label or "");
@@ -3260,6 +3267,33 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	if self.portrait then
 		self.portrait:SetTexture("Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Icons\\ItemUpgrade_64.tga");
 	end
+
+	-- Move MoneyFrame (player currency balance) out of ButtonFrame so it sits
+	-- in the frame's footer strip and never overlaps the Upgrade button.
+	-- Dropdown uses the original XML anchor (right of "Upgrade To:" label).
+	local moneyFrame = self.ButtonFrame and self.ButtonFrame.MoneyFrame;
+	if moneyFrame then
+		moneyFrame:SetParent(self);
+		moneyFrame:ClearAllPoints();
+		moneyFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -20, 14);
+		moneyFrame:SetFrameLevel(self:GetFrameLevel() + 5);
+	end
+
+	-- Replace the TGA-based arrow (may render green on some clients) with a
+	-- FontString arrow so it always displays correctly in WoW 3.3.5a.
+	if self.Arrow then
+		if self.Arrow.Texture then
+			self.Arrow.Texture:SetTexture(nil);
+			self.Arrow.Texture:Hide();
+		end
+		local arrowFont = self.Arrow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge");
+		arrowFont:SetAllPoints(self.Arrow);
+		arrowFont:SetJustifyH("CENTER");
+		arrowFont:SetJustifyV("MIDDLE");
+		arrowFont:SetTextColor(0.95, 0.76, 0.18, 0.9);
+		arrowFont:SetText(">>"); -- ASCII arrow (Unicode ▶ not available in WoW 3.3.5a fonts)
+		self.Arrow.ArrowLabel = arrowFont;
+	end
 	self:RegisterEvent("PLAYER_LOGIN");
 	
 	-- Initialize UI elements
@@ -3338,6 +3372,9 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	AttachCurrencyTooltip(self.CostFrame and self.CostFrame.EssenceCurrency, "ANCHOR_BOTTOMRIGHT", "Required");
 	AttachCurrencyTooltip(self.ButtonFrame and self.ButtonFrame.MoneyFrame and self.ButtonFrame.MoneyFrame.TokenCurrency, "ANCHOR_TOPLEFT", "Owned");
 	AttachCurrencyTooltip(self.ButtonFrame and self.ButtonFrame.MoneyFrame and self.ButtonFrame.MoneyFrame.EssenceCurrency, "ANCHOR_TOPLEFT", "Owned");
+
+	-- Currency tooltips already describe the amounts (Owned); no extra label needed here
+	-- as it would push the strip over the Upgrade button.
 	
 	-- Create settings button in the title bar area (next to close button)
 	local settingsBtn = CreateFrame("Button", "DarkChaos_ItemUpgradeSettingsBtn", self);
@@ -3377,6 +3414,10 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	DarkChaos_ItemUpgrade_CreateStatPackageSelector(self);
 	
 	tinsert(UISpecialFrames, self:GetName());
+	-- Force a solid dark backdrop regardless of any other code that may clear it
+	if self.SetBackdropColor then
+		self:SetBackdropColor(0.05, 0.05, 0.07, 0.97);
+	end
 end
 
 function DarkChaos_ItemUpgrade_OnShow(self)
@@ -3643,7 +3684,11 @@ function DarkChaos_ItemUpgrade_OnUpdate(self, elapsed)
 		local pulse = 0.82 + math.sin(phase) * 0.12;
 		self.Arrow:ClearAllPoints();
 		self.Arrow:SetPoint("CENTER", self, "CENTER", offset, -18);
-		self.Arrow.Texture:SetAlpha(pulse);
+		if self.Arrow.ArrowLabel then
+			self.Arrow.ArrowLabel:SetAlpha(pulse);
+		elseif self.Arrow.Texture then
+			self.Arrow.Texture:SetAlpha(pulse);
+		end
 		if self.Arrow.Glow then
 			self.Arrow.Glow:SetAlpha(0.24 + math.sin(phase) * 0.06);
 		end
@@ -5043,6 +5088,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		frame.ItemInfo.UpgradeProgress:SetText(string.format("%s %d/%d  %d (%d-%d)", tierName, currentUpgrade, maxUpgrade, currentLevel, currentLevel, maxPotential));
 		frame.ItemInfo.UpgradeProgress:Show();
 	end
+	-- "Upgrade To:" label provides the context that distinguishes the current-level
+	-- info line from the target-level dropdown (matches retail layout).
 	if frame.ItemInfo.UpgradeToLabel then
 		frame.ItemInfo.UpgradeToLabel:Show();
 	end

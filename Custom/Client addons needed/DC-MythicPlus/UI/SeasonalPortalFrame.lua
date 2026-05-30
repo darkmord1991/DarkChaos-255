@@ -196,6 +196,19 @@ local function clamp(n, minV, maxV)
     return n
 end
 
+-- Seconds -> "mm:ss" (or "h:mm:ss"); used for timers and best run durations.
+local function formatClock(seconds)
+    seconds = math.floor(tonumber(seconds) or 0)
+    if seconds <= 0 then return "--" end
+    local h = math.floor(seconds / 3600)
+    local m = math.floor((seconds % 3600) / 60)
+    local s = seconds % 60
+    if h > 0 then
+        return string.format("%d:%02d:%02d", h, m, s)
+    end
+    return string.format("%d:%02d", m, s)
+end
+
 local function setButtonEnabled(button, enabled)
     if not button then
         return
@@ -341,12 +354,38 @@ local function ensureFrame()
         b.highlight:SetBlendMode("ADD")
         b.highlight:SetAlpha(0.25)
 
+        -- Dark banner behind the dungeon name (top of card, readable over art).
+        b.nameStrip = b:CreateTexture(nil, "ARTWORK", nil, 1)
+        b.nameStrip:SetPoint("TOPLEFT", 5, -5)
+        b.nameStrip:SetPoint("TOPRIGHT", -5, -5)
+        b.nameStrip:SetHeight(24)
+        b.nameStrip:SetColorTexture(0, 0, 0, 0.65)
+
         b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        b.text:SetPoint("CENTER", 0, 0)
-        b.text:SetJustifyH("CENTER")
-        b.text:SetJustifyV("MIDDLE")
+        b.text:SetPoint("TOPLEFT", b.nameStrip, "TOPLEFT", 8, -4)
+        b.text:SetPoint("TOPRIGHT", b.nameStrip, "TOPRIGHT", -8, -4)
+        b.text:SetJustifyH("LEFT")
         b.text:SetText("-")
         b.text:SetTextColor(1, 0.82, 0, 1)
+
+        -- Dark info bar at the bottom: timer | best key | rating.
+        b.infoStrip = b:CreateTexture(nil, "ARTWORK", nil, 1)
+        b.infoStrip:SetPoint("BOTTOMLEFT", 5, 5)
+        b.infoStrip:SetPoint("BOTTOMRIGHT", -5, 5)
+        b.infoStrip:SetHeight(22)
+        b.infoStrip:SetColorTexture(0, 0, 0, 0.65)
+
+        b.timer = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        b.timer:SetPoint("LEFT", b.infoStrip, "LEFT", 8, 0)
+        b.timer:SetText("")
+
+        b.best = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        b.best:SetPoint("CENTER", b.infoStrip, "CENTER", 0, 0)
+        b.best:SetText("")
+
+        b.rating = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        b.rating:SetPoint("RIGHT", b.infoStrip, "RIGHT", -8, 0)
+        b.rating:SetText("")
 
         b:SetScript("OnClick", function(self)
             if not self.mapId then return end
@@ -456,6 +495,29 @@ local function rebuildGrid()
             b.text:SetText(label)
             b.mapId = d.mapId
 
+            -- Timer (dungeon time limit), best key level, and Mythic+ rating.
+            local timeLimit = tonumber(d.timeLimit or d.timeLimitSec or d.timer)
+            b.timer:SetText(timeLimit and timeLimit > 0
+                and ("Timer: " .. formatClock(timeLimit)) or "Timer: --")
+
+            local bestLevel = tonumber(d.bestLevel or d.best or d.keyLevel)
+            local bestTime = tonumber(d.bestTime or d.bestDurationSec)
+            if bestLevel and bestLevel > 0 then
+                if bestTime and bestTime > 0 then
+                    b.best:SetText(string.format("Best: +%d (%s)", bestLevel,
+                        formatClock(bestTime)))
+                else
+                    b.best:SetText(string.format("Best: +%d", bestLevel))
+                end
+            else
+                b.best:SetText("Best: --")
+            end
+
+            -- Rating system is not implemented server-side yet.
+            local rating = tonumber(d.rating or d.scorePerDungeon)
+            b.rating:SetText(rating and rating > 0
+                and ("Rating: " .. rating) or "Rating: N/A")
+
             -- Use the dungeon image as the button background if available.
             local iconPaths = iconPathForDungeonDescriptor(d)
             local hasIcon = false
@@ -509,6 +571,7 @@ function UI:Preview(payload)
 
     state.seasonId = tonumber(payload.seasonId) or 0
     state.difficulty = tonumber(payload.difficulty) or 3
+    state.rating = tonumber(payload.rating or payload.overallRating)
     state.dungeons = {}
 
     for _, dungeon in ipairs(payload.dungeons or {}) do
@@ -532,7 +595,10 @@ end
 
 function UI:Refresh()
     if not frame or not frame:IsShown() then return end
-    frame.sub:SetText(string.format("Season: %s", tostring(state.seasonId or 0)))
+    local overall = tonumber(state.rating or state.overallRating)
+    frame.sub:SetText(string.format("Season: %s  |  Mythic+ Rating: %s",
+        tostring(state.seasonId or 0),
+        (overall and overall > 0) and tostring(overall) or "N/A"))
     rebuildGrid()
 end
 
@@ -551,6 +617,7 @@ local function RegisterProtocolHandlers()
         if type(payload) ~= "table" then return end
 
         state.seasonId = payload.seasonId or 0
+        state.rating = tonumber(payload.rating or payload.overallRating)
         state.dungeons = {}
 
         for _, dungeon in ipairs(payload.dungeons or {}) do
@@ -571,7 +638,9 @@ local function RegisterProtocolHandlers()
     DC:RegisterHandler(MPLUS, 0x92, function(payload)
         if type(payload) ~= "table" then return end
         ensureFrame()
-        if payload.message then
+        if payload.success then
+            UI:Hide()
+        elseif payload.message then
             frame.result:SetText(tostring(payload.message))
         end
     end)

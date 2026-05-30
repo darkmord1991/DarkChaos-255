@@ -1376,7 +1376,13 @@ DC.GroupFinderOpcodes = {
     CMSG_DELIST_GROUP        = 0x16,  -- Remove group listing
     CMSG_UPDATE_LISTING      = 0x17,  -- Update group listing
     CMSG_GET_MY_APPLICATIONS = 0x18,  -- Get my active applications
-    
+
+    -- Client -> Server: Auto-matchmaking queue (LFG-style)
+    CMSG_QUEUE_JOIN              = 0x19,  -- Join the matchmaking queue
+    CMSG_QUEUE_LEAVE             = 0x1A,  -- Leave the matchmaking queue
+    CMSG_QUEUE_STATUS_REQUEST    = 0x1B,  -- Request current queue status
+    CMSG_QUEUE_PROPOSAL_RESPONSE = 0x1C,  -- Accept/decline a match proposal
+
     -- Client -> Server: Keystone & Difficulty
     CMSG_GET_MY_KEYSTONE     = 0x20,  -- Request player's keystone info
     CMSG_SET_DIFFICULTY      = 0x21,  -- Request difficulty change
@@ -1404,7 +1410,15 @@ DC.GroupFinderOpcodes = {
     SMSG_NEW_APPLICATION     = 0x33,  -- Leader: new applicant
     SMSG_GROUP_UPDATED       = 0x34,  -- Group composition changed
     SMSG_MY_APPLICATIONS     = 0x35,  -- List of my active applications
-    
+
+    -- Server -> Client: Auto-matchmaking queue (LFG-style)
+    SMSG_QUEUE_JOINED          = 0x36,  -- Confirm joined the queue
+    SMSG_QUEUE_LEFT            = 0x37,  -- Confirm left the queue
+    SMSG_QUEUE_STATUS          = 0x38,  -- Queue status (counts/role needs)
+    SMSG_QUEUE_PROPOSAL        = 0x39,  -- Match found -> ready check
+    SMSG_QUEUE_PROPOSAL_UPDATE = 0x3A,  -- Proposal accept progress
+    SMSG_QUEUE_PROPOSAL_FAILED = 0x3B,  -- Proposal failed (declined/timeout)
+
     -- Server -> Client: Keystone & Difficulty
     SMSG_KEYSTONE_INFO       = 0x40,  -- Player's keystone data
     SMSG_DIFFICULTY_CHANGED  = 0x41,  -- Confirm difficulty changed
@@ -2628,7 +2642,40 @@ DC.GroupFinder = {
     GetSpectateList = function()
         DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_SPECTATE_LIST, {})
     end,
-    
+
+    -- ============================================================
+    -- Auto-matchmaking queue (LFG-style)
+    -- ============================================================
+    -- category: 1 = dungeon (Mythic 0), 2 = raid
+    -- roles: bitmask (tank=1, healer=2, dps=4)
+    -- dungeonId: specific map id, or 0 for "any" (dungeons only)
+    -- difficulty: dungeon/raid difficulty enum value
+    -- raidSize: 10 or 25 for raids
+    JoinQueue = function(category, roles, dungeonId, difficulty, raidSize)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_QUEUE_JOIN, {
+            category = category or 1,
+            roles = roles or 4,
+            dungeonId = dungeonId or 0,
+            difficulty = difficulty or 0,
+            raidSize = raidSize or 0,
+        })
+    end,
+
+    LeaveQueue = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_QUEUE_LEAVE, {})
+    end,
+
+    GetQueueStatus = function()
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_QUEUE_STATUS_REQUEST, {})
+    end,
+
+    RespondToProposal = function(proposalId, accept)
+        DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_QUEUE_PROPOSAL_RESPONSE, {
+            proposalId = proposalId,
+            accept = accept and true or false,
+        })
+    end,
+
     -- Difficulty control
     SetDifficulty = function(difficultyType, difficulty)
         -- difficultyType: "dungeon" or "raid"

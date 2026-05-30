@@ -132,6 +132,17 @@ function GF:UpdateRaidList(raidData)
     GF.Print("Raid list updated: " .. #RAID_LIST .. " raids from server")
 end
 
+-- Expose the raid catalog (id/name/mapId/era/bosses/minDiff/maxDiff) so the
+-- matchmaking queue picker can build raid+difficulty rows. Falls back to the
+-- built-in defaults and kicks off a server refresh if nothing is loaded yet.
+function GF:GetRaidCatalog()
+    if #RAID_LIST == 0 then
+        InitializeRaidList()
+        RequestRaidList()
+    end
+    return RAID_LIST
+end
+
 -- Get available difficulties for a specific raid
 local function GetDifficultiesForRaid(raid)
     if not raid then return {} end

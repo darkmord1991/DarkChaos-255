@@ -687,14 +687,6 @@ local function RegisterWorldHandlers()
         GF:RefreshWorldContentList()
     end)
     
-    -- Handle group search results for world category
-    if DC.GroupFinderOpcodes then
-        DC:RegisterHandler("GRPF", DC.GroupFinderOpcodes.SMSG_SEARCH_RESULTS, function(data)
-            if data and (data.category == "quest" or data.category == "other") then
-                GF:UpdateWorldGroups(data.groups or {}, data.category)
-            end
-        end)
-    end
 end
 
 RegisterWorldHandlers()

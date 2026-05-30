@@ -29,6 +29,9 @@ local RETAIL_ATLAS_ROOT = "Interface\\AddOns\\DC-MythicPlus\\Textures\\RetailAtl
 local BG_TINT_ALPHA = 0.78
 local ROLE_TEXTURE = "Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES"
 
+-- 3.3.5a only reliably loads power-of-two textures. The standalone .tga rips in
+-- Textures\Retail are arbitrary (non-PoT) dimensions and silently fail to load,
+-- so the keystone art uses the 1024x1024 packed .blp atlases with UV coords.
 local RETAIL_ATLAS = {
     ChallengeMode = RETAIL_ATLAS_ROOT .. "ChallengeMode.blp",
     ChallengeModeRunes = RETAIL_ATLAS_ROOT .. "ChallengeModeRunes.blp",

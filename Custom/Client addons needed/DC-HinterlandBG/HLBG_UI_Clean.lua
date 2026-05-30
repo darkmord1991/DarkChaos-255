@@ -131,7 +131,10 @@ if not HLBG.UI.Frame then
     HLBG.UI.Frame.RefreshBtn = refreshBtn
 
     -- Re-apply the selected tab whenever the frame becomes visible.
+    -- _suppressOnShow is set by OpenMainWindow so that Frame:Show() doesn't
+    -- double-fire ShowTab (OpenMainWindow calls ShowTab explicitly after Show).
     HLBG.UI.Frame:SetScript("OnShow", function()
+        if HLBG.UI.Frame._suppressOnShow then return end
         local showFn = HLBG and HLBG.ShowTab
         if type(showFn) == 'function' then
             local target = (DCHLBGDB and DCHLBGDB.lastInnerTab) or 1
@@ -257,13 +260,19 @@ if not HLBG.UI.Queue.Content then
    .hlbg queue status
 |cFFAAAAAANote: History and leaderboard views are provided through DC-Leaderboards (/leaderboard).|r]])
     HLBG.UI.Queue.InfoText = infoText
-    -- Auto-request queue status when tab is shown
+    -- Auto-request queue status when tab is shown.
+    -- Throttled: ShowTab calls Hide then Show each time, so without the
+    -- 2-second guard a single OpenMainWindow would fire this twice.
     HLBG.UI.Queue:SetScript("OnShow", function()
+        local now = GetTime and GetTime() or 0
+        local lastShown = HLBG._queueTabLastShownAt or 0
+        if (now - lastShown) < 2.0 then return end
+        HLBG._queueTabLastShownAt = now
         if type(HLBG.QueueMessage) == 'function' then
             HLBG.QueueMessage("shown_requesting")
         end
         if type(HLBG.RequestQueueStatus) == 'function' then
-            C_Timer.After(0.3, function()  -- Small delay to ensure AIO ready
+            C_Timer.After(0.3, function()
                 pcall(HLBG.RequestQueueStatus)
             end)
         else
@@ -359,7 +368,11 @@ function HLBG.OpenMainWindow(tabIndex)
         return false
     end
 
+    -- Suppress the Frame's OnShow → ShowTab path so that ShowTab is only
+    -- called once (below), not twice (once from OnShow, once explicitly).
+    HLBG.UI.Frame._suppressOnShow = true
     HLBG.UI.Frame:Show()
+    HLBG.UI.Frame._suppressOnShow = nil
     if HLBG.UI.Frame.Raise then
         HLBG.UI.Frame:Raise()
     end

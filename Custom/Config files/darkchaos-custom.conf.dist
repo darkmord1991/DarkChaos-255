@@ -3345,20 +3345,92 @@ DC.GroupFinder.RatingMatchRange = 200
 DC.GroupFinder.KeyLevelMatchRange = 3
 
 # -----------------------------------------------------------------------------
+# Auto-Matchmaking Queue (LFG-style, Mythic 0 dungeons + raids)
+# -----------------------------------------------------------------------------
+# The "Dungeon Finder" and "Raid Finder" tabs use an automatic queue: players
+# (solo or as a party) pick a role, the server pools them, forms a full group
+# when role requirements are met (dungeon 1 tank/1 healer/3 dps; raids by size),
+# runs a ready-check, then teleports the group in and grants the reward below.
+#
+
+#
+#    DC.GroupFinder.Queue.Enabled
+#        Description: Master toggle for the auto-matchmaking queue
+#        Default:     1 (Enabled)
+#
+DC.GroupFinder.Queue.Enabled = 1
+
+#
+#    DC.GroupFinder.Queue.ProposalTimeoutSec
+#        Description: Seconds players have to accept a found-group ready-check
+#                     before it is cancelled (accepters are re-queued)
+#        Default:     40
+#
+DC.GroupFinder.Queue.ProposalTimeoutSec = 40
+
+#
+#    DC.GroupFinder.Queue.MatchIntervalMs
+#        Description: How often (ms) the server attempts to form matches
+#        Default:     3000
+#
+DC.GroupFinder.Queue.MatchIntervalMs = 3000
+
+#
+#    DC.GroupFinder.Queue.StatusIntervalMs
+#        Description: How often (ms) queued players get a status refresh
+#        Default:     5000
+#
+DC.GroupFinder.Queue.StatusIntervalMs = 5000
+
+# -----------------------------------------------------------------------------
 # Rewards
 # -----------------------------------------------------------------------------
+# Applies to BOTH listing completions and auto-matchmaking queue pops. The
+# reward is daily-limited per character (see DailyLimit). Set an item, a
+# currency, or both. Leave an ID at 0 to disable that reward type.
+#
 
 #
 #    DC.GroupFinder.Reward.Enable
-#        Description: Enable rewards for Group Finder completions
+#        Description: Enable the daily Group Finder reward
 #        Default:     1 (Enabled)
 #
 DC.GroupFinder.Reward.Enable = 1
 
+#
+#    DC.GroupFinder.Reward.ItemID
+#        Description: Item granted as the reward (0 = no item reward)
+#        Default:     49426 (Emblem of Frost)
+#
 DC.GroupFinder.Reward.ItemID = 49426
+
+#
+#    DC.GroupFinder.Reward.ItemCount
+#        Description: Stack size of the reward item
+#        Default:     2
+#
 DC.GroupFinder.Reward.ItemCount = 2
+
+#
+#    DC.GroupFinder.Reward.CurrencyID
+#        Description: Custom currency type id granted (0 = none; uses the DC
+#                     ItemUpgrade currency system, or money if so configured)
+#        Default:     0
+#
 DC.GroupFinder.Reward.CurrencyID = 0
+
+#
+#    DC.GroupFinder.Reward.CurrencyCount
+#        Description: Amount of currency granted
+#        Default:     0
+#
 DC.GroupFinder.Reward.CurrencyCount = 0
+
+#
+#    DC.GroupFinder.Reward.DailyLimit
+#        Description: Max reward claims per character per day (0 = unlimited)
+#        Default:     1
+#
 DC.GroupFinder.Reward.DailyLimit = 1
 
 # -----------------------------------------------------------------------------

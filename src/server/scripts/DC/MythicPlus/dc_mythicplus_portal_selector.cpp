@@ -220,8 +220,6 @@ static void TeleportToDungeonEntranceByDungeonMap(Player* player, uint32 dungeon
 
     if (player->TeleportTo(entranceMap, x, y, z, o))
     {
-        ChatHandler(player->GetSession()).SendSysMessage(
-            Acore::StringFormat("|cff00ff00[Dungeon Portal]|r Teleporting to {} entrance...", dungeonName).c_str());
         LOG_INFO("mythic.portal", "Player {} teleported to seasonal dungeon {}", player->GetName(), dungeonMapId);
     }
     else

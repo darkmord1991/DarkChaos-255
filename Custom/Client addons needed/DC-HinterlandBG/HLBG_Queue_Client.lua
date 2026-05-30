@@ -259,7 +259,7 @@ function HLBG.RequestQueueStatus()
     if usedNative or SendHLBGRequest(DC, 1) then
         -- Send via DC Protocol (HLBG module op 0x01 = CMSG_REQUEST_STATUS)
         -- See DCAddonNamespace.h: CMSG_REQUEST_STATUS = 0x01
-        if DEFAULT_CHAT_FRAME then
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             HLBG.QueueMessage(usedNative and "request_status_native" or "request_status_dc")
         end
 
@@ -278,7 +278,7 @@ function HLBG.RequestQueueStatus()
         end
     elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "RequestQueueStatus", "")
-        if DEFAULT_CHAT_FRAME then
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             HLBG.QueueMessage("request_status_aio")
         end
     else
@@ -289,7 +289,7 @@ function HLBG.RequestQueueStatus()
             editBox:SetText(cmd)
             ChatEdit_SendText(editBox, 0)
         end
-        if DEFAULT_CHAT_FRAME then
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             HLBG.QueueMessage("request_status_cmd")
         end
     end
@@ -308,6 +308,23 @@ function HLBG.JoinQueue()
     if SendNativeQueueRequest("queue_join") then
         if DEFAULT_CHAT_FRAME then
             HLBG.QueueMessage("join_native")
+        end
+        -- If the native bridge sent the request but the server never confirms
+        -- (no queue sync within 2 s), fall back to the chat-command path so
+        -- the server still receives the join even when the bridge is silent.
+        if C_Timer and C_Timer.After then
+            local joinAt = GetTime()
+            C_Timer.After(2.0, function()
+                if not HLBG.IsInQueue and (HLBG._lastQueueSyncAt or 0) < joinAt then
+                    local editBox = DEFAULT_CHAT_FRAME
+                        and (DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox)
+                        or ChatFrame1EditBox
+                    if editBox then
+                        editBox:SetText(".hlbg queue join")
+                        ChatEdit_SendText(editBox, 0)
+                    end
+                end
+            end)
         end
     elseif SendHLBGRequest(DC, 4) then
         -- CMSG_QUICK_QUEUE = 0x04
