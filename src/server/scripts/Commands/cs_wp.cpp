@@ -564,8 +564,7 @@ public:
 
             uint32 a2, a3, a4, a5, a6;
             float a8, a9, a10, a11;
-            std::string a7Str;
-            char const* a7;
+            std::string a7;
 
             WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WAYPOINT_SCRIPT_BY_ID);
             stmt->SetData(0, id);
@@ -587,8 +586,7 @@ public:
                 a4 = fields[2].Get<uint32>();
                 a5 = fields[3].Get<uint32>();
                 a6 = fields[4].Get<uint32>();
-                a7Str = fields[5].Get<std::string>();
-                a7 = a7Str.c_str();
+                a7 = fields[5].Get<std::string>();
                 a8 = fields[6].Get<float>();
                 a9 = fields[7].Get<float>();
                 a10 = fields[8].Get<float>();
