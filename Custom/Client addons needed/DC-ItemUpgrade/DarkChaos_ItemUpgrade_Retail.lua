@@ -658,27 +658,29 @@ ICON_TOKEN = "|TInterface\\Icons\\INV_Misc_Coin_01:14|t";
 =======================================================]]
 
 function DarkChaos_ItemUpgrade_InitializeCosts()
-	-- Initialize cost table from database schema
+	-- OFFLINE FALLBACK ONLY. The server (dc_item_upgrade_costs DB table) is
+	-- authoritative; its values are used whenever DCProtocol is available.
+	-- Keep these in sync with that table to avoid a wrong fallback total.
 	DC.upgradeCosts = {};
-	-- Tier 1: 5-30 tokens
+	-- Tier 1 (Leveling): token_cost = level * 10
 	DC.upgradeCosts[1] = {
-		[1]={tokens=5,essence=0}, [2]={tokens=5,essence=0}, [3]={tokens=5,essence=0},
-		[4]={tokens=10,essence=0}, [5]={tokens=10,essence=0}, [6]={tokens=10,essence=0},
-		[7]={tokens=15,essence=0}, [8]={tokens=15,essence=0}, [9]={tokens=15,essence=0},
-		[10]={tokens=20,essence=0}, [11]={tokens=20,essence=0}, [12]={tokens=20,essence=0},
-		[13]={tokens=25,essence=0}, [14]={tokens=25,essence=0}, [15]={tokens=30,essence=0},
+		[1]={tokens=10,essence=0}, [2]={tokens=20,essence=0}, [3]={tokens=30,essence=0},
+		[4]={tokens=40,essence=0}, [5]={tokens=50,essence=0}, [6]={tokens=60,essence=0},
+		[7]={tokens=70,essence=0}, [8]={tokens=80,essence=0}, [9]={tokens=90,essence=0},
+		[10]={tokens=100,essence=0}, [11]={tokens=110,essence=0}, [12]={tokens=120,essence=0},
+		[13]={tokens=130,essence=0}, [14]={tokens=140,essence=0}, [15]={tokens=150,essence=0},
 	};
 
-	-- Tier 2: 10-35 tokens
+	-- Tier 2 (Heroic): token_cost = level * 15
 	DC.upgradeCosts[2] = {
-		[1]={tokens=10,essence=0}, [2]={tokens=10,essence=0}, [3]={tokens=10,essence=0},
-		[4]={tokens=15,essence=0}, [5]={tokens=15,essence=0}, [6]={tokens=15,essence=0},
-		[7]={tokens=20,essence=0}, [8]={tokens=20,essence=0}, [9]={tokens=20,essence=0},
-		[10]={tokens=25,essence=0}, [11]={tokens=25,essence=0}, [12]={tokens=25,essence=0},
-		[13]={tokens=30,essence=0}, [14]={tokens=30,essence=0}, [15]={tokens=35,essence=0},
+		[1]={tokens=15,essence=0}, [2]={tokens=30,essence=0}, [3]={tokens=45,essence=0},
+		[4]={tokens=60,essence=0}, [5]={tokens=75,essence=0}, [6]={tokens=90,essence=0},
+		[7]={tokens=105,essence=0}, [8]={tokens=120,essence=0}, [9]={tokens=135,essence=0},
+		[10]={tokens=150,essence=0}, [11]={tokens=165,essence=0}, [12]={tokens=180,essence=0},
+		[13]={tokens=195,essence=0}, [14]={tokens=210,essence=0}, [15]={tokens=225,essence=0},
 	};
 
-	-- Tier 3: 15-40 tokens
+	-- Tier 3 (Heirloom uses essence; tokens kept as a coarse fallback)
 	DC.upgradeCosts[3] = {
 		[1]={tokens=15,essence=0}, [2]={tokens=15,essence=0}, [3]={tokens=15,essence=0},
 		[4]={tokens=20,essence=0}, [5]={tokens=20,essence=0}, [6]={tokens=20,essence=0},
@@ -687,7 +689,7 @@ function DarkChaos_ItemUpgrade_InitializeCosts()
 		[13]={tokens=35,essence=0}, [14]={tokens=35,essence=0}, [15]={tokens=40,essence=0},
 	};
 
-	-- Tier 4: 20-50 tokens
+	-- Tier 4: coarse fallback
 	DC.upgradeCosts[4] = {
 		[1]={tokens=20,essence=0}, [2]={tokens=20,essence=0}, [3]={tokens=20,essence=0},
 		[4]={tokens=25,essence=0}, [5]={tokens=25,essence=0}, [6]={tokens=25,essence=0},
@@ -696,7 +698,7 @@ function DarkChaos_ItemUpgrade_InitializeCosts()
 		[13]={tokens=40,essence=0}, [14]={tokens=40,essence=0}, [15]={tokens=50,essence=0},
 	};
 
-	-- Tier 5: 30-60 tokens + 10-40 essence
+	-- Tier 5: coarse fallback
 	DC.upgradeCosts[5] = {
 		[1]={tokens=30,essence=10}, [2]={tokens=30,essence=10}, [3]={tokens=30,essence=10},
 		[4]={tokens=35,essence=15}, [5]={tokens=35,essence=15}, [6]={tokens=35,essence=15},
@@ -754,11 +756,18 @@ function DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, target
 	end
 
 	if DC.useDCProtocol and DC.GetCachedCostInfo then
+		-- The server is authoritative for costs (dc_item_upgrade_costs DB table).
+		-- The client's static table is only an offline fallback and may not match,
+		-- so for the live protocol path we must use the server's value — never a
+		-- guess that could let the player click Upgrade and then be rejected.
+
+		-- 1) Exact range cached by the server? Use it directly.
 		local liveTotals = DC.GetCachedCostInfo(tier, currentLevel, targetLevel);
 		if liveTotals then
 			return DarkChaos_ItemUpgrade_CopyCostTotals(liveTotals.tokens, liveTotals.essence), nil, false;
 		end
 
+		-- 2) Single-step upgrade with a known authoritative next-step cost.
 		if targetLevel == (currentLevel + 1) and DC.currentItem then
 			local nextTokens = tonumber(DC.currentItem.tokenCost) or 0;
 			local nextEssence = tonumber(DC.currentItem.essenceCost) or 0;
@@ -767,6 +776,8 @@ function DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, target
 			end
 		end
 
+		-- 3) Not cached yet: request the authoritative total and report pending.
+		--    SMSG_COST_INFO will cache the exact value and refresh the UI.
 		if DC.RequestCostInfo then
 			DC.RequestCostInfo(tier, currentLevel, targetLevel);
 			return nil, nil, true;
@@ -3325,36 +3336,48 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	if moneyFrame then
 		moneyFrame:SetParent(self);
 		moneyFrame:ClearAllPoints();
-		moneyFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -20, 14);
+		moneyFrame:SetWidth(240);
+		moneyFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 14);
 		moneyFrame:SetFrameLevel(self:GetFrameLevel() + 5);
-		-- Give the two currency widgets explicit, evenly-spaced positions so they
-		-- don't crowd each other or overlap their icons.
-		if moneyFrame.TokenCurrency then
-			moneyFrame.TokenCurrency:ClearAllPoints();
-			moneyFrame.TokenCurrency:SetWidth(88);
-			moneyFrame.TokenCurrency:SetPoint("RIGHT", moneyFrame, "CENTER", -8, 0);
-		end
+		-- Lay the two balances left-to-right: essence pinned to the right edge,
+		-- token anchored relative to it so there is always a fixed gap and the
+		-- count text can never overlap the neighbouring icon.
 		if moneyFrame.EssenceCurrency then
 			moneyFrame.EssenceCurrency:ClearAllPoints();
-			moneyFrame.EssenceCurrency:SetWidth(88);
-			moneyFrame.EssenceCurrency:SetPoint("RIGHT", moneyFrame, "RIGHT", -2, 0);
+			moneyFrame.EssenceCurrency:SetWidth(100);
+			moneyFrame.EssenceCurrency:SetPoint("RIGHT", moneyFrame, "RIGHT", 0, 0);
+			if moneyFrame.EssenceCurrency.count then
+				moneyFrame.EssenceCurrency.count:SetWidth(78);
+			end
+		end
+		if moneyFrame.TokenCurrency then
+			moneyFrame.TokenCurrency:ClearAllPoints();
+			moneyFrame.TokenCurrency:SetWidth(100);
+			moneyFrame.TokenCurrency:SetPoint("RIGHT", moneyFrame.EssenceCurrency, "LEFT", -18, 0);
+			if moneyFrame.TokenCurrency.count then
+				moneyFrame.TokenCurrency.count:SetWidth(78);
+			end
 		end
 	end
 
-	-- Arrow: custom chevron PNGs (17×45 px each).
+	-- Arrow: custom chevron TGAs (17×45 px each). WoW 3.3.5a cannot load PNG, so
+	-- these were converted to 32-bit TGA. Static (no animation).
 	-- "full"  = item selected and data loaded  (golden amber chevron)
 	-- "empty" = item still syncing / not yet selected (light chevron)
-	DC.ARROW_TEX_FULL  = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-full.png";
-	DC.ARROW_TEX_EMPTY = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-empty.png";
+	DC.ARROW_TEX_FULL  = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-full.tga";
+	DC.ARROW_TEX_EMPTY = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\cyphersetupgrade-arrow-empty.tga";
 
 	if self.Arrow then
+		if self.Arrow.Glow then
+			self.Arrow.Glow:Hide();   -- no animated glow; arrow is static
+		end
 		if self.Arrow.Texture then
 			self.Arrow.Texture:ClearAllPoints();
 			self.Arrow.Texture:SetPoint("CENTER", self.Arrow, "CENTER", 0, 0);
 			self.Arrow.Texture:SetSize(28, 74);   -- 17×45 displayed at ~1.65×
 			self.Arrow.Texture:SetTexture(DC.ARROW_TEX_EMPTY);
 			self.Arrow.Texture:SetVertexColor(1, 1, 1);
-			self.Arrow.Texture:SetAlpha(0.85);
+			self.Arrow.Texture:SetAlpha(1);
 			self.Arrow.Texture:Show();
 		end
 		self.Arrow.ArrowLabel = nil;
@@ -3741,30 +3764,19 @@ function DarkChaos_ItemUpgrade_SaveCharSettings()
 end
 
 function DarkChaos_ItemUpgrade_OnUpdate(self, elapsed)
-	-- Arrow animation: bounce left-right, centred between the two stat panels.
-	-- Anchoring to CurrentPanel RIGHT CENTER keeps the arrow vertically aligned
+	-- Arrow is static (no animation): keep it pinned, centred between the two
+	-- stat panels. Anchoring to CurrentPanel RIGHT keeps it vertically aligned
 	-- with the panels regardless of where they sit in the frame.
 	if self.Arrow and self.Arrow:IsShown() then
-		DC.arrowAnimationTime = (DC.arrowAnimationTime or 0) + elapsed;
-		local phase = DC.arrowAnimationTime * 2.6;
-		local offset = math.sin(phase) * 7;
-		local pulse = 0.82 + math.sin(phase) * 0.12;
 		self.Arrow:ClearAllPoints();
 		if self.CurrentPanel and self.CurrentPanel:IsShown() then
-			self.Arrow:SetPoint("CENTER", self.CurrentPanel, "RIGHT", offset, 0);
+			self.Arrow:SetPoint("CENTER", self.CurrentPanel, "RIGHT",
+				(self.UpgradePanel and self.UpgradePanel:IsShown()) and 16 or 0, 0);
 		else
-			self.Arrow:SetPoint("CENTER", self, "CENTER", offset, -22);
-		end
-		if self.Arrow.ArrowLabel then
-			self.Arrow.ArrowLabel:SetAlpha(pulse);
-		elseif self.Arrow.Texture then
-			self.Arrow.Texture:SetAlpha(pulse);
-		end
-		if self.Arrow.Glow then
-			self.Arrow.Glow:SetAlpha(0.24 + math.sin(phase) * 0.06);
+			self.Arrow:SetPoint("CENTER", self, "CENTER", 0, -22);
 		end
 	end
-	
+
 	-- Button glow pulse (enhanced for better visibility)
 	if self.UpgradeButton and self.UpgradeButton:IsEnabled() and self.UpgradeButton.Glow:IsShown() then
 		DC.glowAnimationTime = (DC.glowAnimationTime or 0) + elapsed;
@@ -4507,21 +4519,23 @@ local function SetButtonEnabled(button, enabled)
 		end
 	end
 
+	-- Standard solid red button. Keep the white Sheen low so the fill reads as a
+	-- clean red instead of washing out to salmon/pink.
 	if button.Fill then
 		if enabled then
-			button.Fill:SetVertexColor(0.55, 0.08, 0.05, 1);
+			button.Fill:SetVertexColor(0.70, 0.10, 0.10, 1);
 		else
-			button.Fill:SetVertexColor(0.22, 0.08, 0.07, 0.95);
+			button.Fill:SetVertexColor(0.26, 0.10, 0.10, 0.95);
 		end
 	end
 	if button.Sheen then
-		button.Sheen:SetAlpha(enabled and 0.75 or 0.28);
+		button.Sheen:SetAlpha(enabled and 0.16 or 0.08);
 	end
 	if button.Text then
 		if enabled then
-			button.Text:SetTextColor(1.0, 0.95, 0.82);
+			button.Text:SetTextColor(1.0, 1.0, 1.0);
 		else
-			button.Text:SetTextColor(0.62, 0.56, 0.52);
+			button.Text:SetTextColor(0.60, 0.55, 0.55);
 		end
 	end
 	if button.Glow then

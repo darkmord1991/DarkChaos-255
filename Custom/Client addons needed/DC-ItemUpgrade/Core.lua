@@ -1096,12 +1096,12 @@ function DC.CreateSettingsPanel()
 			DC.CacheCostInfo(tier, fromLevel, toLevel, data.tokens, data.essence);
 		end
 
-		if DC.currentItem and DarkChaos_ItemUpgrade_UpdateUI then
-			local currentLevel = DC.currentItem.currentUpgrade or 0;
-			local targetLevel = DC.targetUpgradeLevel or currentLevel;
-			if tier == (DC.currentItem.tier or 0) and fromLevel == currentLevel and toLevel == targetLevel then
-				DarkChaos_ItemUpgrade_UpdateUI();
-			end
+		-- Refresh the UI whenever the upgrade frame is open so a freshly cached
+		-- cost is shown immediately (covers cases where the selected target level
+		-- changed between request and response).
+		if DC.currentItem and DarkChaos_ItemUpgrade_UpdateUI
+				and DarkChaos_ItemUpgradeFrame and DarkChaos_ItemUpgradeFrame:IsShown() then
+			DarkChaos_ItemUpgrade_UpdateUI();
 		end
 	end);
 	

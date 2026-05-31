@@ -12,22 +12,25 @@ local DC = DarkChaos_ItemUpgrade;
 DC.upgradeCosts = {};
 
 function DarkChaos_ItemUpgrade_InitializeCosts()
-	-- Tier 1: 5-30 tokens
+	-- NOTE: These are an OFFLINE FALLBACK only. The server (dc_item_upgrade_costs
+	-- DB table) is authoritative and its values are used whenever DCProtocol is
+	-- available. Keep these in sync with that table to avoid a wrong fallback.
+	-- Tier 1 (Leveling): token_cost = level * 10
 	DC.upgradeCosts[1] = {
-		[1]={tokens=5,essence=0}, [2]={tokens=5,essence=0}, [3]={tokens=5,essence=0},
-		[4]={tokens=10,essence=0}, [5]={tokens=10,essence=0}, [6]={tokens=10,essence=0},
-		[7]={tokens=15,essence=0}, [8]={tokens=15,essence=0}, [9]={tokens=15,essence=0},
-		[10]={tokens=20,essence=0}, [11]={tokens=20,essence=0}, [12]={tokens=20,essence=0},
-		[13]={tokens=25,essence=0}, [14]={tokens=25,essence=0}, [15]={tokens=30,essence=0},
+		[1]={tokens=10,essence=0}, [2]={tokens=20,essence=0}, [3]={tokens=30,essence=0},
+		[4]={tokens=40,essence=0}, [5]={tokens=50,essence=0}, [6]={tokens=60,essence=0},
+		[7]={tokens=70,essence=0}, [8]={tokens=80,essence=0}, [9]={tokens=90,essence=0},
+		[10]={tokens=100,essence=0}, [11]={tokens=110,essence=0}, [12]={tokens=120,essence=0},
+		[13]={tokens=130,essence=0}, [14]={tokens=140,essence=0}, [15]={tokens=150,essence=0},
 	};
 
-	-- Tier 2: 10-35 tokens
+	-- Tier 2 (Heroic): token_cost = level * 15
 	DC.upgradeCosts[2] = {
-		[1]={tokens=10,essence=0}, [2]={tokens=10,essence=0}, [3]={tokens=10,essence=0},
-		[4]={tokens=15,essence=0}, [5]={tokens=15,essence=0}, [6]={tokens=15,essence=0},
-		[7]={tokens=20,essence=0}, [8]={tokens=20,essence=0}, [9]={tokens=20,essence=0},
-		[10]={tokens=25,essence=0}, [11]={tokens=25,essence=0}, [12]={tokens=25,essence=0},
-		[13]={tokens=30,essence=0}, [14]={tokens=30,essence=0}, [15]={tokens=35,essence=0},
+		[1]={tokens=15,essence=0}, [2]={tokens=30,essence=0}, [3]={tokens=45,essence=0},
+		[4]={tokens=60,essence=0}, [5]={tokens=75,essence=0}, [6]={tokens=90,essence=0},
+		[7]={tokens=105,essence=0}, [8]={tokens=120,essence=0}, [9]={tokens=135,essence=0},
+		[10]={tokens=150,essence=0}, [11]={tokens=165,essence=0}, [12]={tokens=180,essence=0},
+		[13]={tokens=195,essence=0}, [14]={tokens=210,essence=0}, [15]={tokens=225,essence=0},
 	};
 
 	-- Tier 3: 15-40 tokens

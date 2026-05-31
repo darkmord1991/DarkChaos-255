@@ -413,7 +413,7 @@
             </Frame>
 
             <Frame name="$parentCurrentPanel" parentKey="CurrentPanel" hidden="true">
-                <Size x="234" y="220"/>
+                <Size x="222" y="220"/>
                 <Anchors>
                     <Anchor point="TOPLEFT" x="42" y="-187"/>
                 </Anchors>
@@ -475,7 +475,7 @@
             </Frame>
 
             <Frame name="$parentUpgradePanel" parentKey="UpgradePanel" hidden="true">
-                <Size x="234" y="220"/>
+                <Size x="222" y="220"/>
                 <Anchors>
                     <Anchor point="TOPRIGHT" x="-42" y="-187"/>
                 </Anchors>
@@ -788,14 +788,14 @@
                                         <Anchor point="TOPLEFT"/>
                                         <Anchor point="BOTTOMRIGHT"/>
                                     </Anchors>
-                                    <Color r="0.08" g="0.02" b="0.02" a="1"/>
+                                    <Color r="0.10" g="0.02" b="0.02" a="1"/>
                                 </Texture>
                                 <Texture parentKey="Fill" file="Interface\Buttons\WHITE8X8">
                                     <Anchors>
                                         <Anchor point="TOPLEFT" x="1" y="-1"/>
                                         <Anchor point="BOTTOMRIGHT" x="-1" y="1"/>
                                     </Anchors>
-                                    <Color r="0.55" g="0.08" b="0.05" a="1"/>
+                                    <Color r="0.70" g="0.10" b="0.10" a="1"/>
                                 </Texture>
                             </Layer>
                             <Layer level="ARTWORK">
@@ -804,7 +804,7 @@
                                         <Anchor point="TOPLEFT" x="2" y="-2"/>
                                         <Anchor point="BOTTOMRIGHT" x="-2" y="2"/>
                                     </Anchors>
-                                    <Color r="1" g="1" b="1" a="0.10"/>
+                                    <Color r="1" g="1" b="1" a="0.06"/>
                                 </Texture>
                             </Layer>
                             <Layer level="OVERLAY">
