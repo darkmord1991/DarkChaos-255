@@ -69,24 +69,34 @@ local function GetRarityColor(rarity)
 end
 
 local function GetMountIcon(spellId, def)
-    -- Try spell texture first
-    if spellId and GetSpellTexture then
-        local tex = GetSpellTexture(spellId)
+    def = def or {}
+
+    -- Definition icon first (most reliable when the server provides it).
+    if def.icon and def.icon ~= "" then
+        return def.icon
+    end
+
+    -- Spell texture: prefer an explicit spellId from the definition. The list
+    -- passed mount.id here, which is a collection id (not a spellId) on this
+    -- server, so GetSpellTexture(mount.id) returned nothing -> "?" icons.
+    local sid = tonumber(def.spellId or def.spell_id) or tonumber(spellId)
+    if sid and sid > 0 and GetSpellTexture then
+        local tex = GetSpellTexture(sid)
         if tex and tex ~= "" then
             return tex
         end
     end
 
-    -- Try definition icon
-    if def and def.icon and def.icon ~= "" then
-        return def.icon
-    end
-
-    -- Try item icon if mount has associated item
-    if def and def.itemId and GetItemIcon then
-        local tex = GetItemIcon(def.itemId)
-        if tex and tex ~= "" then
-            return tex
+    -- Item icon if the mount has an associated item.
+    local iid = tonumber(def.itemId or def.item_id)
+    if iid and iid > 0 then
+        if type(GetItemIcon) == "function" then
+            local tex = GetItemIcon(iid)
+            if tex and tex ~= "" then return tex end
+        end
+        if type(GetItemInfo) == "function" then
+            local tex = select(10, GetItemInfo(iid))
+            if tex and tex ~= "" then return tex end
         end
     end
 
@@ -410,12 +420,14 @@ function MountJournal:CreateModelPreview(parent)
     end)
 
     model:SetScript("OnMouseWheel", function(self, delta)
-        local zoom = self.zoom or 0
-        zoom = zoom + delta * 0.1
-        zoom = math.max(-1, math.min(1, zoom))
-        self.zoom = zoom
-        self:SetCamera(0)
-        self:SetPosition(zoom, 0, 0)
+        -- Zoom by scaling the model. The old SetPosition(zoom,0,0) drove the
+        -- camera into the creature, so it got stuck on the head with no way back.
+        local s = (self.modelZoom or 1.0) + delta * 0.1
+        s = math.max(0.5, math.min(2.5, s))
+        self.modelZoom = s
+        if self.SetModelScale then
+            self:SetModelScale(s)
+        end
     end)
 
     modelFrame.model = model
@@ -830,6 +842,10 @@ function MountJournal:SelectMount(mountData)
         end
         model.rotation = 0
         model.zoom = 0
+        model.modelZoom = 1.0
+        if model.SetModelScale then
+            model:SetModelScale(1.0)
+        end
         if model.SetPosition then
             model:SetPosition(0, 0, 0)
         end

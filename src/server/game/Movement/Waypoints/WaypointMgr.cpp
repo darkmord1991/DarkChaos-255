@@ -149,12 +149,24 @@ void WaypointMgr::LoadWaypointAddons()
     LOG_INFO("server.loading", " ");
 }
 
+void WaypointMgr::AppendWaypointToPath(uint32 id, WaypointNode node)
+{
+    // operator[] creates a default-constructed WaypointPath if the key is absent
+    // (first node of a brand-new path), or returns the existing one in place.
+    // Either way the pointer held by any live WaypointMovementGenerator remains valid.
+    WaypointPath& path = _waypointStore[id];
+    path.Id = id;
+    path.Nodes.push_back(std::move(node));
+}
+
 void WaypointMgr::ReloadPath(uint32 id)
 {
-    auto itr = _waypointStore.find(id);
-    if (itr != _waypointStore.end())
-        _waypointStore.erase(itr);
-
+    // Query the DB first, before touching _waypointStore.
+    // We must NOT erase the existing entry before the new data is ready:
+    // any live WaypointMovementGenerator holds a WaypointPath const* that
+    // points directly into this map, and erasing the entry destroys the
+    // object, leaving that pointer dangling.  The next DoUpdate() tick then
+    // dereferences freed memory and crashes the server.
     WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WAYPOINT_DATA_BY_ID);
 
     stmt->SetData(0, id);
@@ -162,7 +174,13 @@ void WaypointMgr::ReloadPath(uint32 id)
     PreparedQueryResult result = WorldDatabase.Query(stmt);
 
     if (!result)
+    {
+        // No waypoints remain in DB for this path.  Callers that reach here
+        // after a wipe (HandleWpWipeCommand) also reinitialize the motion
+        // master immediately, which clears i_path, so the erase is safe.
+        _waypointStore.erase(id);
         return;
+    }
 
     std::vector<WaypointNode> values;
     do
@@ -204,5 +222,12 @@ void WaypointMgr::ReloadPath(uint32 id)
         values.push_back(std::move(waypoint));
     } while (result->NextRow());
 
-    _waypointStore[id] = WaypointPath(id, std::move(values));
+    // Update the entry in-place so any live WaypointMovementGenerator that
+    // holds a WaypointPath const* to this map entry keeps a valid pointer.
+    // operator[] inserts a default entry if the key is absent (first load),
+    // or returns a reference to the existing one (subsequent reloads), either
+    // way without destroying an object that is already pointed to.
+    WaypointPath& path = _waypointStore[id];
+    path.Id = id;
+    path.Nodes = std::move(values);
 }

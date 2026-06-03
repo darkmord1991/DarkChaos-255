@@ -1155,36 +1155,29 @@ ItemUpgrade.Perf.AchievementReward.SamplePct = 30
 # -----------------------------------------------------------------------------
 # Tier Stat Scaling
 # -----------------------------------------------------------------------------
-
 #
-#    ItemUpgrade.Tier1.MaxStatBonusPct
-#        Description: Maximum total stat bonus percent for tier 1 items at max
-#                     upgrade level. Set to 0 to keep the value from
-#                     dc_item_upgrade_tiers.stat_multiplier_max.
-#                     The addon caches the resolved tier caps at login/reload.
-#        Default:     7
+#    ItemUpgrade.TierN.MaxStatBonusPct
+#        Description: Hard cap (%) on the total stat bonus for a tier at max
+#                     upgrade level.
+#                     0 = use dc_item_upgrade_tiers.stat_multiplier_max (DB).
+#                     Non-zero overrides the DB value entirely.
 #
-ItemUpgrade.Tier1.MaxStatBonusPct = 7
-
+#        Authoritative caps live in dc_item_upgrade_tiers (maintained by
+#        fix_tier_stat_multipliers.sql and Hyjal_Tiers_T4_T5.sql):
 #
-#    ItemUpgrade.Tier2.MaxStatBonusPct
-#        Description: Maximum total stat bonus percent for tier 2 items at max
-#                     upgrade level. Set to 0 to keep the value from
-#                     dc_item_upgrade_tiers.stat_multiplier_max.
-#                     The addon caches the resolved tier caps at login/reload.
-#        Default:     5
+#          T1 Leveling   :  6 levels ×  7.00% = +42%  (stat_multiplier_max 1.42)
+#          T2 Heroic     : 15 levels ×  5.00% = +75%  (stat_multiplier_max 1.75)
+#          T3 Heirloom   : 80 levels ×  3.75% = +300% (stat_multiplier_max 4.00)
+#          T4 Hyjal Prog : 10 levels ×  5.00% = +50%  (stat_multiplier_max 1.50)
+#          T5 Hyjal End  : 15 levels ×  4.00% = +60%  (stat_multiplier_max 1.60)
 #
-ItemUpgrade.Tier2.MaxStatBonusPct = 5
-
+#        All set to 0 — DB is the single source of truth.
 #
-#    ItemUpgrade.Tier3.MaxStatBonusPct
-#        Description: Maximum total stat bonus percent for tier 3 items at max
-#                     upgrade level. Set to 0 to keep the value from
-#                     dc_item_upgrade_tiers.stat_multiplier_max.
-#                     The addon caches the resolved tier caps at login/reload.
-#        Default:     7
-#
-ItemUpgrade.Tier3.MaxStatBonusPct = 7
+ItemUpgrade.Tier1.MaxStatBonusPct = 0
+ItemUpgrade.Tier2.MaxStatBonusPct = 0
+ItemUpgrade.Tier3.MaxStatBonusPct = 0
+ItemUpgrade.Tier4.MaxStatBonusPct = 0
+ItemUpgrade.Tier5.MaxStatBonusPct = 0
 
 # -----------------------------------------------------------------------------
 # Currency Configuration

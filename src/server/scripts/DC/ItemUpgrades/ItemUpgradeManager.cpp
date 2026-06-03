@@ -180,7 +180,7 @@ namespace DarkChaos
             // Cache maps for fast lookup
             std::unordered_map<uint16, UpgradeCost> upgrade_costs;          // (tier_id << 8) | upgrade_level -> cost
             std::unordered_map<uint8, TierDefinition> tier_definitions;     // tier_id -> definition
-            std::unordered_map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
+            std::unordered_map<uint32, uint8> item_overrides;              // item_id -> pinned tier_id (dc_item_upgrade_item_overrides)
             std::unordered_map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
 
             // Caches
@@ -616,10 +616,12 @@ namespace DarkChaos
                     uint32 mastery_points = 0;
                     switch (tier)
                     {
-                        case TIER_LEVELING: mastery_points = 1; break;
-                        case TIER_HEROIC: mastery_points = 2; break;
-                        case TIER_HEIRLOOM: mastery_points = 6; break;
-                        default: mastery_points = 1; break;
+                        case TIER_LEVELING:           mastery_points = 1; break;
+                        case TIER_HEROIC:             mastery_points = 2; break;
+                        case TIER_HEIRLOOM:           mastery_points = 6; break;
+                        case TIER_HYJAL_PROGRESSION:  mastery_points = 3; break;
+                        case TIER_HYJAL_ENDGAME:      mastery_points = 4; break;
+                        default:                      mastery_points = 1; break;
                     }
 
                     // Award bonus points for reaching certain upgrade milestones
@@ -871,14 +873,8 @@ namespace DarkChaos
                 if (it != upgrade_costs.end())
                     return it->second.ilvl_increase;
 
-                // Fallback to hardcoded values if database not loaded
-                switch (tier_id)
-                {
-                    case TIER_LEVELING: return 60;
-                    case TIER_HEROIC: return 15;
-                    case TIER_HEIRLOOM: return 15;
-                    default: return 15;
-                }
+                // Not in dc_item_upgrade_costs → no ilvl increase for this step.
+                return 0;
             }
 
             uint16 GetUpgradedItemLevel(uint32 item_guid, uint16 base_ilvl) override
@@ -1010,63 +1006,35 @@ namespace DarkChaos
 
             uint8 GetItemTier(uint32 item_id) override
             {
-                // Check for heirlooms first (special item ID range)
-                if (item_id >= HEIRLOOM_ITEM_ID_MIN && item_id <= HEIRLOOM_ITEM_ID_MAX)
-                    return TIER_HEIRLOOM;
+                // 1. Per-item override (dc_item_upgrade_item_overrides).
+                //    Pinned tier is authoritative — no ilvl promotion.
+                auto it = item_overrides.find(item_id);
+                if (it != item_overrides.end())
+                    return it->second;
 
-                // Helper to resolve tier by item level ranges
-                auto resolveTierByIlvl = [&](uint16 itemLevel) -> uint8
+                // 2. ilvl-based tier assignment from dc_item_upgrade_tiers.
+                //    Picks the highest tier_id whose [min_ilvl, max_ilvl] range
+                //    contains the item's base item level.  Returns TIER_INVALID
+                //    (item not upgradeable) if no range matches.
+                if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id))
                 {
-                    // Prefer tier definitions from DB (min/max ilvl)
+                    uint16 itemLevel = itemTemplate->ItemLevel;
                     uint8 matchedTier = TIER_INVALID;
                     for (auto const& [tierId, def] : tier_definitions)
                     {
-                        // Skip artifact-only tiers when mapping regular items
                         if (def.is_artifact)
                             continue;
                         if (def.min_ilvl == 0 && def.max_ilvl == 0)
                             continue;
 
                         bool withinMin = itemLevel >= def.min_ilvl;
-                        bool withinMax = (def.max_ilvl == 0) ? true : (itemLevel <= def.max_ilvl);
-                        if (withinMin && withinMax)
-                        {
-                            // Prefer the highest matching tier
-                            if (tierId > matchedTier)
-                                matchedTier = tierId;
-                        }
+                        bool withinMax = (def.max_ilvl == 0) || (itemLevel <= def.max_ilvl);
+                        if (withinMin && withinMax && tierId > matchedTier)
+                            matchedTier = tierId;
                     }
-                    if (matchedTier != TIER_INVALID)
-                        return matchedTier;
-
-                    // Determine tier based on item level ranges (general item id check)
-                    if (itemLevel < 213)
-                        return TIER_LEVELING;      // T1: < 213 ilevel
-                    else if (itemLevel < 355)
-                        return TIER_HEROIC;       // T2: 213-226 ilevel
-                    else
-                        return TIER_HEIRLOOM;     // T3: >226 ilevel (heirlooms/special items)
-                };
-
-                // First check explicit database mapping
-                auto it = item_to_tier.find(item_id);
-                if (it != item_to_tier.end())
-                {
-                    uint8 mappedTier = it->second;
-                    // If ilvl-based tier is higher than the mapped tier, prefer ilvl
-                    if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id))
-                    {
-                        uint8 ilvlTier = resolveTierByIlvl(itemTemplate->ItemLevel);
-                        if (ilvlTier != TIER_INVALID && ilvlTier > mappedTier)
-                            return ilvlTier;
-                    }
-                    return mappedTier;
+                    return matchedTier;
                 }
-                // Fallback: Get item template and determine tier by item level
-                if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id))
-                    return resolveTierByIlvl(itemTemplate->ItemLevel);
 
-                // If item template not found, return invalid
                 return TIER_INVALID;
             }
 
@@ -1206,7 +1174,7 @@ namespace DarkChaos
 
                 tier_definitions.clear();
                 upgrade_costs.clear();
-                item_to_tier.clear();
+                item_overrides.clear();
                 artifacts.clear();
 
                 // Load tier definitions
@@ -1291,10 +1259,11 @@ namespace DarkChaos
                     LOG_ERROR("scripts.dc", "ItemUpgrade: No upgrade costs found. Check table 'dc_item_upgrade_costs' and season {}", season);
                 }
 
-                // Load item to tier mappings
+                // Load per-item tier pins (overrides ilvl-based assignment; pinned tier is final).
+                // Table: dc_item_upgrade_item_overrides (replaces dc_item_templates_upgrade).
                 result = WorldDatabase.Query(
-                    "SELECT item_id, tier_id FROM dc_item_templates_upgrade "
-                    "WHERE season = {} AND is_active = 1",
+                    "SELECT item_id, tier_id FROM dc_item_upgrade_item_overrides "
+                    "WHERE is_active = 1 AND season = {}",
                     season);
                 if (result)
                 {
@@ -1303,17 +1272,17 @@ namespace DarkChaos
                     {
                         Field* fields = result->Fetch();
                         uint32 item_id = fields[0].Get<uint32>();
-                        uint8 tier_id = fields[1].Get<uint8>();
+                        uint8 tier_id  = fields[1].Get<uint8>();
 
-                        item_to_tier[item_id] = tier_id;
+                        item_overrides[item_id] = tier_id;
                         count++;
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} item-to-tier mappings", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} item tier overrides", count);
                 }
                 else
                 {
-                    LOG_WARN("scripts.dc", "ItemUpgrade: No item-to-tier mappings found. Check table 'dc_item_templates_upgrade' and season {}", season);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: No item tier overrides found in 'dc_item_upgrade_item_overrides' (season {}). Items will be tiered by ilvl only.", season);
                 }
 
                 // Load artifacts

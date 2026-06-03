@@ -46,47 +46,23 @@ namespace
     uint8 ResolveMaxUpgradeLevel(uint8 tier_id)
     {
         if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-        {
             if (DarkChaos::ItemUpgrade::TierDefinition const* def = mgr->GetTierDefinition(tier_id))
-            {
                 if (def->max_upgrade_level > 0)
                     return def->max_upgrade_level;
-            }
-        }
 
-        switch (tier_id)
-        {
-            case DarkChaos::ItemUpgrade::TIER_LEVELING:
-                return 6;
-            case DarkChaos::ItemUpgrade::TIER_HEROIC:
-                return 15;
-            case DarkChaos::ItemUpgrade::TIER_HEIRLOOM:
-                return DarkChaos::ItemUpgrade::MAX_UPGRADE_LEVEL;
-            default:
-                return 15;
-        }
+        // Tier not found in dc_item_upgrade_tiers → treat as not upgradeable.
+        return 0;
     }
 
     float ResolveStatMultiplierCap(uint8 tier_id)
     {
         if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-        {
             if (DarkChaos::ItemUpgrade::TierDefinition const* def = mgr->GetTierDefinition(tier_id))
-            {
-                if (def->stat_multiplier_max > 1.0f)
+                if (def->stat_multiplier_max > DarkChaos::ItemUpgrade::STAT_MULTIPLIER_BASE)
                     return def->stat_multiplier_max;
-            }
-        }
 
-        switch (tier_id)
-        {
-            case DarkChaos::ItemUpgrade::TIER_HEIRLOOM:
-                return DarkChaos::ItemUpgrade::STAT_MULTIPLIER_MAX_HEIRLOOM;
-            case DarkChaos::ItemUpgrade::TIER_INVALID:
-                return DarkChaos::ItemUpgrade::STAT_MULTIPLIER_BASE;
-            default:
-                return DarkChaos::ItemUpgrade::STAT_MULTIPLIER_MAX_REGULAR;
-        }
+        // Tier not found → no stat bonus.
+        return DarkChaos::ItemUpgrade::STAT_MULTIPLIER_BASE;
     }
 }
 

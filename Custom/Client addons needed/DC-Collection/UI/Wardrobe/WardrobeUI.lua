@@ -336,18 +336,18 @@ function Wardrobe:_ApplyEmbeddedLayout()
         right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, bottomInset)
     end
 
-    -- Move Preview Toggle to Bottom Right (near page controls)
+    -- Move Preview Toggle to Bottom Right (near page controls), nudged down.
     if previewModeFrame then
         previewModeFrame:ClearAllPoints()
         previewModeFrame:SetParent(frame)
-        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 5)
+        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -10)
         previewModeFrame:SetFrameStrata("HIGH")
     end
 
-    -- Restore page frame position for embedded mode
+    -- Restore page frame position for embedded mode (nudged down a bit).
     if frame.pageFrame and frame.gridContainer then
         frame.pageFrame:ClearAllPoints()
-        frame.pageFrame:SetPoint("TOPLEFT", frame.gridContainer, "BOTTOMLEFT", 0, -2)
+        frame.pageFrame:SetPoint("TOPLEFT", frame.gridContainer, "BOTTOMLEFT", 0, -12)
     end
 
     if frame.RefreshOutfitGridAnchors then
@@ -399,13 +399,13 @@ function Wardrobe:_ApplyStandaloneLayout()
 
     if frame.pageFrame then
         frame.pageFrame:ClearAllPoints()
-        frame.pageFrame:SetPoint("BOTTOM", right, "BOTTOM", 0, -45)
+        frame.pageFrame:SetPoint("BOTTOM", right, "BOTTOM", 0, -58)
     end
 
     if previewModeFrame then
         previewModeFrame:SetParent(right)
         previewModeFrame:ClearAllPoints()
-        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -45)
+        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -58)
     end
 
     if frame.RefreshOutfitGridAnchors then
@@ -448,6 +448,34 @@ function Wardrobe:ShowFixedItemTooltip(owner, itemId, extraLineFn)
         extraLineFn(GameTooltip)
     end
     GameTooltip:Show()
+end
+
+function Wardrobe:ShowSortMenu(anchorButton)
+    if not anchorButton then
+        return
+    end
+
+    local dropdown = CreateFrame("Frame", "DCWardrobeSortMenu", UIParent, "UIDropDownMenuTemplate")
+    local menu = {}
+
+    for _, mode in ipairs(self.SORT_MODES or {}) do
+        table.insert(menu, {
+            text = mode.text,
+            checked = (self.sortMode == mode.id),
+            func = function()
+                self.sortMode = mode.id
+                self.currentPage = 1
+                -- Order affects both the Items grid and the Sets grid.
+                if self.currentTab == "sets" and type(self.RefreshSetsGrid) == "function" then
+                    self:RefreshSetsGrid()
+                else
+                    self:RefreshGrid()
+                end
+            end,
+        })
+    end
+
+    EasyMenu(menu, dropdown, anchorButton, 0, 0, "MENU")
 end
 
 function Wardrobe:ShowSlotFilterMenu(anchorButton)
@@ -647,49 +675,10 @@ function Wardrobe:CreateLeftPanel(parent)
         Wardrobe:StabilizePreviewModel(model, model._dcPreviewSequence)
     end
 
-    model:EnableMouse(true)
-    model.rotating = false
-    model.rotation = 0
-    model.cameraDistance = 1.0
-    model.cameraX = 0
-    model.cameraY = 0
-    model.cameraZ = 0
-
-    -- Mouse rotation (drag)
-    model:SetScript("OnMouseDown", function(selfModel, button)
-        if button == "LeftButton" then
-            selfModel.rotating = true
-            selfModel.prevX = GetCursorPosition()
-        end
-    end)
-    model:SetScript("OnMouseUp", function(selfModel)
-        selfModel.rotating = false
-    end)
-    model:SetScript("OnUpdate", function(selfModel)
-        if selfModel.rotating then
-            local x = GetCursorPosition()
-            local rotSpeed = Wardrobe.CAMERA_ROTATION_SPEED or 0.01
-            local delta = (x - (selfModel.prevX or x)) * rotSpeed
-            selfModel.rotation = (selfModel.rotation or 0) + delta
-            selfModel:SetFacing(selfModel.rotation)
-            selfModel.prevX = x
-        end
-    end)
-
-    -- Mouse wheel zoom
-    model:SetScript("OnMouseWheel", function(selfModel, delta)
-        local step = Wardrobe.CAMERA_ZOOM_STEP or 0.1
-        local minZoom = Wardrobe.CAMERA_ZOOM_MIN or 0.3
-        local maxZoom = Wardrobe.CAMERA_ZOOM_MAX or 3.0
-        selfModel.cameraDistance = math.max(minZoom, math.min(maxZoom, selfModel.cameraDistance - (delta * step)))
-        
-        if selfModel.SetPosition then
-            local x = selfModel.cameraX * selfModel.cameraDistance
-            local y = selfModel.cameraY
-            local z = selfModel.cameraZ
-            selfModel:SetPosition(x, y, z)
-        end
-    end)
+    -- Rotate (with release momentum), additive wheel zoom, and right-drag pan.
+    -- Defined in CameraDB.lua; initializes a full-body framing so zoom/pan work
+    -- before any slot is selected.
+    Wardrobe:_SetupModelController(model)
 
     parent.model = model
     parent.modelFrame = modelFrame
@@ -935,7 +924,16 @@ function Wardrobe:CreateRightPanel(parent)
     orderBtn:SetSize(70, 22)
     orderBtn:SetPoint("TOPLEFT", right, "TOPLEFT", 0, filterControlsY)
     orderBtn:SetText("Order By")
-    orderBtn:SetScript("OnClick", function() end)
+    orderBtn:SetScript("OnClick", function()
+        Wardrobe:ShowSortMenu(orderBtn)
+    end)
+    orderBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Order By", 1, 0.82, 0)
+        GameTooltip:AddLine("Current: " .. Wardrobe:GetSortModeText(Wardrobe.sortMode), 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    orderBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     parent.orderBtn = orderBtn
 
     local filterBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
@@ -1128,6 +1126,29 @@ function Wardrobe:CreateRightPanel(parent)
         Wardrobe:RefreshGrid()
     end)
     parent.showUncollectedCheck = showUncollectedCheck
+
+    -- "3D" toggle: render a live model per grid cell instead of a flat icon.
+    local gridPreviewCheck = CreateFrame("CheckButton", "DCWardrobeGridPreviewCheck", right, "UICheckButtonTemplate")
+    gridPreviewCheck:SetPoint("LEFT", showUncollectedCheck, "RIGHT", 90, 0)
+    gridPreviewCheck:SetChecked(Wardrobe.gridPreviewMode and true or false)
+    if _G["DCWardrobeGridPreviewCheckText"] then
+        _G["DCWardrobeGridPreviewCheckText"]:SetText("3D")
+    end
+    gridPreviewCheck:SetScript("OnClick", function(btn)
+        Wardrobe.gridPreviewMode = btn:GetChecked() and true or false
+        Wardrobe:RefreshGrid()
+    end)
+    gridPreviewCheck:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("3D Appearance Grid", 1, 0.82, 0)
+        GameTooltip:AddLine("Show each appearance on a live character model", 1, 1, 1)
+        GameTooltip:AddLine("instead of a flat item icon.", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Heavier on the GPU; turn off if the grid feels slow.", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    gridPreviewCheck:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    parent.gridPreviewCheck = gridPreviewCheck
 
     -- Create a decorative frame around the grid area (snug fit around the icon grid)
     local gridContainer = CreateFrame("Frame", nil, right)
@@ -1751,9 +1772,14 @@ function Wardrobe:ShowTooltipPreview(itemId)
     local frame = self.tooltipPreview
     frame:Show()
     
-    -- Position near pagination (bottom row)
+    -- Position the preview just right of the items grid, with the bottom edges
+    -- aligned to the grid's bottom border.
     frame:ClearAllPoints()
-    if self.isEmbedded and self.frame and self.frame.previewHost then
+    local gridContainer = self.frame and self.frame.gridContainer
+    if gridContainer then
+        frame:SetParent(self.frame)
+        frame:SetPoint("BOTTOMLEFT", gridContainer, "BOTTOMRIGHT", 8, 0)
+    elseif self.isEmbedded and self.frame and self.frame.previewHost then
         frame:SetParent(self.frame.previewHost)
         frame:SetPoint("BOTTOMRIGHT", self.frame.previewHost, "BOTTOMRIGHT", -5, 10)
     else

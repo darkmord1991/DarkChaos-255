@@ -179,6 +179,10 @@ Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0  -- 0 = all
 Wardrobe.currentPage = Wardrobe.currentPage or 1
 Wardrobe.totalPages = Wardrobe.totalPages or 1
 Wardrobe.searchText = Wardrobe.searchText or ""
+Wardrobe.sortMode = Wardrobe.sortMode or "default"  -- see Wardrobe.SORT_MODES
+-- When true, the items grid renders a live 3D model per cell (each appearance
+-- shown on the character) instead of a flat icon. Toggled by the "3D" check.
+Wardrobe.gridPreviewMode = Wardrobe.gridPreviewMode or false
 
 function Wardrobe:StabilizePreviewModel(model, sequence)
     if not model then
@@ -229,6 +233,26 @@ Wardrobe.QUALITY_FILTERS = {
     { id = 4, text = "Epic+", color = { r = 0.64, g = 0.21, b = 0.93 } },    -- Purple+
     { id = 5, text = "Legendary", color = { r = 1, g = 0.5, b = 0 } },       -- Orange
 }
+
+-- Sort modes for the "Order By" button (Items/Sets grid).
+-- "default" preserves the legacy behavior (collected first, then name A-Z).
+Wardrobe.SORT_MODES = {
+    { id = "default",      text = "Default (Collected, Name)" },
+    { id = "name",         text = "Name (A-Z)" },
+    { id = "quality",      text = "Quality (High to Low)" },
+    { id = "itemId",       text = "Item ID" },
+    { id = "collected",    text = "Collected First" },
+    { id = "uncollected",  text = "Uncollected First" },
+}
+
+function Wardrobe:GetSortModeText(id)
+    for _, mode in ipairs(self.SORT_MODES) do
+        if mode.id == id then
+            return mode.text
+        end
+    end
+    return "Order By"
+end
 
 -- ============================================================================
 -- SHARED HELPERS
@@ -1212,8 +1236,15 @@ end
 
 SLASH_DCWARDROBE1 = "/wardrobe"
 SLASH_DCWARDROBE2 = "/transmog"
-SlashCmdList["DCWARDROBE"] = function()
-    Wardrobe:Toggle()
+SlashCmdList["DCWARDROBE"] = function(msg)
+    msg = tostring(msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if msg == "camdebug" then
+        Wardrobe:ToggleCameraDebug()
+    elseif msg == "camdump" then
+        Wardrobe:DumpCameraForSelectedSlot()
+    else
+        Wardrobe:Toggle()
+    end
 end
 
 -- ============================================================================

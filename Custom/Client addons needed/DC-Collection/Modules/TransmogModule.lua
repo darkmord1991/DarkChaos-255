@@ -226,6 +226,23 @@ local function TryDressUpItemId(itemId)
     end
 end
 
+-- The default WotLK Dressing Room (DressUpFrame) is not draggable. Make it
+-- movable so outfit/link previews can be repositioned. Idempotent.
+local function EnsureDressUpFrameMovable()
+    local f = DressUpFrame
+    if not f or f._dcMovable then
+        return
+    end
+    f._dcMovable = true
+    f:SetMovable(true)
+    f:SetClampedToScreen(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+end
+DC._EnsureDressUpFrameMovable = EnsureDressUpFrameMovable
+
 function DC:PreviewTransmogAppearance(appearanceId)
     local def = self.TransmogModule and self.TransmogModule:GetAppearanceDefinition(appearanceId)
     if not def then
@@ -606,23 +623,51 @@ function DC:PreviewOutfitFromLink(linkData)
     end
     
     if DressUpFrame and DressUpFrame.Show then
+        EnsureDressUpFrameMovable()
         DressUpFrame:Show()
     end
-    
+
+    -- Ensure the model actually has a body before dressing it; calling Undress on
+    -- a model with no unit leaves an empty dressing room.
+    if DressUpModel and DressUpModel.SetUnit then
+        DressUpModel:SetUnit("player")
+    end
     if DressUpModel and DressUpModel.Undress then
         DressUpModel:Undress()
     end
-    
+
+    local shown = 0
     for _, appearanceId in pairs(outfit.state) do
         local app = tonumber(appearanceId)
         if app and app ~= 0 then
-            local def = self.TransmogModule and self.TransmogModule:GetAppearanceDefinition(app)
-            local itemId = def and def.itemId
-            TryDressUpItemId(itemId)
+            -- Link slots store displayIds. DressUpModel:TryOn needs an itemId, so
+            -- resolve displayId -> representative itemId. The Wardrobe builder
+            -- handles packed defs and itemId-keyed definitions; fall back to the
+            -- transmog definition, then finally treat the value as an itemId.
+            local itemId
+            if DC.Wardrobe and type(DC.Wardrobe.GetRepresentativeItemIdForDisplayId) == "function" then
+                itemId = DC.Wardrobe:GetRepresentativeItemIdForDisplayId(app)
+            end
+            if not itemId or itemId == 0 then
+                local def = self.TransmogModule and self.TransmogModule:GetAppearanceDefinition(app)
+                itemId = (def and def.itemId) or app
+            end
+            if itemId and itemId > 0 then
+                TryDressUpItemId(itemId)
+                shown = shown + 1
+            end
         end
     end
-    
-    DC:Print("Previewing outfit: " .. (outfit.name or "Unknown"))
+
+    if shown == 0 then
+        -- Definitions probably aren't loaded yet; pull them so a retry works.
+        if type(self.RequestDefinitions) == "function" then
+            self:RequestDefinitions("transmog")
+        end
+        self:Print("Couldn't resolve this outfit's appearances yet. Open the Wardrobe once to load appearance data, then click the link again.")
+    else
+        DC:Print("Previewing outfit: " .. (outfit.name or "Unknown"))
+    end
 end
 
 function DC:ApplyOutfitFromLink(linkData)

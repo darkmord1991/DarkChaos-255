@@ -1087,7 +1087,13 @@ local function EnsureNativeCollectionWave1PollFrame()
         end
 
         self.elapsed = 0
-        ConsumeNativeCollectionWave1Snapshot()
+        -- Drain all queued messages in one tick so rapid-fire server responses
+        -- (e.g. 13 DeltaSync replies on a LAN server) don't pile up and stall
+        -- the progress bar for seconds. Cap at 64 to match the C++ queue max.
+        local drained = 0
+        while ConsumeNativeCollectionWave1Snapshot() and drained < 64 do
+            drained = drained + 1
+        end
     end)
 end
 
@@ -3164,12 +3170,23 @@ function DC:RequestStats()
 
     self:_DebounceRequest(key, 0.30, function()
         if self:_IsInflight(key) then
+            -- A previous request is still in flight; complete the progress step
+            -- so the sync bar doesn't get stuck waiting for a second response.
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(progressKey, progressLabel)
+            end
             return
         end
         if type(self._syncProgress) == "table" then
             self:StartSyncProgressStep(progressKey, progressLabel)
         end
         self:_MarkInflight(key, true)
+
+        -- Bump watchdog token so any leftover timer from a previous request is
+        -- cancelled when it fires and sees a mismatched token.
+        self._statsWatchdogToken = (self._statsWatchdogToken or 0) + 1
+        local watchdogToken = self._statsWatchdogToken
+
         local ok = SendCollectionWave1Request(self.Opcodes.CMSG_GET_STATS,
             {})
         if not ok then
@@ -3178,6 +3195,23 @@ function DC:RequestStats()
                 self:CompleteSyncProgressStep(progressKey,
                     progressLabel .. " (failed)")
             end
+        elseif self.After and type(self.After) == "function" then
+            -- Watchdog: if the server doesn't respond within 10 s (e.g. the
+            -- response was overwritten in the single-slot native bridge before
+            -- the Lua poll frame consumed it), force-complete the step so the
+            -- sync bar is not permanently stuck at 12/13.
+            self.After(10.0, function()
+                if (self._statsWatchdogToken or 0) ~= watchdogToken then
+                    return
+                end
+                if not self:_IsInflight(key) then
+                    return
+                end
+                self:_MarkInflight(key, nil)
+                if type(self._syncProgress) == "table" then
+                    self:CompleteSyncProgressStep(progressKey, progressLabel)
+                end
+            end)
         end
     end)
     return true

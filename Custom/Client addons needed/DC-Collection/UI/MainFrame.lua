@@ -2495,11 +2495,7 @@ function DC:UpdateHeader()
     end
 
     if header.transportText then
-        if type(self.GetCollectionTransportSummary) == "function" then
-            header.transportText:SetText(self:GetCollectionTransportSummary())
-        else
-            header.transportText:SetText("")
-        end
+        header.transportText:SetText("")
     end
     
     -- Update mount speed bonus
@@ -3478,7 +3474,9 @@ function DC:ShowHeirloomPreview(itemId, options)
     -- This is intentionally styled like the Wardrobe grid preview.
     if not parent.heirloomPreviewFrame then
         local frame = CreateFrame("Frame", "DCHeirloomPreview", parent)
-        frame:SetSize(200, 200)
+        -- Larger, taller box so the whole character (and the heirloom on it) is
+        -- visible; the extra width grows to the left into free space.
+        frame:SetSize(260, 340)
         -- Keep the preview away from the scroll bar so it doesn't look like the bar controls the model.
         frame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -40, -90)
         frame:SetFrameStrata("DIALOG")
@@ -3544,9 +3542,12 @@ function DC:ShowHeirloomPreview(itemId, options)
         end)
 
         model:SetScript("OnMouseWheel", function(selfModel, delta)
-            selfModel.cameraDistance = math.max(0.6, math.min(2.5, (selfModel.cameraDistance or 1.6) - delta * 0.08))
-            if selfModel.SetCamDistanceScale then
-                selfModel:SetCamDistanceScale(2.5 * selfModel.cameraDistance)
+            -- Reversible scale-based zoom (SetCamDistanceScale is unreliable on 3.3.5).
+            local s = (selfModel.modelZoom or 1.0) + delta * 0.1
+            s = math.max(0.5, math.min(2.5, s))
+            selfModel.modelZoom = s
+            if selfModel.SetModelScale then
+                selfModel:SetModelScale(s)
             end
         end)
 
@@ -3574,12 +3575,14 @@ function DC:ShowHeirloomPreview(itemId, options)
     end
 
     model.rotation = 0
-    model.cameraDistance = model.cameraDistance or 1.6
-    if model.SetCamDistanceScale then
-        model:SetCamDistanceScale(2.5 * model.cameraDistance)
+    model.modelZoom = 1.0
+    -- Full-body framing. SetPosition is reliable on 3.3.5 player models; the old
+    -- SetCamDistanceScale path zoomed onto the face (and is often unsupported).
+    if model.SetModelScale then
+        model:SetModelScale(1.0)
     end
-    if model.SetCamera then
-        model:SetCamera(0)
+    if model.SetPosition then
+        model:SetPosition(0, 0, 0)
     end
 
     if options.canTryOn and model.TryOn then
@@ -3607,8 +3610,9 @@ function DC:ShowHeirloomPreview(itemId, options)
         end
     end
 
-    if model.SetCamera then
-        model:SetCamera(0)
+    -- Re-assert full-body framing after TryOn so the equipped heirloom is visible.
+    if model.SetPosition then
+        model:SetPosition(0, 0, 0)
     end
     if model.SetFacing then
         model:SetFacing(0)

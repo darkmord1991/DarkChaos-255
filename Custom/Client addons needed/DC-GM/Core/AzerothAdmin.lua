@@ -818,6 +818,7 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
         self._dcWpInfoPending = false
         self._dcWpLastEntry = entry
         self._dcWpLastSpawn = spawn
+        self._dcWpLastPath  = path
         self._dcWpLastCount = count
         self._dcWpLastSpawnDist = wander
         if self.UpdateDCWaypointInfoDisplay then
@@ -903,6 +904,23 @@ function AzerothAdmin:AddMessage(frame, text, r, g, b, id)
             self:ChatMsg(".wp show on "..wnpc)
         else
         end
+    end
+    -- Auto-refresh the DC Waypoints info panel after any waypoint command succeeds.
+    -- Without this, the WP count stays at "-" after the first "Start" click and the
+    -- user has no feedback that the path was created, causing repeated "Start" clicks.
+    if not self._dcWpInfoPending and (_G["ma_dcwaypoints_info"] or _G["ma_dc_waypoints_info"]) then
+      if string.find(text, "Started new path for target", 1, true) then
+        -- Auto-show the visual waypoints immediately so the GM can see the path was
+        -- created without needing to manually click "Show On" first.
+        AzerothAdmin:ChatMsg(".wp show on")
+        AzerothAdmin:UpdateWaypointInfo()
+      elseif string.find(text, "Wiped all waypoints", 1, true)
+        or string.find(text, "Inserted waypoint", 1, true)
+        or string.find(text, "Waypoint removed.", 1, true)
+        or string.find(text, "Waypoint changed.", 1, true)
+        or (string.find(text, "PathID:", 1, true) and string.find(text, "created", 1, true)) then
+        AzerothAdmin:UpdateWaypointInfo()
+      end
     end
     if self.db.char.requests.toggle then
       if self.db.char.requests.item then

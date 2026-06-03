@@ -347,12 +347,15 @@ function PetJournal:CreateModelPreview(parent)
     end)
 
     model:SetScript("OnMouseWheel", function(self, delta)
-        local zoom = self.zoom or 0
-        zoom = zoom + delta * 0.1
-        zoom = math.max(-1, math.min(1, zoom))
-        self.zoom = zoom
-        self:SetCamera(0)
-        self:SetPosition(zoom, 0, 0)
+        -- Zoom by scaling the model. The old SetPosition(zoom,0,0) drove the
+        -- camera into the creature (head close-up / white near-plane clipping)
+        -- with no reliable way to zoom back out.
+        local s = (self.modelZoom or 1.0) + delta * 0.1
+        s = math.max(0.5, math.min(2.5, s))
+        self.modelZoom = s
+        if self.SetModelScale then
+            self:SetModelScale(s)
+        end
     end)
 
     modelFrame.model = model
@@ -878,6 +881,7 @@ function PetJournal:SelectPet(petData)
         if model.SetFacing then model:SetFacing(0) end
         model.rotation = 0
         model.zoom = 0
+        model.modelZoom = 1.0
         if model.SetPortraitZoom then model:SetPortraitZoom(0) end
         if model.SetCamDistanceScale then model:SetCamDistanceScale(1.0) end
         if model.SetCamera then model:SetCamera(0) end

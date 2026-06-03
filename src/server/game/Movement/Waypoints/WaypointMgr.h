@@ -29,6 +29,11 @@ public:
     // Attempts to reload a single path from database
     void ReloadPath(uint32 id);
 
+    // Directly appends a single pre-built node to the in-memory cache without
+    // re-querying the database.  Use this immediately after an async Execute()
+    // insert so the cache is correct before the async commit lands.
+    void AppendWaypointToPath(uint32 id, WaypointNode node);
+
     // Loads all paths from database, should only run on startup
     void Load();
 

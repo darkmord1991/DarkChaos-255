@@ -41,6 +41,7 @@ public:
                 { "info",       HandleWpInfoCommand,     SEC_ADMINISTRATOR,                 Console::No },
             { "load",       HandleWpLoadCommand,     rbac::RBAC_PERM_COMMAND_WP_LOAD,   Console::No },
             { "modify",     HandleWpModifyCommand,   rbac::RBAC_PERM_COMMAND_WP_MODIFY, Console::No },
+                { "run",        HandleWpRunCommand,      SEC_ADMINISTRATOR,                 Console::No },
                 { "start",      HandleWpStartCommand,    SEC_ADMINISTRATOR,                 Console::No },
             { "unload",     HandleWpUnLoadCommand,   rbac::RBAC_PERM_COMMAND_WP_UNLOAD, Console::No },
                 { "wipe",       HandleWpWipeCommand,     SEC_ADMINISTRATOR,                 Console::No },
@@ -133,8 +134,21 @@ public:
 
         WorldDatabase.Execute(stmt);
 
-        // WaypointMgr caches waypoint_data on startup; refresh this path so movement can load it immediately.
-        sWaypointMgr->ReloadPath(pathid);
+        // Update the in-memory cache directly instead of calling ReloadPath().
+        // ReloadPath() issues a synchronous SELECT that may race with the async
+        // Execute() above: if the INSERT hasn't committed yet the SELECT returns
+        // 0 rows, ReloadPath erases the entry, and the motion generator later
+        // finds no path and the creature never moves.  Appending the node we
+        // just inserted bypasses the race entirely.
+        {
+            WaypointNode newNode;
+            newNode.Id     = point + 1;
+            newNode.X      = player->GetPositionX();
+            newNode.Y      = player->GetPositionY();
+            newNode.Z      = player->GetPositionZ();
+            newNode.MoveType = WAYPOINT_MOVE_TYPE_WALK;
+            sWaypointMgr->AppendWaypointToPath(pathid, std::move(newNode));
+        }
 
         handler->PSendSysMessage("{}{}{}{}{}{}|r", "|cff00ff00", "PathID: |r|cff00ffff", pathid, "|r|cff00ff00: Waypoint |r|cff00ffff", point + 1, "|r|cff00ff00 created. ");
         return true;
@@ -165,11 +179,12 @@ public:
 
         if (pathid)
         {
-            WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_WAYPOINT_DATA_MAX_POINT);
-            stmt->SetData(0, pathid);
-            PreparedQueryResult result = WorldDatabase.Query(stmt);
-            if (result)
-                count = (*result)[0].Get<uint32>();
+            // Read count from the in-memory cache rather than from the DB.
+            // DB-querying here has the same async-race as HandleWpAddCommand:
+            // a just-added waypoint may not be visible to a synchronous SELECT
+            // yet, so the count would appear as 0 or stale.
+            if (WaypointPath const* cachedPath = sWaypointMgr->GetPath(pathid))
+                count = static_cast<uint32>(cachedPath->Nodes.size());
         }
 
         handler->PSendSysMessage(
@@ -218,8 +233,20 @@ public:
         stmt->SetData(4, player->GetPositionZ());
         WorldDatabase.Execute(stmt);
 
-        // Ensure the waypoint manager cache is refreshed for this newly created path.
-        sWaypointMgr->ReloadPath(pathid);
+        // Seed the in-memory cache with WP1 directly so the motion generator
+        // finds the path immediately.  ReloadPath() would race with the async
+        // Execute() above and might erase the cache entry if the INSERT hasn't
+        // committed by the time the SELECT runs, preventing the creature from
+        // ever starting (only a server restart would fix it).
+        {
+            WaypointNode firstNode;
+            firstNode.Id       = 1;
+            firstNode.X        = player->GetPositionX();
+            firstNode.Y        = player->GetPositionY();
+            firstNode.Z        = player->GetPositionZ();
+            firstNode.MoveType = WAYPOINT_MOVE_TYPE_WALK;
+            sWaypointMgr->AppendWaypointToPath(pathid, std::move(firstNode));
+        }
 
         // Assign path to creature spawn (creature_addon.path_id) and set movement type.
         ObjectGuid::LowType guidLow = target->GetSpawnId();
@@ -434,6 +461,38 @@ public:
         target->GetMotionMaster()->Initialize();
         target->Say("Path loaded.", LANG_UNIVERSAL);
 
+        return true;
+    }
+
+    // Restarts waypoint movement on the selected creature using its already-assigned
+    // path.  Unlike .npc set movetype way NODEL, this does NOT kill+respawn the
+    // creature, so it stays at its current position and just starts walking.
+    static bool HandleWpRunCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Creature* target = handler->getSelectedCreature();
+        if (!target)
+        {
+            handler->SendErrorMessage(LANG_SELECT_CREATURE);
+            return false;
+        }
+
+        if (target->GetEntry() == VISUAL_WAYPOINT)
+        {
+            handler->SendErrorMessage("|cffff33ffYou must select a creature (not a visual waypoint).|r");
+            return false;
+        }
+
+        uint32 pathid = target->GetWaypointPath();
+        if (!pathid)
+        {
+            handler->PSendSysMessage("|cffff33ffCreature has no loaded path. Use .wp start first.|r");
+            return true;
+        }
+
+        target->SetDefaultMovementType(WAYPOINT_MOTION_TYPE);
+        target->GetMotionMaster()->Initialize();
+
+        handler->PSendSysMessage("|cff00ff00Running path PathID: |r|cff00ffff{}|r", pathid);
         return true;
     }
 

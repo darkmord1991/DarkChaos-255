@@ -576,6 +576,16 @@ local function AddItemLevel(tooltip, itemLink)
     if not addon.settings.tooltips.showItemLevel then return end
     if not itemLink then return end
 
+    -- On patched native clients the C++ tooltip owns item rendering and redraws
+    -- asynchronously (item-upgrade snapshots) without re-entering these Lua
+    -- hooks. A Lua-owned line here gets wiped by that redraw and re-added on the
+    -- next refresh, which flickers below the item. Defer to the native renderer
+    -- exactly like AddItemId does. (Upgraded items show their item level via the
+    -- native upgrade snapshot.)
+    if type(GetDCClientCapabilities) == "function" then
+        return
+    end
+
     -- If the tooltip already shows item level (client or another addon), don't add a duplicate.
     local tipName = tooltip and tooltip.GetName and tooltip:GetName()
     if tipName and tooltip.NumLines then
@@ -2715,7 +2725,8 @@ local function RequestNpcInfo(guid)
     end
 
     local cached = npcInfoCache[guid]
-    if cached and (now - (tonumber(cached.timestamp) or 0)) < NPC_INFO_CACHE_DURATION then
+    local cacheTtl = (cached and cached.spawnMissing) and 15 or NPC_INFO_CACHE_DURATION
+    if cached and (now - (tonumber(cached.timestamp) or 0)) < cacheTtl then
         return
     end
     if cached then
@@ -2797,11 +2808,14 @@ local function OnNpcInfoReceived(npcData)
         return
     end
 
+    local spawnIdNum = tonumber(npcData.spawnId) or 0
+    local dbGuidNum  = tonumber(npcData.dbGuid)  or tonumber(npcData.spawnGuid) or 0
     npcInfoCache[guid] = {
-        timestamp = GetTime(),
-        spawnId = npcData.spawnId,
-        entry = npcData.entry,
-        dbGuid = npcData.dbGuid or npcData.spawnGuid,
+        timestamp    = GetTime(),
+        spawnId      = npcData.spawnId,
+        entry        = npcData.entry,
+        dbGuid       = npcData.dbGuid or npcData.spawnGuid,
+        spawnMissing = spawnIdNum == 0 and dbGuidNum == 0,
     }
     
     -- Don't force refresh to avoid lag
@@ -2840,26 +2854,32 @@ local function AddNpcId(tooltip, unit, guidOverride)
     local dbGuid = nil
     
     if cachedInfo then
-        if cachedInfo.entry then entry = cachedInfo.entry end
-        if cachedInfo.spawnId then localSpawnId = cachedInfo.spawnId end
-        dbGuid = cachedInfo.dbGuid or cachedInfo.spawnId
+        local cachedEntry   = tonumber(cachedInfo.entry)   or 0
+        local cachedSpawnId = tonumber(cachedInfo.spawnId) or 0
+        local cachedDbGuid  = tonumber(cachedInfo.dbGuid)  or 0
+        if cachedEntry   ~= 0 then entry        = cachedEntry   end
+        if cachedSpawnId ~= 0 then localSpawnId = cachedSpawnId end
+        dbGuid = (cachedDbGuid ~= 0 and cachedDbGuid)
+            or  (cachedSpawnId ~= 0 and cachedSpawnId)
+            or  nil
     else
         -- Request from server
         RequestNpcInfo(guid)
     end
-    
+
     -- Add separator
     tooltip:AddLine(" ")
-    
+
     -- Show Entry ID
     if entry then
         tooltip:AddDoubleLine("Entry:", "|cffffffff" .. entry .. "|r", 0.5, 0.5, 0.5)
     end
-    
+
     -- Show Spawn (from server or parsed)
     if dbGuid then
         tooltip:AddDoubleLine("Spawn:", "|cffffffff" .. dbGuid .. "|r", 0.5, 0.5, 0.5)
-    elseif cachedInfo == nil then
+    elseif cachedInfo == nil or (cachedInfo and cachedInfo.spawnMissing) then
+        -- No response yet, or server returned 0 (freshly spawned NPC without DB entry yet)
         tooltip:AddDoubleLine("Spawn:", "|cff888888Fetching...|r", 0.5, 0.5, 0.5)
     elseif localSpawnId then
         tooltip:AddDoubleLine("Spawn:", "|cffffff88~" .. localSpawnId .. "|r", 0.5, 0.5, 0.5)

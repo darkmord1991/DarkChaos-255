@@ -296,8 +296,14 @@ function AzerothAdminCommands.NPCFreezeDEL()
 end
 
 function AzerothAdminCommands.WayStart()
-  local NPC_target = UnitName("target")
-  AzerothAdmin:ChatMsg(".wp start")
+  -- If the DC Waypoints panel knows the creature already has a path, add to the
+  -- end of it instead of trying to start a new one (which would error).
+  local count = tonumber(AzerothAdmin._dcWpLastCount)
+  if count and count > 0 then
+    AzerothAdmin:ChatMsg(".wp add")
+  else
+    AzerothAdmin:ChatMsg(".wp start")
+  end
 end
 
 function AzerothAdminCommands.WayEndAdd()
@@ -364,7 +370,7 @@ function AzerothAdminCommands.NPCUnFreeze_Way()
 end
 
 function AzerothAdminCommands.WayRun()
-  AzerothAdminCommands.NPCUnFreeze_Way()
+  AzerothAdmin:ChatMsg(".wp run")
 end
 
 function AzerothAdminCommands.ShowMove()

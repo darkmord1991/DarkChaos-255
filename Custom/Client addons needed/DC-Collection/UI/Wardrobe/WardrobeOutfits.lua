@@ -46,16 +46,18 @@ local function ResolvePreviewItemId(rawId)
         return nil
     end
 
-    -- If it's already a valid item entry (cached), use it.
-    if type(GetItemInfo) == "function" then
-        local name = GetItemInfo(n)
-        if name then
-            return n
+    -- Outfit slots store displayIds. DressUpModel:TryOn needs an itemId, so map
+    -- displayId -> representative itemId FIRST. Doing GetItemInfo(n) first is a
+    -- trap: a displayId frequently collides with a real itemId, which made the
+    -- model try on the wrong (often invisible) item -> "naked"/missing pieces.
+    if DC and DC.Wardrobe and type(DC.Wardrobe.GetRepresentativeItemIdForDisplayId) == "function" then
+        local mapped = DC.Wardrobe:GetRepresentativeItemIdForDisplayId(n)
+        if mapped and mapped > 0 then
+            return mapped
         end
     end
 
-    -- Try packed transmog definitions: itemId is field #9, itemIdsStr is field #12.
-    -- Try unpacked definition table.
+    -- Definition lookup (some servers key transmog defs by displayId).
     local def = DC and type(DC.GetDefinition) == "function" and DC:GetDefinition("transmog", n)
     if type(def) == "table" then
         local resolved = tonumber(def.itemId or def.item_id)
@@ -70,7 +72,11 @@ local function ResolvePreviewItemId(rawId)
         end
     end
 
-    -- Fallback: return as-is (may still work for some ids).
+    -- Last resort: maybe the value really is an itemId already.
+    if type(GetItemInfo) == "function" and GetItemInfo(n) then
+        return n
+    end
+
     return n
 end
 
@@ -582,6 +588,19 @@ function Wardrobe:_QueueOutfitPreview(btn, outfit)
     end
     btn._outfitPreviewSig = sig
 
+    -- Pre-warm the item cache now so all tiles' items load in parallel. The
+    -- queue processes one tile per tick and waits on the front job until its
+    -- items are cached; without this, a slow first tile delays every tile.
+    if type(GetItemInfo) == "function" then
+        local rawIds = ExtractOutfitItemIds(outfit, true)
+        for _, id in ipairs(rawIds) do
+            local resolved = ResolvePreviewItemId(id)
+            if resolved and resolved > 0 then
+                GetItemInfo(resolved)
+            end
+        end
+    end
+
     self._outfitPreviewQueue = self._outfitPreviewQueue or {}
 
     for i = #self._outfitPreviewQueue, 1, -1 do
@@ -979,6 +998,15 @@ function Wardrobe:ShowOutfitContextMenu(outfit, anchor)
     local menu = {
         { text = outfit.name or "Outfit", isTitle = true, notCheckable = true },
         {
+            text = "Send to Player...",
+            notCheckable = true,
+            func = function()
+                if type(Wardrobe.ShowSendOutfitDialog) == "function" then
+                    Wardrobe:ShowSendOutfitDialog(outfit)
+                end
+            end,
+        },
+        {
             text = "Share to Community",
             notCheckable = true,
             func = function()
@@ -1083,35 +1111,49 @@ function Wardrobe:LoadOutfit(outfit)
             local equipmentSlot = invSlotId - 1
 
             local n = tonumber(appearanceId) or 0
-            local resolvedDef
             local skipAppearance = false
             local skipReason = nil
+            local mapped  -- kept for debug output below
 
-            -- Some payloads store itemIds instead of displayIds.
-            local mapped
-            if n and n > 0 and Wardrobe and type(Wardrobe.GetAppearanceDisplayIdForItemId) == "function" then
-                mapped = Wardrobe:GetAppearanceDisplayIdForItemId(n)
-                if mapped and mapped > 0 then
-                    n = mapped
-                end
-            end
-
-            if n and n > 0 and (not mapped or mapped <= 0)
-                and DC and type(DC.GetDefinition) == "function" then
-                resolvedDef = DC:GetDefinition("transmog", n)
-                if type(resolvedDef) == "table" then
-                    local resolvedDisplayId = tonumber(
-                        resolvedDef.displayId or resolvedDef.displayID or
-                        resolvedDef.display_id or resolvedDef.appearanceId or
-                        resolvedDef.appearance_id
-                    ) or 0
-                    if resolvedDisplayId > 0 then
-                        mapped = resolvedDisplayId
-                        n = resolvedDisplayId
+            if n and n > 0 then
+                -- Outfit slots normally store displayIds. If `n` is already a known
+                -- displayId, send it as-is. Previously we ran it through the
+                -- itemId->displayId map, which corrupted any displayId that happened
+                -- to collide with a real itemId.
+                local isDisplayId = false
+                if Wardrobe and type(Wardrobe.GetRepresentativeItemIdForDisplayId) == "function" then
+                    local rep = Wardrobe:GetRepresentativeItemIdForDisplayId(n)
+                    if rep and rep > 0 then
+                        isDisplayId = true
                     end
-                else
-                    skipAppearance = true
-                    skipReason = "unresolved"
+                end
+
+                if not isDisplayId then
+                    -- Value looks like an itemId (legacy payloads): map itemId -> displayId.
+                    if Wardrobe and type(Wardrobe.GetAppearanceDisplayIdForItemId) == "function" then
+                        mapped = Wardrobe:GetAppearanceDisplayIdForItemId(n)
+                        if mapped and mapped > 0 then
+                            n = mapped
+                        end
+                    end
+
+                    if (not mapped or mapped <= 0) and DC and type(DC.GetDefinition) == "function" then
+                        local resolvedDef = DC:GetDefinition("transmog", n)
+                        if type(resolvedDef) == "table" then
+                            local resolvedDisplayId = tonumber(
+                                resolvedDef.displayId or resolvedDef.displayID or
+                                resolvedDef.display_id or resolvedDef.appearanceId or
+                                resolvedDef.appearance_id
+                            ) or 0
+                            if resolvedDisplayId > 0 then
+                                mapped = resolvedDisplayId
+                                n = resolvedDisplayId
+                            end
+                        end
+                        -- If still unresolved, send `n` as-is instead of skipping the
+                        -- slot. The server validates and ignores anything invalid;
+                        -- skipping here silently dropped legitimate appearances.
+                    end
                 end
             end
 

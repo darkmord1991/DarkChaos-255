@@ -185,55 +185,9 @@ function Wardrobe:SelectSlot(slotDef)
         end
     end
 
-    -- Apply per-slot camera positioning for optimal preview
+    -- Frame the model on the selected slot (absolute reset of zoom/pan/rotation).
     if self.frame and self.frame.model and slotDef then
-        -- Cache camera position per slot to avoid repeated lookups
-        if not self.cachedCameraPositions then
-            self.cachedCameraPositions = {}
-        end
-        
-        local cameraPos = self.cachedCameraPositions[slotDef.label]
-        if not cameraPos then
-            cameraPos = self:GetCameraPosition(slotDef.label)
-            self.cachedCameraPositions[slotDef.label] = cameraPos
-        end
-        
-        if cameraPos then
-            local model = self.frame.model
-            
-            -- Store camera position in model for zoom functionality
-            model.cameraX = cameraPos.x
-            model.cameraY = cameraPos.y
-            model.cameraZ = cameraPos.z
-
-            -- Apply with current zoom level
-            local zoomedPos = {
-                x = cameraPos.x * (model.cameraDistance or 1.0),
-                y = cameraPos.y,
-                z = cameraPos.z,
-                facing = cameraPos.facing
-            }
-            if type(self.ApplyCameraPosition) == "function" then
-                self:ApplyCameraPosition(model, zoomedPos)
-            elseif model.SetPosition then
-                model:SetPosition(zoomedPos.x, zoomedPos.y, zoomedPos.z)
-            end
-
-            -- Reset rotation to facing angle for this slot
-            if model.SetFacing then
-                model:SetFacing(cameraPos.facing)
-                model.rotation = cameraPos.facing
-            end
-            
-            if cameraPos.sequence then
-                model._dcPreviewSequence = cameraPos.sequence
-            else
-                model._dcPreviewSequence = self.PREVIEW_IDLE_SEQUENCE or 0
-            end
-            if type(self.StabilizePreviewModel) == "function" then
-                self:StabilizePreviewModel(model, model._dcPreviewSequence)
-            end
-        end
+        self:SetModelCameraFromSlot(self.frame.model, slotDef.label)
     end
 
     -- Update slot filter based on selected slot
@@ -260,6 +214,139 @@ end
 -- ============================================================================
 -- GRID REFRESH
 -- ============================================================================
+
+-- ============================================================================
+-- 3D GRID PREVIEW (live model per cell, mirrors AppearanceBuddy's PreviewList)
+-- ============================================================================
+
+-- How far to push the camera back for a tiny grid cell vs the big left-panel
+-- model. CameraDB x values are tuned for the 250px model; cells are ~46px, so
+-- we zoom out. Tunable; raise to make cell models smaller.
+Wardrobe.GRID_CELL_ZOOMOUT_X = Wardrobe.GRID_CELL_ZOOMOUT_X or 1.3
+
+-- Map a server inventoryType to a CameraDB slot key.
+local _INVTYPE_TO_CAMSLOT = {
+    [1] = "Head", [3] = "Shoulder", [4] = "Shirt", [5] = "Chest", [20] = "Chest",
+    [19] = "Tabard", [6] = "Waist", [7] = "Legs", [8] = "Feet", [9] = "Wrist",
+    [10] = "Hands", [16] = "Back",
+    [13] = "MainHand", [21] = "MainHand", [17] = "MainHand",
+    [14] = "OffHand", [22] = "OffHand", [23] = "OffHand",
+    [15] = "Ranged", [26] = "Ranged", [25] = "Ranged", [28] = "Ranged",
+}
+
+function Wardrobe:_InvTypeToCamSlot(invType)
+    return _INVTYPE_TO_CAMSLOT[tonumber(invType) or -1]
+end
+
+-- Best-effort weapon subclass key (for WeaponSubclassCamera framing offsets).
+function Wardrobe:_GuessWeaponSubclass(itemId, invType)
+    if tonumber(invType) == 17 then
+        return "2H"  -- any two-hander
+    end
+    if itemId and type(GetItemInfo) == "function" then
+        local _, _, _, _, _, _, subType = GetItemInfo(itemId)
+        if type(subType) == "string" then
+            local s = subType:lower()
+            if s:find("stave") or s:find("staff") then return "Staff" end
+            if s:find("polearm") then return "Polearm" end
+            if s:find("crossbow") then return "Crossbow" end
+            if s:find("bow") then return "Bow" end
+            if s:find("gun") then return "Gun" end
+            if s:find("dagger") then return "Dagger" end
+            if s:find("wand") then return "Wand" end
+            if s:find("fist") then return "Fist" end
+            if s:find("shield") then return "Shield" end
+            if s:find("two%-handed") then return "2H" end
+        end
+    end
+    return nil
+end
+
+-- Lazily create the per-cell DressUpModel + a selection border that draws above
+-- it (button textures render behind child frames, so the border must be a frame).
+function Wardrobe:_EnsureGridPreviewModel(btn)
+    if btn.previewModel then
+        return btn.previewModel
+    end
+
+    local model = CreateFrame("DressUpModel", nil, btn)
+    model:SetPoint("TOPLEFT", btn, "TOPLEFT", 2, -2)
+    model:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -2, 2)
+    model:EnableMouse(false)       -- let the underlying button get hover/click
+    model:EnableMouseWheel(false)
+    model:SetUnit("player")
+    model._dcPreviewSequence = self.PREVIEW_IDLE_SEQUENCE or 0
+    model:Hide()
+    btn.previewModel = model
+
+    local sel = CreateFrame("Frame", nil, btn)
+    sel:SetPoint("TOPLEFT", btn, "TOPLEFT", -1, 1)
+    sel:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 1, -1)
+    sel:SetFrameLevel(model:GetFrameLevel() + 1)
+    sel:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+    })
+    sel:SetBackdropBorderColor(1, 0.82, 0)
+    sel:Hide()
+    btn.previewSelect = sel
+
+    return model
+end
+
+-- Dress one grid cell's model with `item`'s appearance and frame it.
+function Wardrobe:_UpdateGridPreviewCell(btn, item)
+    local model = btn.previewModel
+    if not model then return end
+
+    local previewUnit = Wardrobe.previewUnit or "player"
+    if previewUnit == "target" and not UnitExists("target") then
+        previewUnit = "player"
+    end
+
+    -- Framing slot: an explicitly selected slot wins; otherwise infer from item.
+    local camLabel = (self.selectedSlot and self.selectedSlot.label)
+        or self:_InvTypeToCamSlot(item.inventoryType)
+        or "Chest"
+
+    local isWeapon = (camLabel == "Main Hand" or camLabel == "MainHand"
+        or camLabel == "Off Hand" or camLabel == "OffHand"
+        or camLabel == "Ranged")
+
+    -- Reset to the unit (restores body + gear), then strip for armor so we show
+    -- just the piece. Weapons stay dressed so a 1H doesn't ghost into both hands.
+    model:SetUnit(previewUnit)
+    if not isWeapon and model.Undress then
+        model:Undress()
+    end
+
+    local itemId = item.itemId
+    if itemId then
+        pcall(function()
+            model:TryOn("item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0")
+        end)
+    end
+
+    local subclass = isWeapon and self:_GuessWeaponSubclass(itemId, item.inventoryType) or nil
+    local pos = self:GetCameraPosition(camLabel, subclass)
+    if model.SetPosition then
+        model:SetPosition((pos.x or 1.0) + (self.GRID_CELL_ZOOMOUT_X or 1.3), pos.y or 0, pos.z or 0)
+    end
+    if model.SetFacing then
+        model:SetFacing(pos.facing or 0)
+    end
+    if pos.sequence then
+        model._dcPreviewSequence = pos.sequence
+    end
+    if type(self.StabilizePreviewModel) == "function" then
+        self:StabilizePreviewModel(model, model._dcPreviewSequence)
+    end
+
+    -- Texture overlays sit behind the model; convey "uncollected" by dimming.
+    if model.SetAlpha then
+        model:SetAlpha(item.collected and 1.0 or 0.45)
+    end
+end
 
 function Wardrobe:RefreshGrid()
     if not self.frame then return end
@@ -501,12 +588,36 @@ function Wardrobe:RefreshGrid()
                     btn.wishOverlay:Hide()
                 end
             end
+
+            -- 3D preview mode: render the appearance on a live model in the cell.
+            if Wardrobe.gridPreviewMode and item.itemId and not item.isHideOption then
+                self:_EnsureGridPreviewModel(btn)
+                if btn.icon and btn.icon.Hide then btn.icon:Hide() end
+                if btn.notCollected then btn.notCollected:Hide() end
+                if btn.wishOverlay then btn.wishOverlay:Hide() end
+                btn.previewModel:Show()
+                self:_UpdateGridPreviewCell(btn, item)
+                if btn.previewSelect then
+                    if self.selectedAppearanceItemId and item.itemId == self.selectedAppearanceItemId then
+                        btn.previewSelect:Show()
+                    else
+                        btn.previewSelect:Hide()
+                    end
+                end
+            else
+                -- Icon mode (or hide-slot cell): hide any 3D leftovers. The icon
+                -- block above already set the icon's correct shown/hidden state.
+                if btn.previewModel then btn.previewModel:Hide() end
+                if btn.previewSelect then btn.previewSelect:Hide() end
+            end
         else
             btn:Hide()
             btn.itemData = nil
+            if btn.previewModel then btn.previewModel:Hide() end
+            if btn.previewSelect then btn.previewSelect:Hide() end
         end
     end
-    
+
     -- Preload items from adjacent pages to cache them in advance
     self:PreloadAdjacentPages(list)
 end
@@ -621,6 +732,7 @@ function Wardrobe:BuildAppearanceList()
         tostring(tonumber(self.selectedQualityFilter) or 0),
         tostring(self.showUncollected and 1 or 0),
         search,
+        tostring(self.sortMode or "default"),
     }, "|")
 
     self._appearanceListCache = self._appearanceListCache or {}
@@ -837,6 +949,7 @@ function Wardrobe:BuildAppearanceList()
                     displayId = displayId,
                     itemIds = itemIds,
                     itemIdsTotal = itemIdsTotal,
+                    quality = packedQuality or 0,
                 }
             else
                 -- If any variant is collected, mark collected.
@@ -861,6 +974,7 @@ function Wardrobe:BuildAppearanceList()
                     existing.icon = iconTexture or existing.icon
                     existing.inventoryType = invType
                     existing.displayId = displayId
+                    existing.quality = packedQuality or existing.quality or 0
                 end
             end
         end
@@ -882,10 +996,34 @@ function Wardrobe:BuildAppearanceList()
     self.totalCount = totalMatched
     self.collectedCount = collectedMatched
 
+    local sortMode = self.sortMode or "default"
+    local function byName(a, b)
+        local an, bn = a.name or "", b.name or ""
+        if an ~= bn then return an < bn end
+        return (tonumber(a.itemId) or 0) < (tonumber(b.itemId) or 0)
+    end
     table.sort(results, function(a, b)
+        if sortMode == "name" then
+            return byName(a, b)
+        elseif sortMode == "itemId" then
+            local ai, bi = tonumber(a.itemId) or 0, tonumber(b.itemId) or 0
+            if ai ~= bi then return ai < bi end
+            return byName(a, b)
+        elseif sortMode == "quality" then
+            local aq, bq = tonumber(a.quality) or 0, tonumber(b.quality) or 0
+            if aq ~= bq then return aq > bq end
+            return byName(a, b)
+        elseif sortMode == "collected" then
+            if a.collected ~= b.collected then return a.collected end
+            return byName(a, b)
+        elseif sortMode == "uncollected" then
+            if a.collected ~= b.collected then return b.collected end
+            return byName(a, b)
+        end
+        -- "default": collected first, then name (legacy behavior).
         if a.collected and not b.collected then return true end
         if b.collected and not a.collected then return false end
-        return (a.name or "") < (b.name or "")
+        return byName(a, b)
     end)
 
     if not hasPendingItemInfo then
@@ -923,18 +1061,21 @@ function Wardrobe:PreviewAppearance(itemId)
     self.selectedAppearanceItemId = itemId
 
     local model = self.frame.model
-    
+    local previewUnit = Wardrobe.previewUnit or "player"
+
     -- Reset model to current preview unit with all current equipment
-    model:SetUnit(Wardrobe.previewUnit or "player")
-    
+    model:SetUnit(previewUnit)
+
     -- Only preview the specific slot if one is selected
     if self.selectedSlot and model.Undress and model.TryOn then
         -- Undress only the selected slot, keep everything else
         model:Undress()
-        
-        -- Re-apply all equipped items (with error protection)
+
+        -- Re-apply all equipped items (with error protection).
+        -- Read from the unit actually being previewed so "Target" previews use
+        -- the target's gear rather than the player's.
         for slot = 1, 19 do
-            local itemID = GetInventoryItemID("player", slot)
+            local itemID = GetInventoryItemID(previewUnit, slot)
             if itemID then
                 pcall(function()
                     local link = "item:" .. tostring(itemID) .. ":0:0:0:0:0:0:0"
@@ -958,34 +1099,10 @@ function Wardrobe:PreviewAppearance(itemId)
         end
     end
     
-    -- Apply slot-specific camera positioning if a slot is selected
-    if self.selectedSlot then
-        -- Use cached position if available
-        if not self.cachedCameraPositions then
-            self.cachedCameraPositions = {}
-        end
-        
-        local cameraPos = self.cachedCameraPositions[self.selectedSlot.label]
-        if not cameraPos then
-            cameraPos = self:GetCameraPosition(self.selectedSlot.label)
-            self.cachedCameraPositions[self.selectedSlot.label] = cameraPos
-        end
-        
-        if cameraPos then
-            -- Store camera position for zoom
-            model.cameraX = cameraPos.x
-            model.cameraY = cameraPos.y
-            model.cameraZ = cameraPos.z
-            
-            -- Apply with current zoom level
-            local zoomedPos = {
-                x = cameraPos.x * (model.cameraDistance or 1.0),
-                y = cameraPos.y,
-                z = cameraPos.z,
-                facing = cameraPos.facing
-            }
-            self:ApplyCameraPosition(model, zoomedPos)
-        end
+    -- SetUnit above reset the model transform; restore the camera the user is
+    -- currently looking through (preserves any manual zoom/pan/rotation).
+    if type(self._ApplyModelCamera) == "function" then
+        self:_ApplyModelCamera(model)
     end
 end
 

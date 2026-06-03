@@ -513,6 +513,7 @@ function AzerothAdmin:UpdateWaypointInfo()
   self._dcWpLastSpawnDist = nil
   self._dcWpLastEntry = nil
   self._dcWpLastSpawn = nil
+  self._dcWpLastPath  = nil
   self._dcWpLastCount = nil
   self:ChatMsg(".wp info")
 end
@@ -574,7 +575,7 @@ function AzerothAdmin:OpenDCWaypoints()
 
   -- Compact 2-column layout (GOMove-like)
   local baseY = -85
-  WpBtn("ma_dcwp_start", LocaleText("ma_WayAdd", "Start"), pad, baseY, LocaleText("tt_WayStart", "Start waypoint movement for the selected creature."), function() AzerothAdminCommands.WayStart() end)
+  WpBtn("ma_dcwp_start", "Add WP", pad, baseY, "Add waypoint at your position. Creates a new path if the creature has none; appends to the existing path otherwise. Use Wipe first to start over.", function() AzerothAdminCommands.WayStart() end)
   WpBtn("ma_dcwp_add", LocaleText("ma_WayEndAdd", "Add End"), col2X, baseY, LocaleText("tt_WayEndAdd", "Add a waypoint to the end of the existing stack."), function() AzerothAdminCommands.WayEndAdd() end)
   WpBtn("ma_dcwp_showon", LocaleText("ma_WayShow1", "Show On"), pad, baseY - (btnH + 2), LocaleText("tt_WayShow1", "Show waypoints for the selected creature."), function() AzerothAdminCommands.WayShowOn() end)
   WpBtn("ma_dcwp_showoff", LocaleText("ma_WayShow0", "Show Off"), col2X, baseY - (btnH + 2), LocaleText("tt_WayShow0", "Hide waypoints for the selected creature."), function() AzerothAdminCommands.WayShowOff() end)
