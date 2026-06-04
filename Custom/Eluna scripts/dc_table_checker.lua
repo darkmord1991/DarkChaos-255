@@ -158,7 +158,6 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_hotspots_active", "Hotspot System", true},
         {"acore_world", "dc_item_custom_data", "Custom Data", false},
         {"acore_world", "dc_item_enchantment_random_tiers", "Random Enchants", true},
-        {"acore_world", "dc_item_templates_upgrade", "Item Upgrade", true},
         {"acore_world", "dc_item_upgrade_costs", "Item Upgrade", false},
         {"acore_world", "dc_item_upgrade_synthesis_inputs", "Item Upgrade", false},
         {"acore_world", "dc_item_upgrade_synthesis_recipes", "Item Upgrade", false},
@@ -223,6 +222,7 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_top_upgraders", "Analytics Views"},
         {"acore_chars", "dc_upgrade_speed_stats", "Analytics Views"},
         {"acore_world", "dc_hlbg_seasons", "HLBG System"},
+        {"acore_world", "dc_item_templates_upgrade", "Item Upgrade (legacy compat stub — no longer queried by current binary)"},
         {"acore_world", "dc_mplus_seasons", "Mythic+"},
     },
 

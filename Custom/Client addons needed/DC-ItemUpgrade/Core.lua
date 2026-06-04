@@ -1074,37 +1074,6 @@ function DC.CreateSettingsPanel()
 		DC_ItemUpgrade_Settings.autoEquip = self:GetChecked();
 	end);
 	
-	-- Debug checkbox
-	-- SMSG_COST_INFO (0x13) - Authoritative cost totals for a target range
-	DCProtocol:RegisterHandler("UPG", 0x13, function(data)
-		DC.Debug("Received SMSG_COST_INFO: " .. tostring(data or "nil"));
-		if type(data) ~= "table" then return; end
-
-		local tier = tonumber(data.tier) or 0;
-		local fromLevel = tonumber(data.fromLevel) or 0;
-		local toLevel = tonumber(data.toLevel) or 0;
-		local key = DC.BuildCostCacheKey and DC.BuildCostCacheKey(tier, fromLevel, toLevel);
-		if key then
-			DC.pendingCostRequests[key] = nil;
-		end
-
-		if data.success == false or tier <= 0 or toLevel <= fromLevel then
-			return;
-		end
-
-		if DC.CacheCostInfo then
-			DC.CacheCostInfo(tier, fromLevel, toLevel, data.tokens, data.essence);
-		end
-
-		-- Refresh the UI whenever the upgrade frame is open so a freshly cached
-		-- cost is shown immediately (covers cases where the selected target level
-		-- changed between request and response).
-		if DC.currentItem and DarkChaos_ItemUpgrade_UpdateUI
-				and DarkChaos_ItemUpgradeFrame and DarkChaos_ItemUpgradeFrame:IsShown() then
-			DarkChaos_ItemUpgrade_UpdateUI();
-		end
-	end);
-	
 	local debugCheck = CreateFrame("CheckButton", "DC_ItemUpgrade_DebugCheck", panel, "InterfaceOptionsCheckButtonTemplate");
 	debugCheck:SetPoint("TOPLEFT", autoEquipCheck, "BOTTOMLEFT", 0, -8);
 	if not debugCheck.Text then
@@ -1639,6 +1608,36 @@ function DC.RegisterDCProtocolHandlers()
 			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000" .. msg .. "|r")
 		end
 	end)
+
+	-- SMSG_COST_INFO (0x13) - Authoritative cost totals for a target range
+	DCProtocol:RegisterHandler("UPG", 0x13, function(data)
+		DC.Debug("Received SMSG_COST_INFO: " .. tostring(data or "nil"));
+		if type(data) ~= "table" then return; end
+
+		local tier = tonumber(data.tier) or 0;
+		local fromLevel = tonumber(data.fromLevel) or 0;
+		local toLevel = tonumber(data.toLevel) or 0;
+		local key = DC.BuildCostCacheKey and DC.BuildCostCacheKey(tier, fromLevel, toLevel);
+		if key then
+			DC.pendingCostRequests[key] = nil;
+		end
+
+		if data.success == false or tier <= 0 or toLevel <= fromLevel then
+			return;
+		end
+
+		if DC.CacheCostInfo then
+			DC.CacheCostInfo(tier, fromLevel, toLevel, data.tokens, data.essence);
+		end
+
+		-- Refresh the UI whenever the upgrade frame is open so a freshly cached
+		-- cost is shown immediately (covers cases where the selected target level
+		-- changed between request and response).
+		if DC.currentItem and DarkChaos_ItemUpgrade_UpdateUI
+				and DarkChaos_ItemUpgradeFrame and DarkChaos_ItemUpgradeFrame:IsShown() then
+			DarkChaos_ItemUpgrade_UpdateUI();
+		end
+	end);
 
 	-- SMSG_HEIRLOOM_RESULT (0x17) - Heirloom upgrade result
 	DCProtocol:RegisterHandler("UPG", 0x17, function(data)

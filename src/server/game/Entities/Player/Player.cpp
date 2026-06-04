@@ -5316,18 +5316,31 @@ float Player::GetExpertiseDodgeOrParryReduction(WeaponAttackType attType) const
     return 0.0f;
 }
 
+// The GT* tables (gtOCTRegenHP, gtRegenHPPerSpt, gtRegenMPPerSpt, ...) hold one
+// contiguous block of "levels" rows per playable class, ordered by class id
+// 1..(MAX_CLASSES - 1) i.e. CLASS_WARRIOR..CLASS_DRUID. The slot for the unused
+// class id 10 (CLASS_UNK) exists but is zero-filled, so the number of class
+// blocks is (MAX_CLASSES - 1) == 11, NOT MAX_CLASSES (12).
+//
+// Derive the per-class row count from the loaded DBC so the index is correct
+// whether the table still ships retail 100-level data or was extended to
+// GT_MAX_LEVEL (255). GetNumRows() returns maxId + 1, so dividing by the block
+// count yields the per-class level count for both 0-based and 1-based id
+// layouts (e.g. 2805/11 == 2806/11 == 255, 1100/11 == 1101/11 == 100).
 template <typename T>
 static uint32 GetGtClassLevelIndex(DBCStorage<T> const& store, uint32 pclass, uint32 level)
 {
+    constexpr uint32 GT_CLASS_BLOCKS = MAX_CLASSES - 1; // class ids 1..11
+
     if (pclass < 1)
         pclass = 1;
-    else if (pclass > MAX_CLASSES)
-        pclass = MAX_CLASSES;
+    else if (pclass > GT_CLASS_BLOCKS)
+        pclass = GT_CLASS_BLOCKS;
 
     uint32 rows = store.GetNumRows();
-    if (rows >= MAX_CLASSES)
+    if (rows >= GT_CLASS_BLOCKS)
     {
-        uint32 entriesPerClass = rows / MAX_CLASSES;
+        uint32 entriesPerClass = rows / GT_CLASS_BLOCKS;
         if (entriesPerClass > 0)
         {
             uint32 clampedLevel = std::min(level, entriesPerClass);

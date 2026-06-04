@@ -1478,19 +1478,6 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   KEY `idx_entry` (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom stat package upgrade state';
 
-CREATE TABLE IF NOT EXISTS `dc_hlbg_match_history` (
-  `match_id` int unsigned NOT NULL AUTO_INCREMENT,
-  `start_time` int unsigned NOT NULL COMMENT 'Match start timestamp',
-  `end_time` int unsigned DEFAULT NULL COMMENT 'Match end timestamp',
-  `winner_team` tinyint DEFAULT NULL COMMENT 'Winning team (1 or 2)',
-  `team1_score` int NOT NULL DEFAULT '0',
-  `team2_score` int NOT NULL DEFAULT '0',
-  `player_count` tinyint NOT NULL DEFAULT '0',
-  `season_id` int unsigned NOT NULL COMMENT 'Season this match belongs to',
-  PRIMARY KEY (`match_id`),
-  KEY `idx_season` (`season_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG archived match history';
-
 CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique participant record ID',
   `match_id` int unsigned NOT NULL COMMENT 'Foreign key to dc_hlbg_winner_history.id (the match ID)',
@@ -1517,40 +1504,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
   KEY `idx_date` (`match_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
 
-CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
-  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
-  `season_id` int unsigned NOT NULL COMMENT 'Season identifier',
-  `joined_at` int unsigned NOT NULL COMMENT 'Unix timestamp when player joined season',
-  `rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Final rating',
-  `completed_games` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total games completed',
-  `wins` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total wins',
-  `losses` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total losses',
-  `highest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Highest rating achieved',
-  `lowest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Lowest rating',
-  `total_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Cumulative score',
-  `average_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Average score',
-  `archived_at` int unsigned NOT NULL COMMENT 'Unix timestamp when archived',
-  PRIMARY KEY (`player_guid`,`season_id`),
-  KEY `idx_season` (`season_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG archived player history';
-
-CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
-  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
-  `season_id` int unsigned NOT NULL COMMENT 'Season identifier',
-  `joined_at` int unsigned NOT NULL COMMENT 'Unix timestamp when player joined season',
-  `rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Current rating',
-  `completed_games` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total games completed',
-  `wins` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total wins',
-  `losses` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total losses',
-  `highest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Highest rating achieved this season',
-  `lowest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Lowest rating this season',
-  `total_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Cumulative score from all games',
-  `average_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Average score per game',
-  PRIMARY KEY (`player_guid`,`season_id`),
-  KEY `idx_season_rating` (`season_id`,`rating` DESC),
-  KEY `idx_season_wins` (`season_id`,`wins` DESC)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG player seasonal statistics';
-
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
   `player_name` varchar(12) NOT NULL COMMENT 'Player character name',
@@ -1568,29 +1521,6 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   KEY `idx_total_kills` (`total_kills`) COMMENT 'Kill count leaderboard',
   KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
-
-CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
-  `season_id` int unsigned NOT NULL COMMENT 'Season identifier',
-  `base_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Base rating for new players',
-  `max_rating_change` int unsigned NOT NULL DEFAULT '50' COMMENT 'Maximum rating change per match',
-  `min_players_per_team` tinyint unsigned NOT NULL DEFAULT '5' COMMENT 'Minimum players required per team',
-  `max_players_per_team` tinyint unsigned NOT NULL DEFAULT '10' COMMENT 'Maximum players allowed per team',
-  `match_duration` int unsigned NOT NULL DEFAULT '1800' COMMENT 'Match duration in seconds',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`season_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG season configuration';
-
-CREATE TABLE IF NOT EXISTS `dc_hlbg_state` (
-  `zone_id` int NOT NULL,
-  `bg_state` tinyint DEFAULT NULL,
-  `alliance_score` int DEFAULT NULL,
-  `horde_score` int DEFAULT NULL,
-  `match_time_remaining_ms` int DEFAULT NULL,
-  `warmup_time_remaining_ms` int DEFAULT NULL,
-  `affix_id` tinyint DEFAULT NULL,
-  `updated_at` datetime DEFAULT NULL,
-  PRIMARY KEY (`zone_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',

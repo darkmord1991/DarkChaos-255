@@ -1284,25 +1284,6 @@ function DC:CreateContentArea(parent)
         end
     end)
     
-    -- Toggle Player Checkbox
-    local togglePlayer = CreateFrame("CheckButton", nil, mountPreview, "UICheckButtonTemplate")
-    togglePlayer:SetSize(24, 24)
-    togglePlayer:SetPoint("BOTTOMRIGHT", mountPreview, "BOTTOMRIGHT", -10, 44)
-    togglePlayer:SetFrameLevel((mountPreview.model:GetFrameLevel() or (mountPreview:GetFrameLevel() + 1)) + 5)
-    
-    togglePlayer.text = togglePlayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    togglePlayer.text:SetPoint("RIGHT", togglePlayer, "LEFT", -2, 0)
-    togglePlayer.text:SetText("Show Player")
-    
-    togglePlayer:SetScript("OnClick", function(self)
-        DC.showPlayerInMountPreview = self:GetChecked()
-        if DC.selectedItem then
-            DC:UpdateMountPreview(DC.selectedItem)
-        end
-    end)
-    
-    mountPreview.togglePlayer = togglePlayer
-
     -- Mount action buttons are positioned in the footer (CreateFooter) so they align with Sync.
     -- Hide them here to avoid overlapping the model hit-rect before footer anchors them.
     mountPreview.favBtn:Hide()
@@ -1523,23 +1504,6 @@ function DC:UpdateMountPreview(item)
         p.model._dcPendingCameraApply = 0
     end
 
-    local function ConfigurePlayerCamera()
-        p.model.baseCamDistanceScale = 3.4
-        p.model._dcDefaultCamDist = 2.6
-        p.model.cameraDistance = p.model._dcDefaultCamDist
-        p.model._dcCameraId = 0
-        p.model._dcMinCamDist = 1.4
-        p.model._dcMaxCamDist = 6.5
-        p.model._dcCamStep = 0.20
-        p.model._dcUseSimpleCreatureZoom = false
-        p.model._dcUseModelScaleZoom = false
-        p.model._dcBaseDistanceForScale = p.model._dcDefaultCamDist
-
-        ResetModelPose()
-        ApplyStableModelCamera(p.model)
-        p.model._dcPendingCameraApply = 1
-    end
-
     local function TrySetCreature(modelId)
         local resolvedId = ToPositiveNumber(modelId)
         if not resolvedId or type(p.model.SetCreature) ~= "function" then
@@ -1593,105 +1557,53 @@ function DC:UpdateMountPreview(item)
 
     local displayId = ResolveMountPreviewDisplayId(item)
     local creatureId = ResolveMountPreviewCreatureId(item)
-    local renderedPlayer = false
 
-    if self.showPlayerInMountPreview and type(p.model.SetUnit) == "function" then
-        local okSetUnit = pcall(p.model.SetUnit, p.model, "player")
-        if okSetUnit then
-            renderedPlayer = true
-            if p.model.Dress then
-                p.model:Dress()
-            end
-            if p.model.SetPortraitZoom then
-                p.model:SetPortraitZoom(0)
-            end
-            ConfigurePlayerCamera()
+    local modelShown = ApplyMountModel(displayId, creatureId)
+
+    if modelShown then
+        ConfigureCreatureZoom()
+    else
+        p.model:ClearModel()
+        if displayId or creatureId then
+            ReportMountPreviewIssue(item, "model_apply_failed")
+        else
+            ReportMountPreviewIssue(item, "missing_model_data")
         end
     end
 
-    if renderedPlayer then
-        local verifyToken = p._modelVerifyToken
-        local function VerifyPlayerModelLoaded()
-            if p._modelVerifyToken ~= verifyToken then
-                return
-            end
-
-            local selected = self.selectedItem
-            if not selected or tostring(selected.id or "") ~= tostring(item.id or "") then
-                return
-            end
-
-            if HasLoadedModel(p.model) then
-                return
-            end
-
-            local recovered = ApplyMountModel(displayId, creatureId)
-            if recovered then
-                ConfigureCreatureZoom()
-                return
-            end
-
-            p.model:ClearModel()
-            if displayId or creatureId then
-                ReportMountPreviewIssue(item, "player_model_apply_failed")
-            else
-                ReportMountPreviewIssue(item, "missing_model_data")
-            end
+    local verifyToken = p._modelVerifyToken
+    local function VerifyModelLoaded()
+        if p._modelVerifyToken ~= verifyToken then
+            return
         end
 
-        if type(self.After) == "function" then
-            self.After(0.12, VerifyPlayerModelLoaded)
-        else
-            VerifyPlayerModelLoaded()
+        local selected = self.selectedItem
+        if not selected or tostring(selected.id or "") ~= tostring(item.id or "") then
+            return
         end
-    else
-        local modelShown = ApplyMountModel(displayId, creatureId)
 
-        if modelShown then
+        if HasLoadedModel(p.model) then
+            return
+        end
+
+        local recovered = ApplyMountModel(displayId, creatureId)
+        if recovered then
             ConfigureCreatureZoom()
+            return
+        end
+
+        p.model:ClearModel()
+        if displayId or creatureId then
+            ReportMountPreviewIssue(item, "model_async_load_failed")
         else
-            p.model:ClearModel()
-            if displayId or creatureId then
-                ReportMountPreviewIssue(item, "model_apply_failed")
-            else
-                ReportMountPreviewIssue(item, "missing_model_data")
-            end
+            ReportMountPreviewIssue(item, "missing_model_data")
         end
+    end
 
-        local verifyToken = p._modelVerifyToken
-        local function VerifyModelLoaded()
-            if p._modelVerifyToken ~= verifyToken then
-                return
-            end
-
-            local selected = self.selectedItem
-            if not selected or tostring(selected.id or "") ~= tostring(item.id or "") then
-                return
-            end
-
-            if HasLoadedModel(p.model) then
-                return
-            end
-
-            local recovered = ApplyMountModel(displayId, creatureId)
-            if recovered then
-                ConfigureCreatureZoom()
-                return
-            end
-
-            p.model:ClearModel()
-            if displayId or creatureId then
-                ReportMountPreviewIssue(item, "model_async_load_failed")
-            else
-                ReportMountPreviewIssue(item, "missing_model_data")
-            end
-        end
-
-        if type(self.After) == "function" then
-            self.After(0.12, VerifyModelLoaded)
-        else
-            VerifyModelLoaded()
-        end
+    if type(self.After) == "function" then
+        self.After(0.12, VerifyModelLoaded)
+    else
+        VerifyModelLoaded()
     end
 
     if item.collected then
