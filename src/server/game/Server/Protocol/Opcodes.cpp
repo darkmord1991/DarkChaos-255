@@ -1464,6 +1464,16 @@ void OpcodeTable::Initialize()
     /*0x536*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_NATIVE_ENVELOPE,                                 STATUS_NEVER);
     /*0x537*/ DEFINE_HANDLER(CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT,                                    STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
     /*0x538*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_ITEM_TOOLTIP_SNAPSHOT,                              STATUS_NEVER);
+    /*0x539*/ DEFINE_HANDLER(CMSG_REQUEST_SEASONAL,                                                 STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x53A*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_SEASONAL,                                           STATUS_NEVER);
+    /*0x53B*/ DEFINE_HANDLER(CMSG_REQUEST_HOTSPOT,                                                  STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x53C*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_HOTSPOT,                                            STATUS_NEVER);
+    /*0x53D*/ DEFINE_HANDLER(CMSG_REQUEST_PRESTIGE,                                                 STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x53E*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_PRESTIGE,                                           STATUS_NEVER);
+    /*0x53F*/ DEFINE_HANDLER(CMSG_REQUEST_WORLD_CONTENT,                                            STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x540*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_WORLD_CONTENT,                                      STATUS_NEVER);
+    /*0x541*/ DEFINE_HANDLER(CMSG_DC_NATIVE_REQUEST,                                                STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
+    /*0x542*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_NATIVE_MESSAGE,                                  STATUS_NEVER);
 
 #undef DEFINE_HANDLER
 #undef DEFINE_SERVER_OPCODE_HANDLER

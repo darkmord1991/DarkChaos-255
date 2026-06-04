@@ -52,6 +52,12 @@ DCAddonProtocol = {
         SPECTATOR_LIVE_NATIVE = 0x00040000,
         COLLECTION_WAVE1_NATIVE = 0x00080000,
         GENERIC_NATIVE_ENVELOPE = 0x00100000,
+        ITEM_TOOLTIP_REPLACEMENT_NATIVE = 0x00200000,
+        SEASONAL_NATIVE = 0x00400000,
+        HOTSPOT_NATIVE = 0x00800000,
+        PRESTIGE_NATIVE = 0x01000000,
+        WORLD_NATIVE = 0x02000000,
+        GENERIC_MESSAGE_NATIVE = 0x04000000,
     },
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
     BASE_CAPABILITIES = 3,
@@ -544,6 +550,37 @@ function DC:GetNativeExtensionCapabilities()
             self.Capability.COLLECTION_WAVE1_NATIVE)
     end
 
+    if type(RequestNativeSeasonal) == "function"
+        and type(GetNativeSeasonalSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.SEASONAL_NATIVE)
+    end
+
+    if type(RequestNativeHotspot) == "function"
+        and type(GetNativeHotspotSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.HOTSPOT_NATIVE)
+    end
+
+    if type(RequestNativePrestige) == "function"
+        and type(GetNativePrestigeSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.PRESTIGE_NATIVE)
+    end
+
+    if type(RequestNativeWorldContent) == "function"
+        and type(GetNativeWorldContentSnapshot) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.WORLD_NATIVE)
+    end
+
+    -- The generic DC native message bridge (one client poll fn) carries every
+    -- module registered server-side over SMSG_DC_NATIVE_MESSAGE.
+    if type(GetNativeDcMessage) == "function" then
+        capabilities = CombineCapabilities(capabilities,
+            self.Capability.GENERIC_MESSAGE_NATIVE)
+    end
+
     if type(PollDCNativeEnvelope) == "function" then
         capabilities = CombineCapabilities(capabilities,
             self.Capability.GENERIC_NATIVE_ENVELOPE)
@@ -660,6 +697,26 @@ function DC:DescribeCapabilities(mask)
     if HasCapabilityBit(capabilities,
             self.Capability.COLLECTION_WAVE1_NATIVE) then
         table.insert(parts, "NativeCollectionWave1")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.SEASONAL_NATIVE) then
+        table.insert(parts, "NativeSeasonal")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.HOTSPOT_NATIVE) then
+        table.insert(parts, "NativeHotspot")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.PRESTIGE_NATIVE) then
+        table.insert(parts, "NativePrestige")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.WORLD_NATIVE) then
+        table.insert(parts, "NativeWorld")
+    end
+    if HasCapabilityBit(capabilities,
+            self.Capability.GENERIC_MESSAGE_NATIVE) then
+        table.insert(parts, "NativeGenericMessage")
     end
     if HasCapabilityBit(capabilities,
             self.Capability.GENERIC_NATIVE_ENVELOPE) then
@@ -1754,6 +1811,282 @@ function DC:UnregisterJSONHandler(module, opcode, handler)
     return true
 end
 
+-- =========================================================================
+-- Native transport routing (dedicated WotLK-Extensions custom opcodes)
+-- -------------------------------------------------------------------------
+-- Modules that have a native bridge can transparently send requests over the
+-- custom opcode and receive responses by polling, instead of the addon (chat)
+-- protocol. Responses are funneled back through the same handler dispatch the
+-- addon path uses, so module consumers (handlers registered via
+-- RegisterHandler / RegisterJSONHandler) need no changes.
+-- =========================================================================
+
+-- Registry of modules with a native dedicated-opcode bridge. Each row maps a DC
+-- module code to its capability bit and the global native request/poll function
+-- names exposed by WotLK-Extensions. To migrate another module, add a row here
+-- (and the matching server/client opcode + capability).
+DC._nativeBridges = {
+    { module = "SEAS", capability = DC.Capability.SEASONAL_NATIVE,
+      requestFn = "RequestNativeSeasonal", pollFn = "GetNativeSeasonalSnapshot" },
+    { module = "SPOT", capability = DC.Capability.HOTSPOT_NATIVE,
+      requestFn = "RequestNativeHotspot", pollFn = "GetNativeHotspotSnapshot" },
+    { module = "PRES", capability = DC.Capability.PRESTIGE_NATIVE,
+      requestFn = "RequestNativePrestige", pollFn = "GetNativePrestigeSnapshot" },
+    { module = "WRLD", capability = DC.Capability.WORLD_NATIVE,
+      requestFn = "RequestNativeWorldContent",
+      pollFn = "GetNativeWorldContentSnapshot" },
+    -- Generic-bridge modules share the single RequestNativeDcMessage /
+    -- GetNativeDcMessage pair (the module code travels in the payload), the
+    -- single GENERIC_MESSAGE_NATIVE capability, and carry the canonical addon
+    -- body ("J|<json>" or plain "<f1>|<f2>..."). Modules with their own
+    -- dedicated bridge (MPLUS HUD, SPEC live) keep that bridge; only their
+    -- request/response JsonMessage/Message sends route here.
+    { module = "GRPF", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "UPG", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "AOE", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "MPLUS", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "TELE", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "EVNT", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "DUEL", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "LBRD", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "WELC", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "SPEC", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "GOMV", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "NPCM", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    -- These keep their dedicated bridge for hot flows (QOS ping, COLL wave1,
+    -- HLBG live); only their request/response remainder routes generic.
+    { module = "QOS", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "COLL", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+    { module = "HLBG", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
+}
+
+local function ResolveGlobalFunction(name)
+    local fn = rawget(_G, name)
+    if type(fn) == "function" then
+        return fn
+    end
+    return nil
+end
+
+function DC:_FindNativeBridge(module)
+    for _, bridge in ipairs(self._nativeBridges or {}) do
+        if bridge.module == module then
+            return bridge
+        end
+    end
+    return nil
+end
+
+-- True when the client exposes the bridge's native request+poll functions.
+function DC:_NativeBridgeHasFns(bridge)
+    if not bridge then
+        return false
+    end
+    if bridge.kind == "generic" then
+        return ResolveGlobalFunction("RequestNativeDcMessage") ~= nil
+            and ResolveGlobalFunction("GetNativeDcMessage") ~= nil
+    end
+    return ResolveGlobalFunction(bridge.requestFn) ~= nil
+        and ResolveGlobalFunction(bridge.pollFn) ~= nil
+end
+
+-- True when a module should use its native dedicated opcode: the client exposes
+-- the native functions AND the server negotiated the matching capability.
+function DC:_ShouldUseNativeBridge(bridge)
+    if not self:_NativeBridgeHasFns(bridge) then
+        return false
+    end
+    return HasCapabilityBit(tonumber(self._serverCaps) or 0, bridge.capability)
+end
+
+-- Try to send a JSON request over a native bridge. Returns true if it was sent
+-- natively (caller must not also send it over the addon protocol).
+function DC:_TryNativeSendJSON(module, opcode, json)
+    local bridge = self:_FindNativeBridge(module)
+    if not bridge or not self:_ShouldUseNativeBridge(bridge) then
+        return false
+    end
+    local payload = (type(json) == "string" and json ~= "") and json or "{}"
+
+    if bridge.kind == "generic" then
+        local requestFn = ResolveGlobalFunction("RequestNativeDcMessage")
+        if not requestFn then
+            return false
+        end
+        -- Canonical addon body carries the JSON marker.
+        requestFn(module, tonumber(opcode) or 0, "J|" .. payload)
+        return true
+    end
+
+    local requestFn = ResolveGlobalFunction(bridge.requestFn)
+    if not requestFn then
+        return false
+    end
+    requestFn(tonumber(opcode) or 0, payload)
+    return true
+end
+
+-- Dispatch a native JSON response through the same handler chain the addon
+-- (CHAT_MSG_ADDON) path uses: JSON handler -> decoded handler -> module callback.
+function DC:_DispatchNativeJSON(module, opcode, jsonStr)
+    jsonStr = (type(jsonStr) == "string" and jsonStr ~= "") and jsonStr or "{}"
+    local data = self:DecodeJSON(jsonStr)
+    if data == nil then
+        local trimmed = string.gsub(jsonStr, "^%s*(.-)%s*$", "%1")
+        if trimmed ~= "null" then
+            self:LogNetEvent("error", "json",
+                "Failed to decode native JSON payload",
+                { module = module, opcode = opcode })
+            return
+        end
+    end
+
+    self:LogResponse(module, opcode, data, jsonStr, nil)
+
+    local jsonKey = module .. "_" .. tostring(opcode) .. "_json"
+    local jsonHandler = self._handlers[jsonKey]
+    if jsonHandler then
+        if type(jsonHandler) == "table" then
+            for _, h in ipairs(jsonHandler) do
+                self:_InvokeHandlerSafe("native-json", module, opcode, h, data, jsonStr)
+            end
+        else
+            self:_InvokeHandlerSafe("native-json", module, opcode, jsonHandler, data, jsonStr)
+        end
+    else
+        local key = module .. "_" .. tostring(opcode)
+        local h = self._handlers[key]
+        if h then
+            if type(h) == "table" then
+                for _, handler in ipairs(h) do
+                    self:_InvokeHandlerSafe("native-decoded", module, opcode, handler, data)
+                end
+            else
+                self:_InvokeHandlerSafe("native-decoded", module, opcode, h, data)
+            end
+        end
+    end
+
+    local modCallback = self._moduleCallbacks and self._moduleCallbacks[module]
+    if modCallback then
+        self:_InvokeHandlerSafe("native-module-callback", module, opcode,
+            modCallback, { op = tonumber(opcode), data = data })
+    end
+end
+
+-- Dispatch a generic-bridge native response. The body is the canonical addon
+-- body: "J|<json>" (dispatched as JSON) or pipe-delimited positional fields
+-- (dispatched as a plain message, mirroring the CHAT_MSG_ADDON path).
+function DC:_DispatchNativeMessage(module, opcode, body)
+    body = body or ""
+
+    if string.sub(body, 1, 2) == "J|" then
+        self:_DispatchNativeJSON(module, opcode, string.sub(body, 3))
+        return
+    end
+
+    local fields = {}
+    if body ~= "" then
+        for field in string.gmatch(body .. "|", "([^|]*)|") do
+            table.insert(fields, field)
+        end
+    end
+
+    -- Core error / permission-denied: route to error handlers like the addon
+    -- path, since these never reach a per-opcode handler.
+    if opcode == self.Opcode.Core.SMSG_ERROR
+        or opcode == self.Opcode.Core.SMSG_PERMISSION_DENIED then
+        local errCode = tonumber(fields[1]) or 0
+        local errMsg = fields[2] or ""
+        local errHandlers = self._errorHandlers[module]
+        if errHandlers then
+            for _, h in ipairs(errHandlers) do
+                self:_InvokeHandlerSafe("native-module-error", module, opcode,
+                    h, errCode, errMsg, opcode)
+            end
+        end
+        for _, h in ipairs(self._globalErrorHandlers) do
+            self:_InvokeHandlerSafe("native-global-error", module, opcode, h,
+                module, errCode, errMsg, opcode)
+        end
+        if self:GetSetting("chatOnError") then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC] Error:|r " .. module
+                .. ": " .. (errMsg or "Unknown error"))
+        end
+        self:LogResponse(module, opcode, { errCode, errMsg }, nil, nil)
+        return
+    end
+
+    self:LogResponse(module, opcode, fields, nil, nil)
+
+    local key = module .. "_" .. tostring(opcode)
+    local h = self._handlers[key]
+    if type(h) == "table" then
+        for _, handler in ipairs(h) do
+            if type(handler) == "function" then
+                self:_InvokeHandlerSafe("native-plain", module, opcode,
+                    handler, unpack(fields))
+            end
+        end
+    elseif type(h) == "function" then
+        self:_InvokeHandlerSafe("native-plain", module, opcode, h,
+            unpack(fields))
+    end
+end
+
+-- Drain queued native responses for every registered bridge and dispatch them.
+-- Called every frame from the OnUpdate loop; a cheap no-op when idle.
+function DC:_PollNativeResponses()
+    -- Dedicated per-module bridges (own request/poll fns, JSON payload).
+    for _, bridge in ipairs(self._nativeBridges or {}) do
+        if bridge.kind ~= "generic" then
+            local pollFn = ResolveGlobalFunction(bridge.pollFn)
+            if pollFn then
+                local guard = 0
+                while guard < 16 do
+                    guard = guard + 1
+                    local revision, logicalOpcode, payload = pollFn()
+                    if not revision or not logicalOpcode then
+                        break
+                    end
+                    self:_DispatchNativeJSON(bridge.module,
+                        tonumber(logicalOpcode) or 0, payload or "{}")
+                end
+            end
+        end
+    end
+
+    -- Generic shared bridge: one queue, the module code travels in the payload.
+    local genericPoll = ResolveGlobalFunction("GetNativeDcMessage")
+    if genericPoll then
+        local guard = 0
+        while guard < 32 do
+            guard = guard + 1
+            local revision, module, logicalOpcode, body = genericPoll()
+            if not revision or not module or not logicalOpcode then
+                break
+            end
+            self:_DispatchNativeMessage(module, tonumber(logicalOpcode) or 0,
+                body or "")
+        end
+    end
+end
+
 function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     local requestId = self:NextRequestId()
     local parts = {module, tostring(opcode), "RID:" .. tostring(requestId)}
@@ -1841,12 +2174,21 @@ function DC:SendJSON(module, opcode, data)
     
     -- Log request
     self:LogRequest(module, opcode, data, requestId)
-    
+
     if self._debug then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending JSON: " .. module .. " opcode=" .. tostring(opcode) .. " size=" .. string.len(msg))
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Data: " .. string.sub(json, 1, 200) .. (string.len(json) > 200 and "..." or ""))
     end
-    
+
+    -- Prefer the native dedicated opcode when the module/server support it.
+    -- Responses arrive via DC:_PollNativeResponses and dispatch identically.
+    if self:_TryNativeSendJSON(module, opcode, json) then
+        if self._debug then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Routed " .. module .. " opcode=" .. tostring(opcode) .. " over native bridge")
+        end
+        return true
+    end
+
     -- Use chunked sending for large messages
     return self:SendChunked(msg)
 end
@@ -2739,7 +3081,20 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("ADDON_LOADED")
+-- Track loading screens so we never dispatch native bridge responses while the
+-- world/UI is being torn down or rebuilt (e.g. ReloadMap, zone change). Handlers
+-- dispatched mid-reload can touch not-yet-valid world objects and hard-crash the
+-- client; PLAYER_LEAVING_WORLD..PLAYER_ENTERING_WORLD brackets that window.
+frame:RegisterEvent("PLAYER_LEAVING_WORLD")
+frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnUpdate", function(self, elapsed)
+    -- Drain native bridge responses every frame so the UI stays responsive
+    -- (the 1s throttle below only gates the slower bookkeeping tasks). Skip
+    -- while a loading screen is active - see PLAYER_LEAVING_WORLD below.
+    if not DC._worldLoading and type(DC._PollNativeResponses) == "function" then
+        DC:_PollNativeResponses()
+    end
+
     DC._tick = (DC._tick or 0) + (elapsed or 0)
     if DC._tick < 1.0 then
         return
@@ -2765,6 +3120,15 @@ frame:SetScript("OnUpdate", function(self, elapsed)
     end
 end)
 frame:SetScript("OnEvent", function()
+    if event == "PLAYER_LEAVING_WORLD" then
+        -- Loading screen / map teardown begins: pause native response dispatch.
+        DC._worldLoading = true
+        return
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- World is valid again: resume native response dispatch.
+        DC._worldLoading = nil
+        return
+    end
     if event == "CHAT_MSG_ADDON" then
         -- Accept DC protocol whispers regardless of sender name.
         -- Some server packets can arrive with sender != UnitName("player"),
@@ -3081,6 +3445,93 @@ SlashCmdList["DC"] = function(msg)
     elseif cmd == "sendjson" then
         DC:SendJSON("CORE", 99, {action = "test", timestamp = time()})
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Sent JSON test")
+    elseif cmd == "native" or cmd == "seas" or cmd == "seasonal" then
+        -- Native dedicated-opcode round-trip test for a bridged module. Reports
+        -- the transport decision, then fires that module's read requests and
+        -- prints the responses (dispatched identically whether native or addon).
+        local moduleArg = (cmd == "native") and string.upper(args[2] or "")
+            or "SEAS"
+        local testSpecs = {
+            SEAS = { req = { 0x01, 0x03, 0x02 },
+                resp = { [0x10] = "current", [0x12] = "progress",
+                    [0x11] = "rewards" } },
+            SPOT = { req = { 0x01 },
+                resp = { [0x10] = "hotspotList" } },
+            PRES = { req = { 0x01, 0x02 },
+                resp = { [0x10] = "info", [0x11] = "bonuses" } },
+            WRLD = { req = { 0x01 },
+                resp = { [0x10] = "content", [0x11] = "update" } },
+            GRPF = { req = { 0x22, 0x23, 0x24 },
+                resp = { [0x42] = "dungeonList", [0x43] = "raidList",
+                    [0x44] = "systemInfo" } },
+            UPG = { req = { 0x08, 0x09 },
+                resp = { [0x18] = "packageList", [0x19] = "tierConfig" } },
+            AOE = { req = { 0x06, 0x03, 0x08 },
+                resp = { [0x11] = "settings", [0x10] = "stats",
+                    [0x14] = "qualityStats" } },
+            MPLUS = { req = { 0x01, 0x02, 0x03 },
+                resp = { [0x10] = "keyInfo", [0x11] = "affixes",
+                    [0x12] = "bestRuns" } },
+            TELE = { req = { 0x01 },
+                resp = { [0x10] = "teleList" } },
+            DUEL = { req = { 0x01, 0x02 },
+                resp = { [0x10] = "stats", [0x11] = "leaderboard" } },
+            LBRD = { req = { 0x02 },
+                resp = { [0x11] = "categories" } },
+            WELC = { req = { 0x01, 0x02 },
+                resp = { [0x11] = "serverInfo", [0x12] = "faq" } },
+            SPEC = { req = { 0x03 },
+                resp = { [0x12] = "runList" } },
+        }
+        local spec = testSpecs[moduleArg]
+        if not spec then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                "|cffff4444[DC]|r Usage: /dc native <MODULE> (SEAS SPOT PRES WRLD GRPF UPG AOE MPLUS TELE DUEL LBRD WELC SPEC)")
+            return
+        end
+
+        local bridge = DC:_FindNativeBridge(moduleArg)
+        local hasFns = DC:_NativeBridgeHasFns(bridge)
+        local negotiated = bridge ~= nil and HasCapabilityBit(
+            tonumber(DC._serverCaps) or 0, bridge.capability) or false
+        local willUseNative = bridge ~= nil
+            and DC:_ShouldUseNativeBridge(bridge)
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "|cff00ccff[DC %s test]|r nativeFns=%s negotiated=%s -> transport=%s",
+            moduleArg, tostring(hasFns), tostring(negotiated),
+            willUseNative and "|cff00ff00NATIVE|r" or "|cffffcc00ADDON|r"))
+
+        DC._nativeTestHooked = DC._nativeTestHooked or {}
+        if not DC._nativeTestHooked[moduleArg] then
+            DC._nativeTestHooked[moduleArg] = true
+            for op, label in pairs(spec.resp) do
+                local capturedLabel = string.format("%s(0x%X)", label, op)
+                -- Handle both JSON (single table) and plain (positional) forms.
+                DC:RegisterHandler(moduleArg, op, function(...)
+                    local n = select("#", ...)
+                    local first = ...
+                    local text
+                    if n <= 1 and type(first) == "table" then
+                        text = DC:EncodeJSON(first or {})
+                    else
+                        local parts = {}
+                        for i = 1, n do
+                            parts[i] = tostring(select(i, ...))
+                        end
+                        text = table.concat(parts, ", ")
+                    end
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC " .. moduleArg
+                        .. " test]|r " .. capturedLabel .. ": " .. text)
+                end)
+            end
+        end
+
+        for _, op in ipairs(spec.req) do
+            DC:Request(moduleArg, op, {})
+        end
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "|cff00ccff[DC %s test]|r fired %d request(s); watch for responses above.",
+            moduleArg, #spec.req))
     elseif cmd == "debug" then
         DC._debug = not DC._debug
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Debug mode: " .. (DC._debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
@@ -3242,6 +3693,7 @@ SlashCmdList["DC"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dc handlers - List registered handlers (key: count)")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc unregister <MODULE> <OPCODE> [json] - Unregister handlers (use 'json' for JSON handlers)")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc json - Test JSON encode/decode")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc native <MODULE> - Native bridge round-trip test (SEAS SPOT PRES WRLD GRPF UPG AOE MPLUS TELE DUEL LBRD WELC SPEC; /dc seas = SEAS)")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc panel - Open settings/debug panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc log - Open request/response log panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc requests - Show recent requests")

@@ -1363,7 +1363,17 @@ enum Opcodes : uint16
     SMSG_DC_NATIVE_ENVELOPE                        = 0x536,
     CMSG_REQUEST_ITEM_TOOLTIP_SNAPSHOT             = 0x537,
     SMSG_ITEM_TOOLTIP_SNAPSHOT                     = 0x538,
-    NUM_MSG_TYPES                                   = 0x539
+    CMSG_REQUEST_SEASONAL                          = 0x539,
+    SMSG_SEASONAL                                  = 0x53A,
+    CMSG_REQUEST_HOTSPOT                            = 0x53B,
+    SMSG_HOTSPOT                                    = 0x53C,
+    CMSG_REQUEST_PRESTIGE                           = 0x53D,
+    SMSG_PRESTIGE                                   = 0x53E,
+    CMSG_REQUEST_WORLD_CONTENT                      = 0x53F,
+    SMSG_WORLD_CONTENT                              = 0x540,
+    CMSG_DC_NATIVE_REQUEST                          = 0x541,
+    SMSG_DC_NATIVE_MESSAGE                          = 0x542,
+    NUM_MSG_TYPES                                   = 0x543
 };
 
 enum OpcodeMisc : uint16

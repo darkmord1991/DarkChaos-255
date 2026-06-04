@@ -126,7 +126,7 @@ namespace ItemUpgrade
             uint32 season = GetCurrentSeasonId();
             std::vector<uint32> eligibleEntries;
             QueryResult eligibleResult = WorldDatabase.Query(
-                "SELECT item_id FROM dc_item_templates_upgrade "
+                "SELECT item_id FROM dc_item_upgrade_item_overrides "
                 "WHERE season = {} AND is_active = 1",
                 season);
 

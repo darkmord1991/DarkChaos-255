@@ -883,8 +883,9 @@ function PetJournal:SelectPet(petData)
         model.zoom = 0
         model.modelZoom = 1.0
         if model.SetPortraitZoom then model:SetPortraitZoom(0) end
-        if model.SetCamDistanceScale then model:SetCamDistanceScale(1.0) end
-        if model.SetCamera then model:SetCamera(0) end
+        -- Pull the camera back so the full body is visible (not just the head).
+        -- SetCamera(0) is portrait mode (head close-up) — do not call it here.
+        if model.SetCamDistanceScale then model:SetCamDistanceScale(2.5) end
         if model.SetModelScale then model:SetModelScale(1.0) end
         if model.SetPosition then model:SetPosition(0, 0, 0) end
     end

@@ -332,7 +332,7 @@ namespace Upgrade
         if (tier == 0 || tier == DarkChaos::ItemUpgrade::TIER_INVALID)
         {
              QueryResult tierLookup = WorldDatabase.Query(
-                "SELECT tier_id FROM dc_item_templates_upgrade WHERE item_id = {} AND season = 1 AND is_active = 1",
+                "SELECT tier_id FROM dc_item_upgrade_item_overrides WHERE item_id = {} AND season = 1 AND is_active = 1",
                 baseEntry);
              if (tierLookup)
                  tier = (*tierLookup)[0].Get<uint8>();

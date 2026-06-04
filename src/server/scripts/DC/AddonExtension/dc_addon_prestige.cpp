@@ -26,6 +26,9 @@
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "WorldSession.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Config.h"
@@ -54,6 +57,60 @@ namespace DCPrestigeAddon
     namespace Config
     {
         constexpr const char* CANONICAL_ENABLED = "DC.AddonProtocol.Prestige.Enable";
+    }
+
+    // =======================================================================
+    // Native transport bridge (CMSG_REQUEST_PRESTIGE / SMSG_PRESTIGE). Falls
+    // back to the addon (chat) protocol when PRESTIGE_NATIVE is not negotiated.
+    // =======================================================================
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_PRESTIGE = ::CMSG_REQUEST_PRESTIGE,
+            SMSG_PRESTIGE         = ::SMSG_PRESTIGE,
+        };
+    }
+
+    static DCAddon::TransportPolicyDecision ResolvePrestigeTransport(Player* player)
+    {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "prestige";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::PRESTIGE_NATIVE;
+        return DCAddon::ResolveTransportPolicy(player, request);
+    }
+
+    static void SendNativePrestigePayload(Player* player, uint8 logicalOpcode,
+        std::string const& payload)
+    {
+        if (!player || !player->GetSession() || payload.empty())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_PRESTIGE,
+            sizeof(uint32) + payload.size() + 1);
+        data << uint32(logicalOpcode);
+        data << payload;
+        player->GetSession()->SendPacket(&data);
+
+        std::string preview = "logical="
+            + std::to_string(static_cast<uint32>(logicalOpcode))
+            + "|bytes=" + std::to_string(payload.size());
+        DCAddon::LogNativeS2CMessage(player, MODULE, logicalOpcode,
+            BridgeOpcode::SMSG_PRESTIGE, data.size(), preview, true, 0);
+    }
+
+    // Transport-aware send: native dedicated opcode when negotiated, else addon.
+    static void SendPrestigeMessage(Player* player,
+        DCAddon::JsonMessage const& msg)
+    {
+        if (ResolvePrestigeTransport(player).UsesNative())
+        {
+            SendNativePrestigePayload(player, msg.GetOpcode(), msg.Encode());
+            return;
+        }
+
+        msg.Send(player);
     }
 
     // =======================================================================
@@ -115,7 +172,7 @@ namespace DCPrestigeAddon
         msg.Set("totalPrestiges", totalPrestiges);
         msg.Set("lastPrestigeTime", static_cast<uint32>(lastPrestigeTime));
 
-        msg.Send(player);
+        SendPrestigeMessage(player, msg);
     }
 
     /**
@@ -167,7 +224,7 @@ namespace DCPrestigeAddon
         msg.Set("nextLevelBonus", prestigeLevel < maxPrestigeLevel ? (prestigeLevel + 1) * bonusPerLevel : 0);
         msg.Set("atMaxPrestige", prestigeLevel >= maxPrestigeLevel);
 
-        msg.Send(player);
+        SendPrestigeMessage(player, msg);
     }
 
     // =======================================================================
@@ -251,7 +308,36 @@ public:
     }
 };
 
+// Native transport receive hook: decodes CMSG_REQUEST_PRESTIGE and routes it
+// through the shared MessageRouter so native and addon clients hit the same
+// handlers. Responses pick their transport in SendPrestigeMessage().
+class PrestigeNativeServerScript : public ServerScript
+{
+public:
+    PrestigeNativeServerScript()
+        : ServerScript("PrestigeNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode()
+            != DCPrestigeAddon::BridgeOpcode::CMSG_REQUEST_PRESTIGE)
+        {
+            return true;
+        }
+
+        return DCAddon::HandleNativeModuleRequest(session, packet,
+            DCPrestigeAddon::BridgeOpcode::CMSG_REQUEST_PRESTIGE,
+            DCPrestigeAddon::MODULE);
+    }
+};
+
 void AddSC_dc_addon_prestige()
 {
     new DCPrestigeAddonWorldScript();
+    new PrestigeNativeServerScript();
 }

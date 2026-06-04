@@ -9,6 +9,9 @@
 
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "WorldSession.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
 #include "Chat.h"
 #include "Config.h"
 #include "Log.h"
@@ -18,6 +21,7 @@
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "../Seasons/SeasonalRewardSystem.h"
 #include <algorithm>
+#include <limits>
 
 namespace DCAddon
 {
@@ -110,6 +114,82 @@ namespace Seasons
         }
     }
 
+    // =======================================================================
+    // Native transport bridge
+    // -----------------------------------------------------------------------
+    // Request/response flows can travel over the dedicated WotLK-Extensions
+    // custom opcodes (CMSG_REQUEST_SEASONAL / SMSG_SEASONAL) when the client
+    // has negotiated the SEASONAL_NATIVE capability, otherwise they fall back
+    // to the legacy addon (chat) protocol. Both transports carry an identical
+    // MODULE+opcode+JSON payload so the handlers stay transport-agnostic.
+    // =======================================================================
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_SEASONAL = ::CMSG_REQUEST_SEASONAL,
+            SMSG_SEASONAL         = ::SMSG_SEASONAL,
+        };
+    }
+
+    static DCAddon::TransportPolicyDecision ResolveSeasonalTransport(Player* player)
+    {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "seasonal";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::SEASONAL_NATIVE;
+        return DCAddon::ResolveTransportPolicy(player, request);
+    }
+
+    static void SendNativeSeasonalPayload(Player* player, uint8 logicalOpcode,
+        std::string const& payload)
+    {
+        if (!player || !player->GetSession() || payload.empty())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_SEASONAL,
+            sizeof(uint32) + payload.size() + 1);
+        data << uint32(logicalOpcode);
+        data << payload;
+        player->GetSession()->SendPacket(&data);
+
+        std::string preview = "logical="
+            + std::to_string(static_cast<uint32>(logicalOpcode))
+            + "|bytes=" + std::to_string(payload.size());
+        DCAddon::LogNativeS2CMessage(player, Module::SEASONAL, logicalOpcode,
+            BridgeOpcode::SMSG_SEASONAL, data.size(), preview, true, 0);
+    }
+
+    static void SendAddonSeasonalPayload(Player* player, uint8 logicalOpcode,
+        std::string const& payload)
+    {
+        if (!player)
+            return;
+
+        DCAddon::JsonMessage msg(Module::SEASONAL, logicalOpcode);
+        msg.SetPreEncodedJson(payload.empty() ? "{}" : payload);
+        msg.Send(player);
+    }
+
+    // Pick the negotiated transport for a server -> client response.
+    static void SendSeasonalPayload(Player* player, uint8 logicalOpcode,
+        std::string const& payload)
+    {
+        if (ResolveSeasonalTransport(player).UsesNative())
+        {
+            SendNativeSeasonalPayload(player, logicalOpcode, payload);
+            return;
+        }
+
+        SendAddonSeasonalPayload(player, logicalOpcode, payload);
+    }
+
+    static void SendSeasonalJson(Player* player, uint8 logicalOpcode,
+        DCAddon::JsonValue& payload)
+    {
+        SendSeasonalPayload(player, logicalOpcode, payload.Encode());
+    }
+
     // Send current season information
     void SendSeasonInfo(Player* player, uint32 seasonId, const std::string& seasonName,
                         uint32 startTime, uint32 endTime, uint32 daysRemaining)
@@ -118,7 +198,8 @@ namespace Seasons
         uint32 essenceItemId = 0;
         ResolveSeasonCurrencyItemIds(tokenItemId, essenceItemId);
 
-        JsonMessage msg(Module::SEASONAL, Opcode::Season::SMSG_CURRENT_SEASON);
+        JsonValue msg;
+        msg.SetObject();
         msg.Set("seasonId", JsonValue(seasonId));
         msg.Set("name", JsonValue(seasonName));
         msg.Set("startTime", JsonValue(startTime));
@@ -128,7 +209,7 @@ namespace Seasons
         msg.Set("essenceId", JsonValue(essenceItemId));
         msg.Set("tokenCap", JsonValue(GetWeeklyTokenCap()));
         msg.Set("essenceCap", JsonValue(GetWeeklyEssenceCap()));
-        msg.Send(player);
+        SendSeasonalJson(player, Opcode::Season::SMSG_CURRENT_SEASON, msg);
     }
 
     // Send player progress
@@ -151,12 +232,13 @@ namespace Seasons
     void SendRewardClaimed(Player* player, uint32 rewardId, RewardClaimResult result,
                            uint32 itemId, uint32 itemCount)
     {
-        JsonMessage msg(Module::SEASONAL, SMSG_REWARD_CLAIMED);
+        JsonValue msg;
+        msg.SetObject();
         msg.Set("rewardId", JsonValue(rewardId));
         msg.Set("result", JsonValue(static_cast<uint32>(result)));
         msg.Set("itemId", JsonValue(itemId));
         msg.Set("itemCount", JsonValue(itemCount));
-        msg.Send(player);
+        SendSeasonalJson(player, SMSG_REWARD_CLAIMED, msg);
     }
 
     // Send milestone notification
@@ -271,7 +353,8 @@ namespace Seasons
             bossesKilled = fields[5].Get<uint32>();
         }
 
-        DCAddon::JsonMessage response(Module::SEASONAL, Opcode::Season::SMSG_PROGRESS);
+        DCAddon::JsonValue response;
+        response.SetObject();
         response.Set("seasonId", static_cast<int32>(seasonId));
         response.Set("tokenId", static_cast<int32>(tokenItemId));
         response.Set("essenceId", static_cast<int32>(essenceItemId));
@@ -285,7 +368,7 @@ namespace Seasons
         response.Set("totalEssence", static_cast<int32>(totalEssenceEarned));
         response.Set("quests", static_cast<int32>(questsCompleted));
         response.Set("bosses", static_cast<int32>(bossesKilled));
-        response.Send(player);
+        SendSeasonalJson(player, Opcode::Season::SMSG_PROGRESS, response);
     }
 
     static void HandleGetRewards(Player* player, const ParsedMessage& msg)
@@ -323,11 +406,12 @@ namespace Seasons
             } while (result->NextRow());
         }
 
-        JsonMessage response(Module::SEASONAL, Opcode::Season::SMSG_REWARDS);
+        JsonValue response;
+        response.SetObject();
         response.Set("seasonId", JsonValue(seasonId));
         response.Set("count", JsonValue(static_cast<uint32>(rewards.Size())));
         response.Set("rewards", rewards);
-        response.Send(player);
+        SendSeasonalJson(player, Opcode::Season::SMSG_REWARDS, response);
     }
 
     static void HandleClaimReward(Player* player, const ParsedMessage& msg)
@@ -451,23 +535,25 @@ namespace Seasons
             } while (result->NextRow());
         }
 
-        JsonMessage response(Module::SEASONAL, SMSG_LEADERBOARD);
+        JsonValue response;
+        response.SetObject();
         response.Set("seasonId", JsonValue(seasonId));
         response.Set("page", JsonValue(page));
         response.Set("perPage", JsonValue(perPage));
         response.Set("total", JsonValue(totalEntries));
         response.Set("entries", entries);
-        response.Send(player);
+        SendSeasonalJson(player, SMSG_LEADERBOARD, response);
     }
 
     static void HandleGetChallenges(Player* player, const ParsedMessage& /*msg*/)
     {
-        JsonMessage response(Module::SEASONAL, SMSG_CHALLENGES);
+        JsonValue response;
+        response.SetObject();
         response.Set("dailyChallenge1", JsonValue(0));
         response.Set("dailyChallenge2", JsonValue(0));
         response.Set("weeklyChallenge", JsonValue(0));
         response.Set("seasonProgress", JsonValue(0));
-        response.Send(player);
+        SendSeasonalJson(player, SMSG_CHALLENGES, response);
     }
 
     // Register handlers with the router
@@ -486,8 +572,43 @@ namespace Seasons
 }  // namespace Seasons
 }  // namespace DCAddon
 
+// ===========================================================================
+// Native transport receive hook
+// ---------------------------------------------------------------------------
+// Decodes the dedicated CMSG_REQUEST_SEASONAL custom opcode (sent by the
+// WotLK-Extensions native client) back into the canonical DC addon message
+// form and routes it through the shared MessageRouter, so native and addon
+// clients exercise the exact same handlers. Responses pick their transport in
+// SendSeasonalPayload().
+// ===========================================================================
+class SeasonalNativeServerScript : public ServerScript
+{
+public:
+    SeasonalNativeServerScript()
+        : ServerScript("SeasonalNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode()
+            != DCAddon::Seasons::BridgeOpcode::CMSG_REQUEST_SEASONAL)
+        {
+            return true;
+        }
+
+        return DCAddon::HandleNativeModuleRequest(session, packet,
+            DCAddon::Seasons::BridgeOpcode::CMSG_REQUEST_SEASONAL,
+            DCAddon::Module::SEASONAL);
+    }
+};
+
 // Register the Seasons addon handler
 void AddSC_dc_addon_seasons()
 {
     DCAddon::Seasons::RegisterHandlers();
+    new SeasonalNativeServerScript();
 }

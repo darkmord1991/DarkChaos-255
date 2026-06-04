@@ -8,6 +8,9 @@
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "WorldSession.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
 #include "DBCStores.h"
 #include "DBCStore.h"
 #include "DBCStructure.h"
@@ -49,6 +52,61 @@ namespace World
     constexpr const char* MODULE_WORLD = Module::WORLD;
     constexpr int32 WORLD_SCHEMA_VERSION = 1;
     constexpr uint64 WORLD_CONTENT_CACHE_TTL_MS = 1000;
+
+    // =======================================================================
+    // Native transport bridge (CMSG_REQUEST_WORLD_CONTENT / SMSG_WORLD_CONTENT).
+    // Falls back to the addon (chat) protocol when WORLD_NATIVE is not
+    // negotiated. The native path avoids the 255-byte chunking the large world
+    // content snapshot otherwise needs.
+    // =======================================================================
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_WORLD_CONTENT = ::CMSG_REQUEST_WORLD_CONTENT,
+            SMSG_WORLD_CONTENT         = ::SMSG_WORLD_CONTENT,
+        };
+    }
+
+    static DCAddon::TransportPolicyDecision ResolveWorldTransport(Player* player)
+    {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "world-content";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::WORLD_NATIVE;
+        return DCAddon::ResolveTransportPolicy(player, request);
+    }
+
+    static void SendNativeWorldPayload(Player* player, uint8 logicalOpcode,
+        std::string const& payload)
+    {
+        if (!player || !player->GetSession() || payload.empty())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_WORLD_CONTENT,
+            sizeof(uint32) + payload.size() + 1);
+        data << uint32(logicalOpcode);
+        data << payload;
+        player->GetSession()->SendPacket(&data);
+
+        std::string preview = "logical="
+            + std::to_string(static_cast<uint32>(logicalOpcode))
+            + "|bytes=" + std::to_string(payload.size());
+        DCAddon::LogNativeS2CMessage(player, MODULE_WORLD, logicalOpcode,
+            BridgeOpcode::SMSG_WORLD_CONTENT, data.size(), preview, true, 0);
+    }
+
+    // Transport-aware send: native dedicated opcode when negotiated, else addon.
+    static void SendWorldMessage(Player* player, DCAddon::JsonMessage const& msg)
+    {
+        if (ResolveWorldTransport(player).UsesNative())
+        {
+            SendNativeWorldPayload(player, msg.GetOpcode(), msg.Encode());
+            return;
+        }
+
+        msg.Send(player);
+    }
 
     struct CachedWorldContentPayload
     {
@@ -184,7 +242,7 @@ namespace World
 
         JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
         response.SetPreEncodedJson(payload.snapshotJson);
-        response.Send(player);
+        SendWorldMessage(player, response);
 
         // Compatibility / robustness:
         // Even with JSON chunking, some clients may fail to reassemble or may miss large snapshots.
@@ -193,7 +251,7 @@ namespace World
         {
             JsonMessage upd(Module::WORLD, Opcode::World::SMSG_UPDATE);
             upd.SetPreEncodedJson(bossUpdateJson);
-            upd.Send(player);
+            SendWorldMessage(player, upd);
         }
     }
 
@@ -213,7 +271,7 @@ namespace World
             JsonMessage err(Module::WORLD, Opcode::World::SMSG_RESOLVE_RESULT);
             err.Set("success", JsonValue(false));
             err.Set("error", JsonValue("bad_format"));
-            err.Send(player);
+            SendWorldMessage(player, err);
             return;
         }
 
@@ -235,7 +293,7 @@ namespace World
         {
             reply.Set("success", JsonValue(false));
             reply.Set("error", JsonValue("not_found"));
-            reply.Send(player);
+            SendWorldMessage(player, reply);
             return;
         }
 
@@ -254,7 +312,7 @@ namespace World
             reply.Set("error", JsonValue("no_bounds"));
         }
 
-        reply.Send(player);
+        SendWorldMessage(player, reply);
     }
 
     void RegisterHandlers()
@@ -267,7 +325,36 @@ namespace World
 } // namespace World
 } // namespace DCAddon
 
+// Native transport receive hook: decodes CMSG_REQUEST_WORLD_CONTENT and routes
+// it through the shared MessageRouter so native and addon clients hit the same
+// handlers. Responses pick their transport in SendWorldMessage().
+class WorldContentNativeServerScript : public ServerScript
+{
+public:
+    WorldContentNativeServerScript()
+        : ServerScript("WorldContentNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode()
+            != DCAddon::World::BridgeOpcode::CMSG_REQUEST_WORLD_CONTENT)
+        {
+            return true;
+        }
+
+        return DCAddon::HandleNativeModuleRequest(session, packet,
+            DCAddon::World::BridgeOpcode::CMSG_REQUEST_WORLD_CONTENT,
+            DCAddon::World::MODULE_WORLD);
+    }
+};
+
 void AddSC_dc_addon_world()
 {
     DCAddon::World::RegisterHandlers();
+    new WorldContentNativeServerScript();
 }

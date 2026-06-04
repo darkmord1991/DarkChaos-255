@@ -41,6 +41,7 @@
 
 class Player;
 class WorldSession;
+class WorldPacket;
 #include <cctype>
 #include <charconv>
 #include <cstdlib>
@@ -639,6 +640,11 @@ namespace DCAddon
             constexpr uint32 COLLECTION_WAVE1_NATIVE = 0x00080000; // Native collection wave-1 sync bridge (handshake/full/stats/bonuses/base collections/saved outfits/community responses)
             constexpr uint32 GENERIC_NATIVE_ENVELOPE = 0x00100000; // Generic DC native push/invalidate envelope bridge
             constexpr uint32 ITEM_TOOLTIP_REPLACEMENT_NATIVE = 0x00200000; // Native item tooltip snapshot bridge for full stat-line replacement
+            constexpr uint32 SEASONAL_NATIVE = 0x00400000; // Native seasonal request/response bridge (current/progress/rewards/leaderboard)
+            constexpr uint32 HOTSPOT_NATIVE = 0x00800000; // Native hotspot request/response bridge (list/info/teleport)
+            constexpr uint32 PRESTIGE_NATIVE = 0x01000000; // Native prestige request/response bridge (info/bonuses)
+            constexpr uint32 WORLD_NATIVE = 0x02000000; // Native world-content request/response bridge (content/resolve)
+            constexpr uint32 GENERIC_MESSAGE_NATIVE = 0x04000000; // Generic DC native message bridge: any module in the GetModuleNativeCapability registry (GRPF/UPG/AOE/MPLUS/TELE/EVNT/DUEL/LBRD/WELC/SPEC/GOMV/NPCM) routes its JsonMessage/Message::Send over SMSG_DC_NATIVE_MESSAGE
 
             // Default capabilities for current server version
             constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES |
@@ -653,7 +659,12 @@ namespace DCAddon
                 SPECTATOR_LIVE_NATIVE |
                 COLLECTION_WAVE1_NATIVE |
                 GENERIC_NATIVE_ENVELOPE |
-                ITEM_TOOLTIP_REPLACEMENT_NATIVE;
+                ITEM_TOOLTIP_REPLACEMENT_NATIVE |
+                SEASONAL_NATIVE |
+                HOTSPOT_NATIVE |
+                PRESTIGE_NATIVE |
+                WORLD_NATIVE |
+                GENERIC_MESSAGE_NATIVE;
         }
 
         // Version info structure for handshake
@@ -1266,6 +1277,24 @@ namespace DCAddon
         const std::string& errorMsg = "",
         const std::string& eventType = "",
         const std::string& eventMessage = "");
+    // Shared receive-side bridge for dedicated native CMSG opcodes. Decodes the
+    // packet (uint32 logicalOpcode + JSON string), rebuilds the canonical
+    // MODULE|op|J|payload message, routes it through MessageRouter (so native
+    // and addon clients hit identical handlers), audits it, and returns false so
+    // the caller's CanPacketReceive consumes the packet. Caller must first check
+    // packet.GetOpcode() == nativeOpcode.
+    bool HandleNativeModuleRequest(WorldSession* session,
+        WorldPacket const& packet, uint16 nativeOpcode, const char* module);
+    // Generic native message bridge: modules with a registered native capability
+    // have their JsonMessage/Message::Send transparently routed over the single
+    // SMSG_DC_NATIVE_MESSAGE opcode (body = canonical addon body, "J|<json>" or
+    // "<f1>|<f2>..."), and CMSG_DC_NATIVE_REQUEST is decoded back through the
+    // MessageRouter. Returns 0 when the module has no native bridge.
+    uint32 GetModuleNativeCapability(const std::string& module);
+    bool TrySendModuleNativeMessage(Player* player, const std::string& module,
+        uint8 opcode, const std::string& body);
+    bool HandleNativeGenericRequest(WorldSession* session,
+        WorldPacket const& packet);
     bool SendNativeEnvelope(Player* player, const std::string& module,
         uint8 logicalOpcode, const std::string& feature,
         const std::string& action, uint32 revision,
@@ -2131,6 +2160,10 @@ namespace DCAddon
             return EncodeJson();
         }
 
+        // Public accessor for the logical opcode, used by dual-send helpers
+        // that forward the same message over a native dedicated opcode.
+        uint8 GetOpcode() const { return _opcode; }
+
         std::string Build() const
         {
             std::string const opcode = std::to_string(_opcode);
@@ -2158,6 +2191,15 @@ namespace DCAddon
         {
             if (!player || !player->GetSession())
                 return;
+
+            // Generic native bridge: route over the dedicated native opcode when
+            // this module has a negotiated native capability. Body carries the
+            // JSON marker so the client reconstructs an identical addon message.
+            if (TrySendModuleNativeMessage(player, _module, _opcode,
+                std::string(JSON_MARKER) + DELIMITER + EncodeJson()))
+            {
+                return;
+            }
 
             uint32 sendStartMs = getMSTime();
 

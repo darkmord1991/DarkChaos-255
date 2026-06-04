@@ -11,6 +11,9 @@
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "WorldSession.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
 #include "Log.h"
 #include "GameTime.h"
 #include "DBCStores.h"
@@ -38,6 +41,61 @@ namespace Hotspot
 {
     // Module identifier
     constexpr const char* MODULE_HOTSPOT = Module::HOTSPOT;
+
+    // =======================================================================
+    // Native transport bridge (CMSG_REQUEST_HOTSPOT / SMSG_HOTSPOT). Falls back
+    // to the addon (chat) protocol when HOTSPOT_NATIVE is not negotiated. Both
+    // request responses and spawn/expire broadcasts pick transport per-player.
+    // =======================================================================
+    namespace BridgeOpcode
+    {
+        enum : uint16
+        {
+            CMSG_REQUEST_HOTSPOT = ::CMSG_REQUEST_HOTSPOT,
+            SMSG_HOTSPOT         = ::SMSG_HOTSPOT,
+        };
+    }
+
+    static DCAddon::TransportPolicyDecision ResolveHotspotTransport(Player* player)
+    {
+        DCAddon::TransportPolicyRequest request;
+        request.featureName = "hotspot";
+        request.nativeCapability =
+            DCAddon::ProtocolVersion::Capability::HOTSPOT_NATIVE;
+        return DCAddon::ResolveTransportPolicy(player, request);
+    }
+
+    static void SendNativeHotspotPayload(Player* player, uint8 logicalOpcode,
+        std::string const& payload)
+    {
+        if (!player || !player->GetSession() || payload.empty())
+            return;
+
+        WorldPacket data(BridgeOpcode::SMSG_HOTSPOT,
+            sizeof(uint32) + payload.size() + 1);
+        data << uint32(logicalOpcode);
+        data << payload;
+        player->GetSession()->SendPacket(&data);
+
+        std::string preview = "logical="
+            + std::to_string(static_cast<uint32>(logicalOpcode))
+            + "|bytes=" + std::to_string(payload.size());
+        DCAddon::LogNativeS2CMessage(player, MODULE_HOTSPOT, logicalOpcode,
+            BridgeOpcode::SMSG_HOTSPOT, data.size(), preview, true, 0);
+    }
+
+    // Transport-aware send: native dedicated opcode when negotiated, else addon.
+    static void SendHotspotMessage(Player* player,
+        DCAddon::JsonMessage const& msg)
+    {
+        if (ResolveHotspotTransport(player).UsesNative())
+        {
+            SendNativeHotspotPayload(player, msg.GetOpcode(), msg.Encode());
+            return;
+        }
+
+        msg.Send(player);
+    }
 
     static uint32 ReadHotspotId(const ParsedMessage& msg)
     {
@@ -110,9 +168,9 @@ namespace Hotspot
             } while (result->NextRow());
         }
 
-        JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_LIST)
-            .Set("hotspots", hotspots)
-            .Send(player);
+        SendHotspotMessage(player,
+            JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_LIST)
+                .Set("hotspots", hotspots));
     }
 
     // Handler: Get specific hotspot info
@@ -121,10 +179,10 @@ namespace Hotspot
         uint32 hotspotId = ReadHotspotId(msg);
         if (!hotspotId)
         {
-            JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO)
-                .Set("found", false)
-                .Set("error", "Missing hotspot id")
-                .Send(player);
+            SendHotspotMessage(player,
+                JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO)
+                    .Set("found", false)
+                    .Set("error", "Missing hotspot id"));
             return;
         }
 
@@ -137,10 +195,10 @@ namespace Hotspot
 
         if (!result)
         {
-            JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO)
-                .Set("found", false)
-                .Set("id", hotspotId)
-                .Send(player);
+            SendHotspotMessage(player,
+                JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO)
+                    .Set("found", false)
+                    .Set("id", hotspotId));
             return;
         }
 
@@ -162,7 +220,7 @@ namespace Hotspot
         // Flatten hotspot fields at top-level for legacy consumers.
         for (auto const& [k, v] : hs.AsObject())
             reply.Set(k, v);
-        reply.Send(player);
+        SendHotspotMessage(player, reply);
     }
 
     // Handler: Teleport to hotspot (GM only or with item)
@@ -171,10 +229,10 @@ namespace Hotspot
         uint32 hotspotId = ReadHotspotId(msg);
         if (!hotspotId)
         {
-            JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
-                .Set("success", false)
-                .Set("error", "Missing hotspot id")
-                .Send(player);
+            SendHotspotMessage(player,
+                JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
+                    .Set("success", false)
+                    .Set("error", "Missing hotspot id"));
             return;
         }
 
@@ -188,11 +246,11 @@ namespace Hotspot
 
         if (!canTeleport)
         {
-            JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
-                .Set("success", false)
-                .Set("id", hotspotId)
-                .Set("error", "No permission to teleport")
-                .Send(player);
+            SendHotspotMessage(player,
+                JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
+                    .Set("success", false)
+                    .Set("id", hotspotId)
+                    .Set("error", "No permission to teleport"));
             return;
         }
 
@@ -202,11 +260,11 @@ namespace Hotspot
 
         if (!result)
         {
-            JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
-                .Set("success", false)
-                .Set("id", hotspotId)
-                .Set("error", "Hotspot not found or expired")
-                .Send(player);
+            SendHotspotMessage(player,
+                JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
+                    .Set("success", false)
+                    .Set("id", hotspotId)
+                    .Set("error", "Hotspot not found or expired"));
             return;
         }
 
@@ -217,10 +275,10 @@ namespace Hotspot
 
         player->TeleportTo(mapId, x, y, z, player->GetOrientation());
 
-        JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
-            .Set("success", true)
-            .Set("id", hotspotId)
-            .Send(player);
+        SendHotspotMessage(player,
+            JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
+                .Set("success", true)
+                .Set("id", hotspotId));
     }
 
     // Broadcast hotspot spawn to all players
@@ -237,7 +295,7 @@ namespace Hotspot
 
         // Send to all online players
         sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
-            msg.Send(player);
+            SendHotspotMessage(player, msg);
         });
 
         LOG_DEBUG("dc.addon", "Broadcast hotspot spawn: id={} map={} zone={}", id, mapId, zoneId);
@@ -251,7 +309,7 @@ namespace Hotspot
 
         // Send to all online players
         sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
-            msg.Send(player);
+            SendHotspotMessage(player, msg);
         });
 
         LOG_DEBUG("dc.addon", "Broadcast hotspot expire: id={}", id);
@@ -270,7 +328,36 @@ namespace Hotspot
 }  // namespace Hotspot
 }  // namespace DCAddon
 
+// Native transport receive hook: decodes CMSG_REQUEST_HOTSPOT and routes it
+// through the shared MessageRouter so native and addon clients hit the same
+// handlers. Responses pick their transport in SendHotspotMessage().
+class HotspotNativeServerScript : public ServerScript
+{
+public:
+    HotspotNativeServerScript()
+        : ServerScript("HotspotNativeServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode()
+            != DCAddon::Hotspot::BridgeOpcode::CMSG_REQUEST_HOTSPOT)
+        {
+            return true;
+        }
+
+        return DCAddon::HandleNativeModuleRequest(session, packet,
+            DCAddon::Hotspot::BridgeOpcode::CMSG_REQUEST_HOTSPOT,
+            DCAddon::Hotspot::MODULE_HOTSPOT);
+    }
+};
+
 void AddSC_dc_addon_hotspot()
 {
     DCAddon::Hotspot::RegisterHandlers();
+    new HotspotNativeServerScript();
 }

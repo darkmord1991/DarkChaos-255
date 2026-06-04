@@ -1340,6 +1340,21 @@ namespace DCAddon
         if (!player || !player->GetSession())
             return;
 
+        // Generic native bridge: route over the dedicated native opcode when this
+        // module has a negotiated native capability. Body = pipe-joined fields,
+        // so the client reconstructs an identical plain addon message.
+        {
+            std::string nativeBody;
+            for (auto const& field : _data)
+            {
+                if (!nativeBody.empty())
+                    nativeBody += DELIMITER;
+                nativeBody += field;
+            }
+            if (TrySendModuleNativeMessage(player, _module, _opcode, nativeBody))
+                return;
+        }
+
         uint32 sendStartMs = getMSTime();
 
         std::string effectiveRequestId = _requestId;
@@ -2398,6 +2413,228 @@ namespace DCAddon
 
         LogNativeC2SMessage(player, module, logicalOpcode, nativeOpcode,
             dataSize, payloadPreview, handled, errorMsg);
+    }
+
+    bool HandleNativeModuleRequest(WorldSession* session,
+        WorldPacket const& packet, uint16 nativeOpcode, const char* module)
+    {
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        uint32 logicalOpcodeValue = 0;
+        std::string payload;
+        bool parseOk = packet.size() > 0;
+
+        if (parseOk)
+        {
+            WorldPacket nativePacket(packet);
+            nativePacket.rpos(0);
+
+            try
+            {
+                nativePacket >> logicalOpcodeValue;
+                if (nativePacket.rpos() < nativePacket.size())
+                    nativePacket >> payload;
+            }
+            catch (ByteBufferException const&)
+            {
+                parseOk = false;
+                logicalOpcodeValue = 0;
+                payload.clear();
+            }
+        }
+
+        bool handled = false;
+        std::string errorMsg;
+        std::string eventType;
+        std::string eventMessage;
+
+        if (!parseOk
+            || logicalOpcodeValue > std::numeric_limits<uint8>::max())
+        {
+            eventType = "native_bad_format";
+            eventMessage = "Malformed native request";
+        }
+        else
+        {
+            uint8 logicalOpcode = static_cast<uint8>(logicalOpcodeValue);
+            std::string raw = std::string(module)
+                + "|" + std::to_string(static_cast<uint32>(logicalOpcode))
+                + "|J|" + (payload.empty() ? "{}" : payload);
+            ParsedMessage parsed(raw);
+
+            if (!parsed.IsValid())
+            {
+                eventType = "native_bad_format";
+                eventMessage = "Malformed native JSON payload";
+            }
+            else if (MessageRouter::Instance().Route(player, raw))
+            {
+                handled = true;
+            }
+            else
+            {
+                eventType = "native_unhandled_opcode";
+                eventMessage = "No handler for native logical opcode";
+            }
+        }
+
+        uint8 auditedLogicalOpcode = 0;
+        if (logicalOpcodeValue <= std::numeric_limits<uint8>::max())
+            auditedLogicalOpcode = static_cast<uint8>(logicalOpcodeValue);
+
+        std::string preview = "logical="
+            + std::to_string(logicalOpcodeValue)
+            + "|payloadBytes=" + std::to_string(payload.size());
+        AuditNativeC2SRequest(player, module, auditedLogicalOpcode,
+            nativeOpcode, packet.size(), preview, handled, errorMsg,
+            eventType, eventMessage);
+        return false;
+    }
+
+    uint32 GetModuleNativeCapability(const std::string& module)
+    {
+        // Modules routed over the generic native message bridge. All share the
+        // single GENERIC_MESSAGE_NATIVE capability (one client mechanism). Keep
+        // in sync with DCAddonProtocol.lua DC._nativeBridges. Modules with their
+        // own dedicated bridge (HUD/live snapshots) are unaffected: those send
+        // via direct WorldPacket and never reach JsonMessage/Message::Send.
+        static std::unordered_map<std::string, uint32> const s_map = {
+            { Module::GROUP_FINDER, 1 }, { Module::UPGRADE, 1 },
+            { Module::AOE_LOOT, 1 },     { Module::MYTHIC_PLUS, 1 },
+            { Module::TELEPORTS, 1 },    { Module::EVENTS, 1 },
+            { Module::PHASED_DUELS, 1 }, { Module::LEADERBOARD, 1 },
+            { Module::WELCOME, 1 },      { Module::SPECTATOR, 1 },
+            { Module::GOMOVE, 1 },       { Module::NPCMOVE, 1 },
+            // Modules with their own dedicated bridge for hot flows (ping relay,
+            // collection wave1, HLBG live snapshot). Those send via direct
+            // WorldPacket and bypass JsonMessage/Message::Send; only their
+            // request/response *remainder* (bare sends) routes here.
+            { Module::QOS, 1 },          { Module::COLLECTION, 1 },
+            { Module::HINTERLAND, 1 },
+        };
+        return s_map.find(module) != s_map.end()
+            ? ProtocolVersion::Capability::GENERIC_MESSAGE_NATIVE : 0;
+    }
+
+    bool TrySendModuleNativeMessage(Player* player, const std::string& module,
+        uint8 opcode, const std::string& body)
+    {
+        if (!player || !player->GetSession())
+            return false;
+
+        uint32 capability = GetModuleNativeCapability(module);
+        if (capability == 0)
+            return false;
+
+        TransportPolicyRequest request;
+        request.featureName = module.c_str();
+        request.nativeCapability = capability;
+        if (!ResolveTransportPolicy(player, request).UsesNative())
+            return false;
+
+        WorldPacket data(::SMSG_DC_NATIVE_MESSAGE,
+            module.size() + body.size() + sizeof(uint32) + 2);
+        data << module;
+        data << uint32(opcode);
+        data << body;
+        player->GetSession()->SendPacket(&data);
+
+        std::string preview = "module=" + module
+            + "|opcode=" + std::to_string(static_cast<uint32>(opcode))
+            + "|bytes=" + std::to_string(body.size());
+        LogNativeS2CMessage(player, module, opcode, ::SMSG_DC_NATIVE_MESSAGE,
+            data.size(), preview, true, 0);
+        return true;
+    }
+
+    bool HandleNativeGenericRequest(WorldSession* session,
+        WorldPacket const& packet)
+    {
+        if (!session)
+            return false;
+
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            return false;
+
+        std::string module;
+        uint32 logicalOpcodeValue = 0;
+        std::string body;
+        bool parseOk = packet.size() > 0;
+
+        if (parseOk)
+        {
+            WorldPacket nativePacket(packet);
+            nativePacket.rpos(0);
+            try
+            {
+                nativePacket >> module;
+                nativePacket >> logicalOpcodeValue;
+                if (nativePacket.rpos() < nativePacket.size())
+                    nativePacket >> body;
+            }
+            catch (ByteBufferException const&)
+            {
+                parseOk = false;
+                module.clear();
+                logicalOpcodeValue = 0;
+                body.clear();
+            }
+        }
+
+        bool handled = false;
+        std::string errorMsg;
+        std::string eventType;
+        std::string eventMessage;
+
+        if (!parseOk || module.empty()
+            || logicalOpcodeValue > std::numeric_limits<uint8>::max()
+            || GetModuleNativeCapability(module) == 0)
+        {
+            eventType = "native_bad_format";
+            eventMessage = "Malformed or unregistered native generic request";
+        }
+        else
+        {
+            uint8 logicalOpcode = static_cast<uint8>(logicalOpcodeValue);
+            std::string canonicalBody = body.empty()
+                ? std::string(JSON_MARKER) + DELIMITER + "{}"
+                : body;
+            std::string raw = module + DELIMITER
+                + std::to_string(static_cast<uint32>(logicalOpcode))
+                + DELIMITER + canonicalBody;
+            ParsedMessage parsed(raw);
+            if (!parsed.IsValid())
+            {
+                eventType = "native_bad_format";
+                eventMessage = "Malformed native generic payload";
+            }
+            else if (MessageRouter::Instance().Route(player, raw))
+            {
+                handled = true;
+            }
+            else
+            {
+                eventType = "native_unhandled_opcode";
+                eventMessage = "No handler for native generic opcode";
+            }
+        }
+
+        uint8 auditedLogicalOpcode = 0;
+        if (logicalOpcodeValue <= std::numeric_limits<uint8>::max())
+            auditedLogicalOpcode = static_cast<uint8>(logicalOpcodeValue);
+        std::string preview = "module=" + module
+            + "|opcode=" + std::to_string(logicalOpcodeValue)
+            + "|bodyBytes=" + std::to_string(body.size());
+        AuditNativeC2SRequest(player, module.empty() ? "DCGEN" : module,
+            auditedLogicalOpcode, ::CMSG_DC_NATIVE_REQUEST, packet.size(),
+            preview, handled, errorMsg, eventType, eventMessage);
+        return false;
     }
 
     bool SendNativeEnvelope(Player* player, const std::string& module,
@@ -3460,6 +3697,30 @@ private:
     uint32 _statsFlushTimer = 0;
 };
 
+// Native transport receive hook for the generic DC native message bridge.
+// Decodes CMSG_DC_NATIVE_REQUEST (module + opcode + body) and routes it through
+// the shared MessageRouter, so any module with a registered native capability
+// (GRPF/UPG/AOE) hits the same handlers as the addon path.
+class DcNativeGenericServerScript : public ServerScript
+{
+public:
+    DcNativeGenericServerScript()
+        : ServerScript("DcNativeGenericServerScript",
+            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    {
+    }
+
+private:
+    bool CanPacketReceive(WorldSession* session,
+        WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode() != ::CMSG_DC_NATIVE_REQUEST)
+            return true;
+
+        return DCAddon::HandleNativeGenericRequest(session, packet);
+    }
+};
+
 // ============================================================================
 // SCRIPT REGISTRATION
 // ============================================================================
@@ -3469,4 +3730,5 @@ void AddSC_dc_addon_protocol()
     new DCAddonProtocolScript();
     new DCAddonMessageRouterScript();
     new DCAddonWorldScript();
+    new DcNativeGenericServerScript();
 }

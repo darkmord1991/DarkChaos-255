@@ -625,7 +625,12 @@ local function GetCurrentOutfitSlots()
         if invSlotId then
             local itemId = GetInventoryItemID("player", invSlotId)
             if itemId then
-                slots[slotDef.key] = GetPreviewOutfitSlotValue(invSlotId, itemId)
+                -- Use the same lookup as SaveCurrentOutfit so IsSameSlots() matches
+                -- the just-saved outfit without waiting for a server round-trip.
+                local value = GetSavedOutfitSlotValue(invSlotId)
+                if value ~= nil then
+                    slots[slotDef.key] = value
+                end
             end
         end
     end
@@ -908,6 +913,13 @@ function Wardrobe:SaveCurrentOutfit(name, overwriteId)
         -- Also update locally for instant feedback (will be overwritten by sync)
         if id == 0 then
             table.insert(DC.db.outfits, outfit)
+            -- Keep local total accurate so totalPages is correct before the
+            -- server sends back SMSG_SAVED_OUTFITS with the authoritative count.
+            if DC.db.outfitsTotal then
+                DC.db.outfitsTotal = DC.db.outfitsTotal + 1
+            else
+                DC.db.outfitsTotal = #DC.db.outfits
+            end
             DC:Print("Outfit '" .. name .. "' saved to server!")
         else
             local replaced
