@@ -265,8 +265,8 @@ namespace Upgrade
         DarkChaos::ItemUpgrade::UpgradeManager* mgr =
             DarkChaos::ItemUpgrade::GetUpgradeManager();
 
-        // Special Case: Heirloom Shirt
-        if (baseEntry == DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+        // Special Case: Heirloom items (any is_artifact tier)
+        if (IsHeirloomEntry(baseEntry))
         {
              QueryResult heirloomResult = CharacterDatabase.Query(
                 "SELECT upgrade_level FROM dc_heirloom_upgrades WHERE item_guid = {}",
@@ -276,19 +276,20 @@ namespace Upgrade
             if (heirloomResult)
                 upgradeLevel = (*heirloomResult)[0].Get<uint32>();
 
+            uint8 hlTier = mgr ? static_cast<uint8>(mgr->GetItemTier(baseEntry)) : 3u;
             float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
-                static_cast<uint8>(upgradeLevel), static_cast<uint8>(DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER));
+                static_cast<uint8>(upgradeLevel), hlTier);
 
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
                 .SetRequestId(msg.GetRequestId())
                 .Set("success", true)
                 .Set("itemID", itemGUID)
-                .Set("itemEntry", DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+                .Set("itemEntry", baseEntry)
                 .Set("serverBag", extBag)
                 .Set("serverSlot", extSlot)
                 .Set("currentUpgrade", upgradeLevel)
-                .Set("maxUpgrade", DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL)
-                .Set("tier", DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
+                .Set("maxUpgrade", GetHeirloomMaxLevel(baseEntry))
+                .Set("tier", static_cast<uint32>(hlTier))
                 .Set("tokenCost", 0u)
                 .Set("essenceCost", 0u)
                 .Set("baseIlvl", baseItemLevel)
@@ -459,23 +460,13 @@ namespace Upgrade
 
              uint32 entry = item->GetEntry();
 
-             // Check for Heirloom
-             if (entry == HEIRLOOM_SHIRT_ENTRY)
-             {
-                 std::ostringstream ss;
-                 // Format: bag:slot:guid:entry:tier
-                 // Use pseudo-tier 3 for heirlooms
-                 uint8 addonBag = (bag == INVENTORY_SLOT_BAG_0) ? 0 : (bag - INVENTORY_SLOT_BAG_START + 1);
-                 ss << (int)addonBag << ":" << (int)slot << ":" << item->GetGUID().GetCounter()
-                    << ":" << entry << ":" << HEIRLOOM_TIER;
-                 items.push_back(ss.str());
-                 return;
-             }
-
+             // All upgradeable items (regular and heirloom) resolved via UpgradeManager.
+             // Heirloom items carry their actual tier_id; the client routes them to the
+             // heirloom UI based on DC.HEIRLOOM_TIERS.
              if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
              {
                  uint32 tier = mgr->GetItemTier(entry);
-                 if (tier > 0 && tier != DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
+                 if (tier > 0)
                  {
                      std::ostringstream ss;
                      uint8 addonBag = (bag == INVENTORY_SLOT_BAG_0) ? 0 : (bag - INVENTORY_SLOT_BAG_START + 1);
@@ -550,7 +541,7 @@ namespace Upgrade
             return;
         }
 
-           if (item->GetEntry() == HEIRLOOM_SHIRT_ENTRY)
+           if (IsHeirloomEntry(item->GetEntry()))
         {
                SendUpgradeResult(player, msg.GetRequestId(), false, item->GetGUID().GetCounter(), 0, 0, UPGRADE_ERR_NOT_UPGRADEABLE, "Use Heirloom Upgrade for this item");
              return;
@@ -565,12 +556,16 @@ namespace Upgrade
         if (mgr)
            tier = mgr->GetItemTier(currentEntry);
 
-        // Disallow tier 3 (heirloom tier) in standard item upgrade flow
-        if (tier == DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
+        // Disallow heirloom (is_artifact) tiers in standard item upgrade flow
         {
-            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, 0, currentEntry, UPGRADE_ERR_NOT_UPGRADEABLE,
-                "Tier 3 items must be upgraded via the Heirloom interface");
-            return;
+            DarkChaos::ItemUpgrade::TierDefinition const* tierDef =
+                mgr ? mgr->GetTierDefinition(static_cast<uint8>(tier)) : nullptr;
+            if (tierDef && tierDef->is_artifact)
+            {
+                SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, 0, currentEntry, UPGRADE_ERR_NOT_UPGRADEABLE,
+                    "Heirloom items must be upgraded via the Heirloom interface");
+                return;
+            }
         }
 
         uint32 currentLevel = 0;
@@ -792,7 +787,7 @@ namespace Upgrade
            }
 
         Item* item = player->GetItemByPos(bag, slot);
-           if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+           if (!item || !IsHeirloomEntry(item->GetEntry()))
            {
                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
                   .SetRequestId(msg.GetRequestId())
@@ -819,7 +814,7 @@ namespace Upgrade
                .Set("itemGuid", itemGuid)
                .Set("level", level)
                .Set("packageId", package)
-               .Set("maxLevel", HEIRLOOM_MAX_LEVEL)
+               .Set("maxLevel", GetHeirloomMaxLevel(item->GetEntry()))
                .Set("maxPackage", HEIRLOOM_MAX_PACKAGE_ID)
                .Send(player);
     }
@@ -881,7 +876,7 @@ namespace Upgrade
            }
 
         Item* item = player->GetItemByPos(bag, slot);
-           if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+           if (!item || !IsHeirloomEntry(item->GetEntry()))
            {
                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
                   .SetRequestId(msg.GetRequestId())
@@ -890,6 +885,17 @@ namespace Upgrade
                   .Send(player);
                return;
            }
+
+        // Resolve per-item tier and max level from the DB tier definition
+        uint8 itemTier = 0;
+        uint32 heirloomMaxLevel = HEIRLOOM_MAX_LEVEL;
+        if (DarkChaos::ItemUpgrade::UpgradeManager* hMgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+        {
+            itemTier = static_cast<uint8>(hMgr->GetItemTier(item->GetEntry()));
+            uint8 tMax = hMgr->GetTierMaxLevel(itemTier);
+            if (tMax > 0)
+                heirloomMaxLevel = tMax;
+        }
 
         // Validate inputs
            if (packageId < 1 || packageId > HEIRLOOM_MAX_PACKAGE_ID)
@@ -901,7 +907,7 @@ namespace Upgrade
                   .Send(player);
                return;
            }
-           if (targetLevel > HEIRLOOM_MAX_LEVEL)
+           if (targetLevel > heirloomMaxLevel)
            {
                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
                   .SetRequestId(msg.GetRequestId())
@@ -933,7 +939,7 @@ namespace Upgrade
           }
 
         // Calculate Cost
-        QueryResult costRes = WorldDatabase.Query("SELECT SUM(token_cost), SUM(essence_cost) FROM dc_heirloom_upgrade_costs WHERE upgrade_level BETWEEN {} AND {}", currentLevel + 1, targetLevel);
+        QueryResult costRes = WorldDatabase.Query("SELECT SUM(token_cost), SUM(essence_cost) FROM dc_heirloom_upgrade_costs WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}", itemTier, currentLevel + 1, targetLevel);
 
         uint32 tokensNeeded = 0;
         uint32 essenceNeeded = 0;
@@ -980,11 +986,11 @@ namespace Upgrade
 
         // Update DB (timestamps use column defaults)
         CharacterDatabase.Execute("REPLACE INTO dc_heirloom_upgrades (player_guid, item_guid, item_entry, upgrade_level, package_id, enchant_id) VALUES ({}, {}, {}, {}, {}, {})",
-            player->GetGUID().GetCounter(), itemGuid, HEIRLOOM_SHIRT_ENTRY, targetLevel, packageId, enchantId);
+            player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), targetLevel, packageId, enchantId);
 
         // Log
         CharacterDatabase.Execute("INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, item_entry, from_level, to_level, from_package, to_package, enchant_id, token_cost, essence_cost) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
-            player->GetGUID().GetCounter(), itemGuid, HEIRLOOM_SHIRT_ENTRY, currentLevel, targetLevel, currentPackage, packageId, enchantId, tokensNeeded, essenceNeeded);
+            player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), currentLevel, targetLevel, currentPackage, packageId, enchantId, tokensNeeded, essenceNeeded);
 
         // Success
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)

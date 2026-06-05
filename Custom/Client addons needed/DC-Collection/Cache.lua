@@ -1487,6 +1487,15 @@ function DC:BootstrapLocalCollectionCDBC(force)
                         def.mountType = mountType
                     end
 
+                    if typeName == "mounts" then
+                        local spd = tonumber(row.speed or row.Speed)
+                        if spd and spd > 0 then def.speed = spd end
+                        local gs = tonumber(row.groundSpeed or row.ground_speed)
+                        if gs and gs > 0 then def.groundSpeed = gs end
+                        local fs = tonumber(row.flySpeed or row.fly_speed)
+                        if fs and fs > 0 then def.flySpeed = fs end
+                    end
+
                     if typeName == "pets" and
                        not (displayId and displayId > 0) and
                        not (creatureId and creatureId > 0) then

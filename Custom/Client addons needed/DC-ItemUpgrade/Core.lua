@@ -1409,8 +1409,8 @@ function DC.RegisterDCProtocolHandlers()
 
 			DC.pendingUpgrade = nil
 
-			-- Record history (standard upgrades only; heirloom shirt handled by DCHEIRLOOM_SUCCESS)
-			if itemId ~= 300365 then
+			-- Record history (standard upgrades only; heirloom items handled by DCHEIRLOOM_SUCCESS)
+			if not (DC.IsHeirloomItemId and DC.IsHeirloomItemId(itemId)) then
 				local itemName, itemLink = GetItemInfo(itemId)
 				DC.AddUpgradeHistoryEntry({
 					source = "protocol",
@@ -1585,7 +1585,13 @@ function DC.RegisterDCProtocolHandlers()
 		maxPackage = data.maxPackage
 
 		if success then
-			DC.selectedStatPackage = (packageId and packageId > 0) and packageId or DC.selectedStatPackage
+			if packageId and packageId > 0 then
+				DC.selectedStatPackage = packageId
+			elseif DC.currentItem and DC.currentItem.guid == itemGuid then
+				-- Server confirmed this item has no package yet; clear the global so
+				-- UpdateStatPackageSelector prompts for a fresh selection.
+				DC.selectedStatPackage = nil
+			end
 			if DC.currentItem and DC.currentItem.guid == itemGuid then
 				DC.currentItem.currentUpgrade = level
 				DC.currentItem.maxUpgrade = maxLevel

@@ -45,7 +45,7 @@ namespace DarkChaos
         // Constants
     static const uint8 MAX_UPGRADE_LEVEL = 80;  // Max for heirlooms (Tier 3)
         static const uint8 MIN_UPGRADE_LEVEL = 0;
-    static const uint8 NUM_TIERS = 5;
+    static const uint8 NUM_TIERS = 15;  // Covers sparse IDs up to tier 15; tiers not in DB are skipped via GetTierDefinition nullptr check
         static const float STAT_MULTIPLIER_BASE = 1.0f;
         static const float STAT_MULTIPLIER_MAX_REGULAR = 1.375f;
         static const float STAT_MULTIPLIER_MAX_HEIRLOOM = 1.35f;   // Tier 3: 1.05x → 1.35x

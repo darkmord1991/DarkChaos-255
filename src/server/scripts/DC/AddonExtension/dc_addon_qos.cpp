@@ -1154,7 +1154,7 @@ namespace DCQoS
         using namespace DarkChaos::ItemUpgrade::UI;
 
         HeirloomPackageTooltipState state;
-        if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+        if (!item || !IsHeirloomEntry(item->GetEntry()))
             return state;
 
         uint32 enchantId = item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT);
@@ -1236,9 +1236,9 @@ namespace DCQoS
 
         uint32 displayMaxUpgrade = snapshot.max_upgrade;
         if (displayMaxUpgrade == 0
-            && item->GetEntry() == DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+            && DarkChaos::ItemUpgrade::UI::IsHeirloomEntry(item->GetEntry()))
         {
-            displayMaxUpgrade = DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL;
+            displayMaxUpgrade = DarkChaos::ItemUpgrade::UI::GetHeirloomMaxLevel(item->GetEntry());
         }
         if (displayMaxUpgrade == 0 && displayUpgradeLevel > 0)
             displayMaxUpgrade = displayUpgradeLevel;

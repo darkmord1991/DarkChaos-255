@@ -125,6 +125,7 @@ addon.defaults = {
         showNpcId = true,
         showNpcKillCount = true,
         showSpellId = true,
+        showMountInfo = true,
         showSpellFamilyMetadata = false,
         showGuildRank = true,
         showTarget = true,

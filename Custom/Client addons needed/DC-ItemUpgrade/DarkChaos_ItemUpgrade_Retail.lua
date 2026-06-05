@@ -248,29 +248,36 @@ function DarkChaos_ItemUpgrade_UpdateTierIndicator(tier)
 	-- Removed as per request
 end
 
-DC.HEIRLOOM_SHIRT_ENTRY = DC.HEIRLOOM_SHIRT_ENTRY or 300365;
+-- Registry of all heirloom items that use the stat-package upgrade system.
+-- To add a new heirloom: insert a new entry here AND add its tierId to
+-- DC.HEIRLOOM_TIERS, add a cost subtable in Costs.lua, and add a tier
+-- entry in Data/TierStatic.lua.
+--   tier       : tier ID used for upgrade costs and max-level lookups
+--   maxUpgrade : maximum number of upgrade stages for this item
+--   slot       : INVSLOT_* where the item is equipped (for auto-select)
+DC.HEIRLOOM_ITEMS = DC.HEIRLOOM_ITEMS or {
+	[300365] = { name = "Heirloom Adventurer's Shirt", tier = 3, maxUpgrade = 15, slot = 4 },
+	[300412] = { name = "Heartstone of Nordrassil",     tier = 10, maxUpgrade = 5,  slot = 2 },
+};
+
+-- Set of tier IDs that route through the heirloom cost + stat-package path.
+-- Regular upgrade tiers live in 1-9; zone heirloom tiers start at 10.
+DC.HEIRLOOM_TIERS = DC.HEIRLOOM_TIERS or { [3] = true, [10] = true };
+
+-- Returns true when itemId (number or string) is a registered heirloom upgrade item.
+function DC.IsHeirloomItemId(itemId)
+	return DC.HEIRLOOM_ITEMS[tonumber(itemId)] ~= nil;
+end
 
 function DC.IsHeirloomItem(item)
-	if not item then
-		return false;
-	end
-
+	if not item then return false; end
 	local trackedItemId = GetCanonicalItemEntry(item);
-	if trackedItemId == DC.HEIRLOOM_SHIRT_ENTRY then
-		return true;
-	end
-
-	if tonumber(item.tier) == 3 then
-		return true;
-	end
-
+	if DC.IsHeirloomItemId(trackedItemId) then return true; end
+	if DC.HEIRLOOM_TIERS[tonumber(item.tier)] then return true; end
 	if item.link then
 		local linkedItemId = tonumber(item.link:match("item:(%d+)"));
-		if linkedItemId == DC.HEIRLOOM_SHIRT_ENTRY then
-			return true;
-		end
+		if DC.IsHeirloomItemId(linkedItemId) then return true; end
 	end
-
 	return false;
 end
 
@@ -601,7 +608,7 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	local totalEssence = 0
 
 	if isHeirloomMode then
-		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentLevel, targetLevel)
+		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(tier, currentLevel, targetLevel)
 		totalEssence = (heirloomTotals and heirloomTotals.essence) or 0
 		-- Fallback to tier costs if heirloom table yields 0 (legacy token costs)
 		if totalEssence == 0 then
@@ -715,8 +722,9 @@ function DarkChaos_ItemUpgrade_GetCost(tier, level)
 		return nil;
 	end
 
-	if numericTier == 3 or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
-		local heirloomCost = DarkChaos_ItemUpgrade_GetHeirloomCost(numericLevel);
+	if (DC.HEIRLOOM_TIERS and DC.HEIRLOOM_TIERS[numericTier]) or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
+		local heirloomTier = numericTier or (DC.currentItem and DC.currentItem.tier) or 3;
+		local heirloomCost = DarkChaos_ItemUpgrade_GetHeirloomCost(heirloomTier, numericLevel);
 		if not heirloomCost then
 			return nil;
 		end
@@ -750,8 +758,9 @@ function DarkChaos_ItemUpgrade_GetAuthoritativeTotals(tier, currentLevel, target
 		return DarkChaos_ItemUpgrade_CopyCostTotals(0, 0), nil, false;
 	end
 
-	if tier == 3 or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
-		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentLevel, targetLevel);
+	if (DC.HEIRLOOM_TIERS and DC.HEIRLOOM_TIERS[tier]) or (DC.currentItem and DC.IsHeirloomItem and DC.IsHeirloomItem(DC.currentItem)) then
+		local heirloomTier = tier or (DC.currentItem and DC.currentItem.tier) or 3;
+		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(heirloomTier, currentLevel, targetLevel);
 		return DarkChaos_ItemUpgrade_CopyCostTotals(0, (heirloomTotals and heirloomTotals.essence) or 0), nil, false;
 	end
 
@@ -1860,7 +1869,7 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	if itemLink then
 		local _, _, quality, _, _, itemType, _, _, equipLoc = GetItemInfo(itemLink);
 		local itemId = tonumber(itemLink:match("item:(%d+)")) or 0;
-		if quality == 7 and itemId ~= 300365 then
+		if quality == 7 and not DC.IsHeirloomItemId(itemId) then
 			return;
 		end
 		if itemType ~= "Armor" and itemType ~= "Weapon" then
@@ -1886,8 +1895,7 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	end
 	local itemEntry = GetCanonicalItemEntry(data) or 0;
 	-- tier is computed above
-	local HEIRLOOM_SHIRT_ENTRY = 300365;
-	local isHeirloom = (itemEntry == HEIRLOOM_SHIRT_ENTRY);
+	local isHeirloom = DC.IsHeirloomItemId(itemEntry);
 
 	tooltip.__dcUpgradeProcessing = true;
 	tooltip:AddLine(" ");
@@ -1921,9 +1929,6 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 			local packageId = data.heirloomPackageId or data.packageId;
 			if (not packageId or packageId <= 0) and data.guid and DC.itemUpgradeCache and DC.itemUpgradeCache[data.guid] then
 				packageId = DC.itemUpgradeCache[data.guid].heirloomPackageId;
-			end
-			if (not packageId or packageId <= 0) and DC.selectedStatPackage then
-				packageId = DC.selectedStatPackage;
 			end
 			if packageId and packageId > 0 and DC.STAT_PACKAGES and DC.STAT_PACKAGES[packageId] then
 				local pkg = DC.STAT_PACKAGES[packageId];
@@ -2158,17 +2163,16 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 		return;
 	end
 
-	-- SPECIAL HANDLING: Heirloom Adventurer's Shirt (300365)
-	-- Force tier 3 (HEIRLOOM) and 15 max levels regardless of server response
-	local HEIRLOOM_SHIRT_ENTRY = 300365;
-	local isHeirloomShirt = (GetCanonicalItemEntry(item) == HEIRLOOM_SHIRT_ENTRY)
-		or (GetCanonicalItemEntry(data) == HEIRLOOM_SHIRT_ENTRY);
-	
-	if isHeirloomShirt then
+	-- Registered heirloom items always drive their own tier + maxUpgrade so the
+	-- UI is responsive before the server responds.
+	local heirloomEntry = GetCanonicalItemEntry(item) or GetCanonicalItemEntry(data);
+	local heirloomMeta  = DC.HEIRLOOM_ITEMS and DC.HEIRLOOM_ITEMS[heirloomEntry];
+
+	if heirloomMeta then
 		DC.uiMode = "HEIRLOOM";
-		item.tier = 3;  -- TIER_HEIRLOOM
-		item.maxUpgrade = 15;
-		DC.Debug("ApplyQueryData: Forced HEIRLOOM tier for item 300365");
+		item.tier      = heirloomMeta.tier;
+		item.maxUpgrade = heirloomMeta.maxUpgrade;
+		DC.Debug("ApplyQueryData: Forced HEIRLOOM tier " .. tostring(heirloomMeta.tier) .. " for item " .. tostring(heirloomEntry));
 	else
 		item.tier = data.tier or item.tier or 1;
 		item.maxUpgrade = data.maxUpgrade or DC.GetMaxUpgradeLevelForTier(item.tier);
@@ -2240,9 +2244,9 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	local modeError = nil;
 	local canUpgrade = (current < maxUpgrade);
 	if canUpgrade then
-		if DC.uiMode == "HEIRLOOM" and item.tier ~= 3 then
+		if DC.uiMode == "HEIRLOOM" and not DC.HEIRLOOM_TIERS[item.tier] then
 			modeError = "This item is not an Heirloom.";
-		elseif DC.uiMode == "STANDARD" and item.tier == 3 then
+		elseif DC.uiMode == "STANDARD" and DC.HEIRLOOM_TIERS[item.tier] then
 			modeError = "Please use the Heirloom Upgrade interface.";
 		end
 	end
@@ -2308,7 +2312,7 @@ local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBa
 	end
 
 	local itemId = tonumber(itemLink:match("item:(%d+)")) or 0;
-	if itemId ~= 300365 then
+	if not DC.IsHeirloomItemId(itemId) then
 		return false;
 	end
 
@@ -3336,8 +3340,8 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	if moneyFrame then
 		moneyFrame:SetParent(self);
 		moneyFrame:ClearAllPoints();
-		moneyFrame:SetWidth(240);
-		moneyFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -16, 14);
+		moneyFrame:SetWidth(220);
+		moneyFrame:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -24, 14);
 		moneyFrame:SetFrameLevel(self:GetFrameLevel() + 5);
 		-- Lay the two balances left-to-right: essence pinned to the right edge,
 		-- token anchored relative to it so there is always a fixed gap and the
@@ -3353,7 +3357,7 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 		if moneyFrame.TokenCurrency then
 			moneyFrame.TokenCurrency:ClearAllPoints();
 			moneyFrame.TokenCurrency:SetWidth(100);
-			moneyFrame.TokenCurrency:SetPoint("RIGHT", moneyFrame.EssenceCurrency, "LEFT", -18, 0);
+			moneyFrame.TokenCurrency:SetPoint("RIGHT", moneyFrame.EssenceCurrency, "LEFT", -8, 0);
 			if moneyFrame.TokenCurrency.count then
 				moneyFrame.TokenCurrency.count:SetWidth(78);
 			end
@@ -4324,19 +4328,15 @@ local function IsUpgradeableItem(link)
 	-- Filter based on UI mode
 	local isHeirloomMode = (DC.uiMode == "HEIRLOOM");
 	
-	-- The specific heirloom item that can be upgraded via Heirloom UI
-	local HEIRLOOM_UPGRADE_ITEM = 300365; -- Heirloom Adventurer's Shirt
-	
-	-- Check if item is an heirloom (quality 7) or the specific heirloom upgrade item
-	local isHeirloomQuality = (quality == 7);
-	local isHeirloomUpgradeItem = (itemId == HEIRLOOM_UPGRADE_ITEM);
-	
+	local isHeirloomQuality  = (quality == 7);
+	local isRegisteredHeirloom = DC.IsHeirloomItemId(itemId);
+
 	if isHeirloomMode then
-		-- In Heirloom mode, only show the specific heirloom upgrade item (300365)
-		return isHeirloomUpgradeItem;
+		-- In Heirloom mode show only registered heirloom upgrade items.
+		return isRegisteredHeirloom;
 	else
-		-- In Standard mode, exclude ALL heirloom quality items AND the specific heirloom item
-		if isHeirloomQuality or isHeirloomUpgradeItem then
+		-- In Standard mode exclude ALL heirloom-quality and registered heirloom items.
+		if isHeirloomQuality or isRegisteredHeirloom then
 			return false;
 		end
 		return true;
@@ -4889,17 +4889,19 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	pooledItem.baseLevel = level;
 	pooledItem.upgradedLevel = level;
 	
-	-- SPECIAL HANDLING: Heirloom Adventurer's Shirt (300365)
-	-- Force tier 3 with 15 max levels immediately for UI responsiveness
-	local HEIRLOOM_SHIRT_ID = DC.HEIRLOOM_SHIRT_ENTRY or 300365;
-	if itemID == HEIRLOOM_SHIRT_ID then
+	-- Registered heirloom items: set tier + maxUpgrade immediately for UI
+	-- responsiveness before the server responds.
+	local heirloomMeta = DC.HEIRLOOM_ITEMS and DC.HEIRLOOM_ITEMS[itemID];
+	if heirloomMeta then
 		DC.uiMode = "HEIRLOOM";
-		pooledItem.tier = 3;  -- TIER_HEIRLOOM
-		pooledItem.maxUpgrade = 15;
-		DC.Debug("SelectItemBySlot: Initialized heirloom shirt with tier 3, max 15 levels");
+		pooledItem.tier = heirloomMeta.tier;
+		pooledItem.maxUpgrade = heirloomMeta.maxUpgrade;
+		DC.Debug("SelectItemBySlot: Initialized heirloom " .. tostring(itemID) ..
+			" tier=" .. tostring(heirloomMeta.tier) ..
+			" maxUpgrade=" .. tostring(heirloomMeta.maxUpgrade));
 	else
 		pooledItem.tier = 1;
-		pooledItem.maxUpgrade = DC.GetMaxUpgradeLevelForTier(1);  -- Default to tier 1, will be updated when data arrives
+		pooledItem.maxUpgrade = DC.GetMaxUpgradeLevelForTier(1);
 	end
 	
 	pooledItem.currentUpgrade = 0;
@@ -4936,13 +4938,11 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 		locationKey = locationKey,
 	});
 	
-	-- For heirloom items, only request package state when cache does not
-	-- already have it; selection reuses the same throttled query path as tooltips.
-	local HEIRLOOM_SHIRT_ID = 300365;
-	if itemID == HEIRLOOM_SHIRT_ID then
+	-- For registered heirloom items request package state if not already cached.
+	if DC.IsHeirloomItemId(itemID) then
 		if DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag,
 				serverSlot, DC.currentItem, true) then
-			DC.Debug("SelectItemBySlot: Requested heirloom info for item 300365");
+			DC.Debug("SelectItemBySlot: Requested heirloom info for item " .. tostring(itemID));
 		end
 	end
 	
@@ -4965,40 +4965,48 @@ function DarkChaos_ItemUpgrade_ClearItem()
 	DarkChaos_ItemUpgrade_UpdateUI();
 end
 
--- Auto-find and select the Heirloom Adventurer's Shirt (item 300365)
-function DarkChaos_ItemUpgrade_AutoSelectHeirloomShirt()
-	local HEIRLOOM_SHIRT_ID = 300365;
-	
-	-- First check if wearing it (body slot = 4)
-	local equippedLink = GetInventoryItemLink("player", 4);
-	if equippedLink then
-		local itemID = tonumber(equippedLink:match("item:(%d+)"));
-		if itemID == HEIRLOOM_SHIRT_ID then
-			DC.Debug("AutoSelectHeirloomShirt: Found equipped at slot 4");
-			DarkChaos_ItemUpgrade_SelectItemBySlot(BAG_EQUIPPED, 4);
-			return true;
-		end
+-- Auto-find and select any registered heirloom upgrade item.
+-- Iterates DC.HEIRLOOM_ITEMS in ascending item-ID order for predictable
+-- precedence; the first item found (equipped slot first, then bags) wins.
+function DarkChaos_ItemUpgrade_AutoSelectHeirloomItem()
+	local orderedIds = {};
+	for id in pairs(DC.HEIRLOOM_ITEMS) do
+		table.insert(orderedIds, id);
 	end
-	
-	-- Check bags
-	for bag = 0, 4 do
-		for slot = 1, GetContainerNumSlots(bag) do
-			local link = GetContainerItemLink(bag, slot);
-			if link then
-				local itemID = tonumber(link:match("item:(%d+)"));
-				if itemID == HEIRLOOM_SHIRT_ID then
-					DC.Debug(string.format("AutoSelectHeirloomShirt: Found in bag %d slot %d", bag, slot));
+	table.sort(orderedIds);
+
+	for _, itemId in ipairs(orderedIds) do
+		local meta = DC.HEIRLOOM_ITEMS[itemId];
+
+		-- Check the designated equipped slot first.
+		if meta.slot then
+			local link = GetInventoryItemLink("player", meta.slot);
+			if link and tonumber(link:match("item:(%d+)")) == itemId then
+				DC.Debug("AutoSelectHeirloomItem: Found " .. meta.name .. " equipped at slot " .. meta.slot);
+				DarkChaos_ItemUpgrade_SelectItemBySlot(BAG_EQUIPPED, meta.slot);
+				return true;
+			end
+		end
+
+		-- Fall through to bag search.
+		for bag = 0, 4 do
+			for slot = 1, GetContainerNumSlots(bag) do
+				local link = GetContainerItemLink(bag, slot);
+				if link and tonumber(link:match("item:(%d+)")) == itemId then
+					DC.Debug(string.format("AutoSelectHeirloomItem: Found %s in bag %d slot %d",
+						meta.name, bag, slot));
 					DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot);
 					return true;
 				end
 			end
 		end
 	end
-	
-	-- Not found
-	DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[DC-ItemUpgrade]|r Heirloom Adventurer's Shirt not found. Please equip or place it in your bags.");
+
+	DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[DC-ItemUpgrade]|r No heirloom item found. Please equip or place one in your bags.");
 	return false;
 end
+-- Alias keeps any external callers (Core.lua, macros) working unchanged.
+DarkChaos_ItemUpgrade_AutoSelectHeirloomShirt = DarkChaos_ItemUpgrade_AutoSelectHeirloomItem;
 
 function DarkChaos_ItemUpgrade_UpdatePlayerCurrencies()
 	local frame = DarkChaos_ItemUpgradeFrame;
@@ -5283,7 +5291,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	local costPending = false;
 	local itemSyncPending = (DC.IsItemSyncPending and DC.IsItemSyncPending(item)) or false;
 	if DC.IsHeirloomItem and DC.IsHeirloomItem(item) then
-		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentUpgrade, DC.targetUpgradeLevel);
+		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(item.tier, currentUpgrade, DC.targetUpgradeLevel);
 		if (heirloomTotals.essence or 0) > (DC.playerEssence or 0) then
 			canAfford = false;
 		end
@@ -5420,7 +5428,10 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			DC.pendingUpgrade = nil;
 
 			-- Record history
-			local heirloomItemId = 300365;
+			local heirloomItemId = (pending and pending.itemId)
+				or (DC.currentItem and DC.currentItem.itemID)
+				or 300365;
+			local heirloomTierForHistory = (DC.currentItem and DC.currentItem.tier) or 3;
 			local fromLevel = pending and pending.startLevel or nil;
 			local itemName, itemLink = GetItemInfo(heirloomItemId)
 			if DC.AddUpgradeHistoryEntry then
@@ -5433,7 +5444,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 					itemGUID = itemGUID,
 					fromLevel = fromLevel,
 					toLevel = newLevel,
-					tier = 3,
+					tier = heirloomTierForHistory,
 					packageId = packageId,
 					enchantId = enchantId,
 				});

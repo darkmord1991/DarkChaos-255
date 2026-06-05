@@ -14,6 +14,7 @@
 #define DARKCHAOS_ITEMUPGRADE_UI_HELPERS_H
 
 #include "Common.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include <sstream>
 #include <iomanip>
 #include <string>
@@ -27,11 +28,9 @@ namespace DarkChaos
             // =====================================================================
             // HEIRLOOM CONSTANTS
             // =====================================================================
-            constexpr uint32 HEIRLOOM_SHIRT_ENTRY = 300365;
             constexpr uint32 HEIRLOOM_MAX_PACKAGE_ID = 12;
-            constexpr uint32 HEIRLOOM_MAX_LEVEL = 15;
+            constexpr uint32 HEIRLOOM_MAX_LEVEL = 15;  // stat-package budget table has 15 entries; per-item max comes from the tier definition
             constexpr uint32 HEIRLOOM_ENCHANT_BASE_ID = 900000;
-            constexpr uint32 HEIRLOOM_TIER = 3;
 
             // =====================================================================
             // COLOR CODES FOR WoW CHAT
@@ -336,6 +335,29 @@ namespace DarkChaos
                 }
 
                 return false;
+            }
+
+            // Returns true if itemEntry belongs to an is_artifact=1 tier (heirloom upgrade path).
+            inline bool IsHeirloomEntry(uint32 itemEntry)
+            {
+                UpgradeManager* mgr = GetUpgradeManager();
+                if (!mgr)
+                    return false;
+                uint8 tier = static_cast<uint8>(mgr->GetItemTier(itemEntry));
+                TierDefinition const* def = mgr->GetTierDefinition(tier);
+                return def && def->is_artifact;
+            }
+
+            // Returns the max upgrade level for a heirloom item from its tier definition.
+            // Falls back to HEIRLOOM_MAX_LEVEL when the tier is unknown.
+            inline uint32 GetHeirloomMaxLevel(uint32 itemEntry)
+            {
+                UpgradeManager* mgr = GetUpgradeManager();
+                if (!mgr)
+                    return HEIRLOOM_MAX_LEVEL;
+                uint8 tier = static_cast<uint8>(mgr->GetItemTier(itemEntry));
+                uint8 maxLevel = mgr->GetTierMaxLevel(tier);
+                return maxLevel > 0 ? maxLevel : HEIRLOOM_MAX_LEVEL;
             }
 
         } // namespace UI

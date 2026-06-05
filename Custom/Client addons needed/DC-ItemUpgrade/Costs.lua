@@ -95,39 +95,58 @@ end
 
 --[[=====================================================
 	HEIRLOOM COST TABLES
+	Keyed by tier ID so each heirloom tier has its own
+	essence curve.  Add a new subtable when registering a
+	new heirloom tier in DC.HEIRLOOM_TIERS.
 =======================================================]]
 
--- Heirloom essence costs per level (for stat package upgrades)
 DC.heirloomCosts = {
-	[1] = { essence = 5 },
-	[2] = { essence = 10 },
-	[3] = { essence = 15 },
-	[4] = { essence = 20 },
-	[5] = { essence = 30 },
-	[6] = { essence = 40 },
-	[7] = { essence = 50 },
-	[8] = { essence = 65 },
-	[9] = { essence = 80 },
-	[10] = { essence = 100 },
-	[11] = { essence = 120 },
-	[12] = { essence = 145 },
-	[13] = { essence = 170 },
-	[14] = { essence = 200 },
-	[15] = { essence = 250 },
+	-- Tier 3: Heirloom Adventurer's Shirt — 15 levels.
+	-- Values kept in sync with dc_heirloom_upgrade_costs (server is authoritative).
+	[3] = {
+		[1]  = { tokens = 0, essence = 50   },
+		[2]  = { tokens = 0, essence = 75   },
+		[3]  = { tokens = 0, essence = 100  },
+		[4]  = { tokens = 0, essence = 150  },
+		[5]  = { tokens = 1, essence = 200  },
+		[6]  = { tokens = 1, essence = 275  },
+		[7]  = { tokens = 1, essence = 350  },
+		[8]  = { tokens = 2, essence = 450  },
+		[9]  = { tokens = 2, essence = 575  },
+		[10] = { tokens = 3, essence = 725  },
+		[11] = { tokens = 3, essence = 900  },
+		[12] = { tokens = 4, essence = 1100 },
+		[13] = { tokens = 4, essence = 1350 },
+		[14] = { tokens = 5, essence = 1650 },
+		[15] = { tokens = 5, essence = 2050 },
+	},
+	-- Tier 10: Frontier Heirloom (Heartstone of Nordrassil) — 5 stages.
+	-- Shares dc_heirloom_upgrade_costs (flat table), capped by maxUpgrade=5.
+	[10] = {
+		[1] = { tokens = 0, essence = 50  },
+		[2] = { tokens = 0, essence = 75  },
+		[3] = { tokens = 0, essence = 100 },
+		[4] = { tokens = 0, essence = 150 },
+		[5] = { tokens = 1, essence = 200 },
+	},
 };
 
-function DarkChaos_ItemUpgrade_GetHeirloomCost(level)
-	return DC.heirloomCosts[level];
+-- Returns the cost entry for one upgrade level within the given heirloom tier.
+-- Falls back to tier 3 if the requested tier has no table.
+function DarkChaos_ItemUpgrade_GetHeirloomCost(tier, level)
+	local tierTable = DC.heirloomCosts[tonumber(tier)] or DC.heirloomCosts[3];
+	return tierTable and tierTable[tonumber(level)];
 end
 
-function DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentLevel, targetLevel)
+-- Returns { essence = N } summed from currentLevel+1 to targetLevel.
+function DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(tier, currentLevel, targetLevel)
 	local totals = { essence = 0 };
 	if not targetLevel or not currentLevel or targetLevel <= currentLevel then
 		return totals;
 	end
 
 	for level = currentLevel + 1, targetLevel do
-		local cost = DarkChaos_ItemUpgrade_GetHeirloomCost(level);
+		local cost = DarkChaos_ItemUpgrade_GetHeirloomCost(tier, level);
 		if cost then
 			totals.essence = totals.essence + (cost.essence or 0);
 		end

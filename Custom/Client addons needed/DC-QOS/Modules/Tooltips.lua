@@ -610,6 +610,56 @@ local function AddItemLevel(tooltip, itemLink)
 end
 
 -- ============================================================
+-- Mount Info in Tooltips
+-- ============================================================
+local function AddMountInfo(tooltip, spellId)
+    if not addon.settings.tooltips.showMountInfo then return end
+    if not spellId then return end
+    local sid = tonumber(spellId)
+    if not sid or sid <= 0 then return end
+
+    if type(DCCollection) ~= "table" then return end
+    local defs = type(DCCollection.definitions) == "table" and DCCollection.definitions.mounts
+    if not defs then return end
+    local def = defs[sid]
+    if not def then return end
+
+    if tooltip._dcqosMountInfoShownSpellId == sid then return end
+    tooltip._dcqosMountInfoShownSpellId = sid
+
+    local mountTypeLabels = {
+        [0] = "|cffffff00Ground|r",
+        [1] = "|cff00aaffFlying|r",
+        [2] = "|cff00ffffAquatic|r",
+        [3] = "|cffffff00Ground|r + |cff00aaffFlying|r",
+    }
+    local mountType = tonumber(def.mountType) or 0
+    local typeLabel = mountTypeLabels[mountType] or mountTypeLabels[0]
+
+    local groundSpeed = tonumber(def.groundSpeed)
+    local flySpeed    = tonumber(def.flySpeed)
+    local baseSpeed   = tonumber(def.speed)
+
+    if mountType == 3 and (groundSpeed or flySpeed) then
+        -- dual-mode mount with separate speeds
+        local gs = groundSpeed or baseSpeed or 0
+        local fs = flySpeed    or baseSpeed or 0
+        tooltip:AddDoubleLine(
+            "Mount: " .. typeLabel,
+            "|cffffff00" .. gs .. "%|r ground  |cff00aaff" .. fs .. "%|r fly",
+            0.5, 0.5, 0.5, 0.9, 0.9, 0.9)
+    elseif baseSpeed and baseSpeed > 0 then
+        tooltip:AddDoubleLine(
+            "Mount: " .. typeLabel,
+            "|cffffffff" .. baseSpeed .. "%|r speed",
+            0.5, 0.5, 0.5, 0.9, 0.9, 0.9)
+    else
+        tooltip:AddLine("Mount: " .. typeLabel, 0.5, 0.5, 0.5)
+    end
+    tooltip:Show()
+end
+
+-- ============================================================
 -- Spell ID in Tooltips
 -- ============================================================
 local function AddSpellId(tooltip, spellId)
@@ -668,12 +718,6 @@ local NATIVE_NPC_TOOLTIP_CAPABILITY = 0x00000800
 local NATIVE_TOOLTIP_TIMEOUT_MS = math.floor(SPELL_TOOLTIP_ENRICHMENT_PENDING_TTL * 1000)
 local NATIVE_TOOLTIP_MIN_INTERVAL_MS = math.floor(SPELL_TOOLTIP_ENRICHMENT_MIN_SEND_INTERVAL * 1000)
 local NATIVE_TOOLTIP_MAX_TIMEOUTS = 3
-local NATIVE_SPELL_TOOLTIP_STATUS_UNAVAILABLE = 0
-local NATIVE_SPELL_TOOLTIP_STATUS_PENDING = 1
-local NATIVE_SPELL_TOOLTIP_STATUS_READY = 2
-local NATIVE_SPELL_TOOLTIP_STATUS_TIMED_OUT = 3
-local NATIVE_SPELL_TOOLTIP_STATUS_DISABLED = 4
-
 local spellEnrichmentRequestCounter = 0
 local pendingSpellEnrichment = {}
 local pendingSpellEnrichmentByRequestId = {}
@@ -1974,13 +2018,12 @@ local function TryConsumeNativeSpellTooltipEnrichment(spellId, contextHash)
         return false
     end
 
-    nativeStatus = tonumber(nativeStatus) or NATIVE_SPELL_TOOLTIP_STATUS_UNAVAILABLE
-    if nativeStatus == NATIVE_SPELL_TOOLTIP_STATUS_PENDING
-        or nativeStatus == NATIVE_SPELL_TOOLTIP_STATUS_UNAVAILABLE then
+    nativeStatus = tonumber(nativeStatus) or 0
+    if nativeStatus == 1 or nativeStatus == 0 then  -- PENDING or UNAVAILABLE
         return false
     end
 
-    if nativeStatus == NATIVE_SPELL_TOOLTIP_STATUS_READY then
+    if nativeStatus == 2 then  -- READY
         TelemetryInc("spell", "nativeResponsesReady")
         addon:FireEvent("SPELL_TOOLTIP_ENRICHMENT_RECEIVED",
             StoreSpellTooltipEnrichmentResult({
@@ -2437,6 +2480,7 @@ local function EnhanceSpellTooltip(tooltip, spellId)
         tooltip._dcqosLastEnhancedSpellId = sid
         tooltip._dcqosLastEnhancedSpellAt = now
     end
+    AddMountInfo(tooltip, spellId)
     local enrichResult = AddSpellTooltipEnrichment(tooltip, spellId)
     if enrichResult == nil then
         -- Request is in-flight; defer Spell ID to be added when the response arrives.
@@ -5190,8 +5234,20 @@ function Tooltips.CreateSettings(parent)
     end)
     AddSettingTooltip(spellIdCb, "Show Spell ID",
         "Displays the spell's database ID in tooltips. Useful for macro creation, WeakAuras, and identifying custom server spells. Shown for abilities, buffs, debuffs, and item enchants.")
+    yOffset = yOffset - 25
+
+    -- Show Mount Info
+    local mountInfoCb = addon:CreateCheckbox(parent)
+    mountInfoCb:SetPoint("TOPLEFT", 16, yOffset)
+    mountInfoCb.Text:SetText("Show Mount Info")
+    mountInfoCb:SetChecked(settings.showMountInfo ~= false)
+    mountInfoCb:SetScript("OnClick", function(self)
+        addon:SetSetting("tooltips.showMountInfo", self:GetChecked())
+    end)
+    AddSettingTooltip(mountInfoCb, "Show Mount Info",
+        "Displays mount type (Ground / Flying / Aquatic) and speed percentage on mount spell tooltips. Requires DC-Collection addon with definitions loaded.")
     yOffset = yOffset - 35
-    
+
     -- ============================================================
     -- Unit Tooltip Section
     -- ============================================================

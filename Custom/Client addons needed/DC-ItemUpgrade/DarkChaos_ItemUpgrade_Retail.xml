@@ -35,7 +35,7 @@
                 <FontString parentKey="ValueText" inherits="GameFontNormal" justifyH="RIGHT">
                     <Size x="52" y="12"/>
                     <Anchors>
-                        <Anchor point="RIGHT" x="-2" y="0"/>
+                        <Anchor point="RIGHT" x="-10" y="0"/>
                     </Anchors>
                 </FontString>
             </Layer>
@@ -82,7 +82,7 @@
                 <FontString parentKey="ValueText" inherits="GameFontNormalLarge" justifyH="RIGHT">
                     <Size x="52" y="16"/>
                     <Anchors>
-                        <Anchor point="RIGHT" x="-2" y="0"/>
+                        <Anchor point="RIGHT" x="-10" y="0"/>
                     </Anchors>
                 </FontString>
             </Layer>

@@ -429,7 +429,7 @@ function DarkChaos_ItemUpgrade_CreateChangePackageButton(parent)
 	local btn = CreateFrame("Button", "DarkChaos_ChangePackageBtn", parent, "UIPanelButtonTemplate");
 	btn:SetWidth(130);
 	btn:SetHeight(22);
-	btn:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -20, 20);
+	btn:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -20, 40);
 	btn:SetText("Change Package");
 	btn:Hide();
 	
