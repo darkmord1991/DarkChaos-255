@@ -1158,9 +1158,18 @@ namespace DCQoS
             return state;
 
         uint32 enchantId = item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT);
-        if (enchantId > HEIRLOOM_ENCHANT_BASE_ID)
+        // Determine which enchant range this item uses (Frontier tier 10 vs standard).
+        uint32 resolvedBase = 0;
+        if (enchantId >= FRONTIER_HEIRLOOM_ENCHANT_BASE_ID
+            && enchantId < FRONTIER_HEIRLOOM_ENCHANT_BASE_ID + 20000)
+            resolvedBase = FRONTIER_HEIRLOOM_ENCHANT_BASE_ID;
+        else if (enchantId > HEIRLOOM_ENCHANT_BASE_ID
+            && enchantId < HEIRLOOM_ENCHANT_BASE_ID + 20000)
+            resolvedBase = HEIRLOOM_ENCHANT_BASE_ID;
+
+        if (resolvedBase > 0)
         {
-            uint32 encodedState = enchantId - HEIRLOOM_ENCHANT_BASE_ID;
+            uint32 encodedState = enchantId - resolvedBase;
             uint32 packageId = encodedState / 100;
             uint32 upgradeLevel = encodedState % 100;
 

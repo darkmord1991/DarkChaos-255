@@ -257,7 +257,7 @@ end
 --   slot       : INVSLOT_* where the item is equipped (for auto-select)
 DC.HEIRLOOM_ITEMS = DC.HEIRLOOM_ITEMS or {
 	[300365] = { name = "Heirloom Adventurer's Shirt", tier = 3, maxUpgrade = 15, slot = 4 },
-	[300412] = { name = "Heartstone of Nordrassil",     tier = 10, maxUpgrade = 5,  slot = 2 },
+	[300412] = { name = "Heartstone of Nordrassil",     tier = 10, maxUpgrade = 15, slot = 2 },
 };
 
 -- Set of tier IDs that route through the heirloom cost + stat-package path.
@@ -3606,6 +3606,21 @@ local function CurrentSelectionHasPendingUpgrade()
 	return locationKey == BuildLocationKey(pendingBag, pendingSlot);
 end
 
+local function RefreshCurrentItemMetadata(link)
+	if not DC.currentItem or not link then return; end
+	local name, _, quality, level = GetItemInfo(link);
+	local itemID = tonumber(link:match("|H[^:]*:(%d+)")) or DC.currentItem.itemID;
+	DC.currentItem.link    = link;
+	DC.currentItem.itemID  = itemID  or DC.currentItem.itemID;
+	DC.currentItem.name    = name    or DC.currentItem.name;
+	DC.currentItem.quality = quality or DC.currentItem.quality;
+	if level and level > 0 then
+		DC.currentItem.level      = level;
+		DC.currentItem.baseLevel  = DC.currentItem.baseLevel or level;
+		DC.currentItem.upgradedLevel = level;
+	end
+end
+
 local function RefreshCurrentSelectedItem()
 	if not DC.currentItem then
 		return;
@@ -5294,6 +5309,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(item.tier, currentUpgrade, DC.targetUpgradeLevel);
 		if (heirloomTotals.essence or 0) > (DC.playerEssence or 0) then
 			canAfford = false;
+		elseif (heirloomTotals.tokens or 0) > (DC.playerTokens or 0) then
+			canAfford = false;
 		end
 	else
 		local totals = nil;
@@ -5312,7 +5329,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	local hasPackage = true;
 	if DC.IsHeirloomItem and DC.IsHeirloomItem(item) then
 		needsPackage = true;
-		hasPackage = (DC.selectedStatPackage ~= nil and DC.selectedStatPackage > 0);
+		hasPackage = (DC.selectedStatPackage ~= nil and DC.selectedStatPackage > 0)
+			or (item.heirloomPackageId ~= nil and item.heirloomPackageId > 0);
 	end
 	
 	if canUpgrade and not itemSyncPending and canAfford and (not needsPackage or hasPackage) then
@@ -5473,7 +5491,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				DC.currentItem.currentUpgrade = newLevel;
 				DC.currentItem.heirloomPackageId = packageId;
 				DC.currentItem.heirloomPackageLevel = newLevel;
-				DC.currentItem.tier = 3;
+				-- Do not overwrite tier: it was set correctly when the item was loaded.
 				if packageId and packageId > 0 then
 					DC.selectedStatPackage = packageId;
 					if DarkChaos_ItemUpgrade_SaveCharSettings then
@@ -5483,11 +5501,14 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				DC.targetUpgradeLevel = math.min(newLevel + 1, DC.currentItem.maxUpgrade or 15);
 			end
 
+			local correctTier = (DC.currentItem and DC.currentItem.tier)
+				or (DC.HEIRLOOM_ITEMS and DC.HEIRLOOM_ITEMS[heirloomItemId] and DC.HEIRLOOM_ITEMS[heirloomItemId].tier)
+				or 3;
 			DC.itemUpgradeCache = DC.itemUpgradeCache or {};
 			DC.itemUpgradeCache[itemGUID] = DC.itemUpgradeCache[itemGUID] or {};
 			DC.itemUpgradeCache[itemGUID].currentUpgrade = newLevel;
 			DC.itemUpgradeCache[itemGUID].heirloomPackageId = packageId;
-			DC.itemUpgradeCache[itemGUID].tier = 3;
+			DC.itemUpgradeCache[itemGUID].tier = correctTier;
 			if DC.currentItem and DC.currentItem.maxUpgrade then
 				DC.itemUpgradeCache[itemGUID].maxUpgrade = DC.currentItem.maxUpgrade;
 			end

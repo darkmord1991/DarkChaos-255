@@ -232,7 +232,8 @@ public:
             { "unlocktier", HandleProgUnlockTierCommand,    SEC_GAMEMASTER, Console::No },
             { "weekcap",    HandleProgWeekCapCommand,       SEC_PLAYER,     Console::No },
             { "tiercap",    HandleProgTierCapCommand,       SEC_GAMEMASTER, Console::No },
-            { "testset",    HandleProgTestSetCommand,       SEC_GAMEMASTER, Console::No }
+            { "testset",    HandleProgTestSetCommand,       SEC_GAMEMASTER, Console::No },
+            { "reload",     HandleProgReloadCommand,        SEC_GAMEMASTER, Console::No }
         };
 
         // Seasonal Subcommands
@@ -1200,6 +1201,21 @@ public:
         handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r %u", tokenAmount);
         handler->PSendSysMessage("|cff00ffffYou can now test the upgrade system!|r");
 
+        return true;
+    }
+
+    static bool HandleProgReloadCommand(ChatHandler* handler, const char* /*args*/)
+    {
+        UpgradeManager* mgr = GetUpgradeManager();
+        if (!mgr)
+        {
+            handler->PSendSysMessage("UpgradeManager not available.");
+            return false;
+        }
+
+        uint32 season = GetCurrentSeasonId();
+        mgr->LoadUpgradeData(season);
+        handler->PSendSysMessage("Item upgrade tier data reloaded for season %u.", season);
         return true;
     }
 

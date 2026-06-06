@@ -977,8 +977,10 @@ namespace Upgrade
         if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
 
         // Apply Enchantment
-        // ID: 900000 + (packageId * 100) + level
-        uint32 enchantId = HEIRLOOM_ENCHANT_BASE_ID + (packageId * 100) + targetLevel;
+        // Standard heirlooms:  900000 + (packageId * 100) + level
+        // Frontier heirlooms (tier 10): 920000 + (packageId * 100) + level
+        uint32 enchantBase = (itemTier == 10) ? FRONTIER_HEIRLOOM_ENCHANT_BASE_ID : HEIRLOOM_ENCHANT_BASE_ID;
+        uint32 enchantId = enchantBase + (packageId * 100) + targetLevel;
 
         player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
         item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());

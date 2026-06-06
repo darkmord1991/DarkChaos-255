@@ -31,6 +31,9 @@ namespace DarkChaos
             constexpr uint32 HEIRLOOM_MAX_PACKAGE_ID = 12;
             constexpr uint32 HEIRLOOM_MAX_LEVEL = 15;  // stat-package budget table has 15 entries; per-item max comes from the tier definition
             constexpr uint32 HEIRLOOM_ENCHANT_BASE_ID = 900000;
+            // Frontier Heirlooms (tier 10, 5-level zone drops) use a separate enchant
+            // range so their budget is independent of the shirt's 1–15 scale.
+            constexpr uint32 FRONTIER_HEIRLOOM_ENCHANT_BASE_ID = 920000;
 
             // =====================================================================
             // COLOR CODES FOR WoW CHAT

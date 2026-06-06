@@ -1657,10 +1657,14 @@ function DC.RegisterDCProtocolHandlers()
 		packageId = data.packageId
 		enchantId = data.enchantId
 
+		-- Always clear the pending upgrade so IsItemSyncPending unblocks the button.
+		DC.pendingUpgrade = nil
+
 		if success then
 			if DC.currentItem and DC.currentItem.guid == itemGuid then
 				DC.currentItem.currentUpgrade = newLevel
 				DC.currentItem.heirloomPackageId = packageId or DC.currentItem.heirloomPackageId
+				DC.currentItem.awaitingServerInfo = false
 			end
 			if itemGuid then
 				DC.itemUpgradeCache = DC.itemUpgradeCache or {}
@@ -1680,6 +1684,9 @@ function DC.RegisterDCProtocolHandlers()
 		else
 			local msg = data.errorMsg or data.message or "Heirloom upgrade failed."
 			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000" .. msg .. "|r")
+			if DarkChaos_ItemUpgrade_UpdateUI then
+				DarkChaos_ItemUpgrade_UpdateUI()
+			end
 		end
 	end)
 end

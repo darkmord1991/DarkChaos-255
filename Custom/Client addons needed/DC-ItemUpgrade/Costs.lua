@@ -120,14 +120,23 @@ DC.heirloomCosts = {
 		[14] = { tokens = 5, essence = 1650 },
 		[15] = { tokens = 5, essence = 2050 },
 	},
-	-- Tier 10: Frontier Heirloom (Heartstone of Nordrassil) — 5 stages.
-	-- Shares dc_heirloom_upgrade_costs (flat table), capped by maxUpgrade=5.
+	-- Tier 10: Frontier Heirloom (Heartstone of Nordrassil) — 15 stages.
 	[10] = {
-		[1] = { tokens = 0, essence = 50  },
-		[2] = { tokens = 0, essence = 75  },
-		[3] = { tokens = 0, essence = 100 },
-		[4] = { tokens = 0, essence = 150 },
-		[5] = { tokens = 1, essence = 200 },
+		[1]  = { tokens = 0, essence = 50   },
+		[2]  = { tokens = 0, essence = 75   },
+		[3]  = { tokens = 0, essence = 100  },
+		[4]  = { tokens = 0, essence = 150  },
+		[5]  = { tokens = 1, essence = 200  },
+		[6]  = { tokens = 1, essence = 275  },
+		[7]  = { tokens = 1, essence = 350  },
+		[8]  = { tokens = 2, essence = 450  },
+		[9]  = { tokens = 2, essence = 575  },
+		[10] = { tokens = 3, essence = 725  },
+		[11] = { tokens = 3, essence = 900  },
+		[12] = { tokens = 4, essence = 1100 },
+		[13] = { tokens = 4, essence = 1350 },
+		[14] = { tokens = 5, essence = 1650 },
+		[15] = { tokens = 5, essence = 2050 },
 	},
 };
 
@@ -138,9 +147,9 @@ function DarkChaos_ItemUpgrade_GetHeirloomCost(tier, level)
 	return tierTable and tierTable[tonumber(level)];
 end
 
--- Returns { essence = N } summed from currentLevel+1 to targetLevel.
+-- Returns { essence = N, tokens = N } summed from currentLevel+1 to targetLevel.
 function DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(tier, currentLevel, targetLevel)
-	local totals = { essence = 0 };
+	local totals = { essence = 0, tokens = 0 };
 	if not targetLevel or not currentLevel or targetLevel <= currentLevel then
 		return totals;
 	end
@@ -149,6 +158,7 @@ function DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(tier, currentLevel, tar
 		local cost = DarkChaos_ItemUpgrade_GetHeirloomCost(tier, level);
 		if cost then
 			totals.essence = totals.essence + (cost.essence or 0);
+			totals.tokens  = totals.tokens  + (cost.tokens  or 0);
 		end
 	end
 

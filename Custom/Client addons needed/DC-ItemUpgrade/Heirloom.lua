@@ -120,6 +120,15 @@ DC.STAT_PACKAGE_LEVEL_VALUES = {
 	[15] = 168,  -- Level 15: 168 total (max, same as 14)
 };
 
+-- Frontier Heirloom (tier 10, 5-level items) use different per-stat budgets.
+-- Two-stat packages have totals [40,72,104,144,180]; three-stat [42,72,105,144,180].
+DC.FRONTIER_HEIRLOOM_BUDGETS = {
+	[2] = { [1]=40,  [2]=72,  [3]=104, [4]=144, [5]=180 },
+	[3] = { [1]=42,  [2]=72,  [3]=105, [4]=144, [5]=180 },
+};
+-- Item entries that use FRONTIER_HEIRLOOM_BUDGETS instead of STAT_PACKAGE_LEVEL_VALUES.
+DC.FRONTIER_HEIRLOOM_ENTRIES = { [300412] = true };
+
 -- Currently selected stat package
 DC.selectedStatPackage = DC.selectedStatPackage or nil;
 
@@ -379,9 +388,10 @@ function DarkChaos_ItemUpgrade_UpdatePackageList()
 			local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
 			row.NameText:SetText(string.format("|cff%s%s|r", colorHex, pkg.name));
 			
-			-- Set stats with values at level 15 (max)
+			-- Set stats with values at item's max upgrade level
 			local statsStr = "";
-			local lvl15Stats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageIndex, 15);
+			local maxLevel = (DC.currentItem and DC.currentItem.maxUpgrade) or 15;
+			local lvl15Stats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageIndex, maxLevel);
 			if lvl15Stats then
 				local statParts = {};
 				for _, stat in ipairs(lvl15Stats) do
@@ -603,12 +613,13 @@ function DarkChaos_ItemUpgrade_PreviewStatPackage(packageId)
 	local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
 	
 	local statsPreview = "";
+	local maxLevel = (DC.currentItem and DC.currentItem.maxUpgrade) or 15;
 	local lvl1Stats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, 1);
-	local lvl15Stats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, 15);
-	if lvl1Stats and lvl15Stats then
+	local lvlMaxStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, maxLevel);
+	if lvl1Stats and lvlMaxStats then
 		local parts = {};
 		for i, stat in ipairs(lvl1Stats) do
-			local maxVal = lvl15Stats[i] and lvl15Stats[i].value or stat.value;
+			local maxVal = lvlMaxStats[i] and lvlMaxStats[i].value or stat.value;
 			table.insert(parts, string.format("%s: %d to %d", stat.name, stat.value, maxVal));
 		end
 		statsPreview = table.concat(parts, "  |  ");
@@ -745,10 +756,19 @@ end
 function DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(packageId, level)
 	local pkg = DC.STAT_PACKAGES[packageId];
 	if not pkg then return nil end
-	
-	local totalBudget = DC.STAT_PACKAGE_LEVEL_VALUES[level] or 0;
+
 	local numStats = #pkg.stats;
 	if numStats == 0 then return {} end
+
+	local totalBudget;
+	local itemEntry = DC.currentItem
+		and (tonumber(DC.currentItem.itemEntry) or tonumber(DC.currentItem.itemID));
+	if itemEntry and DC.FRONTIER_HEIRLOOM_ENTRIES and DC.FRONTIER_HEIRLOOM_ENTRIES[itemEntry] then
+		local tbl = DC.FRONTIER_HEIRLOOM_BUDGETS[numStats] or DC.FRONTIER_HEIRLOOM_BUDGETS[2];
+		totalBudget = tbl[level] or 0;
+	else
+		totalBudget = DC.STAT_PACKAGE_LEVEL_VALUES[level] or 0;
+	end
 	
 	local perStat = math.floor(totalBudget / numStats);
 	local remainder = totalBudget - (perStat * numStats);
