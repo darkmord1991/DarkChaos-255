@@ -14,6 +14,7 @@
 #include "Player.h"
 #include "Random.h"
 #include "ScriptMgr.h"
+#include "DC/dc_update_profiler.h"
 #include "WhoListCacheMgr.h"
 #include "WorldSessionMgr.h"
 
@@ -548,6 +549,7 @@ namespace DCFakePlayers
 
         void OnUpdate(uint32 diff) override
         {
+            DarkChaos::ScopedUpdateProfiler _prof("FakePlayers");
             sFakePlayersMgr.Update(diff);
         }
     };

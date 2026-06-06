@@ -1,12 +1,28 @@
 -- DC_DebugUtils.lua
 -- Centralized debug logging utility for all DC addons
--- Prevents duplicate messages and provides consistent formatting
+-- Standalone shared addon: defines the global _G.DC_DebugUtils. Consumers
+-- (DC-HinterlandBG, DC-Mapupgrades, ...) list it in ## OptionalDeps so it
+-- loads first; every call site also guards on _G.DC_DebugUtils being present.
 
 if not _G.DC_DebugUtils then
     _G.DC_DebugUtils = {}
 end
 
+-- Ensure slash command table exists before registering commands on older clients
+if not _G.SlashCmdList then
+    _G.SlashCmdList = {}
+end
+
 local DC_Debug = _G.DC_DebugUtils
+
+local function SafeGetTime()
+    if _G.GetTime then
+        return _G.GetTime()
+    elseif _G.time then
+        return _G.time()
+    end
+    return 0
+end
 
 -- Message deduplication cache: [hash] = {msg=string, count=number, lastTime=number}
 DC_Debug.messageCache = DC_Debug.messageCache or {}
@@ -20,7 +36,7 @@ end
 
 -- Clean old entries from cache
 local function CleanCache()
-    local now = GetTime()
+    local now = SafeGetTime()
     local toRemove = {}
     
     for hash, entry in pairs(DC_Debug.messageCache) do
@@ -70,7 +86,7 @@ function DC_Debug:Print(addonName, msg, isEnabled)
     -- Convert message to string
     local msgStr = tostring(msg)
     local hash = MessageHash(addonName, msgStr)
-    local now = GetTime()
+    local now = SafeGetTime()
     
     -- Clean cache periodically
     if math.random() < 0.1 then  -- 10% chance on each call
@@ -133,11 +149,11 @@ function DC_Debug:GetStats()
     local totalRepeats = 0
     
     for _, entry in pairs(self.messageCache) do
-        total = total + 1
         if entry.count > 1 then
             repeated = repeated + 1
             totalRepeats = totalRepeats + entry.count
         end
+        total = total + 1
     end
     
     return {
@@ -164,5 +180,3 @@ SlashCmdList['DCDEBUGCLEAR'] = function()
     DC_Debug:ClearCache()
     print("|cff33ff99DC Debug:|r Message cache cleared")
 end
-
-print("|cff00ff00DC Debug Utils loaded|r - Use /dcdebugstats to see statistics")

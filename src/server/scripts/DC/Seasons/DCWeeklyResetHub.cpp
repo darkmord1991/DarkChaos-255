@@ -4,6 +4,7 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "ScriptMgr.h"
+#include "DC/dc_update_profiler.h"
 
 #include <ctime>
 
@@ -157,6 +158,7 @@ namespace
 
         void OnUpdate(uint32 diff) override
         {
+            DarkChaos::ScopedUpdateProfiler _prof("WeeklyReset");
             _timer += diff;
             if (_timer < 60000)
                 return;

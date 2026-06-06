@@ -3,6 +3,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "GameTime.h"
+#include "DC/dc_update_profiler.h"
 #include <mutex>
 
 class HotspotsWorldScript : public WorldScript
@@ -34,6 +35,7 @@ public:
 
     void OnUpdate(uint32 /*diff*/) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("Hotspots");
         if (!sHotspotsConfig.enabled) return;
 
         time_t now = GameTime::GetGameTime().count();

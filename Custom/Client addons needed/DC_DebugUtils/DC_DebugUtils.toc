@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: |cffFFCC00DC|r Debug Utils
+## Notes: Shared debug logging utility (dedup + /dcdebugstats) for DC addons
+## Author: DC-255
+## Version: 1.0.0
+## X-Category: Library
+## DefaultState: enabled
+
+DC_DebugUtils.lua

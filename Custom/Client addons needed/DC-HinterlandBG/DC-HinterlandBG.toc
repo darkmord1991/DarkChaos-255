@@ -9,7 +9,9 @@
 ## DefaultState: enabled
 
 # Core compatibility and utilities
-..\DC_DebugUtils.lua
+# DC_DebugUtils is provided by the standalone DC_DebugUtils addon (see
+# ## OptionalDeps above); do not load it via a parent-dir path here, the
+# 3.3.5a client refuses TOC entries outside the addon folder.
 HLBG_TimerCompat.lua
 HLBG_Utils.lua
 HLBG_Stubs.lua

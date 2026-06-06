@@ -354,13 +354,12 @@ namespace Upgrade
         if (state && state->upgraded_item_level != 0)
             upgradedIlvl = state->upgraded_item_level;
 
-        // Get tier max level
+        // Tier max level: served from the in-memory UpgradeManager (the tier
+        // definition table is loaded once at startup), so no per-request query.
         uint32 maxLevel = 15;
-        QueryResult tierResult = WorldDatabase.Query(
-            "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
-            tier);
-        if (tierResult)
-            maxLevel = (*tierResult)[0].Get<uint32>();
+        if (DarkChaos::ItemUpgrade::UpgradeManager* tierMgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+            if (DarkChaos::ItemUpgrade::TierDefinition const* tierDef = tierMgr->GetTierDefinition(static_cast<uint8>(tier)))
+                maxLevel = tierDef->max_upgrade_level;
 
         uint32 nextTokenCost = 0;
         uint32 nextEssenceCost = 0;
@@ -422,18 +421,20 @@ namespace Upgrade
             return;
         }
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT SUM(token_cost), SUM(essence_cost) FROM dc_item_upgrade_costs "
-            "WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}",
-            tier, fromLevel + 1, toLevel);
-
+        // Cost preview: summed from the in-memory UpgradeManager (the cost
+        // table is loaded once at startup) instead of a per-request SUM query.
+        // Levels without a cost row contribute 0; the upper bound is clamped to
+        // the uint8 level range so a bogus toLevel can't spin the loop. This
+        // mirrors the previous SQL SUM over [fromLevel+1, toLevel].
         uint32 tokens = 0, essence = 0;
-        if (result)
+        if (DarkChaos::ItemUpgrade::UpgradeManager* costMgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
         {
-            if (!(*result)[0].IsNull())
-                tokens = (*result)[0].Get<uint32>();
-            if (!(*result)[1].IsNull())
-                essence = (*result)[1].Get<uint32>();
+            uint32 upper = (toLevel < 255u) ? toLevel : 255u;
+            for (uint32 lvl = fromLevel + 1; lvl <= upper; ++lvl)
+            {
+                tokens += costMgr->GetUpgradeCost(static_cast<uint8>(tier), static_cast<uint8>(lvl));
+                essence += costMgr->GetEssenceCost(static_cast<uint8>(tier), static_cast<uint8>(lvl));
+            }
         }
 
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_COST_INFO)

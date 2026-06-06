@@ -16,6 +16,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "World.h"
+#include "DC/dc_update_profiler.h"
 
 using namespace DarkChaos::CrossSystem;
 
@@ -51,6 +52,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("CrossSystem");
         GetManager()->OnWorldUpdate(diff);
     }
 };

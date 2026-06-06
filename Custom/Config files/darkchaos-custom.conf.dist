@@ -3698,44 +3698,31 @@ FakePlayers.GuildTags.List = ""
 #
 #  SECTION 21: DC SYSTEM LOGGING
 #
-#  Dedicated file logging for DarkChaos custom systems.
+#  DC log appenders and loggers (Appender.DC, Appender.DCConsole,
+#  Logger.module.dc, Logger.scripts.dc, Logger.dc.addon, Logger.mythic,
+#  Logger.hlbg, Logger.seasonal, Logger.dc.perf, ...) are defined in the MAIN
+#  config -- see the "DarkChaos custom systems" logging block in
+#  worldserver.conf.dist. They are intentionally NOT repeated here: declaring
+#  the same keys in both files duplicates them in the merged worldserver.conf
+#  and produces "Config::LoadFile: Duplicate key name ..." warnings at startup.
+#  Only DC-specific *settings* belong in this section.
 #
 ###############################################################################
 
 # -----------------------------------------------------------------------------
-# Log Appender Configuration
+# OnUpdate Performance Profiler (diagnostic)
 # -----------------------------------------------------------------------------
 #
-# Appender.DC
-#    Type: 2 (File), Level: 5 (Debug), Flags: 0, Filename: dcsystem.log, Mode: a (Append)
+#    DC.UpdateProfiler.ThresholdMs
+#        Description: World-tick spike diagnostic. Emits a WARN under the
+#                     "dc.perf" logger whenever an instrumented DC
+#                     WorldScript::OnUpdate handler (CrossSystem, Hotspots,
+#                     WeeklyReset, FakePlayers) runs for at least this many
+#                     milliseconds in a single tick. Lower it to catch smaller
+#                     spikes; set 0 to disable entirely. Read once at startup.
+#        Default:     25
 #
-Appender.DC=2,5,0,dcsystem.log,a
-
-# -----------------------------------------------------------------------------
-# Logger Configuration
-# -----------------------------------------------------------------------------
-#
-# Format: Logger.name=LogLevel,AppenderList (space-separated appender names)
-#
-
-# General DC scripts/modules
-Logger.scripts.dc=5,Console DC
-Logger.module.dc=5,Console DC
-Logger.modules.dc=5,Console DC
-
-# DC Addon Protocol
-Logger.dc.addon=5,Console DC
-
-# Mythic+ System
-Logger.mythic=5,Console DC
-Logger.mythic.run=5,Console DC
-
-# Hinterland BG
-Logger.hlbg=5,Console DC
-Logger.hlbg.aio=5,Console DC
-
-# Seasonal System
-Logger.seasonal=5,Console DC
+DC.UpdateProfiler.ThresholdMs = 25
 
 
 ###############################################################################

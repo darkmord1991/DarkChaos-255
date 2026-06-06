@@ -22,6 +22,8 @@
 #include "GameTime.h"
 #include "Timer.h"
 #include "DatabaseEnv.h"
+#include "QueryCallback.h"
+#include "AsyncCallbackProcessor.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "DC/CrossSystem/EventBus.h"
 #include "DC/CrossSystem/CrossSystemCore.h"
@@ -3345,10 +3347,12 @@ public:
         std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
         if (chunkIndex == 0)
         {
-            // Security: Check if adding this would exceed max pending chunks
-            // Count how many accounts have pending chunks (simple approach)
+            // Security: bound how many DISTINCT accounts may have an in-flight
+            // chunked message at once. s_ChunkedMessages is keyed by accountId,
+            // so .size() is the number of accounts currently mid-reassembly (not
+            // a chunk count). The global ceiling is MaxPendingChunks * 10.
             if (s_ChunkedMessages.find(accountId) == s_ChunkedMessages.end() &&
-                s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)  // Global limit = per-account * 10
+                s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)
             {
                 g_ProtocolMetrics.parseErrors++;
                 LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: global pending chunks limit reached ({})",
@@ -3629,6 +3633,44 @@ public:
     }
 };
 
+namespace
+{
+    // Async DB callback plumbing. A discarded QueryCallback never invokes its
+    // continuation (see QueryCallback::~QueryCallback), so handlers route their
+    // callbacks here. EnqueueQueryCallback() may be called from any thread (the
+    // addon message handlers guard their session state with mutexes for the
+    // same reason); the processor itself is only ever touched on the world
+    // thread inside ProcessPendingQueryCallbacks().
+    QueryCallbackProcessor s_DCAddonQueryProcessor;
+    std::vector<QueryCallback> s_DCAddonPendingQueries;
+    std::mutex s_DCAddonPendingQueriesMutex;
+}
+
+namespace DCAddon
+{
+    void EnqueueQueryCallback(QueryCallback&& callback)
+    {
+        std::lock_guard<std::mutex> lock(s_DCAddonPendingQueriesMutex);
+        s_DCAddonPendingQueries.emplace_back(std::move(callback));
+    }
+
+    void ProcessPendingQueryCallbacks()
+    {
+        // World thread only. Move any queued callbacks into the processor,
+        // then invoke those whose results are ready.
+        std::vector<QueryCallback> pending;
+        {
+            std::lock_guard<std::mutex> lock(s_DCAddonPendingQueriesMutex);
+            pending.swap(s_DCAddonPendingQueries);
+        }
+
+        for (QueryCallback& cb : pending)
+            s_DCAddonQueryProcessor.AddCallback(std::move(cb));
+
+        s_DCAddonQueryProcessor.ProcessReadyCallbacks();
+    }
+}
+
 class DCAddonWorldScript : public WorldScript
 {
 public:
@@ -3636,6 +3678,11 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        // Drain queued async DB callbacks every tick on the world thread so
+        // their .WithCallback() continuations actually run (a discarded
+        // QueryCallback never fires). Cheap no-op when nothing is queued.
+        DCAddon::ProcessPendingQueryCallbacks();
+
         _statsFlushTimer += diff;
         if (_statsFlushTimer < STATS_FLUSH_INTERVAL_MS)
             return;

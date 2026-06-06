@@ -42,6 +42,7 @@
 class Player;
 class WorldSession;
 class WorldPacket;
+class QueryCallback;
 #include <cctype>
 #include <charconv>
 #include <cstdlib>
@@ -1234,6 +1235,20 @@ namespace DCAddon
     void ClearCurrentRequestContext();
     const std::string& GetCurrentRequestId();
     void NotifyResponseSent(Player* player, const std::string& requestId);
+
+    // Async DB helpers (defined in dc_addon_protocol.cpp).
+    // A QueryCallback that is created and then discarded never runs its
+    // .WithCallback() continuation (see QueryCallback::~QueryCallback): the
+    // query still executes, but the response-building lambda is silently
+    // dropped. Hand the callback to EnqueueQueryCallback() instead -- it is
+    // thread-safe (addon handlers may run off the world thread) and the queued
+    // callbacks are invoked on the world thread by ProcessPendingQueryCallbacks(),
+    // which the addon WorldScript ticks every update. Example:
+    //   DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+    //       .WithCallback([guid](QueryResult r) { /* build + send response */ }));
+    void EnqueueQueryCallback(QueryCallback&& callback);
+    void ProcessPendingQueryCallbacks();
+
     bool IsS2CProtocolLoggingEnabled();
     uint32 GetPendingRequestElapsedMs(Player* player, const std::string& requestId);
     void LogS2CMessage(Player* player, const std::string& module, uint8 opcode,
