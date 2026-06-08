@@ -140,7 +140,6 @@ std::string GetMapName(uint32 mapId);
 Map* GetBaseMapSafe(uint32 mapId);
 
 // Position generation
-bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float& outX, float& outY, float& outZ);
 uint32 GetHotspotCountInZone(uint32 zoneId);
 bool CanSpawnInZone(uint32 zoneId);
 

@@ -3221,6 +3221,22 @@ local function StyleQuestText()
         ApplyFontStyle(_G[name], 11, preferStockChrome and 0 or 1, sectionR, sectionG, sectionB)
     end
 
+    -- The reward XP value rendered with a heavy embossed/outlined number font that
+    -- was hard to read. Force a clean (no-outline) glyph with a readable shadow.
+    local xpText = _G["QuestInfoXPFrameReceiveText"]
+    if xpText and xpText.GetFont and xpText.SetFont then
+        local font = (xpText.__dcqosQuestFont and xpText.__dcqosQuestFont.font) or (xpText:GetFont())
+        if font then
+            xpText:SetFont(font, 13, "")
+        end
+        if xpText.SetShadowColor then
+            xpText:SetShadowColor(0, 0, 0, 0.65)
+        end
+        if xpText.SetShadowOffset then
+            xpText:SetShadowOffset(1, -1)
+        end
+    end
+
     UpdateQuestInfoTitles()
 end
 
@@ -3580,6 +3596,15 @@ function QuestFrames.OnEnable()
 
     if state.worldMapRefreshListener and type(addon.RegisterWorldMapRefreshListener) == "function" then
         addon:RegisterWorldMapRefreshListener("QuestFramesWorldMap", state.worldMapRefreshListener)
+    end
+
+    -- Re-render the quest log + objective tracker when the tracked quest changes
+    -- (3.3.5a has no SUPER_TRACKING_CHANGED event; Navigation broadcasts instead).
+    if type(addon.RegisterQuestTrackingListener) == "function" then
+        addon:RegisterQuestTrackingListener("QuestFrames", function()
+            QueueRefresh(0)
+            QueueRefresh(0.05)
+        end)
     end
 
     if not state.eventFrame then

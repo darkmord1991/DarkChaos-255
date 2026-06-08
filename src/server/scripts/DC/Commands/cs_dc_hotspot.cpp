@@ -66,10 +66,20 @@ public:
 
     static bool HandleHotspotsSpawnCommand(ChatHandler* handler, char const* /*args*/)
     {
-        if (sHotspotMgr->SpawnHotspot())
-            handler->SendSysMessage("Spawned a new hotspot.");
-        else
-            handler->SendSysMessage("Failed to spawn a new hotspot (limit reached or no valid pos).");
+        // Spawning draws from the pre-validated spawn-point pool. On a cold pool
+        // (fresh DB before background discovery has run) prime it on demand so a
+        // manual GM spawn still works; a brief stall here is acceptable.
+        if (!sHotspotMgr->SpawnHotspot())
+        {
+            sHotspotMgr->RefillSpawnPool();
+            if (!sHotspotMgr->SpawnHotspot())
+            {
+                handler->SendSysMessage("Failed to spawn a new hotspot (limit reached or no valid pos).");
+                return true;
+            }
+        }
+
+        handler->SendSysMessage("Spawned a new hotspot.");
         return true;
     }
 

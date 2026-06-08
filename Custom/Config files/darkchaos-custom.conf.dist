@@ -380,6 +380,34 @@ DC.AddonProtocol.QoS.Enable = 1
 DC.QoS.TooltipTransport.Debug = 0
 
 #
+#    DC.QoS.TooltipEnrichment.CacheTtlSeconds
+#        Description: Server-side cache TTL (seconds) for spell-tooltip
+#                     enrichment lines. SMSG_SPELL_TOOLTIP_ENRICHMENT is the
+#                     highest-volume DC addon message; the enrichment line is
+#                     cached per (player, spellId, contextHash) so repeated
+#                     hovers/casts of the same spell skip the rebuild. The line
+#                     uses gear-scaled stats that contextHash does not capture,
+#                     so the TTL bounds staleness after a gear change (the line
+#                     refreshes within this window). Set 0 to disable the cache.
+#        Default:     60
+#
+DC.QoS.TooltipEnrichment.CacheTtlSeconds = 60
+
+#
+#    DC.QoS.TooltipEnrichment.PreWarmPush
+#        Description: On login the server pushes enrichment for the player's
+#                     entire spellbook (~once per login) so first-hover tooltips
+#                     are instant. This bulk push is the dominant share of DC
+#                     addon message volume. Disable it (0) to have clients fetch
+#                     enrichment lazily on first hover via the deduped on-demand
+#                     path -- this trades a brief first-hover delay for a large
+#                     drop in login-time traffic. The per-spell on-demand path
+#                     and the server-side line cache both keep working.
+#        Default:     1 (Enabled - pre-warm push on)
+#
+DC.QoS.TooltipEnrichment.PreWarmPush = 1
+
+#
 #    DC.AddonProtocol.AOELoot.Enable
 #        Description: Enable DCAOE prefix for AoE Loot addon sync
 #        Default:     1 (Enabled)

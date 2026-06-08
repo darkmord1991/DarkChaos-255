@@ -32,6 +32,11 @@ namespace DCAddon
         static void SendGOMoveMessage(Player* player, const std::string& msg)
         {
             Message response(Module::GOMOVE, Opcode::GOMove::SMSG_MOVE_RESULT);
+            // Echo the in-flight request id so the client closes its pending
+            // request on this actual response, instead of relying on the
+            // protocol's RID-timeout fallback (the cause of the historical
+            // GOMV op1 timeouts, when no response carried the request id).
+            response.SetRequestId(DCAddon::GetCurrentRequestId());
             response.Add(msg);
             response.Send(player);
         }

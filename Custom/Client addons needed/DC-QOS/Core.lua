@@ -520,6 +520,27 @@ function addon:Debug(msg)
     end
 end
 
+-- 3.3.5a id-space note: GetCurrentMapAreaID(), GetPlayerMapPosition(), QuestPOI*,
+-- and our native exports all use a "UI map id" that equals WorldMapArea.ID + 1.
+-- QuestMapData and the WorldMapArea DBC (and the generated MapAreaSizes table) use
+-- the raw WorldMapArea.ID. These helpers convert between the two spaces so the
+-- minimap/HUD/world-map all line up.
+function addon:UiMapIdFromWorldMapAreaId(worldMapAreaId)
+    worldMapAreaId = tonumber(worldMapAreaId)
+    if not worldMapAreaId or worldMapAreaId <= 0 then
+        return nil
+    end
+    return worldMapAreaId + 1
+end
+
+function addon:WorldMapAreaIdFromUiMapId(uiMapId)
+    uiMapId = tonumber(uiMapId)
+    if not uiMapId or uiMapId <= 0 then
+        return nil
+    end
+    return uiMapId - 1
+end
+
 function addon:GetMapUtils()
     if self._mapUtils then
         return self._mapUtils
@@ -607,20 +628,74 @@ function addon:GetMapUtils()
         return nil, nil, nil
     end
 
+    local mapAreaYardsCache = {}
+
+    -- Returns the world-space size (in yards) of a WorldMapArea so that
+    -- normalized map deltas can be converted into yards. Without this the
+    -- navigation/minimap code falls back to a 10000x10000 guess, which makes
+    -- every quest read as "hundreds of yards away" and clamps every minimap pin
+    -- to the edge ring around the player.
+    --
+    -- Resolution order (best first), memoized per mapId:
+    --   1. Native GetWorldMapAreaYards export (live WorldMapArea.dbc; covers
+    --      custom zones such as Hyjal and the Giant Isles exactly).
+    --   2. LibMapData-1.0, if another addon happens to provide it.
+    --   3. Embedded MapAreaSizes table generated from the WorldMapArea CSV.
+    --   4. 10000x10000 fallback (directions stay usable; distance is approximate).
     function mapUtils.GetMapAreaYards(mapId)
-        local mapLib = mapUtils.GetMapDataLib()
-        if mapLib and mapId and mapLib.MapArea then
-            local floor =
-                (type(GetCurrentMapDungeonLevel) == "function")
-                and GetCurrentMapDungeonLevel()
-                or 0
-            local ok, width, height = pcall(mapLib.MapArea, mapLib, mapId, floor)
-            if ok and width and height and width > 0 and height > 0 then
-                return width, height
+        mapId = tonumber(mapId)
+
+        if mapId and mapAreaYardsCache[mapId] then
+            local cached = mapAreaYardsCache[mapId]
+            return cached[1], cached[2]
+        end
+
+        local width, height
+
+        if mapId and mapId > 0 then
+            local nativeFn = rawget(_G, "GetWorldMapAreaYards")
+                or rawget(_G, "C_Map_GetWorldMapAreaYards")
+            if type(nativeFn) == "function" then
+                local ok, nativeWidth, nativeHeight = pcall(nativeFn, mapId)
+                if ok and tonumber(nativeWidth) and tonumber(nativeHeight)
+                    and nativeWidth > 0 and nativeHeight > 0 then
+                    width, height = nativeWidth, nativeHeight
+                end
             end
         end
 
-        return 10000, 10000
+        if not width then
+            local mapLib = mapUtils.GetMapDataLib()
+            if mapLib and mapId and mapLib.MapArea then
+                local floor =
+                    (type(GetCurrentMapDungeonLevel) == "function")
+                    and GetCurrentMapDungeonLevel()
+                    or 0
+                local ok, libWidth, libHeight = pcall(mapLib.MapArea, mapLib, mapId, floor)
+                if ok and libWidth and libHeight and libWidth > 0 and libHeight > 0 then
+                    width, height = libWidth, libHeight
+                end
+            end
+        end
+
+        if not width and mapId then
+            -- MapAreaSizes is keyed by raw WorldMapArea.ID; mapId is a UI map id.
+            local sizes = addon.MapAreaSizes
+            local entry = sizes and (sizes[mapId - 1] or sizes[mapId])
+            if entry and entry[1] and entry[2] and entry[1] > 0 and entry[2] > 0 then
+                width, height = entry[1], entry[2]
+            end
+        end
+
+        if not width then
+            return 10000, 10000
+        end
+
+        if mapId then
+            mapAreaYardsCache[mapId] = { width, height }
+        end
+
+        return width, height
     end
 
     function mapUtils.ComputeDistanceYards(mapId, x1, y1, x2, y2)
@@ -1061,6 +1136,51 @@ function addon:UnregisterWorldMapRefreshListener(listenerKey)
 
     registry[listenerKey] = nil
     return true
+end
+
+-- Super-tracking (followed quest) change broadcast. 3.3.5a has no native
+-- SUPER_TRACKING_CHANGED event, so when the addon changes the tracked quest we
+-- must explicitly tell every surface (quest log, objective tracker, world map
+-- quest list, world-map pins) to re-render its "this is the tracked quest"
+-- highlight -- otherwise the selection silently fails to update.
+function addon:RegisterQuestTrackingListener(listenerKey, callback)
+    if type(listenerKey) ~= "string" or listenerKey == "" or type(callback) ~= "function" then
+        return false
+    end
+
+    local registry = self.__dcqosQuestTrackingListeners
+    if type(registry) ~= "table" then
+        registry = {}
+        self.__dcqosQuestTrackingListeners = registry
+    end
+
+    registry[listenerKey] = callback
+    return true
+end
+
+function addon:UnregisterQuestTrackingListener(listenerKey)
+    local registry = self.__dcqosQuestTrackingListeners
+    if type(registry) == "table" and type(listenerKey) == "string" then
+        registry[listenerKey] = nil
+    end
+end
+
+function addon:NotifyQuestTrackingChanged()
+    -- World-map surfaces (pins + quest list) reuse the world-map refresh path.
+    if type(self.DispatchWorldMapRefreshListeners) == "function" then
+        self:DispatchWorldMapRefreshListeners()
+    end
+
+    local registry = self.__dcqosQuestTrackingListeners
+    if type(registry) ~= "table" then
+        return
+    end
+
+    for _, callback in pairs(registry) do
+        if type(callback) == "function" then
+            pcall(callback)
+        end
+    end
 end
 
 -- ============================================================

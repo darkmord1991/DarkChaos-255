@@ -519,19 +519,11 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
         pulseAlpha = math.max(pulseAlpha, 0.18)
     end
 
-    local renderGlowAlpha = 0
-    local renderPulseAlpha = 0
-    if isTracked or isSelected or isWatched or isComplete then
-        renderGlowAlpha = glowAlpha
-    end
-    if isTracked or isSelected then
-        renderPulseAlpha = pulseAlpha
-    end
-
-    chrome.glow:SetVertexColor(borderR, borderG, borderB, 1)
-    chrome.glow:SetAlpha(renderGlowAlpha)
-    chrome.pulse:SetVertexColor(borderR, borderG, borderB, 1)
-    chrome.pulse:SetAlpha(renderPulseAlpha)
+    -- The extra glow/pulse ring around the native world-map POI read as a confusing
+    -- "second circle" that was also centered differently from the POI number. Drop
+    -- it entirely; the recolored POI number/icon is the tracked/selected indicator.
+    chrome.glow:SetAlpha(0)
+    chrome.pulse:SetAlpha(0)
     chrome.completeDot:SetAlpha(dotAlpha)
 
     if poiIcon.SetAlpha then

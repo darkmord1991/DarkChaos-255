@@ -6,6 +6,19 @@
 #include <unordered_map>
 #include <unordered_set>
 
+// Pre-validated spawn location. Terrain/zone eligibility is static, so once a
+// point is discovered it can be reused indefinitely without probing cold
+// terrain on the world thread. Backed by the dc_hotspot_spawn_points table.
+struct HotspotSpawnPoint
+{
+    uint32 dbId = 0;
+    uint32 mapId = 0;
+    uint32 zoneId = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+
 class HotspotMgr
 {
 private:
@@ -15,6 +28,8 @@ private:
     HotspotGrid _grid;
     uint32 _nextHotspotId;
     std::unordered_map<uint32, std::array<float, 4>> _mapBounds;
+    // Pre-validated spawn point pool (world-thread only; no lock needed)
+    std::vector<HotspotSpawnPoint> _spawnPool;
     // Per-player objectives tracking
     std::unordered_map<ObjectGuid, HotspotObjectives> _playerObjectives;
     // Per-player server-side expiry check
@@ -30,6 +45,11 @@ private:
     std::unordered_map<ObjectGuid, PlayerHotspotTracking> _playerTracking;
     std::mutex _playerDataLock;
 
+    // Pick a currently-eligible point from the pool (dynamic capacity/spacing
+    // checks applied at pick time). Returns false if nothing is eligible.
+    bool PickSpawnPoint(HotspotSpawnPoint& out);
+    void SaveSpawnPointToDB(HotspotSpawnPoint const& point);
+
 public:
     static HotspotMgr* instance();
 
@@ -39,6 +59,11 @@ public:
     void LoadFromDB();
     bool SpawnHotspot();
     void CleanupExpiredHotspots();
+
+    // Spawn point pool: load persisted points, and lazily discover new ones
+    // with bounded disk I/O per call (throttled from OnUpdate).
+    void LoadSpawnPointsFromDB();
+    void RefillSpawnPool();
 
     // Player interactions
     Hotspot const* GetPlayerHotspot(Player* player);

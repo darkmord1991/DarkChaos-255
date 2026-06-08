@@ -4476,7 +4476,10 @@ function PingSystem:Push(payload)
     frame.__dcqosUiTextureKit = uiTextureKit
     frame.ClampedPin:Hide()
 
-    frame.GroundBackground:SetVertexColor(1, 1, 1, 1)
+    -- The ground-marker disc texture is a heavy near-black glass plate; at full
+    -- opacity it reads as a solid black blob over the terrain. Drop its alpha so the
+    -- world shows through and the marker reads as a translucent shaded disc.
+    frame.GroundBackground:SetVertexColor(1, 1, 1, 0.45)
     frame.GroundHighlight:SetVertexColor(1, 1, 1, 1)
     frame.GroundMarker:SetVertexColor(1, 1, 1, 1)
     frame.Stem:SetVertexColor(1, 1, 1, 1)

@@ -180,7 +180,9 @@ local function EnsureAvailableIndex()
         if type(starts) == "table" then
             for i = 1, #starts do
                 local marker = starts[i]
-                local mapId = marker and tonumber(marker.m) or nil
+                -- QuestMapData uses raw WorldMapArea ids; the world map (GetCurrentMapAreaID)
+                -- uses UI map ids (WorldMapArea.ID + 1). Convert so the keys line up.
+                local mapId = addon:UiMapIdFromWorldMapAreaId(marker and marker.m)
                 local x = marker and tonumber(marker.x) or nil
                 local y = marker and tonumber(marker.y) or nil
                 if mapId and mapId > 0 and x and y then
@@ -221,6 +223,83 @@ local function EnsureAvailableIndex()
     return availableByMap
 end
 
+-- The native client QuestPOI system already draws objective/turn-in circles for
+-- quests it has POI data for (and QuestTrackerMarkers decorates those). If we also
+-- draw our QuestMapData pin at the same spot the player gets a doubled circle and a
+-- stacked tooltip. QuestPOIGetIconInfo returns coordinates exactly when the native
+-- POI is showing the quest on the current map, so we use it to defer. On realms
+-- without POI data it returns nothing and our pins fill in as before.
+local function NativePoiShowsQuest(questId)
+    if type(QuestPOIGetIconInfo) ~= "function" then
+        return false
+    end
+
+    local r = { pcall(QuestPOIGetIconInfo, questId) }
+    if not r[1] then
+        return false
+    end
+
+    for i = 2, 6 do
+        local x = tonumber(r[i])
+        local y = tonumber(r[i + 1])
+        if x and y and x > 0 and x <= 1 and y > 0 and y <= 1
+            and not (x == math.floor(x) and x <= 12) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local mapUtils = type(addon.GetMapUtils) == "function" and addon:GetMapUtils() or nil
+local ComputeDistanceYards = mapUtils and mapUtils.ComputeDistanceYards or nil
+
+-- Retail draws one numbered pin per objective AREA, not one per spawn point. Group a
+-- quest's objective/turn-in points so points within this many yards of each other
+-- collapse into a single pin at their center.
+local QUEST_AREA_CLUSTER_THRESHOLD_YARDS = 160
+
+local function ClusterQuestMarkerPoints(points, mapId)
+    local clusters = {}
+    for i = 1, #points do
+        local point = points[i]
+        local assigned = nil
+        for c = 1, #clusters do
+            local cluster = clusters[c]
+            local distance
+            if ComputeDistanceYards then
+                distance = ComputeDistanceYards(mapId, cluster.x, cluster.y, point.x, point.y)
+            else
+                local dx = (cluster.x - point.x) * 10000
+                local dy = (cluster.y - point.y) * 10000
+                distance = math.sqrt((dx * dx) + (dy * dy))
+            end
+            if distance and distance <= QUEST_AREA_CLUSTER_THRESHOLD_YARDS then
+                assigned = cluster
+                break
+            end
+        end
+        if not assigned then
+            assigned = {
+                sumX = 0,
+                sumY = 0,
+                count = 0,
+                x = point.x,
+                y = point.y,
+                objectiveIndex = point.objectiveIndex,
+                sourceKind = point.sourceKind,
+            }
+            clusters[#clusters + 1] = assigned
+        end
+        assigned.count = assigned.count + 1
+        assigned.sumX = assigned.sumX + point.x
+        assigned.sumY = assigned.sumY + point.y
+        assigned.x = assigned.sumX / assigned.count
+        assigned.y = assigned.sumY / assigned.count
+    end
+    return clusters
+end
+
 local function GetVisibleMarkers(currentMapId)
     local settings = GetSettings()
     local markers = {}
@@ -249,46 +328,65 @@ local function GetVisibleMarkers(currentMapId)
     if type(data) == "table" then
         for questId, questState in pairs(activeQuestLookup) do
             local quest = data[questId]
-            if quest then
+            -- Defer objective/turn-in pins to the native QuestPOI to avoid duplicates.
+            if quest and not NativePoiShowsQuest(questId) then
                 if questState.isComplete then
                     if settings.showTurnIns and type(quest.r) == "table" then
+                        local points = {}
                         for i = 1, #quest.r do
                             local marker = quest.r[i]
-                            if tonumber(marker.m) == currentMapId then
-                                markers[#markers + 1] = {
-                                    category = "turnin",
-                                    questId = questId,
-                                    questLogIndex = questState.questLogIndex,
-                                    mapId = currentMapId,
-                                    x = tonumber(marker.x),
-                                    y = tonumber(marker.y),
-                                    level = questState.level,
-                                    title = questState.title or quest.t,
-                                    isTracked = trackedQuestId and trackedQuestId == questId or false,
-                                    recurrenceType = GetRecurringQuestType(questId),
-                                    sourceKind = marker.k,
-                                }
+                            local x = tonumber(marker.x)
+                            local y = tonumber(marker.y)
+                            if x and y and addon:UiMapIdFromWorldMapAreaId(marker.m) == currentMapId then
+                                points[#points + 1] = { x = x, y = y, sourceKind = marker.k }
                             end
                         end
-                    end
-                elseif settings.showObjectives and type(quest.o) == "table" then
-                    for i = 1, #quest.o do
-                        local marker = quest.o[i]
-                        if tonumber(marker.m) == currentMapId then
+                        local clusters = ClusterQuestMarkerPoints(points, currentMapId)
+                        for c = 1, #clusters do
+                            local cluster = clusters[c]
                             markers[#markers + 1] = {
-                                category = "objective",
+                                category = "turnin",
                                 questId = questId,
                                 questLogIndex = questState.questLogIndex,
                                 mapId = currentMapId,
-                                x = tonumber(marker.x),
-                                y = tonumber(marker.y),
+                                x = cluster.x,
+                                y = cluster.y,
                                 level = questState.level,
                                 title = questState.title or quest.t,
                                 isTracked = trackedQuestId and trackedQuestId == questId or false,
                                 recurrenceType = GetRecurringQuestType(questId),
-                                objectiveIndex = tonumber(marker.i) or 0,
+                                sourceKind = cluster.sourceKind,
+                                areaCount = cluster.count,
                             }
                         end
+                    end
+                elseif settings.showObjectives and type(quest.o) == "table" then
+                    local points = {}
+                    for i = 1, #quest.o do
+                        local marker = quest.o[i]
+                        local x = tonumber(marker.x)
+                        local y = tonumber(marker.y)
+                        if x and y and addon:UiMapIdFromWorldMapAreaId(marker.m) == currentMapId then
+                            points[#points + 1] = { x = x, y = y, objectiveIndex = tonumber(marker.i) or 0 }
+                        end
+                    end
+                    local clusters = ClusterQuestMarkerPoints(points, currentMapId)
+                    for c = 1, #clusters do
+                        local cluster = clusters[c]
+                        markers[#markers + 1] = {
+                            category = "objective",
+                            questId = questId,
+                            questLogIndex = questState.questLogIndex,
+                            mapId = currentMapId,
+                            x = cluster.x,
+                            y = cluster.y,
+                            level = questState.level,
+                            title = questState.title or quest.t,
+                            isTracked = trackedQuestId and trackedQuestId == questId or false,
+                            recurrenceType = GetRecurringQuestType(questId),
+                            objectiveIndex = cluster.objectiveIndex or 0,
+                            areaCount = cluster.count,
+                        }
                     end
                 end
             end
@@ -372,6 +470,10 @@ local function OnMarkerEnter(self)
     GameTooltip:ClearLines()
     GameTooltip:AddLine(FormatQuestLabel(marker.title, marker.level), 1.0, 0.84, 0.22)
     GameTooltip:AddLine(GetMarkerKindLabel(marker), 0.88, 0.88, 0.88)
+
+    if tonumber(marker.areaCount) and marker.areaCount > 1 then
+        GameTooltip:AddLine(string.format("Area of %d locations", marker.areaCount), 0.66, 0.78, 0.66)
+    end
 
     if marker.recurrenceType == "daily" then
         GameTooltip:AddLine("Recurring: Daily", 0.50, 0.78, 1.0)

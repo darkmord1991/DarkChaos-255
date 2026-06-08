@@ -53,6 +53,7 @@ void AddSC_boss_oondasta();                   // GiantIsles/boss_oondasta.cpp
 void AddSC_boss_thok();                       // GiantIsles/boss_thok.cpp
 void AddSC_boss_nalak();                      // GiantIsles/boss_nalak.cpp
 void AddSC_dc_giant_isles_water_monster();    // GiantIsles/dc_giant_isles_water_monster.cpp
+void AddSC_dc_giant_isles_fishing();          // GiantIsles/dc_giant_isles_fishing.cpp
 
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
@@ -266,6 +267,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_boss_thok);
     DC_LOAD(AddSC_boss_nalak);
     DC_LOAD(AddSC_dc_giant_isles_water_monster);
+    DC_LOAD(AddSC_dc_giant_isles_fishing);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);

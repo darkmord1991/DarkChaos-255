@@ -490,6 +490,54 @@ namespace DCQoS
     static std::unordered_map<uint32, QoSSettings> s_PlayerSettingsCache;
     static std::mutex s_PlayerSettingsCacheMutex;
 
+    // Spell-tooltip enrichment line cache.
+    // SMSG_SPELL_TOOLTIP_ENRICHMENT is by far the highest-volume DC addon
+    // message (~58% of all protocol traffic), and BuildSpellTooltipEnrichmentLine()
+    // is its expensive step (description-template rendering + per-effect
+    // formatting from live player stats). The line depends on the player's
+    // spell power / attack power (gear), which the protocol contextHash does
+    // NOT capture (it folds in spellId/level/class/form/talentGroup only), so
+    // the cache is keyed PER PLAYER -- sharing across players would leak one
+    // player's gear-scaled numbers to another with the same context. A short
+    // TTL bounds staleness when gear changes without a contextHash change.
+    struct SpellTooltipLineKey
+    {
+        uint32 guid;
+        uint32 spellId;
+        uint32 contextHash;
+
+        bool operator==(SpellTooltipLineKey const& other) const
+        {
+            return guid == other.guid && spellId == other.spellId
+                && contextHash == other.contextHash;
+        }
+    };
+
+    struct SpellTooltipLineKeyHash
+    {
+        std::size_t operator()(SpellTooltipLineKey const& key) const
+        {
+            std::size_t hash = 1469598103934665603ULL;
+            for (uint32 part : { key.guid, key.spellId, key.contextHash })
+            {
+                hash ^= part;
+                hash *= 1099511628211ULL;
+            }
+            return hash;
+        }
+    };
+
+    struct SpellTooltipLineCacheEntry
+    {
+        std::string line;
+        time_t expiresAt = 0;
+    };
+
+    static std::unordered_map<SpellTooltipLineKey, SpellTooltipLineCacheEntry,
+        SpellTooltipLineKeyHash> s_SpellTooltipLineCache;
+    static std::mutex s_SpellTooltipLineCacheMutex;
+    static constexpr std::size_t SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP = 8192;
+
     // =======================================================================
     // Helper Functions
     // =======================================================================
@@ -4241,6 +4289,58 @@ namespace DCQoS
         msg.Send(player);
     }
 
+    // Returns the enrichment line for (player, spellId, contextHash), building
+    // it on a cache miss. See s_SpellTooltipLineCache for the keying rationale.
+    // Set DC.QoS.TooltipEnrichment.CacheTtlSeconds = 0 to bypass the cache.
+    static std::string GetOrBuildSpellTooltipLine(Player* player, uint32 spellId,
+        uint32 contextHash, SpellInfo const* spellInfo)
+    {
+        uint32 const ttlSeconds = sConfigMgr->GetOption<uint32>(
+            "DC.QoS.TooltipEnrichment.CacheTtlSeconds", 60);
+        if (ttlSeconds == 0 || !player)
+            return BuildSpellTooltipEnrichmentLine(player, spellId, spellInfo);
+
+        SpellTooltipLineKey const key{ player->GetGUID().GetCounter(), spellId,
+            contextHash };
+        time_t const now = time(nullptr);
+
+        {
+            std::lock_guard<std::mutex> lock(s_SpellTooltipLineCacheMutex);
+            auto itr = s_SpellTooltipLineCache.find(key);
+            if (itr != s_SpellTooltipLineCache.end() && itr->second.expiresAt > now)
+                return itr->second.line;
+        }
+
+        std::string line = BuildSpellTooltipEnrichmentLine(player, spellId,
+            spellInfo);
+
+        {
+            std::lock_guard<std::mutex> lock(s_SpellTooltipLineCacheMutex);
+            if (s_SpellTooltipLineCache.size() >= SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP)
+            {
+                for (auto itr = s_SpellTooltipLineCache.begin();
+                    itr != s_SpellTooltipLineCache.end(); )
+                {
+                    if (itr->second.expiresAt <= now)
+                        itr = s_SpellTooltipLineCache.erase(itr);
+                    else
+                        ++itr;
+                }
+
+                // Still oversized after pruning expired entries: drop all to
+                // keep memory bounded (rare with a short TTL).
+                if (s_SpellTooltipLineCache.size()
+                    >= SPELL_TOOLTIP_LINE_CACHE_SOFT_CAP * 2)
+                    s_SpellTooltipLineCache.clear();
+            }
+
+            s_SpellTooltipLineCache[key] = SpellTooltipLineCacheEntry{
+                line, now + static_cast<time_t>(ttlSeconds) };
+        }
+
+        return line;
+    }
+
     void HandleSpellTooltipEnrichmentRequest(Player* player,
                                              uint32 requestId,
                                              uint32 spellId,
@@ -4275,8 +4375,8 @@ namespace DCQoS
             return;
         }
 
-        std::string line = BuildSpellTooltipEnrichmentLine(player, spellId,
-            spellInfo);
+        std::string line = GetOrBuildSpellTooltipLine(player, spellId,
+            contextHash, spellInfo);
         if (line.empty())
         {
             SendSpellTooltipEnrichment(player, requestId, spellId,
@@ -4886,7 +4986,7 @@ namespace DCQoS
             uint32 contextHash = BuildSpellTooltipContextHashForPlayer(spellId,
                 level, classId, shapeshiftForm, activeTalentGroup);
 
-            std::string line = BuildSpellTooltipEnrichmentLine(player, spellId, spellInfo);
+            std::string line = GetOrBuildSpellTooltipLine(player, spellId, contextHash, spellInfo);
             if (line.empty())
                 continue;
 
@@ -4934,10 +5034,17 @@ public:
 
         // Pre-push spell enrichment data so first-hover tooltips are instant.
         // Delayed 3 s to let the addon initialize and open its protocol channel.
-        player->m_Events.AddEvent(
-            new DCQoS_SpellEnrichmentPushEvent(player->GetGUID()),
-            player->m_Events.CalculateTime(3000)
-        );
+        // This bulk push (whole spellbook, once per login) is the dominant share
+        // of DC addon traffic. Admins can disable it: clients then fetch
+        // enrichment lazily on first hover via the deduped on-demand path,
+        // trading a brief first-hover delay for a large drop in login volume.
+        if (sConfigMgr->GetOption<bool>("DC.QoS.TooltipEnrichment.PreWarmPush", true))
+        {
+            player->m_Events.AddEvent(
+                new DCQoS_SpellEnrichmentPushEvent(player->GetGUID()),
+                player->m_Events.CalculateTime(3000)
+            );
+        }
 
         player->m_Events.AddEventAtOffset([guid = player->GetGUID()]
         {

@@ -19,12 +19,11 @@
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 #include "DBCEnums.h"
+#include "Random.h"
 #include <sstream>
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
-#include <random>
-#include <array>
 #include <unordered_set>
 
 // Helper to get base map safely
@@ -252,7 +251,7 @@ void HotspotMgr::DeleteHotspotFromDB(uint32 id)
     WorldDatabase.Execute("DELETE FROM dc_hotspots_active WHERE id = {}", id);
 }
 
-// Private Helper: GetRandomHotspotPosition
+// Spawn-time eligibility helpers (dynamic; depend on currently-active hotspots)
 static bool IsZoneAtCapacity(uint32 zoneId)
 {
     if (sHotspotsConfig.maxPerZone == 0)
@@ -285,139 +284,196 @@ static bool IsCityLikeArea(uint32 areaId)
     return false;
 }
 
-static bool IsElevatedSpot(Map* map, float x, float y, float z)
+// Static terrain/zone eligibility for a candidate position. Excludes the
+// dynamic checks (zone capacity, distance-to-existing) on purpose: those depend
+// on currently-active hotspots and are applied at spawn time in PickSpawnPoint,
+// so the result here is stable and safe to cache in the spawn pool.
+static bool EvaluateCandidateTerrain(Map* map, uint32 mapId, float cx, float cy,
+    uint32& outZoneId, float& outZ)
 {
-    if (!map)
+    if (!MapMgr::IsValidMapCoord(mapId, cx, cy))
         return false;
 
-    constexpr float PI = 3.14159265f;
-
-    constexpr std::array<float, 8> angles =
-    {
-        0.0f,
-        PI * 0.25f,
-        PI * 0.50f,
-        PI * 0.75f,
-        PI,
-        PI * 1.25f,
-        PI * 1.50f,
-        PI * 1.75f
-    };
-
-    float sampleRadius = std::max(35.0f, sHotspotsConfig.radius * 0.35f);
-    uint32 validSamples = 0;
-    uint32 lowerSamples = 0;
-    float dropSum = 0.0f;
-
-    for (float angle : angles)
-    {
-        float sx = x + std::cos(angle) * sampleRadius;
-        float sy = y + std::sin(angle) * sampleRadius;
-        if (!MapMgr::IsValidMapCoord(map->GetId(), sx, sy))
-            continue;
-
-        float sz = map->GetHeight(sx, sy, z + 20.0f, true, 80.0f);
-        if (!std::isfinite(sz) || sz <= MIN_HEIGHT)
-            continue;
-
-        ++validSamples;
-        float delta = z - sz;
-        if (delta >= 3.0f)
-        {
-            ++lowerSamples;
-            dropSum += delta;
-        }
-    }
-
-    if (validSamples < 4)
+    float gz = map->GetHeight(cx, cy, MAX_HEIGHT);
+    if (!std::isfinite(gz) || gz <= MIN_HEIGHT)
         return false;
 
-    if (lowerSamples < 4)
+    if (!MapMgr::IsValidMapCoord(mapId, cx, cy, gz))
         return false;
 
-    return (dropSum / float(lowerSamples)) >= 4.0f;
+    uint32 zoneId = map->GetZoneId(PHASEMASK_NORMAL, cx, cy, gz);
+    if (!zoneId)
+        return false;
+
+    if (!IsZoneAllowed(mapId, zoneId) || !sHotspotMgr->CanSpawnInZone(zoneId))
+        return false;
+
+    uint32 areaId = map->GetAreaId(PHASEMASK_NORMAL, cx, cy, gz);
+    if (IsCityLikeArea(areaId))
+        return false;
+
+    constexpr float collisionHeight = 2.0f;
+    if (map->IsInWater(PHASEMASK_NORMAL, cx, cy, gz, collisionHeight))
+        return false;
+
+    float waterLevel = map->GetWaterLevel(cx, cy);
+    if (std::isfinite(waterLevel) && waterLevel > gz - 1.0f)
+        return false;
+
+    outZoneId = zoneId;
+    outZ = gz;
+    return true;
 }
 
-static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float& outX, float& outY, float& outZ)
+void HotspotMgr::LoadSpawnPointsFromDB()
 {
-    if (sHotspotsConfig.enabledMaps.empty())
+    _spawnPool.clear();
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT id, map_id, zone_id, x, y, z FROM dc_hotspot_spawn_points WHERE enabled = 1");
+    if (!result)
     {
-        LOG_WARN("scripts.dc", "GetRandomHotspotPosition: no enabled maps configured");
-        return false;
+        LOG_INFO("server.loading", "Hotspots: No cached spawn points; will discover lazily.");
+        return;
     }
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::vector<uint32> maps = sHotspotsConfig.enabledMaps;
-    std::shuffle(maps.begin(), maps.end(), gen);
-
-    constexpr uint32 ATTEMPTS_PER_MAP = 5000;
-    constexpr uint32 ELEVATION_PREFERRED_ATTEMPTS = 3000;
-    std::uniform_real_distribution<float> xDist(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
-    std::uniform_real_distribution<float> yDist(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
-
-    for (uint32 candidateMapId : maps)
+    do
     {
-        if (!IsMapEnabled(candidateMapId))
+        Field* fields = result->Fetch();
+        HotspotSpawnPoint p;
+        p.dbId   = fields[0].Get<uint32>();
+        p.mapId  = fields[1].Get<uint32>();
+        p.zoneId = fields[2].Get<uint32>();
+        p.x      = fields[3].Get<float>();
+        p.y      = fields[4].Get<float>();
+        p.z      = fields[5].Get<float>();
+        _spawnPool.push_back(p);
+    } while (result->NextRow());
+
+    LOG_INFO("server.loading", "Hotspots: Loaded {} cached spawn point(s).", _spawnPool.size());
+}
+
+void HotspotMgr::SaveSpawnPointToDB(HotspotSpawnPoint const& p)
+{
+    WorldDatabase.Execute(
+        "INSERT INTO dc_hotspot_spawn_points (map_id, zone_id, x, y, z, enabled) VALUES ({}, {}, {}, {}, {}, 1)",
+        p.mapId, p.zoneId, p.x, p.y, p.z);
+}
+
+void HotspotMgr::RefillSpawnPool()
+{
+    // Target variety so spawns rarely repeat the same spot.
+    constexpr size_t POOL_TARGET = 200;
+    if (_spawnPool.size() >= POOL_TARGET)
+        return;
+
+    if (sHotspotsConfig.enabledMaps.empty())
+        return;
+
+    // Bound disk I/O: every cold (unloaded) grid we probe pulls .map/.vmtile/
+    // .mmtile off disk (~several ms each). Cap cold-grid loads per call so a
+    // single world tick never stalls; probes into already-loaded grids are
+    // cheap and not budgeted. The pool fills over many ticks and persists.
+    constexpr uint32 COLD_GRID_BUDGET = 3;
+    constexpr uint32 MAX_PROBES = 400;     // total random samples per call
+    constexpr size_t MAX_NEW_POINTS = 8;   // stop early once this many are added
+    constexpr float MIN_POINT_SPACING_SQ = 100.0f * 100.0f;
+
+    std::vector<uint32> const& maps = sHotspotsConfig.enabledMaps;
+    uint32 coldBudget = COLD_GRID_BUDGET;
+    size_t added = 0;
+
+    for (uint32 probe = 0; probe < MAX_PROBES; ++probe)
+    {
+        if (added >= MAX_NEW_POINTS)
+            break;
+
+        uint32 mapId = maps[urand(0, static_cast<uint32>(maps.size()) - 1)];
+        if (!IsMapEnabled(mapId))
             continue;
 
-        Map* map = GetBaseMapSafe(candidateMapId);
+        Map* map = GetBaseMapSafe(mapId);
         if (!map)
             continue;
 
-        for (uint32 attempt = 0; attempt < ATTEMPTS_PER_MAP; ++attempt)
+        float cx = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
+        float cy = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
+        if (!MapMgr::IsValidMapCoord(mapId, cx, cy))
+            continue;
+
+        // Gate cold terrain: once the budget is spent, only probe grids that
+        // are already resident (free), otherwise skip to the next sample.
+        if (!map->IsGridLoaded(cx, cy))
         {
-            float cx = xDist(gen);
-            float cy = yDist(gen);
-            if (!MapMgr::IsValidMapCoord(candidateMapId, cx, cy))
+            if (coldBudget == 0)
                 continue;
-
-            float gz = map->GetHeight(cx, cy, MAX_HEIGHT);
-            if (!std::isfinite(gz) || gz <= MIN_HEIGHT)
-                continue;
-
-            if (!MapMgr::IsValidMapCoord(candidateMapId, cx, cy, gz))
-                continue;
-
-            uint32 zoneId = map->GetZoneId(PHASEMASK_NORMAL, cx, cy, gz);
-            if (!zoneId)
-                continue;
-
-            if (!IsZoneAllowed(candidateMapId, zoneId) || !sHotspotMgr->CanSpawnInZone(zoneId))
-                continue;
-
-            if (IsZoneAtCapacity(zoneId))
-                continue;
-
-            uint32 areaId = map->GetAreaId(PHASEMASK_NORMAL, cx, cy, gz);
-            if (IsCityLikeArea(areaId))
-                continue;
-
-            constexpr float collisionHeight = 2.0f;
-            if (map->IsInWater(PHASEMASK_NORMAL, cx, cy, gz, collisionHeight))
-                continue;
-
-            float waterLevel = map->GetWaterLevel(cx, cy);
-            if (std::isfinite(waterLevel) && waterLevel > gz - 1.0f)
-                continue;
-
-            if (!IsFarEnoughFromExistingHotspots(candidateMapId, cx, cy))
-                continue;
-
-            if (attempt < ELEVATION_PREFERRED_ATTEMPTS && !IsElevatedSpot(map, cx, cy, gz))
-                continue;
-
-            outMapId = candidateMapId;
-            outZoneId = zoneId;
-            outX = cx;
-            outY = cy;
-            outZ = gz;
-            return true;
+            --coldBudget; // this probe will trigger a disk load
         }
+
+        uint32 zoneId;
+        float gz;
+        if (!EvaluateCandidateTerrain(map, mapId, cx, cy, zoneId, gz))
+            continue;
+
+        // Avoid clustering near an existing pool entry.
+        bool tooClose = false;
+        for (HotspotSpawnPoint const& existing : _spawnPool)
+        {
+            if (existing.mapId != mapId)
+                continue;
+            float dx = existing.x - cx;
+            float dy = existing.y - cy;
+            if ((dx * dx + dy * dy) < MIN_POINT_SPACING_SQ)
+            {
+                tooClose = true;
+                break;
+            }
+        }
+        if (tooClose)
+            continue;
+
+        HotspotSpawnPoint point;
+        point.mapId = mapId;
+        point.zoneId = zoneId;
+        point.x = cx;
+        point.y = cy;
+        point.z = gz;
+        _spawnPool.push_back(point);
+        SaveSpawnPointToDB(point);
+        ++added;
     }
 
-    LOG_WARN("scripts.dc", "GetRandomHotspotPosition: failed to find eligible terrain after random world sampling.");
-    return false;
+    if (added)
+        LOG_DEBUG("scripts.dc", "Hotspots: discovered {} new spawn point(s); pool size {}.",
+            added, _spawnPool.size());
+}
+
+bool HotspotMgr::PickSpawnPoint(HotspotSpawnPoint& out)
+{
+    if (_spawnPool.empty())
+        return false;
+
+    // Collect points eligible right now (dynamic capacity + spacing checks).
+    std::vector<HotspotSpawnPoint const*> eligible;
+    eligible.reserve(_spawnPool.size());
+    for (HotspotSpawnPoint const& p : _spawnPool)
+    {
+        if (!IsMapEnabled(p.mapId))
+            continue;
+        if (!IsZoneAllowed(p.mapId, p.zoneId) || !CanSpawnInZone(p.zoneId))
+            continue;
+        if (IsZoneAtCapacity(p.zoneId))
+            continue;
+        if (!IsFarEnoughFromExistingHotspots(p.mapId, p.x, p.y))
+            continue;
+        eligible.push_back(&p);
+    }
+
+    if (eligible.empty())
+        return false;
+
+    out = *eligible[urand(0, static_cast<uint32>(eligible.size()) - 1)];
+    return true;
 }
 
 bool HotspotMgr::SpawnHotspot()
@@ -425,13 +481,19 @@ bool HotspotMgr::SpawnHotspot()
     if (!sHotspotsConfig.enabled) return false;
     if (_grid.Count() >= sHotspotsConfig.maxActive) return false;
 
-    uint32 mapId, zoneId;
-    float x, y, z;
-    if (!GetRandomHotspotPosition(mapId, zoneId, x, y, z))
+    HotspotSpawnPoint point;
+    if (!PickSpawnPoint(point))
     {
-        LOG_ERROR("scripts.dc", "SpawnHotspot: Failed to find valid position");
+        // Pool empty or nothing eligible right now; RefillSpawnPool (throttled
+        // from OnUpdate) seeds/replenishes it without blocking the tick.
         return false;
     }
+
+    uint32 mapId = point.mapId;
+    uint32 zoneId = point.zoneId;
+    float x = point.x;
+    float y = point.y;
+    float z = point.z;
 
     Hotspot h;
     h.id = _nextHotspotId++;
@@ -588,12 +650,12 @@ void HotspotMgr::CleanupExpiredHotspots()
         }
     }
 
-    // Respawn min active
+    // Respawn toward minActive, but only one per cleanup cycle: each spawn
+    // places a GameObject marker (one grid load), so refilling N at once would
+    // stack N disk loads into a single world tick. Cleanup runs every ~10s, so
+    // the population recovers steadily without a spike.
     if (sHotspotsConfig.minActive > 0 && _grid.Count() < sHotspotsConfig.minActive)
-    {
-        uint32 diff = sHotspotsConfig.minActive - (uint32)_grid.Count();
-        for(uint32 i=0; i<diff; ++i) SpawnHotspot();
-    }
+        SpawnHotspot();
 }
 
 void HotspotMgr::CheckPlayerHotspotStatus(Player* player)

@@ -106,6 +106,10 @@ namespace DCAddon
         static void SendNPCMoveResult(Player* player, std::string const& msg)
         {
             Message response(Module::NPCMOVE, Opcode::NPCMove::SMSG_MOVE_RESULT);
+            // Echo the in-flight request id so the client closes its pending
+            // request on this response rather than via the RID-timeout fallback
+            // (the cause of the historical NPCM op1 timeouts).
+            response.SetRequestId(DCAddon::GetCurrentRequestId());
             response.Add(msg);
             response.Send(player);
         }

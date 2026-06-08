@@ -282,6 +282,7 @@ Modules\Chat.lua
 Modules\Interface.lua
 Modules\GraphicsPlus.lua
 Modules\QuestRecurringLookup.lua
+Modules\MapAreaSizes.lua
 Modules\QuestMapData.lua
 Modules\QuestTrackerMarkers.lua
 Modules\QuestFrames.lua

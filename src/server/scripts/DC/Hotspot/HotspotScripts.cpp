@@ -4,7 +4,6 @@
 #include "Player.h"
 #include "GameTime.h"
 #include "DC/dc_update_profiler.h"
-#include <mutex>
 
 class HotspotsWorldScript : public WorldScript
 {
@@ -22,14 +21,12 @@ public:
         if (sHotspotsConfig.enabled)
         {
             sHotspotMgr->LoadFromDB();
+            sHotspotMgr->LoadSpawnPointsFromDB();
             sHotspotMgr->RecreateHotspotVisualMarkers();
 
-            // Initial population
-             if (sHotspotsConfig.minActive > 0 && sHotspotMgr->GetGrid().Count() < sHotspotsConfig.minActive)
-             {
-                 uint32 diff = sHotspotsConfig.minActive - (uint32)sHotspotMgr->GetGrid().Count();
-                 for(uint32 i=0; i<diff; ++i) sHotspotMgr->SpawnHotspot();
-             }
+            // Population is maintained lazily by OnUpdate: CleanupExpiredHotspots
+            // refills toward minActive (one per cycle) once the spawn pool has
+            // eligible points, so startup never bursts disk loads.
         }
     }
 
@@ -44,6 +41,14 @@ public:
         {
             sLastCleanup = now;
             sHotspotMgr->CleanupExpiredHotspots();
+        }
+
+        // Background spawn-point discovery: throttled, bounded disk I/O per call.
+        static time_t sLastDiscovery = 0;
+        if (now - sLastDiscovery >= 5)
+        {
+            sLastDiscovery = now;
+            sHotspotMgr->RefillSpawnPool();
         }
 
         static time_t sLastSpawnCheck = 0;
@@ -66,27 +71,16 @@ public:
             sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
 
-    void OnPlayerUpdate(Player* player, uint32 /*diff*/) override
+    void OnPlayerUpdate(Player* player, uint32 diff) override
     {
         if (!sHotspotsConfig.enabled || !player) return;
 
-        // Poll every 2s (borrowed from legacy logic)
-        // Ideally we'd optimize this to not use gettime every update or use a timer in player aux
-        // But following original logic:
-        if (player->GetSession() && (GameTime::GetGameTime().count() % 2 == 0))
-        {
-             // Simple throttling: valid every second, checks count.
-            // Better: static maps.
-            static std::unordered_map<ObjectGuid, time_t> _lastCheck;
-            static std::mutex _lastCheckLock;
-             time_t now = GameTime::GetGameTime().count();
-            std::lock_guard<std::mutex> lock(_lastCheckLock);
-            if (now - _lastCheck[player->GetGUID()] >= 2)
-             {
-                 _lastCheck[player->GetGUID()] = now;
-                 sHotspotMgr->CheckPlayerHotspotStatus(player);
-             }
-        }
+        thread_local std::unordered_map<ObjectGuid, uint32> sTimer;
+        auto& elapsed = sTimer[player->GetGUID()];
+        elapsed += diff;
+        if (elapsed < 2000) return;
+        elapsed = 0;
+        sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
 
     void OnPlayerResurrect(Player* player, float, bool&) override

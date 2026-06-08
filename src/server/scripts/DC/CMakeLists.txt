@@ -48,6 +48,9 @@ set(SCRIPTS_DC_HyjalFrontier
 set(SCRIPTS_DC_GiantIsles
     GiantIsles/dc_giant_isles_zone.cpp
     GiantIsles/dc_giant_isles_invasion.cpp
+    GiantIsles/dc_giant_isles_water_monster.cpp
+    GiantIsles/dc_giant_isles_cannon_quest.cpp
+    GiantIsles/dc_giant_isles_fishing.cpp
     GiantIsles/boss_oondasta.cpp
     GiantIsles/boss_thok.cpp
     GiantIsles/boss_nalak.cpp
