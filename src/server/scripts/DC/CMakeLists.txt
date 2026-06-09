@@ -50,6 +50,7 @@ set(SCRIPTS_DC_GiantIsles
     GiantIsles/dc_giant_isles_invasion.cpp
     GiantIsles/dc_giant_isles_invasion_npcs.cpp
     GiantIsles/dc_giant_isles_water_monster.cpp
+    GiantIsles/dc_giant_isles_hydra_drum.cpp
     GiantIsles/dc_giant_isles_cannon_quest.cpp
     GiantIsles/dc_giant_isles_fishing.cpp
     GiantIsles/boss_oondasta.cpp
