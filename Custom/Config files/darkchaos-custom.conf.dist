@@ -395,10 +395,9 @@ DC.QoS.TooltipEnrichment.CacheTtlSeconds = 60
 
 #
 #    DC.QoS.TooltipEnrichment.PreWarmPush
-#        Description: On login the server pushes enrichment for the player's
-#                     entire spellbook (~once per login) so first-hover tooltips
-#                     are instant. This bulk push is the dominant share of DC
-#                     addon message volume. Disable it (0) to have clients fetch
+#        Description: On login the server pushes spell-tooltip enrichment so
+#                     first-hover tooltips are instant (scope controlled by
+#                     PreWarmScope below). Disable it (0) to have clients fetch
 #                     enrichment lazily on first hover via the deduped on-demand
 #                     path -- this trades a brief first-hover delay for a large
 #                     drop in login-time traffic. The per-spell on-demand path
@@ -406,6 +405,22 @@ DC.QoS.TooltipEnrichment.CacheTtlSeconds = 60
 #        Default:     1 (Enabled - pre-warm push on)
 #
 DC.QoS.TooltipEnrichment.PreWarmPush = 1
+
+#
+#    DC.QoS.TooltipEnrichment.PreWarmScope
+#        Description: Which spells the login pre-warm push covers.
+#                     "actionbar" - only spells on the current spec's action
+#                                   bars. The client enrichment cache expires
+#                                   after ~3 minutes, so the full-spellbook
+#                                   push mostly expired unused; action bars
+#                                   cover first-hover at a fraction of the
+#                                   bytes (this was the single largest DC
+#                                   addon traffic source).
+#                     "full"      - every active, non-passive known spell
+#                                   (legacy behavior).
+#        Default:     "actionbar"
+#
+DC.QoS.TooltipEnrichment.PreWarmScope = "actionbar"
 
 #
 #    DC.AddonProtocol.AOELoot.Enable
@@ -971,16 +986,16 @@ Hotspots.MinDistance = 300.0
 #
 #    Hotspots.MaxActive
 #        Description: Maximum number of active hotspots at any time
-#        Default:     15
+#        Default:     5
 #
-Hotspots.MaxActive = 15
+Hotspots.MaxActive = 6
 
 #
 #    Hotspots.MinActive
 #        Description: Minimum number of hotspots to maintain
-#        Default:     12
+#        Default:     1
 #
-Hotspots.MinActive = 12
+Hotspots.MinActive = 3
 
 #
 #    Hotspots.MaxPerZone
@@ -1052,6 +1067,40 @@ Hotspots.AnnounceRadius = 500.0
 # -----------------------------------------------------------------------------
 # Zone Configuration
 # -----------------------------------------------------------------------------
+
+#
+#    Hotspots.EnabledMaps
+#        Description: Comma-separated map IDs where hotspots may spawn.
+#                     Restricted to the custom leveling maps:
+#                     37 = Azshara Crater (1-80), 1410 = Hyjal Frontier
+#                     (80-130), 850 = Stratholme Valley (130-160).
+#                     Other options: 1405 = Isles of Giants, 0/1/530/571 =
+#                     vanilla continents. Maps must exist in the deployed
+#                     Map.dbc and be non-instanced; invalid entries are
+#                     skipped with a startup warning.
+#        Default:     "0,1,530,571,37"
+#
+Hotspots.EnabledMaps = "37,850,1410"
+
+#
+#    Hotspots.EnabledZones
+#        Description: Comma-separated zone IDs. If non-empty, hotspots spawn
+#                     only in these zones (zone IDs are globally unique).
+#                     268 = Azshara Crater, 6100 = Hyjal Frontier,
+#                     6000 = Stratholme Valley, 5006 = Isles of Giants,
+#                     616 = Hyjal (Kalimdor). Empty = all non-city zones on
+#                     the enabled maps.
+#        Default:     ""
+#
+Hotspots.EnabledZones = "268,6000,6100"
+
+#
+#    Hotspots.ExcludedZones
+#        Description: Comma-separated zone IDs that never get hotspots,
+#                     applied on top of EnabledMaps/EnabledZones.
+#        Default:     ""
+#
+Hotspots.ExcludedZones = ""
 
 # -----------------------------------------------------------------------------
 # Announcements

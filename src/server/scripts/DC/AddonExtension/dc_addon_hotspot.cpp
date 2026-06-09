@@ -19,6 +19,8 @@
 #include "DBCStores.h"
 #include "World.h"
 #include "WorldSessionMgr.h"
+#include "../Hotspot/HotspotMgr.h"
+#include <algorithm>
 
 // External functions from ac_hotspots.cpp
 extern uint32 GetHotspotXPBonusPercentage();
@@ -133,44 +135,83 @@ namespace Hotspot
         return h;
     }
 
-    // Handler: Get list of active hotspots
-    static void HandleGetList(Player* player, const ParsedMessage& /*msg*/)
+    // Active hotspots sorted by id, expired entries dropped. (::Hotspot is the
+    // global struct; unqualified it would resolve to this namespace.)
+    static std::vector<::Hotspot> GetActiveHotspotsSorted()
     {
-        // Query from dc_hotspots_active table (correct table name)
-        // expire_time is unix timestamp, compare with current time
-        QueryResult result = WorldDatabase.Query(
-            "SELECT id, map_id, zone_id, x, y, z, "
-            "(expire_time - UNIX_TIMESTAMP()) as dur "
-            "FROM dc_hotspots_active "
-            "WHERE expire_time > UNIX_TIMESTAMP()");
+        std::vector<::Hotspot> active = sHotspotMgr->GetGrid().GetAll();
+        time_t now = GameTime::GetGameTime().count();
+        active.erase(std::remove_if(active.begin(), active.end(),
+            [now](::Hotspot const& hotspot) { return hotspot.expireTime <= now; }),
+            active.end());
+        std::sort(active.begin(), active.end(),
+            [](::Hotspot const& a, ::Hotspot const& b) { return a.id < b.id; });
+        return active;
+    }
+
+    // List version: changes whenever the active set changes (spawn, expire,
+    // admin clear). Lets clients poll cheaply -- a request echoing the current
+    // version gets a tiny "unchanged" reply instead of the full list.
+    static uint32 ComputeHotspotListVersion(std::vector<::Hotspot> const& hotspots)
+    {
+        uint32 version = 2166136261u;
+        auto mix = [&version](uint32 value)
+        {
+            version ^= value;
+            version *= 16777619u;
+        };
+
+        mix(static_cast<uint32>(hotspots.size()));
+        for (::Hotspot const& hotspot : hotspots)
+        {
+            mix(hotspot.id);
+            mix(static_cast<uint32>(hotspot.expireTime));
+        }
+
+        return version ? version : 1u;
+    }
+
+    // Handler: Get list of active hotspots (served from the in-memory grid;
+    // no world-thread DB roundtrip).
+    static void HandleGetList(Player* player, const ParsedMessage& msg)
+    {
+        std::vector<::Hotspot> active = GetActiveHotspotsSorted();
+        uint32 version = ComputeHotspotListVersion(active);
+
+        uint32 clientVersion = 0;
+        if (IsJsonMessage(msg))
+        {
+            JsonValue json = GetJsonData(msg);
+            if (json.IsObject() && json.HasKey("v"))
+                clientVersion = json["v"].AsUInt32();
+        }
+
+        if (clientVersion && clientVersion == version)
+        {
+            SendHotspotMessage(player,
+                JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_LIST)
+                    .Set("unchanged", true)
+                    .Set("v", version));
+            return;
+        }
 
         // Get XP bonus from config (same for all hotspots)
         uint32 xpBonus = GetHotspotXPBonusPercentage();
+        time_t now = GameTime::GetGameTime().count();
 
         JsonValue hotspots; hotspots.SetArray();
-
-        if (result)
+        for (::Hotspot const& hotspot : active)
         {
-            do
-            {
-                uint32 id = (*result)[0].Get<uint32>();
-                uint32 mapId = (*result)[1].Get<uint32>();
-                uint32 zoneId = (*result)[2].Get<uint32>();
-                float x = (*result)[3].Get<float>();
-                float y = (*result)[4].Get<float>();
-                float z = (*result)[5].Get<float>();
-                int64 dur = (*result)[6].Get<int64>();
-                if (dur <= 0)
-                    continue;
-
-                std::string zoneName = GetZoneNameFromDBC(zoneId);
-                hotspots.Push(BuildHotspotObject(id, mapId, zoneId, zoneName, x, y, z, static_cast<uint32>(dur), xpBonus));
-            } while (result->NextRow());
+            std::string zoneName = GetZoneNameFromDBC(hotspot.zoneId);
+            hotspots.Push(BuildHotspotObject(hotspot.id, hotspot.mapId,
+                hotspot.zoneId, zoneName, hotspot.x, hotspot.y, hotspot.z,
+                static_cast<uint32>(hotspot.expireTime - now), xpBonus));
         }
 
         SendHotspotMessage(player,
             JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_LIST)
-                .Set("hotspots", hotspots));
+                .Set("hotspots", hotspots)
+                .Set("v", version));
     }
 
     // Handler: Get specific hotspot info
@@ -186,14 +227,9 @@ namespace Hotspot
             return;
         }
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT id, map_id, zone_id, x, y, z, "
-            "(expire_time - UNIX_TIMESTAMP()) as dur "
-            "FROM dc_hotspots_active "
-            "WHERE id = {} AND expire_time > UNIX_TIMESTAMP()",
-            hotspotId);
-
-        if (!result)
+        ::Hotspot const* hotspot = sHotspotMgr->GetGrid().GetById(hotspotId);
+        time_t now = GameTime::GetGameTime().count();
+        if (!hotspot || hotspot->expireTime <= now)
         {
             SendHotspotMessage(player,
                 JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO)
@@ -205,15 +241,11 @@ namespace Hotspot
         // Get XP bonus from config
         uint32 xpBonus = GetHotspotXPBonusPercentage();
 
-        uint32 mapId = (*result)[1].Get<uint32>();
-        uint32 zoneId = (*result)[2].Get<uint32>();
-        float x = (*result)[3].Get<float>();
-        float y = (*result)[4].Get<float>();
-        float z = (*result)[5].Get<float>();
-        int64 dur = (*result)[6].Get<int64>();
-        std::string zoneName = GetZoneNameFromDBC(zoneId);
+        std::string zoneName = GetZoneNameFromDBC(hotspot->zoneId);
 
-        JsonValue hs = BuildHotspotObject(hotspotId, mapId, zoneId, zoneName, x, y, z, static_cast<uint32>(dur), xpBonus);
+        JsonValue hs = BuildHotspotObject(hotspotId, hotspot->mapId,
+            hotspot->zoneId, zoneName, hotspot->x, hotspot->y, hotspot->z,
+            static_cast<uint32>(hotspot->expireTime - now), xpBonus);
 
         JsonMessage reply(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO);
         reply.Set("found", true);
@@ -254,11 +286,8 @@ namespace Hotspot
             return;
         }
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT map_id, x, y, z FROM dc_hotspots_active WHERE id = {} AND expire_time > UNIX_TIMESTAMP()",
-            hotspotId);
-
-        if (!result)
+        ::Hotspot const* hotspot = sHotspotMgr->GetGrid().GetById(hotspotId);
+        if (!hotspot || !hotspot->IsActive())
         {
             SendHotspotMessage(player,
                 JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
@@ -268,12 +297,7 @@ namespace Hotspot
             return;
         }
 
-        uint32 mapId = (*result)[0].Get<uint32>();
-        float x = (*result)[1].Get<float>();
-        float y = (*result)[2].Get<float>();
-        float z = (*result)[3].Get<float>();
-
-        player->TeleportTo(mapId, x, y, z, player->GetOrientation());
+        player->TeleportTo(hotspot->mapId, hotspot->x, hotspot->y, hotspot->z, player->GetOrientation());
 
         SendHotspotMessage(player,
             JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)

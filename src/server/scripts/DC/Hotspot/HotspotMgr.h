@@ -19,6 +19,19 @@ struct HotspotSpawnPoint
     float z = 0.0f;
 };
 
+// World-space bounding box of an eligible zone (from WorldMapArea data).
+// Discovery samples inside these instead of blind map-wide points, which
+// raises the hit rate by orders of magnitude on continent maps.
+struct HotspotZoneSampleBox
+{
+    uint32 zoneId = 0;
+    uint32 mapId = 0;
+    float minX = 0.0f;
+    float maxX = 0.0f;
+    float minY = 0.0f;
+    float maxY = 0.0f;
+};
+
 class HotspotMgr
 {
 private:
@@ -30,6 +43,8 @@ private:
     std::unordered_map<uint32, std::array<float, 4>> _mapBounds;
     // Pre-validated spawn point pool (world-thread only; no lock needed)
     std::vector<HotspotSpawnPoint> _spawnPool;
+    // Zone bounding boxes for targeted discovery; rebuilt on config (re)load
+    std::vector<HotspotZoneSampleBox> _zoneSampleBoxes;
     // Per-player objectives tracking
     std::unordered_map<ObjectGuid, HotspotObjectives> _playerObjectives;
     // Per-player server-side expiry check
@@ -49,6 +64,10 @@ private:
     // checks applied at pick time). Returns false if nothing is eligible.
     bool PickSpawnPoint(HotspotSpawnPoint& out);
     void SaveSpawnPointToDB(HotspotSpawnPoint const& point);
+    void BuildZoneSampleBoxes();
+    // Create markers for hotspots whose target grid has since been loaded by
+    // a player; spawning itself never forces terrain off disk.
+    void SpawnPendingMarkers();
 
 public:
     static HotspotMgr* instance();

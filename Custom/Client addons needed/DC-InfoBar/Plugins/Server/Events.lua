@@ -41,6 +41,20 @@ local function IsStoppedState(state)
     return state == "victory" or state == "failed" or state == "stopped" or state == "cancelled" or state == "ended"
 end
 
+-- Live countdown: Core stamps endsAt (local clock) when a server update
+-- arrives, so the display ticks every second instead of stepping by the
+-- ~10 s server push interval. Falls back to the raw pushed value.
+local function GetLiveRemaining(event)
+    if not event then
+        return nil
+    end
+    local endsAt = tonumber(event.endsAt)
+    if endsAt then
+        return math.floor(endsAt - Now() + 0.5)
+    end
+    return tonumber(event.timeRemaining)
+end
+
 function EventsPlugin:OnActivate()
     DCInfoBar:Debug("Events plugin activated - waiting for server data")
     -- Ensure serverData.events exists
@@ -112,7 +126,7 @@ local function BuildEventLine(event, showZone, showTimer)
     end
 
     if showTimer then
-        local remaining = tonumber(event.timeRemaining)
+        local remaining = GetLiveRemaining(event)
         if (not remaining or remaining <= 0) and event.hideAt then
             remaining = math.floor((tonumber(event.hideAt) or 0) - Now())
         end
@@ -261,8 +275,9 @@ function EventsPlugin:OnTooltip(tooltip)
             end
         end
         
-        if showTimer and event.timeRemaining and event.timeRemaining > 0 then
-            tooltip:AddDoubleLine("  Time:", DCInfoBar:FormatTime(event.timeRemaining),
+        local remaining = GetLiveRemaining(event)
+        if showTimer and remaining and remaining > 0 then
+            tooltip:AddDoubleLine("  Time:", DCInfoBar:FormatTime(remaining),
                 0.7, 0.7, 0.7, 1, 0.82, 0)
         end
     end

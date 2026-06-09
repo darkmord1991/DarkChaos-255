@@ -53,8 +53,8 @@ namespace DCGiantIsles
     enum InvasionFaction : uint32
     {
         // See dc_giant_isles_invasion.cpp for the full faction rationale.
-        INVADER_FACTION                 = 16, // hostile to all players
-        DEFENDER_FACTION                = 35, // friendly to all players
+        INVADER_FACTION                 = 16,  // Monster group; hostile to all players
+        DEFENDER_FACTION                = 250, // Player group; friendly to all players, HOSTILE to monsters/invaders
     };
 }
 

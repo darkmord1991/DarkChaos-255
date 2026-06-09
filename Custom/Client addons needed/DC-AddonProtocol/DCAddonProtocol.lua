@@ -2792,7 +2792,9 @@ DC.AOE = {
 }
 
 DC.Hotspot = {
-    GetList = function() DC:Request("SPOT", 0x01, {}) end,
+    -- Optional v: echo the held list version; the server answers a matching
+    -- version with a tiny { unchanged = true } reply instead of the full list.
+    GetList = function(v) DC:Request("SPOT", 0x01, { v = v or 0 }) end,
     GetInfo = function(id) DC:Request("SPOT", 0x02, { id = id }) end,
     Teleport = function(id) DC:Request("SPOT", 0x03, { id = id }) end,
     TogglePins = function(e) DC:Request("SPOT", 0x04, { enabled = e }) end,

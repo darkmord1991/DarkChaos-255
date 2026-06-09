@@ -26,6 +26,7 @@ private:
 public:
     void Add(Hotspot const& hotspot);
     void Remove(uint32 id);
+    void UpdateGameObjectGuid(uint32 id, ObjectGuid guid);
     Hotspot const* GetById(uint32 id) const;
     Hotspot const* GetForPlayer(Player* player) const;
     size_t Count() const { return _hotspots.size(); }

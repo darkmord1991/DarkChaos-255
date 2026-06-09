@@ -94,6 +94,7 @@ private:
     bool IsEligibleForRewards(Player* player) const;
     bool ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& scorePoints) const;
     uint32 GetHudEndEpoch() const;
+    uint64 ComputeHudSnapshotKey() const;
 
     uint32 _matchDurationSeconds = 60u * 60u;
     uint32 _afkWarnSeconds = 120u;
@@ -115,6 +116,8 @@ private:
     uint32 _matchStartEpoch = 0u;
     uint32 _matchEndEpoch = 0u;
     uint32 _hudSyncTimerMs = 0u;
+    uint32 _hudMsSinceBroadcast = 0u;
+    uint64 _lastHudSnapshotKey = 0u;
     uint32 _afkCheckTimerMs = 0u;
     uint32 _allianceNpcKills = 0u;
     uint32 _hordeNpcKills = 0u;

@@ -68,6 +68,13 @@ void HotspotGrid::Remove(uint32 id)
     _hotspots.erase(it);
 }
 
+void HotspotGrid::UpdateGameObjectGuid(uint32 id, ObjectGuid guid)
+{
+    auto it = _hotspots.find(id);
+    if (it != _hotspots.end())
+        it->second.gameObjectGuid = guid;
+}
+
 Hotspot const* HotspotGrid::GetById(uint32 id) const
 {
     auto it = _hotspots.find(id);

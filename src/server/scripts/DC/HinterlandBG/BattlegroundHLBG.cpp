@@ -32,6 +32,7 @@ namespace
     constexpr uint32 HLBGQuestCreditParticipation = 920103;
     constexpr uint32 HLBGDeserterSpell = 26013;
     constexpr uint32 HLBGHudSyncIntervalMs = 1000;
+    constexpr uint32 HLBGHudHeartbeatIntervalMs = 30000;
     constexpr uint32 HLBGAfkTickIntervalMs = 2000;
     constexpr uint32 WORLD_STATE_HL_AFFIX_TEXT = 0xDD1010;
     constexpr uint32 HLBGAffixSlotCount = 3u;
@@ -927,6 +928,34 @@ void BattlegroundHLBG::SendStatusSnapshotToAll() const
     }
 }
 
+uint64 BattlegroundHLBG::ComputeHudSnapshotKey() const
+{
+    // Everything the periodic HUD broadcast carries except the per-second
+    // countdown, which the client derives locally from the end epoch.
+    HLBGHudMetrics metrics = CollectHudMetrics(this);
+
+    uint64 key = 14695981039346656037ULL;
+    auto mix = [&key](uint64 value)
+    {
+        key ^= value;
+        key *= 1099511628211ULL;
+    };
+
+    mix(static_cast<uint64>(GetAddonStatus(this)));
+    mix(GetHudEndEpoch());
+    mix(GetResources(TEAM_ALLIANCE));
+    mix(GetResources(TEAM_HORDE));
+    mix(metrics.alliancePlayers);
+    mix(metrics.hordePlayers);
+    mix(metrics.alliancePlayerKills);
+    mix(metrics.hordePlayerKills);
+    mix(metrics.allianceNpcKills);
+    mix(metrics.hordeNpcKills);
+    mix(GetActiveAffixCode());
+    mix(_afkFlagged.size());
+    return key;
+}
+
 bool BattlegroundHLBG::IsEligibleForRewards(Player* player) const
 {
     return player && !player->HasAura(HLBGDeserterSpell);
@@ -1477,11 +1506,23 @@ void BattlegroundHLBG::PostUpdateImpl(uint32 diff)
         TickAfk(diff);
     }
 
+    _hudMsSinceBroadcast += diff;
     if (_hudSyncTimerMs <= diff)
     {
         _hudSyncTimerMs = HLBGHudSyncIntervalMs;
-        UpdateWorldStatesForAll();
-        SendStatusSnapshotToAll();
+
+        // The HUD payload only changes on resource/kill/affix/AFK events and
+        // the client ticks the countdown locally, so broadcast only when the
+        // snapshot differs (plus a slow heartbeat to correct client drift).
+        uint64 snapshotKey = ComputeHudSnapshotKey();
+        if (snapshotKey != _lastHudSnapshotKey
+            || _hudMsSinceBroadcast >= HLBGHudHeartbeatIntervalMs)
+        {
+            _lastHudSnapshotKey = snapshotKey;
+            _hudMsSinceBroadcast = 0u;
+            UpdateWorldStatesForAll();
+            SendStatusSnapshotToAll();
+        }
     }
     else
         _hudSyncTimerMs -= diff;

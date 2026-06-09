@@ -1200,6 +1200,8 @@ namespace
                 defender->SetFaction(DEFENDER_FACTION);
                 defender->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
                 defender->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
+                defender->LoadEquipment(1, true);
+                defender->SetSheath(SHEATH_STATE_MELEE);
                 _defenderGuids.push_back(defender->GetGUID());
 
                 if (i < LaneObjectives.size())
@@ -1240,6 +1242,8 @@ namespace
                 ranger->SetFaction(DEFENDER_FACTION);
                 ranger->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
                 ranger->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
+                ranger->LoadEquipment(1, true);
+                ranger->SetSheath(SHEATH_STATE_MELEE);
                 _defenderGuids.push_back(ranger->GetGUID());
                 CommandDefender(ranger, map);
             }
@@ -1250,6 +1254,8 @@ namespace
                 shaman->SetFaction(DEFENDER_FACTION);
                 shaman->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
                 shaman->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
+                shaman->LoadEquipment(1, true);
+                shaman->SetSheath(SHEATH_STATE_MELEE);
                 _defenderGuids.push_back(shaman->GetGUID());
                 CommandDefender(shaman, map);
             }
@@ -1290,6 +1296,11 @@ namespace
             // Keep invaders on explicit invasion faction (never Horde-side guards).
             creature->SetFaction(INVADER_FACTION);
             creature->SetReactState(REACT_AGGRESSIVE);
+
+            // Force the template's weapon/shield set and draw it so the marching
+            // invaders are visibly armed (summons can spawn with weapons sheathed).
+            creature->LoadEquipment(1, true);
+            creature->SetSheath(SHEATH_STATE_MELEE);
         }
 
         uint8 GetLaneForInvader(ObjectGuid guid) const

@@ -395,6 +395,18 @@ function DCInfoBar:SetupServerCommunication()
     return true
 end
 
+-- Anchor a server-relative countdown to the local clock so the Events plugin
+-- can tick it every second between server pushes (which arrive every ~10 s).
+local function StampEventDeadline(record)
+    local remaining = tonumber(record.timeRemaining)
+    if remaining and remaining > 0 and GetTime then
+        record.endsAt = GetTime() + remaining
+    else
+        record.endsAt = nil
+    end
+    return record
+end
+
 -- Handle event JSON payload from server and update serverData.events
 function DCInfoBar:HandleEventData(data)
     if not data then return end
@@ -431,6 +443,8 @@ function DCInfoBar:HandleEventData(data)
             end
         end
     end
+
+    StampEventDeadline(record)
 
     local updated = false
     for index, existing in ipairs(events) do
@@ -811,6 +825,7 @@ function DCInfoBar:HandleWorldContent(data)
                 enemiesRemaining = e.enemiesRemaining,
                 timeRemaining = e.timeRemaining or e.timeLeft,
             }
+            StampEventDeadline(record)
 
             -- Upsert
             local updated = false
@@ -959,6 +974,7 @@ function DCInfoBar:HandleWorldUpdate(data)
                 enemiesRemaining = e.enemiesRemaining,
                 timeRemaining = e.timeRemaining or e.timeLeft,
             }
+            StampEventDeadline(record)
             -- Upsert by id
             local matched = false
             if id ~= 0 then

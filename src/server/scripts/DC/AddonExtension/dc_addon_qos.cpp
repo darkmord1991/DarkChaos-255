@@ -4957,7 +4957,11 @@ namespace DCQoS
         return hash;
     }
 
-    // Push enrichment data for every active, non-passive spell the player knows.
+    // Push enrichment data for spells the player is likely to hover soon.
+    // Scope "actionbar" (default) covers the current spec's action bars only;
+    // "full" pushes every active, non-passive spell in the spellbook. The
+    // client caches entries for ~3 minutes, so the full-spellbook push mostly
+    // expires unused -- action bars cover first-hover for a fraction of the bytes.
     // Uses requestId=0 as the server-push sentinel (no pending client request to resolve).
     static void PushAllSpellEnrichments(Player* player)
     {
@@ -4965,7 +4969,19 @@ namespace DCQoS
             return;
 
         QoSSettings settings = GetPlayerSettingsCached(player);
+        if (!settings.tooltipsEnabled)
+            return;
+
         bool includeFamilyMetadata = settings.showSpellFamilyMetadata;
+
+        bool actionBarScope = sConfigMgr->GetOption<std::string>(
+            "DC.QoS.TooltipEnrichment.PreWarmScope", "actionbar") != "full";
+        std::set<uint32> actionBarSpells;
+        if (actionBarScope)
+            for (uint16 button = 0; button < MAX_ACTION_BUTTONS; ++button)
+                if (ActionButton const* actionButton = player->GetActionButton(static_cast<uint8>(button)))
+                    if (actionButton->GetType() == ACTION_BUTTON_SPELL && actionButton->GetAction())
+                        actionBarSpells.insert(actionButton->GetAction());
 
         uint8 level            = static_cast<uint8>(player->GetLevel());
         uint8 classId          = static_cast<uint8>(player->getClass());
@@ -4977,6 +4993,9 @@ namespace DCQoS
         for (auto const& [spellId, spellState] : player->GetSpellMap())
         {
             if (!spellState || spellState->State == PLAYERSPELL_REMOVED || !spellState->Active)
+                continue;
+
+            if (actionBarScope && actionBarSpells.find(spellId) == actionBarSpells.end())
                 continue;
 
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
@@ -5034,10 +5053,11 @@ public:
 
         // Pre-push spell enrichment data so first-hover tooltips are instant.
         // Delayed 3 s to let the addon initialize and open its protocol channel.
-        // This bulk push (whole spellbook, once per login) is the dominant share
-        // of DC addon traffic. Admins can disable it: clients then fetch
-        // enrichment lazily on first hover via the deduped on-demand path,
-        // trading a brief first-hover delay for a large drop in login volume.
+        // Scope is controlled by DC.QoS.TooltipEnrichment.PreWarmScope
+        // ("actionbar" default, "full" for the whole spellbook). Admins can
+        // disable it entirely: clients then fetch enrichment lazily on first
+        // hover via the deduped on-demand path, trading a brief first-hover
+        // delay for a large drop in login volume.
         if (sConfigMgr->GetOption<bool>("DC.QoS.TooltipEnrichment.PreWarmPush", true))
         {
             player->m_Events.AddEvent(

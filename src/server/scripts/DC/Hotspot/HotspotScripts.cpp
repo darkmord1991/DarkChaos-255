@@ -3,7 +3,14 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "GameTime.h"
+#include "DataMap.h"
 #include "DC/dc_update_profiler.h"
+
+// Per-player poll throttle, stored on the player object so it dies with it.
+struct HotspotCheckTimer : public DataMap::Base
+{
+    uint32 elapsed = 0;
+};
 
 class HotspotsWorldScript : public WorldScript
 {
@@ -75,11 +82,10 @@ public:
     {
         if (!sHotspotsConfig.enabled || !player) return;
 
-        thread_local std::unordered_map<ObjectGuid, uint32> sTimer;
-        auto& elapsed = sTimer[player->GetGUID()];
-        elapsed += diff;
-        if (elapsed < 2000) return;
-        elapsed = 0;
+        auto* timer = player->CustomData.GetDefault<HotspotCheckTimer>("dc_hotspot_check");
+        timer->elapsed += diff;
+        if (timer->elapsed < 2000) return;
+        timer->elapsed = 0;
         sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
 

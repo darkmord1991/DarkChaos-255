@@ -155,9 +155,15 @@ function LocationPlugin:OnActivate()
     if DC then
         -- SMSG_HOTSPOT_LIST (0x10) - List of active hotspots
         DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_LIST, function(data)
+            -- Version-gated reply for another addon's poll: the set we hold
+            -- is still current, so don't wipe it.
+            if data and data.unchanged then
+                return
+            end
+
             local normalized = {}
             local rawList = nil
-            
+
             if data and data.hotspots then
                 rawList = data.hotspots
             elseif data and type(data) == "table" and #data > 0 then
@@ -173,7 +179,10 @@ function LocationPlugin:OnActivate()
                     end
                 end
             end
-            
+
+            if data and data.v then
+                LocationPlugin._hotspotListVersion = tonumber(data.v) or 0
+            end
             LocationPlugin._hotspots = normalized
             LocationPlugin._hotspotsLoaded = true
             DCInfoBar.serverData.hotspots = normalized
@@ -227,12 +236,9 @@ function LocationPlugin:OnActivate()
         local cacheAge = now - LocationPlugin._lastHotspotListRequest
         if cacheAge >= HOTSPOT_CACHE_TTL or not LocationPlugin._hotspotsLoaded then
             LocationPlugin._lastHotspotListRequest = now
-            DC:Request("SPOT", SPOT_CMSG_GET_LIST, {})
-            
-            -- Also use helper if available
-            if DC.Hotspot and DC.Hotspot.GetList then
-                DC.Hotspot.GetList()
-            end
+            -- Echo the held list version so the server can answer with a
+            -- tiny "unchanged" reply instead of the full list.
+            DC:Request("SPOT", SPOT_CMSG_GET_LIST, { v = LocationPlugin._hotspotListVersion or 0 })
         end
     else
         -- Fallback: Try to request hotspots after a delay when DC loads
@@ -249,10 +255,7 @@ function LocationPlugin:OnActivate()
                     local cacheAge = now - LocationPlugin._lastHotspotListRequest
                     if cacheAge >= HOTSPOT_CACHE_TTL or not LocationPlugin._hotspotsLoaded then
                         LocationPlugin._lastHotspotListRequest = now
-                        DC:Request("SPOT", 0x01, {})
-                        if DC.Hotspot and DC.Hotspot.GetList then
-                            DC.Hotspot.GetList()
-                        end
+                        DC:Request("SPOT", 0x01, { v = LocationPlugin._hotspotListVersion or 0 })
                     end
                 end
             end

@@ -1533,6 +1533,9 @@ function Core:RequestHotspotList(reason)
     if GetCurrentMapAreaID then
         payload.mapAreaId = GetCurrentMapAreaID() or 0
     end
+    -- Version gate: echo the version of the list we hold so the server can
+    -- answer with a tiny "unchanged" reply when the active set didn't change.
+    payload.v = Core.hotspotListVersion or 0
     
     -- Protocol fallback chain: DCAddonProtocol → AIO → Chat
     if Core.useDCProtocol and DC then
@@ -1774,11 +1777,39 @@ function Core:RegisterProtocolHandlers()
         -- JSON-by-default path: DCAddonProtocol already decoded JSON and passes a table.
         if type(firstArg) == "table" then
             local data = firstArg
+            if data.unchanged then
+                DebugProtocol("Hotspot list unchanged (v:", data.v, ")")
+                return
+            end
+            -- Only adopt the version when a full list is applied: an
+            -- "unchanged" reply to another addon's request must not bump
+            -- our version past the list we actually hold.
+            if data.v then
+                Core.hotspotListVersion = tonumber(data.v) or 0
+            end
             local list = (data and data.hotspots) or data
             if type(list) == "table" then
                 -- list may be {hotspots=[...]} or the array directly
+                local received = {}
                 for _, hs in ipairs(list) do
+                    local id = tonumber(hs and hs.i or hs and hs.id)
+                    if id then
+                        received[id] = true
+                    end
                     Core:ProcessHotspotPayload(hs)
+                end
+                -- A full JSON list is authoritative: drop tracked hotspots the
+                -- server no longer reports (early despawns/admin clears).
+                if type(data.hotspots) == "table" then
+                    local stale = {}
+                    for id in pairs(state.hotspots) do
+                        if not received[id] then
+                            stale[#stale + 1] = id
+                        end
+                    end
+                    for _, id in ipairs(stale) do
+                        Core:RemoveHotspot(id, "list_sync")
+                    end
                 end
                 if Pins and Pins.Refresh then
                     Pins:Refresh()
@@ -1958,8 +1989,9 @@ end
 
 -- Process a hotspot payload (from any protocol)
 function Core:ProcessHotspotPayload(payload)
-    if not payload or not payload.id then return end
-    
+    -- JSON payloads use the short key "i"; legacy paths use "id".
+    if not payload or not (payload.id or payload.i) then return end
+
     local record = BuildHotspotRecord(payload)
     if record then
         self:UpsertHotspot(record)

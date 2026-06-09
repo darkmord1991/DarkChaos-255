@@ -1039,12 +1039,22 @@ local function ShouldUseNativeSpellTooltipBridge()
     return true
 end
 
+-- Server-side errors on native-bridge enrichment requests (observed live:
+-- the addon JSON path answers the same spells fine). After a streak of
+-- native errors, stop using the bridge for the rest of the session.
+local nativeSpellEnrichmentErrorStreak = 0
+local NATIVE_SPELL_ENRICH_ERROR_STREAK_LIMIT = 3
+
 local function ShouldUseNativeSpellTooltipAddonBridge()
     if not HasNativeSpellTooltipAddonBridge() then
         return false
     end
 
     if not IsNativeSpellTooltipNegotiated() then
+        return false
+    end
+
+    if nativeSpellEnrichmentErrorStreak >= NATIVE_SPELL_ENRICH_ERROR_STREAK_LIMIT then
         return false
     end
 
@@ -1881,10 +1891,11 @@ local function GetSpellTooltipRenderMode(tooltip, clientDescription)
         return "full"
     end
     if source == "aura" then
-        if type(clientDescription) == "string" and clientDescription ~= "" then
-            return "append-nonbody"
-        end
-        return "full"
+        -- Buff/debuff tooltips already carry the aura's own description and
+        -- remaining time; appending the (different) full spell description
+        -- plus cost/cast lines bloats a small frame. Keep them native-only
+        -- (EnhanceSpellTooltip still adds the Spell ID line).
+        return "disabled"
     end
     if source == "spellbook" then
         if type(clientDescription) == "string" and clientDescription ~= "" then
@@ -2062,6 +2073,16 @@ local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
     end
 
     local existing = BuildExistingTooltipTextSet(tooltip)
+    -- A locally rendered cast line (AddSpellStatLines) can differ from the
+    -- server's by rounding/haste; text dedupe alone would then show both.
+    local existingHasCastLine = false
+    for existingKey in pairs(existing) do
+        if existingKey == "instant cast" or existingKey:find(" sec cast$") then
+            existingHasCastLine = true
+            break
+        end
+    end
+
     local addedAny = false
     for _, rawEntry in ipairs(lines) do
         local entry = rawEntry
@@ -2082,8 +2103,11 @@ local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
             local leftNorm = NormalizeTooltipTextValue(left)
             local rightNorm = NormalizeTooltipTextValue(right or "")
             local key = leftNorm .. "||" .. rightNorm
+            local isDuplicateCastLine = existingHasCastLine
+                and (leftNorm == "instant cast" or leftNorm:find(" sec cast$"))
 
-            if leftNorm ~= "" and not existing[key] and not existing[leftNorm] then
+            if leftNorm ~= "" and not existing[key] and not existing[leftNorm]
+                and not isDuplicateCastLine then
                 if not addedAny then
                     tooltip:AddLine(" ")
                 end
@@ -2238,6 +2262,7 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
         pendingSpellEnrichment[key] = {
             requestId = requestId,
             sentAt = now,
+            transport = "addon",
         }
         pendingSpellEnrichmentByRequestId[requestId] = key
         lastSpellEnrichmentAttemptAt[key] = now
@@ -2250,6 +2275,7 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
                 sid, contextHash)
             if nativeOk then
                 TelemetryInc("spell", "nativeRequestsSent")
+                pendingSpellEnrichment[key].transport = "native"
                 ok = true
             else
                 TelemetryInc("spell", "nativeErrors")
@@ -2318,8 +2344,40 @@ local function OnSpellTooltipEnrichmentReceived(data)
     local status = tonumber(data.status) or 0
     if status == 0 then
         TelemetryInc("spell", "responsesSuccess")
+        if pending and pending.transport == "native" then
+            nativeSpellEnrichmentErrorStreak = 0
+        end
     else
         TelemetryInc("spell", "responsesError")
+
+        -- Native-bridge requests can fail server-side while the addon JSON
+        -- path answers the same spells fine (observed live: spellbook works,
+        -- action/companion tooltips stay bare). Retry once over the addon
+        -- transport; the streak counter parks the bridge for the session.
+        if pending and pending.transport == "native" then
+            nativeSpellEnrichmentErrorStreak = nativeSpellEnrichmentErrorStreak + 1
+            if not pending.addonRetry
+                and addon.RequestSpellTooltipEnrichment
+                and addon.protocol and addon.protocol.connected then
+                local retryRequestId = NextSpellEnrichmentRequestId()
+                if addon:RequestSpellTooltipEnrichment(retryRequestId, sid,
+                    contextHash, false) then
+                    pendingSpellEnrichment[key] = {
+                        requestId = retryRequestId,
+                        sentAt = GetTime(),
+                        transport = "addon",
+                        addonRetry = true,
+                    }
+                    pendingSpellEnrichmentByRequestId[retryRequestId] = key
+                    lastSpellEnrichmentSendAt = GetTime()
+                    lastSpellEnrichmentAttemptAt[key] = nil
+                    TelemetryInc("spell", "nativeErrorAddonRetries")
+                    -- Leave the open tooltip un-finalized; the retry response
+                    -- re-renders it through the normal path.
+                    return
+                end
+            end
+        end
     end
 
     -- Clear retry backoff on any response so immediate re-render stays snappy.
@@ -2554,6 +2612,11 @@ local function TrackAuraTooltipContext(tooltip, unit, index, filter, isDebuff)
     if spellId and spellId > 0 then
         tooltip._dcqosResolvedSpellId = spellId
         EnhanceSpellTooltip(tooltip, spellId)
+        -- SetUnitBuff/Aura already laid the tooltip out; without a re-Show
+        -- the appended Spell ID line renders outside the backdrop.
+        if type(tooltip.Show) == "function" and tooltip:IsShown() then
+            tooltip:Show()
+        end
     end
 end
 
@@ -3927,6 +3990,131 @@ local function FormatSpellCastTimeText(castTimeMs)
     return string.format("%.1f sec cast", seconds)
 end
 
+-- Server GetPowerTypeLabel equivalents (keep text identical for dedupe).
+local SPELL_POWER_TYPE_LABELS = {
+    [0] = "Mana",
+    [1] = "Rage",
+    [2] = "Focus",
+    [3] = "Energy",
+    [4] = "Happiness",
+    [5] = "Rune",
+    [6] = "Runic Power",
+}
+
+-- Native rows from hyperlink-style contexts can be description-only; only a
+-- cast-time line proves the row set carries the cost/range/cast stat block.
+local function NativeRowsContainStatLines(rows)
+    if type(rows) ~= "table" then
+        return false
+    end
+
+    for _, rawEntry in ipairs(rows) do
+        local entry = rawEntry
+        if type(entry) ~= "table" then
+            entry = { left = tostring(rawEntry or "") }
+        end
+        local leftNorm = NormalizeTooltipTextValue(entry.left or "")
+        if leftNorm == "instant cast" or leftNorm:find(" sec cast$") then
+            return true
+        end
+    end
+
+    return false
+end
+
+-- True when the stat block will be drawn by another layer: native client
+-- rows that actually resolve for THIS tooltip's request context AND carry
+-- stat lines, or fresh cached server enrichment lines (both already include
+-- cost/range/cast, plus cooldown/duration the Lua API cannot read). The rows
+-- export existing is NOT enough on its own: action/hyperlink contexts can
+-- come back empty or body-only even when spellbook contexts work, and then
+-- nothing would draw the stats.
+local function WillEnrichmentProvideStatLines(tooltip, spellId)
+    local sid = tonumber(spellId)
+    if not sid or sid <= 0 then
+        return false
+    end
+
+    local contextHash = BuildSpellTooltipContextHash(sid)
+
+    if HasNativeSpellTooltipRowsExport() then
+        local rows = GetNativeClientSpellTooltipRows(tooltip, sid, contextHash)
+        if rows and NativeRowsContainStatLines(rows) then
+            return true
+        end
+    end
+
+    if not addon.GetSpellTooltipEnrichment then
+        return false
+    end
+    if not addon.settings or not addon.settings.tooltips
+        or not addon.settings.tooltips.enabled
+        or not addon.settings.communication
+        or not addon.settings.communication.enabled then
+        return false
+    end
+
+    local cached = addon:GetSpellTooltipEnrichment(sid, contextHash)
+    if not cached or tonumber(cached.status) ~= 0
+        or type(cached.lines) ~= "table" or #cached.lines == 0 then
+        return false
+    end
+
+    local age = GetTime() - (tonumber(cached.receivedAt) or 0)
+    return age <= SPELL_TOOLTIP_ENRICHMENT_OK_TTL
+end
+
+-- Locally rendered stat block (cost | range double line + cast time line),
+-- shaped exactly like the server enrichment rows so the enrichment dedupe
+-- (BuildExistingTooltipTextSet keys) suppresses the server copies when they
+-- arrive later. Keeps action-bar and spellbook tooltips carrying mana/range/
+-- cast time even when enrichment is cold or unavailable.
+local function AddSpellStatLines(tooltip, spellId, existing)
+    local sid = tonumber(spellId)
+    if not tooltip or not sid or sid <= 0
+        or type(GetSpellInfo) ~= "function" then
+        return
+    end
+
+    -- 3.3.5 GetSpellInfo: name, rank, icon, cost, isFunnel, powerType,
+    -- castTime (ms), minRange, maxRange.
+    local name, _, _, cost, _, powerType, castTimeMs, minRange, maxRange =
+        GetSpellInfo(sid)
+    if not name or name == "" then
+        return
+    end
+
+    existing = existing or BuildExistingTooltipTextSet(tooltip)
+
+    local costText
+    cost = tonumber(cost) or 0
+    if cost > 0 then
+        local label = SPELL_POWER_TYPE_LABELS[tonumber(powerType) or 0] or "Mana"
+        costText = string.format("%d %s", cost, label)
+    end
+    local rangeText = FormatSpellRangeText(minRange, maxRange)
+
+    if costText and rangeText and type(tooltip.AddDoubleLine) == "function" then
+        local leftNorm = NormalizeTooltipTextValue(costText)
+        local rightNorm = NormalizeTooltipTextValue(rangeText)
+        local key = leftNorm .. "||" .. rightNorm
+        if not existing[key] and not existing[leftNorm] then
+            tooltip:AddDoubleLine(costText, rangeText,
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+            existing[key] = true
+            existing[leftNorm] = true
+            existing[rightNorm] = true
+        end
+    elseif costText then
+        AddUniqueTooltipLine(tooltip, existing, costText, 1.0, 1.0, 1.0, false)
+    elseif rangeText then
+        AddUniqueTooltipLine(tooltip, existing, rangeText, 1.0, 1.0, 1.0, false)
+    end
+
+    AddUniqueTooltipLine(tooltip, existing,
+        FormatSpellCastTimeText(castTimeMs), 1.0, 1.0, 1.0, false)
+end
+
 local function AddFallbackSpellBookLines(tooltip, tooltipData)
     if not tooltip or type(tooltipData) ~= "table" then
         return
@@ -3935,33 +4123,29 @@ local function AddFallbackSpellBookLines(tooltip, tooltipData)
     local spellId = tonumber(tooltipData.spellId)
     local existing = BuildExistingTooltipTextSet(tooltip)
 
-    if spellId and spellId > 0 and type(GetSpellInfo) == "function" then
-        local _, _, _, castTimeMs, minRange, maxRange = GetSpellInfo(spellId)
-        local rangeText = FormatSpellRangeText(minRange, maxRange)
-        if rangeText then
-            AddUniqueTooltipLine(tooltip, existing, rangeText, 0.8, 0.8, 0.8, true)
-        end
+    local passive = false
+    if type(IsPassiveSpell) == "function"
+        and tooltipData.bookSlot and tooltipData.bookType then
+        local ok, result = pcall(function()
+            return IsPassiveSpell(tooltipData.bookSlot, tooltipData.bookType)
+        end)
+        passive = ok and result and true or false
+    end
 
-        local passive = false
-        if type(IsPassiveSpell) == "function"
-            and tooltipData.bookSlot and tooltipData.bookType then
-            local ok, result = pcall(function()
-                return IsPassiveSpell(tooltipData.bookSlot, tooltipData.bookType)
-            end)
-            passive = ok and result and true or false
-        end
-
-        if passive then
-            AddUniqueTooltipLine(tooltip, existing, PASSIVE or "Passive", 0.8, 0.8, 0.8, true)
-        else
-            AddUniqueTooltipLine(tooltip, existing, FormatSpellCastTimeText(castTimeMs), 0.8, 0.8, 0.8, true)
-        end
+    if passive then
+        AddUniqueTooltipLine(tooltip, existing, PASSIVE or "Passive", 0.8, 0.8, 0.8, true)
     end
 
     if spellId and spellId > 0 then
         local description = GetClientSpellDescription(spellId)
         if description then
             AddClientSpellDescriptionLines(tooltip, description)
+        end
+
+        -- Body first, stat block after: matches the action-bar tooltip layout
+        -- (hyperlink bodies cannot be split) so both render identically.
+        if not passive and not WillEnrichmentProvideStatLines(tooltip, spellId) then
+            AddSpellStatLines(tooltip, spellId, existing)
         end
     end
 end
@@ -4024,6 +4208,11 @@ local function SetFallbackActionTooltip(button)
             -- Safe native spell body fallback: avoids SetAction/SetSpell while
             -- still allowing client-side tooltip description rendering.
             wroteText = TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(resolvedId))
+            if wroteText and not WillEnrichmentProvideStatLines(GameTooltip, resolvedId) then
+                -- Hyperlink bodies carry no cost/range/cast block; add it so
+                -- action tooltips match the spellbook rendering.
+                AddSpellStatLines(GameTooltip, resolvedId)
+            end
         end
 
         if not wroteText and (not spellName or spellName == "") and resolvedId and type(GetSpellInfo) == "function" then
@@ -4039,6 +4228,9 @@ local function SetFallbackActionTooltip(button)
                 end
             end
             GameTooltip._dcqosResolvedSpellId = resolvedId
+            if resolvedId and not WillEnrichmentProvideStatLines(GameTooltip, resolvedId) then
+                AddSpellStatLines(GameTooltip, resolvedId)
+            end
             EnhanceSpellTooltip(GameTooltip, resolvedId)
             wroteText = true
         end

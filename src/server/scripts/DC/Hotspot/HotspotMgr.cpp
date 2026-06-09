@@ -11,7 +11,6 @@
 #include "GameTime.h"
 #include "StringConvert.h"
 #include "GameObject.h"
-#include "ObjectAccessor.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "DC/CrossSystem/CrossSystemMapCoords.h"
@@ -20,15 +19,24 @@
 #include "DatabaseEnv.h"
 #include "DBCEnums.h"
 #include "Random.h"
+#include "Tokenize.h"
+#include <cctype>
 #include <sstream>
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
 #include <unordered_set>
 
-// Helper to get base map safely
+// Helper to get base map safely. CreateBaseMap ASSERTs (crashes) on map ids
+// missing from Map.dbc, and instanceable maps return MapInstanced whose
+// players live in private instance copies — neither can host world hotspots,
+// and a config typo must not take the server down.
 static Map* GetBaseMapSafe(uint32 mapId)
 {
+    MapEntry const* entry = sMapStore.LookupEntry(mapId);
+    if (!entry || entry->Instanceable())
+        return nullptr;
+
     return sMapMgr->CreateBaseMap(mapId);
 }
 
@@ -75,6 +83,19 @@ static bool IsMapEnabled(uint32 mapId)
     for (uint32 id : sHotspotsConfig.enabledMaps)
         if (id == mapId) return true;
     return false;
+}
+
+// Parse a comma-separated ID list from a config string ("0, 1,530" → {0,1,530}).
+static std::vector<uint32> ParseIdList(std::string csv)
+{
+    csv.erase(std::remove_if(csv.begin(), csv.end(),
+        [](unsigned char c) { return std::isspace(c); }), csv.end());
+
+    std::vector<uint32> ids;
+    for (std::string_view token : Acore::Tokenize(csv, ',', false))
+        if (Optional<uint32> id = Acore::StringTo<uint32>(token))
+            ids.push_back(*id);
+    return ids;
 }
 
 static bool IsFarEnoughFromExistingHotspots(uint32 mapId, float x, float y)
@@ -190,15 +211,24 @@ void HotspotMgr::LoadConfig()
     sHotspotsConfig.objectiveSurviveMinutes = sConfigMgr->GetOption<uint32>("Hotspots.Objectives.SurviveMinutes", 5);
     sHotspotsConfig.showObjectivesProgress = sConfigMgr->GetOption<bool>("Hotspots.Objectives.ShowProgress", true);
 
-    // Parse vector configs manually (ConfigMgr doesn't support vector templates)
-    sHotspotsConfig.enabledMaps = { 0, 1, 530, 571, 37 }; // Default: all main continents + Azshara Crater
-    sHotspotsConfig.enabledZones.clear();
-    sHotspotsConfig.excludedZones.clear();
+    // Comma-separated ID lists (ConfigMgr has no vector support). EnabledMaps
+    // limits where hotspots may appear; EnabledZones (optional) narrows that
+    // further, e.g. to the leveling path. Zone IDs are globally unique across
+    // maps, so a flat zone list is sufficient (no per-map list needed).
+    sHotspotsConfig.enabledMaps = ParseIdList(
+        sConfigMgr->GetOption<std::string>("Hotspots.EnabledMaps", "0,1,530,571,37"));
+    if (sHotspotsConfig.enabledMaps.empty())
+        sHotspotsConfig.enabledMaps = { 0, 1, 530, 571, 37 };
 
+    sHotspotsConfig.enabledZones = ParseIdList(
+        sConfigMgr->GetOption<std::string>("Hotspots.EnabledZones", ""));
+    sHotspotsConfig.excludedZones = ParseIdList(
+        sConfigMgr->GetOption<std::string>("Hotspots.ExcludedZones", ""));
     sHotspotsConfig.enabledZonesPerMap.clear();
-    // Parse manual per-map list if needed (omitted for brevity, assume simple list for now or copy parsing logic if extensive)
-    // Legacy parsing logic for Hotspots.EnabledZonesPerMap string was in ac_hotspots.cpp, should look into moving it if complex strings are used.
-    // For now assuming default simple vectors.
+
+    // Harmless no-op before DBC stores load (first OnAfterConfigLoad during
+    // boot); rebuilt with real data from OnStartup and on config reload.
+    BuildZoneSampleBoxes();
 }
 
 void HotspotMgr::LoadFromDB()
@@ -221,7 +251,10 @@ void HotspotMgr::LoadFromDB()
         h.z = fields[5].Get<float>();
         h.spawnTime = static_cast<time_t>(fields[6].Get<uint64>());
         h.expireTime = static_cast<time_t>(fields[7].Get<uint64>());
-        h.gameObjectGuid = ObjectGuid(fields[8].Get<uint64>()); // Assuming GUID stored as uint64
+        // Marker GOs are created dynamically and do not survive a restart;
+        // clear the stale guid so SpawnPendingMarkers recreates the marker
+        // once a player loads the area.
+        h.gameObjectGuid = ObjectGuid::Empty;
 
         if (h.expireTime > now)
         {
@@ -282,6 +315,107 @@ static bool IsCityLikeArea(uint32 areaId)
             return isCityFlags(parentZone->flags);
 
     return false;
+}
+
+// Recover a zone's world-space bounding box by probing Zone2MapCoordinates
+// with the client-space corners (0,0) and (100,100). If the zone has no
+// WorldMapArea entry the inputs come back unchanged, which we detect.
+static bool TryGetZoneWorldBox(uint32 zoneId, float& minX, float& maxX, float& minY, float& maxY)
+{
+    float ax = 0.0f, ay = 0.0f;
+    float bx = 100.0f, by = 100.0f;
+    Zone2MapCoordinates(ax, ay, zoneId);
+    Zone2MapCoordinates(bx, by, zoneId);
+
+    // Unchanged inputs = no WorldMapArea entry (a real 100x100yd zone box at
+    // the exact map origin does not exist).
+    if (ax == 0.0f && ay == 0.0f && bx == 100.0f && by == 100.0f)
+        return false;
+
+    minX = std::min(ax, bx);
+    maxX = std::max(ax, bx);
+    minY = std::min(ay, by);
+    maxY = std::max(ay, by);
+
+    // Reject degenerate boxes.
+    return (maxX - minX) > 1.0f && (maxY - minY) > 1.0f;
+}
+
+// Fallback boxes for zones the server's WorldMapArea.dbc may not cover
+// (values from Custom/CSV DBC/WorldMapArea.csv; columns after the name are
+// y1,y2,x1,x2 with x = world X — convention verified against the live areas'
+// game_tele and playercreateinfo coordinates). Only consulted when
+// TryGetZoneWorldBox fails for the zone.
+struct CustomZoneBox
+{
+    uint32 zoneId;
+    float minX, maxX, minY, maxY;
+};
+static constexpr CustomZoneBox CUSTOM_ZONE_BOXES[] =
+{
+    { 268,  -1116.0f,  1756.0f,  -1884.0f,  2427.0f   }, // Azshara Crater (map 37)
+    { 5006,  5334.3f,  6932.32f,  2.91f,    2132.02f  }, // Isles of Giants (map 1405)
+    { 6000,  2066.67f, 4333.33f, -5166.67f, -1766.67f }, // Stratholme Valley (map 850)
+    { 6100,  4479.17f, 6145.83f, -4025.0f,  -1525.0f  }, // Hyjal Frontier (map 1410)
+};
+
+void HotspotMgr::BuildZoneSampleBoxes()
+{
+    _zoneSampleBoxes.clear();
+
+    // Surface config mistakes once DBC stores are loaded (GetBaseMapSafe
+    // silently skips these at runtime, which would otherwise look like
+    // hotspots randomly never spawning on a map).
+    if (sMapStore.GetNumRows() > 0)
+    {
+        for (uint32 mapId : sHotspotsConfig.enabledMaps)
+        {
+            MapEntry const* entry = sMapStore.LookupEntry(mapId);
+            if (!entry)
+                LOG_WARN("scripts.dc", "Hotspots: enabled map {} does not exist in Map.dbc - it will be skipped.", mapId);
+            else if (entry->Instanceable())
+                LOG_WARN("scripts.dc", "Hotspots: enabled map {} is instanceable - it will be skipped.", mapId);
+        }
+    }
+
+    for (uint32 i = 0; i < sAreaTableStore.GetNumRows(); ++i)
+    {
+        AreaTableEntry const* area = sAreaTableStore.LookupEntry(i);
+        if (!area || area->zone != 0) // only top-level zones
+            continue;
+
+        if (!IsMapEnabled(area->mapid))
+            continue;
+
+        if (!IsZoneAllowed(area->mapid, area->ID) || IsCityLikeArea(area->ID))
+            continue;
+
+        HotspotZoneSampleBox box;
+        box.zoneId = area->ID;
+        box.mapId = area->mapid;
+
+        if (TryGetZoneWorldBox(area->ID, box.minX, box.maxX, box.minY, box.maxY))
+        {
+            _zoneSampleBoxes.push_back(box);
+            continue;
+        }
+
+        for (CustomZoneBox const& custom : CUSTOM_ZONE_BOXES)
+        {
+            if (custom.zoneId != area->ID)
+                continue;
+            box.minX = custom.minX;
+            box.maxX = custom.maxX;
+            box.minY = custom.minY;
+            box.maxY = custom.maxY;
+            _zoneSampleBoxes.push_back(box);
+        }
+        // Zones with no known bounds stay reachable via the periodic map-wide
+        // probes in RefillSpawnPool.
+    }
+
+    LOG_INFO("server.loading", "Hotspots: prepared {} zone sampling box(es) for spawn discovery.",
+        _zoneSampleBoxes.size());
 }
 
 // Static terrain/zone eligibility for a candidate position. Excludes the
@@ -363,7 +497,7 @@ void HotspotMgr::SaveSpawnPointToDB(HotspotSpawnPoint const& p)
 void HotspotMgr::RefillSpawnPool()
 {
     // Target variety so spawns rarely repeat the same spot.
-    constexpr size_t POOL_TARGET = 200;
+    constexpr size_t POOL_TARGET = 100;
     if (_spawnPool.size() >= POOL_TARGET)
         return;
 
@@ -372,11 +506,12 @@ void HotspotMgr::RefillSpawnPool()
 
     // Bound disk I/O: every cold (unloaded) grid we probe pulls .map/.vmtile/
     // .mmtile off disk (~several ms each). Cap cold-grid loads per call so a
-    // single world tick never stalls; probes into already-loaded grids are
-    // cheap and not budgeted. The pool fills over many ticks and persists.
-    constexpr uint32 COLD_GRID_BUDGET = 3;
-    constexpr uint32 MAX_PROBES = 400;     // total random samples per call
-    constexpr size_t MAX_NEW_POINTS = 8;   // stop early once this many are added
+    // single world tick never stalls (2 loads stays under the 25ms profiler
+    // threshold); probes into already-loaded grids are cheap and not budgeted.
+    // The pool fills over many ticks and persists.
+    constexpr uint32 COLD_GRID_BUDGET = 2;
+    constexpr uint32 MAX_PROBES = 150;     // total random samples per call
+    constexpr size_t MAX_NEW_POINTS = 5;   // stop early once this many are added
     constexpr float MIN_POINT_SPACING_SQ = 100.0f * 100.0f;
 
     std::vector<uint32> const& maps = sHotspotsConfig.enabledMaps;
@@ -388,7 +523,27 @@ void HotspotMgr::RefillSpawnPool()
         if (added >= MAX_NEW_POINTS)
             break;
 
-        uint32 mapId = maps[urand(0, static_cast<uint32>(maps.size()) - 1)];
+        // Sample inside a known zone bounding box when available: far higher
+        // hit rate than map-wide random points, and it concentrates the pool
+        // in the configured (leveling) zones. Every 4th probe still samples
+        // map-wide so zones without known bounds remain discoverable.
+        uint32 mapId;
+        float cx, cy;
+        if (!_zoneSampleBoxes.empty() && (probe % 4) != 0)
+        {
+            HotspotZoneSampleBox const& box =
+                _zoneSampleBoxes[urand(0, static_cast<uint32>(_zoneSampleBoxes.size()) - 1)];
+            mapId = box.mapId;
+            cx = frand(box.minX, box.maxX);
+            cy = frand(box.minY, box.maxY);
+        }
+        else
+        {
+            mapId = maps[urand(0, static_cast<uint32>(maps.size()) - 1)];
+            cx = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
+            cy = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
+        }
+
         if (!IsMapEnabled(mapId))
             continue;
 
@@ -396,8 +551,6 @@ void HotspotMgr::RefillSpawnPool()
         if (!map)
             continue;
 
-        float cx = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
-        float cy = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
         if (!MapMgr::IsValidMapCoord(mapId, cx, cy))
             continue;
 
@@ -476,6 +629,56 @@ bool HotspotMgr::PickSpawnPoint(HotspotSpawnPoint& out)
     return true;
 }
 
+// Create the visual marker GameObject for a hotspot. Caller must ensure the
+// grid at (x,y) is already loaded so this never triggers terrain disk I/O.
+static ObjectGuid CreateHotspotMarker(Map* map, Hotspot const& h)
+{
+    if (!sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
+        return ObjectGuid::Empty;
+
+    time_t now = GameTime::GetGameTime().count();
+    if (h.expireTime <= now)
+        return ObjectGuid::Empty;
+
+    GameObject* go = new GameObject();
+    if (!go->Create(map->GenerateLowGuid<HighGuid::GameObject>(),
+        sHotspotsConfig.markerGameObjectEntry, map, 0,
+        h.x, h.y, h.z + 0.5f, 0.0f, G3D::Quat(), 255, GO_STATE_READY))
+    {
+        delete go;
+        return ObjectGuid::Empty;
+    }
+
+    go->SetRespawnTime(static_cast<int32>(h.expireTime - now));
+    if (!map->AddToMap(go))
+    {
+        delete go;
+        return ObjectGuid::Empty;
+    }
+
+    return go->GetGUID();
+}
+
+void HotspotMgr::SpawnPendingMarkers()
+{
+    if (!sHotspotsConfig.spawnVisualMarker)
+        return;
+
+    for (Hotspot const& h : _grid.GetAll())
+    {
+        if (!h.gameObjectGuid.IsEmpty())
+            continue;
+
+        Map* map = GetBaseMapSafe(h.mapId);
+        if (!map || !map->IsGridLoaded(h.x, h.y))
+            continue; // defer until a player loads the area
+
+        ObjectGuid guid = CreateHotspotMarker(map, h);
+        if (!guid.IsEmpty())
+            _grid.UpdateGameObjectGuid(h.id, guid);
+    }
+}
+
 bool HotspotMgr::SpawnHotspot()
 {
     if (!sHotspotsConfig.enabled) return false;
@@ -501,28 +704,14 @@ bool HotspotMgr::SpawnHotspot()
     h.spawnTime = GameTime::GetGameTime().count();
     h.expireTime = h.spawnTime + (sHotspotsConfig.duration * MINUTE);
 
-    // Spawn Visual Marker
+    // Visual marker: created immediately only if the target grid is already
+    // resident, so spawning never pulls terrain off disk. Otherwise
+    // SpawnPendingMarkers (10s cleanup cadence) creates it once a player
+    // loads the area — until then nobody is there to see it anyway.
     if (sHotspotsConfig.spawnVisualMarker)
-    {
         if (Map* m = GetBaseMapSafe(mapId))
-        {
-            if (sObjectMgr->GetGameObjectTemplate(sHotspotsConfig.markerGameObjectEntry))
-            {
-                GameObject* go = new GameObject();
-                float mz = z;
-                float sz = m->GetHeight(x, y, z);
-                if (std::isfinite(sz) && sz > MIN_HEIGHT) { mz = sz + 0.5f; h.z = mz; }
-
-                if (go->Create(m->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry, m, 0, x, y, mz, 0.0f, G3D::Quat(), 255, GO_STATE_READY))
-                {
-                    go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
-                    if (m->AddToMap(go)) h.gameObjectGuid = go->GetGUID();
-                    else delete go;
-                }
-                else delete go;
-            }
-        }
-    }
+            if (m->IsGridLoaded(x, y))
+                h.gameObjectGuid = CreateHotspotMarker(m, h);
 
     _grid.Add(h);
     SaveHotspotToDB(h);
@@ -538,15 +727,9 @@ bool HotspotMgr::SpawnHotspot()
         std::ostringstream ss;
         ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot in " << mapName << " (" << zoneName << ")! +" << sHotspotsConfig.experienceBonus << "% XP";
 
-        // Announce to players on map
-        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str(), nullptr); // Broadcast all? No, logical code iterated sessions.
-        // Simplified broadcast:
-        for (auto const& sess : sWorldSessionMgr->GetAllSessions())
-        {
-            if (Player* p = sess.second->GetPlayer())
-                if (p->GetMapId() == h.mapId)
-                    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), p);
-        }
+        // One global announce; players on the map previously got it twice
+        // (broadcast + per-map loop).
+        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str(), nullptr);
 
         // Send WRLD packet
         DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
@@ -574,6 +757,9 @@ void HotspotMgr::CleanupExpiredHotspots()
 {
     std::vector<Hotspot> all = _grid.GetAll();
     time_t now = GameTime::GetGameTime().count();
+
+    // Create deferred visual markers for areas players have since loaded.
+    SpawnPendingMarkers();
 
     for (const Hotspot& h : all)
     {
@@ -821,10 +1007,9 @@ void HotspotMgr::ClearAll()
 
 void HotspotMgr::RecreateHotspotVisualMarkers()
 {
-    // Placeholder for visual marker recreation
-    // GetAll returns by value, so we cannot modify hotspots directly
-    // To implement: add UpdateHotspot method to grid or iterate differently
-    (void)_grid.GetAll(); // Suppress unused result warning
+    // Markers for grids that are not yet resident are created lazily by the
+    // SpawnPendingMarkers pass in CleanupExpiredHotspots.
+    SpawnPendingMarkers();
 }
 
 std::string HotspotMgr::GetZoneName(uint32 zoneId)

@@ -24,6 +24,7 @@
 #include "DatabaseEnv.h"
 #include "QueryCallback.h"
 #include "AsyncCallbackProcessor.h"
+#include "StringFormat.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "DC/CrossSystem/EventBus.h"
 #include "DC/CrossSystem/CrossSystemCore.h"
@@ -818,10 +819,17 @@ static void StoreCapabilityHistory(Player* player,
 
     uint32 accountId = player->GetSession()->GetAccountId();
     uint64 characterGuid = player->GetGUID().GetCounter();
-    std::string const characterName = player->GetName();
+    std::string characterName = player->GetName();
+    bool hasMetadataColumns = HasCapabilityHistoryMetadataColumns();
+    std::string sourceStr = source ? source : "unknown";
+    std::string fingerprint = metadata.nativeBuildFingerprint;
+    std::string revisionsJson = EncodeDataRevisionsJson(metadata.dataRevisions);
 
-    QueryResult latestResult = CharacterDatabase.Query(
-        HasCapabilityHistoryMetadataColumns()
+    // History is telemetry only: nothing downstream waits on it, so run the
+    // dedup SELECT async instead of blocking the handshake on a DB roundtrip
+    // (this SELECT dominated CORE handshake latency).
+    std::string selectSql = Acore::StringFormat(
+        hasMetadataColumns
             ? "SELECT version_string, capabilities, negotiated_caps, compatible, "
               "character_guid, character_name, native_build_fingerprint, data_revisions_json "
               "FROM dc_addon_client_caps_history "
@@ -833,68 +841,75 @@ static void StoreCapabilityHistory(Player* player,
               "WHERE account_id = {} AND addon_name = 'DC' "
               "ORDER BY seen_at DESC, id DESC LIMIT 1",
         accountId);
-    if (latestResult)
+
+    DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(selectSql)
+        .WithCallback([accountId, characterGuid, characterName = std::move(characterName),
+            clientVersionStr = clientVersionStr, clientCaps, negotiatedCaps,
+            versionCompatible, hasMetadataColumns, sourceStr = std::move(sourceStr),
+            fingerprint = std::move(fingerprint),
+            revisionsJson = std::move(revisionsJson)](QueryResult latestResult)
     {
-        Field* latestFields = latestResult->Fetch();
-        if (latestFields[0].Get<std::string>() == clientVersionStr &&
-            latestFields[1].Get<uint32>() == clientCaps &&
-            latestFields[2].Get<uint32>() == negotiatedCaps &&
-            (latestFields[3].Get<uint8>() != 0) == versionCompatible &&
-            latestFields[4].Get<uint64>() == characterGuid &&
-            latestFields[5].Get<std::string>() == characterName &&
-            (!HasCapabilityHistoryMetadataColumns()
-                || (latestFields[6].Get<std::string>()
-                        == metadata.nativeBuildFingerprint
-                    && latestFields[7].Get<std::string>()
-                        == EncodeDataRevisionsJson(metadata.dataRevisions))))
+        if (latestResult)
         {
-            return;
+            Field* latestFields = latestResult->Fetch();
+            if (latestFields[0].Get<std::string>() == clientVersionStr &&
+                latestFields[1].Get<uint32>() == clientCaps &&
+                latestFields[2].Get<uint32>() == negotiatedCaps &&
+                (latestFields[3].Get<uint8>() != 0) == versionCompatible &&
+                latestFields[4].Get<uint64>() == characterGuid &&
+                latestFields[5].Get<std::string>() == characterName &&
+                (!hasMetadataColumns
+                    || (latestFields[6].Get<std::string>() == fingerprint
+                        && latestFields[7].Get<std::string>() == revisionsJson)))
+            {
+                return;
+            }
         }
-    }
 
-    if (HasCapabilityHistoryMetadataColumns())
-    {
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_addon_client_caps_history "
-            "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name, native_build_fingerprint, data_revisions_json) "
-            "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}', '{}', '{}')",
-            accountId,
-            EscapeSQLString(source ? source : "unknown"),
-            EscapeSQLString(clientVersionStr),
-            clientCaps,
-            negotiatedCaps,
-            versionCompatible ? 1 : 0,
-            characterGuid,
-            EscapeSQLString(characterName),
-            EscapeSQLString(metadata.nativeBuildFingerprint),
-            EscapeSQLString(EncodeDataRevisionsJson(metadata.dataRevisions)));
-    }
-    else
-    {
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_addon_client_caps_history "
-            "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name) "
-            "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}')",
-            accountId,
-            EscapeSQLString(source ? source : "unknown"),
-            EscapeSQLString(clientVersionStr),
-            clientCaps,
-            negotiatedCaps,
-            versionCompatible ? 1 : 0,
-            characterGuid,
-            EscapeSQLString(characterName));
-    }
+        if (hasMetadataColumns)
+        {
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_addon_client_caps_history "
+                "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name, native_build_fingerprint, data_revisions_json) "
+                "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}', '{}', '{}')",
+                accountId,
+                EscapeSQLString(sourceStr),
+                EscapeSQLString(clientVersionStr),
+                clientCaps,
+                negotiatedCaps,
+                versionCompatible ? 1 : 0,
+                characterGuid,
+                EscapeSQLString(characterName),
+                EscapeSQLString(fingerprint),
+                EscapeSQLString(revisionsJson));
+        }
+        else
+        {
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_addon_client_caps_history "
+                "(account_id, addon_name, source, version_string, capabilities, negotiated_caps, compatible, character_guid, character_name) "
+                "VALUES ({}, 'DC', '{}', '{}', {}, {}, {}, {}, '{}')",
+                accountId,
+                EscapeSQLString(sourceStr),
+                EscapeSQLString(clientVersionStr),
+                clientCaps,
+                negotiatedCaps,
+                versionCompatible ? 1 : 0,
+                characterGuid,
+                EscapeSQLString(characterName));
+        }
 
-    CharacterDatabase.Execute(
-        "DELETE FROM dc_addon_client_caps_history "
-        "WHERE account_id = {} AND addon_name = 'DC' AND id NOT IN ("
-            "SELECT id FROM ("
-                "SELECT id FROM dc_addon_client_caps_history "
-                "WHERE account_id = {} AND addon_name = 'DC' "
-                "ORDER BY seen_at DESC, id DESC LIMIT {}"
-            ") AS recent_rows"
-        ")",
-        accountId, accountId, MAX_CAPABILITY_HISTORY_ENTRIES);
+        CharacterDatabase.Execute(
+            "DELETE FROM dc_addon_client_caps_history "
+            "WHERE account_id = {} AND addon_name = 'DC' AND id NOT IN ("
+                "SELECT id FROM ("
+                    "SELECT id FROM dc_addon_client_caps_history "
+                    "WHERE account_id = {} AND addon_name = 'DC' "
+                    "ORDER BY seen_at DESC, id DESC LIMIT {}"
+                ") AS recent_rows"
+            ")",
+            accountId, accountId, MAX_CAPABILITY_HISTORY_ENTRIES);
+    }));
 }
 
 namespace
