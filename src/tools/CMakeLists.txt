@@ -124,6 +124,10 @@ foreach(TOOL_NAME ${TOOLS_BUILD_LIST})
       PRIVATE
         modules
         scripts
+        # scripts/modules only carry game's headers via game-interface, so the
+        # final executable must link the real game library itself (the same way
+        # worldserver does) or every game symbol they reference is unresolved.
+        game
         acore-core-interface)
 
     # Install config
