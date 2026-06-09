@@ -24,6 +24,12 @@
 #include "Chat.h"
 #include "Log.h"
 #include "Random.h"
+#include "World.h"
+#include "WorldSession.h"
+#include "WorldSessionMgr.h"
+
+#include "dc_giant_isles_invasion_internal.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 
 #include <array>
 #include <map>
@@ -38,36 +44,14 @@ using namespace std::chrono_literals;
 
 namespace
 {
+    // Shared NPC entry ids and factions live in the internal header so the NPC
+    // AIs (dc_giant_isles_invasion_npcs.cpp) and this orchestrator agree.
+    using namespace DCGiantIsles;
+
     enum InvasionData
     {
         MAP_GIANT_ISLES                 = 1405,
         AREA_SEEPING_SHORES             = 5010,
-
-        NPC_INVASION_HORN               = 400325,
-
-        // Invaders
-        NPC_ZANDALARI_INVADER           = 400326,
-        NPC_ZANDALARI_SCOUT             = 400327,
-        NPC_ZANDALARI_SPEARMAN          = 400328,
-        NPC_ZANDALARI_WARRIOR           = 400329,
-        NPC_ZANDALARI_BERSERKER         = 400330,
-        NPC_ZANDALARI_SHADOW_HUNTER     = 400331,
-        NPC_ZANDALARI_BLOOD_GUARD       = 400332,
-        NPC_ZANDALARI_WITCH_DOCTOR      = 400333,
-        NPC_ZANDALARI_BEAST_TAMER       = 400334,
-        NPC_ZANDALARI_WAR_RAPTOR        = 400335,
-        NPC_WARLORD_ZULMAR              = 400336,
-        NPC_ZANDALARI_HONOR_GUARD       = 400337,
-        NPC_ZANDALARI_INVASION_LEADER   = 400338,
-
-        // Defenders (Horde camp units)
-        NPC_BEAST_HUNTER                = 401004,
-        NPC_BEAST_HUNTER_VETERAN        = 401005,
-        NPC_BEAST_HUNTER_TRAPPER        = 401006,
-        NPC_BEAST_HUNTER_WARLORD        = 401007,
-
-        INVADER_FACTION                 = 16,
-        DEFENDER_FACTION_HORDE          = 29,
 
         // World states
         WORLD_STATE_INVASION_ACTIVE     = 20000,
@@ -92,22 +76,6 @@ namespace
         INVASION_FAILED                 = 7,
     };
 
-    enum WarlordSpells
-    {
-        SPELL_MORTAL_STRIKE             = 16856,
-        SPELL_WHIRLWIND                 = 15589,
-        SPELL_COMMANDING_SHOUT          = 32064,
-        SPELL_ENRAGE                    = 8599,
-    };
-
-    enum WarlordEvents
-    {
-        EVENT_MORTAL_STRIKE             = 1,
-        EVENT_WHIRLWIND                 = 2,
-        EVENT_COMMANDING_SHOUT          = 3,
-        EVENT_CHECK_GUARDS              = 4,
-    };
-
     constexpr uint32 WARNING_DURATION_MS = 30 * IN_MILLISECONDS;
     constexpr uint32 WAVE_1_DURATION_MS = 2 * MINUTE * IN_MILLISECONDS;
     constexpr uint32 WAVE_2_DURATION_MS = 3 * MINUTE * IN_MILLISECONDS;
@@ -127,6 +95,9 @@ namespace
     constexpr uint32 NUDGE_INTERVAL_MS = 2000;
     constexpr uint32 CHAOS_PULSE_MIN_MS = 18000;
     constexpr uint32 CHAOS_PULSE_MAX_MS = 28000;
+    // How often the live invasion state is pushed to the DC-InfoBar Events feed
+    // while the event is running (also re-syncs anyone who just logged in).
+    constexpr uint32 EVENT_BROADCAST_INTERVAL_MS = 10000;
     constexpr uint32 SUMMON_LIFETIME_MS = 45 * MINUTE * IN_MILLISECONDS;
 
     constexpr float START_REQUIRED_RANGE_YARDS = 50.0f;
@@ -178,11 +149,6 @@ namespace
         return static_cast<uint32>(GameTime::GetGameTime().count());
     }
 
-    static uint64 GetNowMs()
-    {
-        return static_cast<uint64>(GameTime::GetGameTimeMS().count());
-    }
-
     static std::string FormatEpochTimestamp(uint32 epoch)
     {
         if (epoch == 0)
@@ -227,322 +193,9 @@ namespace
         }
     }
 
-    static Player* ResolvePlayerKiller(Unit* killer)
-    {
-        if (!killer)
-            return nullptr;
-
-        if (Player* player = killer->ToPlayer())
-            return player;
-
-        if (Unit* owner = killer->GetOwner())
-            return owner->ToPlayer();
-
-        return nullptr;
-    }
-
-    static void GI_TrackPlayerKill(ObjectGuid playerGuid);
-    static void GI_RegisterSummonedInvader(Creature* creature);
-    static void GI_MaintainBossGuards(Map* map);
-    static void GI_NotifyBossDeath();
-    static bool GI_IsInvasionActive();
-
-    class npc_invasion_mob : public CreatureScript
-    {
-    public:
-        npc_invasion_mob() : CreatureScript("npc_invasion_mob") { }
-
-        struct npc_invasion_mobAI : public ScriptedAI
-        {
-            npc_invasion_mobAI(Creature* creature) : ScriptedAI(creature) { }
-
-            std::vector<ObjectGuid> _raptorGuids;
-
-            void Reset() override
-            {
-                PruneRaptors();
-
-                // Cleanup any stray summon instances if event is not active.
-                if (!GI_IsInvasionActive() && me->IsSummon())
-                    me->DespawnOrUnsummon(1s);
-            }
-
-            void JustEngagedWith(Unit* who) override
-            {
-                if (!GI_IsInvasionActive())
-                    return;
-
-                if (me->GetEntry() == NPC_ZANDALARI_BEAST_TAMER)
-                    SummonWarRaptor(who);
-            }
-
-            void JustDied(Unit* killer) override
-            {
-                DespawnRaptors();
-
-                if (Player* player = ResolvePlayerKiller(killer))
-                    GI_TrackPlayerKill(player->GetGUID());
-            }
-
-            void UpdateAI(uint32 diff) override
-            {
-                (void)diff;
-
-                if (!UpdateVictim())
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-
-        private:
-            void PruneRaptors()
-            {
-                if (_raptorGuids.empty())
-                    return;
-
-                Map* map = me->GetMap();
-                if (!map)
-                {
-                    _raptorGuids.clear();
-                    return;
-                }
-
-                _raptorGuids.erase(
-                    std::remove_if(_raptorGuids.begin(), _raptorGuids.end(),
-                        [map](ObjectGuid const& guid)
-                        {
-                            Creature* c = map->GetCreature(guid);
-                            return !c || !c->IsAlive();
-                        }),
-                    _raptorGuids.end());
-            }
-
-            void DespawnRaptors()
-            {
-                if (_raptorGuids.empty())
-                    return;
-
-                Map* map = me->GetMap();
-                if (!map)
-                {
-                    _raptorGuids.clear();
-                    return;
-                }
-
-                for (ObjectGuid const& guid : _raptorGuids)
-                {
-                    if (Creature* c = map->GetCreature(guid))
-                        c->DespawnOrUnsummon(1s);
-                }
-
-                _raptorGuids.clear();
-            }
-
-            void SummonWarRaptor(Unit* target)
-            {
-                PruneRaptors();
-
-                if (_raptorGuids.size() >= 1)
-                    return;
-
-                Position pos = me->GetPosition();
-                pos.m_positionX += frand(-1.5f, 1.5f);
-                pos.m_positionY += frand(-1.5f, 1.5f);
-
-                Creature* raptor = me->SummonCreature(
-                    NPC_ZANDALARI_WAR_RAPTOR,
-                    pos,
-                    TEMPSUMMON_TIMED_OR_DEAD_DESPAWN,
-                    2 * MINUTE * IN_MILLISECONDS);
-
-                if (!raptor)
-                    return;
-
-                raptor->SetFaction(INVADER_FACTION);
-                raptor->SetReactState(REACT_AGGRESSIVE);
-
-                if (target)
-                    ForceStartCombat(raptor, target);
-
-                GI_RegisterSummonedInvader(raptor);
-                _raptorGuids.push_back(raptor->GetGUID());
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const override
-        {
-            return new npc_invasion_mobAI(creature);
-        }
-    };
-
-    class npc_invasion_leader : public CreatureScript
-    {
-    public:
-        npc_invasion_leader() : CreatureScript("npc_invasion_leader") { }
-
-        struct npc_invasion_leaderAI : public ScriptedAI
-        {
-            npc_invasion_leaderAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void Reset() override
-            {
-                me->SetReactState(REACT_PASSIVE);
-                me->SetFlag(UNIT_FIELD_FLAGS,
-                    UNIT_FLAG_NON_ATTACKABLE |
-                    UNIT_FLAG_IMMUNE_TO_PC |
-                    UNIT_FLAG_IMMUNE_TO_NPC);
-                me->GetMotionMaster()->MoveIdle();
-            }
-
-            void InitializeAI() override
-            {
-                Reset();
-            }
-
-            void DoAnnouncement(uint8 stage)
-            {
-                switch (stage)
-                {
-                    case 0:
-                        me->Yell("Unload everything! The beach will burn!", LANG_UNIVERSAL);
-                        break;
-                    case 1:
-                        me->Yell("Scouts first! Probe their line!", LANG_UNIVERSAL);
-                        break;
-                    case 2:
-                        me->Yell("Warriors to the front! Break their shields!", LANG_UNIVERSAL);
-                        break;
-                    case 3:
-                        me->Yell("Elites, crush them! No survivors!", LANG_UNIVERSAL);
-                        break;
-                    case 4:
-                        me->Yell("Warlord Zul'mar, finish this!", LANG_UNIVERSAL);
-                        break;
-                    case 5:
-                        me->Yell("Retreat to the ship!", LANG_UNIVERSAL);
-                        break;
-                    case 6:
-                        me->Yell("The beach is ours. Hold this ground!", LANG_UNIVERSAL);
-                        break;
-                    default:
-                        break;
-                }
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const override
-        {
-            return new npc_invasion_leaderAI(creature);
-        }
-    };
-
-    class npc_invasion_commander : public CreatureScript
-    {
-    public:
-        npc_invasion_commander() : CreatureScript("npc_invasion_commander") { }
-
-        struct npc_invasion_commanderAI : public ScriptedAI
-        {
-            npc_invasion_commanderAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap _events;
-            bool _enraged = false;
-            uint64 _lastSlayYellMs = 0;
-
-            void Reset() override
-            {
-                _events.Reset();
-                _enraged = false;
-                _lastSlayYellMs = 0;
-            }
-
-            void JustEngagedWith(Unit* /*who*/) override
-            {
-                me->Yell("You face Zul'mar, breaker of armies!", LANG_UNIVERSAL);
-
-                _events.ScheduleEvent(EVENT_MORTAL_STRIKE, 8s);
-                _events.ScheduleEvent(EVENT_WHIRLWIND, 16s);
-                _events.ScheduleEvent(EVENT_COMMANDING_SHOUT, 24s);
-                _events.ScheduleEvent(EVENT_CHECK_GUARDS, 12s);
-            }
-
-            void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/, DamageEffectType /*damagetype*/,
-                SpellSchoolMask /*schoolMask*/) override
-            {
-                if (_enraged)
-                    return;
-
-                if (me->HealthBelowPct(30))
-                {
-                    _enraged = true;
-                    DoCast(me, SPELL_ENRAGE, true);
-                    me->Yell("You only feed my fury!", LANG_UNIVERSAL);
-                }
-            }
-
-            void KilledUnit(Unit* victim) override
-            {
-                if (!victim || !victim->IsPlayer())
-                    return;
-
-                uint64 now = GetNowMs();
-                if (_lastSlayYellMs == 0 || (now - _lastSlayYellMs) > 8000)
-                {
-                    _lastSlayYellMs = now;
-                    me->Yell("Another defender falls!", LANG_UNIVERSAL);
-                }
-            }
-
-            void JustDied(Unit* /*killer*/) override
-            {
-                me->Yell("This beach... is not yours...", LANG_UNIVERSAL);
-                GI_NotifyBossDeath();
-            }
-
-            void UpdateAI(uint32 diff) override
-            {
-                if (!UpdateVictim())
-                    return;
-
-                _events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while (uint32 eventId = _events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_MORTAL_STRIKE:
-                            DoCastVictim(SPELL_MORTAL_STRIKE);
-                            _events.ScheduleEvent(EVENT_MORTAL_STRIKE, 12s);
-                            break;
-                        case EVENT_WHIRLWIND:
-                            DoCastAOE(SPELL_WHIRLWIND);
-                            _events.ScheduleEvent(EVENT_WHIRLWIND, 20s);
-                            break;
-                        case EVENT_COMMANDING_SHOUT:
-                            DoCastAOE(SPELL_COMMANDING_SHOUT);
-                            _events.ScheduleEvent(EVENT_COMMANDING_SHOUT, 30s);
-                            break;
-                        case EVENT_CHECK_GUARDS:
-                            GI_MaintainBossGuards(me->GetMap());
-                            _events.ScheduleEvent(EVENT_CHECK_GUARDS, 15s);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const override
-        {
-            return new npc_invasion_commanderAI(creature);
-        }
-    };
+    // The invader / leader / boss / questgiver creature AIs live in
+    // dc_giant_isles_invasion_npcs.cpp. They reach back into this orchestrator
+    // through the GI_* bridge declared in dc_giant_isles_invasion_internal.h.
 
     class giant_isles_invasion : public WorldMapScript
     {
@@ -583,6 +236,17 @@ namespace
             {
                 HandleAutoTrigger(map);
                 return;
+            }
+
+            // Keep the DC-InfoBar Events feed fresh (live wave / enemy counts)
+            // and re-sync anyone who logged in mid-invasion. Result states are
+            // skipped: their transition already pushed the final record.
+            if (_phase != INVASION_VICTORY && _phase != INVASION_FAILED)
+            {
+                if (_eventBroadcastTimerMs <= diff)
+                    BroadcastInvasionEvent(map);
+                else
+                    _eventBroadcastTimerMs -= diff;
             }
 
             // Result states keep event visible briefly, then fully cleanup.
@@ -771,6 +435,7 @@ namespace
             SetLastEndTimestamp();
             _phase = INVASION_FAILED;
             _phaseTimerMs = 1 * IN_MILLISECONDS;
+            BroadcastInvasionEvent(map);
         }
 
         void ForceAdvanceWave(Map* map)
@@ -921,6 +586,7 @@ namespace
         uint32 _spawnTimerMs = 0;
         uint32 _nudgeTimerMs = 0;
         uint32 _chaosTimerMs = 0;
+        uint32 _eventBroadcastTimerMs = 0;
         uint32 _waveSpawnBudget = 0;
         uint32 _waveActiveCap = 0;
         uint32 _spawnedThisWave = 0;
@@ -1035,6 +701,8 @@ namespace
                     player->PlayDirectSound(6674);
             });
 
+            BroadcastInvasionEvent(map);
+
             LOG_INFO("scripts.dc", "Giant Isles Invasion: warning phase started (trigger={}, starter={}, defenders={}, nextAutoWas={}, nextAutoWasTime={})",
                 triggerSource,
                 starterName,
@@ -1091,6 +759,7 @@ namespace
             _spawnTimerMs = 0;
             _nudgeTimerMs = 0;
             _chaosTimerMs = 0;
+            _eventBroadcastTimerMs = 0;
             _waveSpawnBudget = 0;
             _waveActiveCap = 0;
             _spawnedThisWave = 0;
@@ -1210,11 +879,11 @@ namespace
                 UNIT_FLAG_IMMUNE_TO_NPC);
             leader->GetMotionMaster()->MoveIdle();
 
-            if (npc_invasion_leader::npc_invasion_leaderAI* ai =
-                CAST_AI(npc_invasion_leader::npc_invasion_leaderAI, leader->AI()))
-            {
+            // Re-apply the leader AI's passive/immune setup (defined in the NPC
+            // unit). The concrete AI type lives in the other translation unit,
+            // so go through the virtual CreatureAI interface.
+            if (CreatureAI* ai = leader->AI())
                 ai->Reset();
-            }
         }
 
         void LeaderAnnounce(uint8 stage, Map* map)
@@ -1229,11 +898,72 @@ namespace
             if (!leader || !leader->IsAlive())
                 return;
 
-            if (npc_invasion_leader::npc_invasion_leaderAI* ai =
-                CAST_AI(npc_invasion_leader::npc_invasion_leaderAI, leader->AI()))
+            GI_LeaderYell(leader, stage);
+        }
+
+        char const* GetEventStateString() const
+        {
+            switch (_phase)
             {
-                ai->DoAnnouncement(stage);
+                case INVASION_WARNING:
+                    return "warning";
+                case INVASION_WAVE_1:
+                case INVASION_WAVE_2:
+                case INVASION_WAVE_3:
+                case INVASION_WAVE_4_BOSS:
+                    return "active";
+                case INVASION_VICTORY:
+                    return "victory";
+                case INVASION_FAILED:
+                    return "failed";
+                default:
+                    return "inactive";
             }
+        }
+
+        // Push the current invasion state to every online player's DC-InfoBar
+        // Events feed. Uses the shared EVNT module/opcode and the stable event
+        // id so the bar upserts a single record. The WRLD content snapshot
+        // (BuildEventsArray in dc_addon_world.cpp) carries the same record for
+        // the login/handshake sync path.
+        void BroadcastInvasionEvent(Map* map)
+        {
+            bool const active = (_phase != INVASION_INACTIVE &&
+                _phase != INVASION_VICTORY && _phase != INVASION_FAILED);
+
+            DCAddon::JsonValue data;
+            data.SetObject();
+            data.Set("id", DCAddon::JsonValue(static_cast<int32>(DCGiantIsles::INVASION_EVENT_ID)));
+            data.Set("name", DCAddon::JsonValue("Zandalari Invasion"));
+            data.Set("zone", DCAddon::JsonValue("Giant Isles"));
+            data.Set("type", DCAddon::JsonValue("invasion"));
+            data.Set("state", DCAddon::JsonValue(GetEventStateString()));
+            data.Set("active", DCAddon::JsonValue(active));
+            data.Set("wave", DCAddon::JsonValue(static_cast<uint32>(GetPublicWave())));
+            data.Set("maxWaves", DCAddon::JsonValue(static_cast<uint32>(DCGiantIsles::INVASION_MAX_WAVES)));
+            data.Set("timeRemaining", DCAddon::JsonValue(static_cast<uint32>(_phaseTimerMs / IN_MILLISECONDS)));
+
+            if (map)
+                data.Set("enemiesRemaining", DCAddon::JsonValue(CountAliveInvaders(map)));
+
+            DCAddon::JsonMessage msg(DCAddon::Module::EVENTS,
+                DCAddon::Opcode::Events::SMSG_EVENT_UPDATE, data);
+
+            WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
+            for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin();
+                itr != sessions.end(); ++itr)
+            {
+                if (!itr->second)
+                    continue;
+
+                if (Player* player = itr->second->GetPlayer())
+                {
+                    if (player->IsInWorld() && player->GetSession())
+                        msg.Send(player);
+                }
+            }
+
+            _eventBroadcastTimerMs = EVENT_BROADCAST_INTERVAL_MS;
         }
 
         uint8 GetPublicWave() const
@@ -1467,7 +1197,7 @@ namespace
                 }
 
                 defender->SetReactState(REACT_AGGRESSIVE);
-                defender->SetFaction(DEFENDER_FACTION_HORDE);
+                defender->SetFaction(DEFENDER_FACTION);
                 defender->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
                 defender->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
                 _defenderGuids.push_back(defender->GetGUID());
@@ -1507,7 +1237,7 @@ namespace
             if (ranger)
             {
                 ranger->SetReactState(REACT_AGGRESSIVE);
-                ranger->SetFaction(DEFENDER_FACTION_HORDE);
+                ranger->SetFaction(DEFENDER_FACTION);
                 ranger->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
                 ranger->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
                 _defenderGuids.push_back(ranger->GetGUID());
@@ -1517,7 +1247,7 @@ namespace
             if (shaman)
             {
                 shaman->SetReactState(REACT_AGGRESSIVE);
-                shaman->SetFaction(DEFENDER_FACTION_HORDE);
+                shaman->SetFaction(DEFENDER_FACTION);
                 shaman->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
                 shaman->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
                 _defenderGuids.push_back(shaman->GetGUID());
@@ -1650,7 +1380,10 @@ namespace
             creature->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
             creature->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
             creature->SetWalk(false);
-            creature->SetFaction(DEFENDER_FACTION_HORDE);
+            // Invaders must stay on the hostile invader faction. Previously this
+            // wrote the defender faction here, which made every invader friendly
+            // to the defenders (and to Horde players) and silently broke combat.
+            creature->SetFaction(INVADER_FACTION);
             creature->SetReactState(REACT_AGGRESSIVE);
 
             if (Unit* target = SelectInvaderTarget(creature, map))
@@ -1906,6 +1639,8 @@ namespace
             // Immediate opening pressure.
             SpawnWaveTick(map);
             SpawnWaveTick(map);
+
+            BroadcastInvasionEvent(map);
         }
 
         void StartBossWave(Map* map)
@@ -1989,6 +1724,8 @@ namespace
                 RegisterInvader(guard, 2);
                 CommandInvader(guard, map, 2);
             }
+
+            BroadcastInvasionEvent(map);
         }
 
         void EnterVictory(Map* map)
@@ -2018,6 +1755,7 @@ namespace
             );
             LeaderAnnounce(5, map);
             RewardParticipants(map);
+            BroadcastInvasionEvent(map);
         }
 
         void FailInvasion(Map* map, char const* reasonText)
@@ -2042,6 +1780,7 @@ namespace
 
             SendMapSystemMessage(map, reasonText ? reasonText : "|cFFFF3030[INVASION]|r Defense failed.");
             LeaderAnnounce(6, map);
+            BroadcastInvasionEvent(map);
         }
 
         void RewardParticipants(Map* map)
@@ -2249,44 +1988,46 @@ namespace
         }
     };
 
-    static void GI_TrackPlayerKill(ObjectGuid playerGuid)
-    {
-        if (sGiantIslesInvasion)
-            sGiantIslesInvasion->TrackPlayerKill(playerGuid);
-    }
+}
 
-    static void GI_RegisterSummonedInvader(Creature* creature)
-    {
-        if (sGiantIslesInvasion)
-            sGiantIslesInvasion->RegisterSummonedInvader(creature);
-    }
+// GI_* bridge: implemented here on the orchestrator side, declared in
+// dc_giant_isles_invasion_internal.h, and called by the creature AIs in
+// dc_giant_isles_invasion_npcs.cpp. (Anonymous-namespace names such as
+// sGiantIslesInvasion remain visible at file scope for the rest of the TU.)
+bool GI_IsInvasionActive()
+{
+    return sGiantIslesInvasion && sGiantIslesInvasion->IsActive();
+}
 
-    static void GI_MaintainBossGuards(Map* map)
-    {
-        if (sGiantIslesInvasion)
-            sGiantIslesInvasion->MaintainBossGuards(map);
-    }
+void GI_TrackPlayerKill(ObjectGuid playerGuid)
+{
+    if (sGiantIslesInvasion)
+        sGiantIslesInvasion->TrackPlayerKill(playerGuid);
+}
 
-    static void GI_NotifyBossDeath()
-    {
-        if (sGiantIslesInvasion)
-            sGiantIslesInvasion->NotifyBossKilled();
-    }
+void GI_RegisterSummonedInvader(Creature* creature)
+{
+    if (sGiantIslesInvasion)
+        sGiantIslesInvasion->RegisterSummonedInvader(creature);
+}
 
-    static bool GI_IsInvasionActive()
-    {
-        return sGiantIslesInvasion && sGiantIslesInvasion->IsActive();
-    }
+void GI_MaintainBossGuards(Map* map)
+{
+    if (sGiantIslesInvasion)
+        sGiantIslesInvasion->MaintainBossGuards(map);
+}
 
+void GI_NotifyBossDeath()
+{
+    if (sGiantIslesInvasion)
+        sGiantIslesInvasion->NotifyBossKilled();
 }
 
 void AddSC_giant_isles_invasion()
 {
     new npc_invasion_horn();
-    new npc_invasion_mob();
-    new npc_invasion_leader();
-    new npc_invasion_commander();
     new giant_isles_invasion();
+    GI_RegisterInvasionNpcs();
 
     LOG_INFO("scripts.dc", "Giant Isles Invasion: deterministic rewrite loaded");
 }

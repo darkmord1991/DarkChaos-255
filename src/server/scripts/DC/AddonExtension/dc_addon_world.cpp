@@ -25,6 +25,7 @@
 #include "DC/CrossSystem/CrossSystemMapCoords.h"
 #include "DC/CrossSystem/CrossSystemSpawnResolver.h"
 #include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
+#include "DC/GiantIsles/dc_giant_isles_invasion.h"
 
 #include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"
@@ -169,10 +170,37 @@ namespace World
         return arr;
     }
 
-    // Helper: Build events array (Stub for now)
+    // Helper: Build events array.
+    // Currently surfaces the Giant Isles Zandalari invasion derived from the
+    // world states the invasion script maintains. The invasion script also
+    // pushes live EVNT updates; both use DCGiantIsles::INVASION_EVENT_ID so the
+    // DC-InfoBar Events feed upserts a single record rather than duplicating it.
     static JsonValue BuildEventsArray()
     {
         JsonValue arr; arr.SetArray();
+
+        if (!sWorldState)
+            return arr;
+
+        uint32 const active = static_cast<uint32>(
+            sWorldState->getWorldState(DCGiantIsles::WS_INVASION_ACTIVE));
+        if (active == 0)
+            return arr;
+
+        uint32 const wave = static_cast<uint32>(
+            sWorldState->getWorldState(DCGiantIsles::WS_INVASION_WAVE));
+
+        JsonValue ev; ev.SetObject();
+        ev.Set("id", JsonValue(DCGiantIsles::INVASION_EVENT_ID));
+        ev.Set("name", JsonValue("Zandalari Invasion"));
+        ev.Set("zone", JsonValue("Giant Isles"));
+        ev.Set("type", JsonValue("invasion"));
+        ev.Set("state", JsonValue(wave == 0 ? "warning" : "active"));
+        ev.Set("active", JsonValue(true));
+        ev.Set("wave", JsonValue(wave));
+        ev.Set("maxWaves", JsonValue(DCGiantIsles::INVASION_MAX_WAVES));
+        arr.Push(ev);
+
         return arr;
     }
 

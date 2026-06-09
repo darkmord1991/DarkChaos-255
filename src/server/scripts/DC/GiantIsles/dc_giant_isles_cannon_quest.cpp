@@ -472,6 +472,32 @@ public:
             }
         }
 
+        // Belt-and-suspenders: the ship is a timed summon (5-minute despawn).
+        // If it vanishes on its own (player never sank it and just sat in the
+        // cannon), make sure the owner isn't left seated with the fixed aiming
+        // camera. The normal sink path already ejects in StartSinking; this
+        // only covers the abandon/timeout case.
+        void SummonedCreatureDespawn(Creature* summon) override
+        {
+            if (!summon || summon->GetEntry() != NPC_SHIP_HITBOX)
+                return;
+
+            ObjectGuid ownerGuid = summon->GetCreatorGUID();
+            if (ownerGuid.IsEmpty())
+                return;
+
+            // Drop any stale tracking that points at this ship.
+            auto it = PlayerShipMap.find(ownerGuid);
+            if (it != PlayerShipMap.end() && it->second == summon->GetGUID())
+                PlayerShipMap.erase(it);
+            ShipHitCount.erase(summon->GetGUID());
+
+            // Only eject if the owner is still seated in THIS cannon.
+            Player* player = ObjectAccessor::GetPlayer(*me, ownerGuid);
+            if (player && player->GetVehicleBase() == me)
+                player->ExitVehicle();
+        }
+
         // Called when cannon finishes casting a spell
         void OnSpellCast(SpellInfo const* spell) override
         {
@@ -855,9 +881,19 @@ public:
 
             LOG_INFO("scripts.dc", "Giant Isles: Ship sunk by player {}", player->GetName());
 
-            // Clean up player mapping
+            // Clean up player mapping BEFORE ejecting the player. ExitVehicle()
+            // triggers the cannon's PassengerBoarded(apply=false) -> OnPlayerExitCannon
+            // synchronously; clearing the mapping first prevents that handler from
+            // treating this as an abandon (despawning the ship / "escaping" whisper).
             PlayerShipMap.erase(player->GetGUID());
             ShipHitCount.erase(me->GetGUID());
+
+            // Eject the player from the cannon so the vehicle seat's fixed
+            // aiming camera is released and the normal follow camera returns.
+            // Without this the player is left seated indefinitely (the cannon
+            // never despawns), and the stuck camera even survives a relog
+            // because the server re-seats the player on login.
+            player->ExitVehicle();
         }
 
         void UpdateAI(uint32 diff) override
