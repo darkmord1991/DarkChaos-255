@@ -267,7 +267,6 @@ WeakAurasArchive\WeakAurasArchive.lua
 # DC-QOS CORE FRAMEWORK
 # ============================================================
 Core.lua
-Bindings.xml
 Protocol.lua
 UI\SharedShell.lua
 

@@ -1,5 +1,7 @@
 
-CurrentGlueMusic = "GS_LichKing";
+-- Legion menu music (the mp3 ships in the "legion menu" patch staging folder).
+CurrentGlueMusic = "Sound\\music\\legion\\mus_70_kingdomswillburn_maintitle.mp3";
+-- CurrentGlueMusic = "GS_LichKing";
 
 GlueCreditsSoundKits = { };
 GlueCreditsSoundKits[1] = "Menu-Credits01";

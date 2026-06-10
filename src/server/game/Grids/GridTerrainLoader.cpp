@@ -5,9 +5,14 @@
 #include "ScriptMgr.h"
 #include "VMapFactory.h"
 #include "VMapMgr2.h"
+#include "dc_update_profiler.h"
 
 void GridTerrainLoader::LoadTerrain()
 {
+    // Synchronous disk I/O (.map + .vmtile + .mmtile) on whichever thread
+    // triggers the grid load — flags cold-grid loads stalling a map update.
+    DarkChaos::ScopedUpdateProfiler _prof("Grid.TerrainLoad", _map->GetId());
+
     LoadMap();
 
     if (_map->GetInstanceId() == 0)
