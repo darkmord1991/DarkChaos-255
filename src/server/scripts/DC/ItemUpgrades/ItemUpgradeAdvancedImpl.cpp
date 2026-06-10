@@ -851,8 +851,3 @@ OptimizationManager* GetOptimizationManager()
 }
 
 } } // namespace DarkChaos::ItemUpgrade
-
-void AddSC_ItemUpgradeAdvanced()
-{
-    // new DarkChaos::ItemUpgrade::ItemUpgradeAdvancedCommands();
-}

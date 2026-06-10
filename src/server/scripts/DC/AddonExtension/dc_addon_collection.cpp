@@ -3200,9 +3200,19 @@ namespace DCCollection
 
     std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached();
 
-    // Get total counts for definitions (for % calculations)
+    // Get total counts for definitions (for % calculations).
+    // The definition tables are static world data, so the counts are cached
+    // and refreshed at most every 5 minutes instead of re-queried per request.
     std::map<CollectionType, uint32> LoadTotalDefinitions()
     {
+        static std::map<CollectionType, uint32> s_cachedTotals;
+        static uint32 s_cachedAtMs = 0;
+        constexpr uint32 CACHE_TTL_MS = 5 * 60 * 1000;
+
+        uint32 nowMs = getMSTime();
+        if (!s_cachedTotals.empty() && getMSTimeDiff(s_cachedAtMs, nowMs) < CACHE_TTL_MS)
+            return s_cachedTotals;
+
         std::map<CollectionType, uint32> totals;
 
         if (WorldTableExists("dc_collection_definitions"))
@@ -3262,6 +3272,8 @@ namespace DCCollection
                 ensureTotal(CollectionType::HEIRLOOM, r->Fetch()[0].Get<uint32>());
         }
 
+        s_cachedTotals = totals;
+        s_cachedAtMs = nowMs;
         return totals;
     }
 
@@ -6044,7 +6056,8 @@ namespace DCCollection
             }
         }
 
-        if (!servedFromCuratedCache) {
+        if (!servedFromCuratedCache)
+        {
         if (ct == CollectionType::MOUNT && WorldTableExists("dc_mount_definitions"))
         {
             QueryResult r = WorldDatabase.Query(

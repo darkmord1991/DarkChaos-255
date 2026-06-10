@@ -347,7 +347,7 @@ DCWelcome.RegisteredAddons = {
                         tab:GetScript("OnClick")(tab)
                     end
                 end
-                -- Prime data (prefers DCAddonProtocol -> AIO -> dot-command)
+                -- Prime data via DCAddonProtocol
                 local season = (HLBG._getSeason and HLBG._getSeason()) or 0
                 if type(HLBG.RequestHistoryUI) == 'function' then
                     HLBG.RequestHistoryUI(1, 20, season, 'id', 'DESC')

@@ -1107,6 +1107,12 @@ void World::Update(uint32 diff)
 {
     METRIC_TIMER("world_update_time_total");
 
+    // Whole-update watchdog: if a recorded diff spike shows a large
+    // World.UpdateTotal, the time was spent in here (some phase below names
+    // it); if UpdateTotal stays small while the diff is huge, the wall time
+    // vanished outside the update loop (OS suspension, sleep overrun).
+    DarkChaos::ScopedUpdateProfiler _profTotal("World.UpdateTotal");
+
     ///- Update the game time and check for shutdown time
     _UpdateGameTime();
     Seconds currentGameTime = GameTime::GetGameTime();

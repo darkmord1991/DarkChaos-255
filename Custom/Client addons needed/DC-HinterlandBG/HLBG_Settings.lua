@@ -481,8 +481,7 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         
         local y = -70
         local DC = rawget(_G, "DCAddonProtocol")
-        local AIO = rawget(_G, "AIO")
-        
+
         local function HLBGPrint(msg)
             if DEFAULT_CHAT_FRAME then
                 DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r " .. (msg or ""))
@@ -498,11 +497,6 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         local dcStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
         dcStatus:SetPoint('TOPLEFT', 24, y)
         dcStatus:SetText('DCAddonProtocol: ' .. (DC and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-        y = y - 16
-        
-        local aioStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
-        aioStatus:SetPoint('TOPLEFT', 24, y)
-        aioStatus:SetText('AIO (Eluna): ' .. (AIO and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
         y = y - 26
         
         -- JSON Toggle
@@ -593,36 +587,7 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         btnRow = btnRow + 1
         
         y = y - (btnRow * rowSpacing) - 16
-        
-        -- AIO Fallback Tests (compact)
-        local aioHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
-        aioHeader:SetPoint('TOPLEFT', 16, y)
-        aioHeader:SetText('AIO Fallback Tests')
-        
-        local aioDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlightSmall')
-        aioDesc:SetPoint('TOPLEFT', aioHeader, 'TOPRIGHT', 10, 0)
-        aioDesc:SetText('(requires AIO addon)')
-        aioDesc:SetTextColor(0.6, 0.6, 0.6)
-        y = y - 26
-        btnRow = 0
-        
-        -- AIO Row 1
-        makeTestButton("AIO: Request History", "Request battle history via AIO.Handle", function()
-            if AIO and AIO.Handle then
-                AIO.Handle("HLBG", "Request", "HISTORY", 1, 25, 0, "id", "DESC")
-                HLBGPrint("Sent AIO history request")
-            else HLBGPrint("|cFFFF0000AIO not available|r") end
-        end, 1)
-        makeTestButton("AIO: Request Stats", "Request stats via AIO.Handle", function()
-            if AIO and AIO.Handle then
-                AIO.Handle("HLBG", "Request", "STATS", 0)
-                HLBGPrint("Sent AIO stats request")
-            else HLBGPrint("|cFFFF0000AIO not available|r") end
-        end, 2)
-        btnRow = btnRow + 1
-        
-        y = y - (btnRow * rowSpacing) - 16
-        
+
         -- Results/Log Section
         local logHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
         logHeader:SetPoint('TOPLEFT', 16, y)
@@ -642,9 +607,7 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         refreshBtn:SetText("Refresh Status")
         refreshBtn:SetScript("OnClick", function()
             local dc = rawget(_G, "DCAddonProtocol")
-            local aio = rawget(_G, "AIO")
             dcStatus:SetText('DCAddonProtocol: ' .. (dc and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-            aioStatus:SetText('AIO (Eluna): ' .. (aio and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
             HLBGPrint("Status refreshed")
         end)
     end)

@@ -536,22 +536,22 @@ namespace DarkChaos
                     {
                         if (!RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season))
                             return false;
-                        
+
                         Player* player = FindPlayerWithContext(player_guid);
                         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                             player_guid, state->season, player, CURRENCY_ARTIFACT_ESSENCE, 0, false);
-                        
+
                         state->essence_invested += essence_cost;
                     }
                     else
                     {
                         if (!RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state->season))
                             return false;
-                        
+
                         Player* player = FindPlayerWithContext(player_guid);
                         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                             player_guid, state->season, player, CURRENCY_UPGRADE_TOKEN, 0, false);
-                        
+
                         state->tokens_invested += token_cost;
                     }
 
@@ -698,7 +698,7 @@ namespace DarkChaos
                 return true;
             }
 
-            bool SyncInventoryToDB(uint32 /*player_guid*/, uint32 /*season*/, Player* /*player_ptr*/, 
+            bool SyncInventoryToDB(uint32 /*player_guid*/, uint32 /*season*/, Player* /*player_ptr*/,
                                   CurrencyType /*specific_currency*/, uint32 /*db_amount*/, bool /*sync_both*/) override
             {
                 // AzerothCore Standard: No DB sync needed - inventory items ARE the currency

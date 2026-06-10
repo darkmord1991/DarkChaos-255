@@ -1949,7 +1949,7 @@ namespace DCCollection
     void HandleCommunityRate(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
-        
+
         static std::unordered_map<uint32, uint32> s_rateLimitMap;
         static std::mutex s_rateLimitMutex;
 
@@ -1996,7 +1996,7 @@ namespace DCCollection
 
         if (value > 0)
         {
-            CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            CharacterDatabase.Execute(Acore::StringFormat(
                 "UPDATE dc_collection_community_outfits "
                 "SET upvotes = upvotes + 1, weekly_votes = weekly_votes + 1 "
                 "WHERE id = {}",
@@ -2004,7 +2004,7 @@ namespace DCCollection
         }
         else
         {
-            CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            CharacterDatabase.Execute(Acore::StringFormat(
                 "UPDATE dc_collection_community_outfits "
                 "SET downvotes = downvotes + 1, "
                 "weekly_votes = CASE WHEN weekly_votes > 0 THEN weekly_votes - 1 ELSE 0 END "
@@ -2047,14 +2047,27 @@ namespace DCCollection
         }));
     }
 
-    void HandleCommunityView(Player* /*player*/, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityView(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        if (!DCAddon::IsJsonMessage(msg)) return;
+        if (!player || !DCAddon::IsJsonMessage(msg)) return;
         EnsureCommunityTables();
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
 
-        CharacterDatabase.AsyncQuery(Acore::StringFormat(
+        // Count at most one view per account/outfit per minute so clients
+        // cannot spam the counter.
+        static std::unordered_map<uint64, uint32> s_viewThrottleMap;
+        uint64 throttleKey = (static_cast<uint64>(GetAccountId(player)) << 32) | id;
+        uint32 now = getMSTime();
+        auto [it, inserted] = s_viewThrottleMap.try_emplace(throttleKey, now);
+        if (!inserted)
+        {
+            if (getMSTimeDiff(it->second, now) < 60000)
+                return;
+            it->second = now;
+        }
+
+        CharacterDatabase.Execute(Acore::StringFormat(
             "UPDATE dc_collection_community_outfits SET views = views + 1 WHERE id = {}",
             id));
     }
@@ -2374,30 +2387,30 @@ namespace DCCollection
                 uint32 vSetId = sItemSetStore.GetNumRows() + 10000;
                 auto const& idx = GetTransmogAppearanceIndexCached();
                 std::map<std::string, std::set<uint32>> virtualSets;
-                
+
                 for (auto const& pair : idx)
                 {
                     for (auto const& v : pair.second)
                     {
                         if (v.name.empty()) continue;
-                        
+
                         // Find last space
                         size_t lastSpace = v.name.find_last_of(' ');
                         if (lastSpace == std::string::npos) continue;
-                        
+
                         std::string baseName = v.name.substr(0, lastSpace);
                         if (baseName.empty() || baseName.length() < 4) continue;
                         if (baseName.find("Gladiator") != std::string::npos) continue; // Skip huge PvP buckets
-                        
+
                         virtualSets[baseName].insert(v.canonicalItemId);
                     }
                 }
-                
+
                 for (auto const& pair : virtualSets)
                 {
                     std::string const& vName = pair.first;
                     std::set<uint32> const& entries = pair.second;
-                    
+
                     // Only create a set if there are enough pieces (e.g. 5-15 items) to avoid junk sets
                     if (entries.size() >= 5 && entries.size() <= 20)
                     {
@@ -2410,7 +2423,7 @@ namespace DCCollection
                             else if (c == '"') escaped += "\\\"";
                             else escaped += c;
                         }
-                        
+
                         std::ostringstream entry;
                         entry << "{\"id\":" << vSetId << ",\"name\":\"" << escaped << "\",\"items\":[";
                         bool firstItem = true;
@@ -2431,7 +2444,7 @@ namespace DCCollection
                         std::ostringstream packed;
                         packed << vSetId << ';' << packEscape(finalName) << ';' << itemsCsv.str();
                         payload.setPacked.emplace_back(packed.str());
-                        
+
                         vSetId++;
                     }
                 }

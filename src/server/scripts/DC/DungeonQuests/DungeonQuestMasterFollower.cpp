@@ -54,7 +54,7 @@ static uint32 GetQuestMasterEntryForMap(uint32 mapId)
     {
         LOG_WARN("scripts.dc", "DungeonQuestMaster: No mapping found for map ID {}", mapId);
     }
-    
+
     // Always return Universal Quest Master
     return NPC_UNIVERSAL_QUEST_MASTER;
 }

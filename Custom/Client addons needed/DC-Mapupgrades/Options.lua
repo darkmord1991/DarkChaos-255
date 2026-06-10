@@ -256,29 +256,17 @@ function Options:CreateCommPanel()
         
         local y = -70
         local DC = rawget(_G, "DCAddonProtocol")
-        local AIO = rawget(_G, "AIO")
         local db = Options.state and Options.state.db or {}
-        
+
         -- Protocol Status
         local statusHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
         statusHeader:SetPoint('TOPLEFT', 16, y)
         statusHeader:SetText('Protocol Status')
         y = y - 22
-        
+
         local dcStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
         dcStatus:SetPoint('TOPLEFT', 24, y)
         dcStatus:SetText('DCAddonProtocol: ' .. (DC and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-        y = y - 16
-        
-        local aioStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
-        aioStatus:SetPoint('TOPLEFT', 24, y)
-        aioStatus:SetText('AIO (Eluna): ' .. (AIO and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-        y = y - 16
-        
-        local fallbackStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
-        fallbackStatus:SetPoint('TOPLEFT', 24, y)
-        local fallbackMode = (DC and "DCAddonProtocol") or (AIO and "AIO/Eluna") or "Chat Commands"
-        fallbackStatus:SetText('Active Mode: |cFF00FFFF' .. fallbackMode .. '|r')
         y = y - 26
         
         -- JSON Toggle
@@ -370,50 +358,10 @@ function Options:CreateCommPanel()
         makeTestButton("Ping Server", "Send CMSG_HANDSHAKE to test connectivity (JSON)", function()
             if DC then DC:Request("CORE", 0x01, { ping = true }); Print("Sent handshake (JSON)") else Print("|cFFFF0000DCAddonProtocol not available|r") end
         end, 1)
-        makeTestButton("Chat Fallback Test", "Test .hotspot list command", function()
-            -- Use the proper server command method
-            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
-                local editBox = DEFAULT_CHAT_FRAME.editBox
-                local oldText = editBox:GetText() or ""
-                editBox:SetText(".hotspot list")
-                ChatEdit_SendText(editBox)
-                editBox:SetText(oldText)
-            elseif ChatFrameEditBox then
-                local oldText = ChatFrameEditBox:GetText() or ""
-                ChatFrameEditBox:SetText(".hotspot list")
-                ChatEdit_SendText(ChatFrameEditBox)
-                ChatFrameEditBox:SetText(oldText)
-            end
-            Print("Sent .hotspot list via server command")
-        end, 2)
         btnRow = btnRow + 1
-        
+
         y = y - (btnRow * rowSpacing) - 20
-        
-        -- Results/Log Section
-        local logHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
-        logHeader:SetPoint('TOPLEFT', 16, y)
-        logHeader:SetText('Protocol Fallback Chain')
-        y = y - 20
-        
-        local fallbackDesc = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
-        fallbackDesc:SetPoint('TOPLEFT', 24, y)
-        fallbackDesc:SetText('1. DCAddonProtocol (binary/JSON)')
-        fallbackDesc:SetTextColor(0.8, 0.8, 0.8)
-        y = y - 16
-        
-        local fallbackDesc2 = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
-        fallbackDesc2:SetPoint('TOPLEFT', 24, y)
-        fallbackDesc2:SetText('2. AIO/Eluna (HOTSPOT_ADDON messages)')
-        fallbackDesc2:SetTextColor(0.8, 0.8, 0.8)
-        y = y - 16
-        
-        local fallbackDesc3 = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
-        fallbackDesc3:SetPoint('TOPLEFT', 24, y)
-        fallbackDesc3:SetText('3. Chat Commands (.hotspot list)')
-        fallbackDesc3:SetTextColor(0.8, 0.8, 0.8)
-        y = y - 26
-        
+
         -- Refresh Status Button
         local refreshBtn = CreateFrame("Button", nil, commPanel, "UIPanelButtonTemplate")
         refreshBtn:SetSize(140, 24)
@@ -421,11 +369,7 @@ function Options:CreateCommPanel()
         refreshBtn:SetText("Refresh Status")
         refreshBtn:SetScript("OnClick", function()
             local dc = rawget(_G, "DCAddonProtocol")
-            local aio = rawget(_G, "AIO")
             dcStatus:SetText('DCAddonProtocol: ' .. (dc and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-            aioStatus:SetText('AIO (Eluna): ' .. (aio and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-            local mode = (dc and "DCAddonProtocol") or (aio and "AIO/Eluna") or "Chat Commands"
-            fallbackStatus:SetText('Active Mode: |cFF00FFFF' .. mode .. '|r')
             Print("Status refreshed")
         end)
     end)

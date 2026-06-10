@@ -626,7 +626,7 @@ public:
         {
             uint32 targetGuid = target->GetGUID().GetCounter();
             uint32 current = mgr->GetCurrency(targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency);
-            
+
             bool success = true;
             if (amount > current)
                 success = DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
@@ -634,8 +634,9 @@ public:
             else if (amount < current)
                 success = DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
                     targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency, current - amount, 1, target, true);
-            
-            if (!success) {
+
+            if (!success)
+            {
                 handler->SendSysMessage("Failed to set currency.");
                 return true;
             }

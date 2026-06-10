@@ -4,8 +4,8 @@
 ## Author: DarkChaos-255
 ## Version: 1.0.0
 ## SavedVariables: DCMythicPlusHUDDB
-## OptionalDeps: DC-AddonProtocol, AIO_Client
-## LoadAfter: DC-AddonProtocol, AIO_Client
+## OptionalDeps: DC-AddonProtocol
+## LoadAfter: DC-AddonProtocol
 
 # Settings (loads first for defaults)
 Settings.lua

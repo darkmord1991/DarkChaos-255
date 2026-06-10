@@ -13,6 +13,7 @@
 #include "WorldSessionMgr.h"
 
 #include <algorithm>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -47,9 +48,13 @@ namespace DeathMarkers
             uint32 expiresAt = 0;
         };
 
+        // Written from player-kill hooks (map-update worker threads) and read
+        // from the world thread; every access must hold g_markersMutex.
+        std::mutex g_markersMutex;
         std::vector<DeathMarker> g_markers;
         uint32 g_nextMarkerId = 1;
 
+        // Caller must hold g_markersMutex.
         void PruneExpired(uint32 now)
         {
             g_markers.erase(
@@ -127,10 +132,8 @@ namespace DeathMarkers
             return;
 
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
-        PruneExpired(now);
 
         DeathMarker marker;
-        marker.markerId = g_nextMarkerId++;
         marker.modeId = modeId ? modeId : "challenge";
         marker.modeLabel = modeLabel ? modeLabel : "Challenge";
 
@@ -180,7 +183,13 @@ namespace DeathMarkers
             marker.ny = 0.0f;
         }
 
-        g_markers.push_back(marker);
+        {
+            std::lock_guard<std::mutex> lock(g_markersMutex);
+            PruneExpired(now);
+            marker.markerId = g_nextMarkerId++;
+            g_markers.push_back(marker);
+        }
+
         BroadcastNewMarker(marker);
     }
 
@@ -188,6 +197,8 @@ namespace DeathMarkers
     {
         JsonValue arr; arr.SetArray();
         uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+
+        std::lock_guard<std::mutex> lock(g_markersMutex);
         PruneExpired(now);
 
         for (DeathMarker const& m : g_markers)

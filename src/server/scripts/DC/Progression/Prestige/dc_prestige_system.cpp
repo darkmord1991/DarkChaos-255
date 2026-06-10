@@ -178,7 +178,7 @@ public:
             Field* fields = result->Fetch();
             level = fields[0].Get<uint32>();
         }
-        
+
         {
             std::lock_guard<std::mutex> lock(cacheMutex);
             prestigeCache[guid] = level;

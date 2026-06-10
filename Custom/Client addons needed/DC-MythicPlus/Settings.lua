@@ -201,22 +201,16 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         
         local y = -70
         local DC = rawget(_G, "DCAddonProtocol")
-        local AIO = rawget(_G, "AIO")
-        
+
         -- Protocol Status
         local statusHeader = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontNormalLarge')
         statusHeader:SetPoint('TOPLEFT', 16, y)
         statusHeader:SetText('Protocol Status')
         y = y - 22
-        
+
         local dcStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
         dcStatus:SetPoint('TOPLEFT', 24, y)
         dcStatus:SetText('DCAddonProtocol: ' .. (DC and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-        y = y - 16
-        
-        local aioStatus = commPanel:CreateFontString(nil, 'OVERLAY', 'GameFontHighlight')
-        aioStatus:SetPoint('TOPLEFT', 24, y)
-        aioStatus:SetText('AIO (Eluna): ' .. (AIO and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
         y = y - 26
         
         -- JSON Toggle
@@ -318,9 +312,7 @@ if type(InterfaceOptions_AddCategory) == 'function' then
         refreshBtn:SetText("Refresh Status")
         refreshBtn:SetScript("OnClick", function()
             local dc = rawget(_G, "DCAddonProtocol")
-            local aio = rawget(_G, "AIO")
             dcStatus:SetText('DCAddonProtocol: ' .. (dc and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
-            aioStatus:SetText('AIO (Eluna): ' .. (aio and '|cFF00FF00Available|r' or '|cFFFF0000Not Loaded|r'))
             Print("Status refreshed")
         end)
     end)

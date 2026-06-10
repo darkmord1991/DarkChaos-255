@@ -150,22 +150,6 @@ local function ShouldUseNativeMythicPlusHudBridge()
         and IsCapabilityNegotiated(NATIVE_MPLUS_HUD_CAPABILITY)
 end
 
-local AIO = rawget(_G, "AIO")
-if not AIO then
-    local ok, mod = pcall(function()
-        return require("AIO")
-    end)
-    if ok then
-        AIO = mod
-    end
-end
-
-if AIO and type(AIO.AddAddon) == "function" then
-    if AIO.AddAddon() then
-        return
-    end
-end
-
 local SERVER_ADDON_NAME = "DCMythicPlusHUD"
 local SERVER_MESSAGE_KEY = "HUD"
 local UPDATE_INTERVAL = 0.25
@@ -2785,29 +2769,8 @@ local function RequestServerSnapshot(reason)
         protocol:Send("MPLUS", 0x05, reqReason)
         return
     end
-    
-    -- Fallback to AIO (old Lua backend)
-    if not AIO or type(AIO.Handle) ~= "function" then
-        Trace("RequestHUD skipped: no DC or AIO transport available")
-        return
-    end
-    local now = (type(GetTime) == "function" and GetTime()) or 0
-    if now <= 0 and type(time) == "function" then
-        now = time()
-    end
-    if REQUEST_COOLDOWN > 0 and lastRequestTime > 0 and now > 0 then
-        if (now - lastRequestTime) < REQUEST_COOLDOWN then
-            return
-        end
-    end
-    lastRequestTime = now > 0 and now or lastRequestTime
-    Trace("RequestHUD via AIO, reason=" .. tostring(reqReason))
-    local ok, err = pcall(function()
-        AIO.Handle(SERVER_ADDON_NAME, "RequestHud", reqReason)
-    end)
-    if not ok then
-        Print("Failed to request HUD data: " .. tostring(err))
-    end
+
+    Trace("RequestHUD skipped: DC transport not available")
 end
 
 local JsonDecoder
@@ -3271,71 +3234,13 @@ local function TryRegisterHandlers()
         return true
     end
 
-    local function DecodeAioPayload(payload)
-        if type(payload) == "table" then
-            return payload
-        end
-        if type(payload) == "string" and payload ~= "" then
-            return DecodeJSON(payload)
-        end
-        return nil
-    end
-
-    local aioReady = false
-    if AIO and type(AIO.AddHandlers) == "function" then
-        local ok, handlers = pcall(function()
-            return AIO.AddHandlers(SERVER_ADDON_NAME, {})
-        end)
-        if ok and type(handlers) == "table" then
-            handlers[SERVER_MESSAGE_KEY] = function(_, payload)
-                HandleIncomingPayload(payload)
-            end
-
-            local okMplus, mplusHandlers = pcall(function()
-                return AIO.AddHandlers("MPLUS", {})
-            end)
-            if okMplus and type(mplusHandlers) == "table" then
-                mplusHandlers.KEYSTONE_ACTIVATE = function(_, payload)
-                    local data = DecodeAioPayload(payload) or {}
-                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnKeystoneReadyCheck) == "function" then
-                        namespace.KeystoneUI:OnKeystoneReadyCheck(data)
-                    end
-                end
-
-                mplusHandlers.KEYSTONE_STATUS = function(_, payload)
-                    local data = DecodeAioPayload(payload) or {}
-                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnPlayerReadyUpdate) == "function" then
-                        namespace.KeystoneUI:OnPlayerReadyUpdate(data)
-                    end
-                end
-
-                mplusHandlers.KEYSTONE_COUNTDOWN = function(_, payload)
-                    local data = DecodeAioPayload(payload) or {}
-                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnCountdownStart) == "function" then
-                        namespace.KeystoneUI:OnCountdownStart(data)
-                    end
-                end
-
-                mplusHandlers.KEYSTONE_CANCEL = function(_, payload)
-                    local data = DecodeAioPayload(payload) or {}
-                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnActivationCancelled) == "function" then
-                        namespace.KeystoneUI:OnActivationCancelled(data)
-                    end
-                end
-            end
-
-            aioReady = true
-        end
-    end
-
     Trace(string.format(
-        "TryRegisterHandlers aioReady=%s dcReady=%s useDC=%s",
-        tostring(aioReady),
+        "TryRegisterHandlers dcReady=%s useDC=%s",
         tostring(dcReady),
         tostring(namespace.useDCProtocol)
     ))
 
-    if not aioReady and not dcReady then
+    if not dcReady then
         Trace("TryRegisterHandlers waiting for transport")
         return false
     end
@@ -3345,11 +3250,7 @@ local function TryRegisterHandlers()
         retryTicker:SetScript("OnUpdate", nil)
     end
     if DCMythicPlusHUDDB.debugTrace then
-        if aioReady then
-            Print("AIO handler ready")
-        elseif dcReady then
-            Print("DC protocol handler ready")
-        end
+        Print("DC protocol handler ready")
     end
     RequestServerSnapshot("register")
     if lastPayload then
@@ -3580,10 +3481,8 @@ SlashCmdList.DCM = function(msg)
         end
     elseif cmd == "protocol" then
         local dcAvail = rawget(_G, "DCAddonProtocol") and "YES" or "NO"
-        local aioAvail = rawget(_G, "AIO") and "YES" or "NO"
         Print("Protocol status:")
         Print("  DCAddonProtocol: " .. dcAvail)
-        Print("  AIO: " .. aioAvail)
         Print("  JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
         Print("  Trace: " .. (DCMythicPlusHUDDB.debugTrace and "ON" or "OFF"))
     elseif cmd == "trace" then
@@ -3717,7 +3616,7 @@ localTicker:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 -- =====================================================================
--- DC ADDON PROTOCOL HANDLERS (lightweight alternative to AIO)
+-- DC ADDON PROTOCOL HANDLERS
 -- =====================================================================
 
 -- Settings toggle for JSON vs pipe-delimited

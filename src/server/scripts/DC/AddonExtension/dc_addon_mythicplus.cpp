@@ -236,8 +236,6 @@ namespace MythicPlus
             return false;
         }
 
-
-
         void SendVaultAvailableNotification(Player* player)
         {
             if (!player)
@@ -1450,9 +1448,9 @@ namespace MythicPlus
         void Update()
         {
             ProcessPendingQuery();
-            PullCacheUpdates();
 
             // Iterate all online players
+            bool anyInstancePlayer = false;
             auto const& sessions = sWorldSessionMgr->GetAllSessions();
             for (auto const& pair : sessions)
             {
@@ -1461,10 +1459,20 @@ namespace MythicPlus
                     if (Player* player = session->GetPlayer())
                     {
                         if (player->IsInWorld())
+                        {
+                            if (MakeInstanceKey(player))
+                                anyInstancePlayer = true;
                             DeliverSnapshot(player);
+                        }
                     }
                 }
             }
+
+            // Only poll the cache table while someone is actually inside a
+            // dungeon/raid; the pull is async, so within-tick ordering does
+            // not matter. m_lastSeenUpdate makes the next pull catch up.
+            if (anyInstancePlayer)
+                PullCacheUpdates();
         }
 
         // Client-requested snapshot (force refresh)

@@ -114,14 +114,10 @@ namespace DCAddon
 }
 
 // Register the handler(s) during script load
-void AddSC_DCAddon_Teleports()
+namespace DCAddon
 {
-    DCAddon::RegisterHandlers();
-}
-
-    namespace DCAddon {
-        void AddTeleportScripts()
-        {
-            RegisterHandlers();
-        }
+    void AddTeleportScripts()
+    {
+        RegisterHandlers();
     }
+}

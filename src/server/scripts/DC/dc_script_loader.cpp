@@ -44,6 +44,7 @@ void AddSC_npc_hyjal_flightmaster();          // HyjalFrontier/hyjal_frontier_fl
 void AddSC_npc_hyjal_guard_alliance();        // HyjalFrontier/hyjal_frontier_guards.cpp
 void AddSC_npc_hyjal_guard_horde();           // HyjalFrontier/hyjal_frontier_guards.cpp
 void AddSC_npc_hyjal_emberwood_vendor();      // HyjalFrontier/hyjal_frontier_currency.cpp
+void AddSC_npc_hyjal_innkeeper();             // HyjalFrontier/hyjal_frontier_innkeeper.cpp
 
 // --- Giant Isles zone ---
 void AddSC_giant_isles_zone();                // GiantIsles/dc_giant_isles_zone.cpp
@@ -115,6 +116,7 @@ void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades/ItemUpgradeSeasona
 void AddSC_ItemUpgradeExchange();             // ItemUpgrades/ItemUpgradeExchangeNPC.cpp
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades/ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades/ItemUpgradeProcScaling.cpp
+void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades/ItemUpgradeStatApplication.cpp
 
 // --- Random enchants system ---
 void AddSC_dc_random_enchants();              // RandomEnchants/dc_random_enchants.cpp
@@ -259,6 +261,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_npc_hyjal_guard_alliance);
     DC_LOAD(AddSC_npc_hyjal_guard_horde);
     DC_LOAD(AddSC_npc_hyjal_emberwood_vendor);
+    DC_LOAD(AddSC_npc_hyjal_innkeeper);
 
     LogSection("Giant Isles Zone");
     DC_LOAD(AddSC_giant_isles_zone);
@@ -327,6 +330,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_ItemUpgradeExchange);
     DC_LOAD(AddSC_ItemUpgradeTokenHooks);
     DC_LOAD(AddSC_ItemUpgradeProcScaling);
+    // Applies ItemUpgradeState::stat_multiplier to equipped items; without
+    // this registration upgrades consume currency but grant no stats.
+    DC_LOAD(AddSC_ItemUpgradeStatApplication);
 
     LogSection("Random Enchants System");
     DC_LOAD(AddSC_dc_random_enchants);

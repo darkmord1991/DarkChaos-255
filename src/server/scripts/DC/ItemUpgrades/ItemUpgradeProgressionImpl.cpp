@@ -569,12 +569,3 @@ public:
     }
 
 };
-
-// =====================================================================
-// Script Registration
-// =====================================================================
-
-void AddSC_ItemUpgradeProgression()
-{
-    // new ItemUpgradeProgressionCommands();
-}

@@ -711,7 +711,7 @@ namespace
 
             player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount, true);
             uint32 playerGuid = player->GetGUID().GetCounter();
-            
+
             if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
                 playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta,
                 DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
@@ -969,7 +969,7 @@ public:
                 {
                     player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToTake, true);
                     uint32 playerGuid = player->GetGUID().GetCounter();
-                    
+
                     if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
                         playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToGive,
                         DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))

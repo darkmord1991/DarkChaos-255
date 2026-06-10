@@ -276,6 +276,10 @@ UI\SettingsPanel.lua
 # Feature Modules
 Modules\Experience.lua
 Modules\Tooltips.lua
+Modules\Tooltips_Items.lua
+Modules\Tooltips_Spells.lua
+Modules\Tooltips_Units.lua
+Modules\Tooltips_Settings.lua
 Modules\Automation.lua
 Modules\Chat.lua
 Modules\Interface.lua

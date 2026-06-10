@@ -21,9 +21,9 @@
 #include "Player.h"
 #include "World.h"
 #include "Chat.h"
+#include "Containers.h"
 #include "GameTime.h"
 #include <algorithm>
-#include <random>
 #include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 
 #include <cmath>
@@ -223,9 +223,7 @@ public:
             if (targets.size() >= 2)
             {
                 // Shuffle and pick 2-3
-                static std::random_device rd;
-                static std::mt19937 rng(rd());
-                std::shuffle(targets.begin(), targets.end(), rng);
+                Acore::Containers::RandomShuffle(targets);
                 uint8 numTargets = std::min((size_t)3, targets.size());
 
                 for (uint8 i = 0; i < numTargets; ++i)

@@ -1,4 +1,9 @@
 # CMakeLists.txt for DC scripts
+#
+# NOTE: This file is documentation only. It is not consumed by the build:
+# the parent scripts CMakeLists collects every source file under DC/
+# recursively via CollectSourceFiles, so new files compile without being
+# listed here. Keep the lists below in sync purely as a subsystem inventory.
 
 # Prestige System scripts
 set(SCRIPTS_DC_Prestige
@@ -42,6 +47,7 @@ set(SCRIPTS_DC_HyjalFrontier
     HyjalFrontier/hyjal_frontier_flightmaster.cpp
     HyjalFrontier/hyjal_frontier_guards.cpp
     HyjalFrontier/hyjal_frontier_currency.cpp
+    HyjalFrontier/hyjal_frontier_innkeeper.cpp
 )
 
 # Giant Isles Zone scripts (Ported from MoP Isle of Giants)
@@ -263,11 +269,17 @@ set(SCRIPTS_DC_CrossSystem
     CrossSystem/SessionContext.cpp
     CrossSystem/EventBus.cpp
     CrossSystem/CrossSystemAffixes.cpp
+    CrossSystem/CrossSystemMapCoords.cpp
     CrossSystem/RewardDistributor.cpp
     CrossSystem/CrossSystemManager.cpp
     CrossSystem/CrossSystemScripts.cpp
     CrossSystem/CrossSystemSpawnResolver.cpp
     CrossSystem/CrossSystemWorldBossMgr.cpp
+)
+
+# Custom Achievements
+set(SCRIPTS_DC_Achievements
+    Achievements/dc_achievements.cpp
 )
 
 # DC Commands - Unified command hub
@@ -335,6 +347,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_FirstStart}
     ${SCRIPTS_DC_GOMove}
     ${SCRIPTS_DC_CrossSystem}
+    ${SCRIPTS_DC_Achievements}
     ${SCRIPTS_DC_Commands}
     ${SCRIPTS_DC_GuildHousing}
     ${SCRIPTS_DC_Teleporters}

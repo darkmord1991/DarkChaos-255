@@ -55,11 +55,20 @@ private:
                     time_t lastCompleted = time_t(fields[2].Get<uint32>());
                     time_t now = time(nullptr);
 
-                    // If different days or enough time has passed, reset daily quest
-                    tm* timeinfo = localtime(&now);
-                    tm* lastTime = localtime(&lastCompleted);
+                    // If different days or enough time has passed, reset daily
+                    // quest. localtime() returns a shared static buffer, so
+                    // copy each breakdown into its own struct.
+                    tm timeinfo{};
+                    tm lastTime{};
+#ifdef _WIN32
+                    localtime_s(&timeinfo, &now);
+                    localtime_s(&lastTime, &lastCompleted);
+#else
+                    localtime_r(&now, &timeinfo);
+                    localtime_r(&lastCompleted, &lastTime);
+#endif
 
-                    if (lastTime->tm_mday != timeinfo->tm_mday || (now - lastCompleted) > (24 * 3600))
+                    if (lastTime.tm_mday != timeinfo.tm_mday || (now - lastCompleted) > (24 * 3600))
                         ResetDailyQuest(player, dailyQuestId);
                 }
             } while (result->NextRow());

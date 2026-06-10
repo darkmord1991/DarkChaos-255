@@ -3,7 +3,7 @@
 -- ============================================================
 -- A lightweight WoW 3.3.5a addon for managing AoE loot settings
 -- Integrates with Interface -> AddOns menu
--- Uses DCAddonProtocol for server communication (with fallback)
+-- Uses DCAddonProtocol for server communication
 -- ============================================================
 
 -- Create the addon namespace
@@ -13,7 +13,6 @@ local addon = DCAoELootSettings
 -- Addon info
 addon.name = "DC-AOESettings"
 addon.version = "1.2.0"
-addon.prefix = "DCAOE"  -- Legacy prefix (fallback)
 
 -- DCAddonProtocol integration
 local DC = rawget(_G, "DCAddonProtocol")
@@ -300,32 +299,35 @@ function addon:SaveSettingsLocal()
 end
 
 -- ============================================================
--- Server Command Helpers (send settings via chat commands)
+-- Server Setting Sync (DCAddonProtocol AOE module)
 -- ============================================================
-function addon:SendServerCommand(cmd)
-    -- Prefer direct chat API to avoid edit-box taint issues.
-    if SendChatMessage then
-        SendChatMessage(cmd, "SAY")
-        return
-    end
 
-    -- Execute the command as if the player typed it in chat
-    -- This works for server commands starting with . in WoW 3.3.5a
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
-        local editBox = DEFAULT_CHAT_FRAME.editBox
-        local oldText = editBox:GetText() or ""
-        editBox:SetText(cmd)
-        ChatEdit_SendText(editBox)
-        editBox:SetText(oldText)
-    else
-        -- Fallback: Try to use ChatFrameEditBox directly
-        if ChatFrameEditBox then
-            local oldText = ChatFrameEditBox:GetText() or ""
-            ChatFrameEditBox:SetText(cmd)
-            ChatEdit_SendText(ChatFrameEditBox)
-            ChatFrameEditBox:SetText(oldText)
-        end
+-- Settings synced via the generic AOE CMSG_SET_SETTING (0x09) opcode.
+-- The looter-pet keys (other than looterPet itself) mirror the old .lpet
+-- commands and adjust server-wide looter-pet behaviour.
+local GENERIC_SYNC_KEYS = {
+    showMessages = true,
+    smartLoot = true,
+    autoVendorPoor = true,
+    goldOnly = true,
+    looterPet = true,
+    looterFallbackToPlayer = true,
+    looterCompanionLeash = true,
+    looterPathfinding = true,
+    looterPathAllowIncomplete = true,
+    looterPathRejectShortcut = true,
+}
+
+function addon:SendAOESetting(key, value)
+    if not DC then
+        DC = rawget(_G, "DCAddonProtocol")
+        self.useDCProtocol = (DC ~= nil)
     end
+    if not (self.useDCProtocol and DC) then
+        return false
+    end
+    DC:Request("AOE", 0x09, { key = key, value = value }) -- CMSG_SET_SETTING
+    return true
 end
 
 function addon:SyncSettingToServer(settingKey, value)
@@ -335,7 +337,7 @@ function addon:SyncSettingToServer(settingKey, value)
     self.ignoreSyncUntil = GetTime() + 2.0
 
     local handled = false
-    
+
     -- Use DCAddonProtocol if available
     if self.useDCProtocol and DC then
         if settingKey == "enabled" then
@@ -347,131 +349,19 @@ function addon:SyncSettingToServer(settingKey, value)
         elseif settingKey == "autoSkin" then
             DC.AOE.SetAutoSkin(value)
             handled = true
-        elseif settingKey == "showMessages" then
-            self:SendServerCommand(value and ".lp msg 1" or ".lp msg 0")
-            handled = true
-        elseif settingKey == "smartLoot" then
-            self:SendServerCommand(value and ".lp smartset 1" or ".lp smartset 0")
-            handled = true
-        elseif settingKey == "autoVendorPoor" then
-            self:SendServerCommand(value and ".lp autovendor 1" or ".lp autovendor 0")
-            handled = true
-        elseif settingKey == "goldOnly" then
-            self:SendServerCommand(value and ".lp goldonly 1" or ".lp goldonly 0")
-            handled = true
-        elseif settingKey == "looterPet" then
-            self:SendServerCommand(value and ".lpet on" or ".lpet off")
-            handled = true
-        elseif settingKey == "looterFallbackToPlayer" then
-            self:SendServerCommand(value and ".lpet fallback on" or ".lpet fallback off")
-            handled = true
-        elseif settingKey == "looterCompanionLeash" then
-            self:SendServerCommand(value and ".lpet leash on" or ".lpet leash off")
-            handled = true
         elseif settingKey == "looterCompanionLeashDistance" then
             local distance = math.floor(Clamp(
                 tonumber(value) or self.settings.looterCompanionLeashDistance or self.defaults.looterCompanionLeashDistance,
                 self.leashDistanceMin,
                 self.leashDistanceMax) + 0.5)
-            self:SendServerCommand(string.format(".lpet leashdist %d", distance))
-            handled = true
-        elseif settingKey == "looterPathfinding" then
-            self:SendServerCommand(value and ".lpet path on" or ".lpet path off")
-            handled = true
-        elseif settingKey == "looterPathAllowIncomplete" then
-            self:SendServerCommand(value and ".lpet pathincomplete on" or ".lpet pathincomplete off")
-            handled = true
-        elseif settingKey == "looterPathRejectShortcut" then
-            self:SendServerCommand(value and ".lpet pathshortcutreject on" or ".lpet pathshortcutreject off")
-            handled = true
+            handled = self:SendAOESetting(settingKey, distance)
+        elseif GENERIC_SYNC_KEYS[settingKey] then
+            handled = self:SendAOESetting(settingKey, value and true or false)
         end
     end
 
-    if handled then
-        return
-    end
-    
-    -- Fallback: Map settings to server commands that directly set the state (not toggles)
-    if settingKey == "enabled" then
-        if value then
-            self:SendServerCommand(".lp enable")
-        else
-            self:SendServerCommand(".lp disable")
-        end
-    elseif settingKey == "showMessages" then
-        if value then
-            self:SendServerCommand(".lp msg 1")
-        else
-            self:SendServerCommand(".lp msg 0")
-        end
-    elseif settingKey == "minQuality" then
-        self:SendServerCommand(".lp quality " .. tostring(value))
-    elseif settingKey == "autoSkin" then
-        if value then
-            self:SendServerCommand(".lp skinset 1")
-        else
-            self:SendServerCommand(".lp skinset 0")
-        end
-    elseif settingKey == "smartLoot" then
-        if value then
-            self:SendServerCommand(".lp smartset 1")
-        else
-            self:SendServerCommand(".lp smartset 0")
-        end
-    elseif settingKey == "autoVendorPoor" then
-        if value then
-            self:SendServerCommand(".lp autovendor 1")
-        else
-            self:SendServerCommand(".lp autovendor 0")
-        end
-    elseif settingKey == "goldOnly" then
-        if value then
-            self:SendServerCommand(".lp goldonly 1")
-        else
-            self:SendServerCommand(".lp goldonly 0")
-        end
-    elseif settingKey == "looterPet" then
-        if value then
-            self:SendServerCommand(".lpet on")
-        else
-            self:SendServerCommand(".lpet off")
-        end
-    elseif settingKey == "looterFallbackToPlayer" then
-        if value then
-            self:SendServerCommand(".lpet fallback on")
-        else
-            self:SendServerCommand(".lpet fallback off")
-        end
-    elseif settingKey == "looterCompanionLeash" then
-        if value then
-            self:SendServerCommand(".lpet leash on")
-        else
-            self:SendServerCommand(".lpet leash off")
-        end
-    elseif settingKey == "looterCompanionLeashDistance" then
-        local distance = math.floor(Clamp(
-            tonumber(value) or self.settings.looterCompanionLeashDistance or self.defaults.looterCompanionLeashDistance,
-            self.leashDistanceMin,
-            self.leashDistanceMax) + 0.5)
-        self:SendServerCommand(string.format(".lpet leashdist %d", distance))
-    elseif settingKey == "looterPathfinding" then
-        if value then
-            self:SendServerCommand(".lpet path on")
-        else
-            self:SendServerCommand(".lpet path off")
-        end
-    elseif settingKey == "looterPathAllowIncomplete" then
-        if value then
-            self:SendServerCommand(".lpet pathincomplete on")
-        else
-            self:SendServerCommand(".lpet pathincomplete off")
-        end
-    elseif settingKey == "looterPathRejectShortcut" then
-        if value then
-            self:SendServerCommand(".lpet pathshortcutreject on")
-        else
-            self:SendServerCommand(".lpet pathshortcutreject off")
-        end
+    if not handled then
+        self:Print("Setting not synced: DCAddonProtocol unavailable (" .. tostring(settingKey) .. ")", true)
     end
 end
 
@@ -530,13 +420,13 @@ function addon:SyncLooterPetRuntimeState(reason)
     end
     _lastLooterPetRuntimeSync = now
 
-    self:SendServerCommand(self.settings.looterPet and ".lpet on" or ".lpet off")
+    self:SendAOESetting("looterPet", self.settings.looterPet and true or false)
 
     if self.settings.looterFallbackToPlayer ~= nil then
-        self:SendServerCommand(self.settings.looterFallbackToPlayer and ".lpet fallback on" or ".lpet fallback off")
+        self:SendAOESetting("looterFallbackToPlayer", self.settings.looterFallbackToPlayer and true or false)
     end
     if self.settings.looterCompanionLeash ~= nil then
-        self:SendServerCommand(self.settings.looterCompanionLeash and ".lpet leash on" or ".lpet leash off")
+        self:SendAOESetting("looterCompanionLeash", self.settings.looterCompanionLeash and true or false)
     end
     if self.settings.looterCompanionLeashDistance ~= nil then
         local distance = math.floor(Clamp(
@@ -544,16 +434,16 @@ function addon:SyncLooterPetRuntimeState(reason)
             self.leashDistanceMin,
             self.leashDistanceMax) + 0.5)
         self.settings.looterCompanionLeashDistance = distance
-        self:SendServerCommand(string.format(".lpet leashdist %d", distance))
+        self:SendAOESetting("looterCompanionLeashDistance", distance)
     end
     if self.settings.looterPathfinding ~= nil then
-        self:SendServerCommand(self.settings.looterPathfinding and ".lpet path on" or ".lpet path off")
+        self:SendAOESetting("looterPathfinding", self.settings.looterPathfinding and true or false)
     end
     if self.settings.looterPathAllowIncomplete ~= nil then
-        self:SendServerCommand(self.settings.looterPathAllowIncomplete and ".lpet pathincomplete on" or ".lpet pathincomplete off")
+        self:SendAOESetting("looterPathAllowIncomplete", self.settings.looterPathAllowIncomplete and true or false)
     end
     if self.settings.looterPathRejectShortcut ~= nil then
-        self:SendServerCommand(self.settings.looterPathRejectShortcut and ".lpet pathshortcutreject on" or ".lpet pathshortcutreject off")
+        self:SendAOESetting("looterPathRejectShortcut", self.settings.looterPathRejectShortcut and true or false)
     end
 
     if self.settings.debugMessages then
@@ -783,10 +673,9 @@ function addon:RegisterDCHandlers(DC)
 end
 
 -- ============================================================
--- Server Communication (DCAddonProtocol + Legacy fallback)
+-- Server Communication (DCAddonProtocol)
 -- ============================================================
 
--- Send message using DCAddonProtocol if available, otherwise legacy
 function addon:SendToServer(messageType, data)
     if self.useDCProtocol and DC then
         -- Use new protocol: DC|AOE|opcode|data...
@@ -804,10 +693,10 @@ function addon:SendToServer(messageType, data)
                 DC.AOE.SetQuality(tonumber(minQuality) or 0)
                 DC.AOE.SetAutoSkin(tonumber(autoSkin) == 1)
 
-                self:SendServerCommand((tonumber(showMessages) == 1) and ".lp msg 1" or ".lp msg 0")
-                self:SendServerCommand((tonumber(smartLoot) == 1) and ".lp smartset 1" or ".lp smartset 0")
-                self:SendServerCommand((tonumber(autoVendorPoor) == 1) and ".lp autovendor 1" or ".lp autovendor 0")
-                self:SendServerCommand((tonumber(goldOnly) == 1) and ".lp goldonly 1" or ".lp goldonly 0")
+                self:SendAOESetting("showMessages", tonumber(showMessages) == 1)
+                self:SendAOESetting("smartLoot", tonumber(smartLoot) == 1)
+                self:SendAOESetting("autoVendorPoor", tonumber(autoVendorPoor) == 1)
+                self:SendAOESetting("goldOnly", tonumber(goldOnly) == 1)
             end
             return
         elseif messageType == "GET_STATS" then
@@ -1182,8 +1071,6 @@ function addon:CreateCommunicationPanel(parentPanel)
     statsBtn:SetScript("OnClick", function()
         if DC then
             DC:Request("AOE", 0x03, { action = "get_stats" })  -- CMSG_GET_STATS
-        else
-            SendChatMessage(".lp stats", "SAY")
         end
     end)
     
@@ -1707,8 +1594,9 @@ function addon:CreateMainFrame()
     statsBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos + 145, yPos)
     statsBtn:SetText("Show Stats")
     statsBtn:SetScript("OnClick", function()
-        -- Try server command first (more reliable than addon message)
-        SendChatMessage(".lp stats", "SAY")
+        if DC then
+            DC:Request("AOE", 0x03, { action = "get_stats" })  -- CMSG_GET_STATS
+        end
     end)
 
     yPos = yPos - 45
@@ -1851,11 +1739,10 @@ SlashCmdList["DCAOELOOT"] = function(msg)
     msg = strlower(msg or "")
     
     if msg == "stats" then
-        -- Use DC protocol if available (JSON format), otherwise server command
         if DCAoELootSettings.useDCProtocol and DC then
             DC:Request("AOE", 0x03, { action = "get_stats" })  -- CMSG_GET_STATS
         else
-            SendChatMessage(".lp stats", "SAY")
+            DCAoELootSettings:Print("DCAddonProtocol not available; unable to request stats.", true)
         end
     elseif msg == "reload" or msg == "sync" or msg == "refresh" then
         DCAoELootSettings:RequestSettings()

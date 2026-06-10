@@ -411,14 +411,14 @@ public:
         // Inputs: no args; acts on the active HLBG battleground instance.
         // Outputs: resets the live battleground instance and logs the action.
 
-	if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
-	{
-		bg->AdminResetMatch();
-		if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
-			LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced HLBG battleground reset for instance {}", admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID());
-		handler->PSendSysMessage("HLBG battleground instance {} reset and players relocated.", bg->GetInstanceID());
-		return true;
-	}
+        if (BattlegroundHLBG* bg = ResolveHLBGBattleground(handler))
+        {
+            bg->AdminResetMatch();
+            if (Player* admin = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+                LOG_INFO("admin.hlbg", "[ADMIN] {} (GUID:{}) forced HLBG battleground reset for instance {}", admin->GetName(), admin->GetGUID().GetCounter(), bg->GetInstanceID());
+            handler->PSendSysMessage("HLBG battleground instance {} reset and players relocated.", bg->GetInstanceID());
+            return true;
+        }
 
         handler->PSendSysMessage("Hinterland BG instance not found.");
         return false;

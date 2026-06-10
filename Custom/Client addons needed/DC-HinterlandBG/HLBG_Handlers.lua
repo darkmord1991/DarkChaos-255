@@ -581,7 +581,7 @@ zoneWatcher:SetScript("OnEvent", function()
 end)
 
 -- =====================================================================
--- Unified request helpers (DCAddonProtocol -> AIO -> dot-command)
+-- Unified request helpers (DCAddonProtocol)
 -- =====================================================================
 
 function HLBG.RequestHistoryUI(page, per, season, sortKey, sortDir)
@@ -635,15 +635,8 @@ local function OpenHLBGFromPVP()
         end
     end
 
-    -- chat fallbacks (use raw dot to server)
-    if type(HLBG.RequestLiveSnapshot) == 'function'
-        and HLBG.RequestLiveSnapshot('pvp_open', true) then
-        return
-    end
-
-    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-    if type(sendDot) == 'function' then
-        sendDot('.hlbg live players')
+    if type(HLBG.RequestLiveSnapshot) == 'function' then
+        HLBG.RequestLiveSnapshot('pvp_open', true)
     end
 end
 
@@ -980,14 +973,6 @@ do
         end
     end)
 end
--- Support addon-channel STATUS & AFFIX messages to drive HUD
-local eventFrame = CreateFrame("Frame")
--- 3.3.5a requires registering addon message prefixes explicitly
-pcall(function()
-    if type(RegisterAddonMessagePrefix) == 'function' then
-        RegisterAddonMessagePrefix('HLBG')
-    end
-end)
     -- Slash command to dump last sanitized TSV (client-side debug)
     SLASH_HLBGSANIT1 = '/hlbgsanitize'
     SLASH_HLBGSANIT2 = '.hlbgsanitize'
@@ -1004,169 +989,6 @@ end)
     table.insert(DCHLBG_DebugLog, 1, string.format('[HLBG_SANITIZED] %s', s))
     while #DCHLBG_DebugLog > 500 do table.remove(DCHLBG_DebugLog) end
     end
-eventFrame:RegisterEvent("CHAT_MSG_ADDON")
-eventFrame:SetScript("OnEvent", function(_, event, ...)
-    local prefix, msg = ...
-    if tostring(prefix) ~= "HLBG" then return end
-    -- Optionally capture the raw incoming message into debug buffer
-    pcall(function()
-        local should = HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
-        if should then
-            HLBG.DebugLog('AIO_RAW', { prefix = prefix, msg = msg })
-        end
-    end)
-    -- Dev: lightweight receipt log for addon messages (only when dev mode true)
-    pcall(function()
-        local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
-        if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            local preview = (type(msg)=='string' and (msg:sub(1,180) .. ( #msg>180 and '...[truncated]' or '' )) ) or tostring(msg)
-            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Received AIO msg prefix=%s len=%d preview=%s', tostring(prefix), (type(msg)=='string' and #msg) or 0, preview))
-        end
-    end)
-    -- Forward a compact raw sample of incoming addon messages to the server-side log (throttled)
-    pcall(function()
-        local send = _G.HLBG_SendClientLog or (type(HLBG) == 'table' and HLBG.SendClientLog)
-        if type(send) == 'function' then
-            HLBG._rawSampleState = HLBG._rawSampleState or { lastSample = nil, lastTs = 0 }
-            local raw = tostring(prefix or "") .. "\t" .. tostring(msg or "")
-            local sample = raw
-            if #sample > 256 then sample = sample:sub(1,256) .. "...[truncated]" end
-            local now = time()
-            local changed = (HLBG._rawSampleState.lastSample ~= sample)
-            local elapsed = now - (HLBG._rawSampleState.lastTs or 0)
-            if changed or elapsed >= 5 then
-                HLBG._rawSampleState.lastSample = sample
-                HLBG._rawSampleState.lastTs = now
-                pcall(send, string.format("ADDON_MSG_SAMPLE prefix=%s len=%d sample=%s", tostring(prefix), (type(msg)=="string" and #msg) or 0, sample))
-            end
-        end
-    end)
-    if type(msg) ~= 'string' then return end
-    -- STATUS messages
-    if msg:match("^STATUS|") then
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('STATUS', msg) end end)
-        local A = tonumber(msg:match("A=(%d+)") or 0) or 0
-        local H = tonumber(msg:match("H=(%d+)") or 0) or 0
-        local ENDt = tonumber(msg:match("END=(%d+)") or 0) or 0
-        local LOCK = tonumber(msg:match("LOCK=(%d+)") or 0) or 0
-        local APC = tonumber(msg:match("APC=(%d+)") or "")
-        local HPC = tonumber(msg:match("HPC=(%d+)") or "")
-        -- EXTENSIVE DEBUG: Log parsed values
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS PARSED]|r A=%d H=%d END=%d LOCK=%d", A, H, ENDt, LOCK))
-        end
-        RES.A = A; RES.H = H; RES.END = ENDt; RES.LOCK = LOCK
-        -- Also store in HLBG._lastStatus for UpdateHUD compatibility
-        HLBG._lastStatus = HLBG._lastStatus or {}
-        HLBG._lastStatus.A = A
-        HLBG._lastStatus.H = H
-        HLBG._lastStatus.DURATION = ENDt
-        if APC ~= nil then HLBG._lastStatus.APC = APC end
-        if HPC ~= nil then HLBG._lastStatus.HPC = HPC end
-        HLBG._lastStatus.allianceResources = A
-        HLBG._lastStatus.hordeResources = H
-        HLBG._lastStatus.timeLeft = ENDt
-        HLBG._lastStatus.END = ENDt  -- Store END time for HUD visibility check
-        if type(HLBG.TrackStatusSignal) == 'function' then
-            HLBG.TrackStatusSignal(HLBG.STATUS_ACTIVE, HLBG.MAP_ID)
-        end
-        HLBG._lastStatusTime = GetTime()  -- Track when we last received a STATUS message
-        -- EXTENSIVE DEBUG: Confirm storage
-        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS STORED]|r _lastStatus.A=%s RES.A=%s", tostring(HLBG._lastStatus.A), tostring(RES.A)))
-        end
-        -- Update HUD visibility since we just received a STATUS message (we're definitely in BG now)
-        if type(HLBG.UpdateHUDVisibility) == 'function' then
-            pcall(HLBG.UpdateHUDVisibility)
-        end
-        -- EXTENSIVE DEBUG: Check UpdateHUD exists and call it
-        if type(HLBG.UpdateHUD) == 'function' then
-            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFFF[HLBG STATUS]|r Calling UpdateHUD...")
-            end
-            pcall(HLBG.UpdateHUD)
-        else
-            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[HLBG STATUS ERROR]|r UpdateHUD not found! Type: " .. type(HLBG.UpdateHUD))
-            end
-        end
-        return
-    end
-    -- AFFIX messages
-    local aff = msg:match("^AFFIX|(.*)$")
-    if aff then
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('AFFIX', aff) end end)
-        HLBG._affixText = tostring(aff)
-        if type(HLBG.UpdateHUD) == 'function' then pcall(HLBG.UpdateHUD) end
-        -- Always hide legacy floating chip to avoid duplicate Affix text
-        if HLBG.UI and HLBG.UI.Affix then pcall(function() HLBG.UI.Affix:Hide() end) end
-        return
-    end
-    -- Warmup notice
-    local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
-    if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end; return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('WARMUP', warm) end end)
-    -- Queue status
-    local q = msg:match('%[HLBG_QUEUE%]%s*(.*)')
-    if q then if type(HLBG.QueueStatus) == 'function' then pcall(HLBG.QueueStatus, q) end; return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('QUEUE', q) end end)
-    -- Results JSON
-    local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
-    if rj then
-        local decoded = (type(HLBG.tryDecodeJson) == 'function' and HLBG.tryDecodeJson(rj))
-            or (HLBG.json_decode and HLBG.json_decode(rj))
-            or (type(json_decode) == 'function' and json_decode(rj))
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('RESULTS_JSON', { raw = rj, parsed = decoded }) end end)
-        if type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
-        return
-    end
-    -- History TSV fallback
-    local htsv = msg:match('%[HLBG_HISTORY_TSV%]%s*(.*)')
-    if htsv then
-        -- Handler-side sanitization (pre-process common chat fallback shapes)
-        -- Convert '||' markers into newlines, strip optional TOTAL= prefix, and remove high-byte garbage
-        local function strip_high_bytes(s)
-            if type(s) ~= 'string' then return s end
-            local out = {}
-            for i=1,#s do local b = string.byte(s,i); if b and b < 128 then table.insert(out, string.char(b)) end end
-            return table.concat(out)
-        end
-    htsv = strip_high_bytes(htsv)
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('HISTORY_TSV_RAW', htsv) end end)
-    local total = tonumber((htsv:match('^TOTAL=(%d+)%s*%|%|') or htsv:match('^TOTAL=(%d+)%s*') or 0)) or 0
-    htsv = htsv:gsub('^TOTAL=%d+%s*%|%|', ''):gsub('^TOTAL=%d+%s*', '')
-    -- Convert common row separators into real newlines. Some servers use '||' or single '|' between rows.
-    htsv = htsv:gsub('%|%|', '\n')
-    -- Dev-only: report whether handler converted pipes into newlines
-    pcall(function()
-        local dev = HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)
-        if dev and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            local foundPipe = htsv:find('%|') and true or false
-            local foundNl = htsv:find('\n') and true or false
-            DebugPrint(string.format('|cFF33FF99HLBG Debug|r Handler sanitized: foundPipe=%s foundNewline=%s', tostring(foundPipe), tostring(foundNl)))
-        end
-    end)
-    if htsv:find('%|') and not htsv:find('\n') then htsv = htsv:gsub('%|', '\n') end
-        if HLBG.UI and HLBG.UI.History and total and total > 0 then HLBG.UI.History.total = total end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('HISTORY_TSV_POSTSANIT', { total = total, sanit = htsv }) end end)
-        if type(HLBG.HistoryStr) == 'function' then pcall(HLBG.HistoryStr, htsv, 1, (HLBG.UI and HLBG.UI.History and HLBG.UI.History.per) or 5, total, 'id', 'DESC') end
-        return
-    end
-    -- Stats JSON fallback
-    local sj = msg:match('%[HLBG_STATS_JSON%]%s*(.*)')
-    if sj then
-        local ok, decoded = pcall(function()
-            return (HLBG.json_decode and HLBG.json_decode(sj)) or (type(json_decode) == 'function' and json_decode(sj)) or nil
-        end)
-        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('STATS_JSON', { raw = sj, parsed = ok and decoded or nil }) end end)
-        if ok and type(decoded) == 'table' then
-            if decoded.total and HLBG.UI and HLBG.UI.History then HLBG.UI.History.total = tonumber(decoded.total) or HLBG.UI.History.total end
-            if type(HLBG.Stats) == 'function' then pcall(HLBG.Stats, decoded) end
-        end
-        return
-    end
-end)
-
 -- Filter raw HLBG payload spam from chat (system/say/etc). Parsing is handled separately.
 local function _ShouldFilterHLBGChatMessage(msg)
     if type(msg) ~= 'string' then return false end
@@ -1251,10 +1073,6 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
     local warm = msg:match('%[HLBG_WARMUP%]%s*(.*)')
     if warm then if type(HLBG.Warmup) == 'function' then pcall(HLBG.Warmup, warm) end return end
     pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_WARMUP', warm) end end)
-    -- Queue
-    local q = msg:match('%[HLBG_QUEUE%]%s*(.*)')
-    if q then if type(HLBG.QueueStatus) == 'function' then pcall(HLBG.QueueStatus, q) end return end
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('CHAT_QUEUE', q) end end)
     -- Results JSON
     local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
     if rj then
@@ -1496,23 +1314,6 @@ chatFrame:SetScript('OnEvent', function(_, ev, msg)
         end
         return
     end
-    -- Queue status response
-    if msg:match("^QUEUE_STATUS") then
-        pcall(function()
-            if type(HLBG.HandleQueueStatus) == 'function' then
-                HLBG.HandleQueueStatus(msg)
-                if DEFAULT_CHAT_FRAME then
-                    DebugPrint('|cFF33FF99HLBG Debug:|r Queue status received and processed')
-                end
-            else
-                if DEFAULT_CHAT_FRAME then
-                    DebugPrint('|cFFFFAA00HLBG Debug:|r HandleQueueStatus function not available (will be loaded from HLBG_Queue_Client.lua)')
-                end
-            end
-        end)
-        return
-    end
-    
     -- Config info response
     if msg:match("^CONFIG_INFO") then
         pcall(function()
@@ -2061,10 +1862,8 @@ SlashCmdList['HLBGPROTO'] = function(msg)
     else
         -- Show protocol status
         local dcAvail = rawget(_G, "DCAddonProtocol") and "|cFF00FF00YES|r" or "|cFFFF0000NO|r"
-        local aioAvail = rawget(_G, "AIO") and "|cFF00FF00YES|r" or "|cFFFF0000NO|r"
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Protocol Status:|r')
         DEFAULT_CHAT_FRAME:AddMessage('  DCAddonProtocol: ' .. dcAvail)
-        DEFAULT_CHAT_FRAME:AddMessage('  AIO: ' .. aioAvail)
         DEFAULT_CHAT_FRAME:AddMessage('  JSON mode: ' .. 
             (DCHLBGDB.useDCProtocolJSON and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
         DEFAULT_CHAT_FRAME:AddMessage('  Type /hlbgproto help for commands')
@@ -2162,7 +1961,7 @@ HLBG.EnsurePvPTab = EnsurePvPTab
 HLBG.EnsurePvPHeaderButton = EnsurePvPHeaderButton
 
 -- =====================================================================
--- DC ADDON PROTOCOL HANDLERS (lightweight alternative to AIO)
+-- DC ADDON PROTOCOL HANDLERS
 -- =====================================================================
 
 -- Settings toggle for JSON vs pipe-delimited

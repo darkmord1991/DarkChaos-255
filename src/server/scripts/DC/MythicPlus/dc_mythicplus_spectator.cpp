@@ -25,9 +25,9 @@
 #include "SpellAuraEffects.h"
 #include "Guild.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "Random.h"
 
 #include <sstream>
-#include <random>
 
 using namespace Acore::ChatCommands;
 
@@ -314,14 +314,11 @@ void MythicSpectatorManager::LoadConfig()
 std::string MythicSpectatorManager::GenerateRandomCode(uint32 length)
 {
     static const char chars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";  // Excluding confusing chars (0,O,1,I)
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis(0, sizeof(chars) - 2);
 
     std::string code;
     code.reserve(length);
     for (uint32 i = 0; i < length; ++i)
-        code += chars[dis(gen)];
+        code += chars[urand(0, sizeof(chars) - 2)];
     return code;
 }
 

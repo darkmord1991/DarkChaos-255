@@ -205,8 +205,8 @@ namespace DarkChaos
             // Pass Player* to avoid lookup, pass currency amounts to avoid re-querying DB
             // Pass specific currency type to sync only what changed
             // Returns true if sync completed successfully
-            virtual bool SyncInventoryToDB(uint32 player_guid, uint32 season = 1, Player* player = nullptr, 
-                                          CurrencyType specific_currency = CURRENCY_UPGRADE_TOKEN, 
+            virtual bool SyncInventoryToDB(uint32 player_guid, uint32 season = 1, Player* player = nullptr,
+                                          CurrencyType specific_currency = CURRENCY_UPGRADE_TOKEN,
                                           uint32 db_amount = 0, bool sync_both = true) = 0;
             // Check if an item can be upgraded for a player
             virtual bool CanUpgradeItem(uint32 item_guid, uint32 player_guid) = 0;

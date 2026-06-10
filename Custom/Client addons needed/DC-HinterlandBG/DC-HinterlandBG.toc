@@ -4,8 +4,8 @@
 ## Author: DC-255
 ## Version: 1.4.0
 ## SavedVariables: DCHLBGDB
-## OptionalDeps: DC-AddonProtocol, AIO_Client, DC_DebugUtils
-## LoadAfter: DC-AddonProtocol, AIO_Client
+## OptionalDeps: DC-AddonProtocol, DC_DebugUtils
+## LoadAfter: DC-AddonProtocol
 ## DefaultState: enabled
 
 # Core compatibility and utilities
@@ -16,8 +16,6 @@ HLBG_TimerCompat.lua
 HLBG_Utils.lua
 HLBG_Stubs.lua
 
-# AIO integration
-HLBG_AIO_Check.lua
 
 # Main UI (clean version)
 HLBG_UI_Clean.lua

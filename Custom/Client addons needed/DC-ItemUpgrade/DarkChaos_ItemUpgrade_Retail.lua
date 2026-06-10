@@ -2306,7 +2306,7 @@ local function DarkChaos_ItemUpgrade_ResolveHeirloomTooltipCache(serverBag, serv
 	return cached or resolved;
 end
 
-local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBag, serverSlot, cached, allowChatFallback)
+local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBag, serverSlot, cached)
 	if not itemLink or serverBag == nil or serverSlot == nil then
 		return false;
 	end
@@ -2335,12 +2335,6 @@ local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBa
 	local DCProtocol = rawget(_G, "DCAddonProtocol");
 	if DCProtocol and DC.useDCProtocol and DCProtocol.Request then
 		DCProtocol:Request("UPG", 0x06, { bag = serverBag, slot = serverSlot }); -- CMSG_HEIRLOOM_QUERY
-		return true;
-	end
-
-	if allowChatFallback then
-		local heirloomCmd = string.format(".dcheirloom query %d %d", serverBag, serverSlot);
-		SendChatMessage(heirloomCmd, "SAY");
 		return true;
 	end
 
@@ -4956,7 +4950,7 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	-- For registered heirloom items request package state if not already cached.
 	if DC.IsHeirloomItemId(itemID) then
 		if DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag,
-				serverSlot, DC.currentItem, true) then
+				serverSlot, DC.currentItem) then
 			DC.Debug("SelectItemBySlot: Requested heirloom info for item " .. tostring(itemID));
 		end
 	end

@@ -2567,25 +2567,6 @@ function DC:InitializeProtocol()
         return false
     end
 
-    -- Two protocol variants exist in this project:
-    -- 1) Legacy DCAddonProtocol:RegisterModule(moduleId, callback) + :SendMessage(moduleId, payload)
-    -- 2) Current DCAddonProtocol:RegisterJSONHandler(module, opcode, handler) + :Request(module, opcode, data)
-    -- Support both to avoid runtime errors when the library is updated.
-
-    -- Legacy API
-    if type(DCAddonProtocol.RegisterModule) == "function" and type(DCAddonProtocol.SendMessage) == "function" then
-        local success = DCAddonProtocol:RegisterModule(self.MODULE_ID, self.OnProtocolMessage)
-        if success then
-            self:Debug("Protocol module registered: " .. self.MODULE_ID)
-            self.isConnected = true
-            return true
-        end
-
-        self:Print("|cffff0000Error:|r Failed to register protocol module")
-        return false
-    end
-
-    -- Current API
     if type(DCAddonProtocol.RegisterJSONHandler) ~= "function" or type(DCAddonProtocol.Request) ~= "function" then
         self:Print("|cffff0000Error:|r DCAddonProtocol API mismatch (missing RegisterJSONHandler/Request).")
         return false
@@ -2597,36 +2578,13 @@ function DC:InitializeProtocol()
         end)
     end
 
-    -- Register handlers for all server->client opcodes we care about.
-    registerOpcode(self.Opcodes.SMSG_HANDSHAKE_ACK)
-    registerOpcode(self.Opcodes.SMSG_FULL_COLLECTION)
-    registerOpcode(self.Opcodes.SMSG_DELTA_SYNC)
-    registerOpcode(self.Opcodes.SMSG_STATS)
-    registerOpcode(self.Opcodes.SMSG_BONUSES)
-    registerOpcode(self.Opcodes.SMSG_ITEM_LEARNED)
-    registerOpcode(self.Opcodes.SMSG_DEFINITIONS)
-    registerOpcode(self.Opcodes.SMSG_COLLECTION)
-    registerOpcode(self.Opcodes.SMSG_TRANSMOG_STATE)
-    registerOpcode(self.Opcodes.SMSG_TRANSMOG_SLOT_ITEMS)
-    registerOpcode(self.Opcodes.SMSG_COLLECTED_APPEARANCES)
-    registerOpcode(self.Opcodes.SMSG_SHOP_DATA)
-    registerOpcode(self.Opcodes.SMSG_PURCHASE_RESULT)
-    registerOpcode(self.Opcodes.SMSG_CURRENCIES)
-    registerOpcode(self.Opcodes.SMSG_SHOP_HISTORY)
-    registerOpcode(self.Opcodes.SMSG_WISHLIST_DATA)
-    registerOpcode(self.Opcodes.SMSG_WISHLIST_AVAILABLE)
-    registerOpcode(self.Opcodes.SMSG_WISHLIST_UPDATED)
-    registerOpcode(self.Opcodes.SMSG_OPEN_UI)
-    registerOpcode(self.Opcodes.SMSG_ERROR)
-    
-    registerOpcode(self.Opcodes.SMSG_COMMUNITY_LIST)
-    registerOpcode(self.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT)
-    registerOpcode(self.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT)
-    registerOpcode(self.Opcodes.SMSG_COMMUNITY_DELETE_RESULT)
-    registerOpcode(self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT)
-    registerOpcode(self.Opcodes.SMSG_INSPECT_TRANSMOG)
-    registerOpcode(self.Opcodes.SMSG_ITEM_SETS)
-    registerOpcode(self.Opcodes.SMSG_SAVED_OUTFITS)
+    -- Register handlers for every server->client opcode (SMSG_*) so opcodes
+    -- added to the table later are picked up automatically.
+    for name, opcode in pairs(self.Opcodes) do
+        if string.sub(name, 1, 5) == "SMSG_" then
+            registerOpcode(opcode)
+        end
+    end
 
     -- Diagnostics: also register the request opcodes used by Wardrobe (Outfits/Community).
     -- If these are ever received client-side, it typically means the server did NOT handle the message
@@ -2660,37 +2618,6 @@ function DC:SendMessage(opcode, data)
         return false
     end
 
-    -- Legacy API: send a wrapped payload
-    if type(DCAddonProtocol.SendMessage) == "function" then
-        local payload = {
-            op = opcode,
-            data = data or {},
-            time = time(),
-        }
-
-        local success = DCAddonProtocol:SendMessage(self.MODULE_ID, payload)
-        if success then
-            self:Debug(string.format("Sent message opcode 0x%02X", opcode))
-
-            if type(self.LogNetEvent) == "function" then
-                self:LogNetEvent("info", "send", string.format("Sent opcode 0x%02X", tonumber(opcode) or 0), { opcode = opcode })
-            end
-
-            self.pendingRequests[opcode] = {
-                sentAt = GetTime(),
-                data = data,
-            }
-        else
-            self:Debug("Failed to send message")
-            if type(self.LogNetEvent) == "function" then
-                self:LogNetEvent("error", "send", "Failed to send message (legacy)", { opcode = opcode })
-            end
-        end
-
-        return success
-    end
-
-    -- Current API: module+opcode routing, JSON-by-default
     if type(DCAddonProtocol.Request) ~= "function" then
         self:Debug("Cannot send message - DCAddonProtocol missing Request")
         return false

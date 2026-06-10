@@ -61,7 +61,7 @@ public:
     static void LoadCache()
     {
         std::lock_guard<std::mutex> lock(_cacheMutex);
-        
+
         if (_cacheLoaded)
             return;
 
@@ -71,16 +71,16 @@ public:
     static void ReloadCache()
     {
         std::lock_guard<std::mutex> lock(_cacheMutex);
-        
+
         // Clear existing data
         _dungeonQuests.clear();
         _dungeonDisplayIds.clear();
         _dailyQuests.clear();
         _weeklyQuests.clear();
         _cacheLoaded = false;
-        
+
         LoadCacheInternal();
-        
+
         LOG_INFO("scripts.dc", "UniversalQuestMaster: Cache reloaded successfully");
     }
 
@@ -281,7 +281,7 @@ public:
 
     struct npc_universal_quest_masterAI : public ScriptedAI
     {
-        npc_universal_quest_masterAI(Creature* creature) : ScriptedAI(creature) 
+        npc_universal_quest_masterAI(Creature* creature) : ScriptedAI(creature)
         {
             // Set display immediately on creation
             InitializeDisplay();
@@ -291,7 +291,7 @@ public:
         {
             // Keep visible to players regardless of active phase bit
             me->SetPhaseMask(PHASE_ALL_VISIBLE, true);
-            
+
             // Set display on reset as well (handles .npc respawn cases)
             InitializeDisplay();
         }
@@ -304,7 +304,7 @@ public:
             // Use creature's map, not player's - this works immediately on spawn
             uint32 mapId = me->GetMapId();
             uint32 displayId = UniversalQuestMasterCache::GetDisplayIdForDungeon(mapId);
-            
+
             if (me->GetDisplayId() != displayId)
             {
                 me->SetNativeDisplayId(displayId);
@@ -316,7 +316,7 @@ public:
 
         void MoveInLineOfSight(Unit* who) override
         {
-            if (!who || who->GetTypeId() != TYPEID_PLAYER)
+            if (!who || !who->IsPlayer())
                 return;
 
             // Follow behavior: only follow the last player who interacted
@@ -502,7 +502,7 @@ public:
                  // Decode Sender: (ListType << 16) | TargetPage
                  uint32 listType = (sender >> 16) & 0xFFFF;
                  uint32 page = sender & 0xFFFF;
-                 
+
                  if (listType == ACTION_SHOW_DUNGEON_QUESTS)
                      ShowDungeonQuests(player, creature, page);
                  else if (listType == ACTION_SHOW_DAILY_QUESTS)
@@ -599,7 +599,7 @@ private:
                  availableQuests.push_back(questId);
              }
         }
-        
+
         if (availableQuests.empty())
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, fmt::format("No {} available.", typeName), GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
@@ -700,7 +700,7 @@ private:
     {
         uint32 currentMapId = player->GetMapId();
         auto const& dungeonQuests = UniversalQuestMasterCache::GetQuestsForDungeon(currentMapId);
-        
+
         bool hasQuests = false;
         for (uint32 questId : dungeonQuests)
         {
@@ -713,27 +713,27 @@ private:
                 uint16 slot = player->FindQuestSlot(questId);
                 if (slot >= MAX_QUEST_LOG_SIZE)
                     continue;
-                
+
                 // Calculate progress percentage
                 uint32 totalObjectives = 0;
                 uint32 completedObjectives = 0;
-                
+
                 for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
                 {
                     if (quest->RequiredNpcOrGo[i] != 0 || quest->RequiredItemCount[i] != 0)
                     {
                         totalObjectives++;
-                        uint32 required = quest->RequiredNpcOrGoCount[i] > 0 ? 
+                        uint32 required = quest->RequiredNpcOrGoCount[i] > 0 ?
                                          quest->RequiredNpcOrGoCount[i] : quest->RequiredItemCount[i];
                         uint32 current = player->GetQuestSlotCounter(slot, i);
                         if (current >= required)
                             completedObjectives++;
                     }
                 }
-                
-                uint32 progressPercent = totalObjectives > 0 ? 
+
+                uint32 progressPercent = totalObjectives > 0 ?
                                         (completedObjectives * 100 / totalObjectives) : 0;
-                
+
                 // Format quest with progress
                 std::ostringstream oss;
                 oss << "|cFFFFFF00" << quest->GetTitle() << "|r [" << progressPercent << "%]";
@@ -741,12 +741,12 @@ private:
                 hasQuests = true;
             }
         }
-        
+
         if (!hasQuests)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No quests in progress.", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
         }
-        
+
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back to Main Menu", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
@@ -803,16 +803,16 @@ public:
     static bool HandleReloadDungeonQuestsCommand(ChatHandler* handler, Optional<PlayerIdentifier> /*target*/)
     {
         handler->PSendSysMessage("Reloading Universal Quest Master cache...");
-        
+
         UniversalQuestMasterCache::ReloadCache();
-        
+
         handler->PSendSysMessage("Done! Loaded %u dungeons, %u display IDs.",
                                 UniversalQuestMasterCache::GetTotalQuestMappings(),
                                 UniversalQuestMasterCache::GetTotalDisplayMappings());
-        
+
         LOG_INFO("scripts.dc", "GM {} reloaded Universal Quest Master cache",
                  handler->GetSession() ? handler->GetSession()->GetPlayer()->GetName() : "Console");
-        
+
         return true;
     }
 };
@@ -829,4 +829,3 @@ void AddSC_npc_universal_quest_master()
 
     LOG_INFO("server.loading", ">> Loaded Universal Quest Master NPC (Entry {})", NPC_UNIVERSAL_QUEST_MASTER);
 }
-

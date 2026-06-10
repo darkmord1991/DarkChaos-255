@@ -229,15 +229,6 @@ local function IsQueuedFlag(value)
     return false
 end
 
-local function SendQueueStatusCommandFallback()
-    local cmd = ".hlbg queue status"
-    local editBox = DEFAULT_CHAT_FRAME and (DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox) or ChatFrame1EditBox
-    if editBox then
-        editBox:SetText(cmd)
-        ChatEdit_SendText(editBox, 0)
-    end
-end
-
 local function SendNativeQueueRequest(reason)
     if type(HLBG.RequestLiveSnapshot) ~= "function" then
         return false
@@ -262,36 +253,6 @@ function HLBG.RequestQueueStatus()
         if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             HLBG.QueueMessage(usedNative and "request_status_native" or "request_status_dc")
         end
-
-        if C_Timer and C_Timer.After then
-            local requestedAt = GetTime()
-            C_Timer.After(1.0, function()
-                local lastSync = HLBG._lastQueueSyncAt or 0
-                local lastFallback = HLBG._lastQueueStatusFallbackAt or 0
-                local now = GetTime()
-
-                if lastSync < requestedAt and (now - lastFallback) >= 8 then
-                    HLBG._lastQueueStatusFallbackAt = now
-                    SendQueueStatusCommandFallback()
-                end
-            end)
-        end
-    elseif AIO and AIO.Handle then
-        AIO.Handle("HLBG", "RequestQueueStatus", "")
-        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            HLBG.QueueMessage("request_status_aio")
-        end
-    else
-        -- Fallback: use chat command
-        local cmd = ".hlbg queue status"
-        local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
-        if editBox then
-            editBox:SetText(cmd)
-            ChatEdit_SendText(editBox, 0)
-        end
-        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            HLBG.QueueMessage("request_status_cmd")
-        end
     end
 end
 
@@ -309,46 +270,10 @@ function HLBG.JoinQueue()
         if DEFAULT_CHAT_FRAME then
             HLBG.QueueMessage("join_native")
         end
-        -- If the native bridge sent the request but the server never confirms
-        -- (no queue sync within 2 s), fall back to the chat-command path so
-        -- the server still receives the join even when the bridge is silent.
-        if C_Timer and C_Timer.After then
-            local joinAt = GetTime()
-            C_Timer.After(2.0, function()
-                if not HLBG.IsInQueue and (HLBG._lastQueueSyncAt or 0) < joinAt then
-                    local editBox = DEFAULT_CHAT_FRAME
-                        and (DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox)
-                        or ChatFrame1EditBox
-                    if editBox then
-                        editBox:SetText(".hlbg queue join")
-                        ChatEdit_SendText(editBox, 0)
-                    end
-                end
-            end)
-        end
     elseif SendHLBGRequest(DC, 4) then
         -- CMSG_QUICK_QUEUE = 0x04
         if DEFAULT_CHAT_FRAME then
             HLBG.QueueMessage("join_dc")
-        end
-    elseif AIO and AIO.Handle then
-        AIO.Handle("HLBG", "JoinQueue", "")
-        if DEFAULT_CHAT_FRAME then
-            HLBG.QueueMessage("join_aio")
-        end
-    else
-        -- Fallback: use chat command
-        if DEFAULT_CHAT_FRAME then
-            HLBG.QueueMessage("fallback_no_transport")
-            HLBG.QueueMessage("fallback_join_hint")
-        end
-        
-        -- Try to execute command
-        local cmd = ".hlbg queue join"
-        local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
-        if editBox then
-            editBox:SetText(cmd)
-            ChatEdit_SendText(editBox, 0)
         end
     end
 end
@@ -364,22 +289,6 @@ function HLBG.LeaveQueue()
         -- CMSG_LEAVE_QUEUE = 0x05
         if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             HLBG.QueueMessage("leave_dc")
-        end
-    elseif AIO and AIO.Handle then
-        AIO.Handle("HLBG", "LeaveQueue", "")
-        if DEFAULT_CHAT_FRAME then
-            HLBG.QueueMessage("leave_aio")
-        end
-    else
-        -- Fallback: use chat command
-        local cmd = ".hlbg queue leave"
-        local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
-        if editBox then
-            editBox:SetText(cmd)
-            ChatEdit_SendText(editBox, 0)
-        end
-        if DEFAULT_CHAT_FRAME then
-            HLBG.QueueMessage("leave_cmd")
         end
     end
 end
@@ -507,82 +416,6 @@ function HLBG.HandleQueueStatusRaw(queueStatus, position, estimatedTime, totalQu
             "|cFF33FF99HLBG Queue(DC):|r InQueue=%s Pos=%d/%d A=%d H=%d Est=%ds State=%s",
             tostring(inQueue), HLBG.QueuePosition, HLBG.QueueTotal, HLBG.AllianceQueued, HLBG.HordeQueued, HLBG.EstimatedWaitSeconds, HLBG.BattleState))
     end
-end
-
--- Handle QUEUE_STATUS response from server (Legacy AIO/String)
-function HLBG.HandleQueueStatus(statusString)
-    if type(statusString) ~= 'string' then return end
-    -- Debug: Show what we received
-    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG Queue Debug:|r Received status: %s", statusString))
-    end
-    -- Parse status packet - support multiple formats:
-    -- Format 1: "QUEUE_STATUS|IN_QUEUE=1|POSITION=5|WAIT_TIME=30|TOTAL=12|ALLIANCE=6|HORDE=6|MIN_PLAYERS=10|EST_WAIT=120|STATE=WAITING"
-    -- Format 2: Legacy simple text
-    local inQueue = false
-    local position = 0
-    local total = 0
-    local allianceCount = 0
-    local hordeCount = 0
-    local minPlayers = 10
-    local estWaitSeconds = 0
-    local waitTime = 0
-    local state = "UNKNOWN"
-
-    -- Try structured format first
-    if statusString:match("IN_QUEUE=") then
-        inQueue = statusString:match("IN_QUEUE=(%d)") == "1"
-        position = tonumber(statusString:match("POSITION=(%d+)")) or 0
-        total = tonumber(statusString:match("TOTAL=(%d+)")) or 0
-        allianceCount = tonumber(statusString:match("ALLIANCE=(%d+)")) or 0
-        hordeCount = tonumber(statusString:match("HORDE=(%d+)")) or 0
-        minPlayers = tonumber(statusString:match("MIN_PLAYERS=(%d+)")) or 10
-        estWaitSeconds = tonumber(statusString:match("EST_WAIT=(%d+)")) or 0
-        waitTime = tonumber(statusString:match("WAIT_TIME=(%d+)")) or 0
-        state = statusString:match("STATE=(%w+)") or "UNKNOWN"
-    -- Try simple text format
-    elseif statusString:lower():match("not in queue") or statusString:lower():match("not queued") then
-        inQueue = false
-        position = 0
-        total = 0
-        state = "NOT_QUEUED"
-    elseif statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)") then
-        inQueue = true
-        position = tonumber(statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)")) or 1
-        total = tonumber(statusString:match("/%s*(%d+)") or statusString:match("total[:%s]+(%d+)")) or position
-        state = "WAITING"
-    else
-        -- Unknown format - show as-is
-        if DEFAULT_CHAT_FRAME then
-            HLBG.QueueMessage("unknown_status", statusString)
-        end
-        return
-    end
-
-    -- Update global state
-    HLBG.IsInQueue = inQueue
-    HLBG.QueuePosition = position
-    HLBG.QueueTotal = total
-    HLBG.AllianceQueued = allianceCount
-    HLBG.HordeQueued = hordeCount
-    HLBG.MinPlayersToStart = minPlayers
-    HLBG.EstimatedWaitSeconds = estWaitSeconds
-    HLBG.BattleState = state
-    HLBG._lastQueueSyncAt = GetTime()
-
-    HLBG.UpdateQueueUI()
-
-    -- Debug output
-    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format(
-            "|cFF33FF99HLBG Queue:|r InQueue=%s Pos=%d/%d A=%d H=%d Est=%ds State=%s",
-            tostring(inQueue), position, total, allianceCount, hordeCount, estWaitSeconds, state))
-    end
-end
-
--- Backward-compatible alias used by older handlers.
-if type(HLBG.QueueStatus) ~= "function" then
-    HLBG.QueueStatus = HLBG.HandleQueueStatus
 end
 
 local function StripQueueChatMarkup(msg)
@@ -742,13 +575,6 @@ SlashCmdList['HLBGQ'] = function(msg)
         end
     end
 end
--- Integration with existing AIO message handler
--- Add this to your CHAT_MSG_ADDON handler in HLBG_Handlers.lua:
---
--- if prefix == "HLBG" and msg:match("^QUEUE_STATUS") then
---     HLBG.HandleQueueStatus(msg)
---     return
--- end
 -- Debug announce
 if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG Debug:|r Queue client functions loaded. Type /hlbgq for commands.")

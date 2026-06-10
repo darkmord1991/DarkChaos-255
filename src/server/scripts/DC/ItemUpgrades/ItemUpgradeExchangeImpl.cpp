@@ -216,7 +216,7 @@ namespace DarkChaos
                         mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.input_essence, season);
                     if (recipe.input_tokens > 0)
                         mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.input_tokens, season);
-                    
+
                     // Sync inventory using centralized utility (full sync, no player available)
                     DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                         player_guid, season, nullptr, CURRENCY_UPGRADE_TOKEN, 0, true);
@@ -319,7 +319,7 @@ namespace DarkChaos
                             mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, refund_essence, season);
                         if (refund_tokens > 0)
                             mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, refund_tokens, season);
-                        
+
                         // Sync inventory using centralized utility (full sync, no player available)
                         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                             player_guid, season, nullptr, CURRENCY_UPGRADE_TOKEN, 0, true);
@@ -491,7 +491,7 @@ namespace DarkChaos
                             mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, recipe.output_essence, season);
                         if (recipe.output_tokens > 0)
                             mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, recipe.output_tokens, season);
-                        
+
                         // Sync inventory using centralized utility (full sync, no player available)
                         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                             player_guid, season, nullptr, CURRENCY_UPGRADE_TOKEN, 0, true);
@@ -629,7 +629,7 @@ namespace DarkChaos
                 {
                     mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, season);
                     mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, season);
-                    
+
                     // Sync inventory using centralized utility (full sync, no player available)
                     DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                         player_guid, season, nullptr, CURRENCY_UPGRADE_TOKEN, 0, true);

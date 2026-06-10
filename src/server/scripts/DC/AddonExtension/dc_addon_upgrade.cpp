@@ -599,7 +599,7 @@ namespace Upgrade
         // Costs
         QueryResult costResult = WorldDatabase.Query(
             "SELECT SUM(token_cost), SUM(essence_cost) FROM dc_item_upgrade_costs "
-            "WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}",
+            "WHERE tier_id = {} AND season = 1 AND upgrade_level BETWEEN {} AND {}",
             tier, currentLevel + 1, targetLevel);
 
         uint32 tokensNeeded = 0;

@@ -1733,19 +1733,6 @@ function DC:RegisterHandler(module, opcode, handler)
     table.insert(self._handlers[key], handler)
 end
 
--- Legacy API: RegisterModule for DC-Collection Protocol.lua compatibility
--- Registers a single callback to receive all messages for a module.
--- The callback receives the raw payload from the server.
-DC._moduleCallbacks = DC._moduleCallbacks or {}
-
-function DC:RegisterModule(moduleId, callback)
-    if type(callback) ~= "function" then
-        return false
-    end
-    self._moduleCallbacks[moduleId] = callback
-    return true
-end
-
 function DC:UnregisterHandler(module, opcode, handler)
     local key = module .. "_" .. tostring(opcode)
     local h = self._handlers[key]
@@ -1942,7 +1929,7 @@ function DC:_TryNativeSendJSON(module, opcode, json)
 end
 
 -- Dispatch a native JSON response through the same handler chain the addon
--- (CHAT_MSG_ADDON) path uses: JSON handler -> decoded handler -> module callback.
+-- (CHAT_MSG_ADDON) path uses: JSON handler -> decoded handler.
 function DC:_DispatchNativeJSON(module, opcode, jsonStr)
     jsonStr = (type(jsonStr) == "string" and jsonStr ~= "") and jsonStr or "{}"
     local data = self:DecodeJSON(jsonStr)
@@ -1982,11 +1969,6 @@ function DC:_DispatchNativeJSON(module, opcode, jsonStr)
         end
     end
 
-    local modCallback = self._moduleCallbacks and self._moduleCallbacks[module]
-    if modCallback then
-        self:_InvokeHandlerSafe("native-module-callback", module, opcode,
-            modCallback, { op = tonumber(opcode), data = data })
-    end
 end
 
 -- Dispatch a generic-bridge native response. The body is the canonical addon
@@ -2206,20 +2188,6 @@ function DC:Request(module, opcode, data)
         -- Simple value - wrap in object
         return self:SendJSON(module, opcode, { value = data })
     end
-end
-
--- Legacy SendMessage API for DC-Collection Protocol.lua compatibility
--- payload is a table: { op = opcode, data = {}, time = timestamp }
-function DC:SendMessage(moduleId, payload)
-    if type(payload) ~= "table" then
-        return false
-    end
-    local opcode = payload.op
-    local data = payload.data or {}
-    if opcode == nil then
-        return false
-    end
-    return self:SendJSON(moduleId, opcode, data)
 end
 
 -- Alias for Request
@@ -3374,14 +3342,6 @@ frame:SetScript("OnEvent", function()
                         elseif DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
                         end
-                    end
-                    
-                    -- Legacy module callback (DC-Collection Protocol.lua uses this)
-                    local modCallback = DC._moduleCallbacks and DC._moduleCallbacks[module]
-                    if modCallback then
-                        -- Pass a payload similar to what the legacy API expects
-                        local legacyPayload = { op = tonumber(opcode), data = data }
-                        DC:_InvokeHandlerSafe("module-callback", module, opcode, modCallback, legacyPayload)
                     end
                 else
                     -- Regular message - log it too

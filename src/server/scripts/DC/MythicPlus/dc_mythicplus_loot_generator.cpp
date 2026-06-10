@@ -18,11 +18,11 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "Containers.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include <algorithm>
 #include <array>
-#include <random>
 #include <vector>
 
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
@@ -188,9 +188,7 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
 
     // Randomize selection order so winners are unpredictable
     std::vector<Player*> shuffled = participants;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::shuffle(shuffled.begin(), shuffled.end(), gen);
+    Acore::Containers::RandomShuffle(shuffled);
 
     uint32 desiredCount = isFinalBoss
         ? std::min<uint32>(

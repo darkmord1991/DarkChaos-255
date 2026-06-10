@@ -5,24 +5,20 @@ local Pins = addonTable.Pins or {}
 local UI = addonTable.UI or {}
 local Debug = _G.DC_DebugUtils
 
--- Protocol detection with fallback chain: DCAddonProtocol → AIO → Chat
+-- Server communication runs over DCAddonProtocol (native bridge or addon whisper)
 local DC = rawget(_G, "DCAddonProtocol")
-local AIO = rawget(_G, "AIO")
 
 local Core = {}
 addonTable.Core = Core
 
 -- Protocol availability flags
 Core.useDCProtocol = (DC ~= nil)
-Core.useAIO = (AIO ~= nil)
-Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
+Core.protocolMode = DC and "DCAddonProtocol" or "None"
 
 local function RefreshProtocolMode()
     DC = rawget(_G, "DCAddonProtocol")
-    AIO = rawget(_G, "AIO")
     Core.useDCProtocol = (DC ~= nil)
-    Core.useAIO = (AIO ~= nil)
-    Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
+    Core.protocolMode = DC and "DCAddonProtocol" or "None"
 end
 
 local state = {
@@ -595,24 +591,6 @@ local function NormalizePossibleNormalizedPos(nx, ny)
     return nx, ny
 end
 
--- Execute a server command (e.g., .hotspot list) by simulating chat input
--- This works for WoW 3.3.5a server commands starting with "."
-local function SendServerCommand(cmd)
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
-        local editBox = DEFAULT_CHAT_FRAME.editBox
-        local oldText = editBox:GetText() or ""
-        editBox:SetText(cmd)
-        ChatEdit_SendText(editBox)
-        editBox:SetText(oldText)
-    elseif ChatFrameEditBox then
-        -- Fallback: Try to use ChatFrameEditBox directly
-        local oldText = ChatFrameEditBox:GetText() or ""
-        ChatFrameEditBox:SetText(cmd)
-        ChatEdit_SendText(ChatFrameEditBox)
-        ChatFrameEditBox:SetText(oldText)
-    end
-end
-
 local function CopyInto(src, dest)
     for k, v in pairs(src) do
         if type(v) == "table" then
@@ -769,129 +747,6 @@ function Core:PersistHotspot(record)
     end
 end
 
-local function ParsePayloadString(payload)
-    if not payload or payload == "" then
-        return nil
-    end
-    
-    -- Format 1: HOTSPOT_ADDON|id:31|map:0|zone:10|x:-4739.6|y:-2212.5|dur:1800
-    if string.find(payload, "HOTSPOT_ADDON", 1, true) then
-        local data = { raw = payload }
-        for token in string.gmatch(payload, "[^|]+") do
-            if token == "HOTSPOT_ADDON" then
-                data.tag = token
-            else
-                local key, value = token:match("^(%w+):(.*)$")
-                if key then
-                    data[key] = value
-                end
-            end
-        end
-        if data.tag == "HOTSPOT_ADDON" then
-            return data
-        end
-    end
-    
-    -- Format 2: Teleport confirmation message
-    -- "Teleported to Hotspot ID 45 on map 1 (zone Ashenvale) at (-2892.9, -4884.0, -53.8)"
-    local teleportId, teleportMap, teleportZone, teleportX, teleportY, teleportZ = 
-        payload:match("Teleported to Hotspot ID (%d+) on map (%d+) %(zone ([^%)]+)%) at %(([%-%d%.]+), ([%-%d%.]+), ([%-%d%.]+)%)")
-    if teleportId then
-        local data = {
-            raw = payload,
-            id = teleportId,
-            map = teleportMap,
-            zone = teleportZone, -- This is the zone name, not ID - may need lookup
-            x = teleportX,
-            y = teleportY,
-            z = teleportZ,
-            teleported = true -- Mark this as a teleport confirmation
-        }
-        return data
-    end
-    
-    -- Format 3: "ID: 31 | Map: 0 | Zone: Duskwood (10) | Pos: (-4739.6, -2212.5, 534.1) | Time Left: 30m"
-    -- This is the list format from your server
-    local id = payload:match("ID:%s*(%d+)")
-    if id then
-        local data = { raw = payload }
-        data.id = id
-        
-        -- Extract map
-        local map = payload:match("Map:%s*(%d+)")
-        if map then data.map = map end
-        
-        -- Extract zone from "Zone: Name (ID)"
-        local zoneName, zoneId = payload:match("Zone:%s*([^%(]+)%s*%((%d+)%)")
-        if zoneId then data.zone = zoneId end
-        
-        -- Extract coordinates from "Pos: (x, y, z)"
-        local x, y, z = payload:match("Pos:%s*%(([%-%d%.]+),%s*([%-%d%.]+),%s*([%-%d%.]+)%)")
-        if x then data.x = x end
-        if y then data.y = y end
-        if z then data.z = z end
-        
-        -- Extract time left and convert to duration in seconds
-        local timeValue, timeUnit = payload:match("Time Left:%s*(%d+)(%w+)")
-        if timeValue then
-            local dur = tonumber(timeValue)
-            if dur then
-                if timeUnit == "m" or timeUnit == "min" then
-                    dur = dur * 60
-                elseif timeUnit == "h" or timeUnit == "hr" then
-                    dur = dur * 3600
-                elseif timeUnit == "s" or timeUnit == "sec" then
-                    -- already in seconds
-                end
-                data.dur = tostring(dur)
-            end
-        end
-        
-        return data
-    end
-    
-    -- Format 3: Header message "Active Hotspots: 4" - ignore
-    if payload:match("Active Hotspots:%s*%d+") then
-        return nil
-    end
-    
-    -- Format 4: Ignore upgrade token messages "+X Upgrade Tokens"
-    if payload:match("^%+?%d+%s+[Uu]pgrade%s+[Tt]okens") then
-        return nil
-    end
-    
-    -- Format 5: Ignore messages with % placeholders like "+%u Upgrade Tokens"
-    if payload:match("%%[ud]") then
-        return nil
-    end
-    
-    return nil
-end
-
-local function IsHotspotPayloadCandidate(payload)
-    if not payload or payload == "" then
-        return false
-    end
-
-    if payload:find("HOTSPOT", 1, true) or payload:find("Hotspot", 1, true) then
-        return true
-    end
-
-    if payload:find("ID:", 1, true) and payload:find("Zone:", 1, true) and payload:find("Pos:", 1, true) then
-        return true
-    end
-
-    if payload:match("Active Hotspots:%s*%d+") then
-        return true
-    end
-
-    if payload:match("Hotspot%s+%d+") then
-        return true
-    end
-
-    return false
-end
-
 function Core:UpsertHotspot(record)
     if not record or not record.id then return end
     local existing = state.hotspots[record.id]
@@ -976,101 +831,6 @@ function Core:PruneExpiredHotspots()
     end
 end
 
-function Core:HandlePayloadString(payload)
-    DebugPrint("Received message:", payload)
-    local parsed = ParsePayloadString(payload)
-    if not parsed then
-        DebugPrint("  Failed to parse message")
-        return
-    end
-    DebugPrint("  Parsed data:", parsed.id, parsed.map, parsed.zone, parsed.x, parsed.y)
-    local record = BuildHotspotRecord(parsed)
-    if not record then
-        DebugPrint("  Failed to build hotspot record")
-        return
-    end
-    DebugPrint("  Created hotspot record:", record.id)
-    
-    -- Track this ID as part of current list response
-    if self.pendingListIds then
-        self.pendingListIds[record.id] = true
-    end
-    
-    self:UpsertHotspot(record)
-end
-
--- Handle the "Active Hotspots: X" header to start tracking a new list
-function Core:HandleListHeader(count)
-    DebugPrint("List header received, expecting", count, "hotspots")
-    
-    -- Start tracking which IDs we receive in this list
-    self.pendingListIds = {}
-    self.expectedListCount = count
-    self.receivedListCount = 0
-    
-    -- Set a timer to finalize the list after all entries are received
-    -- (in case some messages are delayed or count is 0)
-    if self.listFinalizeFrame then
-        self.listFinalizeFrame:SetScript("OnUpdate", nil)
-    end
-    
-    self.listFinalizeFrame = self.listFinalizeFrame or CreateFrame("Frame")
-    self.listFinalizeFrame.elapsed = 0
-    self.listFinalizeFrame:SetScript("OnUpdate", function(frame, elapsed)
-        frame.elapsed = frame.elapsed + elapsed
-        if frame.elapsed >= 2 then  -- Wait 2 seconds after header for all entries
-            frame:SetScript("OnUpdate", nil)
-            Core:FinalizeListResponse()
-        end
-    end)
-end
-
--- Finalize list response - remove hotspots not in the new list
-function Core:FinalizeListResponse()
-    if not self.pendingListIds then return end
-    
-    local toRemove = {}
-    for id in pairs(state.hotspots) do
-        if not self.pendingListIds[id] then
-            table.insert(toRemove, id)
-        end
-    end
-    
-    for _, id in ipairs(toRemove) do
-        DebugPrint("Removing stale hotspot", id, "(not in server list)")
-        self:RemoveHotspot(id, "server_removed")
-    end
-    
-    self.pendingListIds = nil
-    self.expectedListCount = nil
-    self.receivedListCount = nil
-end
-
-function Core:CHAT_MSG_SYSTEM(message)
-    if not IsHotspotPayloadCandidate(message) then
-        return
-    end
-    
-    -- Check for list header "Active Hotspots: X"
-    local count = message:match("Active Hotspots:%s*(%d+)")
-    if count then
-        self:HandleListHeader(tonumber(count))
-        return
-    end
-    
-    self:HandlePayloadString(message)
-end
-
-function Core:CHAT_MSG_ADDON(prefix, message)
-    if prefix ~= "HOTSPOT" then
-        return
-    end
-    if not IsHotspotPayloadCandidate(message) then
-        return
-    end
-    self:HandlePayloadString(message)
-end
-
 function Core:ADDON_LOADED(name)
     if name ~= addonName then return end
 
@@ -1099,16 +859,8 @@ function Core:ADDON_LOADED(name)
         state.db.bossBlacklistMaps[1102] = nil
     end
 
-    if RegisterAddonMessagePrefix then
-        RegisterAddonMessagePrefix("HOTSPOT")
-    end
-
     -- Re-check protocol availability after all addons loaded
-    DC = rawget(_G, "DCAddonProtocol")
-    AIO = rawget(_G, "AIO")
-    Core.useDCProtocol = (DC ~= nil)
-    Core.useAIO = (AIO ~= nil)
-    Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
+    RefreshProtocolMode()
 
     if Pins and Pins.Init then
         Pins:Init(state)
@@ -1170,10 +922,8 @@ end
 
 function Core:PLAYER_LOGIN()
     -- Re-check DC availability (DC-AddonProtocol may have loaded after us)
-    DC = rawget(_G, "DCAddonProtocol")
-    Core.useDCProtocol = (DC ~= nil)
-    Core.protocolMode = (DC and "DCAddonProtocol") or (AIO and "AIO") or "Chat"
-    
+    RefreshProtocolMode()
+
     -- Re-register protocol handlers if DC is now available
     if DC and not Core._handlersRegistered then
         self:RegisterProtocolHandlers()
@@ -1537,16 +1287,11 @@ function Core:RequestHotspotList(reason)
     -- answer with a tiny "unchanged" reply when the active set didn't change.
     payload.v = Core.hotspotListVersion or 0
     
-    -- Protocol fallback chain: DCAddonProtocol → AIO → Chat
     if Core.useDCProtocol and DC then
-        -- Primary: DCAddonProtocol (JSON-by-default)
+        -- DCAddonProtocol (JSON-by-default; routes native bridge or addon whisper)
         DC:Request("SPOT", 0x01, payload)
-    elseif Core.useAIO and AIO and AIO.Handle then
-        -- Secondary: AIO/Eluna
-        AIO.Handle("HOTSPOT", "Request", "LIST")
     else
-        -- Tertiary: Chat command fallback (uses editbox to send server command)
-        SendServerCommand(".hotspot list")
+        DebugPrint("Hotspot list request skipped: DCAddonProtocol not available")
     end
     
     -- Enable announcements after initial list load completes (with delay)
@@ -1571,10 +1316,6 @@ function Core:RequestTeleport(hotspotId)
     
     if Core.useDCProtocol and DC then
         DC:Request("SPOT", 0x03, { id = hotspotId })
-    elseif Core.useAIO and AIO and AIO.Handle then
-        AIO.Handle("HOTSPOT", "Request", "TELEPORT", hotspotId)
-    else
-        SendServerCommand(".hotspot tp " .. hotspotId)
     end
 end
 
@@ -1585,10 +1326,6 @@ function Core:RequestHotspotInfo(hotspotId)
     
     if Core.useDCProtocol and DC then
         DC:Request("SPOT", 0x02, { id = hotspotId })
-    elseif Core.useAIO and AIO and AIO.Handle then
-        AIO.Handle("HOTSPOT", "Request", "INFO", hotspotId)
-    else
-        SendServerCommand(".hotspot info " .. hotspotId)
     end
 end
 
@@ -1668,8 +1405,6 @@ SafeRegister(eventFrame, "ADDON_LOADED")
 SafeRegister(eventFrame, "PLAYER_LOGIN")
 SafeRegister(eventFrame, "PLAYER_ENTERING_WORLD")
 SafeRegister(eventFrame, "PLAYER_LOGOUT")
-SafeRegister(eventFrame, "CHAT_MSG_SYSTEM")
-SafeRegister(eventFrame, "CHAT_MSG_ADDON")
 SafeRegister(eventFrame, "ZONE_CHANGED_NEW_AREA")
 -- Group join/leave events (varies by client version)
 SafeRegister(eventFrame, "GROUP_ROSTER_UPDATE")
@@ -1681,10 +1416,6 @@ SafeRegister(eventFrame, "COMBAT_LOG_EVENT_UNFILTERED")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if Core[event] then
         Core[event](Core, ...)
-    elseif event == "CHAT_MSG_ADDON" then
-        Core:CHAT_MSG_ADDON(...)
-    elseif event == "CHAT_MSG_SYSTEM" then
-        Core:CHAT_MSG_SYSTEM(...)
     end
 end)
 

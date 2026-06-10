@@ -118,8 +118,7 @@ if not HLBG.UI.Frame then
         if DEFAULT_CHAT_FRAME then
             local DC = _G.DCAddonProtocol
             local hasDC = DC and "YES" or "NO"
-            local hasAIO = _G.AIO and "YES" or "NO"
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Refresh:|r DCAddonProtocol=" .. hasDC .. " AIO=" .. hasAIO)
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Refresh:|r DCAddonProtocol=" .. hasDC)
         end
         if type(HLBG.RequestStatus) == 'function' then pcall(HLBG.RequestStatus) end
         if type(HLBG.RequestResources) == 'function' then pcall(HLBG.RequestResources) end

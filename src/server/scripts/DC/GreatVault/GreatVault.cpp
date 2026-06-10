@@ -10,11 +10,11 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "Random.h"
 #include "StringFormat.h"
 #include "ScriptMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include <algorithm>
-#include <random>
 #include <unordered_set>
 
 // Universal token that players can exchange for class/spec-appropriate items
@@ -256,7 +256,7 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
         return candidates;
     };
 
-    auto pickWeighted = [&](std::vector<Candidate> const& candidates, std::mt19937& rng, std::unordered_set<uint32>& used) -> uint32
+    auto pickWeighted = [&](std::vector<Candidate> const& candidates, std::unordered_set<uint32>& used) -> uint32
     {
         std::vector<Candidate> available;
         for (auto const& c : candidates)
@@ -265,12 +265,9 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
 
         if (available.empty()) return 0;
 
-        std::uniform_int_distribution<size_t> dist(0, available.size() - 1);
-        return available[dist(rng)].itemId;
+        return available[urand(0, static_cast<uint32>(available.size() - 1))].itemId;
     };
 
-    std::random_device rd;
-    std::mt19937 rng(rd());
     std::unordered_set<uint32> usedItems;
 
     std::unordered_set<uint8> existingSlots;
@@ -313,7 +310,7 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
             else
             {
                 auto candidates = fetchCandidates(raidItemLevel);
-                itemId = pickWeighted(candidates, rng, usedItems);
+                itemId = pickWeighted(candidates, usedItems);
                 if (!itemId)
                     itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
             }
@@ -344,7 +341,7 @@ mythic_track:
             else
             {
                 auto candidates = fetchCandidates(mplusIlvl);
-                itemId = pickWeighted(candidates, rng, usedItems);
+                itemId = pickWeighted(candidates, usedItems);
                 if (!itemId)
                     itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
             }
@@ -370,7 +367,7 @@ pvp_track:
             else
             {
                 auto candidates = fetchCandidates(pvpItemLevel);
-                itemId = pickWeighted(candidates, rng, usedItems);
+                itemId = pickWeighted(candidates, usedItems);
                 if (!itemId)
                     itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
             }

@@ -4,7 +4,7 @@
 ## Author: DarkChaos Team
 ## Version: 1.2.0
 ## SavedVariables: DCMapupgradesDB, DCHotspotDB
-## OptionalDeps: DC-AddonProtocol, AIO_Client, DC-InfoBar
+## OptionalDeps: DC-AddonProtocol, DC-InfoBar
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
 

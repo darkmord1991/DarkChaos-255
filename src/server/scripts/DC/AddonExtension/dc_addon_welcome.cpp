@@ -789,12 +789,6 @@ public:
             return;
         }
 
-        // Check if player has dismissed welcome
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT dismissed_at FROM dc_player_welcome WHERE guid = {}",
-            player->GetGUID().GetCounter()
-        );
-
         // Always send server info on login (for version updates, season changes, etc.)
         DCWelcome::SendServerInfo(player);
     }

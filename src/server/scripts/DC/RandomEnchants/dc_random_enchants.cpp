@@ -829,4 +829,3 @@ void AddSC_dc_random_enchants()
     new DCRandomEnchantsPlayerScript();
     new DCRandomEnchantsWorldScript();
 }
-

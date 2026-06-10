@@ -3,8 +3,8 @@
 	Shared namespace, utilities, settings, and slash commands
 	
 	Based on: Blizzard_ItemUpgradeUI (11.2.7.64169)
-	Adapted for: AzerothCore 3.3.5a with Eluna server communication
-	Updated: Now supports DCAddonProtocol for lightweight messaging
+	Adapted for: AzerothCore 3.3.5a
+	Server communication: DCAddonProtocol
 --]]
 
 -- Global namespace
@@ -15,12 +15,8 @@ local DC = DarkChaos_ItemUpgrade;
 local DCProtocol = rawget(_G, "DCAddonProtocol");
 DC.useDCProtocol = (DCProtocol ~= nil);
 
--- AIO detection
-local hasAIO = (rawget(_G, "AIO") ~= nil);
-DC.hasAIO = hasAIO;
-
--- Protocol mode: "dc", "aio", or "chat"
-DC.protocolMode = DC.useDCProtocol and "dc" or (hasAIO and "aio" or "chat");
+-- Protocol mode: "dc" or "none"
+DC.protocolMode = DC.useDCProtocol and "dc" or "none";
 
 -- JSON mode toggle (for DC protocol)
 DC.useDCProtocolJSON = true;
@@ -1869,8 +1865,7 @@ function DC.CreateCommPanel()
 	local statusLine = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 	statusLine:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 	local dcStatus = DC.useDCProtocol and "|cff00ff00Available|r" or "|cffff0000Not Found|r"
-	local aioStatus = DC.hasAIO and "|cff00ff00Available|r" or "|cffff0000Not Found|r"
-	statusLine:SetText("DC Protocol: " .. dcStatus .. "  |  AIO: " .. aioStatus .. "  |  Mode: |cffffcc00" .. DC.protocolMode .. "|r")
+	statusLine:SetText("DC Protocol: " .. dcStatus .. "  |  Mode: |cffffcc00" .. DC.protocolMode .. "|r")
 	panel.statusLine = statusLine
 	
 	-- Button layout settings
@@ -1896,23 +1891,14 @@ function DC.CreateCommPanel()
 		Print("Ping disabled in JSON-only mode")
 	end)
 	
-	CreateButton("PingAIO", "Ping AIO", 1, 0, function()
-		if DC.hasAIO and AIO then
-			Print("AIO detected: " .. (AIO.GetVersion and tostring(AIO.GetVersion()) or "unknown version"))
-		else
-			Print("|cffff0000AIO not available!|r")
-		end
-	end)
-	
-	CreateButton("TestChat", "Test Chat Cmd", 2, 0, function()
+	CreateButton("TestChat", "Test Chat Cmd", 1, 0, function()
 		Print("Testing chat command: .dcupgrade init")
 		SendChatMessage(".dcupgrade init", "SAY")
 	end)
-	
-	CreateButton("ShowStatus", "Show Status", 3, 0, function()
+
+	CreateButton("ShowStatus", "Show Status", 2, 0, function()
 		Print("--- Protocol Status ---")
 		Print("DC Protocol: " .. (DC.useDCProtocol and "Available" or "Not Found"))
-		Print("AIO: " .. (DC.hasAIO and "Available" or "Not Found"))
 		Print("Active Mode: " .. DC.protocolMode)
 		Print("JSON Mode: " .. (DC.useDCProtocolJSON and "Enabled" or "Disabled"))
 		Print("Verbose: " .. (DC.verboseProtocol and "Enabled" or "Disabled"))
