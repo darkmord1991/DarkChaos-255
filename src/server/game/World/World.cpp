@@ -45,6 +45,7 @@
 #include "DatabaseEnv.h"
 #include "DisableMgr.h"
 #include "DynamicVisibility.h"
+#include "dc_update_profiler.h"
 #include "GameEventMgr.h"
 #include "GameGraveyard.h"
 #include "GameTime.h"
@@ -1187,6 +1188,7 @@ void World::Update(uint32 diff)
     {
         // pussywizard: handle expired auctions, auctions expired when realm was offline are also handled here (not during loading when many required things aren't loaded yet)
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update expired auctions"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.AuctionsAndAHBot");
         sAuctionMgr->Update(diff);
     }
 
@@ -1198,6 +1200,7 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update sessions"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.UpdateSessions");
         sWorldSessionMgr->UpdateSessions(diff);
     }
 
@@ -1225,6 +1228,7 @@ void World::Update(uint32 diff)
     {
         ///- Update objects when the timer has passed (maps, transport, creatures, ...)
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update maps"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.MapUpdate");
         sMapMgr->Update(diff);
     }
 
@@ -1240,11 +1244,13 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update battlegrounds"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.Battlegrounds");
         sBattlegroundMgr->Update(diff);
     }
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update outdoor pvp"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.OutdoorPvP");
         sOutdoorPvPMgr->Update(diff);
     }
 
@@ -1255,6 +1261,7 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update battlefields"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.Battlefields");
         sBattlefieldMgr->Update(diff);
     }
 
@@ -1265,6 +1272,7 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Process query callbacks"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.QueryCallbacks");
         // execute callbacks from sql queries that were queued recently
         ProcessQueryCallbacks();
     }
@@ -1288,6 +1296,7 @@ void World::Update(uint32 diff)
     if (_timers[WUPDATE_EVENTS].Passed())
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update game events"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.GameEvents");
         _timers[WUPDATE_EVENTS].Reset();                   // to give time for Update() to be processed
         uint32 nextGameEvent = sGameEventMgr->Update();
         _timers[WUPDATE_EVENTS].SetInterval(nextGameEvent);
@@ -1298,6 +1307,7 @@ void World::Update(uint32 diff)
     if (_timers[WUPDATE_PINGDB].Passed())
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Ping MySQL"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.PingDB");
         _timers[WUPDATE_PINGDB].Reset();
         LOG_DEBUG("sql.driver", "Ping MySQL to keep connection alive");
         CharacterDatabase.KeepAlive();
@@ -1307,18 +1317,21 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update instance reset times"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.InstanceSaves");
         // update the instance reset times
         sInstanceSaveMgr->Update();
     }
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Process cli commands"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.CliCommands");
         // And last, but not least handle the issued cli commands
         ProcessCliCommands();
     }
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update world scripts"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.ScriptsOnWorldUpdate");
         sScriptMgr->OnWorldUpdate(diff);
     }
 

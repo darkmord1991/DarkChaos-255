@@ -4,7 +4,7 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "ScriptMgr.h"
-#include "DC/dc_update_profiler.h"
+#include "dc_update_profiler.h"
 
 #include <ctime>
 

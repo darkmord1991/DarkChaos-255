@@ -14,7 +14,7 @@
 #include "Player.h"
 #include "Random.h"
 #include "ScriptMgr.h"
-#include "DC/dc_update_profiler.h"
+#include "dc_update_profiler.h"
 #include "WhoListCacheMgr.h"
 #include "WorldSessionMgr.h"
 

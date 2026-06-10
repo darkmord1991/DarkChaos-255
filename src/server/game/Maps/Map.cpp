@@ -21,6 +21,7 @@
 #include "Chat.h"
 #include "DisableMgr.h"
 #include "DynamicTree.h"
+#include "dc_update_profiler.h"
 #include "GameTime.h"
 #include "Geometry.h"
 #include "GridNotifiers.h"
@@ -429,6 +430,10 @@ void Map::UpdatePlayerZoneStats(uint32 oldZone, uint32 newZone)
 
 void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 {
+    // Per-map tick watchdog (runs on map-updater worker threads; the world
+    // tick waits on all of them, so a slow map stalls the whole update).
+    DarkChaos::ScopedUpdateProfiler _prof("Map.Update", GetId());
+
     if (t_diff)
         _mapCollisionData.GetDynamicTree().update(t_diff);
 

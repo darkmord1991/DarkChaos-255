@@ -4,7 +4,7 @@
 #include "Player.h"
 #include "GameTime.h"
 #include "DataMap.h"
-#include "DC/dc_update_profiler.h"
+#include "dc_update_profiler.h"
 
 // Per-player poll throttle, stored on the player object so it dies with it.
 struct HotspotCheckTimer : public DataMap::Base
