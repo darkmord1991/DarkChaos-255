@@ -295,6 +295,7 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<uint32>(CONFIG_GROUP_VISIBILITY, "Visibility.GroupMode", 1);
 
     SetConfigValue<bool>(CONFIG_OBJECT_SPARKLES, "Visibility.ObjectSparkles", true);
+    SetConfigValue<uint32>(CONFIG_OBJECT_SPARKLES_LOOTABLES, "Visibility.ObjectSparkles.Lootables", 3);
 
     SetConfigValue<bool>(CONFIG_LOW_LEVEL_REGEN_BOOST, "EnableLowLevelRegenBoost", true);
 

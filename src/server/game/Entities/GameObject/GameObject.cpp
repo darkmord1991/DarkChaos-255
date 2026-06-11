@@ -2758,6 +2758,48 @@ GameObject* GameObject::GetLinkedTrap()
     return ObjectAccessor::GetGameObject(*this, m_linkedTrap);
 }
 
+namespace
+{
+    enum LootableSparkleMask : uint32
+    {
+        SPARKLE_MASK_LOOTABLE_CHESTS = 0x1,
+        SPARKLE_MASK_GATHERING_NODES = 0x2,
+        SPARKLE_MASK_USABLE_GOOBERS  = 0x4
+    };
+
+    bool IsGatheringNode(GameObjectTemplate const* goInfo)
+    {
+        LockEntry const* lock = sLockStore.LookupEntry(goInfo->GetLockId());
+        if (!lock)
+            return false;
+
+        for (uint8 i = 0; i < MAX_LOCK_CASE; ++i)
+            if (lock->Type[i] == LOCK_KEY_SKILL && (lock->Index[i] == LOCKTYPE_HERBALISM || lock->Index[i] == LOCKTYPE_MINING))
+                return true;
+
+        return false;
+    }
+
+    // Retail-like sparkles on objects that are usable/lootable for everyone.
+    // Quest-conditional sparkles are handled separately via ActivateToQuest.
+    bool SparklesAsLootable(GameObject const* go)
+    {
+        uint32 mask = sWorld->getIntConfig(CONFIG_OBJECT_SPARKLES_LOOTABLES);
+        if (!mask || !go->isSpawned() || go->getLootState() != GO_READY)
+            return false;
+
+        GameObjectTemplate const* goInfo = go->GetGOInfo();
+        if (go->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
+            return (mask & SPARKLE_MASK_USABLE_GOOBERS) && !goInfo->goober.questId;
+
+        // chests: skip quest-gated or lootless containers
+        if (!goInfo->GetLootId() || goInfo->chest.questId)
+            return false;
+
+        return (mask & (IsGatheringNode(goInfo) ? SPARKLE_MASK_GATHERING_NODES : SPARKLE_MASK_LOOTABLE_CHESTS)) != 0;
+    }
+}
+
 void GameObject::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
 {
     if (!target)
@@ -2804,6 +2846,9 @@ void GameObject::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* t
                         }
                         else if (targetIsGM)
                             dynFlags |= GO_DYNFLAG_LO_ACTIVATE;
+
+                        if (sWorld->getBoolConfig(CONFIG_OBJECT_SPARKLES) && SparklesAsLootable(this))
+                            dynFlags |= GO_DYNFLAG_LO_SPARKLE;
                         break;
                     case GAMEOBJECT_TYPE_SPELL_FOCUS:
                     case GAMEOBJECT_TYPE_GENERIC:

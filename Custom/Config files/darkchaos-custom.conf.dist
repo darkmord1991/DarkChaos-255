@@ -113,6 +113,19 @@ OutdoorPvPCaptureRate = 1
 Rate.Health.Above80 = 1
 Rate.Mana.Above80 = 1
 
+#
+#    Visibility.ObjectSparkles.Lootables
+#        Description: Retail-like sparkle effect on non-quest gameobjects that
+#                     are usable/lootable for everyone. Bitmask of categories.
+#                     Requires Visibility.ObjectSparkles = 1 (main config).
+#        Values:      1 - Lootable chests (treasure chests, crates, ...)
+#                     2 - Gathering nodes (herbs and mineral veins)
+#                     4 - Usable goobers (levers, books, ...)
+#        Default:     3 - (Chests and gathering nodes)
+#                     0 - (Quest sparkles only, stock behavior)
+#
+Visibility.ObjectSparkles.Lootables = 3
+
 
 ###############################################################################
 #
