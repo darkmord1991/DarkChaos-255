@@ -50,6 +50,22 @@ namespace DCAoELootExt
     void SetPlayerGoldOnly(ObjectGuid playerGuid, bool value);
     void SetPlayerLootRange(ObjectGuid playerGuid, float value);
     void TogglePlayerIgnoredItem(ObjectGuid playerGuid, uint32 itemId);
+
+    // Looter-pet pathfinding flags (server-wide, mirrors .lpet path* commands)
+    void SetLooterPetPathfindingEnabled(bool value);
+    void SetLooterPetPathAllowIncomplete(bool value);
+    void SetLooterPetPathRejectShortcut(bool value);
+}
+
+// Forward declarations from dc_looter_pet.cpp (QOL) so addon opcodes drive the
+// same state as the .lpet chat commands. Only the enable is per-player; the
+// rest mutates the server-wide looter-pet config (same as the commands).
+namespace DCLooterPet
+{
+    void SetEnabledForPlayer(Player* player, bool enabled);
+    void SetFallbackToPlayerAnchor(bool value);
+    void SetCompanionLeashEnabled(bool value);
+    void SetCompanionLeashDistance(float value);
 }
 
 namespace DCAddon
@@ -588,6 +604,89 @@ namespace AOELoot
         SendSettingsSync(player);
     }
 
+    // Handler: Generic {key, value} setting. Covers the toggles that
+    // previously only existed as .lp/.lpet chat commands, including the
+    // looter-pet settings.
+    static void HandleSetSetting(Player* player, const ParsedMessage& msg)
+    {
+        if (!IsJsonMessage(msg))
+            return;
+
+        JsonValue json = GetJsonData(msg);
+        if (!json["key"].IsString())
+            return;
+
+        std::string const key = json["key"].AsString();
+        uint32 guid = player->GetGUID().GetCounter();
+        bool const boolValue = JsonGetBool(json, "value", false);
+
+        bool perPlayerAoePref = false;
+
+        if (key == "showMessages")
+        {
+            {
+                std::lock_guard<std::mutex> lock(s_SettingsMutex);
+                s_PlayerSettings[guid].showMessages = boolValue;
+            }
+            DCAoELootExt::SetPlayerShowMessages(player->GetGUID(), boolValue);
+            perPlayerAoePref = true;
+        }
+        else if (key == "smartLoot")
+        {
+            {
+                std::lock_guard<std::mutex> lock(s_SettingsMutex);
+                s_PlayerSettings[guid].smartLoot = boolValue;
+            }
+            DCAoELootExt::SetPlayerSmartLoot(player->GetGUID(), boolValue);
+            perPlayerAoePref = true;
+        }
+        else if (key == "autoVendorPoor")
+        {
+            {
+                std::lock_guard<std::mutex> lock(s_SettingsMutex);
+                s_PlayerSettings[guid].autoVendorPoor = boolValue;
+            }
+            DCAoELootExt::SetPlayerAutoVendorPoor(player->GetGUID(), boolValue);
+            perPlayerAoePref = true;
+        }
+        else if (key == "goldOnly")
+        {
+            {
+                std::lock_guard<std::mutex> lock(s_SettingsMutex);
+                s_PlayerSettings[guid].goldOnly = boolValue;
+            }
+            DCAoELootExt::SetPlayerGoldOnly(player->GetGUID(), boolValue);
+            perPlayerAoePref = true;
+        }
+        else if (key == "looterPet")
+            DCLooterPet::SetEnabledForPlayer(player, boolValue);
+        else if (key == "looterFallbackToPlayer")
+            DCLooterPet::SetFallbackToPlayerAnchor(boolValue);
+        else if (key == "looterCompanionLeash")
+            DCLooterPet::SetCompanionLeashEnabled(boolValue);
+        else if (key == "looterCompanionLeashDistance")
+            DCLooterPet::SetCompanionLeashDistance(JsonGetFloat(json, "value", 45.0f));
+        else if (key == "looterPathfinding")
+            DCAoELootExt::SetLooterPetPathfindingEnabled(boolValue);
+        else if (key == "looterPathAllowIncomplete")
+            DCAoELootExt::SetLooterPetPathAllowIncomplete(boolValue);
+        else if (key == "looterPathRejectShortcut")
+            DCAoELootExt::SetLooterPetPathRejectShortcut(boolValue);
+        else
+        {
+            LOG_DEBUG("dc.addon.aoe", "Player {} sent unknown AOE setting key '{}'", player->GetName(), key);
+            return;
+        }
+
+        if (perPlayerAoePref)
+        {
+            SavePlayerSettings(player);
+            SendSettingsSync(player);
+        }
+
+        LOG_DEBUG("dc.addon.aoe", "Player {} set AOE setting '{}'", player->GetName(), key);
+    }
+
     // Handler: Get quality breakdown stats
     static void HandleGetQualityStats(Player* player, const ParsedMessage& /*msg*/)
     {
@@ -629,6 +728,7 @@ namespace AOELoot
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_GET_SETTINGS, HandleGetSettings);
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_IGNORE_ITEM, HandleIgnoreItem);
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_GET_QUALITY_STATS, HandleGetQualityStats);
+        DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_SET_SETTING, HandleSetSetting);
 
         LOG_INFO("dc.addon", "AOE Loot module handlers registered");
     }

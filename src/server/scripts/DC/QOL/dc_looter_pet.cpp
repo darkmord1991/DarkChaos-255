@@ -511,6 +511,55 @@ public:
     }
 };
 
+// Public API consumed by the AOE addon-protocol handler (dc_addon_aoeloot.cpp)
+// so addon opcodes drive the same state as the .lpet chat commands.
+// Note: everything except the per-player enable mirrors the chat commands and
+// mutates the server-wide looter-pet config.
+namespace DCLooterPet
+{
+    void SetEnabledForPlayer(Player* player, bool enabled)
+    {
+        if (!player)
+            return;
+
+        SetLooterPetEnabled(player, enabled);
+        if (!enabled)
+            return;
+
+        if (Unit* companion = GetActiveLooterCompanion(player))
+        {
+            auto stateIt = sLooterPetStates.find(player->GetGUID());
+            if (stateIt != sLooterPetStates.end())
+                stateIt->second.boundCompanionGuid = companion->GetGUID();
+        }
+    }
+
+    bool IsEnabledForPlayer(Player* player)
+    {
+        return player && IsLooterPetEnabled(player->GetGUID());
+    }
+
+    void SetFallbackToPlayerAnchor(bool value)
+    {
+        sLooterPetConfig.fallbackToPlayerAnchor = value;
+    }
+
+    void SetCompanionLeashEnabled(bool value)
+    {
+        sLooterPetConfig.companionLeashEnable = value;
+    }
+
+    void SetCompanionLeashDistance(float value)
+    {
+        if (value < 5.0f)
+            value = 5.0f;
+        if (value > 150.0f)
+            value = 150.0f;
+
+        sLooterPetConfig.companionMaxDistance = value;
+    }
+}
+
 void AddSC_dc_looter_pet_qol()
 {
     sLooterPetConfig.Load();

@@ -256,7 +256,12 @@ function HLBG.RequestQueueStatus()
     end
 end
 
--- Join the battleground queue
+-- Join the battleground queue.
+-- NOTE: the native live-snapshot bridge only READS state — it must never be
+-- used as the join/leave transport (that bug made Join Queue silently send a
+-- status request and nothing else). Joining goes through the Blizzard queue
+-- when possible, otherwise the DC protocol (CMSG_QUICK_QUEUE = 0x04); the
+-- server queues the player and answers with fresh queue info (0x13).
 function HLBG.JoinQueue()
     if type(HLBG.TryJoinViaBlizzardQueue) == "function" and HLBG.TryJoinViaBlizzardQueue(false) then
         if DEFAULT_CHAT_FRAME then
@@ -266,30 +271,25 @@ function HLBG.JoinQueue()
     end
 
     local DC = _G.DCAddonProtocol
-    if SendNativeQueueRequest("queue_join") then
-        if DEFAULT_CHAT_FRAME then
-            HLBG.QueueMessage("join_native")
-        end
-    elseif SendHLBGRequest(DC, 4) then
-        -- CMSG_QUICK_QUEUE = 0x04
+    if SendHLBGRequest(DC, 4) then
         if DEFAULT_CHAT_FRAME then
             HLBG.QueueMessage("join_dc")
         end
+        -- Pull a fresh snapshot so HUD/state catch up right after the join.
+        SendNativeQueueRequest("queue_join_status")
+    elseif DEFAULT_CHAT_FRAME then
+        HLBG.QueueMessage("no_response")
     end
 end
 
--- Leave the battleground queue
+-- Leave the battleground queue (CMSG_LEAVE_QUEUE = 0x05; see JoinQueue note).
 function HLBG.LeaveQueue()
     local DC = _G.DCAddonProtocol
-    if SendNativeQueueRequest("queue_leave") then
-        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            HLBG.QueueMessage("leave_native")
-        end
-    elseif SendHLBGRequest(DC, 5) then
-        -- CMSG_LEAVE_QUEUE = 0x05
+    if SendHLBGRequest(DC, 5) then
         if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             HLBG.QueueMessage("leave_dc")
         end
+        SendNativeQueueRequest("queue_leave_status")
     end
 end
 

@@ -129,6 +129,7 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_SETTINGS      = 0x06;
             constexpr uint8 CMSG_IGNORE_ITEM       = 0x07;
             constexpr uint8 CMSG_GET_QUALITY_STATS = 0x08;  // Request quality breakdown
+            constexpr uint8 CMSG_SET_SETTING       = 0x09;  // Generic {key, value} setting (incl. looter pet)
 
             constexpr uint8 SMSG_STATS             = 0x10;
             constexpr uint8 SMSG_SETTINGS_SYNC     = 0x11;

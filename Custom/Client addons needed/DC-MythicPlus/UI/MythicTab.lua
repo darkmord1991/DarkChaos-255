@@ -189,6 +189,17 @@ function GF:UpdateDungeonList(dungeonData)
     end
     
     dungeonListLoaded = true
+
+    -- Share the server list with the rest of the finder (Mythic+ portal seed,
+    -- create dialog) and fill the portal if it is waiting for data.
+    self.serverDungeonList = {}
+    for _, d in ipairs(DUNGEON_LIST) do
+        table.insert(self.serverDungeonList, d)
+    end
+    if self.TrySeedPendingMythicPortal then
+        self:TrySeedPendingMythicPortal()
+    end
+
     GF.Print("Dungeon list updated: " .. #DUNGEON_LIST .. " dungeons from server")
 end
 

@@ -65,11 +65,16 @@ function GF:QueueForCurrent()
         DC.GroupFinder.JoinQueue(QUEUE_CAT_RAID, roles, sel.mapId,
             sel.difficulty or 0, sel.size or 10)
     else
-        -- Dungeon: a specific Mythic 0 dungeon, or 0 = any.
+        -- Dungeon: a specific dungeon or 0 = any. "Specific Dungeons" queues
+        -- at the Difficulty button's Normal/Heroic; "Mythic+" is always Mythic.
         local dungeonId = tonumber(self.queueDungeonSelection) or 0
+        local difficulty = DUNGEON_DIFFICULTY_MYTHIC
+        if kind == "dungeons" then
+            difficulty = tonumber(self.queueDungeonDifficulty) or 0
+        end
         self._queueCategory = QUEUE_CAT_DUNGEON
         DC.GroupFinder.JoinQueue(QUEUE_CAT_DUNGEON, roles, dungeonId,
-            DUNGEON_DIFFICULTY_MYTHIC, 0)
+            difficulty, 0)
     end
 
     self:ShowQueueStatus()
@@ -121,8 +126,15 @@ function GF:OnQueueCatalog(data)
 
     -- Refresh the picker if a finder list is currently shown.
     if self.compactMode and self.retailNavContext ~= "premade"
-        and (self.compactSelectedKind == "mythic" or self.compactSelectedKind == "raid") then
+        and (self.compactSelectedKind == "dungeons"
+            or self.compactSelectedKind == "mythic"
+            or self.compactSelectedKind == "raid") then
         self:SelectCompactType(self.compactSelectedKind)
+    end
+
+    -- Fill the Mythic+ panel if it opened before any dungeon data arrived.
+    if self.TrySeedPendingMythicPortal then
+        self:TrySeedPendingMythicPortal()
     end
 end
 
@@ -176,12 +188,32 @@ function GF:GetQueueTargets(kind)
             end
         end
     else
-        -- Dungeons: an "Any" option plus every mythic-capable dungeon.
+        -- Dungeons: an "Any" option plus every dungeon from the catalog.
+        -- "Specific Dungeons" shows the Difficulty button's Normal/Heroic;
+        -- the "Mythic+" type is locked to Mythic.
+        local queueDiff = DUNGEON_DIFFICULTY_MYTHIC
+        if kind == "dungeons" then
+            queueDiff = tonumber(self.queueDungeonDifficulty) or 0
+        end
+        local diffName = (self.DUNGEON_DIFFICULTY_LABELS
+            and self.DUNGEON_DIFFICULTY_LABELS[queueDiff]) or "Mythic"
+
+        -- Heroic and Mythic versions are level-80 content on this server;
+        -- a dungeon's original leveling bracket only applies to Normal.
+        local function DiffLabelFor(lvl)
+            if queueDiff == 0 then
+                return (lvl and lvl > 0) and (diffName .. "  -  Lv " .. lvl)
+                    or diffName
+            end
+            return diffName .. "  -  Lv 80"
+        end
+
         table.insert(targets, {
             isQueueTarget = true, queueCategory = QUEUE_CAT_DUNGEON,
-            queueMapId = 0, queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
+            queueMapId = 0, queueDifficulty = queueDiff,
             name = "Any Dungeon", dungeonName = "Any Dungeon", mapId = 0,
-            difficultyName = "Mythic", needTank = 1, needHealer = 1, needDps = 3,
+            difficultyName = DiffLabelFor(nil),
+            needTank = 1, needHealer = 1, needDps = 3,
         })
 
         local dungeons = cat and cat.dungeons
@@ -200,14 +232,14 @@ function GF:GetQueueTargets(kind)
             for _, d in ipairs(sorted) do
                 local exp = tonumber(d.expansion) or 2
                 local lvl = tonumber(d.level) or 0
-                local diffLabel = lvl > 0 and ("Mythic  -  Lv " .. lvl) or "Mythic"
                 table.insert(targets, {
                     isQueueTarget = true, queueCategory = QUEUE_CAT_DUNGEON,
-                    queueMapId = d.mapId, queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
+                    queueMapId = d.mapId, queueDifficulty = queueDiff,
                     _exp = exp, _level = lvl,
                     name = (EXP_TAG[exp] or "") .. (d.name or ("Map " .. tostring(d.mapId))),
                     dungeonName = d.name, mapId = d.mapId,
-                    difficultyName = diffLabel, needTank = 1, needHealer = 1, needDps = 3,
+                    difficultyName = DiffLabelFor(lvl),
+                    needTank = 1, needHealer = 1, needDps = 3,
                 })
             end
         else
@@ -217,10 +249,11 @@ function GF:GetQueueTargets(kind)
             for _, d in ipairs(list) do
                 table.insert(targets, {
                     isQueueTarget = true, queueCategory = QUEUE_CAT_DUNGEON,
-                    queueMapId = d.mapId, queueDifficulty = DUNGEON_DIFFICULTY_MYTHIC,
+                    queueMapId = d.mapId, queueDifficulty = queueDiff,
                     name = d.name or ("Map " .. tostring(d.mapId)),
                     dungeonName = d.name, mapId = d.mapId,
-                    difficultyName = "Mythic", needTank = 1, needHealer = 1, needDps = 3,
+                    difficultyName = DiffLabelFor(nil),
+                    needTank = 1, needHealer = 1, needDps = 3,
                 })
             end
         end

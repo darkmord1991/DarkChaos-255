@@ -27,7 +27,7 @@ GF.CATEGORY_CONFIG = {
 }
 
 GF.COMPACT_OPTION_ORDER = {
-    "mythic", "raid", "hlbg", "quest", "other", "live", "queues", "blizzardLFG", "blizzardPVP"
+    "dungeons", "mythic", "raid", "hlbg", "quest", "other", "live", "queues", "blizzardLFG", "blizzardPVP"
 }
 
 GF.PREMADE_CATEGORY_ORDER = {
@@ -35,7 +35,8 @@ GF.PREMADE_CATEGORY_ORDER = {
 }
 
 GF.COMPACT_OPTIONS = {
-    mythic = { label = "Mythic+", title = "Dungeon Finder", typeText = "Specific Dungeons", actionText = "Find Group", create = true },
+    dungeons = { label = "Specific Dungeons", title = "Dungeon Finder", typeText = "Specific Dungeons", actionText = "Find Group" },
+    mythic = { label = "Mythic+", title = "Dungeon Finder", typeText = "Mythic+ Dungeons", actionText = "Find Group", create = true },
     raid = { label = "Raid Finder", title = "Raid Finder", typeText = "Specific Raids", actionText = "Find Group", create = true },
     quest = { label = "Questing", title = "Questing", typeText = "Questing Groups", actionText = "Find a Group", create = true },
     other = { label = "Custom", title = "Custom", typeText = "Custom Groups", actionText = "Find a Group", create = true },
@@ -45,6 +46,23 @@ GF.COMPACT_OPTIONS = {
     blizzardLFG = { label = "Blizzard LFG", title = "Dungeon Finder", typeText = "Stock LFG/LFM", actionText = "Open" },
     blizzardPVP = { label = "Blizzard PvP", title = "PvP", typeText = "Battlegrounds", actionText = "Open" },
 }
+
+-- Type menu contents per left-nav section. The Dungeon Finder and Raid Finder
+-- navs only offer their own content; Premade Groups keeps the full catalog.
+GF.TYPE_MENU_BY_CONTEXT = {
+    dungeon = { "dungeons", "mythic", "blizzardLFG" },
+    raid = { "raid" },
+    premade = {
+        "mythic", "raid", "hlbg", "quest", "other", "live", "queues",
+        "blizzardLFG", "blizzardPVP"
+    },
+}
+
+-- Dungeon matchmaking difficulty (server Difficulty enum: 0/1/2 where 2 is
+-- DUNGEON_DIFFICULTY_EPIC = Mythic on this core). The "Specific Dungeons"
+-- type queues Normal/Heroic; the "Mythic+" type is locked to Mythic.
+GF.DUNGEON_DIFFICULTY_LABELS = { [0] = "Normal", [1] = "Heroic", [2] = "Mythic" }
+GF.queueDungeonDifficulty = 0
 
 local LFG_FRAME_TEXTURE = "Interface\\LFGFrame\\UI-LFG-FRAME"
 local LFG_FRAME_FALLBACK = "Interface\\LFGFrame\\LFGParentFrame"
@@ -703,6 +721,13 @@ function GF:JoinHinterlandQueue(joinAsGroup)
         return true
     end
 
+    -- DC-HinterlandBG not loaded: fall back to the protocol quick-queue.
+    local DC = GetDCProtocol()
+    if DC and DC.Hinterland and DC.Hinterland.QuickQueue then
+        DC.Hinterland.QuickQueue()
+        return true
+    end
+
     return false
 end
 
@@ -894,7 +919,7 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
     local rowWidth = self.compactRowWidth or 312
 
     -- Dungeon/raid rows show the dungeon teleporter art as a thumbnail.
-    local showThumb = (kind == "mythic" or kind == "raid")
+    local showThumb = (kind == "dungeons" or kind == "mythic" or kind == "raid")
     local textInset = showThumb and 62 or 10
     local textWidth = showThumb and 110 or 162
 
@@ -974,6 +999,16 @@ end
 function GF:UpdateCompactButtons()
     if not self.compactPrimaryButton then return end
 
+    if self.hlbgPanelShown then
+        local HLBG = rawget(_G, "HLBG")
+        self.compactPrimaryButton:SetText(
+            (HLBG and HLBG.IsInQueue) and "Leave Queue" or "Join Queue")
+        if self.compactCreateButton then
+            self.compactCreateButton:Hide()
+        end
+        return
+    end
+
     if self.retailHomeShown then
         local selectedKind = self.premadeSelectedKind or "mythic"
         local homeOption = self.COMPACT_OPTIONS[selectedKind] or self.COMPACT_OPTIONS.mythic
@@ -993,7 +1028,14 @@ function GF:UpdateCompactButtons()
     local option = self.COMPACT_OPTIONS[kind] or self.COMPACT_OPTIONS.mythic
     local selected = self.compactSelectedEntry
 
-    if selected and (kind == "mythic" or kind == "raid" or kind == "quest" or kind == "other") then
+    -- In the Dungeon/Raid Finder navs a selected row is the queue target, not
+    -- a listing — the primary action queues, so it must not read "Apply".
+    local finderQueueMode = self.retailNavContext ~= "premade"
+        and (kind == "dungeons" or kind == "mythic" or kind == "raid")
+
+    if finderQueueMode then
+        self.compactPrimaryButton:SetText(option.actionText or "Find Group")
+    elseif selected and (kind == "mythic" or kind == "raid" or kind == "quest" or kind == "other") then
         self.compactPrimaryButton:SetText("Apply")
     elseif selected and kind == "live" then
         self.compactPrimaryButton:SetText("Spectate")
@@ -1011,12 +1053,40 @@ function GF:UpdateCompactButtons()
     end
 end
 
+function GF:SetQueueDungeonDifficulty(difficulty)
+    difficulty = tonumber(difficulty) or 0
+    if difficulty < 0 or difficulty > 1 then
+        difficulty = 0
+    end
+    self.queueDungeonDifficulty = difficulty
+
+    if self.compactDiffButton then
+        self.compactDiffButton:SetText(self.DUNGEON_DIFFICULTY_LABELS[difficulty] or "Normal")
+    end
+
+    -- Refresh the picker rows so their difficulty column matches.
+    if self.compactMode and self.retailNavContext ~= "premade"
+        and self.compactSelectedKind == "dungeons" then
+        self:SelectCompactType("dungeons")
+    end
+end
+
+function GF:CycleQueueDifficulty()
+    self:SetQueueDungeonDifficulty(((self.queueDungeonDifficulty or 0) + 1) % 2)
+end
+
 function GF:SelectCompactType(kind)
     kind = kind or "mythic"
+    if kind == "hlbg" then
+        self:ShowHinterlandPanel()
+        return
+    end
+
     local option = self.COMPACT_OPTIONS[kind] or self.COMPACT_OPTIONS.mythic
     self.compactSelectedKind = kind
     self.compactSelectedEntry = nil
     self.retailHomeShown = false
+    self.hlbgPanelShown = false
 
     if self.compactTypeMenu then
         self.compactTypeMenu:Hide()
@@ -1028,11 +1098,50 @@ function GF:SelectCompactType(kind)
     if self.retailHomeFrame then
         self.retailHomeFrame:Hide()
     end
+    if self.hlbgPanel then
+        self.hlbgPanel:Hide()
+    end
     if self.compactBrowserFrame then
         self.compactBrowserFrame:Show()
     end
     if self.compactListFrame then
         self.compactListFrame:Show()
+    end
+
+    -- The difficulty row only applies to the Specific Dungeons queue
+    -- (Mythic+ is locked to Mythic difficulty).
+    local showDifficulty = self.retailNavContext ~= "premade" and kind == "dungeons"
+    if self.compactDiffButton then
+        self.compactDiffButton:SetText(
+            self.DUNGEON_DIFFICULTY_LABELS[self.queueDungeonDifficulty or 0] or "Normal")
+        if showDifficulty then
+            self.compactDiffButton:Show()
+            self.compactDiffLabel:Show()
+        else
+            self.compactDiffButton:Hide()
+            self.compactDiffLabel:Hide()
+        end
+    end
+    if self.compactListFrame then
+        self.compactListFrame:SetPoint("TOPLEFT", 6, showDifficulty and -152 or -116)
+    end
+
+    -- The Raid Finder has a single type, so the Type dropdown is pointless
+    -- there; hide the whole row.
+    local showTypeRow = not (self.retailNavContext ~= "premade" and kind == "raid")
+    if self.compactTypeLabel then
+        if showTypeRow then
+            self.compactTypeLabel:Show()
+        else
+            self.compactTypeLabel:Hide()
+        end
+    end
+    if self.compactTypeButton then
+        if showTypeRow then
+            self.compactTypeButton:Show()
+        else
+            self.compactTypeButton:Hide()
+        end
     end
     if self.retailContentTitle then
         self.retailContentTitle:SetText(option.title or option.label or "Group Finder")
@@ -1040,7 +1149,7 @@ function GF:SelectCompactType(kind)
     if self.SetRetailNavSelection then
         if self.retailNavContext == "premade" then
             self:SetRetailNavSelection("premade")
-        elseif kind == "mythic" then
+        elseif kind == "dungeons" or kind == "mythic" then
             self:SetRetailNavSelection("dungeon")
         elseif kind == "raid" then
             self:SetRetailNavSelection("raid")
@@ -1067,7 +1176,8 @@ function GF:SelectCompactType(kind)
     -- In Dungeon Finder / Raid Finder mode the list is a queue-target picker
     -- (pick one + Find Group, or for dungeons just Find Group = Any). The Premade
     -- Groups nav keeps the listing browse/apply flow.
-    if self.retailNavContext ~= "premade" and (kind == "mythic" or kind == "raid")
+    if self.retailNavContext ~= "premade"
+        and (kind == "dungeons" or kind == "mythic" or kind == "raid")
         and self.GetQueueTargets then
         self:CompactRenderRows(self:GetQueueTargets(kind),
             kind == "raid" and "No raids available" or "No dungeons available",
@@ -1082,6 +1192,41 @@ function GF:SelectCompactType(kind)
             or "Click Find Group to refresh this list.")
 end
 
+-- Lay out the type menu for the active nav section (Dungeon Finder and Raid
+-- Finder only list their own content; Premade Groups gets the full catalog).
+function GF:RebuildCompactTypeMenu()
+    local menu = self.compactTypeMenu
+    if not menu or not menu.items then return end
+
+    local context
+    if self.retailNavContext == "premade" then
+        context = "premade"
+    elseif (self.compactSelectedKind or "mythic") == "raid" then
+        context = "raid"
+    else
+        context = "dungeon"
+    end
+
+    local kinds = self.TYPE_MENU_BY_CONTEXT[context] or self.COMPACT_OPTION_ORDER
+
+    for _, item in pairs(menu.items) do
+        item:Hide()
+    end
+
+    local menuY = -4
+    for _, kind in ipairs(kinds) do
+        local item = menu.items[kind]
+        if item then
+            item:ClearAllPoints()
+            item:SetPoint("TOPLEFT", 7, menuY)
+            item:Show()
+            menuY = menuY - 22
+        end
+    end
+
+    menu:SetHeight(-menuY + 8)
+end
+
 function GF:ToggleCompactTypeMenu()
     if not self.compactTypeMenu then return end
 
@@ -1089,6 +1234,7 @@ function GF:ToggleCompactTypeMenu()
         self.compactTypeMenu:Hide()
         if self.compactTypeMenuCatcher then self.compactTypeMenuCatcher:Hide() end
     else
+        self:RebuildCompactTypeMenu()
         if self.compactTypeMenuCatcher then self.compactTypeMenuCatcher:Show() end
         self.compactTypeMenu:Show()
         self.compactTypeMenu:Raise()
@@ -1110,7 +1256,7 @@ function GF:CompactPrimaryAction()
     -- A selected row is the queue target (raid/dungeon picker), not a listing.
     -- (The Premade Groups nav keeps the listing browse/apply flow below.)
     if self.retailNavContext ~= "premade"
-        and (kind == "mythic" or kind == "raid")
+        and (kind == "dungeons" or kind == "mythic" or kind == "raid")
         and self.QueueForCurrent then
         self:QueueForCurrent()
         return
@@ -1134,8 +1280,28 @@ function GF:CompactPrimaryAction()
     end
 
     if kind == "hlbg" then
-        if not self:JoinHinterlandQueue(false) then
+        local HLBG = rawget(_G, "HLBG")
+        local leaving = HLBG and HLBG.IsInQueue
+        local ok
+        if leaving then
+            ok = self:LeaveHinterlandQueue()
+        else
+            ok = self:JoinHinterlandQueue(false)
+        end
+
+        if not ok then
             self:SetStatusMessage("Hinterland BG queue helper is not available.")
+        else
+            -- Immediate feedback; the join/leave confirmation follows from the
+            -- server (see UpdateHinterlandPanel state-change announcements).
+            self:PrintImportant(leaving
+                and "Hinterland BG: leave request sent."
+                or "Hinterland BG: queue join requested...")
+            self:ScheduleHinterlandStatusPolls()
+        end
+
+        if self.UpdateHinterlandPanel then
+            self:UpdateHinterlandPanel()
         end
     elseif kind == "blizzardLFG" then
         self:ToggleBlizzardLFG()
@@ -1164,8 +1330,23 @@ function GF:SetCreateTarget(name, mapId)
     end
 end
 
--- Dropdown init: dungeons = flat list; raids = grouped by expansion (submenus
--- so the long raid list never overflows the screen).
+-- Dropdown init: dungeons and raids are both grouped by expansion (submenus
+-- so the long lists never overflow the screen).
+local CREATE_TARGET_ERAS = {
+    [0] = "Classic", [1] = "The Burning Crusade", [2] = "Wrath of the Lich King"
+}
+
+local function AddCreateTargetEraHeaders(level)
+    for eraId = 0, 2 do
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = CREATE_TARGET_ERAS[eraId]
+        info.value = eraId
+        info.hasArrow = true
+        info.notCheckable = true
+        UIDropDownMenu_AddButton(info, level)
+    end
+end
+
 local function InitCreateTargetDropdown(_, level)
     local dialog = GF.compactCreateDialog
     if not dialog then return end
@@ -1174,15 +1355,7 @@ local function InitCreateTargetDropdown(_, level)
 
     if kind == "raid" then
         if level == 1 then
-            local eras = { [0] = "Classic", [1] = "The Burning Crusade", [2] = "Wrath of the Lich King" }
-            for eraId = 0, 2 do
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = eras[eraId]
-                info.value = eraId
-                info.hasArrow = true
-                info.notCheckable = true
-                UIDropDownMenu_AddButton(info, level)
-            end
+            AddCreateTargetEraHeaders(level)
         elseif level == 2 then
             local eraId = UIDROPDOWNMENU_MENU_VALUE
             local catalog = (GF.GetRaidCatalog and GF:GetRaidCatalog()) or {}
@@ -1196,16 +1369,33 @@ local function InitCreateTargetDropdown(_, level)
                 end
             end
         end
-    else
-        -- Dungeon list (flat).
-        local list = namespace.GetMythicPlusDungeonList and namespace.GetMythicPlusDungeonList() or {}
-        for _, d in ipairs(list) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = d.name or ("Map " .. tostring(d.mapId))
-            info.notCheckable = true
-            info.func = function() GF:SetCreateTarget(d.name, d.mapId) end
-            UIDropDownMenu_AddButton(info, level)
+        return
+    end
+
+    -- Mythic+ listings only target the real seasonal M+ dungeons (the same
+    -- set shown in the Seasonal Mythic+ panel), not the full Normal/Heroic
+    -- catalog. The list is short, so it stays flat.
+    local list = GF.GetSeasonalDungeonList and GF:GetSeasonalDungeonList()
+    if not list then
+        -- Request the server list and show a placeholder until it arrives
+        -- (an empty menu rendered blank and "couldn't be selected").
+        local DCproto = rawget(_G, "DCAddonProtocol")
+        if DCproto and DCproto.GroupFinder and DCproto.GroupFinder.GetDungeonList then
+            DCproto.GroupFinder.GetDungeonList()
         end
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "Loading dungeons..."
+        info.disabled = true
+        info.notCheckable = true
+        UIDropDownMenu_AddButton(info, level)
+        return
+    end
+    for _, d in ipairs(list) do
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = d.name or ("Map " .. tostring(d.mapId))
+        info.notCheckable = true
+        info.func = function() GF:SetCreateTarget(d.name, d.mapId) end
+        UIDropDownMenu_AddButton(info, level)
     end
 end
 
@@ -1358,6 +1548,34 @@ function GF:ShowCompactCreateDialog(kind)
         dialog.nameBox:Hide()
         UIDropDownMenu_Initialize(dialog.targetDrop, InitCreateTargetDropdown)
         UIDropDownMenu_SetText(dialog.targetDrop, "Select a " .. (kind == "raid" and "raid" or "dungeon") .. "...")
+
+        -- Pre-select the dungeon/raid the player already picked in the list,
+        -- so the dialog doesn't ask for the same choice twice. Mythic+
+        -- listings only target seasonal dungeons, so skip the prefill when
+        -- the picked dungeon isn't part of the season.
+        local selected = self.compactSelectedEntry
+        if type(selected) == "table" then
+            local selIsRaid = (selected.queueCategory == 2) or selected.isRaid or false
+            if (kind == "raid") == (selIsRaid and true or false) then
+                local name = selected.dungeonName or selected._name or selected.name
+                local mapId = tonumber(selected.mapId or selected.queueMapId or 0) or 0
+                local valid = name ~= nil and mapId > 0
+                if valid and kind == "mythic" then
+                    valid = false
+                    local seasonal = self.GetSeasonalDungeonList
+                        and self:GetSeasonalDungeonList()
+                    for _, d in ipairs(seasonal or {}) do
+                        if (tonumber(d.mapId) or 0) == mapId then
+                            valid = true
+                            break
+                        end
+                    end
+                end
+                if valid then
+                    self:SetCreateTarget(name, mapId)
+                end
+            end
+        end
     else
         dialog.targetLabel:SetText("Name:")
         dialog.targetLabel:Show()
@@ -1488,6 +1706,7 @@ end
 function GF:ShowRetailPremadeHome(kind)
     self.retailNavContext = "premade"
     self.retailHomeShown = true
+    self.hlbgPanelShown = false
     self.premadeSelectedKind = kind or self.premadeSelectedKind or "mythic"
     self.compactSelectedKind = self.premadeSelectedKind
     self.compactSelectedEntry = nil
@@ -1502,6 +1721,9 @@ function GF:ShowRetailPremadeHome(kind)
     if self.compactListFrame then
         self.compactListFrame:Hide()
     end
+    if self.hlbgPanel then
+        self.hlbgPanel:Hide()
+    end
     if self.retailHomeFrame then
         self.retailHomeFrame:Show()
     end
@@ -1514,6 +1736,195 @@ function GF:ShowRetailPremadeHome(kind)
 
     self:SetRetailNavSelection("premade")
     self:RefreshRetailPremadeSelection()
+end
+
+-- =====================================================================
+-- Hinterland BG queue panel (left-nav section)
+-- =====================================================================
+
+function GF:RequestHinterlandStatus()
+    local HLBG = rawget(_G, "HLBG")
+    if HLBG and type(HLBG.RequestQueueStatus) == "function" then
+        HLBG.RequestQueueStatus()
+        return true
+    end
+
+    local DC = GetDCProtocol()
+    if DC and DC.Hinterland and DC.Hinterland.GetStatus then
+        DC.Hinterland.GetStatus()
+        return true
+    end
+
+    return false
+end
+
+function GF:LeaveHinterlandQueue()
+    local HLBG = rawget(_G, "HLBG")
+    if HLBG and type(HLBG.LeaveQueue) == "function" then
+        HLBG.LeaveQueue()
+        return true
+    end
+
+    local DC = GetDCProtocol()
+    if DC and DC.Hinterland and DC.Hinterland.LeaveQueue then
+        DC.Hinterland.LeaveQueue()
+        return true
+    end
+
+    return false
+end
+
+-- After a join/leave click, poll the queue status quickly so the panel and
+-- announcements react within seconds instead of the 10s background refresh.
+function GF:ScheduleHinterlandStatusPolls()
+    if not (C_Timer and C_Timer.After) then return end
+    C_Timer.After(1, function() GF:RequestHinterlandStatus() end)
+    C_Timer.After(3, function() GF:RequestHinterlandStatus() end)
+end
+
+-- Render the queue status from the shared HLBG state (kept current by the
+-- DC-HinterlandBG addon via DC protocol + chat parsing).
+function GF:UpdateHinterlandPanel()
+    local HLBG = rawget(_G, "HLBG")
+
+    -- Blizzard-style join/leave confirmation (chat + status + sound) whenever
+    -- the queue state actually changes, no matter which path updated it.
+    if HLBG then
+        local inQueue = HLBG.IsInQueue and true or false
+        if self._hlbgWasInQueue == nil then
+            self._hlbgWasInQueue = inQueue
+        elseif inQueue ~= self._hlbgWasInQueue then
+            self._hlbgWasInQueue = inQueue
+            self:PrintImportant(inQueue
+                and "You have joined the Hinterland BG queue."
+                or "You are no longer in the Hinterland BG queue.")
+            if PlaySound then
+                pcall(PlaySound, inQueue and "PVPENTERQUEUE" or "PVPLEAVEQUEUE")
+            end
+        end
+    end
+
+    local panel = self.hlbgPanel
+    if not panel or not panel:IsShown() then return end
+    if not HLBG then
+        panel.status:SetText("|cffff4444The DC-HinterlandBG addon is not loaded.|r\n\n"
+            .. "Queue status is unavailable; Join Queue will try the\n"
+            .. "server protocol directly.")
+        self:UpdateCompactButtons()
+        return
+    end
+
+    local total = tonumber(HLBG.QueueTotal) or 0
+    local alliance = tonumber(HLBG.AllianceQueued) or 0
+    local horde = tonumber(HLBG.HordeQueued) or 0
+    local minPlayers = tonumber(HLBG.MinPlayersToStart) or 10
+    local state = tostring(HLBG.BattleState or "UNKNOWN")
+
+    local stateDisplay = state
+    if state == "WAITING" then
+        stateDisplay = "|cFFAAAA00Waiting for players|r"
+    elseif state == "WARMUP" then
+        stateDisplay = "|cFF00FF00Warmup - Battle starting soon!|r"
+    elseif state == "IN_PROGRESS" then
+        stateDisplay = "|cFFFF0000Battle in progress|r"
+    elseif state == "FINISHED" then
+        stateDisplay = "|cFF98FB98Battle finished|r"
+    end
+
+    if HLBG.IsInQueue then
+        local estWait = tonumber(HLBG.EstimatedWaitSeconds) or 0
+        local estWaitDisplay = "Starting soon!"
+        if estWait >= 60 then
+            estWaitDisplay = string.format("%d min %d sec", math.floor(estWait / 60), estWait % 60)
+        elseif estWait > 0 then
+            estWaitDisplay = string.format("%d sec", estWait)
+        end
+
+        panel.status:SetText(string.format(
+            "|cFF00FF00You are in the queue!|r\n\n"
+            .. "|cFFFFD700Position:|r %d / %d\n"
+            .. "|cFF00AAFFAlliance:|r %d  |cFFFF4444Horde:|r %d\n"
+            .. "|cFFFFD700Est. Wait:|r %s\n"
+            .. "|cFFFFD700Battle State:|r %s\n\n"
+            .. "You will be teleported when the battle starts.",
+            tonumber(HLBG.QueuePosition) or 0, total, alliance, horde,
+            estWaitDisplay, stateDisplay))
+    elseif total > 0 then
+        local playersNeeded = math.max(0, minPlayers - total)
+        local neededStr = playersNeeded > 0
+            and string.format("|cFFFF4444Need %d more players|r", playersNeeded)
+            or "|cFF00FF00Ready to start!|r"
+
+        panel.status:SetText(string.format(
+            "|cFFAAAAAANot in queue|r\n\n"
+            .. "%d / %d player(s) queued\n"
+            .. "|cFF00AAFFAlliance:|r %d  |cFFFF4444Horde:|r %d\n"
+            .. "%s\n"
+            .. "|cFFFFD700Battle State:|r %s\n\n"
+            .. "Click Join Queue to participate in the next battle.",
+            total, minPlayers, alliance, horde, neededStr, stateDisplay))
+    else
+        panel.status:SetText(string.format(
+            "|cFFAAAAAANot in queue|r\n\n"
+            .. "No players queued\n"
+            .. "|cFFFFD700Battle State:|r %s\n\n"
+            .. "Be the first to join!",
+            stateDisplay))
+    end
+
+    self:UpdateCompactButtons()
+end
+
+function GF:ShowHinterlandPanel()
+    self.retailNavContext = "hlbg"
+    self.retailHomeShown = false
+    self.hlbgPanelShown = true
+    self.compactSelectedKind = "hlbg"
+    self.compactSelectedEntry = nil
+
+    if self.compactTypeMenu then
+        self.compactTypeMenu:Hide()
+    end
+    if self.compactTypeMenuCatcher then
+        self.compactTypeMenuCatcher:Hide()
+    end
+    if self.compactBrowserFrame then
+        self.compactBrowserFrame:Hide()
+    end
+    if self.compactListFrame then
+        self.compactListFrame:Hide()
+    end
+    if self.retailHomeFrame then
+        self.retailHomeFrame:Hide()
+    end
+
+    -- Repaint the panel whenever the HLBG addon refreshes its own queue UI.
+    local HLBG = rawget(_G, "HLBG")
+    if HLBG and not self._hlbgQueueUiHooked
+        and type(HLBG.UpdateQueueUI) == "function" then
+        local original = HLBG.UpdateQueueUI
+        HLBG.UpdateQueueUI = function(...)
+            original(...)
+            GF:UpdateHinterlandPanel()
+        end
+        self._hlbgQueueUiHooked = true
+    end
+
+    if self.hlbgPanel then
+        self.hlbgPanel:Show()
+    end
+    if self.retailContentTitle then
+        self.retailContentTitle:SetText("Hinterland BG")
+    end
+    if self.mainFrame and self.mainFrame.TitleText then
+        self.mainFrame.TitleText:SetText("Group Finder")
+    end
+
+    self:SetRetailNavSelection("hlbg")
+    if self.SetActiveBottomTab then
+        self:SetActiveBottomTab("finder")
+    end
+    self:UpdateCompactButtons()
 end
 
 function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onClick)
@@ -1558,10 +1969,11 @@ function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onCl
     button.icon = icon
     button.ring = nil
 
-    -- Label (starts just right of the icon frame).
+    -- Label (starts just right of the icon frame; wide enough that
+    -- "Hinterland" doesn't truncate).
     local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     text:SetPoint("LEFT", iconFrame, "RIGHT", 8, 0)
-    text:SetWidth(76)
+    text:SetWidth(98)
     text:SetJustifyH("LEFT")
     text:SetText(label)
     text:SetTextColor(1, 0.82, 0)
@@ -1706,7 +2118,7 @@ function GF:CreateCompactMainFrame()
     self:CreateRetailNavButton(navPanel, "dungeon", "Dungeon\nFinder",
         "Interface\\Icons\\INV_Helmet_08", -46, function()
         GF.retailNavContext = nil
-        GF:SelectCompactType("mythic")
+        GF:SelectCompactType("dungeons")
     end)
     self:CreateRetailNavButton(navPanel, "raid", "Raid\nFinder",
         "Interface\\Icons\\Achievement_Boss_Kelthuzad_01", -129, function()
@@ -1716,6 +2128,10 @@ function GF:CreateCompactMainFrame()
     self:CreateRetailNavButton(navPanel, "premade", "Premade\nGroups",
         "Interface\\Icons\\Achievement_General_StayClassy", -212, function()
         GF:ShowRetailPremadeHome(GF.premadeSelectedKind or "mythic")
+    end)
+    self:CreateRetailNavButton(navPanel, "hlbg", "Hinterland\nBG",
+        "Interface\\Icons\\INV_BannerPVP_01", -295, function()
+        GF:ShowHinterlandPanel()
     end)
 
     local contentPanel = CreateFrame("Frame", nil, frame)
@@ -1794,6 +2210,7 @@ function GF:CreateCompactMainFrame()
     typeLabel:SetPoint("TOPLEFT", rolePanel, "BOTTOMLEFT", 18, -10)
     typeLabel:SetText("Type:")
     typeLabel:SetTextColor(1, 0.82, 0)
+    self.compactTypeLabel = typeLabel
 
     local typeButton = CreateFrame("Button", nil, browserFrame, "UIPanelButtonTemplate")
     typeButton:SetSize(250, 28)
@@ -1809,6 +2226,29 @@ function GF:CreateCompactMainFrame()
     local arrow = typeButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     arrow:SetPoint("RIGHT", -10, 0)
     arrow:SetText("v")
+
+    -- Dungeon difficulty selector ("Specific Dungeons" only): the matchmaking
+    -- queue supports Normal and Heroic here; Mythic runs through the Mythic+
+    -- type instead. The label starts at the same x as "Type:" so the row
+    -- stays inside the content panel.
+    local diffLabel = browserFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    diffLabel:SetPoint("TOPLEFT", typeLabel, "BOTTOMLEFT", 0, -16)
+    diffLabel:SetText("Difficulty:")
+    diffLabel:SetTextColor(1, 0.82, 0)
+    self.compactDiffLabel = diffLabel
+
+    local diffButton = CreateFrame("Button", nil, browserFrame, "UIPanelButtonTemplate")
+    diffButton:SetSize(140, 24)
+    diffButton:SetPoint("LEFT", diffLabel, "RIGHT", 10, 0)
+    diffButton:SetScript("OnClick", function() GF:CycleQueueDifficulty() end)
+    diffButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Dungeon Difficulty", 1, 1, 1)
+        GameTooltip:AddLine("Click to switch between Normal and Heroic.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    diffButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.compactDiffButton = diffButton
 
     -- Full-frame click-catcher that blocks background clicks/scroll while the
     -- type dropdown is open and closes it when clicking away (retail behaviour).
@@ -1837,20 +2277,23 @@ function GF:CreateCompactMainFrame()
     menu:Hide()
     self.compactTypeMenu = menu
 
-    local menuY = -4
+    -- One reusable item per option; RebuildCompactTypeMenu positions the ones
+    -- allowed in the active nav section each time the menu opens.
+    menu.items = {}
     for _, kind in ipairs(self.COMPACT_OPTION_ORDER) do
         local option = self.COMPACT_OPTIONS[kind]
         local item = CreateFrame("Button", nil, menu)
         item:SetSize(206, 20)
-        item:SetPoint("TOPLEFT", 7, menuY)
         item:SetNormalFontObject("GameFontHighlightSmall")
         item:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
         item:SetText(option.label)
         item:SetScript("OnClick", function()
             GF.compactTypeMenu:Hide()
+            if GF.compactTypeMenuCatcher then GF.compactTypeMenuCatcher:Hide() end
             GF:SelectCompactType(kind)
         end)
-        menuY = menuY - 22
+        item:Hide()
+        menu.items[kind] = item
     end
 
     local listFrame = CreateFrame("Frame", nil, browserFrame)
@@ -1909,6 +2352,43 @@ function GF:CreateCompactMainFrame()
         end
     end
 
+    -- Hinterland BG queue panel (mirrors the standalone DC-HinterlandBG
+    -- Queue tab: live status text + join/leave through the HLBG helpers).
+    local hlbgPanel = CreateFrame("Frame", nil, contentPanel)
+    hlbgPanel:SetPoint("TOPLEFT", 6, -14)
+    hlbgPanel:SetPoint("BOTTOMRIGHT", -6, 64)
+    hlbgPanel:Hide()
+    self.hlbgPanel = hlbgPanel
+
+    local hlbgBg = hlbgPanel:CreateTexture(nil, "BACKGROUND")
+    hlbgBg:SetAllPoints()
+    SetSolidTexture(hlbgBg, 0, 0, 0, 0.45)
+
+    local hlbgTitle = hlbgPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hlbgTitle:SetPoint("TOP", 0, -16)
+    hlbgTitle:SetText("Hinterland Battleground")
+    hlbgTitle:SetTextColor(1, 0.82, 0)
+
+    local hlbgStatus = hlbgPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    hlbgStatus:SetPoint("TOP", hlbgTitle, "BOTTOM", 0, -20)
+    hlbgStatus:SetWidth(310)
+    hlbgStatus:SetJustifyH("CENTER")
+    hlbgStatus:SetText("")
+    hlbgPanel.status = hlbgStatus
+
+    hlbgPanel:SetScript("OnShow", function(panel)
+        panel._refreshAcc = 0
+        GF:RequestHinterlandStatus()
+        GF:UpdateHinterlandPanel()
+    end)
+    -- 10s auto-refresh while visible (same cadence as the standalone addon).
+    hlbgPanel:SetScript("OnUpdate", function(panel, elapsed)
+        panel._refreshAcc = (panel._refreshAcc or 0) + elapsed
+        if panel._refreshAcc < 10 then return end
+        panel._refreshAcc = 0
+        GF:RequestHinterlandStatus()
+    end)
+
     local primary = CreateFrame("Button", nil, contentPanel, "UIPanelButtonTemplate")
     primary:SetSize(104, 22)
     primary:SetPoint("BOTTOMLEFT", 10, 14)
@@ -1942,7 +2422,7 @@ function GF:CreateCompactMainFrame()
     self.compactMode = true
     self.compactData = self.compactData or {}
     self.compactCategoryButton = nil
-    self:SelectCompactType("mythic")
+    self:SelectCompactType("dungeons")
 
     -- Bottom tabs (retail PVEFrame style: Dungeon Finder | Battlegrounds | Mythic+)
     self:CreateBottomTabs(frame)
@@ -1951,35 +2431,106 @@ function GF:CreateCompactMainFrame()
     return frame
 end
 
+-- The real seasonal Mythic+ dungeon set (dc_mplus_dungeons): local DLL list
+-- first, then the server-pushed list (GRPF 0x42). Returns nil when nothing is
+-- cached yet. This is intentionally NOT the full Normal/Heroic queue catalog.
+function GF:GetSeasonalDungeonList()
+    local list
+    if type(namespace.GetMythicPlusDungeonList) == "function" then
+        list = namespace.GetMythicPlusDungeonList()
+    end
+    if type(list) == "table" and #list > 0 then
+        return list
+    end
+
+    if type(self.serverDungeonList) == "table" and #self.serverDungeonList > 0 then
+        return self.serverDungeonList
+    end
+
+    return nil
+end
+
+-- Best dungeon data available for the Mythic+ panel grid: the seasonal list,
+-- falling back to queue catalog names. Returns nil when nothing is cached yet.
+function GF:GetMythicPortalDungeons()
+    local dungeons = self:GetSeasonalDungeonList()
+    if dungeons then
+        return dungeons
+    end
+
+    local catalog = self.queueCatalog and self.queueCatalog.dungeons
+    if type(catalog) == "table" and #catalog > 0 then
+        local out = {}
+        for _, d in ipairs(catalog) do
+            table.insert(out, { mapId = d.mapId, name = d.name })
+        end
+        return out
+    end
+
+    return nil
+end
+
 function GF:OpenMythicPlusPanel()
     -- Retail's Mythic+ tab opens the keystone/season panel. Our analogue is the
     -- Seasonal Portal (dungeon grid with art + timer + level + rating).
     local portal = namespace.SeasonalPortalUI
-    if portal and type(portal.Show) == "function" then
-        -- The portal is normally server-pushed; seed it with the locally cached
-        -- dungeon list so the grid is populated even without a server push.
-        local dungeons
-        if type(namespace.GetMythicPlusDungeonList) == "function" then
-            dungeons = namespace.GetMythicPlusDungeonList()
+    if not (portal and type(portal.Show) == "function") then
+        -- Fallback: keep the player in the group finder on the Mythic+ dungeon
+        -- view and pull the live dungeon list so rows populate.
+        self:SelectCompactType("mythic")
+        local DC = GetDCProtocol()
+        if DC and DC.GroupFinder and DC.GroupFinder.GetDungeonList then
+            DC.GroupFinder.GetDungeonList()
         end
-
-        if type(dungeons) == "table" and #dungeons > 0
-            and type(portal.Preview) == "function" then
-            portal:Preview({ dungeons = dungeons, difficulty = 3 })
-        else
-            portal:Show()
-        end
-        return true
+        return false
     end
 
-    -- Fallback: keep the player in the group finder on the Mythic+ dungeon view
-    -- and pull the live dungeon list so rows populate.
-    self:SelectCompactType("mythic")
+    local dungeons = self:GetMythicPortalDungeons()
     local DC = GetDCProtocol()
-    if DC and DC.GroupFinder and DC.GroupFinder.GetDungeonList then
-        DC.GroupFinder.GetDungeonList()
+
+    if dungeons and type(portal.Preview) == "function" then
+        self._pendingMythicPortalSeed = nil
+        local seasonId
+        if DC and type(DC._serverContext) == "table" then
+            seasonId = tonumber(DC._serverContext.seasonId)
+        end
+        portal:Preview({ dungeons = dungeons, difficulty = 3, seasonId = seasonId })
+        if portal.frame and portal.frame.result then
+            portal.frame.result:SetText("")
+        end
+    else
+        -- Nothing cached yet: open the portal with a loading note and fill the
+        -- grid when the server data arrives (UpdateDungeonList/OnQueueCatalog
+        -- call TrySeedPendingMythicPortal).
+        self._pendingMythicPortalSeed = true
+        portal:Show()
+        if portal.frame and portal.frame.result then
+            portal.frame.result:SetText("Requesting dungeon list from the server...")
+        end
+        if DC and DC.GroupFinder and DC.GroupFinder.GetDungeonList then
+            DC.GroupFinder.GetDungeonList()
+        end
+        if self.RequestQueueCatalog then
+            self:RequestQueueCatalog()
+        end
     end
-    return false
+    return true
+end
+
+-- Called when fresh server dungeon data lands while the portal waits for it.
+function GF:TrySeedPendingMythicPortal()
+    if not self._pendingMythicPortalSeed then return end
+
+    local portal = namespace.SeasonalPortalUI
+    if not (portal and portal.frame and portal.frame:IsShown()) then
+        -- The portal was closed while waiting; drop the pending seed.
+        self._pendingMythicPortalSeed = nil
+        return
+    end
+
+    if self:GetMythicPortalDungeons() then
+        self:OpenMythicPlusPanel()
+    end
 end
 
 function GF:CreateBottomTabs(frame)
@@ -1987,7 +2538,7 @@ function GF:CreateBottomTabs(frame)
     local TAB_DEFS = {
         { key = "finder",  label = "Dungeons & Raids", onClick = function()
             GF.retailNavContext = nil
-            GF:SelectCompactType("mythic")
+            GF:SelectCompactType("dungeons")
         end },
         { key = "pvp",     label = "Player vs Player",  onClick = function()
             if not GF:ToggleBlizzardPVP() then
@@ -2126,9 +2677,9 @@ end
 
 function GF:SelectTab(index)
     if self.compactMode then
-        local compactMap = { "mythic", "raid", "quest", "live", "queues" }
+        local compactMap = { "dungeons", "raid", "quest", "live", "queues" }
         self.currentTab = index or 1
-        self:SelectCompactType(compactMap[index or 1] or "mythic")
+        self:SelectCompactType(compactMap[index or 1] or "dungeons")
         return
     end
 
@@ -2232,7 +2783,7 @@ function GF:InstallBlizzardLFGReplacement()
                 if tab == 2 then
                     GF:SelectCompactType("other")
                 else
-                    GF:SelectCompactType("mythic")
+                    GF:SelectCompactType("dungeons")
                 end
             end
 

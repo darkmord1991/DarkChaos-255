@@ -178,12 +178,14 @@ local function ensureFrame()
     UIDropDownMenu_SetText(frame.diffDrop, "Mythic")
 
     frame.gridLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    frame.gridLabel:SetPoint("TOPLEFT", 12, -120)
+    frame.gridLabel:SetPoint("TOPLEFT", 12, -112)
     frame.gridLabel:SetText("Dungeons")
     frame.gridLabel:SetTextColor(1, 0.82, 0, 1)
 
+    -- Grid sits high enough that the third card row clears the paging
+    -- buttons at the bottom of the frame.
     frame.grid = CreateFrame("Frame", nil, frame)
-    frame.grid:SetPoint("TOPLEFT", 12, -140)
+    frame.grid:SetPoint("TOPLEFT", 12, -130)
     frame.grid:SetPoint("BOTTOMRIGHT", -12, 68)
 
     frame.buttons = {}
@@ -347,7 +349,7 @@ local function rebuildGrid()
     local leftX = 0
     local rightX = 372
     local topY = -2
-    local rowH = 116
+    local rowH = 112
 
     for i = 1, 6 do
         local b = frame.buttons[i]

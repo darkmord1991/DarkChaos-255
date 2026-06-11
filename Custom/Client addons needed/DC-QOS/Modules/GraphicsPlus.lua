@@ -18,10 +18,23 @@ local GraphicsPlus = {
             cameraDistance = 120,
             horizonScale = 8.0,
             environmentDetail = 2.0,
+            doodadFade = 2560,
+            doodadFadeCategories = { 2560, 2560, 2560, 2560, 2560 },
             fogOverride = false,
             applyQualityPreset = true,
         },
     },
+}
+
+-- Doodad size categories as bucketed by the client (bounding radius
+-- < 1/4/15/100/100000); vanilla is each category's stock draw distance and
+-- the native lift-only floor, so it doubles as the slider minimum.
+local DOODAD_CATEGORIES = {
+    { label = "Tiny Doodads", vanilla = 30 },
+    { label = "Small Doodads", vanilla = 100 },
+    { label = "Medium Doodads", vanilla = 200 },
+    { label = "Large Doodads", vanilla = 750 },
+    { label = "Huge Doodads", vanilla = 1250 },
 }
 
 local eventFrame
@@ -65,6 +78,8 @@ local SERVER_PROFILE_PRESETS = {
         cameraDistance = 70,
         horizonScale = 4.5,
         environmentDetail = 1.2,
+        doodadFade = 220,
+        doodadFadeCategories = { 220, 220, 220, 750, 1250 },
         fogOverride = false,
         applyQualityPreset = false,
         nameplateDistance = 20,
@@ -74,6 +89,8 @@ local SERVER_PROFILE_PRESETS = {
         cameraDistance = 120,
         horizonScale = 8.0,
         environmentDetail = 2.0,
+        doodadFade = 1250,
+        doodadFadeCategories = { 1250, 1250, 1250, 1250, 1250 },
         fogOverride = false,
         applyQualityPreset = true,
         nameplateDistance = 41,
@@ -83,6 +100,8 @@ local SERVER_PROFILE_PRESETS = {
         cameraDistance = 95,
         horizonScale = 6.0,
         environmentDetail = 1.5,
+        doodadFade = 750,
+        doodadFadeCategories = { 750, 750, 750, 750, 1250 },
         fogOverride = false,
         applyQualityPreset = true,
         nameplateDistance = 35,
@@ -92,6 +111,8 @@ local SERVER_PROFILE_PRESETS = {
         cameraDistance = 150,
         horizonScale = 7.0,
         environmentDetail = 2.4,
+        doodadFade = 1250,
+        doodadFadeCategories = { 1250, 1250, 1250, 1250, 1250 },
         fogOverride = false,
         applyQualityPreset = true,
         nameplateDistance = 41,
@@ -189,6 +210,38 @@ local function HasNativeGraphicsApi()
         and type(SetFogDistance) == "function"
 end
 
+-- Newer DLL builds only; checked separately so older DLLs keep the rest
+-- of the panel working.
+local function HasDoodadFadeApi()
+    return type(SetDoodadFadeDistance) == "function"
+end
+
+local function HasDoodadFadeCategoryApi()
+    return type(SetDoodadFadeCategoryDistance) == "function"
+end
+
+-- Per-category distances with fallbacks: stored category value, else the
+-- master doodadFade value, never below the category's vanilla distance.
+local function GetDoodadCategoryValues(settings)
+    local stored = settings and settings.doodadFadeCategories
+    local master = tonumber(settings and settings.doodadFade) or 2560
+    local values = {}
+
+    for index, category in ipairs(DOODAD_CATEGORIES) do
+        local value
+        if type(stored) == "table" then
+            value = tonumber(stored[index])
+        end
+        value = value or master
+        if value < category.vanilla then
+            value = category.vanilla
+        end
+        values[index] = value
+    end
+
+    return values
+end
+
 local function CallNative(func, ...)
     if type(func) ~= "function" then
         return false
@@ -246,6 +299,18 @@ local function ApplyGraphicsSettings(reason, overrideSettings)
     applied = CallNative(SetExtendedCameraDistance, settings.cameraDistance) and applied
     applied = CallNative(SetHorizonScale, settings.horizonScale) and applied
     applied = CallNative(SetEnvironmentDetail, settings.environmentDetail) and applied
+
+    if settings.doodadFade or settings.doodadFadeCategories then
+        if HasDoodadFadeCategoryApi() then
+            local categories = GetDoodadCategoryValues(settings)
+            for index = 1, #DOODAD_CATEGORIES do
+                applied = CallNative(SetDoodadFadeCategoryDistance,
+                    index - 1, categories[index]) and applied
+            end
+        elseif settings.doodadFade and HasDoodadFadeApi() then
+            applied = CallNative(SetDoodadFadeDistance, settings.doodadFade) and applied
+        end
+    end
 
     if settings.applyQualityPreset then
         applied = CallNative(SetRenderFlags, true, true, true, false, 0) and applied
@@ -1072,6 +1137,77 @@ function GraphicsPlus.CreateSettings(parent)
     end)
     yOffset = yOffset - 54
 
+    local doodadCategorySliders = {}
+
+    local doodadSlider = addon:CreateSlider(parent)
+    doodadSlider:SetPoint("TOPLEFT", 16, yOffset)
+    doodadSlider:SetWidth(220)
+    doodadSlider:SetMinMaxValues(30, 2560)
+    doodadSlider:SetValueStep(10)
+    doodadSlider.Text:SetText("Doodad Distance (all): " .. tostring(settings.doodadFade or 2560))
+    doodadSlider.Low:SetText("30")
+    doodadSlider.High:SetText("2560")
+    doodadSlider:SetValue(settings.doodadFade or 2560)
+    doodadSlider:SetScript("OnValueChanged", function(self, value)
+        local rounded = math.floor(value + 0.5)
+        if self._dcqosLastValue == rounded then return end
+        self._dcqosLastValue = rounded
+        self.Text:SetText("Doodad Distance (all): " .. tostring(rounded))
+        addon:SetSetting("graphicsPlus.doodadFade", rounded)
+        addon:SetSetting("graphicsPlus.doodadFadeCategories",
+            { rounded, rounded, rounded, rounded, rounded })
+        for index, slider in ipairs(doodadCategorySliders) do
+            local target = math.max(rounded, DOODAD_CATEGORIES[index].vanilla)
+            slider._dcqosLastValue = target
+            slider:SetValue(target)
+            slider.Text:SetText(DOODAD_CATEGORIES[index].label .. ": " .. tostring(target))
+        end
+        ScheduleApply("slider", 0.05)
+    end)
+    if not HasDoodadFadeApi() then
+        doodadSlider:EnableMouse(false)
+        doodadSlider:SetAlpha(0.5)
+        doodadSlider.Text:SetText("Doodad Distance (DLL update required)")
+    end
+    yOffset = yOffset - 54
+
+    local doodadInfo = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    doodadInfo:SetPoint("TOPLEFT", 34, yOffset)
+    doodadInfo:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+    doodadInfo:SetJustifyH("LEFT")
+    doodadInfo:SetText("Draw distance for clutter that ignores farclip and object fade (tiny: candles, pebbles - small: crates, signs - medium: fences, tents - large: statues - huge: landmark props). Lift-only: each category never drops below its vanilla distance; the slider above sets all five at once.")
+    yOffset = yOffset - 48
+
+    local doodadCategoryValues = GetDoodadCategoryValues(settings)
+    for index, category in ipairs(DOODAD_CATEGORIES) do
+        local categorySlider = addon:CreateSlider(parent)
+        categorySlider:SetPoint("TOPLEFT", 36, yOffset)
+        categorySlider:SetWidth(200)
+        categorySlider:SetMinMaxValues(category.vanilla, 2560)
+        categorySlider:SetValueStep(10)
+        categorySlider.Text:SetText(category.label .. ": " .. tostring(doodadCategoryValues[index]))
+        categorySlider.Low:SetText(tostring(category.vanilla))
+        categorySlider.High:SetText("2560")
+        categorySlider:SetValue(doodadCategoryValues[index])
+        categorySlider:SetScript("OnValueChanged", function(self, value)
+            local rounded = math.floor(value + 0.5)
+            if self._dcqosLastValue == rounded then return end
+            self._dcqosLastValue = rounded
+            self.Text:SetText(category.label .. ": " .. tostring(rounded))
+            local categories = GetDoodadCategoryValues(GetSettings())
+            categories[index] = rounded
+            addon:SetSetting("graphicsPlus.doodadFadeCategories", categories)
+            ScheduleApply("slider", 0.05)
+        end)
+        if not HasDoodadFadeCategoryApi() then
+            categorySlider:EnableMouse(false)
+            categorySlider:SetAlpha(0.5)
+            categorySlider.Text:SetText(category.label .. " (DLL update required)")
+        end
+        doodadCategorySliders[index] = categorySlider
+        yOffset = yOffset - 54
+    end
+
     local qualityHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     qualityHeader:SetPoint("TOPLEFT", 16, yOffset)
     qualityHeader:SetText("Overrides")
@@ -1126,6 +1262,24 @@ function GraphicsPlus.CreateSettings(parent)
         horizonSlider:SetValue(current.horizonScale or 8.0)
         environmentSlider._dcqosLastValue = nil
         environmentSlider:SetValue(current.environmentDetail or 2.0)
+
+        -- Handlers stay suppressed here: the master handler would rewrite the
+        -- per-category settings, and a refresh must not modify settings.
+        local masterValue = current.doodadFade or 2560
+        doodadSlider._dcqosLastValue = masterValue
+        doodadSlider:SetValue(masterValue)
+        if HasDoodadFadeApi() then
+            doodadSlider.Text:SetText("Doodad Distance (all): " .. tostring(masterValue))
+        end
+
+        local categories = GetDoodadCategoryValues(current)
+        for index, slider in ipairs(doodadCategorySliders) do
+            slider._dcqosLastValue = categories[index]
+            slider:SetValue(categories[index])
+            if HasDoodadFadeCategoryApi() then
+                slider.Text:SetText(DOODAD_CATEGORIES[index].label .. ": " .. tostring(categories[index]))
+            end
+        end
     end
 
     local balancedBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -1138,6 +1292,8 @@ function GraphicsPlus.CreateSettings(parent)
             cameraDistance = 120,
             horizonScale = 8.0,
             environmentDetail = 2.0,
+            doodadFade = 1250,
+            doodadFadeCategories = { 1250, 1250, 1250, 1250, 1250 },
             fogOverride = false,
             applyQualityPreset = true,
         })
@@ -1155,6 +1311,8 @@ function GraphicsPlus.CreateSettings(parent)
             cameraDistance = 500,
             horizonScale = 12.0,
             environmentDetail = 6.0,
+            doodadFade = 2560,
+            doodadFadeCategories = { 2560, 2560, 2560, 2560, 2560 },
             fogOverride = true,
             applyQualityPreset = true,
         })
