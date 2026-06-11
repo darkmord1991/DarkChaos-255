@@ -6,6 +6,7 @@ DC_RED_BUTTONS = {
 	"AccountLoginLoginButton", "AccountLoginExitButton", "AccountLoginTOSButton",
 	"AccountLoginCreditsButton", "AccountLoginCinematicsButton", "OptionsButton",
 	"AccountLoginCommunityButton", "AccountLoginManageAccountButton", "AccountLoginUpgradeAccountButton",
+	"AccountLoginDiscordButton", "AccountLoginBugtrackerButton",
 };
 
 -- The glue renderer ignores SetVertexColor on desaturated textures, so red
@@ -236,6 +237,16 @@ end
 function AccountLogin_LaunchCommunitySite()
 	PlaySound("gsLoginNewAccount");
 	LaunchURL(COMMUNITY_URL);
+end
+
+function AccountLogin_LaunchDiscord()
+	PlaySound("gsLoginNewAccount");
+	LaunchURL("https://discord.gg/pNddMEMbb2");
+end
+
+function AccountLogin_LaunchBugtracker()
+	PlaySound("gsLoginNewAccount");
+	LaunchURL("https://github.com/darkmord1991/DarkChaos-255/issues");
 end
 
 function CharacterSelect_UpgradeAccount()
@@ -722,13 +733,16 @@ end
 
 AccountList = {};
 function AccountLogin_SetupAccountListDDL()
+	-- Keep the login button (and the save-name checkbox anchored under it) close
+	-- under the password box, unless the authenticator token box needs the space.
+	local loginOffset = AccountLoginTokenEdit:IsShown() and 0 or 45;
 	if ( GetSavedAccountName() ~= "" and GetSavedAccountList() ~= "" ) then
 		AccountLoginPasswordEdit:SetPoint("BOTTOM", 0, 255);
-		AccountLoginLoginButton:SetPoint("BOTTOM", 0, 150);
+		AccountLoginLoginButton:SetPoint("BOTTOM", 0, 150 + loginOffset);
 		AccountLoginDropDown:Show();
 	else
 		AccountLoginPasswordEdit:SetPoint("BOTTOM", 0, 275);
-		AccountLoginLoginButton:SetPoint("BOTTOM", 0, 170);
+		AccountLoginLoginButton:SetPoint("BOTTOM", 0, 170 + loginOffset);
 		AccountLoginDropDown:Hide();
 		return;
 	end

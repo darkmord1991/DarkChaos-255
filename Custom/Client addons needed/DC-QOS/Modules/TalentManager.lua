@@ -34,6 +34,7 @@ local TalentManager = {
             showLevelReq = false,
             alwaysEdit = false,
             hookInspect = true,
+            replaceBlizzardFrame = true,
             framePos = {},
             glyphFramePos = {},
         },
@@ -339,16 +340,18 @@ local function GetPrimaryTree(talents)
     return primary
 end
 
--- Get required level for point count
+-- Get required level for point count (DC-255: clamp to realm max level)
+local DC_MAX_LEVEL = 255
+
 local function GetRequiredLevel(points, pet)
     if pet then
         if points == 0 then return 10 end
         if points > 16 then
-            return 60 + (points - 15) * 4 -- Beast Mastery required
+            return math.min(60 + (points - 15) * 4, DC_MAX_LEVEL) -- Beast Mastery required
         end
-        return 16 + points * 4
+        return math.min(16 + points * 4, DC_MAX_LEVEL)
     end
-    return points == 0 and 1 or (points + 9)
+    return points == 0 and 1 or math.min(points + 9, DC_MAX_LEVEL)
 end
 
 -- Build prerequisite cache for a class
@@ -416,6 +419,87 @@ local function GetTalentState(talents, tab, index, pet)
     else
         return "available"
     end
+end
+
+-- ============================================================
+-- Loadout State (per character)
+-- ============================================================
+-- Tracks which saved build is "active" per talent group, plus
+-- per-character favorites. Lives in the account-wide DB keyed
+-- by character so builds themselves stay shared per class.
+
+local function GetLoadoutState()
+    if not addon.db then return nil end
+    addon.db.talentLoadoutState = addon.db.talentLoadoutState or {}
+    local key = addon.GetCharacterKey and addon:GetCharacterKey() or (UnitName("player") or "Unknown")
+    local state = addon.db.talentLoadoutState[key]
+    if not state then
+        state = { activeBySpec = {}, favorites = {} }
+        addon.db.talentLoadoutState[key] = state
+    end
+    state.activeBySpec = state.activeBySpec or {}
+    state.favorites = state.favorites or {}
+    return state
+end
+
+function TalentManager:GetActiveLoadoutName(spec)
+    local state = GetLoadoutState()
+    if not state then return nil end
+    spec = spec or SafeGetActiveTalentGroup()
+    local name = state.activeBySpec[spec]
+    if name and not self:GetTemplate(name) then
+        -- Loadout was deleted; clear the stale pointer
+        state.activeBySpec[spec] = nil
+        return nil
+    end
+    return name
+end
+
+function TalentManager:SetActiveLoadout(name, spec)
+    local state = GetLoadoutState()
+    if not state then return end
+    spec = spec or SafeGetActiveTalentGroup()
+    state.activeBySpec[spec] = name
+end
+
+function TalentManager:IsFavorite(name)
+    local state = GetLoadoutState()
+    return (state and state.favorites[name]) and true or false
+end
+
+function TalentManager:ToggleFavorite(name)
+    local state = GetLoadoutState()
+    if not state then return end
+    if state.favorites[name] then
+        state.favorites[name] = nil
+    else
+        state.favorites[name] = true
+    end
+end
+
+local function TalentsMatchTemplate(template, pet)
+    if not template or not template.talents then return false end
+    local current = GetCurrentTalents(pet)
+    for tab = 1, 3 do
+        local tree = template.talents[tab] or {}
+        local curTree = current[tab] or {}
+        local count = math.max(#tree, #curTree)
+        for i = 1, count do
+            if (tree[i] or 0) ~= (curTree[i] or 0) then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+-- Has the character's actual build drifted from the active loadout?
+function TalentManager:IsActiveLoadoutDirty()
+    local name = self:GetActiveLoadoutName()
+    if not name then return false end
+    local template = self:GetTemplate(name)
+    if not template then return false end
+    return not TalentsMatchTemplate(template)
 end
 
 -- ============================================================
@@ -612,13 +696,16 @@ function TalentManager:CreateTemplate(name, talents, class)
     if templates[class][name] then
         return false, "Template already exists"
     end
-    
+
+    -- Only snapshot glyphs when saving the character's own current build
+    local fromCurrent = (talents == nil)
     talents = talents or GetCurrentTalents()
-    
+
     templates[class][name] = {
         name = name,
         class = class,
         talents = talents,
+        glyphs = fromCurrent and self:SnapshotGlyphs() or nil,
         encoded = EncodeTalentsSimple(talents),
         talentedCode = EncodeTalented(talents, class),
         summary = GetPointSummary(talents),
@@ -627,9 +714,10 @@ function TalentManager:CreateTemplate(name, talents, class)
         created = time(),
         modified = time(),
     }
-    
+
     self:SaveTemplates()
-    NotifyTalent("Template saved: " .. name .. " (" .. GetPointSummary(talents) .. ")", "success", { title = "Talents" })
+    NotifyTalent("Loadout saved: " .. name .. " (" .. GetPointSummary(talents) .. ")", "success", { title = "Talents" })
+    self:RefreshLoadoutUI()
     return true
 end
 
@@ -638,19 +726,24 @@ function TalentManager:UpdateTemplate(name, talents, class)
     if not templates[class] or not templates[class][name] then
         return self:CreateTemplate(name, talents, class)
     end
-    
+
+    local fromCurrent = (talents == nil)
     talents = talents or GetCurrentTalents()
-    
+
     templates[class][name].talents = talents
+    if fromCurrent then
+        templates[class][name].glyphs = self:SnapshotGlyphs()
+    end
     templates[class][name].encoded = EncodeTalentsSimple(talents)
     templates[class][name].talentedCode = EncodeTalented(talents, class)
     templates[class][name].summary = GetPointSummary(talents)
     templates[class][name].totalPoints = GetTotalPoints(talents)
     templates[class][name].primaryTree = GetPrimaryTree(talents)
     templates[class][name].modified = time()
-    
+
     self:SaveTemplates()
-    NotifyTalent("Template updated: " .. name, "success", { title = "Talents" })
+    NotifyTalent("Loadout updated: " .. name, "success", { title = "Talents" })
+    self:RefreshLoadoutUI()
     return true
 end
 
@@ -658,8 +751,18 @@ function TalentManager:DeleteTemplate(name, class)
     class = class or GetPlayerClass()
     if templates[class] and templates[class][name] then
         templates[class][name] = nil
+        local state = GetLoadoutState()
+        if state then
+            state.favorites[name] = nil
+            for spec, active in pairs(state.activeBySpec) do
+                if active == name then
+                    state.activeBySpec[spec] = nil
+                end
+            end
+        end
         self:SaveTemplates()
-        NotifyTalent("Template deleted: " .. name, "info", { title = "Talents" })
+        NotifyTalent("Loadout deleted: " .. name, "info", { title = "Talents" })
+        self:RefreshLoadoutUI()
         return true
     end
     return false, "Template not found"
@@ -678,9 +781,23 @@ function TalentManager:RenameTemplate(oldName, newName, class)
     templates[class][newName].name = newName
     templates[class][newName].modified = time()
     templates[class][oldName] = nil
-    
+
+    local state = GetLoadoutState()
+    if state then
+        if state.favorites[oldName] then
+            state.favorites[oldName] = nil
+            state.favorites[newName] = true
+        end
+        for spec, active in pairs(state.activeBySpec) do
+            if active == oldName then
+                state.activeBySpec[spec] = newName
+            end
+        end
+    end
+
     self:SaveTemplates()
-    NotifyTalent("Template renamed: " .. oldName .. " -> " .. newName, "success", { title = "Talents" })
+    NotifyTalent("Loadout renamed: " .. oldName .. " -> " .. newName, "success", { title = "Talents" })
+    self:RefreshLoadoutUI()
     return true
 end
 
@@ -706,8 +823,18 @@ function TalentManager:CopyTemplate(name, class)
         end
     end
     copyTalents.class = src.class
-    
-    return self:CreateTemplate(newName, copyTalents, class)
+
+    local ok, msg = self:CreateTemplate(newName, copyTalents, class)
+    if ok and src.glyphs then
+        local glyphCopy = { major = {}, minor = {} }
+        for i = 1, 3 do
+            glyphCopy.major[i] = src.glyphs.major and src.glyphs.major[i] or 0
+            glyphCopy.minor[i] = src.glyphs.minor and src.glyphs.minor[i] or 0
+        end
+        templates[class][newName].glyphs = glyphCopy
+        self:SaveTemplates()
+    end
+    return ok, msg
 end
 
 function TalentManager:GetTemplate(name, class)
@@ -726,10 +853,22 @@ function TalentManager:GetTemplateList(class)
                 totalPoints = data.totalPoints,
                 primaryTree = data.primaryTree,
                 modified = data.modified,
+                isBackup = data.isBackup,
+                favorite = self:IsFavorite(name),
+                hasGlyphs = data.glyphs and true or false,
             })
         end
     end
-    table.sort(list, function(a, b) return a.name < b.name end)
+    -- Favorites first, automatic backups last, alphabetical within groups
+    table.sort(list, function(a, b)
+        if (a.isBackup and true or false) ~= (b.isBackup and true or false) then
+            return not a.isBackup
+        end
+        if a.favorite ~= b.favorite then
+            return a.favorite
+        end
+        return a.name < b.name
+    end)
     return list
 end
 
@@ -739,29 +878,37 @@ end
 
 function TalentManager:CanApplyTemplate(template, pet)
     if not template then return false, "No template" end
-    
+
     local current = GetCurrentTalents(pet)
     local available = SafeGetUnspentTalentPoints(nil, pet)
     local needed = 0
-    
+    local conflicts = 0
+
     for tab = 1, 3 do
         for i = 1, #(template.talents[tab] or {}) do
             local targetRank = template.talents[tab][i] or 0
             local currentRank = current[tab] and current[tab][i] or 0
             if targetRank > currentRank then
                 needed = needed + (targetRank - currentRank)
+            elseif targetRank < currentRank then
+                conflicts = conflicts + (currentRank - targetRank)
             end
         end
     end
-    
-    if needed > available then
-        return false, "Need " .. needed .. " points, have " .. available
+
+    if conflicts > 0 then
+        return false, conflicts .. " spent points conflict with this loadout. Unlearn your talents first, then activate it."
     end
-    
+
     if needed == 0 then
-        return false, "Nothing to apply"
+        -- Build already matches the loadout exactly
+        return false, "match"
     end
-    
+
+    if needed > available then
+        return false, "Need " .. needed .. " unspent points, have " .. available
+    end
+
     return true, needed
 end
 
@@ -774,7 +921,16 @@ function TalentManager:ApplyTemplate(templateName, pet)
     
     local canApply, info = self:CanApplyTemplate(template, pet)
     if not canApply then
-        NotifyTalent("Cannot apply template: " .. info, "warning", { title = "Talents" })
+        if info == "match" then
+            -- Nothing to learn: the build already matches, just mark it active
+            self:SetActiveLoadout(templateName)
+            NotifyTalent("Loadout active: " .. templateName, "success", { title = "Talents" })
+            self:NotifyGlyphDiff(template)
+            self:RefreshLoadoutUI()
+            self:UpdateTalentDisplay()
+            return true
+        end
+        NotifyTalent("Cannot activate loadout: " .. info, "warning", { title = "Talents" })
         return false
     end
     
@@ -809,20 +965,34 @@ function TalentManager:ApplyTemplate(templateName, pet)
 end
 
 function TalentManager:DoApplyTemplate(template, pet)
+    if not pet then
+        self:BackupCurrentSpec()
+    end
+
     local current = GetCurrentTalents(pet)
     local learned = 0
     local class = template.class or template.talents.class or GetPlayerClass()
     local prereqs = BuildPrereqCache(class, pet)
-    
+
+    -- Determine the highest tier present (DC-255 trees may exceed stock 11)
+    local maxTier = 1
+    for tab = 1, 3 do
+        for _, info in pairs(prereqs[tab] or {}) do
+            if info.tier and info.tier > maxTier then
+                maxTier = info.tier
+            end
+        end
+    end
+
     -- Apply talents in tier order
-    for tier = 1, 11 do
+    for tier = 1, maxTier do
         for tab = 1, 3 do
             for i = 1, #(template.talents[tab] or {}) do
                 local info = prereqs[tab] and prereqs[tab][i]
                 if info and info.tier == tier then
                     local targetRank = template.talents[tab][i] or 0
                     local currentRank = current[tab] and current[tab][i] or 0
-                    
+
                     while currentRank < targetRank do
                         LearnTalent(tab, i, pet)
                         currentRank = currentRank + 1
@@ -833,10 +1003,15 @@ function TalentManager:DoApplyTemplate(template, pet)
             end
         end
     end
-    
-    NotifyTalent("Applied template: " .. template.name .. " (" .. learned .. " points spent)", "success", { title = "Talents" })
-    
-    -- Update display
+
+    if not pet and template.name then
+        self:SetActiveLoadout(template.name)
+    end
+
+    NotifyTalent("Loadout applied: " .. (template.name or "?") .. " (" .. learned .. " points spent)", "success", { title = "Talents" })
+    self:NotifyGlyphDiff(template)
+
+    self:RefreshLoadoutUI()
     self:UpdateTalentDisplay()
 end
 
@@ -1141,6 +1316,112 @@ function TalentManager:GetAvailableGlyphs()
     return available
 end
 
+-- Capture the current glyph set as plain spell ids (0 = empty socket)
+function TalentManager:SnapshotGlyphs(talentGroup)
+    if not self:EnsureGlyphUI() then return nil end
+
+    local current = self:GetCurrentGlyphs(talentGroup)
+    local snapshot = { major = {}, minor = {} }
+    for i = 1, 3 do
+        local major = current.major[i]
+        snapshot.major[i] = (major and major.spellId) or 0
+        local minor = current.minor[i]
+        snapshot.minor[i] = (minor and minor.spellId) or 0
+    end
+    return snapshot
+end
+
+-- List sockets where the loadout's saved glyphs differ from what is inscribed
+function TalentManager:GetGlyphDiff(template, talentGroup)
+    if not template or not template.glyphs then return nil end
+    if not self:EnsureGlyphUI() then return nil end
+
+    local current = self:GetCurrentGlyphs(talentGroup)
+    local diff = {}
+    for _, kind in ipairs({ "major", "minor" }) do
+        local saved = template.glyphs[kind] or {}
+        for i = 1, 3 do
+            local want = saved[i] or 0
+            local socketData = current[kind][i]
+            local have = (socketData and socketData.spellId) or 0
+            if want ~= 0 and want ~= have and socketData and socketData.enabled then
+                table.insert(diff, {
+                    kind = kind,
+                    index = i,
+                    socket = socketData.socket,
+                    spellId = want,
+                    name = GetSpellInfo(want),
+                })
+            end
+        end
+    end
+    return diff
+end
+
+function TalentManager:NotifyGlyphDiff(template)
+    local diff = self:GetGlyphDiff(template)
+    if diff and #diff > 0 then
+        NotifyTalent(#diff .. " glyph(s) differ from this loadout - open Glyphs to apply them", "info", { title = "Talents" })
+    end
+end
+
+-- Apply the next missing glyph from bags (one per click: glyph use is a
+-- hardware-event-bound item use, so we cannot batch them reliably)
+function TalentManager:ApplyLoadoutGlyphs()
+    local name = self:GetActiveLoadoutName()
+    local template = name and self:GetTemplate(name)
+    if not template then
+        NotifyTalent("No active loadout for this spec", "warning", { title = "Talents" })
+        return
+    end
+    if not template.glyphs then
+        NotifyTalent("Loadout '" .. name .. "' has no glyph set saved", "info", { title = "Talents" })
+        return
+    end
+    if glyphFrame and glyphFrame.viewingGroup and glyphFrame.viewingGroup ~= self:GetActiveSpec() then
+        NotifyTalent("Glyphs can only be applied to the active spec", "warning", { title = "Talents" })
+        return
+    end
+
+    local diff = self:GetGlyphDiff(template)
+    if not diff or #diff == 0 then
+        NotifyTalent("Glyphs already match loadout: " .. name, "success", { title = "Talents" })
+        return
+    end
+
+    local entry = diff[1]
+    local wantName = entry.name
+    if not wantName then
+        NotifyTalent("Glyph spell " .. entry.spellId .. " is unknown (not in client cache)", "warning", { title = "Talents" })
+        return
+    end
+
+    for bag = 0, 4 do
+        for slot = 1, GetContainerNumSlots(bag) do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local itemName = GetItemInfo(link)
+                if itemName == wantName then
+                    UseContainerItem(bag, slot)
+                    if PlaceGlyphInSocket then
+                        pcall(PlaceGlyphInSocket, entry.socket)
+                    end
+                    local remaining = #diff - 1
+                    if remaining > 0 then
+                        NotifyTalent("Applied " .. wantName .. " - " .. remaining .. " glyph(s) left, click again", "info", { title = "Talents" })
+                    else
+                        NotifyTalent("Applied " .. wantName, "success", { title = "Talents" })
+                    end
+                    self:UpdateGlyphDisplay()
+                    return
+                end
+            end
+        end
+    end
+
+    NotifyTalent("Missing glyph in bags: " .. wantName, "warning", { title = "Talents" })
+end
+
 -- ============================================================
 -- Dual Spec Support
 -- ============================================================
@@ -1162,14 +1443,35 @@ function TalentManager:SwitchSpec(specIndex)
     return false
 end
 
+-- Quiet rolling backup (one per spec) taken right before a loadout is applied
 function TalentManager:BackupCurrentSpec()
     local settings = addon.settings.talentManager
     if not settings.autoBackup then return end
-    
-    local specIndex = self:GetActiveSpec()
-    local backupName = "_Backup_Spec" .. specIndex .. "_" .. date("%Y%m%d_%H%M%S")
-    
-    self:CreateTemplate(backupName, GetCurrentTalents())
+
+    local talents = GetCurrentTalents()
+    if GetTotalPoints(talents) == 0 then return end
+
+    local class = GetPlayerClass()
+    templates[class] = templates[class] or {}
+    local backupName = "Backup (Spec " .. self:GetActiveSpec() .. ")"
+    local existing = templates[class][backupName]
+
+    templates[class][backupName] = {
+        name = backupName,
+        class = class,
+        talents = talents,
+        glyphs = self:SnapshotGlyphs(),
+        encoded = EncodeTalentsSimple(talents),
+        talentedCode = EncodeTalented(talents, class),
+        summary = GetPointSummary(talents),
+        totalPoints = GetTotalPoints(talents),
+        primaryTree = GetPrimaryTree(talents),
+        created = existing and existing.created or time(),
+        modified = time(),
+        isBackup = true,
+    }
+
+    self:SaveTemplates()
 end
 
 -- ============================================================
@@ -1290,18 +1592,20 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
         button.slot:Show()
     end
     
-    if prereqsSet then
-        -- Prerequisites met: NOT desaturated, full color icon
+    -- Readability: only talents you actually spent points in render in
+    -- full color; available-but-unspent talents stay desaturated so the
+    -- build is recognizable at a glance.
+    if prereqsSet and displayRank > 0 then
         SetTalentButtonDesaturated(button, false)
-        
-        if displayRank > 0 and displayRank >= maxRank then
-            -- Maxed out: GOLD glow
+
+        if displayRank >= maxRank then
+            -- Maxed out: GOLD border
             if button.slot then
-                button.slot:SetVertexColor(1, 1, 1)
+                button.slot:SetVertexColor(1, 0.82, 0)
             end
             if button.glow then
                 button.glow:SetVertexColor(1, 0.82, 0)
-                button.glow:SetAlpha(0.5)
+                button.glow:SetAlpha(0.6)
             end
             if button.rankText then
                 button.rankText:SetTextColor(1, 0.82, 0)
@@ -1310,13 +1614,13 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
                 button.rankBorder:SetVertexColor(1, 0.82, 0)
             end
         else
-            -- Available (with or without points): GREEN glow
+            -- Partially filled: GREEN border
             if button.slot then
-                button.slot:SetVertexColor(1, 1, 1)
+                button.slot:SetVertexColor(0.4, 1, 0.4)
             end
             if button.glow then
                 button.glow:SetVertexColor(0.1, 1, 0.1)
-                button.glow:SetAlpha(0.4)
+                button.glow:SetAlpha(0.55)
             end
             if button.rankText then
                 button.rankText:SetTextColor(0.1, 1, 0.1)
@@ -1325,17 +1629,28 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
                 button.rankBorder:SetVertexColor(0.1, 1, 0.1)
             end
         end
-    else
-        -- Prerequisites NOT met: desaturated, no glow
-        SetTalentButtonDesaturated(button, true, 0.65, 0.65, 0.65)
-        
+    elseif prereqsSet then
+        -- Available but unspent: bright grayscale + subtle green hint
+        SetTalentButtonDesaturated(button, true, 0.9, 0.9, 0.9)
+
         if button.slot then
-            button.slot:SetVertexColor(0.5, 0.5, 0.5)
+            button.slot:SetVertexColor(0.8, 0.8, 0.8)
+        end
+        if button.glow then
+            button.glow:SetVertexColor(0.1, 1, 0.1)
+            button.glow:SetAlpha(0.15)
+        end
+    else
+        -- Prerequisites NOT met: dark desaturated, no glow
+        SetTalentButtonDesaturated(button, true, 0.45, 0.45, 0.45)
+
+        if button.slot then
+            button.slot:SetVertexColor(0.4, 0.4, 0.4)
         end
         if button.glow then
             button.glow:SetAlpha(0)
         end
-        
+
         if displayRank > 0 then
             if button.rankText then
                 button.rankText:SetTextColor(0.5, 0.5, 0.5)
@@ -1416,16 +1731,16 @@ local function CreateTalentButton(parent, tab, index, pet)
     glow:SetAlpha(0)
     button.glow = glow
     
-    -- Rank border (small circle behind rank text)
-    local rankBorder = button:CreateTexture(nil, "OVERLAY")
-    rankBorder:SetSize(18, 18)
-    rankBorder:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
+    -- Rank border (circle behind rank text, oversized for readability)
+    local rankBorder = button:CreateTexture(nil, "OVERLAY", nil, 2)
+    rankBorder:SetSize(24, 24)
+    rankBorder:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 6, -6)
     rankBorder:SetTexture("Interface\\TalentFrame\\TalentFrame-RankBorder")
     rankBorder:Hide()
     button.rankBorder = rankBorder
-    
+
     -- Rank text
-    local rankText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local rankText = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     rankText:SetPoint("CENTER", rankBorder, "CENTER", 0, 0)
     button.rankText = rankText
     
@@ -1530,11 +1845,28 @@ local function CreateTalentTreeFrame(parent, tab, pet)
     
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(TREE_WIDTH, TREE_HEIGHT + TREE_TOP_OFFSET)
-    
-    -- Tree background
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
-    bg:SetPoint("TOPLEFT", 0, -TREE_TOP_OFFSET)
-    bg:SetPoint("BOTTOMRIGHT")
+
+    -- Flat panel behind the tree
+    frame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    frame:SetBackdropColor(0.07, 0.07, 0.07, 0.9)
+    frame:SetBackdropBorderColor(0.22, 0.22, 0.22, 1)
+
+    -- Header strip behind icon/title
+    local headerBg = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    headerBg:SetPoint("TOPLEFT", 1, -1)
+    headerBg:SetPoint("TOPRIGHT", -1, -1)
+    headerBg:SetHeight(TREE_TOP_OFFSET - 2)
+    headerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    headerBg:SetVertexColor(0.11, 0.11, 0.11, 0.9)
+
+    -- Tree background (keep WotLK tree art, dimmed)
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
+    bg:SetPoint("TOPLEFT", 1, -TREE_TOP_OFFSET)
+    bg:SetPoint("BOTTOMRIGHT", -1, 1)
     if treeData and treeData.backgrounds and treeData.backgrounds[tab] then
         bg:SetTexture("Interface\\TalentFrame\\" .. treeData.backgrounds[tab])
         bg:SetAlpha(0.25)
@@ -1543,14 +1875,15 @@ local function CreateTalentTreeFrame(parent, tab, pet)
         bg:SetAlpha(0.20)
     end
     frame.bg = bg
-    
+
     -- Tree icon
     local treeIcon = frame:CreateTexture(nil, "ARTWORK")
     treeIcon:SetSize(22, 22)
-    treeIcon:SetPoint("TOPLEFT", 4, -4)
+    treeIcon:SetPoint("TOPLEFT", 6, -6)
     if treeIcons[tab] then
         treeIcon:SetTexture("Interface\\Icons\\" .. treeIcons[tab])
     end
+    treeIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     frame.treeIcon = treeIcon
     
     -- Tree title
@@ -1580,16 +1913,389 @@ local function CreateTalentTreeFrame(parent, tab, pet)
 end
 
 -- ============================================================
+-- UI: Flat (retail-style) widgets
+-- ============================================================
+
+local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+
+local function CreateFlatButton(parent, text, width, height)
+    if addon.CreateActionButton then
+        return addon:CreateActionButton(parent, text, width, height)
+    end
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(width or 100, height or 22)
+    button:SetText(text or "")
+    return button
+end
+
+-- ============================================================
+-- UI: Loadout Dialogs
+-- ============================================================
+
+function TalentManager:ShowSaveDialog()
+    StaticPopupDialogs["DCQOS_SAVE_TEMPLATE"] = StaticPopupDialogs["DCQOS_SAVE_TEMPLATE"] or {
+        text = "Name the new loadout:",
+        hasEditBox = 1,
+        button1 = ACCEPT,
+        button2 = CANCEL,
+        OnAccept = function(dialog)
+            local name = dialog.editBox:GetText()
+            if name and name ~= "" then
+                local ok, msg = TalentManager:CreateTemplate(name)
+                if ok then
+                    -- The new loadout is the current build by definition
+                    TalentManager:SetActiveLoadout(name)
+                    TalentManager:RefreshLoadoutUI()
+                elseif msg then
+                    NotifyTalent("Cannot save loadout: " .. msg, "warning", { title = "Talents" })
+                end
+            end
+        end,
+        EditBoxOnEnterPressed = function(editBox)
+            local parent = editBox:GetParent()
+            StaticPopupDialogs["DCQOS_SAVE_TEMPLATE"].OnAccept(parent)
+            parent:Hide()
+        end,
+        EditBoxOnEscapePressed = function(editBox) editBox:GetParent():Hide() end,
+        timeout = 0, whileDead = 1, hideOnEscape = 1,
+    }
+    StaticPopup_Show("DCQOS_SAVE_TEMPLATE")
+end
+
+function TalentManager:ShowRenameDialog(name)
+    StaticPopupDialogs["DCQOS_RENAME_TEMPLATE"] = StaticPopupDialogs["DCQOS_RENAME_TEMPLATE"] or {
+        text = "Rename loadout '%s' to:",
+        hasEditBox = 1,
+        button1 = ACCEPT,
+        button2 = CANCEL,
+        OnAccept = function(dialog)
+            local newName = dialog.editBox:GetText()
+            if newName and newName ~= "" and dialog.data then
+                local ok, msg = TalentManager:RenameTemplate(dialog.data, newName)
+                if not ok and msg then
+                    NotifyTalent("Cannot rename: " .. msg, "warning", { title = "Talents" })
+                end
+            end
+        end,
+        EditBoxOnEnterPressed = function(editBox)
+            local parent = editBox:GetParent()
+            StaticPopupDialogs["DCQOS_RENAME_TEMPLATE"].OnAccept(parent)
+            parent:Hide()
+        end,
+        EditBoxOnEscapePressed = function(editBox) editBox:GetParent():Hide() end,
+        timeout = 0, whileDead = 1, hideOnEscape = 1,
+    }
+    local dialog = StaticPopup_Show("DCQOS_RENAME_TEMPLATE", name)
+    if dialog then
+        dialog.data = name
+    end
+end
+
+function TalentManager:ShowDeleteDialog(name)
+    StaticPopupDialogs["DCQOS_DELETE_TEMPLATE"] = StaticPopupDialogs["DCQOS_DELETE_TEMPLATE"] or {
+        text = "Delete loadout '%s'?",
+        button1 = ACCEPT,
+        button2 = CANCEL,
+        OnAccept = function(dialog)
+            if dialog.data then
+                TalentManager:DeleteTemplate(dialog.data)
+            end
+        end,
+        timeout = 0, whileDead = 1, hideOnEscape = 1,
+        showAlert = 1,
+    }
+    local dialog = StaticPopup_Show("DCQOS_DELETE_TEMPLATE", name)
+    if dialog then
+        dialog.data = name
+    end
+end
+
+function TalentManager:ShowSendDialog(name)
+    StaticPopupDialogs["DCQOS_SEND_TEMPLATE"] = StaticPopupDialogs["DCQOS_SEND_TEMPLATE"] or {
+        text = "Send loadout '%s' to player:",
+        hasEditBox = 1,
+        button1 = ACCEPT,
+        button2 = CANCEL,
+        OnAccept = function(dialog)
+            local target = dialog.editBox:GetText()
+            if target and target ~= "" and dialog.data then
+                TalentManager:SendTemplateToPlayer(dialog.data, target)
+            end
+        end,
+        EditBoxOnEnterPressed = function(editBox)
+            local parent = editBox:GetParent()
+            StaticPopupDialogs["DCQOS_SEND_TEMPLATE"].OnAccept(parent)
+            parent:Hide()
+        end,
+        EditBoxOnEscapePressed = function(editBox) editBox:GetParent():Hide() end,
+        timeout = 0, whileDead = 1, hideOnEscape = 1,
+    }
+    local dialog = StaticPopup_Show("DCQOS_SEND_TEMPLATE", name)
+    if dialog then
+        dialog.data = name
+    end
+end
+
+-- ============================================================
+-- UI: Loadout Dropdown Menu (retail-style loadout picker)
+-- ============================================================
+
+local loadoutMenuHost
+
+local function BuildLoadoutMenu(menuSelf, level)
+    level = level or 1
+    local info
+
+    if level == 1 then
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Talent Loadouts"
+        info.isTitle = true
+        info.notCheckable = true
+        UIDropDownMenu_AddButton(info, level)
+
+        local activeName = TalentManager:GetActiveLoadoutName()
+        local dirty = TalentManager:IsActiveLoadoutDirty()
+        local list = TalentManager:GetTemplateList()
+
+        if #list == 0 then
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "|cff888888No loadouts saved yet|r"
+            info.disabled = true
+            info.notCheckable = true
+            UIDropDownMenu_AddButton(info, level)
+        end
+
+        for _, entry in ipairs(list) do
+            info = UIDropDownMenu_CreateInfo()
+            local label = entry.name
+            if entry.favorite then
+                label = "|cffffd200" .. label .. "|r"
+            elseif entry.isBackup then
+                label = "|cff999999" .. label .. "|r"
+            end
+            label = label .. " |cff666666(" .. (entry.summary or "?") .. ")|r"
+            if entry.name == activeName and dirty then
+                label = label .. " |cffff5533*|r"
+            end
+            info.text = label
+            info.checked = (entry.name == activeName)
+            info.hasArrow = true
+            info.value = entry.name
+            local loadoutName = entry.name
+            info.func = function()
+                TalentManager:ApplyTemplate(loadoutName)
+                CloseDropDownMenus()
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = " "
+        info.disabled = true
+        info.notCheckable = true
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Save current build as loadout..."
+        info.notCheckable = true
+        info.func = function() TalentManager:ShowSaveDialog() end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Import from string / URL..."
+        info.notCheckable = true
+        info.func = function() TalentManager:ShowImportDialog() end
+        UIDropDownMenu_AddButton(info, level)
+
+        if #TalentManager:GetInspectionList() > 0 then
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Inspected players"
+            info.notCheckable = true
+            info.hasArrow = true
+            info.value = "__INSPECTIONS__"
+            UIDropDownMenu_AddButton(info, level)
+        end
+
+        if targetTemplate then
+            info = UIDropDownMenu_CreateInfo()
+            info.text = "Clear comparison (" .. (targetTemplate.name or "?") .. ")"
+            info.notCheckable = true
+            info.func = function()
+                targetTemplate = nil
+                TalentManager:UpdateTalentDisplay()
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+
+    elseif level == 2 then
+        local value = UIDROPDOWNMENU_MENU_VALUE
+
+        if value == "__INSPECTIONS__" then
+            for _, insp in ipairs(TalentManager:GetInspectionList()) do
+                info = UIDropDownMenu_CreateInfo()
+                info.text = insp.name .. " |cff888888(" .. insp.class .. " " .. (insp.summary or "?") .. ")|r"
+                info.notCheckable = true
+                local inspName = insp.name
+                info.func = function()
+                    local ok, msg = TalentManager:SaveInspectionAsTemplate(inspName)
+                    if not ok and msg then
+                        NotifyTalent("Cannot save inspection: " .. msg, "warning", { title = "Talents" })
+                    end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+            return
+        end
+
+        local name = value
+        if not TalentManager:GetTemplate(name) then return end
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Activate"
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:ApplyTemplate(name)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Overwrite with current build"
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:UpdateTemplate(name)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Duplicate"
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:CopyTemplate(name)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Favorite"
+        info.checked = TalentManager:IsFavorite(name)
+        info.func = function()
+            TalentManager:ToggleFavorite(name)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Compare with current"
+        info.notCheckable = true
+        info.func = function()
+            targetTemplate = TalentManager:GetTemplate(name)
+            TalentManager:UpdateTalentDisplay()
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Rename..."
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:ShowRenameDialog(name)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Export string..."
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:ShowExportDialog(TalentManager:ExportToString(name), "Loadout String")
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "WoWHead link..."
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:ShowExportDialog(TalentManager:ExportToURL(name, "wowhead"), "WoWHead URL")
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "Send to player..."
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:ShowSendDialog(name)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info = UIDropDownMenu_CreateInfo()
+        info.text = "|cffff5533Delete...|r"
+        info.notCheckable = true
+        info.func = function()
+            TalentManager:ShowDeleteDialog(name)
+            CloseDropDownMenus()
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+end
+
+local function GetLoadoutMenuHost()
+    if not loadoutMenuHost then
+        loadoutMenuHost = CreateFrame("Frame", "DCQoSLoadoutMenuHost", UIParent, "UIDropDownMenuTemplate")
+    end
+    UIDropDownMenu_Initialize(loadoutMenuHost, BuildLoadoutMenu, "MENU")
+    return loadoutMenuHost
+end
+
+-- Refresh header widgets (loadout button text, spec buttons)
+function TalentManager:RefreshLoadoutUI()
+    if not mainFrame then return end
+
+    local loadoutBtn = mainFrame.loadoutButton
+    if loadoutBtn and loadoutBtn.text then
+        local activeName = self:GetActiveLoadoutName()
+        if activeName then
+            local dirty = self:IsActiveLoadoutDirty()
+            loadoutBtn.text:SetText("|cffffd200" .. activeName .. "|r" .. (dirty and " |cffff5533(modified)|r" or ""))
+        else
+            loadoutBtn.text:SetText("|cff999999Select loadout...|r")
+        end
+    end
+
+    local activeSpec = self:GetActiveSpec()
+    local numSpecs = self:GetNumSpecs()
+    for i = 1, 2 do
+        local specBtn = mainFrame["specBtn" .. i]
+        if specBtn then
+            if i <= numSpecs then
+                specBtn:Enable()
+            else
+                specBtn:Disable()
+            end
+            if i == activeSpec then
+                specBtn:SetText("|cffffd200Spec " .. i .. "|r")
+            else
+                specBtn:SetText("Spec " .. i)
+            end
+        end
+    end
+end
+
+-- ============================================================
 -- UI: Main Frame
 -- ============================================================
 
 function TalentManager:CreateMainFrame()
     if mainFrame then return mainFrame end
-    
+
     local settings = addon.settings.talentManager
-    
+
     local frame = CreateFrame("Frame", "DCQoSTalentManagerFrame", UIParent)
-    frame:SetSize(700, 640)
+    frame:SetSize(700, 604)
     frame:SetPoint("CENTER", 50, 0)
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -1606,71 +2312,119 @@ function TalentManager:CreateMainFrame()
         settings.framePos = { point = point, relPoint = relPoint, x = x, y = y }
     end)
     frame:Hide()
-    
-    -- Background
+
+    -- Flat DC-style background
     frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        bgFile = FLAT_TEXTURE,
+        edgeFile = FLAT_TEXTURE,
+        edgeSize = 1,
     })
-    local bgTex = frame:CreateTexture(nil, "BACKGROUND")
-    bgTex:SetAllPoints(frame)
+    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+    frame:SetBackdropBorderColor(0.28, 0.28, 0.28, 1)
+
+    local bgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    bgTex:SetPoint("TOPLEFT", 1, -1)
+    bgTex:SetPoint("BOTTOMRIGHT", -1, 1)
     bgTex:SetTexture(BG_FELLEATHER)
-    bgTex:SetAlpha(0.35)
+    bgTex:SetAlpha(0.10)
     frame.bgTex = bgTex
-    
+
+    -- Header strip
+    local headerBg = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
+    headerBg:SetPoint("TOPLEFT", 1, -1)
+    headerBg:SetPoint("TOPRIGHT", -1, -1)
+    headerBg:SetHeight(64)
+    headerBg:SetTexture(FLAT_TEXTURE)
+    headerBg:SetVertexColor(0.09, 0.09, 0.09, 0.9)
+
+    local headerLine = frame:CreateTexture(nil, "BORDER")
+    headerLine:SetPoint("TOPLEFT", 1, -65)
+    headerLine:SetPoint("TOPRIGHT", -1, -65)
+    headerLine:SetHeight(1)
+    headerLine:SetTexture(FLAT_TEXTURE)
+    headerLine:SetVertexColor(0.28, 0.28, 0.28, 1)
+
     -- Title
     local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -15)
-    title:SetText("DC-QoS Talent Manager")
+    title:SetPoint("TOPLEFT", 16, -12)
+    title:SetText("Talents")
     frame.title = title
-    
+
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -5, -5)
-    
-    -- Spec tabs
-    local specTabs = CreateFrame("Frame", nil, frame)
-    specTabs:SetPoint("TOPLEFT", 15, -40)
-    specTabs:SetSize(200, 25)
-    frame.specTabs = specTabs
-    
+    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+
+    -- Point summary (right side of title row)
+    local pointSummary = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
+    pointSummary:SetPoint("TOPRIGHT", -34, -14)
+    pointSummary:SetText("0/0/0")
+    frame.pointSummary = pointSummary
+
+    -- Toolbar row: loadout picker + spec buttons + glyphs
+    local loadoutBtn = CreateFrame("Button", "DCQoSLoadoutButton", frame)
+    loadoutBtn:SetSize(220, 24)
+    loadoutBtn:SetPoint("TOPLEFT", 16, -34)
+    if addon.StyleActionButton then
+        addon:StyleActionButton(loadoutBtn)
+    end
+    local loadoutText = loadoutBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    loadoutText:SetPoint("LEFT", 8, 0)
+    loadoutText:SetPoint("RIGHT", -20, 0)
+    loadoutText:SetJustifyH("LEFT")
+    loadoutText:SetText("|cff999999Select loadout...|r")
+    loadoutBtn.text = loadoutText
+    local loadoutArrow = loadoutBtn:CreateTexture(nil, "OVERLAY")
+    loadoutArrow:SetSize(12, 12)
+    loadoutArrow:SetPoint("RIGHT", -5, 0)
+    loadoutArrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+    -- Rotate the right-arrow 90 degrees clockwise so it points down
+    loadoutArrow:SetTexCoord(0, 1, 1, 1, 0, 0, 1, 0)
+    loadoutBtn:SetScript("OnClick", function(self)
+        ToggleDropDownMenu(1, nil, GetLoadoutMenuHost(), "DCQoSLoadoutButton", 0, 0)
+    end)
+    frame.loadoutButton = loadoutBtn
+
+    local newLoadoutBtn = CreateFlatButton(frame, "+ New", 56, 24)
+    newLoadoutBtn:SetPoint("LEFT", loadoutBtn, "RIGHT", 4, 0)
+    newLoadoutBtn:SetScript("OnClick", function() TalentManager:ShowSaveDialog() end)
+    newLoadoutBtn:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Save current build as a new loadout")
+        GameTooltip:Show()
+    end)
+    newLoadoutBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.newLoadoutButton = newLoadoutBtn
+
     for i = 1, 2 do
-        local specBtn = CreateFrame("Button", nil, specTabs, "UIPanelButtonTemplate")
-        specBtn:SetSize(80, 22)
-        specBtn:SetPoint("LEFT", (i-1) * 85, 0)
-        specBtn:SetText("Spec " .. i)
+        local specBtn = CreateFlatButton(frame, "Spec " .. i, 56, 24)
+        if i == 1 then
+            specBtn:SetPoint("LEFT", newLoadoutBtn, "RIGHT", 8, 0)
+        else
+            specBtn:SetPoint("LEFT", frame.specBtn1, "RIGHT", 4, 0)
+        end
         specBtn:SetScript("OnClick", function()
             TalentManager:SwitchSpec(i)
         end)
         frame["specBtn" .. i] = specBtn
     end
-    
-    -- Active spec indicator
-    local specLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    specLabel:SetPoint("LEFT", specTabs, "RIGHT", 10, 0)
-    specLabel:SetText("Active: Spec 1")
-    frame.specLabel = specLabel
-    
-    -- Point summary
-    local pointSummary = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
-    pointSummary:SetPoint("TOPRIGHT", -20, -15)
-    pointSummary:SetText("0/0/0")
-    frame.pointSummary = pointSummary
-    
+
+    local glyphBtn = CreateFlatButton(frame, "Glyphs", 64, 24)
+    glyphBtn:SetPoint("LEFT", frame.specBtn2, "RIGHT", 8, 0)
+    glyphBtn:SetScript("OnClick", function() TalentManager:ToggleGlyphFrame() end)
+    frame.glyphButton = glyphBtn
+
     local unspentText = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    unspentText:SetPoint("TOP", pointSummary, "BOTTOM", 0, -2)
+    unspentText:SetPoint("TOPRIGHT", -16, -40)
     unspentText:SetText("0 unspent")
     frame.unspentText = unspentText
-    
+
     -- Talent trees container
     local treesFrame = CreateFrame("Frame", nil, frame)
-    treesFrame:SetPoint("TOPLEFT", 20, -65)
+    treesFrame:SetPoint("TOPLEFT", 20, -72)
     treesFrame:SetPoint("RIGHT", -8, 0)
     treesFrame:SetHeight(TREE_HEIGHT + TREE_TOP_OFFSET)
     frame.treesFrame = treesFrame
-    
+
     -- Create 3 tree frames
     frame.trees = {}
     local treeGap = 4
@@ -1685,191 +2439,19 @@ function TalentManager:CreateMainFrame()
         tree:SetPoint("TOPLEFT", treesFrame, "TOPLEFT", startX + (tab - 1) * (TREE_WIDTH + treeGap), 0)
         frame.trees[tab] = tree
     end
-    
-    -- Bottom panel
-    local bottomPanel = CreateFrame("Frame", nil, frame)
-    bottomPanel:SetPoint("BOTTOMLEFT", 15, 10)
-    bottomPanel:SetPoint("BOTTOMRIGHT", -10, 10)
-    bottomPanel:SetHeight(95)
-    frame.bottomPanel = bottomPanel
-    
-    -- Template dropdown
-    local templateLabel = bottomPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    templateLabel:SetPoint("TOPLEFT", 0, -5)
-    templateLabel:SetText("Templates:")
-    
-    local templateDropdown = CreateFrame("Frame", "DCQoSTalentTemplateDropdown", bottomPanel, "UIDropDownMenuTemplate")
-    templateDropdown:SetPoint("TOPLEFT", templateLabel, "BOTTOMLEFT", -15, 0)
-    UIDropDownMenu_SetWidth(templateDropdown, 130)
-    frame.templateDropdown = templateDropdown
-    
-    -- Buttons row 1
-    local saveBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    saveBtn:SetSize(45, 22)
-    saveBtn:SetPoint("LEFT", templateDropdown, "RIGHT", -10, 2)
-    saveBtn:SetText("Save")
-    saveBtn:SetScript("OnClick", function()
-        StaticPopupDialogs["DCQOS_SAVE_TEMPLATE"] = {
-            text = "Enter template name:",
-            hasEditBox = 1,
-            button1 = ACCEPT,
-            button2 = CANCEL,
-            OnAccept = function(self)
-                local name = self.editBox:GetText()
-                if name and name ~= "" then
-                    TalentManager:CreateTemplate(name)
-                    TalentManager:UpdateTemplateDropdown()
-                end
-            end,
-            EditBoxOnEnterPressed = function(self)
-                local parent = self:GetParent()
-                StaticPopupDialogs["DCQOS_SAVE_TEMPLATE"].OnAccept(parent)
-                parent:Hide()
-            end,
-            EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
-            timeout = 0, whileDead = 1, hideOnEscape = 1,
-        }
-        StaticPopup_Show("DCQOS_SAVE_TEMPLATE")
-    end)
-    
-    local loadBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    loadBtn:SetSize(48, 22)
-    loadBtn:SetPoint("LEFT", saveBtn, "RIGHT", 2, 0)
-    loadBtn:SetText("Apply")
-    loadBtn:SetScript("OnClick", function()
-        local selected = UIDropDownMenu_GetSelectedValue(templateDropdown)
-        if selected then TalentManager:ApplyTemplate(selected) end
-    end)
-    
-    local copyBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    copyBtn:SetSize(45, 22)
-    copyBtn:SetPoint("LEFT", loadBtn, "RIGHT", 2, 0)
-    copyBtn:SetText("Copy")
-    copyBtn:SetScript("OnClick", function()
-        local selected = UIDropDownMenu_GetSelectedValue(templateDropdown)
-        if selected then
-            TalentManager:CopyTemplate(selected)
-            TalentManager:UpdateTemplateDropdown()
-        end
-    end)
-    
-    local deleteBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    deleteBtn:SetSize(55, 22)
-    deleteBtn:SetPoint("LEFT", copyBtn, "RIGHT", 2, 0)
-    deleteBtn:SetText("Delete")
-    deleteBtn:SetScript("OnClick", function()
-        local selected = UIDropDownMenu_GetSelectedValue(templateDropdown)
-        if selected then
-            TalentManager:DeleteTemplate(selected)
-            TalentManager:UpdateTemplateDropdown()
-        end
-    end)
-    
-    local targetBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    targetBtn:SetSize(48, 22)
-    targetBtn:SetPoint("LEFT", deleteBtn, "RIGHT", 2, 0)
-    targetBtn:SetText("Target")
-    targetBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Set as comparison target")
-        GameTooltip:AddLine("Shows difference between current and template", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    targetBtn:SetScript("OnLeave", GameTooltip_Hide)
-    targetBtn:SetScript("OnClick", function()
-        local selected = UIDropDownMenu_GetSelectedValue(templateDropdown)
-        if selected then
-            local template = TalentManager:GetTemplate(selected)
-            if template then
-                targetTemplate = template
-                TalentManager:UpdateTalentDisplay()
-                NotifyTalent("Target set: " .. selected, "info", { title = "Talents", chatFallback = false })
-            end
-        else
-            targetTemplate = nil
-            TalentManager:UpdateTalentDisplay()
-        end
-    end)
-    
-    -- Row 2
-    local exportBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    exportBtn:SetSize(48, 22)
-    exportBtn:SetPoint("TOPLEFT", templateDropdown, "BOTTOMLEFT", 15, -2)
-    exportBtn:SetText("Export")
-    exportBtn:SetScript("OnClick", function()
-        local selected = UIDropDownMenu_GetSelectedValue(templateDropdown)
-        local str = TalentManager:ExportToString(selected)
-        TalentManager:ShowExportDialog(str, "Template String")
-    end)
-    
-    local importBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    importBtn:SetSize(48, 22)
-    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 1, 0)
-    importBtn:SetText("Import")
-    importBtn:SetScript("OnClick", function() TalentManager:ShowImportDialog() end)
-    
-    local urlBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    urlBtn:SetSize(65, 22)
-    urlBtn:SetPoint("LEFT", importBtn, "RIGHT", 1, 0)
-    urlBtn:SetText("WoWHead")
-    urlBtn:SetScript("OnClick", function()
-        local selected = UIDropDownMenu_GetSelectedValue(templateDropdown)
-        local url = TalentManager:ExportToURL(selected, "wowhead")
-        TalentManager:ShowExportDialog(url, "WoWHead URL")
-    end)
-    
-    local sendBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    sendBtn:SetSize(42, 22)
-    sendBtn:SetPoint("LEFT", urlBtn, "RIGHT", 1, 0)
-    sendBtn:SetText("Send")
-    sendBtn:SetScript("OnClick", function()
-        StaticPopupDialogs["DCQOS_SEND_TEMPLATE"] = {
-            text = "Enter player name:",
-            hasEditBox = 1, button1 = ACCEPT, button2 = CANCEL,
-            OnAccept = function(self)
-                local target = self.editBox:GetText()
-                if target and target ~= "" then
-                    local selected = UIDropDownMenu_GetSelectedValue(mainFrame.templateDropdown)
-                    TalentManager:SendTemplateToPlayer(selected, target)
-                end
-            end,
-            EditBoxOnEnterPressed = function(self)
-                local parent = self:GetParent()
-                StaticPopupDialogs["DCQOS_SEND_TEMPLATE"].OnAccept(parent)
-                parent:Hide()
-            end,
-            EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
-            timeout = 0, whileDead = 1, hideOnEscape = 1,
-        }
-        StaticPopup_Show("DCQOS_SEND_TEMPLATE")
-    end)
-    
-    -- Inspect dropdown
-    local inspectDropdown = CreateFrame("Frame", "DCQoSInspectDropdown", bottomPanel, "UIDropDownMenuTemplate")
-    inspectDropdown:SetPoint("LEFT", sendBtn, "RIGHT", -12, 0)
-    UIDropDownMenu_SetWidth(inspectDropdown, 70)
-    UIDropDownMenu_SetText(inspectDropdown, "Inspects")
-    frame.inspectDropdown = inspectDropdown
-    
-    -- Glyph button
-    local glyphBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    glyphBtn:SetSize(52, 22)
-    glyphBtn:SetPoint("LEFT", inspectDropdown, "RIGHT", -8, 2)
-    glyphBtn:SetText("Glyphs")
-    glyphBtn:SetScript("OnClick", function() TalentManager:ToggleGlyphFrame() end)
-    
+
     mainFrame = frame
     tinsert(UISpecialFrames, "DCQoSTalentManagerFrame")
-    
+
     -- Restore position
     if settings.framePos and settings.framePos.point then
         frame:ClearAllPoints()
         frame:SetPoint(settings.framePos.point, UIParent, settings.framePos.relPoint,
                        settings.framePos.x, settings.framePos.y)
     end
-    
+
     frame:SetScale(settings.frameScale or 1)
-    
+
     return frame
 end
 
@@ -1992,69 +2574,14 @@ function TalentManager:ShowImportDialog()
     StaticPopup_Show("DCQOS_IMPORT_TEMPLATE")
 end
 
+-- Legacy entry points kept for older call sites; the loadout dropdown is
+-- built on demand by BuildLoadoutMenu, so a header refresh is all that's left.
 function TalentManager:UpdateTemplateDropdown()
-    local dropdown = mainFrame and mainFrame.templateDropdown
-    if not dropdown then return end
-    
-    local templateList = self:GetTemplateList()
-    
-    UIDropDownMenu_Initialize(dropdown, function(self, level)
-        local info = UIDropDownMenu_CreateInfo()
-        
-        info.text = "-- Current --"
-        info.value = nil
-        info.func = function()
-            UIDropDownMenu_SetSelectedValue(dropdown, nil)
-            UIDropDownMenu_SetText(dropdown, "Current")
-            targetTemplate = nil
-            TalentManager:UpdateTalentDisplay()
-        end
-        UIDropDownMenu_AddButton(info)
-        
-        for _, template in ipairs(templateList) do
-            info.text = template.name .. " (" .. template.summary .. ")"
-            info.value = template.name
-            info.func = function()
-                UIDropDownMenu_SetSelectedValue(dropdown, template.name)
-                UIDropDownMenu_SetText(dropdown, template.name)
-            end
-            UIDropDownMenu_AddButton(info)
-        end
-    end)
-    
-    UIDropDownMenu_SetText(dropdown, "Select...")
+    self:RefreshLoadoutUI()
 end
 
 function TalentManager:UpdateInspectDropdown()
-    local dropdown = mainFrame and mainFrame.inspectDropdown
-    if not dropdown then return end
-    
-    local inspectList = self:GetInspectionList()
-    
-    UIDropDownMenu_Initialize(dropdown, function(self, level)
-        local info = UIDropDownMenu_CreateInfo()
-        
-        if #inspectList == 0 then
-            info.text = "No inspections"
-            info.disabled = true
-            UIDropDownMenu_AddButton(info)
-            return
-        end
-        
-        for _, insp in ipairs(inspectList) do
-            info.text = insp.name .. " (" .. insp.class .. ")"
-            info.value = insp.name
-            info.func = function()
-                TalentManager:SaveInspectionAsTemplate(insp.name)
-                TalentManager:UpdateTemplateDropdown()
-            end
-            info.tooltipTitle = insp.name
-            info.tooltipText = insp.class .. " " .. insp.summary .. "\nClick to save as template"
-            UIDropDownMenu_AddButton(info)
-        end
-    end)
-    
-    UIDropDownMenu_SetText(dropdown, "Inspects")
+    self:RefreshLoadoutUI()
 end
 
 function TalentManager:UpdateTalentDisplay()
@@ -2135,13 +2662,14 @@ function TalentManager:UpdateTalentDisplay()
     local total = GetTotalPoints(current)
     local unspent = SafeGetUnspentTalentPoints()
     mainFrame.unspentText:SetText(unspent .. " unspent (Lvl " .. GetRequiredLevel(total) .. "+)")
-    mainFrame.specLabel:SetText("Active: Spec " .. self:GetActiveSpec())
-    
+
     if targetTemplate then
-        mainFrame.title:SetText("DC Talent Manager - Target: " .. (targetTemplate.name or "?"))
+        mainFrame.title:SetText("Talents |cff888888vs|r |cffffd200" .. (targetTemplate.name or "?") .. "|r")
     else
-        mainFrame.title:SetText("DC-QoS Talent Manager")
+        mainFrame.title:SetText("Talents")
     end
+
+    self:RefreshLoadoutUI()
 end
 
 function TalentManager:PopulateTalentTrees(pet)
@@ -2161,14 +2689,29 @@ function TalentManager:PopulateTalentTrees(pet)
             tree.prereqLines = {}
             
             local numTalents = SafeGetNumTalents(tab, nil, pet)
+            local maxColumn = 1
             for i = 1, numTalents do
                 local button = CreateTalentButton(tree.container, tab, i, pet)
                 if button then
-                    local x = (button.column - 1) * TALENT_SPACING_X
-                    local y = -(button.tier - 1) * TALENT_SPACING_Y
-                    button:SetPoint("TOPLEFT", x, y)
                     tree.talentButtons[i] = button
+                    if button.column and button.column > maxColumn then
+                        maxColumn = button.column
+                    end
                 end
+            end
+
+            -- Center the talent grid horizontally inside the tree panel
+            local containerWidth = tree.container:GetWidth()
+            if not containerWidth or containerWidth <= 0 then
+                containerWidth = TREE_WIDTH - 16
+            end
+            local gridWidth = (maxColumn - 1) * TALENT_SPACING_X + TALENT_BUTTON_SIZE
+            local xBase = math.max(0, math.floor((containerWidth - gridWidth) / 2 + 0.5))
+
+            for _, button in pairs(tree.talentButtons) do
+                local x = xBase + (button.column - 1) * TALENT_SPACING_X
+                local y = -(button.tier - 1) * TALENT_SPACING_Y
+                button:SetPoint("TOPLEFT", x, y)
             end
         end
     end
@@ -2184,7 +2727,7 @@ function TalentManager:CreateGlyphFrame()
     local settings = addon.settings.talentManager
     
     local frame = CreateFrame("Frame", "DCQoSGlyphFrame", UIParent)
-    frame:SetSize(340, 420)
+    frame:SetSize(340, 470)
     frame:SetPoint("CENTER", 360, 0)
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -2200,23 +2743,28 @@ function TalentManager:CreateGlyphFrame()
     end)
     frame:Hide()
     
-    -- DC addon standard background (matching talent frame)
+    -- Flat DC-style background (matching talent frame)
     frame:SetBackdrop({
-        bgFile = BG_FELLEATHER,
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 256, edgeSize = 32,
-        insets = { left = 8, right = 8, top = 8, bottom = 8 }
+        bgFile = FLAT_TEXTURE,
+        edgeFile = FLAT_TEXTURE,
+        edgeSize = 1,
     })
-    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.92)
-    frame:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
-    
+    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+    frame:SetBackdropBorderColor(0.28, 0.28, 0.28, 1)
+
+    local glyphBgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    glyphBgTex:SetPoint("TOPLEFT", 1, -1)
+    glyphBgTex:SetPoint("BOTTOMRIGHT", -1, 1)
+    glyphBgTex:SetTexture(BG_FELLEATHER)
+    glyphBgTex:SetAlpha(0.10)
+
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -10)
     title:SetText("Glyphs")
-    
+
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", 2, 2)
+    closeBtn:SetPoint("TOPRIGHT", -2, -2)
     
     -- Spec toggle row
     local specRow = CreateFrame("Frame", nil, frame)
@@ -2246,26 +2794,10 @@ function TalentManager:CreateGlyphFrame()
     viewText:SetText("")
     frame.viewText = viewText
 
-    local openBlizz = CreateFrame("Button", nil, specRow, "UIPanelButtonTemplate")
-    openBlizz:SetSize(100, 18)
+    local openBlizz = CreateFlatButton(specRow, "Blizzard UI", 100, 18)
     openBlizz:SetPoint("RIGHT", specRow, "RIGHT", 0, 0)
-    openBlizz:SetText("Blizzard UI")
     openBlizz:SetScript("OnClick", function()
-        local loader = UIParentLoadAddOn or LoadAddOn
-        if loader then
-            pcall(loader, "Blizzard_TalentUI")
-            pcall(loader, "Blizzard_GlyphUI")
-        end
-        if ToggleTalentFrame then
-            ToggleTalentFrame()
-        elseif PlayerTalentFrame and ShowUIPanel then
-            ShowUIPanel(PlayerTalentFrame)
-        end
-        if PlayerTalentFrameTab3 and PlayerTalentFrameTab3.Click then
-            PlayerTalentFrameTab3:Click()
-        elseif PlayerTalentFrame_OnTabClicked then
-            pcall(PlayerTalentFrame_OnTabClicked, PlayerTalentFrame, 3)
-        end
+        TalentManager:OpenBlizzardTalentUI(3)
     end)
 
     -- Helper to create a glyph socket (DC addon style)
@@ -2362,6 +2894,9 @@ function TalentManager:CreateGlyphFrame()
                 GameTooltip:SetText(typeStr .. " Glyph Slot " .. index)
                 GameTooltip:AddLine(self.lockedText or "Empty", 0.7, 0.7, 0.7, true)
             end
+            if self.expectedGlyph then
+                GameTooltip:AddLine("Loadout wants: " .. (self.expectedGlyph.name or ("spell " .. self.expectedGlyph.spellId)), 1, 0.35, 0.3, true)
+            end
             GameTooltip:Show()
         end)
         slot:SetScript("OnLeave", GameTooltip_Hide)
@@ -2417,7 +2952,19 @@ function TalentManager:CreateGlyphFrame()
     frame.availText:SetPoint("TOP", availLabel, "BOTTOM", 0, -5)
     frame.availText:SetWidth(300)
     frame.availText:SetJustifyH("CENTER")
-    
+
+    -- Loadout glyph controls
+    local applyGlyphsBtn = CreateFlatButton(frame, "Apply Loadout Glyphs", 170, 22)
+    applyGlyphsBtn:SetPoint("BOTTOM", 0, 12)
+    applyGlyphsBtn:SetScript("OnClick", function() TalentManager:ApplyLoadoutGlyphs() end)
+    frame.applyGlyphsBtn = applyGlyphsBtn
+
+    local loadoutDiffText = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    loadoutDiffText:SetPoint("BOTTOM", applyGlyphsBtn, "TOP", 0, 5)
+    loadoutDiffText:SetWidth(310)
+    loadoutDiffText:SetJustifyH("CENTER")
+    frame.loadoutDiffText = loadoutDiffText
+
     glyphFrame = frame
     tinsert(UISpecialFrames, "DCQoSGlyphFrame")
     
@@ -2508,7 +3055,58 @@ function TalentManager:UpdateGlyphDisplay()
     for i, slot in ipairs(glyphFrame.minorSlots) do
         ApplySlot(slot, current.minor[i], "minor")
     end
-    
+
+    -- Mark sockets that differ from the active loadout's glyph set
+    local activeName = self:GetActiveLoadoutName()
+    local activeTemplate = activeName and self:GetTemplate(activeName)
+    local diff = activeTemplate and self:GetGlyphDiff(activeTemplate, group)
+    local diffByKey = {}
+    if diff then
+        for _, entry in ipairs(diff) do
+            diffByKey[entry.kind .. entry.index] = entry
+        end
+    end
+
+    local function MarkDiff(slot, kind, index)
+        local entry = diffByKey[kind .. index]
+        slot.expectedGlyph = entry
+        if entry then
+            slot.ring:SetVertexColor(1, 0.35, 0.3, 1)
+            slot.ring:SetAlpha(1)
+        elseif kind == "major" then
+            slot.ring:SetVertexColor(1, 0.82, 0, 1)
+        else
+            slot.ring:SetVertexColor(0.5, 0.7, 1, 1)
+        end
+    end
+
+    for i, slot in ipairs(glyphFrame.majorSlots) do
+        MarkDiff(slot, "major", i)
+    end
+    for i, slot in ipairs(glyphFrame.minorSlots) do
+        MarkDiff(slot, "minor", i)
+    end
+
+    if glyphFrame.loadoutDiffText then
+        if not activeTemplate then
+            glyphFrame.loadoutDiffText:SetText("|cff888888No active loadout for this spec|r")
+        elseif not activeTemplate.glyphs then
+            glyphFrame.loadoutDiffText:SetText("|cff888888Loadout '" .. activeName .. "' has no glyph set|r")
+        elseif diff and #diff > 0 then
+            glyphFrame.loadoutDiffText:SetText("|cffff5533" .. #diff .. " glyph(s) differ from '" .. activeName .. "'|r")
+        else
+            glyphFrame.loadoutDiffText:SetText("|cff44dd44Glyphs match '" .. activeName .. "'|r")
+        end
+    end
+
+    if glyphFrame.applyGlyphsBtn then
+        if diff and #diff > 0 and group == self:GetActiveSpec() then
+            glyphFrame.applyGlyphsBtn:Enable()
+        else
+            glyphFrame.applyGlyphsBtn:Disable()
+        end
+    end
+
     local available = self:GetAvailableGlyphs()
     local lines = {}
     if #available.major > 0 then
@@ -2540,6 +3138,7 @@ end
 -- ============================================================
 
 function TalentManager:Toggle()
+    self:Initialize()
     local frame = self:CreateMainFrame()
     if frame:IsShown() then
         frame:Hide()
@@ -2549,8 +3148,6 @@ function TalentManager:Toggle()
         self:LoadTemplates()
         self:PopulateTalentTrees()
         self:UpdateTalentDisplay()
-        self:UpdateTemplateDropdown()
-        self:UpdateInspectDropdown()
     end
 end
 
@@ -2620,25 +3217,27 @@ function TalentManager.CreateSettings(parent)
     openBtn:SetScript("OnClick", function() TalentManager:Toggle() end)
     yOffset = yOffset - 35
     
-    local enableCb = addon:CreateCheckbox(parent, "Enabled", "talentManager", "enabled")
-    enableCb:SetPoint("TOPLEFT", 16, yOffset)
-    yOffset = yOffset - 26
-    
-    local confirmCb = addon:CreateCheckbox(parent, "Confirm before learning", "talentManager", "confirmLearning")
-    confirmCb:SetPoint("TOPLEFT", 16, yOffset)
-    yOffset = yOffset - 26
-    
-    local backupCb = addon:CreateCheckbox(parent, "Auto-backup before respec", "talentManager", "autoBackup")
-    backupCb:SetPoint("TOPLEFT", 16, yOffset)
-    yOffset = yOffset - 26
-    
-    local inspectCb = addon:CreateCheckbox(parent, "Save inspected talents", "talentManager", "hookInspect")
-    inspectCb:SetPoint("TOPLEFT", 16, yOffset)
-    yOffset = yOffset - 26
-    
-    local lockCb = addon:CreateCheckbox(parent, "Lock frame position", "talentManager", "lockFrame")
-    lockCb:SetPoint("TOPLEFT", 16, yOffset)
-    yOffset = yOffset - 35
+    local function AddCheckbox(label, key)
+        local cb = addon:CreateCheckbox(parent)
+        cb:SetPoint("TOPLEFT", 16, yOffset)
+        if cb.Text then
+            cb.Text:SetText(label)
+        end
+        cb:SetChecked(settings[key])
+        cb:SetScript("OnClick", function(self)
+            addon:SetSetting("talentManager." .. key, self:GetChecked() and true or false)
+        end)
+        yOffset = yOffset - 26
+        return cb
+    end
+
+    AddCheckbox("Enabled", "enabled")
+    AddCheckbox("Replace Blizzard talent frame (Shift+N opens the original)", "replaceBlizzardFrame")
+    AddCheckbox("Confirm before learning talents", "confirmLearning")
+    AddCheckbox("Auto-backup build before applying a loadout", "autoBackup")
+    AddCheckbox("Save inspected players' builds", "hookInspect")
+    AddCheckbox("Lock frame position", "lockFrame")
+    yOffset = yOffset - 9
     
     -- Scale slider
     local scaleLabel = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -2668,22 +3267,27 @@ function TalentManager.CreateSettings(parent)
     -- Template list
     local listLabel = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     listLabel:SetPoint("TOPLEFT", 16, yOffset)
-    listLabel:SetText("Saved Templates:")
+    listLabel:SetText("Saved Loadouts:")
     yOffset = yOffset - 18
-    
+
     local listText = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     listText:SetPoint("TOPLEFT", 16, yOffset)
     listText:SetWidth(380)
     listText:SetJustifyH("LEFT")
-    
+
     local function UpdateList()
         local list = TalentManager:GetTemplateList()
         if #list == 0 then
             listText:SetText("None saved yet")
         else
+            local activeName = TalentManager:GetActiveLoadoutName()
             local lines = {}
             for _, t in ipairs(list) do
-                table.insert(lines, "• " .. t.name .. " (" .. t.summary .. ")")
+                local line = "• " .. t.name .. " (" .. (t.summary or "?") .. ")"
+                if t.name == activeName then
+                    line = line .. " |cffffd200[active]|r"
+                end
+                table.insert(lines, line)
             end
             listText:SetText(table.concat(lines, "\n"))
         end
@@ -2720,6 +3324,46 @@ end
 
 addon:RegisterModule("TalentManager", TalentManager)
 TalentManager:RegisterSlashCommand()
+
+-- ============================================================
+-- Blizzard Talent Frame Replacement
+-- ============================================================
+-- The N key (TOGGLETALENTS binding) and the micro menu both route
+-- through the global ToggleTalentFrame. Redirect it to the DC
+-- manager; hold Shift (or disable the setting) for the original.
+local blizzardToggleTalentFrame = ToggleTalentFrame
+function ToggleTalentFrame(...)
+    local settings = addon.settings and addon.settings.talentManager
+    if settings and settings.enabled and settings.replaceBlizzardFrame and not IsShiftKeyDown() then
+        TalentManager:Toggle()
+        return
+    end
+    if blizzardToggleTalentFrame then
+        return blizzardToggleTalentFrame(...)
+    end
+end
+
+-- Always opens the original Blizzard frame (used by the Glyphs window
+-- and as the Shift-modified fallback)
+function TalentManager:OpenBlizzardTalentUI(tab)
+    local loader = UIParentLoadAddOn or LoadAddOn
+    if loader then
+        pcall(loader, "Blizzard_TalentUI")
+        pcall(loader, "Blizzard_GlyphUI")
+    end
+    if blizzardToggleTalentFrame then
+        blizzardToggleTalentFrame()
+    elseif PlayerTalentFrame and ShowUIPanel then
+        ShowUIPanel(PlayerTalentFrame)
+    end
+    if tab == 3 then
+        if PlayerTalentFrameTab3 and PlayerTalentFrameTab3.Click then
+            PlayerTalentFrameTab3:Click()
+        elseif PlayerTalentFrame_OnTabClicked then
+            pcall(PlayerTalentFrame_OnTabClicked, PlayerTalentFrame, 3)
+        end
+    end
+end
 
 -- Hook Blizzard talent frame
 local hookFrame = CreateFrame("Frame")
