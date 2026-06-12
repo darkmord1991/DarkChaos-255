@@ -393,7 +393,20 @@ end
 local nativeSpellEnrichmentErrorStreak = 0
 local NATIVE_SPELL_ENRICH_ERROR_STREAK_LIMIT = 3
 
+-- The native C2S enrichment bridge is end-to-end broken on live: the server
+-- rejects those requests and the DLL swallows the error responses (it resets
+-- its pending without surfacing an error to Lua), so they die as silent
+-- timeouts that the error-streak/retry logic never sees. Action/companion
+-- tooltips then miss their enrichment lines while the addon JSON path
+-- answers the same spells fine. Keep the bridge parked until the DLL-side
+-- path is fixed, then flip this back on.
+local NATIVE_SPELL_ENRICH_BRIDGE_ENABLED = false
+
 function TT.ShouldUseNativeSpellTooltipAddonBridge()
+    if not NATIVE_SPELL_ENRICH_BRIDGE_ENABLED then
+        return false
+    end
+
     if not HasNativeSpellTooltipAddonBridge() then
         return false
     end
@@ -1059,6 +1072,49 @@ local function RenderNativeClientSpellTooltipRows(tooltip, rows)
     return addedAny
 end
 
+-- Retail-style white numbers inside gold body text. Lua-rendered tooltip
+-- lines honor inline |c escapes (the engine-side AddLine path does not,
+-- which is why this cannot live in the DLL). Skips text that already
+-- carries color codes (server-colored bodies, the mount line).
+local function ColorizeBodyNumbers(text)
+    if type(text) ~= "string" or text == "" or text:find("|c", 1, true) then
+        return text
+    end
+    if addon.settings and addon.settings.tooltips
+        and addon.settings.tooltips.colorSpellValues == false then
+        return text
+    end
+    return (text:gsub("%f[%d%.](%d+%.?%d*)", "|cffffffff%1|r"))
+end
+
+-- The hyperlink body is engine-rendered (inline colors lost). Re-color its
+-- gold description lines through the Lua FontStrings, which honor escapes.
+local function ColorizeTooltipBodyLines(tooltip)
+    if not tooltip or type(tooltip.GetName) ~= "function"
+        or type(tooltip.NumLines) ~= "function" then
+        return
+    end
+
+    local tipName = tooltip:GetName()
+    if not tipName or tipName == "" then
+        return
+    end
+
+    for i = 2, tooltip:NumLines() do
+        local leftLine = _G[tipName .. "TextLeft" .. i]
+        local text = leftLine and leftLine.GetText and leftLine:GetText()
+        if leftLine and text and text:find("%d")
+            and not text:find("|c", 1, true) and leftLine.GetTextColor then
+            local r, g, b = leftLine:GetTextColor()
+            -- Gold body text only (rank/stat/meta lines keep their colors).
+            if (r or 0) > 0.88 and (g or 0) > 0.70 and (g or 0) < 0.95
+                and (b or 1) < 0.35 then
+                leftLine:SetText(ColorizeBodyNumbers(text))
+            end
+        end
+    end
+end
+
 local function AddClientSpellDescriptionLines(tooltip, description)
     if not tooltip or type(description) ~= "string" or description == ""
         or type(tooltip.AddLine) ~= "function" then
@@ -1076,7 +1132,7 @@ local function AddClientSpellDescriptionLines(tooltip, description)
                 tooltip:AddLine(" ")
             end
 
-            tooltip:AddLine(text, 1.0, 0.82, 0.0, true)
+            tooltip:AddLine(ColorizeBodyNumbers(text), 1.0, 0.82, 0.0, true)
             existing[normalized] = true
             addedAny = true
         end
@@ -1431,6 +1487,13 @@ local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
         end
     end
 
+    -- TT.AddMountInfo (collection definitions) already rendered the mount
+    -- type/speed line for this spell; the server enrichment's mount meta
+    -- lines would duplicate it with different wording.
+    local mountInfoShown = tonumber(tooltip._dcqosMountInfoShownSpellId) ~= nil
+        and tonumber(tooltip._dcqosMountInfoShownSpellId)
+            == tonumber(enrichment.spellId)
+
     local addedAny = false
     for _, rawEntry in ipairs(lines) do
         local entry = rawEntry
@@ -1453,9 +1516,12 @@ local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
             local key = leftNorm .. "||" .. rightNorm
             local isDuplicateCastLine = existingHasCastLine
                 and (leftNorm == "instant cast" or leftNorm:find(" sec cast$"))
+            local isDuplicateMountLine = mountInfoShown
+                and (leftNorm == "mount type" or leftNorm == "ground speed"
+                    or leftNorm == "flight speed")
 
             if leftNorm ~= "" and not existing[key] and not existing[leftNorm]
-                and not isDuplicateCastLine then
+                and not isDuplicateCastLine and not isDuplicateMountLine then
                 if not addedAny then
                     tooltip:AddLine(" ")
                 end
@@ -1464,7 +1530,7 @@ local function RenderSpellEnrichmentLines(tooltip, enrichment, renderMode)
                     tooltip:AddDoubleLine(left, right, 1.0, 1.0, 1.0)
                 else
                     if kind == "body" then
-                        tooltip:AddLine(left, 1.0, 0.82, 0.0, true)
+                        tooltip:AddLine(ColorizeBodyNumbers(left), 1.0, 0.82, 0.0, true)
                     elseif kind == "meta" then
                         tooltip:AddLine(left, 0.75, 0.75, 0.75, true)
                     else
@@ -1501,11 +1567,12 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
 
     local tooltipSource = ResolveSpellTooltipSource(tooltip)
     local nativeSpellTooltipNegotiated = IsNativeSpellTooltipNegotiated()
-    local nativeSpellTooltipAddonAvailable = tooltipSource ~= "spellbook"
-        and nativeSpellTooltipNegotiated
-        and HasNativeSpellTooltipAddonBridge()
     local useNativeAddonTransport = tooltipSource ~= "spellbook"
         and TT.ShouldUseNativeSpellTooltipAddonBridge()
+    -- Blocks the addon-transport fallback below; must mirror the actual
+    -- bridge decision (incl. the parked-bridge kill switch), otherwise a
+    -- disabled bridge leaves requests with NO transport at all.
+    local nativeSpellTooltipAddonAvailable = useNativeAddonTransport
 
     if tooltipSource == "spellbook" and nativeSpellTooltipNegotiated
         and not hasNativeRowsExport then
@@ -1552,6 +1619,32 @@ local function AddSpellTooltipEnrichment(tooltip, spellId)
             or "clientRowsAlreadyPresent")
         tooltip._dcqosSpellEnrichmentShownKey = key
         return true
+    end
+
+    -- Server pre-warm pushes arrive over the native transport and land in
+    -- the DLL-side cache (hash formulas aligned with the server). Import any
+    -- ready entry into the Lua cache so warm spells render below with zero
+    -- requests on either transport.
+    if addon.GetSpellTooltipEnrichment
+        and type(PollNativeSpellTooltipEnrichment) == "function" then
+        local existingCached = addon:GetSpellTooltipEnrichment(sid, contextHash)
+        if not existingCached or tonumber(existingCached.status) ~= 0 then
+            local okPoll, nativeStatus, nativeLine, nativeStructured =
+                pcall(PollNativeSpellTooltipEnrichment, sid, contextHash)
+            if okPoll and tonumber(nativeStatus) == 2 then
+                TT.TelemetryInc("spell", "nativePrewarmCacheHits")
+                StoreSpellTooltipEnrichmentResult({
+                    requestId = 0,
+                    spellId = sid,
+                    contextHash = contextHash,
+                    status = 0,
+                    line = type(nativeLine) == "string" and nativeLine or "",
+                    lines = type(nativeStructured) == "table"
+                        and nativeStructured or nil,
+                    source = "native-prewarm-cache",
+                })
+            end
+        end
     end
 
     local cached = addon.GetSpellTooltipEnrichment and addon:GetSpellTooltipEnrichment(sid, contextHash) or nil
@@ -2794,10 +2887,13 @@ local function SetFallbackActionTooltip(button)
             -- Safe native spell body fallback: avoids SetAction/SetSpell while
             -- still allowing client-side tooltip description rendering.
             wroteText = TrySetTooltipHyperlink(GameTooltip, "spell:" .. tostring(resolvedId))
-            if wroteText and not WillEnrichmentProvideStatLines(GameTooltip, resolvedId) then
-                -- Hyperlink bodies carry no cost/range/cast block; add it so
-                -- action tooltips match the spellbook rendering.
-                AddSpellStatLines(GameTooltip, resolvedId)
+            if wroteText then
+                ColorizeTooltipBodyLines(GameTooltip)
+                if not WillEnrichmentProvideStatLines(GameTooltip, resolvedId) then
+                    -- Hyperlink bodies carry no cost/range/cast block; add it
+                    -- so action tooltips match the spellbook rendering.
+                    AddSpellStatLines(GameTooltip, resolvedId)
+                end
             end
         end
 
@@ -3365,6 +3461,25 @@ function TT.HookSpellTooltips()
             EnsureGameTooltipActionMethods()
             InstallShapeshiftOnEnterGuards()
         end)
+    end
+
+    -- Keep the DLL's tooltip context hash aligned with the Lua/server
+    -- formula: push the active talent group (the one hash input the DLL
+    -- cannot read from the engine) on login and on spec switches.
+    if not addon._dcqosTalentGroupSyncFrame
+        and type(SetSpellTooltipTalentGroup) == "function" then
+        local syncFrame = CreateFrame("Frame")
+        addon._dcqosTalentGroupSyncFrame = syncFrame
+        local function pushTalentGroup()
+            local group = type(GetActiveTalentGroup) == "function"
+                and tonumber(GetActiveTalentGroup()) or 1
+            pcall(SetSpellTooltipTalentGroup, group or 1)
+        end
+        syncFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        syncFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+        syncFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+        syncFrame:SetScript("OnEvent", pushTalentGroup)
+        pushTalentGroup()
     end
 
     if not addon._dcqosAuraBarRefreshFrame then

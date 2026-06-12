@@ -1846,14 +1846,14 @@ local function CreateTalentTreeFrame(parent, tab, pet)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(TREE_WIDTH, TREE_HEIGHT + TREE_TOP_OFFSET)
 
-    -- Flat panel behind the tree
+    -- Dark inset panel so the frame's FelLeather shows through (DC style)
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    frame:SetBackdropColor(0.07, 0.07, 0.07, 0.9)
-    frame:SetBackdropBorderColor(0.22, 0.22, 0.22, 1)
+    frame:SetBackdropColor(0, 0, 0, 0.40)
+    frame:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.9)
 
     -- Header strip behind icon/title
     local headerBg = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -1861,7 +1861,7 @@ local function CreateTalentTreeFrame(parent, tab, pet)
     headerBg:SetPoint("TOPRIGHT", -1, -1)
     headerBg:SetHeight(TREE_TOP_OFFSET - 2)
     headerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    headerBg:SetVertexColor(0.11, 0.11, 0.11, 0.9)
+    headerBg:SetVertexColor(0, 0, 0, 0.35)
 
     -- Tree background (keep WotLK tree art, dimmed)
     local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
@@ -2313,46 +2313,45 @@ function TalentManager:CreateMainFrame()
     end)
     frame:Hide()
 
-    -- Flat DC-style background
+    -- Standard DC addon background: FelLeather dark parchment + black tint
+    -- behind the gold dialog border (matches DC-Leaderboards et al.)
     frame:SetBackdrop({
-        bgFile = FLAT_TEXTURE,
-        edgeFile = FLAT_TEXTURE,
-        edgeSize = 1,
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    frame:SetBackdropBorderColor(0.28, 0.28, 0.28, 1)
+    frame:SetBackdropColor(0, 0, 0, 0)
 
-    local bgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    bgTex:SetPoint("TOPLEFT", 1, -1)
-    bgTex:SetPoint("BOTTOMRIGHT", -1, 1)
+    local bgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bgTex:SetAllPoints()
     bgTex:SetTexture(BG_FELLEATHER)
-    bgTex:SetAlpha(0.10)
+    if bgTex.SetHorizTile then bgTex:SetHorizTile(false) end
+    if bgTex.SetVertTile then bgTex:SetVertTile(false) end
     frame.bgTex = bgTex
 
-    -- Header strip
-    local headerBg = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
-    headerBg:SetPoint("TOPLEFT", 1, -1)
-    headerBg:SetPoint("TOPRIGHT", -1, -1)
-    headerBg:SetHeight(64)
-    headerBg:SetTexture(FLAT_TEXTURE)
-    headerBg:SetVertexColor(0.09, 0.09, 0.09, 0.9)
+    local bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    bgTint:SetAllPoints()
+    bgTint:SetTexture(0, 0, 0, 0.78)
+    frame.bgTint = bgTint
 
+    -- Separator between header and trees
     local headerLine = frame:CreateTexture(nil, "BORDER")
-    headerLine:SetPoint("TOPLEFT", 1, -65)
-    headerLine:SetPoint("TOPRIGHT", -1, -65)
+    headerLine:SetPoint("TOPLEFT", 12, -65)
+    headerLine:SetPoint("TOPRIGHT", -12, -65)
     headerLine:SetHeight(1)
     headerLine:SetTexture(FLAT_TEXTURE)
-    headerLine:SetVertexColor(0.28, 0.28, 0.28, 1)
+    headerLine:SetVertexColor(0.28, 0.28, 0.28, 0.8)
 
     -- Title
     local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -12)
+    title:SetPoint("TOPLEFT", 18, -14)
     title:SetText("Talents")
     frame.title = title
 
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetPoint("TOPRIGHT", -5, -5)
 
     -- Point summary (right side of title row)
     local pointSummary = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
@@ -2743,32 +2742,36 @@ function TalentManager:CreateGlyphFrame()
     end)
     frame:Hide()
     
-    -- Flat DC-style background (matching talent frame)
+    -- Standard DC addon background (matching talent frame)
     frame:SetBackdrop({
-        bgFile = FLAT_TEXTURE,
-        edgeFile = FLAT_TEXTURE,
-        edgeSize = 1,
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    frame:SetBackdropBorderColor(0.28, 0.28, 0.28, 1)
+    frame:SetBackdropColor(0, 0, 0, 0)
 
-    local glyphBgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    glyphBgTex:SetPoint("TOPLEFT", 1, -1)
-    glyphBgTex:SetPoint("BOTTOMRIGHT", -1, 1)
+    local glyphBgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    glyphBgTex:SetAllPoints()
     glyphBgTex:SetTexture(BG_FELLEATHER)
-    glyphBgTex:SetAlpha(0.10)
+    if glyphBgTex.SetHorizTile then glyphBgTex:SetHorizTile(false) end
+    if glyphBgTex.SetVertTile then glyphBgTex:SetVertTile(false) end
+
+    local glyphBgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    glyphBgTint:SetAllPoints()
+    glyphBgTint:SetTexture(0, 0, 0, 0.78)
 
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -10)
+    title:SetPoint("TOP", 0, -14)
     title:SetText("Glyphs")
 
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    closeBtn:SetPoint("TOPRIGHT", -5, -5)
     
     -- Spec toggle row
     local specRow = CreateFrame("Frame", nil, frame)
-    specRow:SetPoint("TOPLEFT", 15, -30)
+    specRow:SetPoint("TOPLEFT", 15, -36)
     specRow:SetSize(310, 22)
     
     local specToggle = CreateFrame("CheckButton", nil, specRow, "UICheckButtonTemplate")
@@ -2800,82 +2803,60 @@ function TalentManager:CreateGlyphFrame()
         TalentManager:OpenBlizzardTalentUI(3)
     end)
 
-    -- Helper to create a glyph socket (DC addon style)
+    -- Helper to create a glyph socket (flat DC style)
     local function CreateGlyphSocket(parent, x, y, glyphType, index)
         local slot = CreateFrame("Button", nil, parent)
-        slot:SetSize(64, 64)
-        slot:SetPoint("CENTER", parent, "CENTER", x, y)
+        slot:SetSize(56, 56)
+        slot:SetPoint("TOP", parent, "TOP", x, y)
         slot.slotIndex = index
         slot.slotKind = glyphType
-        
-        -- Background ring (simple circle)
-        local background = slot:CreateTexture(nil, "BACKGROUND")
-        background:SetSize(70, 70)
-        background:SetPoint("CENTER")
-        background:SetTexture("Interface\\Minimap\\UI-Minimap-Border")
-        background:SetTexCoord(0, 1, 0, 1)
+
+        -- Colored 1px border (kept as .ring so loadout diff marking works)
+        local ring = slot:CreateTexture(nil, "BACKGROUND")
+        ring:SetPoint("TOPLEFT", -1, 1)
+        ring:SetPoint("BOTTOMRIGHT", 1, -1)
+        ring:SetTexture(FLAT_TEXTURE)
         if glyphType == "major" then
-            background:SetVertexColor(1, 0.82, 0, 0.8)  -- Gold for major
+            ring:SetVertexColor(1, 0.82, 0, 1)  -- Gold for major
         else
-            background:SetVertexColor(0.5, 0.7, 1, 0.8)  -- Blue for minor
+            ring:SetVertexColor(0.5, 0.7, 1, 1)  -- Blue for minor
         end
-        slot.background = background
-        
-        -- Inner socket backdrop
-        local socketBg = slot:CreateTexture(nil, "BORDER")
-        socketBg:SetSize(58, 58)
-        socketBg:SetPoint("CENTER")
-        socketBg:SetTexture("Interface\\Buttons\\UI-Quickslot")
-        socketBg:SetVertexColor(0.1, 0.1, 0.1, 0.9)
+        slot.ring = ring
+
+        -- Socket backdrop
+        local socketBg = slot:CreateTexture(nil, "BACKGROUND", nil, 1)
+        socketBg:SetAllPoints(slot)
+        socketBg:SetTexture(FLAT_TEXTURE)
+        socketBg:SetVertexColor(0.1, 0.1, 0.1, 0.95)
         slot.socketBg = socketBg
-        
+
         -- Glyph icon
         local glyph = slot:CreateTexture(nil, "ARTWORK")
-        glyph:SetSize(52, 52)
+        glyph:SetSize(48, 48)
         glyph:SetPoint("CENTER")
         glyph:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         slot.glyph = glyph
-        
-        -- Border highlight
-        local ring = slot:CreateTexture(nil, "OVERLAY")
-        ring:SetSize(66, 66)
-        ring:SetPoint("CENTER")
-        ring:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-        ring:SetBlendMode("ADD")
-        if glyphType == "major" then
-            ring:SetVertexColor(1, 0.82, 0, 1)
-        else
-            ring:SetVertexColor(0.5, 0.7, 1, 1)
-        end
-        slot.ring = ring
-        
-        -- Shine overlay (for filled sockets)
+        slot.icon = glyph
+
+        -- Subtle sheen for filled sockets
         local shine = slot:CreateTexture(nil, "OVERLAY")
-        shine:SetSize(64, 64)
-        shine:SetPoint("CENTER")
-        shine:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+        shine:SetAllPoints(slot)
+        shine:SetTexture(FLAT_TEXTURE)
         shine:SetBlendMode("ADD")
         shine:SetAlpha(0)
         slot.shine = shine
-        
-        -- Setting/decoration frame
-        slot.setting = socketBg  -- Reuse socket background
-        
-        -- Icon alias for compatibility
-        slot.icon = glyph
-        
+
         -- Name label below the socket
         local nameLabel = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        nameLabel:SetPoint("TOP", slot, "BOTTOM", 0, -2)
-        nameLabel:SetWidth(80)
+        nameLabel:SetPoint("TOP", slot, "BOTTOM", 0, -3)
+        nameLabel:SetWidth(94)
         nameLabel:SetJustifyH("CENTER")
         nameLabel:SetText("")
         slot.nameLabel = nameLabel
 
         -- Highlight on mouseover
         local highlight = slot:CreateTexture(nil, "HIGHLIGHT")
-        highlight:SetSize(64, 64)
-        highlight:SetPoint("CENTER")
+        highlight:SetAllPoints(slot)
         highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
         highlight:SetBlendMode("ADD")
         highlight:SetAlpha(0.5)
@@ -2904,48 +2885,42 @@ function TalentManager:CreateGlyphFrame()
         return slot
     end
     
-    -- Glyph socket container with Blizzard-like circular layout
+    -- Glyph socket container (top-down rows: label, sockets, label, sockets)
     local socketContainer = CreateFrame("Frame", nil, frame)
-    socketContainer:SetPoint("TOP", frame, "TOP", 0, -60)
-    socketContainer:SetSize(300, 240)
+    socketContainer:SetPoint("TOP", frame, "TOP", 0, -62)
+    socketContainer:SetSize(310, 230)
     frame.socketContainer = socketContainer
-    
-    -- Section labels
-    local majorLabel = socketContainer:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+
+    local majorLabel = socketContainer:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     majorLabel:SetPoint("TOP", socketContainer, "TOP", 0, 0)
     majorLabel:SetText("|cFFFFD100Major Glyphs|r")
-    
-    -- Major glyphs - arranged in a row with wider spacing
+
     frame.majorSlots = {}
-    local majorY = -35
     for i = 1, 3 do
-        local xOffset = (i - 2) * 100  -- -100, 0, 100 (wider spacing)
-        local slot = CreateGlyphSocket(socketContainer, xOffset, majorY, "major", i)
-        frame.majorSlots[i] = slot
+        local xOffset = (i - 2) * 100  -- -100, 0, 100
+        frame.majorSlots[i] = CreateGlyphSocket(socketContainer, xOffset, -20, "major", i)
     end
-    
-    local minorLabel = socketContainer:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    minorLabel:SetPoint("TOP", socketContainer, "TOP", 0, -120)
+
+    local minorLabel = socketContainer:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    minorLabel:SetPoint("TOP", socketContainer, "TOP", 0, -112)
     minorLabel:SetText("|cFF8888FFMinor Glyphs|r")
-    
-    -- Minor glyphs - arranged in a row below with wider spacing
+
     frame.minorSlots = {}
-    local minorY = -155
     for i = 1, 3 do
-        local xOffset = (i - 2) * 100  -- -100, 0, 100 (wider spacing)
-        local slot = CreateGlyphSocket(socketContainer, xOffset, minorY, "minor", i)
-        frame.minorSlots[i] = slot
+        local xOffset = (i - 2) * 100  -- -100, 0, 100
+        frame.minorSlots[i] = CreateGlyphSocket(socketContainer, xOffset, -132, "minor", i)
     end
-    
+
     -- Divider line
     local divider = frame:CreateTexture(nil, "ARTWORK")
-    divider:SetTexture("Interface\\FriendsFrame\\UI-FriendsFrame-OnlineDivider")
-    divider:SetSize(280, 16)
-    divider:SetPoint("TOP", socketContainer, "BOTTOM", 0, 5)
-    
+    divider:SetTexture(FLAT_TEXTURE)
+    divider:SetVertexColor(0.28, 0.28, 0.28, 1)
+    divider:SetSize(290, 1)
+    divider:SetPoint("TOP", socketContainer, "BOTTOM", 0, 0)
+
     -- Available in bags section
     local availLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    availLabel:SetPoint("TOP", divider, "BOTTOM", 0, -5)
+    availLabel:SetPoint("TOP", divider, "BOTTOM", 0, -8)
     availLabel:SetText("|cFF00FF00Glyphs in Bags:|r")
     
     frame.availText = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -3022,7 +2997,7 @@ function TalentManager:UpdateGlyphDisplay()
             else
                 slot.glyph:SetTexture("Interface\\Icons\\INV_Inscription_Tradeskill01")
             end
-            slot.shine:SetAlpha(0.3)
+            slot.shine:SetAlpha(0.06)
             slot.ring:SetAlpha(1)
             slot.socketBg:SetVertexColor(0.1, 0.1, 0.1, 0.9)
             slot.glyphData = glyph

@@ -436,6 +436,17 @@ DC.QoS.TooltipEnrichment.PreWarmPush = 1
 DC.QoS.TooltipEnrichment.PreWarmScope = "actionbar"
 
 #
+#    DC.QoS.TooltipEnrichment.ColorValues
+#        Description: Wrap the dynamic numbers in enriched spell descriptions
+#                     (damage/heal ranges, durations, computed expressions) in
+#                     white inline color codes, retail-style. The Lua tooltip
+#                     renderer honors them; the DLL/engine render path
+#                     flattens them to the line color (harmless).
+#        Default:     1 (Enabled)
+#
+DC.QoS.TooltipEnrichment.ColorValues = 1
+
+#
 #    DC.AddonProtocol.AOELoot.Enable
 #        Description: Enable DCAOE prefix for AoE Loot addon sync
 #        Default:     1 (Enabled)

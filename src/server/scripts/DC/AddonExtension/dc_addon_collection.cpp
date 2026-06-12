@@ -5907,6 +5907,84 @@ namespace DCCollection
 
         std::unordered_set<uint32> sentIds;
 
+        // Mount speed metadata for client tooltips (DC-QOS TT.AddMountInfo
+        // reads definitions.mounts[sid].groundSpeed/flySpeed/speed): best
+        // mounted-speed aura values from the mount spell. Curated rows may
+        // reference teaching/trigger spells, so walk the learn/trigger chain
+        // (mirrors resolveMountedModelInfo) to reach the actual mount aura.
+        auto appendMountSpeeds = [&](DCAddon::JsonValue& d, uint32 rootSpellId)
+        {
+            if (ct != CollectionType::MOUNT || !rootSpellId)
+                return;
+
+            int32 bestGround = 0;
+            int32 bestFlying = 0;
+
+            std::vector<uint32> toVisit;
+            toVisit.push_back(rootSpellId);
+            std::unordered_set<uint32> visited;
+            visited.reserve(8);
+
+            while (!toVisit.empty())
+            {
+                uint32 spellId = toVisit.back();
+                toVisit.pop_back();
+                if (!spellId || !visited.insert(spellId).second)
+                    continue;
+
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                if (!spellInfo)
+                    continue;
+
+                for (SpellEffectInfo const& effect : spellInfo->Effects)
+                {
+                    if (effect.Effect == SPELL_EFFECT_LEARN_SPELL
+                        || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL)
+                    {
+                        uint32 chained = effect.TriggerSpell;
+                        if (!chained && effect.MiscValue > 0)
+                            chained = static_cast<uint32>(effect.MiscValue);
+                        if (chained)
+                            toVisit.push_back(chained);
+                        continue;
+                    }
+
+                    if (!effect.IsEffect() || !effect.IsAura())
+                        continue;
+
+                    int32 value = effect.CalcValue();
+                    if (value < 0)
+                        value = -value;
+
+                    switch (effect.ApplyAuraName)
+                    {
+                        case SPELL_AURA_MOD_INCREASE_MOUNTED_SPEED:
+                        case SPELL_AURA_MOD_MOUNTED_SPEED_ALWAYS:
+                        case SPELL_AURA_MOD_MOUNTED_SPEED_NOT_STACK:
+                            bestGround = std::max(bestGround, value);
+                            break;
+                        case SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED:
+                        case SPELL_AURA_MOD_MOUNTED_FLIGHT_SPEED_ALWAYS:
+                            bestFlying = std::max(bestFlying, value);
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
+
+            if (bestGround > 0)
+                d.Set("groundSpeed", static_cast<uint32>(bestGround));
+            if (bestFlying > 0)
+                d.Set("flySpeed", static_cast<uint32>(bestFlying));
+
+            // Single-mode display value (the client shows "X% speed" for
+            // ground-only or flying-only mounts).
+            int32 single = (bestGround > 0) ? bestGround : bestFlying;
+            if (single > 0)
+                d.Set("speed", static_cast<uint32>(single));
+        };
+
         auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0, uint32 creatureId = 0)
         {
             DCAddon::JsonValue d;
@@ -5937,6 +6015,8 @@ namespace DCCollection
             // Some client modules sort on mountType.
             if (ct == CollectionType::MOUNT && extraType >= 0)
                 d.Set("mountType", static_cast<uint32>(extraType));
+
+            appendMountSpeeds(d, id);
 
             defs.Set(std::to_string(id), d);
             sentIds.insert(id);
@@ -6128,6 +6208,8 @@ namespace DCCollection
                         d.Set("mountType", static_cast<uint32>(mountType));
                     if (itemId)
                         d.Set("itemId", itemId);
+
+                    appendMountSpeeds(d, spellId);
 
                     defs.Set(std::to_string(spellId), d);
                     sentIds.insert(spellId);

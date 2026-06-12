@@ -2931,6 +2931,174 @@ namespace DCQoS
         }
     }
 
+    // Inline color for dynamic values in description bodies. The Lua tooltip
+    // renderer honors |c escapes; the DLL/engine path flattens them to the
+    // line color, so this is safe on both transports. The hex must avoid
+    // decimal digits ("ffffff" qualifies) so the $l singular/plural detector
+    // (ExtractLastTemplateQuantity) never matches digits inside the escape.
+    static std::string ColorizeTooltipValue(std::string const& value)
+    {
+        if (value.empty()
+            || !sConfigMgr->GetOption<bool>("DC.QoS.TooltipEnrichment.ColorValues", true))
+            return value;
+
+        return "|cffffffff" + value + "|r";
+    }
+
+    // "1 Blood, 1 Unholy" for Death Knight spells (flat power cost is 0).
+    static std::string BuildRuneCostText(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo || !spellInfo->RuneCostID)
+            return "";
+
+        SpellRuneCostEntry const* runeCost =
+            sSpellRuneCostStore.LookupEntry(spellInfo->RuneCostID);
+        if (!runeCost || runeCost->NoRuneCost())
+            return "";
+
+        static char const* runeNames[3] = { "Blood", "Frost", "Unholy" };
+        std::string text;
+        for (uint8 i = 0; i < 3; ++i)
+        {
+            if (!runeCost->RuneCost[i])
+                continue;
+
+            if (!text.empty())
+                text += ", ";
+            text += std::to_string(runeCost->RuneCost[i]);
+            text += " ";
+            text += runeNames[i];
+        }
+
+        return text;
+    }
+
+    // "Ankh" / "Wild Berries (2), Ankh" -- mirrors the native reagents line
+    // the rebuilt hyperlink tooltip bodies lose.
+    static std::string BuildReagentsText(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return "";
+
+        std::string text;
+        for (uint8 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+        {
+            if (spellInfo->Reagent[i] <= 0 || !spellInfo->ReagentCount[i])
+                continue;
+
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(
+                static_cast<uint32>(spellInfo->Reagent[i]));
+            if (!proto)
+                continue;
+
+            if (!text.empty())
+                text += ", ";
+            text += proto->Name1;
+            if (spellInfo->ReagentCount[i] > 1)
+                text += " (" + std::to_string(spellInfo->ReagentCount[i]) + ")";
+        }
+
+        return text;
+    }
+
+    // "Requires Battle Stance" from the Stances mask.
+    static std::string BuildRequiredFormText(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo || !spellInfo->Stances)
+            return "";
+
+        struct FormName
+        {
+            uint32 form;
+            char const* name;
+        };
+        static FormName const formNames[] =
+        {
+            { FORM_CAT, "Cat Form" },
+            { FORM_TREE, "Tree of Life" },
+            { FORM_TRAVEL, "Travel Form" },
+            { FORM_AQUA, "Aquatic Form" },
+            { FORM_BEAR, "Bear Form" },
+            { FORM_DIREBEAR, "Dire Bear Form" },
+            { FORM_GHOSTWOLF, "Ghost Wolf" },
+            { FORM_BATTLESTANCE, "Battle Stance" },
+            { FORM_DEFENSIVESTANCE, "Defensive Stance" },
+            { FORM_BERSERKERSTANCE, "Berserker Stance" },
+            { FORM_METAMORPHOSIS, "Metamorphosis" },
+            { FORM_FLIGHT_EPIC, "Swift Flight Form" },
+            { FORM_SHADOW, "Shadowform" },
+            { FORM_FLIGHT, "Flight Form" },
+            { FORM_STEALTH, "Stealth" },
+            { FORM_MOONKIN, "Moonkin Form" },
+        };
+
+        std::string text;
+        for (FormName const& entry : formNames)
+        {
+            if (!(spellInfo->Stances & (1u << (entry.form - 1))))
+                continue;
+
+            if (!text.empty())
+                text += ", ";
+            text += entry.name;
+        }
+
+        if (text.empty())
+            return "";
+        return "Requires " + text;
+    }
+
+    // "Requires Daggers" / "Requires Shields" from the equipped-item rules.
+    static std::string BuildRequiredEquipText(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return "";
+
+        if (spellInfo->EquippedItemClass == ITEM_CLASS_ARMOR)
+        {
+            if (spellInfo->EquippedItemSubClassMask
+                & (1 << ITEM_SUBCLASS_ARMOR_SHIELD))
+                return "Requires Shields";
+            return "";
+        }
+
+        if (spellInfo->EquippedItemClass != ITEM_CLASS_WEAPON
+            || spellInfo->EquippedItemSubClassMask <= 0)
+            return "";
+
+        static char const* weaponNames[MAX_ITEM_SUBCLASS_WEAPON] =
+        {
+            "Axes", "Two-Handed Axes", "Bows", "Guns", "Maces",
+            "Two-Handed Maces", "Polearms", "Swords", "Two-Handed Swords",
+            nullptr, "Staves", nullptr, nullptr, "Fist Weapons", nullptr,
+            "Daggers", "Thrown", "Spears", "Crossbows", "Wands",
+            "Fishing Poles"
+        };
+
+        std::string text;
+        uint32 named = 0;
+        for (uint8 i = 0; i < MAX_ITEM_SUBCLASS_WEAPON; ++i)
+        {
+            if (!(spellInfo->EquippedItemSubClassMask & (1 << i))
+                || !weaponNames[i])
+                continue;
+
+            if (!text.empty())
+                text += ", ";
+            text += weaponNames[i];
+            ++named;
+        }
+
+        if (!named)
+            return "";
+
+        // Broad masks (e.g. "any melee weapon") would produce a wall of
+        // names; summarize instead.
+        if (named > 4)
+            return "Requires Melee Weapon";
+        return "Requires " + text;
+    }
+
     static void PushTooltipLine(DCAddon::JsonValue& lines,
                                 std::string const& left,
                                 std::string const& right = "",
@@ -3700,7 +3868,7 @@ namespace DCQoS
                                                             expression,
                                                             expressionValue))
                     {
-                        rendered += expressionValue;
+                        rendered += ColorizeTooltipValue(expressionValue);
                     }
                     else
                     {
@@ -3759,7 +3927,7 @@ namespace DCQoS
                                                                     effectNumber);
                 if (!replacement.empty())
                 {
-                    rendered += replacement;
+                    rendered += ColorizeTooltipValue(replacement);
                     i = indexEnd;
                     continue;
                 }
@@ -3776,7 +3944,7 @@ namespace DCQoS
                 std::string namedReplacement = ReplaceNamedSpellTemplateToken(player, spellInfo, namedToken);
                 if (!namedReplacement.empty())
                 {
-                    rendered += namedReplacement;
+                    rendered += ColorizeTooltipValue(namedReplacement);
                     i += 3;
                     continue;
                 }
@@ -3809,7 +3977,9 @@ namespace DCQoS
             }
             else
             {
-                rendered += replacement;
+                // $n resolves to the spell NAME -- never color it.
+                rendered += (token == 'n') ? replacement
+                    : ColorizeTooltipValue(replacement);
             }
 
             i = indexEnd;
@@ -4159,6 +4329,24 @@ namespace DCQoS
             costStr = costLine.str();
         }
 
+        // Death Knight spells cost runes instead of a flat power amount.
+        if (costStr.empty())
+            costStr = BuildRuneCostText(spellInfo);
+
+        // Channeled/periodic power drain ("X Mana per sec").
+        uint32 powerPerSecond = spellInfo->ManaPerSecond
+            + spellInfo->ManaPerSecondPerLevel
+                * (player ? player->GetLevel() : 0);
+        if (powerPerSecond > 0)
+        {
+            if (costStr.empty())
+                costStr = std::to_string(powerPerSecond) + " "
+                    + GetPowerTypeLabel(spellInfo->PowerType) + " per sec";
+            else
+                costStr += ", plus " + std::to_string(powerPerSecond)
+                    + " per sec";
+        }
+
         float minRange = spellInfo->GetMinRange(false);
         float maxRange = spellInfo->GetMaxRange(false, player);
         std::string rangeStr;
@@ -4190,6 +4378,20 @@ namespace DCQoS
         int32 durationMs = spellInfo->GetMaxDuration();
         if (durationMs > 0)
             PushTooltipLine(lines, "Duration", FormatSpellSeconds(static_cast<uint32>(durationMs)));
+
+        // Native-tooltip extras lost by the rebuilt hyperlink bodies.
+        std::string reagents = BuildReagentsText(spellInfo);
+        if (!reagents.empty())
+            PushWrappedTooltipLine(lines, "Reagents: " + reagents,
+                1.0, 1.0, 1.0, "");
+
+        std::string requiredForm = BuildRequiredFormText(spellInfo);
+        if (!requiredForm.empty())
+            PushTooltipLine(lines, requiredForm, "", 1.0, 1.0, 1.0);
+
+        std::string requiredEquip = BuildRequiredEquipText(spellInfo);
+        if (!requiredEquip.empty())
+            PushTooltipLine(lines, requiredEquip, "", 1.0, 1.0, 1.0);
 
         AppendMountMetadataLines(player, spellInfo, lines);
 

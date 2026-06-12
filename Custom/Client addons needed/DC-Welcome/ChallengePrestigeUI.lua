@@ -3,7 +3,8 @@
 	Lightweight UI wrapper for the server-side Challenge Mode Manager gossip.
 
 	Goals (per DarkChaos-255 spec):
-	- Two tabs: Challenge Modes + Prestige
+	- Header band with player status (absorbs the old Overview tab)
+	- Two tabs: Challenge Modes (card grid) + Prestige (progress view)
 	- Shows information like the gossip-based Challenge Mode Manager
 	- Allows selecting/confirming challenge modes and prestige directly from the UI
 	- Automatically opens when interacting with the Challenge Mode Manager gameobject
@@ -13,6 +14,8 @@
 	  drives it by calling SelectGossipOption(index).
 	- Detection is based on the manager's unique title line:
 	  "=== Challenge Mode Manager ===".
+	- Server sub-pages (mode details, confirmations) are rendered as a centered
+	  dialog; full mode rules live in hover tooltips instead of inline text.
 
 	WoW client: 3.3.5 (Interface 30300)
 ]]
@@ -30,42 +33,51 @@ DCWelcome.ChallengePrestigeUI = UI
 local FRAME_WIDTH = 860
 local FRAME_HEIGHT = 560
 local TAB_HEIGHT = 26
-local TAB_WIDTH = 150
+local TAB_WIDTH = 170
 
-local LEFT_WIDTH = 255
-local RIGHT_WIDTH = 545
-local CONTENT_HEIGHT = 430
-local MODE_BUTTON_WIDTH = 108
+local CONTENT_WIDTH = 816
+local CONTENT_HEIGHT = 382
+local CHILD_WIDTH = CONTENT_WIDTH - 26
+
+local CARD_WIDTH = 388
+local CARD_HEIGHT = 60
+local CARD_GAP = 8
 
 local MODE_VISUAL_STATE = {
 	active = {
 		label = "|cff54ff9aACTIVE|r",
-		bg = { 0.05, 0.20, 0.11, 0.45 },
+		bg = { 0.05, 0.20, 0.11, 0.50 },
+		hover = { 0.08, 0.28, 0.16, 0.60 },
 		accent = { 0.36, 0.95, 0.56, 0.95 },
-		edge = { 0.28, 0.78, 0.46, 0.95 },
-		buttonText = { 0.80, 1.00, 0.86 },
+		nameColor = { 0.80, 1.00, 0.86 },
 	},
 	available = {
 		label = "|cff7ad5ffAVAILABLE|r",
-		bg = { 0.06, 0.12, 0.22, 0.42 },
+		bg = { 0.06, 0.12, 0.22, 0.50 },
+		hover = { 0.10, 0.20, 0.36, 0.62 },
 		accent = { 0.42, 0.76, 1.00, 0.95 },
-		edge = { 0.32, 0.62, 0.92, 0.95 },
-		buttonText = { 0.82, 0.92, 1.00 },
+		nameColor = { 0.96, 0.96, 0.96 },
 	},
 	conditional = {
-		label = "|cffffcb71CONDITIONAL|r",
-		bg = { 0.21, 0.15, 0.05, 0.38 },
+		label = "|cffffcb71BLOCKED|r",
+		bg = { 0.21, 0.15, 0.05, 0.40 },
+		hover = { 0.28, 0.20, 0.08, 0.50 },
 		accent = { 0.95, 0.75, 0.30, 0.92 },
-		edge = { 0.82, 0.64, 0.26, 0.92 },
-		buttonText = { 1.00, 0.88, 0.62 },
+		nameColor = { 0.85, 0.80, 0.70 },
 	},
 	locked = {
-		label = "|cffff8787LOCKED|r",
-		bg = { 0.16, 0.07, 0.07, 0.32 },
-		accent = { 0.86, 0.44, 0.44, 0.90 },
-		edge = { 0.72, 0.34, 0.34, 0.90 },
-		buttonText = { 0.95, 0.72, 0.72 },
+		label = "|cff9d9d9dNOT OFFERED|r",
+		bg = { 0.10, 0.10, 0.10, 0.35 },
+		hover = { 0.14, 0.14, 0.14, 0.40 },
+		accent = { 0.45, 0.45, 0.45, 0.85 },
+		nameColor = { 0.62, 0.62, 0.62 },
 	},
+}
+
+local IMPACT_COLORS = {
+	Extreme = "ff6b6b",
+	High = "ffb347",
+	Medium = "ffe066",
 }
 
 local MANAGER_DETECT_TEXT = "=== Challenge Mode Manager ==="
@@ -87,11 +99,11 @@ local MANAGER_SIGNATURES = {
 -- =============================================================================
 
 UI.frame = nil
-UI.currentTab = "challenge" -- "overview" | "challenge" | "prestige"
+UI.currentTab = "challenge" -- "challenge" | "prestige"
 UI._gossipHidden = false
 UI._pendingUpdate = false
-UI.confirmationStep = 0 -- 0: none, 1: confirming
-UI.confirmationText = ""
+UI.confirmationStep = 0 -- 0: none, 1: typed prestige confirmation
+UI._confirmIndex = nil
 
 -- =============================================================================
 -- Helpers
@@ -179,26 +191,6 @@ local function IsModeOptionActionable(text)
 	return true
 end
 
-local function BuildModeActionLabel(optionText, isActive)
-	local plain = SafeLower(StripColorCodes(optionText or ""))
-
-	if string.find(plain, "disable", 1, true) then
-		return "Disable"
-	end
-	if string.find(plain, "enable", 1, true) then
-		return "Enable"
-	end
-	if string.find(plain, "activate", 1, true) then
-		return "Activate"
-	end
-
-	if isActive then
-		return "Active"
-	end
-
-	return "Select"
-end
-
 local function GetModeVisualState(isActive, actionAllowed, hasOption)
 	if isActive then
 		return MODE_VISUAL_STATE.active
@@ -213,46 +205,84 @@ local function GetModeVisualState(isActive, actionAllowed, hasOption)
 end
 
 local MODE_SUMMARIES = {
-	{ key = "Hardcore Mode", label = "Hardcore", category = "Survival", impact = "Extreme", lines = {
-		"Death is permanent for the character.",
-		"Strong planning and defensive play are required.",
-	}, tip = "Best for players who want the highest stakes." },
-	{ key = "Semi-Hardcore Mode", label = "Semi-Hardcore", category = "Survival", impact = "High", lines = {
-		"Death applies a severe penalty instead of full run loss.",
-		"Good stepping stone before full Hardcore.",
-	}, tip = "Safer than Hardcore, still punishing mistakes." },
-	{ key = "Self-Crafted Mode", label = "Self-Crafted", category = "Economy", impact = "Medium", lines = {
-		"Only self-crafted equipment should be used.",
-		"Pushes profession planning and material farming.",
-	}, tip = "Pairs well with Slow XP for long-term progression." },
-	{ key = "Item Quality Restriction", label = "Item Quality", category = "Gear", impact = "High", lines = {
-		"Use poor/common (gray/white) quality gear only.",
-		"Many quest and dungeon rewards become unusable.",
-	}, tip = "Inventory management becomes part of the challenge." },
-	{ key = "Slow XP Gain", label = "Slow XP", category = "Progression", impact = "Medium", lines = {
-		"XP gains are reduced to 50%.",
-		"Mutually exclusive with other XP-rate challenge modes.",
-	}, tip = "Great for extended leveling routes." },
-	{ key = "Very Slow XP Gain", label = "Very Slow XP", category = "Progression", impact = "High", lines = {
-		"XP gains are reduced to 25%.",
-		"Intended for long, methodical progression runs.",
-	}, tip = "Usually chosen instead of Slow XP, not with it." },
-	{ key = "Quest XP Only", label = "Quest XP Only", category = "Progression", impact = "High", lines = {
-		"No kill XP; quests are your primary progression source.",
-		"Route quality and quest chaining matter much more.",
-	}, tip = "Works well for lore/zone-completion playstyles." },
-	{ key = "Iron Man Mode", label = "Iron Man", lines = {
-		"No deaths, white/gray only, no talents/glyphs.",
-		"No professions (except First Aid), no grouping/dungeons/raids, no PvP/heirlooms.",
-	}, category = "Composite", impact = "Extreme", tip = "A full ruleset challenge with strict limitations." },
-	{ key = "Iron Man+ Mode", label = "Iron Man+", lines = {
-		"No talents, no glyphs, no grouping/party play.",
-		"No dungeons/raids, no professions (no exceptions).",
-	}, category = "Composite", impact = "Extreme", tip = "Most restrictive variant for veteran challenge runs." },
+	{ key = "Hardcore Mode", label = "Hardcore", category = "Survival", impact = "Extreme",
+		summary = "One life only - death is permanent.",
+		lines = {
+			"Death is permanent for the character.",
+			"Strong planning and defensive play are required.",
+		}, tip = "Best for players who want the highest stakes." },
+	{ key = "Semi-Hardcore Mode", label = "Semi-Hardcore", category = "Survival", impact = "High",
+		summary = "Death brings a severe penalty, not a full loss.",
+		lines = {
+			"Death applies a severe penalty instead of full run loss.",
+			"Good stepping stone before full Hardcore.",
+		}, tip = "Safer than Hardcore, still punishing mistakes." },
+	{ key = "Self-Crafted Mode", label = "Self-Crafted", category = "Economy", impact = "Medium",
+		summary = "Wear only gear you crafted yourself.",
+		lines = {
+			"Only self-crafted equipment should be used.",
+			"Pushes profession planning and material farming.",
+		}, tip = "Pairs well with Slow XP for long-term progression." },
+	{ key = "Item Quality Restriction", label = "Item Quality", category = "Gear", impact = "High",
+		summary = "Poor and common (gray/white) gear only.",
+		lines = {
+			"Use poor/common (gray/white) quality gear only.",
+			"Many quest and dungeon rewards become unusable.",
+		}, tip = "Inventory management becomes part of the challenge." },
+	{ key = "Slow XP Gain", label = "Slow XP", category = "Progression", impact = "Medium",
+		summary = "XP gains are reduced to 50%.",
+		lines = {
+			"XP gains are reduced to 50%.",
+			"Mutually exclusive with other XP-rate challenge modes.",
+		}, tip = "Great for extended leveling routes." },
+	{ key = "Very Slow XP Gain", label = "Very Slow XP", category = "Progression", impact = "High",
+		summary = "XP gains are reduced to 25%.",
+		lines = {
+			"XP gains are reduced to 25%.",
+			"Intended for long, methodical progression runs.",
+		}, tip = "Usually chosen instead of Slow XP, not with it." },
+	{ key = "Quest XP Only", label = "Quest XP Only", category = "Progression", impact = "High",
+		summary = "No kill XP - level through quests.",
+		lines = {
+			"No kill XP; quests are your primary progression source.",
+			"Route quality and quest chaining matter much more.",
+		}, tip = "Works well for lore/zone-completion playstyles." },
+	{ key = "Iron Man Mode", label = "Iron Man", category = "Composite", impact = "Extreme",
+		summary = "One life, basic gear, no talents - the classic gauntlet.",
+		lines = {
+			"No deaths, white/gray only, no talents/glyphs.",
+			"No professions (except First Aid), no grouping/dungeons/raids, no PvP/heirlooms.",
+		}, tip = "A full ruleset challenge with strict limitations." },
+	{ key = "Iron Man+ Mode", label = "Iron Man+", category = "Composite", impact = "Extreme",
+		summary = "Iron Man with zero exceptions allowed.",
+		lines = {
+			"No talents, no glyphs, no grouping/party play.",
+			"No dungeons/raids, no professions (no exceptions).",
+		}, tip = "Most restrictive variant for veteran challenge runs." },
+}
+
+local RANDOM_SUMMARY = {
+	key = "Random Challenge Mode", label = "Random Mode", category = "Gamble", impact = "Extreme",
+	summary = "Let fate pick one eligible mode - permanently.",
+	lines = {
+		"Randomly activates ONE of the currently eligible modes.",
+		"Only available while no other challenge mode is active.",
+	}, tip = "The roll is permanent - confirm twice before it lands.",
 }
 
 local function GetOptionForMode(options, modeKey)
 	local tokenLower = SafeLower(modeKey)
+
+	-- Prefer the exact bracketed form: "hardcore mode" is a substring of
+	-- "semi-hardcore mode", so a plain find can hit the wrong row.
+	local bracketed = "[" .. tokenLower .. "]"
+	for _, opt in ipairs(options) do
+		local plain = SafeLower(StripColorCodes(opt.text))
+		if string.find(plain, bracketed, 1, true) then
+			return opt
+		end
+	end
+
 	for _, opt in ipairs(options) do
 		local plain = SafeLower(StripColorCodes(opt.text))
 		if string.find(plain, tokenLower, 1, true) then
@@ -345,6 +375,8 @@ local function GossipLooksLikeChallengeManager(options)
 	return false
 end
 
+-- Bottom-bar navigation: only Back/Close. [Continue]/[CONFIRM]/etc. are
+-- rendered as dialog buttons inside the sub-page body.
 local function IsNavAction(text)
 	if type(text) ~= "string" then
 		return false
@@ -352,9 +384,6 @@ local function IsNavAction(text)
 
 	return (string.find(text, "[<< Back]", 1, true) ~= nil)
 		or (string.find(text, "[Close]", 1, true) ~= nil)
-		or (string.find(text, "[Continue]", 1, true) ~= nil)
-		or (string.find(text, "[CONFIRM]", 1, true) ~= nil)
-		or (string.find(text, "[Confirm Prestige]", 1, true) ~= nil)
 end
 
 local function IsActionCandidate(text)
@@ -374,29 +403,6 @@ local function IsPrestigeRelated(text)
 	return string.find(SafeLower(text), "prestige", 1, true) ~= nil
 end
 
-local function ShouldShowInTab(tabId, option)
-	local text = option.text
-
-	-- Navigation actions always visible
-	if IsNavAction(text) then
-		return true
-	end
-
-	local isPrestige = IsPrestigeRelated(text)
-
-	if tabId == "overview" then
-		-- Overview tab is for status; keep navigation actions only.
-		return false
-	end
-
-	if tabId == "prestige" then
-		return isPrestige
-	end
-
-	-- challenge tab
-	return not isPrestige
-end
-
 local function HideGossipFrameInput()
 	if GossipFrame then
 		GossipFrame:SetAlpha(0)
@@ -411,6 +417,41 @@ local function RestoreGossipFrameInput()
 		GossipFrame:EnableMouse(true)
 	end
 	UI._gossipHidden = false
+end
+
+-- Extract structured prestige info from the gossip status lines.
+local function ParsePrestigeStatus(options)
+	local info = { statusLines = {} }
+
+	for _, opt in ipairs(options) do
+		local plain = StripColorCodes(opt.text or "")
+
+		local lvl, maxLvl, bonus = string.match(plain, "Prestige Level:%s*(%d+)%s*/%s*(%d+)%s*%((%d+)%% bonus%)")
+		if lvl then
+			info.level = tonumber(lvl)
+			info.maxLevel = tonumber(maxLvl)
+			info.bonusPercent = tonumber(bonus)
+		else
+			local req, cur = string.match(plain, "Reach level (%d+) to prestige %(current: (%d+)%)")
+			if req then
+				info.requiredLevel = tonumber(req)
+				info.currentLevel = tonumber(cur)
+			elseif string.find(plain, "meet all requirements to prestige", 1, true) then
+				info.canPrestige = true
+				table.insert(info.statusLines, opt.text)
+			elseif string.find(plain, "maximum prestige level", 1, true) then
+				info.atMax = true
+				table.insert(info.statusLines, opt.text)
+			elseif string.find(plain, "Prestige system currently disabled", 1, true) then
+				info.disabled = true
+				table.insert(info.statusLines, opt.text)
+			elseif string.find(plain, "Prestige requirements not yet met", 1, true) then
+				table.insert(info.statusLines, opt.text)
+			end
+		end
+	end
+
+	return info
 end
 
 -- Simple timer helper for WoW 3.3.5 (no C_Timer).
@@ -446,7 +487,7 @@ end
 local function CreateTabButton(parent, id, label, x)
 	local btn = CreateFrame("Button", nil, parent)
 	btn:SetSize(TAB_WIDTH, TAB_HEIGHT)
-	btn:SetPoint("TOPLEFT", x, -40)
+	btn:SetPoint("TOPLEFT", x, -98)
 	btn.id = id
 
 	local bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -489,6 +530,62 @@ local function CreateTabButton(parent, id, label, x)
 	return btn
 end
 
+local function CreateStatChip(parent, width, labelText)
+	local chip = CreateFrame("Frame", nil, parent)
+	chip:SetSize(width, 38)
+
+	local bg = chip:CreateTexture(nil, "BACKGROUND")
+	bg:SetAllPoints()
+	bg:SetTexture(0, 0, 0, 0.40)
+
+	local edge = chip:CreateTexture(nil, "BORDER")
+	edge:SetPoint("BOTTOMLEFT", 0, 0)
+	edge:SetPoint("BOTTOMRIGHT", 0, 0)
+	edge:SetHeight(2)
+	edge:SetTexture(1, 0.82, 0, 0.45)
+	chip.edge = edge
+
+	local label = chip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	label:SetPoint("TOPLEFT", 9, -5)
+	label:SetText(labelText)
+	label:SetTextColor(0.62, 0.62, 0.62)
+	chip.label = label
+
+	local value = chip:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	value:SetPoint("BOTTOMLEFT", 9, 5)
+	value:SetText("-")
+	chip.value = value
+
+	return chip
+end
+
+local function CreateFlatButton(parent, width, height, label)
+	local btn = CreateFrame("Button", nil, parent)
+	btn:SetSize(width, height)
+
+	local bg = btn:CreateTexture(nil, "BACKGROUND")
+	bg:SetAllPoints()
+	bg:SetTexture(0.16, 0.16, 0.16, 0.95)
+	btn.bg = bg
+
+	local txt = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	txt:SetPoint("CENTER", 0, 0)
+	txt:SetText(label or "")
+	txt:SetTextColor(0.92, 0.92, 0.92)
+	btn.text = txt
+
+	btn:SetScript("OnEnter", function(self)
+		self.bg:SetTexture(0.26, 0.26, 0.26, 0.95)
+		self.text:SetTextColor(1, 1, 1)
+	end)
+	btn:SetScript("OnLeave", function(self)
+		self.bg:SetTexture(0.16, 0.16, 0.16, 0.95)
+		self.text:SetTextColor(0.92, 0.92, 0.92)
+	end)
+
+	return btn
+end
+
 local function CreateScrollArea(parent, width, height, id)
 	local container = CreateFrame("Frame", nil, parent)
 	container:SetSize(width, height)
@@ -508,10 +605,10 @@ local function CreateScrollArea(parent, width, height, id)
 	container.child = child
 
 	-- Simple pooling to avoid unbounded frame creation during Refresh.
-	container._buttonPool = {}
+	-- Buttons are pooled per kind so cards and dialog buttons never share widgets.
+	container._buttonPools = {}
 	container._fsPool = {}
 	container._texPool = {}
-	container._buttonUsed = 0
 	container._fsUsed = 0
 	container._texUsed = 0
 
@@ -565,47 +662,71 @@ function UI:EnsureFrame()
 		CloseGossip()
 	end)
 
+	-- Header band: player status (replaces the old Overview tab)
+	local playerLine = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	playerLine:SetPoint("TOPLEFT", 26, -46)
+	f.playerLine = playerLine
+
+	local playerSub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	playerSub:SetPoint("TOPLEFT", 26, -65)
+	playerSub:SetWidth(380)
+	playerSub:SetJustifyH("LEFT")
+	playerSub:SetTextColor(0.72, 0.72, 0.72)
+	f.playerSub = playerSub
+
+	f.chipAlt = CreateStatChip(f, 128, "ALT XP BONUS")
+	f.chipAlt:SetPoint("TOPRIGHT", -26, -42)
+	f.chipPrestige = CreateStatChip(f, 128, "PRESTIGE")
+	f.chipPrestige:SetPoint("RIGHT", f.chipAlt, "LEFT", -8, 0)
+	f.chipModes = CreateStatChip(f, 128, "ACTIVE MODES")
+	f.chipModes:SetPoint("RIGHT", f.chipPrestige, "LEFT", -8, 0)
+
+	local headerRule = f:CreateTexture(nil, "ARTWORK")
+	headerRule:SetPoint("TOPLEFT", 22, -90)
+	headerRule:SetPoint("TOPRIGHT", -22, -90)
+	headerRule:SetHeight(1)
+	headerRule:SetTexture(1, 0.82, 0, 0.30)
+
 	-- Tabs
-	local tabStartX = 20
+	local tabStartX = 24
 	local tabGap = 6
-	f.tabOverview = CreateTabButton(f, "overview", "Overview", tabStartX)
-	f.tabChallenge = CreateTabButton(f, "challenge", "Challenge Modes", tabStartX + TAB_WIDTH + tabGap)
-	f.tabPrestige = CreateTabButton(f, "prestige", "Prestige", tabStartX + (TAB_WIDTH + tabGap) * 2)
+	f.tabChallenge = CreateTabButton(f, "challenge", "Challenge Modes", tabStartX)
+	f.tabPrestige = CreateTabButton(f, "prestige", "Prestige", tabStartX + TAB_WIDTH + tabGap)
 
-	-- Left: Status + Actions
-	local leftTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	leftTitle:SetPoint("TOPLEFT", 24, -76)
-	leftTitle:SetText("Status & Actions")
-	leftTitle:SetTextColor(1, 0.82, 0)
+	-- Content (full width, scrollable)
+	local content = CreateScrollArea(f, CONTENT_WIDTH, CONTENT_HEIGHT, "Content")
+	content:SetPoint("TOPLEFT", 22, -132)
+	f.content = content
 
-	local left = CreateScrollArea(f, LEFT_WIDTH, CONTENT_HEIGHT, "Actions")
-	left:SetPoint("TOPLEFT", 20, -96)
-	f.left = left
+	-- Bottom bar
+	local bottomRule = f:CreateTexture(nil, "ARTWORK")
+	bottomRule:SetPoint("BOTTOMLEFT", 22, 46)
+	bottomRule:SetPoint("BOTTOMRIGHT", -22, 46)
+	bottomRule:SetHeight(1)
+	bottomRule:SetTexture(1, 0.82, 0, 0.30)
 
-	-- Right: Details
-	local rightTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	rightTitle:SetPoint("TOPLEFT", 20 + LEFT_WIDTH + 28, -76)
-	rightTitle:SetText("Details")
-	rightTitle:SetTextColor(1, 0.82, 0)
+	f.closeBtn = CreateFlatButton(f, 110, 26, "Close")
+	f.closeBtn:SetPoint("BOTTOMRIGHT", -22, 12)
+	f.closeBtn:SetScript("OnClick", function()
+		CloseGossip()
+	end)
 
-	local right = CreateScrollArea(f, RIGHT_WIDTH, CONTENT_HEIGHT, "Details")
-	right:SetPoint("TOPLEFT", 20 + LEFT_WIDTH + 24, -96)
-	f.right = right
+	f.backBtn = CreateFlatButton(f, 110, 26, "<< Back")
+	f.backBtn:SetPoint("RIGHT", f.closeBtn, "LEFT", -8, 0)
+	f.backBtn:Hide()
 
-	-- Footer hint
 	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	hint:SetPoint("BOTTOMLEFT", 20, 16)
-	hint:SetText("Tip: actions are server-driven. Use [<< Back] to navigate between manager pages.")
-	hint:SetTextColor(0.75, 0.75, 0.75)
+	hint:SetPoint("BOTTOMLEFT", 26, 18)
+	hint:SetText("Hover a mode for its full rules. Challenge modes are permanent once confirmed.")
+	hint:SetTextColor(0.62, 0.62, 0.62)
+	f.hint = hint
 
 	self.frame = f
 
-	self:SelectTab("overview")
+	self:SelectTab("challenge")
 end
 
-function UI:SelectTab(tabId)
-	self.currentTab = tabId
-
+function UI:ApplyTabVisuals()
 	local f = self.frame
 	if not f then
 		return
@@ -623,15 +744,18 @@ function UI:SelectTab(tabId)
 		end
 	end
 
-	ApplyTab(f.tabChallenge, tabId == "challenge")
-	ApplyTab(f.tabPrestige, tabId == "prestige")
-	ApplyTab(f.tabOverview, tabId == "overview")
+	ApplyTab(f.tabChallenge, self.currentTab == "challenge")
+	ApplyTab(f.tabPrestige, self.currentTab == "prestige")
+end
 
+function UI:SelectTab(tabId)
+	self.currentTab = tabId
+	self:ApplyTabVisuals()
 	self:Refresh()
 end
 
 -- =============================================================================
--- Rendering
+-- Widget pools
 -- =============================================================================
 
 function UI:ClearScrollChild(child)
@@ -639,16 +763,18 @@ function UI:ClearScrollChild(child)
 		return
 	end
 
-	-- Reset pool cursors and hide previously used elements.
 	local container = child:GetParent() -- ScrollFrame
 	container = container and container:GetParent() -- our container frame
 
-	if container and container._buttonPool then
-		for i = 1, (container._buttonUsed or 0) do
-			local b = container._buttonPool[i]
-			if b then
-				b:Hide()
+	if container and container._buttonPools then
+		for _, pool in pairs(container._buttonPools) do
+			for i = 1, (pool.used or 0) do
+				local b = pool.list[i]
+				if b then
+					b:Hide()
+				end
 			end
+			pool.used = 0
 		end
 		for i = 1, (container._fsUsed or 0) do
 			local fs = container._fsPool[i]
@@ -665,24 +791,28 @@ function UI:ClearScrollChild(child)
 			end
 		end
 
-		container._buttonUsed = 0
 		container._fsUsed = 0
 		container._texUsed = 0
 	end
-
-	child._items = {}
 end
 
-local function AcquireButton(container, parent)
-	container._buttonUsed = (container._buttonUsed or 0) + 1
-	local idx = container._buttonUsed
-	local b = container._buttonPool[idx]
+local function AcquireButton(container, parent, kind)
+	kind = kind or "generic"
+	local pool = container._buttonPools[kind]
+	if not pool then
+		pool = { list = {}, used = 0 }
+		container._buttonPools[kind] = pool
+	end
+
+	pool.used = pool.used + 1
+	local b = pool.list[pool.used]
 	if not b then
 		b = CreateFrame("Button", nil, parent)
-		container._buttonPool[idx] = b
+		pool.list[pool.used] = b
 	end
 
 	b:SetParent(parent)
+	b:ClearAllPoints()
 	b:Show()
 	return b
 end
@@ -698,6 +828,7 @@ local function AcquireFontString(container, parent)
 
 	-- FontStrings cannot have nil parent, but can be re-parented safely.
 	fs:SetParent(parent)
+	fs:ClearAllPoints()
 	fs:Show()
 	return fs
 end
@@ -717,188 +848,671 @@ local function AcquireTexture(container, parent, layer, subLevel)
 	return tex
 end
 
-function UI:AddActionButton(parent, y, text, gossipIndex)
+local function GetContainer(parent)
 	local container = parent:GetParent() -- ScrollFrame
-	container = container and container:GetParent()
-	local btn = AcquireButton(container, parent)
-	btn:SetSize(LEFT_WIDTH - 34, 20)
-	btn:SetPoint("TOPLEFT", 4, y)
-	btn:EnableMouse(true)
+	return container and container:GetParent()
+end
 
-	if not btn.bg then
-		local bg = btn:CreateTexture(nil, "BACKGROUND")
-		bg:SetAllPoints()
-		bg:SetTexture(0.14, 0.14, 0.14, 0.95)
-		btn.bg = bg
-	end
-
-	if not btn._text then
-		local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		fs:SetPoint("LEFT", 8, 0)
-		fs:SetWidth(LEFT_WIDTH - 52)
-		fs:SetJustifyH("LEFT")
-		btn._text = fs
-	end
-
-	local fs = btn._text
+function UI:AddText(parent, y, text, opts)
+	opts = opts or {}
+	local fs = AcquireFontString(GetContainer(parent), parent)
+	fs:SetFontObject(opts.font or GameFontHighlightSmall)
+	fs:SetPoint("TOPLEFT", opts.x or 6, y)
+	fs:SetWidth(opts.width or (CHILD_WIDTH - 12))
+	fs:SetJustifyH(opts.justify or "LEFT")
 	fs:SetText(text)
-	fs:SetTextColor(0.92, 0.92, 0.92)
+	fs:SetTextColor(opts.r or 1, opts.g or 1, opts.b or 1)
+	return fs
+end
 
-	btn:SetScript("OnClick", function()
-		if type(gossipIndex) == "number" and gossipIndex > 0 then
-			SelectGossipOption(gossipIndex)
+function UI:AddRule(parent, y, width, xOffset, r, g, b, a, thickness, layer, subLevel)
+	local tex = AcquireTexture(GetContainer(parent), parent, layer or "ARTWORK", subLevel or 1)
+	tex:ClearAllPoints()
+	tex:SetTexture(r or 1, g or 1, b or 1, a or 1)
+	tex:SetPoint("TOPLEFT", xOffset or 6, y)
+	tex:SetSize(width or (CHILD_WIDTH - 12), thickness or 1)
+	return tex
+end
+
+-- =============================================================================
+-- Mode cards
+-- =============================================================================
+
+local function EnsureCardWidgets(btn)
+	if btn._isCard then
+		return
+	end
+	btn._isCard = true
+
+	btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+	btn.bg:SetAllPoints()
+
+	btn.accent = btn:CreateTexture(nil, "BORDER")
+	btn.accent:SetPoint("TOPLEFT", 0, 0)
+	btn.accent:SetPoint("BOTTOMLEFT", 0, 0)
+	btn.accent:SetWidth(3)
+
+	btn.nameFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	btn.nameFS:SetPoint("TOPLEFT", 11, -8)
+	btn.nameFS:SetWidth(CARD_WIDTH - 120)
+	btn.nameFS:SetJustifyH("LEFT")
+
+	btn.badgeFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	btn.badgeFS:SetPoint("TOPRIGHT", -9, -10)
+
+	btn.summaryFS = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	btn.summaryFS:SetPoint("TOPLEFT", 11, -27)
+	btn.summaryFS:SetWidth(CARD_WIDTH - 22)
+	btn.summaryFS:SetJustifyH("LEFT")
+	btn.summaryFS:SetTextColor(0.82, 0.82, 0.82)
+
+	btn.metaFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	btn.metaFS:SetPoint("BOTTOMLEFT", 11, 7)
+	btn.metaFS:SetJustifyH("LEFT")
+
+	btn:SetScript("OnClick", function(self)
+		if self._gossipIndex then
+			SelectGossipOption(self._gossipIndex)
 			UI:QueueRefresh()
 		end
 	end)
 
-	btn:SetScript("OnEnter", function()
-		fs:SetTextColor(1, 1, 1)
-		btn.bg:SetTexture(0.22, 0.22, 0.22, 0.95)
+	btn:SetScript("OnEnter", function(self)
+		if self._hoverBg then
+			self.bg:SetTexture(self._hoverBg[1], self._hoverBg[2], self._hoverBg[3], self._hoverBg[4])
+		end
+		UI:ShowModeTooltip(self)
 	end)
 
-	btn:SetScript("OnLeave", function()
-		fs:SetTextColor(0.92, 0.92, 0.92)
-		btn.bg:SetTexture(0.14, 0.14, 0.14, 0.95)
+	btn:SetScript("OnLeave", function(self)
+		if self._normalBg then
+			self.bg:SetTexture(self._normalBg[1], self._normalBg[2], self._normalBg[3], self._normalBg[4])
+		end
+		GameTooltip:Hide()
 	end)
+end
 
+function UI:ShowModeTooltip(card)
+	local m = card._mode
+	if not m then
+		return
+	end
+
+	GameTooltip:SetOwner(card, "ANCHOR_RIGHT")
+	GameTooltip:ClearLines()
+	GameTooltip:AddLine(m.label, 1, 0.82, 0)
+
+	local impactColor = IMPACT_COLORS[m.impact] or "cccccc"
+	GameTooltip:AddLine(
+		string.format("%s  -  Impact: |cff%s%s|r", m.category or "Challenge", impactColor, m.impact or "Mixed"),
+		0.75, 0.75, 0.75
+	)
+	GameTooltip:AddLine(" ")
+
+	for _, line in ipairs(m.lines or {}) do
+		GameTooltip:AddLine("- " .. line, 1, 1, 1, true)
+	end
+
+	if m.tip then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine("Tip: " .. m.tip, 0.48, 0.70, 1, true)
+	end
+
+	GameTooltip:AddLine(" ")
+	if card._stateKind == "active" then
+		GameTooltip:AddLine("This mode is active on this character.", 0.33, 1, 0.60)
+	elseif card._stateKind == "available" then
+		GameTooltip:AddLine("Click to review and activate.", 0.48, 0.84, 1)
+	elseif card._stateKind == "conditional" then
+		GameTooltip:AddLine(card._lockReason or "Currently blocked by an active mode.", 1, 0.80, 0.44, true)
+	else
+		GameTooltip:AddLine("Not offered by the manager right now.", 0.62, 0.62, 0.62, true)
+	end
+
+	GameTooltip:Show()
+end
+
+function UI:AddModeCard(parent, x, y, m, opt, isActive)
+	local container = GetContainer(parent)
+	local btn = AcquireButton(container, parent, "card")
+	EnsureCardWidgets(btn)
+
+	btn:SetSize(CARD_WIDTH, CARD_HEIGHT)
+	btn:SetPoint("TOPLEFT", x, y)
+
+	local actionAllowed = opt and IsModeOptionActionable(opt.text) and not isActive
+	local visual = GetModeVisualState(isActive, actionAllowed, opt ~= nil)
+
+	local stateKind = "locked"
+	if isActive then
+		stateKind = "active"
+	elseif actionAllowed then
+		stateKind = "available"
+	elseif opt then
+		stateKind = "conditional"
+	end
+
+	btn._mode = m
+	btn._stateKind = stateKind
+	btn._gossipIndex = actionAllowed and opt.index or nil
+	btn._normalBg = visual.bg
+	btn._hoverBg = visual.hover
+	btn._lockReason = nil
+
+	if stateKind == "conditional" and opt then
+		local plain = StripColorCodes(opt.text)
+		local reason = string.match(plain, "%]%s*%-%s*(.+)$")
+		if reason then
+			btn._lockReason = reason .. "."
+		end
+	end
+
+	btn.bg:SetTexture(visual.bg[1], visual.bg[2], visual.bg[3], visual.bg[4])
+	btn.accent:SetTexture(visual.accent[1], visual.accent[2], visual.accent[3], visual.accent[4])
+	btn.nameFS:SetText(m.label)
+	btn.nameFS:SetTextColor(visual.nameColor[1], visual.nameColor[2], visual.nameColor[3])
+	btn.badgeFS:SetText(visual.label)
+	btn.summaryFS:SetText(m.summary or "")
+
+	local impactColor = IMPACT_COLORS[m.impact] or "cccccc"
+	btn.metaFS:SetText(string.format(
+		"|cff8a8a8a%s|r  |cff5a5a5a-|r  |cff%s%s|r",
+		m.category or "Challenge",
+		impactColor,
+		m.impact or "Mixed"
+	))
+
+	btn:EnableMouse(true)
 	return btn
 end
 
-function UI:AddDetailLine(parent, y, text, width, xOffset)
-	local container = parent:GetParent() -- ScrollFrame
-	container = container and container:GetParent()
-	local fs = AcquireFontString(container, parent)
-	fs:SetPoint("TOPLEFT", xOffset or 4, y)
-	fs:SetWidth(width or (RIGHT_WIDTH - 44))
-	fs:SetJustifyH("LEFT")
-	fs:SetText(text)
-	fs:SetTextColor(1, 1, 1)
-	return fs
+-- =============================================================================
+-- Dialog/action buttons (sub-pages, prestige actions)
+-- =============================================================================
+
+local function EnsureDialogButtonWidgets(btn)
+	if btn._isDialog then
+		return
+	end
+	btn._isDialog = true
+
+	btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+	btn.bg:SetAllPoints()
+
+	btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	btn.text:SetPoint("CENTER", 0, 0)
+	btn.text:SetWidth(0)
+
+	btn:SetScript("OnEnter", function(self)
+		self.bg:SetTexture(0.28, 0.28, 0.28, 0.95)
+	end)
+	btn:SetScript("OnLeave", function(self)
+		self.bg:SetTexture(0.17, 0.17, 0.17, 0.95)
+	end)
 end
 
-function UI:AddLeftHeader(parent, y, text)
-	local container = parent:GetParent() -- ScrollFrame
-	container = container and container:GetParent()
-	local fs = AcquireFontString(container, parent)
-	fs:SetPoint("TOPLEFT", 4, y)
-	fs:SetWidth(LEFT_WIDTH - 44)
-	fs:SetJustifyH("LEFT")
-	fs:SetText(text)
-	fs:SetTextColor(1, 0.82, 0)
-	return fs
+function UI:AddDialogButton(parent, y, text, onClick, width, xOffset)
+	local container = GetContainer(parent)
+	local btn = AcquireButton(container, parent, "dialog")
+	EnsureDialogButtonWidgets(btn)
+
+	width = width or 420
+	btn:SetSize(width, 26)
+	btn:SetPoint("TOPLEFT", xOffset or ((CHILD_WIDTH - width) / 2), y)
+	btn.bg:SetTexture(0.17, 0.17, 0.17, 0.95)
+	btn.text:SetText(text)
+	btn:EnableMouse(true)
+	btn:SetScript("OnClick", onClick)
+	return btn
 end
 
-function UI:AddLeftLine(parent, y, text, r, g, b)
-	local container = parent:GetParent() -- ScrollFrame
-	container = container and container:GetParent()
-	local fs = AcquireFontString(container, parent)
-	fs:SetPoint("TOPLEFT", 4, y)
-	fs:SetWidth(LEFT_WIDTH - 44)
-	fs:SetJustifyH("LEFT")
-	fs:SetText(text)
-	fs:SetTextColor(r or 0.85, g or 0.85, b or 0.85)
-	return fs
+-- =============================================================================
+-- Rendering: header band
+-- =============================================================================
+
+function UI:UpdateHeader(progress, activeModes)
+	local f = self.frame
+	if not f then
+		return
+	end
+
+	local playerName = UnitName("player") or "?"
+	local playerLevel = UnitLevel("player") or 0
+	local _, classFile = UnitClass("player")
+	local classColor = (classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]) or { r = 1, g = 1, b = 1 }
+	f.playerLine:SetText(string.format("%s  |cffaaaaaa-  Level %d|r", playerName, playerLevel))
+	f.playerLine:SetTextColor(classColor.r or 1, classColor.g or 1, classColor.b or 1)
+
+	if #activeModes > 0 then
+		f.playerSub:SetText("Running: |cffffd700" .. table.concat(activeModes, ", ") .. "|r")
+	else
+		f.playerSub:SetText("No challenge modes active on this character.")
+	end
+
+	f.chipModes.value:SetText(tostring(#activeModes))
+	if #activeModes > 0 then
+		f.chipModes.value:SetTextColor(0.33, 1, 0.60)
+	else
+		f.chipModes.value:SetTextColor(1, 1, 1)
+	end
+
+	local prestigeText = "-"
+	if progress.prestigeLevel then
+		prestigeText = tostring(progress.prestigeLevel)
+		if progress.prestigeXP and progress.prestigeXPMax then
+			prestigeText = prestigeText .. string.format(" |cff888888(%s/%s)|r", tostring(progress.prestigeXP), tostring(progress.prestigeXPMax))
+		end
+	end
+	f.chipPrestige.value:SetText(prestigeText)
+
+	if progress.altBonusPercent then
+		local altText = "+" .. tostring(progress.altBonusPercent) .. "%"
+		if progress.altBonusLevel then
+			altText = altText .. string.format(" |cff888888(T%s)|r", tostring(progress.altBonusLevel))
+		end
+		f.chipAlt.value:SetText(altText)
+	else
+		f.chipAlt.value:SetText("-")
+	end
+
+	local hintText = "Hover a mode for its full rules. Challenge modes are permanent once confirmed."
+	if progress._lastUpdate and progress._lastUpdate > 0 then
+		local age = time() - (progress._lastUpdate or 0)
+		hintText = hintText .. "  |cff555555(data " .. FormatAgeSeconds(age) .. " old)|r"
+	end
+	f.hint:SetText(hintText)
 end
 
-function UI:AddDetailRule(parent, y, width, xOffset, r, g, b, a, thickness, layer, subLevel)
-	local container = parent:GetParent() -- ScrollFrame
-	container = container and container:GetParent()
-	local tex = AcquireTexture(container, parent, layer or "BACKGROUND", subLevel or 0)
-	tex:ClearAllPoints()
-	tex:SetTexture(r or 1, g or 1, b or 1, a or 1)
-	tex:SetPoint("TOPLEFT", xOffset or 4, y)
-	tex:SetSize(width or (RIGHT_WIDTH - 44), thickness or 1)
-	return tex
+-- =============================================================================
+-- Rendering: bottom bar
+-- =============================================================================
+
+function UI:UpdateBottomBar(options)
+	local f = self.frame
+	if not f then
+		return
+	end
+
+	local backOpt = nil
+	for _, opt in ipairs(options) do
+		if type(opt.text) == "string" and string.find(opt.text, "[<< Back]", 1, true) then
+			backOpt = opt
+			break
+		end
+	end
+
+	if backOpt then
+		f.backBtn:Show()
+		f.backBtn:SetScript("OnClick", function()
+			SelectGossipOption(backOpt.index)
+			UI:QueueRefresh()
+		end)
+	else
+		f.backBtn:Hide()
+	end
 end
 
-function UI:AddLeftRule(parent, y, r, g, b, a, thickness)
-	local container = parent:GetParent() -- ScrollFrame
-	container = container and container:GetParent()
-	local tex = AcquireTexture(container, parent, "ARTWORK", 1)
-	tex:ClearAllPoints()
-	tex:SetTexture(r or 1, g or 1, b or 1, a or 1)
-	tex:SetPoint("TOPLEFT", 4, y)
-	tex:SetSize(LEFT_WIDTH - 44, thickness or 1)
-	return tex
-end
+-- =============================================================================
+-- Rendering: challenge mode grid
+-- =============================================================================
 
-function UI:AddModeRowDecor(parent, yTop, yBottom, style)
-	local topY = yTop + 1
-	local bottomY = yBottom + 2
-	local rowHeight = math.max(14, topY - bottomY + 1)
-	local width = RIGHT_WIDTH - 44
+function UI:RenderChallengeTab(child, options, activeSet)
+	local y = -2
 
-	local bg = self:AddDetailRule(
-		parent,
-		topY,
-		width,
-		4,
-		style.bg[1],
-		style.bg[2],
-		style.bg[3],
-		style.bg[4],
-		rowHeight,
-		"BACKGROUND",
-		0
+	local availableCount = 0
+	for _, m in ipairs(MODE_SUMMARIES) do
+		local opt = GetOptionForMode(options, m.key)
+		if opt and IsModeOptionActionable(opt.text) then
+			availableCount = availableCount + 1
+		end
+	end
+
+	local intro = self:AddText(
+		child,
+		y,
+		string.format(
+			"|cffbfbfbfPick your permanent challenge - hover a card for the full ruleset.|r  |cff7a7a7a%d of %d selectable|r",
+			availableCount,
+			#MODE_SUMMARIES
+		)
 	)
-	local accent = self:AddDetailRule(
-		parent,
-		topY,
-		2,
-		4,
-		style.accent[1],
-		style.accent[2],
-		style.accent[3],
-		style.accent[4],
-		rowHeight,
-		"ARTWORK",
-		1
-	)
-	local topEdge = self:AddDetailRule(parent, topY, width, 4, 0.35, 0.35, 0.35, 0.75, 1, "ARTWORK", 1)
-	local bottomEdge = self:AddDetailRule(
-		parent,
-		bottomY,
-		width,
-		4,
-		style.edge[1],
-		style.edge[2],
-		style.edge[3],
-		style.edge[4],
-		1,
-		"ARTWORK",
-		1
-	)
+	y = y - (intro:GetStringHeight() + 8)
 
-	return bg, accent, topEdge, bottomEdge
+	local gridTop = y
+	local cardIndex = 0
+
+	local function PlaceCard(m, opt, isActive)
+		local col = cardIndex % 2
+		local row = math.floor(cardIndex / 2)
+		local x = col * (CARD_WIDTH + CARD_GAP)
+		local cardY = gridTop - row * (CARD_HEIGHT + CARD_GAP)
+		self:AddModeCard(child, x, cardY, m, opt, isActive)
+		cardIndex = cardIndex + 1
+		return cardY - CARD_HEIGHT
+	end
+
+	local lowestY = gridTop
+	for _, m in ipairs(MODE_SUMMARIES) do
+		local opt = GetOptionForMode(options, m.key)
+		local bottom = PlaceCard(m, opt, activeSet[m.label])
+		if bottom < lowestY then
+			lowestY = bottom
+		end
+	end
+
+	local randomOpt = GetOptionForMode(options, "Random Challenge Mode")
+	local bottom = PlaceCard(RANDOM_SUMMARY, randomOpt, false)
+	if bottom < lowestY then
+		lowestY = bottom
+	end
+
+	y = lowestY - 10
+
+	-- Catch-all: render any actionable, non-navigation option the grid didn't
+	-- claim (future server additions stay reachable).
+	local claimed = {}
+	for _, m in ipairs(MODE_SUMMARIES) do
+		local opt = GetOptionForMode(options, m.key)
+		if opt then
+			claimed[opt.index] = true
+		end
+	end
+	if randomOpt then
+		claimed[randomOpt.index] = true
+	end
+
+	for _, opt in ipairs(options) do
+		if IsActionCandidate(opt.text)
+			and not claimed[opt.index]
+			and not IsNavAction(opt.text)
+			and not IsPrestigeRelated(opt.text)
+			and not IsDecorativeOption(opt.text)
+			and not IsUnclickableStatus(opt.text) then
+			self:AddDialogButton(child, y, opt.text, function()
+				SelectGossipOption(opt.index)
+				UI:QueueRefresh()
+			end)
+			y = y - 32
+		end
+	end
+
+	return y
 end
+
+-- =============================================================================
+-- Rendering: prestige tab
+-- =============================================================================
+
+function UI:RenderPrestigeTab(child, options, progress)
+	local y = -4
+	local info = ParsePrestigeStatus(options)
+
+	local level = info.level or progress.prestigeLevel or 0
+	local maxLevel = info.maxLevel
+
+	local levelText
+	if maxLevel then
+		levelText = string.format("Prestige %d |cff8a8a8a/ %d|r", level, maxLevel)
+	else
+		levelText = string.format("Prestige %d", level)
+	end
+	local lvlFS = self:AddText(child, y, levelText, { font = GameFontNormalLarge, r = 1, g = 0.82, b = 0 })
+	y = y - (lvlFS:GetStringHeight() + 4)
+
+	if info.bonusPercent then
+		local bonusFS = self:AddText(
+			child,
+			y,
+			string.format("Permanent bonus: |cff54ff9a+%d%%|r to all stats", info.bonusPercent),
+			{ r = 0.85, g = 0.85, b = 0.85 }
+		)
+		y = y - (bonusFS:GetStringHeight() + 12)
+	else
+		y = y - 8
+	end
+
+	-- Progress bar toward the next prestige (level requirement).
+	local barWidth = 480
+	local barHeight = 16
+
+	local barLabelText = "Progress to next prestige"
+	if info.atMax then
+		barLabelText = "Maximum prestige reached"
+	elseif info.disabled then
+		barLabelText = "Prestige system disabled"
+	end
+	local barLabel = self:AddText(child, y, barLabelText, { r = 0.72, g = 0.72, b = 0.72 })
+	y = y - (barLabel:GetStringHeight() + 4)
+
+	local pct = 0
+	local barText = ""
+	local playerLevel = UnitLevel("player") or 0
+	if info.atMax then
+		pct = 1
+		barText = "Complete"
+	elseif info.disabled then
+		pct = 0
+		barText = "Disabled"
+	elseif info.canPrestige then
+		pct = 1
+		barText = "Ready to prestige!"
+	elseif info.requiredLevel and info.requiredLevel > 0 then
+		local cur = info.currentLevel or playerLevel
+		pct = math.min(1, cur / info.requiredLevel)
+		barText = string.format("Level %d / %d", cur, info.requiredLevel)
+	else
+		barText = string.format("Level %d", playerLevel)
+	end
+
+	local barBg = self:AddRule(child, y, barWidth, 6, 0.05, 0.05, 0.05, 0.90, barHeight, "BACKGROUND", 1)
+	if pct > 0 then
+		local fillR, fillG, fillB = 0.80, 0.62, 0.10
+		if pct >= 1 then
+			fillR, fillG, fillB = 0.24, 0.70, 0.36
+		end
+		self:AddRule(child, y - 1, math.max(2, (barWidth - 2) * pct), 7, fillR, fillG, fillB, 0.95, barHeight - 2, "BORDER", 1)
+	end
+	local barFS = self:AddText(child, y - 2, barText, { x = 6, width = barWidth, justify = "CENTER", font = GameFontNormalSmall })
+	y = y - (barHeight + 12)
+
+	-- Server status lines (anything informative we did not fold into the bar).
+	for _, line in ipairs(info.statusLines) do
+		local fs = self:AddText(child, y, line)
+		y = y - (fs:GetStringHeight() + 4)
+	end
+	if #info.statusLines > 0 then
+		y = y - 6
+	end
+
+	-- Actions offered by the manager ([Prestige Overview], [Prestige Reset], ...).
+	local hasActions = false
+	for _, opt in ipairs(options) do
+		if IsPrestigeRelated(opt.text)
+			and IsActionCandidate(opt.text)
+			and not IsNavAction(opt.text)
+			and not IsDecorativeOption(opt.text)
+			and not IsUnclickableStatus(opt.text) then
+			self:AddDialogButton(child, y, opt.text, function()
+				SelectGossipOption(opt.index)
+				UI:QueueRefresh()
+			end, 420, 6)
+			y = y - 32
+			hasActions = true
+		end
+	end
+	if hasActions then
+		y = y - 6
+	end
+
+	local rule = self:AddRule(child, y, CHILD_WIDTH - 12, 6, 0.42, 0.42, 0.42, 0.70, 1)
+	y = y - 12
+
+	local howHdr = self:AddText(child, y, "How Prestige Works", { font = GameFontNormal, r = 1, g = 0.82, b = 0 })
+	y = y - (howHdr:GetStringHeight() + 6)
+
+	local howLines = {
+		"Reach the level cap to unlock prestige, then reset back to level 1.",
+		"Every prestige grants a permanent bonus to all stats - forever.",
+		"Max-level characters also grant an account-wide alt XP bonus for your other characters.",
+	}
+	for _, line in ipairs(howLines) do
+		local fs = self:AddText(child, y, "- " .. line, { r = 0.72, g = 0.72, b = 0.72 })
+		y = y - (fs:GetStringHeight() + 3)
+	end
+
+	return y
+end
+
+-- =============================================================================
+-- Rendering: server sub-pages (mode details, confirmations, random flow)
+-- =============================================================================
+
+function UI:RenderSubPage(child, options)
+	local y = -10
+	local textWidth = 620
+	local textX = (CHILD_WIDTH - textWidth) / 2
+
+	for _, opt in ipairs(options) do
+		local text = opt.text or ""
+		local plain = StripColorCodes(text)
+
+		if IsNavAction(text) then
+			-- Back/Close live in the bottom bar.
+		elseif IsActionCandidate(text) and not IsDecorativeOption(text) and not IsUnclickableStatus(text) then
+			y = y - 6
+			local lowerPlain = SafeLower(plain)
+			local onClick
+			if string.find(lowerPlain, "confirm prestige", 1, true) then
+				-- Extra safety: prestige reset requires typing PRESTIGE.
+				local idx = opt.index
+				onClick = function()
+					UI._confirmIndex = idx
+					UI.confirmationStep = 1
+					UI:Refresh()
+				end
+			else
+				local idx = opt.index
+				onClick = function()
+					SelectGossipOption(idx)
+					UI:QueueRefresh()
+				end
+			end
+			self:AddDialogButton(child, y, text, onClick)
+			y = y - 32
+		elseif plain == "" or string.match(plain, "^%s*$") then
+			y = y - 8
+		elseif string.find(plain, "---", 1, true) then
+			self:AddRule(child, y - 2, textWidth, textX, 0.42, 0.42, 0.42, 0.60, 1)
+			y = y - 12
+		elseif string.find(plain, "===", 1, true) then
+			local headerText = string.gsub(plain, "=", "")
+			headerText = string.gsub(headerText, "^%s*(.-)%s*$", "%1")
+			local fs = self:AddText(child, y, headerText, {
+				font = GameFontNormalLarge,
+				x = textX,
+				width = textWidth,
+				justify = "CENTER",
+				r = 1, g = 0.82, b = 0,
+			})
+			y = y - (fs:GetStringHeight() + 10)
+		else
+			local fs = self:AddText(child, y, text, {
+				x = textX,
+				width = textWidth,
+				justify = "CENTER",
+				font = GameFontHighlight,
+			})
+			y = y - (fs:GetStringHeight() + 5)
+		end
+	end
+
+	return y
+end
+
+-- =============================================================================
+-- Rendering: typed prestige confirmation
+-- =============================================================================
+
+function UI:RenderPrestigeConfirm(child)
+	local y = -16
+	local textWidth = 620
+	local textX = (CHILD_WIDTH - textWidth) / 2
+
+	local function CenterText(text, opts)
+		opts = opts or {}
+		opts.x = textX
+		opts.width = textWidth
+		opts.justify = "CENTER"
+		local fs = self:AddText(child, y, text, opts)
+		y = y - (fs:GetStringHeight() + (opts.gap or 6))
+		return fs
+	end
+
+	CenterText("WARNING: PERMANENT ACTION", { font = GameFontNormalLarge, r = 1, g = 0.25, b = 0.25, gap = 12 })
+	CenterText("You are about to Prestige. This will reset your level to 1.", { font = GameFontHighlight })
+	CenterText("Gear, Gold, and Skills may be lost depending on server settings.", { font = GameFontHighlight, gap = 16 })
+	CenterText("Type |cffffd700PRESTIGE|r to confirm:", { font = GameFontHighlight, gap = 10 })
+
+	if not self.confirmInput then
+		local eb = CreateFrame("EditBox", nil, child)
+		eb:SetFontObject(GameFontHighlight)
+		eb:SetSize(160, 24)
+		eb:SetAutoFocus(false)
+		eb:SetMaxLetters(12)
+		eb:SetJustifyH("CENTER")
+		eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+		eb:SetScript("OnEnterPressed", function(self)
+			if self:GetText() == "PRESTIGE" and UI._confirmIndex then
+				local idx = UI._confirmIndex
+				UI._confirmIndex = nil
+				UI.confirmationStep = 0
+				SelectGossipOption(idx)
+				UI:QueueRefresh()
+			end
+		end)
+
+		local bg = eb:CreateTexture(nil, "BACKGROUND")
+		bg:SetAllPoints()
+		bg:SetTexture(0.08, 0.08, 0.08, 1)
+
+		self.confirmInput = eb
+	end
+
+	self.confirmInput:SetParent(child)
+	self.confirmInput:ClearAllPoints()
+	self.confirmInput:SetPoint("TOPLEFT", (CHILD_WIDTH - 160) / 2, y)
+	self.confirmInput:SetText("")
+	self.confirmInput:Show()
+	self.confirmInput:SetFocus()
+	y = y - 34
+
+	self:AddDialogButton(child, y, "|cffff8787Cancel|r", function()
+		UI.confirmationStep = 0
+		UI._confirmIndex = nil
+		UI:Refresh()
+	end, 160)
+	y = y - 32
+
+	return y
+end
+
+-- =============================================================================
+-- Refresh
+-- =============================================================================
 
 function UI:Refresh()
 	if not self.frame or not self.frame:IsShown() then
 		return
 	end
 
-	local leftChild = self.frame.left.child
-	local rightChild = self.frame.right.child
+	local child = self.frame.content.child
+	self:ClearScrollChild(child)
 
-	self:ClearScrollChild(leftChild)
-	self:ClearScrollChild(rightChild)
+	if self.confirmInput and self.confirmationStep ~= 1 then
+		self.confirmInput:Hide()
+	end
 
 	local options = GetGossipOptionsList()
-	local progress = (DCWelcome and DCWelcome.GetProgress and DCWelcome:GetProgress()) or (DCWelcome and DCWelcome.Progress) or {}
-	local activeModes = GetActiveChallengeModesFromAuras()
-	local activeSet = {}
-	for _, modeName in ipairs(activeModes) do
-		activeSet[modeName] = true
-	end
-
-	local availableModeCount = 0
-	for _, m in ipairs(MODE_SUMMARIES) do
-		if GetOptionForMode(options, m.key) then
-			availableModeCount = availableModeCount + 1
-		end
-	end
-
-	local randomOpt = GetOptionForMode(options, "Random Challenge Mode")
 
 	-- If gossip no longer matches the manager, close.
 	if not GossipLooksLikeChallengeManager(options) then
@@ -906,465 +1520,43 @@ function UI:Refresh()
 		return
 	end
 
-	-- Details panel: show Overview section (if selected) + current gossip state
-	local yDetail = -4
-	local handledIndices = {}
-
-	-- CONFIRMATION OVERLAY
-	if UI.confirmationStep == 1 then
-		local warn = self:AddDetailLine(rightChild, yDetail, "|cffff0000WARNING: PERMANENT ACTION|r")
-		table.insert(rightChild._items, warn)
-		yDetail = yDetail - (warn:GetStringHeight() + 8)
-
-		local desc1 = self:AddDetailLine(rightChild, yDetail, "You are about to Prestige. This will reset your level to 1.")
-		table.insert(rightChild._items, desc1)
-		yDetail = yDetail - (desc1:GetStringHeight() + 4)
-
-		local desc2 = self:AddDetailLine(rightChild, yDetail, "Gear, Gold, and Skills may be lost depending on server settings.")
-		table.insert(rightChild._items, desc2)
-		yDetail = yDetail - (desc2:GetStringHeight() + 12)
-
-		local desc3 = self:AddDetailLine(rightChild, yDetail, "Type |cffffd700PRESTIGE|r to confirm:")
-		table.insert(rightChild._items, desc3)
-		yDetail = yDetail - (desc3:GetStringHeight() + 8)
-
-		-- Input Box
-		if not self.confirmInput then
-			local eb = CreateFrame("EditBox", nil, rightChild)
-			eb:SetFontObject(GameFontHighlight)
-			eb:SetSize(140, 24)
-			eb:SetAutoFocus(false)
-			eb:SetMaxLetters(12)
-			eb:SetScript("OnEscapePressed", function() eb:ClearFocus() end)
-			eb:SetScript("OnEnterPressed", function()
-				if eb:GetText() == "PRESTIGE" then
-					-- Find the "Confirm" gossip option
-					for _, opt in ipairs(options) do
-						if IsNavAction(opt.text) and (string.find(opt.text, "CONFIRM") or string.find(opt.text, "Confirm")) then
-							SelectGossipOption(opt.index)
-							UI.confirmationStep = 0
-							UI:QueueRefresh()
-							return
-						end
-					end
-					-- Fallback if not found immediately (server might need a step)
-					UI.confirmationStep = 0
-					UI:QueueRefresh()
-				end
-			end)
-			
-			local bg = eb:CreateTexture(nil, "BACKGROUND")
-			bg:SetAllPoints()
-			bg:SetTexture(0.1, 0.1, 0.1, 1)
-			
-			self.confirmInput = eb
-		end
-		
-		self.confirmInput:SetParent(rightChild)
-		self.confirmInput:SetPoint("TOPLEFT", 10, yDetail)
-		self.confirmInput:Show()
-		self.confirmInput:SetText("")
-		self.confirmInput:SetFocus()
-		table.insert(rightChild._items, self.confirmInput)
-		yDetail = yDetail - 30
-
-		local cancelBtn = AcquireButton(rightChild:GetParent():GetParent(), rightChild)
-		cancelBtn:SetSize(100, 22)
-		cancelBtn:SetPoint("TOPLEFT", 10, yDetail)
-		if not cancelBtn.bg then
-			local bg = cancelBtn:CreateTexture(nil, "BACKGROUND")
-			bg:SetAllPoints()
-			cancelBtn.bg = bg
-		end
-		if not cancelBtn._text then
-			local fs = cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-			fs:SetPoint("CENTER", 0, 0)
-			cancelBtn._text = fs
-		end
-		cancelBtn.bg:SetTexture(0.25, 0.14, 0.14, 0.95)
-		cancelBtn._text:SetText("Cancel")
-		cancelBtn._text:SetTextColor(1, 0.86, 0.86)
-		cancelBtn:EnableMouse(true)
-		cancelBtn:SetScript("OnClick", function()
-			UI.confirmationStep = 0
-			UI:Refresh()
-		end)
-		cancelBtn:SetScript("OnEnter", function()
-			cancelBtn.bg:SetTexture(0.35, 0.2, 0.2, 0.95)
-		end)
-		cancelBtn:SetScript("OnLeave", function()
-			cancelBtn.bg:SetTexture(0.25, 0.14, 0.14, 0.95)
-		end)
-		yDetail = yDetail - 30
-
-		return -- Don't show other tabs while confirming
+	local progress = (DCWelcome and DCWelcome.GetProgress and DCWelcome:GetProgress()) or (DCWelcome and DCWelcome.Progress) or {}
+	local activeModes = GetActiveChallengeModesFromAuras()
+	local activeSet = {}
+	for _, modeName in ipairs(activeModes) do
+		activeSet[modeName] = true
 	end
 
-	if self.currentTab == "overview" then
-		local title = self:AddDetailLine(rightChild, yDetail, "|cffffd700Player Overview|r")
-		table.insert(rightChild._items, title)
-		yDetail = yDetail - (title:GetStringHeight() + 8)
+	self:UpdateHeader(progress, activeModes)
+	self:UpdateBottomBar(options)
 
-		local playerName = UnitName("player") or "?"
-		local playerLevel = UnitLevel("player") or 0
-		local _, classFile = UnitClass("player")
-		local classColor = (classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]) or { r = 1, g = 1, b = 1 }
-		local r = math.floor((classColor.r or 1) * 255 + 0.5)
-		local g = math.floor((classColor.g or 1) * 255 + 0.5)
-		local b = math.floor((classColor.b or 1) * 255 + 0.5)
-		local nameLine = string.format("|cff%02x%02x%02x%s|r - Level %d", r, g, b, playerName, playerLevel)
-		local n = self:AddDetailLine(rightChild, yDetail, nameLine)
-		table.insert(rightChild._items, n)
-		yDetail = yDetail - (n:GetStringHeight() + 10)
-
-		local modesText = "None"
-		if #activeModes > 0 then
-			modesText = table.concat(activeModes, ", ")
-		end
-		local cm = self:AddDetailLine(rightChild, yDetail, "|cffffd700Challenge Modes:|r " .. modesText)
-		table.insert(rightChild._items, cm)
-		yDetail = yDetail - (cm:GetStringHeight() + 6)
-
-		local prestigeLevel = progress.prestigeLevel
-		local prestigeXP = progress.prestigeXP
-		local prestigeXPMax = progress.prestigeXPMax
-		local altBonusLevel = progress.altBonusLevel
-		local altBonusPercent = progress.altBonusPercent
-
-		if prestigeLevel then
-			local pLine = "|cffffd700Prestige Level:|r " .. tostring(prestigeLevel)
-			if prestigeXP and prestigeXPMax then
-				pLine = pLine .. string.format("  (XP: %s/%s)", tostring(prestigeXP), tostring(prestigeXPMax))
-			elseif prestigeXP then
-				pLine = pLine .. string.format("  (XP: %s)", tostring(prestigeXP))
-			end
-			local p = self:AddDetailLine(rightChild, yDetail, pLine)
-			table.insert(rightChild._items, p)
-			yDetail = yDetail - (p:GetStringHeight() + 6)
-		else
-			local p = self:AddDetailLine(rightChild, yDetail, "|cff888888Prestige: no data yet.|r")
-			table.insert(rightChild._items, p)
-			yDetail = yDetail - (p:GetStringHeight() + 6)
-		end
-
-		if altBonusPercent or altBonusLevel then
-			local aLine = "|cffffd700Alt Bonus:|r " .. tostring(altBonusPercent or "?") .. "%"
-			if altBonusLevel then
-				aLine = aLine .. "  (Tier: " .. tostring(altBonusLevel) .. ")"
-			end
-			local a = self:AddDetailLine(rightChild, yDetail, aLine)
-			table.insert(rightChild._items, a)
-			yDetail = yDetail - (a:GetStringHeight() + 10)
-		end
-
-		if progress._lastUpdate and progress._lastUpdate > 0 then
-			local age = time() - (progress._lastUpdate or 0)
-			local u = self:AddDetailLine(rightChild, yDetail, "|cff888888Progress cache age: " .. FormatAgeSeconds(age) .. "|r")
-			table.insert(rightChild._items, u)
-			yDetail = yDetail - (u:GetStringHeight() + 8)
-		end
-
-		local sep = self:AddDetailRule(rightChild, yDetail, RIGHT_WIDTH - 44, 4, 0.42, 0.42, 0.42, 0.9, 1, "ARTWORK", 1)
-		table.insert(rightChild._items, sep)
-		yDetail = yDetail - 8
-
-	elseif self.currentTab == "challenge" then
-		local hdr = self:AddDetailLine(rightChild, yDetail, "|cffffd700Challenge Modes Overview|r")
-		table.insert(rightChild._items, hdr)
-		yDetail = yDetail - (hdr:GetStringHeight() + 6)
-
-		local summary = self:AddDetailLine(
-			rightChild,
-			yDetail,
-			string.format(
-				"|cffcfcfcfActive now: %d  |  Visible in menu: %d/%d|r",
-				#activeModes,
-				availableModeCount,
-				#MODE_SUMMARIES
-			)
-		)
-		table.insert(rightChild._items, summary)
-		yDetail = yDetail - (summary:GetStringHeight() + 7)
-
-		local summaryRule = self:AddDetailRule(rightChild, yDetail, RIGHT_WIDTH - 44, 4, 0.45, 0.45, 0.45, 0.9, 1, "ARTWORK", 1)
-		table.insert(rightChild._items, summaryRule)
-		yDetail = yDetail - 6
-
-		for _, m in ipairs(MODE_SUMMARIES) do
-			local opt = GetOptionForMode(options, m.key)
-			local isActive = activeSet[m.label]
-			local actionAllowed = opt and IsModeOptionActionable(opt.text)
-			local blockStart = yDetail
-			local visual = GetModeVisualState(isActive, actionAllowed, opt ~= nil)
-			local stateText = visual.label
-
-			local textWidth = RIGHT_WIDTH - 44
-			if actionAllowed then
-				textWidth = RIGHT_WIDTH - MODE_BUTTON_WIDTH - 82
-				handledIndices[opt.index] = true
-			end
-
-			local nameLine = self:AddDetailLine(
-				rightChild,
-				yDetail,
-				"|cffF7F7F7" .. m.label .. "|r  " .. stateText,
-				textWidth,
-				6
-			)
-			table.insert(rightChild._items, nameLine)
-			yDetail = yDetail - (nameLine:GetStringHeight() + 1)
-
-			local metaLine = self:AddDetailLine(
-				rightChild,
-				yDetail,
-				string.format(
-					"|cffc7c7c7Category: %s  |  Impact: %s|r",
-					m.category or "Challenge",
-					m.impact or "Mixed"
-				),
-				textWidth,
-				12
-			)
-			table.insert(rightChild._items, metaLine)
-			yDetail = yDetail - (metaLine:GetStringHeight() + 1)
-
-			for _, desc in ipairs(m.lines or {}) do
-				local d = self:AddDetailLine(rightChild, yDetail, "|cffaaaaaa- " .. desc .. "|r", textWidth, 12)
-				table.insert(rightChild._items, d)
-				yDetail = yDetail - (d:GetStringHeight() + 1)
-			end
-
-			if m.tip then
-				local tip = self:AddDetailLine(rightChild, yDetail, "|cff80b3ffTip:|r |cff9f9f9f" .. m.tip .. "|r", textWidth, 12)
-				table.insert(rightChild._items, tip)
-				yDetail = yDetail - (tip:GetStringHeight() + 2)
-			end
-
-			if actionAllowed then
-				local btnText = BuildModeActionLabel(opt.text, isActive)
-				local container = rightChild:GetParent():GetParent()
-				local b = AcquireButton(container, rightChild)
-				b:SetSize(MODE_BUTTON_WIDTH, 18)
-				b:SetPoint("TOPRIGHT", -20, blockStart - 1)
-
-				if not b.bg then
-					local bg = b:CreateTexture(nil, "BACKGROUND")
-					bg:SetAllPoints()
-					b.bg = bg
-				end
-				if not b._text then
-					local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-					fs:SetPoint("CENTER", 0, 0)
-					b._text = fs
-				end
-
-				local normalR = (visual.accent[1] * 0.36) + 0.06
-				local normalG = (visual.accent[2] * 0.36) + 0.06
-				local normalB = (visual.accent[3] * 0.36) + 0.06
-				local hoverR = (visual.accent[1] * 0.56) + 0.10
-				local hoverG = (visual.accent[2] * 0.56) + 0.10
-				local hoverB = (visual.accent[3] * 0.56) + 0.10
-
-				b.bg:SetTexture(normalR, normalG, normalB, 0.95)
-				b._text:SetText(btnText)
-				b._text:SetTextColor(visual.buttonText[1], visual.buttonText[2], visual.buttonText[3])
-				b:EnableMouse(true)
-				b:SetScript("OnClick", function()
-					SelectGossipOption(opt.index)
-					UI:QueueRefresh()
-				end)
-				b:SetScript("OnEnter", function()
-					b.bg:SetTexture(hoverR, hoverG, hoverB, 0.95)
-				end)
-				b:SetScript("OnLeave", function()
-					b.bg:SetTexture(normalR, normalG, normalB, 0.95)
-				end)
-
-				table.insert(rightChild._items, b)
-			end
-
-			local rowBg, rowAccent, rowTopEdge, rowBottomEdge = self:AddModeRowDecor(rightChild, blockStart, yDetail, visual)
-			table.insert(rightChild._items, rowBg)
-			table.insert(rightChild._items, rowAccent)
-			table.insert(rightChild._items, rowTopEdge)
-			table.insert(rightChild._items, rowBottomEdge)
-			yDetail = yDetail - 4
-		end
-
-		if randomOpt and IsModeOptionActionable(randomOpt.text) then
-			handledIndices[randomOpt.index] = true
-			local randomVisual = MODE_VISUAL_STATE.available
-			local rnd = self:AddDetailLine(rightChild, yDetail, "|cffb4b4b4Random Mode: picks one eligible challenge mode (requires no active challenge aura).|r")
-			table.insert(rightChild._items, rnd)
-			yDetail = yDetail - (rnd:GetStringHeight() + 4)
-
-			local container = rightChild:GetParent():GetParent()
-			local b = AcquireButton(container, rightChild)
-			b:SetSize(MODE_BUTTON_WIDTH, 18)
-			b:SetPoint("TOPLEFT", 20, yDetail)
-
-			if not b._text then
-				local fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-				fs:SetPoint("CENTER", 0, 0)
-				b._text = fs
-			end
-			b._text:SetText("Random")
-			b._text:SetTextColor(randomVisual.buttonText[1], randomVisual.buttonText[2], randomVisual.buttonText[3])
-
-			if not b.bg then
-				local bg = b:CreateTexture(nil, "BACKGROUND")
-				bg:SetAllPoints()
-				b.bg = bg
-			end
-			b.bg:SetTexture(0.21, 0.34, 0.50, 0.95)
-
-			b:EnableMouse(true)
-			b:SetScript("OnClick", function()
-				SelectGossipOption(randomOpt.index)
-				UI:QueueRefresh()
-			end)
-			b:SetScript("OnEnter", function() b.bg:SetTexture(0.30, 0.50, 0.72, 0.95) end)
-			b:SetScript("OnLeave", function() b.bg:SetTexture(0.21, 0.34, 0.50, 0.95) end)
-
-			table.insert(rightChild._items, b)
-			yDetail = yDetail - 22
-			yDetail = yDetail - 4
-		end
-
-		local endRule = self:AddDetailRule(rightChild, yDetail, RIGHT_WIDTH - 44, 4, 0.45, 0.45, 0.45, 0.9, 1, "ARTWORK", 1)
-		table.insert(rightChild._items, endRule)
-		yDetail = yDetail - 8
-
-	elseif self.currentTab == "prestige" then
-		local hdr = self:AddDetailLine(rightChild, yDetail, "|cffffd700Prestige Information|r")
-		table.insert(rightChild._items, hdr)
-		yDetail = yDetail - (hdr:GetStringHeight() + 8)
-
-		local foundAny = false
+	-- Sub-pages (mode details, confirmations) replace the tab content; follow
+	-- the gossip state and highlight the matching tab.
+	local onMainMenu = GossipHasToken(options, MANAGER_DETECT_TEXT)
+	if not onMainMenu and self.confirmationStep ~= 1 then
+		local prestigeSub = false
 		for _, opt in ipairs(options) do
-			if IsPrestigeRelated(opt.text) and not IsNavAction(opt.text) then
-				local t = self:AddDetailLine(rightChild, yDetail, opt.text)
-				table.insert(rightChild._items, t)
-				yDetail = yDetail - (t:GetStringHeight() + 4)
-				foundAny = true
+			if IsPrestigeRelated(opt.text) then
+				prestigeSub = true
+				break
 			end
 		end
-
-		if not foundAny then
-			local t = self:AddDetailLine(rightChild, yDetail, "|cff888888No specific prestige status found.|r")
-			table.insert(rightChild._items, t)
-		end
+		self.currentTab = prestigeSub and "prestige" or "challenge"
+		self:ApplyTabVisuals()
 	end
 
-	rightChild:SetHeight(math.max(1, math.abs(yDetail) + 20))
-
-	-- Left panel: quick status + actions
-	local yAction = -4
-	local statusHeader = self:AddLeftHeader(leftChild, yAction, "Quick Status")
-	table.insert(leftChild._items, statusHeader)
-	yAction = yAction - 18
-	local statusRule = self:AddLeftRule(leftChild, yAction + 2, 0.48, 0.48, 0.48, 0.9, 1)
-	table.insert(leftChild._items, statusRule)
-
-	local statusCount = self:AddLeftLine(
-		leftChild,
-		yAction,
-		string.format("Active challenge modes: %d", #activeModes),
-		0.9,
-		0.9,
-		0.9
-	)
-	table.insert(leftChild._items, statusCount)
-	yAction = yAction - (statusCount:GetStringHeight() + 2)
-
-	if #activeModes > 0 then
-		for i = 1, math.min(#activeModes, 3) do
-			local modeLine = self:AddLeftLine(leftChild, yAction, "- " .. tostring(activeModes[i]), 1, 0.84, 0)
-			table.insert(leftChild._items, modeLine)
-			yAction = yAction - (modeLine:GetStringHeight() + 1)
-		end
-		if #activeModes > 3 then
-			local moreLine = self:AddLeftLine(leftChild, yAction, string.format("... and %d more", #activeModes - 3), 0.75, 0.75, 0.75)
-			table.insert(leftChild._items, moreLine)
-			yAction = yAction - (moreLine:GetStringHeight() + 1)
-		end
+	local y
+	if self.confirmationStep == 1 then
+		y = self:RenderPrestigeConfirm(child)
+	elseif not onMainMenu then
+		y = self:RenderSubPage(child, options)
+	elseif self.currentTab == "prestige" then
+		y = self:RenderPrestigeTab(child, options, progress)
+	else
+		y = self:RenderChallengeTab(child, options, activeSet)
 	end
 
-	local availabilityLine = self:AddLeftLine(
-		leftChild,
-		yAction,
-		string.format("Modes in current menu: %d/%d", availableModeCount, #MODE_SUMMARIES),
-		0.82,
-		0.82,
-		0.82
-	)
-	table.insert(leftChild._items, availabilityLine)
-	yAction = yAction - (availabilityLine:GetStringHeight() + 2)
-
-	local prestigeText = "Prestige: no data"
-	if progress.prestigeLevel then
-		prestigeText = "Prestige: " .. tostring(progress.prestigeLevel)
-		if progress.prestigeXP and progress.prestigeXPMax then
-			prestigeText = prestigeText .. string.format(" (%s/%s)", tostring(progress.prestigeXP), tostring(progress.prestigeXPMax))
-		end
-	end
-	local prestigeLine = self:AddLeftLine(leftChild, yAction, prestigeText, 0.85, 0.85, 0.98)
-	table.insert(leftChild._items, prestigeLine)
-	yAction = yAction - (prestigeLine:GetStringHeight() + 2)
-
-	local randomState = randomOpt and "available" or "not visible"
-	local randomLine = self:AddLeftLine(leftChild, yAction, "Random mode: " .. randomState, 0.76, 0.86, 0.76)
-	table.insert(leftChild._items, randomLine)
-	yAction = yAction - (randomLine:GetStringHeight() + 8)
-
-	local actionsHeader = self:AddLeftHeader(leftChild, yAction, "Actions")
-	table.insert(leftChild._items, actionsHeader)
-	yAction = yAction - 18
-	local actionsRule = self:AddLeftRule(leftChild, yAction + 2, 0.48, 0.48, 0.48, 0.9, 1)
-	table.insert(leftChild._items, actionsRule)
-
-	local navOpts = {}
-	local otherOpts = {}
-	for _, opt in ipairs(options) do
-		if IsActionCandidate(opt.text) and ShouldShowInTab(self.currentTab, opt) then
-			if not handledIndices[opt.index] then
-				if IsNavAction(opt.text) then
-					table.insert(navOpts, opt)
-				elseif not IsDecorativeOption(opt.text) and not IsUnclickableStatus(opt.text) then
-					table.insert(otherOpts, opt)
-				end
-			end
-		end
-	end
-
-	if #otherOpts > 0 then
-		for _, opt in ipairs(otherOpts) do
-			local b = self:AddActionButton(leftChild, yAction, opt.text, opt.index)
-			table.insert(leftChild._items, b)
-			yAction = yAction - 22
-		end
-		yAction = yAction - 6
-	end
-
-	if #navOpts > 0 then
-		local navHeader = self:AddLeftHeader(leftChild, yAction, "Navigation")
-		table.insert(leftChild._items, navHeader)
-		yAction = yAction - 18
-		local navRule = self:AddLeftRule(leftChild, yAction + 2, 0.48, 0.48, 0.48, 0.9, 1)
-		table.insert(leftChild._items, navRule)
-		for _, opt in ipairs(navOpts) do
-			local b = self:AddActionButton(leftChild, yAction, opt.text, opt.index)
-			table.insert(leftChild._items, b)
-			yAction = yAction - 22
-		end
-	end
-
-	if #otherOpts == 0 and #navOpts == 0 then
-		local none = self:AddLeftLine(leftChild, yAction, "No actions available on this tab.", 0.75, 0.75, 0.75)
-		table.insert(leftChild._items, none)
-	end
-
-	leftChild:SetHeight(math.max(1, math.abs(yAction) + 24))
+	child:SetHeight(math.max(1, math.abs(y or 0) + 4))
 end
 
 function UI:QueueRefresh()
@@ -1398,6 +1590,12 @@ function UI:Close()
 	if self.frame then
 		self.frame:Hide()
 	end
+	self.confirmationStep = 0
+	self._confirmIndex = nil
+	if self.confirmInput then
+		self.confirmInput:Hide()
+	end
+	GameTooltip:Hide()
 	-- Do not restore gossip frame input if we are closing the session.
 	RestoreGossipFrameInput()
 end

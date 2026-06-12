@@ -84,7 +84,24 @@ function TT.AddMountInfo(tooltip, spellId)
     local def = defs[sid]
     if not def then return end
 
-    if tooltip._dcqosMountInfoShownSpellId == sid then return end
+    -- Dedupe against the actual tooltip content. Action-button tooltips
+    -- rebuild their lines on the periodic refresh tick; a sticky per-spell
+    -- flag (the old guard) blocked re-adding the line after the first
+    -- rebuild, so it vanished on action bars while surviving in the
+    -- (non-refreshing) mount journal.
+    local tipName = tooltip.GetName and tooltip:GetName()
+    if tipName and tooltip.NumLines then
+        for i = 1, tooltip:NumLines() do
+            local left = _G[tipName .. "TextLeft" .. i]
+            local text = left and left.GetText and left:GetText()
+            if text and text:find("Mount:", 1, true) then
+                return
+            end
+        end
+    end
+
+    -- Still recorded for the enrichment renderer, which skips the server's
+    -- own mount meta lines when this line is present.
     tooltip._dcqosMountInfoShownSpellId = sid
 
     local mountTypeLabels = {
@@ -94,26 +111,32 @@ function TT.AddMountInfo(tooltip, spellId)
         [3] = "|cffffff00Ground|r + |cff00aaffFlying|r",
     }
     local mountType = tonumber(def.mountType) or 0
-    local typeLabel = mountTypeLabels[mountType] or mountTypeLabels[0]
 
     local groundSpeed = tonumber(def.groundSpeed)
     local flySpeed    = tonumber(def.flySpeed)
     local baseSpeed   = tonumber(def.speed)
 
-    if mountType == 3 and (groundSpeed or flySpeed) then
-        -- dual-mode mount with separate speeds
-        local gs = groundSpeed or baseSpeed or 0
-        local fs = flySpeed    or baseSpeed or 0
-        tooltip:AddDoubleLine(
-            "Mount: " .. typeLabel,
-            "|cffffff00" .. gs .. "%|r ground  |cff00aaff" .. fs .. "%|r fly",
-            0.5, 0.5, 0.5, 0.9, 0.9, 0.9)
-    elseif baseSpeed and baseSpeed > 0 then
-        tooltip:AddDoubleLine(
-            "Mount: " .. typeLabel,
-            "|cffffffff" .. baseSpeed .. "%|r speed",
-            0.5, 0.5, 0.5, 0.9, 0.9, 0.9)
+    -- The aura-derived speeds are more reliable than the CDBC mountType
+    -- column (flying mounts are sometimes typed "Ground" there); classify
+    -- from the speeds when they're available. Speeds go on their own line
+    -- below the type so the tooltip doesn't widen.
+    if groundSpeed and flySpeed then
+        tooltip:AddLine("Mount: " .. mountTypeLabels[3], 0.5, 0.5, 0.5)
+        tooltip:AddLine(
+            "|cffffff00" .. groundSpeed .. "%|r ground  |cff00aaff"
+                .. flySpeed .. "%|r fly",
+            0.9, 0.9, 0.9)
+    elseif flySpeed then
+        tooltip:AddLine("Mount: " .. mountTypeLabels[1], 0.5, 0.5, 0.5)
+        tooltip:AddLine("|cff00aaff" .. flySpeed .. "%|r fly", 0.9, 0.9, 0.9)
+    elseif groundSpeed or (baseSpeed and baseSpeed > 0) then
+        local typeLabel = mountTypeLabels[mountType] or mountTypeLabels[0]
+        tooltip:AddLine("Mount: " .. typeLabel, 0.5, 0.5, 0.5)
+        tooltip:AddLine(
+            "|cffffffff" .. (groundSpeed or baseSpeed) .. "%|r speed",
+            0.9, 0.9, 0.9)
     else
+        local typeLabel = mountTypeLabels[mountType] or mountTypeLabels[0]
         tooltip:AddLine("Mount: " .. typeLabel, 0.5, 0.5, 0.5)
     end
     tooltip:Show()

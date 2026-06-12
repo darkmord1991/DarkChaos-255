@@ -133,7 +133,26 @@ function DC:HasCachedDefinitions()
         self:Debug("HasCachedDefinitions: mounts definitions missing")
         return false
     end
-    
+
+    -- Schema migration: mount definitions now carry riding speed fields
+    -- (speed/groundSpeed/flySpeed). Every real mount has at least one speed
+    -- aura, so a cache where NO mount has any speed field predates the
+    -- schema -- treat it as stale to force a refetch.
+    do
+        local hasAnySpeed = false
+        for _, def in pairs(mountDefs) do
+            if type(def) == "table"
+                and (def.speed or def.groundSpeed or def.flySpeed) then
+                hasAnySpeed = true
+                break
+            end
+        end
+        if not hasAnySpeed then
+            self:Debug("HasCachedDefinitions: mount definitions predate speed fields")
+            return false
+        end
+    end
+
     if type(companionDefs) ~= "table" or not next(companionDefs) then
         self:Debug("HasCachedDefinitions: companions definitions missing")
         return false
