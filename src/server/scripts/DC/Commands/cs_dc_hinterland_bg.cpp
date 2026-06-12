@@ -7,6 +7,7 @@
 #include "Player.h"
 #include "../HinterlandBG/BattlegroundHLBG.h"
 #include "../HinterlandBG/HLBGService.h"
+#include "../HinterlandBG/dc_hlbg_spectator.h"
 #include "../HinterlandBG/hlbg_constants.h"
 #include <sstream>
 #include <algorithm>
@@ -201,6 +202,7 @@ public:
             // historyui/statsui intentionally removed: use DC-Leaderboards (/leaderboard)
             { "warmup",  HandleHLBGWarmup,  SEC_GAMEMASTER, Console::No },
             { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
+            { "spectate", HandleHLBGSpectateCommand, SEC_PLAYER, Console::No },
 
             // Nested 'queue' subtable for player queue actions
             { "queue", queueSubTable }
@@ -214,6 +216,33 @@ public:
 
         return commandTable;
     }
+    static bool HandleHLBGSpectateCommand(ChatHandler* handler, char const* args)
+    {
+        // Usage: .hlbg spectate        -> join as spectator
+        //        .hlbg spectate leave  -> stop spectating
+        Player* player = handler->GetSession()
+            ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        std::string arg = args ? args : "";
+        std::transform(arg.begin(), arg.end(), arg.begin(), ::tolower);
+
+        if (arg == "leave" || arg == "stop")
+        {
+            if (!DCHLBGSpectator::StopSpectating(player))
+                handler->SendSysMessage(
+                    "|cffff0000[HLBG Spectator]|r You are not spectating.");
+            return true;
+        }
+
+        std::string error;
+        if (!DCHLBGSpectator::StartSpectating(player, error))
+            handler->PSendSysMessage(
+                "|cffff0000[HLBG Spectator]|r {}", error);
+        return true;
+    }
+
     static bool HandleHLBGStatsManualCommand(ChatHandler* handler, char const* args)
     {
         // Usage: .hlbg statsmanual on|off

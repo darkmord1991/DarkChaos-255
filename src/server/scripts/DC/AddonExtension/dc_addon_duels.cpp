@@ -269,7 +269,8 @@ namespace DCDuelAddon
     /**
      * Handle spectate request for active duels
      * Returns list of active duels if no target specified
-     * TODO: Full spectator integration with PhasedDuels system
+     * Live updates are pushed by the unified spectator core (the duel
+     * context in dc_phased_duels.cpp opts into the periodic push loop).
      */
     void HandleSpectateRequest(Player* player, ObjectGuid targetGuid,
         uint32 matchId)

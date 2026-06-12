@@ -46,6 +46,8 @@
 #include <unordered_map>
 #include <vector>
 #include "../CrossSystem/LeaderboardUtils.h"
+#include "../HinterlandBG/dc_hlbg_spectator.h"
+#include "../Spectator/dc_spectator_core.h"
 #include "dc_addon_hlbg.h"
 
 // Use shared utilities from LeaderboardUtils.h
@@ -553,7 +555,7 @@ namespace HLBG
             }
         }
 
-        std::string BuildNativeLiveSnapshotPayload(Player* player,
+        JsonValue BuildNativeLiveSnapshotJson(Player* player,
             BattlegroundHLBG* bg, uint32 limit = 40,
             std::string const* requestReason = nullptr,
             std::string const* requestToken = nullptr)
@@ -648,7 +650,7 @@ namespace HLBG
                     static_cast<int32>(queueSnapshot.state));
                 appendRequestContext();
                 payload.Set("players", players);
-                return payload.Encode();
+                return payload;
             }
 
             struct LiveRow
@@ -746,8 +748,27 @@ namespace HLBG
                 static_cast<int32>(queueSnapshot.state));
             appendRequestContext();
             payload.Set("players", players);
-            return payload.Encode();
+            return payload;
         }
+
+        std::string BuildNativeLiveSnapshotPayload(Player* player,
+            BattlegroundHLBG* bg, uint32 limit = 40,
+            std::string const* requestReason = nullptr,
+            std::string const* requestToken = nullptr)
+        {
+            return BuildNativeLiveSnapshotJson(player, bg, limit,
+                requestReason, requestToken).Encode();
+        }
+    }
+
+    bool BuildSpectatorLiveSnapshot(Player* spectator, JsonValue& payload)
+    {
+        BattlegroundHLBG* bg = GetActiveHLBG(spectator);
+        if (!bg)
+            return false;
+
+        payload = BuildNativeLiveSnapshotJson(spectator, bg, 40u);
+        return true;
     }
 
     // =====================================================================
@@ -766,6 +787,7 @@ namespace HLBG
         CMSG_QUICK_QUEUE            = 0x04,
         CMSG_LEAVE_QUEUE            = 0x05,
         CMSG_REQUEST_STATS          = 0x06,
+        CMSG_SPECTATE               = 0x07,
 
         // Extended/legacy JSON requests (not part of the canonical HLBG opcode set).
         // Kept in a non-conflicting range to avoid overlap with the live BG opcodes.
@@ -1585,6 +1607,41 @@ namespace HLBG
         response.Send(player);
     }
 
+    static void HandleSpectate(Player* player, const ParsedMessage& msg)
+    {
+        if (!player) return;
+
+        AuditAddonUiTransport(player);
+
+        if (IsRateLimited(player, 800))
+        {
+            SendRateLimitedError(player);
+            return;
+        }
+
+        std::string action = "join";
+        JsonValue json = GetJsonData(msg);
+        if (!json.IsNull() && json.HasKey("action"))
+            action = json["action"].AsString();
+
+        if (action == "leave" || action == "stop")
+        {
+            DCHLBGSpectator::StopSpectating(player);
+            return;
+        }
+
+        std::string error;
+        if (!DCHLBGSpectator::StartSpectating(player, error))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cffff0000[HLBG Spectator]|r {}", error);
+            return;
+        }
+
+        // Seed the HUD immediately; further pushes come from the core loop.
+        DCSpectator::Registry::Get().SendLiveSnapshot(player);
+    }
+
     static void HandleQuickQueue(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
@@ -1938,6 +1995,7 @@ namespace HLBG
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_OBJECTIVE, HandleRequestObjective);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_QUICK_QUEUE, HandleQuickQueue);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_LEAVE_QUEUE, HandleLeaveQueue);
+        DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_SPECTATE, HandleSpectate);
 
         // Legacy/extended requests intentionally no longer registered.
         // (Stats/history moved to DC-Leaderboards to avoid duplicated code + transfers.)

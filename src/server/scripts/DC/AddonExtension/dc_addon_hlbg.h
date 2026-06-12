@@ -42,6 +42,10 @@ namespace DCAddon
         void SendMatchEnd(Player* player, bool victory, uint32 personalScore, uint32 honorGained,
                           uint32 reputationGained, uint32 tokensGained);
 
+        // Fill payload with the live HUD snapshot of the currently running
+        // HLBG match (spectator view). Returns false when no match is active.
+        bool BuildSpectatorLiveSnapshot(Player* spectator, JsonValue& payload);
+
     } // namespace HLBG
 } // namespace DCAddon
 

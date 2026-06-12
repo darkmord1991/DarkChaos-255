@@ -20,6 +20,7 @@
 #include "GameObject.h"
 #include "Log.h"
 #include "CommandScript.h"
+#include "../Spectator/dc_spectator_core.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -662,6 +663,111 @@ namespace DCPhasedDuels
         }
     }
 
+    // ============================================================
+    // Unified Spectator Core Integration
+    // ============================================================
+
+    bool BuildSpectatorLiveSnapshot(Player* spectator,
+        DCAddon::JsonValue& payload)
+    {
+        uint32 phaseId = 0;
+        uint32 spectatorCount = 0;
+
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            auto const it = sDuelSpectators.find(spectator->GetGUID());
+            if (it == sDuelSpectators.end())
+                return false;
+
+            phaseId = it->second.watchedPhaseId;
+            for (auto const& [guid, state] : sDuelSpectators)
+            {
+                (void)guid;
+                if (state.watchedPhaseId == phaseId)
+                    ++spectatorCount;
+            }
+        }
+
+        std::optional<ActiveDuel> duel =
+            GetActiveDuelCopy(ObjectGuid::Empty, phaseId);
+        if (!duel)
+            return false;
+
+        Player* player1 = ObjectAccessor::FindConnectedPlayer(duel->player1);
+        Player* player2 = ObjectAccessor::FindConnectedPlayer(duel->player2);
+        if (!player1 || !player2)
+            return false;
+
+        uint32 durationSeconds = 0;
+        uint64 const now = GameTime::GetGameTime().count();
+        if (now > duel->startTime)
+            durationSeconds = static_cast<uint32>(now - duel->startTime);
+
+        payload.SetObject();
+        payload.Set("system", std::string(DCSpectator::SystemName(
+            DCSpectator::SystemId::Duel)));
+        payload.Set("matchId", static_cast<int32>(phaseId));
+        payload.Set("phaseId", static_cast<int32>(phaseId));
+        payload.Set("duration", static_cast<int32>(durationSeconds));
+        payload.Set("player1Name", player1->GetName());
+        payload.Set("player1Class", static_cast<int32>(player1->getClass()));
+        payload.Set("player1Hp", static_cast<int32>(player1->GetHealth()));
+        payload.Set("player1MaxHp",
+            static_cast<int32>(player1->GetMaxHealth()));
+        payload.Set("player1Damage",
+            static_cast<int32>(duel->player1DamageDealt));
+        payload.Set("player2Name", player2->GetName());
+        payload.Set("player2Class", static_cast<int32>(player2->getClass()));
+        payload.Set("player2Hp", static_cast<int32>(player2->GetHealth()));
+        payload.Set("player2MaxHp",
+            static_cast<int32>(player2->GetMaxHealth()));
+        payload.Set("player2Damage",
+            static_cast<int32>(duel->player2DamageDealt));
+        payload.Set("spectators", static_cast<int32>(spectatorCount));
+        payload.Set("active", true);
+        return true;
+    }
+
+    class DuelSpectatableContext : public DCSpectator::ISpectatableContext
+    {
+    public:
+        DCSpectator::SystemId GetSystemId() const override
+        {
+            return DCSpectator::SystemId::Duel;
+        }
+
+        bool IsSpectating(ObjectGuid guid) const override
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            return sDuelSpectators.find(guid) != sDuelSpectators.end();
+        }
+
+        void StopSpectating(Player* player) override
+        {
+            DCPhasedDuels::StopSpectating(player, std::string());
+        }
+
+        bool BuildLiveSnapshot(Player* spectator,
+            DCAddon::JsonValue& payload) override
+        {
+            return BuildSpectatorLiveSnapshot(spectator, payload);
+        }
+
+        // Duels have no broadcast loop of their own; the spectator core
+        // pushes change-gated snapshots (hp/damage) with its heartbeat.
+        bool WantsPeriodicPush() const override { return true; }
+
+        void CollectSpectators(std::vector<ObjectGuid>& out) const override
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            for (auto const& [guid, state] : sDuelSpectators)
+            {
+                (void)state;
+                out.push_back(guid);
+            }
+        }
+    };
+
 } // namespace DCPhasedDuels
 
 using namespace DCPhasedDuels;
@@ -958,4 +1064,7 @@ void AddSC_dc_phased_duels()
     new DCPhasedDuelsPlayerScript();
     new DCPhasedDuelsCommandScript();
     new DCPhasedDuelsWorldScript();
+
+    static DuelSpectatableContext duelSpectatorContext;
+    DCSpectator::Registry::Get().RegisterContext(&duelSpectatorContext);
 }

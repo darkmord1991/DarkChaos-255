@@ -106,6 +106,8 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/BattlegroundHLBG.cpp
     HinterlandBG/HLBGService.cpp
     HinterlandBG/hlbg_utils.cpp
+    HinterlandBG/dc_hlbg_spectator.h
+    HinterlandBG/dc_hlbg_spectator.cpp
 )
 
 # DC Gilneas Battle for Gilneas implementation
@@ -180,6 +182,12 @@ set(SCRIPTS_DC_SeasonalRewards
     Seasons/DCWeeklyResetHub.cpp
 )
 
+# Unified Spectator Core - shared registry + native snapshot transport
+set(SCRIPTS_DC_Spectator
+    Spectator/dc_spectator_core.h
+    Spectator/dc_spectator_core.cpp
+)
+
 # DC Mythic+ System - Dungeon Scaling, Keystone System & Spectator
 set(SCRIPTS_DC_MythicPlus
     MythicPlus/dc_mythicplus_difficulty_scaling.h
@@ -237,6 +245,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_wardrobe.cpp
     AddonExtension/dc_addon_qos.cpp
     AddonExtension/dc_addon_gomove.cpp
+    AddonExtension/dc_addon_decorations.cpp
     AddonExtension/dc_addon_teleports.cpp
 )
 
@@ -302,6 +311,8 @@ set(SCRIPTS_DC_GuildHousing
     GuildHousing/dc_guildhouse_npcs.cpp
     GuildHousing/dc_guildhouse_butler.cpp
     GuildHousing/dc_guildhouse_manager.cpp
+    GuildHousing/dc_guildhouse_decorations.h
+    GuildHousing/dc_guildhouse_decorations.cpp
     GuildHousing/dc_dalaran_guard.cpp
 )
 
@@ -337,6 +348,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_DungeonQuests}
     ${SCRIPTS_DC_ItemUpgrade}
     ${SCRIPTS_DC_RandomEnchants}
+    ${SCRIPTS_DC_Spectator}
     ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_GreatVault}
     ${SCRIPTS_DC_Jadeforest}

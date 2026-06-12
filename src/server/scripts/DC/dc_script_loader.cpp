@@ -121,6 +121,10 @@ void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades/ItemUpgradeStatApp
 // --- Random enchants system ---
 void AddSC_dc_random_enchants();              // RandomEnchants/dc_random_enchants.cpp
 
+// --- Unified spectator core (must load before spectator consumers) ---
+void AddSC_dc_spectator_core();               // Spectator/dc_spectator_core.cpp
+void AddSC_dc_hlbg_spectator();               // HinterlandBG/dc_hlbg_spectator.cpp
+
 // --- Mythic+ dungeon system ---
 void AddMythicPlusScripts();                  // MythicPlus/dc_mythicplus_loader.cpp
 void AddSC_dc_mythic_spectator();             // MythicPlus/dc_mythicplus_spectator.cpp
@@ -169,6 +173,7 @@ void AddSC_dc_challenge_modes_commandscript();
 // --- Guild housing ---
 void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
 void AddGuildHouseButlerScripts();            // GuildHousing/dc_guildhouse_butler.cpp
+void AddSC_dc_guildhouse_decorations();       // GuildHousing/dc_guildhouse_decorations.cpp
 void AddSC_dc_dalaran_guard();                // GuildHousing/dc_dalaran_guard.cpp
 
 // ============================================================================
@@ -303,6 +308,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_hlbg_battlemaster_hook);
     DC_LOAD(AddSC_hlbg_movement_handler);
     DC_LOAD(AddSC_hlbg_native_broadcast);
+    // Registers the HLBG context with the unified spectator core (the
+    // registry singleton makes this safe before the core scripts load).
+    DC_LOAD(AddSC_dc_hlbg_spectator);
 
     LogSection("Challenge Mode System");
     DC_LOAD(AddSC_dc_challenge_modes);
@@ -337,6 +345,11 @@ void AddDCScripts()
     LogSection("Random Enchants System");
     DC_LOAD(AddSC_dc_random_enchants);
 
+    LogSection("Unified Spectator Core");
+    // Owns the spectator live-snapshot opcode pair and logout cleanup;
+    // must register before M+/Duels/HLBG plug their contexts in.
+    DC_LOAD(AddSC_dc_spectator_core);
+
     LogSection("Mythic+ Dungeon System");
     // AddMythicPlusScripts loads core, portal, vault, vendors, and keystone item.
     DC_LOAD(AddMythicPlusScripts);
@@ -369,6 +382,7 @@ void AddDCScripts()
     // AddGuildHouseScripts also loads AddGuildHouseNpcScripts internally.
     DC_LOAD(AddGuildHouseScripts);
     DC_LOAD(AddGuildHouseButlerScripts);
+    DC_LOAD(AddSC_dc_guildhouse_decorations);
     DC_LOAD(AddSC_dc_dalaran_guard);
 
     LogSection("Dungeon Quest System (late-load stage)");

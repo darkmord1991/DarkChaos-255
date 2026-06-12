@@ -25,6 +25,7 @@
 #include "SpellAuraEffects.h"
 #include "Guild.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "../Spectator/dc_spectator_core.h"
 #include "Random.h"
 
 #include <sstream>
@@ -36,31 +37,6 @@ namespace DCMythicSpectator
 
 namespace
 {
-    namespace BridgeOpcode
-    {
-        enum : uint16
-        {
-            CMSG_REQUEST_LIVE_SNAPSHOT = ::CMSG_REQUEST_SPECTATOR_LIVE_SNAPSHOT,
-            SMSG_LIVE_SNAPSHOT = ::SMSG_SPECTATOR_LIVE_SNAPSHOT,
-        };
-    }
-
-    DCAddon::TransportPolicyDecision ResolveLiveTransport(Player* player)
-    {
-        DCAddon::TransportPolicyRequest request;
-        request.featureName = "spectator-live";
-        request.nativeCapability =
-            DCAddon::ProtocolVersion::Capability::SPECTATOR_LIVE_NATIVE;
-        return DCAddon::ResolveTransportPolicy(player, request);
-    }
-
-    enum class NativeLiveSnapshotRequestOutcome : uint8
-    {
-        Handled,
-        TransportUnavailable,
-        OutsideActiveSession,
-    };
-
     std::string FormatTimerText(uint32 seconds)
     {
         std::ostringstream ss;
@@ -118,67 +94,15 @@ namespace
         payload.Set("maxSpectators", static_cast<int32>(
             MythicSpectatorManager::Get().GetConfig().maxSpectatorsPerRun));
         payload.Set("active", true);
+        payload.Set("system", std::string(DCSpectator::SystemName(
+            DCSpectator::SystemId::MythicPlus)));
         return payload;
-    }
-
-    void SendNativeLiveSnapshot(Player* spectator,
-        DCAddon::JsonValue const& payload)
-    {
-        if (!spectator || !spectator->GetSession())
-            return;
-
-        std::string encoded = payload.Encode();
-        if (encoded.empty())
-            return;
-
-        WorldPacket data(BridgeOpcode::SMSG_LIVE_SNAPSHOT,
-            encoded.size() + 1);
-        data << encoded;
-        spectator->GetSession()->SendPacket(&data);
-        std::string preview = "bytes=" + std::to_string(encoded.size());
-        DCAddon::LogNativeS2CMessage(spectator, DCAddon::Module::SPECTATOR,
-            0, BridgeOpcode::SMSG_LIVE_SNAPSHOT, data.size(), preview, true,
-            0);
-    }
-
-    void SendAddonLiveSnapshot(Player* spectator,
-        DCAddon::JsonValue const& payload)
-    {
-        if (!spectator)
-            return;
-
-        DCAddon::JsonMessage(DCAddon::Module::GROUP_FINDER,
-            DCAddon::Opcode::GroupFinder::SMSG_SPECTATE_DATA, payload)
-            .Send(spectator);
     }
 
     void SendLiveSnapshot(Player* spectator, SpectateableRun const& run)
     {
-        DCAddon::JsonValue payload = BuildLiveSnapshotPayload(run);
-        if (ResolveLiveTransport(spectator).UsesNative())
-        {
-            SendNativeLiveSnapshot(spectator, payload);
-            return;
-        }
-
-        SendAddonLiveSnapshot(spectator, payload);
-    }
-
-    NativeLiveSnapshotRequestOutcome HandleNativeLiveSnapshotRequest(
-        Player* player)
-    {
-        if (!player || !ResolveLiveTransport(player).UsesNative())
-            return NativeLiveSnapshotRequestOutcome::TransportUnavailable;
-
-        if (SpectatorState* state = MythicSpectatorManager::Get()
-            .GetSpectatorState(player->GetGUID()))
-        {
-            MythicSpectatorManager::Get().SendRunSnapshot(player,
-                state->targetInstanceId);
-            return NativeLiveSnapshotRequestOutcome::Handled;
-        }
-
-        return NativeLiveSnapshotRequestOutcome::OutsideActiveSession;
+        DCSpectator::SendSnapshotPayload(spectator,
+            BuildLiveSnapshotPayload(run));
     }
 }
 
@@ -709,8 +633,6 @@ void MythicSpectatorManager::StopSpectating(Player* player)
     player->SetGameMaster(false);
     player->SetGMVisible(true);
     RestoreSpectatorPosition(player, state);
-
-    _spectators.erase(it);
 
     _spectators.erase(it);
 
@@ -1822,9 +1744,8 @@ public:
 
     void OnPlayerLogout(Player* player) override
     {
-        if (sMythicSpectator.IsSpectating(player))
-            sMythicSpectator.StopSpectating(player);
-
+        // Spectator sessions are stopped by the unified spectator core
+        // (DCSpectatorCorePlayerScript); only replay playback is M+-local.
         if (sMythicSpectator.IsReplayPlayback(player))
             sMythicSpectator.StopReplayPlayback(player);
     }
@@ -1854,59 +1775,46 @@ public:
     }
 };
 
-class DCMythicSpectatorNativeServerScript : public ServerScript
+// The CMSG/SMSG_SPECTATOR_LIVE_SNAPSHOT bridge is owned by the unified
+// spectator core (Spectator/dc_spectator_core.cpp); M+ plugs in through
+// this context.
+class MythicPlusSpectatableContext : public DCSpectator::ISpectatableContext
 {
 public:
-    DCMythicSpectatorNativeServerScript()
-        : ServerScript("DCMythicSpectatorNativeServerScript",
-            { SERVERHOOK_CAN_PACKET_RECEIVE })
+    DCSpectator::SystemId GetSystemId() const override
     {
+        return DCSpectator::SystemId::MythicPlus;
     }
 
-private:
-    bool CanPacketReceive(WorldSession* session,
-        WorldPacket const& packet) override
+    bool IsSpectating(ObjectGuid guid) const override
     {
-        if (packet.GetOpcode() != BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT)
-            return true;
-
-        if (!session)
-            return false;
-
-        Player* player = session->GetPlayer();
-        if (!player || !player->IsInWorld())
-            return false;
-
-        NativeLiveSnapshotRequestOutcome outcome =
-            HandleNativeLiveSnapshotRequest(player);
-        switch (outcome)
-        {
-            case NativeLiveSnapshotRequestOutcome::Handled:
-                DCAddon::AuditNativeC2SRequest(player,
-                    DCAddon::Module::SPECTATOR, 0,
-                    BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT,
-                    packet.size(), "request", true);
-                break;
-            case NativeLiveSnapshotRequestOutcome::TransportUnavailable:
-                DCAddon::AuditNativeC2SRequest(player,
-                    DCAddon::Module::SPECTATOR, 0,
-                    BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT,
-                    packet.size(), "request", false,
-                    "Native spectator live snapshot unavailable",
-                    "native_transport_denied",
-                    "Native spectator live snapshot request rejected");
-                break;
-            case NativeLiveSnapshotRequestOutcome::OutsideActiveSession:
-                DCAddon::LogNativeC2SMessageWithStatus(player,
-                    DCAddon::Module::SPECTATOR, 0,
-                    BridgeOpcode::CMSG_REQUEST_LIVE_SNAPSHOT,
-                    packet.size(), "request|outside-session", "ignored",
-                    "Native spectator live snapshot requested without active spectator session",
-                    false);
-                break;
-        }
-        return false;
+        return MythicSpectatorManager::Get().GetSpectatorState(guid) != nullptr;
     }
+
+    void StopSpectating(Player* player) override
+    {
+        MythicSpectatorManager::Get().StopSpectating(player);
+    }
+
+    bool BuildLiveSnapshot(Player* spectator,
+        DCAddon::JsonValue& payload) override
+    {
+        SpectatorState* state = MythicSpectatorManager::Get()
+            .GetSpectatorState(spectator->GetGUID());
+        if (!state)
+            return false;
+
+        SpectateableRun const* run = MythicSpectatorManager::Get()
+            .GetRun(state->targetInstanceId);
+        if (!run)
+            return false;
+
+        payload = BuildLiveSnapshotPayload(*run);
+        return true;
+    }
+
+    // M+ broadcasts its own run updates (BroadcastRunUpdate); the core
+    // push loop stays off to keep the pre-unification cadence.
 };
 
 void AddSC_dc_mythic_spectator()
@@ -1915,5 +1823,7 @@ void AddSC_dc_mythic_spectator()
     new DCMythicSpectatorCommandScript();
     new DCMythicSpectatorPlayerScript();
     new DCMythicSpectatorWorldScript();
-    new DCMythicSpectatorNativeServerScript();
+
+    static MythicPlusSpectatableContext mythicSpectatorContext;
+    DCSpectator::Registry::Get().RegisterContext(&mythicSpectatorContext);
 }

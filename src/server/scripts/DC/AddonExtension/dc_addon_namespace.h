@@ -93,6 +93,7 @@ namespace DCAddon
         constexpr const char* WORLD         = "WRLD";   // World Content (world bosses, hotspots, rares)
         constexpr const char* COLLECTION    = "COLL";   // Collection System (mounts, pets, toys, transmog, etc.)
         constexpr const char* QOS           = "QOS";    // Quality of Service (QoL settings, tooltips, automation)
+        constexpr const char* DECORATION    = "DECO";   // Guild house decorations (player-facing placement)
     }
 
     // ========================================================================
@@ -324,6 +325,7 @@ namespace DCAddon
             constexpr uint8 CMSG_QUICK_QUEUE       = 0x04;
             constexpr uint8 CMSG_LEAVE_QUEUE       = 0x05;
             constexpr uint8 CMSG_REQUEST_STATS     = 0x06;
+            constexpr uint8 CMSG_SPECTATE          = 0x07;  // join/leave HLBG spectating
 
             constexpr uint8 SMSG_STATUS            = 0x10;
             constexpr uint8 SMSG_RESOURCES         = 0x11;
@@ -334,6 +336,24 @@ namespace DCAddon
             constexpr uint8 SMSG_STATS             = 0x16;
             constexpr uint8 SMSG_AFFIX_INFO        = 0x17;
             constexpr uint8 SMSG_MATCH_END         = 0x18;
+        }
+
+        // Guild house decoration opcodes
+        namespace Decoration
+        {
+            constexpr uint8 CMSG_GET_CATALOG       = 0x01;  // paged catalog browse
+            constexpr uint8 CMSG_PLACE             = 0x02;  // buy + place (player pos or explicit coords)
+            constexpr uint8 CMSG_MOVE              = 0x03;  // here / rotate / to / nudge
+            constexpr uint8 CMSG_REMOVE            = 0x04;  // remove + partial refund
+            constexpr uint8 CMSG_GET_BUDGET        = 0x05;  // budget/permissions query
+            constexpr uint8 CMSG_SELECT            = 0x06;  // resolve cursor-picked GO guid
+
+            constexpr uint8 SMSG_CATALOG           = 0x10;
+            constexpr uint8 SMSG_PLACE_RESULT      = 0x11;
+            constexpr uint8 SMSG_MOVE_RESULT       = 0x12;
+            constexpr uint8 SMSG_REMOVE_RESULT     = 0x13;
+            constexpr uint8 SMSG_BUDGET            = 0x14;
+            constexpr uint8 SMSG_SELECT_RESULT     = 0x15;
         }
 
         // Unified Leaderboard opcodes

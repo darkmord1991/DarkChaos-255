@@ -1,0 +1,14 @@
+## Interface: 30300
+## Title: |cffFFCC00DC|r Housing
+## Notes: Guild house decoration catalog, 3D previews and placement editor for DarkChaos-255
+## Author: DarkChaos-255
+## Version: 1.0.0
+## SavedVariables: DCHousingDB
+## Dependencies: DC-AddonProtocol
+
+Localization.lua
+Data\HousingModels.lua
+Core.lua
+Protocol.lua
+UI\CatalogFrame.lua
+UI\EditMode.lua
