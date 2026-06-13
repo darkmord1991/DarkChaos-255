@@ -20,7 +20,9 @@
 #include "Player.h"
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
+#include "WorldSession.h"
 #include "dc_guildhouse.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include "../GOMove/GOMove.h"
 
 #include <algorithm>
@@ -49,6 +51,15 @@ namespace
 
     float sMaxPlacementRange = 250.0f;
     uint32 sRefundPercent = 50;
+    bool sGmBypass = true;
+
+    // GMs may test the decoration system anywhere: house presence/bounds,
+    // rank permissions, and cross-guild ownership checks are skipped.
+    bool IsDecorationGM(Player* player)
+    {
+        return sGmBypass && player && player->GetSession()
+            && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
+    }
 
     uint32 WeightOf(uint32 entry)
     {
@@ -76,6 +87,19 @@ namespace
             return false;
         }
 
+        // GM testing bypass: treat the player's position as house grounds
+        // (max house level so catalog gating never blocks the test).
+        if (IsDecorationGM(player))
+        {
+            static GuildHouseData gmHouse;
+            gmHouse = GuildHouseData(player->GetPhaseMask(),
+                player->GetMapId(), player->GetPositionX(),
+                player->GetPositionY(), player->GetPositionZ(),
+                player->GetOrientation(), 5);
+            outHouse = &gmHouse;
+            return true;
+        }
+
         uint32 guildId = player->GetGuildId();
         if (!guildId)
         {
@@ -98,13 +122,18 @@ namespace
             return false;
         }
 
-        float const dx = player->GetPositionX() - house->posX;
-        float const dy = player->GetPositionY() - house->posY;
-        if ((dx * dx + dy * dy)
-            > sMaxPlacementRange * sMaxPlacementRange)
+        // Default policy is map-wide (large plots like full city clones);
+        // a radius only applies when MaxRange is configured > 0.
+        if (sMaxPlacementRange > 0.f)
         {
-            error = "You are too far from the guild house grounds.";
-            return false;
+            float const dx = player->GetPositionX() - house->posX;
+            float const dy = player->GetPositionY() - house->posY;
+            if ((dx * dx + dy * dy)
+                > sMaxPlacementRange * sMaxPlacementRange)
+            {
+                error = "You are too far from the guild house grounds.";
+                return false;
+            }
         }
 
         outHouse = house;
@@ -115,7 +144,9 @@ namespace
         InstanceInfo const*& outInfo, std::string& error)
     {
         auto it = sInstances.find(lowguid);
-        if (it == sInstances.end() || it->second.guildId != player->GetGuildId())
+        if (it == sInstances.end()
+            || (it->second.guildId != player->GetGuildId()
+                && !IsDecorationGM(player)))
         {
             error = "That object is not a decoration of your guild house.";
             return false;
@@ -126,10 +157,15 @@ namespace
     }
 
     // The TARGET coordinates of a place/move must stay on the house
-    // grounds regardless of where the player stands.
+    // grounds. The map/phase bound comes from ValidateInHouse (objects are
+    // spawned on the player's map); coordinates are only constrained when
+    // a placement radius is configured.
     bool ValidateTargetPosition(GuildHouseData const* house, float x, float y,
         float z, std::string& error)
     {
+        if (sMaxPlacementRange <= 0.f)
+            return true;
+
         float const dx = x - house->posX;
         float const dy = y - house->posY;
         if ((dx * dx + dy * dy)
@@ -146,6 +182,23 @@ namespace
         }
 
         return true;
+    }
+
+    // The decoration tables ship via Custom feature SQL, not the core
+    // updater; a missing table must disable the system instead of letting
+    // the fatal 1146 handler abort worldserver startup.
+    bool WorldTableExists(char const* tableName)
+    {
+        return WorldDatabase.Query(
+            "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = "
+            "DATABASE() AND TABLE_NAME = '{}' LIMIT 1", tableName) != nullptr;
+    }
+
+    bool CharacterTableExists(char const* tableName)
+    {
+        return CharacterDatabase.Query(
+            "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = "
+            "DATABASE() AND TABLE_NAME = '{}' LIMIT 1", tableName) != nullptr;
     }
 
     // Each committed move costs two DB writes plus a despawn/respawn, so
@@ -173,9 +226,22 @@ void LoadCatalog()
     sUsedBudget.clear();
 
     sMaxPlacementRange = sConfigMgr->GetOption<float>(
-        "DC.GuildHouse.Decoration.MaxRange", 250.0f);
+        "DC.GuildHouse.Decoration.MaxRange", 0.0f);
     sRefundPercent = std::min(100u, sConfigMgr->GetOption<uint32>(
         "DC.GuildHouse.Decoration.RefundPercent", 50));
+    sGmBypass = sConfigMgr->GetOption<bool>(
+        "DC.GuildHouse.Decoration.GMBypass", true);
+
+    if (!WorldTableExists("dc_guildhouse_decorations")
+        || !WorldTableExists("dc_guildhouse_decoration_budgets")
+        || !CharacterTableExists("dc_guildhouse_decoration_instances"))
+    {
+        LOG_ERROR("scripts.dc",
+            "GuildHouseDecorations: decoration tables missing - apply "
+            "Custom feature SQLs (worlddb/GuildHousing 2026_06_13_* and "
+            "chardb/GuildHousing 2026_06_13_*). System disabled.");
+        return;
+    }
 
     if (QueryResult result = WorldDatabase.Query(
         "SELECT `entry`, `name`, `category`, `cost_copper`, "
@@ -323,7 +389,8 @@ bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
     if (!ValidateInHouse(player, house, error))
         return false;
 
-    if (!GuildHouseManager::HasPermission(player, GH_PERM_SPAWN))
+    if (!IsDecorationGM(player)
+        && !GuildHouseManager::HasPermission(player, GH_PERM_SPAWN))
     {
         error = "Your guild rank may not place decorations.";
         return false;
@@ -413,7 +480,8 @@ bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
     if (!ValidateInHouse(player, house, error))
         return false;
 
-    if (!GuildHouseManager::HasPermission(player, GH_PERM_MOVE))
+    if (!IsDecorationGM(player)
+        && !GuildHouseManager::HasPermission(player, GH_PERM_MOVE))
     {
         error = "Your guild rank may not move decorations.";
         return false;
@@ -541,7 +609,8 @@ bool Remove(Player* player, uint32 lowguid, std::string& error,
     if (!ValidateInHouse(player, house, error))
         return false;
 
-    if (!GuildHouseManager::HasPermission(player, GH_PERM_DELETE))
+    if (!IsDecorationGM(player)
+        && !GuildHouseManager::HasPermission(player, GH_PERM_DELETE))
     {
         error = "Your guild rank may not remove decorations.";
         return false;
@@ -616,6 +685,22 @@ namespace
 
         bool OnGossipHello(Player* player, Creature* creature) override
         {
+            // Players with the DC-Housing addon (completed DC handshake)
+            // get the full addon UI instead of the gossip fallback.
+            DCAddon::SessionCapabilityState capabilityState;
+            if (DCAddon::TryGetSessionCapabilityState(player,
+                capabilityState))
+            {
+                DCAddon::JsonValue payload;
+                payload.SetObject();
+                payload.Set("source", std::string("npc"));
+                DCAddon::JsonMessage(DCAddon::Module::DECORATION,
+                    DCAddon::Opcode::Decoration::SMSG_OPEN_UI, payload)
+                    .Send(player);
+                CloseGossipMenuFor(player);
+                return true;
+            }
+
             sBrowseStates.erase(player->GetGUID());
             ShowCategories(player, creature);
             return true;

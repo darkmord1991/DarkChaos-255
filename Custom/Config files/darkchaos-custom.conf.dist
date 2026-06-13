@@ -3637,6 +3637,46 @@ GuildHouseBuyRank = 0
 #
 GuildHouseSellRank = 0
 
+#
+#    DC.GuildHouse.Decoration.MaxRange
+#        Description: Placement bound for decorations. 0 limits placement
+#                     to the guild house MAP only (recommended for large
+#                     plots such as full city clones - the per-guild phase
+#                     already isolates guilds from each other). A value
+#                     above 0 additionally restricts player and target
+#                     positions to that radius (yards) around the house
+#                     center.
+#        Default:     0
+#
+DC.GuildHouse.Decoration.MaxRange = 0
+
+#
+#    DC.GuildHouse.Decoration.RefundPercent
+#        Description: Percentage of the purchase price refunded when a
+#                     decoration is removed (0-100).
+#        Default:     50
+#
+DC.GuildHouse.Decoration.RefundPercent = 50
+
+#
+#    DC.AddonProtocol.Decoration.Enable
+#        Description: Enable the DECO addon module (DC-Housing catalog,
+#                     placement and edit mode). The decorator NPC gossip
+#                     works independently of this.
+#        Default:     1
+#
+DC.AddonProtocol.Decoration.Enable = 1
+
+#
+#    DC.GuildHouse.Decoration.GMBypass
+#        Description: Allow GM accounts (SEC_GAMEMASTER+) to place, move,
+#                     select and remove decorations anywhere, skipping the
+#                     guild house presence/bounds, rank permission, and
+#                     guild ownership checks. Intended for testing.
+#        Default:     1
+#
+DC.GuildHouse.Decoration.GMBypass = 1
+
 
 ###############################################################################
 #

@@ -93,34 +93,66 @@ end
 
 local function CreateCatalogFrame()
     frame = CreateFrame("Frame", "DCHousingCatalogFrame", UIParent)
+    frame:SetFrameStrata("HIGH")
     frame:SetWidth(720)
-    frame:SetHeight(460)
+    frame:SetHeight(470)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
+    frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-    frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 },
-    })
     frame:Hide()
     tinsert(UISpecialFrames, "DCHousingCatalogFrame")
 
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -16)
-    title:SetText(L.TITLE)
+    -- DC house style (matches DC-Collection / DC-Leaderboards):
+    -- leather background + dark tint + dialog border + portrait ring.
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    frame.bg:SetAllPoints()
+    frame.bg:SetTexture("Interface\\AddOns\\DC-Collection\\Textures"
+        .. "\\Backgrounds\\FelLeather_512.tga")
+    if frame.bg.SetHorizTile then frame.bg:SetHorizTile(false) end
+    if frame.bg.SetVertTile then frame.bg:SetVertTile(false) end
+
+    frame.bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    frame.bgTint:SetAllPoints()
+    frame.bgTint:SetTexture(0, 0, 0, 0.78)
+
+    frame.border = CreateFrame("Frame", nil, frame)
+    frame.border:SetAllPoints()
+    frame.border:SetBackdrop({
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+
+    local portraitRing = frame:CreateTexture(nil, "OVERLAY")
+    portraitRing:SetWidth(52)
+    portraitRing:SetHeight(52)
+    portraitRing:SetPoint("TOPLEFT", 10, -10)
+    portraitRing:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    portraitRing:SetTexCoord(0, 0.50, 0, 0.50)
+
+    local portrait = frame:CreateTexture(nil, "ARTWORK")
+    portrait:SetWidth(34)
+    portrait:SetHeight(34)
+    portrait:SetPoint("CENTER", portraitRing, "CENTER", 0, -1)
+    portrait:SetTexture("Interface\\Icons\\INV_Misc_Lantern_01")
+    portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    local title = frame:CreateFontString(nil, "OVERLAY",
+        "GameFontHighlightLarge")
+    title:SetPoint("TOP", 0, -14)
+    title:SetText("|cffFFCC00DC|r " .. L.TITLE)
 
     local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -6, -8)
+    close:SetPoint("TOPRIGHT", -5, -5)
 
     -- Category dropdown
     local dropdown = CreateFrame("Frame", "DCHousingCategoryDropDown", frame,
         "UIDropDownMenuTemplate")
-    dropdown:SetPoint("TOPLEFT", 4, -36)
+    dropdown:SetPoint("TOPLEFT", 52, -38)
     UIDropDownMenu_SetWidth(dropdown, 150)
     UIDropDownMenu_Initialize(dropdown, function()
         local info = UIDropDownMenu_CreateInfo()
@@ -150,7 +182,7 @@ local function CreateCatalogFrame()
         "InputBoxTemplate")
     search:SetWidth(140)
     search:SetHeight(20)
-    search:SetPoint("TOPLEFT", 200, -42)
+    search:SetPoint("TOPLEFT", 248, -44)
     search:SetAutoFocus(false)
     search:SetScript("OnTextChanged", function(self)
         state.search = self:GetText() or ""
@@ -163,7 +195,7 @@ local function CreateCatalogFrame()
     -- Item list rows + scroll
     frame.rows = {}
     local listAnchor = CreateFrame("Frame", nil, frame)
-    listAnchor:SetPoint("TOPLEFT", 18, -72)
+    listAnchor:SetPoint("TOPLEFT", 18, -78)
     listAnchor:SetWidth(330)
     listAnchor:SetHeight(ROW_COUNT * ROW_HEIGHT)
 
@@ -205,7 +237,7 @@ local function CreateCatalogFrame()
 
     -- Preview pane
     local previewBg = CreateFrame("Frame", nil, frame)
-    previewBg:SetPoint("TOPLEFT", 370, -72)
+    previewBg:SetPoint("TOPLEFT", 370, -78)
     previewBg:SetWidth(330)
     previewBg:SetHeight(250)
     previewBg:SetBackdrop({
@@ -307,15 +339,19 @@ local function CreateCatalogFrame()
     Catalog:OnBudgetUpdate()
 end
 
-function Catalog:Toggle()
+function Catalog:Show()
     if not frame then
         CreateCatalogFrame()
     end
-    if frame:IsShown() then
+    DC.Protocol:RequestBudget()
+    UpdateList()
+    frame:Show()
+end
+
+function Catalog:Toggle()
+    if frame and frame:IsShown() then
         frame:Hide()
     else
-        DC.Protocol:RequestBudget()
-        UpdateList()
-        frame:Show()
+        self:Show()
     end
 end

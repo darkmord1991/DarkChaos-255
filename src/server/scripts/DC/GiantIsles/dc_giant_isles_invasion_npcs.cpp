@@ -179,6 +179,24 @@ namespace
             { NPC_ZANDALARI_HONOR_GUARD, {
                 { { 29426, 4000, 6000,  6000,  9000, KIT_TARGET_VICTIM } }, // Heroic Strike
                 871, 20 } },                                                // Shield Wall
+
+            // ---- War-beasts ----
+            { NPC_ZANDALARI_WAR_DIREHORN, {
+                { { 11578, 1000, 3000,  9000, 14000, KIT_TARGET_VICTIM },   // Charge (gap-close)
+                  { 13443, 4000, 6000,  9000, 13000, KIT_TARGET_VICTIM },   // Gore (Rend)
+                  { 11876,10000,14000, 16000, 22000, KIT_TARGET_SELF } },   // Trample (War Stomp)
+                0, 0 } },
+
+            { NPC_ZANDALARI_PTERRORDAX_BOMBER, {
+                { { 8078,  5000, 9000,  9000, 14000, KIT_TARGET_SELF },     // Dive-bomb (Thunder Clap AoE)
+                  { 6660,  3000, 5000,  7000, 11000, KIT_TARGET_VICTIM } }, // Screech (Shoot)
+                0, 0 } },
+
+            { NPC_PRIMAL_DEVILSAUR, {
+                { { 15284, 4000, 7000,  7000, 11000, KIT_TARGET_VICTIM },   // Cleave
+                  { 11876, 9000,13000, 14000, 19000, KIT_TARGET_SELF },     // Tail Sweep (War Stomp)
+                  { 13443, 5000, 8000, 10000, 15000, KIT_TARGET_VICTIM } }, // Bleeding Bite (Rend)
+                8599, 30 } },                                               // Frenzy (Enrage) below 30%
         };
 
         auto const itr = kits.find(entry);

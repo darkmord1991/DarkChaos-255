@@ -354,6 +354,7 @@ namespace DCAddon
             constexpr uint8 SMSG_REMOVE_RESULT     = 0x13;
             constexpr uint8 SMSG_BUDGET            = 0x14;
             constexpr uint8 SMSG_SELECT_RESULT     = 0x15;
+            constexpr uint8 SMSG_OPEN_UI           = 0x16;  // decorator NPC opens the addon
         }
 
         // Unified Leaderboard opcodes

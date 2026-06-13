@@ -9,6 +9,11 @@
 --
 -- Texture variation slots were extracted from each M2 header (MONSTER_1/2/3);
 -- models without variation slots use only hardcoded/embedded textures.
+--
+-- NOTE: bloodtick (entry 3461237, display 500284, model 500240) is EXCLUDED:
+-- its M2 has 0 bones (skeleton still in the modern .skel file) and crashes the
+-- 3.3.5 client on view. Do not pack the bloodtick folder. Re-add after the
+-- model is re-exported with the skeleton inlined (reuse the same IDs).
 
 DELETE FROM `creature_template_model`
 WHERE `CreatureID` BETWEEN 3461231 AND 3461274;
@@ -28,7 +33,6 @@ VALUES
 (500281,1.50,3.00,2,0,0),
 (500282,1.50,3.00,2,0,0),
 (500283,0.50,1.50,2,0,0),
-(500284,0.75,1.80,2,0,0),
 (500285,0.40,1.50,2,0,0),
 (500286,0.80,2.00,2,0,0),
 (500287,1.50,3.00,2,0,0),
@@ -77,7 +81,6 @@ VALUES
 (3461234,'Armored T-Rex','Custom Creature Model',83,83,35,1,1.14286,1,1,'',0,1,0),
 (3461235,'Armored T-Rex (Red)','Custom Creature Model',83,83,35,1,1.14286,1,1,'',0,1,0),
 (3461236,'Tauren Band Drummer','Custom Creature Model',83,83,35,1,1.14286,1,7,'',0,1,0),
-(3461237,'Bloodtick','Custom Creature Model',83,83,35,1,1.14286,1,1,'',0,1,0),
 (3461238,'Compy','Custom Creature Model',83,83,35,1,1.14286,1,1,'',0,1,0),
 (3461239,'Dark Watcher (Female)','Custom Creature Model',83,83,35,1,1.14286,1,7,'',0,1,0),
 (3461240,'Dark Watcher Gatekeeper','Custom Creature Model',83,83,35,1,1.14286,1,7,'',0,1,0),
@@ -125,7 +128,6 @@ VALUES
 (3461234,0,500281,1.00,1,0),
 (3461235,0,500282,1.00,1,0),
 (3461236,0,500283,1.00,1,0),
-(3461237,0,500284,1.00,1,0),
 (3461238,0,500285,1.00,1,0),
 (3461239,0,500286,1.00,1,0),
 (3461240,0,500287,1.00,1,0),

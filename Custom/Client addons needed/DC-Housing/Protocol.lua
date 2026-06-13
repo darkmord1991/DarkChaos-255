@@ -19,6 +19,7 @@ Protocol.Opcodes = {
     SMSG_REMOVE_RESULT = 0x13,
     SMSG_BUDGET        = 0x14,
     SMSG_SELECT_RESULT = 0x15,
+    SMSG_OPEN_UI       = 0x16,
 }
 
 function Protocol:Init()
@@ -78,6 +79,12 @@ function Protocol:Init()
             if DC.EditMode then
                 DC.EditMode:OnSelectResult(data or {})
             end
+        end)
+
+    -- Decorator NPC pushes this instead of its gossip menu.
+    DCAddonProtocol:RegisterJSONHandler(DC.MODULE_ID, O.SMSG_OPEN_UI,
+        function()
+            DC.Catalog:Show()
         end)
 
     self:RequestBudget()

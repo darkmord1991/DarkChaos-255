@@ -55,6 +55,7 @@ void AddSC_boss_thok();                       // GiantIsles/boss_thok.cpp
 void AddSC_boss_nalak();                      // GiantIsles/boss_nalak.cpp
 void AddSC_dc_giant_isles_water_monster();    // GiantIsles/dc_giant_isles_water_monster.cpp
 void AddSC_giant_isles_hydra_drum();          // GiantIsles/dc_giant_isles_hydra_drum.cpp
+void AddSC_giant_isles_war_economy();         // GiantIsles/dc_giant_isles_war_economy.cpp
 void AddSC_dc_giant_isles_fishing();          // GiantIsles/dc_giant_isles_fishing.cpp
 
 // --- Heirloom system ---
@@ -277,6 +278,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_boss_nalak);
     DC_LOAD(AddSC_dc_giant_isles_water_monster);
     DC_LOAD(AddSC_giant_isles_hydra_drum);
+    DC_LOAD(AddSC_giant_isles_war_economy);
     DC_LOAD(AddSC_dc_giant_isles_fishing);
 
     LogSection("Heirloom System");

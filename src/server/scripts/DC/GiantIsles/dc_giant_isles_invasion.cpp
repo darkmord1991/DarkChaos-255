@@ -58,10 +58,14 @@ namespace
         WORLD_STATE_INVASION_WAVE       = 20001,
         WORLD_STATE_INVASION_KILLS      = 20002,
         WORLD_STATE_INVASION_LAST_END   = 20010,
+        // Persistent campaign progress: how deep a foothold the Zandalari hold.
+        // Losses push it up (fiercer next assault); victories push it back down.
+        WORLD_STATE_INVASION_CAMPAIGN   = 20011,
 
         // Rules
         INVASION_COOLDOWN               = 2 * HOUR,
         INVASION_MAX_GROUP_SIZE         = 10,
+        INVASION_CAMPAIGN_MAX_FOOTHOLD  = 5,
     };
 
     enum InvasionPhase
@@ -103,6 +107,19 @@ namespace
     constexpr float START_REQUIRED_RANGE_YARDS = 50.0f;
     constexpr float FRONTLINE_REWARD_RADIUS = 320.0f;
 
+    // Loa ritual objective (wave 3): the witch doctors raise an effigy of the
+    // Loa and channel it. The defenders must destroy the effigy before the
+    // timer runs out; otherwise the Loa answers and every invader is empowered
+    // with primal fury for the rest of the assault.
+    constexpr uint32 LOA_RITUAL_DURATION_MS = 75 * IN_MILLISECONDS;
+    constexpr uint32 LOA_BUFF_PULSE_MS = 8000;
+    constexpr uint32 SPELL_LOA_FURY = 8599; // Enrage: visible primal empowerment
+
+    // Lane objective: each landing plants a war standard. Destroy it to scuttle
+    // that longboat and cut off the lane's reinforcements for the rest of the
+    // assault. Polled on this cadence so a kill is noticed promptly.
+    constexpr uint32 STANDARD_CHECK_INTERVAL_MS = 2000;
+
     struct InvasionSpawnPoint
     {
         float x;
@@ -140,6 +157,11 @@ namespace
 
     InvasionSpawnPoint const FrontlineAnchor =
         { 5772.1035f, 1290.6915f, 12.275494f, 4.8210610f };
+
+    // Mid-beach contested ground (between the invader landing and the defender
+    // line), so reaching the Loa effigy means pushing into the fight.
+    InvasionSpawnPoint const LoaRitualPos =
+        { 5794.8f, 1230.3f, 7.9f, 4.95f };
 
     class giant_isles_invasion;
     static giant_isles_invasion* sGiantIslesInvasion = nullptr;
@@ -302,6 +324,9 @@ namespace
                     _nudgeTimerMs -= diff;
                 }
 
+                UpdateLoaRitual(map, diff);
+                UpdateLaneStandards(map, diff);
+
                 if (CountAliveDefenders(map) == 0)
                 {
                     FailInvasion(map, "|cFFFF3030[INVASION]|r The defenders were wiped out!");
@@ -339,6 +364,9 @@ namespace
                 }
 
                 MaintainBossGuards(map);
+
+                // An unbroken Loa empowerment carries into the boss fight.
+                UpdateLoaRitual(map, diff);
 
                 if (CountAliveDefenders(map) == 0)
                 {
@@ -592,6 +620,19 @@ namespace
         uint32 _spawnedThisWave = 0;
         uint32 _killCount = 0;
 
+        // Loa ritual objective state.
+        bool _ritualActive = false;     // effigy is up and counting down
+        bool _ritualResolved = false;   // ritual already happened this invasion
+        bool _loaEmpowered = false;     // ritual completed; invaders stay buffed
+        uint32 _ritualTimerMs = 0;
+        uint32 _loaBuffTimerMs = 0;
+        ObjectGuid _loaTotemGuid;
+
+        // Lane objective state: one war standard per landing lane.
+        std::array<ObjectGuid, 4> _standardGuids;
+        std::array<bool, 4> _laneScuttled = {{ false, false, false, false }};
+        uint32 _standardCheckTimerMs = 0;
+
         ObjectGuid _bossGuid;
         ObjectGuid _leaderGuid;
 
@@ -693,6 +734,13 @@ namespace
                 "|cFFFF8000[INVASION WARNING]|r Zandalari longboats hit the shore. "
                 "War drums thunder across Seeping Shores!");
 
+            if (uint32 foothold = GetCampaignFoothold())
+            {
+                std::string fh = "|cFFFF6000[CAMPAIGN]|r The Zandalari already hold a foothold here "
+                    "(level " + std::to_string(foothold) + "). Expect a fiercer assault!";
+                SendMapSystemMessage(map, fh.c_str());
+            }
+
             LeaderAnnounce(0, map);
 
             map->DoForAllPlayers([](Player* player)
@@ -764,6 +812,16 @@ namespace
             _waveActiveCap = 0;
             _spawnedThisWave = 0;
             _killCount = 0;
+            _ritualActive = false;
+            _ritualResolved = false;
+            _loaEmpowered = false;
+            _ritualTimerMs = 0;
+            _loaBuffTimerMs = 0;
+            _loaTotemGuid.Clear();
+            for (ObjectGuid& g : _standardGuids)
+                g.Clear();
+            _laneScuttled = {{ false, false, false, false }};
+            _standardCheckTimerMs = 0;
             _bossGuid.Clear();
             _leaderGuid.Clear();
             _invaderGuids.clear();
@@ -798,6 +856,66 @@ namespace
                 return;
 
             sWorldState->setWorldState(WORLD_STATE_INVASION_LAST_END, GetNowSeconds());
+        }
+
+        // ----- Persistent campaign (foothold) ---------------------------------
+
+        uint32 GetCampaignFoothold() const
+        {
+            if (!sWorldState)
+                return 0;
+
+            return std::min<uint32>(
+                sWorldState->getWorldState(WORLD_STATE_INVASION_CAMPAIGN),
+                static_cast<uint32>(INVASION_CAMPAIGN_MAX_FOOTHOLD));
+        }
+
+        void SetCampaignFoothold(uint32 value)
+        {
+            if (!sWorldState)
+                return;
+
+            sWorldState->setWorldState(WORLD_STATE_INVASION_CAMPAIGN,
+                std::min<uint32>(value, static_cast<uint32>(INVASION_CAMPAIGN_MAX_FOOTHOLD)));
+        }
+
+        void AdjustCampaign(Map* map, bool victory)
+        {
+            uint32 foothold = GetCampaignFoothold();
+
+            if (victory)
+            {
+                uint32 next = foothold > 0 ? foothold - 1 : 0;
+                SetCampaignFoothold(next);
+
+                if (foothold > 0 && next == 0)
+                    SendMapSystemMessage(map,
+                        "|cFF40FF40[CAMPAIGN]|r The Zandalari are driven back into the sea. "
+                        "Their foothold on Giant Isles is broken!");
+                else if (foothold > 0)
+                {
+                    std::string msg = "|cFF40FF40[CAMPAIGN]|r The invaders are pushed back. "
+                        "Zandalari foothold weakened to level " + std::to_string(next) + ".";
+                    SendMapSystemMessage(map, msg.c_str());
+                }
+
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: campaign foothold {} -> {} (victory)", foothold, next);
+            }
+            else
+            {
+                uint32 next = std::min<uint32>(foothold + 1, static_cast<uint32>(INVASION_CAMPAIGN_MAX_FOOTHOLD));
+                SetCampaignFoothold(next);
+
+                if (next > foothold)
+                {
+                    std::string msg = "|cFFFF3030[CAMPAIGN]|r The Zandalari dig in deeper. "
+                        "Foothold strengthened to level " + std::to_string(next) +
+                        " - the next assault will be fiercer!";
+                    SendMapSystemMessage(map, msg.c_str());
+                }
+
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: campaign foothold {} -> {} (defeat)", foothold, next);
+            }
         }
 
         bool ValidateStarter(Player* starter, Creature* horn, bool ignoreRange, std::string& outError) const
@@ -946,6 +1064,17 @@ namespace
             if (map)
                 data.Set("enemiesRemaining", DCAddon::JsonValue(CountAliveInvaders(map)));
 
+            // Loa ritual objective state for the DC-InfoBar HUD.
+            char const* ritualState = _ritualActive ? "channeling"
+                : (_loaEmpowered ? "empowered" : "none");
+            data.Set("ritual", DCAddon::JsonValue(ritualState));
+            if (_ritualActive)
+                data.Set("ritualTime", DCAddon::JsonValue(static_cast<uint32>(_ritualTimerMs / IN_MILLISECONDS)));
+
+            // Lane objective progress (how many longboats the defenders have sunk).
+            data.Set("boatsScuttled", DCAddon::JsonValue(CountScuttledLanes()));
+            data.Set("boatsTotal", DCAddon::JsonValue(static_cast<uint32>(_standardGuids.size())));
+
             DCAddon::JsonMessage msg(DCAddon::Module::EVENTS,
                 DCAddon::Opcode::Events::SMSG_EVENT_UPDATE, data);
 
@@ -1043,35 +1172,49 @@ namespace
         uint32 ComputeWaveActiveCap(Map* map, InvasionPhase phase) const
         {
             uint32 n = CountNearbyPlayers(map);
+            uint32 base = 0;
 
             switch (phase)
             {
                 case INVASION_WAVE_1:
-                    return std::clamp<uint32>(6u + n, 8u, 16u);
+                    base = std::clamp<uint32>(6u + n, 8u, 16u);
+                    break;
                 case INVASION_WAVE_2:
-                    return std::clamp<uint32>(8u + n, 10u, 20u);
+                    base = std::clamp<uint32>(8u + n, 10u, 20u);
+                    break;
                 case INVASION_WAVE_3:
-                    return std::clamp<uint32>(10u + n, 12u, 24u);
+                    base = std::clamp<uint32>(10u + n, 12u, 24u);
+                    break;
                 default:
                     return 0u;
             }
+
+            // Each foothold level keeps one more invader on the field at once.
+            return base + GetCampaignFoothold();
         }
 
         uint32 ComputeWaveSpawnBudget(Map* map, InvasionPhase phase) const
         {
             uint32 n = CountNearbyPlayers(map);
+            uint32 base = 0;
 
             switch (phase)
             {
                 case INVASION_WAVE_1:
-                    return std::clamp<uint32>(16u + (2u * n), 18u, 40u);
+                    base = std::clamp<uint32>(16u + (2u * n), 18u, 40u);
+                    break;
                 case INVASION_WAVE_2:
-                    return std::clamp<uint32>(22u + (2u * n), 24u, 52u);
+                    base = std::clamp<uint32>(22u + (2u * n), 24u, 52u);
+                    break;
                 case INVASION_WAVE_3:
-                    return std::clamp<uint32>(28u + (2u * n), 32u, 64u);
+                    base = std::clamp<uint32>(28u + (2u * n), 32u, 64u);
+                    break;
                 default:
                     return 0u;
             }
+
+            // A deeper foothold throws more total bodies at the beach.
+            return base + (3u * GetCampaignFoothold());
         }
 
         uint32 GetWaveSpawnIntervalMs() const
@@ -1132,18 +1275,33 @@ namespace
 
         uint8 ChooseLaneByPressure() const
         {
+            // Scuttled lanes contribute no pressure and are never chosen.
             uint32 total = 0;
-            for (uint8 p : _lanePressure)
-                total += p;
+            for (uint8 i = 0; i < _lanePressure.size(); ++i)
+            {
+                if (!_laneScuttled[i])
+                    total += _lanePressure[i];
+            }
 
             if (total == 0)
-                return static_cast<uint8>(urand(0u, 3u));
+            {
+                // No weighted choice available: pick any open lane, else lane 0.
+                for (uint8 i = 0; i < _laneScuttled.size(); ++i)
+                {
+                    if (!_laneScuttled[i])
+                        return i;
+                }
+                return 0;
+            }
 
             uint32 pick = urand(1u, total);
             uint32 running = 0;
 
             for (uint8 i = 0; i < _lanePressure.size(); ++i)
             {
+                if (_laneScuttled[i])
+                    continue;
+
                 running += _lanePressure[i];
                 if (pick <= running)
                     return i;
@@ -1261,6 +1419,268 @@ namespace
             }
         }
 
+        // ----- Loa ritual objective -------------------------------------------
+
+        void StartLoaRitual(Map* map)
+        {
+            if (!map || _ritualActive || _ritualResolved)
+                return;
+
+            Position pos(LoaRitualPos.x, LoaRitualPos.y, LoaRitualPos.z, LoaRitualPos.o);
+
+            // Snap to ground so the carved effigy sits flush on the beach.
+            float groundZ = map->GetHeight(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ() + 6.0f);
+            if (groundZ > INVALID_HEIGHT)
+                pos.m_positionZ = groundZ;
+
+            Creature* effigy = map->SummonCreature(NPC_LOA_EFFIGY, pos, nullptr, SUMMON_LIFETIME_MS);
+            if (!effigy)
+            {
+                LOG_WARN("scripts.dc", "Giant Isles Invasion: failed to spawn Loa effigy {}", static_cast<uint32>(NPC_LOA_EFFIGY));
+                return;
+            }
+
+            // A passive idol: attackable by players, never moves, never retaliates.
+            effigy->SetFaction(INVADER_FACTION);
+            effigy->SetReactState(REACT_PASSIVE);
+            effigy->SetUnitFlag(UNIT_FLAG_DISABLE_MOVE);
+            effigy->SetImmuneToAll(false);
+            effigy->GetMotionMaster()->MoveIdle();
+
+            _loaTotemGuid = effigy->GetGUID();
+            _ritualActive = true;
+            _ritualTimerMs = LOA_RITUAL_DURATION_MS;
+            _loaBuffTimerMs = LOA_BUFF_PULSE_MS;
+
+            LOG_INFO("scripts.dc", "Giant Isles Invasion: Loa ritual started (effigy guid={})", effigy->GetGUID().ToString());
+
+            SendMapSystemMessage(
+                map,
+                "|cFFFF0000[RITUAL]|r The witch doctors raise a Loa effigy and begin a dark chant! "
+                "Destroy the effigy before the ritual completes!");
+
+            BroadcastInvasionEvent(map);
+        }
+
+        void UpdateLoaRitual(Map* map, uint32 diff)
+        {
+            if (!map)
+                return;
+
+            // Keep the empowerment buff refreshed on living invaders while the
+            // ritual channels OR after the Loa has answered.
+            if (_ritualActive || _loaEmpowered)
+            {
+                if (_loaBuffTimerMs <= diff)
+                {
+                    PulseLoaEmpowerment(map);
+                    _loaBuffTimerMs = LOA_BUFF_PULSE_MS;
+                }
+                else
+                {
+                    _loaBuffTimerMs -= diff;
+                }
+            }
+
+            if (!_ritualActive)
+                return;
+
+            // Players win the objective by destroying the effigy in time.
+            Creature* effigy = map->GetCreature(_loaTotemGuid);
+            if (!effigy || !effigy->IsAlive())
+            {
+                EndLoaRitual(map, /*disrupted*/ true);
+                return;
+            }
+
+            if (_ritualTimerMs <= diff)
+                EndLoaRitual(map, /*disrupted*/ false);
+            else
+                _ritualTimerMs -= diff;
+        }
+
+        void EndLoaRitual(Map* map, bool disrupted)
+        {
+            _ritualActive = false;
+            _ritualResolved = true;
+
+            if (Creature* effigy = map->GetCreature(_loaTotemGuid))
+                effigy->DespawnOrUnsummon(disrupted ? 1s : 4s);
+            _loaTotemGuid.Clear();
+
+            if (disrupted)
+            {
+                _loaEmpowered = false;
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Loa ritual disrupted by defenders");
+
+                // Strip the fury from any invader that was already empowered.
+                for (ObjectGuid const& guid : _invaderGuids)
+                {
+                    Creature* c = map->GetCreature(guid);
+                    if (c && c->HasAura(SPELL_LOA_FURY))
+                        c->RemoveAurasDueToSpell(SPELL_LOA_FURY);
+                }
+
+                SendMapSystemMessage(
+                    map,
+                    "|cFF40FF40[DEFENDERS]|r The Loa effigy is shattered! The dark ritual collapses "
+                    "and the Loa's fury is denied!");
+            }
+            else
+            {
+                _loaEmpowered = true;
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Loa ritual completed - invaders empowered");
+
+                PulseLoaEmpowerment(map);
+
+                SendMapSystemMessage(
+                    map,
+                    "|cFFFF0000[RITUAL]|r The Loa answers the Zandalari call! Every invader is "
+                    "EMPOWERED with primal fury for the rest of the assault!");
+            }
+
+            BroadcastInvasionEvent(map);
+        }
+
+        void PulseLoaEmpowerment(Map* map)
+        {
+            if (!map)
+                return;
+
+            for (ObjectGuid const& guid : _invaderGuids)
+            {
+                Creature* c = map->GetCreature(guid);
+                if (!c || !c->IsAlive())
+                    continue;
+
+                if (!c->HasAura(SPELL_LOA_FURY))
+                    c->AddAura(SPELL_LOA_FURY, c);
+            }
+        }
+
+        // ----- Lane objective: destructible longboat standards ----------------
+
+        void SpawnLaneStandards(Map* map)
+        {
+            if (!map)
+                return;
+
+            for (uint8 lane = 0; lane < InvaderSpawnPoints.size(); ++lane)
+            {
+                if (!_standardGuids[lane].IsEmpty())
+                    continue;
+
+                InvasionSpawnPoint const& sp = InvaderSpawnPoints[lane];
+                Position pos(sp.x, sp.y, sp.z, sp.o);
+
+                float groundZ = map->GetHeight(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ() + 6.0f);
+                if (groundZ > INVALID_HEIGHT)
+                    pos.m_positionZ = groundZ;
+
+                Creature* standard = map->SummonCreature(NPC_ZANDALARI_WAR_STANDARD, pos, nullptr, SUMMON_LIFETIME_MS);
+                if (!standard)
+                {
+                    LOG_WARN("scripts.dc", "Giant Isles Invasion: failed to spawn lane standard on lane {}", lane);
+                    continue;
+                }
+
+                // A planted banner: attackable, immovable, never retaliates.
+                standard->SetFaction(INVADER_FACTION);
+                standard->SetReactState(REACT_PASSIVE);
+                standard->SetUnitFlag(UNIT_FLAG_DISABLE_MOVE);
+                standard->SetImmuneToAll(false);
+                standard->GetMotionMaster()->MoveIdle();
+
+                _standardGuids[lane] = standard->GetGUID();
+            }
+
+            SendMapSystemMessage(
+                map,
+                "|cFFFFFF00[OBJECTIVE]|r The Zandalari plant war standards at each landing. "
+                "Cut a standard down to scuttle that longboat and choke its reinforcements!");
+        }
+
+        void UpdateLaneStandards(Map* map, uint32 diff)
+        {
+            if (!map)
+                return;
+
+            if (_standardCheckTimerMs > diff)
+            {
+                _standardCheckTimerMs -= diff;
+                return;
+            }
+            _standardCheckTimerMs = STANDARD_CHECK_INTERVAL_MS;
+
+            for (uint8 lane = 0; lane < _standardGuids.size(); ++lane)
+            {
+                if (_laneScuttled[lane] || _standardGuids[lane].IsEmpty())
+                    continue;
+
+                Creature* standard = map->GetCreature(_standardGuids[lane]);
+                if (!standard || !standard->IsAlive())
+                    ScuttleLane(map, lane);
+            }
+        }
+
+        void ScuttleLane(Map* map, uint8 lane)
+        {
+            if (lane >= _laneScuttled.size() || _laneScuttled[lane])
+                return;
+
+            _laneScuttled[lane] = true;
+            _lanePressure[lane] = 0;
+
+            if (Creature* standard = map->GetCreature(_standardGuids[lane]))
+                standard->DespawnOrUnsummon(2s);
+            _standardGuids[lane].Clear();
+
+            LOG_INFO("scripts.dc", "Giant Isles Invasion: lane {} scuttled by defenders", lane);
+
+            std::string msg = "|cFF40FF40[OBJECTIVE]|r A Zandalari longboat is scuttled! "
+                "Lane " + std::to_string(static_cast<uint32>(lane + 1)) +
+                " reinforcements are cut off.";
+            SendMapSystemMessage(map, msg.c_str());
+
+            if (AllLanesScuttled())
+                SendMapSystemMessage(
+                    map,
+                    "|cFF40FF40[OBJECTIVE]|r Every longboat is scuttled! The Zandalari "
+                    "landing force is broken - no fresh raiders can reach the beach!");
+        }
+
+        bool AllLanesScuttled() const
+        {
+            for (bool scuttled : _laneScuttled)
+            {
+                if (!scuttled)
+                    return false;
+            }
+            return true;
+        }
+
+        uint32 CountScuttledLanes() const
+        {
+            uint32 n = 0;
+            for (bool scuttled : _laneScuttled)
+            {
+                if (scuttled)
+                    ++n;
+            }
+            return n;
+        }
+
+        void DespawnLaneStandards(Map* map)
+        {
+            for (ObjectGuid& guid : _standardGuids)
+            {
+                if (map)
+                    if (Creature* standard = map->GetCreature(guid))
+                        standard->DespawnOrUnsummon(1s);
+                guid.Clear();
+            }
+        }
+
         bool SpawnInvader(Map* map, uint8 lane, uint32 entry)
         {
             if (!map)
@@ -1301,6 +1721,10 @@ namespace
             // invaders are visibly armed (summons can spawn with weapons sheathed).
             creature->LoadEquipment(1, true);
             creature->SetSheath(SHEATH_STATE_MELEE);
+
+            // Reinforcements that arrive while the Loa fury is up join empowered.
+            if ((_ritualActive || _loaEmpowered) && !creature->HasAura(SPELL_LOA_FURY))
+                creature->AddAura(SPELL_LOA_FURY, creature);
         }
 
         uint8 GetLaneForInvader(ObjectGuid guid) const
@@ -1511,6 +1935,11 @@ namespace
             if (!(_phase == INVASION_WAVE_1 || _phase == INVASION_WAVE_2 || _phase == INVASION_WAVE_3))
                 return;
 
+            // Every longboat scuttled means there is no landing left to feed the
+            // beach: reinforcements stop entirely.
+            if (AllLanesScuttled())
+                return;
+
             if (_spawnedThisWave >= _waveSpawnBudget)
                 return;
 
@@ -1559,7 +1988,7 @@ namespace
 
             RebalanceLanePressure();
 
-            uint32 roll = urand(0u, 2u);
+            uint32 roll = urand(0u, 3u);
             if (roll == 0)
             {
                 uint8 lane = ChooseLaneByPressure();
@@ -1579,7 +2008,7 @@ namespace
                     "|cFF40FF40[DEFENDERS]|r Expedition reinforcements rush down from the camp!");
                 SpawnDefenderReinforcement(map);
             }
-            else
+            else if (roll == 2)
             {
                 uint8 lane = ChooseLaneByPressure();
                 LOG_INFO("scripts.dc", "Giant Isles Invasion: chaos pulse war-drum surge (phase={}, lane={})", static_cast<uint32>(_phase), lane);
@@ -1596,6 +2025,27 @@ namespace
                 {
                     SpawnInvader(map, lane, NPC_ZANDALARI_BLOOD_GUARD);
                     SpawnInvader(map, lane, NPC_ZANDALARI_WITCH_DOCTOR);
+                }
+            }
+            else
+            {
+                // War-beast surge: the Zandalari loose the isle's primal dinosaurs.
+                uint8 lane = ChooseLaneByPressure();
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: chaos pulse war-beast surge (phase={}, lane={})", static_cast<uint32>(_phase), lane);
+                SendMapSystemMessage(
+                    map,
+                    "|cFFFF8000[INVASION]|r The Zandalari loose their war-beasts! Primal dinosaurs stampede the shore!");
+
+                SpawnInvader(map, lane, NPC_ZANDALARI_WAR_DIREHORN);
+                SpawnInvader(map, ChooseLaneByPressure(), NPC_ZANDALARI_PTERRORDAX_BOMBER);
+
+                // The wave-3 surge can unleash a devilsaur siege-beast to lead it.
+                if (_phase == INVASION_WAVE_3 && urand(0u, 99u) < 35)
+                {
+                    SendMapSystemMessage(
+                        map,
+                        "|cFFFF0000[INVASION]|r A PRIMAL DEVILSAUR crashes onto the beach! Bring it down!");
+                    SpawnInvader(map, lane, NPC_PRIMAL_DEVILSAUR);
                 }
             }
 
@@ -1647,9 +2097,17 @@ namespace
             if (sWorldState)
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, GetPublicWave());
 
+            // Wave 1 plants the lane standards as the landing force comes ashore.
+            if (phase == INVASION_WAVE_1)
+                SpawnLaneStandards(map);
+
             // Immediate opening pressure.
             SpawnWaveTick(map);
             SpawnWaveTick(map);
+
+            // Wave 3 raises the Loa ritual objective on the contested beach.
+            if (phase == INVASION_WAVE_3)
+                StartLoaRitual(map);
 
             BroadcastInvasionEvent(map);
         }
@@ -1686,6 +2144,9 @@ namespace
             _invaderGuids.clear();
             _laneByInvader.clear();
             _bossGuid.Clear();
+
+            // The landing is over once the warlord arrives - clear the longboats.
+            DespawnLaneStandards(map);
 
             Position bossPos(
                 InvaderSpawnPoints[2].x,
@@ -1766,6 +2227,7 @@ namespace
             );
             LeaderAnnounce(5, map);
             RewardParticipants(map);
+            AdjustCampaign(map, /*victory*/ true);
             BroadcastInvasionEvent(map);
         }
 
@@ -1791,6 +2253,7 @@ namespace
 
             SendMapSystemMessage(map, reasonText ? reasonText : "|cFFFF3030[INVASION]|r Defense failed.");
             LeaderAnnounce(6, map);
+            AdjustCampaign(map, /*victory*/ false);
             BroadcastInvasionEvent(map);
         }
 
@@ -1798,6 +2261,9 @@ namespace
         {
             if (!map)
                 return;
+
+            uint32 const foothold = GetCampaignFoothold();
+            bool const ritualDisrupted = (_ritualResolved && !_loaEmpowered);
 
             map->DoForAllPlayers([&](Player* player)
             {
@@ -1815,9 +2281,19 @@ namespace
                 if (itr != _participantKills.end())
                     personalKills = itr->second;
 
+                // War-Tokens: a flat showing-up reward plus one per personal kill,
+                // scaled up by how dug-in the enemy was, with a bonus for the team
+                // having denied the Loa ritual.
+                uint32 tokens = 5u + personalKills + (2u * foothold);
+                if (ritualDisrupted)
+                    tokens += 5u;
+
+                player->AddItem(WAR_TOKEN_ITEM, tokens);
+
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Invasion]|r Beach secured. Personal contribution: %u kills.",
-                    personalKills);
+                    "|cff00ff00[Invasion]|r Beach secured. Personal contribution: %u kills. "
+                    "Awarded %u War-Tokens.",
+                    personalKills, tokens);
             });
         }
 
@@ -1829,6 +2305,9 @@ namespace
                 _defenderGuids.clear();
                 _laneByInvader.clear();
                 _bossGuid.Clear();
+                _loaTotemGuid.Clear();
+                for (ObjectGuid& g : _standardGuids)
+                    g.Clear();
                 return;
             }
 
@@ -1846,10 +2325,16 @@ namespace
                     c->DespawnOrUnsummon(1s);
             }
 
+            if (Creature* effigy = map->GetCreature(_loaTotemGuid))
+                effigy->DespawnOrUnsummon(1s);
+
+            DespawnLaneStandards(map);
+
             _invaderGuids.clear();
             _defenderGuids.clear();
             _laneByInvader.clear();
             _bossGuid.Clear();
+            _loaTotemGuid.Clear();
         }
 
         void FinalizeEvent(Map* map)

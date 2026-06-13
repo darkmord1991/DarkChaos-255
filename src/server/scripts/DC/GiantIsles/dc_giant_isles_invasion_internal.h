@@ -43,11 +43,34 @@ namespace DCGiantIsles
         NPC_ZANDALARI_HONOR_GUARD       = 400337,
         NPC_ZANDALARI_INVASION_LEADER   = 400338,
 
+        // War-beasts (summoned by the war-beast surge chaos pulse)
+        NPC_ZANDALARI_WAR_DIREHORN      = 400361,
+        NPC_ZANDALARI_PTERRORDAX_BOMBER = 400362,
+        NPC_PRIMAL_DEVILSAUR            = 400363,
+
+        // Loa ritual objective (wave 3): a destructible effigy the witch doctors
+        // channel. Destroy it in time or the invaders are empowered by the Loa.
+        NPC_LOA_EFFIGY                  = 400364,
+
+        // Lane objective: the war standard each beached longboat plants. Cut it
+        // down to scuttle that landing and choke off the lane's reinforcements.
+        NPC_ZANDALARI_WAR_STANDARD      = 400366,
+
         // Defenders (neutral-friendly camp units summoned by the orchestrator)
         NPC_BEAST_HUNTER                = 401004,
         NPC_BEAST_HUNTER_VETERAN        = 401005,
         NPC_BEAST_HUNTER_TRAPPER        = 401006,
         NPC_BEAST_HUNTER_WARLORD        = 401007,
+
+        // War economy (Phase 3): the quartermaster trades War-Tokens for goods.
+        NPC_WAR_QUARTERMASTER           = 400365,
+    };
+
+    enum InvasionItem : uint32
+    {
+        // Currency awarded by the invasion, scaled by personal contribution,
+        // and spent at the War Quartermaster (gossip exchange, no DBC cost).
+        WAR_TOKEN_ITEM                  = 400456,
     };
 
     enum InvasionFaction : uint32
