@@ -25,7 +25,7 @@ local ICON_ITEMUPGRADE = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome
 local ICON_AOESETTINGS = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\AOESettings_64.tga"
 local ICON_HINTERLANDBG = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\HinterlandBG_64.tga"
 
-local BG_FELLEATHER = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.60
 
 -- =============================================================================

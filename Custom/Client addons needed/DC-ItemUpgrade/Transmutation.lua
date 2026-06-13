@@ -23,8 +23,8 @@ local OPCODE_SMSG_OPEN_TRANSMUTE_UI  = 0x32;
 local currentExchangeRates = { tokensToEssence = 100, essenceToTokens = 80 };
 local currentStatus = {};
 
-local BG_FELLEATHER = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga";
-local BG_TINT_ALPHA = 0.78;
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga";
+local BG_TINT_ALPHA = 0.60;
 
 local function GetCurrencyBalances()
     local tokens, essence

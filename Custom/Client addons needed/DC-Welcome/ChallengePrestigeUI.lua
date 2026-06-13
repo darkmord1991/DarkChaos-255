@@ -623,7 +623,7 @@ function UI:EnsureFrame()
 	local f = CreateFrame("Frame", "DCWelcome_ChallengePrestigeFrame", UIParent)
 	f:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
 	f:SetPoint("CENTER", 0, 0)
-	local BG_FELLEATHER = "Interface\\AddOns\\DC-Welcome\\Textures\\Backgrounds\\FelLeather_512.tga"
+	local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 	local BG_TINT_ALPHA = 0.60
 	f:SetBackdrop({
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",

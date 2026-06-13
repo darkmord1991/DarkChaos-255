@@ -324,7 +324,7 @@ local function ApplyStyle(frame)
     local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -5)
     bg:SetPoint("TOPLEFT", 4, -4)
     bg:SetPoint("BOTTOMRIGHT", -4, 4)
-    bg:SetTexture("Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga")
+    bg:SetTexture("Interface\\DC\\Shared\\FelLeather_512.tga")
     
     -- Enable tiling to prevent stretching
     if bg.SetHorizTile then bg:SetHorizTile(true) end

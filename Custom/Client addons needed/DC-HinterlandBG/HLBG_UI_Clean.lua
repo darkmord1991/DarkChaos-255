@@ -53,7 +53,7 @@ if not HLBG.UI.Frame then
     HLBG.UI.Frame:SetBackdropColor(0, 0, 0, 0)
 
     do
-        local BG_FELLEATHER = "Interface\\AddOns\\DC-HinterlandBG\\Textures\\Backgrounds\\FelLeather_512.tga"
+        local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
         local BG_TINT_ALPHA = 0.60
 
         local bg = HLBG.UI.Frame:CreateTexture(nil, "BACKGROUND", nil, 0)

@@ -1314,7 +1314,7 @@ function addon:CreateMainFrame()
     window:SetBackdropColor(0, 0, 0, 0)
 
     do
-        local BG_FELLEATHER = "Interface\\AddOns\\DC-AOESettings\\Textures\\Backgrounds\\FelLeather_512.tga"
+        local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
         local BG_TINT_ALPHA = 0.60
 
         local bg = window:CreateTexture(nil, "BACKGROUND", nil, 0)

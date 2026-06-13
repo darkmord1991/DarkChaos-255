@@ -121,7 +121,7 @@ local talentPrereqs = {}
 -- Encode maps for various sites
 local TALENTED_MAP = "012345abcdefABCDEFmnopqrMNOPQRtuvwxy*"
 local WOWHEAD_MAP = "0zMcmVokRsaqbdrfwihuGINALpTjnyxtgevE"
-local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local DCQOS_ICON = "Interface\\AddOns\\DC-QOS\\Textures\\Icon_64.tga"
 
 -- Class to code mapping
@@ -2332,7 +2332,7 @@ function TalentManager:CreateMainFrame()
 
     local bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
     bgTint:SetAllPoints()
-    bgTint:SetTexture(0, 0, 0, 0.78)
+    bgTint:SetTexture(0, 0, 0, 0.60)
     frame.bgTint = bgTint
 
     -- Separator between header and trees
@@ -2759,7 +2759,7 @@ function TalentManager:CreateGlyphFrame()
 
     local glyphBgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
     glyphBgTint:SetAllPoints()
-    glyphBgTint:SetTexture(0, 0, 0, 0.78)
+    glyphBgTint:SetTexture(0, 0, 0, 0.60)
 
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

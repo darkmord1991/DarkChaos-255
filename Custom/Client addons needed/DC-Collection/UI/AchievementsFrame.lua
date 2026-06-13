@@ -32,7 +32,7 @@ local SCROLL_BAR_WIDTH = 26
 local SHOW_ROW_BACKGROUND = false
 
 -- Use a stable, known-good texture path ("..." can be nil or non-addon-name in some load paths).
-local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 
 -- ============================================================================
 -- FRAME CREATION

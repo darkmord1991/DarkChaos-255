@@ -10,7 +10,7 @@
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
-local BG_FELLEATHER = "Interface\\AddOns\\DC-InfoBar\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.60
 
 local function ApplyLeaderboardsStyle(frame)

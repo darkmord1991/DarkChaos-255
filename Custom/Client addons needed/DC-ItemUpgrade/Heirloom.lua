@@ -144,8 +144,8 @@ DC.inPackageSelectionMode = false;
 =======================================================]]
 
 function DarkChaos_ItemUpgrade_CreateStatPackageSelector(parent)
-	local BG_FELLEATHER = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga";
-	local BG_TINT_ALPHA = 0.78;
+	local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga";
+	local BG_TINT_ALPHA = 0.60;
 
 	-- Create full-size container frame that covers the parent completely
 	local selector = CreateFrame("Frame", "DarkChaos_StatPackageSelector", parent);

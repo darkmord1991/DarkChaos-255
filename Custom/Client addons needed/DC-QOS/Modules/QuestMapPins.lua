@@ -20,7 +20,7 @@ local QuestMapPins = {
     },
 }
 
-local LEATHER_TEXTURE = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
+local LEATHER_TEXTURE = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local QUEST_TEXTURE_ROOT = "Interface\\AddOns\\DC-QOS\\Textures\\QuestFrame\\"
 local AVAILABLE_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "availablequesticon"
 local ACTIVE_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "activequesticon"

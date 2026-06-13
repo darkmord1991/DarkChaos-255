@@ -17,7 +17,7 @@ DC_UI.Colors = {
 }
 
 -- Match DC-Leaderboards UI style across DC addons
-local BG_FELLEATHER = "Interface\\AddOns\\DC-AddonProtocol\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.60
 
 -- ============================================================================

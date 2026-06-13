@@ -17,7 +17,7 @@ local Interface = {
     icon = "Interface\\Icons\\INV_Misc_EngGizmos_01",
 }
 
-local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local STANDALONE_WORLD_MAP_SCALE = 1
 local STANDALONE_WORLD_MAP_WIDTH = 1024
 local STANDALONE_WORLD_MAP_HEIGHT = 736

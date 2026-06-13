@@ -11,7 +11,7 @@ local questTrackingUtils = type(addon.GetQuestTrackingUtils) == "function" and a
 addon.QuestTrackerMarkers = addon.QuestTrackerMarkers or {}
 local Markers = addon.QuestTrackerMarkers
 
-local DC_ADDON_BACKGROUND_TEXTURE = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
+local DC_ADDON_BACKGROUND_TEXTURE = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local QUEST_TRACKER_TEXTURE_ROOT = "Interface\\AddOns\\DC-QOS\\Textures\\QuestTracker\\"
 local QUEST_TRACKER_BUTTONS_TEXTURE = QUEST_TRACKER_TEXTURE_ROOT .. "questtrackerbuttons"
 local QUEST_TRACKER_MAP_BUTTON_TEXTURE = QUEST_TRACKER_TEXTURE_ROOT .. "ui-questtracker-mapbutton"

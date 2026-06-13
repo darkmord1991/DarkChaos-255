@@ -1,7 +1,7 @@
 GOMove = {Frames = {}, Inputs = {}}
 
 -- Match DC-Leaderboards UI style across DC addons
-local BG_FELLEATHER = ROOT_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.60
 
 local function ApplyLeaderboardsStyle(frame)

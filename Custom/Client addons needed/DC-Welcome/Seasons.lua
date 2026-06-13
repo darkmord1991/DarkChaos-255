@@ -276,7 +276,7 @@ function DCWelcome.Seasons:CreateProgressTracker()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 
-    local BG_FELLEATHER = "Interface\\AddOns\\DC-Welcome\\Textures\\Backgrounds\\FelLeather_512.tga"
+    local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
     local BG_TINT_ALPHA = 0.60
     
     -- Background

@@ -38,7 +38,8 @@ local SLICE_W      = 32
 local SLICE_H      = 64
 local DEFAULT_POINT = "TOP"
 local DEFAULT_X     = 0
-local DEFAULT_Y     = -120
+local DEFAULT_Y     = -20  -- top-center fallback when no popup is showing
+local POPUP_GAP     = 6    -- space above a death/resurrect popup
 local CLICK_THROTTLE = 0.5
 
 local Graveyard = {
@@ -48,13 +49,14 @@ local Graveyard = {
     defaults = {
         graveyard = {
             enabled = true,
-            pos     = nil, -- { point = "TOP", x = 0, y = -120 }; nil = default
+            pos     = nil, -- { point, relPoint, x, y }; nil = auto (above popup / top-center)
         },
     },
 }
 
 local button      -- the GhostFrame-equivalent button (created once)
 local eventFrame
+local popupHooksInstalled = false
 
 -- ============================================================
 -- Helpers
@@ -91,18 +93,41 @@ local function RequestReturnToGraveyard()
 end
 
 local function SavePosition(self)
-    local point, _, _, x, y = self:GetPoint()
+    local point, _, relPoint, x, y = self:GetPoint()
     local s = GetSettings()
-    s.pos = { point = point, x = x, y = y }
+    s.pos = { point = point, relPoint = relPoint or point, x = x, y = y }
 end
 
-local function ApplyPosition(self)
-    local p = GetSettings().pos
-    self:ClearAllPoints()
-    if p and p.point then
-        self:SetPoint(p.point, UIParent, p.point, p.x or 0, p.y or 0)
+-- Find the topmost currently-visible static popup (the death / resurrect
+-- dialog while you are a ghost), so the button can sit just above it.
+local function GetTopVisiblePopup()
+    for i = 1, (STATICPOPUP_NUMDIALOGS or 4) do
+        local f = _G["StaticPopup" .. i]
+        if f and f:IsShown() then
+            return f
+        end
+    end
+end
+
+-- Position the button: a manual (shift-dragged) spot wins; otherwise sit just
+-- above the death/resurrect popup if one is up; otherwise top-center.
+local function AnchorButton()
+    if not button then
+        return
+    end
+    button:ClearAllPoints()
+
+    local saved = GetSettings().pos
+    if saved and saved.point then
+        button:SetPoint(saved.point, UIParent, saved.relPoint or saved.point, saved.x or 0, saved.y or 0)
+        return
+    end
+
+    local popup = GetTopVisiblePopup()
+    if popup then
+        button:SetPoint("BOTTOM", popup, "TOP", 0, POPUP_GAP)
     else
-        self:SetPoint(DEFAULT_POINT, UIParent, DEFAULT_POINT, DEFAULT_X, DEFAULT_Y)
+        button:SetPoint(DEFAULT_POINT, UIParent, DEFAULT_POINT, DEFAULT_X, DEFAULT_Y)
     end
 end
 
@@ -112,6 +137,7 @@ local function UpdateVisibility()
         return
     end
     if ModuleEnabled() and UnitIsGhost and UnitIsGhost("player") then
+        AnchorButton()
         button:Show()
     else
         button:Hide()
@@ -173,10 +199,15 @@ local function BuildButton()
 
     local text = b:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     text:SetJustifyH("LEFT")
-    text:SetPoint("LEFT", icon, "RIGHT", 4, 0)
-    text:SetPoint("RIGHT", b, "RIGHT", -10, 0)
+    text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
     text:SetText(RETURN_TO_GRAVEYARD or "Return to Graveyard")
     b:SetFontString(text)
+
+    -- Fit the button to the full label. 3.3.5a's GameFontNormal is wider than
+    -- retail's, so a fixed width clipped the text to "Return to Gra...".
+    -- (left pad 8 + icon 34 + gap 6 + text + right pad 14)
+    local fitWidth = 8 + 34 + 6 + (text:GetStringWidth() or 0) + 14
+    b:SetWidth(math.max(fitWidth, BUTTON_W))
 
     -- Pressed-state feedback: swap to "Down" art and nudge the contents.
     b:SetScript("OnMouseDown", function()
@@ -222,8 +253,27 @@ local function BuildButton()
         SavePosition(self)
     end)
 
-    ApplyPosition(b)
     button = b
+    AnchorButton()
+
+    -- Keep clear of death/resurrect popups: re-anchor whenever a popup is
+    -- shown or hidden (the resurrect dialog appears after we reach a graveyard).
+    if not popupHooksInstalled then
+        popupHooksInstalled = true
+        if type(hooksecurefunc) == "function" then
+            if type(StaticPopup_Show) == "function" then
+                hooksecurefunc("StaticPopup_Show", function()
+                    if button and button:IsShown() then AnchorButton() end
+                end)
+            end
+            if type(StaticPopup_Hide) == "function" then
+                hooksecurefunc("StaticPopup_Hide", function()
+                    if button and button:IsShown() then AnchorButton() end
+                end)
+            end
+        end
+    end
+
     return b
 end
 
@@ -302,7 +352,7 @@ function Graveyard.CreateSettings(parent)
         local s = GetSettings()
         s.pos = nil
         if button then
-            ApplyPosition(button)
+            AnchorButton()
         end
     end)
     yOffset = yOffset - 36
@@ -311,10 +361,11 @@ function Graveyard.CreateSettings(parent)
     note:SetPoint("TOPLEFT", 16, yOffset)
     note:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     note:SetJustifyH("LEFT")
-    note:SetText("Tip: shift-drag the button to move it. The silver button skin uses the " ..
-        "Interface\\Buttons\\UI-SilverButtonLG-* textures shipped with the DarkChaos client patch.")
+    note:SetText("Tip: shift-drag the button to move it. By default it sits above the resurrect " ..
+        "popup, or top-center. The silver skin uses the Interface\\Buttons\\UI-SilverButtonLG-* " ..
+        "textures shipped with the DarkChaos client patch.")
 
-    return yOffset - 30
+    return yOffset - 40
 end
 
 addon:RegisterModule("Graveyard", Graveyard)

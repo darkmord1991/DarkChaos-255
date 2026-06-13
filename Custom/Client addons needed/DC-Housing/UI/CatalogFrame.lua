@@ -208,14 +208,13 @@ local function CreateCatalogFrame()
     -- leather background + dark tint + dialog border + portrait ring.
     frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
     frame.bg:SetAllPoints()
-    frame.bg:SetTexture("Interface\\AddOns\\DC-Collection\\Textures"
-        .. "\\Backgrounds\\FelLeather_512.tga")
+    frame.bg:SetTexture("Interface\\DC\\Shared\\FelLeather_512.tga")
     if frame.bg.SetHorizTile then frame.bg:SetHorizTile(false) end
     if frame.bg.SetVertTile then frame.bg:SetVertTile(false) end
 
     frame.bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
     frame.bgTint:SetAllPoints()
-    frame.bgTint:SetTexture(0, 0, 0, 0.78)
+    frame.bgTint:SetTexture(0, 0, 0, 0.60)
 
     frame.border = CreateFrame("Frame", nil, frame)
     frame.border:SetAllPoints()

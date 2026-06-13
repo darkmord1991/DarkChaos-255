@@ -56,8 +56,8 @@ if not addonNameGlobal or addonNameGlobal == "" then
     addonNameGlobal = ADDON_NAME
 end
 local ADDON_PATH = "Interface\\AddOns\\" .. addonNameGlobal .. "\\"
-local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
-local BG_TINT_ALPHA = 0.78
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
 
 -- Namespace
 DCLeaderboards = DCLeaderboards or {}

@@ -26,7 +26,7 @@ local QuestFrames = {
 }
 
 local ASSET_ROOT = "Interface\\AddOns\\DC-QOS\\Textures\\QuestFrame\\"
-local DC_ADDON_BACKGROUND_TEXTURE = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
+local DC_ADDON_BACKGROUND_TEXTURE = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local QUEST_BACKGROUND_TEXTURE = ASSET_ROOT .. "questbookbg"
 local QUEST_LOG_BACKGROUND_TEXTURE = ASSET_ROOT .. "questlogbackground"
 local QUEST_LOG_FRAME_TEXTURE = ASSET_ROOT .. "questlogframe"

@@ -36,7 +36,7 @@ local SCHOOL_COLORS = {
     [0x40] = {r = 1.00, g = 0.50, b = 1.00, name = "Arcane"},    -- Pink
 }
 
-local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 
 local RECAP_EVENT_STYLE = {
     damage = {

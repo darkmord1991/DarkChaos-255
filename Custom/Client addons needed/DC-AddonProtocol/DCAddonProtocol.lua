@@ -4898,7 +4898,7 @@ function DC:ShowLogPanel()
     -- Background (match DC-Leaderboards)
     local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
     bg:SetAllPoints()
-    bg:SetTexture("Interface\\AddOns\\DC-AddonProtocol\\Textures\\Backgrounds\\FelLeather_512.tga")
+    bg:SetTexture("Interface\\DC\\Shared\\FelLeather_512.tga")
     if bg.SetHorizTile then bg:SetHorizTile(false) end
     if bg.SetVertTile then bg:SetVertTile(false) end
 

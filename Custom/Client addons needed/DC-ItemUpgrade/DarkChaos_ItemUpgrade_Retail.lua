@@ -3235,8 +3235,8 @@ DarkChaos_ItemUpgrade_BuildStatComparison = function(item, targetLevel)
 end
 
 function DarkChaos_ItemUpgrade_OnLoad(self)
-	local BG_FELLEATHER = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga";
-	local BG_TINT_ALPHA = 0.78;
+	local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga";
+	local BG_TINT_ALPHA = 0.60;
 	local function ApplyLeaderboardsStyle(frame)
 		if not frame or frame.__dcLeaderboardsStyled then
 			return;
@@ -3288,10 +3288,10 @@ function DarkChaos_ItemUpgrade_OnLoad(self)
 	do
 		local felBG = self:CreateTexture(nil, "BACKGROUND", nil, -8);
 		felBG:SetAllPoints();
-		felBG:SetTexture("Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga");
+		felBG:SetTexture("Interface\\DC\\Shared\\FelLeather_512.tga");
 		local felTint = self:CreateTexture(nil, "BACKGROUND", nil, -7);
 		felTint:SetAllPoints();
-		felTint:SetTexture(0, 0, 0, 0.78);
+		felTint:SetTexture(0, 0, 0, 0.60);
 	end
 
 	-- Items / Tiers browser buttons: UIPanelButtonTemplate defaults to gold text

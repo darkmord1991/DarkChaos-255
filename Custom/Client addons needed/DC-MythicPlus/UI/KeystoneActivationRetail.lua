@@ -21,11 +21,11 @@ KUI.partyMembers = {}
 KUI.isLeader = false
 KUI.countdownValue = 0
 
-local BG_FELLEATHER = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local KEYSTONE_ICON = "Interface\\Icons\\INV_Misc_Key_14"
 -- (Teleporter art removed; icons come from patch MPQ via ResolveLFGIconCandidates.)
 local RETAIL_ATLAS_ROOT = "Interface\\AddOns\\DC-MythicPlus\\Textures\\RetailAtlas\\"
-local BG_TINT_ALPHA = 0.78
+local BG_TINT_ALPHA = 0.60
 local ROLE_TEXTURE = "Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES"
 
 -- 3.3.5a only reliably loads power-of-two textures. The standalone .tga rips in

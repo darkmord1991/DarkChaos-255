@@ -13,9 +13,9 @@ local L = DC.L
 
 local addonNameGlobal = ...
 local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
-local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
 local ICON_COLLECTION = ADDON_PATH .. "Textures\\Icons\\Collection_64.tga"
-local BG_TINT_ALPHA = 0.78
+local BG_TINT_ALPHA = 0.60
 local DEFAULT_MAINFRAME_Y_OFFSET = 40
 local WARDROBE_CONTENT_BOTTOM_INSET = 8
 
