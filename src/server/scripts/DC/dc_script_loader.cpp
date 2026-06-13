@@ -166,6 +166,7 @@ void AddSC_dc_seasonal_rewards_commandscript();
 // Commands/cs_dc_seasonal_rewards.cpp
 void AddSC_dc_prestige_commandscript();       // Commands/cs_dc_prestige.cpp
 void AddSC_dc_item_upgrade_commandscript();   // Commands/cs_dc_item_upgrade.cpp
+void AddSC_dc_repair_commandscript();         // Commands/cs_dc_repair.cpp
 void AddSC_cs_dc_guildhouse();                // Commands/cs_dc_guildhouse.cpp
 void AddSC_dc_stresstest();                   // Commands/cs_dc_stresstest.cpp
 void AddSC_dc_challenge_modes_commandscript();
@@ -401,6 +402,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_seasonal_rewards_commandscript);
     DC_LOAD(AddSC_dc_prestige_commandscript);
     DC_LOAD(AddSC_dc_item_upgrade_commandscript);
+    DC_LOAD(AddSC_dc_repair_commandscript);
     DC_LOAD(AddSC_cs_dc_guildhouse);
     // Hotspot commands are loaded in AddSC_ac_hotspots.
     DC_LOAD(AddSC_dc_stresstest);

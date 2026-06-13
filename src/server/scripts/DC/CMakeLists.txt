@@ -302,6 +302,7 @@ set(SCRIPTS_DC_Commands
     Commands/cs_dc_seasonal_rewards.cpp
     Commands/cs_dc_prestige.cpp
     Commands/cs_dc_item_upgrade.cpp
+    Commands/cs_dc_repair.cpp
     Commands/cs_dc_guildhouse.cpp
     Commands/cs_dc_stresstest.cpp
 )
