@@ -306,6 +306,16 @@ DC.Addon.CapabilityDebug.Enable = 1
 #
 DC.AddonProtocol.Logging.Enable = 1
 
+#
+#    DC.AddonProtocol.Graveyard.Enable
+#        Description: Enable the retail-style "Return to Graveyard" button
+#                     (GRVY module). When enabled, a player who has released
+#                     their spirit (a ghost) can click the on-screen button to
+#                     teleport to the nearest graveyard, just like retail.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Graveyard.Enable = 1
+
 # -----------------------------------------------------------------------------
 # Message Handling Settings
 # -----------------------------------------------------------------------------

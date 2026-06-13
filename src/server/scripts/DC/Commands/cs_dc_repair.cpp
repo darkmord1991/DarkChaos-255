@@ -41,6 +41,14 @@ public:
             return false;
         }
 
+        // Block in combat so the cooldown reset can't be abused mid-fight.
+        if (player->IsInCombat())
+        {
+            handler->SendSysMessage("|cffff0000You cannot use .rep while in combat.|r");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
         // false = no cost (free), 0 = no discount, false = not guild bank.
         player->DurabilityRepairAll(false, 0, false);
 

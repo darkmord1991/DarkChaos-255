@@ -31,6 +31,7 @@ void AddSC_dc_addon_duels();
 void AddSC_dc_addon_prestige();
 void AddDCQoSScripts();
 void AddSC_dc_addon_collection();
+void AddSC_dc_addon_graveyard();
 
 namespace DCAddon { void AddTeleportScripts(); }
 
@@ -73,5 +74,8 @@ void AddDCAddonExtensionScripts()
 
     // Collection addon handler
     AddSC_dc_addon_collection();
+
+    // Return-to-graveyard button handler (retail-style death helper)
+    AddSC_dc_addon_graveyard();
 
 }

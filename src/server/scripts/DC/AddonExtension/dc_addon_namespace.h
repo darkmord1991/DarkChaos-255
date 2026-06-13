@@ -94,6 +94,7 @@ namespace DCAddon
         constexpr const char* COLLECTION    = "COLL";   // Collection System (mounts, pets, toys, transmog, etc.)
         constexpr const char* QOS           = "QOS";    // Quality of Service (QoL settings, tooltips, automation)
         constexpr const char* DECORATION    = "DECO";   // Guild house decorations (player-facing placement)
+        constexpr const char* GRAVEYARD     = "GRVY";   // Return-to-graveyard button (death helper)
     }
 
     // ========================================================================
@@ -500,6 +501,13 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_REQUEST_LIST      = 0x01; // Client requests list
             constexpr uint8 SMSG_SEND_LIST         = 0x10; // Server sends list (JSON)
+        }
+
+        // Return-to-graveyard opcodes (death helper; see dc_addon_graveyard.cpp)
+        namespace Graveyard
+        {
+            constexpr uint8 CMSG_RETURN = 0x01; // Client: teleport my released ghost to nearest graveyard
+            constexpr uint8 SMSG_RESULT = 0x10; // Server: optional result/ack (JSON)
         }
 
         // World Content opcodes (hotspots, world bosses, events aggregated)

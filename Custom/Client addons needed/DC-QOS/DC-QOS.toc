@@ -315,3 +315,6 @@ Modules\SocialEnhancements.lua
 Modules\CombatLog.lua
 Modules\CombatLog_Enhanced.lua
 Modules\TalentManager.lua
+
+# Return to Graveyard (retail-style ghost button)
+Modules\Graveyard.lua
