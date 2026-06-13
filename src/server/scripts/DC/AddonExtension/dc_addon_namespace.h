@@ -347,6 +347,7 @@ namespace DCAddon
             constexpr uint8 CMSG_REMOVE            = 0x04;  // remove + partial refund
             constexpr uint8 CMSG_GET_BUDGET        = 0x05;  // budget/permissions query
             constexpr uint8 CMSG_SELECT            = 0x06;  // resolve cursor-picked GO guid
+            constexpr uint8 CMSG_LIST              = 0x07;  // list this guild's placed decorations
 
             constexpr uint8 SMSG_CATALOG           = 0x10;
             constexpr uint8 SMSG_PLACE_RESULT      = 0x11;
@@ -355,6 +356,7 @@ namespace DCAddon
             constexpr uint8 SMSG_BUDGET            = 0x14;
             constexpr uint8 SMSG_SELECT_RESULT     = 0x15;
             constexpr uint8 SMSG_OPEN_UI           = 0x16;  // decorator NPC opens the addon
+            constexpr uint8 SMSG_LIST              = 0x17;  // placed-decoration list
         }
 
         // Unified Leaderboard opcodes

@@ -1328,6 +1328,27 @@ namespace
             }
         }
 
+        // Summon one defender and apply the shared combat/visual setup. Returns
+        // the creature (already tracked in _defenderGuids) or nullptr on failure.
+        Creature* SpawnDefender(Map* map, uint32 entry, Position const& pos)
+        {
+            Creature* defender = map->SummonCreature(entry, pos, nullptr, SUMMON_LIFETIME_MS);
+            if (!defender)
+            {
+                LOG_WARN("scripts.dc", "Giant Isles Invasion: failed to spawn defender entry {}", entry);
+                return nullptr;
+            }
+
+            defender->SetReactState(REACT_AGGRESSIVE);
+            defender->SetFaction(DEFENDER_FACTION);
+            defender->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
+            defender->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
+            defender->LoadEquipment(1, true);
+            defender->SetSheath(SHEATH_STATE_MELEE);
+            _defenderGuids.push_back(defender->GetGUID());
+            return defender;
+        }
+
         void SpawnDefenders(Map* map)
         {
             if (!map)
@@ -1347,20 +1368,9 @@ namespace
                 InvasionSpawnPoint const& sp = DefenderSpawnPoints[i];
                 Position p(sp.x, sp.y, sp.z, sp.o);
 
-                Creature* defender = map->SummonCreature(entries[i], p, nullptr, SUMMON_LIFETIME_MS);
+                Creature* defender = SpawnDefender(map, entries[i], p);
                 if (!defender)
-                {
-                    LOG_WARN("scripts.dc", "Giant Isles Invasion: failed to spawn defender entry {}", entries[i]);
                     continue;
-                }
-
-                defender->SetReactState(REACT_AGGRESSIVE);
-                defender->SetFaction(DEFENDER_FACTION);
-                defender->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
-                defender->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
-                defender->LoadEquipment(1, true);
-                defender->SetSheath(SHEATH_STATE_MELEE);
-                _defenderGuids.push_back(defender->GetGUID());
 
                 if (i < LaneObjectives.size())
                 {
@@ -1368,6 +1378,29 @@ namespace
                     defender->GetMotionMaster()->MovePoint(50 + i, obj.x, obj.y, obj.z);
                 }
 
+                CommandDefender(defender, map);
+            }
+
+            // The left flank (lane 0) is the most exposed landing approach, so
+            // post two extra defenders to hold that side of the beach.
+            std::array<uint32, 2> const leftFlank =
+            {{
+                NPC_BEAST_HUNTER_VETERAN,
+                NPC_BEAST_HUNTER,
+            }};
+
+            InvasionSpawnPoint const& leftStage = DefenderSpawnPoints[1];
+            InvasionSpawnPoint const& leftObjective = LaneObjectives[0];
+
+            for (uint32 j = 0; j < leftFlank.size(); ++j)
+            {
+                Position p(leftStage.x + (j * 2.0f), leftStage.y - (j * 1.5f), leftStage.z, leftStage.o);
+
+                Creature* defender = SpawnDefender(map, leftFlank[j], p);
+                if (!defender)
+                    continue;
+
+                defender->GetMotionMaster()->MovePoint(70 + j, leftObjective.x, leftObjective.y, leftObjective.z);
                 CommandDefender(defender, map);
             }
         }
@@ -1382,41 +1415,11 @@ namespace
             Position p1(rear.x - 2.0f, rear.y - 1.0f, rear.z, rear.o);
             Position p2(rear.x + 2.0f, rear.y + 1.0f, rear.z, rear.o);
 
-            Creature* ranger = map->SummonCreature(
-                NPC_BEAST_HUNTER_TRAPPER,
-                p1,
-                nullptr,
-                SUMMON_LIFETIME_MS);
-
-            Creature* shaman = map->SummonCreature(
-                NPC_BEAST_HUNTER_VETERAN,
-                p2,
-                nullptr,
-                SUMMON_LIFETIME_MS);
-
-            if (ranger)
-            {
-                ranger->SetReactState(REACT_AGGRESSIVE);
-                ranger->SetFaction(DEFENDER_FACTION);
-                ranger->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
-                ranger->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
-                ranger->LoadEquipment(1, true);
-                ranger->SetSheath(SHEATH_STATE_MELEE);
-                _defenderGuids.push_back(ranger->GetGUID());
+            if (Creature* ranger = SpawnDefender(map, NPC_BEAST_HUNTER_TRAPPER, p1))
                 CommandDefender(ranger, map);
-            }
 
-            if (shaman)
-            {
-                shaman->SetReactState(REACT_AGGRESSIVE);
-                shaman->SetFaction(DEFENDER_FACTION);
-                shaman->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
-                shaman->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
-                shaman->LoadEquipment(1, true);
-                shaman->SetSheath(SHEATH_STATE_MELEE);
-                _defenderGuids.push_back(shaman->GetGUID());
+            if (Creature* shaman = SpawnDefender(map, NPC_BEAST_HUNTER_VETERAN, p2))
                 CommandDefender(shaman, map);
-            }
         }
 
         // ----- Loa ritual objective -------------------------------------------

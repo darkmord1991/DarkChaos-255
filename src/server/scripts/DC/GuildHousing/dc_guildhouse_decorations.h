@@ -70,6 +70,22 @@ namespace DCGuildHouseDecorations
     // player's guild. Fills lowguid/entry on success.
     bool ResolveSelection(Player* player, uint64 rawGuid, uint32& outLowguid,
         uint32& outEntry, uint32& outPaidCopper, std::string& error);
+
+    struct PlacedDecoration
+    {
+        uint32 lowguid = 0;
+        uint32 entry = 0;
+        std::string name;
+        float x = 0.f;
+        float y = 0.f;
+        float z = 0.f;
+        float orientation = 0.f;
+        uint32 mapId = 0;
+    };
+
+    // All decorations placed by the player's guild (saved spawn data).
+    void ListDecorations(Player* player,
+        std::vector<PlacedDecoration>& out);
 }
 
 #endif // DC_GUILDHOUSE_DECORATIONS_H

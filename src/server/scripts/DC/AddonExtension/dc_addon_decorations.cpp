@@ -307,6 +307,37 @@ namespace Decorations
             response).Send(player);
     }
 
+    static void HandleList(Player* player, ParsedMessage const& /*msg*/)
+    {
+        if (!player)
+            return;
+
+        std::vector<GHD::PlacedDecoration> items;
+        GHD::ListDecorations(player, items);
+
+        JsonValue response;
+        response.SetObject();
+        JsonValue arr;
+        arr.SetArray();
+        for (GHD::PlacedDecoration const& d : items)
+        {
+            JsonValue row;
+            row.SetObject();
+            row.Set("lowguid", static_cast<int32>(d.lowguid));
+            row.Set("entry", static_cast<int32>(d.entry));
+            row.Set("name", d.name);
+            row.Set("x", JsonValue(d.x));
+            row.Set("y", JsonValue(d.y));
+            row.Set("z", JsonValue(d.z));
+            row.Set("mapId", static_cast<int32>(d.mapId));
+            arr.Push(row);
+        }
+        response.Set("items", arr);
+        response.Set("count", static_cast<int32>(items.size()));
+        JsonMessage(Module::DECORATION, Opcode::Decoration::SMSG_LIST,
+            response).Send(player);
+    }
+
     void RegisterHandlers()
     {
         if (!sConfigMgr->GetOption<bool>(
@@ -325,6 +356,8 @@ namespace Decorations
             Opcode::Decoration::CMSG_GET_BUDGET, HandleGetBudget);
         DC_REGISTER_HANDLER(Module::DECORATION,
             Opcode::Decoration::CMSG_SELECT, HandleSelect);
+        DC_REGISTER_HANDLER(Module::DECORATION,
+            Opcode::Decoration::CMSG_LIST, HandleList);
     }
 }
 }

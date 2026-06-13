@@ -12,6 +12,7 @@ Protocol.Opcodes = {
     CMSG_REMOVE        = 0x04,
     CMSG_GET_BUDGET    = 0x05,
     CMSG_SELECT        = 0x06,
+    CMSG_LIST          = 0x07,
 
     SMSG_CATALOG       = 0x10,
     SMSG_PLACE_RESULT  = 0x11,
@@ -20,6 +21,7 @@ Protocol.Opcodes = {
     SMSG_BUDGET        = 0x14,
     SMSG_SELECT_RESULT = 0x15,
     SMSG_OPEN_UI       = 0x16,
+    SMSG_LIST          = 0x17,
 }
 
 function Protocol:Init()
@@ -87,6 +89,14 @@ function Protocol:Init()
             DC.Catalog:Show()
         end)
 
+    DCAddonProtocol:RegisterJSONHandler(DC.MODULE_ID, O.SMSG_LIST,
+        function(data)
+            DC.placed = (data and data.items) or {}
+            if DC.Catalog then
+                DC.Catalog:OnPlacedUpdate()
+            end
+        end)
+
     self:RequestBudget()
 end
 
@@ -117,6 +127,16 @@ end
 function Protocol:Rotate(lowguid)
     DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
         { lowguid = lowguid, mode = "rotate" })
+end
+
+-- Move the decoration to the player's current position (server reads it).
+function Protocol:MoveHere(lowguid)
+    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
+        { lowguid = lowguid, mode = "here" })
+end
+
+function Protocol:RequestList()
+    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_LIST)
 end
 
 function Protocol:Remove(lowguid)

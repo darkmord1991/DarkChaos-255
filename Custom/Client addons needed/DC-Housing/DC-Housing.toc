@@ -12,3 +12,4 @@ Core.lua
 Protocol.lua
 UI\CatalogFrame.lua
 UI\EditMode.lua
+UI\SocialButton.lua

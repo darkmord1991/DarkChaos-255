@@ -10,16 +10,39 @@ local ROW_HEIGHT = 20
 
 local frame
 local state = {
+    mode = "catalog",    -- "catalog" or "placed"
     category = nil,      -- nil = all
     search = "",
     entries = {},
     selectedEntry = nil,
+    placedSel = nil,     -- selected placed lowguid (manage mode)
+    placedSelEntry = nil,
     previewFacing = 0.6,
 }
 
 local function UpdateList()
+    if state.mode == "placed" then
+        Catalog:RefreshRows()
+        return
+    end
     state.entries = DC:GetFilteredEntries(state.category, state.search)
     Catalog:RefreshRows()
+end
+
+-- Load a model into the preview pane and frame it (shared by catalog
+-- selection and placed-object selection).
+function Catalog:LoadPreviewModel(item)
+    if not frame or not item then
+        return
+    end
+    frame.preview:ClearModel()
+    state.previewFacing = 0.6
+    state.previewRadius = math.max(item.radius or 1.0, 0.2)
+    state.previewDepth = state.previewRadius * 2.2
+    state.previewVertical = 0
+    if pcall(frame.preview.SetModel, frame.preview, item.path) then
+        Catalog:ApplyPreviewTransform()
+    end
 end
 
 local function SetPreview(entry)
@@ -34,12 +57,7 @@ local function SetPreview(entry)
         "%s  -  |cffffd700%dg|r  -  weight %d",
         item.category, math.floor(item.cost / 10000), item.weight))
 
-    frame.preview:ClearModel()
-    state.previewFacing = 0.6
-    local ok = pcall(frame.preview.SetModel, frame.preview, item.path)
-    if ok then
-        pcall(frame.preview.SetFacing, frame.preview, state.previewFacing)
-    end
+    Catalog:LoadPreviewModel(item)
 
     local canPlace = DC.budget.canSpawn
     frame.placeButton:SetText(L.PLACE)
@@ -52,7 +70,78 @@ local function SetPreview(entry)
     end
 end
 
+-- Select a placed decoration (manage mode): preview its model + enable the
+-- management buttons.
+local function SetPlacedSelection(item)
+    if not item then
+        return
+    end
+    state.placedSel = item.lowguid
+    state.placedSelEntry = item.entry
+    local model = DC:GetItem(item.entry)
+    frame.previewName:SetText(model and model.name or ("Entry "
+        .. tostring(item.entry)))
+    frame.previewInfo:SetText("Placed - select an action below")
+    if model then
+        Catalog:LoadPreviewModel(model)
+    end
+    if frame.manageButtons then
+        for _, b in ipairs(frame.manageButtons) do
+            b:Enable()
+        end
+    end
+end
+
+-- Frame an arbitrary GO model. On the 3.3.5 Model widget the camera is
+-- fixed; SetPosition(x, y, z) moves the MODEL relative to it where +x is
+-- DEPTH (distance from the camera - bigger = farther/smaller) and z is
+-- vertical. SetModelScale barely changes apparent size because the widget
+-- auto-frames the (scaled) bounding sphere, so depth is the real zoom.
+-- previewDepth/previewVertical are seeded from the model's bounding radius
+-- and adjustable with the mouse wheel (zoom) and shift+wheel (pan).
+function Catalog:ApplyPreviewTransform()
+    if not frame or not frame.preview then
+        return
+    end
+    local m = frame.preview
+    pcall(m.SetModelScale, m, 1.0)
+    if m.SetCamera then
+        pcall(m.SetCamera, m, 0)
+    end
+    pcall(m.SetPosition, m, state.previewDepth or 1.5, 0,
+        state.previewVertical or 0)
+    pcall(m.SetFacing, m, state.previewFacing or 0.6)
+end
+
 function Catalog:RefreshRows()
+    if state.mode == "placed" then
+        local placed = DC.placed or {}
+        local offset = FauxScrollFrame_GetOffset(frame.scroll)
+        FauxScrollFrame_Update(frame.scroll, #placed, ROW_COUNT, ROW_HEIGHT)
+        for i = 1, ROW_COUNT do
+            local row = frame.rows[i]
+            local item = placed[i + offset]
+            if item then
+                row.entry = nil
+                row.placed = item
+                row.text:SetText(item.name and item.name ~= "" and item.name
+                    or ("Entry " .. tostring(item.entry)))
+                row.cost:SetText("")
+                if item.lowguid == state.placedSel then
+                    row:LockHighlight()
+                else
+                    row:UnlockHighlight()
+                end
+                row:Show()
+            else
+                row.entry = nil
+                row.placed = nil
+                row:Hide()
+            end
+        end
+        return
+    end
+
     local offset = FauxScrollFrame_GetOffset(frame.scroll)
     FauxScrollFrame_Update(frame.scroll, #state.entries, ROW_COUNT,
         ROW_HEIGHT)
@@ -63,6 +152,7 @@ function Catalog:RefreshRows()
         if entry then
             local item = DC:GetItem(entry)
             row.entry = entry
+            row.placed = nil
             row.text:SetText(item.name)
             row.cost:SetText(math.floor(item.cost / 10000) .. "g")
             if entry == state.selectedEntry then
@@ -73,8 +163,16 @@ function Catalog:RefreshRows()
             row:Show()
         else
             row.entry = nil
+            row.placed = nil
             row:Hide()
         end
+    end
+end
+
+-- Refresh after a SMSG_LIST arrives.
+function Catalog:OnPlacedUpdate()
+    if frame and state.mode == "placed" then
+        Catalog:RefreshRows()
     end
 end
 
@@ -227,7 +325,12 @@ local function CreateCatalogFrame()
         row.cost:SetPoint("RIGHT", -4, 0)
 
         row:SetScript("OnClick", function(self)
-            if self.entry then
+            if state.mode == "placed" then
+                if self.placed then
+                    SetPlacedSelection(self.placed)
+                    Catalog:RefreshRows()
+                end
+            elseif self.entry then
                 SetPreview(self.entry)
                 Catalog:RefreshRows()
             end
@@ -252,6 +355,7 @@ local function CreateCatalogFrame()
     preview:SetPoint("TOPLEFT", 4, -4)
     preview:SetPoint("BOTTOMRIGHT", -4, 4)
     preview:EnableMouse(true)
+    preview:EnableMouseWheel(true)
     preview:SetScript("OnMouseDown", function(self)
         self.rotating = true
         self.lastX = GetCursorPosition()
@@ -259,10 +363,26 @@ local function CreateCatalogFrame()
     preview:SetScript("OnMouseUp", function(self)
         self.rotating = false
     end)
+    preview:SetScript("OnMouseWheel", function(_, delta)
+        local radius = state.previewRadius or 1.0
+        local step = math.max(radius * 0.25, 0.15)
+        if IsShiftKeyDown() then
+            -- vertical pan
+            state.previewVertical = (state.previewVertical or 0)
+                + delta * step
+        else
+            -- zoom: wheel up = closer (smaller depth)
+            local d = (state.previewDepth or radius * 2.2) - delta * step
+            if d < 0.2 then d = 0.2 end
+            if d > radius * 12 then d = radius * 12 end
+            state.previewDepth = d
+        end
+        Catalog:ApplyPreviewTransform()
+    end)
     preview:SetScript("OnUpdate", function(self)
         if self.rotating then
             local x = GetCursorPosition()
-            state.previewFacing = state.previewFacing
+            state.previewFacing = (state.previewFacing or 0.6)
                 + (x - (self.lastX or x)) * 0.02
             self.lastX = x
             pcall(self.SetFacing, self, state.previewFacing)
@@ -318,6 +438,89 @@ local function CreateCatalogFrame()
     edit:SetScript("OnClick", function()
         DC.EditMode:Toggle()
     end)
+    frame.catalogButtons = { place, placeCursor, edit }
+
+    -- ---- Manage-placed action buttons (shown only in "placed" mode) ----
+    frame.manageButtons = {}
+    local function ManageBtn(text, width, anchorTo, x, y, onClick)
+        local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        b:SetWidth(width)
+        b:SetHeight(22)
+        b:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", x, y)
+        b:SetText(text)
+        b:SetScript("OnClick", function()
+            if state.placedSel then
+                onClick(state.placedSel)
+                -- refresh positions shortly after the server applies it
+                DC.Protocol:RequestList()
+            end
+        end)
+        b:Hide()
+        table.insert(frame.manageButtons, b)
+        return b
+    end
+
+    -- Row 1: Move Here / Rotate / Remove
+    ManageBtn("Move Here", 100, previewBg, 0, -44, function(g)
+        DC.Protocol:MoveHere(g)
+    end)
+    ManageBtn("Rotate", 90, previewBg, 106, -44, function(g)
+        DC.Protocol:Rotate(g)
+    end)
+    local removeBtn = ManageBtn("Remove", 90, previewBg, 202, -44,
+        function(g)
+            StaticPopup_Show("DCHOUSING_REMOVE_PLACED")
+            return
+        end)
+    removeBtn:SetScript("OnClick", function()
+        if state.placedSel then
+            StaticPopup_Show("DCHOUSING_REMOVE_PLACED")
+        end
+    end)
+
+    -- Row 2: nudge grid (precise position/rotation tweaks)
+    local nudges = {
+        { "X+", 80, 0, -72, 0.5, 0, 0, 0 },
+        { "X-", 80, 84, -72, -0.5, 0, 0, 0 },
+        { "Y+", 80, 168, -72, 0, 0.5, 0, 0 },
+        { "Y-", 80, 252, -72, 0, -0.5, 0, 0 },
+        { "Z+", 80, 0, -98, 0, 0, 0.5, 0 },
+        { "Z-", 80, 84, -98, 0, 0, -0.5, 0 },
+        { "Turn +", 80, 168, -98, 0, 0, 0, 0.3927 },
+        { "Turn -", 80, 252, -98, 0, 0, 0, -0.3927 },
+    }
+    for _, n in ipairs(nudges) do
+        ManageBtn(n[1], n[2], previewBg, n[3], n[4], function(g)
+            DC.Protocol:Nudge(g, n[5], n[6], n[7], n[8])
+        end)
+    end
+
+    StaticPopupDialogs["DCHOUSING_REMOVE_PLACED"] = {
+        text = "Remove this decoration? You get a partial refund.",
+        button1 = YES,
+        button2 = NO,
+        OnAccept = function()
+            if state.placedSel then
+                DC.Protocol:Remove(state.placedSel)
+                state.placedSel = nil
+                DC.Protocol:RequestList()
+            end
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+    }
+
+    -- ---- Mode toggle (Browse Catalog <-> Manage Placed) ----
+    local modeToggle = CreateFrame("Button", nil, frame,
+        "UIPanelButtonTemplate")
+    modeToggle:SetWidth(150)
+    modeToggle:SetHeight(22)
+    modeToggle:SetPoint("TOPRIGHT", -42, -40)
+    modeToggle:SetScript("OnClick", function()
+        Catalog:SetMode(state.mode == "catalog" and "placed" or "catalog")
+    end)
+    frame.modeToggle = modeToggle
 
     -- Budget bar
     local bar = CreateFrame("StatusBar", nil, frame)
@@ -335,8 +538,48 @@ local function CreateCatalogFrame()
         "GameFontHighlightSmall")
     frame.budgetText:SetPoint("CENTER")
 
-    UpdateList()
+    Catalog:SetMode("catalog")
     Catalog:OnBudgetUpdate()
+end
+
+-- Switch between browsing the catalog and managing placed decorations.
+function Catalog:SetMode(mode)
+    state.mode = mode
+    local placed = (mode == "placed")
+
+    for _, b in ipairs(frame.catalogButtons or {}) do
+        if placed then b:Hide() else b:Show() end
+    end
+    for _, b in ipairs(frame.manageButtons or {}) do
+        if placed then
+            b:Show()
+            if state.placedSel then b:Enable() else b:Disable() end
+        else
+            b:Hide()
+        end
+    end
+
+    if frame.modeToggle then
+        frame.modeToggle:SetText(placed and "Browse Catalog"
+            or "Manage Placed")
+    end
+
+    if placed then
+        state.placedSel = nil
+        state.placedSelEntry = nil
+        frame.previewName:SetText("Placed Decorations")
+        frame.previewInfo:SetText(
+            "Select an object, then Move Here / Rotate / Remove.")
+        frame.preview:ClearModel()
+        DC.Protocol:RequestList()
+    end
+
+    -- Reset scroll to top when switching modes.
+    FauxScrollFrame_SetOffset(frame.scroll, 0)
+    if frame.scroll.ScrollBar then
+        frame.scroll.ScrollBar:SetValue(0)
+    end
+    UpdateList()
 end
 
 function Catalog:Show()

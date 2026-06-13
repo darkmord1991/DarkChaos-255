@@ -18,6 +18,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
+#include "ObjectMgr.h"
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
@@ -59,6 +60,18 @@ namespace
     {
         return sGmBypass && player && player->GetSession()
             && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
+    }
+
+    // The phase a decoration must spawn in to be visible to the placing
+    // player. Real players are phased into their guild house phase, so we
+    // use that. A GM testing is standing in their own current phase (often
+    // normal phase 1, NOT the guild phase), so spawn where they actually
+    // are — otherwise the object lands in an invisible phase.
+    uint32 PlacementPhase(Player* player)
+    {
+        if (IsDecorationGM(player))
+            return player->GetPhaseMask();
+        return GetGuildPhase(player->GetGuildId());
     }
 
     uint32 WeightOf(uint32 entry)
@@ -427,7 +440,7 @@ bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
     }
 
     GameObject* object = ::GOMove::SpawnGameObject(player, x, y, z,
-        orientation, GetGuildPhase(guildId), entry);
+        orientation, PlacementPhase(player), entry);
     if (!object)
     {
         error = "Failed to place the decoration.";
@@ -502,7 +515,7 @@ bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
 
     GameObject* moved = ::GOMove::MoveGameObject(player, x, y, z,
         Position::NormalizeOrientation(orientation),
-        GetGuildPhase(player->GetGuildId()), lowguid);
+        PlacementPhase(player), lowguid);
     if (!moved)
     {
         error = "Could not move that decoration (is it nearby?).";
@@ -600,6 +613,39 @@ bool ResolveSelection(Player* player, uint64 rawGuid, uint32& outLowguid,
     outEntry = info->entry;
     outPaidCopper = info->paidCopper;
     return true;
+}
+
+void ListDecorations(Player* player, std::vector<PlacedDecoration>& out)
+{
+    if (!player)
+        return;
+
+    uint32 const guildId = player->GetGuildId();
+    if (!guildId)
+        return;
+
+    for (auto const& [lowguid, info] : sInstances)
+    {
+        if (info.guildId != guildId)
+            continue;
+
+        PlacedDecoration d;
+        d.lowguid = lowguid;
+        d.entry = info.entry;
+        if (CatalogEntry const* item = FindCatalogEntry(info.entry))
+            d.name = item->name;
+
+        if (GameObjectData const* gd =
+            sObjectMgr->GetGameObjectData(lowguid))
+        {
+            d.x = gd->posX;
+            d.y = gd->posY;
+            d.z = gd->posZ;
+            d.orientation = gd->orientation;
+            d.mapId = gd->mapid;
+        }
+        out.push_back(d);
+    }
 }
 
 bool Remove(Player* player, uint32 lowguid, std::string& error,
