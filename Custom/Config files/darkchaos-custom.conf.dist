@@ -492,6 +492,15 @@ DC.AddonProtocol.Upgrade.Enable = 1
 DC.AddonProtocol.Collection.Enable = 1
 
 #
+#    DC.AddonProtocol.Forms.Enable
+#        Description: Enable shapeshift form customization (Forms wardrobe tab,
+#                     part of the COLL module). Set 0 to skip Forms handler
+#                     registration and the ObjectMgr form-override provider.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Forms.Enable = 1
+
+#
 #    DC.AddonProtocol.Prestige.Enable
 #        Description: Enable DC addon protocol for Prestige system
 #        Default:     1 (Enabled)

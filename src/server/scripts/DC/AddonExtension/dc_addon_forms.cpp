@@ -59,7 +59,7 @@ namespace Forms
 
     static std::map<FormRaceKey, std::vector<SkinRow>> s_catalog;
     static std::map<FormRaceKey, uint32> s_catalogDefault; // is_default model per (form,race)
-    static bool s_loaded = false; // catalog/tables loaded lazily once DB is up
+    static bool s_loaded = false; // catalog loaded lazily once DB is up
 
     // --- Per-character picks (mutable, guarded) -----------------------------
     static std::unordered_map<ObjectGuidLow, std::map<uint8, uint32>> s_picks;
@@ -113,34 +113,9 @@ namespace Forms
         return playerClass == CLASS_DRUID || playerClass == CLASS_SHAMAN;
     }
 
-    // ------------------------------------------------------------------------
-    // Table bootstrap (self-creating, mirrors the wardrobe's transmog tables).
-    // ------------------------------------------------------------------------
-    static void EnsureCharacterTable()
-    {
-        CharacterDatabase.Execute(
-            "CREATE TABLE IF NOT EXISTS `dc_character_shapeshift_form` ("
-            "`guid` INT UNSIGNED NOT NULL, "
-            "`form` TINYINT UNSIGNED NOT NULL, "
-            "`model` INT UNSIGNED NOT NULL, "
-            "PRIMARY KEY (`guid`, `form`)) "
-            "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    }
-
-    static void EnsureCatalogTable()
-    {
-        WorldDatabase.Execute(
-            "CREATE TABLE IF NOT EXISTS `dc_shapeshift_form_skins` ("
-            "`form` TINYINT UNSIGNED NOT NULL, "
-            "`race` TINYINT UNSIGNED NOT NULL, "
-            "`model` INT UNSIGNED NOT NULL, "
-            "`name` VARCHAR(64) NOT NULL DEFAULT '', "
-            "`sort_order` INT NOT NULL DEFAULT 0, "
-            "`is_default` TINYINT UNSIGNED NOT NULL DEFAULT 0, "
-            "PRIMARY KEY (`form`, `race`, `model`)) "
-            "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    }
-
+    // Tables are created by SQL migrations under data/sql/updates/pending_*
+    // (dc_shapeshift_form_skins in world, dc_character_shapeshift_form in
+    // characters). This module never creates them at runtime.
     static bool LoadCatalog()
     {
         s_catalog.clear();
@@ -177,17 +152,15 @@ namespace Forms
         return result != nullptr;
     }
 
-    // Create the tables and load the catalog on first runtime use. This must NOT
-    // run at AddSC/script-registration time: the WorldDatabase synchronous
-    // connection pool is not open yet then, so a sync Query divides by zero in
+    // Load the catalog into memory on first runtime use. This must NOT run at
+    // AddSC/script-registration time: the WorldDatabase synchronous connection
+    // pool is not open yet then, so a sync Query divides by zero in
     // DatabaseWorkerPool::GetFreeConnection (SIGFPE). All callers run from world
-    // hooks/handlers, where the DB is fully up.
+    // hooks/handlers, where the DB is fully up and the migration tables exist.
     static void EnsureLoaded()
     {
         if (s_loaded)
             return;
-        EnsureCharacterTable();
-        EnsureCatalogTable();
         if (LoadCatalog()) // latch only once the table was actually read
             s_loaded = true;
     }
