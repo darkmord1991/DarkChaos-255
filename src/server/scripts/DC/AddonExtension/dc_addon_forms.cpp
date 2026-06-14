@@ -59,6 +59,7 @@ namespace Forms
 
     static std::map<FormRaceKey, std::vector<SkinRow>> s_catalog;
     static std::map<FormRaceKey, uint32> s_catalogDefault; // is_default model per (form,race)
+    static bool s_loaded = false; // catalog/tables loaded lazily once DB is up
 
     // --- Per-character picks (mutable, guarded) -----------------------------
     static std::unordered_map<ObjectGuidLow, std::map<uint8, uint32>> s_picks;
@@ -140,7 +141,7 @@ namespace Forms
             "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
 
-    static void LoadCatalog()
+    static bool LoadCatalog()
     {
         s_catalog.clear();
         s_catalogDefault.clear();
@@ -173,6 +174,22 @@ namespace Forms
         }
 
         LOG_INFO("server.loading", ">> Loaded {} DC shapeshift form skins", count);
+        return result != nullptr;
+    }
+
+    // Create the tables and load the catalog on first runtime use. This must NOT
+    // run at AddSC/script-registration time: the WorldDatabase synchronous
+    // connection pool is not open yet then, so a sync Query divides by zero in
+    // DatabaseWorkerPool::GetFreeConnection (SIGFPE). All callers run from world
+    // hooks/handlers, where the DB is fully up.
+    static void EnsureLoaded()
+    {
+        if (s_loaded)
+            return;
+        EnsureCharacterTable();
+        EnsureCatalogTable();
+        if (LoadCatalog()) // latch only once the table was actually read
+            s_loaded = true;
     }
 
     static bool CatalogHasSkin(uint8 form, uint8 race, uint32 model)
@@ -345,6 +362,7 @@ namespace Forms
     {
         if (!player)
             return;
+        EnsureLoaded();
         SendFormsData(player);
     }
 
@@ -352,6 +370,7 @@ namespace Forms
     {
         if (!player)
             return;
+        EnsureLoaded();
 
         JsonValue json = GetJsonData(msg);
         uint8 form = static_cast<uint8>(json["form"].AsUInt32());
@@ -386,6 +405,7 @@ namespace Forms
     {
         if (!player)
             return;
+        EnsureLoaded();
 
         JsonValue json = GetJsonData(msg);
         uint8 form = static_cast<uint8>(json["form"].AsUInt32());
@@ -413,7 +433,10 @@ namespace Forms
         void OnPlayerLogin(Player* player) override
         {
             if (player)
+            {
+                EnsureLoaded();
                 LoadPicksFor(player->GetGUID().GetCounter());
+            }
         }
 
         void OnPlayerLogout(Player* player) override
@@ -428,9 +451,9 @@ namespace Forms
         if (!sConfigMgr->GetOption<bool>("DC.AddonProtocol.Forms.Enable", true))
             return;
 
-        EnsureCharacterTable();
-        EnsureCatalogTable();
-        LoadCatalog();
+        // NB: do NOT touch the DB here - script registration runs before the
+        // WorldDatabase sync pool is open. Tables + catalog load lazily via
+        // EnsureLoaded() on first handler/login use (see EnsureLoaded).
 
         DC_REGISTER_HANDLER(Module::COLLECTION,
             Opcode::Collection::CMSG_GET_FORMS, HandleGetForms);
