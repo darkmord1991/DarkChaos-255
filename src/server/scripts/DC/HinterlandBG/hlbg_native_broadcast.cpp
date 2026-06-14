@@ -14,6 +14,7 @@
 #include "Map.h"
 #include "BattlegroundHLBG.h"
 #include "HLBGService.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include <string>
 #include <sstream>
 #include <ctime>
@@ -22,24 +23,10 @@
 
 using namespace Acore::ChatCommands;
 
-// Escape a string for inclusion in a JSON string value (minimal)
+// Escape a string for inclusion in a JSON string value.
 static std::string EscapeJson(const std::string& in)
 {
-    std::string out;
-    out.reserve(in.size());
-    for (char c : in)
-    {
-        switch (c)
-        {
-            case '\\': out += "\\\\"; break;
-            case '"':  out += "\\\""; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default: out.push_back(c); break;
-        }
-    }
-    return out;
+    return DarkChaos::CrossSystem::Utils::EscapeJson(in);
 }
 
 // Build a compact JSON array for rows

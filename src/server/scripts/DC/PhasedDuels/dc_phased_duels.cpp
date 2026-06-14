@@ -21,6 +21,7 @@
 #include "Log.h"
 #include "CommandScript.h"
 #include "../Spectator/dc_spectator_core.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -406,26 +407,7 @@ namespace DCPhasedDuels
 
     std::string EscapeJson(std::string const& value)
     {
-        std::string escaped;
-        escaped.reserve(value.size());
-
-        for (char c : value)
-        {
-            switch (c)
-            {
-                case '\\':
-                    escaped += "\\\\";
-                    break;
-                case '"':
-                    escaped += "\\\"";
-                    break;
-                default:
-                    escaped += c;
-                    break;
-            }
-        }
-
-        return escaped;
+        return DarkChaos::CrossSystem::Utils::EscapeJson(value);
     }
 
     std::string BuildActiveDuelListJson()

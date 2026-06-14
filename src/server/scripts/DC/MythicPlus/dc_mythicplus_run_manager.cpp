@@ -20,6 +20,7 @@
 #include "Map.h"
 #include "MapMgr.h"
 #include "DC/CrossSystem/CrossSystemAffixes.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_constants.h"
 #include "dc_mythicplus_affixes.h"
@@ -135,34 +136,7 @@ uint32 ResolveValidTokenItem(uint32 configuredToken, uint32 mapId, std::string_v
 
 std::string EscapeJson(std::string_view input)
 {
-    std::string escaped;
-    escaped.reserve(input.size());
-    for (char c : input)
-    {
-        switch (c)
-        {
-            case '"': escaped += "\\\""; break;
-            case '\\': escaped += "\\\\"; break;
-            case '\n': escaped += "\\n"; break;
-            case '\r': escaped += "\\r"; break;
-            case '\t': escaped += "\\t"; break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20)
-                {
-                    escaped += "\\u";
-                    constexpr char hex[] = "0123456789ABCDEF";
-                    uint8_t uc = static_cast<uint8_t>(c);
-                    escaped.push_back(hex[(uc >> 4) & 0xF]);
-                    escaped.push_back(hex[uc & 0xF]);
-                }
-                else
-                {
-                    escaped.push_back(c);
-                }
-                break;
-        }
-    }
-    return escaped;
+    return DarkChaos::CrossSystem::Utils::EscapeJson(input);
 }
 
 }

@@ -27,6 +27,13 @@ L.TAB_TITLES = "Titles"
 L.TAB_SHOP = "Shop"
 L.TAB_WISHLIST = "Wishlist"
 L.TAB_ACHIEVEMENTS = "Achievements"
+L.TAB_FORMS = "Forms"
+
+-- Shapeshift forms
+L.FORM_APPLY = "Apply"
+L.FORM_RESET = "Reset to Default"
+L.FORM_LOCKED = "That form appearance is not unlocked yet."
+L.FORM_EMPTY = "No customizable forms available for this character yet."
 
 -- Filters
 L.FILTER_ALL = "All"

@@ -30,6 +30,7 @@ Modules\PetModule.lua
 Modules\TitleModule.lua
 Modules\ToyModule.lua
 Modules\TransmogModule.lua
+Modules\FormModule.lua
 Shop\ShopModule.lua
 
 # UI Components
@@ -38,6 +39,7 @@ UI\MainFrame.lua
 UI\AchievementsFrame.lua
 UI\CommunityFrame.lua
 UI\WardrobeFrame.lua
+UI\FormFrame.lua
 UI\Wardrobe\WardrobeCore.lua
 UI\Wardrobe\WardrobeUI.lua
 UI\Wardrobe\WardrobeOutfits.lua

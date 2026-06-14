@@ -722,7 +722,15 @@ function DC:CreateTabBar(parent)
         { key = "achievements", text = L["TAB_ACHIEVEMENTS"] or "Achievements", icon = "Interface\\Icons\\Achievement_General" },
         { key = "shop",         text = L["TAB_SHOP"] or "Shop",         icon = "Interface\\Icons\\INV_Misc_Bag_10_Green" },
     }
-    
+
+    -- Forms tab only for classes that have customizable shapeshift forms.
+    if DC.FormModule and type(DC.FormModule.PlayerHasForms) == "function"
+        and DC.FormModule:PlayerHasForms() then
+        table.insert(tabs, { key = "forms",
+            text = L["TAB_FORMS"] or "Forms",
+            icon = "Interface\\Icons\\Ability_Druid_CatForm" })
+    end
+
     tabBar.tabs = {}
     local tabWidth = (FRAME_WIDTH - 20) / #tabs
     
@@ -973,9 +981,10 @@ function DC:UpdateFilterBarForTab(tabKey)
     local isOverview = (tabKey == "overview")
     local isAchievements = (tabKey == "achievements")
     local isWardrobe = (tabKey == "wardrobe")
-    
-    -- Hide filter bar for overview/achievements/wardrobe (wardrobe has its own filtering UI)
-    if isOverview or isAchievements or isWardrobe then
+    local isForms = (tabKey == "forms")
+
+    -- Hide filter bar for overview/achievements/wardrobe/forms (these embed their own UI)
+    if isOverview or isAchievements or isWardrobe or isForms then
         fb:Hide()
     else
         fb:Show()
@@ -2135,7 +2144,7 @@ function DC:SelectTab(tabKey)
     -- Adjust content height when the footer is hidden.
     -- Wardrobe embeds and uses the extra space; shop and pets have their own bottom controls.
     local footer = self.MainFrame.Footer
-    if tabKey == "wardrobe" then
+    if tabKey == "wardrobe" or tabKey == "forms" then
         if footer then footer:Hide() end
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", self.MainFrame.TabBar, "BOTTOMLEFT", 0, -2)
@@ -2160,6 +2169,7 @@ function DC:SelectTab(tabKey)
     content.mountList:Hide()
     content.mountPreview:Hide()
     if content.wardrobeHost then content.wardrobeHost:Hide() end
+    if content.formsHost then content.formsHost:Hide() end
     self:HideHeirloomPreview()
     
     if DC.AchievementsUI then DC.AchievementsUI:Hide() end
@@ -2263,6 +2273,29 @@ function DC:SelectTab(tabKey)
         end
     end
 
+    if tabKey == "forms" then
+        content.details:Hide()
+        content.scrollFrame:Hide()
+        if content.modelPanel then content.modelPanel:Hide() end
+        if content.modelStatsPanel then content.modelStatsPanel:Hide() end
+
+        if not content.formsHost then
+            local host = CreateFrame("Frame", nil, content)
+            host:SetAllPoints(content)
+            host:Hide()
+            content.formsHost = host
+        end
+        content.formsHost:Show()
+
+        if DC.Forms and type(DC.Forms.ShowEmbedded) == "function" then
+            DC.Forms:ShowEmbedded(content.formsHost)
+        end
+    else
+        if DC.Forms and type(DC.Forms.Hide) == "function" then
+            DC.Forms:Hide()
+        end
+    end
+
     -- Clear current page
     self.currentPage = 1
 
@@ -2275,6 +2308,8 @@ function DC:SelectTab(tabKey)
     elseif tabKey == "achievements" then
         self:UpdateHeader()
     elseif tabKey == "wardrobe" then
+        self:UpdateHeader()
+    elseif tabKey == "forms" then
         self:UpdateHeader()
     else
         if tabKey == "titles" and type(self.RequestCollection) == "function" then

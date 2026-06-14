@@ -27,6 +27,8 @@
 #include <string>
 #include <string_view>
 #include <sstream>
+#include <ctime>
+#include "Timer.h"
 
 namespace DCUtils
 {
@@ -145,6 +147,18 @@ namespace DCUtils
         ss << cop << "c";
 
         return ss.str();
+    }
+
+    /**
+     * Format a timestamp as local time using a strftime pattern.
+     * Thread-safe (wraps Acore::Time::TimeBreakdown). Pass when=0 for "now".
+     */
+    inline std::string FormatLocalTimestamp(time_t when = 0, char const* fmt = "%Y-%m-%d %H:%M:%S")
+    {
+        std::tm tmv = Acore::Time::TimeBreakdown(when);
+        char buf[64];
+        std::strftime(buf, sizeof(buf), fmt, &tmv);
+        return std::string(buf);
     }
 
     /**

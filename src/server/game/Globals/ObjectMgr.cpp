@@ -1888,6 +1888,11 @@ void ObjectMgr::LoadPlayerShapeshiftModels()
 
 uint32 ObjectMgr::GetModelForShapeshift(ShapeshiftForm form, Player* player) const
 {
+    // DC: per-character form appearance override (set via the Forms addon module).
+    if (_shapeshiftFormModelOverride)
+        if (uint32 overrideModel = _shapeshiftFormModelOverride(player, static_cast<uint8>(form)))
+            return overrideModel;
+
     uint8 customizationID;
 
     if (player->GetTeamId() == TEAM_ALLIANCE)

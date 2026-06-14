@@ -113,6 +113,7 @@ DC.collections = {
     heirlooms = {},
     transmog = {},
     titles = {},
+    forms = {},
 }
 
 -- Definition data (from server)
@@ -2222,6 +2223,7 @@ function DC:InitializeModules()
         self.TitleModule,
         self.ToyModule,
         self.TransmogModule,
+        self.FormModule,
     }
 
     for _, module in ipairs(modules) do

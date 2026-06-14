@@ -790,6 +790,12 @@ public:
 
     uint32 GetModelForShapeshift(ShapeshiftForm form, Player* player) const;
 
+    // DC: optional per-character shapeshift form display override, wired by the
+    // "Forms" addon module. The callback returns a CreatureDisplayInfo id, or 0
+    // to fall through to the default race/hair-color resolution.
+    using ShapeshiftFormModelOverrideFn = std::function<uint32(Player const*, uint8 /*form*/)>;
+    void SetShapeshiftFormModelOverride(ShapeshiftFormModelOverrideFn fn) { _shapeshiftFormModelOverride = std::move(fn); }
+
     ItemSetNameEntry const* GetItemSetNameEntry(uint32 itemId)
     {
         ItemSetNameContainer::iterator itr = _itemSetNameStore.find(itemId);
@@ -1717,6 +1723,8 @@ private:
     PlayerTotemModelMap _playerTotemModel;
 
     PlayerShapeshiftModelMap _playerShapeshiftModel;
+
+    ShapeshiftFormModelOverrideFn _shapeshiftFormModelOverride;
 
     QuestMoneyRewardStore _questMoneyRewards;
 

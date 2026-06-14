@@ -21,6 +21,7 @@
 #include "SpellMgr.h"
 #include "DBCStores.h"
 #include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "../AddonExtension/dc_addon_death_markers.h"
 #include "../AddonExtension/dc_addon_namespace.h"
@@ -366,37 +367,7 @@ namespace DCPerfTest
 
     static std::string JsonEscape(std::string const& in)
     {
-        std::string out;
-        out.reserve(in.size() + 8);
-
-        for (unsigned char c : in)
-        {
-            switch (c)
-            {
-                case '\\': out += "\\\\"; break;
-                case '"': out += "\\\""; break;
-                case '\b': out += "\\b"; break;
-                case '\f': out += "\\f"; break;
-                case '\n': out += "\\n"; break;
-                case '\r': out += "\\r"; break;
-                case '\t': out += "\\t"; break;
-                default:
-                {
-                    if (c < 0x20)
-                    {
-                        std::ostringstream oss;
-                        oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << int(c);
-                        out += oss.str();
-                    }
-                    else
-                    {
-                        out.push_back(static_cast<char>(c));
-                    }
-                    break;
-                }
-            }
-        }
-        return out;
+        return DarkChaos::CrossSystem::Utils::EscapeJson(in);
     }
 
     static std::string CsvEscape(std::string const& in)

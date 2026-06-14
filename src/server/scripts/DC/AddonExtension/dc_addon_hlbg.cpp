@@ -2078,21 +2078,7 @@ namespace HLBGAddonFallback
 
     static std::string EscapeJson(const std::string& in)
     {
-        std::string out;
-        out.reserve(in.size());
-        for (char c : in)
-        {
-            switch (c)
-            {
-                case '\\': out += "\\\\"; break;
-                case '"':  out += "\\\""; break;
-                case '\n': out += "\\n"; break;
-                case '\r': out += "\\r"; break;
-                case '\t': out += "\\t"; break;
-                default:   out += c; break;
-            }
-        }
-        return out;
+        return DarkChaos::CrossSystem::Utils::EscapeJson(in);
     }
 
     static BattlegroundHLBG* GetActiveHLBG(Player* preferredPlayer = nullptr)
@@ -2102,10 +2088,7 @@ namespace HLBGAddonFallback
 
     static std::string NowTimestamp()
     {
-        std::time_t t = std::time(nullptr);
-        char buf[64];
-        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
-        return std::string(buf);
+        return DarkChaos::CrossSystem::Utils::FormatLocalTimestamp();
     }
 
     static std::string BuildLiveJson(uint32 matchStart, uint32 a, uint32 h)

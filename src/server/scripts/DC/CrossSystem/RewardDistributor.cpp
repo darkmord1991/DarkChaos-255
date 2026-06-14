@@ -395,11 +395,13 @@ namespace CrossSystem
 
         if (msg != EQUIP_ERR_OK)
         {
-            // Try to mail it
-            // (Would need MailDraft implementation)
-            LOG_WARN("dc.crosssystem.rewards", "Could not give item {} x{} to player {}: inventory full",
-                     itemId, count, player->GetName());
-            return false;
+            // Bags are full: mail the item via The Postmaster instead of dropping it.
+            player->SendItemRetrievalMail(itemId, count);
+
+            LOG_DEBUG("dc.crosssystem.rewards", "Mailed item {} x{} to player {} from {} ({}): inventory full",
+                      itemId, count, player->GetName(), SystemIdToString(source), reason);
+
+            return true;
         }
 
         Item* item = player->StoreNewItem(dest, itemId, true);

@@ -98,6 +98,11 @@ DC.Opcodes = {
     CMSG_SET_FAVORITE        = 0x31,
     CMSG_TOGGLE_UNLOCK       = 0x32,
 
+    -- Client -> Server: Shapeshift forms (alternate form appearances)
+    CMSG_GET_FORMS           = 0x23,
+    CMSG_SET_FORM            = 0x24,
+    CMSG_RESET_FORM          = 0x25,
+
     -- Client -> Server: Transmog
     CMSG_SET_TRANSMOG            = 0x33,
     CMSG_GET_TRANSMOG_SLOT_ITEMS = 0x34,
@@ -155,6 +160,10 @@ DC.Opcodes = {
     SMSG_WISHLIST_AVAILABLE  = 0x61,
     SMSG_WISHLIST_UPDATED    = 0x62,
     
+    -- Server -> Client: Shapeshift forms
+    SMSG_FORMS_DATA          = 0x69,
+    SMSG_FORM_RESULT         = 0x6A,
+
     -- Server -> Client: UI Control
     SMSG_OPEN_UI             = 0x70,
     SMSG_ERROR               = 0x7F,
@@ -293,6 +302,15 @@ local function GetCollectionOpcodeLabel(opcode)
     if opcode == DC.Opcodes.CMSG_GET_ITEM_SETS
         or opcode == DC.Opcodes.SMSG_ITEM_SETS then
         return "item_sets"
+    end
+    if opcode == DC.Opcodes.CMSG_GET_FORMS
+        or opcode == DC.Opcodes.SMSG_FORMS_DATA then
+        return "forms"
+    end
+    if opcode == DC.Opcodes.CMSG_SET_FORM
+        or opcode == DC.Opcodes.CMSG_RESET_FORM
+        or opcode == DC.Opcodes.SMSG_FORM_RESULT then
+        return "form_result"
     end
     if opcode == DC.Opcodes.CMSG_GET_SAVED_OUTFITS then
         return "get_saved_outfits"
@@ -4373,6 +4391,44 @@ function DC:RequestToggleUnlock(collectionType, entryId)
     })
 end
 
+-- ============================================================================
+-- SHAPESHIFT FORMS
+-- ============================================================================
+
+-- Request the player's customizable forms (catalog + unlocks + current picks).
+function DC:RequestForms()
+    return self:SendMessage(self.Opcodes.CMSG_GET_FORMS, {})
+end
+
+-- Apply a creature display (CreatureDisplayInfo id) to a shapeshift form.
+function DC:RequestSetForm(formId, modelId)
+    return self:SendMessage(self.Opcodes.CMSG_SET_FORM, {
+        form = tonumber(formId) or 0,
+        model = tonumber(modelId) or 0,
+    })
+end
+
+-- Revert a shapeshift form to its automatic (race/hair) default.
+function DC:RequestResetForm(formId)
+    return self:SendMessage(self.Opcodes.CMSG_RESET_FORM, {
+        form = tonumber(formId) or 0,
+    })
+end
+
+-- SMSG_FORMS_DATA: full catalog of the player's forms and current selections.
+function DC:HandleFormsData(data)
+    if DC.FormModule and type(DC.FormModule.SetData) == "function" then
+        DC.FormModule:SetData(data)
+    end
+end
+
+-- SMSG_FORM_RESULT: result of a single set/reset action.
+function DC:HandleFormResult(data)
+    if DC.FormModule and type(DC.FormModule.ApplyResult) == "function" then
+        DC.FormModule:ApplyResult(data)
+    end
+end
+
 -- Legacy function names for backwards compatibility
 DC.RequestCurrency = DC.RequestCurrencies
 DC.RequestShopPurchase = function(self, shopId) return self:RequestBuyItem(shopId) end
@@ -4480,6 +4536,10 @@ function DC.OnProtocolMessage(payload)
         self:HandleCommunityFavoriteResult(data)
     elseif opcode == self.Opcodes.SMSG_INSPECT_TRANSMOG then
         self:HandleInspectTransmog(data)
+    elseif opcode == self.Opcodes.SMSG_FORMS_DATA then
+        self:HandleFormsData(data)
+    elseif opcode == self.Opcodes.SMSG_FORM_RESULT then
+        self:HandleFormResult(data)
     else
         self:Debug(string.format("Unknown opcode: 0x%02X", opcode))
         if type(self.LogNetEvent) == "function" then

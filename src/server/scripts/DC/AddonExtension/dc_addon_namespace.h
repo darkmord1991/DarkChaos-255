@@ -551,6 +551,11 @@ namespace DCAddon
             constexpr uint8 CMSG_SET_FAVORITE        = 0x31;  // Set item as favorite
             constexpr uint8 CMSG_TOGGLE_UNLOCK       = 0x32;  // Toggle account-wide (heirlooms)
 
+            // Client -> Server: Shapeshift forms (alternate form appearances)
+            constexpr uint8 CMSG_GET_FORMS            = 0x23;  // Request customizable forms (catalog + unlocks + current picks)
+            constexpr uint8 CMSG_SET_FORM             = 0x24;  // Apply a creature display to a shapeshift form
+            constexpr uint8 CMSG_RESET_FORM           = 0x25;  // Revert a shapeshift form to its automatic default
+
             constexpr uint8 CMSG_SET_TRANSMOG         = 0x33;  // Apply/clear transmog appearance for an equipment slot
 
             // Client -> Server: Transmog-specific (slot-based UI like Transmogrification addon)
@@ -584,6 +589,10 @@ namespace DCAddon
             constexpr uint8 SMSG_COLLECTION           = 0x47;  // Collection payload
 
             constexpr uint8 SMSG_TRANSMOG_STATE       = 0x48;  // Current per-slot transmog state for the character
+
+            // Server -> Client: Shapeshift forms
+            constexpr uint8 SMSG_FORMS_DATA           = 0x69;  // Forms catalog + unlocks + current selections (JSON)
+            constexpr uint8 SMSG_FORM_RESULT          = 0x6A;  // Result of a single set/reset form action
 
             // Server -> Client: Shop
             constexpr uint8 SMSG_SHOP_DATA           = 0x50;  // Shop items (JSON)

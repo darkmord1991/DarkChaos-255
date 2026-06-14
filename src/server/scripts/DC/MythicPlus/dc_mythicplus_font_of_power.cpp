@@ -24,6 +24,7 @@
 #include "ObjectAccessor.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "../AddonExtension/dc_addon_mythicplus.h"
 #include "Player.h"
@@ -101,23 +102,7 @@ bool HasKeystoneReadyCheckUiTransport()
 
 std::string EscapeJson(std::string_view input)
 {
-    std::string escaped;
-    escaped.reserve(input.size());
-
-    for (char c : input)
-    {
-        switch (c)
-        {
-            case '"': escaped += "\\\""; break;
-            case '\\': escaped += "\\\\"; break;
-            case '\n': escaped += "\\n"; break;
-            case '\r': escaped += "\\r"; break;
-            case '\t': escaped += "\\t"; break;
-            default: escaped.push_back(c); break;
-        }
-    }
-
-    return escaped;
+    return DarkChaos::CrossSystem::Utils::EscapeJson(input);
 }
 
 ObjectGuid GetPendingActivationKey(Player* player)

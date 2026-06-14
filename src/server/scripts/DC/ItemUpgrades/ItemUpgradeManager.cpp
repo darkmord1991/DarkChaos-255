@@ -32,24 +32,6 @@
 
 namespace
 {
-    // fmt uses braces as control characters; double them inside dynamic strings before formatting.
-    void EscapeFmtBraces(std::string& text)
-    {
-        size_t pos = 0;
-        while ((pos = text.find('{', pos)) != std::string::npos)
-        {
-            text.insert(pos, "{");
-            pos += 2;
-        }
-
-        pos = 0;
-        while ((pos = text.find('}', pos)) != std::string::npos)
-        {
-            text.insert(pos, "}");
-            pos += 2;
-        }
-    }
-
     struct PlayerMapContext
     {
         uint32 mapId = 0;
@@ -200,7 +182,7 @@ namespace DarkChaos
 
                 std::string baseName = state.base_item_name;
                 CharacterDatabase.EscapeString(baseName);
-                EscapeFmtBraces(baseName);
+                baseName = DCUtils::EscapeFmtBraces(baseName);
 
                 CharacterDatabase.Execute(
                     "INSERT INTO {} (item_guid, player_guid, base_item_name, tier_id, upgrade_level, "

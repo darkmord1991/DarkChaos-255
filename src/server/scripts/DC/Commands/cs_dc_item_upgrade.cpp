@@ -1340,12 +1340,10 @@ public:
 
         for (auto const& entry : history)
         {
-            time_t timestamp = entry.timestamp;
-            char time_buf[64];
-            strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M", localtime(&timestamp));
+            std::string time_buf = DarkChaos::CrossSystem::Utils::FormatLocalTimestamp(entry.timestamp, "%Y-%m-%d %H:%M");
 
             handler->PSendSysMessage("%s: Item %u (%u->%u) | Cost: %uE/%uT | iLvl: %u->%u",
-                time_buf, entry.item_id, entry.upgrade_from, entry.upgrade_to,
+                time_buf.c_str(), entry.item_id, entry.upgrade_from, entry.upgrade_to,
                 entry.essence_cost, entry.token_cost, entry.old_ilvl, entry.new_ilvl);
         }
 

@@ -13,6 +13,7 @@
 #include "ItemUpgradeMechanics.h"
 #include "ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "ScriptMgr.h"
 #include "Item.h"
 #include "Player.h"
@@ -25,24 +26,6 @@
 
 namespace
 {
-    // Ensure literal braces survive fmt formatting when inserting dynamic strings.
-    void EscapeFmtBraces(std::string& text)
-    {
-        size_t pos = 0;
-        while ((pos = text.find('{', pos)) != std::string::npos)
-        {
-            text.insert(pos, "{");
-            pos += 2;
-        }
-
-        pos = 0;
-        while ((pos = text.find('}', pos)) != std::string::npos)
-        {
-            text.insert(pos, "}");
-            pos += 2;
-        }
-    }
-
     uint8 ResolveMaxUpgradeLevel(uint8 tier_id)
     {
         if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
@@ -284,7 +267,7 @@ bool ItemUpgradeState::SaveToDatabase() const
 {
     std::string baseName = base_item_name;
     CharacterDatabase.EscapeString(baseName);
-    EscapeFmtBraces(baseName);
+    baseName = DCUtils::EscapeFmtBraces(baseName);
 
     // Use INSERT ... ON DUPLICATE KEY UPDATE for upsert
     CharacterDatabase.Execute(
@@ -322,20 +305,6 @@ bool ItemUpgradeState::SaveToDatabase() const
         return TIER_HEROIC;
     else
         return TIER_HEIRLOOM;  // Heirlooms or high-level items
-}
-
-[[maybe_unused]] static uint32 Mechanics_GetCurrentSeason()
-{
-    // Wire to generic seasonal system if available
-    if (DarkChaos::Seasonal::GetSeasonalManager())
-    {
-        auto* activeSeason = DarkChaos::Seasonal::GetSeasonalManager()->GetActiveSeason();
-        if (activeSeason)
-            return activeSeason->season_id;
-    }
-
-    // Fallback to config or default
-    return sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
 }
 
 // (Do not define a global GetUpgradeManager here; use DarkChaos::ItemUpgrade::GetUpgradeManager())
