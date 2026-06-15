@@ -29,6 +29,7 @@
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/CrossSystem/CrossSystemRewards.h"
 #include "dc_prestige_api.h"
 #include "../../AddonExtension/dc_addon_prestige_notify.h"
 #include <sstream>
@@ -356,19 +357,27 @@ public:
         // Grant item upgrade currencies for future prestige systems
         if (tokenRewardPerPrestige > 0 && tokenItemId > 0)
         {
-            if (player->AddItem(tokenItemId, tokenRewardPerPrestige))
+            if (DarkChaos::CrossSystem::Rewards::AwardItemOrSeasonalCurrency(
+                    player, tokenItemId, tokenRewardPerPrestige,
+                    DarkChaos::CrossSystem::SystemId::Prestige,
+                    DarkChaos::CrossSystem::EventType::PlayerPrestige,
+                    "prestige_levelup"))
                 awardedTokens = tokenRewardPerPrestige;
             else
-                LOG_WARN("scripts.dc", "Prestige: Failed to add token reward item {} x{} to player {}",
+                LOG_WARN("scripts.dc", "Prestige: Failed to award token reward item {} x{} to player {}",
                     tokenItemId, tokenRewardPerPrestige, player->GetName());
         }
 
         if (essenceRewardPerPrestige > 0 && essenceItemId > 0)
         {
-            if (player->AddItem(essenceItemId, essenceRewardPerPrestige))
+            if (DarkChaos::CrossSystem::Rewards::AwardItemOrSeasonalCurrency(
+                    player, essenceItemId, essenceRewardPerPrestige,
+                    DarkChaos::CrossSystem::SystemId::Prestige,
+                    DarkChaos::CrossSystem::EventType::PlayerPrestige,
+                    "prestige_levelup"))
                 awardedEssence = essenceRewardPerPrestige;
             else
-                LOG_WARN("scripts.dc", "Prestige: Failed to add essence reward item {} x{} to player {}",
+                LOG_WARN("scripts.dc", "Prestige: Failed to award essence reward item {} x{} to player {}",
                     essenceItemId, essenceRewardPerPrestige, player->GetName());
         }
 

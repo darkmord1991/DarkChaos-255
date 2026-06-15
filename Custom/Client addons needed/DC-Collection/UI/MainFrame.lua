@@ -724,9 +724,18 @@ function DC:CreateTabBar(parent)
     }
 
     -- Forms tab only for classes that have customizable shapeshift forms.
+    -- Place it next to Wardrobe (both are appearance customization) and keep
+    -- Shop as the right-most tab.
     if DC.FormModule and type(DC.FormModule.PlayerHasForms) == "function"
         and DC.FormModule:PlayerHasForms() then
-        table.insert(tabs, { key = "forms",
+        local pos = #tabs + 1
+        for i, t in ipairs(tabs) do
+            if t.key == "wardrobe" then
+                pos = i + 1
+                break
+            end
+        end
+        table.insert(tabs, pos, { key = "forms",
             text = L["TAB_FORMS"] or "Forms",
             icon = "Interface\\Icons\\Ability_Druid_CatForm" })
     end

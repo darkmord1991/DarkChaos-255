@@ -61,6 +61,8 @@
 #include "ScriptedGossip.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemMapCoords.h"
 #include <string>
 #include <cstdio>
 
@@ -98,33 +100,12 @@ namespace
 {
     constexpr uint32 AC_GOSSIP_POI_FLAGS = 99;
     constexpr uint32 AC_GOSSIP_POI_IMPORTANCE = 0;
-
-    void SendPoiMarker(Player* player, float x, float y, uint32 icon, uint32 flags, uint32 importance, std::string const& name)
-    {
-        if (!player || !player->GetSession())
-            return;
-
-        WorldPacket data(SMSG_GOSSIP_POI, 4 + 4 + 4 + 4 + 4 + 20);
-        data << uint32(flags);
-        data << float(x);
-        data << float(y);
-        data << uint32(icon);
-        data << uint32(importance);
-        data << name;
-
-        player->GetSession()->SendPacket(&data);
-    }
 }
 
 // Main script class for the Guard NPC
 class AC_Guard_NPC : public CreatureScript {
 public:
     AC_Guard_NPC() : CreatureScript("AC_Guard_NPC") { }
-
-    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-    {
-        return "|T" + icon + ":40:40:-18|t " + text;
-    }
 
     // Called when a player interacts with the NPC
     bool OnGossipHello(Player* player, Creature* creature) override {
@@ -136,7 +117,7 @@ public:
             ACGuardPOI const& poi = ac_guard_pois[i];
             std::string label = (poi.teleport ? "Teleport: " : "Show on map: ") + std::string(poi.name);
             std::string icon = (poi.gossipIcon && *poi.gossipIcon) ? poi.gossipIcon : (poi.teleport ? "Interface\\Icons\\Spell_Arcane_TeleportDalaran" : "Interface\\Icons\\INV_Misc_Map_01");
-            AddGossipItemFor(player, poi.menuIcon, MakeLargeGossipText(icon, label), GOSSIP_SENDER_MAIN, idx);
+            AddGossipItemFor(player, poi.menuIcon, DCUtils::MakeLargeGossipText(icon, label), GOSSIP_SENDER_MAIN, idx);
         }
         // Show the gossip menu to the player
         SendGossipMenuFor(player, 1, creature->GetGUID());
@@ -160,7 +141,7 @@ public:
         // Default behavior: just show a POI marker on the map/minimap.
         if (!poi.teleport)
         {
-            SendPoiMarker(player, poi.x, poi.y, poi.poiIcon, AC_GOSSIP_POI_FLAGS, AC_GOSSIP_POI_IMPORTANCE, poiPrefix + std::string(poi.name));
+            DC::MapCoords::SendPoiMarker(player, poi.x, poi.y, poi.poiIcon, AC_GOSSIP_POI_FLAGS, AC_GOSSIP_POI_IMPORTANCE, poiPrefix + std::string(poi.name));
             ChatHandler(player->GetSession()).PSendSysMessage("Marked on map: {}", poiPrefix + std::string(poi.name));
 
             // Keep the menu open for quick browsing.

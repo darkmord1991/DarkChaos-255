@@ -18,6 +18,7 @@
 #include "Chat.h"
 #include "Quests/QuestDef.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
 #include <sstream>
 #include <mutex>
 #include <unordered_set>
@@ -431,29 +432,7 @@ namespace DarkChaos
 
         time_t SeasonalRewardManager::GetCurrentWeekTimestamp() const
         {
-            time_t now = time(nullptr);
-            tm* timeInfo = localtime(&now);
-
-            // Calculate days since last reset day
-            int daysSinceReset = timeInfo->tm_wday - config_.resetDay;
-            if (daysSinceReset < 0)
-                daysSinceReset += 7;
-
-            // Calculate seconds to subtract
-            time_t secondsSinceReset = daysSinceReset * 86400 +
-                timeInfo->tm_hour * 3600 +
-                timeInfo->tm_min * 60 +
-                timeInfo->tm_sec;
-
-            time_t resetHourOffset = config_.resetHour * 3600;
-
-            time_t weekTimestamp = now - secondsSinceReset + resetHourOffset;
-
-            // If we haven't reached reset hour yet today and today is reset day, go back one week
-            if (timeInfo->tm_wday == config_.resetDay && timeInfo->tm_hour < config_.resetHour)
-                weekTimestamp -= 604800; // 7 days
-
-            return weekTimestamp;
+            return static_cast<time_t>(DarkChaos::Seasons::GetVaultWeekStartTimestamp());
         }
 
         bool SeasonalRewardManager::IsNewWeek(Player* player)

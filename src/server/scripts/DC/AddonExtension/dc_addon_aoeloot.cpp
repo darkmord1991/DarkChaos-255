@@ -16,6 +16,7 @@
 #include "Log.h"
 #include "Chat.h"
 #include "StringFormat.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include <algorithm>
 #include <cctype>
 #include <mutex>
@@ -98,18 +99,6 @@ namespace AOELoot
     };
 
     static PreferenceSchemaInfo s_PreferenceSchema;
-
-    static std::string JoinStringList(std::vector<std::string> const& values, char const* separator = ", ")
-    {
-        std::ostringstream ss;
-        for (size_t i = 0; i < values.size(); ++i)
-        {
-            if (i > 0)
-                ss << separator;
-            ss << values[i];
-        }
-        return ss.str();
-    }
 
     static PreferenceSchemaInfo const& GetPreferenceSchemaInfo()
     {
@@ -242,7 +231,7 @@ namespace AOELoot
 
         std::string query = Acore::StringFormat(
             "SELECT {} FROM dc_aoeloot_preferences WHERE player_guid = {}",
-            JoinStringList(columns), guid);
+            DCUtils::JoinStringList(columns), guid);
 
         QueryResult result = CharacterDatabase.Query(query);
         if (result)
@@ -369,7 +358,7 @@ namespace AOELoot
 
         CharacterDatabase.Execute(Acore::StringFormat(
             "INSERT INTO dc_aoeloot_preferences ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}",
-            JoinStringList(columns), JoinStringList(values), JoinStringList(updates)));
+            DCUtils::JoinStringList(columns), DCUtils::JoinStringList(values), DCUtils::JoinStringList(updates)));
     }
 
     // Get player stats - uses live in-memory stats from dc_aoeloot_extensions first,

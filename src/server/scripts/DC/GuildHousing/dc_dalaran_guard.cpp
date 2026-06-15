@@ -3,9 +3,9 @@
 #include "Player.h"
 #include "Chat.h"
 #include "ScriptedGossip.h"
-#include "WorldPacket.h"
-#include "Opcodes.h"
 #include "dc_guildhouse.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/CrossSystem/CrossSystemMapCoords.h"
 
 #include <string>
 
@@ -33,32 +33,12 @@ namespace
         {"Training Grounds", 1409, 975.2226f, 1221.9116f, 542.86456f, 4.9999466f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Warrior_WeaponMastery", GOSSIP_ICON_TAXI}
     };
 
-    void SendPoiMarker(Player* player, float x, float y, uint32 icon, uint32 flags, uint32 importance, std::string const& name)
-    {
-        if (!player || !player->GetSession())
-            return;
-
-        WorldPacket data(SMSG_GOSSIP_POI, 4 + 4 + 4 + 4 + 4 + 20);
-        data << uint32(flags);
-        data << float(x);
-        data << float(y);
-        data << uint32(icon);
-        data << uint32(importance);
-        data << name;
-
-        player->GetSession()->SendPacket(&data);
-    }
 }
 
 class DalaranGuardNPC : public CreatureScript
 {
 public:
     DalaranGuardNPC() : CreatureScript("DalaranGuardNPC") { }
-
-    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-    {
-        return "|T" + icon + ":40:40:-18|t " + text;
-    }
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
@@ -71,7 +51,7 @@ public:
             std::string label = "Teleport: " + std::string(poi.name);
             std::string icon = (poi.gossipIcon && *poi.gossipIcon) ? poi.gossipIcon : "Interface\\Icons\\Spell_Arcane_TeleportDalaran";
             AddGossipItemFor(player, poi.menuIcon,
-                MakeLargeGossipText(icon, label),
+                DCUtils::MakeLargeGossipText(icon, label),
                 GOSSIP_SENDER_MAIN, idx);
         }
 
@@ -106,7 +86,7 @@ public:
         if (phase)
             player->SetPhaseMask(phase, true);
 
-        SendPoiMarker(player, poi.x, poi.y, poi.poiIcon, 0, 0, poi.name);
+        DC::MapCoords::SendPoiMarker(player, poi.x, poi.y, poi.poiIcon, 0, 0, poi.name);
         ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to {}", poi.name);
         CloseGossipMenuFor(player);
 

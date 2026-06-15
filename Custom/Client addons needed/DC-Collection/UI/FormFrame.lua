@@ -9,8 +9,9 @@
         [ form list ] [ 3D preview ] [ skin list ]
                                       [ Apply ] [ Reset ]
 
-    The 3D preview uses a Model widget's SetDisplayInfo(), which takes a
-    CreatureDisplayInfo id -- exactly the value the server sends per skin.
+    The 3D preview uses a DressUpModel's SetDisplayInfo() (CreatureDisplayInfo
+    id) + SetCamera/SetPosition/SetFacing so the model is framed (a bare model
+    renders black). Mirrors the mount/pet preview setup in MainFrame.lua.
 
     Author: DarkChaos-255
     Version: 1.0.0
@@ -23,7 +24,7 @@ local Forms = {}
 DC.Forms = Forms
 
 local FORM_LIST_WIDTH = 150
-local PREVIEW_WIDTH = 240
+local PREVIEW_HEIGHT = 260   -- wide-but-short preview banner across the top
 local ROW_HEIGHT = 22
 
 -- Currently selected form id and the model id being previewed (may differ from
@@ -45,9 +46,28 @@ local function SetPreviewDisplay(model, displayId)
         return
     end
     model:Show()
-    pcall(function()
-        model:SetDisplayInfo(displayId)
-    end)
+
+    -- Apply the creature display (DressUpModel). SetCreature is the fallback for
+    -- display ids the client resolves differently.
+    local ok = false
+    if type(model.SetDisplayInfo) == "function" then
+        ok = pcall(model.SetDisplayInfo, model, displayId)
+    end
+    if not ok and type(model.SetCreature) == "function" then
+        pcall(model.SetCreature, model, displayId)
+    end
+
+    -- A model frame renders BLACK until the camera/position are set. Mirror the
+    -- mount/pet preview setup so the form is actually framed in view.
+    if type(model.SetCamera) == "function" then
+        pcall(model.SetCamera, model, 0)
+    end
+    if type(model.SetPosition) == "function" then
+        pcall(model.SetPosition, model, (model.zoom or 0), 0, 0)
+    end
+    if type(model.SetFacing) == "function" then
+        pcall(model.SetFacing, model, model.rotation or 0)
+    end
 end
 
 function Forms:Build(host)
@@ -80,24 +100,49 @@ function Forms:Build(host)
     frame.listFrame = listFrame
     frame.formButtons = {}
 
-    -- --- 3D preview (center) ----------------------------------------------
-    local preview = CreateFrame("Model", nil, frame)
-    preview:SetPoint("TOPLEFT", listFrame, "TOPRIGHT", 6, 0)
-    preview:SetPoint("BOTTOMLEFT", listFrame, "BOTTOMRIGHT", 6, 0)
-    preview:SetWidth(PREVIEW_WIDTH)
+    -- --- 3D preview (wide banner across the top) --------------------------
+    -- DressUpModel (not Model) is what the mount/pet previews use and is what
+    -- frames a creature display correctly on 3.3.5a. Spans the full width right
+    -- of the form list, with the skin list filling the area below it.
+    local preview = CreateFrame("DressUpModel", "DCCollectionFormsModel", frame)
+    preview:SetPoint("TOPLEFT", listFrame, "TOPRIGHT", 8, 0)
+    preview:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -28, -6)
+    preview:SetHeight(PREVIEW_HEIGHT)
+    preview:EnableMouse(true)
+    preview.rotation = 0
+    preview.zoom = 0
     local previewBg = preview:CreateTexture(nil, "BACKGROUND")
     previewBg:SetAllPoints()
     previewBg:SetTexture(0, 0, 0, 0.5)
     frame.preview = preview
 
+    -- Drag to rotate (mirrors the mount preview).
+    preview:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            self.rotating = true
+            self.prevX = GetCursorPosition()
+        end
+    end)
+    preview:SetScript("OnMouseUp", function(self)
+        self.rotating = false
+    end)
+    preview:SetScript("OnUpdate", function(self)
+        if self.rotating then
+            local x = GetCursorPosition()
+            self.rotation = (self.rotation or 0) + (x - (self.prevX or x)) * 0.01
+            self:SetFacing(self.rotation)
+            self.prevX = x
+        end
+    end)
+
     local previewLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     previewLabel:SetPoint("BOTTOM", preview, "BOTTOM", 0, 8)
     frame.previewLabel = previewLabel
 
-    -- --- Skin list (right) -------------------------------------------------
+    -- --- Skin list (fills the area below the preview) ----------------------
     local skinScroll = CreateFrame("ScrollFrame", "DCCollectionFormsSkinScroll", frame,
         "FauxScrollFrameTemplate")
-    skinScroll:SetPoint("TOPLEFT", preview, "TOPRIGHT", 8, 0)
+    skinScroll:SetPoint("TOPLEFT", preview, "BOTTOMLEFT", 0, -10)
     skinScroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -28, 34)
     frame.skinScroll = skinScroll
     frame.skinRows = {}
@@ -213,7 +258,13 @@ function Forms:RefreshSkins()
     local skins = entry and entry.skins or {}
 
     local scroll = frame.skinScroll
-    local maxRows = 12
+    -- Fill the available height so the list isn't half-empty and the scrollbar
+    -- reflects real content (only appears when there are more rows than fit).
+    local h = scroll:GetHeight() or 0
+    if h < ROW_HEIGHT then
+        h = 440
+    end
+    local maxRows = math.max(1, math.floor(h / ROW_HEIGHT))
     FauxScrollFrame_Update(scroll, #skins, maxRows, ROW_HEIGHT)
     local offset = FauxScrollFrame_GetOffset(scroll)
 
@@ -249,7 +300,12 @@ function Forms:RefreshSkins()
         if skin then
             row.model = skin.model
             row.label:SetText(skin.name)
-            row.lock:SetShown(skin.unlocked == false)
+            -- 3.3.5a has no SetShown(bool); use explicit Show/Hide.
+            if skin.unlocked == false then
+                row.lock:Show()
+            else
+                row.lock:Hide()
+            end
 
             local selected = (self.previewModel == skin.model)
             if skin.unlocked == false then

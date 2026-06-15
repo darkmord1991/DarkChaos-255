@@ -31,6 +31,7 @@
 #include "StringFormat.h"
 #include "Spell.h"
 #include "PathGenerator.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 #include <vector>
 #include <list>
@@ -252,18 +253,6 @@ struct PreferenceSchemaInfo
 
 static PreferenceSchemaInfo sPreferenceSchema;
 
-static std::string JoinStringList(std::vector<std::string> const& values, char const* separator = ", ")
-{
-    std::ostringstream ss;
-    for (size_t i = 0; i < values.size(); ++i)
-    {
-        if (i > 0)
-            ss << separator;
-        ss << values[i];
-    }
-    return ss.str();
-}
-
 static std::string EscapeSqlString(std::string const& input)
 {
     std::string escaped;
@@ -465,24 +454,6 @@ static LootItemHighlight GetItemHighlight(Player* player, uint32 itemId)
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-static std::string FormatCoins(uint64_t copper)
-{
-    uint64_t g = copper / 10000;
-    uint64_t s = (copper % 10000) / 100;
-    uint64_t c = copper % 100;
-    std::ostringstream ss;
-    if (g > 0) ss << g << " Gold ";
-    if (s > 0) ss << s << " Silver ";
-    ss << c << " Copper";
-    return ss.str();
-}
-
-static const char* GetQualityName(uint8 quality)
-{
-    static const char* names[] = { "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact" };
-    return quality <= 6 ? names[quality] : "Unknown";
-}
 
 static bool IsItemIgnoredByPlayer(Player* player, uint32 itemId)
 {
@@ -1257,7 +1228,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         std::ostringstream ss;
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " corpses. ";
         if (!itemsToAdd.empty()) ss << "Items: " << itemsToAdd.size() << ". ";
-        if (mergedGold > 0) ss << "Gold: " << FormatCoins(mergedGold);
+        if (mergedGold > 0) ss << "Gold: " << DCUtils::FormatCoinsVerbose(mergedGold);
         ChatHandler(player->GetSession()).PSendSysMessage("{}", ss.str());
     }
     return true;
@@ -1592,7 +1563,7 @@ public:
 
         std::string query = Acore::StringFormat(
             "SELECT {} FROM dc_aoeloot_preferences WHERE player_guid = {}",
-            JoinStringList(columns), player->GetGUID().GetCounter());
+            DCUtils::JoinStringList(columns), player->GetGUID().GetCounter());
 
         QueryResult result = CharacterDatabase.Query(query);
 
@@ -1768,7 +1739,7 @@ public:
 
             CharacterDatabase.Execute(Acore::StringFormat(
                 "INSERT INTO dc_aoeloot_preferences ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}",
-                JoinStringList(columns), JoinStringList(values), JoinStringList(updates)));
+                DCUtils::JoinStringList(columns), DCUtils::JoinStringList(values), DCUtils::JoinStringList(updates)));
 
             sPlayerPrefs.erase(prefIt);
         }
@@ -1883,7 +1854,7 @@ public:
         if (!player) return true;
         if (quality > 6) quality = 6;
         sPlayerPrefs[player->GetGUID()].minQuality = quality;
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Min quality: {}", GetQualityName(quality));
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Min quality: {}", DCUtils::GetQualityName(quality));
         return true;
     }
 
@@ -1963,7 +1934,7 @@ public:
         handler->SendSysMessage("|cff00ff00========== AoE LOOT SETTINGS ==========|r");
         handler->PSendSysMessage("Enabled: {}", prefs.aoeLootEnabled ? "Yes" : "No");
         handler->PSendSysMessage("Messages: {}", prefs.showMessages ? "On" : "Off");
-        handler->PSendSysMessage("Min Quality: {}", GetQualityName(prefs.minQuality));
+        handler->PSendSysMessage("Min Quality: {}", DCUtils::GetQualityName(prefs.minQuality));
         handler->PSendSysMessage("Auto-Skin: {}", prefs.autoSkin ? "On" : "Off");
         handler->PSendSysMessage("Smart Loot: {}", prefs.smartLootEnabled ? "On" : "Off");
         handler->PSendSysMessage("Gold-Only: {}", prefs.goldOnly ? "On" : "Off");
@@ -1976,7 +1947,7 @@ public:
             DetailedLootStats& s = it->second;
             handler->SendSysMessage("|cff00ff00========== STATISTICS ==========|r");
             handler->PSendSysMessage("Items Looted: {}", s.totalItemsLooted);
-            handler->PSendSysMessage("Gold Looted: {}", FormatCoins(s.totalGoldLooted));
+            handler->PSendSysMessage("Gold Looted: {}", DCUtils::FormatCoinsVerbose(s.totalGoldLooted));
             handler->PSendSysMessage("Skinned: {}", s.skinnedCorpses);
         }
         return true;

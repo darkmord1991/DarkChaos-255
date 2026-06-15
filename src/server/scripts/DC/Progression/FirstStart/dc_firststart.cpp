@@ -29,6 +29,7 @@
 #include "Config.h"
 #include "Chat.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/CrossSystem/CrossSystemRewards.h"
 #include "World.h"
 #include "WorldSession.h"
 #include "SpellMgr.h"
@@ -613,7 +614,11 @@ namespace DCFirstStart
 
         if (tokenItemId > 0)
         {
-            player->AddItem(tokenItemId, amount);
+            DarkChaos::CrossSystem::Rewards::AwardItemOrSeasonalCurrency(
+                player, tokenItemId, amount,
+                DarkChaos::CrossSystem::SystemId::Welcome,
+                DarkChaos::CrossSystem::EventType::PlayerLogin,
+                "firststart_tokens");
             if (debug)
                 LOG_INFO("module.dc", "[DCFirstStart] Granted {} seasonal tokens (item {}) to {}",
                          amount, tokenItemId, player->GetName());

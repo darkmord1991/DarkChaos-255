@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "ObjectAccessor.h"
 #include "ScriptedGossip.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 // Jadeforest teleport points
 enum JadeforestTeleports
@@ -64,11 +65,6 @@ class jadeforest_guard : public CreatureScript
 public:
     jadeforest_guard() : CreatureScript("jadeforest_guard") { }
 
-    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-    {
-        return "|T" + icon + ":40:40:-18|t " + text;
-    }
-
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         // Prepare quest menu if available
@@ -79,7 +75,7 @@ public:
         for (auto const& tp : teleportPoints)
         {
             AddGossipItemFor(player, GOSSIP_ICON_TAXI,
-                MakeLargeGossipText(tp.icon, tp.name),
+                DCUtils::MakeLargeGossipText(tp.icon, tp.name),
                 GOSSIP_SENDER_MAIN, tp.id);
         }
 

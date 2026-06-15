@@ -46,6 +46,7 @@
 #include <unordered_map>
 #include <vector>
 #include "../CrossSystem/LeaderboardUtils.h"
+#include "../CrossSystem/CrossSystemDbSchema.h"
 #include "../HinterlandBG/dc_hlbg_spectator.h"
 #include "../Spectator/dc_spectator_core.h"
 #include "dc_addon_hlbg.h"
@@ -127,38 +128,18 @@ namespace HLBG
                 | static_cast<uint64>(limit);
         }
 
-        static bool CharacterColumnExists(char const* tableName,
-            char const* columnName)
-        {
-            std::string query = Acore::StringFormat(
-                "SELECT 1 FROM information_schema.COLUMNS "
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '%s' "
-                "AND COLUMN_NAME = '%s' LIMIT 1",
-                tableName, columnName);
-            return CharacterDatabase.Query(query) != nullptr;
-        }
-
-        static bool CharacterTableExists(char const* tableName)
-        {
-            std::string query = Acore::StringFormat(
-                "SELECT 1 FROM information_schema.TABLES "
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '%s' LIMIT 1",
-                tableName);
-            return CharacterDatabase.Query(query) != nullptr;
-        }
-
         static bool HasUnifiedStatTables()
         {
             static bool const hasTables =
-                CharacterTableExists("dc_hlbg_match_participants")
-                && CharacterTableExists("dc_hlbg_winner_history");
+                DC::DbSchema::CharacterTableExists("dc_hlbg_match_participants")
+                && DC::DbSchema::CharacterTableExists("dc_hlbg_winner_history");
             return hasTables;
         }
 
         static bool HasSeasonalStatView()
         {
             static bool const hasView =
-                CharacterTableExists("v_hlbg_player_seasonal_stats");
+                DC::DbSchema::CharacterTableExists("v_hlbg_player_seasonal_stats");
             return hasView;
         }
 
@@ -166,59 +147,59 @@ namespace HLBG
         {
             AllTimeViewColumns columns;
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "total_matches"))
                 columns.totalMatches = "total_matches";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "total_games_played"))
                 columns.totalMatches = "total_games_played";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "lifetime_wins"))
                 columns.totalWins = "lifetime_wins";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "total_wins"))
                 columns.totalWins = "total_wins";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "lifetime_losses"))
                 columns.totalLosses = "lifetime_losses";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "total_losses"))
                 columns.totalLosses = "total_losses";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "lifetime_kills"))
                 columns.totalKills = "lifetime_kills";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "total_kills"))
                 columns.totalKills = "total_kills";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "lifetime_deaths"))
                 columns.totalDeaths = "lifetime_deaths";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "total_deaths"))
                 columns.totalDeaths = "total_deaths";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "lifetime_kd_ratio"))
                 columns.kdRatio = "lifetime_kd_ratio";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "overall_kd_ratio"))
                 columns.kdRatio = "overall_kd_ratio";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "avg_kills_career"))
                 columns.avgKills = "avg_kills_career";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "avg_kills_per_game"))
                 columns.avgKills = "avg_kills_per_game";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "avg_damage_career"))
                 columns.avgDamage = "avg_damage_career";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats",
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats",
                     "avg_damage_per_game"))
                 columns.avgDamage = "avg_damage_per_game";
 

@@ -2,6 +2,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 // Custom DBC taxi nodes (must match your client+DBC import)
 enum : uint32
@@ -47,14 +48,9 @@ enum GossipAction : uint32
     GA_L70_BACK_TO_65 = 20
 };
 
-static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-{
-    return "|T" + icon + ":40:40:-18|t " + text;
-}
-
 static std::string MakeFlightText(std::string const& text)
 {
-    return MakeLargeGossipText("Interface\\Icons\\Ability_Mount_Wyvern_01", text);
+    return DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_Mount_Wyvern_01", text);
 }
 
 static bool StartDbcTaxiFlight(Player* player, Creature* creature, std::initializer_list<uint32> nodeList)

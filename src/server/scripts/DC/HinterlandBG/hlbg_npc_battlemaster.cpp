@@ -14,6 +14,7 @@
 #include "ObjectMgr.h"
 #include "WorldSession.h"
 #include "../QOL/dc_questgiver_status_override.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 namespace
 {
@@ -50,11 +51,6 @@ public:
         return DCQuestgiverStatusOverride::GetDialogStatus(player, creature);
     }
 
-    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-    {
-        return "|T" + icon + ":40:40:-18|t " + text;
-    }
-
     static void AddQuestOption(Player* player, uint32 questId, std::string const& label)
     {
         Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
@@ -65,7 +61,7 @@ public:
         if (status == QUEST_STATUS_COMPLETE)
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
-                MakeLargeGossipText("Interface\\Icons\\Achievement_Quests_Completed_08", label + " |cFF00FF00(Done)|r"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Achievement_Quests_Completed_08", label + " |cFF00FF00(Done)|r"),
                 HLBG_GOSSIP_SENDER_QUEST_REWARD, questId);
             return;
         }
@@ -73,7 +69,7 @@ public:
         if (status == QUEST_STATUS_INCOMPLETE)
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_2,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label + " |cFFFFFF00(Active)|r"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label + " |cFFFFFF00(Active)|r"),
                 GOSSIP_SENDER_MAIN, ACTION_QUEST_PROGRESS);
             return;
         }
@@ -81,7 +77,7 @@ public:
         if (status == QUEST_STATUS_NONE && player->CanTakeQuest(quest, false))
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label),
                 HLBG_GOSSIP_SENDER_QUEST_MANUAL, questId);
         }
     }
@@ -100,14 +96,14 @@ public:
         ClearGossipMenuFor(player);
 
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-            MakeLargeGossipText("Interface\\Icons\\Ability_Whirlwind", "Open Hinterlands BG Queue"),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_Whirlwind", "Open Hinterlands BG Queue"),
             GOSSIP_SENDER_MAIN, ACTION_QUEUE_JOIN);
 
         AddQuestOption(player, HLBG_QUEST_DAILY, "Daily Quest: Claim Victory");
         AddQuestOption(player, HLBG_QUEST_WEEKLY, "Weekly Quest: Frontline Duty");
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "What is Hinterlands BG?"),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "What is Hinterlands BG?"),
             GOSSIP_SENDER_MAIN, ACTION_INFO);
 
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
@@ -152,7 +148,7 @@ public:
                 return true;
             case ACTION_INFO: // Info
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                    MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "Back"),
+                    DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "Back"),
                     GOSSIP_SENDER_MAIN, ACTION_BACK_MAIN);
                 SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
                 return true;

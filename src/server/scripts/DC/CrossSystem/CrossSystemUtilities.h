@@ -24,10 +24,14 @@
 #ifndef DC_UTILITIES_H
 #define DC_UTILITIES_H
 
+#include <algorithm>
+#include <bit>
+#include <cctype>
 #include <string>
 #include <string_view>
 #include <sstream>
 #include <ctime>
+#include <vector>
 #include "Timer.h"
 
 namespace DCUtils
@@ -162,6 +166,32 @@ namespace DCUtils
     }
 
     /**
+     * Format copper amount as a verbose gold/silver/copper string ("1 Gold 2 Silver 3 Copper").
+     * Use FormatCoins (abbreviated "g/s/c") for compact display.
+     */
+    inline std::string FormatCoinsVerbose(uint64 copper)
+    {
+        uint64 gold   = copper / 10000;
+        uint64 silver = (copper % 10000) / 100;
+        uint64 cop    = copper % 100;
+        std::ostringstream ss;
+        if (gold > 0) ss << gold << " Gold ";
+        if (silver > 0) ss << silver << " Silver ";
+        ss << cop << " Copper";
+        return ss.str();
+    }
+
+    /**
+     * Build a gossip-menu line with a 40x40 inline icon (WoW 3.3.5 texture-escape).
+     * Encodes the shared "|T<icon>:40:40:-18|t <text>" convention used by guard/flight
+     * NPCs across the DC tree.
+     */
+    inline std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+    {
+        return "|T" + icon + ":40:40:-18|t " + text;
+    }
+
+    /**
      * Clamp a value between min and max
      */
     template<typename T>
@@ -185,6 +215,61 @@ namespace DCUtils
     inline float SafePercent(uint32 part, uint32 total)
     {
         return (total > 0) ? (static_cast<float>(part) / static_cast<float>(total)) * 100.0f : 0.0f;
+    }
+
+    // Returns the number of set bits in a 32-bit value (C++20 std::popcount).
+    inline uint32_t PopCount32(uint32_t value)
+    {
+        return std::popcount(value);
+    }
+
+    // Return a copy of s with all ASCII characters lowercased.
+    inline std::string ToLower(std::string s)
+    {
+        std::transform(s.begin(), s.end(), s.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    }
+
+    // Return a copy of s with all ASCII characters uppercased.
+    inline std::string ToUpper(std::string s)
+    {
+        std::transform(s.begin(), s.end(), s.begin(),
+            [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        return s;
+    }
+
+    // Join a list of strings with a separator.
+    inline std::string JoinStringList(std::vector<std::string> const& values, char const* separator = ", ")
+    {
+        std::ostringstream ss;
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            if (i > 0)
+                ss << separator;
+            ss << values[i];
+        }
+        return ss.str();
+    }
+
+    // Parse a comma-separated list of uint32 values from a string_view.
+    // Keeps id 0 (general-purpose; callers that treat 0 as invalid must filter themselves).
+    inline std::vector<uint32_t> ParseUInt32List(std::string_view input)
+    {
+        std::vector<uint32_t> result;
+        std::string src{input};
+        std::istringstream ss{src};
+        std::string token;
+        while (std::getline(ss, token, ','))
+        {
+            size_t start = token.find_first_not_of(" \t");
+            if (start == std::string::npos) continue;
+            size_t end = token.find_last_not_of(" \t");
+            token = token.substr(start, end - start + 1);
+            if (token.empty()) continue;
+            try { result.push_back(static_cast<uint32_t>(std::stoul(token))); } catch (...) {}
+        }
+        return result;
     }
 
 } // namespace DCUtils

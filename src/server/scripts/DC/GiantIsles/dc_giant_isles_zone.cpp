@@ -20,6 +20,7 @@
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
 
@@ -248,17 +249,7 @@ static bool WorldBossScheduleTableExists()
     if (cached.has_value())
         return cached.value();
 
-    QueryResult result = WorldDatabase.Query(
-        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_world_boss_schedule' AND COLUMN_NAME = 'boss_entry'");
-
-    if (!result)
-    {
-        cached = false;
-        return false;
-    }
-
-    Field* fields = result->Fetch();
-    cached = (fields[0].Get<uint64>() > 0);
+    cached = DC::DbSchema::WorldColumnExists("dc_world_boss_schedule", "boss_entry");
     return cached.value();
 }
 

@@ -20,17 +20,13 @@
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "Player.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 // Jadeforest Flightmaster
 class jadeforest_flightmaster : public CreatureScript
 {
 public:
     jadeforest_flightmaster() : CreatureScript("jadeforest_flightmaster") { }
-
-    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-    {
-        return "|T" + icon + ":40:40:-18|t " + text;
-    }
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {

@@ -28,6 +28,7 @@
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "DC/CrossSystem/EventBus.h"
 #include "DC/CrossSystem/CrossSystemCore.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "ObjectAccessor.h"
 #include <unordered_map>
 #include <algorithm>
@@ -107,30 +108,6 @@ namespace
             state.versionCompatible);
     }
 
-    bool DoesCharacterTableExist(char const* tableName)
-    {
-        if (!tableName || !*tableName)
-            return false;
-
-        return CharacterDatabase.Query(
-            "SELECT 1 FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
-            tableName) != nullptr;
-    }
-
-    bool DoesCharacterColumnExist(char const* tableName,
-        char const* columnName)
-    {
-        if (!tableName || !*tableName || !columnName || !*columnName)
-            return false;
-
-        return CharacterDatabase.Query(
-            "SELECT 1 FROM information_schema.COLUMNS "
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' "
-            "AND COLUMN_NAME = '{}' LIMIT 1",
-            tableName, columnName) != nullptr;
-    }
-
     bool HasFeatureTransportAuditTable()
     {
         static std::once_flag once;
@@ -138,7 +115,7 @@ namespace
 
         std::call_once(once, []()
         {
-            exists = DoesCharacterTableExist(TABLE_FEATURE_TRANSPORT_AUDIT);
+            exists = DC::DbSchema::CharacterTableExists(TABLE_FEATURE_TRANSPORT_AUDIT);
             if (!exists)
             {
                 LOG_WARN("dc.addon",
@@ -330,9 +307,9 @@ namespace
 
         std::call_once(once, []()
         {
-            exists = DoesCharacterColumnExist(TABLE_CLIENT_CAPS,
+            exists = DC::DbSchema::CharacterColumnExists(TABLE_CLIENT_CAPS,
                 COLUMN_NATIVE_BUILD_FINGERPRINT)
-                && DoesCharacterColumnExist(TABLE_CLIENT_CAPS,
+                && DC::DbSchema::CharacterColumnExists(TABLE_CLIENT_CAPS,
                     COLUMN_DATA_REVISIONS_JSON);
             if (!exists)
             {
@@ -352,9 +329,9 @@ namespace
 
         std::call_once(once, []()
         {
-            exists = DoesCharacterColumnExist(TABLE_CAPABILITY_HISTORY,
+            exists = DC::DbSchema::CharacterColumnExists(TABLE_CAPABILITY_HISTORY,
                 COLUMN_NATIVE_BUILD_FINGERPRINT)
-                && DoesCharacterColumnExist(TABLE_CAPABILITY_HISTORY,
+                && DC::DbSchema::CharacterColumnExists(TABLE_CAPABILITY_HISTORY,
                     COLUMN_DATA_REVISIONS_JSON);
             if (!exists)
             {
@@ -374,7 +351,7 @@ namespace
 
         std::call_once(once, []()
         {
-            exists = DoesCharacterTableExist(TABLE_CAPABILITY_HISTORY);
+            exists = DC::DbSchema::CharacterTableExists(TABLE_CAPABILITY_HISTORY);
             if (!exists)
             {
                 LOG_WARN("module.dc",
@@ -393,7 +370,7 @@ namespace
 
         std::call_once(once, []()
         {
-            exists = DoesCharacterTableExist(TABLE_PROTOCOL_ERRORS);
+            exists = DC::DbSchema::CharacterTableExists(TABLE_PROTOCOL_ERRORS);
             if (!exists)
             {
                 LOG_WARN("module.dc",

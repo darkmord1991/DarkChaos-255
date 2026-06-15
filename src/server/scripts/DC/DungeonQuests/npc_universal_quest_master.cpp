@@ -26,6 +26,7 @@
 #include "World.h"
 #include "Log.h"
 #include "ScriptedGossip.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "QuestDef.h"
 #include "ChatCommand.h"
 #include "DungeonQuestConstants.h"
@@ -274,11 +275,6 @@ public:
         return DCQuestgiverStatusOverride::GetDialogStatus(player, creature);
     }
 
-    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-    {
-        return "|T" + icon + ":40:40:-18|t " + text;
-    }
-
     struct npc_universal_quest_masterAI : public ScriptedAI
     {
         npc_universal_quest_masterAI(Creature* creature) : ScriptedAI(creature)
@@ -415,7 +411,7 @@ public:
         std::ostringstream dungeonOption;
         dungeonOption << "Dungeon Quests (" << dungeonQuestCount << " available)";
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-            MakeLargeGossipText("Interface\\Icons\\Achievement_Dungeon_Heroic", dungeonOption.str()),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\Achievement_Dungeon_Heroic", dungeonOption.str()),
             GOSSIP_SENDER_MAIN, ACTION_SHOW_DUNGEON_QUESTS);
 
         if (completableCount > 0)
@@ -423,7 +419,7 @@ public:
             std::ostringstream completeOption;
             completeOption << "|cFF00FF00Complete Quests (" << completableCount << " ready)|r";
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
-                MakeLargeGossipText("Interface\\Icons\\Spell_Holy_ChampionsBond", completeOption.str()),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Spell_Holy_ChampionsBond", completeOption.str()),
                 GOSSIP_SENDER_MAIN, ACTION_SHOW_COMPLETABLE);
         }
 
@@ -440,23 +436,23 @@ public:
             std::ostringstream inProgressOption;
             inProgressOption << "|cFFFFFF00In-Progress (" << inProgressCount << " active)|r";
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_2,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_PocketWatch_01", inProgressOption.str()),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_PocketWatch_01", inProgressOption.str()),
                 GOSSIP_SENDER_MAIN, ACTION_SHOW_IN_PROGRESS);
         }
 
         std::ostringstream dailyOption;
         dailyOption << "Daily Quests (" << dailyQuestCount << " available)";
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", dailyOption.str()),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", dailyOption.str()),
             GOSSIP_SENDER_MAIN, ACTION_SHOW_DAILY_QUESTS);
 
         std::ostringstream weeklyOption;
         weeklyOption << "Weekly Quests (" << weeklyQuestCount << " available)";
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", weeklyOption.str()),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", weeklyOption.str()),
             GOSSIP_SENDER_MAIN, ACTION_SHOW_WEEKLY_QUESTS);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER,
-            MakeLargeGossipText("Interface\\Icons\\INV_Misc_Statue_01", "View My Statistics"),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Statue_01", "View My Statistics"),
             GOSSIP_SENDER_MAIN, ACTION_SHOW_STATS);
 
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());

@@ -24,6 +24,7 @@
 #include "WorldSession.h"
 #include "dc_guildhouse.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "../CrossSystem/CrossSystemDbSchema.h"
 #include "../GOMove/GOMove.h"
 
 #include <algorithm>
@@ -197,23 +198,6 @@ namespace
         return true;
     }
 
-    // The decoration tables ship via Custom feature SQL, not the core
-    // updater; a missing table must disable the system instead of letting
-    // the fatal 1146 handler abort worldserver startup.
-    bool WorldTableExists(char const* tableName)
-    {
-        return WorldDatabase.Query(
-            "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = "
-            "DATABASE() AND TABLE_NAME = '{}' LIMIT 1", tableName) != nullptr;
-    }
-
-    bool CharacterTableExists(char const* tableName)
-    {
-        return CharacterDatabase.Query(
-            "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = "
-            "DATABASE() AND TABLE_NAME = '{}' LIMIT 1", tableName) != nullptr;
-    }
-
     // Each committed move costs two DB writes plus a despawn/respawn, so
     // cap the rate per player.
     bool ConsumeMoveRateLimit(Player* player)
@@ -245,9 +229,9 @@ void LoadCatalog()
     sGmBypass = sConfigMgr->GetOption<bool>(
         "DC.GuildHouse.Decoration.GMBypass", true);
 
-    if (!WorldTableExists("dc_guildhouse_decorations")
-        || !WorldTableExists("dc_guildhouse_decoration_budgets")
-        || !CharacterTableExists("dc_guildhouse_decoration_instances"))
+    if (!DC::DbSchema::WorldTableExists("dc_guildhouse_decorations")
+        || !DC::DbSchema::WorldTableExists("dc_guildhouse_decoration_budgets")
+        || !DC::DbSchema::CharacterTableExists("dc_guildhouse_decoration_instances"))
     {
         LOG_ERROR("scripts.dc",
             "GuildHouseDecorations: decoration tables missing - apply "

@@ -15,6 +15,7 @@
 #include "Player.h"
 #include "Creature.h"
 #include "GossipDef.h"
+#include "DC/CrossSystem/RewardDistributor.h"
 #include "Chat.h"
 #include "ObjectMgr.h"
 #include "Item.h"
@@ -72,25 +73,18 @@ namespace DarkChaos::GiantIsles
             }
         }
 
-        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(rewardId);
-        if (!proto)
+        if (!sObjectMgr->GetItemTemplate(rewardId))
         {
             LOG_ERROR("scripts.dc", "PrimalCook: reward item {} not found in item_template", rewardId);
-            return false;
-        }
-
-        ItemPosCountVec dest;
-        InventoryResult bagErr = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, rewardId, rewardCount);
-        if (bagErr != EQUIP_ERR_OK)
-        {
-            player->SendEquipError(bagErr, nullptr, nullptr, rewardId);
             return false;
         }
 
         for (auto const& [id, count] : costs)
             player->DestroyItemCount(id, count, true);
 
-        player->StoreNewItem(dest, rewardId, true);
+        // DistributeItem mails the reward on full bags — no silent data loss.
+        DarkChaos::CrossSystem::GetRewardDistributor()->DistributeItem(
+            player, rewardId, rewardCount, DarkChaos::CrossSystem::SystemId::None, "cook_exchange");
         creature->Whisper(successMsg, LANG_UNIVERSAL, player);
         return true;
     }

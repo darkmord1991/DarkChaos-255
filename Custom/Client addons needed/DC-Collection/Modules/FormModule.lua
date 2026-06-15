@@ -36,6 +36,7 @@ DC.FormModule = FormModule
 -- ShapeshiftForm ids (mirror of core UnitDefines.h ShapeshiftForm enum).
 DC.SHAPESHIFT_FORMS = {
     CAT        = 1,
+    TREE       = 2,
     TRAVEL     = 3,
     AQUA       = 4,
     BEAR       = 5,
@@ -50,6 +51,7 @@ DC.SHAPESHIFT_FORMS = {
 -- a form with its own name/icon. Keyed by ShapeshiftForm id.
 local FORM_META = {
     [1]  = { name = "Cat Form",       icon = "Interface\\Icons\\Ability_Druid_CatForm" },
+    [2]  = { name = "Tree of Life",   icon = "Interface\\Icons\\Ability_Druid_TreeofLife" },
     [3]  = { name = "Travel Form",    icon = "Interface\\Icons\\Ability_Druid_TravelForm" },
     [4]  = { name = "Aquatic Form",   icon = "Interface\\Icons\\Ability_Druid_AquaticForm" },
     [5]  = { name = "Bear Form",      icon = "Interface\\Icons\\Ability_Racial_BearForm" },
@@ -116,6 +118,12 @@ local function NormalizeForm(raw)
             end
         end
     end
+
+    -- Show stock skins first: their display ids (< 500000) exist in every
+    -- client and render immediately, whereas custom retroport ids (500000+)
+    -- only render once their DBC/M2 patch is deployed. Keeps the working
+    -- options at the top instead of buried under undeployed retroports.
+    table.sort(skins, function(a, b) return a.model < b.model end)
 
     return {
         form = formId,

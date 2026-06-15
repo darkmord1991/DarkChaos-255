@@ -126,38 +126,6 @@ namespace DCCollection
             accountId, cache.mounts.size(), cache.pets.size(), cache.toys.size(), cache.transmogDisplayIds.size());
     }
 
-    // =======================================================================
-    // Database Helpers
-    // =======================================================================
-
-    bool WorldTableExists(std::string const& tableName)
-    {
-        QueryResult result = WorldDatabase.Query("SHOW TABLES LIKE '{}'", tableName);
-        return result != nullptr;
-    }
-
-    bool WorldColumnExists(std::string const& tableName, std::string const& columnName)
-    {
-        if (!WorldTableExists(tableName))
-            return false;
-        QueryResult result = WorldDatabase.Query("SHOW COLUMNS FROM `{}` LIKE '{}'", tableName, columnName);
-        return result != nullptr;
-    }
-
-    bool CharacterTableExists(std::string const& tableName)
-    {
-        QueryResult result = CharacterDatabase.Query("SHOW TABLES LIKE '{}'", tableName);
-        return result != nullptr;
-    }
-
-    bool CharacterColumnExists(std::string const& tableName, std::string const& columnName)
-    {
-        if (!CharacterTableExists(tableName))
-            return false;
-        QueryResult result = CharacterDatabase.Query("SHOW COLUMNS FROM `{}` LIKE '{}'", tableName, columnName);
-        return result != nullptr;
-    }
-
     std::string const& GetWorldEntryColumn(std::string const& tableName)
     {
         static std::unordered_map<std::string, std::string> cache;

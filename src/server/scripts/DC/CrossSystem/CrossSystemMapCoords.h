@@ -3,8 +3,13 @@
 #include "Define.h"
 
 #include "DBCStores.h" // Map2ZoneCoordinates
+#include "WorldPacket.h"
+#include "Opcodes.h"
 
 #include <algorithm>
+#include <string>
+
+class Player;
 
 namespace DC
 {
@@ -59,9 +64,18 @@ namespace MapCoords
             // nx = (locLeft - x) / (locLeft - locRight)
             // ny = (locTop - y) / (locTop - locBottom)
             static constexpr WorldMapAreaBounds CustomBounds[] = {
+                // Azshara Crater (MapID 37, AreaID 268)
+                // WorldMapArea.csv: "613","37","268","AzsharaCrater","2427","-1884","1756","-1116"
+                { 268u,  2427.0f,   -1884.0f,  1756.0f,   -1116.0f  },
                 // Isles of Giants (MapID 1405, AreaID 5006)
-                // From WorldMapArea.csv line 219: "1100","1405","5006","IslesofGiants","2132,02","2,91039","6932,32","5334,3"
-                { 5006u, 2132.02f, 2.91039f, 6932.32f, 5334.3f },
+                // WorldMapArea.csv: "1100","1405","5006","IslesofGiants","2132,02","2,91039","6932,32","5334,3"
+                { 5006u, 2132.02f,  2.91039f,  6932.32f,  5334.3f   },
+                // Stratholme Valley (MapID 850, AreaID 6000)
+                // WorldMapArea.csv: "1200","850","6000","Strathlevel","-1766,667","-5166,667","4333,333","2066,667"
+                { 6000u, -1766.667f,-5166.667f, 4333.333f, 2066.667f },
+                // Hyjal Frontier (MapID 1410, AreaID 6100)
+                // WorldMapArea.csv: "1202","1410","6100","Hyjal Frontier","-1525","-4025","6145,833","4479,167"
+                { 6100u, -1525.0f,  -4025.0f,  6145.833f, 4479.167f },
             };
 
             for (WorldMapAreaBounds const& b : CustomBounds)
@@ -76,6 +90,25 @@ namespace MapCoords
         outNx = std::clamp(tx / 100.0f, 0.0f, 1.0f);
         outNy = std::clamp(ty / 100.0f, 0.0f, 1.0f);
         return true;
+    }
+
+    // Send a minimap / world-map Point of Interest packet to one player.
+    // Unlike PlayerMenu::SendPointOfInterest this sends arbitrary coords without
+    // requiring a DB-backed points_of_interest row.
+    inline void SendPoiMarker(Player* player, float x, float y, uint32 icon,
+                              uint32 flags, uint32 importance, std::string const& name)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        WorldPacket data(SMSG_GOSSIP_POI, 4 + 4 + 4 + 4 + 4 + 20);
+        data << uint32(flags);
+        data << float(x);
+        data << float(y);
+        data << uint32(icon);
+        data << uint32(importance);
+        data << name;
+        player->GetSession()->SendPacket(&data);
     }
 }
 }

@@ -1282,17 +1282,7 @@ public:
         if (*args)
             type = args;
 
-        // Get current season - optimized to just get ID
-        QueryResult result = WorldDatabase.Query(
-            "SELECT season_id FROM dc_seasons WHERE is_active = 1");
-
-        if (!result)
-        {
-            handler->PSendSysMessage("No active season found.");
-            return false;
-        }
-
-        uint32 season_id = result->Fetch()[0].Get<uint32>();
+        uint32 season_id = GetCurrentSeasonId();
 
         auto leaderboardMgr = GetLeaderboardManager();
         if (!leaderboardMgr) return false;

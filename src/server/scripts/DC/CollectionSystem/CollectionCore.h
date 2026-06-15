@@ -17,6 +17,7 @@
 #include "SpellMgr.h"
 #include "Spell.h"
 #include "SpellInfo.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 
 #include <string>
 #include <vector>
@@ -120,12 +121,12 @@ namespace DCCollection
     bool IsCollectionCacheValid(uint32 accountId, time_t maxAgeSeconds = 60);
 
     // =======================================================================
-    // Utility Functions
+    // Utility Functions  (delegates to DC::DbSchema canonical implementations)
     // =======================================================================
-    bool WorldTableExists(std::string const& tableName);
-    bool WorldColumnExists(std::string const& tableName, std::string const& columnName);
-    bool CharacterTableExists(std::string const& tableName);
-    bool CharacterColumnExists(std::string const& tableName, std::string const& columnName);
+    using DC::DbSchema::WorldTableExists;
+    using DC::DbSchema::WorldColumnExists;
+    using DC::DbSchema::CharacterTableExists;
+    using DC::DbSchema::CharacterColumnExists;
 
     // =======================================================================
     // Mount/Pet/Companion Functions

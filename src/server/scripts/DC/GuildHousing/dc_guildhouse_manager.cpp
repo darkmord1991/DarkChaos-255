@@ -2,6 +2,7 @@
 
 #include "Chat.h"
 #include "DatabaseEnv.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "GameObject.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
@@ -20,18 +21,7 @@ namespace
         if (cached.has_value())
             return cached.value();
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM information_schema.COLUMNS "
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house' AND COLUMN_NAME = 'guildhouse_level'");
-
-        if (!result)
-        {
-            cached = false;
-            return false;
-        }
-
-        Field* fields = result->Fetch();
-        cached = (fields[0].Get<uint64>() > 0);
+        cached = DC::DbSchema::CharacterColumnExists("dc_guild_house", "guildhouse_level");
         return cached.value();
     }
 }
@@ -42,18 +32,7 @@ bool GuildHouseManager::HasLocationEnabledColumn()
     if (cached.has_value())
         return cached.value();
 
-    QueryResult result = WorldDatabase.Query(
-        "SELECT COUNT(*) FROM information_schema.COLUMNS "
-        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house_locations' AND COLUMN_NAME = 'enabled'");
-
-    if (!result)
-    {
-        cached = false;
-        return false;
-    }
-
-    Field* fields = result->Fetch();
-    cached = (fields[0].Get<uint64>() > 0);
+    cached = DC::DbSchema::WorldColumnExists("dc_guild_house_locations", "enabled");
     return cached.value();
 }
 

@@ -14,6 +14,8 @@
 #include "StringFormat.h"
 #include "ScriptMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/CrossSystem/RewardDistributor.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include <algorithm>
 #include <unordered_set>
 
@@ -111,13 +113,7 @@ uint32 GetRaidBossProgressForWeek(ObjectGuid::LowType playerGuid, uint32 weekSta
         // But for now, assume all instance saves in this period count if they are raids.
         // (Refinement needed: check MapEntry for IsRaid())
 
-        // Simple bit counting
-        uint32 count = 0;
-        while (completedMask > 0) {
-            if (completedMask & 1) count++;
-            completedMask >>= 1;
-        }
-        bossesKilled += count;
+        bossesKilled += DCUtils::PopCount32(completedMask);
 
     } while (result->NextRow());
 
@@ -457,29 +453,17 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
         return false;
     }
 
-    // Give Item
-    ItemPosCountVec dest;
-    InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
-    if (msg == EQUIP_ERR_OK)
-    {
-        if (Item* item = player->StoreNewItem(dest, itemId, true))
-        {
-            player->SendNewItem(item, 1, true, false);
+    // Give item; DistributeItem mails it if bags are full (no silent data loss).
+    if (!DarkChaos::CrossSystem::GetRewardDistributor()->DistributeItem(
+            player, itemId, 1, DarkChaos::CrossSystem::SystemId::None, "vault_claim"))
+        return false;
 
-            // Mark as claimed
-            CharacterDatabase.DirectExecute(
-                "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {} "
-                "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                slot, guidLow, seasonId, weekStart);
+    // Mark as claimed regardless of whether the item was stored or mailed.
+    CharacterDatabase.DirectExecute(
+        "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {} "
+        "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+        slot, guidLow, seasonId, weekStart);
 
-            LOG_INFO("mythic.vault", "Player {} claimed vault reward item {} from slot {}", player->GetName(), itemId, slot);
-            return true;
-        }
-    }
-    else
-    {
-        player->SendEquipError(msg, nullptr, nullptr, itemId);
-    }
-
-    return false;
+    LOG_INFO("mythic.vault", "Player {} claimed vault reward item {} from slot {}", player->GetName(), itemId, slot);
+    return true;
 }

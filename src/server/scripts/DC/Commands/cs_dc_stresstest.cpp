@@ -21,6 +21,7 @@
 #include "SpellMgr.h"
 #include "DBCStores.h"
 #include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "../AddonExtension/dc_addon_death_markers.h"
@@ -724,38 +725,6 @@ namespace DCPerfTest
         }
     }
 
-    // Any SQL error causes a hard abort in AzerothCore's DB layer, so we must
-    // avoid querying tables that may not exist on a given installation.
-    bool CharacterTableExists(char const* tableName)
-    {
-        std::ostringstream sql;
-        sql << "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName << "' LIMIT 1";
-        return CharacterDatabase.Query(sql.str().c_str()) != nullptr;
-    }
-
-    bool CharacterColumnExists(char const* tableName, char const* columnName)
-    {
-        std::ostringstream sql;
-        sql << "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName
-            << "' AND COLUMN_NAME = '" << columnName << "' LIMIT 1";
-        return CharacterDatabase.Query(sql.str().c_str()) != nullptr;
-    }
-
-    bool WorldTableExists(char const* tableName)
-    {
-        std::ostringstream sql;
-        sql << "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName << "' LIMIT 1";
-        return WorldDatabase.Query(sql.str().c_str()) != nullptr;
-    }
-
-    bool WorldColumnExists(char const* tableName, char const* columnName)
-    {
-        std::ostringstream sql;
-        sql << "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName
-            << "' AND COLUMN_NAME = '" << columnName << "' LIMIT 1";
-        return WorldDatabase.Query(sql.str().c_str()) != nullptr;
-    }
-
     // =========================================================================
     // SQL Stress Tests
     // =========================================================================
@@ -965,7 +934,7 @@ namespace DCPerfTest
         {
             for (char const* table : dcTables)
             {
-                if (!CharacterTableExists(table))
+                if (!DC::DbSchema::CharacterTableExists(table))
                 {
                     ++skipped;
                     continue;
@@ -1030,7 +999,7 @@ namespace DCPerfTest
         std::vector<char const*> existingTables;
         existingTables.reserve(std::size(tables));
         for (char const* table : tables)
-            if (CharacterTableExists(table))
+            if (DC::DbSchema::CharacterTableExists(table))
                 existingTables.push_back(table);
 
         if (existingTables.empty())
@@ -1115,7 +1084,7 @@ namespace DCPerfTest
         std::vector<char const*> existingTables;
         existingTables.reserve(std::size(tables));
         for (char const* table : tables)
-            if (WorldTableExists(table))
+            if (DC::DbSchema::WorldTableExists(table))
                 existingTables.push_back(table);
 
         if (existingTables.empty())
@@ -1355,7 +1324,7 @@ namespace DCPerfTest
 
         // This burst targets a World DB table (creature_template). If run against the
         // characters DB, it will abort the server with "table doesn't exist".
-        if (!WorldTableExists("creature_template"))
+        if (!DC::DbSchema::WorldTableExists("creature_template"))
         {
             result.success = false;
             result.error = "Missing world table creature_template";
@@ -1664,15 +1633,15 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(iterations);
 
-        if (!CharacterTableExists("dc_item_upgrades"))
+        if (!DC::DbSchema::CharacterTableExists("dc_item_upgrades"))
         {
             result.success = false;
             result.error = "Missing table dc_item_upgrades";
             return result;
         }
 
-        bool hasSeasonId = CharacterColumnExists("dc_item_upgrades", "season_id");
-        bool hasSeason = CharacterColumnExists("dc_item_upgrades", "season");
+        bool hasSeasonId = DC::DbSchema::CharacterColumnExists("dc_item_upgrades", "season_id");
+        bool hasSeason = DC::DbSchema::CharacterColumnExists("dc_item_upgrades", "season");
 
         try
         {
@@ -1741,7 +1710,7 @@ namespace DCPerfTest
         std::vector<char const*> existingTables;
         existingTables.reserve(std::size(tables));
         for (char const* table : tables)
-            if (CharacterTableExists(table))
+            if (DC::DbSchema::CharacterTableExists(table))
                 existingTables.push_back(table);
 
         if (existingTables.empty())
@@ -2293,81 +2262,81 @@ namespace DCPerfTest
     {
         AddonStressAvailability availability;
 
-        availability.hasProtocolCaps = CharacterTableExists("dc_addon_client_caps");
-        availability.hasProtocolStats = CharacterTableExists("dc_addon_protocol_stats");
-        availability.hasProtocolErrors = CharacterTableExists("dc_addon_protocol_errors");
-        availability.hasProtocolLog = CharacterTableExists("dc_addon_protocol_log");
-        availability.hasQosSettings = CharacterTableExists("dc_player_qos_settings");
-        availability.hasHotspots = WorldTableExists("dc_hotspots_active");
-        availability.hasWelcomeFaq = WorldTableExists("dc_welcome_faq");
-        availability.hasWelcomeWhatsNew = WorldTableExists("dc_welcome_whats_new");
-        availability.hasMplusRating = CharacterTableExists("dc_mplus_player_ratings");
-        availability.hasPrestige = CharacterTableExists("dc_character_prestige");
-        availability.hasSeasonalStats = CharacterTableExists("dc_player_seasonal_stats");
-        availability.hasMplusScores = CharacterTableExists("dc_mplus_scores");
-        availability.hasMplusRuns = CharacterTableExists("dc_mplus_runs");
-        availability.hasWeeklyVault = CharacterTableExists("dc_weekly_vault");
-        availability.hasCharacters = CharacterTableExists("characters");
-        availability.hasGroupFinderListings = CharacterTableExists("dc_group_finder_listings");
-        availability.hasGroupFinderEvents = CharacterTableExists("dc_group_finder_scheduled_events");
-        availability.hasGroupFinderSignups = CharacterTableExists("dc_group_finder_event_signups");
-        availability.hasMplusKeys = CharacterTableExists("dc_mplus_keystones");
-        availability.hasMplusBestRuns = CharacterTableExists("dc_mplus_best_runs");
+        availability.hasProtocolCaps = DC::DbSchema::CharacterTableExists("dc_addon_client_caps");
+        availability.hasProtocolStats = DC::DbSchema::CharacterTableExists("dc_addon_protocol_stats");
+        availability.hasProtocolErrors = DC::DbSchema::CharacterTableExists("dc_addon_protocol_errors");
+        availability.hasProtocolLog = DC::DbSchema::CharacterTableExists("dc_addon_protocol_log");
+        availability.hasQosSettings = DC::DbSchema::CharacterTableExists("dc_player_qos_settings");
+        availability.hasHotspots = DC::DbSchema::WorldTableExists("dc_hotspots_active");
+        availability.hasWelcomeFaq = DC::DbSchema::WorldTableExists("dc_welcome_faq");
+        availability.hasWelcomeWhatsNew = DC::DbSchema::WorldTableExists("dc_welcome_whats_new");
+        availability.hasMplusRating = DC::DbSchema::CharacterTableExists("dc_mplus_player_ratings");
+        availability.hasPrestige = DC::DbSchema::CharacterTableExists("dc_character_prestige");
+        availability.hasSeasonalStats = DC::DbSchema::CharacterTableExists("dc_player_seasonal_stats");
+        availability.hasMplusScores = DC::DbSchema::CharacterTableExists("dc_mplus_scores");
+        availability.hasMplusRuns = DC::DbSchema::CharacterTableExists("dc_mplus_runs");
+        availability.hasWeeklyVault = DC::DbSchema::CharacterTableExists("dc_weekly_vault");
+        availability.hasCharacters = DC::DbSchema::CharacterTableExists("characters");
+        availability.hasGroupFinderListings = DC::DbSchema::CharacterTableExists("dc_group_finder_listings");
+        availability.hasGroupFinderEvents = DC::DbSchema::CharacterTableExists("dc_group_finder_scheduled_events");
+        availability.hasGroupFinderSignups = DC::DbSchema::CharacterTableExists("dc_group_finder_event_signups");
+        availability.hasMplusKeys = DC::DbSchema::CharacterTableExists("dc_mplus_keystones");
+        availability.hasMplusBestRuns = DC::DbSchema::CharacterTableExists("dc_mplus_best_runs");
         availability.hasMplusDungeons = WorldDatabase.Query(
             "SELECT 1 FROM INFORMATION_SCHEMA.TABLES "
             "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_mplus_dungeons'") != nullptr;
-        availability.hasWardrobeOutfits = CharacterTableExists("dc_collection_community_outfits");
-        availability.hasHLBGSeasonal = CharacterTableExists("v_hlbg_player_seasonal_stats");
-        availability.hasHLBGAllTime = CharacterTableExists("v_hlbg_player_alltime_stats");
-        availability.hasHLBGParticipants = CharacterTableExists("dc_hlbg_match_participants");
-        availability.hasHLBGWinnerHistory = CharacterTableExists("dc_hlbg_winner_history");
+        availability.hasWardrobeOutfits = DC::DbSchema::CharacterTableExists("dc_collection_community_outfits");
+        availability.hasHLBGSeasonal = DC::DbSchema::CharacterTableExists("v_hlbg_player_seasonal_stats");
+        availability.hasHLBGAllTime = DC::DbSchema::CharacterTableExists("v_hlbg_player_alltime_stats");
+        availability.hasHLBGParticipants = DC::DbSchema::CharacterTableExists("dc_hlbg_match_participants");
+        availability.hasHLBGWinnerHistory = DC::DbSchema::CharacterTableExists("dc_hlbg_winner_history");
 
         if (availability.hasHLBGAllTime)
         {
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_matches"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "total_matches"))
                 availability.hlbgAllTimeGamesColumn = "total_matches";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_games_played"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "total_games_played"))
                 availability.hlbgAllTimeGamesColumn = "total_games_played";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_wins"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_wins"))
                 availability.hlbgAllTimeWinsColumn = "lifetime_wins";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_wins"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "total_wins"))
                 availability.hlbgAllTimeWinsColumn = "total_wins";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_losses"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_losses"))
                 availability.hlbgAllTimeLossesColumn = "lifetime_losses";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_losses"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "total_losses"))
                 availability.hlbgAllTimeLossesColumn = "total_losses";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_kills"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_kills"))
                 availability.hlbgAllTimeKillsColumn = "lifetime_kills";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_kills"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "total_kills"))
                 availability.hlbgAllTimeKillsColumn = "total_kills";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_deaths"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_deaths"))
                 availability.hlbgAllTimeDeathsColumn = "lifetime_deaths";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "total_deaths"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "total_deaths"))
                 availability.hlbgAllTimeDeathsColumn = "total_deaths";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_kd_ratio"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "lifetime_kd_ratio"))
                 availability.hlbgAllTimeKdRatioColumn = "lifetime_kd_ratio";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "overall_kd_ratio"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "overall_kd_ratio"))
                 availability.hlbgAllTimeKdRatioColumn = "overall_kd_ratio";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_kills_career"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_kills_career"))
                 availability.hlbgAllTimeAvgKillsColumn = "avg_kills_career";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_kills_per_game"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_kills_per_game"))
                 availability.hlbgAllTimeAvgKillsColumn = "avg_kills_per_game";
 
-            if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_damage_career"))
+            if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_damage_career"))
                 availability.hlbgAllTimeAvgDamageColumn = "avg_damage_career";
-            else if (CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_damage_per_game"))
+            else if (DC::DbSchema::CharacterColumnExists("v_hlbg_player_alltime_stats", "avg_damage_per_game"))
                 availability.hlbgAllTimeAvgDamageColumn = "avg_damage_per_game";
         }
 
-        if (CharacterTableExists("dc_transmog_collection"))
+        if (DC::DbSchema::CharacterTableExists("dc_transmog_collection"))
             availability.transmogCollectionTable = "dc_transmog_collection";
-        else if (CharacterTableExists("dc_collection_transmog"))
+        else if (DC::DbSchema::CharacterTableExists("dc_collection_transmog"))
             availability.transmogCollectionTable = "dc_collection_transmog";
 
         return availability;
@@ -2567,8 +2536,8 @@ namespace DCPerfTest
 
     uint32 LoadTopAccountCountFromTable(char const* tableName)
     {
-        if (!CharacterTableExists(tableName)
-            || !CharacterColumnExists(tableName, "account_id"))
+        if (!DC::DbSchema::CharacterTableExists(tableName)
+            || !DC::DbSchema::CharacterColumnExists(tableName, "account_id"))
         {
             return 0;
         }
@@ -2585,8 +2554,8 @@ namespace DCPerfTest
 
     uint32 LoadTopAccountIdFromTable(char const* tableName)
     {
-        if (!CharacterTableExists(tableName)
-            || !CharacterColumnExists(tableName, "account_id"))
+        if (!DC::DbSchema::CharacterTableExists(tableName)
+            || !DC::DbSchema::CharacterColumnExists(tableName, "account_id"))
         {
             return 0;
         }
@@ -2695,10 +2664,10 @@ namespace DCPerfTest
         AddonStressAvailability const availability =
             DetectAddonStressAvailability();
 
-        if (CharacterTableExists("dc_collection_items")
-            && CharacterColumnExists("dc_collection_items", "account_id")
-            && CharacterColumnExists("dc_collection_items", "collection_type")
-            && CharacterColumnExists("dc_collection_items", "unlocked"))
+        if (DC::DbSchema::CharacterTableExists("dc_collection_items")
+            && DC::DbSchema::CharacterColumnExists("dc_collection_items", "account_id")
+            && DC::DbSchema::CharacterColumnExists("dc_collection_items", "collection_type")
+            && DC::DbSchema::CharacterColumnExists("dc_collection_items", "unlocked"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT account_id, "
@@ -2731,14 +2700,14 @@ namespace DCPerfTest
             }
         }
 
-        if (WorldTableExists("dc_collection_definitions")
-            && WorldColumnExists("dc_collection_definitions", "collection_type"))
+        if (DC::DbSchema::WorldTableExists("dc_collection_definitions")
+            && DC::DbSchema::WorldColumnExists("dc_collection_definitions", "collection_type"))
         {
             std::ostringstream sql;
             sql << "SELECT LOWER(CAST(collection_type AS CHAR)), COUNT(*) "
                 << "FROM dc_collection_definitions";
 
-            if (WorldColumnExists("dc_collection_definitions", "enabled"))
+            if (DC::DbSchema::WorldColumnExists("dc_collection_definitions", "enabled"))
                 sql << " WHERE enabled = 1";
 
             sql << " GROUP BY LOWER(CAST(collection_type AS CHAR))";
@@ -2756,7 +2725,7 @@ namespace DCPerfTest
             }
         }
 
-        if (WorldTableExists("dc_mount_definitions"))
+        if (DC::DbSchema::WorldTableExists("dc_mount_definitions"))
         {
             QueryResult result = WorldDatabase.Query(
                 "SELECT COUNT(*) FROM dc_mount_definitions");
@@ -2764,7 +2733,7 @@ namespace DCPerfTest
                 sample.mountTotal = result->Fetch()[0].Get<uint32>();
         }
 
-        if (WorldTableExists("dc_pet_definitions"))
+        if (DC::DbSchema::WorldTableExists("dc_pet_definitions"))
         {
             QueryResult result = WorldDatabase.Query(
                 "SELECT COUNT(*) FROM dc_pet_definitions");
@@ -2772,7 +2741,7 @@ namespace DCPerfTest
                 sample.petTotal = result->Fetch()[0].Get<uint32>();
         }
 
-        if (WorldTableExists("dc_heirloom_definitions"))
+        if (DC::DbSchema::WorldTableExists("dc_heirloom_definitions"))
         {
             QueryResult result = WorldDatabase.Query(
                 "SELECT COUNT(*) FROM dc_heirloom_definitions");
@@ -2900,7 +2869,7 @@ namespace DCPerfTest
         aoe.auxD = 3;
         variants.push_back(aoe);
 
-        if (CharacterTableExists("dc_mplus_scores"))
+        if (DC::DbSchema::CharacterTableExists("dc_mplus_scores"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COUNT(DISTINCT character_guid), "
@@ -2915,7 +2884,7 @@ namespace DCPerfTest
                     fields[1].Get<uint32>());
             }
 
-            if (CharacterTableExists("characters"))
+            if (DC::DbSchema::CharacterTableExists("characters"))
             {
                 result = CharacterDatabase.Query(
                     "SELECT c.name, c.class, MAX(s.best_level) AS best_level, "
@@ -2947,7 +2916,7 @@ namespace DCPerfTest
             }
         }
 
-        if (CharacterTableExists("v_hlbg_player_seasonal_stats"))
+        if (DC::DbSchema::CharacterTableExists("v_hlbg_player_seasonal_stats"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COUNT(DISTINCT guid), COALESCE(MAX(current_rating), 0), "
@@ -2965,7 +2934,7 @@ namespace DCPerfTest
                 variants[1].auxB = fields[3].Get<uint32>();
             }
 
-            if (CharacterTableExists("characters"))
+            if (DC::DbSchema::CharacterTableExists("characters"))
             {
                 result = CharacterDatabase.Query(
                     "SELECT c.name, c.class, v.current_rating, v.wins, v.losses "
@@ -2997,7 +2966,7 @@ namespace DCPerfTest
                 }
             }
         }
-        else if (CharacterTableExists("dc_hlbg_player_stats"))
+        else if (DC::DbSchema::CharacterTableExists("dc_hlbg_player_stats"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COUNT(*), COALESCE(MAX(total_kills), 0), "
@@ -3016,7 +2985,7 @@ namespace DCPerfTest
                 variants[1].auxB = fields[3].Get<uint32>();
             }
 
-            if (CharacterTableExists("characters"))
+            if (DC::DbSchema::CharacterTableExists("characters"))
             {
                 result = CharacterDatabase.Query(
                     "SELECT c.name, c.class, h.total_kills, h.total_deaths, "
@@ -3056,7 +3025,7 @@ namespace DCPerfTest
             }
         }
 
-        if (CharacterTableExists("dc_duel_statistics"))
+        if (DC::DbSchema::CharacterTableExists("dc_duel_statistics"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COUNT(*), COALESCE(MAX(wins), 0), "
@@ -3072,7 +3041,7 @@ namespace DCPerfTest
                 variants[2].auxA = fields[2].Get<uint32>();
             }
 
-            if (CharacterTableExists("characters"))
+            if (DC::DbSchema::CharacterTableExists("characters"))
             {
                 result = CharacterDatabase.Query(
                     "SELECT c.name, c.class, d.wins, d.losses "
@@ -3100,7 +3069,7 @@ namespace DCPerfTest
             }
         }
 
-        if (CharacterTableExists("dc_aoeloot_detailed_stats"))
+        if (DC::DbSchema::CharacterTableExists("dc_aoeloot_detailed_stats"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COUNT(*), COALESCE(MAX(total_items), 0), "
@@ -3122,7 +3091,7 @@ namespace DCPerfTest
                 variants[3].auxD = fields[5].Get<uint32>();
             }
 
-            if (CharacterTableExists("characters"))
+            if (DC::DbSchema::CharacterTableExists("characters"))
             {
                 result = CharacterDatabase.Query(
                     "SELECT c.name, c.class, a.total_items, "
@@ -3282,7 +3251,7 @@ namespace DCPerfTest
         pvp.needDps = 1;
         variants.push_back(pvp);
 
-        if (CharacterTableExists("dc_group_finder_listings"))
+        if (DC::DbSchema::CharacterTableExists("dc_group_finder_listings"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT listing_type, COUNT(*), "
@@ -3336,7 +3305,7 @@ namespace DCPerfTest
                 } while (result->NextRow());
             }
 
-            if (CharacterTableExists("characters"))
+            if (DC::DbSchema::CharacterTableExists("characters"))
             {
                 result = CharacterDatabase.Query(
                     "SELECT l.id, l.leader_guid, l.listing_type, l.dungeon_id, "
@@ -3392,7 +3361,7 @@ namespace DCPerfTest
             }
         }
 
-        if (CharacterTableExists("dc_group_finder_scheduled_events"))
+        if (DC::DbSchema::CharacterTableExists("dc_group_finder_scheduled_events"))
         {
             QueryResult result = CharacterDatabase.Query(
                 "SELECT event_type, COUNT(*), "
@@ -3441,7 +3410,7 @@ namespace DCPerfTest
                 } while (result->NextRow());
             }
 
-            if (CharacterTableExists("characters"))
+            if (DC::DbSchema::CharacterTableExists("characters"))
             {
                 result = CharacterDatabase.Query(
                     "SELECT e.id, e.leader_guid, e.event_type, e.dungeon_id, "
@@ -3827,14 +3796,14 @@ namespace DCPerfTest
         std::vector<uint32> guids;
 
         QueryResult result;
-        if (CharacterTableExists("dc_hlbg_match_participants"))
+        if (DC::DbSchema::CharacterTableExists("dc_hlbg_match_participants"))
         {
             result = CharacterDatabase.Query(
                 "SELECT guid FROM dc_hlbg_match_participants "
                 "GROUP BY guid ORDER BY MAX(match_date) DESC LIMIT {}",
                 limit);
         }
-        else if (CharacterTableExists("v_hlbg_player_alltime_stats"))
+        else if (DC::DbSchema::CharacterTableExists("v_hlbg_player_alltime_stats"))
         {
             result = CharacterDatabase.Query(
                 "SELECT guid FROM v_hlbg_player_alltime_stats LIMIT {}",
@@ -6597,7 +6566,7 @@ namespace DCPerfTest
             return result;
         }
 
-        bool hasItemCustomData = WorldTableExists("dc_item_custom_data");
+        bool hasItemCustomData = DC::DbSchema::WorldTableExists("dc_item_custom_data");
         std::vector<uint32> itemEntries = LoadWorldTemplateSampleEntries("item_template", 64);
 
         if (itemEntries.empty())
@@ -6790,7 +6759,7 @@ namespace DCPerfTest
             return result;
         }
 
-        bool hasSpellCustomData = WorldTableExists("dc_spell_custom_data");
+        bool hasSpellCustomData = DC::DbSchema::WorldTableExists("dc_spell_custom_data");
         uint32 const tooltipSpells[] = { 116, 133, 172, 339, 403, 585, 686, 774,
             2061, 30455, 49998, 5185, 20484 };
         uint32 const tooltipSpellCount = sizeof(tooltipSpells) / sizeof(tooltipSpells[0]);
@@ -7268,7 +7237,7 @@ namespace DCPerfTest
             return result;
         }
 
-        if (!CharacterTableExists("log_arena_memberstats"))
+        if (!DC::DbSchema::CharacterTableExists("log_arena_memberstats"))
             return MakeSkippedTimingResult(result.testName, "log_arena_memberstats missing");
 
         auto start = Clock::now();
@@ -7333,8 +7302,8 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(playerCount);
 
-        bool hasPrestige = CharacterTableExists("dc_character_prestige");
-        bool hasItemUpgrades = CharacterTableExists("dc_item_upgrades");
+        bool hasPrestige = DC::DbSchema::CharacterTableExists("dc_character_prestige");
+        bool hasItemUpgrades = DC::DbSchema::CharacterTableExists("dc_item_upgrades");
         char const* keystoneTable = nullptr;
         char const* keystoneGuidColumn = nullptr;
         char const* keystoneSelectClause = nullptr;
@@ -7342,32 +7311,32 @@ namespace DCPerfTest
         char const* itemUpgradeOwnerColumn = nullptr;
         if (hasItemUpgrades)
         {
-            if (CharacterColumnExists("dc_item_upgrades", "player_guid"))
+            if (DC::DbSchema::CharacterColumnExists("dc_item_upgrades", "player_guid"))
                 itemUpgradeOwnerColumn = "player_guid";
-            else if (CharacterColumnExists("dc_item_upgrades", "owner_guid"))
+            else if (DC::DbSchema::CharacterColumnExists("dc_item_upgrades", "owner_guid"))
                 itemUpgradeOwnerColumn = "owner_guid";
         }
 
         char const* mountCollectionTable = nullptr;
         char const* mountCollectionIdColumn = nullptr;
-        if (CharacterTableExists("dc_mount_collection"))
+        if (DC::DbSchema::CharacterTableExists("dc_mount_collection"))
         {
             mountCollectionTable = "dc_mount_collection";
             mountCollectionIdColumn = "spell_id";
         }
-        else if (CharacterTableExists("dc_collection_mounts"))
+        else if (DC::DbSchema::CharacterTableExists("dc_collection_mounts"))
         {
             mountCollectionTable = "dc_collection_mounts";
             mountCollectionIdColumn = "entry_id";
         }
 
-        if (CharacterTableExists("dc_mplus_keystones"))
+        if (DC::DbSchema::CharacterTableExists("dc_mplus_keystones"))
         {
             keystoneTable = "dc_mplus_keystones";
             keystoneGuidColumn = "character_guid";
             keystoneSelectClause = "map_id, level";
         }
-        else if (CharacterTableExists("dc_player_keystones"))
+        else if (DC::DbSchema::CharacterTableExists("dc_player_keystones"))
         {
             keystoneTable = "dc_player_keystones";
             keystoneGuidColumn = "player_guid";
@@ -7453,10 +7422,10 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(playerCount);
 
-        bool hasCharacters = CharacterTableExists("characters");
-        bool hasCharInv = CharacterTableExists("character_inventory");
-        bool hasCharQuest = CharacterTableExists("character_queststatus");
-        bool hasMail = CharacterTableExists("mail");
+        bool hasCharacters = DC::DbSchema::CharacterTableExists("characters");
+        bool hasCharInv = DC::DbSchema::CharacterTableExists("character_inventory");
+        bool hasCharQuest = DC::DbSchema::CharacterTableExists("character_queststatus");
+        bool hasMail = DC::DbSchema::CharacterTableExists("mail");
 
         try
         {
@@ -7550,9 +7519,9 @@ namespace DCPerfTest
 
         try
         {
-            bool hasGuildHouse = CharacterTableExists("dc_guild_house");
-            bool hasGuildPerms = CharacterTableExists("dc_guild_house_permissions");
-            bool hasGuildLog = CharacterTableExists("dc_guild_house_log");
+            bool hasGuildHouse = DC::DbSchema::CharacterTableExists("dc_guild_house");
+            bool hasGuildPerms = DC::DbSchema::CharacterTableExists("dc_guild_house_permissions");
+            bool hasGuildLog = DC::DbSchema::CharacterTableExists("dc_guild_house_log");
 
             if (!hasGuildHouse && !hasGuildPerms && !hasGuildLog)
             {
@@ -7712,30 +7681,30 @@ namespace DCPerfTest
 
         try
         {
-            if (!CharacterTableExists("dc_mplus_runs"))
+            if (!DC::DbSchema::CharacterTableExists("dc_mplus_runs"))
             {
                 result.success = false;
                 result.error = "Missing table dc_mplus_runs";
                 return result;
             }
 
-            bool mplusHasSeason = CharacterColumnExists("dc_mplus_runs", "season_id");
+            bool mplusHasSeason = DC::DbSchema::CharacterColumnExists("dc_mplus_runs", "season_id");
 
-            bool hasVaultRewardPool = CharacterTableExists("dc_vault_reward_pool");
-            bool vaultHasSeason = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "season_id");
-            bool vaultHasWeekStart = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "week_start");
-            bool vaultHasItemLevel = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "item_level");
-            bool vaultHasSlotIndex = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "slot_index");
-            bool vaultHasSlotId = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "slot_id");
+            bool hasVaultRewardPool = DC::DbSchema::CharacterTableExists("dc_vault_reward_pool");
+            bool vaultHasSeason = hasVaultRewardPool && DC::DbSchema::CharacterColumnExists("dc_vault_reward_pool", "season_id");
+            bool vaultHasWeekStart = hasVaultRewardPool && DC::DbSchema::CharacterColumnExists("dc_vault_reward_pool", "week_start");
+            bool vaultHasItemLevel = hasVaultRewardPool && DC::DbSchema::CharacterColumnExists("dc_vault_reward_pool", "item_level");
+            bool vaultHasSlotIndex = hasVaultRewardPool && DC::DbSchema::CharacterColumnExists("dc_vault_reward_pool", "slot_index");
+            bool vaultHasSlotId = hasVaultRewardPool && DC::DbSchema::CharacterColumnExists("dc_vault_reward_pool", "slot_id");
 
-            bool hasVaultLootTable = WorldTableExists("dc_vault_loot_table");
+            bool hasVaultLootTable = DC::DbSchema::WorldTableExists("dc_vault_loot_table");
             bool vaultLootHasExpectedColumns = hasVaultLootTable
-                && WorldColumnExists("dc_vault_loot_table", "item_id")
-                && WorldColumnExists("dc_vault_loot_table", "item_level_min")
-                && WorldColumnExists("dc_vault_loot_table", "item_level_max")
-                && WorldColumnExists("dc_vault_loot_table", "class_mask")
-                && WorldColumnExists("dc_vault_loot_table", "armor_type")
-                && WorldColumnExists("dc_vault_loot_table", "role_mask");
+                && DC::DbSchema::WorldColumnExists("dc_vault_loot_table", "item_id")
+                && DC::DbSchema::WorldColumnExists("dc_vault_loot_table", "item_level_min")
+                && DC::DbSchema::WorldColumnExists("dc_vault_loot_table", "item_level_max")
+                && DC::DbSchema::WorldColumnExists("dc_vault_loot_table", "class_mask")
+                && DC::DbSchema::WorldColumnExists("dc_vault_loot_table", "armor_type")
+                && DC::DbSchema::WorldColumnExists("dc_vault_loot_table", "role_mask");
 
             // Simulate the heavy DB load of generating vault options for players
             // 1. Check M+ history

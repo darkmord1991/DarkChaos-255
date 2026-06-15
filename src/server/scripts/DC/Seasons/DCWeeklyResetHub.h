@@ -6,6 +6,9 @@ namespace DarkChaos
 {
 namespace Seasons
 {
+    // Canonical seconds-per-week constant shared by all DC systems.
+    inline constexpr uint32 SECONDS_PER_WEEK = 604800;
+
     // Uses the same week boundary logic as Great Vault/Mythic+ (week_start columns).
     uint32 GetVaultWeekStartTimestamp();
 

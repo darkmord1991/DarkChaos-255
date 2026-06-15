@@ -21,6 +21,8 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 namespace
 {
@@ -41,11 +43,6 @@ class GuildHouseSpawner : public CreatureScript
 
 public:
     GuildHouseSpawner() : CreatureScript("GuildHouseSpawner") {}
-
-    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
-    {
-        return "|T" + icon + ":40:40:-18|t " + text;
-    }
 
     static constexpr uint32 ACTION_BACK = 9;
     static constexpr uint32 ACTION_GM_MENU = 9000000;
@@ -83,12 +80,12 @@ public:
         for (uint32 i = 0; i < std::size(s_weatherOptions); ++i)
         {
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText(s_weatherOptions[i].icon, s_weatherOptions[i].label),
+                DCUtils::MakeLargeGossipText(s_weatherOptions[i].icon, s_weatherOptions[i].label),
                 GOSSIP_SENDER_MAIN, ACTION_WEATHER_BASE + i);
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-            MakeLargeGossipText("Interface\\Icons\\Ability_Arrow_Up", "Go Back!"),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_Arrow_Up", "Go Back!"),
             GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
@@ -105,17 +102,7 @@ public:
         if (cached.has_value())
             return cached.value();
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house_spawns' AND COLUMN_NAME = 'map'");
-
-        if (!result)
-        {
-            cached = false;
-            return false;
-        }
-
-        Field* fields = result->Fetch();
-        cached = (fields[0].Get<uint64>() > 0);
+        cached = DC::DbSchema::WorldColumnExists("dc_guild_house_spawns", "map");
         return cached.value();
     }
 
@@ -147,18 +134,7 @@ public:
         if (cached.has_value())
             return cached.value();
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT COUNT(*) FROM information_schema.COLUMNS "
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house_spawns' AND COLUMN_NAME = 'guildhouse_level'");
-
-        if (!result)
-        {
-            cached = false;
-            return false;
-        }
-
-        Field* fields = result->Fetch();
-        cached = (fields[0].Get<uint64>() > 0);
+        cached = DC::DbSchema::WorldColumnExists("dc_guild_house_spawns", "guildhouse_level");
         return cached.value();
     }
 
@@ -417,7 +393,7 @@ public:
             {
                 for (size_t i = 0; i < categories.size(); ++i)
                     AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                        MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_03", FormatCategoryLabel(categories[i].name)),
+                        DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_03", FormatCategoryLabel(categories[i].name)),
                         GOSSIP_SENDER_MAIN, ACTION_PRESET_CATEGORY_BASE + static_cast<uint32>(i));
             }
             else
@@ -428,58 +404,58 @@ public:
         else
         {
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_InnKey", "Spawn Innkeeper"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_InnKey", "Spawn Innkeeper"),
                 GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", s_guildHouseCostInnkeeper, false);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\INV_Letter_18", "Spawn Mailbox"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Letter_18", "Spawn Mailbox"),
                 GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", s_guildHouseCostMailbox, false);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\Ability_Mount_RidingHorse", "Spawn Stable Master"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_Mount_RidingHorse", "Spawn Stable Master"),
                 GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", s_guildHouseCostVendor, false);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_02", "Spawn Vendor"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_02", "Spawn Vendor"),
                 GOSSIP_SENDER_MAIN, 3);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\INV_Crate_01", "Spawn Objects"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Crate_01", "Spawn Objects"),
                 GOSSIP_SENDER_MAIN, 4);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Bag_04", "Spawn Bank"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Bag_04", "Spawn Bank"),
                 GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", s_guildHouseCostBank, false);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_03", "Spawn Auctioneer"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_03", "Spawn Auctioneer"),
                 GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", s_guildHouseCostAuctioneer, false);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_05", "Spawn Neutral Auctioneer"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_05", "Spawn Neutral Auctioneer"),
                 GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", s_guildHouseCostAuctioneer, false);
             AddGossipItemFor(player, GOSSIP_ICON_TRAINER,
-                MakeLargeGossipText("Interface\\Icons\\INV_Scroll_05", "Spawn Primary Profession Trainers"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Scroll_05", "Spawn Primary Profession Trainers"),
                 GOSSIP_SENDER_MAIN, 7);
             AddGossipItemFor(player, GOSSIP_ICON_TRAINER,
-                MakeLargeGossipText("Interface\\Icons\\INV_Scroll_03", "Spawn Secondary Profession Trainers"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Scroll_03", "Spawn Secondary Profession Trainers"),
                 GOSSIP_SENDER_MAIN, 8);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\Spell_Holy_Resurrection", "Spawn Spirit Healer"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Spell_Holy_Resurrection", "Spawn Spirit Healer"),
                 GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", s_guildHouseCostSpirit, false);
 
             // DC Extensions
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
-                MakeLargeGossipText("Interface\\Icons\\Ability_DualWield", "Spawn Mythic+ NPCs"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_DualWield", "Spawn Mythic+ NPCs"),
                 GOSSIP_SENDER_MAIN, 20);
             AddGossipItemFor(player, GOSSIP_ICON_VENDOR,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Seasoning", "Spawn Seasonal Vendors"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Seasoning", "Spawn Seasonal Vendors"),
                 GOSSIP_SENDER_MAIN, 21);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Gem_01", "Spawn Special Vendors"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Gem_01", "Spawn Special Vendors"),
                 GOSSIP_SENDER_MAIN, 22);
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_TALK,
-            MakeLargeGossipText("Interface\\Icons\\Spell_Nature_StormReach", "Change Weather"),
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\Spell_Nature_StormReach", "Change Weather"),
             GOSSIP_SENDER_MAIN, ACTION_WEATHER_MENU);
 
         if (player->IsGameMaster())
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "GM Menu"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "GM Menu"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_MENU);
 
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -516,28 +492,28 @@ public:
         {
             ClearGossipMenuFor(player);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\Spell_Nature_WispSplode", "GM: Spawn everything (free)"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Spell_Nature_WispSplode", "GM: Spawn everything (free)"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_SPAWN_ALL);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\Ability_Rogue_Disguise", "GM: Despawn everything"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_Rogue_Disguise", "GM: Despawn everything"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_DESPAWN_ALL);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_11", "GM: Set Guild House Level 0"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_11", "GM: Set Guild House Level 0"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_12", "GM: Set Guild House Level 1"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_12", "GM: Set Guild House Level 1"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 1);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_13", "GM: Set Guild House Level 2"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_13", "GM: Set Guild House Level 2"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 2);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_14", "GM: Set Guild House Level 3"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_14", "GM: Set Guild House Level 3"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 3);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_15", "GM: Set Guild House Level 4"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_15", "GM: Set Guild House Level 4"),
                 GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 4);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\Ability_Arrow_Up", "Go Back!"),
+                DCUtils::MakeLargeGossipText("Interface\\Icons\\Ability_Arrow_Up", "Go Back!"),
                 GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             return true;

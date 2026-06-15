@@ -36,6 +36,7 @@
 #include "World.h"
 #include "AchievementMgr.h"
 #include "../CrossSystem/CrossSystemSeasonHelper.h"
+#include "../CrossSystem/CrossSystemDbSchema.h"
 #include "../Seasons/DCWeeklyResetHub.h"
 #include <algorithm>
 #include <cctype>
@@ -51,14 +52,6 @@ namespace DCWelcome
     {
         constexpr std::time_t WELCOME_CONTENT_CACHE_TTL_SECS = 30;
         constexpr uint64 WELCOME_PROGRESS_CACHE_TTL_MS = 1000;
-
-        bool CharacterTableExists(char const* tableName)
-        {
-            return CharacterDatabase.Query(
-                "SELECT 1 FROM information_schema.TABLES "
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
-                tableName) != nullptr;
-        }
 
         struct CachedFaqPayload
         {
@@ -218,14 +211,14 @@ namespace DCWelcome
 
         bool HasWeeklyVaultSummary()
         {
-            static bool const hasWeeklyVaultTable = CharacterTableExists("dc_weekly_vault");
+            static bool const hasWeeklyVaultTable = DC::DbSchema::CharacterTableExists("dc_weekly_vault");
             return hasWeeklyVaultTable
                 && sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", false);
         }
 
         bool HasSeasonalProgressSummary()
         {
-            static bool const hasSeasonalStatsTable = CharacterTableExists("dc_player_seasonal_stats");
+            static bool const hasSeasonalStatsTable = DC::DbSchema::CharacterTableExists("dc_player_seasonal_stats");
             return hasSeasonalStatsTable;
         }
 

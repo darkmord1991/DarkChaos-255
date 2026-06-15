@@ -8,6 +8,7 @@
 
 #include "../AddonExtension/dc_addon_breaking_news.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "../CrossSystem/CrossSystemDbSchema.h"
 
 #include <ctime>
 #include <sstream>
@@ -279,21 +280,10 @@ namespace
         return true;
     }
 
-    bool CharacterTableExists(char const* tableName)
-    {
-        if (!tableName || !*tableName)
-            return false;
-
-        return CharacterDatabase.Query(
-            "SELECT 1 FROM information_schema.TABLES "
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
-            tableName) != nullptr;
-    }
-
     ProtocolErrorSummary QueryProtocolErrorSummary(uint32 accountId)
     {
         ProtocolErrorSummary summary;
-        summary.tableExists = CharacterTableExists(TABLE_PROTOCOL_ERRORS);
+        summary.tableExists = DC::DbSchema::CharacterTableExists(TABLE_PROTOCOL_ERRORS);
         if (!summary.tableExists)
             return summary;
 
@@ -339,7 +329,7 @@ namespace
         std::vector<ProtocolErrorEntry>& out)
     {
         out.clear();
-        if (!CharacterTableExists(TABLE_PROTOCOL_ERRORS) || limit == 0)
+        if (!DC::DbSchema::CharacterTableExists(TABLE_PROTOCOL_ERRORS) || limit == 0)
             return false;
 
         QueryResult result = accountId != 0
@@ -508,7 +498,7 @@ namespace
     void PrintBreakingNewsDeliveryRows(ChatHandler* handler,
         char const* scope, uint32 accountId, uint32 limit)
     {
-        bool tableExists = CharacterTableExists(TABLE_BREAKING_NEWS_DELIVERY_LOG);
+        bool tableExists = DC::DbSchema::CharacterTableExists(TABLE_BREAKING_NEWS_DELIVERY_LOG);
         handler->PSendSysMessage(
             "DC breaking news delivery: scope={} account={} table={} limit={}",
             scope,
@@ -597,7 +587,7 @@ namespace
     void PrintCapabilityHistory(ChatHandler* handler,
         char const* scope, uint32 accountId, uint32 limit)
     {
-        bool tableExists = CharacterTableExists(TABLE_CAPABILITY_HISTORY);
+        bool tableExists = DC::DbSchema::CharacterTableExists(TABLE_CAPABILITY_HISTORY);
         handler->PSendSysMessage(
             "DC capability history: scope={} account={} table={} limit={}",
             scope,
@@ -641,7 +631,7 @@ namespace
     void PrintProtocolErrorRows(ChatHandler* handler,
         char const* scope, uint32 accountId, uint32 limit)
     {
-        bool tableExists = CharacterTableExists(TABLE_PROTOCOL_ERRORS);
+        bool tableExists = DC::DbSchema::CharacterTableExists(TABLE_PROTOCOL_ERRORS);
         handler->PSendSysMessage(
             "DC protocol error browse: scope={} account={} table={} limit={}",
             scope,

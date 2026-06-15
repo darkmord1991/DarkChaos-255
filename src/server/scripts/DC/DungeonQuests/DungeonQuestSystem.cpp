@@ -26,6 +26,7 @@
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include <unordered_set>
 
 using namespace DungeonQuest;
@@ -693,9 +694,7 @@ private:
 
         for (auto const& tableName : charTables)
         {
-            std::string sql = Acore::StringFormat("SHOW TABLES LIKE '{}'", tableName);
-            QueryResult result = CharacterDatabase.Query(sql.c_str());
-            if (!result)
+            if (!DC::DbSchema::CharacterTableExists(tableName))
             {
                 LOG_ERROR("scripts.dc", "DungeonQuest: Missing character table: {}", tableName);
                 allTablesExist = false;
@@ -711,9 +710,7 @@ private:
 
         for (auto const& tableName : worldTables)
         {
-            std::string sql = Acore::StringFormat("SHOW TABLES LIKE '{}'", tableName);
-            QueryResult result = WorldDatabase.Query(sql.c_str());
-            if (!result)
+            if (!DC::DbSchema::WorldTableExists(tableName))
             {
                 LOG_ERROR("scripts.dc", "DungeonQuest: Missing world table: {}", tableName);
                 allTablesExist = false;

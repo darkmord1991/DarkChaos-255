@@ -8,6 +8,7 @@
 #include "dc_addon_namespace.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
 
 #include <algorithm>
 #include <cctype>
@@ -49,17 +50,6 @@ namespace DCBreakingNews
         std::mutex sBreakingNewsLock;
         CachedState sBreakingNewsState;
 
-        bool DoesCharacterTableExist(char const* tableName)
-        {
-            if (!tableName || !*tableName)
-                return false;
-
-            return CharacterDatabase.Query(
-                "SELECT 1 FROM information_schema.TABLES "
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' LIMIT 1",
-                tableName) != nullptr;
-        }
-
         bool IsDeliveryLogEnabled()
         {
             return sConfigMgr->GetOption<bool>(CONFIG_DELIVERY_LOG, true);
@@ -72,7 +62,7 @@ namespace DCBreakingNews
 
             std::call_once(once, []()
             {
-                exists = DoesCharacterTableExist(TABLE_DELIVERY_LOG);
+                exists = DC::DbSchema::CharacterTableExists(TABLE_DELIVERY_LOG);
                 if (!exists)
                 {
                     LOG_WARN("module.dc",

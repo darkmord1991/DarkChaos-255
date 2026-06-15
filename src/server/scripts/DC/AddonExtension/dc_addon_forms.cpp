@@ -419,14 +419,28 @@ namespace Forms
         }
     };
 
+    // Load the catalog once at world startup (DB is up by OnStartup), matching
+    // the wardrobe's WorldScript pattern. EnsureLoaded stays idempotent, so the
+    // handlers/login still cover the case where startup load found no rows yet.
+    class FormsWorldScript : public WorldScript
+    {
+    public:
+        FormsWorldScript() : WorldScript("dc_forms_world") {}
+
+        void OnStartup() override
+        {
+            EnsureLoaded();
+        }
+    };
+
     static void RegisterHandlers()
     {
         if (!sConfigMgr->GetOption<bool>("DC.AddonProtocol.Forms.Enable", true))
             return;
 
         // NB: do NOT touch the DB here - script registration runs before the
-        // WorldDatabase sync pool is open. Tables + catalog load lazily via
-        // EnsureLoaded() on first handler/login use (see EnsureLoaded).
+        // WorldDatabase sync pool is open. The catalog is loaded from DB by
+        // FormsWorldScript::OnStartup (and lazily by EnsureLoaded as a fallback).
 
         DC_REGISTER_HANDLER(Module::COLLECTION,
             Opcode::Collection::CMSG_GET_FORMS, HandleGetForms);
@@ -444,6 +458,7 @@ namespace Forms
                 return GetPick(p->GetGUID().GetCounter(), form);
             });
 
+        new FormsWorldScript();
         new FormsPlayerScript();
     }
 }
