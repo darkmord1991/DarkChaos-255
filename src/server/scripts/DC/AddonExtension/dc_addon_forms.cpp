@@ -48,6 +48,15 @@ namespace Forms
 {
     using ObjectGuidLow = uint32;
 
+    // Totem element slots exposed as pseudo-form ids so they ride the same
+    // catalog/picks/opcodes/UI as real shapeshift forms. The display is applied
+    // by Totem.cpp (which queries the override with these ids), not by
+    // GetModelForShapeshift. 240 + slotIndex (slotIndex = summon slot - FIRE).
+    constexpr uint8 FORM_TOTEM_FIRE  = 240;
+    constexpr uint8 FORM_TOTEM_EARTH = 241;
+    constexpr uint8 FORM_TOTEM_WATER = 242;
+    constexpr uint8 FORM_TOTEM_AIR   = 243;
+
     // --- Catalog (world, read-only after load) ------------------------------
     struct SkinRow
     {
@@ -84,7 +93,13 @@ namespace Forms
             case FORM_MOONKIN:
                 return CLASS_DRUID;
             case FORM_GHOSTWOLF:
+            case FORM_TOTEM_FIRE:
+            case FORM_TOTEM_EARTH:
+            case FORM_TOTEM_WATER:
+            case FORM_TOTEM_AIR:
                 return CLASS_SHAMAN;
+            case FORM_METAMORPHOSIS:
+                return CLASS_WARLOCK;
             default:
                 return 0;
         }
@@ -100,17 +115,23 @@ namespace Forms
             case FORM_AQUA:        return "Aquatic Form";
             case FORM_BEAR:        return "Bear Form";
             case FORM_DIREBEAR:    return "Dire Bear Form";
-            case FORM_FLIGHT_EPIC: return "Flight Form";
+            case FORM_FLIGHT_EPIC: return "Swift Flight Form";
             case FORM_FLIGHT:      return "Flight Form";
             case FORM_MOONKIN:     return "Moonkin Form";
             case FORM_GHOSTWOLF:   return "Ghost Wolf";
+            case FORM_METAMORPHOSIS: return "Metamorphosis";
+            case FORM_TOTEM_FIRE:  return "Fire Totem";
+            case FORM_TOTEM_EARTH: return "Earth Totem";
+            case FORM_TOTEM_WATER: return "Water Totem";
+            case FORM_TOTEM_AIR:   return "Air Totem";
             default:               return "Form";
         }
     }
 
     static bool ClassHasForms(uint8 playerClass)
     {
-        return playerClass == CLASS_DRUID || playerClass == CLASS_SHAMAN;
+        return playerClass == CLASS_DRUID || playerClass == CLASS_SHAMAN
+            || playerClass == CLASS_WARLOCK;
     }
 
     // Tables are created by SQL migrations under data/sql/updates/pending_*

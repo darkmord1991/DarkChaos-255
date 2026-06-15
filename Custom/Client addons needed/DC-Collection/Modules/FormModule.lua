@@ -57,9 +57,22 @@ local FORM_META = {
     [5]  = { name = "Bear Form",      icon = "Interface\\Icons\\Ability_Racial_BearForm" },
     [8]  = { name = "Dire Bear Form", icon = "Interface\\Icons\\Ability_Racial_BearForm" },
     [16] = { name = "Ghost Wolf",     icon = "Interface\\Icons\\Spell_Nature_SpiritWolf" },
-    [27] = { name = "Flight Form",    icon = "Interface\\Icons\\Ability_Druid_FlightForm" },
+    [22] = { name = "Metamorphosis",  icon = "Interface\\Icons\\Spell_Shadow_DemonForm" },
+    [27] = { name = "Swift Flight Form", icon = "Interface\\Icons\\Ability_Mount_CockatriceMountElite" },
     [29] = { name = "Flight Form",    icon = "Interface\\Icons\\Ability_Druid_FlightForm" },
     [31] = { name = "Moonkin Form",   icon = "Interface\\Icons\\Spell_Nature_ForceOfNature" },
+    -- Totem element slots (pseudo-forms 240-243, shaman).
+    [240] = { name = "Fire Totem",    icon = "Interface\\Icons\\Spell_Fire_SearingTotem" },
+    [241] = { name = "Earth Totem",   icon = "Interface\\Icons\\Spell_Nature_StoneClawTotem" },
+    [242] = { name = "Water Totem",   icon = "Interface\\Icons\\Spell_Nature_ManaRegenTotem" },
+    [243] = { name = "Air Totem",     icon = "Interface\\Icons\\Spell_Nature_GroundingTotem" },
+}
+
+-- Names that must override whatever the server sends, to disambiguate the two
+-- engine flight forms (regular #29 vs epic/swift #27, both named "Flight Form"
+-- server-side until rebuilt). Avoids two identical rows in the form list.
+local FORM_NAME_OVERRIDE = {
+    [27] = "Swift Flight Form",
 }
 
 -- ============================================================================
@@ -84,7 +97,8 @@ end
 -- skins; the server still decides what is actually offered.
 local FORM_CLASSES = {
     DRUID = true,
-    SHAMAN = true,
+    SHAMAN = true,   -- ghost wolf + totem element slots
+    WARLOCK = true,  -- metamorphosis
 }
 
 function FormModule:PlayerHasForms()
@@ -127,7 +141,7 @@ local function NormalizeForm(raw)
 
     return {
         form = formId,
-        name = raw.name or meta.name or ("Form " .. formId),
+        name = FORM_NAME_OVERRIDE[formId] or raw.name or meta.name or ("Form " .. formId),
         icon = raw.icon or meta.icon or "Interface\\Icons\\INV_Misc_QuestionMark",
         default = tonumber(raw.default) or 0,
         current = tonumber(raw.current) or 0, -- 0 == use auto/default

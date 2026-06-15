@@ -793,8 +793,11 @@ public:
     // DC: optional per-character shapeshift form display override, wired by the
     // "Forms" addon module. The callback returns a CreatureDisplayInfo id, or 0
     // to fall through to the default race/hair-color resolution.
+    // The same provider also backs totem display picks: Totem.cpp queries it
+    // with the totem pseudo-form ids (240-243 = Fire/Earth/Water/Air slots).
     using ShapeshiftFormModelOverrideFn = std::function<uint32(Player const*, uint8 /*form*/)>;
     void SetShapeshiftFormModelOverride(ShapeshiftFormModelOverrideFn fn) { _shapeshiftFormModelOverride = std::move(fn); }
+    uint32 GetShapeshiftFormModelOverride(Player const* player, uint8 form) const { return _shapeshiftFormModelOverride ? _shapeshiftFormModelOverride(player, form) : 0; }
 
     ItemSetNameEntry const* GetItemSetNameEntry(uint32 itemId)
     {

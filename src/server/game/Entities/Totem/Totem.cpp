@@ -68,8 +68,13 @@ void Totem::InitStats(uint32 duration)
             data.SpellID = GetUInt32Value(UNIT_CREATED_BY_SPELL);
             owner->ToPlayer()->SendDirectMessage(data.Write());
 
-            // set display id depending on caster's race
-            SetDisplayId(sObjectMgr->GetModelForTotem(SummonSlot(slot), Races(owner->getRace())));
+            // DC: per-character totem skin (Forms wardrobe) wins over the race
+            // default. Totem element slots map to pseudo-form ids 240-243.
+            uint32 totemDisplay = sObjectMgr->GetShapeshiftFormModelOverride(
+                owner->ToPlayer(), 240 + (slot - SUMMON_SLOT_TOTEM_FIRE));
+            if (!totemDisplay)
+                totemDisplay = sObjectMgr->GetModelForTotem(SummonSlot(slot), Races(owner->getRace()));
+            SetDisplayId(totemDisplay);
         }
 
         SetLevel(owner->GetLevel());
