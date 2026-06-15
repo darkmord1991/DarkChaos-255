@@ -9,7 +9,6 @@
 #define HINTERLAND_BG_CONSTANTS_H
 
 #include "Player.h"
-#include "DC/CrossSystem/CrossSystemAffixes.h"
 #include <cstdint>
 
 namespace HinterlandBGConstants
@@ -180,11 +179,22 @@ namespace HinterlandBGConstants
     // -------------------------------------------------------------------------
     // Affix Names
     // -------------------------------------------------------------------------
+    // Display names mirror the canonical DC::CrossSystem::Affixes registry
+    // (SystemId::HLBG). Kept local because this header is compiled into the
+    // game library (BattlegroundHLBG.h), which cannot resolve the CrossSystem
+    // include chain. Keep in sync with CrossSystemAffixes.cpp.
     inline const char* GetAffixName(uint8 affixCode)
     {
-        char const* name = DarkChaos::CrossSystem::Affixes::GetName(
-            DarkChaos::CrossSystem::SystemId::HLBG, affixCode);
-        return (name && name[0]) ? name : "None";
+        switch (affixCode)
+        {
+            case HLBG_AFFIX_SUNLIGHT:      return "Sunlight";
+            case HLBG_AFFIX_CLEAR_SKIES:   return "Clear Skies";
+            case HLBG_AFFIX_GENTLE_BREEZE: return "Gentle Breeze";
+            case HLBG_AFFIX_STORM:         return "Storm";
+            case HLBG_AFFIX_HEAVY_RAIN:    return "Heavy Rain";
+            case HLBG_AFFIX_FOG:           return "Fog";
+            default:                       return "None";
+        }
     }
 
     // Legacy affix name mapping (for backward compatibility — same display name).

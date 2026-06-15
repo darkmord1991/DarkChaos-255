@@ -126,6 +126,30 @@ namespace DCCollection
             accountId, cache.mounts.size(), cache.pets.size(), cache.toys.size(), cache.transmogDisplayIds.size());
     }
 
+    // =======================================================================
+    // Database Helpers (forward to the canonical DC::DbSchema implementations)
+    // =======================================================================
+
+    bool WorldTableExists(std::string const& tableName)
+    {
+        return DC::DbSchema::WorldTableExists(tableName);
+    }
+
+    bool WorldColumnExists(std::string const& tableName, std::string const& columnName)
+    {
+        return DC::DbSchema::WorldColumnExists(tableName, columnName);
+    }
+
+    bool CharacterTableExists(std::string const& tableName)
+    {
+        return DC::DbSchema::CharacterTableExists(tableName);
+    }
+
+    bool CharacterColumnExists(std::string const& tableName, std::string const& columnName)
+    {
+        return DC::DbSchema::CharacterColumnExists(tableName, columnName);
+    }
+
     std::string const& GetWorldEntryColumn(std::string const& tableName)
     {
         static std::unordered_map<std::string, std::string> cache;

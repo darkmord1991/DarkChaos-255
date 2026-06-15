@@ -121,12 +121,12 @@ namespace DCCollection
     bool IsCollectionCacheValid(uint32 accountId, time_t maxAgeSeconds = 60);
 
     // =======================================================================
-    // Utility Functions  (delegates to DC::DbSchema canonical implementations)
+    // Utility Functions  (thin forwarders to DC::DbSchema canonical helpers)
     // =======================================================================
-    using DC::DbSchema::WorldTableExists;
-    using DC::DbSchema::WorldColumnExists;
-    using DC::DbSchema::CharacterTableExists;
-    using DC::DbSchema::CharacterColumnExists;
+    bool WorldTableExists(std::string const& tableName);
+    bool WorldColumnExists(std::string const& tableName, std::string const& columnName);
+    bool CharacterTableExists(std::string const& tableName);
+    bool CharacterColumnExists(std::string const& tableName, std::string const& columnName);
 
     // =======================================================================
     // Mount/Pet/Companion Functions
