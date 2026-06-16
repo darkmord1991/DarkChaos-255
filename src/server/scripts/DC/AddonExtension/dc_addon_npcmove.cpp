@@ -82,7 +82,7 @@ namespace DCAddon
             if (!data)
                 return;
 
-            CreatureTemplate const* temp = sObjectMgr->GetCreatureTemplate(data->id1);
+            CreatureTemplate const* temp = sObjectMgr->GetCreatureTemplate(data->id);
             if (!temp)
                 return;
 
@@ -92,7 +92,7 @@ namespace DCAddon
             std::replace(name.begin(), name.end(), '|', ' ');
 
             char msg[512];
-            snprintf(msg, 512, "ADD|%u|%s|%u|%.4f|%.4f|%.4f", lowguid, name.c_str(), data->id1, data->posX, data->posY, data->posZ);
+            snprintf(msg, 512, "ADD|%u|%s|%u|%.4f|%.4f|%.4f", lowguid, name.c_str(), data->id, data->posX, data->posY, data->posZ);
             SendAddonMessage(player, msg);
         }
 

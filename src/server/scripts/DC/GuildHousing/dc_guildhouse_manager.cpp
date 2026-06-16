@@ -230,7 +230,7 @@ void GuildHouseManager::CleanupGuildHouseSpawns(uint32 mapId, uint32 guildPhase)
 
             if (CreatureData const* crData = sObjectMgr->GetCreatureData(lowguid))
             {
-                if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(crData->id1, lowguid)))
+                if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(crData->id, lowguid)))
                 {
                     creature->CombatStop();
                     creature->DeleteFromDB();
@@ -429,7 +429,7 @@ bool GuildHouseManager::UndoAction(Player* player, uint32 logId)
         {
             if (CreatureData const* crData = sObjectMgr->GetCreatureData(entityGuid))
             {
-               if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(crData->id1, entityGuid)))
+               if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(crData->id, entityGuid)))
                {
                    creature->CombatStop();
                    creature->DeleteFromDB();

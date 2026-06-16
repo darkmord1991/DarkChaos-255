@@ -2755,7 +2755,7 @@ namespace DCQoS
         for (auto const& pair : sObjectMgr->GetAllCreatureData())
         {
             CreatureData const& creatureData = pair.second;
-            if (creatureData.id1 == entry || creatureData.id2 == entry || creatureData.id3 == entry)
+            if (creatureData.id == entry || creatureData.id2 == entry || creatureData.id3 == entry)
                 return &creatureData;
         }
 

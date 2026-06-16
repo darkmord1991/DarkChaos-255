@@ -40,7 +40,7 @@ namespace SpawnResolver
             if (!resolvedEntry)
             {
                 if (CreatureData const* cData = sObjectMgr->GetCreatureData(spawnId))
-                    resolvedEntry = cData->id1;
+                    resolvedEntry = cData->id;
             }
 
             if (resolvedEntry)
@@ -71,7 +71,7 @@ namespace SpawnResolver
             {
                 out.found = true;
                 out.source = Source::SpawnCache;
-                out.entry = cData->id1;
+                out.entry = cData->id;
                 out.mapId = cData->mapid;
                 out.phaseMask = cData->phaseMask;
                 out.x = cData->posX;

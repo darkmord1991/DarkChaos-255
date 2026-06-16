@@ -4724,12 +4724,12 @@ namespace DCPerfTest
         for (auto const& pair : sObjectMgr->GetAllCreatureData())
         {
             CreatureData const& creatureData = pair.second;
-            if (!creatureData.id1)
+            if (!creatureData.id)
                 continue;
 
             CreatureTooltipSample sample;
             sample.spawnId = pair.first;
-            sample.entry = creatureData.id1;
+            sample.entry = creatureData.id;
             sample.mapId = creatureData.mapid;
             sample.posX = creatureData.posX;
             sample.posY = creatureData.posY;
