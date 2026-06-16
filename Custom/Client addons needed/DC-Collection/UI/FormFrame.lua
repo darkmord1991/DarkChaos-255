@@ -36,38 +36,167 @@ Forms.previewModel = nil
 -- BUILD
 -- ============================================================================
 
-local function SetPreviewDisplay(model, displayId)
+-- Apply a shapeshift-form skin to the preview model.
+--
+-- IMPORTANT: on this 3.3.5a client a CreatureDisplayInfo id does NOT render via
+-- Model:SetDisplayInfo (unreliable / no model) or Model:SetCreature (that wants
+-- a creature_template ENTRY, not a display id) — that's why mounts pass a real
+-- creature entry and forms (display id only) showed black. The reliable path is
+-- Model:SetModel(<m2 path>), exactly how DC-Housing renders its doodads, using
+-- the generated DC.FormModelPaths[displayId] lookup. SetDisplayInfo/SetCreature
+-- remain as fallbacks for any id missing from the path table.
+--
+-- onResult(ok) is invoked after load verification so the caller can show a
+-- "preview unavailable" state when a display id resolves to no model.
+local function SetPreviewDisplay(model, displayId, onResult)
+    local function finish(ok)
+        if type(onResult) == "function" then
+            onResult(ok and true or false)
+        end
+    end
     if not model then
+        finish(false)
         return
     end
     displayId = tonumber(displayId) or 0
     if displayId <= 0 then
+        if type(model.ClearModel) == "function" then
+            pcall(model.ClearModel, model)
+        end
         model:Hide()
+        finish(false)
         return
     end
     model:Show()
 
-    -- Apply the creature display (DressUpModel). SetCreature is the fallback for
-    -- display ids the client resolves differently.
-    local ok = false
-    if type(model.SetDisplayInfo) == "function" then
-        ok = pcall(model.SetDisplayInfo, model, displayId)
-    end
-    if not ok and type(model.SetCreature) == "function" then
-        pcall(model.SetCreature, model, displayId)
+    local function ResetModelPose()
+        if type(model.SetFacing) == "function" then
+            pcall(model.SetFacing, model, model.rotation or 0)
+        end
+        if type(model.SetModelScale) == "function" then
+            pcall(model.SetModelScale, model, model.modelZoom or 1.0)
+        end
+        if type(model.SetPosition) == "function" then
+            pcall(model.SetPosition, model, 0, 0, 0)
+        end
     end
 
-    -- A model frame renders BLACK until the camera/position are set. Mirror the
-    -- mount/pet preview setup so the form is actually framed in view.
-    if type(model.SetCamera) == "function" then
-        pcall(model.SetCamera, model, 0)
+    local function HasLoadedModel()
+        if type(model.GetModel) ~= "function" then
+            return true
+        end
+        local cur = model:GetModel()
+        return cur ~= nil and cur ~= ""
     end
-    if type(model.SetPosition) == "function" then
-        pcall(model.SetPosition, model, (model.zoom or 0), 0, 0)
+
+    local function TrySetModelPath(path)
+        if type(path) ~= "string" or path == ""
+            or type(model.SetModel) ~= "function" then
+            return false
+        end
+        if pcall(model.SetModel, model, path) then
+            -- A raw SetModel'd creature M2 can render unlit/black without an
+            -- explicit light (same as the bare-Model housing preview).
+            if type(model.SetLight) == "function" then
+                pcall(model.SetLight, model, 1, 0, 0, 0, -1,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+            end
+            ResetModelPose()
+            return true
+        end
+        return false
     end
-    if type(model.SetFacing) == "function" then
-        pcall(model.SetFacing, model, model.rotation or 0)
+
+    local function TrySetDisplay(id)
+        if not id or id <= 0 or type(model.SetDisplayInfo) ~= "function" then
+            return false
+        end
+        if pcall(model.SetDisplayInfo, model, id) then
+            ResetModelPose()
+            return true
+        end
+        return false
     end
+
+    local function TrySetCreature(id)
+        if not id or id <= 0 or type(model.SetCreature) ~= "function" then
+            return false
+        end
+        if pcall(model.SetCreature, model, id) then
+            ResetModelPose()
+            return true
+        end
+        return false
+    end
+
+    -- Clear stale model state FIRST (the step whose absence black-screened the
+    -- preview when switching skins).
+    if type(model.ClearModel) == "function" then
+        pcall(model.ClearModel, model)
+    end
+
+    -- Preferred: SetModel with the resolved M2 path; fall back to the (less
+    -- reliable) display/creature setters only if the path is unknown.
+    local path = DC and DC.FormModelPaths and DC.FormModelPaths[displayId]
+    local shown = TrySetModelPath(path)
+    if not shown then
+        shown = TrySetDisplay(displayId)
+    end
+    if not shown then
+        shown = TrySetCreature(displayId)
+    end
+
+    -- pcall-success does not prove a model loaded. Re-verify shortly after and
+    -- report the real outcome so the caller can flag it as unavailable rather
+    -- than leaving a blank frame.
+    local function VerifyLoaded()
+        if HasLoadedModel() then
+            finish(true)
+            return
+        end
+        local recovered = TrySetModelPath(path)
+        if not recovered then
+            recovered = TrySetCreature(displayId)
+        end
+        finish(recovered and HasLoadedModel())
+    end
+    if DC and type(DC.After) == "function" then
+        DC.After(0.12, VerifyLoaded)
+    else
+        VerifyLoaded()
+    end
+end
+
+-- Custom retroport display ids live at >= 500000; their client model/DBC may
+-- not be installed, so they can render empty. When defaulting a form's preview
+-- (no committed pick), prefer a stock skin that is guaranteed to render so the
+-- form doesn't open to an "unavailable" frame when a renderable option exists.
+local CUSTOM_MODEL_MIN = 500000
+
+local function PickDefaultModel(formId)
+    local entry = DC.FormModule:GetForm(formId)
+    if not entry then
+        return 0
+    end
+    -- Always honour the player's committed pick, even a custom one (the overlay
+    -- explains if its model isn't installed).
+    if entry.current and entry.current > 0 then
+        return entry.current
+    end
+    if entry.default and entry.default > 0 and entry.default < CUSTOM_MODEL_MIN then
+        return entry.default
+    end
+    for _, skin in ipairs(entry.skins or {}) do
+        if skin.unlocked ~= false and skin.model
+            and skin.model < CUSTOM_MODEL_MIN then
+            return skin.model
+        end
+    end
+    if entry.default and entry.default > 0 then
+        return entry.default
+    end
+    local first = entry.skins and entry.skins[1]
+    return first and first.model or 0
 end
 
 function Forms:Build(host)
@@ -109,14 +238,15 @@ function Forms:Build(host)
     preview:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -28, -6)
     preview:SetHeight(PREVIEW_HEIGHT)
     preview:EnableMouse(true)
+    preview:EnableMouseWheel(true)
     preview.rotation = 0
-    preview.zoom = 0
+    preview.modelZoom = 1.0
     local previewBg = preview:CreateTexture(nil, "BACKGROUND")
     previewBg:SetAllPoints()
     previewBg:SetTexture(0, 0, 0, 0.5)
     frame.preview = preview
 
-    -- Drag to rotate (mirrors the mount preview).
+    -- Drag to rotate + scroll to zoom (mirrors the mount preview).
     preview:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             self.rotating = true
@@ -134,10 +264,29 @@ function Forms:Build(host)
             self.prevX = x
         end
     end)
+    preview:SetScript("OnMouseWheel", function(self, delta)
+        local s = (self.modelZoom or 1.0) + delta * 0.1
+        s = math.max(0.5, math.min(2.5, s))
+        self.modelZoom = s
+        if self.SetModelScale then
+            self:SetModelScale(s)
+        end
+    end)
 
     local previewLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     previewLabel:SetPoint("BOTTOM", preview, "BOTTOM", 0, 8)
     frame.previewLabel = previewLabel
+
+    -- Shown when the selected skin's model fails to load (e.g. a custom display
+    -- id whose client model patch isn't installed) so the pane reads as
+    -- "unavailable" rather than a confusing empty/black frame.
+    local unavailable = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    unavailable:SetPoint("CENTER", preview, "CENTER", 0, 0)
+    unavailable:SetWidth(360)
+    unavailable:SetJustifyH("CENTER")
+    unavailable:SetText(L["FORM_PREVIEW_UNAVAILABLE"] or "Preview unavailable")
+    unavailable:Hide()
+    frame.previewUnavailable = unavailable
 
     -- --- Skin list (fills the area below the preview) ----------------------
     local skinScroll = CreateFrame("ScrollFrame", "DCCollectionFormsSkinScroll", frame,
@@ -234,11 +383,8 @@ end
 
 function Forms:SelectForm(formId)
     self.selectedForm = formId
-    local entry = DC.FormModule:GetForm(formId)
-    if entry then
-        -- Preview the currently effective model by default.
-        self.previewModel = DC.FormModule:GetEffectiveModel(formId)
-    end
+    -- Default to the committed pick, else a renderable stock skin.
+    self.previewModel = PickDefaultModel(formId)
     self:RefreshFormList()
     self:RefreshSkins()
     self:UpdatePreview()
@@ -338,7 +484,34 @@ function Forms:UpdatePreview()
     if not frame then
         return
     end
-    SetPreviewDisplay(frame.preview, self.previewModel)
+
+    -- Hide the "unavailable" overlay up front; the async load result below
+    -- shows it again only if the model genuinely fails to load. (The model id
+    -- is a CreatureDisplayInfo id — custom retroport ids >= 500000 render fine
+    -- AS LONG AS their client patch is deployed; we no longer assume they
+    -- aren't, and rely on the real load result instead.)
+    if frame.previewUnavailable then
+        frame.previewUnavailable:Hide()
+    end
+
+    if frame.preview then
+        frame.preview:Show()
+    end
+
+    local requested = self.previewModel
+    SetPreviewDisplay(frame.preview, requested, function(ok)
+        -- Ignore stale async results if the selection changed meanwhile.
+        if self.previewModel ~= requested then
+            return
+        end
+        if frame.previewUnavailable then
+            if ok then
+                frame.previewUnavailable:Hide()
+            else
+                frame.previewUnavailable:Show()
+            end
+        end
+    end)
 
     local entry = self.selectedForm and DC.FormModule:GetForm(self.selectedForm)
     if entry then
@@ -371,11 +544,16 @@ function Forms:Refresh()
         frame.listFrame:Hide()
         frame.preview:Hide()
         frame.previewLabel:SetText("")
+        if frame.previewUnavailable then
+            frame.previewUnavailable:Hide()
+        end
         frame.skinScroll:Hide()
         frame.applyBtn:Hide()
         frame.resetBtn:Hide()
         return
     end
+
+    frame.preview:Show()
 
     frame.empty:Hide()
     frame.listFrame:Show()
@@ -386,7 +564,7 @@ function Forms:Refresh()
     -- Default-select the first form if nothing chosen (or selection is stale).
     if not self.selectedForm or not DC.FormModule:GetForm(self.selectedForm) then
         self.selectedForm = DC.FormModule:GetForms()[1].form
-        self.previewModel = DC.FormModule:GetEffectiveModel(self.selectedForm)
+        self.previewModel = PickDefaultModel(self.selectedForm)
     end
 
     self:RefreshFormList()

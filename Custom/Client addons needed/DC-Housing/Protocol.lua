@@ -45,7 +45,31 @@ function Protocol:Init()
         function(data)
             data = data or {}
             if data.success then
-                DC:Print("Decoration placed.")
+                local entry = self._lastPlaceEntry
+                local item = entry and DC:GetItem(entry)
+                local name = (item and item.name)
+                    or (entry and ("Entry " .. entry)) or "Decoration"
+                local spawn = tonumber(data.lowguid)
+                if entry and spawn then
+                    DC:Print(string.format(
+                        "Placed |cffffd700%s|r (entry %d, spawn %d).",
+                        name, entry, spawn))
+                elseif entry then
+                    DC:Print(string.format(
+                        "Placed |cffffd700%s|r (entry %d).", name, entry))
+                else
+                    DC:Print("Decoration placed.")
+                end
+
+                -- Gizmo-first: auto-select the freshly placed object so its
+                -- toolbar (and the in-world gizmo, once its render is fixed)
+                -- appear immediately. Enter edit mode so it is draggable.
+                if data.guid and DC.EditMode and DC.EditMode.AutoSelect then
+                    if DC.EditMode.IsActive and not DC.EditMode:IsActive() then
+                        DC.EditMode:Toggle()
+                    end
+                    DC.EditMode:AutoSelect(data.guid)
+                end
             else
                 DC:Print("|cffff0000" .. (data.error or "Place failed.") .. "|r")
             end
@@ -106,6 +130,9 @@ end
 
 -- entry placed at the player's position when coords are omitted.
 function Protocol:Place(entry, x, y, z, o)
+    -- Remembered so SMSG_PLACE_RESULT can name the placed decoration (the
+    -- result only carries success + the new spawn lowguid).
+    self._lastPlaceEntry = entry
     local data = { entry = entry }
     if x then
         data.x, data.y, data.z, data.o = x, y, z, o or 0
@@ -113,9 +140,51 @@ function Protocol:Place(entry, x, y, z, o)
     DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_PLACE, data)
 end
 
+-- The server caps moves at 1 / 500ms per player (see dc_guildhouse_
+-- decorations ConsumeMoveRateLimit). The gizmo commits one move per release,
+-- so rapid drag-releases would flood the server with rejected requests
+-- ("You are moving decorations too quickly."). Coalesce: send immediately if
+-- the cooldown has elapsed, otherwise remember only the LATEST target and
+-- flush it once the cooldown passes. The object already moved client-side via
+-- the gizmo, so persisting just the final position is correct.
+local MOVE_MIN_INTERVAL = 0.55
+local lastMoveSent = 0
+local pendingMove
+local moveFlushFrame
+
+local function SendMoveNow(m)
+    DCAddonProtocol:Request(DC.MODULE_ID, Protocol.Opcodes.CMSG_MOVE,
+        { lowguid = m.lowguid, mode = "to", x = m.x, y = m.y, z = m.z,
+          o = m.o or 0 })
+    lastMoveSent = GetTime()
+end
+
 function Protocol:MoveTo(lowguid, x, y, z, o)
-    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
-        { lowguid = lowguid, mode = "to", x = x, y = y, z = z, o = o or 0 })
+    local m = { lowguid = lowguid, x = x, y = y, z = z, o = o or 0 }
+    if GetTime() - lastMoveSent >= MOVE_MIN_INTERVAL then
+        pendingMove = nil
+        SendMoveNow(m)
+        return
+    end
+
+    pendingMove = m
+    if not moveFlushFrame then
+        moveFlushFrame = CreateFrame("Frame")
+        moveFlushFrame:Hide()
+        moveFlushFrame:SetScript("OnUpdate", function(self)
+            if not pendingMove then
+                self:Hide()
+                return
+            end
+            if GetTime() - lastMoveSent >= MOVE_MIN_INTERVAL then
+                local m2 = pendingMove
+                pendingMove = nil
+                SendMoveNow(m2)
+                self:Hide()
+            end
+        end)
+    end
+    moveFlushFrame:Show()
 end
 
 function Protocol:Nudge(lowguid, dx, dy, dz, dOrientation)

@@ -380,7 +380,8 @@ bool IsOwnGuildDecoration(Player* player, uint32 lowguid)
 }
 
 bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
-    float orientation, std::string& error, uint32* outLowguid)
+    float orientation, std::string& error, uint32* outLowguid,
+    uint64* outGuidRaw)
 {
     GuildHouseData const* house = nullptr;
     if (!ValidateInHouse(player, house, error))
@@ -453,11 +454,16 @@ bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
 
     if (outLowguid)
         *outLowguid = lowguid;
+    // Full client-facing ObjectGuid of the spawned GO (object is still live
+    // here). The client resolves the just-placed object by this exact value
+    // (OBJECT_FIELD_GUID), so the addon can auto-select it after placing.
+    if (outGuidRaw)
+        *outGuidRaw = object->GetGUID().GetRawValue();
     return true;
 }
 
 bool Place(Player* player, uint32 entry, std::string& error,
-    uint32* outLowguid)
+    uint32* outLowguid, uint64* outGuidRaw)
 {
     if (!player)
     {
@@ -467,7 +473,7 @@ bool Place(Player* player, uint32 entry, std::string& error,
 
     return PlaceAt(player, entry, player->GetPositionX(),
         player->GetPositionY(), player->GetPositionZ(),
-        player->GetOrientation(), error, outLowguid);
+        player->GetOrientation(), error, outLowguid, outGuidRaw);
 }
 
 bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,

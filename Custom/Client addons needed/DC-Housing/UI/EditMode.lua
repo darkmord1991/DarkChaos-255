@@ -41,6 +41,40 @@ local function EnsureNatives()
         getCursorWorldTarget = ResolveNative("GetCursorWorldPingTarget",
             "C_Ping_GetCursorWorldTarget", "C_Ping_GetTargetWorldPing")
         getViewportCursorCoords = ResolveNative("GetViewportCursorCoords")
+        if not getViewportCursorCoords then
+            -- This DLL build does not export GetViewportCursorCoords, so derive
+            -- the viewport-normalized cursor (0..1, top-left origin) in Lua from
+            -- GetCursorPosition (physical px, bottom-left origin). Without this
+            -- the world pick falls back to the stale last-click cache (cursor
+            -- placement ignores the mouse) and the gizmo never gets hover/drag
+            -- input (renders but cannot be grabbed).
+            -- Formula mirrors DC-QOS PingSystem's proven GetViewportCursorCoords
+            -- (the working ping feature uses it for GetCursorWorldPingTarget),
+            -- so the convention matches the native exactly.
+            getViewportCursorCoords = function()
+                if type(GetCursorPosition) ~= "function" or not UIParent then
+                    return nil
+                end
+                local cx, cy = GetCursorPosition()
+                if type(cx) ~= "number" or type(cy) ~= "number" then
+                    return nil
+                end
+                local scale = UIParent:GetEffectiveScale()
+                if type(scale) ~= "number" or scale <= 0 then
+                    return nil
+                end
+                cx = cx / scale
+                cy = cy / scale
+                local sw = UIParent:GetWidth()
+                local sh = UIParent:GetHeight()
+                if type(sw) ~= "number" or type(sh) ~= "number"
+                    or sw <= 0 or sh <= 0 then
+                    return nil
+                end
+                -- normX from left; normY flipped to top-origin (D3D9).
+                return cx / sw, (sh - cy) / sh
+            end
+        end
         convertToScreenSpace = ResolveNative("ConvertCoordsToScreenSpace",
             "C_Ping_ConvertCoordsToScreenSpace")
         -- Live-drag natives (dusk-tswow port); when present the real
@@ -124,6 +158,11 @@ local function EndGhost(cancelled)
     end
     if ghostModel then
         ghostModel:Hide()
+    end
+
+    -- Restore the catalog's 3D preview that StartGhostPlacement hid.
+    if DC.Catalog and DC.Catalog.OnPlacementEnded then
+        DC.Catalog:OnPlacementEnded()
     end
 end
 
@@ -274,11 +313,72 @@ local function StartGhost(mode, entry, lowguid, initialFacing, liveGuid)
     if item and not ghost.liveGuid then
         pcall(ghostModel.SetModel, ghostModel, item.path)
     end
+
+    -- Hide the catalog's redundant 3D preview now that a ghost is truly
+    -- starting (restored by EndGhost -> Catalog:OnPlacementEnded). Doing it
+    -- here, after every early-return above, avoids leaving the preview stuck
+    -- hidden when StartGhost bails (no cursor natives / disabled item).
+    if DC.Catalog and DC.Catalog.HidePreview then
+        DC.Catalog:HidePreview()
+    end
     captureFrame:Show()
 end
 
 function EditMode:StartGhostPlacement(entry)
     StartGhost("place", entry, nil, 0)
+end
+
+-- Exposed so other modules (Protocol place result) can avoid toggling edit
+-- mode off when it is already on.
+function EditMode:IsActive()
+    return active
+end
+
+-- Auto-select a just-placed object by its (server-provided) full client GUID,
+-- routing through the existing Select -> OnSelectResult path so the toolbar and
+-- in-world gizmo appear without the player having to Ctrl+Click it.
+--
+-- SMSG_PLACE_RESULT can arrive before the client has loaded the new gameobject
+-- (its spawn packet may still be in flight), so a single Select can miss
+-- server-side resolve or client-side gizmo attach. Retry on a short OnUpdate
+-- timer (3.3.5a has no C_Timer) until the selection lands or we give up.
+-- _pendingGuidHex must be re-armed before every Select because OnSelectResult
+-- consumes it and the select result never echoes the guid back.
+local selectRetry
+function EditMode:AutoSelect(guidHex)
+    if not guidHex then
+        return
+    end
+    if not selectRetry then
+        selectRetry = CreateFrame("Frame")
+        selectRetry:Hide()
+        selectRetry:SetScript("OnUpdate", function(self, elapsed)
+            self._t = (self._t or 0) + (elapsed or 0)
+            if self._t < 0.25 then -- ~250ms between tries
+                return
+            end
+            self._t = 0
+            -- Success: a live selection now matches the target guid.
+            if selection and selection.guidHex == self._guid then
+                self:Hide()
+                return
+            end
+            self._tries = (self._tries or 0) + 1
+            if self._tries > 8 then -- ~2s budget, then give up
+                self:Hide()
+                return
+            end
+            EditMode._pendingGuidHex = self._guid
+            DC.Protocol:Select(self._guid)
+        end)
+    end
+    selectRetry._guid = guidHex
+    selectRetry._t = 0
+    selectRetry._tries = 0
+    -- Fire one attempt immediately; the ticker retries if it did not land.
+    EditMode._pendingGuidHex = guidHex
+    DC.Protocol:Select(guidHex)
+    selectRetry:Show()
 end
 
 -- ============================================================
@@ -305,6 +405,11 @@ local function StopGizmo()
 end
 
 local function StartGizmo(guidHex)
+    -- The auto-select-after-place path reaches here without ever going through
+    -- PickCursorWorld/StartGhost, which are the only other callers that resolve
+    -- the DLL natives. Resolve them here too (idempotent) so HasGizmoNatives()
+    -- reports correctly instead of falsely claiming the client lacks them.
+    EnsureNatives()
     if not HasGizmoNatives() or not guidHex then
         return false
     end
@@ -362,7 +467,27 @@ local function CommitGizmoDrag()
 
     local ok, wasDragging, x, y, z, yaw = pcall(gizmoEndDrag)
     if ok and wasDragging and selection and type(x) == "number" then
-        DC.Protocol:MoveTo(selection.lowguid, x, y, z, yaw)
+        -- A plain click on an axis (no real drag) still reports wasDragging,
+        -- but nothing moved. Skip those no-op commits so clicking the gizmo
+        -- doesn't spam the server's move rate limit; only persist real moves.
+        -- BUT only suppress when we actually have a baseline: SMSG_SELECT_RESULT
+        -- omits x/y/z/o when the server could not resolve the GO on the grid
+        -- (e.g. the auto-select-after-place race), leaving selection.* nil --
+        -- in that case always send, or the first real drag would be dropped.
+        local hasBaseline = selection.x and selection.y and selection.z
+            and selection.o
+        local moved = (not hasBaseline)
+            or math.abs(x - selection.x) > 0.05
+            or math.abs(y - selection.y) > 0.05
+            or math.abs(z - selection.z) > 0.05
+            or math.abs((yaw or 0) - selection.o) > 0.01
+        if moved then
+            DC.Protocol:MoveTo(selection.lowguid, x, y, z, yaw)
+            -- Track the new position so the next commit compares correctly
+            -- and a rejected/coalesced server move stays consistent.
+            selection.x, selection.y, selection.z, selection.o =
+                x, y, z, (yaw or 0)
+        end
     end
 end
 
@@ -480,9 +605,24 @@ function EditMode:OnSelectResult(data)
     toolbar:Show()
 
     -- Show the in-world gizmo around the selection (drag arrows to move,
-    -- rings to rotate; one server commit per released drag).
+    -- rings to rotate; one server commit per released drag). The arrows are
+    -- drawn by a DLL world-render hook (HousingGizmo* natives), so if the
+    -- running client DLL predates them the gizmo silently won't appear — tell
+    -- the user once so it isn't mistaken for a broken selection.
     StopGizmo()
-    StartGizmo(selection.guidHex)
+    local gizmoShown = StartGizmo(selection.guidHex)
+    if not gizmoShown and not self._gizmoWarned then
+        self._gizmoWarned = true
+        if not HasGizmoNatives() then
+            DC:Print("|cffffcc00In-world gizmo unavailable|r - your client "
+                .. "lacks the HousingGizmo natives (rebuild/redeploy "
+                .. "WotLKExtensions.dll). Use the toolbar's Grab / Nudge / "
+                .. "Rotate buttons instead.")
+        else
+            DC:Print("|cffffcc00Gizmo could not attach to this object.|r "
+                .. "Use the toolbar instead.")
+        end
+    end
 end
 
 function EditMode:ClearSelection()

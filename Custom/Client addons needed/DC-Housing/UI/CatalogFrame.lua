@@ -35,14 +35,21 @@ function Catalog:LoadPreviewModel(item)
     if not frame or not item then
         return
     end
-    frame.preview:ClearModel()
+    local m = frame.preview
+    m:ClearModel()
     state.previewFacing = 0.6
-    state.previewRadius = math.max(item.radius or 1.0, 0.2)
-    state.previewDepth = state.previewRadius * 2.2
+    -- Scale inversely with the model's bounding radius so big and small
+    -- decorations both sit comfortably in the pane (a fixed scale made small
+    -- items fill/overflow the frame). Mouse wheel still zooms from here.
+    local radius = math.max(item.radius or 1.0, 0.4)
+    state.previewScale = math.max(0.05, math.min(0.8, 0.35 / radius))
     state.previewVertical = 0
-    if pcall(frame.preview.SetModel, frame.preview, item.path) then
-        Catalog:ApplyPreviewTransform()
-    end
+    -- Frame the view (camera/light/scale/position) THEN load the model last —
+    -- the exact call order proven to work by the DC-GM gameobject preview.
+    -- Re-apply after SetModel as well in case loading resets the transform.
+    Catalog:ApplyPreviewTransform()
+    pcall(m.SetModel, m, item.path)
+    Catalog:ApplyPreviewTransform()
 end
 
 local function SetPreview(entry)
@@ -92,24 +99,36 @@ local function SetPlacedSelection(item)
     end
 end
 
--- Frame an arbitrary GO model. On the 3.3.5 Model widget the camera is
--- fixed; SetPosition(x, y, z) moves the MODEL relative to it where +x is
--- DEPTH (distance from the camera - bigger = farther/smaller) and z is
--- vertical. SetModelScale barely changes apparent size because the widget
--- auto-frames the (scaled) bounding sphere, so depth is the real zoom.
--- previewDepth/previewVertical are seeded from the model's bounding radius
--- and adjustable with the mouse wheel (zoom) and shift+wheel (pan).
+-- Frame an arbitrary GO model. Mirrors the WORKING DC-GM gameobject preview
+-- (Commands_GO.lua ShowGobModel) exactly: SetSequence(0) for a static pose,
+-- SetCamera(2) (camera 0 framed nothing for doodads), SetLight (a bare Model
+-- frame is unlit = black without it), SetModelScale for zoom (the widget
+-- auto-frames the bounding sphere, so scale is the real zoom — NOT a large
+-- SetPosition depth, which pushed the model out of view), and a small centred
+-- SetPosition. Zoom = mouse wheel (previewScale), vertical pan = shift+wheel.
 function Catalog:ApplyPreviewTransform()
     if not frame or not frame.preview then
         return
     end
     local m = frame.preview
-    pcall(m.SetModelScale, m, 1.0)
-    if m.SetCamera then
-        pcall(m.SetCamera, m, 0)
+
+    -- Centre offset in the frame's normalised half-dimensions, as DC-GM does.
+    local uiScale = UIParent:GetEffectiveScale()
+    local hyp = ((GetScreenWidth() * uiScale) ^ 2
+        + (GetScreenHeight() * uiScale) ^ 2) ^ 0.5
+    local coordX, coordY = 0, 0
+    if hyp > 0 and m:GetRight() and m:GetLeft() and m:GetTop()
+        and m:GetBottom() then
+        coordX = (m:GetRight() - m:GetLeft()) / hyp / 2
+        coordY = (m:GetTop() - m:GetBottom()) / hyp / 2
     end
-    pcall(m.SetPosition, m, state.previewDepth or 1.5, 0,
-        state.previewVertical or 0)
+
+    pcall(m.SetSequence, m, 0)
+    pcall(m.SetCamera, m, 2)
+    pcall(m.SetLight, m, 1, 0, 0, -0.707, -0.707, 0.7,
+        1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
+    pcall(m.SetModelScale, m, state.previewScale or 0.5)
+    pcall(m.SetPosition, m, coordX, coordY, state.previewVertical or 0)
     pcall(m.SetFacing, m, state.previewFacing or 0.6)
 end
 
@@ -194,7 +213,9 @@ local function CreateCatalogFrame()
     frame:SetFrameStrata("HIGH")
     frame:SetWidth(720)
     frame:SetHeight(470)
-    frame:SetPoint("CENTER")
+    -- Docked to the left edge (not centred) so the world stays visible to the
+    -- right while you place/position decorations. Still movable + clamped.
+    frame:SetPoint("LEFT", 24, 0)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
@@ -363,18 +384,17 @@ local function CreateCatalogFrame()
         self.rotating = false
     end)
     preview:SetScript("OnMouseWheel", function(_, delta)
-        local radius = state.previewRadius or 1.0
-        local step = math.max(radius * 0.25, 0.15)
         if IsShiftKeyDown() then
             -- vertical pan
             state.previewVertical = (state.previewVertical or 0)
-                + delta * step
+                + delta * 0.05
         else
-            -- zoom: wheel up = closer (smaller depth)
-            local d = (state.previewDepth or radius * 2.2) - delta * step
-            if d < 0.2 then d = 0.2 end
-            if d > radius * 12 then d = radius * 12 end
-            state.previewDepth = d
+            -- zoom: wheel up = larger (the widget auto-frames, so apparent
+            -- size is driven by SetModelScale, not camera depth)
+            local s = (state.previewScale or 0.5) + delta * 0.1
+            if s < 0.1 then s = 0.1 end
+            if s > 3.0 then s = 3.0 end
+            state.previewScale = s
         end
         Catalog:ApplyPreviewTransform()
     end)
@@ -388,6 +408,7 @@ local function CreateCatalogFrame()
         end
     end)
     frame.preview = preview
+    frame.previewBg = previewBg
 
     frame.previewName = frame:CreateFontString(nil, "OVERLAY",
         "GameFontNormal")
@@ -423,8 +444,10 @@ local function CreateCatalogFrame()
     placeCursor:SetText(L.PLACE_AT_CURSOR)
     placeCursor:SetScript("OnClick", function()
         if state.selectedEntry then
+            -- Keep the catalog docked on the left so you can keep placing the
+            -- same item. StartGhost hides the 3D preview only once the ghost
+            -- actually starts, and EndGhost restores it.
             DC.EditMode:StartGhostPlacement(state.selectedEntry)
-            frame:Hide()
         end
     end)
     frame.placeCursorButton = placeCursor
@@ -539,6 +562,33 @@ local function CreateCatalogFrame()
 
     Catalog:SetMode("catalog")
     Catalog:OnBudgetUpdate()
+end
+
+-- Hide the in-catalog 3D preview while a placement/move ghost is active in the
+-- world: the live ghost (and the real object) IS the preview, so the pane is
+-- redundant and only steals screen space. Restored via ShowPreview when the
+-- ghost ends (EditMode calls Catalog:OnPlacementEnded).
+function Catalog:HidePreview()
+    if not frame then
+        return
+    end
+    if frame.previewBg then frame.previewBg:Hide() end
+    if frame.previewName then frame.previewName:Hide() end
+    if frame.previewInfo then frame.previewInfo:Hide() end
+end
+
+function Catalog:ShowPreview()
+    if not frame then
+        return
+    end
+    if frame.previewBg then frame.previewBg:Show() end
+    if frame.previewName then frame.previewName:Show() end
+    if frame.previewInfo then frame.previewInfo:Show() end
+end
+
+-- Called by EditMode when a ghost placement/move finishes (commit or cancel).
+function Catalog:OnPlacementEnded()
+    self:ShowPreview()
 end
 
 -- Switch between browsing the catalog and managing placed decorations.

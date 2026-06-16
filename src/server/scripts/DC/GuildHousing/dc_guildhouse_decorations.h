@@ -51,9 +51,10 @@ namespace DCGuildHouseDecorations
     // house phase, rank permission, bounds, budget, and funds. On failure
     // `error` carries a player-facing message.
     bool Place(Player* player, uint32 entry, std::string& error,
-        uint32* outLowguid = nullptr);
+        uint32* outLowguid = nullptr, uint64* outGuidRaw = nullptr);
     bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
-        float orientation, std::string& error, uint32* outLowguid = nullptr);
+        float orientation, std::string& error, uint32* outLowguid = nullptr,
+        uint64* outGuidRaw = nullptr);
     bool MoveHere(Player* player, uint32 lowguid, std::string& error);
     bool Rotate(Player* player, uint32 lowguid, std::string& error);
     bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,

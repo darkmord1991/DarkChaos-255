@@ -34,6 +34,7 @@ L.FORM_APPLY = "Apply"
 L.FORM_RESET = "Reset to Default"
 L.FORM_LOCKED = "That form appearance is not unlocked yet."
 L.FORM_EMPTY = "No customizable forms available for this character yet."
+L.FORM_PREVIEW_UNAVAILABLE = "Preview unavailable\nThis appearance is not installed on your client yet."
 
 -- Filters
 L.FILTER_ALL = "All"

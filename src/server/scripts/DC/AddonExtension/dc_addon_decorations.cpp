@@ -18,6 +18,7 @@
 #include "Log.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "StringFormat.h"
 #include "../GOMove/GOMove.h"
 #include "../GuildHousing/dc_guildhouse.h"
 #include "../GuildHousing/dc_guildhouse_decorations.h"
@@ -84,7 +85,8 @@ namespace Decorations
     }
 
     static void SendOpResult(Player* player, uint8 opcode, bool success,
-        std::string const& error, uint32 lowguid = 0, uint32 refund = 0)
+        std::string const& error, uint32 lowguid = 0, uint32 refund = 0,
+        uint64 rawGuid = 0)
     {
         JsonValue response;
         response.SetObject();
@@ -95,6 +97,11 @@ namespace Decorations
             response.Set("lowguid", static_cast<int32>(lowguid));
         if (refund)
             response.Set("refund", static_cast<int32>(refund));
+        // Full 64-bit ObjectGuid as a hex string (does not fit the int32 Set
+        // overload). The client strtoull's it (base 16, "0x" tolerated) to
+        // auto-select the just-placed object - see HandleSelect.
+        if (rawGuid)
+            response.Set("guid", Acore::StringFormat("0x{:016X}", rawGuid));
 
         JsonMessage(Module::DECORATION, opcode, response).Send(player);
     }
@@ -134,11 +141,12 @@ namespace Decorations
 
         std::string error;
         uint32 lowguid = 0;
+        uint64 rawGuid = 0;
         bool const success = hasCoords
-            ? GHD::PlaceAt(player, entry, x, y, z, o, error, &lowguid)
-            : GHD::Place(player, entry, error, &lowguid);
+            ? GHD::PlaceAt(player, entry, x, y, z, o, error, &lowguid, &rawGuid)
+            : GHD::Place(player, entry, error, &lowguid, &rawGuid);
         SendOpResult(player, Opcode::Decoration::SMSG_PLACE_RESULT, success,
-            error, lowguid);
+            error, lowguid, 0, rawGuid);
     }
 
     static void HandleMove(Player* player, ParsedMessage const& msg)
