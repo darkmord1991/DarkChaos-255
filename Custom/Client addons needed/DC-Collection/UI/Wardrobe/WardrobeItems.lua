@@ -890,7 +890,18 @@ function Wardrobe:BuildAppearanceList()
                     hasPendingItemInfo = true
                 end
             end
-            if quality < self.selectedQualityFilter then
+            -- Heirlooms (quality 7) are numerically above Legendary (5) and would
+            -- otherwise leak into every "+" threshold, including the top "Legendary"
+            -- filter. They are not legendary appearances, so exclude them here.
+            if quality == 7 then
+                valid = false
+            elseif self.selectedQualityFilter >= 5 then
+                -- "Legendary" is labeled without a "+", so treat it as an exact
+                -- match (excludes Artifact 6 and the already-handled Heirloom 7).
+                if quality ~= 5 then
+                    valid = false
+                end
+            elseif quality < self.selectedQualityFilter then
                 valid = false
             end
         end
