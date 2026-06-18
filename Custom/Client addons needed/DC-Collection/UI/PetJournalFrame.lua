@@ -314,7 +314,13 @@ function PetJournal:CreateModelPreview(parent)
     bg:SetAllPoints()
     bg:SetTexture(0.05, 0.05, 0.1, 0.8)
 
-    local model = CreateFrame("PlayerModel", "DCPetJournalModel", modelFrame)
+    -- DressUpModel (not PlayerModel): it self-lights and reliably loads a
+    -- creature via SetDisplayInfo()/SetCreature(), so not-yet-collected pets
+    -- render from the server-supplied display id -- exactly how the Mounts tab
+    -- (DCMountJournalModel) previews uncollected mounts. A bare PlayerModel
+    -- loads the model unlit (renders black/blank) and SetDisplayInfo often
+    -- loads nothing on it.
+    local model = CreateFrame("DressUpModel", "DCPetJournalModel", modelFrame)
     model:SetPoint("TOPLEFT", modelFrame, "TOPLEFT", 10, -60)
     model:SetPoint("BOTTOMRIGHT", modelFrame, "BOTTOMRIGHT", -10, 10)
 
@@ -895,8 +901,11 @@ function PetJournal:SelectPet(petData)
             return true
         end
 
+        -- A loaded model returns its .m2 path STRING. SetCreature()/SetDisplayInfo()
+        -- that failed to load leave GetModel() returning a table (no model) -- which
+        -- is exactly how the blank uncollected-pet previews slipped through before.
         local currentModel = model:GetModel()
-        return currentModel ~= nil and currentModel ~= ""
+        return type(currentModel) == "string" and currentModel ~= ""
     end
 
     local creatureId = select(1, GetPetPreviewFields(def))
@@ -936,6 +945,14 @@ function PetJournal:SelectPet(petData)
        type(previewFallback) == "table" then
         resolvedDefinitionCreatureId = tonumber(previewFallback.creatureId)
     end
+
+    -- The dependable renderer on 3.3.5a: a client .m2 path resolved from the
+    -- display id via DC.PetModelPaths. SetModel() loads it directly; SetCreature()
+    -- needs the creature already in the client query cache and SetDisplayInfo()
+    -- frequently loads nothing on this client.
+    local resolvedDisplayKey = ToPositiveNumber(resolvedDisplayId)
+    local modelPath = (DC and DC.PetModelPaths and resolvedDisplayKey and
+        DC.PetModelPaths[resolvedDisplayKey]) or nil
 
     local function FindCollectedCompanionCreatureIdBySpellId(sId)
         if not sId or not GetNumCompanions or not GetCompanionInfo then
@@ -1030,30 +1047,59 @@ function PetJournal:SelectPet(petData)
         return false
     end
 
+    local function TrySetModelPath(path)
+        if type(path) ~= "string" or path == "" or type(model.SetModel) ~= "function" then
+            return false
+        end
+
+        local ok = pcall(model.SetModel, model, path)
+        if ok then
+            -- A raw SetModel'd creature M2 renders unlit/black without a light.
+            -- Use the working DC-Housing preview values (ambient 0.7 + directional
+            -- 0.8); ambient 1.0 + directional 1.0 is over-bright and washes the
+            -- model toward white (see CatalogFrame.lua).
+            if type(model.SetLight) == "function" then
+                pcall(model.SetLight, model, 1, 0, 0, -0.707, -0.707,
+                    0.7, 1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
+            end
+            if type(model.Show) == "function" then
+                model:Show()
+            end
+            if type(model.SetAlpha) == "function" then
+                model:SetAlpha(1)
+            end
+            ResetModelPose()
+            return true
+        end
+
+        return false
+    end
+
     if type(model.ClearModel) == "function" then
         model:ClearModel()
     end
 
     local function TryApplyModelPath(kind, value)
-        if kind == "display" then
-            if not TrySetDisplay(value) then
-                return false
-            end
+        if kind == "model" then
+            return TrySetModelPath(value)
+        elseif kind == "display" then
+            return TrySetDisplay(value)
         else
-            if not TrySetCreature(value) then
-                return false
-            end
+            return TrySetCreature(value)
         end
-
-        -- Accept API-level success and let async verification handle delayed loads.
-        return true
     end
 
     local attempts = {}
     local function PushAttempt(kind, value, allowDuplicate)
-        value = ToPositiveNumber(value)
-        if not value then
-            return
+        if kind == "model" then
+            if type(value) ~= "string" or value == "" then
+                return
+            end
+        else
+            value = ToPositiveNumber(value)
+            if not value then
+                return
+            end
         end
 
         local key = kind .. ":" .. tostring(value)
@@ -1067,21 +1113,20 @@ function PetJournal:SelectPet(petData)
         attempts[#attempts + 1] = { kind = kind, value = value }
     end
 
+    -- SetCreature() is the only renderer that binds the creature's skin
+    -- (textured); SetModel(path) loads the geometry but renders white. Prefer
+    -- SetCreature and let VerifyModelLoaded wait for a possible creature-query
+    -- round-trip before falling back to the untextured SetModel(path).
     if petData.collected then
         PushAttempt("creature", resolvedCompanionCreatureId)
-        PushAttempt("display", resolvedDisplayId)
         PushAttempt("creature", resolvedDefinitionCreatureId)
-        -- End on collected companion creature where possible.
-        PushAttempt("creature", resolvedCompanionCreatureId, true)
+        PushAttempt("model", modelPath)
+        PushAttempt("display", resolvedDisplayId)
     else
-        PushAttempt("display", resolvedDisplayId)
         PushAttempt("creature", resolvedDefinitionCreatureId)
-        -- End on display for uncollected pets; this path is usually most stable.
-        PushAttempt("display", resolvedDisplayId, true)
+        PushAttempt("model", modelPath)
+        PushAttempt("display", resolvedDisplayId)
     end
-
-    -- Some clients accept SetCreature with display-like ids as a fallback.
-    PushAttempt("creature", resolvedDisplayId)
 
     local attemptIndex = 1
     local function ApplyNextAttempt()
@@ -1110,7 +1155,7 @@ function PetJournal:SelectPet(petData)
     local verifyToken = (self._modelVerifyToken or 0) + 1
     self._modelVerifyToken = verifyToken
 
-    local function VerifyModelLoaded(retriesLeft)
+    local function VerifyModelLoaded(checksLeft)
         if self._modelVerifyToken ~= verifyToken then
             return
         end
@@ -1119,33 +1164,21 @@ function PetJournal:SelectPet(petData)
             return
         end
 
-        -- Keep walking fallbacks first; API-level success can still result in
-        -- a blank frame on some clients.
-        if retriesLeft and retriesLeft > 0 then
-            ApplyNextAttempt()
-            if DC and type(DC.After) == "function" then
-                DC.After(0.12, function()
-                    VerifyModelLoaded(retriesLeft - 1)
-                end)
-                return
-            end
-        end
-
         if HasLoadedModel() then
             if type(DC.Debug) == "function" then
                 local loadedKey = tostring(ToPositiveNumber(petData.id) or "?")
                 DC._petPreviewLoadedSeen = DC._petPreviewLoadedSeen or {}
                 if not DC._petPreviewLoadedSeen[loadedKey] then
                     DC._petPreviewLoadedSeen[loadedKey] = true
-                    local modelPath = "n/a"
+                    local loadedPath = "n/a"
                     if type(model.GetModel) == "function" then
                         local raw = model:GetModel()
-                        modelPath = (raw and raw ~= "" and tostring(raw)) or "<empty>"
+                        loadedPath = (type(raw) == "string" and raw ~= "" and raw) or "<empty>"
                     end
                     DC:Debug(string.format(
                         "Pet preview model loaded: id=%s path=%s attempts=%d/%d",
                         loadedKey,
-                        modelPath,
+                        loadedPath,
                         math.max(0, math.min((attemptIndex - 1), #attempts)),
                         #attempts))
                 end
@@ -1153,37 +1186,49 @@ function PetJournal:SelectPet(petData)
             return
         end
 
-        local recovered = false
-
-        while attemptIndex <= #attempts do
-            if ApplyNextAttempt() then
-                recovered = true
-                break
-            end
+        -- The current attempt may still be loading: a SetCreature() for a creature
+        -- the client has not cached can need a server creature-query round-trip
+        -- before the (textured) model appears. Give it a few delayed checks before
+        -- advancing to the next, less faithful, attempt.
+        if checksLeft and checksLeft > 0 and DC and type(DC.After) == "function" then
+            DC.After(0.3, function()
+                VerifyModelLoaded(checksLeft - 1)
+            end)
+            return
         end
 
-        if not recovered and type(model.SetUnit) == "function" then
-            ReportPetPreviewIssue(
-                petData,
-                def,
-                "model_async_load_failed",
-                resolvedDisplayId,
-                fallbackCreatureId or resolvedDefinitionCreatureId)
+        -- Timed out on the current attempt; advance to the next fallback
+        -- (e.g. the untextured SetModel(path), then SetDisplayInfo).
+        if attemptIndex <= #attempts then
+            ApplyNextAttempt()
+            if DC and type(DC.After) == "function" then
+                DC.After(0.2, function()
+                    VerifyModelLoaded(1)
+                end)
+                return
+            end
+            VerifyModelLoaded(0)
+            return
+        end
 
-            model:SetUnit("player")
-            if type(model.Show) == "function" then
-                model:Show()
-            end
-            if type(model.SetAlpha) == "function" then
-                model:SetAlpha(1)
-            end
-            ResetModelPose()
+        -- Nothing rendered. Leave the frame cleared rather than showing the
+        -- player model -- a bare DressUpModel otherwise falls back to the dressed
+        -- (and possibly mounted) player character.
+        ReportPetPreviewIssue(
+            petData,
+            def,
+            "model_async_load_failed",
+            resolvedDisplayId,
+            fallbackCreatureId or resolvedDefinitionCreatureId)
+
+        if type(model.ClearModel) == "function" then
+            model:ClearModel()
         end
     end
 
     if DC and type(DC.After) == "function" then
-        DC.After(0.12, function()
-            VerifyModelLoaded(2)
+        DC.After(0.2, function()
+            VerifyModelLoaded(4)
         end)
     else
         VerifyModelLoaded(0)

@@ -688,6 +688,83 @@ bool Remove(Player* player, uint32 lowguid, std::string& error,
     return true;
 }
 
+bool RemoveAll(Player* player, std::string& error,
+    uint32* outRemovedCount, uint32* outTotalRefund)
+{
+    GuildHouseData const* house = nullptr;
+    if (!ValidateInHouse(player, house, error))
+        return false;
+
+    if (!IsDecorationGM(player)
+        && !GuildHouseManager::HasPermission(player, GH_PERM_DELETE))
+    {
+        error = "Your guild rank may not remove decorations.";
+        return false;
+    }
+
+    uint32 const guildId = player->GetGuildId();
+    if (!guildId)
+    {
+        error = "You are not in a guild.";
+        return false;
+    }
+
+    std::vector<uint32> toRemove;
+    for (auto const& [lowguid, info] : sInstances)
+    {
+        if (info.guildId == guildId)
+            toRemove.push_back(lowguid);
+    }
+
+    if (toRemove.empty())
+    {
+        error = "No decorations to remove.";
+        return false;
+    }
+
+    uint32 totalRefund = 0;
+    uint32 removedCount = 0;
+
+    for (uint32 lowguid : toRemove)
+    {
+        auto it = sInstances.find(lowguid);
+        if (it == sInstances.end())
+            continue;
+
+        InstanceInfo const& info = it->second;
+        uint32 const entry = info.entry;
+        uint32 const refund = info.paidCopper * sRefundPercent / 100;
+
+        if (GameObject* object = ::GOMove::GetGameObject(player, lowguid))
+            ::GOMove::DeleteGameObject(object);
+
+        AddUsedBudget(guildId, -static_cast<int32>(WeightOf(entry)));
+        sInstances.erase(it);
+
+        totalRefund += refund;
+        ++removedCount;
+    }
+
+    CharacterDatabase.Execute(
+        "DELETE FROM `dc_guildhouse_decoration_instances` "
+        "WHERE `guild_id` = {}",
+        guildId);
+
+    if (totalRefund)
+        player->ModifyMoney(static_cast<int32>(totalRefund));
+
+    GuildHouseManager::LogAction(player, GH_ACTION_DELETE,
+        GH_ENTITY_GAMEOBJECT, 0, 0,
+        player->GetPositionX(), player->GetPositionY(),
+        player->GetPositionZ(), player->GetOrientation());
+
+    if (outRemovedCount)
+        *outRemovedCount = removedCount;
+    if (outTotalRefund)
+        *outTotalRefund = totalRefund;
+    return true;
+}
+
 // ============================================================
 // Decorator NPC - gossip catalog browser (non-addon fallback UI)
 // ============================================================

@@ -17,15 +17,13 @@
       "collectionType": 2,
       "serverType": "pet",
       "serverSource": "table",
-      "definitionCount": 176,
-      "expectedCount": 164,
+      "definitionCount": 224,
+      "expectedCount": 212,
       "indexAvailable": true,
-      "authoritative": false,
-      "requestSkip": false,
-      "missingCount": 1,
-      "missingIds": [
-        39148
-      ]
+      "authoritative": true,
+      "requestSkip": true,
+      "missingCount": 0,
+      "missingIds": []
     },
     "heirlooms": {
       "collectionType": 4,

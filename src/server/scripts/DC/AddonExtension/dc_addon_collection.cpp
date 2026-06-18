@@ -1305,6 +1305,23 @@ namespace DCCollection
         // Optional: also include spell-only minipet summon spells (pet_entry = spellId) if no teaching item exists.
         // Disabled by default; iterates Spell.dbc which can add startup time.
         constexpr const char* PET_DEFINITIONS_REBUILD_INCLUDE_SPELL_ONLY = "DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly";
+
+        // Non-destructive maintenance: fill any missing dc_pet_definitions.display_id (and pet_spell_id)
+        // by resolving the companion summon spell -> creature -> CreatureDisplayInfo. Unlike the rebuild
+        // above this never inserts/truncates/renames; it only persists model ids so not-yet-collected
+        // pets still render in the client 3D preview (GetCompanionInfo only knows owned companions).
+        // Idempotent: skips rows that already have a display id. Rows it cannot resolve are logged.
+        constexpr const char* PET_DEFINITIONS_BACKFILL_DISPLAY_IDS_ON_STARTUP = "DCCollection.Pets.BackfillDisplayIdsOnStartup";
+
+        // On a pet-definitions request, push SMSG_CREATURE_QUERY_RESPONSE for each
+        // resolved pet creature (unsolicited) so the client caches entry->display
+        // and Model:SetCreature() can render not-yet-collected pets TEXTURED -- the
+        // 3.3.5a client only binds a creature's skin for a creature it has cached
+        // (which is why owned companions and common mounts already look right).
+        // Best-effort, off by default. If this does not texture them live, the
+        // client does not cache unsolicited responses and the DLL native is needed
+        // (see Custom/Documentation/Pet_Form_Preview_Texture_Native.md).
+        constexpr const char* PET_PREWARM_CREATURE_CACHE = "DCCollection.Pets.PreWarmCreatureCacheOnDefinitions";
     }
 
     // Currency IDs
@@ -1424,6 +1441,62 @@ namespace DCCollection
         return false;
     }
 
+    // Item-context-only tolerant companion resolver.
+    //
+    // IsCompanionSpell() (above) is intentionally STRICT (requires a resolvable
+    // SummonProperties Type == MINIPET) because it is also used to disambiguate
+    // mount-vs-pet over the player's RAW learned-spell stream (account import,
+    // OnPlayerLearnSpell) and as a store-wide filter -- broadening it there would
+    // misclassify guardians/totems/vehicles/water-elemental as companion pets.
+    //
+    // This helper is ONLY called from inside a proven companion-item context
+    // (item_template Class == 15 && SubClass == 2), so the misclassification
+    // surface is already bounded to the companion subclass. It accepts a
+    // SPELL_EFFECT_SUMMON / SPELL_EFFECT_SUMMON_PET effect whose creature
+    // MiscValue resolves to a real CreatureTemplate with a valid model, even when
+    // the SummonProperties row is missing/zero/unresolvable -- which is exactly
+    // how valid classic companions present on this level-255 custom DBC (the
+    // strict MINIPET gate rejects all of them uniformly). A MINIPET property is
+    // preferred and wins immediately; a clearly-non-companion property type
+    // (PET/GUARDIAN/MINION/TOTEM/GUARDIAN2/VEHICLE*/LIGHTWELL/JEEVES) is still
+    // rejected so a teaching item that happens to cast such a summon is not
+    // misfiled. Returns true if any acceptable companion summon effect is found.
+    bool ItemContextIsCompanionSummonSpell(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return false;
+
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            if (spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON &&
+                spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON_PET)
+                continue;
+
+            uint32 const creatureId = static_cast<uint32>(spellInfo->Effects[i].MiscValue);
+            if (!creatureId)
+                continue;
+
+            // Reject summon types that are never non-combat companions. A missing
+            // (nullptr) or NONE/WILD property is ACCEPTED -- that is the relaxation
+            // for the custom DBC where companion SummonProperties are unresolvable.
+            SummonPropertiesEntry const* properties =
+                sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+            if (properties &&
+                properties->Type != SUMMON_TYPE_MINIPET &&
+                properties->Type != SUMMON_TYPE_NONE &&
+                properties->Type != SUMMON_TYPE_WILD2 &&
+                properties->Type != SUMMON_TYPE_WILD3)
+                continue;
+
+            // Require the summoned creature to actually exist with a valid model;
+            // this rejects DUMMY/SCRIPT teaching spells that carry no real summon.
+            CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId);
+            if (cInfo && cInfo->GetFirstValidModel())
+                return true;
+        }
+        return false;
+    }
+
     uint32 ResolveCompanionSummonSpellFromSpell(uint32 spellId)
     {
         if (!spellId)
@@ -1519,12 +1592,20 @@ namespace DCCollection
                         spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON_PET)
                         continue;
 
+                    // Item context (caller already enforced Class==15 && SubClass==2):
+                    // capture the creature on any non-banned SUMMON; prefer MINIPET.
                     SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
-                    if (!properties || properties->Type != SUMMON_TYPE_MINIPET)
+                    bool const bannedType = properties &&
+                        properties->Type != SUMMON_TYPE_MINIPET &&
+                        properties->Type != SUMMON_TYPE_NONE &&
+                        properties->Type != SUMMON_TYPE_WILD2 &&
+                        properties->Type != SUMMON_TYPE_WILD3;
+                    if (bannedType || !spellInfo->Effects[i].MiscValue)
                         continue;
 
                     creatureId = spellInfo->Effects[i].MiscValue;
-                    break;
+                    if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                        break;
                 }
             }
 
@@ -1674,7 +1755,9 @@ namespace DCCollection
                 continue;
 
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-            if (IsCompanionSpell(spellInfo))
+            // Item context (this is a teaching item): tolerate companions whose
+            // SummonProperties are missing/unresolvable on the custom 255 DBC.
+            if (ItemContextIsCompanionSummonSpell(spellInfo))
                 return spellId;
 
             // Many companion "teaching" items cast a spell that teaches the real summon spell.
@@ -1693,7 +1776,7 @@ namespace DCCollection
 
                     if (SpellInfo const* taughtInfo = sSpellMgr->GetSpellInfo(taughtSpellId))
                     {
-                        if (IsCompanionSpell(taughtInfo))
+                        if (ItemContextIsCompanionSummonSpell(taughtInfo))
                             return taughtSpellId;
                     }
                 }
@@ -1706,18 +1789,382 @@ namespace DCCollection
         // so returning the first non-zero spell here can produce bogus/"unknown" companions.
         if (proto->Class == 15 && proto->SubClass == 2)
         {
+            // Tolerant BFS over each item spell's LEARN/TRIGGER chain, accepting the
+            // first spell that is an item-context companion summon (missing/zero
+            // SummonProperties allowed). This intentionally does NOT return the
+            // generic 55884 "Learning" placeholder, because that spell carries no
+            // SUMMON-with-real-creature effect and so fails the predicate.
             for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
             {
-                uint32 spellId = proto->Spells[i].SpellId;
-                if (!spellId)
+                uint32 const rootSpellId = proto->Spells[i].SpellId;
+                if (!rootSpellId)
                     continue;
 
-                if (uint32 resolved = ResolveCompanionSummonSpellFromSpell(spellId))
-                    return resolved;
+                std::vector<uint32> toVisit;
+                toVisit.push_back(rootSpellId);
+                std::unordered_set<uint32> visited;
+                visited.reserve(16);
+
+                while (!toVisit.empty())
+                {
+                    uint32 const spellIdToCheck = toVisit.back();
+                    toVisit.pop_back();
+
+                    if (!spellIdToCheck || visited.find(spellIdToCheck) != visited.end())
+                        continue;
+                    visited.insert(spellIdToCheck);
+
+                    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellIdToCheck);
+                    if (!spellInfo)
+                        continue;
+
+                    if (ItemContextIsCompanionSummonSpell(spellInfo))
+                        return spellIdToCheck;
+
+                    for (uint8 eff = 0; eff < MAX_SPELL_EFFECTS; ++eff)
+                    {
+                        SpellEffectInfo const& effect = spellInfo->Effects[eff];
+                        if (effect.Effect != SPELL_EFFECT_LEARN_SPELL &&
+                            effect.Effect != SPELL_EFFECT_LEARN_PET_SPELL &&
+                            effect.Effect != SPELL_EFFECT_TRIGGER_SPELL)
+                            continue;
+
+                        uint32 nextSpellId = effect.TriggerSpell;
+                        if (!nextSpellId && effect.MiscValue > 0)
+                            nextSpellId = static_cast<uint32>(effect.MiscValue);
+
+                        if (nextSpellId && visited.find(nextSpellId) == visited.end())
+                            toVisit.push_back(nextSpellId);
+                    }
+                }
             }
         }
 
         return 0;
+    }
+
+    // Surgical, non-destructive maintenance: fill in dc_pet_definitions.display_id (and the
+    // resolved pet_spell_id) for rows that are missing it, so the client's 3D preview has a
+    // stable CreatureDisplayInfo id to render even for not-yet-collected pets (the client's
+    // GetCompanionInfo only knows owned companions). Unlike RebuildPetDefinitionsFromLocalData
+    // this never inserts rows, never truncates, and never overwrites curated name/source/rarity --
+    // it only resolves and persists the model id. It reuses the exact runtime resolution chain
+    // (teaching item -> companion summon spell -> SPELL_EFFECT_SUMMON creature -> first valid
+    // creature model). Rows it cannot resolve are logged so the few genuinely-broken definitions
+    // can be fixed by hand. Idempotent: only touches rows whose display id is still 0/NULL.
+    void BackfillPetDisplayIds()
+    {
+        if (!WorldTableExists("dc_pet_definitions"))
+        {
+            LOG_WARN("module.dc", "DC-Collection: dc_pet_definitions missing; skipping pet display-id backfill.");
+            return;
+        }
+
+        // Resolve the actual column names (schema varies across deployments).
+        std::string entryCol = WorldColumnExists("dc_pet_definitions", "pet_entry") ? "pet_entry" : "";
+        if (entryCol.empty() && WorldColumnExists("dc_pet_definitions", "item_id"))
+            entryCol = "item_id";
+
+        std::string displayCol;
+        if (WorldColumnExists("dc_pet_definitions", "display_id"))
+            displayCol = "display_id";
+        else if (WorldColumnExists("dc_pet_definitions", "displayId"))
+            displayCol = "displayId";
+
+        if (entryCol.empty() || displayCol.empty())
+        {
+            LOG_WARN("module.dc",
+                "DC-Collection: pet display-id backfill skipped (missing entry/display column; entry='{}', display='{}').",
+                entryCol, displayCol);
+            return;
+        }
+
+        std::string spellCol;
+        if (WorldColumnExists("dc_pet_definitions", "pet_spell_id"))
+            spellCol = "pet_spell_id";
+        else if (WorldColumnExists("dc_pet_definitions", "spell_id"))
+            spellCol = "spell_id";
+        else if (WorldColumnExists("dc_pet_definitions", "spellId"))
+            spellCol = "spellId";
+
+        bool const entryIsItemId = (entryCol == "pet_entry" || entryCol == "item_id");
+
+        // Prefer a curated/stored summon spell when present (authoritative).
+        std::string const spellSel = spellCol.empty() ? std::string("0") : spellCol;
+
+        // Only touch rows that still lack a display id.
+        QueryResult r = WorldDatabase.Query(
+            "SELECT {}, name, {} FROM dc_pet_definitions WHERE {} = 0 OR {} IS NULL",
+            entryCol, spellSel, displayCol, displayCol);
+        if (!r)
+        {
+            LOG_INFO("module.dc",
+                "DC-Collection: pet display-id backfill: nothing to do (every row already has a display id).");
+            return;
+        }
+
+        uint32 resolved = 0;
+        uint32 unresolved = 0;
+        std::string unresolvedList;
+
+        do
+        {
+            Field* f = r->Fetch();
+            uint32 const raw = f[0].Get<uint32>();
+            std::string const name = f[1].Get<std::string>();
+            uint32 const storedSpell = f[2].Get<uint32>();
+
+            uint32 itemId = entryIsItemId ? raw : 0;
+            uint32 spellId = entryIsItemId ? 0 : raw;
+
+            // Prefer a curated/stored summon spell (authoritative); otherwise
+            // resolve from the teaching item / legacy spell entry.
+            if (storedSpell)
+                spellId = storedSpell;
+            else if (itemId)
+                spellId = FindCompanionSpellIdForItem(itemId);
+            else if (spellId)
+                spellId = ResolveCompanionSummonSpellFromSpell(spellId);
+
+            uint32 creatureId = 0;
+            if (SpellInfo const* spellInfo = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr)
+            {
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                {
+                    if (spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON &&
+                        spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON_PET)
+                        continue;
+
+                    creatureId = spellInfo->Effects[i].MiscValue;
+
+                    // Prefer (and stop on) a true minipet summon; otherwise keep the first summon found.
+                    SummonPropertiesEntry const* properties =
+                        sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                    if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                        break;
+                }
+            }
+
+            uint32 displayId = 0;
+            if (creatureId)
+            {
+                if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                {
+                    if (CreatureModel const* m = cInfo->GetFirstValidModel())
+                        displayId = m->CreatureDisplayID;
+                }
+            }
+
+            if (!displayId)
+            {
+                ++unresolved;
+                if (unresolvedList.size() < 4000)
+                {
+                    if (!unresolvedList.empty())
+                        unresolvedList += ", ";
+                    unresolvedList += std::to_string(raw) + " (" + name + ")";
+                }
+                continue;
+            }
+
+            // Persist the model id; also fill the resolved summon spell when that column is empty.
+            WorldDatabase.Execute(
+                "UPDATE dc_pet_definitions SET {} = {} WHERE {} = {}",
+                displayCol, displayId, entryCol, raw);
+
+            if (!spellCol.empty() && spellId)
+            {
+                WorldDatabase.Execute(
+                    "UPDATE dc_pet_definitions SET {} = {} WHERE {} = {} AND ({} = 0 OR {} IS NULL)",
+                    spellCol, spellId, entryCol, raw, spellCol, spellCol);
+            }
+
+            ++resolved;
+        } while (r->NextRow());
+
+        LOG_INFO("module.dc",
+            "DC-Collection: pet display-id backfill complete: {} resolved & persisted, {} unresolved.",
+            resolved, unresolved);
+
+        if (unresolved)
+        {
+            LOG_WARN("module.dc",
+                "DC-Collection: {} pet definition(s) have no resolvable model (3D preview will be blank for "
+                "not-owned pets). Fix the teaching item/summon spell or set display_id manually -> {}",
+                unresolved, unresolvedList);
+        }
+    }
+
+    // Push a SMSG_CREATURE_QUERY_RESPONSE for one creature to a session, unsolicited,
+    // to pre-populate the client's creature cache (entry -> name + display ids).
+    // Field order mirrors WorldSession::HandleCreatureQueryOpcode so the client parses
+    // it identically. This is what lets Model:SetCreature(entry) render TEXTURED for a
+    // not-yet-collected pet (the client binds the skin only for a cached creature).
+    void SendCreatureQueryResponseTo(WorldSession* session, uint32 entry, CreatureTemplate const* ci)
+    {
+        if (!session || !ci)
+            return;
+
+        std::string name = ci->Name;
+        std::string title = ci->SubName;
+
+        LocaleConstant loc_idx = session->GetSessionDbLocaleIndex();
+        if (loc_idx >= 0)
+        {
+            if (CreatureLocale const* cl = sObjectMgr->GetCreatureLocale(entry))
+            {
+                ObjectMgr::GetLocaleString(cl->Name, loc_idx, name);
+                ObjectMgr::GetLocaleString(cl->Title, loc_idx, title);
+            }
+        }
+
+        WorldPacket data(SMSG_CREATURE_QUERY_RESPONSE, 100);
+        data << uint32(entry);
+        data << name;
+        data << uint8(0) << uint8(0) << uint8(0);                    // name2/3/4 (unused)
+        data << title;
+        data << ci->IconName;
+        data << uint32(ci->type_flags);
+        data << uint32(ci->type);
+        data << uint32(ci->family);
+        data << uint32(ci->rank);
+        data << uint32(ci->KillCredit[0]);
+        data << uint32(ci->KillCredit[1]);
+        for (uint8 i = 0; i < 4; ++i)
+        {
+            if (CreatureModel const* m = ci->GetModelByIdx(i))
+                data << uint32(m->CreatureDisplayID);
+            else
+                data << uint32(0);
+        }
+        data << float(ci->ModHealth);
+        data << float(ci->ModMana);
+        data << uint8(ci->RacialLeader);
+
+        CreatureQuestItemList const* items = sObjectMgr->GetCreatureQuestItemList(entry);
+        for (std::size_t i = 0; i < MAX_CREATURE_QUEST_ITEMS; ++i)
+            data << (items && i < items->size() ? uint32((*items)[i]) : uint32(0));
+
+        data << uint32(ci->movementId);
+        session->SendPacket(&data);
+    }
+
+    // Resolve every pet's summoned creature (same chain as BackfillPetDisplayIds) and
+    // pre-warm the requesting client's creature cache so SetCreature() renders them
+    // textured. Off unless DCCollection.Pets.PreWarmCreatureCacheOnDefinitions = 1.
+    // Per-session throttle for the pet creature-cache pre-warm. The client
+    // clears its creature cache on every relog, so the pre-warm must run once
+    // per session -- but ONLY once. Without this, every pet-definitions request
+    // (Pets tab open, login sync, manual refresh) would re-blast ~160
+    // creature-query packets, which is both wasteful and a visible load hitch.
+    // The entry is dropped on logout (OnPlayerLogout -> ClearPetPrewarmState).
+    std::mutex& PetPrewarmMutex()
+    {
+        static std::mutex m;
+        return m;
+    }
+    std::unordered_set<uint32>& PetPrewarmedGuids()
+    {
+        static std::unordered_set<uint32> s;
+        return s;
+    }
+    void ClearPetPrewarmState(uint32 guidLow)
+    {
+        std::lock_guard<std::mutex> lock(PetPrewarmMutex());
+        PetPrewarmedGuids().erase(guidLow);
+    }
+
+    void PreWarmPetCreatureCache(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+        if (!sConfigMgr->GetOption<bool>(Config::PET_PREWARM_CREATURE_CACHE, false))
+            return;
+        if (!WorldTableExists("dc_pet_definitions"))
+            return;
+
+        // Fire at most once per client session (see PetPrewarmedGuids above).
+        uint32 const guidLow = player->GetGUID().GetCounter();
+        {
+            std::lock_guard<std::mutex> lock(PetPrewarmMutex());
+            if (!PetPrewarmedGuids().insert(guidLow).second)
+                return;
+        }
+
+        std::string entryCol = WorldColumnExists("dc_pet_definitions", "pet_entry") ? "pet_entry" : "";
+        if (entryCol.empty() && WorldColumnExists("dc_pet_definitions", "item_id"))
+            entryCol = "item_id";
+        if (entryCol.empty())
+            return;
+
+        std::string spellCol;
+        if (WorldColumnExists("dc_pet_definitions", "pet_spell_id"))
+            spellCol = "pet_spell_id";
+        else if (WorldColumnExists("dc_pet_definitions", "spell_id"))
+            spellCol = "spell_id";
+        else if (WorldColumnExists("dc_pet_definitions", "spellId"))
+            spellCol = "spellId";
+
+        bool const entryIsItemId = (entryCol == "pet_entry" || entryCol == "item_id");
+
+        // Prefer a curated/stored summon spell when present (authoritative).
+        std::string const spellSel = spellCol.empty() ? std::string("0") : spellCol;
+        QueryResult r = WorldDatabase.Query("SELECT {}, {} FROM dc_pet_definitions", entryCol, spellSel);
+        if (!r)
+            return;
+
+        WorldSession* session = player->GetSession();
+        std::unordered_set<uint32> sent;
+        uint32 const maxSends = 400;
+
+        do
+        {
+            Field* f = r->Fetch();
+            uint32 const raw = f[0].Get<uint32>();
+            uint32 const storedSpell = f[1].Get<uint32>();
+            uint32 itemId = entryIsItemId ? raw : 0;
+            uint32 spellId = entryIsItemId ? 0 : raw;
+
+            if (storedSpell)
+                spellId = storedSpell;
+            else if (itemId)
+                spellId = FindCompanionSpellIdForItem(itemId);
+            else if (spellId)
+                spellId = ResolveCompanionSummonSpellFromSpell(spellId);
+
+            uint32 creatureId = 0;
+            if (SpellInfo const* spellInfo = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr)
+            {
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                {
+                    if (spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON &&
+                        spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON_PET)
+                        continue;
+
+                    creatureId = spellInfo->Effects[i].MiscValue;
+
+                    SummonPropertiesEntry const* properties =
+                        sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                    if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                        break;
+                }
+            }
+
+            if (!creatureId || sent.count(creatureId))
+                continue;
+
+            if (CreatureTemplate const* ci = sObjectMgr->GetCreatureTemplate(creatureId))
+            {
+                SendCreatureQueryResponseTo(session, creatureId, ci);
+                sent.insert(creatureId);
+                if (sent.size() >= maxSends)
+                    break;
+            }
+        } while (r->NextRow());
+
+        LOG_DEBUG("module.dc",
+            "DC-Collection: pre-warmed {} pet creature(s) into the client cache for {}.",
+            uint32(sent.size()), player->GetName());
     }
 
     // Forward declarations used by early migration helpers.
@@ -6663,24 +7110,37 @@ namespace DCCollection
                                             if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
                                                 spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
                                             {
+                                                // Item context (player owns this Class15/SubClass2 item): accept any
+                                                // SUMMON effect with a real creature; prefer MINIPET but tolerate the
+                                                // missing/unresolvable SummonProperties of the custom 255 DBC. Reject
+                                                // clearly-non-companion summon types so a stray guardian/totem summon
+                                                // on a companion item is not misfiled.
                                                 SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
-                                                if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                                                bool const bannedType = properties &&
+                                                    properties->Type != SUMMON_TYPE_MINIPET &&
+                                                    properties->Type != SUMMON_TYPE_NONE &&
+                                                    properties->Type != SUMMON_TYPE_WILD2 &&
+                                                    properties->Type != SUMMON_TYPE_WILD3;
+                                                uint32 const effCreatureId = static_cast<uint32>(spellInfo->Effects[i].MiscValue);
+                                                if (!bannedType && effCreatureId)
                                                 {
-                                                    isValidCompanion = true;
-                                                    creatureId = spellInfo->Effects[i].MiscValue;
-                                                    if (creatureId)
+                                                    if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(effCreatureId))
                                                     {
-                                                        if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                                                        if (CreatureModel const* m = cInfo->GetFirstValidModel())
                                                         {
-                                                            if (CreatureModel const* m = cInfo->GetFirstValidModel())
-                                                                displayId = m->CreatureDisplayID;
+                                                            isValidCompanion = true;
+                                                            creatureId = effCreatureId;
+                                                            displayId = m->CreatureDisplayID;
 
                                                             // Fallback name from creature if item name is missing/unknown
                                                             if (name.empty() || name == "Unknown")
                                                                 name = cInfo->Name;
+
+                                                            bool const isMinipet = properties && properties->Type == SUMMON_TYPE_MINIPET;
+                                                            if (isMinipet)
+                                                                break;
                                                         }
                                                     }
-                                                    break;
                                                 }
                                             }
                                         }
@@ -6705,24 +7165,32 @@ namespace DCCollection
                                     if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
                                         spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
                                     {
+                                        // Legacy spell-keyed owned pet: same tolerant rule as the item path.
                                         SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
-                                        if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                                        bool const bannedType = properties &&
+                                            properties->Type != SUMMON_TYPE_MINIPET &&
+                                            properties->Type != SUMMON_TYPE_NONE &&
+                                            properties->Type != SUMMON_TYPE_WILD2 &&
+                                            properties->Type != SUMMON_TYPE_WILD3;
+                                        uint32 const effCreatureId = static_cast<uint32>(spellInfo->Effects[i].MiscValue);
+                                        if (!bannedType && effCreatureId)
                                         {
-                                            isValidCompanion = true;
-                                            if (spellInfo->SpellName[0])
-                                                name = spellInfo->SpellName[0];
-
-                                            creatureId = spellInfo->Effects[i].MiscValue;
-                                            if (creatureId)
+                                            if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(effCreatureId))
                                             {
-                                                if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                                                if (CreatureModel const* m = cInfo->GetFirstValidModel())
                                                 {
-                                                    if (CreatureModel const* m = cInfo->GetFirstValidModel())
-                                                        displayId = m->CreatureDisplayID;
+                                                    isValidCompanion = true;
+                                                    if (spellInfo->SpellName[0])
+                                                        name = spellInfo->SpellName[0];
+
+                                                    creatureId = effCreatureId;
+                                                    displayId = m->CreatureDisplayID;
+
+                                                    bool const isMinipet = properties && properties->Type == SUMMON_TYPE_MINIPET;
+                                                    if (isMinipet)
+                                                        break;
                                                 }
                                             }
-
-                                            break;
                                         }
                                     }
                                 }
@@ -6827,6 +7295,11 @@ namespace DCCollection
         msg.Set("definitions", defs);
         msg.Set("syncVersion", cachedSyncVersion ? cachedSyncVersion : 1);
         msg.Send(player);
+
+        // Best-effort: pre-warm the client creature cache so not-yet-collected pets
+        // render textured in the preview (gated; no-op unless the config is enabled).
+        if (ct == CollectionType::PET)
+            PreWarmPetCreatureCache(player);
     }
 
     // Send ItemSet definitions from ItemSet.dbc
@@ -6970,6 +7443,16 @@ namespace DCCollection
         SendCollectionWave1Payload(player,
             DCAddon::Opcode::Collection::SMSG_COLLECTION,
             payload.Encode());
+
+        // Pre-warm the client creature cache here too (throttled once/session):
+        // the client serves pet DEFINITIONS from local CDBC and may never send
+        // CMSG_GET_DEFINITIONS (it logs "using local CDBC metadata" and returns),
+        // so the definitions-handler pre-warm never fires. The pet COLLECTION is
+        // per-character and always requested from the server every session, so
+        // this is the reliable trigger that lets SetCreature() render textured
+        // previews for not-yet-collected pets.
+        if (ct == CollectionType::PET)
+            PreWarmPetCreatureCache(player);
     }
 
     void HandleGetDefinitionsMessage(Player* player, const DCAddon::ParsedMessage& msg)
@@ -7095,6 +7578,15 @@ namespace DCCollection
                 ack.Set("limit", limit ? limit : 0);
                 ack.Set("more", false);
                 ack.Send(player);
+
+                // Definitions are client-cached so we skip the full resend, but
+                // the per-session client creature cache still needs warming so
+                // not-yet-collected pets render textured in the 3D preview.
+                // (Throttled to once per session inside the helper.) This is the
+                // path that previously left pets white: SendDefinitions -- and
+                // therefore the pre-warm -- never ran on the short-circuit.
+                if (static_cast<CollectionType>(type) == CollectionType::PET)
+                    PreWarmPetCreatureCache(player);
                 return;
             }
         }
@@ -7748,6 +8240,10 @@ namespace DCCollection
             EraseSessionNotifiedAppearances(guid);
 
             EraseCharacterTransmogCache(guid);
+
+            // Allow the pet creature-cache pre-warm to fire again next session
+            // (the client creature cache is cleared on relog).
+            ClearPetPrewarmState(guid);
         }
     };
 
@@ -7811,6 +8307,14 @@ namespace DCCollection
             if (!reload && enabled && sConfigMgr->GetOption<bool>(Config::PET_DEFINITIONS_REBUILD_ON_STARTUP, false))
             {
                 RebuildPetDefinitionsFromLocalData();
+            }
+
+            // Non-destructive: ensure every curated pet has a persisted model id so not-owned
+            // pets render in the client 3D preview. Idempotent and curation-preserving (only
+            // fills rows whose display_id is still 0); also logs any unresolvable definitions.
+            if (!reload && enabled && sConfigMgr->GetOption<bool>(Config::PET_DEFINITIONS_BACKFILL_DISPLAY_IDS_ON_STARTUP, false))
+            {
+                BackfillPetDisplayIds();
             }
         }
     };

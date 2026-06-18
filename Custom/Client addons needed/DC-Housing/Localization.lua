@@ -14,4 +14,5 @@ DCHousingLocale = {
     GHOST_HINT = "Click to place - mouse wheel rotates - Shift+wheel adjusts height - right-click cancels.",
     CONFIRM_REMOVE = "Remove '%s'? You get a partial refund.",
     NOT_ENABLED = "This decoration is not available yet (model not shipped).",
+    CONFIRM_RESET_ALL = "Remove ALL guild house decorations? Each decoration will be partially refunded. This cannot be undone.",
 }

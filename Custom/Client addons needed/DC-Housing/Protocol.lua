@@ -14,14 +14,17 @@ Protocol.Opcodes = {
     CMSG_SELECT        = 0x06,
     CMSG_LIST          = 0x07,
 
-    SMSG_CATALOG       = 0x10,
-    SMSG_PLACE_RESULT  = 0x11,
-    SMSG_MOVE_RESULT   = 0x12,
-    SMSG_REMOVE_RESULT = 0x13,
-    SMSG_BUDGET        = 0x14,
-    SMSG_SELECT_RESULT = 0x15,
-    SMSG_OPEN_UI       = 0x16,
-    SMSG_LIST          = 0x17,
+    CMSG_RESET_ALL     = 0x08,
+
+    SMSG_CATALOG           = 0x10,
+    SMSG_PLACE_RESULT      = 0x11,
+    SMSG_MOVE_RESULT       = 0x12,
+    SMSG_REMOVE_RESULT     = 0x13,
+    SMSG_BUDGET            = 0x14,
+    SMSG_SELECT_RESULT     = 0x15,
+    SMSG_OPEN_UI           = 0x16,
+    SMSG_LIST              = 0x17,
+    SMSG_RESET_ALL_RESULT  = 0x18,
 }
 
 function Protocol:Init()
@@ -121,6 +124,26 @@ function Protocol:Init()
             end
         end)
 
+    DCAddonProtocol:RegisterJSONHandler(DC.MODULE_ID, O.SMSG_RESET_ALL_RESULT,
+        function(data)
+            data = data or {}
+            if data.success then
+                local removed = tonumber(data.removed) or 0
+                local refund = tonumber(data.refund) or 0
+                DC:Print(string.format(
+                    "Removed %d decoration(s). %dg refunded.",
+                    removed, math.floor(refund / 10000)))
+                if DC.EditMode then
+                    DC.EditMode:ClearSelection()
+                end
+                self:RequestList()
+            else
+                DC:Print("|cffff0000"
+                    .. (data.error or "Reset failed.") .. "|r")
+            end
+            self:RequestBudget()
+        end)
+
     self:RequestBudget()
 end
 
@@ -216,4 +239,8 @@ end
 function Protocol:Select(guidHex)
     DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_SELECT,
         { guid = guidHex })
+end
+
+function Protocol:ResetAll()
+    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_RESET_ALL)
 end

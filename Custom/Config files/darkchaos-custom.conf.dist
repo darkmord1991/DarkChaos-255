@@ -15,6 +15,7 @@
 #   Section 1:  Global Server Settings
 #   Section 2:  Unified Seasonal System
 #   Section 3:  Addon Communication Protocol
+#   Section 3A: Trial Account Restrictions
 #
 # PART II - GAMEPLAY SYSTEMS
 #   Section 4:  AoE Loot System
@@ -622,6 +623,87 @@ DC.AddonProtocol.NPCMove.MinSecurity = 1
 #        Default:     2 (SEC_ADMINISTRATOR)
 #
 DC.AddonProtocol.NPCMove.MinSecurityMove = 2
+
+
+###############################################################################
+#
+#  SECTION 3A: TRIAL ACCOUNT RESTRICTIONS
+#
+#  Limits for free-trial / starter accounts.  These mirror the defaults
+#  hard-coded in mod-trial-accounts; declare them here so the server does
+#  not print "Missing property" warnings on startup.
+#
+###############################################################################
+
+#
+#    Trial.LevelCap
+#        Description: Maximum level a trial account may reach
+#        Default:     20
+#
+Trial.LevelCap = 20
+
+#
+#    Trial.MoneyCap
+#        Description: Maximum copper a trial account may hold
+#        Default:     100000 (10 gold)
+#
+Trial.MoneyCap = 100000
+
+#
+#    Trial.TradeSkillCap
+#        Description: Maximum trade-skill rank for trial accounts
+#        Default:     100
+#
+Trial.TradeSkillCap = 100
+
+#
+#    Trial.Restriction.Chat
+#        Description: Prevent trial accounts from using general chat channels
+#        Default:     1 (Restricted)
+#
+Trial.Restriction.Chat = 1
+
+#
+#    Trial.Restriction.Mail
+#        Description: Prevent trial accounts from sending mail
+#        Default:     1 (Restricted)
+#
+Trial.Restriction.Mail = 1
+
+#
+#    Trial.Restriction.Trade
+#        Description: Prevent trial accounts from initiating trades
+#        Default:     1 (Restricted)
+#
+Trial.Restriction.Trade = 1
+
+#
+#    Trial.Restriction.Auction
+#        Description: Prevent trial accounts from using the auction house
+#        Default:     1 (Restricted)
+#
+Trial.Restriction.Auction = 1
+
+#
+#    Trial.Restriction.Party
+#        Description: Prevent trial accounts from forming or joining groups
+#        Default:     1 (Restricted)
+#
+Trial.Restriction.Party = 1
+
+#
+#    Trial.Restriction.Guild
+#        Description: Prevent trial accounts from joining guilds
+#        Default:     1 (Restricted)
+#
+Trial.Restriction.Guild = 1
+
+#
+#    Trial.Restriction.Queue
+#        Description: Prevent trial accounts from queuing for BGs / LFG
+#        Default:     1 (Restricted)
+#
+Trial.Restriction.Queue = 1
 
 
 ###############################################################################
@@ -1285,11 +1367,12 @@ ItemUpgrade.Perf.AchievementReward.SamplePct = 30
 #        Authoritative caps live in dc_item_upgrade_tiers (maintained by
 #        fix_tier_stat_multipliers.sql and Hyjal_Tiers_T4_T5.sql):
 #
-#          T1 Leveling   :  6 levels ×  7.00% = +42%  (stat_multiplier_max 1.42)
-#          T2 Heroic     : 15 levels ×  5.00% = +75%  (stat_multiplier_max 1.75)
-#          T3 Heirloom   : 80 levels ×  3.75% = +300% (stat_multiplier_max 4.00)
-#          T4 Hyjal Prog : 10 levels ×  5.00% = +50%  (stat_multiplier_max 1.50)
-#          T5 Hyjal End  : 15 levels ×  4.00% = +60%  (stat_multiplier_max 1.60)
+#          T1  Leveling   :  6 levels ×  7.00% = +42%  (stat_multiplier_max 1.42)
+#          T2  Heroic     : 15 levels ×  5.00% = +75%  (stat_multiplier_max 1.75)
+#          T3  Heirloom   : 80 levels ×  3.75% = +300% (stat_multiplier_max 4.00)
+#          T4  Hyjal Prog : 10 levels ×  5.00% = +50%  (stat_multiplier_max 1.50)
+#          T5  Hyjal End  : 15 levels ×  4.00% = +60%  (stat_multiplier_max 1.60)
+#          T10 (reserved) : see dc_item_upgrade_tiers for active definition
 #
 #        All set to 0 — DB is the single source of truth.
 #
@@ -1298,6 +1381,7 @@ ItemUpgrade.Tier2.MaxStatBonusPct = 0
 ItemUpgrade.Tier3.MaxStatBonusPct = 0
 ItemUpgrade.Tier4.MaxStatBonusPct = 0
 ItemUpgrade.Tier5.MaxStatBonusPct = 0
+ItemUpgrade.Tier10.MaxStatBonusPct = 0
 
 # -----------------------------------------------------------------------------
 # Currency Configuration
@@ -1623,6 +1707,54 @@ DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter = 1
 #        Default:     0 (Disabled)
 #
 DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly = 0
+
+#
+#    DCCollection.Pets.BackfillDisplayIdsOnStartup
+#        Description: Non-destructively fill any missing dc_pet_definitions.display_id
+#                     (and pet_spell_id) by resolving the companion summon spell -> creature
+#                     -> CreatureDisplayInfo. Lets not-yet-collected pets render in the client
+#                     3D preview (GetCompanionInfo only knows owned companions). Unlike the
+#                     rebuild above, this NEVER inserts/truncates/renames rows -- it only fills
+#                     missing model ids and is safe to leave enabled (idempotent; skips rows
+#                     that already have a display id). Unresolvable rows are logged as warnings.
+#        Default:     0 (Disabled)
+#
+DCCollection.Pets.BackfillDisplayIdsOnStartup = 0
+
+#
+#    DCCollection.Pets.PreWarmCreatureCacheOnDefinitions
+#        Description: When a client requests pet definitions (opening the Pets
+#                     tab), push an (unsolicited) creature-query response for each
+#                     resolved pet creature so the client caches entry->display.
+#                     This lets the 3D preview render NOT-YET-COLLECTED pets
+#                     TEXTURED via Model:SetCreature() -- the client only binds a
+#                     creature's skin for a creature it has cached (which is why
+#                     owned companions and common mounts already look right, but
+#                     uncollected pets render as white untextured silhouettes).
+#                     Best-effort and gated: if textures still do not appear with
+#                     this on, the client does not cache unsolicited responses and
+#                     the proper fix is the SetCreatureDisplay DLL native (see
+#                     Custom/Documentation/Pet_Form_Preview_Texture_Native.md).
+#        Default:     0 (Disabled)
+#
+DCCollection.Pets.PreWarmCreatureCacheOnDefinitions = 1
+
+#
+#    DCCollection.Forms.PreWarmCreatureCacheOnDefinitions
+#        Description: The same trick as the pet pre-warm above, for the Forms tab.
+#                     Druid form skins are pure CreatureDisplayInfo display ids with
+#                     no backing creature, so SetCreature can't reach them and they
+#                     render as white untextured models. When enabled, on a forms
+#                     request the server pushes an (unsolicited) creature-query
+#                     response for a SYNTHETIC entry (0x40000000 + displayId) whose
+#                     model is the form display, so FormFrame renders the form
+#                     TEXTURED via SetCreature(0x40000000 + displayId). Best-effort
+#                     and gated; if off (or a row is missed) the preview falls back
+#                     to its white SetModel shape (no regression). No creature_template
+#                     rows and no client DLL are involved.
+#        Default:     0 (Disabled)
+#
+DCCollection.Forms.PreWarmCreatureCacheOnDefinitions = 1
 
 # -----------------------------------------------------------------------------
 # Transmog Settings

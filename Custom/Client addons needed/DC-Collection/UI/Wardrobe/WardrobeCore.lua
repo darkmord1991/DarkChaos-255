@@ -175,7 +175,7 @@ Wardrobe.VISUAL_SLOTS = {
 Wardrobe.currentTab = Wardrobe.currentTab or "items" -- "items", "sets", "community"
 Wardrobe.selectedSlot = Wardrobe.selectedSlot or nil
 Wardrobe.selectedSlotFilter = Wardrobe.selectedSlotFilter or nil
-Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0  -- 0 = all qualities
+Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or -1  -- -1 = all qualities
 Wardrobe.currentPage = Wardrobe.currentPage or 1
 Wardrobe.totalPages = Wardrobe.totalPages or 1
 Wardrobe.searchText = Wardrobe.searchText or ""
@@ -224,14 +224,20 @@ if type(Wardrobe.LoadOutfit) ~= "function" then
     function Wardrobe:LoadOutfit() end
 end
 
--- Quality filter constants (matches server-side ITEM_QUALITY)
+-- Quality filter constants (id == server-side ITEM_QUALITY; -1 = no filter).
+-- Each entry is an exact-match filter for a single quality so heirlooms,
+-- artifacts, etc. each get their own bucket instead of leaking into "Legendary".
+Wardrobe.QUALITY_FILTER_ALL = -1
 Wardrobe.QUALITY_FILTERS = {
-    { id = 0, text = "All Qualities", color = { r = 1, g = 1, b = 1 } },
-    { id = 1, text = "Common+", color = { r = 1, g = 1, b = 1 } },           -- Poor (0) excluded
-    { id = 2, text = "Uncommon+", color = { r = 0.12, g = 1, b = 0 } },      -- Green+
-    { id = 3, text = "Rare+", color = { r = 0, g = 0.44, b = 0.87 } },       -- Blue+
-    { id = 4, text = "Epic+", color = { r = 0.64, g = 0.21, b = 0.93 } },    -- Purple+
-    { id = 5, text = "Legendary", color = { r = 1, g = 0.5, b = 0 } },       -- Orange
+    { id = -1, text = "All Qualities", color = { r = 1, g = 1, b = 1 } },
+    { id = 0,  text = "Poor",      color = { r = 0.62, g = 0.62, b = 0.62 } }, -- Grey
+    { id = 1,  text = "Common",    color = { r = 1, g = 1, b = 1 } },          -- White
+    { id = 2,  text = "Uncommon",  color = { r = 0.12, g = 1, b = 0 } },       -- Green
+    { id = 3,  text = "Rare",      color = { r = 0, g = 0.44, b = 0.87 } },    -- Blue
+    { id = 4,  text = "Epic",      color = { r = 0.64, g = 0.21, b = 0.93 } }, -- Purple
+    { id = 5,  text = "Legendary", color = { r = 1, g = 0.5, b = 0 } },        -- Orange
+    { id = 6,  text = "Artifact",  color = { r = 0.9, g = 0.8, b = 0.5 } },    -- Gold
+    { id = 7,  text = "Heirloom",  color = { r = 0.9, g = 0.8, b = 0.5 } },    -- Light gold
 }
 
 -- Sort modes for the "Order By" button (Items/Sets grid).

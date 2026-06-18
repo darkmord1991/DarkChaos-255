@@ -517,6 +517,33 @@ local function CreateCatalogFrame()
         end)
     end
 
+    -- "Remove All" button — no selection required; shown only in placed mode.
+    -- Anchored to the left side below the decoration list so it never
+    -- overlaps the right-side manage buttons.
+    local resetAllBtn = CreateFrame("Button", nil, frame,
+        "UIPanelButtonTemplate")
+    resetAllBtn:SetWidth(190)
+    resetAllBtn:SetHeight(22)
+    resetAllBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 42)
+    resetAllBtn:SetText("Remove All Decorations")
+    resetAllBtn:SetScript("OnClick", function()
+        StaticPopup_Show("DCHOUSING_RESET_ALL")
+    end)
+    resetAllBtn:Hide()
+    frame.resetAllButton = resetAllBtn
+
+    StaticPopupDialogs["DCHOUSING_RESET_ALL"] = {
+        text = L.CONFIRM_RESET_ALL,
+        button1 = YES,
+        button2 = NO,
+        OnAccept = function()
+            DC.Protocol:ResetAll()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+    }
+
     StaticPopupDialogs["DCHOUSING_REMOVE_PLACED"] = {
         text = "Remove this decoration? You get a partial refund.",
         button1 = YES,
@@ -611,6 +638,13 @@ function Catalog:SetMode(mode)
     if frame.modeToggle then
         frame.modeToggle:SetText(placed and "Browse Catalog"
             or "Manage Placed")
+    end
+    if frame.resetAllButton then
+        if placed then
+            frame.resetAllButton:Show()
+        else
+            frame.resetAllButton:Hide()
+        end
     end
 
     if placed then

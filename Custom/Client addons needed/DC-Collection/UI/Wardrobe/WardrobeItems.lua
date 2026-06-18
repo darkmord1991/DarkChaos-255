@@ -876,8 +876,8 @@ function Wardrobe:BuildAppearanceList()
             end
         end
 
-        -- Quality filtering
-        if valid and self.selectedQualityFilter and self.selectedQualityFilter > 0 then
+        -- Quality filtering: exact match per quality (-1 = all qualities).
+        if valid and self.selectedQualityFilter and self.selectedQualityFilter >= 0 then
             -- Server definitions commonly use "rarity" (and some use "quality").
             -- Fall back to the client item cache (GetItemInfo) if the definition is missing it.
             local quality = packedQuality or 0
@@ -890,18 +890,7 @@ function Wardrobe:BuildAppearanceList()
                     hasPendingItemInfo = true
                 end
             end
-            -- Heirlooms (quality 7) are numerically above Legendary (5) and would
-            -- otherwise leak into every "+" threshold, including the top "Legendary"
-            -- filter. They are not legendary appearances, so exclude them here.
-            if quality == 7 then
-                valid = false
-            elseif self.selectedQualityFilter >= 5 then
-                -- "Legendary" is labeled without a "+", so treat it as an exact
-                -- match (excludes Artifact 6 and the already-handled Heirloom 7).
-                if quality ~= 5 then
-                    valid = false
-                end
-            elseif quality < self.selectedQualityFilter then
+            if quality ~= self.selectedQualityFilter then
                 valid = false
             end
         end

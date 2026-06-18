@@ -31,10 +31,13 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "ObjectMgr.h"
+#include "Opcodes.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
 #include "UnitDefines.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
 
 #include <map>
 #include <mutex>
@@ -256,6 +259,55 @@ namespace Forms
     // ------------------------------------------------------------------------
     // Outgoing payloads
     // ------------------------------------------------------------------------
+    // Form creature-cache pre-warm (the zero-DLL form texture fix).
+    //
+    // Forms are pure CreatureDisplayInfo display ids with no backing creature, so
+    // Model:SetCreature (which textures, but needs a cached creature) and the
+    // missing Model:SetDisplayInfo both fail, and SetModel(path) renders white. We
+    // therefore push an (unsolicited) SMSG_CREATURE_QUERY_RESPONSE for a SYNTHETIC
+    // creature entry (FORM_PREWARM_ENTRY_BASE + displayId) whose Modelid1 is the
+    // form display. The client caches entry->display, and FormFrame then renders
+    // the form TEXTURED via SetCreature(FORM_PREWARM_ENTRY_BASE + displayId) -- the
+    // exact mechanism that already textures not-yet-collected pets. The entry is
+    // synthetic (no creature_template needed, so no schema-drift risk); rendering is
+    // client-side only. FormFrame keeps SetModel(path) as a fallback, so a miss just
+    // yields today's white shape (no regression).
+    //
+    // Must match FORM_PREWARM_ENTRY_BASE in DC-Collection/UI/FormFrame.lua.
+    static constexpr uint32 FORM_PREWARM_ENTRY_BASE = 0x40000000u;
+
+    static void SendFabricatedFormCreature(WorldSession* session, uint32 displayId)
+    {
+        if (!session || !displayId)
+            return;
+
+        // Field order mirrors WorldSession::HandleCreatureQueryOpcode so the client
+        // parses it identically and caches entry -> Modelid1(displayId).
+        WorldPacket data(SMSG_CREATURE_QUERY_RESPONSE, 100);
+        data << uint32(FORM_PREWARM_ENTRY_BASE + displayId);    // synthetic entry
+        data << std::string("Form");                            // Name
+        data << uint8(0) << uint8(0) << uint8(0);               // name2/3/4
+        data << std::string("");                                // Title
+        data << std::string("");                                // IconName
+        data << uint32(0);                                      // type_flags
+        data << uint32(0);                                      // type
+        data << uint32(0);                                      // family
+        data << uint32(0);                                      // rank
+        data << uint32(0);                                      // KillCredit[0]
+        data << uint32(0);                                      // KillCredit[1]
+        data << uint32(displayId);                              // Modelid1
+        data << uint32(0);                                      // Modelid2
+        data << uint32(0);                                      // Modelid3
+        data << uint32(0);                                      // Modelid4
+        data << float(1.0f);                                    // ModHealth
+        data << float(1.0f);                                    // ModMana
+        data << uint8(0);                                       // RacialLeader
+        for (uint8 i = 0; i < 6; ++i)                           // MAX_CREATURE_QUEST_ITEMS
+            data << uint32(0);
+        data << uint32(0);                                      // movementId
+        session->SendPacket(&data);
+    }
+
     static void SendFormsData(Player* player)
     {
         if (!player)
@@ -264,6 +316,10 @@ namespace Forms
         uint8 playerClass = player->getClass();
         uint8 race = player->getRace();
         ObjectGuidLow guid = player->GetGUID().GetCounter();
+
+        bool const prewarm = sConfigMgr->GetOption<bool>(
+            "DCCollection.Forms.PreWarmCreatureCacheOnDefinitions", false);
+        std::vector<uint32> prewarmDisplays;
 
         JsonValue forms;
         forms.SetArray();
@@ -309,6 +365,9 @@ namespace Forms
                 skinArr.SetArray();
                 for (SkinRow const& s : skins)
                 {
+                    if (prewarm)
+                        prewarmDisplays.push_back(s.model);
+
                     JsonValue skin;
                     skin.SetObject();
                     skin.Set("model", JsonValue(static_cast<int32>(s.model)));
@@ -327,6 +386,23 @@ namespace Forms
         msg.Set("class", static_cast<uint32>(playerClass));
         msg.Set("forms", forms);
         msg.Send(player);
+
+        // Pre-warm the client creature cache so the form previews render textured
+        // (gated; best-effort; FormFrame falls back to SetModel if a row is missed).
+        if (prewarm && !prewarmDisplays.empty())
+        {
+            if (WorldSession* session = player->GetSession())
+            {
+                std::map<uint32, bool> sentDisplay;
+                for (uint32 d : prewarmDisplays)
+                {
+                    if (!d || sentDisplay[d])
+                        continue;
+                    sentDisplay[d] = true;
+                    SendFabricatedFormCreature(session, d);
+                }
+            }
+        }
     }
 
     static void SendFormResult(Player* player, uint8 form, uint32 model,

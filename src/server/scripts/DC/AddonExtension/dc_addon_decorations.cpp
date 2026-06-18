@@ -290,6 +290,31 @@ namespace Decorations
             error, lowguid, refund);
     }
 
+    static void HandleResetAll(Player* player, ParsedMessage const& /*msg*/)
+    {
+        if (!player)
+            return;
+
+        std::string error;
+        uint32 removedCount = 0;
+        uint32 totalRefund = 0;
+        bool const success = GHD::RemoveAll(player, error,
+            &removedCount, &totalRefund);
+
+        JsonValue response;
+        response.SetObject();
+        response.Set("success", success);
+        if (!success)
+            response.Set("error", error);
+        if (success)
+        {
+            response.Set("removed", static_cast<int32>(removedCount));
+            response.Set("refund", static_cast<int32>(totalRefund));
+        }
+        JsonMessage(Module::DECORATION,
+            Opcode::Decoration::SMSG_RESET_ALL_RESULT, response).Send(player);
+    }
+
     static void HandleGetBudget(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player)
@@ -366,6 +391,8 @@ namespace Decorations
             Opcode::Decoration::CMSG_SELECT, HandleSelect);
         DC_REGISTER_HANDLER(Module::DECORATION,
             Opcode::Decoration::CMSG_LIST, HandleList);
+        DC_REGISTER_HANDLER(Module::DECORATION,
+            Opcode::Decoration::CMSG_RESET_ALL, HandleResetAll);
     }
 }
 }

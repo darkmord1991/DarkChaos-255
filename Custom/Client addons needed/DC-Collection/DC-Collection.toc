@@ -27,6 +27,7 @@ Data\CompanionItemSeeds.lua
 Data\CollectionCompletenessManifest.lua
 Data\ShopStatic.lua
 Data\FormModelPaths.lua
+Data\PetModelPaths.lua
 Modules\PetModule.lua
 Modules\TitleModule.lua
 Modules\ToyModule.lua

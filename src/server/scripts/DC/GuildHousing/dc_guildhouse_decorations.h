@@ -87,6 +87,11 @@ namespace DCGuildHouseDecorations
     // All decorations placed by the player's guild (saved spawn data).
     void ListDecorations(Player* player,
         std::vector<PlacedDecoration>& out);
+
+    // Remove every decoration belonging to the player's guild and refund each
+    // at the configured refund percent. Requires GH_PERM_DELETE permission.
+    bool RemoveAll(Player* player, std::string& error,
+        uint32* outRemovedCount = nullptr, uint32* outTotalRefund = nullptr);
 }
 
 #endif // DC_GUILDHOUSE_DECORATIONS_H

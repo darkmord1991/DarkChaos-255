@@ -27,6 +27,14 @@ local FORM_LIST_WIDTH = 150
 local PREVIEW_HEIGHT = 260   -- wide-but-short preview banner across the top
 local ROW_HEIGHT = 22
 
+-- Synthetic creature-entry base for the server form pre-warm. When
+-- DCCollection.Forms.PreWarmCreatureCacheOnDefinitions is enabled, the server
+-- caches a (fake) creature entry FORM_PREWARM_ENTRY_BASE + displayId whose model
+-- is the form's display, letting SetCreature(entry) render the form TEXTURED (the
+-- same path that textures pets). MUST match FORM_PREWARM_ENTRY_BASE in
+-- dc_addon_forms.cpp. 0x40000000 = 1073741824 (well above any real creature entry).
+local FORM_PREWARM_ENTRY_BASE = 1073741824
+
 -- Currently selected form id and the model id being previewed (may differ from
 -- the committed selection until "Apply" is pressed).
 Forms.selectedForm = nil
@@ -85,8 +93,10 @@ local function SetPreviewDisplay(model, displayId, onResult)
         if type(model.GetModel) ~= "function" then
             return true
         end
+        -- A loaded model returns its .m2 path STRING; a SetCreature/SetDisplayInfo
+        -- that resolved nothing leaves GetModel() returning a table (not loaded).
         local cur = model:GetModel()
-        return cur ~= nil and cur ~= ""
+        return type(cur) == "string" and cur ~= ""
     end
 
     local function TrySetModelPath(path)
@@ -96,10 +106,12 @@ local function SetPreviewDisplay(model, displayId, onResult)
         end
         if pcall(model.SetModel, model, path) then
             -- A raw SetModel'd creature M2 can render unlit/black without an
-            -- explicit light (same as the bare-Model housing preview).
+            -- explicit light. Use the working DC-Housing preview values
+            -- (ambient 0.7 + directional 0.8); ambient 1.0 + directional 1.0 is
+            -- over-bright and washes the model toward white (see CatalogFrame.lua).
             if type(model.SetLight) == "function" then
-                pcall(model.SetLight, model, 1, 0, 0, 0, -1,
-                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+                pcall(model.SetLight, model, 1, 0, 0, -0.707, -0.707,
+                    0.7, 1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
             end
             ResetModelPose()
             return true
@@ -129,16 +141,55 @@ local function SetPreviewDisplay(model, displayId, onResult)
         return false
     end
 
+    -- Preferred when available: the SetCreatureDisplay DLL native textures the
+    -- model from the display id directly (binds the CreatureDisplayInfo skin that
+    -- SetModel cannot). A global native, gated so the addon still works without
+    -- the rebuilt DLL (falls through to the white SetModel path).
+    local function TrySetCreatureDisplay(id)
+        if not id or id <= 0 or type(SetCreatureDisplay) ~= "function" then
+            return false
+        end
+        local ok, res = pcall(SetCreatureDisplay, model, id)
+        if ok and (res == true or res == 1) then
+            ResetModelPose()
+            return true
+        end
+        return false
+    end
+
+    -- Zero-DLL form texture path: when the server form pre-warm is enabled
+    -- (DCCollection.Forms.PreWarmCreatureCacheOnDefinitions) it caches a synthetic
+    -- creature whose model is this display id, so SetCreature on that entry renders
+    -- the form TEXTURED -- the exact mechanism that textures not-yet-collected pets.
+    -- If the pre-warm is off the entry is uncached and this no-ops, so we fall
+    -- through to SetModel(path). Entry base must match dc_addon_forms.cpp.
+    local function TrySetCreatureCached(id)
+        if not id or id <= 0 or type(model.SetCreature) ~= "function" then
+            return false
+        end
+        if pcall(model.SetCreature, model, FORM_PREWARM_ENTRY_BASE + id) then
+            ResetModelPose()
+            return true
+        end
+        return false
+    end
+
     -- Clear stale model state FIRST (the step whose absence black-screened the
     -- preview when switching skins).
     if type(model.ClearModel) == "function" then
         pcall(model.ClearModel, model)
     end
 
-    -- Preferred: SetModel with the resolved M2 path; fall back to the (less
-    -- reliable) display/creature setters only if the path is unknown.
+    -- Render priority: SetCreatureDisplay native (textured) -> SetModel(path)
+    -- [correct shape, white until the native lands] -> the less-reliable setters.
     local path = DC and DC.FormModelPaths and DC.FormModelPaths[displayId]
-    local shown = TrySetModelPath(path)
+    local shown = TrySetCreatureDisplay(displayId)
+    if not shown then
+        shown = TrySetCreatureCached(displayId)
+    end
+    if not shown then
+        shown = TrySetModelPath(path)
+    end
     if not shown then
         shown = TrySetDisplay(displayId)
     end
@@ -154,7 +205,10 @@ local function SetPreviewDisplay(model, displayId, onResult)
             finish(true)
             return
         end
-        local recovered = TrySetModelPath(path)
+        local recovered = TrySetCreatureDisplay(displayId)
+        if not recovered then
+            recovered = TrySetModelPath(path)
+        end
         if not recovered then
             recovered = TrySetCreature(displayId)
         end
