@@ -11,7 +11,34 @@ DC.EditMode = DC.EditMode or {}
 local EditMode = DC.EditMode
 
 local active = false
-local selection = nil  -- { lowguid, entry, name, x, y, z, o }
+local selection = nil  -- { lowguid, entry, name, x, y, z, o, scale, guidHex }
+
+-- ============================================================
+-- Snapping (Noggit-style grid + angle snap)
+-- ============================================================
+-- Both default to off; the toolbar cycles them. Snapping is applied at commit
+-- time (and echoed client-side via the live-drag natives) so the in-world
+-- gizmo stays smooth while dragging but lands on the grid when released.
+EditMode.snapGrid = 0      -- world units per step; 0 = free
+EditMode.snapAngle = 0     -- radians per step; 0 = free
+EditMode.SNAP_GRID_CYCLE = { 0, 0.25, 0.5, 1.0, 2.0 }
+EditMode.SNAP_ANGLE_CYCLE = { 0, math.rad(15), math.rad(45), math.rad(90) }
+
+local function SnapCoord(v)
+    local g = EditMode.snapGrid
+    if g and g > 0 and type(v) == "number" then
+        return math.floor(v / g + 0.5) * g
+    end
+    return v
+end
+
+local function SnapYaw(v)
+    local a = EditMode.snapAngle
+    if a and a > 0 and type(v) == "number" then
+        return math.floor(v / a + 0.5) * a
+    end
+    return v
+end
 
 -- Resolved DLL natives (pcall-guarded, PingSystem pattern).
 local function ResolveNative(...)
@@ -467,6 +494,17 @@ local function CommitGizmoDrag()
 
     local ok, wasDragging, x, y, z, yaw = pcall(gizmoEndDrag)
     if ok and wasDragging and selection and type(x) == "number" then
+        -- Snap the released transform to the grid/angle when enabled, and echo
+        -- it client-side so the object visibly lands on the grid before the
+        -- server's authoritative move arrives.
+        if EditMode.snapGrid > 0 or EditMode.snapAngle > 0 then
+            x, y, z, yaw = SnapCoord(x), SnapCoord(y), SnapCoord(z),
+                SnapYaw(yaw)
+            if selection.guidHex and setGobPosition then
+                pcall(setGobPosition, selection.guidHex, x, y, z)
+                pcall(setGobFacing, selection.guidHex, yaw or 0)
+            end
+        end
         -- A plain click on an axis (no real drag) still reports wasDragging,
         -- but nothing moved. Skip those no-op commits so clicking the gizmo
         -- doesn't spam the server's move rate limit; only persist real moves.
@@ -487,7 +525,91 @@ local function CommitGizmoDrag()
             -- and a rejected/coalesced server move stays consistent.
             selection.x, selection.y, selection.z, selection.o =
                 x, y, z, (yaw or 0)
+            EditMode:RefreshPanel()
         end
+    end
+end
+
+-- Re-attach the gizmo after a server move respawned the object under a new
+-- GUID (GOMove deletes + recreates it, so the old target is dead). Updates the
+-- live selection's guid and re-arms the native gizmo, retrying because the new
+-- object's client-side spawn packet may still be in flight.
+local retargetTicker
+function EditMode:OnMoved(lowguid, guidHex)
+    if not selection or not guidHex then
+        return
+    end
+    if selection.lowguid ~= lowguid then
+        return  -- a different object moved (e.g. catalog manage UI)
+    end
+    if guidHex == selection.guidHex then
+        return  -- GUID unchanged; nothing to re-attach
+    end
+
+    selection.guidHex = guidHex
+
+    -- One immediate attempt; succeed -> done, else retry on a short ticker.
+    StopGizmo()
+    if StartGizmo(guidHex) then
+        return
+    end
+
+    if not retargetTicker then
+        retargetTicker = CreateFrame("Frame")
+        retargetTicker:Hide()
+        retargetTicker:SetScript("OnUpdate", function(self, elapsed)
+            self._t = (self._t or 0) + (elapsed or 0)
+            if self._t < 0.1 then
+                return
+            end
+            self._t = 0
+            StopGizmo()
+            if StartGizmo(self._guid) then
+                self:Hide()
+                return
+            end
+            self._tries = (self._tries or 0) + 1
+            if self._tries > 20 then  -- ~2s budget, then give up
+                self:Hide()
+            end
+        end)
+    end
+    retargetTicker._guid = guidHex
+    retargetTicker._t = 0
+    retargetTicker._tries = 0
+    retargetTicker:Show()
+end
+
+-- Select a placed decoration by spawn id (the manage list knows the lowguid,
+-- not the live client GUID). Ensures edit mode is on so the gizmo's world
+-- input hooks are live; the server returns the GUID and OnSelectResult arms
+-- the gizmo.
+function EditMode:SelectPlaced(lowguid)
+    if not lowguid then
+        return
+    end
+    if self.IsActive and not self:IsActive() then
+        self:Toggle()
+    end
+    self._pendingGuidHex = nil
+    DC.Protocol:SelectByLowguid(lowguid)
+end
+
+-- Manually (re)attach the in-world gizmo to the current selection. Bound to the
+-- toolbar's "Gizmo" button so it can always be brought back if it was dropped
+-- (e.g. after a respawn the auto-retarget missed, or the user wants it back).
+function EditMode:ArmGizmo()
+    if not selection or not selection.guidHex then
+        DC:Print("Select a decoration first (Ctrl+Click it, or pick it in "
+            .. "the manage list).")
+        return
+    end
+    if self.IsActive and not self:IsActive() then
+        self:Toggle()
+    end
+    StopGizmo()
+    if not StartGizmo(selection.guidHex) then
+        DC:Print("|cffffcc00Gizmo could not attach to this object.|r")
     end
 end
 
@@ -496,10 +618,43 @@ end
 -- ============================================================
 local toolbar
 
+-- Cycle a snap setting to the next value in its list (wraps).
+local function NextSnap(list, current)
+    for i, val in ipairs(list) do
+        if math.abs(val - current) < 1e-6 then
+            return list[(i % #list) + 1]
+        end
+    end
+    return list[1]
+end
+
+local function GridLabel()
+    local v = EditMode.snapGrid
+    return v > 0 and ("Grid: " .. tostring(v)) or "Grid: Off"
+end
+
+local function AngleLabel()
+    local v = EditMode.snapAngle
+    return v > 0 and string.format("Angle: %d\194\176",
+        math.floor(math.deg(v) + 0.5)) or "Angle: Off"
+end
+
+-- Push a new scale to the server and reflect it locally (clamped to the same
+-- 0.2..5.0 range the server enforces).
+local function ApplyScale(newScale)
+    if not selection then
+        return
+    end
+    newScale = math.max(0.2, math.min(5.0, newScale))
+    selection.scale = newScale
+    DC.Protocol:Scale(selection.lowguid, newScale)
+    EditMode:RefreshPanel()
+end
+
 local function CreateToolbar()
     toolbar = CreateFrame("Frame", "DCHousingEditToolbar", UIParent)
-    toolbar:SetWidth(260)
-    toolbar:SetHeight(150)
+    toolbar:SetWidth(280)
+    toolbar:SetHeight(286)
     toolbar:SetPoint("RIGHT", -40, 60)
     toolbar:SetMovable(true)
     toolbar:EnableMouse(true)
@@ -516,26 +671,26 @@ local function CreateToolbar()
 
     toolbar.name = toolbar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     toolbar.name:SetPoint("TOP", 0, -10)
-    toolbar.name:SetWidth(240)
+    toolbar.name:SetWidth(260)
 
-    local function MakeButton(text, width, anchor, x, y, onClick)
+    local function MakeButton(text, width, x, y, onClick)
         local button = CreateFrame("Button", nil, toolbar,
             "UIPanelButtonTemplate")
         button:SetWidth(width)
         button:SetHeight(20)
-        button:SetPoint("TOPLEFT", anchor or toolbar, "TOPLEFT", x, y)
+        button:SetPoint("TOPLEFT", toolbar, "TOPLEFT", x, y)
         button:SetText(text)
         button:SetScript("OnClick", onClick)
         return button
     end
 
-    MakeButton(L.GRAB, 70, nil, 12, -30, function()
+    MakeButton(L.GRAB, 80, 12, -30, function()
         if selection then
             StartGhost("move", selection.entry, selection.lowguid,
                 selection.o or 0, selection.guidHex)
         end
     end)
-    MakeButton(L.ROTATE, 160, nil, 88, -30, function()
+    MakeButton(L.ROTATE, 170, 98, -30, function()
         if selection then
             DC.Protocol:Rotate(selection.lowguid)
         end
@@ -551,7 +706,7 @@ local function CreateToolbar()
     for i, n in ipairs(nudges) do
         local col = math.fmod(i - 1, 4)
         local rowIndex = math.floor((i - 1) / 4)
-        MakeButton(n[1], 52, nil, 12 + col * 58, -56 - rowIndex * 24,
+        MakeButton(n[1], 58, 12 + col * 64, -56 - rowIndex * 24,
             function()
                 if selection then
                     DC.Protocol:Nudge(selection.lowguid, n[2], n[3], n[4],
@@ -560,7 +715,80 @@ local function CreateToolbar()
             end)
     end
 
-    MakeButton(L.REMOVE, 100, nil, 12, -110, function()
+    -- Snap toggles (apply to the in-world gizmo's released transform).
+    toolbar.snapGridBtn = MakeButton(GridLabel(), 124, 12, -106, function()
+        EditMode.snapGrid = NextSnap(EditMode.SNAP_GRID_CYCLE,
+            EditMode.snapGrid)
+        toolbar.snapGridBtn:SetText(GridLabel())
+    end)
+    toolbar.snapAngleBtn = MakeButton(AngleLabel(), 124, 144, -106, function()
+        EditMode.snapAngle = NextSnap(EditMode.SNAP_ANGLE_CYCLE,
+            EditMode.snapAngle)
+        toolbar.snapAngleBtn:SetText(AngleLabel())
+    end)
+
+    -- Scale row: [-] value [+]
+    local scaleLabel = toolbar:CreateFontString(nil, "OVERLAY",
+        "GameFontNormalSmall")
+    scaleLabel:SetPoint("TOPLEFT", 12, -134)
+    scaleLabel:SetText("Scale")
+    MakeButton("-", 24, 60, -132, function()
+        if selection then
+            ApplyScale((selection.scale or 1) - 0.1)
+        end
+    end)
+    toolbar.scaleValue = toolbar:CreateFontString(nil, "OVERLAY",
+        "GameFontHighlight")
+    toolbar.scaleValue:SetPoint("LEFT", toolbar, "TOPLEFT", 88, -142)
+    toolbar.scaleValue:SetWidth(80)
+    toolbar.scaleValue:SetText("1.00")
+    MakeButton("+", 24, 172, -132, function()
+        if selection then
+            ApplyScale((selection.scale or 1) + 0.1)
+        end
+    end)
+    MakeButton("Reset", 60, 200, -132, function()
+        if selection then
+            ApplyScale(1.0)
+        end
+    end)
+
+    -- Numeric position/yaw entry. Editing is opt-in: typing then Enter (or
+    -- "Set") commits an exact transform; values otherwise just mirror the live
+    -- selection.
+    local fieldLabels = { "X", "Y", "Z", "Yaw" }
+    toolbar.fields = {}
+    for i, lbl in ipairs(fieldLabels) do
+        local x = 12 + (i - 1) * 64
+        local cap = toolbar:CreateFontString(nil, "OVERLAY",
+            "GameFontNormalSmall")
+        cap:SetPoint("TOPLEFT", x + 2, -162)
+        cap:SetText(lbl)
+
+        local edit = CreateFrame("EditBox", nil, toolbar, "InputBoxTemplate")
+        edit:SetWidth(54)
+        edit:SetHeight(18)
+        edit:SetPoint("TOPLEFT", x + 6, -176)
+        edit:SetAutoFocus(false)
+        edit:SetNumeric(false)
+        edit:SetScript("OnEnterPressed", function(self)
+            EditMode:ApplyNumericEntry()
+            self:ClearFocus()
+        end)
+        edit:SetScript("OnEscapePressed", function(self)
+            EditMode:RefreshPanel()
+            self:ClearFocus()
+        end)
+        toolbar.fields[i] = edit
+    end
+
+    MakeButton("Set", 70, 12, -204, function()
+        EditMode:ApplyNumericEntry()
+    end)
+    MakeButton("Gizmo", 64, 88, -204, function()
+        EditMode:ArmGizmo()
+    end)
+    MakeButton(L.REMOVE, 88, 158, -204, function()
         if selection then
             StaticPopup_Show("DCHOUSING_REMOVE", selection.name or "?")
         end
@@ -581,6 +809,53 @@ local function CreateToolbar()
     }
 end
 
+-- Repopulate the numeric/scale panel from the live selection.
+function EditMode:RefreshPanel()
+    if not toolbar or not selection then
+        return
+    end
+    if toolbar.scaleValue then
+        toolbar.scaleValue:SetText(string.format("%.2f",
+            selection.scale or 1))
+    end
+    if toolbar.fields then
+        local vals = { selection.x, selection.y, selection.z, selection.o }
+        for i, edit in ipairs(toolbar.fields) do
+            -- Don't stomp a value the user is actively typing.
+            if not edit:HasFocus() then
+                local v = vals[i]
+                edit:SetText(type(v) == "number"
+                    and string.format("%.3f", v) or "")
+            end
+        end
+    end
+end
+
+-- Commit the numeric edit boxes as an exact move (snapping still applies).
+function EditMode:ApplyNumericEntry()
+    if not selection or not toolbar or not toolbar.fields then
+        return
+    end
+    local x = tonumber(toolbar.fields[1]:GetText())
+    local y = tonumber(toolbar.fields[2]:GetText())
+    local z = tonumber(toolbar.fields[3]:GetText())
+    local o = tonumber(toolbar.fields[4]:GetText())
+    if not (x and y and z) then
+        DC:Print("|cffff0000Enter valid numbers for X, Y and Z.|r")
+        return
+    end
+    o = o or selection.o or 0
+    x, y, z, o = SnapCoord(x), SnapCoord(y), SnapCoord(z), SnapYaw(o)
+
+    if selection.guidHex and setGobPosition then
+        pcall(setGobPosition, selection.guidHex, x, y, z)
+        pcall(setGobFacing, selection.guidHex, o)
+    end
+    DC.Protocol:MoveTo(selection.lowguid, x, y, z, o)
+    selection.x, selection.y, selection.z, selection.o = x, y, z, o
+    self:RefreshPanel()
+end
+
 function EditMode:OnSelectResult(data)
     if not data.success then
         DC:Print("|cffff0000"
@@ -594,7 +869,10 @@ function EditMode:OnSelectResult(data)
         name = data.name or ("Entry " .. tostring(data.entry)),
         x = tonumber(data.x), y = tonumber(data.y), z = tonumber(data.z),
         o = tonumber(data.o),
-        guidHex = self._pendingGuidHex,
+        scale = tonumber(data.scale) or 1,
+        -- Prefer the server-echoed GUID (always present now); fall back to the
+        -- cursor-pick GUID the client armed the request with.
+        guidHex = data.guid or self._pendingGuidHex,
     }
     self._pendingGuidHex = nil
 
@@ -603,6 +881,7 @@ function EditMode:OnSelectResult(data)
     end
     toolbar.name:SetText(selection.name)
     toolbar:Show()
+    self:RefreshPanel()
 
     -- Show the in-world gizmo around the selection (drag arrows to move,
     -- rings to rotate; one server commit per released drag). The arrows are

@@ -42,6 +42,7 @@ namespace
         uint32 guildId = 0;
         uint32 entry = 0;
         uint32 paidCopper = 0;
+        float scale = 1.0f;
     };
 
     // World-thread only.
@@ -280,7 +281,7 @@ void LoadCatalog()
     }
 
     if (QueryResult result = CharacterDatabase.Query(
-        "SELECT `go_lowguid`, `guild_id`, `entry`, `paid_copper` "
+        "SELECT `go_lowguid`, `guild_id`, `entry`, `paid_copper`, `scale` "
         "FROM `dc_guildhouse_decoration_instances`"))
     {
         do
@@ -291,6 +292,9 @@ void LoadCatalog()
             info.guildId = fields[1].Get<uint32>();
             info.entry = fields[2].Get<uint32>();
             info.paidCopper = fields[3].Get<uint32>();
+            info.scale = fields[4].Get<float>();
+            if (info.scale <= 0.f)
+                info.scale = 1.0f;
             sInstances[lowguid] = info;
             AddUsedBudget(info.guildId, WeightOf(info.entry));
         } while (result->NextRow());
@@ -477,7 +481,7 @@ bool Place(Player* player, uint32 entry, std::string& error,
 }
 
 bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
-    float orientation, std::string& error)
+    float orientation, std::string& error, uint64* outGuidRaw)
 {
     GuildHouseData const* house = nullptr;
     if (!ValidateInHouse(player, house, error))
@@ -512,12 +516,18 @@ bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
         return false;
     }
 
+    // GOMove respawned the object under a new ObjectGuid; hand it back so the
+    // client can re-attach its gizmo to the live object.
+    if (outGuidRaw)
+        *outGuidRaw = moved->GetGUID().GetRawValue();
+
     GuildHouseManager::LogAction(player, GH_ACTION_MOVE,
         GH_ENTITY_GAMEOBJECT, info->entry, lowguid, x, y, z, orientation);
     return true;
 }
 
-bool MoveHere(Player* player, uint32 lowguid, std::string& error)
+bool MoveHere(Player* player, uint32 lowguid, std::string& error,
+    uint64* outGuidRaw)
 {
     if (!player)
     {
@@ -527,10 +537,11 @@ bool MoveHere(Player* player, uint32 lowguid, std::string& error)
 
     return MoveTo(player, lowguid, player->GetPositionX(),
         player->GetPositionY(), player->GetPositionZ(),
-        player->GetOrientation(), error);
+        player->GetOrientation(), error, outGuidRaw);
 }
 
-bool Rotate(Player* player, uint32 lowguid, std::string& error)
+bool Rotate(Player* player, uint32 lowguid, std::string& error,
+    uint64* outGuidRaw)
 {
     if (!player)
     {
@@ -547,11 +558,11 @@ bool Rotate(Player* player, uint32 lowguid, std::string& error)
 
     return MoveTo(player, lowguid, object->GetPositionX(),
         object->GetPositionY(), object->GetPositionZ(),
-        player->GetOrientation(), error);
+        player->GetOrientation(), error, outGuidRaw);
 }
 
 bool Nudge(Player* player, uint32 lowguid, float dx, float dy, float dz,
-    float dOrientation, std::string& error)
+    float dOrientation, std::string& error, uint64* outGuidRaw)
 {
     if (!player)
     {
@@ -575,7 +586,59 @@ bool Nudge(Player* player, uint32 lowguid, float dx, float dy, float dz,
         object->GetPositionX() + clampDelta(dx),
         object->GetPositionY() + clampDelta(dy),
         object->GetPositionZ() + clampDelta(dz),
-        object->GetOrientation() + dOrientation, error);
+        object->GetOrientation() + dOrientation, error, outGuidRaw);
+}
+
+bool SetScale(Player* player, uint32 lowguid, float scale, std::string& error)
+{
+    GuildHouseData const* house = nullptr;
+    if (!ValidateInHouse(player, house, error))
+        return false;
+
+    // Scale is a property edit, so it reuses the MOVE permission (it neither
+    // spawns nor deletes).
+    if (!IsDecorationGM(player)
+        && !GuildHouseManager::HasPermission(player, GH_PERM_MOVE))
+    {
+        error = "Your guild rank may not modify decorations.";
+        return false;
+    }
+
+    InstanceInfo const* info = nullptr;
+    if (!ValidateOwnedDecoration(player, lowguid, info, error))
+        return false;
+
+    // Clamp to a sane visual range: too small becomes unclickable, too large
+    // can swallow the whole house.
+    scale = std::max(0.2f, std::min(5.0f, scale));
+
+    GameObject* object = ::GOMove::GetGameObject(player, lowguid);
+    if (!object)
+    {
+        error = "Could not find that decoration (is it nearby?).";
+        return false;
+    }
+
+    object->SetObjectScale(scale);
+    // A live OBJECT_FIELD_SCALE_X change does not rescale an already-spawned
+    // model on clients, so force a despawn/respawn for nearby players; the
+    // recreated object is built at the new scale.
+    object->DestroyForVisiblePlayers();
+    object->UpdateObjectVisibility();
+
+    sInstances[lowguid].scale = scale;
+    CharacterDatabase.Execute(
+        "UPDATE `dc_guildhouse_decoration_instances` SET `scale` = {} "
+        "WHERE `go_lowguid` = {}",
+        scale, lowguid);
+
+    return true;
+}
+
+float GetDecorationScale(uint32 lowguid)
+{
+    auto it = sInstances.find(lowguid);
+    return it != sInstances.end() ? it->second.scale : 1.0f;
 }
 
 bool ResolveSelection(Player* player, uint64 rawGuid, uint32& outLowguid,
@@ -622,6 +685,7 @@ void ListDecorations(Player* player, std::vector<PlacedDecoration>& out)
         PlacedDecoration d;
         d.lowguid = lowguid;
         d.entry = info.entry;
+        d.scale = info.scale;
         if (CatalogEntry const* item = FindCatalogEntry(info.entry))
             d.name = item->name;
 
@@ -930,6 +994,37 @@ namespace
             LoadCatalog();
         }
     };
+
+    // Per-instance scale lives in our tracking table, not the core
+    // `gameobject` spawn (which has no scale column), so the core spawns every
+    // decoration at its template size. Re-apply the saved scale the moment the
+    // object enters the world (server restart, or a player loading the guild
+    // house grid), before nearby clients first see it.
+    class GuildHouseDecorationScaleScript : public AllGameObjectScript
+    {
+    public:
+        GuildHouseDecorationScaleScript()
+            : AllGameObjectScript("GuildHouseDecorationScaleScript") { }
+
+        void OnGameObjectAddWorld(GameObject* go) override
+        {
+            if (!go)
+                return;
+
+            uint32 const lowguid = go->GetSpawnId();
+            if (!lowguid)
+                return;
+
+            auto it = sInstances.find(lowguid);
+            if (it == sInstances.end())
+                return;
+
+            float const scale = it->second.scale;
+            if (std::fabs(scale - 1.0f) > 0.001f
+                && std::fabs(go->GetObjectScale() - scale) > 0.001f)
+                go->SetObjectScale(scale);
+        }
+    };
 }
 
 } // namespace DCGuildHouseDecorations
@@ -938,4 +1033,5 @@ void AddSC_dc_guildhouse_decorations()
 {
     new DCGuildHouseDecorations::npc_guildhouse_decorator();
     new DCGuildHouseDecorations::GuildHouseDecorationsWorldScript();
+    new DCGuildHouseDecorations::GuildHouseDecorationScaleScript();
 }

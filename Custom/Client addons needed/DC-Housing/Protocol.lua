@@ -84,6 +84,13 @@ function Protocol:Init()
             data = data or {}
             if not data.success then
                 DC:Print("|cffff0000" .. (data.error or "Move failed.") .. "|r")
+                return
+            end
+            -- GOMove respawned the object under a new GUID; re-attach the
+            -- in-world gizmo to it (the old GUID is now dead, which is why the
+            -- gizmo otherwise vanished after the first move).
+            if data.guid and DC.EditMode and DC.EditMode.OnMoved then
+                DC.EditMode:OnMoved(tonumber(data.lowguid), data.guid)
             end
         end)
 
@@ -221,6 +228,13 @@ function Protocol:Rotate(lowguid)
         { lowguid = lowguid, mode = "rotate" })
 end
 
+-- Set the decoration's visual scale (server clamps to 0.2..5.0, persists it,
+-- and replicates the new size to every nearby player).
+function Protocol:Scale(lowguid, scale)
+    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
+        { lowguid = lowguid, mode = "scale", scale = scale or 1 })
+end
+
 -- Move the decoration to the player's current position (server reads it).
 function Protocol:MoveHere(lowguid)
     DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
@@ -239,6 +253,14 @@ end
 function Protocol:Select(guidHex)
     DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_SELECT,
         { guid = guidHex })
+end
+
+-- Select a placed decoration by its spawn id (used by the manage list, which
+-- knows the lowguid but not the live client GUID). The server resolves the
+-- gameobject and returns its full GUID in SMSG_SELECT_RESULT.
+function Protocol:SelectByLowguid(lowguid)
+    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_SELECT,
+        { lowguid = lowguid })
 end
 
 function Protocol:ResetAll()

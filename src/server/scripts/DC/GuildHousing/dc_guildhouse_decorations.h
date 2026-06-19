@@ -55,14 +55,28 @@ namespace DCGuildHouseDecorations
     bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
         float orientation, std::string& error, uint32* outLowguid = nullptr,
         uint64* outGuidRaw = nullptr);
-    bool MoveHere(Player* player, uint32 lowguid, std::string& error);
-    bool Rotate(Player* player, uint32 lowguid, std::string& error);
+    // Moves go through GOMove, which deletes and respawns the gameobject with
+    // a fresh ObjectGuid (to defeat the client's deleted-object cache). The
+    // new full GUID is returned via outGuidRaw so the addon can re-target its
+    // in-world gizmo, which would otherwise point at the now-dead old GUID.
+    bool MoveHere(Player* player, uint32 lowguid, std::string& error,
+        uint64* outGuidRaw = nullptr);
+    bool Rotate(Player* player, uint32 lowguid, std::string& error,
+        uint64* outGuidRaw = nullptr);
     bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
-        float orientation, std::string& error);
+        float orientation, std::string& error, uint64* outGuidRaw = nullptr);
     bool Nudge(Player* player, uint32 lowguid, float dx, float dy, float dz,
-        float dOrientation, std::string& error);
+        float dOrientation, std::string& error, uint64* outGuidRaw = nullptr);
     bool Remove(Player* player, uint32 lowguid, std::string& error,
         uint32* outRefundCopper = nullptr);
+
+    // Set a decoration's visual scale (1.0 = unscaled). Server-authoritative:
+    // updates OBJECT_FIELD_SCALE_X (replicated to every nearby player) and
+    // persists the value so it survives a restart. Clamped to a sane range.
+    bool SetScale(Player* player, uint32 lowguid, float scale,
+        std::string& error);
+    // Persisted scale for a tracked decoration, or 1.0 if none/unknown.
+    float GetDecorationScale(uint32 lowguid);
 
     // True when lowguid is a tracked decoration of the player's guild.
     bool IsOwnGuildDecoration(Player* player, uint32 lowguid);
@@ -81,6 +95,7 @@ namespace DCGuildHouseDecorations
         float y = 0.f;
         float z = 0.f;
         float orientation = 0.f;
+        float scale = 1.f;
         uint32 mapId = 0;
     };
 

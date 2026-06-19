@@ -42,7 +42,9 @@ function Catalog:LoadPreviewModel(item)
     -- decorations both sit comfortably in the pane (a fixed scale made small
     -- items fill/overflow the frame). Mouse wheel still zooms from here.
     local radius = math.max(item.radius or 1.0, 0.4)
-    state.previewScale = math.max(0.05, math.min(0.8, 0.35 / radius))
+    -- Default to a more zoomed-out (farther) framing so whole buildings/large
+    -- props fit without clipping; the mouse wheel still zooms in from here.
+    state.previewScale = math.max(0.03, math.min(0.6, 0.22 / radius))
     state.previewVertical = 0
     -- Frame the view (camera/light/scale/position) THEN load the model last —
     -- the exact call order proven to work by the DC-GM gameobject preview.
@@ -96,6 +98,13 @@ local function SetPlacedSelection(item)
         for _, b in ipairs(frame.manageButtons) do
             b:Enable()
         end
+    end
+
+    -- Also bring up the in-world gizmo for this placed object so it can be
+    -- dragged directly (selects by spawn id; the server resolves and returns
+    -- its live GUID).
+    if DC.EditMode and DC.EditMode.SelectPlaced then
+        DC.EditMode:SelectPlaced(item.lowguid)
     end
 end
 
@@ -378,7 +387,8 @@ local function CreateCatalogFrame()
     preview:EnableMouseWheel(true)
     preview:SetScript("OnMouseDown", function(self)
         self.rotating = true
-        self.lastX = GetCursorPosition()
+        local x, y = GetCursorPosition()
+        self.lastX, self.lastY = x, y
     end)
     preview:SetScript("OnMouseUp", function(self)
         self.rotating = false
@@ -390,9 +400,10 @@ local function CreateCatalogFrame()
                 + delta * 0.05
         else
             -- zoom: wheel up = larger (the widget auto-frames, so apparent
-            -- size is driven by SetModelScale, not camera depth)
-            local s = (state.previewScale or 0.5) + delta * 0.1
-            if s < 0.1 then s = 0.1 end
+            -- size is driven by SetModelScale, not camera depth). The low floor
+            -- lets big buildings be pulled right back.
+            local s = (state.previewScale or 0.5) + delta * 0.05
+            if s < 0.02 then s = 0.02 end
             if s > 3.0 then s = 3.0 end
             state.previewScale = s
         end
@@ -400,11 +411,19 @@ local function CreateCatalogFrame()
     end)
     preview:SetScript("OnUpdate", function(self)
         if self.rotating then
-            local x = GetCursorPosition()
-            state.previewFacing = (state.previewFacing or 0.6)
-                + (x - (self.lastX or x)) * 0.02
-            self.lastX = x
-            pcall(self.SetFacing, self, state.previewFacing)
+            local x, y = GetCursorPosition()
+            local dx = x - (self.lastX or x)
+            local dy = y - (self.lastY or y)
+            self.lastX, self.lastY = x, y
+            -- Horizontal drag spins the model (yaw); a stock 3.3.5 Model widget
+            -- exposes no pitch, so vertical drag raises/lowers it instead so the
+            -- top and underside can be brought into view ("look around" it).
+            state.previewFacing = (state.previewFacing or 0.6) + dx * 0.02
+            local v = (state.previewVertical or 0) + dy * 0.004
+            if v < -2 then v = -2 end
+            if v > 2 then v = 2 end
+            state.previewVertical = v
+            Catalog:ApplyPreviewTransform()
         end
     end)
     frame.preview = preview

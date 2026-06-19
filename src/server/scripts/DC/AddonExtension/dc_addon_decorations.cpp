@@ -158,6 +158,7 @@ namespace Decorations
         std::string mode = "here";
         float x = 0.0f, y = 0.0f, z = 0.0f, o = 0.0f;
         float dx = 0.0f, dy = 0.0f, dz = 0.0f, dOrientation = 0.0f;
+        float scale = 1.0f;
 
         JsonValue json = GetJsonData(msg);
         if (!json.IsNull())
@@ -182,6 +183,8 @@ namespace Decorations
                 dz = static_cast<float>(json["dz"].AsNumber());
             if (json.HasKey("do"))
                 dOrientation = static_cast<float>(json["do"].AsNumber());
+            if (json.HasKey("scale"))
+                scale = static_cast<float>(json["scale"].AsNumber());
         }
 
         if (!lowguid)
@@ -193,17 +196,24 @@ namespace Decorations
 
         std::string error;
         bool success = false;
+        // GOMove respawns moved objects under a new GUID; capture it so the
+        // client can re-target its gizmo. Scale keeps the same GUID (it edits
+        // the live object in place), so it leaves rawGuid at 0.
+        uint64 rawGuid = 0;
         if (mode == "rotate")
-            success = GHD::Rotate(player, lowguid, error);
+            success = GHD::Rotate(player, lowguid, error, &rawGuid);
         else if (mode == "to")
-            success = GHD::MoveTo(player, lowguid, x, y, z, o, error);
+            success = GHD::MoveTo(player, lowguid, x, y, z, o, error,
+                &rawGuid);
         else if (mode == "nudge")
             success = GHD::Nudge(player, lowguid, dx, dy, dz, dOrientation,
-                error);
+                error, &rawGuid);
+        else if (mode == "scale")
+            success = GHD::SetScale(player, lowguid, scale, error);
         else
-            success = GHD::MoveHere(player, lowguid, error);
+            success = GHD::MoveHere(player, lowguid, error, &rawGuid);
         SendOpResult(player, Opcode::Decoration::SMSG_MOVE_RESULT, success,
-            error, lowguid);
+            error, lowguid, 0, rawGuid);
     }
 
     static void HandleSelect(Player* player, ParsedMessage const& msg)
@@ -211,17 +221,33 @@ namespace Decorations
         if (!player)
             return;
 
-        std::string guidHex;
         JsonValue json = GetJsonData(msg);
-        if (!json.IsNull() && json.HasKey("guid"))
-            guidHex = json["guid"].AsString();
+        uint64 rawGuid = 0;
+        if (!json.IsNull())
+        {
+            // Cursor-pick path sends the full client GUID; the manage list
+            // sends only the spawn id, so resolve that to the live object's
+            // GUID here.
+            if (json.HasKey("guid"))
+                rawGuid = std::strtoull(
+                    json["guid"].AsString().c_str(), nullptr, 16);
+            else if (json.HasKey("lowguid"))
+            {
+                uint32 const lowguid = json["lowguid"].AsUInt32();
+                if (GameObject* go = ::GOMove::GetGameObject(player, lowguid))
+                    rawGuid = go->GetGUID().GetRawValue();
+            }
+        }
 
-        uint64 const rawGuid =
-            std::strtoull(guidHex.c_str(), nullptr, 16);
         if (!rawGuid)
         {
-            SendError(player, Module::DECORATION, "Missing guid",
-                ErrorCode::BAD_FORMAT, Opcode::Core::SMSG_ERROR);
+            JsonValue fail;
+            fail.SetObject();
+            fail.Set("success", false);
+            fail.Set("error", std::string("That decoration could not be "
+                "found nearby."));
+            JsonMessage(Module::DECORATION,
+                Opcode::Decoration::SMSG_SELECT_RESULT, fail).Send(player);
             return;
         }
 
@@ -247,6 +273,10 @@ namespace Decorations
         response.Set("lowguid", static_cast<int32>(lowguid));
         response.Set("entry", static_cast<int32>(entry));
         response.Set("paid", static_cast<int32>(paidCopper));
+        // Echo the full GUID so a lowguid-based select (manage list) can attach
+        // the client gizmo; the cursor-pick path already knew it but it is
+        // harmless to send back.
+        response.Set("guid", Acore::StringFormat("0x{:016X}", rawGuid));
 
         if (GHD::CatalogEntry const* item = GHD::FindCatalogEntry(entry))
         {
@@ -260,6 +290,7 @@ namespace Decorations
             response.Set("y", JsonValue(object->GetPositionY()));
             response.Set("z", JsonValue(object->GetPositionZ()));
             response.Set("o", JsonValue(object->GetOrientation()));
+            response.Set("scale", JsonValue(object->GetObjectScale()));
         }
 
         JsonMessage(Module::DECORATION,
@@ -362,6 +393,7 @@ namespace Decorations
             row.Set("x", JsonValue(d.x));
             row.Set("y", JsonValue(d.y));
             row.Set("z", JsonValue(d.z));
+            row.Set("scale", JsonValue(d.scale));
             row.Set("mapId", static_cast<int32>(d.mapId));
             arr.Push(row);
         }
