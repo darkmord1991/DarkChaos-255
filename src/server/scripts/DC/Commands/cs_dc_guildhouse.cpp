@@ -106,16 +106,11 @@ public:
             return false;
         }
 
-        if (player->GetMapId() != data->map || player->GetPhaseByAuras() != data->phase)
+        if (!GuildHouseManager::IsInOwnGuildHouse(player))
         {
-             // If not in the correct phase/map, maybe they should teleport first?
-             // Or at least be at GM Island if that's the default zone
-             if (player->GetZoneId() != 876)
-             {
-                handler->SendSysMessage("You must be in your Guild House to use this command!");
-                handler->SetSentErrorMessage(true);
-                return false;
-             }
+            handler->SendSysMessage("You must be in your Guild House to use this command!");
+            handler->SetSentErrorMessage(true);
+            return false;
         }
 
         if (player->FindNearestCreature(95104, VISIBLE_RANGE, true))
@@ -180,14 +175,15 @@ public:
         handler->PSendSysMessage("Members currently in the Guild House:");
         uint32 count = 0;
 
-        Map* map = sMapMgr->FindMap(data->map, 0);
+        uint32 instanceId = GuildHouseManager::GetGuildInstanceId(player->GetGuildId());
+        Map* map = instanceId ? sMapMgr->FindMap(GUILD_HOUSE_MAP_ID, instanceId) : nullptr;
         if (map)
         {
+             // Everyone in the guild's instance is a guild member here; no phase filter.
              Map::PlayerList const& players = map->GetPlayers();
              for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
              {
-                 Player* p = itr->GetSource();
-                 if (p && p->GetPhaseByAuras() == data->phase)
+                 if (Player* p = itr->GetSource())
                  {
                      handler->PSendSysMessage("- {}", p->GetName());
                      count++;
@@ -225,6 +221,7 @@ public:
         }
 
         GuildHouseManager::CleanupGuildHouseSpawns(data->map, data->phase);
+        GuildHouseManager::ClearGuildContent(guild->GetId());
         GuildHouseManager::SpawnTeleporterNPC(guild->GetId(), data->map, data->phase, data->posX, data->posY, data->posZ, data->ori);
         GuildHouseManager::SpawnButlerNPC(guild->GetId(), data->map, data->phase, data->posX + 2.0f, data->posY, data->posZ, data->ori);
 

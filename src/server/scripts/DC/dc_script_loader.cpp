@@ -176,6 +176,7 @@ void AddSC_dc_challenge_modes_commandscript();
 void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
 void AddGuildHouseButlerScripts();            // GuildHousing/dc_guildhouse_butler.cpp
 void AddSC_dc_guildhouse_decorations();       // GuildHousing/dc_guildhouse_decorations.cpp
+void AddSC_dc_guildhouse_instance();          // GuildHousing/dc_guildhouse_instance.cpp
 void AddSC_dc_dalaran_guard();                // GuildHousing/dc_dalaran_guard.cpp
 
 // ============================================================================
@@ -386,6 +387,7 @@ void AddDCScripts()
     DC_LOAD(AddGuildHouseScripts);
     DC_LOAD(AddGuildHouseButlerScripts);
     DC_LOAD(AddSC_dc_guildhouse_decorations);
+    DC_LOAD(AddSC_dc_guildhouse_instance);
     DC_LOAD(AddSC_dc_dalaran_guard);
 
     LogSection("Dungeon Quest System (late-load stage)");

@@ -82,18 +82,13 @@ public:
 
         DalaranGuardPOI const& poi = dalaran_guard_pois[action];
 
-        uint32 phase = data->phase ? data->phase : GetGuildPhase(player);
-        if (phase)
-            player->SetPhaseMask(phase, true);
-
         DC::MapCoords::SendPoiMarker(player, poi.x, poi.y, poi.poiIcon, 0, 0, poi.name);
         ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to {}", poi.name);
         CloseGossipMenuFor(player);
 
+        // Intra-house POI hop. The player's instance bind keeps them in their own
+        // guild-house instance across this same-map teleport; no phasing needed.
         player->TeleportTo(poi.map, poi.x, poi.y, poi.z, poi.o);
-
-        if (phase && player->GetPhaseMask() != phase)
-            player->SetPhaseMask(phase, true);
 
         return true;
     }

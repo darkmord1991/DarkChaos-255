@@ -313,6 +313,7 @@ set(SCRIPTS_DC_GuildHousing
     GuildHousing/dc_guildhouse_npcs.cpp
     GuildHousing/dc_guildhouse_butler.cpp
     GuildHousing/dc_guildhouse_manager.cpp
+    GuildHousing/dc_guildhouse_instance.cpp
     GuildHousing/dc_guildhouse_decorations.h
     GuildHousing/dc_guildhouse_decorations.cpp
     GuildHousing/dc_dalaran_guard.cpp

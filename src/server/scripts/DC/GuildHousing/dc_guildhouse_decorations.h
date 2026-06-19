@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+class Map;
 class Player;
 
 namespace DCGuildHouseDecorations
@@ -37,6 +38,22 @@ namespace DCGuildHouseDecorations
 
     // Catalog access (loaded once at startup, reloadable).
     void LoadCatalog();
+
+    // Summon (and register for the editor) every decoration owned by the guild
+    // into its freshly-loaded instance map. Called once per instance load by the
+    // guild-house InstanceMapScript. Decorations are non-persistent in-world and
+    // re-created from dc_guild_house_instance_spawns (source=DECORATION) each load.
+    void LoadIntoInstance(Map* map, uint32 guildId);
+
+    // Resolve a tracked decoration (by its stable row id) to its live in-world
+    // GameObject's raw GUID, for addon gizmo re-targeting. False if not loaded.
+    bool GetLiveGuidRaw(Player* player, uint32 lowguid, uint64& outRaw);
+
+    // Forget all in-memory decoration state (metadata, live refs, budget) for a
+    // guild, used when its house is reset/removed. The DB rows are deleted by
+    // GuildHouseManager::ClearGuildContent; any live in-world objects clear on
+    // the next instance reload.
+    void ForgetGuild(uint32 guildId);
     CatalogEntry const* FindCatalogEntry(uint32 entry);
     std::vector<std::string> const& GetCategories();
     std::vector<CatalogEntry const*> GetCatalogPage(
@@ -77,6 +94,11 @@ namespace DCGuildHouseDecorations
         std::string& error);
     // Persisted scale for a tracked decoration, or 1.0 if none/unknown.
     float GetDecorationScale(uint32 lowguid);
+
+    // Cached transform (position/orientation/scale) of a tracked decoration.
+    // False if the row id is unknown.
+    bool GetDecorationTransform(uint32 lowguid, float& x, float& y, float& z,
+        float& orientation, float& scale);
 
     // True when lowguid is a tracked decoration of the player's guild.
     bool IsOwnGuildDecoration(Player* player, uint32 lowguid);

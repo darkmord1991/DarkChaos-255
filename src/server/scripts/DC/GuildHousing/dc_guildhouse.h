@@ -4,6 +4,11 @@
 #include "Guild.h"
 #include "Player.h"
 
+#include <string>
+#include <vector>
+
+class Map;
+
 // Offsets from creatures_objects.sql
 constexpr uint32 GetCreatureEntry(uint32 offset)
 {
@@ -14,6 +19,20 @@ constexpr uint32 GetGameObjectEntry(uint32 offset)
 {
     return 500000 + offset;
 }
+
+// Instanced guild housing (Phase B migration)
+//
+// Each guild gets its own instance of the dedicated guild-house map, which
+// replaces the legacy 27-phase shared-map isolation below. Separation is now
+// provided by the instance id (effectively unlimited guilds), while the map's
+// terrain (map/vmap/mmap for GUILD_HOUSE_MAP_ID) remains a single on-disk copy
+// shared across all live instances. See GuildHouseManager::EnsureGuildInstanceId
+// and the dc_guild_house_instance table.
+constexpr uint32 GUILD_HOUSE_MAP_ID = 1409;
+constexpr float  GUILD_HOUSE_ENTRANCE_X = 1102.5204f;
+constexpr float  GUILD_HOUSE_ENTRANCE_Y = 1198.4127f;
+constexpr float  GUILD_HOUSE_ENTRANCE_Z = 536.79785f;
+constexpr float  GUILD_HOUSE_ENTRANCE_O = 1.6015308f;
 
 // Guild Phase Helpers
 //
@@ -61,10 +80,56 @@ struct GuildHouseData
         : phase(_phase), map(_map), posX(_x), posY(_y), posZ(_z), ori(_o), level(_level) {}
 };
 
+// A butler-purchased spawn the guild owns (one dc_guild_house_instance_spawns
+// row, source=BUTLER), for the "Manage / Remove" gossip list.
+struct ButlerContentItem
+{
+    uint32 id = 0;
+    uint32 entry = 0;
+    bool isGameObject = false;
+    uint32 paidCopper = 0;
+    std::string name;
+};
+
 class GuildHouseManager
 {
 public:
     static bool TeleportToGuildHouse(Player* player, uint32 guildId);
+    // Returns the persistent instance id for this guild's private guild-house
+    // map, minting (and persisting) a fresh one if none exists or the previous
+    // InstanceSave has expired/reset. Returns 0 on failure.
+    static uint32 EnsureGuildInstanceId(uint32 guildId);
+
+    // --- Dynamic per-instance content (butler purchases + decorations) ---
+    // Allocate a unique, monotonically-increasing id for a dc_guild_house_instance_spawns
+    // row. World-thread only; the single id source for both butler and decoration
+    // inserts (all rows use explicit ids, so the shared table never relies on AUTO_INCREMENT).
+    static uint32 AllocateContentId();
+    // Reverse lookup: which guild owns the given instance id (via dc_guild_house_instance).
+    static uint32 GetGuildByInstanceId(uint32 instanceId);
+    // Read-only: the guild's bound instance id (0 if none), without creating one.
+    static uint32 GetGuildInstanceId(uint32 guildId);
+    // True if the player stands in their own guild's house instance. Replaces the
+    // legacy "same map + guild phasemask" check for "inside your guild house".
+    static bool IsInOwnGuildHouse(Player* player);
+    // Summon all of a guild's persisted content (dc_guild_house_instance_spawns)
+    // non-persistently into the given (instance) map. Called once per instance load.
+    static void LoadGuildContentIntoInstance(Map* map, uint32 guildId);
+    // True if the guild already owns a spawn with this entry/type (table-based dedup).
+    static bool GuildOwnsContent(uint32 guildId, uint32 entry, bool isGameObject);
+    // Persist a piece of content for the guild AND summon it live into map.
+    static bool PlaceGuildContent(Map* map, uint32 guildId, bool isGameObject, uint32 entry,
+        float x, float y, float z, float o, float scale, uint32 paidCopper, uint64 placedBy);
+    // Wipe a guild's dynamic content (butler + decorations) from the DB and the
+    // decoration caches, used on house reset/removal. Live in-world objects clear
+    // on the next instance reload.
+    static void ClearGuildContent(uint32 guildId);
+    // List a guild's butler-purchased spawns (for the remove gossip UI).
+    static void ListButlerContent(uint32 guildId, std::vector<ButlerContentItem>& out);
+    // Remove a butler spawn the player's guild owns: despawn the live object,
+    // delete its row, and refund a configured share of the paid cost.
+    static bool RemoveButlerContent(Player* player, uint32 rowId, uint32* outRefundCopper = nullptr);
+
     static bool RemoveGuildHouse(Guild* guild);
     static void CleanupGuildHouseSpawns(uint32 mapId, uint32 guildPhase);
 

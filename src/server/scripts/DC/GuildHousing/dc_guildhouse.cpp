@@ -178,60 +178,6 @@ class GuildHousePlayerScript : public PlayerScript
 public:
     GuildHousePlayerScript() : PlayerScript("GuildHousePlayerScript") {}
 
-    void EnsureButlerSpawned(Player* player, uint32 guildPhase)
-    {
-        if (!player)
-            return;
-
-        // If a butler already exists in this phase, do nothing.
-        if (player->FindNearestCreature(95104, VISIBLE_RANGE, true))
-            return;
-
-        Map* map = player->GetMap();
-        if (!map)
-            return;
-
-        float posX = 16229.422f;
-        float posY = 16283.675f;
-        float posZ = 13.175704f;
-        float ori = 3.036652f;
-
-        Creature* creature = new Creature();
-        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, guildPhase, 95104, 0, posX, posY, posZ, ori))
-        {
-            delete creature;
-            return;
-        }
-
-        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), guildPhase);
-        uint32 lowguid = creature->GetSpawnId();
-
-        creature->CleanupsBeforeDelete();
-        delete creature;
-
-        creature = new Creature();
-        if (!creature->LoadCreatureFromDB(lowguid, map))
-        {
-            delete creature;
-            return;
-        }
-
-        sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
-    }
-
-    void OnPlayerLogin(Player* player)
-    {
-        CheckPlayer(player);
-    }
-
-    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/)
-    {
-        if (newZone == 876)
-            CheckPlayer(player);
-        else
-            player->SetPhaseMask(GetNormalPhase(player), true);
-    }
-
     void OnPlayerBeforeChooseGraveyard(Player* player, TeamId /*teamId*/,
                                        bool nearCorpse,
                                        uint32& graveyardOverride) override
@@ -279,85 +225,6 @@ public:
         return false;
     }
 
-    bool OnPlayerBeforeTeleport(Player* player, uint32 mapid, float x, float y, float z, float orientation, uint32 options, Unit* target)
-    {
-        (void)mapid;
-        (void)x;
-        (void)y;
-        (void)z;
-        (void)orientation;
-        (void)options;
-        (void)target;
-
-        if (player->GetZoneId() == 876 && player->GetAreaId() == 876) // GM Island
-        {
-            // Remove the rested state when teleporting from the guild house
-            player->RemoveRestState();
-        }
-
-        return true;
-    }
-
-    uint32 GetNormalPhase(Player* player) const
-    {
-        if (player->IsGameMaster())
-            return PHASEMASK_ANYWHERE;
-
-        uint32 phase = player->GetPhaseByAuras();
-        if (!phase)
-            return PHASEMASK_NORMAL;
-        else
-            return phase;
-    }
-
-    void CheckPlayer(Player* player)
-    {
-        GuildHouseData const* houseData = GuildHouseManager::GetGuildHouseData(player->GetGuildId());
-        uint32 guildPhase = houseData ? houseData->phase : GetGuildPhase(player);
-
-        if (player->GetZoneId() == 876 && player->GetAreaId() == 876) // GM Island
-        {
-            // Set the guild house as a rested area
-            player->SetRestState(0);
-
-            // If player is not in a guild he doesnt have a guild house teleport away
-            // TODO: What if they are in a guild, but somehow are in the wrong phaseMask and seeing someone else's area?
-
-            if (!houseData || !player->GetGuild())
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House.");
-                TeleportToDefault(player);
-                return;
-            }
-
-            player->SetPhaseMask(guildPhase, true);
-            EnsureButlerSpawned(player, guildPhase);
-        }
-        else
-            player->SetPhaseMask(GetNormalPhase(player), true);
-    }
-
-    void TeleportToDefault(Player* player)
-    {
-        if (player->GetTeamId() == TEAM_ALLIANCE)
-            player->TeleportTo(0, -8833.379883f, 628.627991f, 94.006599f, 1.0f);
-        else
-            player->TeleportTo(1, 1486.048340f, -4415.140625f, 24.187496f, 0.13f);
-    }
-};
-
-class GuildHouseGlobal : public GlobalScript
-{
-public:
-    GuildHouseGlobal() : GlobalScript("GuildHouseGlobal") {}
-
-    void OnBeforeWorldObjectSetPhaseMask(WorldObject const* worldObject, uint32 & /*oldPhaseMask*/, uint32 & /*newPhaseMask*/, bool &useCombinedPhases, bool & /*update*/) override
-    {
-        if (worldObject->GetZoneId() == 876)
-            useCombinedPhases = false;
-        else
-            useCombinedPhases = true;
-    }
 };
 
 void AddGuildHouseScripts()
@@ -365,5 +232,4 @@ void AddGuildHouseScripts()
     new GuildHelper();
     AddGuildHouseNpcScripts();
     new GuildHousePlayerScript();
-    new GuildHouseGlobal();
 }

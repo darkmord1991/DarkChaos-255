@@ -192,6 +192,7 @@ public:
         uint32 mapId = result ? result->Fetch()[0].Get<uint32>() : 1;
 
         GuildHouseManager::CleanupGuildHouseSpawns(mapId, guildPhase);
+        GuildHouseManager::ClearGuildContent(player->GetGuildId());
         GuildHouseManager::SpawnTeleporterNPC(player);
         GuildHouseManager::SpawnButlerNPC(player);
         ChatHandler(player->GetSession()).PSendSysMessage("Guild House has been reset.");

@@ -53,6 +53,11 @@ public:
     static constexpr uint32 ACTION_WEATHER_MENU = 9002000;
     static constexpr uint32 ACTION_WEATHER_BASE = 9002100;
     static constexpr uint32 ACTION_PRESET_ENTRY_BASE = 10000000;
+    static constexpr uint32 ACTION_MANAGE_MENU = 9004000;
+    // Remove items carry the spawn's row id in `action` and this sender, so the
+    // id can be any value without colliding with the action ranges above.
+    // Must differ from GOSSIP_SENDER_MAIN (1), which every other item uses.
+    static constexpr uint32 SENDER_BUTLER_REMOVE = 700;
 
     struct WeatherOption
     {
@@ -365,6 +370,36 @@ public:
         return new GuildHouseSpawnerAI(creature);
     }
 
+    // Lists the guild's butler-purchased spawns, each with a confirm-gated
+    // remove action (refunds a share of the paid cost via the manager).
+    void ShowManageMenu(Player* player, Creature* creature)
+    {
+        if (!player || !player->GetGuildId())
+            return;
+
+        ClearGossipMenuFor(player);
+
+        std::vector<ButlerContentItem> items;
+        GuildHouseManager::ListButlerContent(player->GetGuildId(), items);
+
+        if (items.empty())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "You have no spawns to remove.", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        }
+        else
+        {
+            for (ButlerContentItem const& item : items)
+                AddGossipItemFor(player, GOSSIP_ICON_TALK, "Remove: " + item.name,
+                    SENDER_BUTLER_REMOVE, item.id, "Remove " + item.name + "?", 0, false);
+
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!",
+                GOSSIP_SENDER_MAIN, ACTION_BACK);
+        }
+
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         if (player->GetGuild())
@@ -450,6 +485,10 @@ public:
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_TALK,
+            DCUtils::MakeLargeGossipText("Interface\\Icons\\INV_Misc_Wrench_01", "Manage / Remove Spawns"),
+            GOSSIP_SENDER_MAIN, ACTION_MANAGE_MENU);
+
+        AddGossipItemFor(player, GOSSIP_ICON_TALK,
             DCUtils::MakeLargeGossipText("Interface\\Icons\\Spell_Nature_StormReach", "Change Weather"),
             GOSSIP_SENDER_MAIN, ACTION_WEATHER_MENU);
 
@@ -462,8 +501,28 @@ public:
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
+        // Remove a guild-owned butler spawn (action carries the row id).
+        if (sender == SENDER_BUTLER_REMOVE)
+        {
+            uint32 refund = 0;
+            if (GuildHouseManager::RemoveButlerContent(player, action, &refund))
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "Spawn removed. Refunded {} copper.", refund);
+            else
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "Could not remove that spawn.");
+
+            ShowManageMenu(player, creature);
+            return true;
+        }
+
+        if (action == ACTION_MANAGE_MENU)
+        {
+            ShowManageMenu(player, creature);
+            return true;
+        }
 
         if (action == ACTION_WEATHER_MENU)
         {
@@ -794,13 +853,10 @@ public:
              return;
         }
 
-        uint32 guildPhase = GetGuildPhase(player);
-        if (player->GetPhaseByAuras() != guildPhase)
-            player->SetPhaseMask(guildPhase, true);
-
-        // Global Existence Check
-        // Use current map and phase
-        if (GuildHouseManager::HasSpawn(player->GetMapId(), guildPhase, entry, false))
+        // Instanced guild housing: isolation comes from the per-guild instance,
+        // not phasing, so the player is no longer re-phased. Ownership/dedup is
+        // tracked in dc_guild_house_instance_spawns; the live NPC is dynamic.
+        if (GuildHouseManager::GuildOwnsContent(guild->GetId(), entry, false))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this creature!");
             CloseGossipMenuFor(player);
@@ -849,43 +905,37 @@ public:
                 entry);
         }
 
-        if (!result)
+        if (result)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "No spawn preset found for entry {} (map {}). Check `dc_guild_house_spawns`.", entry, player->GetMapId());
-            return;
+            do
+            {
+                Field* fields = result->Fetch();
+                posX = fields[0].Get<float>();
+                posY = fields[1].Get<float>();
+                posZ = fields[2].Get<float>();
+                ori = fields[3].Get<float>();
+            } while (result->NextRow());
+        }
+        else
+        {
+            // No designated preset for this entry on this map (e.g. the instanced
+            // 1409 house has no preset row yet): drop it where the buyer stands,
+            // so the butler stays usable without hand-authored per-map presets.
+            posX = player->GetPositionX();
+            posY = player->GetPositionY();
+            posZ = player->GetPositionZ();
+            ori = player->GetOrientation();
         }
 
-        do
+        // Record per-guild ownership and dynamically summon the NPC into the
+        // guild's instance (non-persistent; recreated on each instance load by
+        // GuildHouseManager::LoadGuildContentIntoInstance).
+        if (!GuildHouseManager::PlaceGuildContent(player->GetMap(), guild->GetId(), false, entry,
+                posX, posY, posZ, ori, 1.0f, spawnCost, player->GetGUID().GetCounter()))
         {
-            Field* fields = result->Fetch();
-            posX = fields[0].Get<float>();
-            posY = fields[1].Get<float>();
-            posZ = fields[2].Get<float>();
-            ori = fields[3].Get<float>();
-
-        } while (result->NextRow());
-
-        Creature* creature = new Creature();
-
-        if (!creature->Create(player->GetMap()->GenerateLowGuid<HighGuid::Unit>(), player->GetMap(), guildPhase, entry, 0, posX, posY, posZ, ori))
-        {
-            delete creature;
+            ChatHandler(player->GetSession()).PSendSysMessage("Failed to spawn the creature.");
             return;
         }
-        creature->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), guildPhase);
-        uint32 db_guid = creature->GetSpawnId();
-
-        creature->CleanupsBeforeDelete();
-        delete creature;
-        creature = new Creature();
-        if (!creature->LoadCreatureFromDB(db_guid, player->GetMap()))
-        {
-            delete creature;
-            return;
-        }
-
-        sObjectMgr->AddCreatureToGrid(db_guid, sObjectMgr->GetCreatureData(db_guid));
 
         if (Guild* guild = player->GetGuild())
         {
@@ -929,11 +979,9 @@ public:
              return;
         }
 
-        uint32 guildPhase = GetGuildPhase(player);
-        if (player->GetPhaseByAuras() != guildPhase)
-            player->SetPhaseMask(guildPhase, true);
-
-        if (GuildHouseManager::HasSpawn(player->GetMapId(), guildPhase, entry, true))
+        // Instanced guild housing: no re-phasing; per-guild ownership/dedup is
+        // tracked in dc_guild_house_instance_spawns.
+        if (GuildHouseManager::GuildOwnsContent(guild->GetId(), entry, true))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this object!");
             CloseGossipMenuFor(player);
@@ -982,61 +1030,46 @@ public:
                 entry);
         }
 
-        if (!result)
+        if (result)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage(
-                "No spawn preset found for entry {} (map {}). Check `dc_guild_house_spawns`.", entry, player->GetMapId());
-            return;
+            do
+            {
+                Field* fields = result->Fetch();
+                posX = fields[0].Get<float>();
+                posY = fields[1].Get<float>();
+                posZ = fields[2].Get<float>();
+                ori = fields[3].Get<float>();
+            } while (result->NextRow());
+        }
+        else
+        {
+            // No designated preset for this entry on this map (e.g. the instanced
+            // 1409 house has no preset row yet): drop it where the buyer stands,
+            // so the butler stays usable without hand-authored per-map presets.
+            posX = player->GetPositionX();
+            posY = player->GetPositionY();
+            posZ = player->GetPositionZ();
+            ori = player->GetOrientation();
         }
 
-        do
-        {
-            Field* fields = result->Fetch();
-            posX = fields[0].Get<float>();
-            posY = fields[1].Get<float>();
-            posZ = fields[2].Get<float>();
-            ori = fields[3].Get<float>();
-
-        } while (result->NextRow());
-
-        uint32 objectId = entry;
-        if (!objectId)
+        if (!entry)
             return;
 
-        const GameObjectTemplate* objectInfo = sObjectMgr->GetGameObjectTemplate(objectId);
-
+        GameObjectTemplate const* objectInfo = sObjectMgr->GetGameObjectTemplate(entry);
         if (!objectInfo)
             return;
 
         if (objectInfo->displayId && !sGameObjectDisplayInfoStore.LookupEntry(objectInfo->displayId))
             return;
 
-        GameObject* object = sObjectMgr->IsGameObjectStaticTransport(objectInfo->entry) ? new StaticTransport() : new GameObject();
-        ObjectGuid::LowType guidLow = player->GetMap()->GenerateLowGuid<HighGuid::GameObject>();
-
-        if (!object->Create(guidLow, objectInfo->entry, player->GetMap(), guildPhase, posX, posY, posZ, ori, G3D::Quat(), 0, GO_STATE_READY))
+        // Record per-guild ownership and dynamically summon the object into the
+        // guild's instance (non-persistent; recreated on each instance load).
+        if (!GuildHouseManager::PlaceGuildContent(player->GetMap(), guild->GetId(), true, entry,
+                posX, posY, posZ, ori, 1.0f, spawnCost, player->GetGUID().GetCounter()))
         {
-            delete object;
+            ChatHandler(player->GetSession()).PSendSysMessage("Failed to spawn the object.");
             return;
         }
-
-        // fill the gameobject data and save to the db
-        object->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), guildPhase);
-        guidLow = object->GetSpawnId();
-        // delete the old object and do a clean load from DB with a fresh new GameObject instance.
-        // this is required to avoid weird behavior and memory leaks
-        delete object;
-
-        object = sObjectMgr->IsGameObjectStaticTransport(objectInfo->entry) ? new StaticTransport() : new GameObject();
-        // this will generate a new guid if the object is in an instance
-        if (!object->LoadGameObjectFromDB(guidLow, player->GetMap(), true))
-        {
-            delete object;
-            return;
-        }
-
-        // TODO: is it really necessary to add both the real and DB table guid here ?
-        sObjectMgr->AddGameobjectToGrid(guidLow, sObjectMgr->GetGameObjectData(guidLow));
 
         if (Guild* guild = player->GetGuild())
         {

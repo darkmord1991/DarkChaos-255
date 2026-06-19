@@ -226,16 +226,15 @@ namespace Decorations
         if (!json.IsNull())
         {
             // Cursor-pick path sends the full client GUID; the manage list
-            // sends only the spawn id, so resolve that to the live object's
-            // GUID here.
+            // sends only the decoration row id, so resolve that to the live
+            // object's GUID here.
             if (json.HasKey("guid"))
                 rawGuid = std::strtoull(
                     json["guid"].AsString().c_str(), nullptr, 16);
             else if (json.HasKey("lowguid"))
             {
                 uint32 const lowguid = json["lowguid"].AsUInt32();
-                if (GameObject* go = ::GOMove::GetGameObject(player, lowguid))
-                    rawGuid = go->GetGUID().GetRawValue();
+                GHD::GetLiveGuidRaw(player, lowguid, rawGuid);
             }
         }
 
@@ -284,13 +283,14 @@ namespace Decorations
             response.Set("weight", static_cast<int32>(item->budgetWeight));
         }
 
-        if (GameObject* object = ::GOMove::GetGameObject(player, lowguid))
+        float dx, dy, dz, dori, dscale;
+        if (GHD::GetDecorationTransform(lowguid, dx, dy, dz, dori, dscale))
         {
-            response.Set("x", JsonValue(object->GetPositionX()));
-            response.Set("y", JsonValue(object->GetPositionY()));
-            response.Set("z", JsonValue(object->GetPositionZ()));
-            response.Set("o", JsonValue(object->GetOrientation()));
-            response.Set("scale", JsonValue(object->GetObjectScale()));
+            response.Set("x", JsonValue(dx));
+            response.Set("y", JsonValue(dy));
+            response.Set("z", JsonValue(dz));
+            response.Set("o", JsonValue(dori));
+            response.Set("scale", JsonValue(dscale));
         }
 
         JsonMessage(Module::DECORATION,

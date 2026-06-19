@@ -37,19 +37,38 @@ namespace DCGuildHouseDecorations
 
 namespace
 {
+    // Persistent metadata for a placed decoration (one row of
+    // dc_guild_house_instance_spawns, source=DECORATION). Position lives here
+    // now (there is no backing world.gameobject row in the instanced model).
     struct InstanceInfo
     {
         uint32 guildId = 0;
         uint32 entry = 0;
         uint32 paidCopper = 0;
         float scale = 1.0f;
+        float x = 0.f;
+        float y = 0.f;
+        float z = 0.f;
+        float o = 0.f;
+        uint32 mapId = 0;
     };
 
-    // World-thread only.
+    // The live, non-persistent in-world GameObject backing a decoration in a
+    // currently-loaded instance. instanceId disambiguates objects across the
+    // several instances that may be loaded at once.
+    struct LiveRef
+    {
+        ObjectGuid guid;
+        uint32 instanceId = 0;
+    };
+
+    // World-thread only. The decoration key ("lowguid" in the public API) is the
+    // dc_guild_house_instance_spawns row id, not a world spawn id.
     std::map<uint32, CatalogEntry> sCatalog;                 // entry -> data
     std::vector<std::string> sCategories;
     std::unordered_map<uint8, uint32> sBudgetCaps;           // level -> cap
-    std::unordered_map<uint32, InstanceInfo> sInstances;     // lowguid -> info
+    std::unordered_map<uint32, InstanceInfo> sInstances;     // rowId -> info
+    std::unordered_map<uint32, LiveRef> sLive;               // rowId -> live GO
     std::unordered_map<uint32, uint32> sUsedBudget;          // guildId -> used
 
     float sMaxPlacementRange = 250.0f;
@@ -64,16 +83,38 @@ namespace
             && player->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
     }
 
-    // The phase a decoration must spawn in to be visible to the placing
-    // player. Real players are phased into their guild house phase, so we
-    // use that. A GM testing is standing in their own current phase (often
-    // normal phase 1, NOT the guild phase), so spawn where they actually
-    // are — otherwise the object lands in an invisible phase.
-    uint32 PlacementPhase(Player* player)
+    // Summon a decoration non-persistently into an instance map (phase 1, no
+    // SaveToDB). Returns the live GameObject or nullptr.
+    GameObject* SummonDeco(Map* map, InstanceInfo const& info)
     {
-        if (IsDecorationGM(player))
-            return player->GetPhaseMask();
-        return GetGuildPhase(player->GetGuildId());
+        if (!map)
+            return nullptr;
+
+        GameObject* go = map->SummonGameObject(
+            info.entry, info.x, info.y, info.z, info.o, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+        if (go && info.scale > 0.0f && std::fabs(info.scale - 1.0f) > 0.001f)
+            go->SetObjectScale(info.scale);
+        return go;
+    }
+
+    void RegisterLive(uint32 rowId, Map* map, GameObject* go)
+    {
+        sLive[rowId] = LiveRef{ go->GetGUID(), map->GetInstanceId() };
+    }
+
+    // Resolve a decoration's live GameObject, but only if it belongs to the map
+    // instance the player is standing in (the editor only acts on the local one).
+    GameObject* GetLiveObject(Player* player, uint32 rowId)
+    {
+        if (!player || !player->GetMap())
+            return nullptr;
+
+        auto it = sLive.find(rowId);
+        if (it == sLive.end()
+            || it->second.instanceId != player->GetMap()->GetInstanceId())
+            return nullptr;
+
+        return player->GetMap()->GetGameObject(it->second.guid);
     }
 
     uint32 WeightOf(uint32 entry)
@@ -130,8 +171,7 @@ namespace
             return false;
         }
 
-        if (player->GetMapId() != house->map
-            || !(player->GetPhaseMask() & GetGuildPhase(guildId)))
+        if (!GuildHouseManager::IsInOwnGuildHouse(player))
         {
             error = "You must be inside your guild house.";
             return false;
@@ -221,6 +261,7 @@ void LoadCatalog()
     sCategories.clear();
     sBudgetCaps.clear();
     sInstances.clear();
+    sLive.clear();
     sUsedBudget.clear();
 
     sMaxPlacementRange = sConfigMgr->GetOption<float>(
@@ -232,12 +273,13 @@ void LoadCatalog()
 
     if (!DC::DbSchema::WorldTableExists("dc_guildhouse_decorations")
         || !DC::DbSchema::WorldTableExists("dc_guildhouse_decoration_budgets")
-        || !DC::DbSchema::CharacterTableExists("dc_guildhouse_decoration_instances"))
+        || !DC::DbSchema::CharacterTableExists("dc_guild_house_instance_spawns"))
     {
         LOG_ERROR("scripts.dc",
-            "GuildHouseDecorations: decoration tables missing - apply "
-            "Custom feature SQLs (worlddb/GuildHousing 2026_06_13_* and "
-            "chardb/GuildHousing 2026_06_13_*). System disabled.");
+            "GuildHouseDecorations: required tables missing - apply Custom "
+            "feature SQLs (worlddb/GuildHousing 2026_06_13_* and chardb/"
+            "GuildHousing 2026_06_19_02 dc_guild_house_instance_spawns). "
+            "System disabled.");
         return;
     }
 
@@ -281,21 +323,27 @@ void LoadCatalog()
     }
 
     if (QueryResult result = CharacterDatabase.Query(
-        "SELECT `go_lowguid`, `guild_id`, `entry`, `paid_copper`, `scale` "
-        "FROM `dc_guildhouse_decoration_instances`"))
+        "SELECT `id`, `guild_id`, `entry`, `paid_copper`, `scale`, "
+        "`posX`, `posY`, `posZ`, `orientation` "
+        "FROM `dc_guild_house_instance_spawns` WHERE `source` = 'DECORATION'"))
     {
         do
         {
             Field* fields = result->Fetch();
+            uint32 rowId = fields[0].Get<uint32>();
             InstanceInfo info;
-            uint32 lowguid = fields[0].Get<uint32>();
             info.guildId = fields[1].Get<uint32>();
             info.entry = fields[2].Get<uint32>();
             info.paidCopper = fields[3].Get<uint32>();
             info.scale = fields[4].Get<float>();
             if (info.scale <= 0.f)
                 info.scale = 1.0f;
-            sInstances[lowguid] = info;
+            info.x = fields[5].Get<float>();
+            info.y = fields[6].Get<float>();
+            info.z = fields[7].Get<float>();
+            info.o = fields[8].Get<float>();
+            info.mapId = GUILD_HOUSE_MAP_ID;
+            sInstances[rowId] = info;
             AddUsedBudget(info.guildId, WeightOf(info.entry));
         } while (result->NextRow());
     }
@@ -428,8 +476,20 @@ bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
         return false;
     }
 
-    GameObject* object = ::GOMove::SpawnGameObject(player, x, y, z,
-        orientation, PlacementPhase(player), entry);
+    uint32 const lowguid = GuildHouseManager::AllocateContentId();
+
+    InstanceInfo info;
+    info.guildId = guildId;
+    info.entry = entry;
+    info.paidCopper = item->costCopper;
+    info.scale = 1.0f;
+    info.x = x;
+    info.y = y;
+    info.z = z;
+    info.o = orientation;
+    info.mapId = player->GetMapId();
+
+    GameObject* object = SummonDeco(player->GetMap(), info);
     if (!object)
     {
         error = "Failed to place the decoration.";
@@ -438,20 +498,17 @@ bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
 
     player->ModifyMoney(-static_cast<int32>(item->costCopper));
 
-    uint32 const lowguid = object->GetSpawnId();
-    InstanceInfo info;
-    info.guildId = guildId;
-    info.entry = entry;
-    info.paidCopper = item->costCopper;
     sInstances[lowguid] = info;
+    RegisterLive(lowguid, player->GetMap(), object);
     AddUsedBudget(guildId, item->budgetWeight);
 
     CharacterDatabase.Execute(
-        "INSERT INTO `dc_guildhouse_decoration_instances` "
-        "(`go_lowguid`, `guild_id`, `entry`, `placed_by`, `paid_copper`) "
-        "VALUES ({}, {}, {}, {}, {})",
-        lowguid, guildId, entry, player->GetGUID().GetCounter(),
-        item->costCopper);
+        "INSERT INTO `dc_guild_house_instance_spawns` "
+        "(`id`, `guild_id`, `spawn_type`, `entry`, `posX`, `posY`, `posZ`, "
+        "`orientation`, `scale`, `source`, `paid_copper`, `placed_by`) "
+        "VALUES ({}, {}, 'GAMEOBJECT', {}, {}, {}, {}, {}, 1.0, 'DECORATION', {}, {})",
+        lowguid, guildId, entry, x, y, z, orientation, item->costCopper,
+        player->GetGUID().GetCounter());
 
     GuildHouseManager::LogAction(player, GH_ACTION_SPAWN,
         GH_ENTITY_GAMEOBJECT, entry, lowguid, x, y, z, orientation);
@@ -507,22 +564,39 @@ bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
         return false;
     }
 
-    GameObject* moved = ::GOMove::MoveGameObject(player, x, y, z,
-        Position::NormalizeOrientation(orientation),
-        PlacementPhase(player), lowguid);
+    // Despawn the old live object and re-summon at the new transform. Like the
+    // old GOMove path this yields a fresh ObjectGuid (a moved-in-place object is
+    // not reliably re-rendered by the 3.3.5 client), handed back for the gizmo.
+    if (GameObject* old = GetLiveObject(player, lowguid))
+        old->Delete();
+    sLive.erase(lowguid);
+
+    InstanceInfo& stored = sInstances[lowguid];
+    stored.x = x;
+    stored.y = y;
+    stored.z = z;
+    stored.o = Position::NormalizeOrientation(orientation);
+
+    GameObject* moved = SummonDeco(player->GetMap(), stored);
     if (!moved)
     {
         error = "Could not move that decoration (is it nearby?).";
         return false;
     }
 
-    // GOMove respawned the object under a new ObjectGuid; hand it back so the
-    // client can re-attach its gizmo to the live object.
+    RegisterLive(lowguid, player->GetMap(), moved);
+
+    CharacterDatabase.Execute(
+        "UPDATE `dc_guild_house_instance_spawns` SET `posX` = {}, `posY` = {}, "
+        "`posZ` = {}, `orientation` = {} WHERE `id` = {}",
+        stored.x, stored.y, stored.z, stored.o, lowguid);
+
+    // Hand back the new live GUID so the client can re-attach its gizmo.
     if (outGuidRaw)
         *outGuidRaw = moved->GetGUID().GetRawValue();
 
     GuildHouseManager::LogAction(player, GH_ACTION_MOVE,
-        GH_ENTITY_GAMEOBJECT, info->entry, lowguid, x, y, z, orientation);
+        GH_ENTITY_GAMEOBJECT, stored.entry, lowguid, x, y, z, orientation);
     return true;
 }
 
@@ -549,15 +623,14 @@ bool Rotate(Player* player, uint32 lowguid, std::string& error,
         return false;
     }
 
-    GameObject* object = ::GOMove::GetGameObject(player, lowguid);
-    if (!object)
+    auto it = sInstances.find(lowguid);
+    if (it == sInstances.end())
     {
-        error = "Could not find that decoration (is it nearby?).";
+        error = "Could not find that decoration.";
         return false;
     }
 
-    return MoveTo(player, lowguid, object->GetPositionX(),
-        object->GetPositionY(), object->GetPositionZ(),
+    return MoveTo(player, lowguid, it->second.x, it->second.y, it->second.z,
         player->GetOrientation(), error, outGuidRaw);
 }
 
@@ -575,18 +648,19 @@ bool Nudge(Player* player, uint32 lowguid, float dx, float dy, float dz,
         return std::max(-10.0f, std::min(10.0f, value));
     };
 
-    GameObject* object = ::GOMove::GetGameObject(player, lowguid);
-    if (!object)
+    auto it = sInstances.find(lowguid);
+    if (it == sInstances.end())
     {
-        error = "Could not find that decoration (is it nearby?).";
+        error = "Could not find that decoration.";
         return false;
     }
 
+    InstanceInfo const& info = it->second;
     return MoveTo(player, lowguid,
-        object->GetPositionX() + clampDelta(dx),
-        object->GetPositionY() + clampDelta(dy),
-        object->GetPositionZ() + clampDelta(dz),
-        object->GetOrientation() + dOrientation, error, outGuidRaw);
+        info.x + clampDelta(dx),
+        info.y + clampDelta(dy),
+        info.z + clampDelta(dz),
+        info.o + dOrientation, error, outGuidRaw);
 }
 
 bool SetScale(Player* player, uint32 lowguid, float scale, std::string& error)
@@ -612,7 +686,7 @@ bool SetScale(Player* player, uint32 lowguid, float scale, std::string& error)
     // can swallow the whole house.
     scale = std::max(0.2f, std::min(5.0f, scale));
 
-    GameObject* object = ::GOMove::GetGameObject(player, lowguid);
+    GameObject* object = GetLiveObject(player, lowguid);
     if (!object)
     {
         error = "Could not find that decoration (is it nearby?).";
@@ -628,8 +702,7 @@ bool SetScale(Player* player, uint32 lowguid, float scale, std::string& error)
 
     sInstances[lowguid].scale = scale;
     CharacterDatabase.Execute(
-        "UPDATE `dc_guildhouse_decoration_instances` SET `scale` = {} "
-        "WHERE `go_lowguid` = {}",
+        "UPDATE `dc_guild_house_instance_spawns` SET `scale` = {} WHERE `id` = {}",
         scale, lowguid);
 
     return true;
@@ -639,6 +712,69 @@ float GetDecorationScale(uint32 lowguid)
 {
     auto it = sInstances.find(lowguid);
     return it != sInstances.end() ? it->second.scale : 1.0f;
+}
+
+void LoadIntoInstance(Map* map, uint32 guildId)
+{
+    if (!map || !guildId)
+        return;
+
+    for (auto const& [rowId, info] : sInstances)
+    {
+        if (info.guildId != guildId)
+            continue;
+
+        // Drop any stale live ref before re-summoning into the fresh instance.
+        sLive.erase(rowId);
+        if (GameObject* go = SummonDeco(map, info))
+            RegisterLive(rowId, map, go);
+    }
+}
+
+bool GetLiveGuidRaw(Player* player, uint32 lowguid, uint64& outRaw)
+{
+    if (GameObject* go = GetLiveObject(player, lowguid))
+    {
+        outRaw = go->GetGUID().GetRawValue();
+        return true;
+    }
+    return false;
+}
+
+void ForgetGuild(uint32 guildId)
+{
+    if (!guildId)
+        return;
+
+    for (auto it = sInstances.begin(); it != sInstances.end(); )
+    {
+        if (it->second.guildId == guildId)
+        {
+            sLive.erase(it->first);
+            it = sInstances.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    sUsedBudget.erase(guildId);
+}
+
+bool GetDecorationTransform(uint32 lowguid, float& x, float& y, float& z,
+    float& orientation, float& scale)
+{
+    auto it = sInstances.find(lowguid);
+    if (it == sInstances.end())
+        return false;
+
+    x = it->second.x;
+    y = it->second.y;
+    z = it->second.z;
+    orientation = it->second.o;
+    scale = it->second.scale;
+    return true;
 }
 
 bool ResolveSelection(Player* player, uint64 rawGuid, uint32& outLowguid,
@@ -657,10 +793,26 @@ bool ResolveSelection(Player* player, uint64 rawGuid, uint32& outLowguid,
         return false;
     }
 
-    uint32 const lowguid = object->GetSpawnId();
+    // Decorations are non-persistent (spawn id 0); map the live object back to
+    // its row by matching the registered GUID within this map instance.
+    uint32 const instanceId = player->GetMap()->GetInstanceId();
+    uint32 lowguid = 0;
+    for (auto const& [rowId, ref] : sLive)
+    {
+        if (ref.instanceId == instanceId && ref.guid == object->GetGUID())
+        {
+            lowguid = rowId;
+            break;
+        }
+    }
+
     InstanceInfo const* info = nullptr;
-    if (!ValidateOwnedDecoration(player, lowguid, info, error))
+    if (!lowguid || !ValidateOwnedDecoration(player, lowguid, info, error))
+    {
+        if (error.empty())
+            error = "That object is not a decoration of your guild house.";
         return false;
+    }
 
     outLowguid = lowguid;
     outEntry = info->entry;
@@ -686,18 +838,14 @@ void ListDecorations(Player* player, std::vector<PlacedDecoration>& out)
         d.lowguid = lowguid;
         d.entry = info.entry;
         d.scale = info.scale;
+        d.x = info.x;
+        d.y = info.y;
+        d.z = info.z;
+        d.orientation = info.o;
+        d.mapId = info.mapId;
         if (CatalogEntry const* item = FindCatalogEntry(info.entry))
             d.name = item->name;
 
-        if (GameObjectData const* gd =
-            sObjectMgr->GetGameObjectData(lowguid))
-        {
-            d.x = gd->posX;
-            d.y = gd->posY;
-            d.z = gd->posZ;
-            d.orientation = gd->orientation;
-            d.mapId = gd->mapid;
-        }
         out.push_back(d);
     }
 }
@@ -720,23 +868,17 @@ bool Remove(Player* player, uint32 lowguid, std::string& error,
     if (!ValidateOwnedDecoration(player, lowguid, info, error))
         return false;
 
-    GameObject* object = ::GOMove::GetGameObject(player, lowguid);
-    if (!object)
-    {
-        error = "Could not find that decoration (is it nearby?).";
-        return false;
-    }
-
     uint32 const entry = info->entry;
     uint32 const refund = info->paidCopper * sRefundPercent / 100;
 
-    ::GOMove::DeleteGameObject(object);
+    if (GameObject* object = GetLiveObject(player, lowguid))
+        object->Delete();
 
     AddUsedBudget(player->GetGuildId(), -static_cast<int32>(WeightOf(entry)));
     sInstances.erase(lowguid);
+    sLive.erase(lowguid);
     CharacterDatabase.Execute(
-        "DELETE FROM `dc_guildhouse_decoration_instances` "
-        "WHERE `go_lowguid` = {}",
+        "DELETE FROM `dc_guild_house_instance_spawns` WHERE `id` = {}",
         lowguid);
 
     if (refund)
@@ -799,19 +941,20 @@ bool RemoveAll(Player* player, std::string& error,
         uint32 const entry = info.entry;
         uint32 const refund = info.paidCopper * sRefundPercent / 100;
 
-        if (GameObject* object = ::GOMove::GetGameObject(player, lowguid))
-            ::GOMove::DeleteGameObject(object);
+        if (GameObject* object = GetLiveObject(player, lowguid))
+            object->Delete();
 
         AddUsedBudget(guildId, -static_cast<int32>(WeightOf(entry)));
         sInstances.erase(it);
+        sLive.erase(lowguid);
 
         totalRefund += refund;
         ++removedCount;
     }
 
     CharacterDatabase.Execute(
-        "DELETE FROM `dc_guildhouse_decoration_instances` "
-        "WHERE `guild_id` = {}",
+        "DELETE FROM `dc_guild_house_instance_spawns` "
+        "WHERE `guild_id` = {} AND `source` = 'DECORATION'",
         guildId);
 
     if (totalRefund)

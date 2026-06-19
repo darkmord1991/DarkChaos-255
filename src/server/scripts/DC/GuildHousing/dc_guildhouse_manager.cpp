@@ -1,11 +1,17 @@
 #include "dc_guildhouse.h"
+#include "dc_guildhouse_decorations.h"
 
 #include "Chat.h"
+#include "Config.h"
+#include "Creature.h"
 #include "DatabaseEnv.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "GameObject.h"
+#include "InstanceSaveMgr.h"
+#include "Map.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
+#include "TemporarySummon.h"
 
 #include <cmath>
 #include <optional>
@@ -15,6 +21,57 @@ static std::unordered_map<uint32, GuildHouseData> s_guildHouseCache;
 
 namespace
 {
+    // Live in-world handle to a summoned butler spawn, so it can be despawned on
+    // remove. instanceId disambiguates the several instances loaded at once.
+    struct ContentLiveRef
+    {
+        ObjectGuid guid;
+        uint32 instanceId = 0;
+        bool isGameObject = false;
+    };
+}
+
+// rowId -> live butler object (for the currently-loaded instances).
+static std::unordered_map<uint32, ContentLiveRef> s_butlerLive;
+
+namespace
+{
+    // Summon one piece of guild content NON-persistently into an instance map.
+    // No SaveToDB: the object lives until the instance unloads and is recreated
+    // from dc_guild_house_instance_spawns on the next load. Map::SummonCreature/
+    // SummonGameObject default to PHASEMASK_NORMAL (1), matching instance players.
+    // Returns the spawned object's GUID (empty on failure).
+    ObjectGuid SummonContentRow(Map* map, bool isGameObject, uint32 entry,
+        float x, float y, float z, float o, float scale)
+    {
+        if (!map)
+            return ObjectGuid::Empty;
+
+        if (isGameObject)
+        {
+            // respawnTime 0 -> permanent (not flagged temporary), stays for the
+            // instance lifetime.
+            if (GameObject* go = map->SummonGameObject(entry, x, y, z, o, 0.0f, 0.0f, 0.0f, 0.0f, 0))
+            {
+                if (scale > 0.0f && std::fabs(scale - 1.0f) > 0.001f)
+                    go->SetObjectScale(scale);
+                return go->GetGUID();
+            }
+        }
+        else
+        {
+            // duration 0 -> TEMPSUMMON_MANUAL_DESPAWN (never auto-despawns).
+            if (TempSummon* creature = map->SummonCreature(entry, Position(x, y, z, o)))
+            {
+                if (scale > 0.0f && std::fabs(scale - 1.0f) > 0.001f)
+                    creature->SetObjectScale(scale);
+                return creature->GetGUID();
+            }
+        }
+
+        return ObjectGuid::Empty;
+    }
+
     bool HasGuildHouseLevelColumn()
     {
         static std::optional<bool> cached;
@@ -151,28 +208,301 @@ bool GuildHouseManager::SetGuildHouseLevel(uint32 guildId, uint8 level)
     return true;
 }
 
+uint32 GuildHouseManager::EnsureGuildInstanceId(uint32 guildId)
+{
+    if (!guildId)
+        return 0;
+
+    // Reuse the persisted instance if it is still alive and still belongs to the
+    // guild-house map (instance ids are global and recycled, so a stale id may
+    // now point at an unrelated dungeon).
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT `instance_id` FROM `dc_guild_house_instance` WHERE `guild_id` = {}", guildId))
+    {
+        uint32 storedId = result->Fetch()[0].Get<uint32>();
+        if (InstanceSave* save = sInstanceSaveMgr->GetInstanceSave(storedId))
+        {
+            if (save->GetMapId() == GUILD_HOUSE_MAP_ID)
+                return storedId;
+        }
+    }
+
+    // First visit, or the normal-dungeon InstanceSave expired and was reset:
+    // mint a fresh instance and persist the mapping.
+    uint32 newId = sMapMgr->GenerateInstanceId();
+    InstanceSave* save = sInstanceSaveMgr->AddInstanceSave(
+        GUILD_HOUSE_MAP_ID, newId, Difficulty(DUNGEON_DIFFICULTY_NORMAL));
+    if (!save)
+        return 0;
+
+    CharacterDatabase.Execute(
+        "REPLACE INTO `dc_guild_house_instance` (`guild_id`, `instance_id`) VALUES ({}, {})",
+        guildId, newId);
+
+    return newId;
+}
+
+uint32 GuildHouseManager::AllocateContentId()
+{
+    // World-thread only. Seed once from the table's high-water mark, then hand
+    // out monotonically. Both butler and decoration inserts call this, so the
+    // shared table only ever sees explicit ids (no AUTO_INCREMENT races).
+    static uint32 s_next = 0;
+    if (s_next == 0)
+    {
+        if (QueryResult result = CharacterDatabase.Query(
+                "SELECT COALESCE(MAX(`id`), 0) FROM `dc_guild_house_instance_spawns`"))
+            s_next = result->Fetch()[0].Get<uint32>();
+    }
+
+    return ++s_next;
+}
+
+uint32 GuildHouseManager::GetGuildByInstanceId(uint32 instanceId)
+{
+    if (!instanceId)
+        return 0;
+
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT `guild_id` FROM `dc_guild_house_instance` WHERE `instance_id` = {}", instanceId))
+        return result->Fetch()[0].Get<uint32>();
+
+    return 0;
+}
+
+uint32 GuildHouseManager::GetGuildInstanceId(uint32 guildId)
+{
+    if (!guildId)
+        return 0;
+
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT `instance_id` FROM `dc_guild_house_instance` WHERE `guild_id` = {}", guildId))
+        return result->Fetch()[0].Get<uint32>();
+
+    return 0;
+}
+
+bool GuildHouseManager::IsInOwnGuildHouse(Player* player)
+{
+    if (!player || !player->GetGuildId() || !player->GetMap())
+        return false;
+
+    if (player->GetMapId() != GUILD_HOUSE_MAP_ID)
+        return false;
+
+    return GetGuildByInstanceId(player->GetMap()->GetInstanceId()) == player->GetGuildId();
+}
+
+void GuildHouseManager::LoadGuildContentIntoInstance(Map* map, uint32 guildId)
+{
+    if (!map || !guildId)
+        return;
+
+    // Only butler content here; decorations load+register themselves (they need
+    // a live-object registry for the editor) via DCGuildHouseDecorations.
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT `id`, `spawn_type`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `scale` "
+        "FROM `dc_guild_house_instance_spawns` WHERE `guild_id` = {} AND `source` = 'BUTLER'", guildId);
+    if (!result)
+        return;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 rowId = fields[0].Get<uint32>();
+        bool isGameObject = fields[1].Get<std::string>() == "GAMEOBJECT";
+        uint32 entry = fields[2].Get<uint32>();
+        float x = fields[3].Get<float>();
+        float y = fields[4].Get<float>();
+        float z = fields[5].Get<float>();
+        float o = fields[6].Get<float>();
+        float scale = fields[7].Get<float>();
+
+        // Drop any stale live ref before re-summoning into the fresh instance.
+        s_butlerLive.erase(rowId);
+        ObjectGuid guid = SummonContentRow(map, isGameObject, entry, x, y, z, o, scale);
+        if (guid)
+            s_butlerLive[rowId] = ContentLiveRef{ guid, map->GetInstanceId(), isGameObject };
+    } while (result->NextRow());
+}
+
+void GuildHouseManager::ClearGuildContent(uint32 guildId)
+{
+    if (!guildId)
+        return;
+
+    // Drop the guild's butler live-refs (objects vanish on next instance reload).
+    if (QueryResult result = CharacterDatabase.Query(
+            "SELECT `id` FROM `dc_guild_house_instance_spawns` "
+            "WHERE `guild_id` = {} AND `source` = 'BUTLER'", guildId))
+    {
+        do
+        {
+            s_butlerLive.erase(result->Fetch()[0].Get<uint32>());
+        } while (result->NextRow());
+    }
+
+    CharacterDatabase.Execute(
+        "DELETE FROM `dc_guild_house_instance_spawns` WHERE `guild_id` = {}", guildId);
+    DCGuildHouseDecorations::ForgetGuild(guildId);
+}
+
+void GuildHouseManager::ListButlerContent(uint32 guildId,
+    std::vector<ButlerContentItem>& out)
+{
+    if (!guildId)
+        return;
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT `id`, `entry`, `spawn_type`, `paid_copper` "
+        "FROM `dc_guild_house_instance_spawns` "
+        "WHERE `guild_id` = {} AND `source` = 'BUTLER' ORDER BY `id`", guildId);
+    if (!result)
+        return;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        ButlerContentItem item;
+        item.id = fields[0].Get<uint32>();
+        item.entry = fields[1].Get<uint32>();
+        item.isGameObject = fields[2].Get<std::string>() == "GAMEOBJECT";
+        item.paidCopper = fields[3].Get<uint32>();
+
+        if (item.isGameObject)
+        {
+            if (GameObjectTemplate const* tmpl = sObjectMgr->GetGameObjectTemplate(item.entry))
+                item.name = tmpl->name;
+        }
+        else
+        {
+            if (CreatureTemplate const* tmpl = sObjectMgr->GetCreatureTemplate(item.entry))
+                item.name = tmpl->Name;
+        }
+        if (item.name.empty())
+            item.name = std::to_string(item.entry);
+
+        out.push_back(item);
+    } while (result->NextRow());
+}
+
+bool GuildHouseManager::RemoveButlerContent(Player* player, uint32 rowId,
+    uint32* outRefundCopper)
+{
+    if (!player)
+        return false;
+
+    uint32 const guildId = player->GetGuildId();
+    if (!guildId || !rowId)
+        return false;
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT `spawn_type`, `paid_copper` FROM `dc_guild_house_instance_spawns` "
+        "WHERE `id` = {} AND `guild_id` = {} AND `source` = 'BUTLER'", rowId, guildId);
+    if (!result)
+        return false;
+
+    Field* fields = result->Fetch();
+    bool const isGameObject = fields[0].Get<std::string>() == "GAMEOBJECT";
+    uint32 const paidCopper = fields[1].Get<uint32>();
+
+    // Despawn the live object if it is in the player's current instance.
+    auto it = s_butlerLive.find(rowId);
+    if (it != s_butlerLive.end())
+    {
+        if (player->GetMap()
+            && player->GetMap()->GetInstanceId() == it->second.instanceId)
+        {
+            if (isGameObject)
+            {
+                if (GameObject* go = player->GetMap()->GetGameObject(it->second.guid))
+                    go->Delete();
+            }
+            else if (Creature* creature = player->GetMap()->GetCreature(it->second.guid))
+            {
+                creature->DespawnOrUnsummon();
+            }
+        }
+        s_butlerLive.erase(it);
+    }
+
+    CharacterDatabase.Execute(
+        "DELETE FROM `dc_guild_house_instance_spawns` WHERE `id` = {}", rowId);
+
+    uint32 refundPercent =
+        sConfigMgr->GetOption<uint32>("DC.GuildHouse.Butler.RefundPercent", 50);
+    if (refundPercent > 100)
+        refundPercent = 100;
+
+    uint32 const refund = paidCopper * refundPercent / 100;
+    if (refund)
+        player->ModifyMoney(static_cast<int32>(refund));
+
+    if (outRefundCopper)
+        *outRefundCopper = refund;
+    return true;
+}
+
+bool GuildHouseManager::GuildOwnsContent(uint32 guildId, uint32 entry, bool isGameObject)
+{
+    if (!guildId || !entry)
+        return false;
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT 1 FROM `dc_guild_house_instance_spawns` "
+        "WHERE `guild_id` = {} AND `entry` = {} AND `spawn_type` = '{}' AND `source` = 'BUTLER' LIMIT 1",
+        guildId, entry, isGameObject ? "GAMEOBJECT" : "CREATURE");
+
+    return result != nullptr;
+}
+
+bool GuildHouseManager::PlaceGuildContent(Map* map, uint32 guildId, bool isGameObject, uint32 entry,
+    float x, float y, float z, float o, float scale, uint32 paidCopper, uint64 placedBy)
+{
+    if (!map || !guildId || !entry)
+        return false;
+
+    uint32 const id = AllocateContentId();
+    CharacterDatabase.Execute(
+        "INSERT INTO `dc_guild_house_instance_spawns` "
+        "(`id`, `guild_id`, `spawn_type`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `scale`, `source`, `paid_copper`, `placed_by`) "
+        "VALUES ({}, {}, '{}', {}, {}, {}, {}, {}, {}, 'BUTLER', {}, {})",
+        id, guildId, isGameObject ? "GAMEOBJECT" : "CREATURE", entry, x, y, z, o, scale, paidCopper, placedBy);
+
+    ObjectGuid guid = SummonContentRow(map, isGameObject, entry, x, y, z, o, scale);
+    if (guid)
+        s_butlerLive[id] = ContentLiveRef{ guid, map->GetInstanceId(), isGameObject };
+    return true;
+}
+
 bool GuildHouseManager::TeleportToGuildHouse(Player* player, uint32 guildId)
 {
     if (!player || !guildId)
         return false;
 
-    GuildHouseData* data = GetGuildHouseData(guildId);
-    if (!data)
+    // The guild must own a house (row in dc_guild_house) to be teleported.
+    if (!GetGuildHouseData(guildId))
         return false;
 
-    uint32 phase = data->phase ? data->phase : GetGuildPhase(guildId);
+    uint32 instanceId = EnsureGuildInstanceId(guildId);
+    if (!instanceId)
+        return false;
 
-    // This guild housing implementation currently uses phasing on a shared map.
-    // Setting phase mask before teleport helps ensure correct visibility immediately on arrival.
-    if (phase)
-        player->SetPhaseMask(phase, true);
+    InstanceSave* save = sInstanceSaveMgr->GetInstanceSave(instanceId);
+    if (!save)
+        return false;
 
-    player->TeleportTo(data->map, data->posX, data->posY, data->posZ, data->ori);
+    // Permanent bind: in PlayerGetDestinationInstanceId the "self perm" bind has
+    // the highest priority, so destination routing always lands the player in
+    // their guild's instance even when grouped with members bound elsewhere.
+    sInstanceSaveMgr->PlayerBindToInstance(player->GetGUID(), save, true, player);
 
-    // Re-apply the phase after teleport to avoid phase resets on map change.
-    if (phase && player->GetPhaseMask() != phase)
-        player->SetPhaseMask(phase, true);
-    return true;
+    // Fixed entrance inside the instanced guild-house map. The legacy per-guild
+    // map/coords/phase are no longer used for separation; the instance id alone
+    // provides isolation. (Per-guild custom entrances can be layered on later.)
+    return player->TeleportTo(GUILD_HOUSE_MAP_ID,
+        GUILD_HOUSE_ENTRANCE_X, GUILD_HOUSE_ENTRANCE_Y,
+        GUILD_HOUSE_ENTRANCE_Z, GUILD_HOUSE_ENTRANCE_O);
 }
 
 bool GuildHouseManager::RemoveGuildHouse(Guild* guild)
@@ -198,6 +528,9 @@ bool GuildHouseManager::RemoveGuildHouse(Guild* guild)
         // Assuming GetGuildPhase logic calculates default.
          CleanupGuildHouseSpawns(1, GetGuildPhase(guildId));
     }
+
+    // Wipe the guild's dynamic instance content (butler + decorations) too.
+    ClearGuildContent(guildId);
 
     // Remove from Cache
     RemoveGuildHouseData(guildId);
