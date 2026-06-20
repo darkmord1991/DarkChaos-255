@@ -113,7 +113,19 @@ const char* CONF_mpq_list[] =
     "patch-3.MPQ",
     "patch-4.MPQ",
     "patch-5.MPQ",
-    // Additional patches 6-10 loaded dynamically via locale patches
+    "patch-6.MPQ",
+    "patch-7.MPQ",
+    "patch-8.MPQ",
+    "patch-9.MPQ",
+    "patch-A.MPQ", "patch-B.MPQ", "patch-C.MPQ", "patch-D.MPQ", "patch-E.MPQ",
+    "patch-F.MPQ", "patch-G.MPQ", "patch-H.MPQ", "patch-I.MPQ", "patch-J.MPQ",
+    "patch-K.MPQ", "patch-L.MPQ", "patch-M.MPQ", "patch-N.MPQ", "patch-O.MPQ",
+    "patch-P.MPQ", "patch-Q.MPQ", "patch-R.MPQ", "patch-S.MPQ", "patch-T.MPQ",
+    "patch-U.MPQ", "patch-V.MPQ", "patch-W.MPQ", "patch-X.MPQ", "patch-Y.MPQ",
+    "patch-Z.MPQ",
+    // Base patches 6-9 + A-Z for custom content (loaded after the stock patches so they override; later =
+    // higher priority via push_front). Missing files are skipped by LoadCommonMPQFiles()'s FileExists() check.
+    // NOTE: filenames are case-sensitive on Linux - these match the uppercase patch-A.MPQ .. patch-H.MPQ on disk.
 };
 
 static const char* const langs[] = {"enGB", "enUS", "deDE", "esES", "frFR", "koKR", "zhCN", "zhTW", "enCN", "enTW", "esMX", "ruRU" };
