@@ -260,8 +260,17 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
             DCCollectionDB.lastSaveTime = nil
             DCCollectionDB.lastSyncTime = 0  -- Critical: forces IsCacheFresh() to return false
         end
-        
-        DC:Print("|cff00ff00Cache cleared!|r Use /reload to fetch fresh data from server.")
+
+        -- Repopulate the local CDBC catalog (mounts/pets/heirlooms/titles/transmog
+        -- are authoritative local-CDBC types). Without this, wiping DC.definitions
+        -- above leaves the stale "_localCollectionCDBC authoritative" flags set, so
+        -- RequestDefinitions short-circuits ("using local CDBC metadata") and never
+        -- refills the empty tables -- the Mounts tab then hangs on "Loading...".
+        if type(DC.BootstrapLocalCollectionCDBC) == "function" then
+            DC:BootstrapLocalCollectionCDBC(true)
+        end
+
+        DC:Print("|cff00ff00Cache cleared!|r Local catalog rebuilt; use /reload to also refetch owned-state from server.")
     elseif cmd == "forcerefresh" or cmd == "fr" then
         -- Force a full re-request of definitions
         DC._transmogDefsForcedFullDownload = nil

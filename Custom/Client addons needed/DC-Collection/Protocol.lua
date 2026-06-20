@@ -2736,6 +2736,7 @@ function DC:BeginSyncProgress(mode, plannedSteps)
 
     self._syncProgress = progress
     self:RefreshSyncProgressUI(true)
+    self:_ArmSyncProgressWatchdog()
 end
 
 function DC:_EnsureSyncProgressState()
@@ -2781,6 +2782,7 @@ function DC:StartSyncProgressStep(stepKey, label)
     progress.currentKey = key
     progress.currentLabel = step.label or tostring(label or key)
     self:RefreshSyncProgressUI(true)
+    self:_ArmSyncProgressWatchdog()
 end
 
 function DC:CompleteSyncProgressStep(stepKey, label)
@@ -2822,11 +2824,83 @@ function DC:CompleteSyncProgressStep(stepKey, label)
         end
     else
         self:RefreshSyncProgressUI(true)
+        self:_ArmSyncProgressWatchdog()
+    end
+end
+
+-- Global idle watchdog for the whole sync bar. Re-armed on every step
+-- start/completion, so it only fires when NO step has made progress for the
+-- idle window. This is the catch-all for request types that lack their own
+-- per-step watchdog (e.g. RequestCollection): if the server never answers a
+-- CMSG_GET_COLLECTION after a cache clear, the matching coll:* step would
+-- otherwise hang and park the bar one step short forever.
+local SYNC_PROGRESS_IDLE_TIMEOUT = 12.0
+
+function DC:_ArmSyncProgressWatchdog()
+    local progress = self._syncProgress
+    if type(progress) ~= "table" or not progress.active then
+        return
+    end
+    if not (self.After and type(self.After) == "function") then
+        return
+    end
+
+    self._syncProgressWatchdogToken = (self._syncProgressWatchdogToken or 0) + 1
+    local token = self._syncProgressWatchdogToken
+
+    self.After(SYNC_PROGRESS_IDLE_TIMEOUT, function()
+        if (self._syncProgressWatchdogToken or 0) ~= token then
+            return
+        end
+        local p = self._syncProgress
+        if type(p) ~= "table" or not p.active then
+            return
+        end
+        self:_ForceFinishSyncProgress("idle-timeout")
+    end)
+end
+
+function DC:_ForceFinishSyncProgress(reason)
+    local progress = self._syncProgress
+    if type(progress) ~= "table" then
+        return
+    end
+
+    if type(progress.steps) == "table" then
+        for _, step in pairs(progress.steps) do
+            if type(step) == "table" and not step.done then
+                step.done = true
+            end
+        end
+    end
+    progress.completed = progress.total or progress.completed or 0
+    progress.active = nil
+
+    if type(self.Debug) == "function" then
+        self:Debug("Sync progress force-finished: " .. tostring(reason))
+    end
+
+    self:RefreshSyncProgressUI(true)
+
+    local token = (self._syncProgressHideToken or 0) + 1
+    self._syncProgressHideToken = token
+    if self.After and type(self.After) == "function" then
+        self.After(1.25, function()
+            if self._syncProgressHideToken ~= token then
+                return
+            end
+            self._syncProgress = nil
+            self:RefreshSyncProgressUI(false)
+        end)
+    else
+        self._syncProgress = nil
+        self:RefreshSyncProgressUI(false)
     end
 end
 
 function DC:AbortSyncProgress()
     self._syncProgressHideToken = (self._syncProgressHideToken or 0) + 1
+    self._syncProgressWatchdogToken = (self._syncProgressWatchdogToken or 0) + 1
     self._syncProgress = nil
     self:RefreshSyncProgressUI(false)
 end
@@ -6076,11 +6150,6 @@ function DC:HandleWishlistData(data)
         self.PetJournal:SelectPet(self.PetJournal.selectedPet)
     end
 
-    if type(self.MountJournal) == "table" and self.MountJournal.frame and self.MountJournal.frame:IsShown() and
-        self.MountJournal.selectedMount and type(self.MountJournal.SelectMount) == "function" then
-        self.MountJournal:SelectMount(self.MountJournal.selectedMount)
-    end
-    
     -- Fire callback
     if self.callbacks.onWishlistReceived then
         self.callbacks.onWishlistReceived(data)

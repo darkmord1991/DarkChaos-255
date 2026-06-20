@@ -200,6 +200,14 @@ public:
             return;
         }
 
+        // Guild houses are dungeon-type instances (for per-guild isolation) but
+        // are not quest dungeons -> never spawn the quest master there.
+        if (mapId == MAP_GUILD_HOUSE_INSTANCE)
+        {
+            DespawnQuestMasterFollower(player);
+            return;
+        }
+
         // Don't spawn quest masters in Mythic or Mythic+ difficulties
         Map* map = player->GetMap();
         if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
@@ -322,7 +330,7 @@ public:
         // Check if player is in a dungeon
         uint32 mapId = player->GetMapId();
         MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-        if (!mapEntry || !mapEntry->IsDungeon())
+        if (!mapEntry || !mapEntry->IsDungeon() || mapId == MAP_GUILD_HOUSE_INSTANCE)
         {
             handler->PSendSysMessage("You can only summon the Quest Master inside dungeons!");
             return true;

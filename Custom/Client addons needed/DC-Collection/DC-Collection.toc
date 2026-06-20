@@ -28,6 +28,7 @@ Data\CollectionCompletenessManifest.lua
 Data\ShopStatic.lua
 Data\FormModelPaths.lua
 Data\PetModelPaths.lua
+Data\MountModelPaths.lua
 Modules\PetModule.lua
 Modules\TitleModule.lua
 Modules\ToyModule.lua
@@ -51,7 +52,6 @@ UI\Wardrobe\WardrobeSets.lua
 UI\Wardrobe\WardrobeCommunity.lua
 UI\Wardrobe\WardrobeShare.lua
 UI\ToastFrame.lua
-UI\MountJournalFrame.lua
 UI\PetJournalFrame.lua
 UI\CharacterFrameButton.lua
 UI\TransmogBorders.lua

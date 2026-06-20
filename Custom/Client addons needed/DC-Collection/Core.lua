@@ -1678,6 +1678,18 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
     elseif cmd == "debug" then
         DCCollectionDB.debugMode = not DCCollectionDB.debugMode
         DC:Print("Debug mode: " .. (DCCollectionDB.debugMode and "ON" or "OFF"))
+    elseif cmd:match("^mountmodels") then
+        local arg = cmd:match("^mountmodels%s+(%S+)")
+        if arg == "on" then
+            DCCollectionDB.mountModelPreview = true
+        elseif arg == "off" then
+            DCCollectionDB.mountModelPreview = false
+        else
+            DCCollectionDB.mountModelPreview = not DCCollectionDB.mountModelPreview
+        end
+        DC:Print("Mount model preview (SetModel): "
+            .. (DCCollectionDB.mountModelPreview and "ON" or "OFF")
+            .. " - WARNING: a malformed/unconverted custom mount .m2 will crash the client.")
     elseif cmd:match("^netlog") then
         local n = cmd:match("^netlog%s+(%d+)")
         if type(DC.DumpNetEventLog) == "function" then

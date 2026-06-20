@@ -11,6 +11,12 @@
 local DC = DCCollection
 local L = DC.L
 
+-- TEMP load marker: proves THIS edited MainFrame.lua is the copy the client loaded.
+-- If you do not see this line on /reload, the file is NOT deployed to the loaded addon folder.
+if DC and type(DC.Print) == "function" then
+    DC:Print("|cff66ccff[MountPreview]|r MainFrame.lua loaded - display-first fix + trace (build 2026-06-20g (playermodel probe))")
+end
+
 local addonNameGlobal = ...
 local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
 local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
@@ -1552,31 +1558,147 @@ function DC:UpdateMountPreview(item)
         return false
     end
 
-    local function ApplyMountModel(displayId, creatureId)
+    local function ApplyMountModel(displayId, creatureId, modelPath)
         local modelShown = false
+        local appliedVia = "none"
 
-        if creatureId then
+        -- modelPath is set only for CUSTOM mounts (DC.MountModelPaths). SetModel(<m2 path>)
+        -- is the ONLY reliable renderer for them on this client: the preview DressUpModel
+        -- has NO SetDisplayInfo, and custom creature entries (3461xxx) are not shipped to
+        -- the client (SetCreature renders nothing). A raw SetModel'd M2 draws BLACK without
+        -- a light, so SetLight afterwards (same values pets/housing use).
+        if modelPath and modelPath ~= "" and type(p.model.SetModel) == "function" then
+            -- Log BEFORE loading: SetModel on a malformed/unconverted .m2 hard-crashes the
+            -- client (ERROR #132, not catchable). If the client dies right after this line,
+            -- THIS path is the broken model that needs re-converting.
+            if DC and type(DC.Print) == "function" then
+                DC:Print("[MountPreview] SetModel -> " .. modelPath)
+            end
+            local ok = pcall(p.model.SetModel, p.model, modelPath)
+            if ok then
+                if type(p.model.SetLight) == "function" then
+                    pcall(p.model.SetLight, p.model, 1, 0, 0, -0.707, -0.707,
+                        0.7, 1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
+                end
+                if type(p.model.SetAlpha) == "function" then
+                    pcall(p.model.SetAlpha, p.model, 1)
+                end
+                ResetModelPose()
+                modelShown = true
+                appliedVia = "SetModel(" .. modelPath .. ")"
+            end
+        end
+
+        -- Stock mounts (no custom path): owned ones render via the companion creatureId.
+        if not modelShown and creatureId then
             modelShown = TrySetCreature(creatureId)
+            if modelShown then appliedVia = "SetCreature(creatureId=" .. creatureId .. ")" end
         end
 
         if not modelShown and displayId then
             modelShown = TrySetDisplay(displayId)
+            if modelShown then appliedVia = "SetDisplayInfo(displayId=" .. displayId .. ")" end
             if not modelShown then
                 modelShown = TrySetCreature(displayId)
+                if modelShown then appliedVia = "SetCreature(displayId=" .. displayId .. ")" end
             end
         end
 
-        if not modelShown and creatureId then
-            modelShown = TrySetCreature(creatureId)
-        end
-
+        p._dcLastAppliedVia = appliedVia
         return modelShown
     end
 
     local displayId = ResolveMountPreviewDisplayId(item)
     local creatureId = ResolveMountPreviewCreatureId(item)
+    local modelPath = (item.definition and (item.definition.modelPath or item.definition.model_path
+        or item.definition.modelFile or item.definition.modelfile)) or nil
+    -- Custom mounts: per-display .m2 path (SetModel renderer). GATED behind a setting,
+    -- because SetModel HARD-CRASHES the client (ERROR #132, uncatchable by pcall) on a
+    -- malformed/unconverted .m2. Enable with "/dcc mountmodels on" only after every custom
+    -- mount model is converted + packed into the client. Default off keeps the client safe.
+    if (not modelPath) and DC.MountModelPaths and displayId
+        and DCCollectionDB and DCCollectionDB.mountModelPreview == true then
+        modelPath = DC.MountModelPaths[displayId]
+    end
 
-    local modelShown = ApplyMountModel(displayId, creatureId)
+    -- ONE-TIME capability probe: determine which render method actually draws on this
+    -- DressUpModel (SetDisplayInfo appears to fail; SetModel(<m2 path>) may be the answer).
+    if DC and type(DC.Print) == "function" and not DC._mountCapsDumped then
+        DC._mountCapsDumped = true
+        local m = p.model
+        local function gmv()
+            return (type(m.GetModel) == "function") and (m:GetModel() or "") or "<no-GetModel>"
+        end
+        DC:Print(string.format(
+            "[MountPreview] CAPS SetDisplayInfo=%s SetCreature=%s SetModel=%s GetModel=%s SetUnit=%s ClearModel=%s",
+            type(m.SetDisplayInfo), type(m.SetCreature), type(m.SetModel),
+            type(m.GetModel), type(m.SetUnit), type(m.ClearModel)))
+        -- STATE: is the path table loaded + is the toggle on? (explains path=nil)
+        local mmpCount = 0
+        if type(DC.MountModelPaths) == "table" then
+            for _ in pairs(DC.MountModelPaths) do mmpCount = mmpCount + 1 end
+        end
+        DC:Print(string.format(
+            "[MountPreview] STATE MountModelPaths=%s  gate(mountModelPreview)=%s  thisDisplay(%s)=%s",
+            (type(DC.MountModelPaths) == "table") and ("loaded:" .. mmpCount) or "NOT-LOADED",
+            tostring(DCCollectionDB and DCCollectionDB.mountModelPreview),
+            tostring(displayId or "nil"),
+            tostring((DC.MountModelPaths and displayId and DC.MountModelPaths[displayId]) or "nil")))
+        if type(m.SetDisplayInfo) == "function" then
+            local ok, err = pcall(m.SetDisplayInfo, m, displayId or 25280)
+            DC:Print("[MountPreview] PROBE SetDisplayInfo(" .. tostring(displayId or 25280)
+                .. ") ok=" .. tostring(ok) .. " err=" .. tostring(err) .. " GetModel='" .. gmv() .. "'")
+        end
+        if type(m.SetModel) == "function" then
+            local ok, err = pcall(m.SetModel, m, "Creature\\camel\\camelmount.m2")
+            DC:Print("[MountPreview] PROBE SetModel(camel) ok=" .. tostring(ok)
+                .. " err=" .. tostring(err) .. " GetModel='" .. gmv() .. "'")
+        end
+        if type(m.ClearModel) == "function" then pcall(m.ClearModel, m) end
+
+        -- EXPERIMENT: a PlayerModel widget should expose SetDisplayInfo, which the
+        -- DressUpModel above lacks. If SetDisplayInfo(displayId) renders BOTH a stock
+        -- (25280) and a custom (500803) display, it is the universal renderer: stock +
+        -- custom + correct per-variant texture (straight from the client DBC), no model
+        -- baking. Throwaway frame, probe only -- does not change the live preview yet.
+        local okPM, pm = pcall(CreateFrame, "PlayerModel", nil, p)
+        if okPM and pm then
+            pm:SetAllPoints()
+            pm:Hide()
+            local function pmg()
+                return (type(pm.GetModel) == "function") and (pm:GetModel() or "") or "<no-GetModel>"
+            end
+            DC:Print(string.format(
+                "[MountPreview] PLAYERMODEL caps: SetDisplayInfo=%s SetCreature=%s SetModel=%s",
+                type(pm.SetDisplayInfo), type(pm.SetCreature), type(pm.SetModel)))
+            if type(pm.SetDisplayInfo) == "function" then
+                local okS = pcall(pm.SetDisplayInfo, pm, 25280)
+                DC:Print("[MountPreview] PLAYERMODEL SetDisplayInfo(25280 STOCK) ok="
+                    .. tostring(okS) .. " GetModel='" .. pmg() .. "'")
+                if type(pm.ClearModel) == "function" then pcall(pm.ClearModel, pm) end
+                local okC = pcall(pm.SetDisplayInfo, pm, 500803)
+                DC:Print("[MountPreview] PLAYERMODEL SetDisplayInfo(500803 CUSTOM) ok="
+                    .. tostring(okC) .. " GetModel='" .. pmg() .. "'")
+                if type(pm.ClearModel) == "function" then pcall(pm.ClearModel, pm) end
+            end
+        else
+            DC:Print("[MountPreview] PLAYERMODEL create failed: " .. tostring(pm))
+        end
+    end
+
+    local modelShown = ApplyMountModel(displayId, creatureId, modelPath)
+
+    -- TEMP diagnostic (DC:Print = always visible): what resolved + which renderer applied.
+    if DC and type(DC.Print) == "function" then
+        local gm = (type(p.model.GetModel) == "function") and p.model:GetModel() or nil
+        DC:Print(string.format(
+            "[MountPreview] %s id=%s displayId=%s creatureId=%s path=%s collected=%s -> %s via %s | GetModel(now)=%s",
+            tostring(item.name or "?"), tostring(item.id or "?"),
+            tostring(displayId or "nil"), tostring(creatureId or "nil"), tostring(modelPath or "nil"),
+            tostring(item.collected and "Y" or "N"),
+            modelShown and "applied" or "BLANK", tostring(p._dcLastAppliedVia or "none"),
+            (type(gm) == "string" and gm ~= "" and gm) or "<none/loading>"))
+    end
 
     if modelShown then
         ConfigureCreatureZoom()
@@ -1600,11 +1722,19 @@ function DC:UpdateMountPreview(item)
             return
         end
 
+        -- TEMP diagnostic: the settled model path (what actually rendered, or <none>).
+        if DC and type(DC.Print) == "function" then
+            local gm = (type(p.model.GetModel) == "function") and p.model:GetModel() or nil
+            DC:Print(string.format("[MountPreview] %s settled: loaded=%s GetModel=%s",
+                tostring(item.name or "?"), HasLoadedModel(p.model) and "YES" or "NO",
+                (type(gm) == "string" and gm ~= "" and gm) or "<none>"))
+        end
+
         if HasLoadedModel(p.model) then
             return
         end
 
-        local recovered = ApplyMountModel(displayId, creatureId)
+        local recovered = ApplyMountModel(displayId, creatureId, modelPath)
         if recovered then
             ConfigureCreatureZoom()
             return

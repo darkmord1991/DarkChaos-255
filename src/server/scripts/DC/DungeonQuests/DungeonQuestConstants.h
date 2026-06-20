@@ -48,6 +48,10 @@ constexpr uint32 NPC_UNIVERSAL_QUEST_MASTER = 700100; // v4.1: Universal dynamic
 // Phase visibility for quest masters
 constexpr uint32 PHASE_BASE_DUNGEON_QUEST = 10000;   // Base phase mask
 
+// Dungeon-type instances that are NOT quest dungeons and must never receive a
+// quest master (they only use InstanceType=1 for isolation, not gameplay).
+constexpr uint32 MAP_GUILD_HOUSE_INSTANCE = 1409;    // Guild house (instanced)
+
 // =====================================================================
 // ACHIEVEMENT ID RANGES
 // =====================================================================

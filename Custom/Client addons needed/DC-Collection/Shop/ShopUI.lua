@@ -803,11 +803,15 @@ function DC:PreviewShopItem(item)
 
     if previewType == "mount" then
         local spellId = tonumber(item.spellId or item.entryId or item.entry or (definition and (definition.spellId or definition.spell_id)))
-        if self.MountJournal and type(self.MountJournal.Show) == "function" and type(self.MountJournal.SelectMount) == "function" and spellId and spellId > 0 then
+        -- Preview the mount in the main collection window's Mounts tab (the standalone
+        -- mount journal was removed; the main window is the single mount UI).
+        if spellId and spellId > 0 and type(self.ShowMainFrame) == "function"
+            and type(self.UpdateMountPreview) == "function" then
             local mountData = {
                 id = spellId,
                 spellId = spellId,
                 entryId = spellId,
+                type = "mounts",
                 name = item.name,
                 icon = item.icon,
                 rarity = item.rarity,
@@ -815,8 +819,12 @@ function DC:PreviewShopItem(item)
                 collected = item.collected and true or false,
                 definition = definition,
             }
-            self.MountJournal:Show()
-            self.MountJournal:SelectMount(mountData)
+            self:ShowMainFrame()
+            if type(self.SelectTab) == "function" then
+                self:SelectTab("mounts")
+            end
+            self.selectedItem = mountData
+            self:UpdateMountPreview(mountData)
             return
         end
 

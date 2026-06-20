@@ -268,6 +268,22 @@ bool scan_patches(char* scanmatch, std::vector<std::string>& pArchiveNames)
         }
     }
 
+    // Letter patches (patch-A.MPQ .. patch-Z.MPQ) for custom content - the numbered loop above only covers
+    // patch-N.MPQ, so patch-A..patch-H on this server were being skipped. Case-sensitive on Linux (uppercase).
+    for (char c = 'A'; c <= 'Z'; ++c)
+    {
+        sprintf(path, "%s-%c.MPQ", scanmatch, c);
+#ifdef __linux__
+        if (FILE* h = fopen64(path, "rb"))
+#else
+        if (FILE* h = fopen(path, "rb"))
+#endif
+        {
+            fclose(h);
+            pArchiveNames.emplace_back(path);
+        }
+    }
+
     return (true);
 }
 
