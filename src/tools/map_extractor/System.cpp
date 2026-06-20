@@ -791,7 +791,14 @@ bool ConvertADT(std::string const& inputPath, std::string const& outputPath, int
                 }
 
                 liquid_entry[i][j] = h->LiquidType;
-                switch (LiquidTypes.at(h->LiquidType).SoundBank)
+                // LiquidTypes.at() THROWS std::out_of_range and ABORTS the whole extraction when a map uses a
+                // liquid type that isn't in the loaded LiquidType.dbc - e.g. a downported modern type like 751
+                // (Pandaria) or 952 (Undermine) when only the stock 26 types are present. Look it up safely and
+                // default unknown types to water so extraction continues. Deploy a LiquidType.dbc that includes
+                // the modern rows for exact ocean/magma/slime categorization.
+                auto liqTypeIt = LiquidTypes.find(h->LiquidType);
+                uint8 liqSoundBank = (liqTypeIt != LiquidTypes.end()) ? liqTypeIt->second.SoundBank : uint8(LIQUID_TYPE_WATER);
+                switch (liqSoundBank)
                 {
                     case LIQUID_TYPE_WATER: liquid_flags[i][j] |= MAP_LIQUID_TYPE_WATER; break;
                     case LIQUID_TYPE_OCEAN: liquid_flags[i][j] |= MAP_LIQUID_TYPE_OCEAN; if (attrs.Deep) liquid_flags[i][j] |= MAP_LIQUID_TYPE_DARK_WATER; break;
