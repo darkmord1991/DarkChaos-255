@@ -51,6 +51,12 @@ uint32_t libmpq__hash_string(const char *key, uint32_t offset) {
 	/* prepare seeds. */
 	while (*key != 0) {
 		ch    = toupper(*key++);
+		/* Normalize forward slash to backslash so paths coming from modern /
+		   downported ADTs (e.g. "world/wmo/foo.wmo") hash identically to the
+		   stored "world\wmo\foo.wmo" names. StormLib and the WoW client do this
+		   via their uppercase table; stock libmpq does not, which made the
+		   extractors fail to find every forward-slash-referenced WMO/M2. */
+		if (ch == '/') ch = '\\';
 		seed1 = crypt_buf[offset + ch] ^ (seed1 + seed2);
 		seed2 = ch + seed1 + seed2 + (seed2 << 5) + 3;
 	}
