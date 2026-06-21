@@ -43,7 +43,30 @@ bool Model::open()
 
     _unload();
 
+    if (f.getSize() < sizeof(ModelHeader))
+    {
+        f.close();
+        return false;
+    }
+
     memcpy(&header, f.getBuffer(), sizeof(ModelHeader));
+
+    // Guard against non-3.3.5 / malformed M2s. Modern (MD21) or post-WotLK (version > 264) models read
+    // with this 3.3.5 ModelHeader layout land the bounding-count fields on garbage, so the extractor
+    // allocates + writes multi-GB collision (observed on custom totem / druid-form models that render on
+    // the client via the modern-M2 path but are not valid 3.3.5 images here). Reject anything that is not
+    // an MD20 v<=264 image, or whose bounding section would run past the end of the file.
+    const std::size_t fileSize = f.getSize();
+    const bool isMd20  = header.id[0] == 'M' && header.id[1] == 'D' && header.id[2] == '2' && header.id[3] == '0';
+    const uint32 version = header.version[0] | (header.version[1] << 8) | (header.version[2] << 16) | (header.version[3] << 24);
+    if (!isMd20 || version > 264 ||
+        (unsigned long long)header.ofsBoundingVertices  + (unsigned long long)header.nBoundingVertices  * 12ull > fileSize ||
+        (unsigned long long)header.ofsBoundingTriangles + (unsigned long long)header.nBoundingTriangles * 2ull  > fileSize)
+    {
+        f.close();
+        return false; // not a usable 3.3.5 collision model -> skip it (no collision)
+    }
+
     if (header.nBoundingTriangles > 0)
     {
         f.seek(0);
