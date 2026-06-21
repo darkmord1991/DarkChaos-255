@@ -25,18 +25,26 @@
 
 char const* GetPlainName(char const* FileName)
 {
-    const char* szTemp;
-
-    if ((szTemp = strrchr(FileName, '\\')) != nullptr)
+    // Strip the directory, handling BOTH '\' (stock Blizzard data) and '/'
+    // (modern / downported ADTs) separators. strrchr on '\' alone left
+    // forward-slash paths un-stripped -> nested ./Buildings/ paths that fail.
+    const char* szTemp = strrchr(FileName, '\\');
+    const char* szFwd = strrchr(FileName, '/');
+    if (szFwd && (!szTemp || szFwd > szTemp))
+        szTemp = szFwd;
+    if (szTemp != nullptr)
         FileName = szTemp + 1;
     return FileName;
 }
 
 char* GetPlainName(char* FileName)
 {
-    char* szTemp;
-
-    if ((szTemp = strrchr(FileName, '\\')) != nullptr)
+    // Strip the directory, handling BOTH '\' and '/' separators (see above).
+    char* szTemp = strrchr(FileName, '\\');
+    char* szFwd = strrchr(FileName, '/');
+    if (szFwd && (!szTemp || szFwd > szTemp))
+        szTemp = szFwd;
+    if (szTemp != nullptr)
         FileName = szTemp + 1;
     return FileName;
 }

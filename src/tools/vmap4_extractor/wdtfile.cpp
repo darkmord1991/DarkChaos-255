@@ -23,9 +23,12 @@
 
 char* wdtGetPlainName(char* FileName)
 {
-    char* szTemp;
-
-    if ((szTemp = strrchr(FileName, '\\')) != nullptr)
+    // Strip the directory, handling BOTH '\' and '/' separators.
+    char* szTemp = strrchr(FileName, '\\');
+    char* szFwd = strrchr(FileName, '/');
+    if (szFwd && (!szTemp || szFwd > szTemp))
+        szTemp = szFwd;
+    if (szTemp != nullptr)
         FileName = szTemp + 1;
     return FileName;
 }
