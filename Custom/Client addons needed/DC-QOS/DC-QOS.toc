@@ -286,6 +286,8 @@ Modules\Interface.lua
 Modules\GraphicsPlus.lua
 Modules\QuestRecurringLookup.lua
 Modules\MapAreaSizes.lua
+Modules\MapZoneLabels.lua
+Modules\ZoneLabels.lua
 Modules\QuestMapData.lua
 Modules\QuestTrackerMarkers.lua
 Modules\QuestFrames.lua

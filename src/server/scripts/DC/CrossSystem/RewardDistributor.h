@@ -293,6 +293,12 @@ namespace CrossSystem
         // Logging
         void LogTransaction(const RewardTransaction& transaction);
 
+        // Event multiplier read without acquiring mutex_ (caller must already hold it,
+        // or accept a lock-free read as the lock-free multiplier helpers do). Used by
+        // CalculateReward(), which runs both under Distribute()'s lock and lock-free
+        // from the preview path — re-locking here would self-deadlock Distribute().
+        float GetEventMultiplierUnlocked() const;
+
         // Configuration
         MultiplierConfig multiplierConfig_;
         uint32 weeklyTokenCap_ = 0;      // 0 = unlimited

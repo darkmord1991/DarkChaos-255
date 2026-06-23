@@ -368,6 +368,39 @@ ApplyActionBars = function()
     end
 end
 
+-- The (full-screen) world map otherwise renders on top of / behind the custom bars inconsistently. Push the
+-- DCQOS bar holders AND the re-parented Blizzard buttons to BACKGROUND while the map is open, restore on close.
+local WORLDMAP_BAR_PREFIXES = {
+    "MultiBarBottomLeftButton", "MultiBarBottomRightButton", "MultiBarRightButton", "MultiBarLeftButton",
+}
+local function SetBarsBehindMap(behind)
+    local function apply(f)
+        if type(f) ~= "table" or type(f.SetFrameStrata) ~= "function" then return end
+        if behind then
+            if not f.dcqosSavedStrata then f.dcqosSavedStrata = f:GetFrameStrata() end
+            f:SetFrameStrata("BACKGROUND")
+        elseif f.dcqosSavedStrata then
+            f:SetFrameStrata(f.dcqosSavedStrata)
+            f.dcqosSavedStrata = nil
+        end
+    end
+    if ActionBars.customFrames then
+        for _, f in pairs(ActionBars.customFrames) do apply(f) end
+    end
+    for _, prefix in ipairs(WORLDMAP_BAR_PREFIXES) do
+        for i = 1, 12 do apply(getglobal(prefix .. i)) end
+    end
+end
+
+local function InstallWorldMapStrataHook()
+    if ActionBars.worldMapStrataHooked or not WorldMapFrame or type(WorldMapFrame.HookScript) ~= "function" then
+        return
+    end
+    ActionBars.worldMapStrataHooked = true
+    WorldMapFrame:HookScript("OnShow", function() SetBarsBehindMap(true) end)
+    WorldMapFrame:HookScript("OnHide", function() SetBarsBehindMap(false) end)
+end
+
 function ActionBars.OnInitialize()
     addon:Debug("ActionBars module initializing")
 end
@@ -383,6 +416,8 @@ function ActionBars.OnEnable()
         HookAnchorFrameSetPoint(_G.MultiBarBottomLeft)
         HookAnchorFrameSetPoint(_G.MultiBarBottomRight)
     end
+
+    InstallWorldMapStrataHook()
 
     if not ActionBars.eventFrame then
         ActionBars.eventFrame = CreateFrame("Frame")

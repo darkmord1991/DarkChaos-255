@@ -140,7 +140,11 @@ namespace CrossSystem
     float RewardDistributor::GetEventMultiplier() const
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        return GetEventMultiplierUnlocked();
+    }
 
+    float RewardDistributor::GetEventMultiplierUnlocked() const
+    {
         if (eventMultiplierExpires_ > 0 && static_cast<uint64>(GameTime::GetGameTime().count()) > eventMultiplierExpires_)
             return 1.0f;
 
@@ -178,8 +182,9 @@ namespace CrossSystem
         // Seasonal multiplier
         calc.seasonalMultiplier = GetSeasonalMultiplier(context.seasonId);
 
-        // Event multiplier
-        calc.eventMultiplier = GetEventMultiplier();
+        // Event multiplier (lock-free: Distribute() already holds mutex_ when it
+        // reaches here; re-locking via GetEventMultiplier() would self-deadlock).
+        calc.eventMultiplier = GetEventMultiplierUnlocked();
 
         // Calculate final multiplier
         calc.finalMultiplier = calc.baseMultiplier
