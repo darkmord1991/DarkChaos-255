@@ -342,7 +342,11 @@ void LoadCatalog()
             info.y = fields[6].Get<float>();
             info.z = fields[7].Get<float>();
             info.o = fields[8].Get<float>();
-            info.mapId = GUILD_HOUSE_MAP_ID;
+            // Decorations are summoned into the owning guild's instance, whose map is whichever
+            // guild-house skin the guild chose (1409, 1413, ...). Resolve it from the guild's record
+            // so a 1413 guild's decorations are tagged for 1413, not the default 1409.
+            GuildHouseData* ghData = GuildHouseManager::GetGuildHouseData(info.guildId);
+            info.mapId = (ghData && IsGuildHouseMap(ghData->map)) ? ghData->map : GUILD_HOUSE_MAP_ID;
             sInstances[rowId] = info;
             AddUsedBudget(info.guildId, WeightOf(info.entry));
         } while (result->NextRow());

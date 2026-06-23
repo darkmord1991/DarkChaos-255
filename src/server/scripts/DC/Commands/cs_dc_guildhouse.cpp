@@ -176,7 +176,9 @@ public:
         uint32 count = 0;
 
         uint32 instanceId = GuildHouseManager::GetGuildInstanceId(player->GetGuildId());
-        Map* map = instanceId ? sMapMgr->FindMap(GUILD_HOUSE_MAP_ID, instanceId) : nullptr;
+        // Look up the instance on the guild's chosen house map (1409, 1413, ...), not a fixed id.
+        uint32 const ghMap = IsGuildHouseMap(data->map) ? data->map : GUILD_HOUSE_MAP_ID;
+        Map* map = instanceId ? sMapMgr->FindMap(ghMap, instanceId) : nullptr;
         if (map)
         {
              // Everyone in the guild's instance is a guild member here; no phase filter.

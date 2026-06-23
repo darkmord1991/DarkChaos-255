@@ -34,6 +34,24 @@ constexpr float  GUILD_HOUSE_ENTRANCE_Y = 1198.4127f;
 constexpr float  GUILD_HOUSE_ENTRANCE_Z = 536.79785f;
 constexpr float  GUILD_HOUSE_ENTRANCE_O = 1.6015308f;
 
+// Multiple guild-house map skins. GUILD_HOUSE_MAP_ID (1409, "guildhousedala", WotLK Dalaran) is the
+// original/default; 1413 ("guildhousedala2") is the same layout with the modern Legion Dalaran WMO.
+// Each guild's chosen map + entrance comes from its dc_guild_house row (backfilled from
+// dc_guild_house_locations); the instanced teleport/instance-script/decoration code keys off that map
+// rather than a single hard-coded id. Adding another skin = add its id here AND a
+// dc_guild_house_locations row + Map.dbc/MapDifficulty.dbc rows + cloned terrain/spawns.
+// NOTE: 1409 keeps the exact GUILD_HOUSE_ENTRANCE_* above (no behaviour change for existing guilds);
+// other maps use their stored per-location entrance coords.
+constexpr uint32 GUILD_HOUSE_MAP_IDS[] = { GUILD_HOUSE_MAP_ID, 1413 };
+
+inline bool IsGuildHouseMap(uint32 mapId)
+{
+    for (uint32 m : GUILD_HOUSE_MAP_IDS)
+        if (m == mapId)
+            return true;
+    return false;
+}
+
 // Guild Phase Helpers
 //
 // IMPORTANT: WoW phases are BITMASKS. Two phases with overlapping bits will see each other.

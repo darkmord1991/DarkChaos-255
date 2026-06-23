@@ -16,6 +16,7 @@
 #include <cmath>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 static std::unordered_map<uint32, GuildHouseData> s_guildHouseCache;
 
@@ -213,16 +214,21 @@ uint32 GuildHouseManager::EnsureGuildInstanceId(uint32 guildId)
     if (!guildId)
         return 0;
 
-    // Reuse the persisted instance if it is still alive and still belongs to the
-    // guild-house map (instance ids are global and recycled, so a stale id may
-    // now point at an unrelated dungeon).
+    // The guild's house lives on whichever guild-house map it chose (1409, 1413, ...). Resolve it
+    // from the guild's record; fall back to the default map if there is no/invalid stored map.
+    GuildHouseData* data = GetGuildHouseData(guildId);
+    uint32 const ghMap = (data && IsGuildHouseMap(data->map)) ? data->map : GUILD_HOUSE_MAP_ID;
+
+    // Reuse the persisted instance if it is still alive and still belongs to THIS guild's house map
+    // (instance ids are global and recycled, so a stale id may now point at an unrelated dungeon, or
+    // at the guild's previous house map after a move).
     if (QueryResult result = CharacterDatabase.Query(
             "SELECT `instance_id` FROM `dc_guild_house_instance` WHERE `guild_id` = {}", guildId))
     {
         uint32 storedId = result->Fetch()[0].Get<uint32>();
         if (InstanceSave* save = sInstanceSaveMgr->GetInstanceSave(storedId))
         {
-            if (save->GetMapId() == GUILD_HOUSE_MAP_ID)
+            if (save->GetMapId() == ghMap)
                 return storedId;
         }
     }
@@ -231,7 +237,7 @@ uint32 GuildHouseManager::EnsureGuildInstanceId(uint32 guildId)
     // mint a fresh instance and persist the mapping.
     uint32 newId = sMapMgr->GenerateInstanceId();
     InstanceSave* save = sInstanceSaveMgr->AddInstanceSave(
-        GUILD_HOUSE_MAP_ID, newId, Difficulty(DUNGEON_DIFFICULTY_NORMAL));
+        ghMap, newId, Difficulty(DUNGEON_DIFFICULTY_NORMAL));
     if (!save)
         return 0;
 
@@ -287,7 +293,8 @@ bool GuildHouseManager::IsInOwnGuildHouse(Player* player)
     if (!player || !player->GetGuildId() || !player->GetMap())
         return false;
 
-    if (player->GetMapId() != GUILD_HOUSE_MAP_ID)
+    // Accept any guild-house map (1409, 1413, ...); ownership is proven by the instance binding below.
+    if (!IsGuildHouseMap(player->GetMapId()))
         return false;
 
     return GetGuildByInstanceId(player->GetMap()->GetInstanceId()) == player->GetGuildId();
@@ -481,7 +488,8 @@ bool GuildHouseManager::TeleportToGuildHouse(Player* player, uint32 guildId)
         return false;
 
     // The guild must own a house (row in dc_guild_house) to be teleported.
-    if (!GetGuildHouseData(guildId))
+    GuildHouseData* data = GetGuildHouseData(guildId);
+    if (!data)
         return false;
 
     uint32 instanceId = EnsureGuildInstanceId(guildId);
@@ -497,12 +505,19 @@ bool GuildHouseManager::TeleportToGuildHouse(Player* player, uint32 guildId)
     // their guild's instance even when grouped with members bound elsewhere.
     sInstanceSaveMgr->PlayerBindToInstance(player->GetGUID(), save, true, player);
 
-    // Fixed entrance inside the instanced guild-house map. The legacy per-guild
-    // map/coords/phase are no longer used for separation; the instance id alone
-    // provides isolation. (Per-guild custom entrances can be layered on later.)
-    return player->TeleportTo(GUILD_HOUSE_MAP_ID,
-        GUILD_HOUSE_ENTRANCE_X, GUILD_HOUSE_ENTRANCE_Y,
-        GUILD_HOUSE_ENTRANCE_Z, GUILD_HOUSE_ENTRANCE_O);
+    // Entrance inside the instanced guild-house map. The instance id alone provides isolation; the
+    // MAP now depends on which guild-house skin the guild chose (1409 vs 1413, ...). The original
+    // 1409 house keeps its exact hard-coded entrance (no change for existing guilds); secondary house
+    // maps use the per-location entrance coords stored on the guild's record (from
+    // dc_guild_house_locations, backfilled by GetGuildHouseData).
+    uint32 const ghMap = IsGuildHouseMap(data->map) ? data->map : GUILD_HOUSE_MAP_ID;
+    float x = GUILD_HOUSE_ENTRANCE_X, y = GUILD_HOUSE_ENTRANCE_Y,
+          z = GUILD_HOUSE_ENTRANCE_Z, o = GUILD_HOUSE_ENTRANCE_O;
+    if (ghMap != GUILD_HOUSE_MAP_ID)
+    {
+        x = data->posX; y = data->posY; z = data->posZ; o = data->ori;
+    }
+    return player->TeleportTo(ghMap, x, y, z, o);
 }
 
 bool GuildHouseManager::RemoveGuildHouse(Guild* guild)
@@ -842,6 +857,23 @@ bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId, bool i
     float posZ = fields[3].Get<float>();
     float ori = fields[4].Get<float>();
 
+    // 0. Capture everyone currently standing in the guild's OLD instance BEFORE we repoint the house,
+    // so the switch pulls them across to the new map automatically (otherwise they'd be stranded in the
+    // old instance until they re-teleported). This whole function runs synchronously on the world thread
+    // and the steps below never despawn players, so the collected Player* stay valid until we teleport
+    // them in step 6.
+    std::vector<Player*> toMigrate;
+    if (uint32 oldInstanceId = GetGuildInstanceId(guildId))
+    {
+        if (Map* oldInstance = sMapMgr->FindMap(currentData->map, oldInstanceId))
+        {
+            Map::PlayerList const& players = oldInstance->GetPlayers();
+            for (Map::PlayerList::const_iterator it = players.begin(); it != players.end(); ++it)
+                if (Player* p = it->GetSource())
+                    toMigrate.push_back(p);
+        }
+    }
+
     // 1. Cleanup OLD location spawns
     CleanupGuildHouseSpawns(currentData->map, currentData->phase);
 
@@ -861,6 +893,14 @@ bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId, bool i
     // 5. Respawn Core NPCs
     SpawnTeleporterNPC(guildId, newMap, currentData->phase, posX, posY, posZ, ori);
     SpawnButlerNPC(guildId, newMap, currentData->phase, posX + 2.0f, posY, posZ, ori);
+
+    // 6. Migrate any members who were inside the old instance to the new house. TeleportToGuildHouse
+    // mints/reuses the guild's instance on the NEW map (EnsureGuildInstanceId sees the persisted
+    // instance no longer matches the guild's map after the UPDATE above) and binds the player to it, so
+    // everyone who was in the old house lands together in the new map's instance instead of being left
+    // behind. The first teleport mints the new instance; the rest reuse it.
+    for (Player* p : toMigrate)
+        TeleportToGuildHouse(p, guildId);
 
     return true;
 }

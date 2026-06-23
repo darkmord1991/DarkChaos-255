@@ -86,9 +86,13 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to {}", poi.name);
         CloseGossipMenuFor(player);
 
-        // Intra-house POI hop. The player's instance bind keeps them in their own
-        // guild-house instance across this same-map teleport; no phasing needed.
-        player->TeleportTo(poi.map, poi.x, poi.y, poi.z, poi.o);
+        // Intra-house POI hop. The POI coords are identical on every guild-house skin (same terrain),
+        // so hop within the player's CURRENT house map (1409, 1413, ...) rather than the hard-coded
+        // poi.map -- that keeps the player inside their own instance (same-map teleport, instance bind
+        // preserved) instead of yanking a 1413 guild back to 1409.
+        uint32 const ghMap = IsGuildHouseMap(player->GetMapId()) ? player->GetMapId()
+                           : (IsGuildHouseMap(data->map) ? data->map : poi.map);
+        player->TeleportTo(ghMap, poi.x, poi.y, poi.z, poi.o);
 
         return true;
     }
