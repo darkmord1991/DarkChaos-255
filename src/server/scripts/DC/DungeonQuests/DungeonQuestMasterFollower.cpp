@@ -201,8 +201,8 @@ public:
         }
 
         // Guild houses are dungeon-type instances (for per-guild isolation) but
-        // are not quest dungeons -> never spawn the quest master there.
-        if (mapId == MAP_GUILD_HOUSE_INSTANCE)
+        // are not quest dungeons -> never spawn the quest master there (covers 1409 and 1413).
+        if (IsGuildHouseQuestExcludedMap(mapId))
         {
             DespawnQuestMasterFollower(player);
             return;
@@ -330,7 +330,7 @@ public:
         // Check if player is in a dungeon
         uint32 mapId = player->GetMapId();
         MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-        if (!mapEntry || !mapEntry->IsDungeon() || mapId == MAP_GUILD_HOUSE_INSTANCE)
+        if (!mapEntry || !mapEntry->IsDungeon() || IsGuildHouseQuestExcludedMap(mapId))
         {
             handler->PSendSysMessage("You can only summon the Quest Master inside dungeons!");
             return true;

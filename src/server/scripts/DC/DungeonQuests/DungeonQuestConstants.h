@@ -50,7 +50,14 @@ constexpr uint32 PHASE_BASE_DUNGEON_QUEST = 10000;   // Base phase mask
 
 // Dungeon-type instances that are NOT quest dungeons and must never receive a
 // quest master (they only use InstanceType=1 for isolation, not gameplay).
-constexpr uint32 MAP_GUILD_HOUSE_INSTANCE = 1409;    // Guild house (instanced)
+constexpr uint32 MAP_GUILD_HOUSE_INSTANCE   = 1409;  // Guild house (instanced, WotLK Dalaran)
+constexpr uint32 MAP_GUILD_HOUSE_INSTANCE_2 = 1413;  // Guild house 2 (guildhousedala2, modern Dalaran)
+
+// True for any guild-house map -> no dungeon quest master / follower belongs there.
+inline bool IsGuildHouseQuestExcludedMap(uint32 mapId)
+{
+    return mapId == MAP_GUILD_HOUSE_INSTANCE || mapId == MAP_GUILD_HOUSE_INSTANCE_2;
+}
 
 // =====================================================================
 // ACHIEVEMENT ID RANGES
