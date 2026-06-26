@@ -99,6 +99,22 @@ local function PrintNativeCollectionProbe()
             end
         end
     end
+
+    -- Native (DLL) transmog catalog: confirms the grid is querying the DLL
+    -- instead of materialising the catalog into Lua tables.
+    local native = type(DC.HasNativeTransmogCatalog) == "function" and
+        DC:HasNativeTransmogCatalog()
+    local nativeCount = 0
+    if type(GetDCCollectionTransmogCount) == "function" then
+        local ok, c = pcall(GetDCCollectionTransmogCount)
+        if ok then nativeCount = tonumber(c) or 0 end
+    end
+    DC:Print(string.format(
+        "transmog native catalog: active=%s appearances=%d query=%s collectedSetter=%s",
+        tostring(native and true or false),
+        nativeCount,
+        tostring(type(QueryDCCollectionTransmog) == "function"),
+        tostring(type(SetDCCollectionTransmogCollected) == "function")))
 end
 
 local function FormatTransportAge(timestamp)

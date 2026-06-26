@@ -371,6 +371,14 @@ local function ConstructModelPicker(frame)
 end
 
 function OptionsPrivate.ModelPicker(frame)
+  if not modelPicker then
+    -- The model-path catalog (~2 MB) ships as a LoadOnDemand addon; load it the
+    -- first time the picker is built so it isn't resident for players who never
+    -- open the model picker. Degrades gracefully if absent (empty tree).
+    if not IsAddOnLoaded("WeakAurasModelPaths") then
+      LoadAddOn("WeakAurasModelPaths")
+    end
+  end
   modelPicker = modelPicker or ConstructModelPicker(frame)
   return modelPicker
 end

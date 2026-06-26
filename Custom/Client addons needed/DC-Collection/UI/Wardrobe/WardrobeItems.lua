@@ -207,7 +207,12 @@ function Wardrobe:SelectSlot(slotDef)
         end
     end
 
-    self:BuildAppearanceList()
+    -- Under the native source-paged path RefreshGrid queries the page itself;
+    -- skip the redundant full-list build (which would defeat source-paging).
+    if not (type(DC.HasNativeTransmogCatalog) == "function" and
+            DC:HasNativeTransmogCatalog()) then
+        self:BuildAppearanceList()
+    end
     self:RefreshGrid()
 end
 
@@ -465,43 +470,97 @@ function Wardrobe:RefreshGrid()
         end)
     end
 
-    local list = self:BuildAppearanceList()
-    
-    -- Add "Hide Slot" option for eligible slots
-    -- Only certain slots can be hidden: Head (1), Shoulder (3), Back (16), Chest (4)
+    -- "Hide Slot" pseudo-entry for hideable slots (Head/Shoulder/Back/Chest).
+    -- It occupies the first cell of page 1.
     local hideableSlots = {
         [1] = true,   -- Head
-        [3] = true,   -- Shoulder  
+        [3] = true,   -- Shoulder
         [16] = true,  -- Back/Cloak
         [4] = true,   -- Chest
     }
-    
-    if self.selectedSlotFilter then
-        -- Check if current slot filter contains a hideable inventory type
-        local isHideable = false
+    local hideOption = nil
+    if self.selectedSlotFilter and type(self.selectedSlotFilter.invTypes) == "table" then
         for invType in pairs(self.selectedSlotFilter.invTypes) do
             if hideableSlots[invType] then
-                isHideable = true
+                hideOption = {
+                    id = "hide",
+                    itemId = 0,
+                    name = "Hide Slot",
+                    displayId = 0,
+                    collected = true,
+                    isHideOption = true,
+                }
                 break
             end
         end
-        
-        if isHideable then
-            -- Insert "Hide Slot" as first option
-            table.insert(list, 1, {
-                id = "hide",
-                itemId = 0,
-                name = "Hide Slot",
-                displayId = 0,
-                collected = true,
-                isHideOption = true,
-            })
-        end
     end
-    
-    self.appearanceList = list
+    local hideCount = hideOption and 1 or 0
 
-    local totalShown = #list
+    local list
+    local startIdx
+    local totalShown
+
+    if type(DC.HasNativeTransmogCatalog) == "function" and
+       DC:HasNativeTransmogCatalog() and
+       type(QueryDCCollectionTransmog) == "function" then
+        -- Source-paged: ask the DLL for only the current page of appearances so
+        -- the full (~54k) catalog never materialises as Lua tables. The DLL
+        -- returns the page plus the full matched/collected totals for paging.
+        if type(DC._SyncNativeTransmogCollected) == "function" then
+            DC:_SyncNativeTransmogCollected(false)
+        end
+        local invCsv, quality, searchStr, showUncollected, sortMode =
+            self:_NativeTransmogQueryArgs()
+        local perPage = self.ITEMS_PER_PAGE
+
+        local function queryPage(pageIdx)
+            local globalStart0 = (pageIdx - 1) * perPage
+            local hideHere = (globalStart0 < hideCount)
+            local matchedOffset = globalStart0 - hideCount
+            if matchedOffset < 0 then matchedOffset = 0 end
+            local need = perPage - (hideHere and 1 or 0)
+            local ok, items, total, collected = pcall(QueryDCCollectionTransmog,
+                invCsv, quality, searchStr, showUncollected, sortMode,
+                matchedOffset, need)
+            if not ok or type(items) ~= "table" then items = {} end
+            return items, tonumber(total) or 0, tonumber(collected) or 0, hideHere
+        end
+
+        local items, totalMatched, collectedMatched, hideHere =
+            queryPage(self.currentPage)
+        totalShown = totalMatched + hideCount
+        self.totalCount = totalMatched
+        self.collectedCount = collectedMatched
+        self.totalPages = math.max(1, math.ceil(totalShown / perPage))
+        if self.currentPage > self.totalPages then
+            self.currentPage = self.totalPages
+            items, totalMatched, collectedMatched, hideHere =
+                queryPage(self.currentPage)
+            totalShown = totalMatched + hideCount
+            self.totalCount = totalMatched
+            self.collectedCount = collectedMatched
+        end
+
+        if hideHere and hideOption then
+            list = { hideOption }
+            for k = 1, #items do
+                list[#list + 1] = items[k]
+            end
+        else
+            list = items
+        end
+        self.appearanceList = list
+        startIdx = 1
+    else
+        list = self:BuildAppearanceList()
+        if hideOption then
+            table.insert(list, 1, hideOption)
+        end
+        self.appearanceList = list
+        totalShown = #list
+        startIdx = (self.currentPage - 1) * self.ITEMS_PER_PAGE + 1
+    end
+
     self.totalPages = math.max(1, math.ceil(totalShown / self.ITEMS_PER_PAGE))
     if self.currentPage > self.totalPages then
         self.currentPage = self.totalPages
@@ -536,7 +595,8 @@ function Wardrobe:RefreshGrid()
         end
     end
 
-    local startIdx = (self.currentPage - 1) * self.ITEMS_PER_PAGE + 1
+    -- startIdx is set above: 1 for the source-paged native path (list is already
+    -- the page), or the global slice offset for the legacy full-list path.
 
     for i, btn in ipairs(self.frame.gridButtons) do
         ConfigureGridButtonForItems(btn)
@@ -696,6 +756,27 @@ function Wardrobe:InferInventoryTypeFromItemId(itemId)
     return _EQUIPLOC_TO_INVTYPE[equipLoc]
 end
 
+-- Build positional args for QueryDCCollectionTransmog from current filter UI
+-- state. Shared by the full-list and source-paged native render paths.
+function Wardrobe:_NativeTransmogQueryArgs()
+    local invCsv = ""
+    if type(self.selectedSlotFilter) == "table" and
+       type(self.selectedSlotFilter.invTypes) == "table" then
+        local invList = {}
+        for invType in pairs(self.selectedSlotFilter.invTypes) do
+            invList[#invList + 1] = tonumber(invType) or invType
+        end
+        table.sort(invList)
+        invCsv = table.concat(invList, ",")
+    end
+
+    local quality = tonumber(self.selectedQualityFilter)
+    if not quality then quality = -1 end
+
+    return invCsv, quality, (self.searchText or ""),
+        (self.showUncollected and 1 or 0), (self.sortMode or "default")
+end
+
 function Wardrobe:BuildAppearanceList()
     local defsRev = (type(DC.GetDefinitionsRevision) == "function") and
         (DC:GetDefinitionsRevision("transmog") or 0) or 0
@@ -742,6 +823,34 @@ function Wardrobe:BuildAppearanceList()
         self.totalCount = tonumber(cacheEntry.totalCount) or 0
         self.collectedCount = tonumber(cacheEntry.collectedCount) or 0
         return cacheEntry.results
+    end
+
+    -- Native catalog: the DLL does the filter/dedup/sort and returns just the
+    -- matched appearances, so the whole catalog never lives in Lua tables.
+    if type(DC.HasNativeTransmogCatalog) == "function" and
+       DC:HasNativeTransmogCatalog() then
+        if type(DC._SyncNativeTransmogCollected) == "function" then
+            DC:_SyncNativeTransmogCollected(false)
+        end
+
+        local invCsv, quality, searchStr, showUncollected, sortMode =
+            self:_NativeTransmogQueryArgs()
+
+        local ok, qResults, qTotal, qCollected = pcall(QueryDCCollectionTransmog,
+            invCsv, quality, searchStr, showUncollected, sortMode)
+
+        if ok and type(qResults) == "table" then
+            self.totalCount = tonumber(qTotal) or 0
+            self.collectedCount = tonumber(qCollected) or 0
+            self._appearanceListCache.transmog = {
+                key = cacheKey,
+                results = qResults,
+                totalCount = self.totalCount,
+                collectedCount = self.collectedCount,
+            }
+            return qResults
+        end
+        -- On any failure fall through to the legacy Lua path below.
     end
 
     local results = {}

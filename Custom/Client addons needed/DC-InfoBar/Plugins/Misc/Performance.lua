@@ -73,19 +73,27 @@ function PerformancePlugin:OnUpdate(elapsed)
     self._latencyHome = latencyHome or 0
     self._latencyWorld = latencyWorld or 0
     
-    -- Get memory usage
-    UpdateAddOnMemoryUsage()
-    local totalMem = 0
-    local numAddons = GetNumAddOns()
-    for i = 1, numAddons do
-        totalMem = totalMem + (GetAddOnMemoryUsage(i) or 0)
-    end
-    self._memory = totalMem / 1024  -- Convert to MB
-    
     -- Build display string
     local showFPS = DCInfoBar:GetPluginSetting(self.id, "showFPS")
     local showLatency = DCInfoBar:GetPluginSetting(self.id, "showLatency")
     local showMemory = DCInfoBar:GetPluginSetting(self.id, "showMemory")
+
+    -- Memory is expensive: UpdateAddOnMemoryUsage() forces a GC accounting pass
+    -- over every addon. Only compute it when it's actually displayed, and at most
+    -- once every ~5s instead of every tick.
+    if showMemory then
+        self._memAccum = (self._memAccum or 999) + (elapsed or 0)
+        if self._memAccum >= 5 then
+            self._memAccum = 0
+            UpdateAddOnMemoryUsage()
+            local totalMem = 0
+            local numAddons = GetNumAddOns()
+            for i = 1, numAddons do
+                totalMem = totalMem + (GetAddOnMemoryUsage(i) or 0)
+            end
+            self._memory = totalMem / 1024  -- Convert to MB
+        end
+    end
     
     local parts = {}
     

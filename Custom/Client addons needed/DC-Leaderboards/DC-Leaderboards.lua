@@ -726,8 +726,23 @@ function LB:EnsureNativeEnvelopePoller()
         LB._nativeEnvelopePollElapsed = 0
         LB:PollNativeEnvelopes()
     end)
-    frame:Show()
+    -- Left hidden; started only while the leaderboard window is open (see
+    -- LB:Show/LB:Hide). No need to poll the native envelope queue 4x/sec forever.
     self._nativeEnvelopeFrame = frame
+end
+
+function LB:StartNativeEnvelopePoller()
+    self:EnsureNativeEnvelopePoller()
+    if self._nativeEnvelopeFrame then
+        self._nativeEnvelopePollElapsed = NATIVE_ENV_POLL_INTERV  -- poll on next tick
+        self._nativeEnvelopeFrame:Show()
+    end
+end
+
+function LB:StopNativeEnvelopePoller()
+    if self._nativeEnvelopeFrame then
+        self._nativeEnvelopeFrame:Hide()
+    end
 end
 
 -- Handler for test results
@@ -2680,14 +2695,16 @@ function LB:Show()
         -- Refresh current view
         self:SelectSubCategory(self.currentSubCategory or "mplus_key")
     end
-    
+
     frame:Show()
+    self:StartNativeEnvelopePoller()
 end
 
 function LB:Hide()
     if self.Frames.main then
         self.Frames.main:Hide()
     end
+    self:StopNativeEnvelopePoller()
 end
 
 function LB:Toggle()

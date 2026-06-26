@@ -119,10 +119,14 @@ function DC:HasCachedDefinitions()
     end
 
     -- Transmog definitions are critical for wardrobe/outfits - if they're empty, force a refresh.
-    local transmogDefs = self.definitions.transmog
-    if type(transmogDefs) ~= "table" or not next(transmogDefs) then
-        -- No transmog definitions - don't consider cache "valid" for heavy requests.
-        return false
+    -- When the catalog is served natively it always counts as present.
+    if not (type(self.HasNativeTransmogCatalog) == "function" and
+            self:HasNativeTransmogCatalog()) then
+        local transmogDefs = self.definitions.transmog
+        if type(transmogDefs) ~= "table" or not next(transmogDefs) then
+            -- No transmog definitions - don't consider cache "valid" for heavy requests.
+            return false
+        end
     end
 
     -- Mounts and companions are also critical - check them too.
@@ -286,6 +290,79 @@ function DC:_InvalidateTransmogDefinitionLookup()
     self._transmogDefinitionAliasLookup = nil
 end
 
+-- ============================================================================
+-- NATIVE (DLL) TRANSMOG CATALOG
+-- ============================================================================
+-- The transmog appearance catalog is served from the WotLKExtensions DLL
+-- (DCCollectionTransmog.cdbc) via indexed/paged accessors. When available we
+-- keep the catalog in the DLL instead of materialising it into Lua tables
+-- (definitions.transmog + alias lookups), which previously cost hundreds of MB
+-- of addon memory. See QueryDCCollectionTransmog / GetDCCollectionTransmog* and
+-- SetDCCollectionTransmogCollected in the DLL (CustomLua.cpp).
+
+function DC:HasNativeTransmogCatalog()
+    return self._transmogNativeCatalog == true
+        and type(QueryDCCollectionTransmog) == "function"
+end
+
+-- Normalise a DLL appearance row into the def shape the addon expects from
+-- GetDefinition (itemIds as a number array; rarity/quality both present).
+function DC:_NativeTransmogRowToDef(row)
+    if type(row) ~= "table" then
+        return nil
+    end
+
+    local itemIds = row.itemIds
+    if type(itemIds) == "string" and itemIds ~= "" then
+        local t = {}
+        for s in string.gmatch(itemIds, "[^,]+") do
+            local n = tonumber(s)
+            if n then
+                t[#t + 1] = n
+            end
+        end
+        row.itemIds = t
+    elseif type(itemIds) ~= "table" then
+        row.itemIds = nil
+    end
+
+    if row.rarity == nil then row.rarity = row.quality end
+    if row.quality == nil then row.quality = row.rarity end
+    return row
+end
+
+-- Push the player's collected transmog keys to the DLL so native queries can
+-- compute collected/uncollected state. Cheap; only re-pushed when the
+-- collections revision changes (or when forced after a collection update).
+function DC:_SyncNativeTransmogCollected(force)
+    if type(SetDCCollectionTransmogCollected) ~= "function" then
+        return
+    end
+
+    local rev = 0
+    if type(self.GetCollectionsRevision) == "function" then
+        rev = self:GetCollectionsRevision("transmog") or 0
+    end
+    if not force and self._nativeTransmogCollectedRev == rev then
+        return
+    end
+
+    local col = self.collections and
+        (self.collections.transmog or self.collections.wardrobe)
+    local parts = {}
+    if type(col) == "table" then
+        for key in pairs(col) do
+            local n = tonumber(key)
+            if n then
+                parts[#parts + 1] = n
+            end
+        end
+    end
+
+    pcall(SetDCCollectionTransmogCollected, table.concat(parts, ","))
+    self._nativeTransmogCollectedRev = rev
+end
+
 local function ShouldPreferTransmogAlias(currentDef, candidateDef)
     if type(candidateDef) ~= "table" then
         return false
@@ -386,18 +463,25 @@ function DC:LoadCache()
     
     -- Load definitions
     if DCCollectionDB.definitionCache then
+        -- If the DLL serves the transmog catalog, don't even load the (possibly
+        -- stale, multi-MB) persisted copy - it would only be dropped moments
+        -- later by BootstrapLocalCollectionCDBC. Avoids a first-login RAM spike.
+        local nativeTransmog = type(QueryDCCollectionTransmog) == "function"
+            and type(GetDCCollectionTransmogCount) == "function"
         for collType, defs in pairs(DCCollectionDB.definitionCache) do
             -- Keep transmog packed in memory to reduce RAM.
             if collType == "transmog" then
-                local packedDefs = {}
-                for id, data in pairs(defs) do
-                    if type(data) == "table" then
-                        packedDefs[id] = PackTransmogDefinition(data)
-                    else
-                        packedDefs[id] = data
+                if not nativeTransmog then
+                    local packedDefs = {}
+                    for id, data in pairs(defs) do
+                        if type(data) == "table" then
+                            packedDefs[id] = PackTransmogDefinition(data)
+                        else
+                            packedDefs[id] = data
+                        end
                     end
+                    self.definitions[collType] = packedDefs
                 end
-                self.definitions[collType] = packedDefs
             else
                 self.definitions[collType] = defs
             end
@@ -655,18 +739,45 @@ function DC:SaveCache()
     -- OPTIMIZATION: Pack large datasets (transmog) into strings BEFORE saving.
     -- This drastically reduces file size and write time (solving slow logout)
     -- while keeping the data persistent (solving re-download needs).
+    -- Definition types served from the DLL/DBC at startup (local-cdbc / native)
+    -- must NOT be persisted: they reload from the client cdbc every launch, so
+    -- persisting them only bloats SavedVariables (the catalog was ~95% of the
+    -- file) and triplicates the shared item-set table (itemsets/itemSets/sets
+    -- are one shared reference at runtime but serialise to 3 independent copies).
+    local skipPersist = {}
+    local cdbcState = self._localCollectionCDBC
+    if type(cdbcState) == "table" then
+        if type(cdbcState.definitionSources) == "table" then
+            for k, src in pairs(cdbcState.definitionSources) do
+                if src == "local-cdbc" or src == "native-dll" then
+                    skipPersist[k] = true
+                end
+            end
+        end
+        if cdbcState.itemSetsSource == "local-cdbc" then
+            skipPersist.itemsets = true
+            skipPersist.itemSets = true
+            skipPersist.sets = true
+        end
+    end
+    if self:HasNativeTransmogCatalog() then
+        skipPersist.transmog = true
+    end
+
     local defsToSave = {}
     if self.definitions then
         for k, v in pairs(self.definitions) do
-            if k == "transmog" then -- Only pack transmog for now
+            if skipPersist[k] then
+                -- served from the DLL/DBC; nothing to persist
+            elseif k == "transmog" then -- Only pack transmog for now
                 local packedTransmog = {}
                 for id, def in pairs(v) do
                     packedTransmog[id] = PackTransmogDefinition(def)
                 end
                 defsToSave[k] = packedTransmog
             else
-                 -- Save other definitions (mounts, pets, itemSets) as normal tables.
-                 -- They are not large enough to cause logout freezes.
+                 -- Save other definitions (e.g. server-only types) as normal
+                 -- tables. They are not large enough to cause logout freezes.
                  defsToSave[k] = v
             end
         end
@@ -1599,7 +1710,55 @@ function DC:BootstrapLocalCollectionCDBC(force)
         end
     end
 
-    if type(GetDCCollectionTransmog) == "function" then
+    if type(QueryDCCollectionTransmog) == "function"
+        and type(GetDCCollectionTransmogCount) == "function" then
+        -- Native catalog: keep appearances in the DLL. Do NOT materialise
+        -- self.definitions.transmog (the table + alias lookups are the main
+        -- memory hog). The wardrobe grid queries the DLL per filter/page.
+        local count = 0
+        local okc, c = pcall(GetDCCollectionTransmogCount)
+        if okc then count = tonumber(c) or 0 end
+
+        if count > 0 then
+            self._transmogNativeCatalog = true
+            self.definitions.transmog = nil
+            self._transmogDefinitions = nil
+            self:_InvalidateTransmogDefinitionLookup()
+            self._transmogDefinitionsSource = "native-dll"
+            self._transmogDefTotal = count
+
+            local signature = 1000000 + count
+            self:SetSyncVersion("transmog", signature)
+
+            state.definitionTypes.transmog = true
+            state.definitionSources.transmog = "native-dll"
+            state.nativeEligibleDefinitionTypes.transmog = true
+            state.authoritativeDefinitionTypes.transmog = true
+            state.signatures.transmog = signature
+            state.available = true
+            self.definitionsLoaded = true
+
+            DCCollectionDB = DCCollectionDB or {}
+            DCCollectionDB.transmogDefsIncomplete = nil
+            DCCollectionDB.transmogDefsResumeOffset = nil
+            DCCollectionDB.transmogDefsResumeLimit = nil
+            DCCollectionDB.transmogDefsResumeTotal = nil
+            DCCollectionDB.transmogDefsResumeUpdatedAt = nil
+
+            if self.Wardrobe then
+                self.Wardrobe.definitionsLoaded = true
+            end
+            if self.stats.transmog then
+                self.stats.transmog.total = count
+            end
+            if type(self._BumpDefinitionsRevision) == "function" then
+                self:_BumpDefinitionsRevision("transmog")
+            end
+
+            self:_SyncNativeTransmogCollected(true)
+        end
+    elseif type(GetDCCollectionTransmog) == "function" then
+        self._transmogNativeCatalog = false
         local ok, rows = pcall(GetDCCollectionTransmog)
         if ok and type(rows) == "table" and next(rows) ~= nil then
             local defs = {}
@@ -2122,6 +2281,10 @@ function DC:CountDefinitions(collectionType)
             return 0
         end
 
+        if typeName == "transmog" and self:HasNativeTransmogCatalog() then
+            return tonumber(self._transmogDefTotal) or 0
+        end
+
         local count = 0
         if self.definitions[typeName] then
             for _ in pairs(self.definitions[typeName]) do
@@ -2149,6 +2312,21 @@ function DC:GetDefinition(collectionType, itemId)
     end
 
     local normalizedId = NormalizeId(itemId)
+
+    if typeName == "transmog" and self:HasNativeTransmogCatalog() then
+        -- Resolve from the DLL by itemId first, then displayId.
+        local row
+        if type(GetDCCollectionTransmogByItemId) == "function" then
+            local ok, r = pcall(GetDCCollectionTransmogByItemId, normalizedId)
+            if ok and type(r) == "table" then row = r end
+        end
+        if not row and type(GetDCCollectionTransmogByDisplayId) == "function" then
+            local ok, r = pcall(GetDCCollectionTransmogByDisplayId, normalizedId)
+            if ok and type(r) == "table" then row = r end
+        end
+        return self:_NativeTransmogRowToDef(row)
+    end
+
     if self.definitions[typeName] then
         local v = self.definitions[typeName][normalizedId]
         if not v and typeName == "transmog" and type(self._EnsureTransmogDefinitionAliasLookup) == "function" then

@@ -62,22 +62,60 @@ local function BuildLookup()
     return byName
 end
 
+local function CurrentMapKey()
+    if type(GetMapInfo) ~= "function" then
+        return nil
+    end
+    local name = GetMapInfo()       -- the WorldMap art-dir name, e.g. "Undermine", "Pandaria", "TheJadeForest"
+    if name and name ~= "" then
+        return name:lower()
+    end
+    return nil
+end
+
+-- Hardcoded zone navigation for custom continents where GetMapZones/GetCurrentMapContinent return
+-- empty/invalid values (3.3.5a native APIs only know continents 1–4).
+-- Key: map art-dir name lowercase (matches GetMapInfo()) → array of {n=normalized_name, c=continent, z=zone_idx}
+-- continent = WorldMapContinent.ID; z = 1-based index in WorldMapArea DBC row order for that MapID.
+local CUSTOM_ZONE_NAV = {
+    pandaria = {
+        { n = "dreadwastes",            c = 5, z = 6 },
+        { n = "isleofgiants",           c = 5, z = 7 },
+        { n = "krasarangwilds",         c = 5, z = 5 },
+        { n = "kunlaisummit",           c = 5, z = 3 },
+        { n = "thejadeforest",          c = 5, z = 1 },
+        { n = "timelessisle",           c = 5, z = 8 },
+        { n = "townlongsteppes",        c = 5, z = 4 },
+        { n = "valleyofthefourwinds",   c = 5, z = 2 },
+    },
+}
+
 -- Drill into the zone whose label was clicked: match its name against the current continent's zone list
 -- and SetMapZoom to that index. No-op if the name isn't a zone (subzone labels on a zone map) or if the
 -- continent isn't registered (then nothing to switch to — the WorldMapContinent.dbc must be live).
 local function NavigateToZone(name)
-    if not name
-        or type(GetCurrentMapContinent) ~= "function"
-        or type(GetMapZones) ~= "function"
-        or type(SetMapZoom) ~= "function" then
-        return
-    end
-    local continent = GetCurrentMapContinent()
-    if not continent or continent <= 0 then
-        return
-    end
+    if not name or type(SetMapZoom) ~= "function" then return end
     local function norm(s) return (tostring(s or ""):gsub("%W", "")):lower() end
     local target = norm(name)
+
+    -- Custom continent fallback: bypass GetCurrentMapContinent/GetMapZones which 3.3.5a doesn't expose
+    -- for continent IDs beyond the 4 stock WotLK continents.
+    local mapKey = CurrentMapKey()
+    local hints = mapKey and CUSTOM_ZONE_NAV[mapKey] or nil
+    if hints then
+        for _, h in ipairs(hints) do
+            if h.n == target then
+                SetMapZoom(h.c, h.z)
+                return
+            end
+        end
+        return  -- on a custom continent: subzone label click → harmless no-op
+    end
+
+    -- Stock continents: native API path
+    if type(GetCurrentMapContinent) ~= "function" or type(GetMapZones) ~= "function" then return end
+    local continent = GetCurrentMapContinent()
+    if not continent or continent <= 0 then return end
     local zones = { GetMapZones(continent) }
     for i = 1, #zones do
         if norm(zones[i]) == target then
@@ -123,17 +161,6 @@ local function HideFrom(index)
             state.pool[i]:Hide()
         end
     end
-end
-
-local function CurrentMapKey()
-    if type(GetMapInfo) ~= "function" then
-        return nil
-    end
-    local name = GetMapInfo()       -- the WorldMap art-dir name, e.g. "Undermine", "Pandaria", "TheJadeForest"
-    if name and name ~= "" then
-        return name:lower()
-    end
-    return nil
 end
 
 function ZoneLabels:Refresh()

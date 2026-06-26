@@ -403,6 +403,14 @@ local function DispatchNativeEnvelope(adapter, feature, payload, context)
 end
 
 function Adapter:PollNativeEnvelopes()
+    -- Only poll while the HLBG window is open; nothing consumes envelopes when
+    -- it's closed, so skip the per-tick getter loop (saves idle CPU forever).
+    local hlbg = rawget(_G, "HLBG")
+    if not (hlbg and hlbg.UI and hlbg.UI.Frame and hlbg.UI.Frame.IsShown
+        and hlbg.UI.Frame:IsShown()) then
+        return
+    end
+
     local getter = rawget(_G, "GetLastDCNativeEnvelope")
     if type(getter) ~= "function" then
         return

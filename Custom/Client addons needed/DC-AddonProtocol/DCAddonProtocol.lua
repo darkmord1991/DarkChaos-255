@@ -2037,7 +2037,13 @@ function DC:_PollNativeResponses()
     -- Dedicated per-module bridges (own request/poll fns, JSON payload).
     for _, bridge in ipairs(self._nativeBridges or {}) do
         if bridge.kind ~= "generic" then
-            local pollFn = ResolveGlobalFunction(bridge.pollFn)
+            -- Cache the resolved DLL function (this runs every frame). Only cache
+            -- once non-nil so we keep retrying until the DLL registers it.
+            local pollFn = bridge._pollFnCached
+            if not pollFn then
+                pollFn = ResolveGlobalFunction(bridge.pollFn)
+                if pollFn then bridge._pollFnCached = pollFn end
+            end
             if pollFn then
                 local guard = 0
                 while guard < 16 do
@@ -2054,7 +2060,11 @@ function DC:_PollNativeResponses()
     end
 
     -- Generic shared bridge: one queue, the module code travels in the payload.
-    local genericPoll = ResolveGlobalFunction("GetNativeDcMessage")
+    local genericPoll = self._genericPollFnCached
+    if not genericPoll then
+        genericPoll = ResolveGlobalFunction("GetNativeDcMessage")
+        if genericPoll then self._genericPollFnCached = genericPoll end
+    end
     if genericPoll then
         local guard = 0
         while guard < 32 do
@@ -2256,196 +2266,225 @@ function DC:EncodeJSON(val)
     return self:_EncodeJSONValue(val, {}, 0)
 end
 
+-- ============================================================
+-- JSON decode. The parser is hoisted to file scope so the skipWhitespace /
+-- parseValue closures and the ~20 byte constants are created ONCE at load,
+-- not on every DecodeJSON call -- this removes per-sync GC churn. It is not
+-- re-entrant (a decode fully completes before returning, which is how it is
+-- used). Verified byte-for-byte identical to the previous per-call version.
+-- ============================================================
+local _jstr, _jpos, _jlen
+local _jbyte, _jsub, _jfind = string.byte, string.sub, string.find
+local J_SPACE, J_TAB, J_NL, J_CR = 32, 9, 10, 13
+local J_QUOTE, J_COMMA, J_MINUS, J_COLON = 34, 44, 45, 58
+local J_LB, J_BS, J_RB, J_LBR, J_RBR = 91, 92, 93, 123, 125
+local J_0, J_9, J_t, J_f, J_n = 48, 57, 116, 102, 110
+
+local function JsonSkipWS()
+    local b = _jbyte(_jstr, _jpos)
+    while b and (b == J_SPACE or b == J_TAB or b == J_NL or b == J_CR) do
+        _jpos = _jpos + 1
+        b = _jbyte(_jstr, _jpos)
+    end
+end
+
+local function JsonParseValue()
+    JsonSkipWS()
+    if _jpos > _jlen then return nil end
+    local b = _jbyte(_jstr, _jpos)
+    if not b then return nil end
+
+    -- String
+    if b == J_QUOTE then
+        _jpos = _jpos + 1
+        local startPos = _jpos
+        local endPos = _jfind(_jstr, '"', _jpos, true)
+        local hasEscape = _jfind(_jstr, '\\', startPos, true)
+        if not hasEscape or (endPos and hasEscape > endPos) then
+            if endPos then
+                local result = _jsub(_jstr, startPos, endPos - 1)
+                _jpos = endPos + 1
+                return result
+            end
+        end
+        local parts = {}
+        local partStart = _jpos
+        while _jpos <= _jlen do
+            local c = _jbyte(_jstr, _jpos)
+            if c == J_BS and _jpos + 1 <= _jlen then
+                if _jpos > partStart then parts[#parts + 1] = _jsub(_jstr, partStart, _jpos - 1) end
+                local nextC = _jbyte(_jstr, _jpos + 1)
+                if nextC == J_QUOTE then parts[#parts + 1] = '"'
+                elseif nextC == J_BS then parts[#parts + 1] = '\\'
+                elseif nextC == J_n then parts[#parts + 1] = '\n'
+                elseif nextC == J_t then parts[#parts + 1] = '\t'
+                elseif nextC == 114 then parts[#parts + 1] = '\r'
+                else parts[#parts + 1] = _jsub(_jstr, _jpos + 1, _jpos + 1) end
+                _jpos = _jpos + 2
+                partStart = _jpos
+            elseif c == J_QUOTE then
+                if _jpos > partStart then parts[#parts + 1] = _jsub(_jstr, partStart, _jpos - 1) end
+                _jpos = _jpos + 1
+                return table.concat(parts)
+            else
+                _jpos = _jpos + 1
+            end
+        end
+        return table.concat(parts)
+    end
+
+    -- Number
+    if b == J_MINUS or (b >= J_0 and b <= J_9) then
+        local startPos = _jpos
+        local _, endPos = _jfind(_jstr, "^%-?%d+%.?%d*[eE]?[%+%-]?%d*", _jpos)
+        if endPos then
+            _jpos = endPos + 1
+            return tonumber(_jsub(_jstr, startPos, endPos))
+        end
+        return nil
+    end
+
+    -- Object
+    if b == J_LBR then
+        _jpos = _jpos + 1
+        local obj = {}
+        JsonSkipWS()
+        if _jbyte(_jstr, _jpos) == J_RBR then
+            _jpos = _jpos + 1
+            return obj
+        end
+        while _jpos <= _jlen do
+            JsonSkipWS()
+            local key = JsonParseValue()
+            if type(key) ~= "string" then break end
+            JsonSkipWS()
+            if _jbyte(_jstr, _jpos) ~= J_COLON then break end
+            _jpos = _jpos + 1
+            local value = JsonParseValue()
+            obj[key] = value
+            JsonSkipWS()
+            local sep = _jbyte(_jstr, _jpos)
+            if sep == J_RBR then _jpos = _jpos + 1; break end
+            if sep == J_COMMA then _jpos = _jpos + 1 end
+        end
+        return obj
+    end
+
+    -- Array
+    if b == J_LB then
+        _jpos = _jpos + 1
+        local arr = {}
+        local arrLen = 0
+        JsonSkipWS()
+        if _jbyte(_jstr, _jpos) == J_RB then
+            _jpos = _jpos + 1
+            return arr
+        end
+        while _jpos <= _jlen do
+            local value = JsonParseValue()
+            arrLen = arrLen + 1
+            arr[arrLen] = value
+            JsonSkipWS()
+            local sep = _jbyte(_jstr, _jpos)
+            if sep == J_RB then _jpos = _jpos + 1; break end
+            if sep == J_COMMA then _jpos = _jpos + 1 end
+        end
+        return arr
+    end
+
+    -- true / false / null
+    if b == J_t then
+        if _jsub(_jstr, _jpos, _jpos + 3) == "true" then _jpos = _jpos + 4; return true end
+    elseif b == J_f then
+        if _jsub(_jstr, _jpos, _jpos + 4) == "false" then _jpos = _jpos + 5; return false end
+    elseif b == J_n then
+        if _jsub(_jstr, _jpos, _jpos + 3) == "null" then _jpos = _jpos + 4; return nil end
+    end
+
+    return nil
+end
+
+-- Pure-Lua JSON decode (the reference parser). Used directly when the native
+-- parser is off, as the fallback when native declines, and as the source of
+-- truth in verify mode.
+function DC:_DecodeJSONLua(str)
+    _jstr = str
+    _jpos = 1
+    _jlen = #str
+
+    local result = JsonParseValue()
+    JsonSkipWS()
+    if _jpos <= _jlen then
+        return nil
+    end
+
+    return result
+end
+
+local function JsonDeepEqual(a, b)
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return a == b end
+    for k, v in pairs(a) do
+        if not JsonDeepEqual(v, b[k]) then return false end
+    end
+    for k in pairs(b) do
+        if a[k] == nil then return false end
+    end
+    return true
+end
+
+function DC:_JsonVerifyMismatch(str, reason)
+    self._jsonVerifyMismatches = (self._jsonVerifyMismatches or 0) + 1
+    if self._jsonVerifyMismatches <= 25 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC json verify]|r " .. tostring(reason)
+            .. " | len=" .. #str .. " | " .. string.sub(str, 1, 140))
+        self:LogNetEvent("error", "jsonverify", tostring(reason), { len = #str })
+    end
+end
+
+-- Native (DLL) JSON decode rollout. Mode is one of:
+--   "off"    - use the Lua parser only (default; zero risk)
+--   "verify" - parse with BOTH, deep-compare, log mismatches, return the Lua
+--              result (safe). Use this on a test account to validate.
+--   "on"     - use the native (C++) parser, fall back to Lua if it declines.
+-- Toggle with: /dc jsonnative off|verify|on
 function DC:DecodeJSON(str)
     if not str or str == "" then return nil end
-    
+
     -- Security: Reject oversized payloads
     if #str > (self.MAX_JSON_PAYLOAD_SIZE or 65536) then
         self:LogNetEvent("error", "json", "JSON payload too large: " .. #str .. " bytes (max " .. (self.MAX_JSON_PAYLOAD_SIZE or 65536) .. ")")
         return nil
     end
-    
-    -- Optimized JSON parser using string.byte() instead of string.sub()
-    -- string.byte() is ~3x faster than string.sub() for single char access
-    local pos = 1
-    local len = #str
-    local byte = string.byte
-    local sub = string.sub
-    local find = string.find
-    
-    -- Pre-computed byte values for fast comparison
-    local BYTE_SPACE = 32      -- ' '
-    local BYTE_TAB = 9         -- '\t'
-    local BYTE_NEWLINE = 10    -- '\n'
-    local BYTE_RETURN = 13     -- '\r'
-    local BYTE_QUOTE = 34      -- '"'
-    local BYTE_COMMA = 44      -- ','
-    local BYTE_MINUS = 45      -- '-'
-    local BYTE_COLON = 58      -- ':'
-    local BYTE_LBRACKET = 91   -- '['
-    local BYTE_BACKSLASH = 92  -- '\'
-    local BYTE_RBRACKET = 93   -- ']'
-    local BYTE_LBRACE = 123    -- '{'
-    local BYTE_RBRACE = 125    -- '}'
-    local BYTE_0 = 48
-    local BYTE_9 = 57
-    local BYTE_t = 116
-    local BYTE_f = 102
-    local BYTE_n = 110
-    
-    local function skipWhitespace()
-        local b = byte(str, pos)
-        while b and (b == BYTE_SPACE or b == BYTE_TAB or b == BYTE_NEWLINE or b == BYTE_RETURN) do
-            pos = pos + 1
-            b = byte(str, pos)
-        end
-    end
-    
-    local function parseValue()
-        skipWhitespace()
-        if pos > len then return nil end
-        
-        local b = byte(str, pos)
-        if not b then return nil end
-        
-        -- String
-        if b == BYTE_QUOTE then
-            pos = pos + 1
-            -- Fast path: find unescaped quote using pattern
-            local startPos = pos
-            local endPos = find(str, '"', pos, true)
-            
-            -- Check if we have escapes
-            local hasEscape = find(str, '\\', startPos, true)
-            if not hasEscape or (endPos and hasEscape > endPos) then
-                -- No escapes in this string - fast extraction
-                if endPos then
-                    local result = sub(str, startPos, endPos - 1)
-                    pos = endPos + 1
-                    return result
-                end
-            end
-            
-            -- Slow path: handle escapes
-            local parts = {}
-            local partStart = pos
-            while pos <= len do
-                local c = byte(str, pos)
-                if c == BYTE_BACKSLASH and pos + 1 <= len then
-                    -- Collect text before escape
-                    if pos > partStart then
-                        parts[#parts + 1] = sub(str, partStart, pos - 1)
-                    end
-                    local nextC = byte(str, pos + 1)
-                    if nextC == BYTE_QUOTE then parts[#parts + 1] = '"'
-                    elseif nextC == BYTE_BACKSLASH then parts[#parts + 1] = '\\'
-                    elseif nextC == BYTE_n then parts[#parts + 1] = '\n'
-                    elseif nextC == BYTE_t then parts[#parts + 1] = '\t'
-                    elseif nextC == 114 then parts[#parts + 1] = '\r'  -- 'r'
-                    else parts[#parts + 1] = sub(str, pos + 1, pos + 1) end
-                    pos = pos + 2
-                    partStart = pos
-                elseif c == BYTE_QUOTE then
-                    if pos > partStart then
-                        parts[#parts + 1] = sub(str, partStart, pos - 1)
-                    end
-                    pos = pos + 1
-                    return table.concat(parts)
-                else
-                    pos = pos + 1
-                end
-            end
-            return table.concat(parts)
-        end
-        
-        -- Number
-        if b == BYTE_MINUS or (b >= BYTE_0 and b <= BYTE_9) then
-            local startPos = pos
-            -- Use pattern to find number end
-            local _, endPos = find(str, "^%-?%d+%.?%d*[eE]?[%+%-]?%d*", pos)
-            if endPos then
-                pos = endPos + 1
-                return tonumber(sub(str, startPos, endPos))
-            end
-            return nil
-        end
-        
-        -- Object
-        if b == BYTE_LBRACE then
-            pos = pos + 1
-            local obj = {}
-            skipWhitespace()
-            if byte(str, pos) == BYTE_RBRACE then
-                pos = pos + 1
-                return obj
-            end
-            while pos <= len do
-                skipWhitespace()
-                local key = parseValue()
-                if type(key) ~= "string" then break end
-                skipWhitespace()
-                if byte(str, pos) ~= BYTE_COLON then break end
-                pos = pos + 1
-                local value = parseValue()
-                obj[key] = value
-                skipWhitespace()
-                local sep = byte(str, pos)
-                if sep == BYTE_RBRACE then pos = pos + 1; break end
-                if sep == BYTE_COMMA then pos = pos + 1 end
-            end
-            return obj
-        end
-        
-        -- Array
-        if b == BYTE_LBRACKET then
-            pos = pos + 1
-            local arr = {}
-            local arrLen = 0
-            skipWhitespace()
-            if byte(str, pos) == BYTE_RBRACKET then
-                pos = pos + 1
-                return arr
-            end
-            while pos <= len do
-                local value = parseValue()
-                arrLen = arrLen + 1
-                arr[arrLen] = value  -- Faster than table.insert
-                skipWhitespace()
-                local sep = byte(str, pos)
-                if sep == BYTE_RBRACKET then pos = pos + 1; break end
-                if sep == BYTE_COMMA then pos = pos + 1 end
-            end
-            return arr
-        end
-        
-        -- true/false/null using byte checks
-        if b == BYTE_t then  -- 't' for true
-            if sub(str, pos, pos + 3) == "true" then
-                pos = pos + 4
-                return true
-            end
-        elseif b == BYTE_f then  -- 'f' for false
-            if sub(str, pos, pos + 4) == "false" then
-                pos = pos + 5
-                return false
-            end
-        elseif b == BYTE_n then  -- 'n' for null
-            if sub(str, pos, pos + 3) == "null" then
-                pos = pos + 4
-                return nil
-            end
-        end
-        
-        return nil
-    end
-    
-    local result = parseValue()
-    skipWhitespace()
-    if pos <= len then
-        return nil
+
+    local mode = self._jsonNativeMode
+    if mode == nil then
+        mode = (type(self.GetSetting) == "function" and self:GetSetting("jsonNativeMode")) or "off"
+        self._jsonNativeMode = mode
     end
 
-    return result
+    if mode ~= "off" and type(DecodeJSONNative) == "function" then
+        if mode == "verify" then
+            local luaResult = self:_DecodeJSONLua(str)
+            local pcallOk, nativeResult, nativeOk = pcall(DecodeJSONNative, str)
+            if not pcallOk then
+                self:_JsonVerifyMismatch(str, "native error: " .. tostring(nativeResult))
+            elseif not nativeOk then
+                self:_JsonVerifyMismatch(str, "native ok=false (would fall back)")
+            elseif not JsonDeepEqual(nativeResult, luaResult) then
+                self:_JsonVerifyMismatch(str, "value mismatch")
+            end
+            return luaResult
+        else -- "on"
+            local pcallOk, nativeResult, nativeOk = pcall(DecodeJSONNative, str)
+            if pcallOk and nativeOk then
+                return nativeResult
+            end
+            -- native declined or errored: fall through to the Lua parser
+        end
+    end
+
+    return self:_DecodeJSONLua(str)
 end
 
 DC.JSON = { encode = function(v) return DC:EncodeJSON(v) end, decode = function(s) return DC:DecodeJSON(s) end }
@@ -3403,6 +3442,20 @@ SlashCmdList["DC"] = function(msg)
         local decoded = DC:DecodeJSON('{"name":"Player","level":80,"items":[1,2,3]}')
         if decoded then
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Decode: name=" .. tostring(decoded.name) .. ", items=" .. tostring(decoded.items and #decoded.items or 0))
+        end
+    elseif cmd == "jsonnative" then
+        local m = string.lower(args[2] or "")
+        if m == "on" or m == "off" or m == "verify" then
+            DC._jsonNativeMode = m
+            DC._jsonVerifyMismatches = 0
+            if type(DC.SetSetting) == "function" then DC:SetSetting("jsonNativeMode", m) end
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r JSON native parser mode: " .. m
+                .. (type(DecodeJSONNative) == "function" and "" or " |cffff4444(DLL function missing!)|r"))
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Usage: /dc jsonnative off|verify|on")
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r   current=" .. tostring(DC._jsonNativeMode or "off")
+                .. ", verify mismatches=" .. tostring(DC._jsonVerifyMismatches or 0)
+                .. ", DLL=" .. tostring(type(DecodeJSONNative) == "function"))
         end
     elseif cmd == "sendjson" then
         DC:SendJSON("CORE", 99, {action = "test", timestamp = time()})

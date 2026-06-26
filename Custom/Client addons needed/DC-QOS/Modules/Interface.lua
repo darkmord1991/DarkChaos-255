@@ -23,6 +23,20 @@ local STANDALONE_WORLD_MAP_WIDTH = 1024
 local STANDALONE_WORLD_MAP_HEIGHT = 736
 local STANDALONE_WORLD_MAP_OFFSET_Y = 26
 
+-- The standalone map fills the full screen height so the parchment reaches the bottom edge —
+-- otherwise the fixed 736px frame leaves a black gap below it (the frame is shorter than the
+-- ~768px UIParent). The width (1024) already overflows and fills horizontally, so we mirror that
+-- for height. Centred (offset 0) so the slack, if any, is split symmetrically rather than dumped
+-- at the bottom.
+local function GetStandaloneWorldMapHeight()
+    local uiH = (UIParent and UIParent.GetHeight and math.floor(UIParent:GetHeight())) or 768
+    return math.max(STANDALONE_WORLD_MAP_HEIGHT, uiH)
+end
+
+local function GetSafeStandaloneOffsetY()
+    return 0
+end
+
 -- Event frames storage for cleanup (must be defined before functions that use it)
 local eventFrames = {}
 local zoomSettingHookRegistered = false
@@ -1480,7 +1494,7 @@ ApplyStandaloneWorldMapWindowState = function()
         WorldMapFrame:SetWidth(STANDALONE_WORLD_MAP_WIDTH)
     end
     if WorldMapFrame.SetHeight then
-        WorldMapFrame:SetHeight(STANDALONE_WORLD_MAP_HEIGHT)
+        WorldMapFrame:SetHeight(GetStandaloneWorldMapHeight())
     end
     if WorldMapFrame.SetScale then
         WorldMapFrame:SetScale(STANDALONE_WORLD_MAP_SCALE)
@@ -1491,7 +1505,7 @@ ApplyStandaloneWorldMapWindowState = function()
             relativeTo = UIParent,
             relativePoint = "CENTER",
             x = 0,
-            y = STANDALONE_WORLD_MAP_OFFSET_Y,
+            y = GetSafeStandaloneOffsetY(),
         }
     end
     if WorldMapFrame.ClearAllPoints then
@@ -2292,7 +2306,7 @@ local function SetupLargerWorldMap()
             relativeTo = UIParent,
             relativePoint = "CENTER",
             x = 0,
-            y = STANDALONE_WORLD_MAP_OFFSET_Y,
+            y = GetSafeStandaloneOffsetY(),
         }
     end
 

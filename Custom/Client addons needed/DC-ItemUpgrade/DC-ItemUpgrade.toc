@@ -9,8 +9,9 @@
 
 ## Load Order: Core modules first, then main file, then XML
 Core.lua
-Data/TierStatic.lua
-Data/TierItemStatic.lua
+# Data/TierStatic.lua and Data/TierItemStatic.lua are redundant offline
+# fallbacks for the DLL DBCs (GetNativeTier*Rows, which the addon prefers).
+# Not loaded: saves ~74 KB; the fallback path nil-checks them (Core.lua:617).
 Costs.lua
 Cache.lua
 Heirloom.lua

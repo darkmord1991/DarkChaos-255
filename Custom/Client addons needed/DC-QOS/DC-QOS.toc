@@ -100,8 +100,10 @@ WeakAuras\compat.lua
 WeakAuras\Pools.lua
 WeakAuras\Init.lua
 
-# WeakAuras Model Paths (embedded)
-WeakAurasModelPaths\ModelPaths.lua
+# WeakAuras Model Paths: now a top-level LoadOnDemand addon (WeakAurasModelPaths)
+# loaded only when the model picker is first opened (see ModelPicker.lua). This
+# keeps the ~2 MB model-path tree out of memory for players who never use it.
+# Deploy the WeakAurasModelPaths/ folder as a sibling top-level AddOn.
 
 # WeakAuras Locales
 WeakAuras\Locales\enUS.lua
@@ -161,99 +163,11 @@ WeakAuras\SubRegionTypes\Model.lua
 # ============================================================
 # WEAKAURAS OPTIONS
 # ============================================================
-
-# WeakAurasOptions Locales
-WeakAurasOptions\Locales\enUS.lua
-WeakAurasOptions\Locales\deDE.lua
-WeakAurasOptions\Locales\frFR.lua
-WeakAurasOptions\Locales\koKR.lua
-WeakAurasOptions\Locales\zhCN.lua
-WeakAurasOptions\Locales\zhTW.lua
-WeakAurasOptions\Locales\esES.lua
-WeakAurasOptions\Locales\esMX.lua
-WeakAurasOptions\Locales\ruRU.lua
-WeakAurasOptions\Locales\ptBR.lua
-WeakAurasOptions\Locales\itIT.lua
-
-WeakAurasOptions\ForAllIndentsAndPurposes.lua
-
-# WeakAurasOptions Region Options
-WeakAurasOptions\RegionOptions\AuraBar.lua
-WeakAurasOptions\RegionOptions\Texture.lua
-WeakAurasOptions\RegionOptions\Icon.lua
-WeakAurasOptions\RegionOptions\Text.lua
-WeakAurasOptions\RegionOptions\Group.lua
-WeakAurasOptions\RegionOptions\DynamicGroup.lua
-WeakAurasOptions\RegionOptions\StopMotion.lua
-WeakAurasOptions\RegionOptions\Model.lua
-WeakAurasOptions\RegionOptions\ProgressTexture.lua
-
-# WeakAurasOptions Sub-Region Options
-WeakAurasOptions\SubRegionOptions\SubRegionCommon.lua
-WeakAurasOptions\SubRegionOptions\Background.lua
-WeakAurasOptions\SubRegionOptions\SubText.lua
-WeakAurasOptions\SubRegionOptions\Border.lua
-WeakAurasOptions\SubRegionOptions\Glow.lua
-WeakAurasOptions\SubRegionOptions\Tick.lua
-WeakAurasOptions\SubRegionOptions\Model.lua
-
-WeakAurasOptions\Cache.lua
-
-# WeakAurasOptions Core
-WeakAurasOptions\CommonOptions.lua
-WeakAurasOptions\GroupOptions.lua
-WeakAurasOptions\DisplayOptions.lua
-WeakAurasOptions\TriggerOptions.lua
-WeakAurasOptions\LoadOptions.lua
-WeakAurasOptions\ActionOptions.lua
-WeakAurasOptions\AnimationOptions.lua
-WeakAurasOptions\InformationOptions.lua
-
-# WeakAurasOptions Triggers
-WeakAurasOptions\BuffTrigger.lua
-WeakAurasOptions\BuffTrigger2.lua
-WeakAurasOptions\GenericTrigger.lua
-
-WeakAurasOptions\WeakAurasOptions.lua
-WeakAurasOptions\ConditionOptions.lua
-WeakAurasOptions\AuthorOptions.lua
-
-# WeakAurasOptions Frames
-WeakAurasOptions\OptionsFrames\OptionsFrame.lua
-WeakAurasOptions\OptionsFrames\CodeReview.lua
-WeakAurasOptions\OptionsFrames\IconPicker.lua
-WeakAurasOptions\OptionsFrames\ImportExport.lua
-WeakAurasOptions\OptionsFrames\ModelPicker.lua
-WeakAurasOptions\OptionsFrames\TextEditor.lua
-WeakAurasOptions\OptionsFrames\TexturePicker.lua
-WeakAurasOptions\OptionsFrames\Update.lua
-WeakAurasOptions\OptionsFrames\MoverSizer.lua
-WeakAurasOptions\OptionsFrames\FrameChooser.lua
-
-# WeakAurasOptions AceGUI Widgets
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasExpand.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasExpandSmall.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasIcon.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasNewHeaderButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasLoadedHeaderButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasDisplayButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasPendingInstallButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasPendingUpdateButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasTextureButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasIconButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasMultiLineEditBox.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasNewButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasImportButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasSortedDropDown.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasToolbarButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasTwoColumnDropDown.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasSnippetButton.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIContainer-WeakAurasTreeGroup.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIContainer-WeakAurasInlineGroup.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasExpandAnchor.lua
-WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasSpacer.lua
-WeakAurasOptions\AceGUI-Widgets\AceGuiWidget-WeakAurasProgressBar.lua
-
+# Moved to a top-level LoadOnDemand addon (WeakAurasOptions, Dependencies: DC-QOS).
+# WeakAuras loads it on demand when the editor is opened (Private.LoadOptions ->
+# LoadAddOn("WeakAurasOptions")), so the ~1.8 MB editor UI is not resident for
+# players who never open the WA editor. Deploy WeakAurasOptions/ as a sibling
+# top-level AddOn. WeakAurasOptionsSaved stays declared here (DC-QOS).
 # ============================================================
 # WEAKAURAS ARCHIVE
 # ============================================================

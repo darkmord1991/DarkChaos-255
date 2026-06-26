@@ -294,6 +294,11 @@ function Wardrobe:GetTransmogDefinitionsLoadedCount()
         return 0
     end
 
+    if type(DC.HasNativeTransmogCatalog) == "function" and
+       DC:HasNativeTransmogCatalog() then
+        return tonumber(DC._transmogDefTotal) or 0
+    end
+
     local defs = DC._transmogDefinitions
     if type(defs) ~= "table" then
         defs = (DC.definitions and DC.definitions.transmog) or nil
@@ -415,6 +420,23 @@ function Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
     self.itemIdToDisplayId = self.itemIdToDisplayId or {}
     if self.itemIdToDisplayId[itemId] ~= nil then
         return self.itemIdToDisplayId[itemId]
+    end
+
+    -- Native catalog: resolve directly from the DLL (O(1)); never build the
+    -- full reverse map in Lua.
+    if type(DC.HasNativeTransmogCatalog) == "function" and
+       DC:HasNativeTransmogCatalog() then
+        if type(GetDCCollectionTransmogByItemId) == "function" then
+            local ok, row = pcall(GetDCCollectionTransmogByItemId, itemId)
+            if ok and type(row) == "table" then
+                local displayId = tonumber(row.displayId)
+                if displayId and displayId > 0 then
+                    self.itemIdToDisplayId[itemId] = displayId
+                    return displayId
+                end
+            end
+        end
+        return nil
     end
 
     -- Helper to unpack a packed definition string if needed

@@ -6648,6 +6648,11 @@ end
 -- Returns true if we currently have any transmog definitions cached locally.
 -- This prevents getting stuck when the cache is empty but a saved syncVersion still matches.
 function DC:_HasAnyTransmogDefinitions()
+    if type(self.HasNativeTransmogCatalog) == "function" and
+       self:HasNativeTransmogCatalog() then
+        return (tonumber(self._transmogDefTotal) or 0) > 0
+    end
+
     local defs = nil
     if type(self.definitions) == "table" then
         defs = self.definitions.transmog
@@ -6664,6 +6669,15 @@ end
 function DC:HandleDefinitions(data)
     local rawType = data.type
     local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
+
+    -- The native transmog catalog is authoritative; ignore any server-sent
+    -- transmog definitions so we don't rebuild the Lua catalog we dropped.
+    if collType == "transmog" and
+       type(self.HasNativeTransmogCatalog) == "function" and
+       self:HasNativeTransmogCatalog() then
+        return
+    end
+
     local defsProgressKey = "defs:" .. tostring(collType)
     local defsProgressLabel = "definitions: " .. tostring(collType)
     if type(self._syncProgress) == "table" then

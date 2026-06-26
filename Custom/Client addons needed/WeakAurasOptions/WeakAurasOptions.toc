@@ -2,22 +2,24 @@
 ## Title: WeakAuras Options
 ## Author: The WeakAuras Team
 ## Version: 4.0.0
-## Notes: Options for WeakAuras
-## Notes-esES: Opciones para WeakAuras
-## Notes-deDE: Optionen für WeakAuras
-## Notes-ruRU: Опции WeakAuras
-## Notes-zhTW: WeakAuras的設定
+## Notes: Options for WeakAuras (DC-QOS embedded; load-on-demand)
 ## X-Category: Interface Enhancements
-## Globe-Main: WeakAuras
 ## DefaultState: Enabled
 ## LoadOnDemand: 1
-## Dependencies: WeakAuras
-## SavedVariables: WeakAurasOptionsSaved
+## Dependencies: DC-QOS
 
-locales.xml
-
+Locales\enUS.lua
+Locales\deDE.lua
+Locales\frFR.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\ruRU.lua
+Locales\ptBR.lua
+Locales\itIT.lua
 ForAllIndentsAndPurposes.lua
-
 RegionOptions\AuraBar.lua
 RegionOptions\Texture.lua
 RegionOptions\Icon.lua
@@ -27,7 +29,6 @@ RegionOptions\DynamicGroup.lua
 RegionOptions\StopMotion.lua
 RegionOptions\Model.lua
 RegionOptions\ProgressTexture.lua
-
 SubRegionOptions\SubRegionCommon.lua
 SubRegionOptions\Background.lua
 SubRegionOptions\SubText.lua
@@ -35,9 +36,7 @@ SubRegionOptions\Border.lua
 SubRegionOptions\Glow.lua
 SubRegionOptions\Tick.lua
 SubRegionOptions\Model.lua
-
 Cache.lua
-
 CommonOptions.lua
 GroupOptions.lua
 DisplayOptions.lua
@@ -46,18 +45,13 @@ LoadOptions.lua
 ActionOptions.lua
 AnimationOptions.lua
 InformationOptions.lua
-
 BuffTrigger.lua
 BuffTrigger2.lua
 GenericTrigger.lua
-
 WeakAurasOptions.lua
 ConditionOptions.lua
 AuthorOptions.lua
-
 OptionsFrames\OptionsFrame.lua
-
-# Groups
 OptionsFrames\CodeReview.lua
 OptionsFrames\IconPicker.lua
 OptionsFrames\ImportExport.lua
@@ -65,11 +59,8 @@ OptionsFrames\ModelPicker.lua
 OptionsFrames\TextEditor.lua
 OptionsFrames\TexturePicker.lua
 OptionsFrames\Update.lua
-
-# Misc frames
 OptionsFrames\MoverSizer.lua
 OptionsFrames\FrameChooser.lua
-
 AceGUI-Widgets\AceGUIWidget-WeakAurasExpand.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasExpandSmall.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasIcon.lua
