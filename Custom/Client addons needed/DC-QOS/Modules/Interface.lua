@@ -23,18 +23,48 @@ local STANDALONE_WORLD_MAP_WIDTH = 1024
 local STANDALONE_WORLD_MAP_HEIGHT = 736
 local STANDALONE_WORLD_MAP_OFFSET_Y = 26
 
--- The standalone map fills the full screen height so the parchment reaches the bottom edge —
--- otherwise the fixed 736px frame leaves a black gap below it (the frame is shorter than the
--- ~768px UIParent). The width (1024) already overflows and fills horizontally, so we mirror that
--- for height. Centred (offset 0) so the slack, if any, is split symmetrically rather than dumped
--- at the bottom.
-local function GetStandaloneWorldMapHeight()
-    local uiH = (UIParent and UIParent.GetHeight and math.floor(UIParent:GetHeight())) or 768
-    return math.max(STANDALONE_WORLD_MAP_HEIGHT, uiH)
-end
+-- The world-map "art" is a 4x3 grid of 256px detail tiles = 1024x768, drawn centred on
+-- WorldMapDetailFrame's CENTRE (see WorldMapFrame.xml). We SCALE the detail (+sibling layers) so the
+-- map AUTO-FITS a band that runs from just below the top info bar to just above the bottom action bar,
+-- and centre the frame in that band. The whole map scales as one unit so the dot / quest pins align.
+-- Tune these two if the map overlaps your info bar (raise TOP) or action bars (raise BOTTOM):
+local STANDALONE_TOP_INSET    = 24   -- px reserved at the top for the info bar
+local STANDALONE_BOTTOM_INSET = 100  -- px reserved at the bottom for the action bar(s)
+local STANDALONE_MAP_TILES_W  = 1024
+local STANDALONE_MAP_TILES_H  = 768
 
+-- Available vertical band = screen height minus the info-bar (top) and action-bar (bottom) reserves.
+-- Tries to detect the real action-bar top first so it adapts to stacked bars; falls back to the inset.
+local function GetStandaloneBandHeight()
+    local uiH = (UIParent and UIParent.GetHeight and UIParent:GetHeight()) or 768
+    local barTop = 0
+    for _, nm in ipairs({ "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft" }) do
+        local f = _G[nm]
+        if f and f.GetTop and (not f.IsShown or f:IsShown()) then
+            local t = f:GetTop()
+            if t and t > barTop then barTop = t end
+        end
+    end
+    local bottom = (barTop > 0) and barTop or STANDALONE_BOTTOM_INSET
+    local h = uiH - STANDALONE_TOP_INSET - bottom
+    if h < 200 then h = uiH - STANDALONE_TOP_INSET - STANDALONE_BOTTOM_INSET end  -- sanity
+    return h, bottom
+end
+local function GetStandaloneFillScale()
+    local s = GetStandaloneBandHeight() / STANDALONE_MAP_TILES_H
+    if s < 0.5 then s = 0.5 elseif s > 1.6 then s = 1.6 end
+    return s
+end
+local function GetStandaloneWorldMapHeight()
+    return STANDALONE_MAP_TILES_H * GetStandaloneFillScale()
+end
+local function GetStandaloneWorldMapWidth()
+    return STANDALONE_MAP_TILES_W * GetStandaloneFillScale() + 16
+end
+-- Centre the frame in the band: shift up/down by half the difference of the two reserves.
 local function GetSafeStandaloneOffsetY()
-    return 0
+    local _, bottom = GetStandaloneBandHeight()
+    return (bottom - STANDALONE_TOP_INSET) / 2
 end
 
 -- Event frames storage for cleanup (must be defined before functions that use it)
@@ -1301,13 +1331,16 @@ local function ApplyMapsterLikeCombinedMapLayout()
         return
     end
 
-    local questListScale = tonumber(WORLDMAP_QUESTLIST_SIZE) or 1
+    -- Scale the whole map (detail tiles + click overlay + blobs + area highlights) by the same factor
+    -- so it fills the screen height as one aligned unit. The tiles are centred on WorldMapDetailFrame's
+    -- CENTRE, so we anchor the detail to the frame centre and let it grow symmetrically.
+    local fillScale = GetStandaloneFillScale()
 
     if type(WorldMapFrame_SetQuestMapView) == "function" then
         pcall(WorldMapFrame_SetQuestMapView)
     end
     if WORLDMAP_SETTINGS then
-        WORLDMAP_SETTINGS.size = questListScale
+        WORLDMAP_SETTINGS.size = 1
     end
 
     if WorldMapPositioningGuide
@@ -1319,23 +1352,23 @@ local function ApplyMapsterLikeCombinedMapLayout()
 
     if WorldMapDetailFrame then
         if WorldMapDetailFrame.SetScale then
-            WorldMapDetailFrame:SetScale(questListScale)
+            WorldMapDetailFrame:SetScale(fillScale)
         end
-        if WorldMapDetailFrame.ClearAllPoints and WorldMapDetailFrame.SetPoint and WorldMapPositioningGuide then
+        if WorldMapDetailFrame.ClearAllPoints and WorldMapDetailFrame.SetPoint then
             WorldMapDetailFrame:ClearAllPoints()
-            WorldMapDetailFrame:SetPoint("TOPLEFT", WorldMapPositioningGuide, "TOP", -726, -99)
+            WorldMapDetailFrame:SetPoint("CENTER", WorldMapFrame, "CENTER", 0, 0)
         end
     end
 
     if WorldMapButton and WorldMapButton.SetScale then
-        WorldMapButton:SetScale(questListScale)
+        WorldMapButton:SetScale(fillScale)
     end
     if WorldMapFrameAreaFrame and WorldMapFrameAreaFrame.SetScale then
-        WorldMapFrameAreaFrame:SetScale(questListScale)
+        WorldMapFrameAreaFrame:SetScale(fillScale)
     end
     if WorldMapBlobFrame then
         if WorldMapBlobFrame.SetScale then
-            WorldMapBlobFrame:SetScale(questListScale)
+            WorldMapBlobFrame:SetScale(fillScale)
         end
         WorldMapBlobFrame.xRatio = nil
         if type(WorldMapBlobFrame_CalculateHitTranslations) == "function" then
@@ -1491,7 +1524,7 @@ ApplyStandaloneWorldMapWindowState = function()
         WorldMapFrame:SetClampedToScreen(false)
     end
     if WorldMapFrame.SetWidth then
-        WorldMapFrame:SetWidth(STANDALONE_WORLD_MAP_WIDTH)
+        WorldMapFrame:SetWidth(GetStandaloneWorldMapWidth())
     end
     if WorldMapFrame.SetHeight then
         WorldMapFrame:SetHeight(GetStandaloneWorldMapHeight())

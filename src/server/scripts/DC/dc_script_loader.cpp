@@ -58,6 +58,9 @@ void AddSC_giant_isles_hydra_drum();          // GiantIsles/dc_giant_isles_hydra
 void AddSC_giant_isles_war_economy();         // GiantIsles/dc_giant_isles_war_economy.cpp
 void AddSC_dc_giant_isles_fishing();          // GiantIsles/dc_giant_isles_fishing.cpp
 
+// --- Deepholm zone (map 646) ---
+void AddSC_deepholm();                         // Deepholm/zone_deepholm.cpp
+
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
 void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.cpp
@@ -282,6 +285,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_giant_isles_hydra_drum);
     DC_LOAD(AddSC_giant_isles_war_economy);
     DC_LOAD(AddSC_dc_giant_isles_fishing);
+
+    LogSection("Deepholm Zone (map 646)");
+    DC_LOAD(AddSC_deepholm);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);

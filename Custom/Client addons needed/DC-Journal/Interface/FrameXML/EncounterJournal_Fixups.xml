@@ -1,0 +1,33 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+	<Texture name="_UI-Frame-Top" file="Interface\FrameGeneral\_UI-Frame" virtual="true" horizTile="true">
+		<Size x="256" y="9"/>
+		<TexCoords top="0.27343750" bottom="0.20312500"/>
+	</Texture>
+
+	<!-- PortraitFrameTemplate inherits _UI-Frame-TitleTileBG (uppercase); virtual template uses TitleTileBg -->
+	<Texture name="_UI-Frame-TitleTileBG" file="Interface\FrameGeneral\_UI-Frame" virtual="true" horizTile="true">
+		<Size x="256" y="18"/>
+		<TexCoords top="0.28906250" bottom="0.42187500"/>
+	</Texture>
+
+	<Font name="QuestFont_Huge" inherits="QuestFont_Large" virtual="true"/>
+	<Font name="QuestTitleFontBlackShadow" inherits="QuestFont_Shadow_Huge" virtual="true"/>
+	<Font name="GameFontNormalMed1" inherits="GameFontNormal" virtual="true"/>
+	<Font name="GameFontNormalMed3" inherits="GameFontNormalLarge" virtual="true"/>
+	<Font name="QuestFont_Super_Huge" inherits="QuestFont_Huge" virtual="true"/>
+
+	<PlayerModel name="MouseDisabledModelTemplate" virtual="true">
+		<Scripts>
+			<OnLoad function="SharedXML_Model_OnLoad"/>
+			<OnEvent function="SharedXML_Model_OnEvent"/>
+			<OnUpdate function="SharedXML_Model_OnUpdate"/>
+		</Scripts>
+	</PlayerModel>
+	<PlayerModel name="ModelTemplate" inherits="MouseDisabledModelTemplate" virtual="true">
+		<Scripts>
+			<OnMouseUp function="SharedXML_Model_OnMouseUp"/>
+			<OnMouseDown function="SharedXML_Model_OnMouseDown"/>
+			<OnMouseWheel function="SharedXML_Model_OnMouseWheel"/>
+		</Scripts>
+	</PlayerModel>
+</Ui>

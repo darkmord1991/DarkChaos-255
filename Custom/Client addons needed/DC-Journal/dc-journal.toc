@@ -1,0 +1,83 @@
+## Interface: 30300
+## Title: DC Journal |cff808080(Adventure Guide)|r
+## Notes: Encounter Journal / Adventure Guide backport for Dark Chaos 3.3.5a.|nDungeon & raid boss, ability and loot reference. Fill zones & loot via the Data files.
+## Author: Dark Chaos (RU backport, translated to EN)
+## Version: 1.0
+## DefaultState: enabled
+## X-Category: Information
+
+# ---------------------------------------------------------------------------
+# DC Journal addon manifest.
+#
+# This is a backport of retail's Encounter Journal, originally shipped as a
+# FrameXML override patch (Russian). It has been converted into a standalone
+# addon: all paths below are addon-relative, and the original Interface/ tree
+# is mirrored inside the addon so the relative ..\SharedXML\ includes in the
+# XML files keep resolving unchanged.
+#
+# Textures are NOT bundled here: every texture reference uses root client
+# paths (Interface\EncounterJournal\..., Interface\PORTRAITS\..., etc.) and
+# ships via the DC client patch (Custom/Client patches needed/Interface/).
+#
+# Load order mirrors the original FrameXML.toc, with the stock 3.3.5 client
+# files removed (they are already loaded before any addon).
+# ---------------------------------------------------------------------------
+
+# --- Shared library (retail SharedXML backport) ----------------------------
+Interface\SharedXML\AtlasStorage.lua
+Interface\SharedXML\Extensions\math.lua
+Interface\SharedXML\Extensions\string.lua
+Interface\SharedXML\Extensions\table.lua
+Interface\SharedXML\Extensions\middleclass.lua
+Interface\SharedXML\Extensions\enum.lua
+Interface\SharedXML\SharedStrings.lua
+Interface\SharedXML\DataDumper.lua
+Interface\SharedXML\UUID.lua
+Interface\SharedXML\CacheSystem.lua
+Interface\SharedXML\EventHandler.lua
+Interface\SharedXML\Hook.lua
+Interface\SharedXML\EJ_CompatEarly.lua
+Interface\SharedXML\MixIn.lua
+Interface\SharedXML\Util.lua
+Interface\SharedXML\Pools.lua
+Interface\SharedXML\Utils\C_Texture.lua
+Interface\SharedXML\Utils\C_CreatureInfo.lua
+Interface\SharedXML\AnchorUtil.xml
+Interface\SharedXML\CircularBuffer.lua
+Interface\SharedXML\TypeUtil.lua
+
+Interface\SharedXML\C_TimerAugment.lua
+Interface\SharedXML\ItemsCache.lua
+Interface\SharedXML\L_Easing.lua
+Interface\SharedXML\SharedFontStyles.xml
+Interface\SharedXML\SoundKitConstants.lua
+Interface\SharedXML\SharedConstants.lua
+Interface\SharedXML\EJ_CompatLate.lua
+
+Interface\SharedXML\TimeUtil.lua
+Interface\SharedXML\CallbackRegistry.lua
+Interface\SharedXML\FrameUtil.lua
+Interface\SharedXML\FunctionUtil.lua
+Interface\SharedXML\LayoutFrame.xml
+Interface\SharedXML\ScrollList.xml
+Interface\SharedXML\SharedTooltipTemplates.lua
+Interface\SharedXML\TableBuilder.lua
+
+Interface\SharedXML\SharedExtendedMethods.lua
+Interface\SharedXML\SharedUIPanelTemplates.xml
+Interface\SharedXML\ModelFrames.xml
+Interface\SharedXML\HybridScrollFrame.lua
+Interface\SharedXML\HybridScrollFrame.xml
+
+Interface\FrameXML\NavigationBar.xml
+
+# --- Encounter Journal ------------------------------------------------------
+Interface\FrameXML\EncounterJournal_Strings.lua
+Interface\FrameXML\EncounterJournal_OfflineStubs.lua
+Interface\SharedXML\CreaturesCache.lua
+Interface\FrameXML\Utils\C_Item.lua
+Interface\FrameXML\Utils\C_Creature.lua
+Interface\FrameXML\EncounterJournal_Fixups.xml
+Interface\FrameXML\Custom_EncounterJournal\Custom_EncounterJournal.xml
+Interface\FrameXML\EncounterJournal_UI.xml
+Interface\FrameXML\EncounterJournal_MicroButton.xml

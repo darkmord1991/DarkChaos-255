@@ -2387,11 +2387,16 @@ local function UpdateCastBar(frame, castBar, unit, settings)
     local spellTexture
     local isChannel = false
     
-    if unit and UnitExists(unit) then
+    if unit and UnitExists(unit) and not UnitIsUnit(unit, "player") then
         spellName, _, _, spellTexture, startTime, endTime, _, castID, notInterruptible = UnitCastingInfo(unit)
         if not spellName then
             spellName, _, _, spellTexture, startTime, endTime, _, notInterruptible = UnitChannelInfo(unit)
             isChannel = spellName and true or false
+        end
+        -- Suppress permanent/passive auras the server incorrectly reports as channels
+        -- (zero or no duration = no finite end, not a real cast/channel)
+        if spellName and isChannel and (not endTime or not startTime or endTime <= startTime) then
+            spellName = nil
         end
     end
     

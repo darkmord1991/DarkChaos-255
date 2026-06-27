@@ -1,0 +1,1931 @@
+<!--
+
+	Filename:	SharedFontStyles.xml
+	Project:	Sirus Game Interface
+	Author:		Nyll
+	E-mail:		nyll@sirus.su
+	Web:		https://sirus.su/
+
+-->
+
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+	<Script>
+		STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF";
+		UNIT_NAME_FONT = "Fonts\\FRIZQT__.TTF";
+		DAMAGE_TEXT_FONT = "Fonts\\FRIZQT__.TTF";
+		NAMEPLATE_FONT = "Fonts\\FRIZQT__.TTF";
+	</Script>
+
+	<!-- Fonts.xml START -->
+	<Font name="SystemFont_Tiny" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="9"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Outline_Small" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Outline" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Huge3" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="25"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_InverseShadow_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r=".4" g=".4" b=".4" a=".75"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med2" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med5" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="17"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med2" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med3" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med3" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Large" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Large" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Huge1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="20"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Huge1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="20"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_OutlineThick_Huge2" font="Fonts\FRIZQT__.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="22"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Outline_Huge2" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="2" y="-2"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="22"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_OutlineThick_Huge4" font="Fonts\FRIZQT__.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="26"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_OutlineThick_WTF" font="Fonts\FRIZQT__.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="62"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="NumberFont_Shadow_Small" font="Fonts\ARIALN.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_OutlineThick_Mono_Small" font="Fonts\ARIALN.TTF" outline="THICK" monochrome="true" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="Number11Font" font="Fonts\ARIALN.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="11"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="Number12Font" font="Fonts\ARIALN.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="Number13Font" font="Fonts\ARIALN.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="PriceFont" font="Fonts\ARIALN.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="Number15Font" font="Fonts\ARIALN.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="15"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="NumberFont_Normal_Med" font="Fonts\ARIALN.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Shadow_Med" font="Fonts\ARIALN.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Outline_Med" font="Fonts\ARIALN.TTF" outline="NORMAL" virtual="true" >
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Outline_Large" font="Fonts\ARIALN.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Outline_Huge" font="Fonts\skurri.ttf" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="30"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="QuestFont_Large" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight>
+			<AbsValue val="15"/>
+		</FontHeight>
+	</Font>
+	<Font name="QuestFont_Shadow_Huge" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0.49" g="0.35" b="0.05"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="GameTooltipHeader" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="MailFont_Large" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight>
+			<AbsValue val="15"/>
+		</FontHeight>
+	</Font>
+	<Font name="SpellFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="InvoiceFont_Med" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="InvoiceFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="Tooltip_Med" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="Tooltip_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="AchievementFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="ReputationDetailFont" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0.0" g="0.0" b="0.0"/>
+		</Shadow>
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="FriendsFont_Normal" font="Fonts\FRIENDS.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="FriendsFont_Small" font="Fonts\FRIENDS.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="FriendsFont_Large" font="Fonts\FRIENDS.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="FriendsFont_UserText" font="Fonts\ARIALN.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="11"/>
+		</FontHeight>
+	</Font>
+	<!-- Fonts.xml END -->
+
+	<!-- GlueFonts.xml START -->
+	<Font name="SystemFont_Shadow_Outline_Huge" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="2" y="-2"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="22"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Outline_Small" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Outline_Med1" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Outline_Med1" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Outline_Med2" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="15"/>
+		</FontHeight>
+	</Font>
+	<Font name="Glue_SystemFont_Med3" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Outline_Large" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="2" y="-2"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+	</Font>
+	<Font name="EditBoxFont_Large" font="Fonts\ARIALN.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_OutlineThick_Med1" font="Fonts\ARIALN.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_OutlineThick_Med2" font="Fonts\ARIALN.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Outline_Med3" font="Fonts\ARIALN.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="OptionsFont" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+		<Color r="1.0" g="0.82" b="0.0"/>
+	</Font>
+	<Font name="OptionsFontSmall" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+		<Color r="1.0" g="0.82" b="0.0"/>
+	</Font>
+	<Font name="OptionsFontLarge" font="Fonts\FRIZQT__.TTF" outline="NORMAL" spacing="2" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="2" y="-2"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+		<Color r="1.0" g="0.78" b="0"/>
+	</Font>
+	<Font name="OptionsFontHighlight" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="OptionsFontHighlightSmall" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="FactionName_Shadow_Huge" font="Fonts\MORPHEUS.ttf" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<Color r="1.0" g="1.0" b="1.0"/>
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+	</Font>
+	<!-- GlueFonts.xml END -->
+
+	<!-- FontStyles.xml START -->
+	<Font name="GameFontNormal" inherits="SystemFont_Shadow_Med1" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalLeft" inherits="GameFontNormal" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontNormalLeftBottom" inherits="GameFontNormalLeft" justifyV="BOTTOM" virtual="true"/>
+	<Font name="GameFontHighlight" inherits="GameFontNormal" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontNormalLeftGreen" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="0.0" g="1.0" b="0.0"/>
+	</Font>
+	<Font name="GameFontNormalLeftYellow" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="1.0" g="1.0" b="0.0"/>
+	</Font>
+	<Font name="GameFontNormalLeftOrange" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="1.0" g="0.5" b="0.25"/>
+	</Font>
+	<Font name="GameFontNormalLeftLightGreen" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="0.25" g=".75" b="0.25"/>
+	</Font>
+	<Font name="GameFontNormalLeftGrey" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GameFontNormalLeftRed" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="0.9" g="0.0" b="0.0"/>
+	</Font>
+	<Font name="GameFontNormalMed3" inherits="SystemFont_Shadow_Med3" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalRight" inherits="GameFontNormal" justifyH="RIGHT" virtual="true"/>
+	<Font name="GameFontNormalCenter" inherits="GameFontNormal" justifyH="CENTER" virtual="true"/>
+	<Font name="GameFontHighlightLeft" inherits="GameFontHighlight" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontHighlightCenter" inherits="GameFontHighlight" justifyH="CENTER" virtual="true"/>
+	<Font name="GameFontHighlightRight" inherits="GameFontHighlight" justifyH="RIGHT" virtual="true"/>
+	<Font name="GameFontDisable" inherits="GameFontNormal" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GameFontDisableLeft" inherits="GameFontDisable" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontGreen" inherits="GameFontNormal" virtual="true">
+		<Color r="0.1" g="1.0" b="0.1"/>
+	</Font>
+	<Font name="GameFontRed" inherits="GameFontNormal" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="GameFontBlackSmall" inherits="SystemFont_Small" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="GameFontBlackTiny" inherits="SystemFont_Tiny" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="GameFontBlack" inherits="SystemFont_Med1" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="GameFontBlackMedium" inherits="SystemFont_Med3" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="GameFontWhiteSmall" inherits="GameFontBlackSmall" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontWhiteTiny" inherits="SystemFont_Tiny" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontWhite" inherits="GameFontBlack" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontNormalSmall" inherits="SystemFont_Shadow_Small" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalSmallLeft" inherits="GameFontNormalSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontHighlightSmall" inherits="GameFontNormalSmall" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontHighlightSmallLeft" inherits="GameFontHighlightSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontHighlightSmallLeftTop" inherits="GameFontHighlightSmallLeft" justifyV="TOP" virtual="true"/>
+	<Font name="GameFontHighlightSmallRight" inherits="GameFontHighlightSmall" justifyH="RIGHT" virtual="true"/>
+	<Font name="GameFontHighlightExtraSmall" inherits="GameFontHighlightSmall" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontHighlightExtraSmallLeft" inherits="GameFontHighlightExtraSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontHighlightExtraSmallLeftTop" inherits="GameFontHighlightExtraSmallLeft" justifyV="TOP" virtual="true"/>
+	<Font name="GameFontDisableSmall" inherits="GameFontNormalSmall" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GameFontDisableSmallLeft" inherits="GameFontDisableSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontDarkGraySmall" inherits="GameFontNormalSmall" virtual="true">
+		<Color r="0.35" g="0.35" b="0.35"/>
+	</Font>
+	<Font name="GameFontGreenSmall" inherits="GameFontNormalSmall" virtual="true">
+		<Color r="0.1" g="1.0" b="0.1"/>
+	</Font>
+	<Font name="GameFontRedSmall" inherits="GameFontNormalSmall" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="GameFontHighlightSmallOutline" inherits="GameFontHighlightSmall"  virtual="true"/>
+	<Font name="GameFontHighlightMedium" inherits="SystemFont_Shadow_Med3" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontNormalLarge" inherits="SystemFont_Shadow_Large" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalLargeLeft" inherits="GameFontNormalLarge" justifyH="LEFT" virtual="true"/>
+	<Font name="GameFontNormalLargeLeftTop" inherits="GameFontNormalLargeLeft" justifyV="TOP" virtual="true"/>
+	<Font name="GameFontHighlightLarge" inherits="GameFontNormalLarge" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontDisableLarge" inherits="GameFontNormalLarge" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GameFontGreenLarge" inherits="GameFontNormalLarge" virtual="true">
+		<Color r="0.1" g="1.0" b="0.1"/>
+	</Font>
+	<Font name="GameFontRedLarge" inherits="GameFontNormalLarge" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="GameFontNormalHuge" inherits="SystemFont_Shadow_Huge1" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalHugeBlack" inherits="SystemFont_Huge1" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+
+	<Font name="BossEmoteNormalHuge" inherits="SystemFont_Shadow_Huge3" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontDisableHuge" inherits="GameFontNormalHuge" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+
+	<Font name="NumberFontNormal" inherits="NumberFont_Outline_Med" virtual="true" >
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="NumberFontNormalRight" inherits="NumberFontNormal" justifyH="RIGHT" virtual="true"/>
+	<Font name="NumberFontNormalRightRed" inherits="NumberFontNormalRight" virtual="true" >
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="NumberFontNormalRightYellow" inherits="NumberFontNormalRight" virtual="true" >
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="NumberFontNormalYellow" inherits="NumberFontNormal" virtual="true" >
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="NumberFontNormalSmall" inherits="NumberFont_OutlineThick_Mono_Small" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="NumberFontNormalSmallGray" inherits="NumberFontNormalSmall" virtual="true">
+		<Color r="0.6" g="0.6" b="0.6"/>
+	</Font>
+	<Font name="NumberFontNormalLarge" inherits="NumberFont_Outline_Large" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="NumberFontNormalLargeRight" inherits="NumberFontNormalLarge" justifyH="RIGHT" virtual="true"/>
+	<Font name="NumberFontNormalLargeRightRed" inherits="NumberFontNormalLargeRight" virtual="true" >
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="NumberFontNormalLargeRightYellow" inherits="NumberFontNormalLargeRight" virtual="true" >
+		<Color r="1.0" g="0.82" b="0.0"/>
+	</Font>
+	<Font name="NumberFontNormalLargeYellow" inherits="NumberFontNormalLarge" virtual="true">
+		<Color r="1.0" g="0.82" b="0.0"/>
+	</Font>
+	<Font name="NumberFontNormalHuge" inherits="NumberFont_Outline_Huge" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+
+	<Font name="ChatFontNormal" inherits="NumberFont_Shadow_Med" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="ChatFontSmall" inherits="NumberFont_Shadow_Small" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+
+	<Font name="QuestTitleFont" inherits="QuestFont_Shadow_Huge" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="QuestTitleFontBlackShadow" inherits="QuestFont_Shadow_Huge" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<Color r="1" g=".82" b="0"/>
+	</Font>
+	<Font name="QuestFont" inherits="SystemFont_Med2" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="QuestFontLeft" inherits="QuestFont" justifyH="LEFT" virtual="true"/>
+	<Font name="QuestFontNormalSmall" inherits="GameFontBlack" virtual="true">
+		<Color r="0.30" g="0.18" b="0"/>
+	</Font>
+	<Font name="QuestFontHighlight" inherits="SystemFont_Med3" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+
+	<Font name="QuestDifficulty_Impossible" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="QuestDifficulty_VeryDifficult" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="1.0" g="0.5" b="0.25"/>
+	</Font>
+	<Font name="QuestDifficulty_Difficult" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="1.0" g="1.0" b="0.0"/>
+	</Font>
+	<Font name="QuestDifficulty_Standard" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="0.25" g="0.75" b="0.25"/>
+	</Font>
+	<Font name="QuestDifficulty_Trivial" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="QuestDifficulty_Header" inherits="GameFontNormalLeft" virtual="true">
+		<Color r="0.7" g="0.7" b="0.7"/>
+	</Font>
+
+	<Font name="ItemTextFontNormal" inherits="QuestFont_Large" justifyH="LEFT" virtual="true">
+		<Color r="0.18" g="0.12" b="0.06"/>
+	</Font>
+
+	<Font name="MailTextFontNormal" inherits="MailFont_Large" justifyH="LEFT" virtual="true">
+		<Color r="0.18" g="0.12" b="0.06"/>
+	</Font>
+
+	<Font name="SubSpellFont" inherits="SpellFont_Small" virtual="true">
+		<Color r="0.35" g="0.2" b="0"/>
+	</Font>
+
+	<Font name="DialogButtonNormalText" inherits="SystemFont_Large" virtual="true">
+		<Color r="1.0" g="0.82" b="0.0"/>
+	</Font>
+	<Font name="DialogButtonHighlightText" inherits="DialogButtonNormalText" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+
+	<Font name="ZoneTextFont" inherits="SystemFont_OutlineThick_WTF" virtual="true">
+		<Color r="1.0" g="0.9294" b="0.7607"/>
+	</Font>
+	<Font name="SubZoneTextFont" inherits="SystemFont_OutlineThick_Huge4" virtual="true"/>
+	<Font name="PVPInfoTextFont" inherits="SystemFont_OutlineThick_Huge2" virtual="true"/>
+	<Font name="ErrorFont" inherits="GameFontNormalLarge" virtual="true"/>
+	<Font name="TextStatusBarText" inherits="SystemFont_Outline_Small" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="TextStatusBarTextLarge" inherits="SystemFont_Outline" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="CombatLogFont" inherits="GameFontHighlight" justifyH="LEFT" virtual="true"/>
+	<Font name="GameTooltipText" inherits="Tooltip_Med" justifyH="LEFT" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameTooltipTextSmall" inherits="Tooltip_Small" justifyH="LEFT" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameTooltipHeaderText" inherits="GameTooltipHeader" justifyH="LEFT" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="WorldMapTextFont" inherits="SystemFont_OutlineThick_WTF" virtual="true">
+		<Color r="1.0" g="0.9294" b="0.7607"/>
+	</Font>
+	<Font name="InvoiceTextFontNormal" inherits="InvoiceFont_Med" justifyH="LEFT" virtual="true">
+		<Color r="0.18" g="0.12" b="0.06"/>
+	</Font>
+	<Font name="InvoiceTextFontSmall" inherits="InvoiceFont_Small" justifyH="LEFT" virtual="true">
+		<Color r="0.18" g="0.12" b="0.06"/>
+	</Font>
+	<Font name="CombatTextFont" inherits="SystemFont_Shadow_Huge3" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="MovieSubtitleFont" inherits="SystemFont_Shadow_Outline_Huge2" virtual="true">
+		<Color r="1.0" g="0.78" b="0"/>
+	</Font>
+
+	<Font name="AchievementPointsFont" inherits="SystemFont_Shadow_Large" justifyH="CENTER" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="AchievementPointsFontSmall" inherits="SystemFont_Shadow_Med1" justifyH="CENTER" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="AchievementDescriptionFont" inherits="SystemFont_Small" justifyH="CENTER" justifyV="TOP" virtual="true">
+		<!-- 	You might be wondering why AchievementDescriptionFont inherits from SystemFont_Small and has its own shadow, rather than inheriting from SystemFont_Shadow_Small.
+			Good question! SystemFont_Shadow_Small and SystemFont_Small are the same height in most languages, but in Chinese, they are different. SystemFont_Small is the smaller of the two, and what
+			we need to use for things to fit at all well. -->
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<Color r="1" g="1" b="1"/>
+	</Font>
+	<Font name="AchievementCriteriaFont" inherits="AchievementDescriptionFont" justifyH="LEFT" justifyV="MIDDLE" virtual="true"/>
+	<Font name="AchievementDateFont" inherits="AchievementFont_Small" justifyH="RIGHT" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="VehicleMenuBarStatusBarText" inherits="SystemFont_Shadow_Med1" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="FocusFontSmall" inherits="SystemFont_Shadow_Med2" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<!-- FontStyles.xml END -->
+
+	<!-- GlueFontStyles.xml START -->
+	<Font name="GlueFontNormal" inherits="SystemFont_Outline_Med2" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<Color r="1.0" g="0.78" b="0"/>
+	</Font>
+	<Font name="GlueFontNormalLeft" inherits="GlueFontNormal" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontHighlight" inherits="GlueFontNormal" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GlueFontHighlightLeft" inherits="GlueFontHighlight" justifyH="LEFT" virtual="true"/>
+	<Font name="RealmDownNormal" inherits="GlueFontNormalLeft" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="RealmDownHighlight" inherits="GlueFontHighlightLeft" virtual="true">
+		<Color r="0.8" g="0.8" b="0.8"/>
+	</Font>
+	<Font name="RealmInvalidNormal" inherits="GlueFontNormalLeft" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="RealmCharactersNormal" inherits="GlueFontNormalLeft" virtual="true">
+		<Color r="0.1" g="1.0" b="0.1"/>
+	</Font>
+	<Font name="RealmNoCharactersNormal" inherits="GlueFontNormalLeft" virtual="true">
+		<Color r="1.0" g="0.78" b="0.0"/>
+	</Font>
+	<Font name="RealmInvalidHighlight" inherits="GlueFontHighlightLeft" virtual="true">
+		<Color r="1.0" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GlueFontDisable" inherits="GlueFontNormal" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GlueFontDisableLeft" inherits="GlueFontDisable" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontGreen" inherits="GlueFontNormal" virtual="true">
+		<Color r="0.1" g="1.0" b="0.1"/>
+	</Font>
+	<Font name="GlueFontRed" inherits="GlueFontNormal" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="GlueFontLightYellow" inherits="GlueFontNormal" virtual="true">
+		<Color r="1.0" g="0.96" b="0.62"/>
+	</Font>
+	<Font name="GlueFontBlack" inherits="SystemFont_Shadow_Med1" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="GlueFontWhite" inherits="SystemFont_Shadow_Med1" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GlueFontNormalSmall" inherits="SystemFont_Shadow_Outline_Med1" virtual="true">
+		<Color r="1.0" g="0.78" b="0"/>
+	</Font>
+	<Font name="GlueFontNormalSmallLeft" inherits="GlueFontNormalSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontNormalExtraSmall" inherits="SystemFont_Shadow_Outline_Small" virtual="true">
+		<Color r="1.0" g="0.78" b="0"/>
+	</Font>
+	<Font name="GlueFontNormalExtraSmallLeft" inherits="GlueFontNormalExtraSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontHighlightSmall" inherits="GlueFontNormalSmall" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GlueFontHighlightSmallLeft" inherits="GlueFontHighlightSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontHighlightSmallLeftTop" inherits="GlueFontHighlightSmallLeft" justifyV="TOP" virtual="true"/>
+	<Font name="GlueFontHighlightExtraSmall" inherits="SystemFont_Shadow_Outline_Small" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GlueFontHighlightExtraSmallLeft" inherits="GlueFontHighlightExtraSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontHighlightExtraSmallLeftTop" inherits="GlueFontHighlightExtraSmallLeft" justifyV="TOP" virtual="true"/>
+	<Font name="GlueFontCharacterCreate" inherits="GlueFontHighlightSmall" virtual="true" spacing="1.5"/>
+	<Font name="GlueFontDisableSmall" inherits="GlueFontNormalSmall" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GlueFontDisableSmallLeft" inherits="GlueFontDisableSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontGreenSmall" inherits="GlueFontNormalSmall" virtual="true">
+		<Color r="0.1" g="1.0" b="0.1"/>
+	</Font>
+	<Font name="GlueFontRedSmall" inherits="GlueFontNormalSmall" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="GlueFontLightYellowSmall" inherits="GlueFontNormalSmall" virtual="true">
+		<Color r="1.0" g="0.96" b="0.62"/>
+	</Font>
+	<Font name="GlueFontNormalLarge" inherits="SystemFont_Shadow_Outline_Large" spacing="2" virtual="true">
+		<Color r="1.0" g="0.78" b="0"/>
+	</Font>
+	<Font name="GlueFontNormalLargeLeft" inherits="GlueFontNormalLarge" justifyH="LEFT" virtual="true"/>
+	<Font name="GlueFontNormalLargeLeftTop" inherits="GlueFontNormalLargeLeft" justifyV="TOP" virtual="true"/>
+	<Font name="GlueFontNormalHuge" inherits="SystemFont_Shadow_Outline_Huge" virtual="true">
+		<Color r="1.0" g="0.78" b="0"/>
+	</Font>
+	<Font name="GlueFontHighlightHuge" inherits="GlueFontNormalHuge" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GlueFontDisableHuge" inherits="GlueFontNormalHuge" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GlueFontHighlightLarge" inherits="GlueFontNormalLarge" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GlueFontDisableLarge" inherits="GlueFontNormalLarge" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GlueFontGreenLarge" inherits="GlueFontNormalLarge" virtual="true">
+		<Color r="0.1" g="1.0" b="0.1"/>
+	</Font>
+	<Font name="GlueFontRedLarge" inherits="GlueFontNormalLarge" virtual="true">
+		<Color r="1.0" g="0.1" b="0.1"/>
+	</Font>
+	<Font name="GlueFontLightYellowLarge" inherits="GlueFontNormalLarge" virtual="true">
+		<Color r="1.0" g="0.96" b="0.62"/>
+	</Font>
+	<Font name="GlueEditBoxFont" inherits="EditBoxFont_Large" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="Glue_DialogButtonNormalText" inherits="SystemFont_Med3" virtual="true">
+		<Color r="1.0" g="0.82" b="0.0"/>
+	</Font>
+	<Font name="TOSFont" inherits="SystemFont_Outline_Med1" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+
+	<Font name="OptionsFontLeft" inherits="OptionsFont" justifyH="LEFT" virtual="true"/>
+	<Font name="OptionsFontSmallLeft" inherits="OptionsFontSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="OptionsFontHighlightSmallLeft" inherits="OptionsFontHighlightSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="OptionsFontHighlightSmallLeftTop" inherits="OptionsFontHighlightSmallLeft" justifyV="TOP" virtual="true"/>
+
+	<Font name="CharacterCreateTooltipFont" inherits="SystemFont_Outline_Med2" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="CharacterCustomizationTitle" inherits="GlueFontNormal" virtual="true">
+		<Color r="0.91" g="0.78" b="0.53"/>
+	</Font>
+	<Font name="GlueNavButtonsFont" inherits="GlueFontNormal" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="0.5" y="-0.5"/>
+			</Offset>
+			<Color r="0.91" g="0.78" b="0.53"/>
+		</Shadow>
+		<Color r="0.91" g="0.78" b="0.53"/>
+	</Font>
+	<!-- GlueFontStyles.xml END -->
+	<Font name="GlueFontButton" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+		<Color r="0.91" g="0.78" b="0.53"/>
+	</Font>
+	<Font name="GlueFontButtonDisable" inherits="GlueFontButton" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="AccountLoginTextFont" inherits="GlueFontNormal" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="0.50" y="-0.50"/>
+			</Offset>
+			<Color r="0.91" g="0.78" b="0.53"/>
+		</Shadow>
+		<Color r="0.91" g="0.78" b="0.53"/>
+	</Font>
+	<Font name="AccountLoginTextFontDisable" inherits="GlueFontNormal" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="0.50" y="-0.50"/>
+			</Offset>
+			<Color r="0.91" g="0.78" b="0.53"/>
+		</Shadow>
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="GameFontNormalHugeOutline" inherits="SystemFont_Shadow_Outline_Huge" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="0.50" y="-0.50"/>
+			</Offset>
+			<Color r="0.91" g="0.78" b="0.53"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="21"/>
+		</FontHeight>
+	</Font>
+	<Font name="GameFontNormalHugeOutline1" inherits="SystemFont_Shadow_Outline_Huge" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="0" y="0"/>
+			</Offset>
+			<Color r="0.91" g="0.78" b="0.53"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="21"/>
+		</FontHeight>
+	</Font>
+	<Font name="GameFontNormalHugeOutline3" inherits="SystemFont_Shadow_Outline_Huge" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="0" y="0"/>
+			</Offset>
+			<Color r="0.91" g="0.78" b="0.53"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="20"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med1C" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Color r="0" g="0" b="0"/>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med1B" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Color r="0" g="0" b="0"/>
+		<FontHeight>
+			<AbsValue val="11"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="SystemFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Small2" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="11"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Large2" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Large2" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Huge2" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="24"/>
+		</FontHeight>
+	</Font>
+	<Font name="GameFontNormalShadowHuge17" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="1.0" g="0.82" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="17"/>
+		</FontHeight>
+	</Font>
+	<Font name="GameFontNormalShadowHuge12" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="1.0" g="0.82" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Tiny" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="9"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Outline_Small" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Outline2" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Outline" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Small1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="11"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_InverseShadow_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r=".4" g=".4" b=".4" a=".75"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med2" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med2" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="13"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med4" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med5" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med3" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Med4" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Med3" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Large" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Large" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Large3" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1.5" y="-1.5"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Huge1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="20"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Huge1" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="20"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_OutlineThick_Huge2" font="Fonts\FRIZQT__.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="22"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Outline_Huge2" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="2" y="-2"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="22"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Huge5" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="23"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Shadow_Huge4" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight val="32"/>
+	</Font>
+	<Font name="SystemFont_OutlineThick_Huge4" font="Fonts\FRIZQT__.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="26"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_OutlineThick_WTF" font="Fonts\FRIZQT__.TTF" outline="THICK" virtual="true">
+		<FontHeight>
+			<AbsValue val="62"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="NumberFont_Shadow_Small" font="Fonts\ARIALN.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_OutlineThick_Mono_Small" font="Fonts\ARIALN.TTF" outline="THICK" monochrome="true" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Shadow_Med" font="Fonts\ARIALN.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Outline_Med" font="Fonts\ARIALN.TTF" outline="NORMAL" virtual="true" >
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Outline_Large" font="Fonts\ARIALN.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="16"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFont_Outline_Huge" font="Fonts\skurri.ttf" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="30"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="QuestFont_Large" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight>
+			<AbsValue val="15"/>
+		</FontHeight>
+	</Font>
+	<Font name="QuestFont_Shadow_Huge" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0.49" g="0.35" b="0.05"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="18"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="GameTooltipHeader" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="MailFont_Large" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight>
+			<AbsValue val="15"/>
+		</FontHeight>
+	</Font>
+	<Font name="SpellFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="InvoiceFont_Med" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="InvoiceFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="Tooltip_Med" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="Tooltip_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="AchievementFont_Small" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="ReputationDetailFont" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0.0" g="0.0" b="0.0"/>
+		</Shadow>
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="FriendsFont_Normal" font="Fonts\FRIENDS.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="12"/>
+		</FontHeight>
+	</Font>
+	<Font name="FriendsFont_Small" font="Fonts\FRIENDS.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="10"/>
+		</FontHeight>
+	</Font>
+	<Font name="FriendsFont_Large" font="Fonts\FRIENDS.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="FriendsFont_UserText" font="Fonts\ARIALN.TTF" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="11"/>
+		</FontHeight>
+	</Font>
+	<Font name="SystemFont_Huge6" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="60"/>
+		</FontHeight>
+	</Font>
+	<Font name="GameFont_Gigantic" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="32"/>
+		</FontHeight>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0.0" g="0.0" b="0.0"/>
+		</Shadow>
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="QuestFont_Shadow_Small" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0.49" g="0.35" b="0.05"/>
+		</Shadow>
+		<FontHeight>
+			<AbsValue val="14"/>
+		</FontHeight>
+	</Font>
+	<Font name="QuestFont_Super_Huge" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight>
+			<AbsValue val="24"/>
+		</FontHeight>
+		<Color r="1" g=".82" b="0"/>
+	</Font>
+	<Font name="QuestFont_Super_Huge2" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight>
+			<AbsValue val="26"/>
+		</FontHeight>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="2" y="-2"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<Color r="1" g="1" b="1"/>
+	</Font>
+
+	<Font name="Shared_GameFontNormalLarge" inherits="SystemFont_Shadow_Large" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="Shared_GameFontNormal" inherits="SystemFont_Shadow_Med1" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontHighlightMedium" inherits="SystemFont_Shadow_Med3" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontHighlightMedium2" inherits="SystemFont_Shadow_Med3" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontHighlightSmall2" inherits="SystemFont_Small2" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="GameFontNormalMed2" inherits="SystemFont_Shadow_Med2" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalMed4" inherits="SystemFont_Shadow_Med4" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalSmall2" inherits="SystemFont_Shadow_Small" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalLarge2" inherits="SystemFont_Shadow_Large2" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalLarge3" inherits="SystemFont_Large2" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalShadowHuge2" inherits="SystemFont_Shadow_Huge2" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontNormalHugeOutline2" inherits="SystemFont_Shadow_Outline_Huge2" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontHighlightMediumLoginUrl1" inherits="SystemFont_Shadow_Small1" virtual="true">
+		<Color r="0" g="0.58235294117647" b="1"/>
+	</Font>
+	<Font name="GameFontHighlightMediumLoginUrl2" inherits="SystemFont_Shadow_Small1" virtual="true">
+		<Color r="1" g="1" b="1"/>
+	</Font>
+	<Font name="Shared_GameFontHighlight" inherits="Shared_GameFontNormal" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="Shared_GameFontNormalLarge" inherits="SystemFont_Shadow_Large" virtual="true">
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="Shared_GameFontHighlightLarge" inherits="Shared_GameFontNormalLarge" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+	</Font>
+	<Font name="Shared_GameFontDisableLarge" inherits="Shared_GameFontNormalLarge" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+	</Font>
+	<Font name="ObjectiveFont" inherits="Shared_GameFontHighlight" justifyH="LEFT" justifyV="TOP" virtual="true">
+		<Color r="0.8" g="0.8" b="0.8"/>
+	</Font>
+	<Font name="Shared_GameFontBlackMedium" inherits="SystemFont_Med3" virtual="true">
+		<Color r="0" g="0" b="0"/>
+	</Font>
+	<Font name="GameFontNormalMed1" inherits="SystemFont_Med2" virtual="true">
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<Color r="1.0" g="0.82" b="0"/>
+	</Font>
+	<Font name="GameFontGraySmall" inherits="GameFontNormalSmall" virtual="true">
+		<Color r="0.68" g="0.68" b="0.68"/>
+	</Font>
+	<Font name="GameFontNormalFrost" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="17"/>
+		</FontHeight>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0.15" b="0.51"/>
+		</Shadow>
+		<Color r="0.76" g="1" b="1"/>
+	</Font>
+	<Font name="GameFontNormalNeltharion" font="Fonts\FRIZQT__.TTF" outline="NORMAL" virtual="true">
+		<FontHeight>
+			<AbsValue val="17"/>
+		</FontHeight>
+	</Font>
+	<Font name="NumberFontNormalGray" inherits="NumberFont_Outline_Med" virtual="true" >
+		<Color r="0.6" g="0.6" b="0.6"/>
+	</Font>
+	<Font name="PurpleGameFontNormal" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="23"/>
+		</FontHeight>
+		<Shadow>
+			<Offset x="1" y="1"/>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+		<Color r="1" g="1" b="1"/>
+	</Font>
+	<Font name="MailSubjectFontStyle" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight>
+			<AbsValue val="11"/>
+		</FontHeight>
+	</Font>
+
+	<Font name="Number11FontWhite" inherits="Number11Font" virtual="true" >
+		<Color r="1.0" g="1.0" b="1.0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="Number13FontWhite" inherits="Number13Font" virtual="true" >
+		<Color r="1.0" g="1.0" b="1.0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="Number13FontYellow" inherits="Number13Font" virtual="true" >
+		<Color r="1.0" g="0.82" b="0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="Number13FontGray" inherits="Number13Font" virtual="true" >
+		<Color r="0.5" g="0.5" b="0.5"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="Number13FontRed" inherits="Number13Font" virtual="true" >
+		<Color r="1.0" g="0.1" b="0.1"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="PriceFontWhite" inherits="PriceFont" virtual="true" >
+		<Color r="1.0" g="1.0" b="1.0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="PriceFontYellow" inherits="PriceFont" virtual="true" >
+		<Color r="1.0" g="0.82" b="0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="PriceFontGray" inherits="PriceFont" virtual="true" >
+		<Color r="0.5" g="0.5" b="0.5"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="PriceFontRed" inherits="PriceFont" virtual="true" >
+		<Color r="1.0" g="0.1" b="0.1"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="PriceFontGreen" inherits="PriceFont" virtual="true" >
+		<Color r="0.1" g="1" b="0.1"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="Number14FontWhite" inherits="NumberFont_Normal_Med" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="Number14FontGray" inherits="NumberFont_Normal_Med" virtual="true">
+		<Color r="0.5" g="0.5" b="0.5"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<Font name="Number15FontWhite" inherits="Number15Font" virtual="true">
+		<Color r="1.0" g="1.0" b="1.0"/>
+		<Shadow>
+			<Offset>
+				<AbsDimension x="1" y="-1"/>
+			</Offset>
+			<Color r="0" g="0" b="0"/>
+		</Shadow>
+	</Font>
+
+	<!-- New font Style -->
+	<Font name="Fancy12Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="12"/>
+	</Font>
+	<Font name="Fancy13Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="13"/>
+	</Font>
+	<Font name="Fancy14Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="14"/>
+	</Font>
+	<Font name="Fancy15Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="15"/>
+	</Font>
+	<Font name="Fancy16Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="16"/>
+	</Font>
+	<Font name="Fancy17Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="17"/>
+	</Font>
+	<Font name="Fancy18Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="18"/>
+	</Font>
+	<Font name="Fancy19Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="19"/>
+	</Font>
+	<Font name="Fancy20Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="20"/>
+	</Font>
+	<Font name="Fancy21Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="21"/>
+	</Font>
+	<Font name="Fancy22Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="22"/>
+	</Font>
+	<Font name="Fancy23Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="23"/>
+	</Font>
+	<Font name="Fancy24Font" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="24"/>
+	</Font>
+	<Font name="GameFontNormal7" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="7"/>
+	</Font>
+	<Font name="GameFontNormal8" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="8"/>
+	</Font>
+	<Font name="GameFontNormal9" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="9"/>
+	</Font>
+	<Font name="GameFontNormal10" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="10"/>
+	</Font>
+	<Font name="GameFontNormal11" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="11"/>
+	</Font>
+	<Font name="GameFontNormal12" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="12"/>
+	</Font>
+	<Font name="GameFontNormal13" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="13"/>
+	</Font>
+	<Font name="GameFontNormal14" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="14"/>
+	</Font>
+	<Font name="GameFontNormal15" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="15"/>
+	</Font>
+	<Font name="GameFontNormal16" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="16"/>
+	</Font>
+	<Font name="GameFontNormal17" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="17"/>
+	</Font>
+	<Font name="GameFontNormal18" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="18"/>
+	</Font>
+	<Font name="GameFontNormal19" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="19"/>
+	</Font>
+	<Font name="GameFontNormal20" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="20"/>
+	</Font>
+	<Font name="GameFontNormal21" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="21"/>
+	</Font>
+	<Font name="GameFontNormal22" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="22"/>
+	</Font>
+	<Font name="GameFontNormal23" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="23"/>
+	</Font>
+	<Font name="GameFontNormal24" font="Fonts\FRIZQT__.TTF" virtual="true">
+		<FontHeight val="24"/>
+	</Font>
+	<Font name="QuestFont12" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="12"/>
+	</Font>
+	<Font name="QuestFont13" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="13"/>
+	</Font>
+	<Font name="QuestFont14" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="14"/>
+	</Font>
+	<Font name="QuestFont15" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="15"/>
+	</Font>
+	<Font name="QuestFont16" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="16"/>
+	</Font>
+	<Font name="QuestFont17" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="17"/>
+	</Font>
+	<Font name="QuestFont18" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="18"/>
+	</Font>
+	<Font name="QuestFont19" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="19"/>
+	</Font>
+	<Font name="QuestFont20" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="20"/>
+	</Font>
+	<Font name="QuestFont21" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="21"/>
+	</Font>
+	<Font name="QuestFont22" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="22"/>
+	</Font>
+	<Font name="QuestFont23" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="23"/>
+	</Font>
+	<Font name="QuestFont24" font="Fonts\MORPHEUS.ttf" virtual="true">
+		<FontHeight val="24"/>
+	</Font>
+
+	<Font name="ShadowlandsButtonFont" font="Interface\CustomFonts\futurademic.ttf" virtual="true">
+		<FontHeight val="17"/>
+		<Color r="0" g="0" b="0"/>
+	</Font>
+</Ui>
