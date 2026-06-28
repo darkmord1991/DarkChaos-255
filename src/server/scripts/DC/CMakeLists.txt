@@ -317,6 +317,7 @@ set(SCRIPTS_DC_GuildHousing
     GuildHousing/dc_guildhouse_decorations.h
     GuildHousing/dc_guildhouse_decorations.cpp
     GuildHousing/dc_dalaran_guard.cpp
+    GuildHousing/dc_dalaran_manabonk.cpp
 )
 
 # DC Teleporters

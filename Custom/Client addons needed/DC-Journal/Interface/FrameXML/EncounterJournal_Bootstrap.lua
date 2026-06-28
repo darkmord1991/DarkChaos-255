@@ -3,6 +3,22 @@
 local EJ_UI_HIDDEN_INSTANCES = {
 }
 
+-- The bottom journal tabs (Adventure Journal / Headhunting) reference this OnClick
+-- handler in XML, but it was never ported -> "Unknown function Adventure_TabOnClick"
+-- at load. Define it here (this file loads before those frames parse). Only the
+-- Adventure Journal tab is implemented, so we just keep tab 1 selected.
+if not Adventure_TabOnClick then
+	function Adventure_TabOnClick(self)
+		local parent = (self and self.GetParent and self:GetParent()) or _G.EncounterJournal
+		if parent and PanelTemplates_SetTab then
+			PanelTemplates_SetTab(parent, 1)
+		end
+		if PlaySound then
+			PlaySound("igCharacterInfoTab")
+		end
+	end
+end
+
 local function EJ_ApplyContentTabVisibility()
 	local instanceSelect = EncounterJournal and EncounterJournal.instanceSelect
 	if not instanceSelect then
@@ -27,6 +43,10 @@ local function EJ_EnsureFrameTabs(frame)
 	end
 	frame.tab1 = frame.tab1 or _G.EncounterJournalTab1
 	frame.tab2 = frame.tab2 or _G.EncounterJournalTab2
+	-- "Headhunting" (tab2) is not implemented in this backport; hide the dead tab.
+	if frame.tab2 then
+		frame.tab2:Hide()
+	end
 end
 
 if EncounterJournal_InitTab and not EncounterJournal_InitTabHooked then

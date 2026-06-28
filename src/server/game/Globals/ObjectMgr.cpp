@@ -1763,14 +1763,20 @@ void ObjectMgr::LoadCreatureModelInfo()
         if (modelInfo.combat_reach < 0.1f)
             modelInfo.combat_reach = DEFAULT_COMBAT_REACH;
 
-        if (CreatureModelDataEntry const* modelData = sCreatureModelDataStore.LookupEntry(creatureDisplay->ModelId))
+        // creatureDisplay is null when the display id is missing from the store (logged above as
+        // "not existed display id"). Guard the deref — a dangling creature_model_info row must not
+        // crash startup; the model just isn't flagged as an invisible-trigger.
+        if (creatureDisplay)
         {
-            for (uint32 i = 0; i < 14; i++)
+            if (CreatureModelDataEntry const* modelData = sCreatureModelDataStore.LookupEntry(creatureDisplay->ModelId))
             {
-                if (modelData->Id == triggerCreatureModelDataID[i])
+                for (uint32 i = 0; i < 14; i++)
                 {
-                    modelInfo.is_trigger = true;
-                    break;
+                    if (modelData->Id == triggerCreatureModelDataID[i])
+                    {
+                        modelInfo.is_trigger = true;
+                        break;
+                    }
                 }
             }
         }

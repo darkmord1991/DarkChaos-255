@@ -181,6 +181,7 @@ void AddGuildHouseButlerScripts();            // GuildHousing/dc_guildhouse_butl
 void AddSC_dc_guildhouse_decorations();       // GuildHousing/dc_guildhouse_decorations.cpp
 void AddSC_dc_guildhouse_instance();          // GuildHousing/dc_guildhouse_instance.cpp
 void AddSC_dc_dalaran_guard();                // GuildHousing/dc_dalaran_guard.cpp
+void AddSC_dc_dalaran_manabonk();             // GuildHousing/dc_dalaran_manabonk.cpp
 
 // ============================================================================
 // Script Loader Helpers
@@ -395,6 +396,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_guildhouse_decorations);
     DC_LOAD(AddSC_dc_guildhouse_instance);
     DC_LOAD(AddSC_dc_dalaran_guard);
+    DC_LOAD(AddSC_dc_dalaran_manabonk);
 
     LogSection("Dungeon Quest System (late-load stage)");
     DC_LOAD(AddSC_DungeonQuestSystem);
