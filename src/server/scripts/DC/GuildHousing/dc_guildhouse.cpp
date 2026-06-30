@@ -54,6 +54,13 @@ namespace
     bool IsWithinGuildHouseRespawnRange(WorldLocation const& location,
                                         GuildHouseData const& houseData)
     {
+        // Each guild-house map is a per-guild instance whose ENTIRE area is the guild house, and the
+        // Legion-Dalaran skin (1413) spans z -372..955 -> a fixed radius from the entrance cannot
+        // cover it (high/low deaths fell through to the Crystalsong graveyard on map 571). So any
+        // death on a guild-house map respawns in-instance; the radius only guards a non-instanced map.
+        if (IsGuildHouseMap(location.GetMapId()))
+            return true;
+
         float dx = location.GetPositionX() - houseData.posX;
         float dy = location.GetPositionY() - houseData.posY;
         float dz = location.GetPositionZ() - houseData.posZ;
