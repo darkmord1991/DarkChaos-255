@@ -260,7 +260,7 @@ public:
                 playerGUID = player->GetGUID();
         }
 
-        void PassengerBoarded(Unit* passenger, int8 seatId, bool apply)
+        void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply)
         {
             flyphase = 1;
             if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
@@ -272,7 +272,7 @@ public:
             if (type != ESCORT_MOTION_TYPE)
                 return;
 
-            if (auto passenger = me->GetVehicleKit()->GetPassenger(0)) {
+            if (auto* _p = me->GetVehicleKit()->GetPassenger(0)) { (void)_p;
                 switch (point)
                 {
                 case 2:
@@ -296,7 +296,7 @@ public:
                 }
             }
         }
-        void WaypointReached(uint32 waypointId) {}
+        void WaypointReached(uint32 /*waypointId*/) {}
 
         void UpdateAI(uint32 const diff)
         {
@@ -424,7 +424,7 @@ public:
     {
         npc_emerald_flameweaver_infiltratorsAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(WorldObject* summoner) override
+        void IsSummonedBy(WorldObject* /*summoner*/) override
         {
             MoveSmoothPath(me->GetMotionMaster(), EmeraldFlamePath, EmeraldFlamePathSize);
         }
@@ -661,7 +661,7 @@ public:
     {
         npc_twilight_proveditorAI(Creature* creature) : ScriptedAI(creature), _summons(me) {}
 
-        void IsSummonedBy(WorldObject* summoner) override
+        void IsSummonedBy(WorldObject* /*summoner*/) override
         {
             if (auto slavedriver = me->SummonCreature(NPC_SLAVE_DRIVER, 5127.52f, -2356.76f, 1414.76f, 5.387f, TEMPSUMMON_TIMED_DESPAWN, 900000))
             {
@@ -837,7 +837,7 @@ public:
             _opponentsDead = false;
         }
 
-        void SetData(uint32 data, uint32 state)
+        void SetData(uint32 data, uint32 /*state*/)
         {
             switch (data)
             {
@@ -870,15 +870,15 @@ public:
                         switch (_whichSlave)
                         {
                         case 1:
-                            me->SetRooted(false);
+                            me->SetControlled(false, UNIT_STATE_ROOT);
                             me->GetMotionMaster()->MoveFollow(prove, 2.0f, 0.7f * M_PI);
                             break;
                         case 2:
-                            me->SetRooted(false);
+                            me->SetControlled(false, UNIT_STATE_ROOT);
                             me->GetMotionMaster()->MoveFollow(prove, 2.0f, 1.0f * M_PI);
                             break;
                         case 3:
-                            me->SetRooted(false);
+                            me->SetControlled(false, UNIT_STATE_ROOT);
                             me->GetMotionMaster()->MoveFollow(prove, 2.0f, 1.3f * M_PI);
                             break;
                         default:
@@ -888,7 +888,7 @@ public:
                     else
                     {
                         me->GetMotionMaster()->Clear();
-                        me->SetRooted(true);
+                        me->SetControlled(true, UNIT_STATE_ROOT);
                     }
 
                     if (!_opponentsDead)
@@ -1046,7 +1046,7 @@ public:
             _summons.DespawnAll();
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
         {
             if (spellInfo->Id == SPELL_DUMMY_PING_2)
             {
@@ -1251,7 +1251,7 @@ public:
             me->SetReactState(REACT_PASSIVE);
             me->SetPhaseMask(32, false);
             me->setActive(true);
-            me->SetRooted(true);
+            me->SetControlled(true, UNIT_STATE_ROOT);
             CastWithDelay(me, 100, me, SPELL_SPEED_MINUS_90);
             CastWithDelay(me, 100, me, SPELL_SPOTLIGHT_1);
 
@@ -1324,7 +1324,7 @@ public:
                 switch (eventId)
                 {
                 case EVENT_AESSINA_VEH_1:
-                    me->SetRooted(false);
+                    me->SetControlled(false, UNIT_STATE_ROOT);
                     me->GetMotionMaster()->MovePoint(1, 5135.51f, -1756.11f, 1349.144f); // AC: dropped 4.3.4 'generatePath=false' bool
 
                     if (auto aessina1 = ObjectAccessor::GetCreature(*me, _aessinaGUID))
@@ -1425,7 +1425,7 @@ public:
                 me->GetMotionMaster()->MoveFollow(player, 0.7f, 0.3f * M_PI);
             }
         }
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
         {
             if (spellInfo->Id == SPELL_PING_CHILD)
             {
@@ -1433,7 +1433,7 @@ public:
             }
         }
 
-        void JustDied(Unit* killer)
+        void JustDied(Unit* /*killer*/)
         {
             if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
@@ -1545,7 +1545,7 @@ public:
         {
             //me->SetReactState(REACT_PASSIVE);
             me->setActive(true);
-            me->SetRooted(true);
+            me->SetControlled(true, UNIT_STATE_ROOT);
 
             if (auto player = summoner->ToPlayer())
             {
@@ -1582,7 +1582,7 @@ public:
                 }
                 else if (me->GetDistance(player) < 1.f)
                 {
-                    me->SetRooted(true);
+                    me->SetControlled(true, UNIT_STATE_ROOT);
                     AiTalk(me->AI(), 1, _playerGUID);
                     player->FailQuest(QUEST_AGILITY_TRAINING);
                     player->CombatStop();
@@ -1592,7 +1592,7 @@ public:
 
                 if (player->GetAreaId() != 4994)
                 {
-                    me->SetRooted(true);
+                    me->SetControlled(true, UNIT_STATE_ROOT);
                     AiTalk(me->AI(), 2, _playerGUID);
                     player->FailQuest(QUEST_AGILITY_TRAINING);
                     player->CombatStop();
@@ -1617,7 +1617,7 @@ public:
                 switch (eventId)
                 {
                 case EVENT_AGILITY_TRAINER_1:
-                    me->SetRooted(false);
+                    me->SetControlled(false, UNIT_STATE_ROOT);
 
                     if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                         me->AI()->AttackStart(player);
@@ -1712,7 +1712,7 @@ public:
             {
                 playerGUID = player->GetGUID();
                 events.ScheduleEvent(EVENT_ASK_QUESTION, Milliseconds(3000));
-                player->SetRooted(true);
+                player->SetControlled(true, UNIT_STATE_ROOT);
             }
         }
         void SpellHit(Unit* who, SpellInfo const* spellInfo)
@@ -1731,7 +1731,7 @@ public:
                 if (auto player = ObjectAccessor::GetPlayer(*me, playerGUID))
                     if (who->GetGUID() == playerGUID)
                     {
-                        player->SetRooted(false);
+                        player->SetControlled(false, UNIT_STATE_ROOT);
                         player->RemoveAura(SPELL_IDLE_CHECK_AURA);
                         player->RemoveAura(SPELL_MENTAL_TRAINING);
                         me->DespawnOrUnsummon();
@@ -1741,7 +1741,7 @@ public:
         {
             if (auto player = ObjectAccessor::GetPlayer(*me, playerGUID))
             {
-                player->SetRooted(false);
+                player->SetControlled(false, UNIT_STATE_ROOT);
                 player->RemoveAura(SPELL_IDLE_CHECK_AURA);
                 player->RemoveAura(SPELL_MENTAL_TRAINING);
                 me->DespawnOrUnsummon();
@@ -1751,6 +1751,7 @@ public:
         void RandomEvent()
         {
             if (auto player = ObjectAccessor::GetPlayer(*me, playerGUID))
+            {
                 if (player->GetQuestStatus(QUEST_MENTAL_TRAINING_SPEAKING_THE_TRUTH_TO_POWER) == QUEST_STATUS_INCOMPLETE)
                 {
                     uint8 InitEvents[16] = { EVENT_QUESTION_1, EVENT_QUESTION_2, EVENT_QUESTION_3, EVENT_QUESTION_4, EVENT_QUESTION_5, EVENT_QUESTION_6, EVENT_QUESTION_7,
@@ -1762,11 +1763,12 @@ public:
                 }
                 else
                 {
-                    player->SetRooted(false);
+                    player->SetControlled(false, UNIT_STATE_ROOT);
                     player->RemoveAura(SPELL_IDLE_CHECK_AURA);
                     player->RemoveAura(SPELL_MENTAL_TRAINING);
                     me->DespawnOrUnsummon();
                 }
+            }
         }
         void UpdateAI(uint32 const diff)
         {
@@ -1778,6 +1780,7 @@ public:
                 {
                 case EVENT_ASK_QUESTION:
                     if (auto player = ObjectAccessor::GetPlayer(*me, playerGUID))
+                    {
                         if (!player->isDead())
                             RandomEvent();
                         else
@@ -1785,6 +1788,7 @@ public:
                             player->RemoveAura(SPELL_MENTAL_TRAINING);
                             me->DespawnOrUnsummon();
                         }
+                    }
                     break;
                     // for answer "yes"
                 case EVENT_QUESTION_1:
@@ -1962,7 +1966,7 @@ public:
         {
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (Unit* caster = GetCaster())
             {
@@ -2005,7 +2009,7 @@ public:
                 return false;
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (Unit* caster = GetCaster())
             {
@@ -2039,7 +2043,7 @@ public:
                 return false;
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (Unit* caster = GetCaster())
             {
@@ -2084,7 +2088,7 @@ public:
         {
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (Unit* caster = GetCaster())
             {
@@ -2122,7 +2126,7 @@ public:
             return true;
         }
 
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (Unit* caster = GetCaster())
             {
@@ -2170,7 +2174,7 @@ public:
             SetHitDamage(amount);
         }
 
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (Unit* caster = GetCaster())
             {
@@ -2216,7 +2220,7 @@ public:
                 _playerGUID = player->GetGUID();
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
         {
             if (spellInfo->Id == SPELL_FEED_SPAWN_OF_SMOLDEROS)
             {
@@ -2242,7 +2246,7 @@ public:
                         || player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_COMPLETE
                         || player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_REWARDED)
                     {
-                        me->SetRooted(true);
+                        me->SetControlled(true, UNIT_STATE_ROOT);
                         me->DespawnOrUnsummon( Milliseconds(6000));
                     }
 
@@ -2288,7 +2292,7 @@ public:
     {
         npc_spawn_of_smolderos_grudge_matchAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(WorldObject* summoner) override
+        void IsSummonedBy(WorldObject* /*summoner*/) override
         {
             if (auto butcher = me->FindNearestCreature(NPC_BUTCHER, 30.f))
             {
@@ -2362,7 +2366,7 @@ public:
                         grommko->AI()->Talk(0);
                         grommko->SetFaction(14);
 
-                        if (auto player = grommko->FindNearestPlayer(40.f))
+                        if (auto player = grommko->SelectNearestPlayer(40.f))
                             grommko->AI()->AttackStart(player);
                     }
                 }
@@ -2410,7 +2414,7 @@ public:
                 _playerGUID = player->GetGUID();
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
         {
             if (spellInfo->Id == SPELL_DUMMY_PING)
             {
@@ -2519,7 +2523,7 @@ public:
             me->setActive(true);
             _eventStarted = false;
             _waitinForAnswer = false;
-            _playerGUID = 0;
+            _playerGUID = ObjectGuid::Empty;
             _satisfyAnswer = 0;
 
             if (auto podium = me->FindNearestGameObject(GO_PODIUM, 5.f))
@@ -2804,7 +2808,7 @@ public:
         {
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (auto caster = GetCaster())
                 if (auto player = caster->ToPlayer())
@@ -2841,7 +2845,7 @@ public:
         {
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (auto caster = GetCaster())
                 if (auto player = caster->ToPlayer())
@@ -2878,7 +2882,7 @@ public:
         {
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (auto caster = GetCaster())
                 if (auto player = caster->ToPlayer())
@@ -2914,7 +2918,7 @@ public:
         void RemoveAura()
         {
             if (auto caster = GetCaster())
-                if (auto player = caster->ToPlayer())
+                if (caster->ToPlayer())
                 {
                     if (auto controller = caster->FindNearestCreature(NPC_GRADUATION_CONTROLLER, 6.f))
                     {
@@ -2960,7 +2964,7 @@ public:
                 _playerGUID = player->GetGUID();
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
         {
             if (spellInfo->Id == SPELL_SOAR)
             {
@@ -3103,7 +3107,7 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const /*diff*/)
         {
             if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
             {
@@ -3129,7 +3133,7 @@ public:
             //    switch (eventId)
             //    {
             //    case EVENT_STUNT_HORSE_1:
-            //        me->SetRooted(false);
+            //        me->SetControlled(false, UNIT_STATE_ROOT);
             //        MoveSmoothPath(me->GetMotionMaster(), StoutHorsePath, StoutHorsePathSize);
             //        break;
             //    default:
@@ -3256,7 +3260,7 @@ public:
         {
             return true;
         }
-        void HandleScriptEffect(SpellEffIndex effIndex)
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
             if (auto caster = GetCaster())
                 if (auto owner = caster->GetOwner())
@@ -3325,7 +3329,7 @@ public:
         void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
-            me->SetRooted(true);
+            me->SetControlled(true, UNIT_STATE_ROOT);
             me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
 
             if (auto player = summoner->ToPlayer())
@@ -3397,7 +3401,7 @@ public:
                 {
                 case EVENT_LOGOSH_1:
                     _pathmode = 1;
-                    me->SetRooted(false);
+                    me->SetControlled(false, UNIT_STATE_ROOT);
                     MoveSmoothPath(me->GetMotionMaster(), LogoshPath, LogoshPathSize);
                     break;
                 case EVENT_LOGOSH_2:

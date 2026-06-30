@@ -573,7 +573,7 @@ public:
             }
         }
 
-        void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+        void SummonedCreatureDies(Creature* /*summon*/, Unit* /*killer*/) override
         {
             _killCount++;
         }
@@ -653,7 +653,7 @@ public:
                     }
 
                     _summons.DespawnAll();
-                    me->DespawnOrUnsummon(1000);
+                    me->DespawnOrUnsummon(Milliseconds(1000));
                     break;
                 }
                 default:
@@ -1129,7 +1129,7 @@ public:
                 {
                     _summons.Summon(pyrelord);
                     pyrelord->setActive(true);
-                    pyrelord->SetRooted(true);
+                    pyrelord->SetControlled(true, UNIT_STATE_ROOT);
                     me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
                 }
                 break;
@@ -1137,7 +1137,7 @@ public:
                 if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                     me->AI()->Talk(3, player);
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
-                me->SetRooted(true);
+                me->SetControlled(true, UNIT_STATE_ROOT);
                 me->SetReactState(REACT_AGGRESSIVE);
                 _started = false;
                 me->RemoveAura(SPELL_ENVELOPING_WINDS);
