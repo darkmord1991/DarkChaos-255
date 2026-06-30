@@ -61,6 +61,10 @@ void AddSC_dc_giant_isles_fishing();          // GiantIsles/dc_giant_isles_fishi
 // --- Deepholm zone (map 646) ---
 void AddSC_deepholm();                         // Deepholm/zone_deepholm.cpp
 
+// --- Mount Hyjal downport (map 750) ---
+void AddSC_dc_mount_hyjal_ported();           // MountHyjal/zone_mount_hyjal.cpp
+void AddSC_dc_molten_front();                 // MountHyjal/zone_molten_front.cpp
+
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
 void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.cpp
@@ -289,6 +293,10 @@ void AddDCScripts()
 
     LogSection("Deepholm Zone (map 646)");
     DC_LOAD(AddSC_deepholm);
+
+    LogSection("Mount Hyjal Downport (map 750)");
+    DC_LOAD(AddSC_dc_mount_hyjal_ported);
+    DC_LOAD(AddSC_dc_molten_front);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);

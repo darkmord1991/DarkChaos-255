@@ -10,9 +10,14 @@ SDComment: Wondi Scripts!
 SDCategory: Mount Hyjal
 EndScriptData */
 
-#include "UnorderedMap.h"
+// NOTE (AC 3.3.5 port): dropped "UnorderedMap.h" (absent in AzerothCore).
 #include "AchievementMgr.h"
 #include "ScriptMgr.h"
+#include "CreatureScript.h"      // AC: split script-registration class headers
+#include "GameObjectScript.h"
+#include "SpellScriptLoader.h"
+#include "PlayerScript.h"
+#include "CombatAI.h"            // AC: VehicleAI base class
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
@@ -23,9 +28,118 @@ EndScriptData */
 #include "CreatureAI.h"
 #include "CreatureTextMgr.h"
 #include "SpellScript.h"
+#include "SpellMgr.h"         // AC: sSpellMgr for SpellScript::Validate
 #include "SpellAuraEffects.h"
 #include "SmartAI.h"
 #include "SmartScript.h"
+#include "ObjectAccessor.h"   // AC: Unit::GetPlayer/GetCreature -> ObjectAccessor::*
+#include "MotionMaster.h"     // AC: Movement::PointsArray for MoveSmoothPath shim
+#include "GridNotifiers.h"    // AC: player-in-range searcher for GetPlayersInRange shim
+#include "CellImpl.h"
+
+// ---------------------------------------------------------------------------
+// AC 3.3.5 compatibility shims.
+//
+// The Project-Neltharion 4.3.4 source used several helper methods that do not
+// exist in this AzerothCore fork:
+//   Unit::CastWithDelay / UnitAI::TalkWithDelay / MotionMaster::MoveSmoothPath /
+//   WorldObject::SelectNearbyUnits / WorldObject::GetPlayersInRange.
+// They are reimplemented here as free functions (the mechanical port rewrote
+// "x->Foo(...)" call sites into "Foo(x, ...)"). Behaviour is kept as close as
+// 3.3.5 allows; see the port report for the MoveSmoothPath caveat.
+// ---------------------------------------------------------------------------
+namespace
+{
+    // CastWithDelay(caster, delayMs, target, spellId): 3.3.5 has no delayed-cast
+    // primitive on Unit, so we cast immediately (triggered). The small visual
+    // delay is lost but the gameplay effect is preserved.
+    inline void CastWithDelay(Unit* caster, uint32 /*delayMs*/, Unit* target, uint32 spellId)
+    {
+        if (caster && target)
+            caster->CastSpell(target, spellId, true);
+    }
+
+    // TalkWithDelay(ai, delayMs, textGroup, whisperGuid): AC's Talk() supports a
+    // Milliseconds delay and a WorldObject* whisper target. Resolve the GUID to a
+    // player for the whisper; fall back to a broadcast Talk if it cannot be found.
+    inline void TalkWithDelay(CreatureAI* ai, uint32 delayMs, uint8 textGroup, ObjectGuid whisperGuid = ObjectGuid::Empty)
+    {
+        if (!ai)
+            return;
+        WorldObject* whisper = whisperGuid ? ObjectAccessor::FindPlayer(whisperGuid) : nullptr;
+        ai->Talk(textGroup, whisper, Milliseconds(delayMs));
+    }
+    // UnitAI overload (callers pass me->AI() which is UnitAI*; downcast to CreatureAI).
+    inline void TalkWithDelay(UnitAI* ai, uint32 delayMs, uint8 textGroup, ObjectGuid whisperGuid = ObjectGuid::Empty)
+    {
+        TalkWithDelay(dynamic_cast<CreatureAI*>(ai), delayMs, textGroup, whisperGuid);
+    }
+    // Creature overload (a couple of callers pass a Creature* directly).
+    inline void TalkWithDelay(Creature* who, uint32 delayMs, uint8 textGroup, ObjectGuid whisperGuid = ObjectGuid::Empty)
+    {
+        if (who)
+            TalkWithDelay(who->AI(), delayMs, textGroup, whisperGuid);
+    }
+
+    // AiTalk(ai, textGroup, whisperGuid): the 2-arg Talk(id, GUID) whisper form.
+    inline void AiTalk(CreatureAI* ai, uint8 textGroup, ObjectGuid whisperGuid)
+    {
+        if (!ai)
+            return;
+        WorldObject* whisper = whisperGuid ? ObjectAccessor::FindPlayer(whisperGuid) : nullptr;
+        ai->Talk(textGroup, whisper);
+    }
+    inline void AiTalk(UnitAI* ai, uint8 textGroup, ObjectGuid whisperGuid)
+    {
+        AiTalk(dynamic_cast<CreatureAI*>(ai), textGroup, whisperGuid);
+    }
+
+    // MoveSmoothPath(mm, pointsArray, count): 4.3.4's MoveSmoothPath took a raw
+    // G3D::Vector3[]+count and splined through every node, firing MovementInform
+    // per node. 3.3.5's nearest equivalent is MoveSplinePath, which takes a
+    // Movement::PointsArray* and reports completion once as ESCORT_MOTION_TYPE.
+    // CAVEAT: intermediate per-waypoint MovementInform callbacks are NOT emitted,
+    // so the per-"point" switch logic in those AIs only sees the final node.
+    inline void MoveSmoothPath(MotionMaster* mm, G3D::Vector3 const* path, uint32 count)
+    {
+        if (!mm || !path || !count)
+            return;
+        Movement::PointsArray points;
+        points.reserve(count);
+        for (uint32 i = 0; i < count; ++i)
+            points.push_back(path[i]);
+        mm->MoveSplinePath(&points);
+    }
+
+    // SelectNearbyUnits(who, entry, range): 4.3.4 returned a unit list of a given
+    // creature entry in range. Reimplemented via GetCreatureListWithEntryInGrid.
+    inline std::list<Unit*> SelectNearbyUnits(WorldObject* who, uint32 entry, float range)
+    {
+        std::list<Unit*> result;
+        if (!who)
+            return result;
+        std::list<Creature*> creatures;
+        who->GetCreatureListWithEntryInGrid(creatures, entry, range);
+        for (Creature* c : creatures)
+            result.push_back(c);
+        return result;
+    }
+
+    // GetPlayersInRange(who, range, alive): 4.3.4 returned nearby players.
+    inline std::list<Player*> GetPlayersInRange(WorldObject* who, float range, bool alive)
+    {
+        std::list<Player*> result;
+        if (!who)
+            return result;
+        std::list<Player*> players;
+        Acore::AnyPlayerInObjectRangeCheck checker(who, range, alive);
+        Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(who, players, checker);
+        Cell::VisitObjects(who, searcher, range);
+        for (Player* pl : players)
+            result.push_back(pl);
+        return result;
+    }
+}
 
 enum MountHyjalDefaultSpells
 {
@@ -140,7 +254,7 @@ public:
 
         uint8 flyphase = 0;
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             if (auto player = summoner->ToPlayer())
                 playerGUID = player->GetGUID();
@@ -150,7 +264,7 @@ public:
         {
             flyphase = 1;
             if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
-                events.ScheduleEvent(EVENT_TIMER_0, 1000);
+                events.ScheduleEvent(EVENT_TIMER_0, Milliseconds(1000));
         }
 
         void MovementInform(uint32 type, uint32 point) override
@@ -163,7 +277,7 @@ public:
                 {
                 case 2:
                     if (flyphase == 1)
-                        events.ScheduleEvent(EVENT_TIMER_1, 1000);
+                        events.ScheduleEvent(EVENT_TIMER_1, Milliseconds(1000));
                     break;
                 case 3:
                     if (flyphase == 2)
@@ -171,11 +285,11 @@ public:
                     break;
                 case 6:
                     if (flyphase == 2)
-                        events.ScheduleEvent(EVENT_TIMER_2, 1000);
+                        events.ScheduleEvent(EVENT_TIMER_2, Milliseconds(1000));
                     break;
                 case 7:
                     if (flyphase == 3)
-                        events.ScheduleEvent(EVENT_TIMER_4, 3000);
+                        events.ScheduleEvent(EVENT_TIMER_4, Milliseconds(3000));
                     break;
                 default:
                     break;
@@ -198,7 +312,7 @@ public:
                     me->SetSpeed(MOVE_FLIGHT, 1.2f);
                     me->AI()->DoCast(SPELL_FLIGHT_SPEED_180);
                     MoveSmoothPath(me->GetMotionMaster(), AronusVehiclePath1, AronusVehiclePathSize1);
-                    events.ScheduleEvent(EVENT_TIMER_FADE, 2000);
+                    events.ScheduleEvent(EVENT_TIMER_FADE, Milliseconds(2000));
                     break;
                 case EVENT_TIMER_1:
                     AiTalk(me->AI(), 0, playerGUID);
@@ -211,7 +325,7 @@ public:
                     flyphase = 3;
                     me->SetOrientation(4.116f);
                     me->SummonCreature(NPC_RAGNAROS, 4024.39f, -3100.2f, 972.58f, 0.969f, TEMPSUMMON_TIMED_DESPAWN, 8000); //  SAI ragna
-                    events.ScheduleEvent(EVENT_TIMER_3, 5000);
+                    events.ScheduleEvent(EVENT_TIMER_3, Milliseconds(5000));
 
                     if (auto deathwing = me->FindNearestCreature(NPC_DEATHWING, 300.0f))
                         deathwing->AI()->DoCast(SPELL_FLAME_BREATH);
@@ -227,7 +341,7 @@ public:
                     me->AI()->DoCast(SPELL_EJECT_PASSENGER);
                     if (auto player = ObjectAccessor::GetPlayer(*me, playerGUID))
                         player->GetMotionMaster()->MoveJump(PlayerJumpPos, 12.0f, 14.0f);
-                    me->DespawnOrUnsummon(1000);
+                    me->DespawnOrUnsummon( Milliseconds(1000));
                     break;
 
                 case EVENT_TIMER_FADE:
@@ -264,9 +378,9 @@ static Position FirstQuestTeleport = { 4761.667f, -3234.507f, 1093.803f, 2.9624f
 class first_quest_mount_hyjal_playerscript : public PlayerScript
 {
 public:
-    first_quest_mount_hyjal_playerscript() : PlayerScript("first_quest_mount_hyjal_playerscript") { }
+    first_quest_mount_hyjal_playerscript() : PlayerScript("first_quest_mount_hyjal_playerscript", { PLAYERHOOK_ON_UPDATE_ZONE }) { }
 
-    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 newArea)
+    void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 newArea) override
     {
         if (newZone == MOUNT_HYJAL_ZONEID && newArea == SCORCHED_PLAIN_AREAID && player->GetQuestStatus(AS_HYJAL_BURNS_QUESTID) == QUEST_STATUS_INCOMPLETE)
         {
@@ -310,7 +424,7 @@ public:
     {
         npc_emerald_flameweaver_infiltratorsAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             MoveSmoothPath(me->GetMotionMaster(), EmeraldFlamePath, EmeraldFlamePathSize);
         }
@@ -426,7 +540,7 @@ public:
     {
         npc_archdruid_fandral_staghelm_dreamAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             if (auto player = summoner->ToPlayer())
             {
@@ -447,7 +561,7 @@ public:
                     {
                         playerx->AreaExploredOrEventHappens(QUEST_THROUGH_THE_DREAM);
                         me->CastSpell(me, SPELL_ROOT);
-                        me->DespawnOrUnsummon(5000);
+                        me->DespawnOrUnsummon( Milliseconds(5000));
                     }
             }
         }
@@ -547,7 +661,7 @@ public:
     {
         npc_twilight_proveditorAI(Creature* creature) : ScriptedAI(creature), _summons(me) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             if (auto slavedriver = me->SummonCreature(NPC_SLAVE_DRIVER, 5127.52f, -2356.76f, 1414.76f, 5.387f, TEMPSUMMON_TIMED_DESPAWN, 900000))
             {
@@ -564,7 +678,7 @@ public:
                             slave3->setActive(true);
                             slave3->AI()->SetData(3, 1);
 
-                            me->GetMotionMaster()->MovePath(WAYPOINT_PATH, false);
+                            me->GetMotionMaster()->MovePath(WAYPOINT_PATH, FORCED_MOVEMENT_NONE);
                         }
             }
         }
@@ -594,7 +708,7 @@ public:
 
         void JustEngagedWith(Unit* /*who*/)
         {
-            _events.ScheduleEvent(EVENT_PROVEDITOR_1, urand(4000, 12000));
+            _events.ScheduleEvent(EVENT_PROVEDITOR_1, Milliseconds(urand(4000, 12000)));
         }
 
         void UpdateAI(uint32 const diff) override
@@ -614,7 +728,7 @@ public:
                     if (auto victim = me->GetVictim())
                         me->CastSpell(victim, SPELL_UPPERCUT);
 
-                    _events.ScheduleEvent(EVENT_PROVEDITOR_1, urand(11000, 16000));
+                    _events.ScheduleEvent(EVENT_PROVEDITOR_1, Milliseconds(urand(11000, 16000)));
                     break;
                 default:
                     break;
@@ -645,7 +759,7 @@ public:
     {
         npc_twilight_slavedriverAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             if (auto owner = summoner->ToCreature())
                 _proveditorGUID = owner->GetGUID();
@@ -710,7 +824,7 @@ public:
     {
         npc_twilight_slaveAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             if (auto owner = summoner->ToCreature())
                 _proveditorGUID = owner->GetGUID();
@@ -789,7 +903,7 @@ public:
                                     me->RemoveAura(SPELL_HOLD_BURDEN);
                                     me->CastSpell(me, SPELL_SUMMON_SUPPLIES);
                                     CastWithDelay(me, 2500, me, SPELL_FEAR_VISUAL);
-                                    me->DespawnOrUnsummon(6000);
+                                    me->DespawnOrUnsummon( Milliseconds(6000));
                                 }
                         }
                     }
@@ -905,7 +1019,7 @@ public:
     {
         npc_activated_flamewardAI(Creature* creature) : ScriptedAI(creature), _summons(me) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
             CastWithDelay(me, 100, me, SPELL_COSMETIC_SHIELD);
@@ -922,7 +1036,7 @@ public:
 
                 _started = true;
                 TalkWithDelay(me->AI(), 1000, 0, _playerGUID);
-                _events.ScheduleEvent(EVENT_FLAMEWARD_1, 3000);
+                _events.ScheduleEvent(EVENT_FLAMEWARD_1, Milliseconds(3000));
             }
         }
 
@@ -941,7 +1055,7 @@ public:
                 if (_counter < 4)
                 {
                     _counter++;
-                    _events.ScheduleEvent(EVENT_FLAMEWARD_2, 6500);
+                    _events.ScheduleEvent(EVENT_FLAMEWARD_2, Milliseconds(6500));
                 }
                 else
                 {
@@ -1132,7 +1246,7 @@ public:
     {
         npc_aessina_miracle_vehicleAI(Creature* creature) : VehicleAI(creature), _summons(me) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
             me->SetPhaseMask(32, false);
@@ -1156,13 +1270,13 @@ public:
                 {
                     if (auto aessina = me->SummonCreature(NPC_SUMMONED_AESSINA, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN))
                     {
-                        me->setActive(aessina);
+                        aessina->setActive(true);  // AC: was me->setActive(aessina) (Creature*->bool); intent is to keep the summon active
                         _aessinaGUID = aessina->GetGUID();
                         _summons.Summon(aessina);
                         CastWithDelay(aessina, 300, me, SPELL_RIDE_VEHICLE_SEAT_02);
                     }
 
-                    _events.ScheduleEvent(EVENT_AESSINA_VEH_1, 2000);
+                    _events.ScheduleEvent(EVENT_AESSINA_VEH_1, Milliseconds(2000));
                 }
                 else
                     passenger->CastSpell(passenger, SPELL_SWITCH_SEAT_01);
@@ -1211,14 +1325,14 @@ public:
                 {
                 case EVENT_AESSINA_VEH_1:
                     me->SetRooted(false);
-                    me->GetMotionMaster()->MovePoint(1, 5135.51f, -1756.11f, 1349.144f, false);
+                    me->GetMotionMaster()->MovePoint(1, 5135.51f, -1756.11f, 1349.144f); // AC: dropped 4.3.4 'generatePath=false' bool
 
                     if (auto aessina1 = ObjectAccessor::GetCreature(*me, _aessinaGUID))
                         if (auto aessina = aessina1->AI())
                         {
                             TalkWithDelay(aessina, 1000, 0, _playerGUID);
                             TalkWithDelay(aessina, 8000, 1, _playerGUID);
-                            _events.ScheduleEvent(EVENT_AESSINA_VEH_2, 15000);
+                            _events.ScheduleEvent(EVENT_AESSINA_VEH_2, Milliseconds(15000));
                         }
                     break;
                 case EVENT_AESSINA_VEH_2:
@@ -1227,7 +1341,7 @@ public:
                         {
                             TalkWithDelay(aessina, 1000, 2, _playerGUID);
                             TalkWithDelay(aessina, 9000, 3, _playerGUID);
-                            _events.ScheduleEvent(EVENT_AESSINA_VEH_3, 17000);
+                            _events.ScheduleEvent(EVENT_AESSINA_VEH_3, Milliseconds(17000));
                         }
                     break;
                 case EVENT_AESSINA_VEH_3:
@@ -1236,7 +1350,7 @@ public:
                         {
                             TalkWithDelay(aessina, 1000, 4, _playerGUID);
                             TalkWithDelay(aessina, 9500, 5, _playerGUID);
-                            _events.ScheduleEvent(EVENT_AESSINA_VEH_4, 16500);
+                            _events.ScheduleEvent(EVENT_AESSINA_VEH_4, Milliseconds(16500));
                         }
                     break;
                 case EVENT_AESSINA_VEH_4:
@@ -1244,7 +1358,7 @@ public:
                         if (auto aessina = aessina1->AI())
                         {
                             TalkWithDelay(aessina, 1000, 6, _playerGUID);
-                            _events.ScheduleEvent(EVENT_AESSINA_VEH_5, 2500);
+                            _events.ScheduleEvent(EVENT_AESSINA_VEH_5, Milliseconds(2500));
                         }
                     break;
                 case EVENT_AESSINA_VEH_5:
@@ -1299,7 +1413,7 @@ public:
     {
         npc_strength_of_tortollaAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
             me->setActive(true);
@@ -1347,7 +1461,7 @@ public:
                                 me->CastSpell(trigger, SPELL_NEMESIS_CRYSTAL_EXAMINATION);
                                 trigger->CastSpell(player, SPELL_NEMESIS_CRYSTAL_EXAMINATION);
                                 AiTalk(me->AI(), 0, _playerGUID);
-                                _events.ScheduleEvent(EVENT_CHILD_OF_TORTOLLA_1, 6000);
+                                _events.ScheduleEvent(EVENT_CHILD_OF_TORTOLLA_1, Milliseconds(6000));
                             }
                         }
                     }
@@ -1427,7 +1541,7 @@ public:
     {
         npc_blazing_trainer_agility_trainingAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             //me->SetReactState(REACT_PASSIVE);
             me->setActive(true);
@@ -1439,7 +1553,7 @@ public:
                 player->CastSpell(player, SPELL_DISMOUNT_AND_CANCEL_ALL_SHAPESHIFTS);
                 TalkWithDelay(me->AI(), 100, 0, _playerGUID);
                 CastWithDelay(me, 100, me, SPELL_IMMUNITY_ALL);
-                _events.ScheduleEvent(EVENT_AGILITY_TRAINER_1, 500);
+                _events.ScheduleEvent(EVENT_AGILITY_TRAINER_1, Milliseconds(500));
             }
         }
 
@@ -1592,12 +1706,12 @@ public:
         bool WaitingForAnswer = false;
         uint32 WaitingForAnswerTimer = 8000;
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             if (auto player = summoner->ToPlayer())
             {
                 playerGUID = player->GetGUID();
-                events.ScheduleEvent(EVENT_ASK_QUESTION, 3000);
+                events.ScheduleEvent(EVENT_ASK_QUESTION, Milliseconds(3000));
                 player->SetRooted(true);
             }
         }
@@ -1610,7 +1724,7 @@ public:
                     {
                         player->RemoveAura(SPELL_IDLE_CHECK_AURA);
                         WaitingForAnswer = false;
-                        events.ScheduleEvent(EVENT_ASK_QUESTION, 3500);
+                        events.ScheduleEvent(EVENT_ASK_QUESTION, Milliseconds(3500));
                     }
 
             if (spellInfo->Id == SPELL_DISMISS_ORB_OF_ASCENSION)
@@ -1644,7 +1758,7 @@ public:
 
                     // i think to do (should be NOT repeatable, now the events can be draw many times
                     uint8 number = urand(1, 16);
-                    events.ScheduleEvent(InitEvents[number], 0);
+                    events.ScheduleEvent(InitEvents[number], Milliseconds(0));
                 }
                 else
                 {
@@ -2093,7 +2207,7 @@ public:
     {
         npc_spawn_of_smolderos_dogAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
             me->setActive(true);
@@ -2129,7 +2243,7 @@ public:
                         || player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_REWARDED)
                     {
                         me->SetRooted(true);
-                        me->DespawnOrUnsummon(6000);
+                        me->DespawnOrUnsummon( Milliseconds(6000));
                     }
 
                     if (me->GetReactState() != REACT_PASSIVE)
@@ -2174,7 +2288,7 @@ public:
     {
         npc_spawn_of_smolderos_grudge_matchAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             if (auto butcher = me->FindNearestCreature(NPC_BUTCHER, 30.f))
             {
@@ -2209,7 +2323,7 @@ public:
                     if (auto grommko = ObjectAccessor::GetCreature(*me, _grommkoGUID))
                     {
                         me->SetFacingToObject(grommko);
-                        me->DespawnOrUnsummon(3000);
+                        me->DespawnOrUnsummon( Milliseconds(3000));
                     }
                 }
             }
@@ -2287,7 +2401,7 @@ public:
     {
         npc_emerald_drake_slash_burnAI(Creature* creature) : VehicleAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
             me->SetPhaseMask(32768, true);
@@ -2321,7 +2435,7 @@ public:
                     {
                         _isInCorrectArea = false;
                         AiTalk(me->AI(), 0, _playerGUID);
-                        _events.ScheduleEvent(EVENT_EMERALD_DRAKE_1, 10000);
+                        _events.ScheduleEvent(EVENT_EMERALD_DRAKE_1, Milliseconds(10000));
                     }
                 }
                 else
@@ -2357,7 +2471,7 @@ public:
                 {
                 case EVENT_EMERALD_DRAKE_1:
                     me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
-                    me->DespawnOrUnsummon(100);
+                    me->DespawnOrUnsummon( Milliseconds(100));
                     break;
                 default:
                     break;
@@ -2475,7 +2589,7 @@ public:
                         if (auto target = result->ToCreature())
                         {
                             TalkWithDelay(target->AI(), 1500, 7, _playerGUID);
-                            _events.ScheduleEvent(EVENT_GRADUATION_2, 5000);
+                            _events.ScheduleEvent(EVENT_GRADUATION_2, Milliseconds(5000));
                         }
                     }
                 }
@@ -2495,7 +2609,7 @@ public:
                                 player->KilledMonsterCredit(NPC_GRADUATION_CREDIT);
 
                             TalkWithDelay(target->AI(), 1500, 6, _playerGUID);
-                            _events.ScheduleEvent(EVENT_GRADUATION_2, 5000);
+                            _events.ScheduleEvent(EVENT_GRADUATION_2, Milliseconds(5000));
                         }
                     }
                 }
@@ -2519,7 +2633,7 @@ public:
                         if (auto target = result->ToCreature())
                         {
                             TalkWithDelay(target->AI(), 1500, 7, _playerGUID);
-                            _events.ScheduleEvent(EVENT_GRADUATION_2, 5000);
+                            _events.ScheduleEvent(EVENT_GRADUATION_2, Milliseconds(5000));
                         }
                     }
                 }
@@ -2539,7 +2653,7 @@ public:
                                 player->KilledMonsterCredit(NPC_GRADUATION_CREDIT);
 
                             TalkWithDelay(target->AI(), 1500, 6, _playerGUID);
-                            _events.ScheduleEvent(EVENT_GRADUATION_2, 5000);
+                            _events.ScheduleEvent(EVENT_GRADUATION_2, Milliseconds(5000));
                         }
                     }
                 }
@@ -2563,7 +2677,7 @@ public:
                         if (auto target = result->ToCreature())
                         {
                             TalkWithDelay(target->AI(), 1500, 7, _playerGUID);
-                            _events.ScheduleEvent(EVENT_GRADUATION_2, 5000);
+                            _events.ScheduleEvent(EVENT_GRADUATION_2, Milliseconds(5000));
                         }
                     }
                 }
@@ -2583,7 +2697,7 @@ public:
                                 player->KilledMonsterCredit(NPC_GRADUATION_CREDIT);
 
                             TalkWithDelay(target->AI(), 1500, 6, _playerGUID);
-                            _events.ScheduleEvent(EVENT_GRADUATION_2, 5000);
+                            _events.ScheduleEvent(EVENT_GRADUATION_2, Milliseconds(5000));
                         }
                     }
                 }
@@ -2607,7 +2721,7 @@ public:
                     {
                         _eventStarted = true;
                         _playerGUID = player->GetGUID();
-                        _events.ScheduleEvent(EVENT_GRADUATION_2, 2500, 1);
+                        _events.ScheduleEvent(EVENT_GRADUATION_2, Milliseconds(2500), 1);
                     }
                 }
             }
@@ -2622,7 +2736,7 @@ public:
                     if (_checkTimer <= diff)
                     {
                         _checkTimer = 17000;
-                        _events.ScheduleEvent(EVENT_GRADUATION_1, 15000);
+                        _events.ScheduleEvent(EVENT_GRADUATION_1, Milliseconds(15000));
                     }
                     else _checkTimer -= diff;
                 }
@@ -2837,7 +2951,7 @@ public:
     {
         npc_wings_of_aviana_dailyAI(Creature* creature) : VehicleAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
             me->SetPhaseMask(32, true);
@@ -2885,7 +2999,7 @@ public:
                     {
                         _isInCorrectArea = false;
                         AiTalk(me->AI(), 0, _playerGUID);
-                        _events.ScheduleEvent(EVENT_WINGS_OF_AVIANA_1, 10000);
+                        _events.ScheduleEvent(EVENT_WINGS_OF_AVIANA_1, Milliseconds(10000));
                     }
                 }
                 else
@@ -2926,7 +3040,7 @@ public:
                 {
                 case EVENT_WINGS_OF_AVIANA_1:
                     me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
-                    me->DespawnOrUnsummon(100);
+                    me->DespawnOrUnsummon( Milliseconds(100));
                     break;
                 default:
                     break;
@@ -2966,7 +3080,7 @@ public:
     {
         npc_turtle_punterAI(Creature* creature) : VehicleAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->setActive(true);
             me->SetReactState(REACT_PASSIVE);
@@ -2985,7 +3099,7 @@ public:
             {
                 passenger->RemoveAura(SPELL_VISUAL_HOLD_CHILD);
                 me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-                me->DespawnOrUnsummon(8000);
+                me->DespawnOrUnsummon( Milliseconds(8000));
             }
         }
 
@@ -2998,13 +3112,13 @@ public:
                 {
                     player->ExitVehicle();
                     me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-                    me->DespawnOrUnsummon(100);
+                    me->DespawnOrUnsummon( Milliseconds(100));
                 }
 
                 if (me->GetDistance(player) >= 10.f)
                 {
                     me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-                    me->DespawnOrUnsummon(100);
+                    me->DespawnOrUnsummon( Milliseconds(100));
                 }
             }
 
@@ -3042,9 +3156,10 @@ public:
     {
         npc_punt_child_of_tortollaAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summonerObj) override
         {
-            if (me->GetOwnerGUID() != summoner->GetOwnerGUID())
+            Unit* summoner = summonerObj ? summonerObj->ToUnit() : nullptr;
+            if (summoner && me->GetOwnerGUID() != summoner->GetOwnerGUID())
             {
                 if (auto myowner = summoner->GetOwner())
                     if (auto newowner = myowner->ToPlayer())
@@ -3070,12 +3185,12 @@ public:
                     if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                     {
                         player->KilledMonsterCredit(NPC_PUTING_SEASON_CREDIT);
-                        me->DespawnOrUnsummon(6000);
+                        me->DespawnOrUnsummon( Milliseconds(6000));
                     }
                 }
                 else
                 {
-                    me->DespawnOrUnsummon(6000);
+                    me->DespawnOrUnsummon( Milliseconds(6000));
 
                     if (me->FindNearestCreature(NPC_FLAME_ELEMENTAL, 3.f))
                     {
@@ -3207,7 +3322,7 @@ public:
     {
         npc_spirit_of_logosh_goldrinn_vehicleAI(Creature* creature) : VehicleAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
             me->SetRooted(true);
@@ -3224,12 +3339,12 @@ public:
         {
             if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
             {
-                _events.ScheduleEvent(EVENT_LOGOSH_1, 2000);
+                _events.ScheduleEvent(EVENT_LOGOSH_1, Milliseconds(2000));
             }
 
             if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
             {
-                me->DespawnOrUnsummon(2500);
+                me->DespawnOrUnsummon( Milliseconds(2500));
             }
         }
 
@@ -3254,7 +3369,7 @@ public:
                         player->GetMotionMaster()->MoveJump(5178.640f, -2269.761f, 1275.2f, 30.f, 30.f);
                     }
 
-                    _events.ScheduleEvent(EVENT_LOGOSH_3, 1000);
+                    _events.ScheduleEvent(EVENT_LOGOSH_3, Milliseconds(1000));
                 }
             }
             // cant script cuz because camera view is falling while using changeseat
@@ -3266,7 +3381,7 @@ public:
             //        {
             //            player->ExitVehicle();
             //            me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-            //            me->DespawnOrUnsummon(1000);
+            //            me->DespawnOrUnsummon( Milliseconds(1000));
             //        }
             //    }
             //}

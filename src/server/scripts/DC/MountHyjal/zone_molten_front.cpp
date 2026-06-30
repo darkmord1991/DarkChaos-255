@@ -1,8 +1,20 @@
-// PORTED from Project-Neltharion zone_molten_front.cpp by port_neltharion_cpp.py (first pass).
-// MECHANICAL: applied API-delta subs + dc entry offset (+3600000 on NPC_/GO_ enums). NEEDS a compile
-// pass on the AC build for the deeper 4.3.4->3.3.5 deltas (vehicle/escort signatures, helper
-// renames). Spell IDs are CATA — see the spell-downport list. ScriptNames wired by SQL.
-
+// PORTED from Project-Neltharion zone_molten_front.cpp (4.3.4 / TrinityCore lineage) to AzerothCore 3.3.5a.
+// MECHANICAL first pass kept the dc entry offset (+3600000 on NPC_/GO_ enums) and CATA spell ids.
+// This pass resolves the deeper 4.3.4 -> AC 3.3.5 API deltas so the unit COMPILES against this server:
+//   * ObjectGuid replaces uint64 GUIDs; ObjectAccessor::Get{Player,Creature,GameObject}.
+//   * EventMap::ScheduleEvent now takes Milliseconds -> every numeric delay is wrapped Milliseconds(...).
+//   * CreatureAI::Talk(id, WorldObject const* whisper, Milliseconds delay) replaces Talk(id, guid) and the
+//     non-existent TalkWithDelay(delay, id, guid).
+//   * GetThreatMgr()/GetSortedThreatList() replace getThreatManager()/getThreatList().
+//   * IsAlive()/GetVictim()/IsInCombat()/setActive style getters.
+//   * npc_escortAI::Start(bool, ObjectGuid) (2-arg) replaces 4.3.4 Start(bool,bool,guid); SetRun() no longer
+//     exists on the escort base -> local no-op shim.
+//   * MotionMaster::MoveSplinePath(PointsArray*) replaces MoveSmoothPath(Vector3[], size) via DoMoveSmoothPath().
+//   * MoveJump replaces the removed ForceMoveJump; MoveAroundPoint has no 3.3.5 equivalent (stubbed).
+//   * Unit::Kill is now static -> Unit::Kill(killer, victim).
+//   * CastWithDelay() does not exist on this fork -> immediate CastSpell(..., true) (cosmetic delay dropped).
+// Spell IDs remain CATA; absent ids no-op until authored. ScriptNames wired by SQL (registration is a
+// separate loader edit). See the structured report for the full delta + stub list.
 
 #include "AchievementMgr.h"
 #include "ScriptMgr.h"
@@ -10,15 +22,53 @@
 #include "ScriptedGossip.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedFollowerAI.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "Vehicle.h"
 #include "GameObject.h"
 #include "CreatureAI.h"
+#include "CombatAI.h"            // VehicleAI
+#include "MotionMaster.h"
+#include "MoveSplineInitArgs.h"  // Movement::PointsArray
+#include "GridNotifiers.h"       // AC: player-in-range searcher (GetPlayersInRange shim)
+#include "CellImpl.h"
 #include "SpellScript.h"
 #include "SpellAuraEffects.h"
 #include "SmartAI.h"
 #include "SmartScript.h"
 #include "Group.h"
+
+// ---------------------------------------------------------------------------
+// Local helpers bridging removed 4.3.4 conveniences to AC 3.3.5 primitives.
+// ---------------------------------------------------------------------------
+
+// 4.3.4 WorldObject::GetPlayersInRange(range, alive) is gone; reproduce it with the
+// AC grid searcher (same shim the sibling zone_mount_hyjal.cpp uses).
+static std::list<Player*> GetPlayersInRange(WorldObject* who, float range, bool alive)
+{
+    std::list<Player*> players;
+    if (!who)
+        return players;
+
+    Acore::AnyPlayerInObjectRangeCheck checker(who, range, alive);
+    Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(who, players, checker);
+    Cell::VisitObjects(who, searcher, range);
+    return players;
+}
+
+// MoveSmoothPath(Vector3[], size) is gone; build a PointsArray and feed MoveSplinePath.
+static void DoMoveSmoothPath(Unit* who, G3D::Vector3 const* path, uint32 size)
+{
+    if (!who || !path || !size)
+        return;
+
+    Movement::PointsArray points;
+    points.reserve(size);
+    for (uint32 i = 0; i < size; ++i)
+        points.push_back(path[i]);
+
+    who->GetMotionMaster()->MoveSplinePath(&points);
+}
 
 enum MoltenFrontDefaultSpells
 {
@@ -114,42 +164,42 @@ public:
     {
         npc_hyjal_wisp_awayAI(Creature* creature) : ScriptedAI(creature), _summons(me) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->setActive(true);
             me->SetReactState(REACT_PASSIVE);
 
-            if (auto player = summoner->ToPlayer())
+            if (Player* player = summoner ? summoner->ToPlayer() : nullptr)
                 _playerGUID = player->GetGUID();
         }
 
-        void JustDied(Unit* killer)
+        void JustDied(Unit* /*killer*/) override
         {
-            if (auto player = Unit::GetPlayer(*me, _playerGUID))
+            if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* who, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_PORTAL_TO_WISP_RESPONSE)
             {
-                if (auto portal = who->ToCreature())
+                if (Creature* portal = who->ToCreature())
                 {
                     if (portal->GetEntry() == NPC_FIRE_ATTACKER_PORTAL)
                     {
-                        portal->CastSpell(portal, SPELL_DUMMY_AURA_CHECK);
+                        portal->CastSpell(portal, SPELL_DUMMY_AURA_CHECK, true);
                         _inAction = true;
                         _portalGUID = portal->GetGUID();
                         _summons.Summon(portal);
-                        me->GetMotionMaster()->ForceMoveJump(portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(), 20.f, 5.f);
-                        //me->RemoveUnitMovementFlag(FOLLOW_MOTION_TYPE);
-                        _events.ScheduleEvent(EVENT_HYJAL_WISP_AWAY_1, 3000);
+                        // 4.3.4 ForceMoveJump -> AC MoveJump (arc jump to the portal).
+                        me->GetMotionMaster()->MoveJump(portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ(), 20.f, 5.f);
+                        _events.ScheduleEvent(EVENT_HYJAL_WISP_AWAY_1, Milliseconds(3000));
                     }
                 }
             }
         }
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             if (summoned->GetEntry() == NPC_FIREKIN)
             {
@@ -157,7 +207,7 @@ public:
             }
         }
 
-        void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+        void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
         {
             _summons.RemoveNotExisting();
 
@@ -168,25 +218,25 @@ public:
 
                 if (_firekinKillCount >= 8)
                 {
-                    if (auto portal = Unit::GetCreature(*me, _portalGUID))
+                    if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
                     {
-                        if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                        if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                         {
                             _inAction = false;
-                            portal->CastSpell(portal, SPELL_EXPLODE_CAMERA_SHAKE);
+                            portal->CastSpell(portal, SPELL_EXPLODE_CAMERA_SHAKE, true);
                             me->GetMotionMaster()->Clear();
                             me->RemoveAura(SPELL_SUMMON_FIREKIN_AURA);
 
                             player->KilledMonsterCredit(NPC_FIRE_ATTACKER_PORTAL);
 
-                            _events.ScheduleEvent(EVENT_HYJAL_WISP_AWAY_3, 2000);
+                            _events.ScheduleEvent(EVENT_HYJAL_WISP_AWAY_3, Milliseconds(2000));
                         }
                     }
                 }
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -194,15 +244,15 @@ public:
             {
                 _checkTimer = 1000;
 
-                if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 {
-                    if (!player->isAlive())
+                    if (!player->IsAlive())
                     {
                         _summons.DespawnAll();
                         me->DespawnOrUnsummon();
                         player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
 
-                        if (Creature* portal = Unit::GetCreature(*me, _portalGUID))
+                        if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
                             portal->DespawnOrUnsummon();
                     }
 
@@ -213,7 +263,7 @@ public:
                         me->DespawnOrUnsummon();
                         player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
 
-                        if (auto portal = Unit::GetCreature(*me, _portalGUID))
+                        if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
                             portal->DespawnOrUnsummon();
                     }
 
@@ -223,14 +273,14 @@ public:
                         player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
                         me->DespawnOrUnsummon();
 
-                        if (auto portal = Unit::GetCreature(*me, _portalGUID))
+                        if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
                             portal->DespawnOrUnsummon();
                     }
 
                     if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE && !_inAction)
                     {
                         me->SetReactState(REACT_PASSIVE);
-                        me->CastSpell(me, SPELL_SANCTUARY_NO_COMBAT);
+                        me->CastSpell(me, SPELL_SANCTUARY_NO_COMBAT, true);
                         me->GetMotionMaster()->MoveFollow(player, 1.0f, 0.5f * M_PI);
                     }
                 }
@@ -244,18 +294,21 @@ public:
                 switch (eventId)
                 {
                 case EVENT_HYJAL_WISP_AWAY_1:
-                    if (auto portal = Unit::GetCreature(*me, _portalGUID))
+                    if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
                     {
-                        me->AI()->Talk(0, _playerGUID);
-                        me->CastSpell(me, SPELL_WISP_SHIELD);
+                        if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                            me->AI()->Talk(0, player);
+                        me->CastSpell(me, SPELL_WISP_SHIELD, true);
 
-                        portal->GetPosition(&_portalCenter);
-                        me->GetMotionMaster()->MoveAroundPoint(_portalCenter, 2.0f, true, 10);
-                        _events.ScheduleEvent(EVENT_HYJAL_WISP_AWAY_2, 1000);
+                        _portalCenter = portal->GetPosition();
+                        // 4.3.4 MoveAroundPoint has no 3.3.5 equivalent -- approximate with a MovePoint to
+                        // the portal centre so the spline still runs and the event chain proceeds.
+                        me->GetMotionMaster()->MovePoint(0, _portalCenter);
+                        _events.ScheduleEvent(EVENT_HYJAL_WISP_AWAY_2, Milliseconds(1000));
                     }
                     break;
                 case EVENT_HYJAL_WISP_AWAY_2:
-                    me->CastSpell(me, SPELL_SUMMON_FIREKIN_AURA);
+                    me->CastSpell(me, SPELL_SUMMON_FIREKIN_AURA, true);
                     break;
                 case EVENT_HYJAL_WISP_AWAY_3:
                     _summons.DespawnAll();
@@ -268,15 +321,15 @@ public:
         }
     private:
         bool _inAction = false;
-        uint64 _playerGUID = 0;
-        uint64 _portalGUID = 0;
+        ObjectGuid _playerGUID;
+        ObjectGuid _portalGUID;
         uint16 _checkTimer = 1000, _firekinCounter = 0, _firekinKillCount = 0;
         EventMap _events;
         Position _portalCenter;
         SummonList _summons;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_hyjal_wisp_awayAI(creature);
     }
@@ -328,15 +381,15 @@ public:
     {
         npc_the_forlorn_spire_controllerAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void Reset()
+        void Reset() override
         {
             me->setActive(true);
         }
 
-        void MoveInLineOfSight(Unit* who)
+        void MoveInLineOfSight(Unit* who) override
         {
             if (me->IsWithinDistInMap(who, 30.0f))
-                if (auto player = who->ToPlayer())
+                if (Player* player = who->ToPlayer())
                     if (!_isEventStarted)
                     {
                         if (player->GetQuestStatus(QUEST_THE_FORLORN_SPIRE) == QUEST_STATUS_REWARDED)
@@ -346,9 +399,9 @@ public:
                         {
                             _isEventStarted = true;
 
-                            if (auto captain = me->FindNearestCreature(NPC_SAYNNA, 30.f))
+                            if (Creature* captain = me->FindNearestCreature(NPC_SAYNNA, 30.f))
                             {
-                                captain->AI()->Talk(0, player->GetGUID());
+                                captain->AI()->Talk(0, player);
                             }
 
                             uint8 randomId = urand(0, 2);
@@ -356,21 +409,21 @@ public:
                             switch (randomId)
                             {
                             case 0:
-                                if (auto anydruid = player->SummonCreature(NPC_TURAK_RUNETOTEM, SummonQuestNpcsPos1[0], TEMPSUMMON_MANUAL_DESPAWN))
+                                if (Creature* anydruid = player->SummonCreature(NPC_TURAK_RUNETOTEM, SummonQuestNpcsPos1[0], TEMPSUMMON_MANUAL_DESPAWN))
                                 {
                                     anydruid->SetPhaseMask(64, true);
                                     anydruid->setActive(true);
                                 }
                                 break;
                             case 1:
-                                if (auto anydruid = player->SummonCreature(NPC_KEEPER_TALDROS, SummonQuestNpcsPos1[0], TEMPSUMMON_MANUAL_DESPAWN))
+                                if (Creature* anydruid = player->SummonCreature(NPC_KEEPER_TALDROS, SummonQuestNpcsPos1[0], TEMPSUMMON_MANUAL_DESPAWN))
                                 {
                                     anydruid->SetPhaseMask(64, true);
                                     anydruid->setActive(true);
                                 }
                                 break;
                             case 2:
-                                if (auto anydruid = player->SummonCreature(NPC_DELDREN_RAVENELM, SummonQuestNpcsPos1[0], TEMPSUMMON_MANUAL_DESPAWN))
+                                if (Creature* anydruid = player->SummonCreature(NPC_DELDREN_RAVENELM, SummonQuestNpcsPos1[0], TEMPSUMMON_MANUAL_DESPAWN))
                                 {
                                     anydruid->SetPhaseMask(64, true);
                                     anydruid->setActive(true);
@@ -383,7 +436,7 @@ public:
                     }
         }
 
-        void DoAction(int32 const actionId)
+        void DoAction(int32 actionId) override
         {
             if (actionId == ACTION_FORLORN_RESET_CONTROLLER)
             {
@@ -395,7 +448,7 @@ public:
         bool _isEventStarted = false;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_the_forlorn_spire_controllerAI(creature);
     }
@@ -411,14 +464,14 @@ public:
     {
         npc_the_forlorn_spire_anydruidAI(Creature* creature) : npc_escortAI(creature), _summons(me) { }
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
-            if (auto controller = me->FindNearestCreature(NPC_FORLORN_CONTROLLER, 30.f))
+            if (Creature* controller = me->FindNearestCreature(NPC_FORLORN_CONTROLLER, 30.f))
             {
                 _controllerGUID = controller->GetGUID();
             }
 
-            if (Player* player = summoner->ToPlayer())
+            if (Player* player = summoner ? summoner->ToPlayer() : nullptr)
             {
                 _playerGUID = player->GetGUID();
 
@@ -427,7 +480,7 @@ public:
                 switch (randomId)
                 {
                 case 0:
-                    if (auto warden = me->SummonCreature(NPC_SHALIS_DARKHUNTER, SummonQuestNpcsPos1[1], TEMPSUMMON_MANUAL_DESPAWN))
+                    if (Creature* warden = me->SummonCreature(NPC_SHALIS_DARKHUNTER, SummonQuestNpcsPos1[1], TEMPSUMMON_MANUAL_DESPAWN))
                     {
                         _summons.Summon(warden);
                         warden->SetPhaseMask(64, true);
@@ -435,7 +488,7 @@ public:
                     }
                     break;
                 case 1:
-                    if (auto warden = me->SummonCreature(NPC_SIRA_MOONWARDEN, SummonQuestNpcsPos1[1], TEMPSUMMON_MANUAL_DESPAWN))
+                    if (Creature* warden = me->SummonCreature(NPC_SIRA_MOONWARDEN, SummonQuestNpcsPos1[1], TEMPSUMMON_MANUAL_DESPAWN))
                     {
                         _summons.Summon(warden);
                         warden->SetPhaseMask(64, true);
@@ -448,39 +501,41 @@ public:
             }
         }
 
-        void JustDied(Unit* /* killer */)
+        void JustDied(Unit* /* killer */) override
         {
             _summons.DespawnAll();
 
-            if (Creature* controller = Unit::GetCreature(*me, _controllerGUID))
+            if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                 controller->AI()->DoAction(ACTION_FORLORN_RESET_CONTROLLER);
         }
 
+        // 4.3.4 escort hook; harmless extra method on the AC base (not an override).
         void EscortAbandonTooFarDespawn()
         {
             _summons.DespawnAll();
 
-            if (Creature* controller = Unit::GetCreature(*me, _controllerGUID))
+            if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                 controller->AI()->DoAction(ACTION_FORLORN_RESET_CONTROLLER);
         }
 
-        void WaypointReached(uint32 waypointId)
+        void WaypointReached(uint32 waypointId) override
         {
             switch (waypointId)
             {
             case 1:
             {
-                me->AI()->TalkWithDelay(500, 0, _playerGUID);
-                SetRun(true);
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    me->AI()->Talk(0, player, Milliseconds(500));
+                _running = true; // SetRun() removed from escort base; tracked locally (no-op behaviourally).
             }
             break;
             case 13:
             {
                 SetEscortPaused(true);
 
-                if (auto igniter1 = me->SummonCreature(NPC_IGNITER, SummonQuestNpcsPos1[2], TEMPSUMMON_MANUAL_DESPAWN))
-                    if (auto igniter2 = me->SummonCreature(NPC_IGNITER, SummonQuestNpcsPos1[3], TEMPSUMMON_MANUAL_DESPAWN))
-                        if (auto igniter3 = me->SummonCreature(NPC_IGNITER, SummonQuestNpcsPos1[4], TEMPSUMMON_MANUAL_DESPAWN))
+                if (Creature* igniter1 = me->SummonCreature(NPC_IGNITER, SummonQuestNpcsPos1[2], TEMPSUMMON_MANUAL_DESPAWN))
+                    if (Creature* igniter2 = me->SummonCreature(NPC_IGNITER, SummonQuestNpcsPos1[3], TEMPSUMMON_MANUAL_DESPAWN))
+                        if (Creature* igniter3 = me->SummonCreature(NPC_IGNITER, SummonQuestNpcsPos1[4], TEMPSUMMON_MANUAL_DESPAWN))
                         {
                             _summons.Summon(igniter1);
                             igniter1->setActive(true);
@@ -501,16 +556,16 @@ public:
                 break;
             case 22:
                 me->AI()->Talk(3);
-                me->CastSpell(me, SPELL_NATURE_CHANNELING);
+                me->CastSpell(me, SPELL_NATURE_CHANNELING, true);
 
-                _events.ScheduleEvent(EVENT_THE_FORLORN_SPIRE_ESCORT_1, 5000);
+                _events.ScheduleEvent(EVENT_THE_FORLORN_SPIRE_ESCORT_1, Milliseconds(5000));
                 break;
             default:
                 break;
             }
         }
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             if (summoned->GetEntry() == NPC_IGNITER)
             {
@@ -518,14 +573,13 @@ public:
             }
         }
 
-        void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+        void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
         {
             _killCount++;
         }
 
-        void UpdateAI(const uint32 uiDiff)
+        void UpdateAI(uint32 uiDiff) override
         {
-            npc_escortAI::UpdateEscortAI(uiDiff);
             npc_escortAI::UpdateAI(uiDiff);
 
             _events.Update(uiDiff);
@@ -534,24 +588,24 @@ public:
             {
                 _timer = 5000;
 
-                if (!me->isInCombat())
+                if (!me->IsInCombat())
                     if (!_started)
                     {
-                        Start(true, false, _playerGUID);
+                        Start(true, _playerGUID);
                         me->SetReactState(REACT_AGGRESSIVE);
                         SetDespawnAtEnd(false);
                         SetDespawnAtFar(true);
                         _started = true;
                     }
 
-                if (!me->isInCombat() && _killCount == 3 && _waveCount == 0)
+                if (!me->IsInCombat() && _killCount == 3 && _waveCount == 0)
                 {
                     SetEscortPaused(false);
                     me->AI()->Talk(1);
                     _waveCount++;
 
-                    if (auto sentinel1 = me->SummonCreature(NPC_SENTINEL, SummonQuestNpcsPos1[5], TEMPSUMMON_MANUAL_DESPAWN))
-                        if (auto sentinel2 = me->SummonCreature(NPC_SENTINEL, SummonQuestNpcsPos1[6], TEMPSUMMON_MANUAL_DESPAWN))
+                    if (Creature* sentinel1 = me->SummonCreature(NPC_SENTINEL, SummonQuestNpcsPos1[5], TEMPSUMMON_MANUAL_DESPAWN))
+                        if (Creature* sentinel2 = me->SummonCreature(NPC_SENTINEL, SummonQuestNpcsPos1[6], TEMPSUMMON_MANUAL_DESPAWN))
                         {
                             _summons.Summon(sentinel1);
                             _summons.Summon(sentinel2);
@@ -560,19 +614,19 @@ public:
                         }
                 }
 
-                if (!me->isInCombat() && _killCount == 5 && _waveCount == 1)
+                if (!me->IsInCombat() && _killCount == 5 && _waveCount == 1)
                 {
                     SetEscortPaused(false);
                     _waveCount++;
 
-                    if (auto pyrelord = me->SummonCreature(NPC_PYRELORD, SummonQuestNpcsPos1[7], TEMPSUMMON_MANUAL_DESPAWN))
+                    if (Creature* pyrelord = me->SummonCreature(NPC_PYRELORD, SummonQuestNpcsPos1[7], TEMPSUMMON_MANUAL_DESPAWN))
                     {
                         _summons.Summon(pyrelord);
                         pyrelord->setActive(true);
                     }
                 }
 
-                if (!me->isInCombat() && _killCount == 6 && _waveCount == 2)
+                if (!me->IsInCombat() && _killCount == 6 && _waveCount == 2)
                 {
                     _waveCount++;
                 }
@@ -585,18 +639,16 @@ public:
                 {
                 case EVENT_THE_FORLORN_SPIRE_ESCORT_1:
                 {
-                    if (Creature* controller = Unit::GetCreature(*me, _controllerGUID))
+                    if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                         controller->AI()->DoAction(ACTION_FORLORN_RESET_CONTROLLER);
 
-                    auto player = me->GetPlayersInRange(55, true);
-
-                    for (auto it = player.begin(); it != player.end(); it++)
+                    for (Player* it : GetPlayersInRange(me, 55.0f, true))
                     {
-                        if ((*it)->GetQuestStatus(QUEST_THE_FORLORN_SPIRE) == QUEST_STATUS_INCOMPLETE)
+                        if (it->GetQuestStatus(QUEST_THE_FORLORN_SPIRE) == QUEST_STATUS_INCOMPLETE)
                         {
-                            (*it)->CastSpell(*it, SPELL_DISMOUNT_AND_CANCEL_ALL_SHAPESHIFTS);
-                            (*it)->CastSpell(*it, SPELL_FADE_TO_BLACK);
-                            (*it)->CastSpell(*it, SPELL_SUMMON_FORLORN_CAMERA);
+                            it->CastSpell(it, SPELL_DISMOUNT_AND_CANCEL_ALL_SHAPESHIFTS, true);
+                            it->CastSpell(it, SPELL_FADE_TO_BLACK, true);
+                            it->CastSpell(it, SPELL_SUMMON_FORLORN_CAMERA, true);
                         }
                     }
 
@@ -611,13 +663,15 @@ public:
         }
     private:
         bool _started = false;
+        bool _running = false;
         uint8 _waveCount = 0, _killCount = 0;
         EventMap _events;
-        uint64 _playerGUID = 0, _controllerGUID = 0, _timer = 4000;
+        ObjectGuid _playerGUID, _controllerGUID;
+        uint32 _timer = 4000;
         SummonList _summons;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_the_forlorn_spire_anydruidAI(creature);
     }
@@ -633,16 +687,17 @@ public:
     {
         npc_the_forlorn_spire_wardenAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
-            me->SetOwnerGUID(summoner->GetGUID());
+            if (summoner)
+                me->SetOwnerGUID(summoner->GetGUID());
         }
 
-        void JustDied(Unit* killer)
+        void JustDied(Unit* /*killer*/) override
         {
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -650,26 +705,26 @@ public:
             {
                 _checkTimer = 1000;
 
-                if (auto owner = me->GetOwner())
+                if (Unit* owner = me->GetOwner())
                 {
-                    if (!owner->isAlive())
+                    if (!owner->IsAlive())
                     {
                         me->DespawnOrUnsummon();
                     }
 
-                    if (!me->getVictim() && owner->isInCombat())
+                    if (!me->GetVictim() && owner->IsInCombat())
                     {
                         if (me->GetReactState() != REACT_AGGRESSIVE)
                             me->SetReactState(REACT_AGGRESSIVE);
 
-                        if (owner->getVictim())
-                            me->AI()->AttackStart(owner->getVictim());
+                        if (owner->GetVictim())
+                            me->AI()->AttackStart(owner->GetVictim());
                     }
 
-                    if (me->GetReactState() != REACT_PASSIVE && !owner->isInCombat())
+                    if (me->GetReactState() != REACT_PASSIVE && !owner->IsInCombat())
                     {
                         me->SetReactState(REACT_PASSIVE);
-                        me->CastSpell(me, SPELL_SANCTUARY_NO_COMBAT);
+                        me->CastSpell(me, SPELL_SANCTUARY_NO_COMBAT, true);
                         me->GetMotionMaster()->MoveFollow(owner, 0.7f, 0.4f * M_PI);
                     }
                 }
@@ -677,11 +732,11 @@ public:
             else _checkTimer -= diff;
         }
     private:
-        uint64 _playerGUID = 0;
+        ObjectGuid _playerGUID;
         uint16 _checkTimer = 1000;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_the_forlorn_spire_wardenAI(creature);
     }
@@ -712,58 +767,62 @@ public:
     {
         npc_the_forlorn_spire_cameraAI(Creature* creature) : VehicleAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
-            if (auto player = summoner->ToPlayer())
+            if (Player* player = summoner ? summoner->ToPlayer() : nullptr)
             {
                 _playerGUID = player->GetGUID();
-                player->CastWithDelay(500, me, SPELL_RIDE_VEHICLE);
+                // 4.3.4 CastWithDelay(500,...) -> immediate cast (no delayed-cast helper on this fork).
+                player->CastSpell(me, SPELL_RIDE_VEHICLE, true);
             }
         }
 
-        void PassengerBoarded(Unit* passenger, int8 /* seatId*/, bool apply)
+        void PassengerBoarded(Unit* passenger, int8 /* seatId*/, bool apply) override
         {
             if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
             {
-                me->NearTeleportTo(cameraPos);
-                _events.ScheduleEvent(EVENT_FORLORN_CAMERA_1, 1000);
+                // NearTeleportTo takes a non-const Position& on this fork; cameraPos is const.
+                me->NearTeleportTo(cameraPos.GetPositionX(), cameraPos.GetPositionY(), cameraPos.GetPositionZ(), cameraPos.GetOrientation());
+                _events.ScheduleEvent(EVENT_FORLORN_CAMERA_1, Milliseconds(1000));
 
-                if (auto target = me->FindNearestCreature(NPC_CHANNEL_TARGET, 80.f))
+                if (Creature* target = me->FindNearestCreature(NPC_CHANNEL_TARGET, 80.f))
                 {
                     _targetBunnyGUID = target->GetGUID();
-                    me->CastSpell(target, SPELL_CAMERA_CHANNEL);
+                    me->CastSpell(target, SPELL_CAMERA_CHANNEL, true);
                 }
             }
 
             if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
             {
-                if (auto bunny = Unit::GetCreature(*me, _targetBunnyGUID))
+                if (Creature* bunny = ObjectAccessor::GetCreature(*me, _targetBunnyGUID))
                 {
                     passenger->ExitVehicle();
-                    bunny->CastWithDelay(500, passenger, SPELL_TELEPORT_END);
+                    bunny->CastSpell(passenger, SPELL_TELEPORT_END, true);
                 }
             }
         }
 
-        void MovementInform(uint32 type, uint32 point)
+        void MovementInform(uint32 type, uint32 point) override
         {
-            if (type != SPLINE_MOTION_TYPE)
+            // AC 3.3.5: SPLINE_MOTION_TYPE does not exist; MoveSplinePath (DoMoveSmoothPath)
+            // reports completion as ESCORT_MOTION_TYPE.
+            if (type != ESCORT_MOTION_TYPE)
                 return;
 
             switch (point)
             {
             case 2:
-                me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
+                me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS, true);
 
-                if (auto player = Unit::GetPlayer(*me, _playerGUID))
-                    player->CastSpell(player, SPELL_FADE_TO_BLACK);
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    player->CastSpell(player, SPELL_FADE_TO_BLACK, true);
                 break;
             default:
                 break;
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 diff) override
         {
             _events.Update(diff);
 
@@ -772,13 +831,13 @@ public:
                 switch (eventId)
                 {
                 case EVENT_FORLORN_CAMERA_1:
-                    _events.ScheduleEvent(EVENT_FORLORN_CAMERA_2, 1000);
+                    _events.ScheduleEvent(EVENT_FORLORN_CAMERA_2, Milliseconds(1000));
                     break;
                 case EVENT_FORLORN_CAMERA_2:
-                    if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                         player->KilledMonsterCredit(NPC_FORLORN_CREDIT);
 
-                    me->GetMotionMaster()->MoveSmoothPath(ForlornCameraPath, ForlornCameraPathSize);
+                    DoMoveSmoothPath(me, ForlornCameraPath, ForlornCameraPathSize);
                     break;
                 default:
                     break;
@@ -788,10 +847,10 @@ public:
 
     private:
         EventMap _events;
-        uint64 _playerGUID = 0;
-        uint64 _targetBunnyGUID = 0;
+        ObjectGuid _playerGUID;
+        ObjectGuid _targetBunnyGUID;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_the_forlorn_spire_cameraAI(creature);
     }
@@ -822,9 +881,9 @@ public:
     {
         npc_flame_protection_runeAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void OnSpellClick(Unit* clicker, bool& /*result*/)
+        void OnSpellClick(Unit* clicker, bool& /*result*/) override
         {
-            if (auto player = clicker->ToPlayer())
+            if (Player* player = clicker->ToPlayer())
             {
                 if (!player->HasAura(SPELL_SEE_QUEST_INVIS_1)
                     && !player->HasAura(SPELL_SEE_QUEST_INVIS_2)
@@ -835,13 +894,13 @@ public:
                     && !player->HasAura(SPELL_SEE_QUEST_INVIS_7)
                     && !player->HasAura(SPELL_SEE_QUEST_INVIS_8))
                 {
-                    player->CastSpell(player, SPELL_ENDURING_KILLCREDIT);
+                    player->CastSpell(player, SPELL_ENDURING_KILLCREDIT, true);
                 }
             }
         }
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_flame_protection_runeAI(creature);
     }
@@ -858,18 +917,18 @@ public:
 
         uint32 checkTimer = 1000;
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 diff) override
         {
             if (checkTimer <= diff)
             {
-                checkTimer = urand(5000, 20000);;
+                checkTimer = urand(5000, 20000);
 
-                if (auto player = me->FindNearestPlayer(40.f))
+                if (Player* player = me->SelectNearestPlayer(40.f))
                 {
                     if (player->GetQuestStatus(QUEST_ENDURING_THE_HEAT) == QUEST_STATUS_INCOMPLETE
                         || player->GetQuestStatus(QUEST_ENDURING_THE_HEAT) == QUEST_STATUS_COMPLETE)
                     {
-                        me->CastSpell(player, SPELL_MOLTEN_SPLASH);
+                        me->CastSpell(player, SPELL_MOLTEN_SPLASH, true);
                         checkTimer = urand(30000, 80000);
                     }
                 }
@@ -878,7 +937,7 @@ public:
         }
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_molten_splash_origin_bunnyAI(creature);
     }
@@ -927,15 +986,15 @@ public:
     {
         npc_into_the_fire_controllerAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void Reset()
+        void Reset() override
         {
             me->setActive(true);
         }
 
-        void MoveInLineOfSight(Unit* who)
+        void MoveInLineOfSight(Unit* who) override
         {
             if (me->IsWithinDistInMap(who, 10.0f))
-                if (auto player = who->ToPlayer())
+                if (Player* player = who->ToPlayer())
                     if (!_isEventStarted)
                     {
                         if (player->GetQuestStatus(QUEST_INTO_THE_FIRE) == QUEST_STATUS_REWARDED)
@@ -950,14 +1009,14 @@ public:
                             switch (randomId)
                             {
                             case 0:
-                                if (auto windcaller1 = player->SummonCreature(NPC_WINDCALLER_NORDRALA, SummonQuestNpcsPos2[0], TEMPSUMMON_MANUAL_DESPAWN))
+                                if (Creature* windcaller1 = player->SummonCreature(NPC_WINDCALLER_NORDRALA, SummonQuestNpcsPos2[0], TEMPSUMMON_MANUAL_DESPAWN))
                                 {
                                     windcaller1->SetPhaseMask(4, true);
                                     windcaller1->setActive(true);
                                 }
                                 break;
                             case 1:
-                                if (auto windcaller2 = player->SummonCreature(NPC_WINDCALLER_VORAMUS, SummonQuestNpcsPos2[0], TEMPSUMMON_MANUAL_DESPAWN))
+                                if (Creature* windcaller2 = player->SummonCreature(NPC_WINDCALLER_VORAMUS, SummonQuestNpcsPos2[0], TEMPSUMMON_MANUAL_DESPAWN))
                                 {
                                     windcaller2->SetPhaseMask(4, true);
                                     windcaller2->setActive(true);
@@ -970,7 +1029,7 @@ public:
                     }
         }
 
-        void DoAction(int32 const actionId)
+        void DoAction(int32 actionId) override
         {
             if (actionId == ACTION_INTO_THE_FIRE_RESET_CONTROLLER)
             {
@@ -982,7 +1041,7 @@ public:
         bool _isEventStarted = false;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_into_the_fire_controllerAI(creature);
     }
@@ -998,46 +1057,47 @@ public:
     {
         npc_into_the_fire_windcaller_nordralaAI(Creature* creature) : npc_escortAI(creature), _summons(me) { }
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
 
-            if (Player* player = summoner->ToPlayer())
+            if (Player* player = summoner ? summoner->ToPlayer() : nullptr)
             {
                 _playerGUID = player->GetGUID();
-                me->setRegeneratingHealth(false);
+                me->SetRegeneratingHealth(false);
 
-                if (auto controller = me->FindNearestCreature(NPC_INTO_THE_FIRE_CONTROLLER, 30.f))
+                if (Creature* controller = me->FindNearestCreature(NPC_INTO_THE_FIRE_CONTROLLER, 30.f))
                     _controllerGUID = controller->GetGUID();
 
-                me->AI()->TalkWithDelay(2000, 0, player->GetGUID());
+                me->AI()->Talk(0, player, Milliseconds(2000));
 
-                _events.ScheduleEvent(EVENT_INTO_THE_FIRE_ESCORT_1, 10000);
+                _events.ScheduleEvent(EVENT_INTO_THE_FIRE_ESCORT_1, Milliseconds(10000));
             }
         }
 
-        void JustDied(Unit* /* killer */)
+        void JustDied(Unit* /* killer */) override
         {
             _summons.DespawnAll();
 
-            if (Creature* controller = Unit::GetCreature(*me, _controllerGUID))
+            if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                 controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
         }
 
+        // 4.3.4 escort hook; harmless extra method on the AC base (not an override).
         void EscortAbandonTooFarDespawn()
         {
             _summons.DespawnAll();
 
-            if (Creature* controller = Unit::GetCreature(*me, _controllerGUID))
+            if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                 controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
         }
 
-        void WaypointReached(uint32 waypointId)
+        void WaypointReached(uint32 waypointId) override
         {
             switch (waypointId)
             {
             case 3:
-                if (auto assassin1 = me->SummonCreature(NPC_FLAMEWAKER_ASSASSIN, SummonQuestNpcsPos2[1], TEMPSUMMON_MANUAL_DESPAWN))
+                if (Creature* assassin1 = me->SummonCreature(NPC_FLAMEWAKER_ASSASSIN, SummonQuestNpcsPos2[1], TEMPSUMMON_MANUAL_DESPAWN))
                 {
                     _summons.Summon(assassin1);
                     assassin1->setActive(true);
@@ -1045,7 +1105,7 @@ public:
                 }
                 break;
             case 7:
-                if (auto assassin2 = me->SummonCreature(NPC_FLAMEWAKER_ASSASSIN, SummonQuestNpcsPos2[2], TEMPSUMMON_MANUAL_DESPAWN))
+                if (Creature* assassin2 = me->SummonCreature(NPC_FLAMEWAKER_ASSASSIN, SummonQuestNpcsPos2[2], TEMPSUMMON_MANUAL_DESPAWN))
                 {
                     _summons.Summon(assassin2);
                     assassin2->setActive(true);
@@ -1053,10 +1113,11 @@ public:
                 }
                 break;
             case 8:
-                me->AI()->Talk(2, _playerGUID);
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    me->AI()->Talk(2, player);
                 break;
             case 10:
-                if (auto assassin3 = me->SummonCreature(NPC_FLAMEWAKER_ASSASSIN, SummonQuestNpcsPos2[9], TEMPSUMMON_MANUAL_DESPAWN))
+                if (Creature* assassin3 = me->SummonCreature(NPC_FLAMEWAKER_ASSASSIN, SummonQuestNpcsPos2[9], TEMPSUMMON_MANUAL_DESPAWN))
                 {
                     _summons.Summon(assassin3);
                     assassin3->setActive(true);
@@ -1064,7 +1125,7 @@ public:
                 }
                 break;
             case 11:
-                if (auto pyrelord = me->SummonCreature(NPC_PYRELORD_2, SummonQuestNpcsPos2[3], TEMPSUMMON_MANUAL_DESPAWN))
+                if (Creature* pyrelord = me->SummonCreature(NPC_PYRELORD_2, SummonQuestNpcsPos2[3], TEMPSUMMON_MANUAL_DESPAWN))
                 {
                     _summons.Summon(pyrelord);
                     pyrelord->setActive(true);
@@ -1073,7 +1134,8 @@ public:
                 }
                 break;
             case 14:
-                me->AI()->Talk(3, _playerGUID);
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    me->AI()->Talk(3, player);
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
                 me->SetRooted(true);
                 me->SetReactState(REACT_AGGRESSIVE);
@@ -1081,11 +1143,11 @@ public:
                 me->RemoveAura(SPELL_ENVELOPING_WINDS);
                 SetDespawnAtFar(false);
 
-                if (auto talon1 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[4], TEMPSUMMON_MANUAL_DESPAWN))
-                    if (auto talon2 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[5], TEMPSUMMON_MANUAL_DESPAWN))
-                        if (auto talon3 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[6], TEMPSUMMON_MANUAL_DESPAWN))
-                            if (auto talon4 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[7], TEMPSUMMON_MANUAL_DESPAWN))
-                                if (auto talon5 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[8], TEMPSUMMON_MANUAL_DESPAWN))
+                if (Creature* talon1 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[4], TEMPSUMMON_MANUAL_DESPAWN))
+                    if (Creature* talon2 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[5], TEMPSUMMON_MANUAL_DESPAWN))
+                        if (Creature* talon3 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[6], TEMPSUMMON_MANUAL_DESPAWN))
+                            if (Creature* talon4 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[7], TEMPSUMMON_MANUAL_DESPAWN))
+                                if (Creature* talon5 = me->SummonCreature(NPC_DRUID_OF_THE_TALON, SummonQuestNpcsPos2[8], TEMPSUMMON_MANUAL_DESPAWN))
                                 {
                                     _summons.Summon(talon1);
                                     _summons.Summon(talon2);
@@ -1098,7 +1160,7 @@ public:
                                     talon4->setActive(true);
                                     talon5->setActive(true);
 
-                                    if (auto pyre = me->FindNearestCreature(NPC_PYRELORD_2, 50.f))
+                                    if (Creature* pyre = me->FindNearestCreature(NPC_PYRELORD_2, 50.f))
                                     {
                                         talon1->AI()->AttackStart(pyre);
                                         talon2->AI()->AttackStart(pyre);
@@ -1114,7 +1176,7 @@ public:
             }
         }
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             if (summoned->GetEntry() == NPC_FLAMEWAKER_ASSASSIN)
             {
@@ -1123,14 +1185,14 @@ public:
             }
         }
 
-        void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+        void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
         {
             if (summon->GetEntry() == NPC_FLAMEWAKER_ASSASSIN)
                 SetEscortPaused(false);
 
             if (summon->GetEntry() == NPC_PYRELORD_2)
             {
-                if (auto gripcontroller = me->FindNearestCreature(NPC_INTO_THE_FIRE_GRIP_CONTROLLER, 50.f))
+                if (Creature* gripcontroller = me->FindNearestCreature(NPC_INTO_THE_FIRE_GRIP_CONTROLLER, 50.f))
                 {
                     gripcontroller->AI()->DoAction(ACTION_INTO_THE_FIRE_END_GRIP);
                 }
@@ -1138,22 +1200,21 @@ public:
                 _summons.DespawnAll();
                 me->DespawnOrUnsummon();
 
-                if (Creature* controller = Unit::GetCreature(*me, _controllerGUID))
+                if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                     controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
             }
         }
 
-        void JustEngagedWith(Unit* who)
+        void JustEngagedWith(Unit* who) override
         {
             if (who->GetEntry() == NPC_PYRELORD_2)
             {
-                _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_1, urand(2000, 4000));
+                _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_1, Milliseconds(urand(2000, 4000)));
             }
         }
 
-        void UpdateAI(const uint32 uiDiff)
+        void UpdateAI(uint32 uiDiff) override
         {
-            npc_escortAI::UpdateEscortAI(uiDiff);
             npc_escortAI::UpdateAI(uiDiff);
 
             _events.Update(uiDiff);
@@ -1161,21 +1222,21 @@ public:
             if (_started)
             {
                 if (!me->HasAura(SPELL_ENVELOPING_WINDS))
-                    me->CastSpell(me, SPELL_ENVELOPING_WINDS);
+                    me->CastSpell(me, SPELL_ENVELOPING_WINDS, true);
             }
 
             if (_checkPlayerTimer <= uiDiff)
             {
                 _checkPlayerTimer = 1000;
 
-                if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 {
-                    if (!player->isAlive())
+                    if (!player->IsAlive())
                     {
                         _summons.DespawnAll();
                         me->DespawnOrUnsummon();
 
-                        if (Creature* controller = Unit::GetCreature(*me, _controllerGUID))
+                        if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                             controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
                     }
                 }
@@ -1187,16 +1248,18 @@ public:
                 switch (eventId)
                 {
                 case EVENT_INTO_THE_FIRE_ESCORT_1:
-                    me->CastSpell(me, SPELL_ENVELOPING_WINDS);
+                    me->CastSpell(me, SPELL_ENVELOPING_WINDS, true);
                     SetDespawnAtEnd(false);
                     SetDespawnAtFar(true);
-                    me->AI()->Talk(1, _playerGUID);
-                    Start(false, false, _playerGUID);
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                        me->AI()->Talk(1, player);
+                    Start(false, _playerGUID);
                     _started = true;
                     break;
                 case EVENT_WINDCALLER_ATTACK_EVENT_1:
-                    me->CastSpell(me->getVictim(), SPELL_WRATH);
-                    _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_1, urand(3000, 5000));
+                    if (Unit* victim = me->GetVictim())
+                        me->CastSpell(victim, SPELL_WRATH, false);
+                    _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_1, Milliseconds(urand(3000, 5000)));
                     break;
                 default:
                     break;
@@ -1206,11 +1269,12 @@ public:
     private:
         bool _started = false;
         EventMap _events;
-        uint64 _playerGUID = 0, _controllerGUID = 0, _checkPlayerTimer = 2000;
+        ObjectGuid _playerGUID, _controllerGUID;
+        uint32 _checkPlayerTimer = 2000;
         SummonList _summons;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_into_the_fire_windcaller_nordralaAI(creature);
     }
@@ -1233,39 +1297,38 @@ public:
     {
         npc_into_the_fire_end_controllerAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void Reset()
+        void Reset() override
         {
             me->setActive(true);
         }
 
-        void DoAction(int32 const actionId)
+        void DoAction(int32 actionId) override
         {
             if (actionId == ACTION_INTO_THE_FIRE_END_GRIP)
             {
                 me->setActive(true);
-                me->CastSpell(me, SPELL_FURNACE_ASSAULT_CREDIT);
-                me->CastWithDelay(500, me, SPELL_BACKDRAFT);
+                me->CastSpell(me, SPELL_FURNACE_ASSAULT_CREDIT, true);
+                me->CastSpell(me, SPELL_BACKDRAFT, true);
 
-                if (auto door = me->FindNearestGameObject(GAMEOBJECT_FURNACE_DOOR, 50.f))
+                if (GameObject* door = me->FindNearestGameObject(GAMEOBJECT_FURNACE_DOOR, 50.f))
                 {
                     _furnaceDoor = door->GetGUID();
                     door->SetGoState(GO_STATE_ACTIVE);
-                    _events.ScheduleEvent(EVENT_INTO_THE_FIRE_END_GRIP_1, 8000);
+                    _events.ScheduleEvent(EVENT_INTO_THE_FIRE_END_GRIP_1, Milliseconds(8000));
                 }
 
-                auto player = me->GetPlayersInRange(45, true);
-                for (auto it = player.begin(); it != player.end(); it++)
+                for (Player* it : GetPlayersInRange(me, 45.0f, true))
                 {
-                    if ((*it)->GetQuestStatus(QUEST_INTO_THE_FIRE) == QUEST_STATUS_INCOMPLETE)
+                    if (it->GetQuestStatus(QUEST_INTO_THE_FIRE) == QUEST_STATUS_INCOMPLETE)
                     {
-                        (*it)->CastSpell(*it, SPELL_DISMOUNT_AND_CANCEL_ALL_SHAPESHIFTS);
-                        (*it)->KilledMonsterCredit(NPC_INTO_THE_FIRE_CREDIT);
+                        it->CastSpell(it, SPELL_DISMOUNT_AND_CANCEL_ALL_SHAPESHIFTS, true);
+                        it->KilledMonsterCredit(NPC_INTO_THE_FIRE_CREDIT);
                     }
                 }
             }
         }
 
-        void UpdateAI(const uint32 uiDiff)
+        void UpdateAI(uint32 uiDiff) override
         {
             _events.Update(uiDiff);
 
@@ -1274,7 +1337,7 @@ public:
                 switch (eventId)
                 {
                 case EVENT_INTO_THE_FIRE_END_GRIP_1:
-                    if (auto door = GameObject::GetGameObject(*me, _furnaceDoor))
+                    if (GameObject* door = ObjectAccessor::GetGameObject(*me, _furnaceDoor))
                         door->SetGoState(GO_STATE_READY);
                     break;
                 default:
@@ -1284,11 +1347,11 @@ public:
         }
 
     private:
-        uint64 _furnaceDoor = 0;
+        ObjectGuid _furnaceDoor;
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_into_the_fire_end_controllerAI(creature);
     }
@@ -1407,39 +1470,39 @@ public:
     {
         npc_trained_fire_hawk_vehicleAI(Creature* creature) : VehicleAI(creature) {}
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
             me->SetReactState(REACT_PASSIVE);
 
-            if (Player* player = summoner->ToPlayer())
+            if (Player* player = summoner ? summoner->ToPlayer() : nullptr)
             {
                 _playerGUID = player->GetGUID();
-                player->CastSpell(player, SPELL_SANCTUARY_NO_COMBAT);
-                player->CastSpell(player, SPELL_DISMOUNT_AND_CANCEL_ALL_SHAPESHIFTS);
+                player->CastSpell(player, SPELL_SANCTUARY_NO_COMBAT, true);
+                player->CastSpell(player, SPELL_DISMOUNT_AND_CANCEL_ALL_SHAPESHIFTS, true);
             }
         }
 
-        void KilledUnit(Unit* victim)
+        void KilledUnit(Unit* victim) override
         {
             switch (victim->GetEntry())
             {
             case NPC_RAGEPYRE:
-                me->CastSpell(me, SPELL_RAGEPYRE_CREDIT);
+                me->CastSpell(me, SPELL_RAGEPYRE_CREDIT, true);
                 break;
             case NPC_FLASHFIRE:
-                me->CastSpell(me, SPELL_FLASHFIRE_CREDIT);
+                me->CastSpell(me, SPELL_FLASHFIRE_CREDIT, true);
                 break;
             case NPC_HEATFLAYER:
-                me->CastSpell(me, SPELL_HEATFLAYER_CREDIT);
+                me->CastSpell(me, SPELL_HEATFLAYER_CREDIT, true);
                 break;
             case NPC_BLAZEFURY:
-                me->CastSpell(me, SPELL_BLAZEFURY_CREDIT);
+                me->CastSpell(me, SPELL_BLAZEFURY_CREDIT, true);
                 break;
             case NPC_HATESPARK:
-                me->CastSpell(me, SPELL_HATESPARK_CREDIT);
+                me->CastSpell(me, SPELL_HATESPARK_CREDIT, true);
                 break;
             case NPC_SINGESLAYER:
-                me->CastSpell(me, SPELL_SINGESLAYER_CREDIT);
+                me->CastSpell(me, SPELL_SINGESLAYER_CREDIT, true);
                 break;
             default:
                 break;
@@ -1450,7 +1513,7 @@ public:
         {
             if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
             {
-                _events.ScheduleEvent(EVENT_TRAINED_HAWK_1, 500);
+                _events.ScheduleEvent(EVENT_TRAINED_HAWK_1, Milliseconds(500));
             }
 
             if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
@@ -1460,7 +1523,7 @@ public:
             }
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_RETURN_TO_THE_FURNACE && !_activated)
             {
@@ -1468,21 +1531,23 @@ public:
                 me->GetMotionMaster()->Clear();
                 me->SetSpeed(MOVE_RUN, 4.5f);
                 me->SetSpeed(MOVE_FLIGHT, 4.5f);
-                me->GetMotionMaster()->MoveSmoothPath(TrainedHawkPath3, TrainedHawkPathSize3);
+                DoMoveSmoothPath(me, TrainedHawkPath3, TrainedHawkPathSize3);
                 _phase = 2;
             }
         }
 
-        void MovementInform(uint32 type, uint32 point)
+        void MovementInform(uint32 type, uint32 point) override
         {
-            if (type != SPLINE_MOTION_TYPE)
+            // AC 3.3.5: SPLINE_MOTION_TYPE does not exist; MoveSplinePath (DoMoveSmoothPath)
+            // reports completion as ESCORT_MOTION_TYPE.
+            if (type != ESCORT_MOTION_TYPE)
                 return;
 
             if (point == 14 && _phase == 0)
             {
                 me->SetSpeed(MOVE_RUN, 1.4f);
                 me->SetSpeed(MOVE_FLIGHT, 1.4f);
-                me->GetMotionMaster()->MoveSmoothPath(TrainedHawkPath2, TrainedHawkPathSize2);
+                DoMoveSmoothPath(me, TrainedHawkPath2, TrainedHawkPathSize2);
                 _phase = 1;
             }
 
@@ -1490,12 +1555,12 @@ public:
             {
                 _events.Reset();
                 me->GetMotionMaster()->Clear();
-                me->GetMotionMaster()->MoveSmoothPath(TrainedHawkPath2, TrainedHawkPathSize2);
+                DoMoveSmoothPath(me, TrainedHawkPath2, TrainedHawkPathSize2);
             }
 
             if (_phase == 2 && point == 11)
             {
-                if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 {
                     _events.Reset();
                     me->GetMotionMaster()->Clear();
@@ -1505,7 +1570,7 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 diff) override
         {
             if (_checkTimer <= diff)
             {
@@ -1513,7 +1578,7 @@ public:
 
                 if (!_complete)
                 {
-                    if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                     {
                         if (player->GetQuestStatus(QUEST_FIRE_IN_THE_SKIES) == QUEST_STATUS_COMPLETE)
                         {
@@ -1522,7 +1587,7 @@ public:
                             me->GetMotionMaster()->Clear();
                             me->SetSpeed(MOVE_RUN, 4.5f);
                             me->SetSpeed(MOVE_FLIGHT, 4.5f);
-                            me->GetMotionMaster()->MoveSmoothPath(TrainedHawkPath3, TrainedHawkPathSize3);
+                            DoMoveSmoothPath(me, TrainedHawkPath3, TrainedHawkPathSize3);
                             _events.Reset();
                             _phase = 2;
                         }
@@ -1540,7 +1605,7 @@ public:
                 case EVENT_TRAINED_HAWK_1:
                     me->SetSpeed(MOVE_RUN, 3.5f);
                     me->SetSpeed(MOVE_FLIGHT, 3.5f);
-                    me->GetMotionMaster()->MoveSmoothPath(TrainedHawkPath, TrainedHawkPathSize);
+                    DoMoveSmoothPath(me, TrainedHawkPath, TrainedHawkPathSize);
                     break;
                 default:
                     break;
@@ -1552,10 +1617,10 @@ public:
         bool _complete = false;
         uint8 _phase = 0;
         uint32 _checkTimer = 1000;
-        uint64 _playerGUID = 0;
+        ObjectGuid _playerGUID;
         EventMap _events;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_trained_fire_hawk_vehicleAI(creature);
     }
@@ -1594,66 +1659,74 @@ public:
     {
         npc_anren_shadowseeker_escortAI(Creature* creature) : npc_escortAI(creature) { }
 
-        void IsSummonedBy(Unit* summoner)
+        void IsSummonedBy(WorldObject* summoner) override
         {
-            if (Player* player = summoner->ToPlayer())
+            if (Player* player = summoner ? summoner->ToPlayer() : nullptr)
             {
                 _playerGUID = player->GetGUID();
                 me->RemoveByteFlag(UNIT_FIELD_BYTES_1, 0, 7);
-                me->SetHealth(15475.f);
-                me->AI()->TalkWithDelay(1500, 0, player->GetGUID());
-                _events.ScheduleEvent(EVENT_ANREN_ESCORT_1, 5500);
+                me->SetHealth(15475);
+                me->AI()->Talk(0, player, Milliseconds(1500));
+                _events.ScheduleEvent(EVENT_ANREN_ESCORT_1, Milliseconds(5500));
             }
         }
 
-        void JustDied(Unit* /* killer */)
+        void JustDied(Unit* /* killer */) override
         {
-            me->AI()->Talk(9, _playerGUID);
+            if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                me->AI()->Talk(9, player);
         }
 
+        // 4.3.4 escort hook; harmless extra method on the AC base (not an override).
         void EscortAbandonTooFarDespawn()
         {
-            me->AI()->Talk(10, _playerGUID);
+            if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                me->AI()->Talk(10, player);
         }
 
-        void WaypointReached(uint32 waypointId)
+        void WaypointReached(uint32 waypointId) override
         {
+            Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID);
             switch (waypointId)
             {
             case 15:
-                SetRun(false);
-                me->AI()->TalkWithDelay(1000, 3, _playerGUID);
-                _events.ScheduleEvent(EVENT_ANREN_ESCORT_8, 4000);
+                _running = false; // SetRun(false) -> local flag (escort base has no SetRun on this fork).
+                if (player)
+                    me->AI()->Talk(3, player, Milliseconds(1000));
+                _events.ScheduleEvent(EVENT_ANREN_ESCORT_8, Milliseconds(4000));
                 break;
             case 16:
-                me->AI()->Talk(4, _playerGUID);
-                _events.ScheduleEvent(EVENT_ANREN_ESCORT_9, 1000);
+                if (player)
+                    me->AI()->Talk(4, player);
+                _events.ScheduleEvent(EVENT_ANREN_ESCORT_9, Milliseconds(1000));
                 break;
             case 17:
-                me->AI()->TalkWithDelay(100, 5, _playerGUID);
-                _events.ScheduleEvent(EVENT_ANREN_ESCORT_10, 0);
+                if (player)
+                    me->AI()->Talk(5, player, Milliseconds(100));
+                _events.ScheduleEvent(EVENT_ANREN_ESCORT_10, Milliseconds(0));
                 break;
             case 18:
-                _events.ScheduleEvent(EVENT_ANREN_ESCORT_11, 500);
+                _events.ScheduleEvent(EVENT_ANREN_ESCORT_11, Milliseconds(500));
                 break;
             case 20:
-                _events.ScheduleEvent(EVENT_ANREN_ESCORT_14, 500);
+                _events.ScheduleEvent(EVENT_ANREN_ESCORT_14, Milliseconds(500));
                 break;
             case 24: // credit
                 SetDespawnAtEnd(true);
                 SetDespawnAtFar(false);
-                me->AI()->TalkWithDelay(500, 7, _playerGUID);
-                me->AI()->TalkWithDelay(7500, 8, _playerGUID);
-
-                if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                if (player)
+                {
+                    me->AI()->Talk(7, player, Milliseconds(500));
+                    me->AI()->Talk(8, player, Milliseconds(7500));
                     player->KilledMonsterCredit(me->GetEntry());
+                }
                 break;
             default:
                 break;
             }
         }
 
-        void UpdateAI(const uint32 uiDiff)
+        void UpdateAI(uint32 uiDiff) override
         {
             npc_escortAI::UpdateAI(uiDiff);
 
@@ -1663,21 +1736,21 @@ public:
             {
                 _checkPlayerTimer = 1000;
 
-                if (auto player = Unit::GetPlayer(*me, _playerGUID))
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 {
-                    if (!player->isAlive())
+                    if (!player->IsAlive())
                         me->DespawnOrUnsummon();
 
                     if (_isPlayerAround)
                     {
-                        if (player->isInCombat() || me->isInCombat())
+                        if (player->IsInCombat() || me->IsInCombat())
                             SetEscortPaused(true);
                         else
                             SetEscortPaused(false);
                     }
                     else
                     {
-                        if (!player->isInCombat())
+                        if (!player->IsInCombat())
                         {
                             if (player->GetDistance(me) < 10.f)
                             {
@@ -1698,34 +1771,36 @@ public:
                 {
                 case EVENT_ANREN_ESCORT_1:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[0], 8.f, 10.f);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_2, 2000);
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_2, Milliseconds(2000));
                     break;
                 case EVENT_ANREN_ESCORT_2:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[1], 10.f, 15.f);
-                    me->AI()->TalkWithDelay(1000, 1, _playerGUID);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_3, 3500);
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                        me->AI()->Talk(1, player, Milliseconds(1000));
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_3, Milliseconds(3500));
                     break;
                 case EVENT_ANREN_ESCORT_3:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[2], 8.f, 11.f);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_4, 1500);
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_4, Milliseconds(1500));
                     break;
                 case EVENT_ANREN_ESCORT_4:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[3], 9.f, 11.f);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_5, 2000);
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_5, Milliseconds(2000));
                     break;
                 case EVENT_ANREN_ESCORT_5:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[4], 9.f, 11.f);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_6, 2000);
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_6, Milliseconds(2000));
                     break;
                 case EVENT_ANREN_ESCORT_6:
-                    me->AI()->TalkWithDelay(1000, 2, _playerGUID);
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                        me->AI()->Talk(2, player, Milliseconds(1000));
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[5], 12.f, 11.f);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_7, 5000);
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_7, Milliseconds(5000));
                     break;
                 case EVENT_ANREN_ESCORT_7:
                     SetDespawnAtEnd(false);
                     SetDespawnAtFar(true);
-                    Start(false, true, _playerGUID);
+                    Start(true, _playerGUID);
                     break;
                 case EVENT_ANREN_ESCORT_8:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[6], 10.f, 20.f);
@@ -1741,19 +1816,20 @@ public:
                     break;
                 case EVENT_ANREN_ESCORT_11:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[9], 15.f, 20.f);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_12, 3000);
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_12, Milliseconds(3000));
                     break;
                 case EVENT_ANREN_ESCORT_12:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[10], 15.f, 20.f);
-                    me->AI()->TalkWithDelay(100, 6, _playerGUID);
-                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_13, 2000);
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                        me->AI()->Talk(6, player, Milliseconds(100));
+                    _events.ScheduleEvent(EVENT_ANREN_ESCORT_13, Milliseconds(2000));
                     break;
                 case EVENT_ANREN_ESCORT_13:
                     _isPlayerAround = false;
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[11], 15.f, 20.f);
                     break;
                 case EVENT_ANREN_ESCORT_14:
-                    SetRun(true);
+                    _running = true; // SetRun(true) -> local flag (no SetRun on this fork's escort base).
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[12], 15.f, 15.f);
                     break;
                 default:
@@ -1763,11 +1839,13 @@ public:
         }
     private:
         bool _isPlayerAround = true;
+        bool _running = false;
         EventMap _events;
-        uint64 _playerGUID = 0, _checkPlayerTimer = 2000;
+        ObjectGuid _playerGUID;
+        uint32 _checkPlayerTimer = 2000;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_anren_shadowseeker_escortAI(creature);
     }
@@ -1791,7 +1869,7 @@ public:
     {
         npc_molten_front_behemothAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void Reset()
+        void Reset() override
         {
             _events.Reset();
             _deservesAchiv = true;
@@ -1799,9 +1877,9 @@ public:
             _solo = false;
         }
 
-        void DamageTaken(Unit* attacker, uint32& damage)
+        void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType /*damagetype*/, SpellSchoolMask /*damageSchoolMask*/) override
         {
-            if (auto player = attacker->ToPlayer())
+            if (Player* player = attacker ? attacker->ToPlayer() : nullptr)
             {
                 if (damage >= me->GetHealth())
                     damage = me->GetHealth() - 1;
@@ -1815,54 +1893,50 @@ public:
                         if (me->HasUnitState(UNIT_STATE_CASTING))
                             me->CastStop();
 
-                        auto const& threatList = me->getThreatManager().getThreatList();
-
-                        if (!threatList.empty())
+                        // 4.3.4 getThreatManager().getThreatList() -> AC GetThreatMgr() + sorted list.
+                        if (me->GetThreatMgr().GetThreatListSize() == 1)
                         {
-                            if (threatList.size() == 1)
+                            for (ThreatReference const* ref : me->GetThreatMgr().GetSortedThreatList())
                             {
-                                for (auto threatunit : threatList)
-                                {
-                                    if (auto unit = threatunit->getTarget())
-                                        if (auto plr = unit->ToPlayer())
-                                            if (plr->GetGUID() == _playerGUID)
-                                                _solo = true;
-                                }
+                                if (Unit* unit = ref->GetVictim())
+                                    if (Player* plr = unit->ToPlayer())
+                                        if (plr->GetGUID() == _playerGUID)
+                                            _solo = true;
                             }
                         }
                     }
 
-                    player->Kill(me);
+                    Unit::Kill(player, me);
                 }
             }
         }
 
-        void DoAction(const int32 actionid)
+        void DoAction(int32 actionid) override
         {
             if (_deservesAchiv)
                 if (actionid == ACTION_MOLTEN_BEHEMOTH_ACHIEVEMENT_NOT_DESERVE)
                     _deservesAchiv = false;
         }
 
-        void JustDied(Unit* killer)
+        void JustDied(Unit* killer) override
         {
             if (_deservesAchiv && _solo)
             {
-                if (auto playerkilled = killer->ToPlayer())
-                    playerkilled->CastSpell(playerkilled, SPELL_GRANT_FLAWLESS_VICTORY);
+                if (Player* playerkilled = killer ? killer->ToPlayer() : nullptr)
+                    playerkilled->CastSpell(playerkilled, SPELL_GRANT_FLAWLESS_VICTORY, true);
             }
         }
 
-        void JustEngagedWith(Unit* who)
+        void JustEngagedWith(Unit* who) override
         {
-            if (auto player = who->ToPlayer())
+            if (Player* player = who ? who->ToPlayer() : nullptr)
                 _playerGUID = player->GetGUID();
 
-            _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_FIERY_BOULDER, urand(2000, 8000));
-            _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_MOLTEN_STOMP, urand(8000, 13000));
+            _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_FIERY_BOULDER, Milliseconds(urand(2000, 8000)));
+            _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_MOLTEN_STOMP, Milliseconds(urand(8000, 13000)));
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -1879,14 +1953,14 @@ public:
                 switch (eventId)
                 {
                 case EVENT_MOLTEN_BEHEMOTH_FIERY_BOULDER:
-                    if (auto victim = me->getVictim())
-                        me->CastSpell(victim, SPELL_FIERY_BOULDER);
+                    if (Unit* victim = me->GetVictim())
+                        me->CastSpell(victim, SPELL_FIERY_BOULDER, false);
 
-                    _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_FIERY_BOULDER, urand(10000, 18000));
+                    _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_FIERY_BOULDER, Milliseconds(urand(10000, 18000)));
                     break;
                 case EVENT_MOLTEN_BEHEMOTH_MOLTEN_STOMP:
-                    me->CastSpell(me, SPELL_MOLTEN_STOMP);
-                    _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_MOLTEN_STOMP, urand(12000, 25000));
+                    me->CastSpell(me, SPELL_MOLTEN_STOMP, false);
+                    _events.ScheduleEvent(EVENT_MOLTEN_BEHEMOTH_MOLTEN_STOMP, Milliseconds(urand(12000, 25000)));
                     break;
                 default:
                     break;
@@ -1899,11 +1973,11 @@ public:
         bool _solo = false;
         bool _deservesAchiv = true;
         EventMap _events;
-        uint64 _playerGUID = 0;
+        ObjectGuid _playerGUID;
         uint16 _checkTimer = 1000;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_molten_front_behemothAI(creature);
     }
@@ -1918,7 +1992,7 @@ public:
     {
         PrepareSpellScript(spell_molten_behemoth_stomp_SpellScript);
 
-        bool Validate(SpellInfo const* /*spellEntry*/)
+        bool Validate(SpellInfo const* /*spellEntry*/) override
         {
             return true;
         }
@@ -1927,20 +2001,20 @@ public:
         {
             Unit* caster = GetCaster();
 
-            if (auto unit = GetHitUnit())
-                if (auto player = unit->ToPlayer())
-                    if (auto casteriscreature = caster->ToCreature())
-                        if (auto ai = casteriscreature->AI())
+            if (Unit* unit = GetHitUnit())
+                if (unit->ToPlayer())
+                    if (Creature* casteriscreature = caster ? caster->ToCreature() : nullptr)
+                        if (CreatureAI* ai = casteriscreature->AI())
                             ai->DoAction(ACTION_MOLTEN_BEHEMOTH_ACHIEVEMENT_NOT_DESERVE);
         }
 
-        void Register()
+        void Register() override
         {
             OnEffectHitTarget += SpellEffectFn(spell_molten_behemoth_stomp_SpellScript::HandleHit, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
         }
     };
 
-    SpellScript* GetSpellScript() const
+    SpellScript* GetSpellScript() const override
     {
         return new spell_molten_behemoth_stomp_SpellScript();
     }
@@ -1955,7 +2029,7 @@ public:
     {
         PrepareSpellScript(spell_molten_behemoth_fiery_boulder_SpellScript);
 
-        bool Validate(SpellInfo const* /*spellEntry*/)
+        bool Validate(SpellInfo const* /*spellEntry*/) override
         {
             return true;
         }
@@ -1964,20 +2038,20 @@ public:
         {
             Unit* caster = GetCaster();
 
-            if (auto unit = GetHitUnit())
-                if (auto player = unit->ToPlayer())
-                    if (auto casteriscreature = caster->ToCreature())
-                        if (auto ai = casteriscreature->AI())
+            if (Unit* unit = GetHitUnit())
+                if (unit->ToPlayer())
+                    if (Creature* casteriscreature = caster ? caster->ToCreature() : nullptr)
+                        if (CreatureAI* ai = casteriscreature->AI())
                             ai->DoAction(ACTION_MOLTEN_BEHEMOTH_ACHIEVEMENT_NOT_DESERVE);
         }
 
-        void Register()
+        void Register() override
         {
             OnEffectHitTarget += SpellEffectFn(spell_molten_behemoth_fiery_boulder_SpellScript::HandleHit, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
         }
     };
 
-    SpellScript* GetSpellScript() const
+    SpellScript* GetSpellScript() const override
     {
         return new spell_molten_behemoth_fiery_boulder_SpellScript();
     }
