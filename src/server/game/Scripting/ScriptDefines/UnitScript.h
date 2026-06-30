@@ -42,6 +42,7 @@ enum UnitHook
     UNITHOOK_ON_DISPLAYID_CHANGE,
     UNITHOOK_ON_UNIT_ENTER_EVADE_MODE,
     UNITHOOK_ON_UNIT_ENTER_COMBAT,
+    UNITHOOK_ON_UNIT_EXIT_COMBAT,
     UNITHOOK_ON_UNIT_DEATH,
     UNITHOOK_ON_UNIT_SET_SHAPESHIFT_FORM,
     UNITHOOK_END
@@ -110,6 +111,7 @@ public:
 
     virtual void OnUnitEnterEvadeMode(Unit* /*unit*/, uint8 /*evadeReason*/) { }
     virtual void OnUnitEnterCombat(Unit* /*unit*/, Unit* /*victim*/) { }
+    virtual void OnUnitExitCombat(Unit* /*unit*/) { }
     virtual void OnUnitDeath(Unit* /*unit*/, Unit* /*killer*/) { }
     virtual void OnUnitSetShapeshiftForm(Unit* /*unit*/, uint8 /*form*/) { }
 };
