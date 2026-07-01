@@ -263,7 +263,7 @@ public:
         void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply)
         {
             flyphase = 1;
-            if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (apply && passenger->IsPlayer())
                 events.ScheduleEvent(EVENT_TIMER_0, Milliseconds(1000));
         }
 
@@ -272,7 +272,8 @@ public:
             if (type != ESCORT_MOTION_TYPE)
                 return;
 
-            if (auto* _p = me->GetVehicleKit()->GetPassenger(0)) { (void)_p;
+            if (me->GetVehicleKit() && me->GetVehicleKit()->GetPassenger(0))
+            {
                 switch (point)
                 {
                 case 2:
@@ -412,7 +413,7 @@ const G3D::Vector3 EmeraldFlamePath[EmeraldFlamePathSize] =
     { 5782.762f, -3302.702f, 1624.523f },
     { 5779.277f, -3314.132f, 1631.050f },
     { 5760.595f, -3333.994f, 1644.458f },
-    { 5722.669f, -3357.374f, 1642.473f }, // 9 
+    { 5722.669f, -3357.374f, 1642.473f }, // 9
 };
 
 class npc_emerald_flameweaver_infiltrators : public CreatureScript
@@ -482,39 +483,39 @@ public:
 //     SPELL_INFERNO_TICK_AURA   = 74813,
 //     SPELL_INFERNO_AOE         = 74817,
 // };
-// 
+//
 // class spell_inferno_tick : public SpellScriptLoader
 // {
 // public:
 //     spell_inferno_tick() : SpellScriptLoader("spell_inferno_tick") { }
-// 
+//
 //     class spell_inferno_tick_AuraScript : public AuraScript
 //     {
 //         PrepareAuraScript(spell_inferno_tick_AuraScript);
-// 
+//
 //         bool Validate(SpellInfo const* /*spellInfo*/)
 //         {
 //             if (!sSpellMgr->GetSpellInfo(SPELL_INFERNO_TICK_AURA))
 //                 return false;
-// 
+//
 //             return true;
 //             TC_LOG_ERROR("sql.sql", "SPELL_INFERNO_TICK_AURA returned true");
 //         }
-// 
+//
 //         void HandleProc(AuraEffect const* aurEff, ProcEventInfo& /*eventInfo*/)
 //         {
 //             int32 damageForTick[8] = { 1500, 1500, 2000, 2000, 3000, 3000, 5000, 5000 };
-// 
+//
 //             GetCaster()->CastCustomSpell(GetCaster(), SPELL_INFERNO_AOE, &damageForTick[aurEff->GetTotalTicks() - 1], NULL, NULL, true);
 //             TC_LOG_ERROR("sql.sql", "Inferno hits!");
 //         }
-// 
+//
 //         void Register()
 //         {
 //             OnEffectPeriodic += AuraEffectPeriodicFn(spell_inferno_tick_AuraScript::HandleProc, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
 //         }
 //     };
-// 
+//
 //     AuraScript* GetAuraScript() const
 //     {
 //         return new spell_inferno_tick_AuraScript();
@@ -688,7 +689,7 @@ public:
             _summons.Summon(summoned);
         }
 
-        void EnterEvadeMode()
+        void EnterEvadeMode(EvadeReason /*why*/) override
         {
         }
 
@@ -1204,6 +1205,7 @@ public:
                     default:
                         break;
                     }
+                    break;
                 default:
                     break;
                 }
@@ -1264,7 +1266,7 @@ public:
 
         void PassengerBoarded(Unit* passenger, int8 seatId, bool apply)
         {
-            if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (apply && passenger->IsPlayer())
             {
                 if (seatId == 0)
                 {
@@ -1282,7 +1284,7 @@ public:
                     passenger->CastSpell(passenger, SPELL_SWITCH_SEAT_01);
             }
 
-            if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (!apply && passenger->IsPlayer())
             {
                 if (seatId == 0)
                 {
@@ -1294,8 +1296,6 @@ public:
 
         void UpdateAI(uint32 const diff)
         {
-            _events.Update(diff);
-
             if (_checkTimer <= diff)
             {
                 _checkTimer = 1000;
@@ -1604,9 +1604,7 @@ public:
             if (_checkTimer <= diff)
             {
                 _checkTimer = 1000;
-                me->SetHomePosition(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());\
-
-
+                me->SetHomePosition(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
             }
             else _checkTimer -= diff;
 
@@ -1657,7 +1655,7 @@ enum MentalTrainingSpeaking
     EVENT_QUESTION_13 = 13,    // 'Is Ice hot?'                    -- No
     EVENT_QUESTION_14 = 14,    // 'Do Giants tread lightly?'       -- No
     EVENT_QUESTION_15 = 15,    // 'Does Fire consume stone?'       -- No
-    EVENT_QUESTION_16 = 16,    // 'Do Rocks float on water? '      -- No 
+    EVENT_QUESTION_16 = 16,    // 'Do Rocks float on water? '      -- No
 
     EVENT_START = 17,
     EVENT_ASK_QUESTION = 18,
@@ -1665,7 +1663,7 @@ enum MentalTrainingSpeaking
     QUEST_MENTAL_TRAINING_SPEAKING_THE_TRUTH_TO_POWER = 25299,
 
     SPELL_YES = 73982,
-    // Trigger spell(74010) Answer Yes Correct.  // Caster Aura Spell (74008) Answer the Question! 
+    // Trigger spell(74010) Answer Yes Correct.  // Caster Aura Spell (74008) Answer the Question!
     // Trigger spell(74011) Answer Yes Incorrect // Caster Aura Spell (74009) Answer the Question!
 
     SPELL_NO = 73983,
@@ -1758,7 +1756,7 @@ public:
                 EVENT_QUESTION_8, EVENT_QUESTION_9, EVENT_QUESTION_10, EVENT_QUESTION_11, EVENT_QUESTION_12, EVENT_QUESTION_13, EVENT_QUESTION_14, EVENT_QUESTION_15, EVENT_QUESTION_16 };
 
                     // i think to do (should be NOT repeatable, now the events can be draw many times
-                    uint8 number = urand(1, 16);
+                    uint8 number = urand(0, 15);
                     events.ScheduleEvent(InitEvents[number], Milliseconds(0));
                 }
                 else
@@ -2303,7 +2301,7 @@ public:
             if (auto grommko = me->FindNearestCreature(NPC_GROMMKO, 30.f))
             {
                 _grommkoGUID = grommko->GetGUID();
-                grommko->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+                grommko->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
             }
 
             me->GetMotionMaster()->MovePoint(1, 4745.7036f, -4231.2216f, 894.522f);
@@ -2419,7 +2417,7 @@ public:
             if (spellInfo->Id == SPELL_DUMMY_PING)
             {
                 if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                    player->KilledMonsterCredit(40573);
+                    player->KilledMonsterCredit(3640573); // Twilight Stormwaker dc-clone (raw Cata 40573 was never offset)
             }
         }
 
@@ -2460,8 +2458,8 @@ public:
                     if (player->GetQuestStatus(QUEST_SLASH_AND_BURN) == QUEST_STATUS_NONE ||
                         player->GetQuestStatus(QUEST_SLASH_AND_BURN) == QUEST_STATUS_REWARDED)
                     {
-                        me->DespawnOrUnsummon();
                         me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
+                        me->DespawnOrUnsummon();
                     }
                 }
             }
@@ -3029,8 +3027,8 @@ public:
                     if (player->GetQuestStatus(QUEST_CALL_THE_FLOCK) == QUEST_STATUS_NONE ||
                         player->GetQuestStatus(QUEST_CALL_THE_FLOCK) == QUEST_STATUS_REWARDED)
                     {
-                        me->DespawnOrUnsummon();
                         me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
+                        me->DespawnOrUnsummon();
                     }
                 }
             }
@@ -3095,14 +3093,14 @@ public:
 
         void PassengerBoarded(Unit* passenger, int8 /* seatId */, bool apply)
         {
-            if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (apply && passenger->IsPlayer())
             {
             }
 
-            if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (!apply && passenger->IsPlayer())
             {
                 passenger->RemoveAura(SPELL_VISUAL_HOLD_CHILD);
-                me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
                 me->DespawnOrUnsummon( Milliseconds(8000));
             }
         }
@@ -3115,13 +3113,13 @@ public:
                     player->GetQuestStatus(QUEST_PUNTING_SEASON) == QUEST_STATUS_REWARDED)
                 {
                     player->ExitVehicle();
-                    me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                    me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
                     me->DespawnOrUnsummon( Milliseconds(100));
                 }
 
                 if (me->GetDistance(player) >= 10.f)
                 {
-                    me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                    me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
                     me->DespawnOrUnsummon( Milliseconds(100));
                 }
             }
@@ -3330,7 +3328,7 @@ public:
         {
             me->SetReactState(REACT_PASSIVE);
             me->SetControlled(true, UNIT_STATE_ROOT);
-            me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
 
             if (auto player = summoner->ToPlayer())
             {
@@ -3341,12 +3339,12 @@ public:
 
         void PassengerBoarded(Unit* passenger, int8 /* seatId */, bool apply)
         {
-            if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (apply && passenger->IsPlayer())
             {
                 _events.ScheduleEvent(EVENT_LOGOSH_1, Milliseconds(2000));
             }
 
-            if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (!apply && passenger->IsPlayer())
             {
                 me->DespawnOrUnsummon( Milliseconds(2500));
             }
@@ -3384,7 +3382,7 @@ public:
             //        if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
             //        {
             //            player->ExitVehicle();
-            //            me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+            //            me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
             //            me->DespawnOrUnsummon( Milliseconds(1000));
             //        }
             //    }
@@ -3412,7 +3410,7 @@ public:
                     if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                     {
                         player->RemoveAura(SPELL_FADE_TO_BLACK);
-                        player->TeleportTo(1, 5360.246f, -2184.654f, 1287.916f, 5.919f);
+                        player->TeleportTo(750, 5360.246f, -2184.654f, 1287.916f, 5.919f); // dc Hyjal is map 750, not Kalimdor
                     }
                     break;
                 default:

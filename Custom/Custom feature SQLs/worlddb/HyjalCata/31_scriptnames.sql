@@ -13,13 +13,14 @@
 -- site, quest, level/role) cross-checked against what the dc downport
 -- actually created in acore_world (clone = original + 3,600,000).
 --
--- ONLY entries that currently EXIST in acore_world are wired here. Most
--- of the ported scripts' target NPCs (proveditor 3639436, slavedriver
--- 3639438, slave 3639431, orb 3639601, all 75xxx controllers/cameras,
--- windcallers, behemoth 3652552, hyjal wisp 3653083, flame-protection
--- runes, aessina/aronus vehicles, forlorn druids/wardens, etc.) are NOT
--- yet in creature_template, so their UPDATEs are deliberately omitted --
--- add them once 29_neltharion_templates.sql is extended to clone them.
+-- ONLY entries that existed in acore_world at the time were wired here.
+-- 2026-07 UPDATE: 29_neltharion_templates.sql now clones the remaining
+-- script targets (proveditor set, orb, controllers, Molten Front cast,
+-- summon-spell targets) and 46_neltharion_fixups.sql wires their
+-- ScriptNames -- including MOVING npc_aronus_vehicle from the static
+-- questgiver 3640816 (wired in the live DB by an earlier revision) to the
+-- flight vehicle 3675024 that summon spell 151010 actually creates.
+-- Apply 29 -> 46 after this file.
 -- Idempotent.
 -- =====================================================================
 

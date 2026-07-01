@@ -779,7 +779,7 @@ public:
 
         void PassengerBoarded(Unit* passenger, int8 /* seatId*/, bool apply) override
         {
-            if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (apply && passenger->IsPlayer())
             {
                 // NearTeleportTo takes a non-const Position& on this fork; cameraPos is const.
                 me->NearTeleportTo(cameraPos.GetPositionX(), cameraPos.GetPositionY(), cameraPos.GetPositionZ(), cameraPos.GetOrientation());
@@ -792,7 +792,7 @@ public:
                 }
             }
 
-            if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (!apply && passenger->IsPlayer())
             {
                 if (Creature* bunny = ObjectAccessor::GetCreature(*me, _targetBunnyGUID))
                 {
@@ -1511,14 +1511,14 @@ public:
 
         void PassengerBoarded(Unit* passenger, int8 /* seatId */, bool apply) override
         {
-            if (apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (apply && passenger->IsPlayer())
             {
                 _events.ScheduleEvent(EVENT_TRAINED_HAWK_1, Milliseconds(500));
             }
 
-            if (!apply && passenger->GetTypeId() == TYPEID_PLAYER)
+            if (!apply && passenger->IsPlayer())
             {
-                me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
                 me->DespawnOrUnsummon();
             }
         }
@@ -1629,7 +1629,6 @@ public:
 enum QuestNeedWaterBadly
 {
     QUEST_GET_ME_OUT_OF_HERE = 29272,
-
 
 };
 
