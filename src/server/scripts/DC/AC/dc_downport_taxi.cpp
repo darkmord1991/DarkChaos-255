@@ -37,28 +37,29 @@ namespace
         char const* name;
     };
 
-    // Keep in sync with Custom/CSV DBC/TaxiNodes.csv (ids 421-437).
+    // Keep in sync with Custom/CSV DBC/TaxiNodes.csv (ids 421-437). Names and
+    // coordinates are the matched retail Cata taxi nodes (gen_taxi.py).
     constexpr FlightNode kNodes[] =
     {
         // Mount Hyjal (map 750)
-        { 421, 750, 5167.74f, -1761.50f, 1339.16f, "Sanctuary of Malorne" },
-        { 422, 750, 4394.19f, -2107.44f, 1204.37f, "Nordrassil" },
-        { 423, 750, 4994.58f, -2678.85f, 1426.71f, "Grove of Aessina" },
-        { 424, 750, 5584.20f, -3567.47f, 1570.61f, "Shrine of Aviana" },
-        { 425, 750, 4062.76f, -3969.84f,  970.40f, "Sethria's Roost" },
+        { 421, 750, 5163.51f, -1760.58f, 1338.47f, "Grove of Aessina, Hyjal" },
+        { 422, 750, 4397.79f, -2107.53f, 1204.34f, "Sanctuary of Malorne, Hyjal" },
+        { 423, 750, 4987.87f, -2676.19f, 1426.36f, "Shrine of Aviana, Hyjal" },
+        { 424, 750, 5584.06f, -3569.84f, 1570.60f, "Nordrassil, Hyjal" },
+        { 425, 750, 4059.40f, -3966.75f,  970.15f, "Gates of Sothann, Hyjal" },
         // Plaguelands (map 751)
-        { 426, 751,  928.66f, -1429.06f,   64.74f, "Chillwind Camp" },
-        { 427, 751, 2268.80f, -5345.42f,   87.02f, "Light's Hope Chapel" },
-        { 428, 751, 2348.63f, -5669.29f,  382.32f, "The Ebon Hold" },
-        { 429, 751, 1939.44f, -2694.39f,   62.15f, "Thondoril River" },
-        { 430, 751, 2526.09f, -4772.52f,  104.32f, "Eastwall Tower" },
-        { 431, 751, 2264.55f, -4414.64f,  111.78f, "Corin's Crossing" },
-        { 432, 751, 1879.72f, -3694.56f,  157.77f, "Crown Guard Tower" },
-        { 433, 751, 2968.76f, -3031.63f,  126.91f, "Plaguewood Tower" },
-        { 434, 751, 1511.60f, -1583.94f,   64.69f, "The Bulwark" },
-        { 435, 751, 1372.11f, -1277.58f,   59.59f, "Sorrow Hill" },
-        { 436, 751, 1869.61f, -1754.99f,   60.15f, "Andorhal" },
-        { 437, 751, 2837.17f, -1503.59f,  146.02f, "Northdale" },
+        { 426, 751,  931.32f, -1430.11f,   64.67f, "Chillwind Camp, Western Plaguelands" },
+        { 427, 751, 2270.20f, -5343.11f,   86.97f, "Light's Hope Chapel, Eastern Plaguelands" },
+        { 428, 751, 2352.37f, -5666.91f,  382.24f, "Acherus: The Ebon Hold" },
+        { 429, 751, 1935.97f, -2694.48f,   61.95f, "Thondroril River, Eastern Plaguelands" },
+        { 430, 751, 2524.44f, -4769.56f,  104.09f, "Eastwall Tower, Eastern Plaguelands" },
+        { 431, 751, 2262.10f, -4411.52f,  111.65f, "Light's Shield Tower, Eastern Plaguelands" },
+        { 432, 751, 1876.40f, -3693.32f,  157.69f, "Crown Guard Tower, Eastern Plaguelands" },
+        { 433, 751, 2965.55f, -3033.61f,  126.93f, "Plaguewood Tower, Eastern Plaguelands" },
+        { 434, 751, 1511.80f, -1586.95f,   64.34f, "Andorhal (Forsaken), Western Plaguelands" },
+        { 435, 751, 1374.23f, -1281.94f,   59.17f, "Andorhal (Alliance), Western Plaguelands" },
+        { 436, 751, 1864.32f, -1755.82f,   59.66f, "The Menders' Stead, Western Plaguelands" },
+        { 437, 751, 2839.78f, -1500.51f,  146.09f, "Hearthglen, Western Plaguelands" },
     };
 
     constexpr char const* TAXI_ICON = "Interface\\Icons\\Ability_Mount_Wyvern_01";

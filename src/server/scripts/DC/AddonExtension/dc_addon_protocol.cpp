@@ -1100,6 +1100,17 @@ namespace DCAddon
             return false;
 
         LogCapabilityFallback(session, out);
+
+        // Cache the persisted result. Without this, every caller that needs
+        // capability state during the window between a cache clear (logout)
+        // and the next real handshake (SetSessionCapabilityState) pays its
+        // own synchronous CharacterDatabase.Query() -- one per message, not
+        // once -- since nothing ever primed the live registry.
+        {
+            std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+            s_SessionCapabilityRegistry.try_emplace(key, out);
+        }
+
         return true;
     }
 
