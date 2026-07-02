@@ -1626,6 +1626,11 @@ local infiniteLoopPolice = false
 function EncounterJournal_ListInstances()
 	local instanceSelect = EncounterJournal.instanceSelect
 
+	-- Re-derived below for the current tab/tier; never leave a stale grayBox
+	-- blocking clicks on a tab past the call that showed it.
+	instanceSelect.dungeonsTab.grayBox:Hide()
+	instanceSelect.raidsTab.grayBox:Hide()
+
 	local tierName = EJ_GetTierInfo(EJ_GetCurrentTier())
 	UIDropDownMenu_SetText(instanceSelect.tierDropDown, tierName)
 	NavBar_Reset(EncounterJournal.navBar)
@@ -1638,6 +1643,17 @@ function EncounterJournal_ListInstances()
 	local instanceID, name, description, _, buttonImage, _, _, _, link = EJ_GetInstanceByIndex(index, showRaid)
 
 	if not instanceID and not infiniteLoopPolice then
+		if ( EncounterJournal.dcActiveTab ) then
+			-- A DC custom content tab (Open World / Mythic+) is active and its list
+			-- is empty. That has nothing to do with the Instances/Raids tier pairing,
+			-- so skip the base empty-tier auto-correct below: it would otherwise gray
+			-- out and forcibly bounce back to the Instances/Raids tab, permanently
+			-- blocking clicks on it (grayBox is only ever cleared by the tier dropdown,
+			-- which is disabled while a custom tab is active).
+			EJ_HideInstances(1)
+			return
+		end
+
 		infiniteLoopPolice = true
 		if ( showRaid ) then
 			instanceSelect.raidsTab.grayBox:Show()

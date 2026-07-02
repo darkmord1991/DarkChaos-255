@@ -491,8 +491,12 @@ void WorldSession::HandleMoverRelocation(MovementInfo& movementInfo, Unit* mover
             {
                 if (plrMover->IsAlive())
                 {
-                    // The Oculus under map case is handled by areatrigger (5001) and should not kill the player
-                    if (plrMover->GetMapId() == MAP_THE_OCULUS)
+                    // The Oculus under map case is handled by areatrigger (5001) and should not kill the player.
+                    // Guild-house maps 1409/1413 reuse the Dalaran WMO as a standalone interior with no real
+                    // ADT terrain beneath it (e.g. 1413's Underbelly sits at z ~ -373), so GetMinHeight() at
+                    // that column resolves above it and this same false-positive void-kill fires there too -
+                    // bypassing GM immunity by design (DAMAGE_FALL_TO_VOID), which reads as an instant kill.
+                    if (plrMover->GetMapId() == MAP_THE_OCULUS || plrMover->GetMapId() == 1409 || plrMover->GetMapId() == 1413)
                         return;
 
                     plrMover->SetPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
