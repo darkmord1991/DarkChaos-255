@@ -1,10 +1,10 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
 ..\FrameXML\UI.xsd">
-	<Texture name="HybridScrollBarButton" virtual="true">
+	<Texture name="EJHybridScrollBarButton" virtual="true">
 		<TexCoords left="0.25" right="0.75" top="0.25" bottom="0.75"/>
 	</Texture>
 
-	<Slider name="HybridScrollBarBackgroundTemplate" parentKey="scrollBar" virtual="true">
+	<Slider name="EJHybridScrollBarBackgroundTemplate" parentKey="scrollBar" virtual="true">
 		<Size x="20" y="0"/>
 		<Anchors>
 			<Anchor point="TOPLEFT" relativePoint="TOPRIGHT" x="0" y="-18"/>
@@ -46,15 +46,15 @@
 		</ThumbTexture>
 	</Slider>
 
-	<Slider name="HybridScrollBarTemplate" inherits="HybridScrollBarBackgroundTemplate" virtual="true">
+	<Slider name="EJHybridScrollBarTemplate" inherits="EJHybridScrollBarBackgroundTemplate" virtual="true">
 		<Frames>
 			<Button name="$parentScrollUpButton" inherits="UIPanelScrollUpButtonTemplate">
 				<Anchors>
 					<Anchor point="BOTTOM" relativePoint="TOP" x="0" y="-2"/>
 				</Anchors>
 				<Scripts>
-					<OnLoad function="HybridScrollFrameScrollUp_OnLoad"/>
-					<OnClick function ="HybridScrollFrameScrollButton_OnClick"/>
+					<OnLoad function="EJHybridScrollFrameScrollUp_OnLoad"/>
+					<OnClick function ="EJHybridScrollFrameScrollButton_OnClick"/>
 				</Scripts>
 			</Button>
 			<Button name="$parentScrollDownButton" inherits="UIPanelScrollDownButtonTemplate">
@@ -62,17 +62,17 @@
 					<Anchor point="TOP" relativePoint="BOTTOM" x="0" y="2"/>
 				</Anchors>
 				<Scripts>
-					<OnLoad function="HybridScrollFrameScrollDown_OnLoad"/>
-					<OnClick function="HybridScrollFrameScrollButton_OnClick"/>
+					<OnLoad function="EJHybridScrollFrameScrollDown_OnLoad"/>
+					<OnClick function="EJHybridScrollFrameScrollButton_OnClick"/>
 				</Scripts>
 			</Button>
 		</Frames>
 		<Scripts>
-			<OnValueChanged function="HybridScrollFrame_OnValueChanged"/>
+			<OnValueChanged function="EJHybridScrollFrame_OnValueChanged"/>
 		</Scripts>
 	</Slider>
 
-	<Slider name="HybridScrollBarTrimTemplate" parentKey="scrollBar" virtual="true">
+	<Slider name="EJHybridScrollBarTrimTemplate" parentKey="scrollBar" virtual="true">
 		<Size x="20" y="0"/>
 		<Layers>
 			<Layer level="BACKGROUND">
@@ -110,8 +110,8 @@
 					<Anchor point="BOTTOM" relativePoint="TOP" x="0" y="-2"/>
 				</Anchors>
 				<Scripts>
-					<OnLoad function="HybridScrollFrameScrollUp_OnLoad"/>
-					<OnClick  function="HybridScrollFrameScrollButton_OnClick"/>
+					<OnLoad function="EJHybridScrollFrameScrollUp_OnLoad"/>
+					<OnClick  function="EJHybridScrollFrameScrollButton_OnClick"/>
 				</Scripts>
 			</Button>
 			<Button name="$parentScrollDownButton" parentKey="DownButton" inherits="UIPanelScrollDownButtonTemplate">
@@ -119,21 +119,21 @@
 					<Anchor point="TOP" relativePoint="BOTTOM" x="0" y="2"/>
 				</Anchors>
 				<Scripts>
-					<OnLoad function="HybridScrollFrameScrollDown_OnLoad"/>
-					<OnClick function="HybridScrollFrameScrollButton_OnClick"/>
+					<OnLoad function="EJHybridScrollFrameScrollDown_OnLoad"/>
+					<OnClick function="EJHybridScrollFrameScrollButton_OnClick"/>
 				</Scripts>
 			</Button>
 		</Frames>
 		<Scripts>
-			<OnValueChanged function="HybridScrollFrame_OnValueChanged"/>
+			<OnValueChanged function="EJHybridScrollFrame_OnValueChanged"/>
 		</Scripts>
-		<ThumbTexture name="$parentThumbTexture" inherits="HybridScrollBarButton" file="Interface\Buttons\UI-ScrollBar-Knob" parentKey="thumbTexture">
+		<ThumbTexture name="$parentThumbTexture" inherits="EJHybridScrollBarButton" file="Interface\Buttons\UI-ScrollBar-Knob" parentKey="thumbTexture">
 			<Size x="18" y="24"/>
 			<TexCoords left="0.20" right="0.80" top="0.125" bottom="0.875"/>
 		</ThumbTexture>
 	</Slider>
 
-	<Slider name="MinimalHybridScrollBarTemplate" parentKey="scrollBar" virtual="true">
+	<Slider name="EJMinimalHybridScrollBarTemplate" parentKey="scrollBar" virtual="true">
 		<Size x="22" y="0"/>
 		<Layers>
 			<Layer level="BACKGROUND">
@@ -152,8 +152,8 @@
 					<Anchor point="TOP" x="0" y="15"/>
 				</Anchors>
 				<Scripts>
-					<OnLoad function="HybridScrollFrameScrollUp_OnLoad"/>
-					<OnClick function="HybridScrollFrameScrollButton_OnClick"/>
+					<OnLoad function="EJHybridScrollFrameScrollUp_OnLoad"/>
+					<OnClick function="EJHybridScrollFrameScrollButton_OnClick"/>
 				</Scripts>
 			</Button>
 			<Button name="$parentScrollDownButton" inherits="UIPanelScrollDownButtonTemplate">
@@ -161,41 +161,41 @@
 					<Anchor point="BOTTOM" x="0" y="-15"/>
 				</Anchors>
 				<Scripts>
-					<OnLoad function="HybridScrollFrameScrollDown_OnLoad"/>
-					<OnClick function="HybridScrollFrameScrollButton_OnClick"/>
+					<OnLoad function="EJHybridScrollFrameScrollDown_OnLoad"/>
+					<OnClick function="EJHybridScrollFrameScrollButton_OnClick"/>
 				</Scripts>
 			</Button>
 		</Frames>
 		<Scripts>
-			<OnValueChanged function="HybridScrollFrame_OnValueChanged"/>
+			<OnValueChanged function="EJHybridScrollFrame_OnValueChanged"/>
 		</Scripts>
-		<ThumbTexture name="$parentThumbTexture" inherits="HybridScrollBarButton" file="Interface\Buttons\UI-ScrollBar-Knob" parentKey="thumbTexture">
+		<ThumbTexture name="$parentThumbTexture" inherits="EJHybridScrollBarButton" file="Interface\Buttons\UI-ScrollBar-Knob" parentKey="thumbTexture">
 			<Size x="18" y="24"/>
 			<TexCoords left="0.20" right="0.80" top="0.125" bottom="0.875"/>
 		</ThumbTexture>
 	</Slider>
 
-	<ScrollFrame name="HybridScrollFrameTemplate" virtual="true">
+	<ScrollFrame name="EJHybridScrollFrameTemplate" virtual="true">
 		<Scripts>
-			<OnLoad function="HybridScrollFrame_OnLoad"/>
-			<OnMouseWheel function="HybridScrollFrame_OnMouseWheel"/>
+			<OnLoad function="EJHybridScrollFrame_OnLoad"/>
+			<OnMouseWheel function="EJHybridScrollFrame_OnMouseWheel"/>
 		</Scripts>
 		<ScrollChild>
 			<Frame name="$parentScrollChild" parentKey="ScrollChild">
 				<Scripts>
-					<OnLoad function="HybridScrollFrameScrollChild_OnLoad"/>
+					<OnLoad function="EJHybridScrollFrameScrollChild_OnLoad"/>
 				</Scripts>
 			</Frame>
 		</ScrollChild>
 	</ScrollFrame>
 
-	<ScrollFrame name="BasicHybridScrollFrameTemplate" inherits="HybridScrollFrameTemplate" virtual="true">
+	<ScrollFrame name="EJBasicHybridScrollFrameTemplate" inherits="EJHybridScrollFrameTemplate" virtual="true">
 		<Anchors>
 			<Anchor point="TOPLEFT"/>
 			<Anchor point="BOTTOMRIGHT"/>
 		</Anchors>
 		<Frames>
-			<Slider name="$parentScrollBar" parentKey="ScrollBar" inherits="HybridScrollBarTemplate">
+			<Slider name="$parentScrollBar" parentKey="ScrollBar" inherits="EJHybridScrollBarTemplate">
 				<Anchors>
 					<Anchor point="TOPLEFT" relativePoint="TOPRIGHT" x="0" y="-17"/>
 					<Anchor point="BOTTOMLEFT" relativePoint="BOTTOMRIGHT" x="0" y="12"/>
@@ -205,9 +205,9 @@
 	</ScrollFrame>
 
 	<!-- This is a scrollframe with no border and a black texture for a track -->
-	<ScrollFrame name="MinimalHybridScrollFrameTemplate" inherits="HybridScrollFrameTemplate" virtual="true">
+	<ScrollFrame name="EJMinimalHybridScrollFrameTemplate" inherits="EJHybridScrollFrameTemplate" virtual="true">
 		<Frames>
-			<Slider name="$parentScrollBar" inherits="MinimalHybridScrollBarTemplate">
+			<Slider name="$parentScrollBar" inherits="EJMinimalHybridScrollBarTemplate">
 				<Anchors>
 					<Anchor point="TOPLEFT" relativePoint="TOPRIGHT" x="0" y="-17"/>
 					<Anchor point="BOTTOMLEFT" relativePoint="BOTTOMRIGHT" x="0" y="17"/>

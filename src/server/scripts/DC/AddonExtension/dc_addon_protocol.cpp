@@ -926,14 +926,11 @@ namespace
         return true;
     }
 
-    bool TryGetPersistedCapabilityStateByAccount(uint32 accountId,
-        DCAddon::SessionCapabilityState& out)
+    std::string BuildPersistedCapabilityStateSql(uint32 accountId,
+        bool hasMetadataColumns)
     {
-        if (accountId == 0)
-            return false;
-
-        QueryResult result = CharacterDatabase.Query(
-            HasClientCapsMetadataColumns()
+        return Acore::StringFormat(
+            hasMetadataColumns
                 ? "SELECT version_string, capabilities, negotiated_caps, "
                   "last_character_guid, last_character_name, "
                   "UNIX_TIMESTAMP(last_seen), native_build_fingerprint, data_revisions_json "
@@ -947,11 +944,12 @@ namespace
                   "WHERE account_id = {} AND addon_name = 'DC' "
                   "ORDER BY last_seen DESC LIMIT 1",
             accountId);
-        if (!result)
-            return false;
+    }
 
-        Field* fields = result->Fetch();
-        out = DCAddon::SessionCapabilityState();
+    DCAddon::SessionCapabilityState ParseCapabilityStateRow(Field* fields,
+        bool hasMetadataColumns)
+    {
+        DCAddon::SessionCapabilityState out;
         out.clientVersionString = fields[0].Get<std::string>();
         out.clientCapabilities = fields[1].Get<uint32>();
         out.negotiatedCapabilities = fields[2].Get<uint32>();
@@ -963,7 +961,7 @@ namespace
                 DCAddon::ProtocolVersion::ParseClientVersion(
                     out.clientVersionString));
         out.loadedFromPersistedFallback = true;
-        if (HasClientCapsMetadataColumns())
+        if (hasMetadataColumns)
         {
             out.nativeBuildFingerprint = fields[6].Get<std::string>();
             out.dataRevisions = ParseDataRevisionsJson(
@@ -971,6 +969,22 @@ namespace
             out.metadataJson = EncodeHandshakeMetadataJson(
                 out.nativeBuildFingerprint, out.dataRevisions);
         }
+        return out;
+    }
+
+    bool TryGetPersistedCapabilityStateByAccount(uint32 accountId,
+        DCAddon::SessionCapabilityState& out)
+    {
+        if (accountId == 0)
+            return false;
+
+        bool const hasMetadataColumns = HasClientCapsMetadataColumns();
+        QueryResult result = CharacterDatabase.Query(
+            BuildPersistedCapabilityStateSql(accountId, hasMetadataColumns));
+        if (!result)
+            return false;
+
+        out = ParseCapabilityStateRow(result->Fetch(), hasMetadataColumns);
         return true;
     }
 }
@@ -1118,6 +1132,33 @@ namespace DCAddon
 
         std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
         s_SessionCapabilityRegistry.erase(key);
+    }
+
+    void WarmSessionCapabilityStateAsync(Player* player)
+    {
+        uint32 accountId = GetSessionCapabilityRegistryKey(player);
+        if (accountId == 0)
+            return;
+
+        SessionCapabilityState alreadyLive;
+        if (TryGetLiveSessionCapabilityStateByAccount(accountId, alreadyLive))
+            return;
+
+        bool const hasMetadataColumns = HasClientCapsMetadataColumns();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(
+            BuildPersistedCapabilityStateSql(accountId, hasMetadataColumns))
+            .WithCallback([accountId, hasMetadataColumns](QueryResult result)
+        {
+            if (!result)
+                return;
+
+            // try_emplace: never clobber a real handshake result that may
+            // have landed (via SetSessionCapabilityState) while this warm-up
+            // query was in flight.
+            std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+            s_SessionCapabilityRegistry.try_emplace(accountId,
+                ParseCapabilityStateRow(result->Fetch(), hasMetadataColumns));
+        }));
     }
 
     uint32 GetSessionNegotiatedCapabilities(Player* player)
@@ -3200,9 +3241,10 @@ public:
 
     void OnPlayerLogin(Player* player) override
     {
-        (void)player;  // Unused for now
-        // Could send initial sync here if client addon is already known to be present
-        // For now, we wait for client handshake
+        // Warm the live capability registry from the DB asynchronously so
+        // any transport-policy decision that runs before the client's addon
+        // handshake completes hits a cache instead of a blocking query.
+        DCAddon::WarmSessionCapabilityStateAsync(player);
     }
 
     void OnPlayerLogout(Player* player) override

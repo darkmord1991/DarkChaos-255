@@ -4,34 +4,40 @@
 		1. how many buttons the offset is completely past
 		2. how many pixels the offset is into the topmost button
 	So with buttons of size 20, .dynamic(0) should return 0,0 and .dynamic(34) should return 1,14
+
+	NOTE: All globals in this file are prefixed with "EJ" (Encounter Journal) so they can never
+	collide with the client's own built-in Interface/FrameXML/HybridScrollFrame.lua globals of the
+	same name minus the prefix. Loading a second, same-named copy of this file as part of an addon
+	would otherwise silently override the stock implementation for every other default UI panel
+	(Achievement UI, PaperDoll title picker, etc.) that uses HybridScrollFrame and loads afterwards.
 -----------------------------------------------------------------------------------------------]]--
 
 local round = function (num) return math.floor(num + .5); end
 
-function HybridScrollFrame_OnLoad (self)
+function EJHybridScrollFrame_OnLoad (self)
 	self:EnableMouse(true);
 end
 
-function HybridScrollFrameScrollUp_OnLoad (self)
+function EJHybridScrollFrameScrollUp_OnLoad (self)
 	self:GetParent():GetParent().scrollUp = self;
 	self:Disable();
 	self:RegisterForClicks("LeftButtonUp", "LeftButtonDown");
 	self.direction = 1;
 end
 
-function HybridScrollFrameScrollDown_OnLoad (self)
+function EJHybridScrollFrameScrollDown_OnLoad (self)
 	self:GetParent():GetParent().scrollDown = self;
 	self:Disable();
 	self:RegisterForClicks("LeftButtonUp", "LeftButtonDown");
 	self.direction = -1;
 end
 
-function HybridScrollFrame_OnValueChanged (self, value)
-	HybridScrollFrame_SetOffset(self:GetParent(), value);
-	HybridScrollFrame_UpdateButtonStates(self:GetParent(), value);
+function EJHybridScrollFrame_OnValueChanged (self, value)
+	EJHybridScrollFrame_SetOffset(self:GetParent(), value);
+	EJHybridScrollFrame_UpdateButtonStates(self:GetParent(), value);
 end
 
-function HybridScrollFrame_UpdateButtonStates (self, currValue)
+function EJHybridScrollFrame_UpdateButtonStates (self, currValue)
 	if ( not currValue ) then
 		currValue = self.scrollBar:GetValue();
 	end
@@ -54,7 +60,7 @@ function HybridScrollFrame_UpdateButtonStates (self, currValue)
 	end
 end
 
-function HybridScrollFrame_OnMouseWheel (self, delta, stepSize)
+function EJHybridScrollFrame_OnMouseWheel (self, delta, stepSize)
 	if ( not self.scrollBar:IsVisible() ) then
 		return;
 	end
@@ -68,33 +74,33 @@ function HybridScrollFrame_OnMouseWheel (self, delta, stepSize)
 	end
 end
 
-function HybridScrollFrameScrollButton_OnUpdate (self, elapsed)
+function EJHybridScrollFrameScrollButton_OnUpdate (self, elapsed)
 	self.timeSinceLast = self.timeSinceLast + elapsed;
 	if ( self.timeSinceLast >= ( self.updateInterval or 0.08 ) ) then
 		if ( not IsMouseButtonDown("LeftButton") ) then
 			self:SetScript("OnUpdate", nil);
 		elseif ( self:IsMouseOver() ) then
 			local parent = self.parent or self:GetParent():GetParent();
-			HybridScrollFrame_OnMouseWheel (parent, self.direction, (self.stepSize or parent.buttonHeight/3));
+			EJHybridScrollFrame_OnMouseWheel (parent, self.direction, (self.stepSize or parent.buttonHeight/3));
 			self.timeSinceLast = 0;
 		end
 	end
 end
 
-function HybridScrollFrameScrollButton_OnClick (self, button, down)
+function EJHybridScrollFrameScrollButton_OnClick (self, button, down)
 	local parent = self.parent or self:GetParent():GetParent();
 
 	if ( down ) then
 		self.timeSinceLast = (self.timeToStart or -0.2);
-		self:SetScript("OnUpdate", HybridScrollFrameScrollButton_OnUpdate);
-		HybridScrollFrame_OnMouseWheel (parent, self.direction);
+		self:SetScript("OnUpdate", EJHybridScrollFrameScrollButton_OnUpdate);
+		EJHybridScrollFrame_OnMouseWheel (parent, self.direction);
 		PlaySound("UChatScrollButton");
 	else
 		self:SetScript("OnUpdate", nil);
 	end
 end
 
-function HybridScrollFrame_Update (self, totalHeight, displayedHeight)
+function EJHybridScrollFrame_Update (self, totalHeight, displayedHeight)
 	local range = floor(totalHeight - self:GetHeight() + 0.5);
 	if ( range > 0 and self.scrollBar ) then
 		local minVal, maxVal = self.scrollBar:GetMinMaxValues();
@@ -103,13 +109,13 @@ function HybridScrollFrame_Update (self, totalHeight, displayedHeight)
 			if ( math.floor(self.scrollBar:GetValue()) ~= math.floor(range) ) then
 				self.scrollBar:SetValue(range);
 			else
-				HybridScrollFrame_SetOffset(self, range); -- If we've scrolled to the bottom, we need to recalculate the offset.
+				EJHybridScrollFrame_SetOffset(self, range); -- If we've scrolled to the bottom, we need to recalculate the offset.
 			end
 		else
 			self.scrollBar:SetMinMaxValues(0, range)
 		end
 		self.scrollBar:Enable();
-		HybridScrollFrame_UpdateButtonStates(self);
+		EJHybridScrollFrame_UpdateButtonStates(self);
 		self.scrollBar:Show();
 	elseif ( self.scrollBar ) then
 		self.scrollBar:SetValue(0);
@@ -129,26 +135,26 @@ function HybridScrollFrame_Update (self, totalHeight, displayedHeight)
 	self:UpdateScrollChildRect();
 end
 
-function HybridScrollFrame_GetOffset (self)
+function EJHybridScrollFrame_GetOffset (self)
 	return math.floor(self.offset or 0), (self.offset or 0);
 end
 
-function HybridScrollFrameScrollChild_OnLoad (self)
+function EJHybridScrollFrameScrollChild_OnLoad (self)
 	self:GetParent().scrollChild = self;
 end
 
-function HybridScrollFrame_ExpandButton (self, offset, height)
+function EJHybridScrollFrame_ExpandButton (self, offset, height)
 	self.largeButtonTop = round(offset);
 	self.largeButtonHeight = round(height)
-	HybridScrollFrame_SetOffset(self, self.scrollBar:GetValue());
+	EJHybridScrollFrame_SetOffset(self, self.scrollBar:GetValue());
 end
 
-function HybridScrollFrame_CollapseButton (self)
+function EJHybridScrollFrame_CollapseButton (self)
 	self.largeButtonTop = nil;
 	self.largeButtonHeight = nil;
 end
 
-function HybridScrollFrame_SetOffset (self, offset)
+function EJHybridScrollFrame_SetOffset (self, offset)
 	local buttons = self.buttons
 	local buttonHeight = self.buttonHeight;
 	local element, overflow;
@@ -196,7 +202,7 @@ function HybridScrollFrame_SetOffset (self, offset)
 	self:SetVerticalScroll(scrollHeight);
 end
 
-function HybridScrollFrame_CreateButtons (self, buttonTemplate, initialOffsetX, initialOffsetY, initialPoint, initialRelative, offsetX, offsetY, point, relativePoint)
+function EJHybridScrollFrame_CreateButtons (self, buttonTemplate, initialOffsetX, initialOffsetY, initialPoint, initialRelative, offsetX, offsetY, point, relativePoint)
 	local scrollChild = self.scrollChild;
 	local button, buttonHeight, buttons, numButtons;
 
@@ -245,20 +251,20 @@ function HybridScrollFrame_CreateButtons (self, buttonTemplate, initialOffsetX, 
 
 end
 
-function HybridScrollFrame_GetButtons (self)
+function EJHybridScrollFrame_GetButtons (self)
 	return self.buttons;
 end
 
-function HybridScrollFrame_SetDoNotHideScrollBar (self, doNotHide)
+function EJHybridScrollFrame_SetDoNotHideScrollBar (self, doNotHide)
 	if not self.scrollBar or self.scrollBar.doNotHide == doNotHide then
 		return;
 	end
 
 	self.scrollBar.doNotHide = doNotHide;
-	HybridScrollFrame_Update(self, self.totalHeight or 0, self.scrollChild:GetHeight());
+	EJHybridScrollFrame_Update(self, self.totalHeight or 0, self.scrollChild:GetHeight());
 end
 
-function HybridScrollFrame_ScrollToIndex(self, index, getHeightFunc)
+function EJHybridScrollFrame_ScrollToIndex(self, index, getHeightFunc)
 	local totalHeight = 0;
 	local scrollFrameHeight = self:GetHeight();
 	for i = 1, index do

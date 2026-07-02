@@ -32,6 +32,7 @@ void AddSC_ac_guard_npc();                    // AC/ac_guard_npc.cpp
 void AddSC_dc_login_announce();               // Progression/FirstStart/dc_login_announce.cpp
 void AddSC_ac_quest_npc_800009();             // AC/ac_quest_npc_800009.cpp
 void AddSC_flightmasters();                   // AC/ac_flightmasters.cpp
+void AddSC_dc_downport_taxi();                // AC/dc_downport_taxi.cpp
 
 // --- Jadeforest zone ---
 void AddSC_jadeforest_flightmaster();         // Jadeforest/jadeforest_flightmaster.cpp
@@ -258,6 +259,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_ac_guard_npc);
     DC_LOAD(AddSC_ac_quest_npc_800009);
     DC_LOAD(AddSC_flightmasters);
+    DC_LOAD(AddSC_dc_downport_taxi);
 
     LogSection("DC Core Services");
     DC_LOAD(AddSC_dc_login_announce);

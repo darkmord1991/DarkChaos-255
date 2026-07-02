@@ -11,9 +11,13 @@
 -- controllers 75181/75182/75186, portals 52531, behemoths 52552, splash
 -- bunnies 52893, flame-protection runes 52884-90/53887, Saynna 52854,
 -- camera channel bunny 44403, fire hawks 53297/53300, + the Furnace Door
--- GO 208427. Guid blocks 12,900,000+ (creature) / 12,950,000+ (GO) --
--- deliberately OUTSIDE 30_neltharion_spawn_layer.sql's delete ranges so
--- re-running 30 cannot wipe them. Idempotent.
+-- GO 208427. Guid blocks 12,900,000+ (creature) / 15,100,000+ (GO) --
+-- deliberately OUTSIDE 30_neltharion_spawn_layer.sql's delete ranges
+-- (creature 12.0M-12.499M / gameobject 12.5M-12.999M) so re-running 30
+-- cannot wipe them. NOTE 2026-07-02: the GO block was originally
+-- 12,950,000+, which is INSIDE 30's gameobject delete range -- moved to
+-- 15,100,000+ (confirmed empty) before this file was ever applied.
+-- Idempotent.
 -- =====================================================================
 SET @OFF := 3600000;
 
@@ -25,9 +29,9 @@ SELECT 12900000 + ROW_NUMBER() OVER (ORDER BY c.guid), c.id+@OFF, 750, 0, 0, 1, 
 FROM nelt_world.creature c
 WHERE c.map=861 AND c.id IN (75181,75182,75186,52531,52552,52893,52884,52885,52886,52887,52888,52889,52890,53887,52854,44403,53297,53300);
 
-DELETE FROM acore_world.gameobject WHERE guid BETWEEN 12950000 AND 12999999;
+DELETE FROM acore_world.gameobject WHERE guid BETWEEN 15100000 AND 15149999;
 INSERT INTO acore_world.gameobject (`guid`,`id`,`map`,`zoneId`,`areaId`,`spawnMask`,`phaseMask`,`position_x`,`position_y`,`position_z`,`orientation`,`rotation0`,`rotation1`,`rotation2`,`rotation3`,`spawntimesecs`,`animprogress`,`state`,`ScriptName`,`VerifiedBuild`,`Comment`)
-SELECT 12950000 + ROW_NUMBER() OVER (ORDER BY g.guid), g.id+@OFF, 750, 0, 0, 1, g.phaseMask,
+SELECT 15100000 + ROW_NUMBER() OVER (ORDER BY g.guid), g.id+@OFF, 750, 0, 0, 1, g.phaseMask,
        g.position_x, g.position_y, g.position_z, g.orientation, g.rotation0, g.rotation1, g.rotation2, g.rotation3,
        g.spawntimesecs, g.animprogress, g.state, '', 0, 'MoltenFront-Nel'
 FROM nelt_world.gameobject g

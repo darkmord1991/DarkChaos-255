@@ -44,7 +44,7 @@
 
 	<Frame name="ScrollListTemplate" virtual="true">
 		<Frames>
-			<ScrollFrame name="$parentScrollFrame" parentKey="ScrollFrame" inherits="HybridScrollFrameTemplate">
+			<ScrollFrame name="$parentScrollFrame" parentKey="ScrollFrame" inherits="EJHybridScrollFrameTemplate">
 				<Anchors>
 					<Anchor point="TOPLEFT" x="4" y="-7"/>
 					<Anchor point="BOTTOMRIGHT" x="-28" y="3"/>
@@ -59,7 +59,7 @@
 							</Layer>
 						</Layers>
 					</Frame>
-					<Slider name="$parentScrollBar" parentKey="scrollBar" inherits="HybridScrollBarTemplate">
+					<Slider name="$parentScrollBar" parentKey="scrollBar" inherits="EJHybridScrollBarTemplate">
 						<Anchors>
 							<Anchor point="TOPLEFT" relativePoint="TOPRIGHT" x="4" y="-10"/>
 							<Anchor point="BOTTOMLEFT" relativePoint="BOTTOMRIGHT" x="4" y="12"/>

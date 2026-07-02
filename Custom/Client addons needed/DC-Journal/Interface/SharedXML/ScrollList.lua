@@ -88,12 +88,12 @@ function ScrollListMixin:Init()
 		self:RefreshScrollFrame();
 	end;
 
-	HybridScrollFrame_CreateButtons(self.ScrollFrame, self.lineTemplate, 0, 0);
+	EJHybridScrollFrame_CreateButtons(self.ScrollFrame, self.lineTemplate, 0, 0);
 	for i, button in ipairs(self.ScrollFrame.buttons) do
 		button:InitLine(unpack(self.lineTemplateInitArgs));
 	end
 
-	HybridScrollFrame_SetDoNotHideScrollBar(self.ScrollFrame, true);
+	EJHybridScrollFrame_SetDoNotHideScrollBar(self.ScrollFrame, true);
 
 	self.isInitialized = true;
 
@@ -107,7 +107,7 @@ function ScrollListMixin:UpdatedSelectedHighlight()
 
 	if self.isInitialized and self.selectedListIndex ~= nil then
 		local buttonOffset = self.selectedListIndex - self:GetScrollOffset();
-		local buttons = HybridScrollFrame_GetButtons(self.ScrollFrame);
+		local buttons = EJHybridScrollFrame_GetButtons(self.ScrollFrame);
 		if buttonOffset >= 1 and buttonOffset < #buttons then
 			local button = buttons[buttonOffset];
 			selectedHighlight:SetPoint("TOPLEFT", button, "TOPLEFT", 4, 0);
@@ -151,7 +151,7 @@ function ScrollListMixin:Reset()
 end
 
 function ScrollListMixin:GetScrollOffset()
-	return HybridScrollFrame_GetOffset(self.ScrollFrame);
+	return EJHybridScrollFrame_GetOffset(self.ScrollFrame);
 end
 
 function ScrollListMixin:RefreshScrollFrame()
@@ -175,7 +175,7 @@ function ScrollListMixin:RefreshScrollFrame()
 	end
 
 	local numResults = self.getNumResultsFunction();
-	local buttons = HybridScrollFrame_GetButtons(self.ScrollFrame);
+	local buttons = EJHybridScrollFrame_GetButtons(self.ScrollFrame);
 	local buttonCount = #buttons;
 	
 	local offset = self:GetScrollOffset();
@@ -198,7 +198,7 @@ function ScrollListMixin:RefreshScrollFrame()
 	local buttonHeight = buttons[1]:GetHeight();
 	local displayedHeight = numDisplayed * buttonHeight;
 	local totalHeight = numResults * buttonHeight;
-	HybridScrollFrame_Update(self.ScrollFrame, totalHeight, displayedHeight);
+	EJHybridScrollFrame_Update(self.ScrollFrame, totalHeight, displayedHeight);
 
 	self:UpdatedSelectedHighlight();
 

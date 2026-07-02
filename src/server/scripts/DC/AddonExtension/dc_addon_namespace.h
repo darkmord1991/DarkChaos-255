@@ -1375,6 +1375,12 @@ namespace DCAddon
     SessionCapabilityState GetSessionCapabilityState(Player* player);
     SessionCapabilityState GetSessionCapabilityState(WorldSession* session);
     void ClearSessionCapabilityState(Player* player);
+    // Fire-and-forget: primes the live registry from dc_addon_client_caps on
+    // login so the first TryGetSessionCapabilityState() lookup for this
+    // account (e.g. a pre-handshake transport-policy decision) doesn't have
+    // to fall back to a blocking CharacterDatabase.Query() on the world
+    // thread. No-op if the account already has a live entry.
+    void WarmSessionCapabilityStateAsync(Player* player);
     uint32 GetSessionNegotiatedCapabilities(Player* player);
     uint32 GetSessionNegotiatedCapabilities(WorldSession* session);
     bool SessionSupportsCapability(Player* player, uint32 capability);

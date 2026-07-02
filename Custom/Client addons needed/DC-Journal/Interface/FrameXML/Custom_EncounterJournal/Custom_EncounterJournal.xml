@@ -1639,13 +1639,13 @@
 							</OnClick>
 						</Scripts>
 					</Button>
-					<ScrollFrame name="$parentScrollFrame" parentKey="scrollFrame" inherits="HybridScrollFrameTemplate">
+					<ScrollFrame name="$parentScrollFrame" parentKey="scrollFrame" inherits="EJHybridScrollFrameTemplate">
 						<Size x="578" y="371"/>
 						<Anchors>
 							<Anchor point="BOTTOMLEFT" x="1" y="1"/>
 						</Anchors>
 						<Frames>
-							<Slider name="$parentScrollBar" parentKey="scrollBar" inherits="HybridScrollBarTrimTemplate">
+							<Slider name="$parentScrollBar" parentKey="scrollBar" inherits="EJHybridScrollBarTrimTemplate">
 								<Anchors>
 									<Anchor point="TOPLEFT" relativePoint="TOPRIGHT" x="0" y="-16"/>
 									<Anchor point="BOTTOMLEFT" relativePoint="BOTTOMRIGHT" x="0" y="14"/>
@@ -2368,7 +2368,7 @@
 									</OnHide>
 								</Scripts>
 							</ScrollFrame>
-							<ScrollFrame name="$parentLootScrollFrame" parentKey="lootScroll" inherits="HybridScrollFrameTemplate">
+							<ScrollFrame name="$parentLootScrollFrame" parentKey="lootScroll" inherits="EJHybridScrollFrameTemplate">
 								<Size x="345" y="382"/>
 								<Anchors>
 									<Anchor point="BOTTOMRIGHT" x="-5" y="1"/>
@@ -2459,7 +2459,7 @@
 									</Button>
 									<Frame name="$parentLootFilter" inherits="UIDropDownMenuTemplate" parentKey="lootFilter" hidden="true"/>
 									<Frame name="$parentLootSlotFilter" inherits="UIDropDownMenuTemplate" parentKey="lootSlotFilter" hidden="true"/>
-									<Slider name="$parentScrollBar" inherits="MinimalHybridScrollBarTemplate" parentKey="scrollBar">
+									<Slider name="$parentScrollBar" inherits="EJMinimalHybridScrollBarTemplate" parentKey="scrollBar">
 										<Anchors>
 											<Anchor point="TOPRIGHT" x="0" y="-18"/>
 											<Anchor point="BOTTOMRIGHT" x="0" y="17"/>
@@ -2574,7 +2574,7 @@
 							<OnLoad function="LootJournalClassDropDown_OnLoad"/>
 						</Scripts>
 					</Frame>
-					<ScrollFrame name="$parentScrollFrame" parentKey="ItemSetsScrollFrame" inherits="MinimalHybridScrollFrameTemplate">
+					<ScrollFrame name="$parentScrollFrame" parentKey="ItemSetsScrollFrame" inherits="EJMinimalHybridScrollFrameTemplate">
 						<Size x="762" y="332"/>
 						<Anchors>
 							<Anchor point="BOTTOMLEFT" x="0" y="3"/>

@@ -1340,11 +1340,11 @@ function EncounterJournal_OnLoad( self, ... )
 	self.encounter.info.lootScroll.update = EncounterJournal_LootUpdate
 	self.encounter.info.lootScroll.scrollBar.doNotHide = true
 	self.encounter.info.lootScroll.dynamic = EncounterJournal_LootCalcScroll
-	HybridScrollFrame_CreateButtons(self.encounter.info.lootScroll, "EncounterItemTemplate", 0, 0)
+	EJHybridScrollFrame_CreateButtons(self.encounter.info.lootScroll, "EncounterItemTemplate", 0, 0)
 
 	self.searchResults.scrollFrame.update = EncounterJournal_SearchUpdate
 	self.searchResults.scrollFrame.scrollBar.doNotHide = true
-	HybridScrollFrame_CreateButtons(self.searchResults.scrollFrame, "EncounterSearchLGTemplate", 0, 0)
+	EJHybridScrollFrame_CreateButtons(self.searchResults.scrollFrame, "EncounterSearchLGTemplate", 0, 0)
 
 	UIDropDownMenu_Initialize(self.encounter.info.lootScroll.lootFilter, EncounterJournal_InitLootFilter, "MENU")
 	UIDropDownMenu_Initialize(self.encounter.info.lootScroll.lootSlotFilter, EncounterJournal_InitLootSlotFilter, "MENU")
@@ -2931,7 +2931,7 @@ end
 function EncounterJournal_LootUpdate()
 	EncounterJournal_UpdateFilterString()
 	local scrollFrame = EncounterJournal.encounter.info.lootScroll
-	local offset = HybridScrollFrame_GetOffset(scrollFrame)
+	local offset = EJHybridScrollFrame_GetOffset(scrollFrame)
 	local items = scrollFrame.buttons
 	local item, index
 
@@ -2963,7 +2963,7 @@ function EncounterJournal_LootUpdate()
 	end
 
 	local totalHeight = numLoot * buttonSize
-	HybridScrollFrame_Update(scrollFrame, totalHeight, scrollFrame:GetHeight())
+	EJHybridScrollFrame_Update(scrollFrame, totalHeight, scrollFrame:GetHeight())
 end
 
 function EncounterJournal_SetLootButton(item)
@@ -3548,7 +3548,7 @@ end
 
 function EncounterJournal_SearchUpdate()
 	local scrollFrame = EncounterJournal.searchResults.scrollFrame
-	local offset = HybridScrollFrame_GetOffset(scrollFrame)
+	local offset = EJHybridScrollFrame_GetOffset(scrollFrame)
 	local results = scrollFrame.buttons
 	local result, index
 
@@ -3592,7 +3592,7 @@ function EncounterJournal_SearchUpdate()
 	end
 
 	local totalHeight = numResults * 49
-	HybridScrollFrame_Update(scrollFrame, totalHeight, 370)
+	EJHybridScrollFrame_Update(scrollFrame, totalHeight, 370)
 end
 
 function EncounterJournalSearchBoxShowAllResults_OnEnter(self)
@@ -3763,7 +3763,7 @@ end
 function LootJournalItemSetsScrollFrame_OnLoad( self, ... )
 	self.scrollBar.trackBG:Hide()
 	self.update = LootJournalItemSetsScrollFrame_UpdateList
-	HybridScrollFrame_CreateButtons(self, "LootJournalItemSetButtonTemplate", LJ_ITEMSET_X_OFFSET, -LJ_ITEMSET_Y_OFFSET, "TOPLEFT", nil, nil, -LJ_ITEMSET_BUTTON_SPACING);
+	EJHybridScrollFrame_CreateButtons(self, "LootJournalItemSetButtonTemplate", LJ_ITEMSET_X_OFFSET, -LJ_ITEMSET_Y_OFFSET, "TOPLEFT", nil, nil, -LJ_ITEMSET_BUTTON_SPACING);
 end
 
 function LootJournalItemSetsScrollFrame_OnShow( self, ... )
@@ -3804,7 +3804,7 @@ end
 function LootJournalItemSetsScrollFrame_UpdateList()
 	local scrollFrame = EncounterJournal.LootJournal.ItemSetsScrollFrame
 	local buttons = scrollFrame.buttons
-	local offset = HybridScrollFrame_GetOffset(scrollFrame)
+	local offset = EJHybridScrollFrame_GetOffset(scrollFrame)
 
 	local numSets = LootJournal_GetNumLoot()
 
@@ -3856,7 +3856,7 @@ function LootJournalItemSetsScrollFrame_UpdateList()
 	end
 
 	local totalHeight = numSets * buttons[1]:GetHeight() + (numSets - 1) * LJ_ITEMSET_BUTTON_SPACING + LJ_ITEMSET_Y_OFFSET + LJ_ITEMSET_BOTTOM_BUFFER
-	HybridScrollFrame_Update(scrollFrame, totalHeight, scrollFrame:GetHeight())
+	EJHybridScrollFrame_Update(scrollFrame, totalHeight, scrollFrame:GetHeight())
 
 	if EncounterJournal.LootJournal.ItemSetsScrollFrame.activeButton then
 		LootJournalItemSetButton_OnEnter(EncounterJournal.LootJournal.ItemSetsScrollFrame.activeButton)
