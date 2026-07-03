@@ -445,6 +445,12 @@ namespace VMAP
                 }
             }
 
+            // AABox() default-constructs its corners to NaN as an "unset" sentinel
+            // (see G3D::AABox()); a model with no collision geometry never overwrites
+            // it via merge(). Skip it instead of writing NaN bounds to the dtree file.
+            if (boundEmpty)
+                continue;
+
             fwrite(&displayId, sizeof(uint32), 1, model_list_copy);
             fwrite(&isWmo, sizeof(uint8), 1, model_list_copy);
             fwrite(&name_length, sizeof(uint32), 1, model_list_copy);
