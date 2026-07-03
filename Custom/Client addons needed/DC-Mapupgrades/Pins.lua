@@ -457,8 +457,8 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     if not activeMapId or activeMapId == 0 then return false end
     if CONTINENT_MAP_IDS[activeMapId] then return false end
     
-    -- Check blacklist for boss/death entities
-    if (entity.kind == "boss" or entity.kind == "death") and IsBossBlacklistedMap(activeMapId) then
+    -- Check blacklist for boss entities only (death markers are never boss-blacklisted).
+    if entity.kind == "boss" and IsBossBlacklistedMap(activeMapId) then
         return false
     end
     
@@ -470,8 +470,8 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     -- Server-provided entities (bosses/deaths) use server zone/area ID in mapId.
     if entity.kind == "boss" or entity.kind == "death" then
         local db = Pins.state and Pins.state.db
-        -- Block by server map/zone id directly if blacklisted
-        if db and db.bossBlacklistMaps and db.bossBlacklistMaps[entMapId] then
+        -- Block by server map/zone id directly if blacklisted (bosses only).
+        if entity.kind == "boss" and db and db.bossBlacklistMaps and db.bossBlacklistMaps[entMapId] then
             return false
         end
         local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
@@ -865,27 +865,43 @@ function Pins:AcquireEntityWorldPin(id, entity)
                 GameTooltip:AddLine(string.format("Victim: %s (%s)", tostring(victim), className), 1, 1, 1)
             end
 
+            if ent.failureReason and ent.failureReason ~= "" then
+                GameTooltip:AddLine("Failure Reason: " .. tostring(ent.failureReason), 1, 0.3, 0.3)
+            end
+
             local kt = tostring(ent.killerType or "unknown")
             if kt == "creature" then
                 local kName = ent.killerName or "Creature"
                 if ent.killerEntry then
-                    GameTooltip:AddLine(string.format("Killed by: %s (entry %s)", tostring(kName), tostring(ent.killerEntry)), 0.95, 0.95, 0.95)
+                    GameTooltip:AddLine(string.format("Killer: %s (entry %s)", tostring(kName), tostring(ent.killerEntry)), 0.95, 0.95, 0.95)
                 else
-                    GameTooltip:AddLine("Killed by: " .. tostring(kName), 0.95, 0.95, 0.95)
+                    GameTooltip:AddLine("Killer: " .. tostring(kName), 0.95, 0.95, 0.95)
                 end
             elseif kt == "player" then
                 local kName = ent.killerName or "Player"
-                GameTooltip:AddLine("Killed by: " .. tostring(kName), 0.95, 0.95, 0.95)
+                GameTooltip:AddLine("Killer: " .. tostring(kName), 0.95, 0.95, 0.95)
             elseif kt == "environment" then
-                GameTooltip:AddLine("Killed by: Environment", 0.95, 0.95, 0.95)
+                local envType = ent.environmentType
+                if envType and envType ~= "" then
+                    GameTooltip:AddLine("Killer: " .. tostring(envType) .. " (Environmental Damage)", 0.95, 0.95, 0.95)
+                else
+                    GameTooltip:AddLine("Killer: Environment", 0.95, 0.95, 0.95)
+                end
             else
-                GameTooltip:AddLine("Killed by: Unknown", 0.95, 0.95, 0.95)
+                GameTooltip:AddLine("Killer: Unknown", 0.95, 0.95, 0.95)
+            end
+
+            local killingBlowDamage = tonumber(ent.killingBlowDamage)
+            if killingBlowDamage and killingBlowDamage > 0 then
+                GameTooltip:AddLine(string.format("Killing Blow: %d Damage", math.floor(killingBlowDamage)), 1, 1, 1)
             end
 
             local now = NowEpoch()
             local diedAt = tonumber(ent.diedAt)
             local expiresAt = tonumber(ent.expiresAt)
             if diedAt then
+                GameTooltip:AddLine(date("%B %d at %I:%M %p", diedAt), 1, 1, 1)
+
                 local ago = FormatDuration(now - diedAt)
                 if ago then
                     GameTooltip:AddLine("Died: " .. ago .. " ago", 1, 0.82, 0)
@@ -1239,16 +1255,8 @@ function Pins:UpdateWorldPinsInternal()
         end
     end
 
-    -- Entities (world bosses / rares)
-    if IsBossBlacklistedMap(activeMapId) then
-        for id, pin in pairs(self.entityWorldPins) do
-            pin:Hide()
-        end
-        DebugPrint("Entities: skipped due to boss blacklist map")
-        DebugPrint("UpdateWorldPins: Map", activeMapId, "- Showing", visibleCount, "of", self:CountHotspots(), "pins")
-        return
-    end
-
+    -- Entities (world bosses / rares / deaths). Blacklist filtering happens per-entity inside
+    -- EntityMatchesMap() below (boss-only), so a blacklisted boss map doesn't also hide death/rare pins.
     local entSeen = {}
     local list = db.entities and db.entities.list
     if type(list) == "table" then

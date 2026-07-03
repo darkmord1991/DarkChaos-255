@@ -41,6 +41,7 @@
 #include "Config.h"
 #include "CreatureAI.h"
 #include "DatabaseEnv.h"
+#include "../../../scripts/DC/AddonExtension/dc_addon_death_markers.h"
 #include "DisableMgr.h"
 #include "Formulas.h"
 #include "GameEventMgr.h"
@@ -800,6 +801,11 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
     }
 
     Unit::DealDamageMods(this, damage, &absorb);
+
+    // Note the specific cause (fall/lava/drowning/...) in case this hit turns out to be lethal;
+    // DealDamage() below reports this death as a self-kill (killer == victim), so this is the
+    // only place that ever knows *which* environmental cause it was.
+    DCAddon::DeathMarkers::NotePendingEnvironmentalCause(this, static_cast<uint8_t>(type));
 
     WorldPackets::CombatLog::EnvironmentalDamageLog packet;
     packet.Victim = GetGUID();

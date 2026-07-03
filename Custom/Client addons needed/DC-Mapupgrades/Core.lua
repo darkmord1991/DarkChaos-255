@@ -1146,6 +1146,9 @@ local function UpsertDeathEntityFromServerRecord(d)
     ent.killerType = d.killerType
     ent.killerEntry = tonumber(d.killerEntry)
     ent.killerName = d.killerName
+    ent.environmentType = d.environmentType
+    ent.killingBlowDamage = tonumber(d.killingBlowDamage)
+    ent.failureReason = d.failureReason
 
     ent.diedAt = tonumber(d.diedAt)
     ent.expiresAt = tonumber(d.expiresAt)

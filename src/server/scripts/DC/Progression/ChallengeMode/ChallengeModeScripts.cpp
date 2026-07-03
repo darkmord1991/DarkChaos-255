@@ -15,6 +15,20 @@
 
 using namespace Acore::ChatCommands;
 
+namespace
+{
+    // Single source of truth for "who/what killed this player", so the hardcore chat broadcast
+    // and the death marker (DCAddon::DeathMarkers::RecordChallengeDeath) can never disagree.
+    std::string DescribeKillerForChat(DCAddon::DeathMarkers::DeathContext const& ctx)
+    {
+        if (ctx.killerType == "environment")
+            return ctx.environmentType.empty() ? "Environment" : ctx.environmentType;
+        if (ctx.killerType == "player" || ctx.killerType == "creature")
+            return ctx.killerName.empty() ? "Unknown" : ctx.killerName;
+        return "Unknown";
+    }
+} // namespace
+
 // ==============================================
 // DarkChaos-255: HARDCORE CHARACTER LOCKING
 // ==============================================
@@ -70,7 +84,8 @@ public:
         if (player->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
             return;
 
-        HandleHardcoreDeath(player, 0, "Environment");
+        DCAddon::DeathMarkers::DeathContext ctx = DCAddon::DeathMarkers::ResolveDeathContext(player, nullptr);
+        HandleHardcoreDeath(player, 0, DescribeKillerForChat(ctx));
         DCAddon::DeathMarkers::RecordChallengeDeath(player, nullptr, "hardcore", "Hardcore");
         player->SetPvPDeath(true);
     }
@@ -92,7 +107,10 @@ public:
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, victim))
             return;
 
-        HandleHardcoreDeath(victim, 0, killer ? killer->GetName() : "Unknown");
+        // A self-inflicted death (e.g. falling) also fires this hook with killer == victim;
+        // ResolveDeathContext() recognizes that and reports the real environmental cause instead.
+        DCAddon::DeathMarkers::DeathContext ctx = DCAddon::DeathMarkers::ResolveDeathContext(victim, killer);
+        HandleHardcoreDeath(victim, 0, DescribeKillerForChat(ctx));
         DCAddon::DeathMarkers::RecordChallengeDeath(victim, killer, "hardcore", "Hardcore");
 
         // Make player a permanent ghost (original functionality)

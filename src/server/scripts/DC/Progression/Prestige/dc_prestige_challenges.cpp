@@ -493,6 +493,16 @@ namespace
             PrestigeChallengeSystem::instance()->OnDeath(victim, killer);
         }
 
+        void OnPlayerJustDied(Player* player) override
+        {
+            // Covers the rare case where the original attacker already left the map by the time
+            // Unit::Kill() ran (e.g. a DoT finishes the kill after the caster logged out), so
+            // neither OnPlayerKilledByCreature nor OnPlayerPVPKill fired for this death at all.
+            // Safe/idempotent otherwise: OnDeath() no-ops once FailChallenge() has already removed
+            // the active challenge entry for this player.
+            PrestigeChallengeSystem::instance()->OnDeath(player, nullptr);
+        }
+
         void OnPlayerJoinedGroup(Player* player, Group* /*group*/)
         {
             PrestigeChallengeSystem::instance()->OnJoinGroup(player);

@@ -11,10 +11,16 @@
 -- continent. ScriptName preempts the default taxi-map gossip; SmartAI on some
 -- of these NPCs is unaffected (no gossip events).
 --
+-- IMPORTANT: also add the GOSSIP npcflag (0x1). A pure flightmaster (0x2000
+-- only) makes the CLIENT send the taxi-map query instead of gossip-hello, so the
+-- CreatureScript never fires and the (blank, custom-continent) taxi map opens
+-- instead. The GOSSIP flag makes the client open gossip -> our menu.
+--
 -- Scoped by spawn map + FLIGHTMASTER npcflag (0x2000). Idempotent.
 -- =====================================================================
 
 UPDATE acore_world.creature_template ct
 JOIN (SELECT DISTINCT `id` FROM acore_world.creature WHERE `map` = 750) s ON s.`id` = ct.`entry`
-SET ct.`ScriptName` = 'npc_dc_downport_flightmaster'
+SET ct.`ScriptName` = 'npc_dc_downport_flightmaster',
+    ct.`npcflag` = ct.`npcflag` | 1
 WHERE (ct.`npcflag` & 8192);

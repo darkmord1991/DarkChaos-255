@@ -33,6 +33,7 @@ void AddDCQoSScripts();
 void AddSC_dc_addon_collection();
 void AddSC_dc_addon_forms();
 void AddSC_dc_addon_graveyard();
+void AddSC_dc_addon_death_markers();
 
 namespace DCAddon { void AddTeleportScripts(); }
 
@@ -82,4 +83,7 @@ void AddDCAddonExtensionScripts()
     // Return-to-graveyard button handler (retail-style death helper)
     AddSC_dc_addon_graveyard();
 
+    // Death markers (world-map pins for Hardcore / Iron Prestige deaths); loads persisted
+    // markers from dc_death_markers on startup.
+    AddSC_dc_addon_death_markers();
 }

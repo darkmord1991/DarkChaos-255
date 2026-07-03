@@ -33,6 +33,7 @@
 #include "Creature.h"
 #include "CreatureAIImpl.h"
 #include "CreatureGroups.h"
+#include "../../../scripts/DC/AddonExtension/dc_addon_death_markers.h"
 #include "DisableMgr.h"
 #include "DynamicVisibility.h"
 #include "Errors.h"
@@ -1264,6 +1265,8 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
 
         //if (attacker && victim->IsPlayer() && victim != attacker)
         //victim->ToPlayer()->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_TOTAL_DAMAGE_RECEIVED, health); // pussywizard: optimization
+        if (Player* victimPlayer = victim->ToPlayer())
+            DCAddon::DeathMarkers::NotePendingKillingBlow(victimPlayer, damage);
         Unit::Kill(attacker, victim, durabilityLoss, cleanDamage ? cleanDamage->attackType : BASE_ATTACK, spellProto, damageSpell);
     }
     else
