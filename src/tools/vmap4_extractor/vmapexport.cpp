@@ -20,7 +20,9 @@
 #include <cstdio>
 #include <list>
 #include <map>
+#include <memory>
 #include <sys/stat.h>
+#include <unordered_map>
 #include <vector>
 
 #if defined(WIN32) || defined(_WIN32)
@@ -95,6 +97,71 @@ void strToLower(char* str)
     }
 }
 
+// GameObjectDisplayInfo.dbc rows sometimes reference an individual WMO group
+// file directly (transports, siege pieces, arena/coliseum set-pieces such as
+// Undercity_099.wmo or Wg_Tower02C_002.wmo) instead of the WMO root. Roots
+// are cached here because a single oversized WMO (e.g. Undercity) can be
+// referenced this way by 100+ separate GameObjectDisplayInfo rows.
+static std::unordered_map<std::string, std::unique_ptr<WMORoot>> gGroupWmoRoots;
+
+static WMORoot* OpenGroupWmoRoot(std::string const& rootPath)
+{
+    auto it = gGroupWmoRoots.find(rootPath);
+    if (it != gGroupWmoRoots.end())
+        return it->second.get();
+
+    auto root = std::make_unique<WMORoot>(rootPath);
+    if (!root->open())
+        return nullptr;
+
+    return gGroupWmoRoots.emplace(rootPath, std::move(root)).first->second.get();
+}
+
+// Extracts a single WMO group referenced directly by name (rather than as
+// part of its root's combined dump) into its own raw file, so the assembler
+// can find it under the exact name GameObjectDisplayInfo.dbc expects.
+static bool ExtractWmoGroupFile(std::string const& originalName, char const* szLocalFile)
+{
+    std::size_t underscorePos = originalName.find_last_of('_');
+    if (underscorePos == std::string::npos)
+        return false;
+
+    std::string rootPath = originalName.substr(0, underscorePos) + ".wmo";
+    WMORoot* froot = OpenGroupWmoRoot(rootPath);
+    if (!froot)
+    {
+        printf("Couldn't open root WMO '%s' for group file '%s'\n", rootPath.c_str(), originalName.c_str());
+        return false;
+    }
+
+    WMOGroup fgroup(originalName);
+    if (!fgroup.open(froot))
+    {
+        printf("Could not open WMO group file: %s\n", originalName.c_str());
+        return false;
+    }
+
+    if (fgroup.ShouldSkip(froot))
+        return false;
+
+    FILE* output = fopen(szLocalFile, "wb");
+    if (!output)
+    {
+        printf("couldn't open %s for writing!\n", szLocalFile);
+        return false;
+    }
+
+    froot->ConvertToVMAPRootWmo(output);
+    int nVertices = fgroup.ConvertToVMAPGroupWmo(output, preciseVectorData);
+    uint32 groupCount = 1;
+
+    fseek(output, 8, SEEK_SET); // store the correct no of vertices
+    fwrite(&nVertices, sizeof(int), 1, output);
+    fwrite(&groupCount, sizeof(uint32), 1, output); // this dump only ever holds the one group
+    fclose(output);
+    return true;
+}
+
 bool ExtractSingleWmo(std::string& fname)
 {
     // Copy files from archive
@@ -124,7 +191,7 @@ bool ExtractSingleWmo(std::string& fname)
     }
 
     if (p == 3)
-        return true;
+        return ExtractWmoGroupFile(originalName, szLocalFile);
 
     bool file_ok = true;
     printf("Extracting %s\n", originalName.c_str());

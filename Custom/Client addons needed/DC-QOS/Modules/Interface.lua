@@ -107,6 +107,7 @@ local worldMapState = {
     frameTitleShown = nil,
     areaLabelShown = nil,
     controlPoints = nil,
+    detailPersistenceHooksInstalled = false,
 }
 local minimapState = { active = false, mouseWheelEnabled = nil, onMouseWheel = nil, zoomInShown = nil, zoomOutShown = nil }
 local cameraZoomState = { active = false, previousMaxFactor = nil }
@@ -1326,22 +1327,19 @@ local function ReassertWorldMapObjectiveState(questLogIndex)
     end
 end
 
-local function ApplyMapsterLikeCombinedMapLayout()
+-- Scale the map detail (+ click overlay, blobs, area highlights) by the standalone fill factor and
+-- centre it on the frame so the map fills the frame as one aligned unit. Extracted so the same
+-- geometry can be re-asserted from a post-hook: the deployed WorldMapFrame's SetFullMapView /
+-- SetQuestMapView hard-reset the detail to scale 1.0 / 0.691 anchored to the positioning guide's
+-- TOP, and WorldMapFrame_DisplayQuests fires them whenever the current map has no active quest --
+-- which is why zones without a quest (or without map art, e.g. an unimplemented zone) lost the
+-- centred layout while quest zones kept it.
+local function ApplyStandaloneDetailGeometry()
     if not worldMapState.active or not WorldMapFrame then
         return
     end
 
-    -- Scale the whole map (detail tiles + click overlay + blobs + area highlights) by the same factor
-    -- so it fills the screen height as one aligned unit. The tiles are centred on WorldMapDetailFrame's
-    -- CENTRE, so we anchor the detail to the frame centre and let it grow symmetrically.
     local fillScale = GetStandaloneFillScale()
-
-    if type(WorldMapFrame_SetQuestMapView) == "function" then
-        pcall(WorldMapFrame_SetQuestMapView)
-    end
-    if WORLDMAP_SETTINGS then
-        WORLDMAP_SETTINGS.size = 1
-    end
 
     if WorldMapPositioningGuide
         and WorldMapPositioningGuide.ClearAllPoints
@@ -1375,6 +1373,67 @@ local function ApplyMapsterLikeCombinedMapLayout()
             pcall(WorldMapBlobFrame_CalculateHitTranslations)
         end
     end
+end
+
+-- Re-assert ApplyStandaloneDetailGeometry after the client's own view-switch functions run, so the
+-- centred fill layout survives WorldMapFrame_DisplayQuests toggling between quest-list and full-map
+-- views (the root cause of the map being off-centre / leaving a black band in quest-less zones and
+-- jumping off-screen in zones whose world map is not yet implemented).
+local function InstallStandaloneDetailPersistenceHooks()
+    if worldMapState.detailPersistenceHooksInstalled then
+        return
+    end
+    if type(hooksecurefunc) ~= "function" then
+        return
+    end
+
+    local reentrant = false
+    local function ReapplyStandaloneDetailGeometry()
+        if reentrant or not worldMapState.active then
+            return
+        end
+        if IsInRestrictedCombat() then
+            return
+        end
+        if not (WorldMapFrame and type(WorldMapFrame.IsShown) == "function" and WorldMapFrame:IsShown()) then
+            return
+        end
+        reentrant = true
+        ApplyStandaloneDetailGeometry()
+        reentrant = false
+    end
+
+    local hookedAny = false
+    if type(WorldMapFrame_SetFullMapView) == "function" then
+        hooksecurefunc("WorldMapFrame_SetFullMapView", ReapplyStandaloneDetailGeometry)
+        hookedAny = true
+    end
+    if type(WorldMapFrame_SetQuestMapView) == "function" then
+        hooksecurefunc("WorldMapFrame_SetQuestMapView", ReapplyStandaloneDetailGeometry)
+        hookedAny = true
+    end
+
+    if hookedAny then
+        worldMapState.detailPersistenceHooksInstalled = true
+    end
+end
+
+local function ApplyMapsterLikeCombinedMapLayout()
+    if not worldMapState.active or not WorldMapFrame then
+        return
+    end
+
+    -- Put the map into quest-list view, then re-assert our own centred fill geometry on top of it.
+    -- A post-hook (InstallStandaloneDetailPersistenceHooks) re-applies the same geometry after any
+    -- later client-driven view switch so it survives regardless of the current map's quest state.
+    if type(WorldMapFrame_SetQuestMapView) == "function" then
+        pcall(WorldMapFrame_SetQuestMapView)
+    end
+    if WORLDMAP_SETTINGS then
+        WORLDMAP_SETTINGS.size = 1
+    end
+
+    ApplyStandaloneDetailGeometry()
 
     if WorldMapZoneMinimapDropDown then
         WorldMapZoneMinimapDropDown:Show()
@@ -2345,6 +2404,7 @@ local function SetupLargerWorldMap()
 
     InstallMapsterLayoutHooks()
     InstallMapsterSelectionHooks()
+    InstallStandaloneDetailPersistenceHooks()
 
     local now = (type(GetTime) == "function" and GetTime()) or 0
     worldMapState.questLogSuppressUntil = now + 2.5
