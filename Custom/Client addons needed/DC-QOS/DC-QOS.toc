@@ -205,7 +205,9 @@ Modules\ZoneLabels.lua
 Modules\QuestMapData.lua
 Modules\QuestTrackerMarkers.lua
 Modules\QuestFrames.lua
+Modules\TeleportData.lua
 Modules\QuestMapPins.lua
+Modules\QuestPopups.lua
 Modules\DruidFix.lua
 Modules\ExtendedStats\ExtendedStats.lua
 Modules\GTFO.lua

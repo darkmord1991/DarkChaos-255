@@ -25,6 +25,7 @@ Modules\HeirloomModule.lua
 Modules\MountModule.lua
 Data\CompanionItemSeeds.lua
 Data\CollectionCompletenessManifest.lua
+Data\SuggestionData.lua
 Data\ShopStatic.lua
 Data\FormModelPaths.lua
 Data\PetModelPaths.lua

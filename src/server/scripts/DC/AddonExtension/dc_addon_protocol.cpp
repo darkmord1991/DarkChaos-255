@@ -31,6 +31,7 @@
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "ObjectAccessor.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
@@ -93,19 +94,6 @@ namespace
             "DC capability state source={} account={} player='{}' version='{}' clientCaps=0x{:X} negotiatedCaps=0x{:X} compatible={}",
             source, player->GetSession()->GetAccountId(), player->GetName(),
             clientVersionStr, clientCaps, negotiatedCaps, versionCompatible);
-    }
-
-    void LogCapabilityFallback(WorldSession* session,
-        DCAddon::SessionCapabilityState const& state)
-    {
-        if (!IsCapabilityDebugEnabled() || !session)
-            return;
-
-        LOG_INFO("module.dc",
-            "DC capability fallback source=db account={} version='{}' clientCaps=0x{:X} negotiatedCaps=0x{:X} compatible={}",
-            session->GetAccountId(), state.clientVersionString,
-            state.clientCapabilities, state.negotiatedCapabilities,
-            state.versionCompatible);
     }
 
     bool HasFeatureTransportAuditTable()
@@ -876,16 +864,22 @@ static void StoreCapabilityHistory(Player* player,
                 EscapeSQLString(characterName));
         }
 
+        // Trim to the newest N rows via an id threshold: find the (N+1)-th newest row
+        // and delete everything at or below it. The previous "id NOT IN (SELECT ...
+        // LIMIT N)" form forced a full-scan/temp-table DELETE that could hold locks on
+        // the caps tables for seconds (observed stalling a concurrent capability read
+        // for ~18s). If fewer than N+1 rows exist the join matches nothing. id order
+        // approximates seen_at order (auto-increment), which is accurate enough for a
+        // history cap.
         CharacterDatabase.Execute(
-            "DELETE FROM dc_addon_client_caps_history "
-            "WHERE account_id = {} AND addon_name = 'DC' AND id NOT IN ("
-                "SELECT id FROM ("
-                    "SELECT id FROM dc_addon_client_caps_history "
-                    "WHERE account_id = {} AND addon_name = 'DC' "
-                    "ORDER BY seen_at DESC, id DESC LIMIT {}"
-                ") AS recent_rows"
-            ")",
-            accountId, accountId, MAX_CAPABILITY_HISTORY_ENTRIES);
+            "DELETE h FROM dc_addon_client_caps_history h "
+            "JOIN ("
+                "SELECT id FROM dc_addon_client_caps_history "
+                "WHERE account_id = {} AND addon_name = 'DC' "
+                "ORDER BY seen_at DESC, id DESC LIMIT {}, 1"
+            ") AS cutoff ON h.id <= cutoff.id "
+            "WHERE h.account_id = {} AND h.addon_name = 'DC'",
+            accountId, MAX_CAPABILITY_HISTORY_ENTRIES, accountId);
     }));
 }
 
@@ -893,6 +887,10 @@ namespace
 {
     std::unordered_map<uint32, DCAddon::SessionCapabilityState> s_SessionCapabilityRegistry;
     std::mutex s_SessionCapabilityRegistryMutex;
+    // Accounts with a capability warm-up query already in flight. Guards the
+    // async fallback in TryGetSessionCapabilityState against enqueueing one
+    // query per consumer message during the logout->handshake window.
+    std::unordered_set<uint32> s_CapabilityWarmInFlight;
 
     uint32 GetSessionCapabilityRegistryKey(WorldSession* session)
     {
@@ -1086,6 +1084,55 @@ namespace DCAddon
             out);
     }
 
+    // Prime the live registry from the persisted DB row without ever blocking
+    // the calling (world) thread. Deduplicated per account: the first caller
+    // during a registry-miss window enqueues the async query; concurrent
+    // callers see the in-flight marker and return immediately. The callback
+    // try_emplaces so a real handshake landing mid-flight always wins.
+    static void WarmSessionCapabilityStateByAccountAsync(uint32 accountId)
+    {
+        if (accountId == 0)
+            return;
+
+        {
+            std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+            if (s_SessionCapabilityRegistry.find(accountId) != s_SessionCapabilityRegistry.end())
+                return;
+            if (!s_CapabilityWarmInFlight.insert(accountId).second)
+                return; // a warm-up query is already running for this account
+        }
+
+        bool const hasMetadataColumns = HasClientCapsMetadataColumns();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(
+            BuildPersistedCapabilityStateSql(accountId, hasMetadataColumns))
+            .WithCallback([accountId, hasMetadataColumns](QueryResult result)
+        {
+            bool inserted = false;
+            SessionCapabilityState state;
+            {
+                std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
+                s_CapabilityWarmInFlight.erase(accountId);
+                if (!result)
+                    return;
+
+                // try_emplace: never clobber a real handshake result that may
+                // have landed (via SetSessionCapabilityState) while this
+                // warm-up query was in flight.
+                state = ParseCapabilityStateRow(result->Fetch(), hasMetadataColumns);
+                inserted = s_SessionCapabilityRegistry.try_emplace(accountId, state).second;
+            }
+
+            if (inserted && IsCapabilityDebugEnabled())
+            {
+                LOG_INFO("module.dc",
+                    "DC capability fallback source=db account={} version='{}' clientCaps=0x{:X} negotiatedCaps=0x{:X} compatible={}",
+                    accountId, state.clientVersionString,
+                    state.clientCapabilities, state.negotiatedCapabilities,
+                    state.versionCompatible);
+            }
+        }));
+    }
+
     bool TryGetSessionCapabilityState(WorldSession* session,
         SessionCapabilityState& out)
     {
@@ -1096,22 +1143,15 @@ namespace DCAddon
         if (TryGetLiveSessionCapabilityStateByAccount(key, out))
             return true;
 
-        if (!TryGetPersistedCapabilityStateByAccount(key, out))
-            return false;
-
-        LogCapabilityFallback(session, out);
-
-        // Cache the persisted result. Without this, every caller that needs
-        // capability state during the window between a cache clear (logout)
-        // and the next real handshake (SetSessionCapabilityState) pays its
-        // own synchronous CharacterDatabase.Query() -- one per message, not
-        // once -- since nothing ever primed the live registry.
-        {
-            std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
-            s_SessionCapabilityRegistry.try_emplace(key, out);
-        }
-
-        return true;
+        // Registry miss (logout->handshake window). Never run the persisted
+        // read synchronously here: this executes on the world thread inside
+        // WorldSession::Update, and a slow/locked characters-DB query stalls
+        // the whole world tick (observed: 17.9s in World.UpdateSessions).
+        // Kick the deduplicated async warm-up and report "no state yet";
+        // every consumer (ResolveTransportPolicy et al.) already degrades
+        // gracefully until the warm-up or the real handshake lands.
+        WarmSessionCapabilityStateByAccountAsync(key);
+        return false;
     }
 
     SessionCapabilityState GetSessionCapabilityState(Player* player)
@@ -1147,29 +1187,8 @@ namespace DCAddon
 
     void WarmSessionCapabilityStateAsync(Player* player)
     {
-        uint32 accountId = GetSessionCapabilityRegistryKey(player);
-        if (accountId == 0)
-            return;
-
-        SessionCapabilityState alreadyLive;
-        if (TryGetLiveSessionCapabilityStateByAccount(accountId, alreadyLive))
-            return;
-
-        bool const hasMetadataColumns = HasClientCapsMetadataColumns();
-        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(
-            BuildPersistedCapabilityStateSql(accountId, hasMetadataColumns))
-            .WithCallback([accountId, hasMetadataColumns](QueryResult result)
-        {
-            if (!result)
-                return;
-
-            // try_emplace: never clobber a real handshake result that may
-            // have landed (via SetSessionCapabilityState) while this warm-up
-            // query was in flight.
-            std::lock_guard<std::mutex> lock(s_SessionCapabilityRegistryMutex);
-            s_SessionCapabilityRegistry.try_emplace(accountId,
-                ParseCapabilityStateRow(result->Fetch(), hasMetadataColumns));
-        }));
+        WarmSessionCapabilityStateByAccountAsync(
+            GetSessionCapabilityRegistryKey(player));
     }
 
     uint32 GetSessionNegotiatedCapabilities(Player* player)
@@ -2564,7 +2583,7 @@ namespace DCAddon
             // WorldPacket and bypass JsonMessage/Message::Send; only their
             // request/response *remainder* (bare sends) routes here.
             { Module::QOS, 1 },          { Module::COLLECTION, 1 },
-            { Module::HINTERLAND, 1 },
+            { Module::HINTERLAND, 1 },   { Module::QUEST_POPUPS, 1 },
         };
         return s_map.find(module) != s_map.end()
             ? ProtocolVersion::Capability::GENERIC_MESSAGE_NATIVE : 0;

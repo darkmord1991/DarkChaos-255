@@ -666,6 +666,35 @@ function Markers.EnsureWatchFrameQuestChrome(root)
     routeText:Hide()
     chrome.routeText = routeText
 
+    -- In-range arrival pulse. When the super-tracked objective is within arrival
+    -- distance, animate the pulse texture (mirrors the HUD arrival pulse in
+    -- Navigation.UpdateMarker). Queried live here per-frame because tracker chrome
+    -- updates are event-based and would go stale as the player walks; the arrival
+    -- state and the pulseOnArrival setting are read from the Navigation module.
+    chrome:SetScript("OnUpdate", function(self)
+        local pulse = self.trackPulse
+        if not pulse then
+            return
+        end
+
+        local inRange = false
+        if self.__dcqosPulseEligible and self.__dcqosQuestId then
+            local navSettings = addon and addon.settings and addon.settings.navigation
+            local pulseOnArrival = not navSettings or navSettings.pulseOnArrival ~= false
+            local nav = addon and addon.Navigation
+            if pulseOnArrival and nav and type(nav.IsQuestInArrivalRange) == "function" then
+                inRange = nav:IsQuestInArrivalRange(self.__dcqosQuestId)
+            end
+        end
+
+        if inRange then
+            local now = GetTime and GetTime() or 0
+            pulse:SetAlpha(0.55 + 0.45 * (0.5 + 0.5 * math.sin(now * 7.5)))
+        else
+            pulse:SetAlpha(self.__dcqosPulseBase or 0)
+        end
+    end)
+
     root.__dcqosWatchQuestBullets = {}
     root.__dcqosWatchQuestExtraSpacing = 4
     root.__dcqosWatchQuestChrome = chrome
@@ -767,6 +796,9 @@ function Markers.UpdateWatchFrameQuestChrome(root, options)
     chrome.trackPulse:SetPoint("CENTER", chrome.trackBox, "CENTER", 0, 0)
     chrome.trackPulse:SetVertexColor(borderR, borderG, borderB, 1)
     chrome.trackPulse:SetAlpha(pulseAlpha)
+    chrome.__dcqosPulseBase = pulseAlpha
+    chrome.__dcqosQuestId = tonumber(opts.questId)
+    chrome.__dcqosPulseEligible = isTracked and true or false
     chrome.completeDot:ClearAllPoints()
     chrome.completeDot:SetPoint("CENTER", chrome.trackBox, "CENTER", 0, 0)
     chrome.completeDot:SetAlpha(dotAlpha)

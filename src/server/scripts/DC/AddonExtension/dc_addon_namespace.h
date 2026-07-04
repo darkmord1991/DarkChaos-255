@@ -95,6 +95,7 @@ namespace DCAddon
         constexpr const char* QOS           = "QOS";    // Quality of Service (QoL settings, tooltips, automation)
         constexpr const char* DECORATION    = "DECO";   // Guild house decorations (player-facing placement)
         constexpr const char* GRAVEYARD     = "GRVY";   // Return-to-graveyard button (death helper)
+        constexpr const char* QUEST_POPUPS  = "QPOP";   // Auto-quest offer / remote turn-in popups (retail-style)
     }
 
     // ========================================================================
@@ -503,6 +504,16 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_REQUEST_LIST      = 0x01; // Client requests list
             constexpr uint8 SMSG_SEND_LIST         = 0x10; // Server sends list (JSON)
+        }
+
+        // Auto-quest popup opcodes (retail-style zone quest offers + remote turn-in;
+        // see dc_addon_questflow.cpp)
+        namespace QuestPopups
+        {
+            constexpr uint8 CMSG_ACCEPT_QUEST     = 0x01; // {q} accept an offered quest
+            constexpr uint8 CMSG_COMPLETE_QUEST   = 0x02; // {q, c} remote turn-in (c = 0-based reward choice)
+            constexpr uint8 SMSG_OFFER            = 0x10; // {q, t, l} quest offer popup (JSON)
+            constexpr uint8 SMSG_COMPLETE_READY   = 0x11; // {q, t, ch:[itemId,..]} quest ready for remote turn-in (JSON)
         }
 
         // Return-to-graveyard opcodes (death helper; see dc_addon_graveyard.cpp)

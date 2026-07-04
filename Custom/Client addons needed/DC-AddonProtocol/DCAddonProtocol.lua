@@ -1860,6 +1860,8 @@ DC._nativeBridges = {
       kind = "generic" },
     { module = "HLBG", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
       kind = "generic" },
+    { module = "QPOP", capability = DC.Capability.GENERIC_MESSAGE_NATIVE,
+      kind = "generic" },
 }
 
 local function ResolveGlobalFunction(name)
@@ -2511,6 +2513,7 @@ DC.Module = {
     WORLD = "WRLD",
     COLLECTION = "COLL",
     QOS = "QOS",
+    QUEST_POPUPS = "QPOP",
 }
 
 -- Opcode definitions for each module (must match server-side DCAddonNamespace.h)
@@ -2713,6 +2716,12 @@ DC.Opcode = {
     Teleports = {
         CMSG_REQUEST_LIST = 0x01,
         SMSG_SEND_LIST = 0x10,
+    },
+    QuestPopups = {
+        CMSG_ACCEPT_QUEST = 0x01,
+        CMSG_COMPLETE_QUEST = 0x02,
+        SMSG_OFFER = 0x10,
+        SMSG_COMPLETE_READY = 0x11,
     },
     World = {
         CMSG_GET_CONTENT = 0x01,

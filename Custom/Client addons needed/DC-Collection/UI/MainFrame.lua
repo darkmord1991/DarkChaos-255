@@ -1459,6 +1459,7 @@ function DC:UpdateMountPreview(item)
         p.model:ClearModel()
         p.summonBtn:Disable()
         p.favBtn:Hide()
+        self:UpdateSuggestionStrip(p.info, p.info.source, nil)
         return
     end
 
@@ -1470,6 +1471,8 @@ function DC:UpdateMountPreview(item)
     p.info.source:SetText(sourceText or "")
 
     p.info.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+
+    self:UpdateSuggestionStrip(p.info, p.info.source, item)
 
     p.model:ClearModel()
     p.model.zoom = 0
@@ -1776,6 +1779,119 @@ function DC:UpdateMountPreview(item)
     end
 end
 
+-- ============================================================
+-- "Also collected" suggestion strip (Ascension-style co-pick data)
+-- ============================================================
+-- Renders a compact icon row of entries associated with the hovered/selected
+-- one, from the offline-generated DC.SUGGESTION_DATA (Data\SuggestionData.lua,
+-- tools/generate_dc_collection_suggestions.py). Icons resolve through the
+-- existing definition cache; grey = not collected yet (a nudge to go get it).
+function DC:UpdateSuggestionStrip(host, anchorTo, item)
+    if not host then
+        return
+    end
+
+    local strip = host.dcSuggestionStrip
+    if not item then
+        if strip then
+            strip:Hide()
+        end
+        return
+    end
+
+    local typeName = item.type
+    if typeName == "shop" then
+        typeName = item.collectionTypeName
+    end
+    local typeId = (type(self.GetTypeIdFromName) == "function") and self:GetTypeIdFromName(typeName) or nil
+    local entryId = tonumber(item.id)
+    local rows = typeId and entryId
+        and self.SUGGESTION_DATA and self.SUGGESTION_DATA[typeId]
+        and self.SUGGESTION_DATA[typeId][entryId] or nil
+
+    if not rows or #rows == 0 then
+        if strip then
+            strip:Hide()
+        end
+        return
+    end
+
+    if not strip then
+        strip = CreateFrame("Frame", nil, host)
+        strip:SetHeight(22)
+        strip.label = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        strip.label:SetPoint("LEFT", strip, "LEFT", 0, 0)
+        strip.label:SetText("Also collected:")
+        strip.label:SetTextColor(0.75, 0.68, 0.5)
+        strip.icons = {}
+        host.dcSuggestionStrip = strip
+    end
+
+    strip:ClearAllPoints()
+    if anchorTo then
+        strip:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", 0, -3)
+    else
+        strip:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 8, 4)
+    end
+    strip:SetWidth(90 + #rows * 22)
+
+    local labelWidth = (strip.label.GetStringWidth and strip.label:GetStringWidth()) or 80
+    for i = 1, 6 do
+        local btn = strip.icons[i]
+        local row = rows[i]
+        if row then
+            if not btn then
+                btn = CreateFrame("Button", nil, strip)
+                btn:SetSize(18, 18)
+                btn.icon = btn:CreateTexture(nil, "ARTWORK")
+                btn.icon:SetAllPoints(btn)
+                btn.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+                btn:SetScript("OnEnter", function(selfBtn)
+                    if not GameTooltip then
+                        return
+                    end
+                    GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
+                    GameTooltip:ClearLines()
+                    GameTooltip:AddLine(selfBtn.dcName or "Unknown", 1, 0.82, 0.2)
+                    if selfBtn.dcCollected then
+                        GameTooltip:AddLine("Collected", 0.4, 0.9, 0.4)
+                    else
+                        GameTooltip:AddLine("Not collected yet", 0.9, 0.4, 0.4)
+                    end
+                    GameTooltip:Show()
+                end)
+                btn:SetScript("OnLeave", function()
+                    if GameTooltip then
+                        GameTooltip:Hide()
+                    end
+                end)
+                strip.icons[i] = btn
+            end
+
+            local def = (type(self.GetDefinition) == "function") and self:GetDefinition(typeName, row.e) or nil
+            local icon = (type(self.ResolveDefinitionIcon) == "function")
+                and self:ResolveDefinitionIcon(typeName, row.e, def)
+                or (def and def.icon)
+                or "Interface\\Icons\\INV_Misc_QuestionMark"
+            local collected = (type(self.GetCollectionItem) == "function")
+                and (self:GetCollectionItem(typeName, row.e) ~= nil) or false
+
+            btn.dcName = (def and def.name) or ("Entry " .. tostring(row.e))
+            btn.dcCollected = collected
+            btn.icon:SetTexture(icon)
+            btn.icon:SetDesaturated(not collected)
+            btn.icon:SetAlpha(collected and 1 or 0.55)
+            btn:ClearAllPoints()
+            btn:SetPoint("LEFT", strip, "LEFT", labelWidth + 6 + (i - 1) * 22, 0)
+            btn:Show()
+        elseif btn then
+            btn:Hide()
+        end
+    end
+
+    strip:Show()
+end
+
 function DC:UpdateDetailsPanel(item)
     -- If we are in mount mode, update the mount preview instead
     if self.activeTab == "mounts" then
@@ -1846,6 +1962,8 @@ function DC:UpdateDetailsPanel(item)
     else
         d.useBtn:Hide()
     end
+
+    self:UpdateSuggestionStrip(d, d.line2, item)
 
     -- Heirlooms: show tooltip summary in line2.
     if collType == "heirlooms" then

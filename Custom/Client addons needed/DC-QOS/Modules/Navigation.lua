@@ -174,13 +174,25 @@ local NAV_STATE_INVALID = 0
 local NAV_STATE_OCCLUDED = 1
 local NAV_STATE_IN_RANGE = 2
 local NAV_STATE_DISABLED = 3
+-- Arrival state (retail/Ascension Enum.NavigationState.InRadius): within the
+-- objective radius the in-world marker all but fades out (0.1) and the quest
+-- tracker line's in-range pulse takes over as the arrival cue.
+local NAV_STATE_IN_RADIUS = 4
 
+-- Alpha model lifted verbatim from Ascension's SuperTracker.lua state table.
 local NAV_TARGET_ALPHA_BY_STATE = {
     [NAV_STATE_INVALID] = 0.0,
     [NAV_STATE_OCCLUDED] = 0.6,
     [NAV_STATE_IN_RANGE] = 1.0,
     [NAV_STATE_DISABLED] = 0.0,
+    [NAV_STATE_IN_RADIUS] = 0.1,
 }
+
+-- Ascension's distance fades: beyond HIDE the marker is invisible ("dont show
+-- too far"); beyond OCCLUDE an in-range marker drops to the occluded alpha
+-- ("727 = mediumish farclip value").
+local NAV_DISTANCE_HIDE_YARDS = 1500
+local NAV_DISTANCE_OCCLUDE_YARDS = 727
 
 local math_abs = math.abs
 local math_atan2 = math.atan2
@@ -885,7 +897,9 @@ end
 
 local function GetEmulatedNavigationAlpha(frame, navState, isClamped, now)
     local targetAlpha = NAV_TARGET_ALPHA_BY_STATE[navState] or 0
-    if targetAlpha > 0 and isClamped then
+    -- The clamped (edge-indicator) boost applies only to steerable states; it must
+    -- never resurrect a hidden marker (Invalid / too far) or an arrival-faded one.
+    if isClamped and (navState == NAV_STATE_OCCLUDED or navState == NAV_STATE_IN_RANGE) then
         targetAlpha = 1
     end
 
@@ -908,6 +922,8 @@ local function GetNavStateName(navState)
         return "in-range"
     elseif navState == NAV_STATE_DISABLED then
         return "disabled"
+    elseif navState == NAV_STATE_IN_RADIUS then
+        return "in-radius"
     end
 
     return tostring(navState or "n/a")
@@ -3227,7 +3243,11 @@ local function GetQuestPoiLock(questId, mapId, playerX, playerY)
 
     local now = GetTime() or 0
     if (now - (lock.updatedAt or 0)) > QUEST_POI_LOCK_MAX_AGE_SEC then
-        state.questPoiLocks[questId] = nil
+        -- Age expiry: force a re-pick (return nil) but KEEP the record as a stale
+        -- reference. The re-pick uses it as the held point for switch hysteresis,
+        -- so two near-equidistant objective areas don't flip the marker every
+        -- lock cycle as the player walks along their midline.
+        lock.stale = true
         return nil, nil, nil
     end
 
@@ -3891,6 +3911,23 @@ local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, ma
     if not bypassCache then
         local cachedX, cachedY, cachedCount = GetCachedQuestPoiCoords(questId, playerX, playerY, mapId)
         if cachedX and cachedY then
+            -- Cluster-switch hysteresis (Ascension does this natively; we do it here):
+            -- when a stale lock still points at a different objective area, only jump
+            -- to the fresh nearest pick if it is MEANINGFULLY closer (>=15% or >=40yd),
+            -- otherwise keep tracking the held area. Prevents the marker ping-ponging
+            -- between two near-equidistant quest areas while the player walks between.
+            local prev = state.questPoiLocks and state.questPoiLocks[questId]
+            if prev and prev.stale and prev.mapId == activeMapId
+                and type(playerX) == "number" and type(playerY) == "number"
+                and (math_abs(prev.x - cachedX) > 0.0005 or math_abs(prev.y - cachedY) > 0.0005) then
+                local prevDist = ComputeDistanceYards(activeMapId, playerX, playerY, prev.x, prev.y)
+                local newDist = ComputeDistanceYards(activeMapId, playerX, playerY, cachedX, cachedY)
+                if prevDist and newDist
+                    and not (newDist < prevDist * 0.85 or newDist <= prevDist - 40) then
+                    cachedX, cachedY = prev.x, prev.y
+                end
+            end
+
             SetQuestPoiLock(questId, cachedX, cachedY, activeMapId, "cache", playerX, playerY)
             if cachedCount and cachedCount > 1 then
                 return cachedX, cachedY, questId, "poi-cache-multi"
@@ -5825,6 +5862,9 @@ end
 
 local function UpdateMarker()
     local settings = addon.settings.navigation
+    -- Published arrival state (read by the WatchFrame in-range pulse). Reset up
+    -- front so every early-return path below leaves it cleared.
+    state.arrivalInRange = false
     if not settings.enabled then
         ClearMarker()
         return
@@ -5948,6 +5988,12 @@ local function UpdateMarker()
     local arrivalDistance = settings.arrivalDistanceYards or 8
     local arrived = distanceYards and distanceYards <= arrivalDistance
     local now = GetTime() or 0
+
+    -- Publish arrival state so the quest tracker can pulse the tracked row in
+    -- lock-step with the HUD marker below.
+    state.arrivalInRange = arrived and true or false
+    state.arrivalQuestId = tonumber(target.questId) or nil
+    state.arrivalDistanceYards = distanceYards
 
     local iconBaseWidth = frame.iconBaseWidth or ICON_WIDTH
     local iconBaseHeight = frame.iconBaseHeight or ICON_HEIGHT
@@ -6119,26 +6165,29 @@ local function UpdateMarker()
             return
         end
 
-        -- POI-locked fallback: use POI deltas for distance, then rotate by
-        -- facing-relative heading so screen placement follows world direction.
+        -- Bearing-only fallback. Without a native world projection the only truth we
+        -- have is the target's DIRECTION, not its screen position -- placing the marker
+        -- at distance*scale from screen center made it orbit the character whenever the
+        -- camera turned (the "diamond circling the player" complaint). Retail/Ascension
+        -- semantics for an unprojectable target are a CLAMPED EDGE INDICATOR: pin the
+        -- marker on the edge ellipse along the bearing, directional arrow pointing out,
+        -- and let the distance text carry the range. On arrival, park it just above the
+        -- character instead (the target is effectively at the player).
         fallbackRadius = math_sqrt((projectionDxYards * projectionDxYards) + (projectionDyYards * projectionDyYards)) * projectionScale
-        rawX = math_sin(relative) * fallbackRadius
-        rawY = (math_cos(relative) * fallbackRadius) + anchorYOffset
 
-        projectedX, projectedY, clampedToEllipse = ClampPointToEllipse(rawX, rawY, ellipseMajorAxis, ellipseMinorAxis)
-
-        -- Keep markers edge-clamped when the target is outside the forward camera
-        -- hemisphere so outside-view targets always show as edge indicators.
-        if not clampedToEllipse and math_cos(relative or 0) <= 0 then
-            local majorSquared = ellipseMajorAxis * ellipseMajorAxis
-            local minorSquared = ellipseMinorAxis * ellipseMinorAxis
-            local denominator = math_sqrt((majorSquared * rawY * rawY) + (minorSquared * rawX * rawX))
-            if denominator and denominator > 0 then
-                local ratio = (ellipseMajorAxis * ellipseMinorAxis) / denominator
-                projectedX = rawX * ratio
-                projectedY = rawY * ratio
-                clampedToEllipse = true
-            end
+        if arrived then
+            rawX = 0
+            rawY = (anchorYOffset ~= 0) and anchorYOffset or 60
+            projectedX = rawX
+            projectedY = rawY
+            clampedToEllipse = false
+        else
+            -- Push well outside the ellipse so the clamp always lands ON the ring.
+            local pushRadius = ellipseMajorAxis + ellipseMinorAxis
+            rawX = math_sin(relative) * pushRadius
+            rawY = math_cos(relative) * pushRadius
+            projectedX, projectedY = ClampPointToEllipse(rawX, rawY, ellipseMajorAxis, ellipseMinorAxis)
+            clampedToEllipse = true
         end
     end
 
@@ -6207,6 +6256,20 @@ local function UpdateMarker()
         end
     end
 
+    -- Ascension's SuperTracker overrides, applied on top of the resolved state:
+    -- arrival (InRadius) fades the in-world marker to 0.1 (the tracker line's
+    -- in-range pulse is the arrival cue); very distant targets hide entirely;
+    -- distant-but-tracked targets drop to the occluded alpha.
+    if arrived then
+        navState = NAV_STATE_IN_RADIUS
+    elseif distanceYards then
+        if distanceYards > NAV_DISTANCE_HIDE_YARDS then
+            navState = NAV_STATE_INVALID
+        elseif navState == NAV_STATE_IN_RANGE and distanceYards > NAV_DISTANCE_OCCLUDE_YARDS then
+            navState = NAV_STATE_OCCLUDED
+        end
+    end
+
     local alpha = GetEmulatedNavigationAlpha(frame, navState, clampedToEllipse, now)
     frame:SetAlpha(alpha)
     state.lastNavState = navState
@@ -6222,7 +6285,10 @@ local function UpdateMarker()
         frame.Arrow:SetVertexColor(1, 1, 1)
     end
 
-    local showQuestArrow = not (target and target.questId and target.questId > 0)
+    -- Quest targets normally hide the pointer (the diamond sits ON the objective when a
+    -- real projection exists), but an edge-clamped indicator without its directional
+    -- arrow is just a floating diamond -- show the pointer whenever we're clamped.
+    local showQuestArrow = clampedToEllipse or not (target and target.questId and target.questId > 0)
 
     if clampedToEllipse and showQuestArrow then
         local length = math_sqrt((projectedX * projectedX) + (projectedY * projectedY))
@@ -6471,21 +6537,15 @@ Navigation._RefreshQuestTrackingVisuals = function()
     end
 
     if WorldMapFrame and type(WorldMapFrame.IsShown) == "function" and WorldMapFrame:IsShown() then
-        local objectiveQuestLogIndex = GetWorldMapObjectiveQuestLogIndex()
-
-        if type(WorldMapFrame_Update) == "function" then
-            pcall(WorldMapFrame_Update)
-        end
-        if type(WorldMapFrame_UpdateQuests) == "function" then
-            pcall(WorldMapFrame_UpdateQuests)
-        end
-        if type(WorldMapQuestShowObjectives) == "function" then
-            if objectiveQuestLogIndex and objectiveQuestLogIndex > 0 then
-                pcall(WorldMapQuestShowObjectives, objectiveQuestLogIndex)
-            end
-        end
-        if type(QuestMapUpdateAllQuests) == "function" then
-            pcall(QuestMapUpdateAllQuests)
+        -- One idempotent entry point instead of a second full map-refresh orchestrator.
+        -- Interface.lua owns the map window and already runs the exhaustive refresh on
+        -- map events; re-driving WorldMapFrame_Update/UpdateQuests/QuestMapUpdateAllQuests
+        -- here doubled every quest re-draw on super-track changes. Stock DisplayQuests
+        -- updates quest data, picks the view only when quest state requires it, and is
+        -- hooked by Core's world-map refresh dispatch, so the DC pin/label renderers
+        -- (QuestMapPins, ZoneLabels, QuestFrames) all refresh off this single call.
+        if type(WorldMapFrame_DisplayQuests) == "function" then
+            pcall(WorldMapFrame_DisplayQuests)
         end
     end
 end
@@ -6649,6 +6709,22 @@ function Navigation:GetSuperTrackedQuestID()
     end
 
     return nil
+end
+
+-- Returns true when the currently super-tracked objective is within arrival
+-- distance and belongs to the given quest. Used by the quest tracker to pulse
+-- the tracked row's in-range indicator in step with the HUD marker.
+function Navigation:IsQuestInArrivalRange(questId)
+    if not state.arrivalInRange then
+        return false
+    end
+
+    questId = tonumber(questId)
+    if not questId then
+        return false
+    end
+
+    return tonumber(state.arrivalQuestId) == questId
 end
 
 function Navigation:SetFollowGroupMember(unitTokenOrGuid, silent)

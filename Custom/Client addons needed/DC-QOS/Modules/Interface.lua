@@ -37,8 +37,12 @@ local STANDALONE_MAP_TILES_H  = 768
 -- Tries to detect the real action-bar top first so it adapts to stacked bars; falls back to the inset.
 local function GetStandaloneBandHeight()
     local uiH = (UIParent and UIParent.GetHeight and UIParent:GetHeight()) or 768
+    -- ONLY the bottom action bars reserve space at the bottom. The vertical side bars
+    -- (MultiBarRight / MultiBarLeft) sit on the RIGHT edge and their GetTop() is ~half the screen
+    -- height; including them collapsed the band to the min-scale floor (528x384 map) and threw the
+    -- centre offset hundreds of px up (the "map shoved to the top" bug in Mount Hyjal). Bottom bars only.
     local barTop = 0
-    for _, nm in ipairs({ "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft" }) do
+    for _, nm in ipairs({ "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight" }) do
         local f = _G[nm]
         if f and f.GetTop and (not f.IsShown or f:IsShown()) then
             local t = f:GetTop()
@@ -46,6 +50,8 @@ local function GetStandaloneBandHeight()
         end
     end
     local bottom = (barTop > 0) and barTop or STANDALONE_BOTTOM_INSET
+    -- Clamp the reserve so a mis-measured bar can never collapse the map or shove it off-centre.
+    if bottom < 60 then bottom = 60 elseif bottom > 240 then bottom = 240 end
     local h = uiH - STANDALONE_TOP_INSET - bottom
     if h < 200 then h = uiH - STANDALONE_TOP_INSET - STANDALONE_BOTTOM_INSET end  -- sanity
     return h, bottom
@@ -89,6 +95,8 @@ local worldMapState = {
     lastObjectiveReassertAt = nil,
     movable = nil,
     mouseEnabled = nil,
+    keyboardEnabled = nil,
+    detailPersistenceHooksInstalled = false,
     onDragStart = nil,
     onDragStop = nil,
     parent = nil,
@@ -107,7 +115,6 @@ local worldMapState = {
     frameTitleShown = nil,
     areaLabelShown = nil,
     controlPoints = nil,
-    detailPersistenceHooksInstalled = false,
 }
 local minimapState = { active = false, mouseWheelEnabled = nil, onMouseWheel = nil, zoomInShown = nil, zoomOutShown = nil }
 local cameraZoomState = { active = false, previousMaxFactor = nil }
@@ -1160,13 +1167,12 @@ end
 local function RefreshQuestDetailAndPoiDisplays(questLogIndex, reason)
     local activeQuestLogIndex = tonumber(questLogIndex)
 
-    if worldMapState.active
-        and WorldMapFrame
-        and type(WorldMapFrame.IsShown) == "function"
-        and WorldMapFrame:IsShown()
-        and type(WorldMapFrame_SetQuestMapView) == "function" then
-        pcall(WorldMapFrame_SetQuestMapView)
-    end
+    -- Deliberately NO WorldMapFrame_SetQuestMapView here: this refresh runs on every
+    -- quest/POI event, and each view-switch call resets the canvas geometry only for
+    -- the persistence post-hook to re-assert it — a re-layout cycle per event for no
+    -- visual gain. The view is established once in ApplyMapsterLikeCombinedMapLayout;
+    -- stock WorldMapFrame_DisplayQuests (below) switches views itself when quest
+    -- state genuinely requires it.
 
     if type(QuestLog_Update) == "function" then
         pcall(QuestLog_Update)
@@ -1289,14 +1295,6 @@ local function ReassertWorldMapObjectiveState(questLogIndex)
             selectedQuestLogIndex = ResolveSelectedQuestLogIndex()
         end
         if allowSelectionWrites
-            and WorldMapFrame
-            and type(WorldMapFrame.IsShown) == "function"
-            and WorldMapFrame:IsShown()
-            and type(WorldMapFrame_SetQuestMapView) == "function" then
-            pcall(WorldMapFrame_SetQuestMapView)
-        end
-
-        if allowSelectionWrites
             and selectedQuestLogIndex ~= questLogIndex
             and type(WorldMapFrame_SelectQuestFrame) == "function"
             and not worldMapState.reassertingSelection then
@@ -1308,16 +1306,10 @@ local function ReassertWorldMapObjectiveState(questLogIndex)
             end
         end
 
+        -- One refresh, not three: the previous 0s/0.05s DelayedCall re-refreshes tripled
+        -- the full quest-display re-draw on every reassert. If a stock handler stomps
+        -- something after us, the event frame's own throttled refresh catches it.
         RefreshQuestDetailAndPoiDisplays(questLogIndex, "Interface.ReassertWorldMapObjectiveState")
-
-        if allowSelectionWrites and addon and addon.DelayedCall then
-            addon:DelayedCall(0, function()
-                RefreshQuestDetailAndPoiDisplays(questLogIndex, "Interface.ReassertWorldMapObjectiveState.0")
-            end)
-            addon:DelayedCall(0.05, function()
-                RefreshQuestDetailAndPoiDisplays(questLogIndex, "Interface.ReassertWorldMapObjectiveState.0.05")
-            end)
-        end
     else
         RefreshQuestDetailAndPoiDisplays(nil, "Interface.ReassertWorldMapObjectiveState.clear")
     end
@@ -1327,19 +1319,72 @@ local function ReassertWorldMapObjectiveState(questLogIndex)
     end
 end
 
--- Scale the map detail (+ click overlay, blobs, area highlights) by the standalone fill factor and
--- centre it on the frame so the map fills the frame as one aligned unit. Extracted so the same
--- geometry can be re-asserted from a post-hook: the deployed WorldMapFrame's SetFullMapView /
--- SetQuestMapView hard-reset the detail to scale 1.0 / 0.691 anchored to the positioning guide's
--- TOP, and WorldMapFrame_DisplayQuests fires them whenever the current map has no active quest --
--- which is why zones without a quest (or without map art, e.g. an unimplemented zone) lost the
--- centred layout while quest zones kept it.
+-- Scale the map (detail tiles + click overlay + blobs + area highlights) by the standalone fill factor
+-- and centre the VISIBLE 1024x768 tile grid on the frame. The grid is anchored to WorldMapDetailFrame's
+-- TOP-LEFT but the detail frame is only 1002x668, so centring the detail frame leaves the grid ~11px
+-- right / ~50px low; we offset the centre anchor by half that mismatch (scaled) so the map fills evenly
+-- with no black band on the bottom/right. Extracted so it can be re-asserted from a post-hook (the stock
+-- SetFullMapView / SetQuestMapView reset the detail to scale 1.0 / 0.691 anchored top-left).
 local function ApplyStandaloneDetailGeometry()
     if not worldMapState.active or not WorldMapFrame then
         return
     end
 
     local fillScale = GetStandaloneFillScale()
+    local ox = -((STANDALONE_MAP_TILES_W - 1002) / 2) * fillScale   -- ~ -11 * scale
+    local oy =  ((STANDALONE_MAP_TILES_H - 668) / 2) * fillScale    -- ~ +50 * scale
+
+    -- Make BOTH stock views produce OUR scale. WorldMapFrame_SetQuestMapView /
+    -- SetFullMapView write WORLDMAP_SETTINGS.size from these globals and scale the
+    -- whole canvas group with them; overriding the constants while the standalone
+    -- window is active means a stock view switch (quest-ful vs quest-less zone)
+    -- no longer snaps the canvas to 0.691/1.0 before our post-hook runs — the two
+    -- views become geometrically identical and only chrome differs. Originals are
+    -- restored on teardown.
+    if worldMapState.origQuestlistSize == nil then
+        worldMapState.origQuestlistSize = WORLDMAP_QUESTLIST_SIZE
+        worldMapState.origFullmapSize = WORLDMAP_FULLMAP_SIZE
+    end
+    WORLDMAP_QUESTLIST_SIZE = fillScale
+    WORLDMAP_FULLMAP_SIZE = fillScale
+
+    -- THE single size value. Stock FrameXML positions everything native-side with it:
+    -- the player arrow is placed at coord * WORLDMAP_SETTINGS.size (WorldMapFrame.lua
+    -- line ~790: PositionWorldMapArrowFrame(..., playerX * WORLDMAP_SETTINGS.size, ...))
+    -- and WorldMapFrame_SetPOIMaxBounds derives the POI clamp box from it, because the
+    -- native arrow/POI layer lives in UNSCALED space. Writing 1 here while scaling the
+    -- canvas frames to fillScale is exactly what offset every natively-positioned pin
+    -- by a factor of fillScale (player icon at Stonetalon while standing at Crossroads).
+    -- The value and the canvas scale must be the SAME number, always.
+    if WORLDMAP_SETTINGS then
+        WORLDMAP_SETTINGS.size = fillScale
+    end
+
+    -- Set a frame's EFFECTIVE fill scale without double-applying it. WorldMapButton (and the
+    -- area/blob frames, depending on client XML) are descendants of WorldMapDetailFrame, so they
+    -- already inherit its SetScale; forcing another SetScale(fillScale) on them compounds to
+    -- fillScale^2 and compresses everything anchored in their space (native player arrow, stock
+    -- quest POIs, our pins) toward the TOPLEFT by one extra scale factor -- the "player icon shows
+    -- at the wrong position" offset. Frames nested under the detail frame get scale 1 (inherit);
+    -- true siblings get the explicit fillScale.
+    local function ApplyFillScale(frame)
+        if not frame or not frame.SetScale then
+            return
+        end
+        local ancestor = frame.GetParent and frame:GetParent()
+        local nested = false
+        for _ = 1, 4 do
+            if not ancestor then
+                break
+            end
+            if ancestor == WorldMapDetailFrame then
+                nested = true
+                break
+            end
+            ancestor = ancestor.GetParent and ancestor:GetParent()
+        end
+        frame:SetScale(nested and 1 or fillScale)
+    end
 
     if WorldMapPositioningGuide
         and WorldMapPositioningGuide.ClearAllPoints
@@ -1354,31 +1399,44 @@ local function ApplyStandaloneDetailGeometry()
         end
         if WorldMapDetailFrame.ClearAllPoints and WorldMapDetailFrame.SetPoint then
             WorldMapDetailFrame:ClearAllPoints()
-            WorldMapDetailFrame:SetPoint("CENTER", WorldMapFrame, "CENTER", 0, 0)
+            WorldMapDetailFrame:SetPoint("CENTER", WorldMapFrame, "CENTER", ox, oy)
         end
     end
 
-    if WorldMapButton and WorldMapButton.SetScale then
-        WorldMapButton:SetScale(fillScale)
-    end
-    if WorldMapFrameAreaFrame and WorldMapFrameAreaFrame.SetScale then
-        WorldMapFrameAreaFrame:SetScale(fillScale)
-    end
+    ApplyFillScale(WorldMapButton)
+    ApplyFillScale(WorldMapFrameAreaFrame)
     if WorldMapBlobFrame then
-        if WorldMapBlobFrame.SetScale then
-            WorldMapBlobFrame:SetScale(fillScale)
-        end
+        ApplyFillScale(WorldMapBlobFrame)
         WorldMapBlobFrame.xRatio = nil
         if type(WorldMapBlobFrame_CalculateHitTranslations) == "function" then
             pcall(WorldMapBlobFrame_CalculateHitTranslations)
         end
     end
+
+    -- The POI clamp box is derived from WORLDMAP_SETTINGS.size; recompute it now that
+    -- the size/scale pair changed, or numbered quest POIs clamp to a stale rectangle.
+    if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
+        pcall(WorldMapFrame_SetPOIMaxBounds)
+    end
+
+    -- SetFullMapView (quest-less zones) shows the fullscreen "patch tiles" — the
+    -- parchment filler textures framing the map in stock fullscreen. In the
+    -- windowed layout they render as dead parchment/black bands. Keep them hidden
+    -- in every view.
+    if NUM_WORLDMAP_DETAIL_TILES and NUM_WORLDMAP_PATCH_TILES then
+        for i = NUM_WORLDMAP_DETAIL_TILES + 1, NUM_WORLDMAP_DETAIL_TILES + NUM_WORLDMAP_PATCH_TILES do
+            local tile = _G["WorldMapFrameTexture" .. i]
+            if tile and tile.Hide then
+                tile:Hide()
+            end
+        end
+    end
 end
 
--- Re-assert ApplyStandaloneDetailGeometry after the client's own view-switch functions run, so the
--- centred fill layout survives WorldMapFrame_DisplayQuests toggling between quest-list and full-map
--- views (the root cause of the map being off-centre / leaving a black band in quest-less zones and
--- jumping off-screen in zones whose world map is not yet implemented).
+-- Re-assert the fill/centre geometry after the client's own view-switch functions run. WorldMapFrame_-
+-- DisplayQuests calls SetFullMapView (scale 1, top-left) / SetQuestMapView (scale 0.691, top-left)
+-- depending on quest state, which is what left the map small in the top-left with a black band on the
+-- bottom/right. Post-hooking both makes the standalone geometry win regardless of that timing.
 local function InstallStandaloneDetailPersistenceHooks()
     if worldMapState.detailPersistenceHooksInstalled then
         return
@@ -1423,14 +1481,12 @@ local function ApplyMapsterLikeCombinedMapLayout()
         return
     end
 
-    -- Put the map into quest-list view, then re-assert our own centred fill geometry on top of it.
-    -- A post-hook (InstallStandaloneDetailPersistenceHooks) re-applies the same geometry after any
-    -- later client-driven view switch so it survives regardless of the current map's quest state.
+    -- Put the map into quest-list view, then re-assert our own fill/centre geometry on top of it.
+    -- InstallStandaloneDetailPersistenceHooks keeps it applied past later client-driven view switches.
+    -- WORLDMAP_SETTINGS.size is owned by ApplyStandaloneDetailGeometry (it must always equal the
+    -- canvas scale, or every natively-positioned pin lands offset) — never write it here.
     if type(WorldMapFrame_SetQuestMapView) == "function" then
         pcall(WorldMapFrame_SetQuestMapView)
-    end
-    if WORLDMAP_SETTINGS then
-        WORLDMAP_SETTINGS.size = 1
     end
 
     ApplyStandaloneDetailGeometry()
@@ -1447,15 +1503,13 @@ local function ApplyMapsterLikeCombinedMapLayout()
     if WorldMapContinentDropDown then
         WorldMapContinentDropDown:Show()
     end
-    if WorldMapQuestScrollFrame then
-        WorldMapQuestScrollFrame:Show()
-    end
-    if WorldMapQuestDetailScrollFrame then
-        WorldMapQuestDetailScrollFrame:Show()
-    end
-    if WorldMapQuestRewardScrollFrame then
-        WorldMapQuestRewardScrollFrame:Show()
-    end
+    -- Do NOT force-show the quest list/detail/reward scroll frames here. Their
+    -- visibility is owned by stock WorldMapFrame_DisplayQuests (hides them in
+    -- quest-less zones via SetFullMapView) and by QuestFrames' combined shell
+    -- layout (positions them when a quest is selected). Forcing them visible
+    -- left empty panels + orphaned scroll buttons floating in the window
+    -- whenever the current zone had no quests (the Hyjal "black band + lost
+    -- icons" report).
     if WorldMapFrameSizeDownButton then
         WorldMapFrameSizeDownButton:Show()
     end
@@ -1575,6 +1629,13 @@ ApplyStandaloneWorldMapWindowState = function()
     end
     if WorldMapFrame.EnableMouse then
         WorldMapFrame:EnableMouse(true)
+    end
+    -- The stock world map has enableKeyboard="true" so it can grab ESC/keys in fullscreen mode.
+    -- In our windowed Mapster-style layout that capture blocks the chat edit box (can't press
+    -- Enter to type while the map is open). Release keyboard capture; ESC still closes the map
+    -- via UISpecialFrames. Restored to the captured state on teardown.
+    if WorldMapFrame.EnableKeyboard then
+        WorldMapFrame:EnableKeyboard(false)
     end
     if WorldMapFrame.RegisterForDrag then
         WorldMapFrame:RegisterForDrag("LeftButton")
@@ -1941,6 +2002,7 @@ local function SetupQuestLevelText()
         markers.UpdateWatchFrameQuestChrome(root, {
             titleFont = titleFont,
             objectiveFonts = objectiveFonts,
+            questId = questId,
             isTracked = isTracked,
             isWatched = true,
             isComplete = isComplete,
@@ -2198,7 +2260,10 @@ local function EnsureStandaloneWorldMapShell()
         HideUIPanel(WorldMapFrame)
     end
 
-    ApplyStandaloneWorldMapWindowState()
+    -- No ApplyStandaloneWorldMapWindowState here: SetupLargerWorldMap (our only caller)
+    -- applies it right after this returns. Applying it twice per setup doubled the
+    -- whole layout cascade (window state -> combined layout -> detail geometry ->
+    -- objective reassert) on every install.
 
     if UISpecialFrames and not worldMapState.addedToSpecialFrames then
         local found = false
@@ -2233,13 +2298,14 @@ local function InstallMapsterLayoutHooks()
             return
         end
 
+        -- Single apply. Our OnShow hook runs after the stock OnShow handler, so one
+        -- application lands on final stock state; later client-driven view switches
+        -- are covered by the detail-geometry persistence hook. The old 0s/0.05s
+        -- DelayedCall re-applies ran the full window+layout cascade three times per
+        -- map open (the "re-layout storm").
         ApplyStandaloneWorldMapWindowState()
         if ShouldSuppressStandaloneQuestLogPanels() then
             SuppressStandaloneQuestLogPanels()
-        end
-        if addon and addon.DelayedCall then
-            addon:DelayedCall(0, ApplyStandaloneWorldMapWindowState)
-            addon:DelayedCall(0.05, ApplyStandaloneWorldMapWindowState)
         end
     end
 
@@ -2377,6 +2443,7 @@ local function SetupLargerWorldMap()
         worldMapState.active = true
         worldMapState.movable = WorldMapFrame.IsMovable and WorldMapFrame:IsMovable() or false
         worldMapState.mouseEnabled = WorldMapFrame.IsMouseEnabled and WorldMapFrame:IsMouseEnabled() or true
+        worldMapState.keyboardEnabled = WorldMapFrame.IsKeyboardEnabled and WorldMapFrame:IsKeyboardEnabled()
         worldMapState.onDragStart = WorldMapFrame.GetScript and WorldMapFrame:GetScript("OnDragStart") or nil
         worldMapState.onDragStop = WorldMapFrame.GetScript and WorldMapFrame:GetScript("OnDragStop") or nil
         worldMapState.parent = WorldMapFrame.GetParent and WorldMapFrame:GetParent() or nil
@@ -2728,6 +2795,9 @@ function Interface.OnDisable()
         if WorldMapFrame.EnableMouse and worldMapState.mouseEnabled ~= nil then
             WorldMapFrame:EnableMouse(worldMapState.mouseEnabled)
         end
+        if WorldMapFrame.EnableKeyboard and worldMapState.keyboardEnabled ~= nil then
+            WorldMapFrame:EnableKeyboard(worldMapState.keyboardEnabled)
+        end
         if WorldMapFrame.SetScript then
             WorldMapFrame:SetScript("OnDragStart", worldMapState.onDragStart)
             WorldMapFrame:SetScript("OnDragStop", worldMapState.onDragStop)
@@ -2807,6 +2877,24 @@ function Interface.OnDisable()
                     table.remove(UISpecialFrames, i)
                 end
             end
+        end
+        -- Hand the view-size constants and the size value back to stock and let the
+        -- stock view functions re-derive the canvas geometry; leaving our fillScale
+        -- in them would offset every native pin on the restored fullscreen map.
+        if worldMapState.origQuestlistSize ~= nil then
+            WORLDMAP_QUESTLIST_SIZE = worldMapState.origQuestlistSize
+            WORLDMAP_FULLMAP_SIZE = worldMapState.origFullmapSize
+            worldMapState.origQuestlistSize = nil
+            worldMapState.origFullmapSize = nil
+        end
+        if WORLDMAP_SETTINGS then
+            WORLDMAP_SETTINGS.size = WORLDMAP_FULLMAP_SIZE or 1
+        end
+        if type(WorldMapFrame_SetFullMapView) == "function" then
+            pcall(WorldMapFrame_SetFullMapView)
+        end
+        if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
+            pcall(WorldMapFrame_SetPOIMaxBounds)
         end
         worldMapState.active = false
         worldMapState.movable = nil

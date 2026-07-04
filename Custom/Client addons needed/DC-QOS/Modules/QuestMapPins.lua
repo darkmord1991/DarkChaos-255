@@ -4,6 +4,7 @@
 
 local addon = DCQOS
 local questTrackingUtils = type(addon.GetQuestTrackingUtils) == "function" and addon:GetQuestTrackingUtils() or nil
+local mapUtils = type(addon.GetMapUtils) == "function" and addon:GetMapUtils() or nil
 
 local QuestMapPins = {
     displayName = "QuestMapPins",
@@ -16,6 +17,7 @@ local QuestMapPins = {
             showTurnIns = true,
             showObjectives = true,
             hideTrivialStarts = true,
+            showTeleports = false,
         },
     },
 }
@@ -27,6 +29,7 @@ local ACTIVE_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "activequesticon"
 local DAILY_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "dailyquesticon"
 local DAILY_ACTIVE_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "dailyactivequesticon"
 local OBJECTIVE_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_3"
+local TELEPORT_ICON_TEXTURE = "Interface\\Icons\\Spell_Arcane_Blink"
 local GLOW_TEXTURE = "Interface\\Minimap\\UI-Minimap-Ping"
 
 local state = {
@@ -393,6 +396,35 @@ local function GetVisibleMarkers(currentMapId)
         end
     end
 
+    if settings.showTeleports and mapUtils and type(mapUtils.WorldToMapPosition) == "function"
+        and addon.TeleportData and type(addon.TeleportData.GetTeleports) == "function" then
+        -- Lazily sync the teleport list the first time the layer is shown.
+        if type(addon.TeleportData.EnsureRequested) == "function" then
+            addon.TeleportData:EnsureRequested()
+        end
+
+        local teleports = addon.TeleportData:GetTeleports()
+        if type(teleports) == "table" then
+            for i = 1, #teleports do
+                local teleport = teleports[i]
+                local normX, normY = mapUtils.WorldToMapPosition(currentMapId, teleport.map, teleport.x, teleport.y)
+                if normX and normY then
+                    markers[#markers + 1] = {
+                        category = "teleport",
+                        teleportId = teleport.id,
+                        mapId = currentMapId,
+                        x = normX,
+                        y = normY,
+                        title = teleport.name or "Teleport",
+                        worldMap = teleport.map,
+                        worldX = teleport.x,
+                        worldY = teleport.y,
+                    }
+                end
+            end
+        end
+    end
+
     table.sort(markers, function(left, right)
         local function Priority(marker)
             if marker.isTracked then
@@ -400,6 +432,9 @@ local function GetVisibleMarkers(currentMapId)
             end
             if marker.category == "turnin" then
                 return 30
+            end
+            if marker.category == "teleport" then
+                return 15
             end
             if marker.category == "objective" then
                 return 20
@@ -456,6 +491,9 @@ local function GetMarkerKindLabel(marker)
     end
     if marker.category == "objective" then
         return string.format("Objective %d", (tonumber(marker.objectiveIndex) or 0) + 1)
+    end
+    if marker.category == "teleport" then
+        return "Teleport"
     end
     return "Quest"
 end
@@ -634,6 +672,9 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
     local recurrenceType = marker.recurrenceType
     local isTracked = marker.isTracked == true
     local baseSize = marker.category == "objective" and 15 or 20
+    if marker.category == "teleport" then
+        baseSize = 16
+    end
     if isTracked then
         baseSize = baseSize + 4
     end
@@ -654,6 +695,10 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
         texture = OBJECTIVE_ICON_TEXTURE
         borderR, borderG, borderB, borderA = 0.76, 0.56, 0.16, 0.60
         iconR, iconG, iconB, iconA = 0.98, 0.84, 0.30, 1.0
+    elseif marker.category == "teleport" then
+        texture = TELEPORT_ICON_TEXTURE
+        borderR, borderG, borderB, borderA = 0.55, 0.35, 0.85, 0.62
+        iconR, iconG, iconB, iconA = 0.82, 0.72, 1.0, 1.0
     elseif recurrenceType == "daily" then
         texture = DAILY_ICON_TEXTURE
         borderR, borderG, borderB, borderA = 0.26, 0.48, 0.78, 0.58
@@ -897,6 +942,20 @@ function QuestMapPins.CreateSettings(parent)
     turnInCb:SetChecked(settings.showTurnIns ~= false)
     turnInCb:SetScript("OnClick", function(self)
         addon:SetSetting("questMapPins.showTurnIns", self:GetChecked())
+        QueueRefresh(0)
+    end)
+    yOffset = yOffset - 28
+
+    local teleportCb = addon:CreateCheckbox(parent)
+    teleportCb:SetPoint("TOPLEFT", 16, yOffset)
+    teleportCb.Text:SetText("Show teleport / travel destinations on the map")
+    teleportCb:SetChecked(settings.showTeleports == true)
+    teleportCb:SetScript("OnClick", function(self)
+        addon:SetSetting("questMapPins.showTeleports", self:GetChecked())
+        if self:GetChecked() and addon.TeleportData
+            and type(addon.TeleportData.EnsureRequested) == "function" then
+            addon.TeleportData:EnsureRequested()
+        end
         QueueRefresh(0)
     end)
 

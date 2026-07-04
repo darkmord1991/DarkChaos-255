@@ -705,6 +705,54 @@ function addon:GetMapUtils()
         return math.sqrt((dx * dx) + (dy * dy)), dx, dy
     end
 
+    -- Convert a world position into a normalized (0..1) position on the world-map
+    -- view identified by uiMapId (the UI map id used by the world map, which is
+    -- WorldMapArea.ID + 1). Needed to place world-space points such as game_tele
+    -- teleports (which are stored as raw world x/y on a game map) onto the map.
+    --
+    -- WorldMapArea loc bounds are world coordinates: LocLeft/LocRight bound world
+    -- Y (west..east), LocTop/LocBottom bound world X (north..south). The canonical
+    -- WotLK conversion is:
+    --   normX = (LocLeft - worldY) / (LocLeft - LocRight)
+    --   normY = (LocTop  - worldX) / (LocTop  - LocBottom)
+    -- gameMapId (optional) rejects points that only coincidentally share these
+    -- coordinates on a different continent. Returns normX, normY, or nil when the
+    -- area has no bounds data / the point falls outside it.
+    function mapUtils.WorldToMapPosition(uiMapId, gameMapId, worldX, worldY)
+        uiMapId = tonumber(uiMapId)
+        worldX = tonumber(worldX)
+        worldY = tonumber(worldY)
+        if not uiMapId or not worldX or not worldY then
+            return nil
+        end
+
+        local boundsTable = addon.MapAreaBounds
+        -- MapAreaBounds is keyed by raw WorldMapArea.ID; uiMapId is ID + 1.
+        local entry = boundsTable and (boundsTable[uiMapId - 1] or boundsTable[uiMapId])
+        if not entry then
+            return nil
+        end
+
+        local areaMapId, left, right, top, bottom = entry[1], entry[2], entry[3], entry[4], entry[5]
+        if gameMapId ~= nil and areaMapId ~= nil and areaMapId >= 0
+            and tonumber(gameMapId) ~= tonumber(areaMapId) then
+            return nil
+        end
+
+        if not left or not right or not top or not bottom
+            or left == right or top == bottom then
+            return nil
+        end
+
+        local normX = (left - worldY) / (left - right)
+        local normY = (top - worldX) / (top - bottom)
+        if normX < 0 or normX > 1 or normY < 0 or normY > 1 then
+            return nil
+        end
+
+        return normX, normY
+    end
+
     self._mapUtils = mapUtils
     return mapUtils
 end

@@ -36,6 +36,7 @@ void AddSC_dc_addon_graveyard();
 void AddSC_dc_addon_death_markers();
 
 namespace DCAddon { void AddTeleportScripts(); }
+namespace DCAddon { void AddQuestFlowScripts(); }
 
 void AddDCAddonExtensionScripts()
 {
@@ -61,6 +62,9 @@ void AddDCAddonExtensionScripts()
     AddSC_DCAddon_NPCMove();
     AddSC_DCAddon_Decorations();
     DCAddon::AddTeleportScripts();
+
+    // Auto-quest offer / remote turn-in popups (retail-style quest flow)
+    DCAddon::AddQuestFlowScripts();
 
     // NPC scripts
     AddSC_npc_group_finder();
