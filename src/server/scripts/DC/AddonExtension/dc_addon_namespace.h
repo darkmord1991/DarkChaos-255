@@ -512,6 +512,7 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_ACCEPT_QUEST     = 0x01; // {q} accept an offered quest
             constexpr uint8 CMSG_COMPLETE_QUEST   = 0x02; // {q, c} remote turn-in (c = 0-based reward choice)
+            constexpr uint8 CMSG_REQUEST_OFFERS   = 0x03; // {} re-evaluate current zone offers (client ready / login race)
             constexpr uint8 SMSG_OFFER            = 0x10; // {q, t, l} quest offer popup (JSON)
             constexpr uint8 SMSG_COMPLETE_READY   = 0x11; // {q, t, ch:[itemId,..]} quest ready for remote turn-in (JSON)
         }

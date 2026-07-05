@@ -2036,8 +2036,14 @@ GetSelectedWorldMapQuestFrame = function()
 end
 
 local function ShouldApplyCombinedWorldMapLayout()
-    -- Interface.lua now owns world map geometry and pane layout. Keep QuestFrames
-    -- focused on styling text/buttons to avoid conflicting re-anchors.
+    -- RETIRED. The combined map now hosts the STOCK quest-map layout inside
+    -- Interface.lua's movable 1024x768 window (the same geometry Ascension
+    -- ships fullscreen): quest list on the right column, details + rewards on
+    -- the parchment book at the bottom — all on their stock XML anchors, with
+    -- visibility owned by stock WorldMapFrame_DisplayQuests. This shell
+    -- (a re-anchored strip) fought that geometry everywhere and is disabled
+    -- for good; the chrome/styling helpers below are unreferenced while this
+    -- returns false.
     return false
 end
 
@@ -2162,51 +2168,24 @@ local function ApplyCombinedWorldMapLayout()
     state.worldMapLayoutApplying = true
     state.worldMapLayoutApplyingAt = GetTime and GetTime() or 0
 
-    EnsureCombinedWorldMapQuestView()
-    EnforceCombinedWorldMapWindowGeometry()
+    -- NO window/canvas geometry from here: Interface.lua owns WorldMapFrame's
+    -- size/scale/position and the canvas fill (WORLDMAP_SETTINGS.size, blob
+    -- scale, POI bounds). This function only lays out the quest-panel shell
+    -- inside the strip Interface reserves on the right.
 
-    if addon and addon.DelayedCall then
-        addon:DelayedCall(0, function()
-            EnsureCombinedWorldMapQuestView()
-            EnforceCombinedWorldMapWindowGeometry()
-        end)
-        addon:DelayedCall(0.05, function()
-            EnsureCombinedWorldMapQuestView()
-            EnforceCombinedWorldMapWindowGeometry()
-        end)
-        addon:DelayedCall(0.15, function()
-            EnsureCombinedWorldMapQuestView()
-            EnforceCombinedWorldMapWindowGeometry()
-        end)
-    end
-
-    local blobScale = tonumber(WORLDMAP_SETTINGS and WORLDMAP_SETTINGS.size)
-        or tonumber(WORLDMAP_QUESTLIST_SIZE)
-        or tonumber(WORLDMAP_FULLMAP_SIZE)
-        or 1
-    if WorldMapBlobFrame and blobScale then
-        WorldMapBlobFrame:SetScale(blobScale)
-        WorldMapBlobFrame.xRatio = nil
-        if type(WorldMapBlobFrame_CalculateHitTranslations) == "function" then
-            pcall(WorldMapBlobFrame_CalculateHitTranslations)
-        end
-    end
-
-    if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
-        pcall(WorldMapFrame_SetPOIMaxBounds)
-    end
     if type(WorldMapFrame_UpdateQuests) == "function" then
         pcall(WorldMapFrame_UpdateQuests)
     end
 
-    local guideHeight = WorldMapPositioningGuide.GetHeight and WorldMapPositioningGuide:GetHeight() or nil
-    if not guideHeight or guideHeight <= 0 then
-        guideHeight = (WorldMapFrame and WorldMapFrame.GetHeight and WorldMapFrame:GetHeight()) or 768
-    end
-
+    -- Size strictly from the WINDOW. The old guide-height source read
+    -- WorldMapPositioningGuide's stale XML size, and the minShellHeight floor
+    -- (620) pushed the shell past the window bottom on short windows — the
+    -- "running out of its borders" chaos. The shell must never exceed the
+    -- window's inner height.
+    local windowHeight = (WorldMapFrame and WorldMapFrame.GetHeight and WorldMapFrame:GetHeight()) or 768
     local shellHeight = math.max(
-        guideHeight - COMBINED_WORLD_MAP_LAYOUT.topInset - COMBINED_WORLD_MAP_LAYOUT.bottomInset,
-        COMBINED_WORLD_MAP_LAYOUT.minShellHeight
+        300,
+        windowHeight - COMBINED_WORLD_MAP_LAYOUT.topInset - COMBINED_WORLD_MAP_LAYOUT.bottomInset
     )
     local contentHeight = shellHeight
         - COMBINED_WORLD_MAP_LAYOUT.headerHeight
@@ -2243,9 +2222,13 @@ local function ApplyCombinedWorldMapLayout()
 
     shell:Show()
     shell:ClearAllPoints()
+    -- Anchor to the WINDOW, not WorldMapPositioningGuide: under the standalone
+    -- layout the guide is collapsed to a centre point, which would park the
+    -- shell in the middle of the map. Interface widens the window by the shell
+    -- width so this strip has its own reserved space on the right.
     shell:SetPoint(
         "TOPRIGHT",
-        WorldMapPositioningGuide,
+        WorldMapFrame,
         "TOPRIGHT",
         -COMBINED_WORLD_MAP_LAYOUT.rightInset,
         -COMBINED_WORLD_MAP_LAYOUT.topInset

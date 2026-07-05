@@ -231,12 +231,35 @@ function QuestPopups.OnActionClick(popup)
     end
 end
 
+local function IsQuestInLog(questId)
+    for i = 1, (type(GetNumQuestLogEntries) == "function" and GetNumQuestLogEntries() or 0) do
+        local _, _, _, _, isHeader = GetQuestLogTitle(i)
+        if not isHeader then
+            local id = type(addon.GetQuestIdFromLogIndex) == "function"
+                and addon:GetQuestIdFromLogIndex(i) or nil
+            if not id and type(GetQuestLink) == "function" then
+                local link = GetQuestLink(i)
+                if link then
+                    id = tonumber(link:match("quest:(%d+)"))
+                end
+            end
+            if id == questId then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function ShowPopup(kind, questId, title, level, choices)
     if not GetSettings().enabled then
         return
     end
     if FindPopup(questId, kind) then
         return
+    end
+    if kind == "offer" and IsQuestInLog(questId) then
+        return -- already accepted (offers can be re-sent after a client request)
     end
 
     -- A completion popup supersedes an offer popup for the same quest.
@@ -276,26 +299,6 @@ local function ShowPopup(kind, questId, title, level, choices)
     state.popups[#state.popups + 1] = popup
     popup:Show()
     LayoutPopups()
-end
-
-local function IsQuestInLog(questId)
-    for i = 1, (type(GetNumQuestLogEntries) == "function" and GetNumQuestLogEntries() or 0) do
-        local _, _, _, _, isHeader = GetQuestLogTitle(i)
-        if not isHeader then
-            local id = type(addon.GetQuestIdFromLogIndex) == "function"
-                and addon:GetQuestIdFromLogIndex(i) or nil
-            if not id and type(GetQuestLink) == "function" then
-                local link = GetQuestLink(i)
-                if link then
-                    id = tonumber(link:match("quest:(%d+)"))
-                end
-            end
-            if id == questId then
-                return true
-            end
-        end
-    end
-    return false
 end
 
 local function PruneStalePopups()
@@ -340,12 +343,36 @@ local function RegisterHandlers()
     state.handlersRegistered = true
 end
 
+-- Ask the server to re-evaluate the current zone's auto-offers. The server's
+-- OnPlayerLogin push races the addon load (the popup can be sent before this
+-- module is listening — why "welcome" quests never appeared on a fresh
+-- character's first world join); requesting once we ARE listening closes it.
+local function RequestZoneOffers()
+    if not GetSettings().enabled then
+        return
+    end
+    local DC = GetDC()
+    if DC and type(DC.Request) == "function" then
+        DC:Request("QPOP", 0x03, {})
+    end
+end
+
 function QuestPopups.OnEnable()
     RegisterHandlers()
 
     if not state.eventFrame then
         state.eventFrame = CreateFrame("Frame")
-        state.eventFrame:SetScript("OnEvent", function()
+        state.eventFrame:SetScript("OnEvent", function(_, event)
+            if event == "PLAYER_ENTERING_WORLD" then
+                RegisterHandlers() -- protocol may not have existed at OnEnable
+                if type(addon.DelayedCall) == "function" then
+                    addon:DelayedCall(1.5, RequestZoneOffers)
+                else
+                    RequestZoneOffers()
+                end
+                return
+            end
+
             if type(addon.DelayedCall) == "function" then
                 addon:DelayedCall(0.1, PruneStalePopups)
             else
@@ -355,6 +382,7 @@ function QuestPopups.OnEnable()
     end
     state.eventFrame:UnregisterAllEvents()
     state.eventFrame:RegisterEvent("QUEST_LOG_UPDATE")
+    state.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 end
 
 function QuestPopups.OnDisable()

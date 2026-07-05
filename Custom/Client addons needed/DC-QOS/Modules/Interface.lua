@@ -30,8 +30,17 @@ local STANDALONE_WORLD_MAP_OFFSET_Y = 26
 -- Tune these two if the map overlaps your info bar (raise TOP) or action bars (raise BOTTOM):
 local STANDALONE_TOP_INSET    = 24   -- px reserved at the top for the info bar
 local STANDALONE_BOTTOM_INSET = 100  -- px reserved at the bottom for the action bar(s)
+-- The stock world-map art (WorldMapFrameTexture1-12, the parchment sheet with the
+-- quest-list column and details book) is a fixed 1024x768 grid anchored to the
+-- frame CENTRE. The window is exactly that size so every stock anchor (canvas,
+-- quest panes, dropdowns, title, close button) lands on the art as designed —
+-- the same geometry Ascension ships fullscreen, hosted in a movable window.
 local STANDALONE_MAP_TILES_W  = 1024
 local STANDALONE_MAP_TILES_H  = 768
+-- Thin parchment border around the map + a header strip for the dropdown row
+-- (Zone Map / Continent / Zone / Areas). Screen pixels; the map fills the rest.
+local STANDALONE_MAP_BORDER   = 10
+local STANDALONE_MAP_HEADER   = 40
 
 -- Available vertical band = screen height minus the info-bar (top) and action-bar (bottom) reserves.
 -- Tries to detect the real action-bar top first so it adapts to stacked bars; falls back to the inset.
@@ -56,21 +65,34 @@ local function GetStandaloneBandHeight()
     if h < 200 then h = uiH - STANDALONE_TOP_INSET - STANDALONE_BOTTOM_INSET end  -- sanity
     return h, bottom
 end
+-- FILL scale: scale the map (detail tiles + pin/blob layers) so the 1024x768 art
+-- fills the band between the info bar and the action bars. The window is sized to
+-- the scaled map (a clean map-only view — no docked quest panels), so the map
+-- occupies the whole reserved area with no black bands.
 local function GetStandaloneFillScale()
-    local s = GetStandaloneBandHeight() / STANDALONE_MAP_TILES_H
+    -- Reserve the header (dropdown row) + top/bottom border out of the band so the
+    -- WHOLE window (map + header + border) fits between the info bar and action
+    -- bars — not just the map.
+    local usable = GetStandaloneBandHeight() - STANDALONE_MAP_HEADER - (STANDALONE_MAP_BORDER * 2)
+    local s = usable / STANDALONE_MAP_TILES_H
     if s < 0.5 then s = 0.5 elseif s > 1.6 then s = 1.6 end
     return s
 end
+-- Window = scaled map (1024x768 * fillScale) + a thin border all round + a header
+-- strip at the top for the dropdown row. Matches ApplyStandaloneDetailGeometry's
+-- TOPLEFT fill exactly, so the map fills the window with no black band.
 local function GetStandaloneWorldMapHeight()
-    return STANDALONE_MAP_TILES_H * GetStandaloneFillScale()
+    return STANDALONE_MAP_TILES_H * GetStandaloneFillScale() + STANDALONE_MAP_HEADER + STANDALONE_MAP_BORDER
 end
 local function GetStandaloneWorldMapWidth()
-    return STANDALONE_MAP_TILES_W * GetStandaloneFillScale() + 16
+    return STANDALONE_MAP_TILES_W * GetStandaloneFillScale() + (STANDALONE_MAP_BORDER * 2)
 end
--- Centre the frame in the band: shift up/down by half the difference of the two reserves.
+-- Centre the frame in the band, then nudge it up a little so it sits clearly
+-- below the info bar and above the action bars. The frame renders at scale 1,
+-- so the offset is already in screen pixels.
 local function GetSafeStandaloneOffsetY()
     local _, bottom = GetStandaloneBandHeight()
-    return (bottom - STANDALONE_TOP_INSET) / 2
+    return ((bottom - STANDALONE_TOP_INSET) / 2) + (STANDALONE_WORLD_MAP_OFFSET_Y or 0)
 end
 
 -- Event frames storage for cleanup (must be defined before functions that use it)
@@ -1330,43 +1352,70 @@ local function ApplyStandaloneDetailGeometry()
         return
     end
 
-    local fillScale = GetStandaloneFillScale()
-    local ox = -((STANDALONE_MAP_TILES_W - 1002) / 2) * fillScale   -- ~ -11 * scale
-    local oy =  ((STANDALONE_MAP_TILES_H - 668) / 2) * fillScale    -- ~ +50 * scale
-
-    -- Make BOTH stock views produce OUR scale. WorldMapFrame_SetQuestMapView /
-    -- SetFullMapView write WORLDMAP_SETTINGS.size from these globals and scale the
-    -- whole canvas group with them; overriding the constants while the standalone
-    -- window is active means a stock view switch (quest-ful vs quest-less zone)
-    -- no longer snaps the canvas to 0.691/1.0 before our post-hook runs — the two
-    -- views become geometrically identical and only chrome differs. Originals are
-    -- restored on teardown.
-    if worldMapState.origQuestlistSize == nil then
-        worldMapState.origQuestlistSize = WORLDMAP_QUESTLIST_SIZE
-        worldMapState.origFullmapSize = WORLDMAP_FULLMAP_SIZE
+    -- CLEAN MAP-ONLY FILL. The docked stock quest panes (list on the right,
+    -- details/rewards book at the bottom) are anchored for a FULLSCREEN frame:
+    -- in our window they overflow (empty dark right panel, a detail book spilling
+    -- past the bottom, and a black band between). The on-screen quest tracker +
+    -- the map's own quest POIs already provide "quest log + details", so the
+    -- windowed map shows ONLY the map, scaled to fill its reserved area, with the
+    -- panes hidden. If an earlier version overrode the stock view constants, hand
+    -- them back before anything derives geometry from them.
+    if worldMapState.origQuestlistSize ~= nil then
+        WORLDMAP_QUESTLIST_SIZE = worldMapState.origQuestlistSize
+        WORLDMAP_FULLMAP_SIZE = worldMapState.origFullmapSize
+        worldMapState.origQuestlistSize = nil
+        worldMapState.origFullmapSize = nil
     end
-    WORLDMAP_QUESTLIST_SIZE = fillScale
-    WORLDMAP_FULLMAP_SIZE = fillScale
 
-    -- THE single size value. Stock FrameXML positions everything native-side with it:
-    -- the player arrow is placed at coord * WORLDMAP_SETTINGS.size (WorldMapFrame.lua
-    -- line ~790: PositionWorldMapArrowFrame(..., playerX * WORLDMAP_SETTINGS.size, ...))
-    -- and WorldMapFrame_SetPOIMaxBounds derives the POI clamp box from it, because the
-    -- native arrow/POI layer lives in UNSCALED space. Writing 1 here while scaling the
-    -- canvas frames to fillScale is exactly what offset every natively-positioned pin
-    -- by a factor of fillScale (player icon at Stonetalon while standing at Crossroads).
-    -- The value and the canvas scale must be the SAME number, always.
+    local fillScale = GetStandaloneFillScale()
+    if fillScale <= 0 then fillScale = 1 end
+    -- TOPLEFT FILL. The zone-map tiles (WorldMapDetailTile1..12, a 1024x768 grid)
+    -- are anchored to WorldMapDetailFrame's TOPLEFT (verified against the client's
+    -- own patch-enGB-3 WorldMapFrame.xml: detail frame 1002x668, tiles from its
+    -- TOPLEFT). So we anchor the detail's TOPLEFT just inside the window (below a
+    -- header strip for the dropdown row) and scale it by fillScale — the grid then
+    -- fills the window down to a thin border, no black band. CRITICAL: SetPoint
+    -- offsets are in the frame's OWN scaled space (stock proves it: the quest view
+    -- uses offset -726 at detail scale 0.691 = -502 screen px, the same screen
+    -- origin as the full view's -502 at scale 1.0). So to place the TOPLEFT at
+    -- (border, -header) SCREEN pixels, divide by fillScale. The earlier code
+    -- multiplied the offset BY fillScale on top of that implicit scale -> the map
+    -- was pushed up by ~fillScale^2 and left the black box at the bottom.
+    local border = STANDALONE_MAP_BORDER
+    local header = STANDALONE_MAP_HEADER
+
+    -- The positioning guide hosts the dropdowns / close button; fill it to the
+    -- window so they sit along the top header strip.
+    if WorldMapPositioningGuide
+        and WorldMapPositioningGuide.ClearAllPoints
+        and WorldMapPositioningGuide.SetAllPoints then
+        WorldMapPositioningGuide:ClearAllPoints()
+        WorldMapPositioningGuide:SetAllPoints(WorldMapFrame)
+    end
+
+    if WorldMapDetailFrame then
+        if WorldMapDetailFrame.SetScale then
+            WorldMapDetailFrame:SetScale(fillScale)
+        end
+        if WorldMapDetailFrame.ClearAllPoints and WorldMapDetailFrame.SetPoint then
+            WorldMapDetailFrame:ClearAllPoints()
+            WorldMapDetailFrame:SetPoint("TOPLEFT", WorldMapFrame, "TOPLEFT",
+                border / fillScale, -header / fillScale)
+        end
+    end
+
+    -- THE single size value: stock positions the native player arrow at
+    -- coord * WORLDMAP_SETTINGS.size and derives the POI clamp box from it, all
+    -- in UNSCALED space. It MUST equal the canvas scale or every natively-placed
+    -- pin lands offset (the "player icon at Stonetalon while at Crossroads" bug).
     if WORLDMAP_SETTINGS then
         WORLDMAP_SETTINGS.size = fillScale
     end
 
-    -- Set a frame's EFFECTIVE fill scale without double-applying it. WorldMapButton (and the
-    -- area/blob frames, depending on client XML) are descendants of WorldMapDetailFrame, so they
-    -- already inherit its SetScale; forcing another SetScale(fillScale) on them compounds to
-    -- fillScale^2 and compresses everything anchored in their space (native player arrow, stock
-    -- quest POIs, our pins) toward the TOPLEFT by one extra scale factor -- the "player icon shows
-    -- at the wrong position" offset. Frames nested under the detail frame get scale 1 (inherit);
-    -- true siblings get the explicit fillScale.
+    -- Scale the canvas siblings without double-applying: descendants of
+    -- WorldMapDetailFrame inherit its SetScale (a second SetScale compounds to
+    -- fillScale^2 and compresses the pin layer toward the top-left); true
+    -- siblings need the explicit fillScale.
     local function ApplyFillScale(frame)
         if not frame or not frame.SetScale then
             return
@@ -1386,23 +1435,6 @@ local function ApplyStandaloneDetailGeometry()
         frame:SetScale(nested and 1 or fillScale)
     end
 
-    if WorldMapPositioningGuide
-        and WorldMapPositioningGuide.ClearAllPoints
-        and WorldMapPositioningGuide.SetPoint then
-        WorldMapPositioningGuide:ClearAllPoints()
-        WorldMapPositioningGuide:SetPoint("CENTER")
-    end
-
-    if WorldMapDetailFrame then
-        if WorldMapDetailFrame.SetScale then
-            WorldMapDetailFrame:SetScale(fillScale)
-        end
-        if WorldMapDetailFrame.ClearAllPoints and WorldMapDetailFrame.SetPoint then
-            WorldMapDetailFrame:ClearAllPoints()
-            WorldMapDetailFrame:SetPoint("CENTER", WorldMapFrame, "CENTER", ox, oy)
-        end
-    end
-
     ApplyFillScale(WorldMapButton)
     ApplyFillScale(WorldMapFrameAreaFrame)
     if WorldMapBlobFrame then
@@ -1413,22 +1445,31 @@ local function ApplyStandaloneDetailGeometry()
         end
     end
 
-    -- The POI clamp box is derived from WORLDMAP_SETTINGS.size; recompute it now that
-    -- the size/scale pair changed, or numbered quest POIs clamp to a stale rectangle.
     if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
         pcall(WorldMapFrame_SetPOIMaxBounds)
     end
 
-    -- SetFullMapView (quest-less zones) shows the fullscreen "patch tiles" — the
-    -- parchment filler textures framing the map in stock fullscreen. In the
-    -- windowed layout they render as dead parchment/black bands. Keep them hidden
-    -- in every view.
-    if NUM_WORLDMAP_DETAIL_TILES and NUM_WORLDMAP_PATCH_TILES then
-        for i = NUM_WORLDMAP_DETAIL_TILES + 1, NUM_WORLDMAP_DETAIL_TILES + NUM_WORLDMAP_PATCH_TILES do
+    -- Show the map tiles (1..12); hide the fullscreen "-full" patch tiles (13..18)
+    -- and the docked quest panes — this is a map-only window.
+    local detailTiles = NUM_WORLDMAP_DETAIL_TILES or 12
+    for i = 1, detailTiles do
+        local tile = _G["WorldMapFrameTexture" .. i]
+        if tile and tile.Show then
+            tile:Show()
+        end
+    end
+    if NUM_WORLDMAP_PATCH_TILES then
+        for i = detailTiles + 1, detailTiles + NUM_WORLDMAP_PATCH_TILES do
             local tile = _G["WorldMapFrameTexture" .. i]
             if tile and tile.Hide then
                 tile:Hide()
             end
+        end
+    end
+    for _, name in ipairs({ "WorldMapQuestScrollFrame", "WorldMapQuestDetailScrollFrame", "WorldMapQuestRewardScrollFrame" }) do
+        local f = _G[name]
+        if f and f.Hide then
+            f:Hide()
         end
     end
 end
@@ -1437,6 +1478,43 @@ end
 -- DisplayQuests calls SetFullMapView (scale 1, top-left) / SetQuestMapView (scale 0.691, top-left)
 -- depending on quest state, which is what left the map small in the top-left with a black band on the
 -- bottom/right. Post-hooking both makes the standalone geometry win regardless of that timing.
+-- The client ships a native "fullscreen world map" mod: WorldMapFrame_Update calls
+-- the global SetupFullscreenScale(self) whenever WORLDMAP_SETTINGS.size ~=
+-- WORLDMAP_WINDOWED_SIZE, and that rescales/repositions WorldMapDetailFrame to fit
+-- the SCREEN. Our standalone window sets its own scale, so that mod fires every
+-- update and fights us — the map ends up scaled for fullscreen in the top-left of
+-- our window with a black band below (the "layout totally broken" report). While
+-- our windowed map is active we replace the global with a guarded no-op so OUR
+-- geometry is the only thing sizing the map; the original is restored on teardown.
+local function InstallFullscreenScaleGuard()
+    if worldMapState.fullscreenScaleGuarded then
+        return
+    end
+    worldMapState.fullscreenScaleGuarded = true
+    -- Capture whatever SetupFullscreenScale currently is (a Lua global from an
+    -- unlisted locale file). nil is fine — then it was never doing anything.
+    worldMapState.origSetupFullscreenScale = rawget(_G, "SetupFullscreenScale")
+    local orig = worldMapState.origSetupFullscreenScale
+    _G.SetupFullscreenScale = function(...)
+        if worldMapState.active then
+            return
+        end
+        if type(orig) == "function" then
+            return orig(...)
+        end
+    end
+end
+
+local function RestoreFullscreenScaleGuard()
+    if not worldMapState.fullscreenScaleGuarded then
+        return
+    end
+    -- Only restore if nobody replaced our wrapper in the meantime.
+    _G.SetupFullscreenScale = worldMapState.origSetupFullscreenScale
+    worldMapState.origSetupFullscreenScale = nil
+    worldMapState.fullscreenScaleGuarded = false
+end
+
 local function InstallStandaloneDetailPersistenceHooks()
     if worldMapState.detailPersistenceHooksInstalled then
         return
@@ -1481,10 +1559,12 @@ local function ApplyMapsterLikeCombinedMapLayout()
         return
     end
 
-    -- Put the map into quest-list view, then re-assert our own fill/centre geometry on top of it.
-    -- InstallStandaloneDetailPersistenceHooks keeps it applied past later client-driven view switches.
-    -- WORLDMAP_SETTINGS.size is owned by ApplyStandaloneDetailGeometry (it must always equal the
-    -- canvas scale, or every natively-positioned pin lands offset) — never write it here.
+    -- Put the map into the stock quest-list view (the combined layout's default),
+    -- then re-assert the window-hosted geometry on top of it. Stock
+    -- WorldMapFrame_DisplayQuests may later switch to full-map view for
+    -- quest-less zones — that is fine now: both stock views are pixel-designed
+    -- for the 1024x768 art this window hosts, and the persistence hooks re-run
+    -- ApplyStandaloneDetailGeometry after every switch.
     if type(WorldMapFrame_SetQuestMapView) == "function" then
         pcall(WorldMapFrame_SetQuestMapView)
     end
@@ -1505,14 +1585,10 @@ local function ApplyMapsterLikeCombinedMapLayout()
     end
     -- Do NOT force-show the quest list/detail/reward scroll frames here. Their
     -- visibility is owned by stock WorldMapFrame_DisplayQuests (hides them in
-    -- quest-less zones via SetFullMapView) and by QuestFrames' combined shell
-    -- layout (positions them when a quest is selected). Forcing them visible
-    -- left empty panels + orphaned scroll buttons floating in the window
-    -- whenever the current zone had no quests (the Hyjal "black band + lost
-    -- icons" report).
-    if WorldMapFrameSizeDownButton then
-        WorldMapFrameSizeDownButton:Show()
-    end
+    -- quest-less zones via SetFullMapView, which patches the book/column art
+    -- with the "-full" tiles). Forcing them visible left empty panels +
+    -- orphaned scroll buttons floating in the window whenever the current zone
+    -- had no quests (the Hyjal "black band + lost icons" report).
 
     if WorldMapFrameMiniBorderLeft then
         WorldMapFrameMiniBorderLeft:Hide()
@@ -1520,8 +1596,14 @@ local function ApplyMapsterLikeCombinedMapLayout()
     if WorldMapFrameMiniBorderRight then
         WorldMapFrameMiniBorderRight:Hide()
     end
+    -- One canonical view: the combined window. The stock size toggles switch to
+    -- fullscreen (SetParent(nil) + SetAllPoints + blackout) or the mini map —
+    -- both would tear the windowed layout apart, so neither is offered.
     if WorldMapFrameSizeUpButton then
         WorldMapFrameSizeUpButton:Hide()
+    end
+    if WorldMapFrameSizeDownButton then
+        WorldMapFrameSizeDownButton:Hide()
     end
 
     if WorldMapLevelDropDown then
@@ -1539,11 +1621,6 @@ local function ApplyMapsterLikeCombinedMapLayout()
         and WorldMapFrameCloseButton.ClearAllPoints and WorldMapFrameCloseButton.SetPoint then
         WorldMapFrameCloseButton:ClearAllPoints()
         WorldMapFrameCloseButton:SetPoint("TOPRIGHT", WorldMapPositioningGuide, 4, 4)
-    end
-    if WorldMapFrameSizeDownButton and WorldMapPositioningGuide
-        and WorldMapFrameSizeDownButton.ClearAllPoints and WorldMapFrameSizeDownButton.SetPoint then
-        WorldMapFrameSizeDownButton:ClearAllPoints()
-        WorldMapFrameSizeDownButton:SetPoint("TOPRIGHT", WorldMapPositioningGuide, -16, 4)
     end
     if WorldMapTrackQuest and WorldMapPositioningGuide
         and WorldMapTrackQuest.ClearAllPoints and WorldMapTrackQuest.SetPoint then
@@ -1587,6 +1664,11 @@ local function ApplyMapsterLikeCombinedMapLayout()
         end
         if type(WorldMapFrame_UpdateQuests) == "function" then
             pcall(WorldMapFrame_UpdateQuests)
+        end
+        -- Stock ToggleSizeUp calls this after assembling the quest view; it
+        -- parks the "Show Quest Objectives" checkbox by the quest list header.
+        if type(WorldMapQuestShowObjectives_AdjustPosition) == "function" then
+            pcall(WorldMapQuestShowObjectives_AdjustPosition)
         end
     end
 
@@ -1649,6 +1731,10 @@ ApplyStandaloneWorldMapWindowState = function()
     if WorldMapFrame.SetHeight then
         WorldMapFrame:SetHeight(GetStandaloneWorldMapHeight())
     end
+    -- The window renders at scale 1; the MAP fills it via WorldMapDetailFrame's
+    -- fillScale (ApplyStandaloneDetailGeometry). The window is sized to the
+    -- scaled map (GetStandaloneWorldMap Width/Height) so the map fills the whole
+    -- reserved area with no border band.
     if WorldMapFrame.SetScale then
         WorldMapFrame:SetScale(STANDALONE_WORLD_MAP_SCALE)
     end
@@ -2429,6 +2515,18 @@ local function InstallMapsterSelectionHooks()
 end
 
 local function SetupLargerWorldMap()
+    -- RETIRED. The combined world-map window is now owned by the dedicated
+    -- Modules/WorldMapWindow.lua (a single, clean owner using the proven
+    -- whole-frame-scale technique). This old standalone-map takeover — spread
+    -- across worldMapState + ApplyStandaloneDetailGeometry +
+    -- ApplyMapsterLikeCombinedMapLayout + the persistence/fullscreen hooks — was
+    -- exactly the tangle that fought itself and the client's fullscreen-map mod.
+    -- Left inert (worldMapState.active never becomes true, so every hook here
+    -- bails) to avoid a large deletion; WorldMapWindow.lua is the source of truth.
+    do return end
+end
+
+local function SetupLargerWorldMap_DISABLED()
     local settings = addon.settings.interface
     if not settings.enabled then return end
     -- `largerWorldMap` is now informational only; the combined-style world map
@@ -2469,6 +2567,12 @@ local function SetupLargerWorldMap()
         }
     end
 
+    -- Stock WorldMapFrame_OnShow branches into the mini windowed map when this
+    -- CVar is set (hiding the quest panes and swapping in the mini border art).
+    -- The combined window is the one canonical view — keep the flag off.
+    SafeSetCVar("miniWorldMap", 0)
+
+    InstallFullscreenScaleGuard()
     InstallMapsterLayoutHooks()
     InstallMapsterSelectionHooks()
     InstallStandaloneDetailPersistenceHooks()
@@ -2896,6 +3000,7 @@ function Interface.OnDisable()
         if type(WorldMapFrame_SetPOIMaxBounds) == "function" then
             pcall(WorldMapFrame_SetPOIMaxBounds)
         end
+        RestoreFullscreenScaleGuard()
         worldMapState.active = false
         worldMapState.movable = nil
         worldMapState.mouseEnabled = nil
@@ -3149,6 +3254,43 @@ function Interface.CreateSettings(parent)
     minimapInfo:SetJustifyH("LEFT")
     
     return yOffset - 60
+end
+
+-- ============================================================
+-- /dcmapdiag - dump world-map frame geometry (to diagnose layout without
+-- blind iteration). Reports the window + detail frame + fill scale + whether
+-- the fullscreen-map mod is present, so exact numbers can be reported back.
+-- ============================================================
+SLASH_DCMAPDIAG1 = "/dcmapdiag"
+SlashCmdList["DCMAPDIAG"] = function()
+    local function line(fmt, ...)
+        DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[dcmapdiag]|r " .. string.format(fmt, ...))
+    end
+    local function dump(name, f)
+        if not f then line("%s = nil", name); return end
+        local w = f.GetWidth and f:GetWidth() or -1
+        local h = f.GetHeight and f:GetHeight() or -1
+        local s = f.GetScale and f:GetScale() or -1
+        local shown = f.IsShown and f:IsShown()
+        local pt, rel, relpt, x, y = "-", "-", "-", 0, 0
+        if f.GetPoint and f:GetNumPoints() > 0 then
+            pt, rel, relpt, x, y = f:GetPoint(1)
+        end
+        line("%s: %.0fx%.0f scale=%.3f shown=%s pt=%s->%s(%s) off=%.0f,%.0f",
+            name, w, h, s, tostring(shown), tostring(pt), tostring(relpt),
+            rel and rel.GetName and (rel:GetName() or "?") or "-", x or 0, y or 0)
+    end
+    line("UIParent: %.0fx%.0f  size(cvar)=%s", UIParent:GetWidth(), UIParent:GetHeight(),
+        tostring(WORLDMAP_SETTINGS and WORLDMAP_SETTINGS.size))
+    dump("WorldMapFrame", WorldMapFrame)
+    dump("WorldMapDetailFrame", WorldMapDetailFrame)
+    dump("WorldMapButton", WorldMapButton)
+    dump("WorldMapPositioningGuide", WorldMapPositioningGuide)
+    dump("WorldMapDetailTile1", _G["WorldMapDetailTile1"])
+    dump("WorldMapDetailTile12", _G["WorldMapDetailTile12"])
+    line("SetupFullscreenScale global type = %s (guarded=%s)",
+        type(rawget(_G, "SetupFullscreenScale")), tostring(worldMapState.fullscreenScaleGuarded))
+    line("worldMapState.active = %s", tostring(worldMapState.active))
 end
 
 -- ============================================================

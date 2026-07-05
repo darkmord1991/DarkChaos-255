@@ -62,6 +62,16 @@ void AddSC_dc_giant_isles_fishing();          // GiantIsles/dc_giant_isles_fishi
 // --- Deepholm zone (map 646) ---
 void AddSC_deepholm();                         // Deepholm/zone_deepholm.cpp
 
+// --- Blackwing Descent raid (map 669) ---
+void AddSC_instance_blackwing_descent();       // BlackwingDescent/instance_blackwing_descent.cpp
+void AddSC_blackwing_descent();                // BlackwingDescent/blackwing_descent.cpp (misc/trash/Victor RP)
+void AddSC_boss_magmaw();                       // BlackwingDescent/boss_magmaw.cpp
+void AddSC_boss_omnotron_defense_system();      // BlackwingDescent/boss_omnotron_defense_system.cpp
+void AddSC_boss_maloriak();                     // BlackwingDescent/boss_maloriak.cpp
+void AddSC_boss_atramedes();                    // BlackwingDescent/boss_atramedes.cpp
+void AddSC_boss_chimaeron();                    // BlackwingDescent/boss_chimaeron.cpp
+void AddSC_boss_nefarians_end();                // BlackwingDescent/boss_nefarians_end.cpp
+
 // --- Mount Hyjal downport (map 750) ---
 void AddSC_dc_mount_hyjal_ported();           // MountHyjal/zone_mount_hyjal.cpp
 void AddSC_dc_molten_front();                 // MountHyjal/zone_molten_front.cpp
@@ -295,6 +305,16 @@ void AddDCScripts()
 
     LogSection("Deepholm Zone (map 646)");
     DC_LOAD(AddSC_deepholm);
+
+    LogSection("Blackwing Descent Raid (map 669)");
+    DC_LOAD(AddSC_instance_blackwing_descent);
+    DC_LOAD(AddSC_blackwing_descent);
+    DC_LOAD(AddSC_boss_magmaw);
+    DC_LOAD(AddSC_boss_omnotron_defense_system);
+    DC_LOAD(AddSC_boss_maloriak);
+    DC_LOAD(AddSC_boss_atramedes);
+    DC_LOAD(AddSC_boss_chimaeron);
+    DC_LOAD(AddSC_boss_nefarians_end);
 
     LogSection("Mount Hyjal Downport (map 750)");
     DC_LOAD(AddSC_dc_mount_hyjal_ported);

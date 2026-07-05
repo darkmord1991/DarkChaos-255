@@ -197,6 +197,7 @@ Modules\Tooltips_Settings.lua
 Modules\Automation.lua
 Modules\Chat.lua
 Modules\Interface.lua
+Modules\WorldMapWindow.lua
 Modules\GraphicsPlus.lua
 Modules\QuestRecurringLookup.lua
 Modules\MapAreaSizes.lua

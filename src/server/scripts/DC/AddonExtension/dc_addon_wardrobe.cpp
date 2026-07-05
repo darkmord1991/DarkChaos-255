@@ -2772,85 +2772,92 @@ namespace DCCollection
         LOG_INFO("module.dc", "[DCWardrobe] CMSG_GET_SAVED_OUTFITS from {} accountId={} offset={} limit={}",
             player->GetName(), accountId, offset, limit);
 
-        // Synchronous fetch (max 50 rows) to guarantee a response even if DB errors prevent async callbacks.
-        uint32 total = 0;
-        std::string const countSql = "SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
-        if (QueryResult countResult = CharacterDatabase.Query(countSql))
-            total = countResult->Fetch()[0].Get<uint32>();
-
-        uint32 pageOffset = offset;
-        if (pageOffset > total)
-            pageOffset = total;
-
+        // Async fetch. This used to run two synchronous CharacterDatabase.Query()
+        // calls on the world thread "to guarantee a response" - which froze the
+        // whole world tick whenever the DB was slow (observed: an 18s
+        // World.UpdateSessions stall pinned to exactly this handler). The
+        // discarded-callback problem that motivated the sync workaround is solved
+        // by DCAddon::EnqueueQueryCallback (globally ticked processor). The total
+        // rides along as a subquery column so one round-trip serves the page.
+        ObjectGuid playerGuid = player->GetGUID();
         std::string const pageSql =
-            "SELECT outfit_id, name, icon, items, source_author FROM dc_account_outfits "
+            "SELECT outfit_id, name, icon, items, source_author, "
+            "(SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId) + ") AS total "
+            "FROM dc_account_outfits "
             "WHERE account_id = " + std::to_string(accountId) +
-            " ORDER BY outfit_id LIMIT " + std::to_string(pageOffset) + ", " + std::to_string(limit);
+            " ORDER BY outfit_id LIMIT " + std::to_string(offset) + ", " + std::to_string(limit);
 
-        QueryResult result = CharacterDatabase.Query(pageSql);
-
-        std::stringstream ss;
-        ss << "{\"outfits\":[";
-
-        uint32 outfitCount = 0;
-        if (result)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(pageSql)
+            .WithCallback([playerGuid, offset, limit](QueryResult result)
         {
-            bool first = true;
-            do
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            std::stringstream ss;
+            ss << "{\"outfits\":[";
+
+            uint32 total = 0;
+            uint32 outfitCount = 0;
+            if (result)
             {
-                Field* f = result->Fetch();
-                uint32 id = f[0].Get<uint32>();
-                std::string name = f[1].Get<std::string>();
-                std::string icon = f[2].Get<std::string>();
-                std::string items = f[3].Get<std::string>();
-                std::string sourceAuthor = f[4].IsNull() ? "" : f[4].Get<std::string>();
-
-                // Simple JSON escape
-                auto escape = [](std::string s)
+                bool first = true;
+                do
                 {
-                    std::string res;
-                    for (char c : s)
+                    Field* f = result->Fetch();
+                    uint32 id = f[0].Get<uint32>();
+                    std::string name = f[1].Get<std::string>();
+                    std::string icon = f[2].Get<std::string>();
+                    std::string items = f[3].Get<std::string>();
+                    std::string sourceAuthor = f[4].IsNull() ? "" : f[4].Get<std::string>();
+                    total = f[5].Get<uint32>();
+
+                    // Simple JSON escape
+                    auto escape = [](std::string s)
                     {
-                        if (c == '"') res += "\\\"";
-                        else if (c == '\\') res += "\\\\";
-                        else res += c;
-                    }
-                    return res;
-                };
+                        std::string res;
+                        for (char c : s)
+                        {
+                            if (c == '"') res += "\\\"";
+                            else if (c == '\\') res += "\\\\";
+                            else res += c;
+                        }
+                        return res;
+                    };
 
-                items = NormalizeSavedOutfitItemsJson(items);
+                    items = NormalizeSavedOutfitItemsJson(items);
 
-                if (!first)
-                    ss << ",";
-                first = false;
+                    if (!first)
+                        ss << ",";
+                    first = false;
 
-                ss << "{\"id\":" << id
-                   << ",\"name\":\"" << escape(name) << "\""
-                   << ",\"icon\":\"" << escape(icon) << "\""
-                   << ",\"items\":" << items;
+                    ss << "{\"id\":" << id
+                       << ",\"name\":\"" << escape(name) << "\""
+                       << ",\"icon\":\"" << escape(icon) << "\""
+                       << ",\"items\":" << items;
 
-                if (!sourceAuthor.empty())
-                    ss << ",\"author\":\"" << escape(sourceAuthor) << "\"";
+                    if (!sourceAuthor.empty())
+                        ss << ",\"author\":\"" << escape(sourceAuthor) << "\"";
 
-                ss << "}";
-                outfitCount++;
+                    ss << "}";
+                    outfitCount++;
 
-            } while (result->NextRow());
-        }
+                } while (result->NextRow());
+            }
 
-        bool hasMore = (pageOffset + outfitCount) < total;
+            bool hasMore = (offset + outfitCount) < total;
 
-        ss << "],\"offset\":" << pageOffset
-           << ",\"limit\":" << limit
-           << ",\"total\":" << total
-           << ",\"hasMore\":" << (hasMore ? 1 : 0)
-           << "}";
+            ss << "],\"offset\":" << offset
+               << ",\"limit\":" << limit
+               << ",\"total\":" << total
+               << ",\"hasMore\":" << (hasMore ? 1 : 0)
+               << "}";
 
-        LOG_INFO("module.dc", "[DCWardrobe] Loaded {} saved outfits for account (Sync) offset={} limit={} total={} payloadBytes={}",
-            outfitCount, pageOffset, limit, total, ss.str().size());
+            LOG_INFO("module.dc", "[DCWardrobe] Loaded {} saved outfits for account (Async) offset={} limit={} total={} payloadBytes={}",
+                outfitCount, offset, limit, total, ss.str().size());
 
-        LOG_INFO("module.dc", "[DCWardrobe] Sending SMSG_SAVED_OUTFITS to {} (bytes={})", player->GetName(), ss.str().size());
-        SendSavedOutfitsPayload(player, ss.str());
+            SendSavedOutfitsPayload(player, ss.str());
+        }));
     }
     void HandleCopyCommunityOutfit(Player* player, const DCAddon::ParsedMessage& msg)
     {

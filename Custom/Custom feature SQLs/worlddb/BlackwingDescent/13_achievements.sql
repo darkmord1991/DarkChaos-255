@@ -1,0 +1,30 @@
+-- Blackwing Descent (map 669) — achievements (world-DB side)
+--
+-- Achievements are DBC-PRIMARY. The actual achievement rows + criteria live in the CSV DBC set and
+-- must be authored there (they compile to DBC and ship in the client patch to render in the UI):
+--   Custom\CSV DBC\Achievement_Category.csv : add 10011 'Blackwing Descent' (parent 10000 'Dark Chaos'),
+--        or reuse 10002 'Custom Dungeons'.
+--   Custom\CSV DBC\Achievement.csv          : block 11000-11005 (6 boss kills) + meta(s); Category=10011,
+--        Instance_Id=669, Supercedes links the 10<->25 pair.
+--   Custom\CSV DBC\Achievement_Criteria.csv : per boss-kill achievement, Type=0 (KILL_CREATURE),
+--        Asset_Id=boss entry (41570 / 42180 / 41378 / 41442 / 43296 / 41376), Quantity=1;
+--        use a high custom criteria-id band (900000+) to avoid stock 3.3.5 collision. The core
+--        auto-completes KILL_CREATURE criteria — no script needed for the plain boss kills.
+--   Feats (Rotten to the Core / Full of Sound and Fury / ...) = 0-criteria rows completed from a C++
+--        hook via player->CompletedAchievement(), precedent src\server\scripts\DC\Achievements\dc_achievements.cpp.
+--   NOTE: "Glory of the Cataclysm Raider" (mount) is a CROSS-raid meta (BWD + Bastion + Throne of the
+--        Four Winds) — author it only when the other T11 raids land; only BWD sub-achievements belong here.
+--
+-- The world-DB side below is OPTIONAL and keyed by the DBC ids authored above, so it is left as a
+-- template to fill once those ids exist:
+--
+--   -- Titles / mounts / mail on completion (only if an achievement grants one):
+--   -- INSERT INTO `achievement_reward` (`ID`, `TitleA`, `TitleH`, `ItemID`, `Sender`, `Subject`, `Text`, `MailTemplateID`)
+--   -- VALUES (<achievement_id>, 0, 0, 0, 0, '', '', 0);
+--
+--   -- Difficulty gating for the heroic (10H/25H) achievement criteria:
+--   -- INSERT INTO `achievement_criteria_data` (`criteria_id`, `type`, `value1`, `value2`, `ScriptName`)
+--   -- VALUES (<criteria_id>, 7 /*MAP_DIFFICULTY*/, <difficulty>, 0, '');
+--
+-- No non-templated world-DB rows are required for the basic boss-kill achievements once the DBC rows
+-- exist; this file is intentionally documentation-only until the DBC ids are assigned.

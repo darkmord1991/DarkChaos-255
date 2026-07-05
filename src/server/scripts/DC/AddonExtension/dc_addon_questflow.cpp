@@ -160,7 +160,11 @@ namespace
         msg.Send(player);
     }
 
-    void EvaluateZoneOffers(Player* player, uint32 zoneId, uint32 areaId)
+    // resend: bypass the once-per-session dedupe (still recording it) - used when
+    // the CLIENT asks for offers. The login/zone pushes can race the addon's
+    // handshake (the popup module isn't listening yet), so the addon re-requests
+    // once it is ready and eligible offers are sent again.
+    void EvaluateZoneOffers(Player* player, uint32 zoneId, uint32 areaId, bool resend = false)
     {
         if (!IsEnabled() || !player || !player->IsInWorld())
             return;
@@ -185,7 +189,7 @@ namespace
                 continue; // already in log / done
             if (!player->CanTakeQuest(quest, false) || !player->CanAddQuest(quest, false))
                 continue;
-            if (!MarkOfferedOnce(player, entry.questId))
+            if (!MarkOfferedOnce(player, entry.questId) && !resend)
                 continue; // already offered this session
 
             SendQuestOffer(player, quest);
@@ -265,6 +269,18 @@ namespace DCAddon
         player->RewardQuest(quest, choice, player, true);
     }
 
+    // Client-driven offer refresh. The addon sends this once its QPOP module is
+    // registered and listening (PLAYER_ENTERING_WORLD), closing the login race
+    // where the OnPlayerLogin push arrives before the addon loaded - the reason
+    // "welcome" quests never appeared on a fresh character's first world join.
+    static void HandleRequestOffers(Player* player, const ParsedMessage& /*msg*/)
+    {
+        if (!player || !IsEnabled() || !s_tablesLoaded)
+            return;
+
+        EvaluateZoneOffers(player, player->GetZoneId(), player->GetAreaId(), /*resend*/ true);
+    }
+
     void RegisterQuestFlowHandlers()
     {
         if (!IsEnabled())
@@ -272,6 +288,7 @@ namespace DCAddon
 
         DC_REGISTER_HANDLER(Module::QUEST_POPUPS, Opcode::QuestPopups::CMSG_ACCEPT_QUEST, HandleAcceptQuest);
         DC_REGISTER_HANDLER(Module::QUEST_POPUPS, Opcode::QuestPopups::CMSG_COMPLETE_QUEST, HandleCompleteQuest);
+        DC_REGISTER_HANDLER(Module::QUEST_POPUPS, Opcode::QuestPopups::CMSG_REQUEST_OFFERS, HandleRequestOffers);
     }
 }
 

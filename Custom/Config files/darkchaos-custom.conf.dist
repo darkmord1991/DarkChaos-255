@@ -317,6 +317,18 @@ DC.AddonProtocol.Logging.Enable = 1
 #
 DC.AddonProtocol.Graveyard.Enable = 1
 
+#
+#    DC.AddonProtocol.QuestPopups.Enable
+#        Description: Enable retail-style auto-quest popups (QPOP module).
+#                     Pushes "quest available" popups on zone entry (rows in
+#                     world table dc_quest_auto_offer) and "ready to turn in"
+#                     popups for remote-completable quests (QUEST_FLAGS_AUTOCOMPLETE
+#                     or rows in dc_quest_auto_complete). Accept/turn-in happens
+#                     remotely - no questgiver visit needed.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.QuestPopups.Enable = 1
+
 # -----------------------------------------------------------------------------
 # Message Handling Settings
 # -----------------------------------------------------------------------------

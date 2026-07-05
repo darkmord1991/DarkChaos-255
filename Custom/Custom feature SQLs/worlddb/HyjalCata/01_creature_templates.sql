@@ -21,3 +21,22 @@ INSERT IGNORE INTO acore_world.creature_template_addon (`entry`, `mount`, `emote
 SELECT `entry`+@OFF, `mount`, `emote`, `visibilityDistanceType`, `auras` FROM cata_world.creature_template_addon WHERE entry IN (SELECT DISTINCT c.id FROM cata_world.creature c WHERE (c.map=1 AND c.zoneId=616)) AND entry NOT IN (SELECT entry FROM acore_world.creature_template WHERE entry < @OFF);
 INSERT IGNORE INTO acore_world.creature_template_addon (`entry`, `mount`, `emote`, `visibilityDistanceType`, `auras`)
 SELECT `entry`+@OFF, `mount`, `emote`, `visibilityDistanceType`, `auras` FROM acore_world.creature_template_addon WHERE entry IN (SELECT DISTINCT c.id FROM cata_world.creature c WHERE (c.map=1 AND c.zoneId=616)) AND entry IN (SELECT entry FROM acore_world.creature_template WHERE entry < @OFF) AND entry < @OFF;
+
+-- creature_template_movement (cata_world has NO Ground/Swim/Flight/Rooted columns
+-- to clone from - only CreatureId/HoverInitiallyEnabled/Random - so this zone's
+-- flying NPCs previously got zero movement rows and fell to the ground. Bucket A:
+-- reuse the acore-stock original's movement row when one already exists (covers
+-- the "Stock-AC templates" branch above and any coincidental id overlap). Bucket
+-- B: derive Flight from nelt_world's real InhabitType column (bit 0x4 = air-
+-- capable) for everything else; InhabitType=3 is TrinityCore's ground-creature
+-- default and is deliberately excluded as an unreliable flight signal.
+INSERT IGNORE INTO acore_world.creature_template_movement (`CreatureId`, `Ground`, `Swim`, `Flight`, `Rooted`, `Chase`, `Random`, `InteractionPauseTimer`)
+SELECT cl.`entry`, sm.`Ground`, sm.`Swim`, sm.`Flight`, sm.`Rooted`, sm.`Chase`, sm.`Random`, sm.`InteractionPauseTimer`
+FROM acore_world.creature_template cl
+JOIN acore_world.creature_template_movement sm ON sm.CreatureId = cl.entry - @OFF
+WHERE cl.entry IN (SELECT entry+@OFF FROM cata_world.creature_template WHERE entry IN (SELECT DISTINCT c.id FROM cata_world.creature c WHERE (c.map=1 AND c.zoneId=616)));
+INSERT IGNORE INTO acore_world.creature_template_movement (`CreatureId`, `Ground`, `Swim`, `Flight`, `Rooted`, `Chase`, `Random`, `InteractionPauseTimer`)
+SELECT n.entry+@OFF, (n.InhabitType & 1), ((n.InhabitType >> 3) & 1), 1, 0, 0, 0, 0
+FROM nelt_world.creature_template n
+WHERE n.entry IN (SELECT DISTINCT c.id FROM cata_world.creature c WHERE (c.map=1 AND c.zoneId=616))
+  AND n.InhabitType IN (4,5,6,7);

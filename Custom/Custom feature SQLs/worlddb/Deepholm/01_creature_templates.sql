@@ -111,17 +111,28 @@ WHERE a.`entry` IN (SELECT DISTINCT `id` FROM `cata_world`.`creature` WHERE `map
   AND a.`entry` NOT IN (6491, 23837, 24110, 24288, 25670, 28332);
 
 -- ---------------------------------------------------------------------
--- creature_template_movement   (add Chase, absent in Cata)
+-- creature_template_movement
+-- NOTE: `cata_world`.`creature_template_movement` only has
+-- (CreatureId, HoverInitiallyEnabled, Random) in this TDB build - it has
+-- NO Ground/Swim/Flight/Rooted columns, so a straight copy from it (the
+-- previous version of this block) silently produced flightless rows for
+-- every airborne NPC in the zone. Derive the real value from
+-- `nelt_world`.`creature_template`.`InhabitType` instead (bit 0x4 = air-
+-- capable). InhabitType=3 is TrinityCore's ground-creature default and is
+-- deliberately excluded as an unreliable flight signal (see
+-- Custom/Custom feature SQLs/worlddb/ReviewFixes/review_flying_npcs.sql
+-- for the equivalent retroactive fix applied to maps 750/751).
 -- ---------------------------------------------------------------------
 DELETE FROM `creature_template_movement`
 WHERE `CreatureId` IN (SELECT DISTINCT `id` FROM `cata_world`.`creature` WHERE `map` = 646)
   AND `CreatureId` NOT IN (6491, 23837, 24110, 24288, 25670, 28332);
 
 INSERT INTO `creature_template_movement` (`CreatureId`, `Ground`, `Swim`, `Flight`, `Rooted`, `Chase`, `Random`, `InteractionPauseTimer`)
-SELECT m.`CreatureId`, m.`Ground`, m.`Swim`, m.`Flight`, m.`Rooted`, 0, m.`Random`, m.`InteractionPauseTimer`
-FROM `cata_world`.`creature_template_movement` m
-WHERE m.`CreatureId` IN (SELECT DISTINCT `id` FROM `cata_world`.`creature` WHERE `map` = 646)
-  AND m.`CreatureId` NOT IN (6491, 23837, 24110, 24288, 25670, 28332);
+SELECT n.`entry`, (n.`InhabitType` & 1), ((n.`InhabitType` >> 3) & 1), 1, 0, 0, 0, 0
+FROM `nelt_world`.`creature_template` n
+WHERE n.`entry` IN (SELECT DISTINCT `id` FROM `cata_world`.`creature` WHERE `map` = 646)
+  AND n.`entry` NOT IN (6491, 23837, 24110, 24288, 25670, 28332)
+  AND n.`InhabitType` IN (4, 5, 6, 7);
 
 -- ---------------------------------------------------------------------
 -- creature_equip_template   (identical schema -- straight copy; 0 missing items)
