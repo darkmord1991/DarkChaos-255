@@ -292,7 +292,8 @@ namespace
                 !player->GetSession())
                 return;
 
-            EnsurePoolTableExists();
+            // Pool table is created once at startup/config load (WorldScript
+            // below); re-issuing blocking DDL per login stalls the world thread.
 
             uint32 accountId = player->GetSession()->GetAccountId();
             bool highestWins = IsHighestWinsEnabled();
@@ -355,8 +356,6 @@ namespace
             FactionEntry const* factionEntry = sFactionStore.LookupEntry(factionId);
             if (!ShouldTrackFaction(factionEntry))
                 return true;
-
-            EnsurePoolTableExists();
 
             standing = ClampStanding(standing);
 

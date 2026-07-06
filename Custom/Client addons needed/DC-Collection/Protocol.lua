@@ -5371,11 +5371,15 @@ function DC:HandleItemLearned(data)
     
     -- Add to local collection
     self:AddToCollection(data.type, data.entryId)
-    
-    -- Show notification
+
+    -- Show notification through the toast pipeline: it coalesces bursts
+    -- (account-wide sync) instead of printing one chat line per item.
     local typeName = self:GetTypeNameFromId(data.type)
-    self:Print(string.format("|cff00ff00New %s added to your collection!|r", typeName or "item"))
-    
+    local notifyDef = self:GetDefinition(typeName, data.entryId)
+    self:ShowToast(typeName or "default",
+        (notifyDef and notifyDef.name) or string.format("New %s collected", typeName or "item"),
+        notifyDef and notifyDef.icon)
+
     -- Add to recent additions for My Collection overview
     self.recentAdditions = self.recentAdditions or {}
     local def = self:GetDefinition(typeName, data.entryId)

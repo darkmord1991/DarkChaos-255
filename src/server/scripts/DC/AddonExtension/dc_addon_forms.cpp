@@ -232,22 +232,28 @@ namespace Forms
 
     static void LoadPicksFor(ObjectGuidLow guid)
     {
-        std::map<uint8, uint32> picks;
-        if (QueryResult result = CharacterDatabase.Query(
+        // Async load so the login handler never blocks the world thread; the
+        // pick cache is mutex-guarded, so the continuation just swaps it in.
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT form, model FROM dc_character_shapeshift_form WHERE guid = {}", guid))
+            .WithCallback([guid](QueryResult result)
         {
-            do
+            std::map<uint8, uint32> picks;
+            if (result)
             {
-                Field* fields = result->Fetch();
-                picks[fields[0].Get<uint8>()] = fields[1].Get<uint32>();
-            } while (result->NextRow());
-        }
+                do
+                {
+                    Field* fields = result->Fetch();
+                    picks[fields[0].Get<uint8>()] = fields[1].Get<uint32>();
+                } while (result->NextRow());
+            }
 
-        std::unique_lock<std::shared_mutex> lock(s_picksMutex);
-        if (picks.empty())
-            s_picks.erase(guid);
-        else
-            s_picks[guid] = std::move(picks);
+            std::unique_lock<std::shared_mutex> lock(s_picksMutex);
+            if (picks.empty())
+                s_picks.erase(guid);
+            else
+                s_picks[guid] = std::move(picks);
+        }));
     }
 
     static void UnloadPicksFor(ObjectGuidLow guid)

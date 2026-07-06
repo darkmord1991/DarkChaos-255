@@ -24,6 +24,9 @@ local TOAST_HEIGHT = 60
 local TOAST_DURATION = 5
 local TOAST_FADE_OUT = 1
 local MAX_TOASTS = 3
+-- Bursts (e.g. account-wide sync at login) fold everything beyond this many
+-- queued toasts into a single "...and N more" summary toast.
+local MAX_QUEUED_TOASTS = 5
 
 -- ============================================================================
 -- TOAST QUEUE
@@ -155,6 +158,25 @@ local typeTitles = {
 }
 
 function ToastFrame:QueueToast(collType, itemName, icon, subtitle)
+    -- Cap the queue: during sync bursts everything past the cap becomes one
+    -- summary toast instead of minutes of serial popups.
+    if #toastQueue >= MAX_QUEUED_TOASTS then
+        local last = toastQueue[#toastQueue]
+        if last and last.isSummary then
+            last.count = last.count + 1
+            last.itemName = string.format("...and %d more collected", last.count)
+        else
+            table.insert(toastQueue, {
+                collType = "default",
+                itemName = "...and 1 more collected",
+                subtitle = "Open the Collection UI to review recent additions.",
+                isSummary = true,
+                count = 1,
+            })
+        end
+        return
+    end
+
     table.insert(toastQueue, {
         collType = collType,
         itemName = itemName,
@@ -265,11 +287,29 @@ end
 -- PUBLIC API
 -- ============================================================================
 
+-- Chat fallback burst guard: at most a handful of lines per window, then one
+-- summary line (account-wide sync at login can announce hundreds of items).
+local chatBurst = { windowStart = 0, count = 0, summarized = false }
+local CHAT_BURST_WINDOW = 10
+local CHAT_BURST_MAX_LINES = 5
+
 function DC:ShowToast(collType, itemName, icon, subtitle)
     if not self:GetSetting("showNewItemToast") then
-        -- Fallback to chat message
-        local typeStr = L["TAB_" .. string.upper(collType)] or collType
-        self:Print(string.format("|cff00ff00New %s:|r %s", typeStr, itemName))
+        local now = GetTime()
+        if now - chatBurst.windowStart > CHAT_BURST_WINDOW then
+            chatBurst.windowStart = now
+            chatBurst.count = 0
+            chatBurst.summarized = false
+        end
+
+        chatBurst.count = chatBurst.count + 1
+        if chatBurst.count <= CHAT_BURST_MAX_LINES then
+            local typeStr = L["TAB_" .. string.upper(collType)] or collType
+            self:Print(string.format("|cff00ff00New %s:|r %s", typeStr, itemName))
+        elseif not chatBurst.summarized then
+            chatBurst.summarized = true
+            self:Print("More items collected - open the Collection UI to review recent additions.")
+        end
         return
     end
 

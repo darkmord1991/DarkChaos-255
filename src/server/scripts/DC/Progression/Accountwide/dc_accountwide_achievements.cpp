@@ -345,7 +345,8 @@ namespace
                 return;
             }
 
-            EnsurePoolTableExists();
+            // Pool table is created once at startup/config load (WorldScript
+            // below); re-issuing blocking DDL per login stalls the world thread.
 
             uint32 accountId = player->GetSession()->GetAccountId();
             bool debug = IsDebugEnabled();
@@ -392,8 +393,6 @@ namespace
 
             if (!ShouldTrackAchievement(achievement))
                 return;
-
-            EnsurePoolTableExists();
 
             uint32 accountId = player->GetSession()->GetAccountId();
             AchievementPool& pool = GetAccountPool(accountId);

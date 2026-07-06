@@ -59,6 +59,9 @@ local defaults = {
     showCollectionNotifications = true,
     showWishlistAlerts = true,
     playSounds = true,
+    -- New-item notifications use the toast frame (burst-coalesced) rather than
+    -- one chat line per item; see UI/ToastFrame.lua.
+    showNewItemToast = true,
     
     -- Filter settings
     defaultFilter = "all",

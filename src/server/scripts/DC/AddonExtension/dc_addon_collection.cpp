@@ -38,6 +38,7 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include "Bag.h"
 #include "ScriptMgr.h"
 #include "DBCStores.h"
+#include "ObjectAccessor.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include <string>
@@ -1292,6 +1293,11 @@ namespace DCCollection
         // By default these are saved on logout, which can cause a noticeable delay.
         // When enabled, we flush achievement progress once the accountwide sync completes.
         constexpr const char* SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE = "DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete";
+
+        // When enabled, a chat line is sent after the accountwide login sync taught
+        // spells or applied titles. Off by default: the sync only changes anything on
+        // the first login of a character, and the addon surfaces new items itself.
+        constexpr const char* SYNC_TO_CHARACTER_ANNOUNCE = "DCCollection.Accountwide.SyncToCharacterOnLogin.Announce";
 
         // Optional maintenance: rebuild dc_pet_definitions from local data (item_template + Spell/SummonProperties DBC).
         // This avoids relying on external sources and fixes incorrect placeholder pet_spell_id values.
@@ -2791,10 +2797,22 @@ namespace DCCollection
         std::string const petTypeFilter =
             BuildItemsCollectionTypeWhereClause("collection_type", CollectionType::PET);
 
+        // Historical state (already-known spells, owned items, legacy tables)
+        // cannot change while a character is offline, and everything gained
+        // while online is captured live (OnPlayerLearnSpell, unlock/purchase
+        // handlers). The blocking-query scans therefore only need to run once
+        // per character per world session; on plain relogs only the in-memory
+        // title scan below runs, so switching characters no longer stalls the
+        // world thread on MySQL round-trips.
+        static std::unordered_set<ObjectGuid::LowType> fullImportDoneThisSession;
+        bool const fullImport =
+            fullImportDoneThisSession.insert(player->GetGUID().GetCounter()).second;
+
         auto trans = CharacterDatabase.BeginTransaction();
 
         // Migrate older PET collection rows that used learned spellIds instead of companion itemIds.
         // If entry_id is not a valid item_template entry, attempt to map it to the teaching item.
+        if (fullImport)
         {
             QueryResult pets = CharacterDatabase.Query(
                 "SELECT {} FROM dc_collection_items "
@@ -2828,69 +2846,79 @@ namespace DCCollection
         }
 
         // Import learned mount + companion pet spells into account-wide collections.
-        PlayerSpellMap const& spells = player->GetSpellMap();
-        for (auto const& spell : spells)
+        if (fullImport)
         {
-            if (!spell.second || spell.second->State == PLAYERSPELL_REMOVED)
-                continue;
-
-            uint32 spellId = spell.first;
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
-            if (!spellInfo)
-                continue;
-
-            bool isMount = false;
-            uint32 companionSummonSpellId = 0;
-
-            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            PlayerSpellMap const& spells = player->GetSpellMap();
+            for (auto const& spell : spells)
             {
-                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA &&
-                    (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED ||
-                     spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED))
-                {
-                    isMount = true;
-                    break;
-                }
-            }
-
-            // Companion pets (non-combat minipets) are reliably detected via SummonProperties (MINIPET)
-            // and/or via teaching spells that LEARN the summon spell.
-            companionSummonSpellId = ResolveCompanionSummonSpellFromSpell(spellId);
-
-            if (isMount)
-            {
-                trans->Append(
-                    "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-                    "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                    itemsEntryCol, accountId, typeMountValue, spellId);
-            }
-            else if (companionSummonSpellId)
-            {
-                uint32 itemId = FindCompanionItemIdForSpell(companionSummonSpellId);
-                if (!itemId)
+                if (!spell.second || spell.second->State == PLAYERSPELL_REMOVED)
                     continue;
 
-                trans->Append(
-                    "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-                    "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                    itemsEntryCol, accountId, typePetValue, itemId);
+                uint32 spellId = spell.first;
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                if (!spellInfo)
+                    continue;
+
+                bool isMount = false;
+                uint32 companionSummonSpellId = 0;
+
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                {
+                    if (spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA &&
+                        (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED ||
+                         spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED))
+                    {
+                        isMount = true;
+                        break;
+                    }
+                }
+
+                // Companion pets (non-combat minipets) are reliably detected via SummonProperties (MINIPET)
+                // and/or via teaching spells that LEARN the summon spell.
+                companionSummonSpellId = ResolveCompanionSummonSpellFromSpell(spellId);
+
+                if (isMount)
+                {
+                    trans->Append(
+                        "INSERT IGNORE INTO dc_collection_items "
+                        "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                        "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
+                        itemsEntryCol, accountId, typeMountValue, spellId);
+                }
+                else if (companionSummonSpellId)
+                {
+                    uint32 itemId = FindCompanionItemIdForSpell(companionSummonSpellId);
+                    if (!itemId)
+                        continue;
+
+                    trans->Append(
+                        "INSERT IGNORE INTO dc_collection_items "
+                        "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                        "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
+                        itemsEntryCol, accountId, typePetValue, itemId);
+                }
             }
         }
 
         // Import heirlooms already owned by the character into account-wide collections.
         // This relies on the custom world table dc_heirloom_definitions (item_id list).
-        if (WorldTableExists("dc_heirloom_definitions"))
+        if (fullImport && WorldTableExists("dc_heirloom_definitions"))
         {
-            std::unordered_set<uint32> heirloomDefs;
-            QueryResult defRes = WorldDatabase.Query("SELECT item_id FROM dc_heirloom_definitions");
-            if (defRes)
+            // World data is static at runtime, so the definition list is loaded
+            // once per world session instead of once per login.
+            static std::unordered_set<uint32> heirloomDefs;
+            static bool heirloomDefsLoaded = false;
+            if (!heirloomDefsLoaded)
             {
-                do
+                heirloomDefsLoaded = true;
+                QueryResult defRes = WorldDatabase.Query("SELECT item_id FROM dc_heirloom_definitions");
+                if (defRes)
                 {
-                    heirloomDefs.insert(defRes->Fetch()[0].Get<uint32>());
-                } while (defRes->NextRow());
+                    do
+                    {
+                        heirloomDefs.insert(defRes->Fetch()[0].Get<uint32>());
+                    } while (defRes->NextRow());
+                }
             }
 
             if (!heirloomDefs.empty())
@@ -2976,23 +3004,26 @@ namespace DCCollection
                     "VALUES ({}, {}, {}, 'IMPORT_CHOSEN_TITLE', 1, NOW())",
                     itemsEntryCol, accountId, typeTitleValue, chosenTitle->ID);
 
-        auto legacyTitles = LoadLegacyTitleCollection(accountId);
-        for (uint32 legacyTitleKey : legacyTitles)
+        if (fullImport)
         {
-            CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(legacyTitleKey);
-            if (!titleEntry)
-                continue;
+            auto legacyTitles = LoadLegacyTitleCollection(accountId);
+            for (uint32 legacyTitleKey : legacyTitles)
+            {
+                CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(legacyTitleKey);
+                if (!titleEntry)
+                    continue;
 
-            trans->Append(
-                "INSERT IGNORE INTO dc_collection_items "
-                "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-                "VALUES ({}, {}, {}, 'IMPORT_LEGACY_TITLE', 1, NOW())",
-                itemsEntryCol, accountId, typeTitleValue, titleEntry->ID);
+                trans->Append(
+                    "INSERT IGNORE INTO dc_collection_items "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                    "VALUES ({}, {}, {}, 'IMPORT_LEGACY_TITLE', 1, NOW())",
+                    itemsEntryCol, accountId, typeTitleValue, titleEntry->ID);
+            }
         }
 
         // Import legacy transmog appearances for old characters by scanning owned items.
         // This is intentionally a one-time import per account.
-        if (ShouldRunTransmogLegacyImport(accountId))
+        if (fullImport && ShouldRunTransmogLegacyImport(accountId))
         {
             bool includeBank = sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK, true);
             bool requireSoulbound = sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_REQUIRE_SOULBOUND, false);
@@ -3065,6 +3096,147 @@ namespace DCCollection
         CharacterDatabase.CommitTransaction(trans);
     }
 
+    // Teach the given spells in timed batches on the player's event queue.
+    // Runs on the world thread; ticks re-arm via player->m_Events, so they stop
+    // automatically when the player leaves the world.
+    void TeachCollectedSpellsInBatches(Player* player, std::vector<uint32> spellsToTeach,
+        uint32 titlesApplied, uint32 batchSize, uint32 batchDelayMs)
+    {
+        // Dedupe (mount + pet spell collisions can happen in custom content)
+        std::sort(spellsToTeach.begin(), spellsToTeach.end());
+        spellsToTeach.erase(std::unique(spellsToTeach.begin(), spellsToTeach.end()), spellsToTeach.end());
+
+        uint32 const effectiveBatchSize = std::max<uint32>(1u, batchSize);
+        uint32 const effectiveBatchDelayMs = std::max<uint32>(1u, batchDelayMs);
+
+        auto spellsPtr = std::make_shared<std::vector<uint32>>(std::move(spellsToTeach));
+        auto indexPtr = std::make_shared<size_t>(0);
+        auto tickPtr = std::make_shared<std::function<void()>>();
+        auto taughtTotalPtr = std::make_shared<uint32>(0);
+
+        *tickPtr = [player, spellsPtr, indexPtr, taughtTotalPtr, effectiveBatchSize, effectiveBatchDelayMs, tickPtr, titlesApplied]()
+        {
+            if (!player || !player->GetSession())
+            {
+                // Break shared_ptr self-capture cycle on early exit.
+                *tickPtr = std::function<void()>();
+                return;
+            }
+
+            size_t idx = *indexPtr;
+            size_t const total = spellsPtr->size();
+            uint32 taughtThisTick = 0;
+            std::vector<uint32> taughtSpellIds;
+            taughtSpellIds.reserve(effectiveBatchSize);
+
+            while (idx < total && taughtThisTick < effectiveBatchSize)
+            {
+                uint32 spellId = (*spellsPtr)[idx++];
+                if (!spellId)
+                    continue;
+
+                if (player->HasSpell(spellId))
+                    continue;
+
+                if (!player->IsSpellFitByClassAndRace(spellId))
+                    continue;
+
+                // Add silently (no "You have learned..." spam).
+                player->addSpell(spellId, SPEC_MASK_ALL, true, false, false);
+                ++taughtThisTick;
+                ++(*taughtTotalPtr);
+                taughtSpellIds.push_back(spellId);
+            }
+
+            // Persist taught spells now, so logout doesn't need to flush a huge spell delta.
+            // Also mark them as UNCHANGED to avoid SaveToDB doing redundant INSERTs.
+            if (!taughtSpellIds.empty())
+            {
+                auto trans = CharacterDatabase.BeginTransaction();
+
+                std::ostringstream sql;
+                sql << "INSERT INTO character_spell (guid, spell, specMask) VALUES ";
+
+                ObjectGuid::LowType const guidLow = player->GetGUID().GetCounter();
+                bool first = true;
+                for (uint32 taughtSpellId : taughtSpellIds)
+                {
+                    if (!taughtSpellId)
+                        continue;
+
+                    // Ensure it actually got added.
+                    if (!player->HasSpell(taughtSpellId))
+                        continue;
+
+                    if (!first)
+                        sql << ",";
+                    first = false;
+                    sql << "(" << guidLow << "," << taughtSpellId << "," << uint32(SPEC_MASK_ALL) << ")";
+
+                    // Mark as unchanged to prevent redundant saving later.
+                    PlayerSpellMap& spellMap = const_cast<PlayerSpellMap&>(player->GetSpellMap());
+                    auto it = spellMap.find(taughtSpellId);
+                    if (it != spellMap.end() && it->second && (it->second->State == PLAYERSPELL_NEW || it->second->State == PLAYERSPELL_CHANGED))
+                        it->second->State = PLAYERSPELL_UNCHANGED;
+                }
+
+                // Ensure specMask is updated if the row already exists.
+                sql << " ON DUPLICATE KEY UPDATE specMask = VALUES(specMask)";
+
+                if (!first)
+                    trans->Append(sql.str());
+
+                CharacterDatabase.CommitTransaction(trans);
+            }
+
+            *indexPtr = idx;
+
+            if (idx < total)
+            {
+                player->m_Events.AddEventAtOffset(*tickPtr, std::chrono::milliseconds(effectiveBatchDelayMs));
+            }
+            else
+            {
+                // If we taught many spells at once, AchievementMgr may have accumulated a lot of changed criteria.
+                // Flushing those changes here can significantly reduce the time spent during logout SaveToDB.
+                if (*taughtTotalPtr > 0 && sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE, true))
+                {
+                    if (AchievementMgr* achievementMgr = player->GetAchievementMgr())
+                    {
+                        auto const t0 = std::chrono::steady_clock::now();
+
+                        auto trans = CharacterDatabase.BeginTransaction();
+                        achievementMgr->SaveToDB(trans);
+                        CharacterDatabase.CommitTransaction(trans);
+
+                        auto const dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+                        if (dtMs >= 250)
+                            LOG_INFO("module.dc", "DC-Collection: Flushed achievement progress after accountwide sync in {} ms.", dtMs);
+                    }
+                }
+
+                if (*taughtTotalPtr > 0 &&
+                    sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ANNOUNCE, false))
+                {
+                    if (WorldSession* session = player->GetSession())
+                    {
+                        ChatHandler handler(session);
+                        handler.PSendSysMessage(
+                            "DC-Collection: Accountwide sync complete ({} spells taught, {} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
+                            *taughtTotalPtr,
+                            titlesApplied);
+                    }
+                }
+
+                // Break shared_ptr self-capture cycle once work is complete.
+                *tickPtr = std::function<void()>();
+            }
+        };
+
+        // Kick off immediately (still outside the login handler).
+        (*tickPtr)();
+    }
+
     void SyncAccountWideCollectionsToCharacter(Player* player)
     {
         if (!player || !player->GetSession())
@@ -3074,52 +3246,100 @@ namespace DCCollection
             return;
 
         // NOTE: This sync can be large for accounts with many mounts/pets.
-        // Doing it synchronously inside the login handler risks blocking the login handshake.
-        // We therefore (1) defer the DB scan slightly, and (2) teach spells in batches.
+        // The account collection is loaded asynchronously (the world thread only
+        // runs the continuation, ticked by the DC addon world script), then
+        // spells are taught in batches. A relog therefore never blocks the world
+        // thread on MySQL round-trips.
 
         auto const delayMs = sConfigMgr->GetOption<uint32>(Config::SYNC_TO_CHARACTER_DELAY_MS, 1000);
         auto const batchSize = sConfigMgr->GetOption<uint32>(Config::SYNC_TO_CHARACTER_BATCH_SIZE, 200);
         auto const batchDelayMs = sConfigMgr->GetOption<uint32>(Config::SYNC_TO_CHARACTER_BATCH_DELAY_MS, 250);
 
-        player->m_Events.AddEventAtOffset([player, batchSize, batchDelayMs]()
+        uint32 accountId = GetAccountId(player);
+        if (!accountId)
+            return;
+
+        std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return;
+
+        ObjectGuid const playerGuid = player->GetGUID();
+
+        player->m_Events.AddEventAtOffset([playerGuid, accountId, itemsEntryCol, batchSize, batchDelayMs]()
         {
-            if (!player || !player->GetSession())
-                return;
+            std::string sql = Acore::StringFormat(
+                "SELECT collection_type, {} FROM dc_collection_items "
+                "WHERE account_id = {} AND unlocked = 1",
+                itemsEntryCol, accountId);
 
-            uint32 accountId = GetAccountId(player);
-            if (!accountId)
-                return;
-
-            std::vector<uint32> spellsToTeach;
-            spellsToTeach.reserve(256);
-
-            // Titles are cheap to apply and don't need batching.
-            uint32 titlesApplied = 0;
-
-            bool canSyncMounts = player->GetLevel() >= 10 || player->GetSkillValue(SKILL_RIDING) > 0;
-
-            auto considerSpell = [&](uint32 spellId)
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                .WithCallback([playerGuid, batchSize, batchDelayMs](QueryResult result)
             {
-                if (!spellId)
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
                     return;
-                if (player->HasSpell(spellId))
-                    return;
-                if (!player->IsSpellFitByClassAndRace(spellId))
-                    return;
-                spellsToTeach.push_back(spellId);
-            };
 
-            // Mounts
-            if (canSyncMounts)
-            {
-                auto mounts = LoadPlayerCollection(accountId, CollectionType::MOUNT);
-                for (uint32 spellId : mounts)
-                    considerSpell(spellId);
-            }
+                std::vector<uint32> mounts;
+                std::vector<uint32> pets;
+                std::vector<uint32> titles;
 
-            // Pets
-            {
-                auto pets = LoadPlayerCollection(accountId, CollectionType::PET);
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        CollectionType type;
+                        if (!TryParseOwnedCollectionType(&fields[0], type))
+                            continue;
+
+                        uint32 entryId = fields[1].Get<uint32>();
+                        if (!entryId)
+                            continue;
+
+                        switch (type)
+                        {
+                            case CollectionType::MOUNT:
+                                mounts.push_back(entryId);
+                                break;
+                            case CollectionType::PET:
+                                pets.push_back(entryId);
+                                break;
+                            case CollectionType::TITLE:
+                                titles.push_back(entryId);
+                                break;
+                            default:
+                                break;
+                        }
+                    } while (result->NextRow());
+                }
+
+                std::vector<uint32> spellsToTeach;
+                spellsToTeach.reserve(256);
+
+                // Titles are cheap to apply and don't need batching.
+                uint32 titlesApplied = 0;
+
+                bool canSyncMounts = player->GetLevel() >= 10 || player->GetSkillValue(SKILL_RIDING) > 0;
+
+                auto considerSpell = [&](uint32 spellId)
+                {
+                    if (!spellId)
+                        return;
+                    if (player->HasSpell(spellId))
+                        return;
+                    if (!player->IsSpellFitByClassAndRace(spellId))
+                        return;
+                    spellsToTeach.push_back(spellId);
+                };
+
+                // Mounts
+                if (canSyncMounts)
+                {
+                    for (uint32 spellId : mounts)
+                        considerSpell(spellId);
+                }
+
+                // Pets
                 for (uint32 entryId : pets)
                 {
                     // Stored as teaching itemId (preferred) or a spellId (legacy).
@@ -3131,11 +3351,10 @@ namespace DCCollection
 
                     considerSpell(spellId);
                 }
-            }
 
-            // Titles
-            {
-                auto titles = LoadPlayerCollection(accountId, CollectionType::TITLE);
+                // Titles. Legacy dc_title_collection rows are merged into
+                // dc_collection_items by ImportExistingCollections, so no
+                // extra legacy-table query is needed here.
                 for (uint32 entryId : titles)
                 {
                     CharTitlesEntry const* titleEntry =
@@ -3149,154 +3368,27 @@ namespace DCCollection
                     player->SetTitle(titleEntry, false);
                     ++titlesApplied;
                 }
-            }
 
-            if (spellsToTeach.empty())
-            {
-                // No spells to teach; still report titles applied if any
-                if (titlesApplied > 0)
+                if (spellsToTeach.empty())
                 {
-                    if (WorldSession* session = player->GetSession())
+                    // No spells to teach; still report titles applied if any
+                    if (titlesApplied > 0 &&
+                        sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ANNOUNCE, false))
                     {
-                        ChatHandler handler(session);
-                        handler.PSendSysMessage(
-                            "DC-Collection: Accountwide sync complete ({} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
-                            titlesApplied);
+                        if (WorldSession* session = player->GetSession())
+                        {
+                            ChatHandler handler(session);
+                            handler.PSendSysMessage(
+                                "DC-Collection: Accountwide sync complete ({} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
+                                titlesApplied);
+                        }
                     }
-                }
-                return;
-            }
-
-            // Dedupe (mount + pet spell collisions can happen in custom content)
-            std::sort(spellsToTeach.begin(), spellsToTeach.end());
-            spellsToTeach.erase(std::unique(spellsToTeach.begin(), spellsToTeach.end()), spellsToTeach.end());
-
-            uint32 const effectiveBatchSize = std::max<uint32>(1u, batchSize);
-            uint32 const effectiveBatchDelayMs = std::max<uint32>(1u, batchDelayMs);
-
-            auto spellsPtr = std::make_shared<std::vector<uint32>>(std::move(spellsToTeach));
-            auto indexPtr = std::make_shared<size_t>(0);
-            auto tickPtr = std::make_shared<std::function<void()>>();
-            auto taughtTotalPtr = std::make_shared<uint32>(0);
-
-            *tickPtr = [player, spellsPtr, indexPtr, taughtTotalPtr, effectiveBatchSize, effectiveBatchDelayMs, tickPtr, titlesApplied]()
-            {
-                if (!player || !player->GetSession())
-                {
-                    // Break shared_ptr self-capture cycle on early exit.
-                    *tickPtr = std::function<void()>();
                     return;
                 }
 
-                size_t idx = *indexPtr;
-                size_t const total = spellsPtr->size();
-                uint32 taughtThisTick = 0;
-                std::vector<uint32> taughtSpellIds;
-                taughtSpellIds.reserve(effectiveBatchSize);
-
-                while (idx < total && taughtThisTick < effectiveBatchSize)
-                {
-                    uint32 spellId = (*spellsPtr)[idx++];
-                    if (!spellId)
-                        continue;
-
-                    if (player->HasSpell(spellId))
-                        continue;
-
-                    if (!player->IsSpellFitByClassAndRace(spellId))
-                        continue;
-
-                    // Add silently (no "You have learned..." spam).
-                    player->addSpell(spellId, SPEC_MASK_ALL, true, false, false);
-                    ++taughtThisTick;
-                    ++(*taughtTotalPtr);
-                    taughtSpellIds.push_back(spellId);
-                }
-
-                // Persist taught spells now, so logout doesn't need to flush a huge spell delta.
-                // Also mark them as UNCHANGED to avoid SaveToDB doing redundant INSERTs.
-                if (!taughtSpellIds.empty())
-                {
-                    auto trans = CharacterDatabase.BeginTransaction();
-
-                    std::ostringstream sql;
-                    sql << "INSERT INTO character_spell (guid, spell, specMask) VALUES ";
-
-                    ObjectGuid::LowType const guidLow = player->GetGUID().GetCounter();
-                    bool first = true;
-                    for (uint32 taughtSpellId : taughtSpellIds)
-                    {
-                        if (!taughtSpellId)
-                            continue;
-
-                        // Ensure it actually got added.
-                        if (!player->HasSpell(taughtSpellId))
-                            continue;
-
-                        if (!first)
-                            sql << ",";
-                        first = false;
-                        sql << "(" << guidLow << "," << taughtSpellId << "," << uint32(SPEC_MASK_ALL) << ")";
-
-                        // Mark as unchanged to prevent redundant saving later.
-                        PlayerSpellMap& spellMap = const_cast<PlayerSpellMap&>(player->GetSpellMap());
-                        auto it = spellMap.find(taughtSpellId);
-                        if (it != spellMap.end() && it->second && (it->second->State == PLAYERSPELL_NEW || it->second->State == PLAYERSPELL_CHANGED))
-                            it->second->State = PLAYERSPELL_UNCHANGED;
-                    }
-
-                    // Ensure specMask is updated if the row already exists.
-                    sql << " ON DUPLICATE KEY UPDATE specMask = VALUES(specMask)";
-
-                    if (!first)
-                        trans->Append(sql.str());
-
-                    CharacterDatabase.CommitTransaction(trans);
-                }
-
-                *indexPtr = idx;
-
-                if (idx < total)
-                {
-                    player->m_Events.AddEventAtOffset(*tickPtr, std::chrono::milliseconds(effectiveBatchDelayMs));
-                }
-                else
-                {
-                    // If we taught many spells at once, AchievementMgr may have accumulated a lot of changed criteria.
-                    // Flushing those changes here can significantly reduce the time spent during logout SaveToDB.
-                    if (*taughtTotalPtr > 0 && sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE, true))
-                    {
-                        if (AchievementMgr* achievementMgr = player->GetAchievementMgr())
-                        {
-                            auto const t0 = std::chrono::steady_clock::now();
-
-                            auto trans = CharacterDatabase.BeginTransaction();
-                            achievementMgr->SaveToDB(trans);
-                            CharacterDatabase.CommitTransaction(trans);
-
-                            auto const dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
-                            if (dtMs >= 250)
-                                LOG_INFO("module.dc", "DC-Collection: Flushed achievement progress after accountwide sync in {} ms.", dtMs);
-                        }
-                    }
-
-                    if (WorldSession* session = player->GetSession())
-                    {
-                        ChatHandler handler(session);
-                        handler.PSendSysMessage(
-                            "DC-Collection: Accountwide sync complete ({} spells taught, {} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
-                            *taughtTotalPtr,
-                            titlesApplied);
-                    }
-
-                    // Break shared_ptr self-capture cycle once work is complete.
-                    *tickPtr = std::function<void()>();
-                }
-            };
-
-            // Kick off immediately (still outside the login handler).
-            (*tickPtr)();
-
+                TeachCollectedSpellsInBatches(player, std::move(spellsToTeach),
+                    titlesApplied, batchSize, batchDelayMs);
+            }));
         }, std::chrono::milliseconds(delayMs));
     }
 

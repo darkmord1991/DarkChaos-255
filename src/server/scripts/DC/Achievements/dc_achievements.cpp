@@ -20,15 +20,18 @@
 #include "Config.h"
 #include "Chat.h"
 #include "../Progression/Prestige/dc_prestige_api.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include "AchievementMgr.h"
 #include "Map.h"
 #include "Battleground.h"
 #include "DatabaseEnv.h"
+#include "ObjectAccessor.h"
 #include "WorldSessionMgr.h"
 #include "SpellMgr.h"
 #include "SpellInfo.h"
 #include "ChatCommand.h"
 #include "Log.h"
+#include <atomic>
 
 // Achievement IDs
 enum DCAchievements
@@ -334,18 +337,43 @@ public:
         // Check for server first prestige
         if (prestigeLevel >= 1)
         {
+            // The claim can only ever be won once; remember the winner
+            // in-process so relogs don't re-issue queries for a settled claim.
+            static std::atomic<uint32> s_firstPrestigeClaimedBy{0};
+
+            uint32 const guidLow = player->GetGUID().GetCounter();
+            uint32 const cachedWinner = s_firstPrestigeClaimedBy.load();
+            if (cachedWinner != 0 &&
+                (cachedWinner != guidLow || player->HasAchieved(ACHIEVEMENT_FIRST_PRESTIGE)))
+                return;
+
             // Atomic claim using UNIQUE(category)
             CharacterDatabase.Execute(
                 "INSERT IGNORE INTO dc_server_firsts (category, player_guid, player_name, achievement_time) VALUES ('first_prestige', {}, '{}', UNIX_TIMESTAMP())",
-                player->GetGUID().GetCounter(), player->GetName()
+                guidLow, player->GetName()
             );
 
-            QueryResult claimed = CharacterDatabase.Query(
-                "SELECT player_guid FROM dc_server_firsts WHERE category = 'first_prestige' LIMIT 1"
-            );
-
-            if (claimed && claimed->Fetch()[0].Get<uint32>() == player->GetGUID().GetCounter())
+            // Resolve the claim asynchronously so the login handler never
+            // blocks the world thread; the continuation runs on the world
+            // thread and re-resolves the player by guid.
+            ObjectGuid const playerGuid = player->GetGUID();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(
+                "SELECT player_guid FROM dc_server_firsts WHERE category = 'first_prestige' LIMIT 1")
+                .WithCallback([playerGuid, debug](QueryResult claimed)
             {
+                if (!claimed)
+                    return;
+
+                uint32 const winner = claimed->Fetch()[0].Get<uint32>();
+                s_firstPrestigeClaimedBy.store(winner);
+
+                if (winner != playerGuid.GetCounter())
+                    return;
+
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || player->HasAchieved(ACHIEVEMENT_FIRST_PRESTIGE))
+                    return;
+
                 AchievementEntry const* achievement = sAchievementStore.LookupEntry(ACHIEVEMENT_FIRST_PRESTIGE);
                 if (achievement)
                 {
@@ -359,7 +387,7 @@ public:
                     );
                     sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, announcement);
                 }
-            }
+            }));
         }
     }
 };
@@ -396,21 +424,41 @@ public:
                 ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Mount Master (100+)");
         }
 
-        // Check pet count
-        uint32 petCount = GetPetCount(player);
-        if (debug >= 2)
-            ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pets: {}", petCount);
-        if (petCount >= 50)
+        // Check pet count. The COUNT(*) runs asynchronously so the login
+        // handler never blocks the world thread, and is skipped entirely once
+        // both tiers are earned.
+        if (!player->HasAchieved(ACHIEVEMENT_PET_COLLECTOR) ||
+            !player->HasAchieved(ACHIEVEMENT_PET_MASTER))
         {
-            CompleteAchievement(player, ACHIEVEMENT_PET_COLLECTOR);
-            if (debug >= 2)
-                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pet Collector (50+)");
-        }
-        if (petCount >= 100)
-        {
-            CompleteAchievement(player, ACHIEVEMENT_PET_MASTER);
-            if (debug >= 2)
-                ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pet Master (100+)");
+            ObjectGuid const playerGuid = player->GetGUID();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "SELECT COUNT(*) FROM character_pet WHERE owner = {}",
+                playerGuid.GetCounter()))
+                .WithCallback([this, playerGuid, debug](QueryResult result)
+            {
+                if (!result)
+                    return;
+
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                uint32 petCount = static_cast<uint32>(result->Fetch()[0].Get<uint64>());
+                if (debug >= 2)
+                    ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pets: {}", petCount);
+                if (petCount >= 50)
+                {
+                    CompleteAchievement(player, ACHIEVEMENT_PET_COLLECTOR);
+                    if (debug >= 2)
+                        ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pet Collector (50+)");
+                }
+                if (petCount >= 100)
+                {
+                    CompleteAchievement(player, ACHIEVEMENT_PET_MASTER);
+                    if (debug >= 2)
+                        ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Pet Master (100+)");
+                }
+            }));
         }
 
         // Check title count
@@ -461,18 +509,6 @@ private:
         return count;
     }
 
-    uint32 GetPetCount(Player* player)
-    {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM character_pet WHERE owner = {}",
-            player->GetGUID().GetCounter()
-        );
-
-        if (!result)
-            return 0;
-
-        return result->Fetch()[0].Get<uint64>();
-    }
 
     uint32 GetTitleCount(Player* player)
     {

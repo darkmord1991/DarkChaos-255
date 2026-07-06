@@ -2445,10 +2445,12 @@ function DC:_JsonVerifyMismatch(str, reason)
 end
 
 -- Native (DLL) JSON decode rollout. Mode is one of:
---   "off"    - use the Lua parser only (default; zero risk)
+--   "off"    - use the Lua parser only (zero risk)
 --   "verify" - parse with BOTH, deep-compare, log mismatches, return the Lua
 --              result (safe). Use this on a test account to validate.
---   "on"     - use the native (C++) parser, fall back to Lua if it declines.
+--   "on"     - use the native (C++) parser, fall back to Lua if it declines
+--              (default: full-collection payloads parse in native code instead
+--              of hitching a frame in the interpreted Lua parser at login).
 -- Toggle with: /dc jsonnative off|verify|on
 function DC:DecodeJSON(str)
     if not str or str == "" then return nil end
@@ -2461,7 +2463,7 @@ function DC:DecodeJSON(str)
 
     local mode = self._jsonNativeMode
     if mode == nil then
-        mode = (type(self.GetSetting) == "function" and self:GetSetting("jsonNativeMode")) or "off"
+        mode = (type(self.GetSetting) == "function" and self:GetSetting("jsonNativeMode")) or "on"
         self._jsonNativeMode = mode
     end
 

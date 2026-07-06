@@ -13,9 +13,11 @@
 #include "Player.h"
 #include "QuestDef.h"
 #include "WorldSession.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 
 class npc_dungeon_quest_daily_weekly : public PlayerScript
 {
@@ -38,12 +40,23 @@ public:
 private:
     void CheckDailyQuestReset(Player* player)
     {
-        // Query player's daily quest progress (use UNIX_TIMESTAMP for consistency)
-        std::string sql = Acore::StringFormat("SELECT daily_quest_entry, completed_today, UNIX_TIMESTAMP(last_completed) FROM dc_player_daily_quest_progress WHERE guid = {}", player->GetGUID().GetCounter());
-        QueryResult result = CharacterDatabase.Query(sql.c_str());
+        // Query player's daily quest progress (use UNIX_TIMESTAMP for consistency).
+        // Loaded asynchronously so the login handler never blocks the world
+        // thread; the continuation runs on the world thread and re-resolves the
+        // player by guid.
+        ObjectGuid const guid = player->GetGUID();
+        std::string sql = Acore::StringFormat("SELECT daily_quest_entry, completed_today, UNIX_TIMESTAMP(last_completed) FROM dc_player_daily_quest_progress WHERE guid = {}", guid.GetCounter());
 
-        if (result)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([this, guid](QueryResult result)
         {
+            if (!result)
+                return;
+
+            Player* player = ObjectAccessor::FindPlayer(guid);
+            if (!player || !player->GetSession())
+                return;
+
             do {
                 Field* fields = result->Fetch();
                 uint32 dailyQuestId = fields[0].Get<uint32>();
@@ -72,17 +85,25 @@ private:
                         ResetDailyQuest(player, dailyQuestId);
                 }
             } while (result->NextRow());
-        }
+        }));
     }
 
     void CheckWeeklyQuestReset(Player* player)
     {
-        // Query player's weekly quest progress
-        std::string sql = Acore::StringFormat("SELECT weekly_quest_entry, completed_this_week, UNIX_TIMESTAMP(week_reset_date) FROM dc_player_weekly_quest_progress WHERE guid = {}", player->GetGUID().GetCounter());
-        QueryResult result = CharacterDatabase.Query(sql.c_str());
+        // Query player's weekly quest progress (async; see CheckDailyQuestReset).
+        ObjectGuid const guid = player->GetGUID();
+        std::string sql = Acore::StringFormat("SELECT weekly_quest_entry, completed_this_week, UNIX_TIMESTAMP(week_reset_date) FROM dc_player_weekly_quest_progress WHERE guid = {}", guid.GetCounter());
 
-        if (result)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([this, guid](QueryResult result)
         {
+            if (!result)
+                return;
+
+            Player* player = ObjectAccessor::FindPlayer(guid);
+            if (!player || !player->GetSession())
+                return;
+
             do {
                 Field* fields = result->Fetch();
                 uint32 weeklyQuestId = fields[0].Get<uint32>();
@@ -97,7 +118,7 @@ private:
                         ResetWeeklyQuest(player, weeklyQuestId);
                 }
             } while (result->NextRow());
-        }
+        }));
     }
 
     void ResetDailyQuest(Player* player, uint32 questId)

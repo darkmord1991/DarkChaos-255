@@ -453,10 +453,19 @@ end
 
 function addon:OnEvent(event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
+        -- PLAYER_ENTERING_WORLD also fires on every zone change/teleport, and
+        -- settings only need to be (re)loaded once per login session: throttle
+        -- the full reload + server round-trip to at most once per 60s.
+        local now = GetTime()
+        if self._lastEnteringWorldSync and (now - self._lastEnteringWorldSync) < 60 then
+            return
+        end
+        self._lastEnteringWorldSync = now
+
         -- Load settings and request from server
         self:LoadSettings()
         self:UpdateUI()
-        
+
         -- Try to register DC handlers (DC may have loaded after us)
         if not _handlersRegistered then
             local DC = rawget(_G, "DCAddonProtocol")
@@ -466,7 +475,7 @@ function addon:OnEvent(event, ...)
                 addon:Print("Connected to server via DCAddonProtocol", true)
             end
         end
-        
+
         DelayedCall(2, function()
             addon:RequestSettings()
         end)

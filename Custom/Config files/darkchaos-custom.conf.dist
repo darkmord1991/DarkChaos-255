@@ -1654,6 +1654,16 @@ DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize = 200
 #
 DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs = 250
 
+#
+#    DCCollection.Accountwide.SyncToCharacterOnLogin.Announce
+#        Description: Send a chat summary after the login sync taught spells or
+#                     applied titles. The sync only changes anything on a
+#                     character's first login, and the addon shows new items
+#                     itself, so this is off by default to keep logins quiet.
+#        Default:     0 (Disabled)
+#
+DCCollection.Accountwide.SyncToCharacterOnLogin.Announce = 0
+
 # -----------------------------------------------------------------------------
 # Mount Settings
 # -----------------------------------------------------------------------------

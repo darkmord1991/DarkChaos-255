@@ -439,7 +439,8 @@ namespace
             if (!IsEnabled() || !IsSyncOnLoginEnabled())
                 return;
 
-            EnsureFriendPoolTableExists();
+            // Pool table is created once at startup/config load (WorldScript
+            // below); re-issuing blocking DDL per login stalls the world thread.
             SyncPoolToCharacter(player);
         }
 
@@ -448,7 +449,6 @@ namespace
             if (!IsEnabled() || !IsSaveOnLogoutEnabled())
                 return;
 
-            EnsureFriendPoolTableExists();
             SavePoolFromCharacter(player);
         }
 
@@ -469,7 +469,6 @@ namespace
             if (!lowGuid)
                 return;
 
-            EnsureFriendPoolTableExists();
             CharacterDatabase.Execute(
                 "DELETE FROM `{}` WHERE `friend_guid` = {}",
                 TABLE_NAME,

@@ -773,20 +773,31 @@ public:
                 "|cff00ff00[DarkChaos]|r Phased Duels enabled - duels occur in isolated phases!");
         }
 
-        // Load statistics from database
+        // Load statistics from database asynchronously so the login handler
+        // never blocks the world thread on a MySQL round-trip.
         if (sConfig.trackStatistics)
         {
-            QueryResult result = CharacterDatabase.Query(
+            ObjectGuid const playerGuid = player->GetGUID();
+            std::string sql = Acore::StringFormat(
                 "SELECT wins, losses, draws, total_damage_dealt, total_damage_taken, "
                 "longest_duel_seconds, shortest_win_seconds, last_duel_time, last_opponent_guid "
                 "FROM dc_duel_statistics WHERE player_guid = {}",
-                player->GetGUID().GetCounter());
+                playerGuid.GetCounter());
 
-            if (result)
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                .WithCallback([playerGuid](QueryResult result)
             {
+                if (!result)
+                    return;
+
+                // Only populate the cache while the player is still online;
+                // logout erases the entry and this must not resurrect it.
+                if (!ObjectAccessor::FindPlayer(playerGuid))
+                    return;
+
                 Field* fields = result->Fetch();
                 std::lock_guard<std::mutex> lock(sDuelMutex);
-                DuelStats& stats = sPlayerDuelStats[player->GetGUID()];
+                DuelStats& stats = sPlayerDuelStats[playerGuid];
                 stats.wins = fields[0].Get<uint32>();
                 stats.losses = fields[1].Get<uint32>();
                 stats.draws = fields[2].Get<uint32>();
@@ -796,7 +807,7 @@ public:
                 stats.shortestWinSeconds = fields[6].Get<uint32>();
                 stats.lastDuelTime = fields[7].Get<uint64>();
                 stats.lastOpponent = ObjectGuid::Create<HighGuid::Player>(fields[8].Get<uint32>());
-            }
+            }));
         }
     }
 

@@ -32,6 +32,7 @@
 #include "Spell.h"
 #include "PathGenerator.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 
 #include <vector>
 #include <list>
@@ -1565,59 +1566,88 @@ public:
             "SELECT {} FROM dc_aoeloot_preferences WHERE player_guid = {}",
             DCUtils::JoinStringList(columns), player->GetGUID().GetCounter());
 
-        QueryResult result = CharacterDatabase.Query(query);
+        // Initialize session data
+        PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
+        data = PlayerAoELootData();
 
-        if (result)
+        // Defaults above are usable immediately; the saved preferences are
+        // loaded asynchronously so a relog never blocks the world thread on
+        // MySQL round-trips. The continuation runs on the world thread.
+        ObjectGuid const guid = player->GetGUID();
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(query)
+            .WithCallback([guid, schema](QueryResult result)
         {
-            Field* f = result->Fetch();
-            uint8 idx = 0;
-            prefs.aoeLootEnabled = f[idx++].Get<bool>();
-            prefs.minQuality = f[idx++].Get<uint8>();
-            if (prefs.minQuality > 6) prefs.minQuality = 6;
-            prefs.autoSkin = f[idx++].Get<bool>();
-            prefs.smartLootEnabled = f[idx++].Get<bool>();
+            auto prefIt = sPlayerPrefs.find(guid);
+            if (prefIt == sPlayerPrefs.end())
+                return; // logged out before the load finished
 
-            if (schema.hasShowMessages)
-                prefs.showMessages = f[idx++].Get<bool>();
+            PlayerLootPreferences& prefs = prefIt->second;
 
-            if (schema.hasAutoVendorPoor)
-                prefs.autoVendorPoor = f[idx++].Get<bool>();
-
-            if (schema.hasIgnoredItems)
-                ParseIgnoredItems(f[idx++].Get<std::string>(), prefs.ignoredItemIds);
-
-            if (schema.hasGoldOnly)
-                prefs.goldOnly = f[idx++].Get<bool>();
-
-            if (schema.hasLootRange)
+            if (result)
             {
-                prefs.lootRange = f[idx++].Get<float>();
-                if (prefs.lootRange < 5.0f || prefs.lootRange > 100.0f)
-                    prefs.lootRange = sConfig.range;
+                Field* f = result->Fetch();
+                uint8 idx = 0;
+                prefs.aoeLootEnabled = f[idx++].Get<bool>();
+                prefs.minQuality = f[idx++].Get<uint8>();
+                if (prefs.minQuality > 6) prefs.minQuality = 6;
+                prefs.autoSkin = f[idx++].Get<bool>();
+                prefs.smartLootEnabled = f[idx++].Get<bool>();
+
+                if (schema.hasShowMessages)
+                    prefs.showMessages = f[idx++].Get<bool>();
+
+                if (schema.hasAutoVendorPoor)
+                    prefs.autoVendorPoor = f[idx++].Get<bool>();
+
+                if (schema.hasIgnoredItems)
+                    ParseIgnoredItems(f[idx++].Get<std::string>(), prefs.ignoredItemIds);
+
+                if (schema.hasGoldOnly)
+                    prefs.goldOnly = f[idx++].Get<bool>();
+
+                if (schema.hasLootRange)
+                {
+                    prefs.lootRange = f[idx++].Get<float>();
+                    if (prefs.lootRange < 5.0f || prefs.lootRange > 100.0f)
+                        prefs.lootRange = sConfig.range;
+                }
+
+                if (schema.hasActivePreset)
+                {
+                    prefs.activePreset = f[idx++].Get<uint8>();
+                    if (prefs.activePreset > LOOT_PRESET_CUSTOM)
+                        prefs.activePreset = 0;
+                }
             }
 
-            if (schema.hasActivePreset)
-            {
-                prefs.activePreset = f[idx++].Get<uint8>();
-                if (prefs.activePreset > LOOT_PRESET_CUSTOM)
-                    prefs.activePreset = 0;
-            }
-        }
+            if (Player* player = ObjectAccessor::FindPlayer(guid))
+                if (ShouldShowMessage(player))
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled.");
+        }));
 
-        // Load detailed stats
+        // Load detailed stats (async for the same reason).
         if (sConfig.trackDetailedStats)
         {
-            QueryResult statsResult = CharacterDatabase.Query(
+            std::string statsQuery = Acore::StringFormat(
                 "SELECT total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades, "
                 "quality_poor, quality_common, quality_uncommon, quality_rare, quality_epic, quality_legendary, "
                 "filtered_poor, filtered_common, filtered_uncommon, filtered_rare, filtered_epic, filtered_legendary, "
                 "mythic_bonus_items "
                 "FROM dc_aoeloot_detailed_stats WHERE player_guid = {}",
-                player->GetGUID().GetCounter());
-            if (statsResult)
+                guid.GetCounter());
+
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(statsQuery)
+                .WithCallback([guid](QueryResult statsResult)
             {
+                if (!statsResult)
+                    return;
+
+                if (sPlayerPrefs.find(guid) == sPlayerPrefs.end())
+                    return; // logged out before the load finished
+
                 Field* f = statsResult->Fetch();
-                DetailedLootStats& stats = sDetailedStats[player->GetGUID()];
+                DetailedLootStats& stats = sDetailedStats[guid];
                 stats.totalItemsLooted = f[0].Get<uint32>();
                 stats.totalGoldLooted = f[1].Get<uint32>();
                 stats.poorItemsVendored = f[2].Get<uint32>();
@@ -1639,15 +1669,8 @@ public:
                 stats.filteredEpic = f[18].Get<uint32>();
                 stats.filteredLegendary = f[19].Get<uint32>();
                 stats.mythicBonusItems = f[20].Get<uint32>();
-            }
+            }));
         }
-
-        // Initialize session data
-        PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
-        data = PlayerAoELootData();
-
-        if (ShouldShowMessage(player))
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled.");
     }
 
     void OnPlayerLogout(Player* player) override
