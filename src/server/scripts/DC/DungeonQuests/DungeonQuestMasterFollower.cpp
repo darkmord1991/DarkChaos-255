@@ -40,11 +40,11 @@ using namespace DungeonQuestHelpers;
 static std::unordered_map<ObjectGuid, ObjectGuid> sQuestMasterFollowers;
 static std::unordered_map<uint32, uint32> sDungeonDisplayIdCache;
 
-// Helper: Get the appropriate quest master entry for a map
-// Always returns Universal Quest Master (700100)
+// Helper: Get the appropriate quest master entry for a map.
+// Returns 0 (no follower) when the map has no enabled dc_dungeon_npc_mapping row — maps like
+// Blackwing Descent (669) opt out of the dungeon-quest system and run their own questgiver.
 static uint32 GetQuestMasterEntryForMap(uint32 mapId)
 {
-    // Check if this dungeon has quest support (for logging purposes)
     QueryResult result = WorldDatabase.Query(
         "SELECT 1 FROM dc_dungeon_npc_mapping WHERE map_id = {} AND enabled = 1 LIMIT 1",
         mapId
@@ -52,10 +52,10 @@ static uint32 GetQuestMasterEntryForMap(uint32 mapId)
 
     if (!result)
     {
-        LOG_WARN("scripts.dc", "DungeonQuestMaster: No mapping found for map ID {}", mapId);
+        LOG_DEBUG("scripts.dc", "DungeonQuestMaster: No mapping for map ID {} - no follower", mapId);
+        return 0;
     }
 
-    // Always return Universal Quest Master
     return NPC_UNIVERSAL_QUEST_MASTER;
 }
 
@@ -85,6 +85,8 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         return nullptr;
 
     uint32 entry = GetQuestMasterEntryForMap(player->GetMapId());
+    if (!entry)
+        return nullptr;
 
     // Check if one is already nearby (handling grid unload/reload edge cases)
     if (Creature* existing = player->FindNearestCreature(entry, 50.0f))
