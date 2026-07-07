@@ -656,15 +656,8 @@ struct boss_nefarians_end : public BossAI
                     break;
                 }
                 case EVENT_LAND_PHASE_ONE:
-                    if (GameObject* elevator = GetElevator())
-                    {
-                        if (TransportBase* transport = (TransportBase*)nullptr)
-                        {
-                            ; // [3.3.5] transport passenger unsupported
-                            ; // [3.3.5] transport passenger unsupported
-                        }
-                    }
-
+                    // [3.3.5] TC bound Nefarian as an elevator transport passenger here; no scripted
+                    // passenger API in this fork, so he lands at the absolute position below instead.
                     me->GetMotionMaster()->MoveLand(POINT_LAND, NefarianElevatorLandPhaseOnePosition);
                     break;
                 case EVENT_LANDED:
@@ -1122,15 +1115,8 @@ struct npc_nefarians_end_animated_bone_warrior : public ScriptedAI
         DoCastSelf(SPELL_FULL_POWER_NO_REGEN);
         DoCastSelf(SPELL_ANIMATE_BONES);
 
-        if (GameObject* elevator = _instance->GetGameObject(DATA_BLACKWING_ELEVATOR_ONYXIA))
-        {
-            if (TransportBase* transport = (TransportBase*)nullptr)
-            {
-                ; // [3.3.5] transport passenger unsupported
-                ; // [3.3.5] transport passenger unsupported
-            }
-        }
-
+        // [3.3.5] TC re-attached this bone warrior to the elevator transport on respawn; no
+        // scripted passenger API in this fork, so it respawns at its absolute spawn position instead.
         me->UpdatePositionData();
 
         me->m_Events.AddEventAtOffset([this]()

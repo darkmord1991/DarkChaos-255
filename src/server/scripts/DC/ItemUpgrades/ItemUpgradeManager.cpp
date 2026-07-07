@@ -11,6 +11,7 @@
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeMechanics.h"
 #include "Bag.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DatabaseEnv.h"
@@ -27,6 +28,7 @@
 #include "WorldSessionMgr.h"
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <sstream>
 #include <cmath>
 
@@ -760,6 +762,120 @@ namespace DarkChaos
                 // Cache and return
                 item_state_cache.Set(item_guid, state);
                 return item_state_cache.Get(item_guid);
+            }
+
+            void PrefetchItemStatesAsync(std::vector<std::pair<uint32, uint32>> items, uint32 owner_guid) override
+            {
+                std::vector<std::pair<uint32, uint32>> missing;
+                missing.reserve(items.size());
+                for (auto const& [itemGuid, itemEntry] : items)
+                    if (itemGuid && !item_state_cache.Get(itemGuid))
+                        missing.emplace_back(itemGuid, itemEntry);
+
+                if (missing.empty())
+                    return;
+
+                std::ostringstream guidList;
+                for (size_t i = 0; i < missing.size(); ++i)
+                {
+                    if (i)
+                        guidList << ",";
+                    guidList << missing[i].first;
+                }
+
+                std::string sql = Acore::StringFormat(
+                    "SELECT item_guid, player_guid, base_item_name, tier_id, upgrade_level, tokens_invested, essence_invested, "
+                    "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
+                    "FROM {} WHERE item_guid IN ({})",
+                    ITEM_UPGRADES_TABLE, guidList.str());
+
+                // Continuation runs on the world thread (DC addon query
+                // processor). Known entry/owner are pre-filled so
+                // EnsureStateMetadata never falls back to its blocking
+                // item_instance lookup.
+                DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                    .WithCallback([this, missing, owner_guid](QueryResult result)
+                {
+                    std::unordered_map<uint32, uint32> entryByGuid;
+                    for (auto const& [itemGuid, itemEntry] : missing)
+                        entryByGuid[itemGuid] = itemEntry;
+
+                    auto prefill = [&](ItemUpgradeState& state)
+                    {
+                        if (state.player_guid == 0)
+                            state.player_guid = owner_guid;
+
+                        auto it = entryByGuid.find(state.item_guid);
+                        uint32 itemEntry = it != entryByGuid.end() ? it->second : 0;
+                        if (state.item_entry == 0)
+                            state.item_entry = itemEntry;
+
+                        if ((state.tier_id == 0 || state.tier_id == TIER_INVALID) && itemEntry)
+                        {
+                            uint8 mappedTier = GetItemTier(itemEntry);
+                            state.tier_id = mappedTier == TIER_INVALID ? TIER_LEVELING : mappedTier;
+                        }
+
+                        if (itemEntry)
+                        {
+                            if (const ItemTemplate* itemTemplate = sObjectMgr->GetItemTemplate(itemEntry))
+                            {
+                                if (state.base_item_level == 0)
+                                    state.base_item_level = itemTemplate->ItemLevel;
+                                if (state.base_item_name.empty() && !itemTemplate->Name1.empty())
+                                    state.base_item_name = itemTemplate->Name1;
+                            }
+                        }
+                    };
+
+                    std::unordered_set<uint32> seen;
+                    if (result)
+                    {
+                        do
+                        {
+                            Field* fields = result->Fetch();
+                            ItemUpgradeState state;
+                            state.item_guid = fields[0].Get<uint32>();
+                            state.player_guid = fields[1].Get<uint32>();
+                            state.base_item_name = fields[2].Get<std::string>();
+                            state.tier_id = fields[3].Get<uint8>();
+                            state.upgrade_level = fields[4].Get<uint8>();
+                            state.tokens_invested = fields[5].Get<uint32>();
+                            state.essence_invested = fields[6].Get<uint32>();
+                            state.stat_multiplier = fields[7].Get<float>();
+                            state.first_upgraded_at = fields[8].Get<time_t>();
+                            state.last_upgraded_at = fields[9].Get<time_t>();
+                            state.season = fields[10].Get<uint32>();
+                            state.has_persisted_state = true;
+
+                            seen.insert(state.item_guid);
+                            prefill(state);
+                            EnsureStateMetadata(state, state.player_guid);
+
+                            // Don't clobber a state that appeared meanwhile
+                            // (e.g. an upgrade committed since the query).
+                            if (!item_state_cache.Get(state.item_guid))
+                                item_state_cache.Set(state.item_guid, state);
+                        } while (result->NextRow());
+                    }
+
+                    for (auto const& [itemGuid, itemEntry] : missing)
+                    {
+                        (void)itemEntry;
+                        if (seen.count(itemGuid) || item_state_cache.Get(itemGuid))
+                            continue;
+
+                        ItemUpgradeState state;
+                        state.item_guid = itemGuid;
+                        state.has_persisted_state = false;
+                        prefill(state);
+                        EnsureStateMetadata(state);
+                        if (state.tier_id == 0 || state.tier_id == TIER_INVALID)
+                            state.tier_id = TIER_LEVELING;
+
+                        item_state_cache.Set(itemGuid, state);
+                    }
+                }));
             }
 
             bool BuildTooltipSnapshot(Item* item,

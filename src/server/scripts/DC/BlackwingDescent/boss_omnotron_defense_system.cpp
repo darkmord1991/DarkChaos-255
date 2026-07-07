@@ -914,12 +914,6 @@ struct npc_omnotron_arcanotron : public ScriptedAI
         }
     }
 
-    void OnSpellCastFinished(SpellInfo const* spell, SpellFinishReason /*reason*/)
-    {
-        if (spell->Id == SPELL_ARCANE_ANNIHILATION)
-            ;
-    }
-
     void SpellHitTarget(Unit* /*target*/, SpellInfo const* spell) override
     {
         if (spell->Id == SPELL_ARCANE_ANNIHILATION)

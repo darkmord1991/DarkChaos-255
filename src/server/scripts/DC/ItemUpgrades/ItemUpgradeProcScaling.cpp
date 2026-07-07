@@ -32,10 +32,12 @@
 #include "ItemUpgradeProcScaling.h"
 #include "Log.h"
 #include "Chat.h"
+#include "ObjectAccessor.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 #include <sstream>
 #include <iomanip>
 
@@ -451,12 +453,39 @@ namespace ItemUpgrade
         {
             if (!player) return;
 
-            // Check if player has any upgraded items with procs
-            std::string info = GetPlayerProcScalingInfo(player);
-            if (info.find("bonus to procs") != std::string::npos)
+            UpgradeManager* mgr = GetUpgradeManager();
+            if (!mgr)
+                return;
+
+            // Warm the per-item upgrade-state cache with ONE async query. A
+            // cold cache costs a blocking SELECT (plus an item_instance
+            // fallback) per equipped item — previously paid right here at
+            // login, or worse, mid-combat on the first scaled proc.
+            std::vector<std::pair<uint32, uint32>> equipped;
+            equipped.reserve(EQUIPMENT_SLOT_END);
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                    equipped.emplace_back(item->GetGUID().GetCounter(), item->GetEntry());
+
+            if (equipped.empty())
+                return;
+
+            mgr->PrefetchItemStatesAsync(std::move(equipped), player->GetGUID().GetCounter());
+
+            // Defer the informational hint until the prefetch has landed so
+            // the scan below is served entirely from cache.
+            player->m_Events.AddEventAtOffset([guid = player->GetGUID()]()
             {
-                ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Item Upgrade]|r Your item procs are currently scaled by your upgrades. Type .upgrade mech procs to see details.");
-            }
+                Player* player = ObjectAccessor::FindPlayer(guid);
+                if (!player || !player->GetSession())
+                    return;
+
+                std::string info = GetPlayerProcScalingInfo(player);
+                if (info.find("bonus to procs") != std::string::npos)
+                {
+                    ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Item Upgrade]|r Your item procs are currently scaled by your upgrades. Type .upgrade mech procs to see details.");
+                }
+            }, std::chrono::milliseconds(3000));
         }
     };
 

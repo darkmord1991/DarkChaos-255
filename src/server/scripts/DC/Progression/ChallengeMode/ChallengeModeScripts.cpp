@@ -9,6 +9,8 @@
 #include "dc_challenge_modes.h"
 #include "dc_challenge_mode_database.h"
 #include "../../AddonExtension/dc_addon_death_markers.h"
+#include "../../AddonExtension/dc_addon_namespace.h"
+#include "ObjectAccessor.h"
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "Chat.h"
@@ -126,33 +128,53 @@ class ChallengeModes_LoginPrevention : public PlayerScript
 public:
     ChallengeModes_LoginPrevention() : PlayerScript("ChallengeModes_LoginPrevention") { }
 
+    static void NotifyAndKickDeceased(Player* player)
+    {
+        // Show death information
+        ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");
+        ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000   HARDCORE CHARACTER - DECEASED   |r");
+        ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");
+        ChatHandler(player->GetSession()).PSendSysMessage("This character died in Hardcore mode and is permanently locked.");
+        ChatHandler(player->GetSession()).PSendSysMessage("You cannot log in with this character anymore.");
+        ChatHandler(player->GetSession()).PSendSysMessage("Please create a new character or choose another one.");
+        ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");
+
+        // Kick player after showing message
+        player->GetSession()->KickPlayer("Hardcore character is deceased");
+    }
+
     void OnPlayerLogin(Player* player) override
     {
         if (!player)
             return;
 
-        // Check if character died in hardcore mode (legacy flag) OR is DB-locked (authoritative)
-        bool isDeadFlag = player->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1;
-        bool isDbLocked = ChallengeModeDatabase::IsCharacterLocked(player->GetGUID());
-
-        if (isDbLocked && !isDeadFlag)
-            player->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
-
-        if (isDeadFlag || isDbLocked)
+        // The legacy player-setting flag lives in memory and is synced from the
+        // DB lock below, so once set it kicks with no DB round-trip.
+        if (player->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
         {
-            // Show death information
-            ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");
-            ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000   HARDCORE CHARACTER - DECEASED   |r");
-            ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");
-            ChatHandler(player->GetSession()).PSendSysMessage("This character died in Hardcore mode and is permanently locked.");
-            ChatHandler(player->GetSession()).PSendSysMessage("You cannot log in with this character anymore.");
-            ChatHandler(player->GetSession()).PSendSysMessage("Please create a new character or choose another one.");
-            ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");
-
-            // Kick player after showing message
-            player->GetSession()->KickPlayer("Hardcore character is deceased");
+            NotifyAndKickDeceased(player);
             return;
         }
+
+        // The authoritative DB lock is checked asynchronously so login never
+        // blocks the world thread. A locked character is kicked moments later,
+        // and the flag sync above makes every later attempt kick instantly.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            "SELECT character_locked FROM dc_character_challenge_modes WHERE guid = {}",
+            playerGuid.GetCounter()))
+            .WithCallback([playerGuid](QueryResult result)
+        {
+            if (!result || result->Fetch()[0].Get<uint8>() != 1)
+                return;
+
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            player->UpdatePlayerSetting("mod-challenge-modes", HARDCORE_DEAD, 1);
+            NotifyAndKickDeceased(player);
+        }));
     }
 };
 

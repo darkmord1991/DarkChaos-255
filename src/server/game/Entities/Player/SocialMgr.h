@@ -115,9 +115,10 @@ class PlayerSocial
         ObjectGuid const& GetPlayerGUID() const { return m_playerGUID; }
         void SetPlayerGUID(ObjectGuid const& guid) { m_playerGUID = guid; }
         uint32 GetNumberOfSocialsWithFlag(SocialFlag flag) const;
+        typedef std::map<ObjectGuid, FriendInfo> PlayerSocialMap;
+        PlayerSocialMap const& GetSocialMap() const { return m_playerSocialMap; }
     private:
         bool _checkContact(ObjectGuid const& guid, SocialFlag flags) const;
-        typedef std::map<ObjectGuid, FriendInfo> PlayerSocialMap;
         PlayerSocialMap m_playerSocialMap;
         ObjectGuid m_playerGUID;
 };

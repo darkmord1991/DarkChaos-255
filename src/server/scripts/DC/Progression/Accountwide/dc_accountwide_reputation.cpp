@@ -10,9 +10,11 @@
 #include "DatabaseEnv.h"
 #include "DBCStores.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ReputationMgr.h"
 #include "ScriptMgr.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -286,15 +288,8 @@ namespace
         {
         }
 
-        void OnPlayerLogin(Player* player) override
+        static void RunLoginSync(Player* player)
         {
-            if (!IsEnabled() || !IsSyncOnLoginEnabled() || !player ||
-                !player->GetSession())
-                return;
-
-            // Pool table is created once at startup/config load (WorldScript
-            // below); re-issuing blocking DDL per login stalls the world thread.
-
             uint32 accountId = player->GetSession()->GetAccountId();
             bool highestWins = IsHighestWinsEnabled();
             bool debug = IsDebugEnabled();
@@ -302,6 +297,7 @@ namespace
             uint32 mergedCount = 0;
             uint32 appliedCount = 0;
 
+            // Cache hit: the pool was loaded (or async-populated) already.
             ReputationPool& pool = GetAccountPool(accountId);
 
             if (highestWins)
@@ -339,6 +335,58 @@ namespace
                     mergedCount,
                     appliedCount);
             }
+        }
+
+        void OnPlayerLogin(Player* player) override
+        {
+            if (!IsEnabled() || !IsSyncOnLoginEnabled() || !player ||
+                !player->GetSession())
+                return;
+
+            // Pool table is created once at startup/config load (WorldScript
+            // below). The pool itself is loaded asynchronously so login never
+            // blocks the world thread; a cached pool (another character of the
+            // account online, or a mid-flight rep change) is used directly.
+            uint32 accountId = player->GetSession()->GetAccountId();
+            if (gLoadedAccounts.find(accountId) != gLoadedAccounts.end())
+            {
+                RunLoginSync(player);
+                return;
+            }
+
+            ObjectGuid const playerGuid = player->GetGUID();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "SELECT `faction_id`, `standing` FROM `{}` WHERE `account_id` = {}",
+                TABLE_NAME,
+                accountId))
+                .WithCallback([playerGuid, accountId](QueryResult result)
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                // Keep a pool that appeared while the query was in flight (our
+                // snapshot may be stale); otherwise populate from the result.
+                if (gLoadedAccounts.find(accountId) == gLoadedAccounts.end())
+                {
+                    gLoadedAccounts.insert(accountId);
+                    ReputationPool& pool = gAccountReputationCache[accountId];
+                    pool.clear();
+
+                    if (result)
+                    {
+                        do
+                        {
+                            Field* fields = result->Fetch();
+                            uint32 factionId = fields[0].Get<uint32>();
+                            int32 standing = ClampStanding(fields[1].Get<int32>());
+                            pool[factionId] = standing;
+                        } while (result->NextRow());
+                    }
+                }
+
+                RunLoginSync(player);
+            }));
         }
 
         bool OnPlayerReputationChange(

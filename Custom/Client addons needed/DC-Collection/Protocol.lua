@@ -6772,8 +6772,10 @@ function DC:HandleDefinitions(data)
         self:_MarkInflight("req:defs:pets", nil)
     end
 
-    -- Mount preview diagnostics: surface when server definitions are missing model/display hints.
-    if collType == "mounts" then
+    -- Mount preview diagnostics: surface when server definitions are missing
+    -- model/display hints. Full-table scan, so debug mode only - definition
+    -- pages arrive in bursts during the login sync.
+    if collType == "mounts" and self:GetSetting("debugMode") then
         local total = 0
         local missing = 0
         local samples = {}
@@ -6828,7 +6830,7 @@ function DC:HandleDefinitions(data)
     end
 
     -- Debug: how many transmog definitions are missing inventoryType on this page
-    if collType == "transmog" then
+    if collType == "transmog" and self:GetSetting("debugMode") then
         local total = 0
         local missing = 0
         for _, def in pairs(definitions or {}) do

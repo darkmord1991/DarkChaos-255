@@ -981,8 +981,23 @@ function DC:PrintCapabilityStatus()
 end
 
 function DC:SendHandshake(reason)
-    local snapshot = self:GetCapabilitySnapshot()
     local why = tostring(reason or "manual")
+
+    -- Single-flight: several boot paths (ADDON_LOADED, PLAYER_LOGIN) can each
+    -- request a handshake within the same login; one per 2s is enough. Manual
+    -- reconnects (slash command / settings button) always go through.
+    local now = (type(GetTime) == "function" and GetTime()) or 0
+    local isManual = string.find(why, "manual", 1, true) or why == "settings-panel"
+    if now > 0 and not isManual and self._lastHandshakeSentAt
+        and (now - self._lastHandshakeSentAt) < 2 then
+        self:LogNetEvent("info", "handshake", "suppressed duplicate send reason=" .. why)
+        return
+    end
+    if now > 0 then
+        self._lastHandshakeSentAt = now
+    end
+
+    local snapshot = self:GetCapabilitySnapshot()
     local metadataBytes = snapshot.handshakeMetadata and #snapshot.handshakeMetadata or 0
 
     self:LogNetEvent("info", "handshake", string.format(

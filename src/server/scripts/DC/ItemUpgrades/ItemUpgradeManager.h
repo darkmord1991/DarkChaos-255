@@ -15,6 +15,8 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 class Item;
 
@@ -213,6 +215,10 @@ namespace DarkChaos
 
             // Item upgrade state functions
             virtual ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) = 0;
+            // Batch-warm the per-item state cache with one async query so the
+            // login / first-proc paths never pay a blocking SELECT per item.
+            // items = (item_guid, item_entry) pairs owned by owner_guid.
+            virtual void PrefetchItemStatesAsync(std::vector<std::pair<uint32, uint32>> /*items*/, uint32 /*owner_guid*/) { }
             virtual bool BuildTooltipSnapshot(Item* item, ItemUpgradeTooltipSnapshot& out) = 0;
             virtual uint32 GetTooltipRevision(uint32 item_guid) = 0;
             virtual void InvalidateTooltipSnapshot(uint32 item_guid) = 0;

@@ -24,6 +24,7 @@
 #include "ScriptMgr.h"
 #include "dc_prestige_api.h"
 #include "../../AddonExtension/dc_addon_death_markers.h"
+#include "../../AddonExtension/dc_addon_namespace.h"
 #include <sstream>
 
 namespace
@@ -97,17 +98,28 @@ namespace
             if (!player)
                 return;
 
-            uint32 guid = player->GetGUID().GetCounter();
+            ObjectGuid const playerGuid = player->GetGUID();
+            uint32 const guid = playerGuid.GetCounter();
             g_ActiveChallenges[guid].clear();
 
-            QueryResult result = CharacterDatabase.Query(
+            // Load asynchronously so login never blocks the world thread; the
+            // continuation runs on the world thread and announces the count.
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
                 "SELECT guid, prestige_level, challenge_type, active, completed, start_time, start_playtime, death_count, group_count "
                 "FROM dc_prestige_challenges WHERE guid = {} AND active = 1",
-                guid
-            );
-
-            if (result)
+                guid))
+                .WithCallback([playerGuid, guid](QueryResult result)
             {
+                if (!result)
+                    return;
+
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                auto& challenges = g_ActiveChallenges[guid];
+                challenges.clear();
+
                 do
                 {
                     Field* fields = result->Fetch();
@@ -122,12 +134,18 @@ namespace
                     progress.deathCount = fields[7].Get<uint32>();
                     progress.groupCount = fields[8].Get<uint32>();
 
-                    g_ActiveChallenges[guid].push_back(progress);
+                    challenges.push_back(progress);
                 } while (result->NextRow());
 
                 LOG_INFO("scripts.dc", "Prestige Challenges: Loaded {} active challenge(s) for player {}",
-                    g_ActiveChallenges[guid].size(), player->GetName());
-            }
+                    challenges.size(), player->GetName());
+
+                if (!challenges.empty())
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "|cFFFFD700You have {} active prestige challenge(s)!|r", challenges.size());
+                }
+            }));
         }
 
         bool HasActiveChallenge(Player* player, PrestigeChallenge challengeType)
@@ -471,16 +489,9 @@ namespace
             if (!PrestigeChallengeSystem::instance()->IsEnabled())
                 return;
 
+            // Loads asynchronously; the "active challenges" chat line is sent
+            // from the load continuation once the data is in.
             PrestigeChallengeSystem::instance()->LoadPlayerChallenges(player);
-
-            // Show active challenges
-            uint32 guid = player->GetGUID().GetCounter();
-            auto it = g_ActiveChallenges.find(guid);
-            if (it != g_ActiveChallenges.end() && !it->second.empty())
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFFFFD700You have {} active prestige challenge(s)!|r", it->second.size());
-            }
         }
 
         void OnPlayerKilledByCreature(Creature* killer, Player* player) override

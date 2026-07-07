@@ -32,6 +32,7 @@
 #include "ChatCommand.h"
 #include "Log.h"
 #include <atomic>
+#include <chrono>
 
 // Achievement IDs
 enum DCAchievements
@@ -301,6 +302,21 @@ public:
         if (!player || !DCAchievementSystem::IsEnabled())
             return;
 
+        // Deferred: the prestige system warms its level cache asynchronously
+        // at login, so by the time this runs GetPrestigeLevel is a cache hit
+        // instead of a blocking query on the world thread.
+        player->m_Events.AddEventAtOffset([playerGuid = player->GetGUID()]()
+        {
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            CheckPrestigeAchievements(player);
+        }, std::chrono::milliseconds(2000));
+    }
+
+    static void CheckPrestigeAchievements(Player* player)
+    {
         uint32 debug = DCAchievementSystem::GetDebugLevel();
         if (debug >= 2)
             ChatHandler(player->GetSession()).PSendSysMessage("[DC.Achievements] Prestige achievement check");
@@ -508,7 +524,6 @@ private:
         }
         return count;
     }
-
 
     uint32 GetTitleCount(Player* player)
     {

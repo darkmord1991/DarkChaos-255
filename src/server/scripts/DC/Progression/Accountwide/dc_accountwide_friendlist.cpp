@@ -11,12 +11,14 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "ObjectGuid.h"
 #include "Player.h"
 #include "RBAC.h"
 #include "ScriptMgr.h"
 #include "SocialMgr.h"
 #include "World.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 
 #include <algorithm>
 #include <string>
@@ -134,32 +136,30 @@ namespace
         return true;
     }
 
-    std::vector<FriendEntry> LoadCharacterFriends(uint32 characterLowGuid)
+    std::vector<FriendEntry> LoadCharacterFriends(Player* player)
     {
+        // The core keeps the full social list (friends + notes) in memory from
+        // character load onward, so no character_social query is needed here.
         std::vector<FriendEntry> entries;
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT `friend`, `note` FROM `character_social` "
-            "WHERE `guid` = {} AND (`flags` & {}) != 0",
-            characterLowGuid,
-            static_cast<uint32>(SOCIAL_FLAG_FRIEND));
-
-        if (!result)
+        PlayerSocial const* social = player ? player->GetSocial() : nullptr;
+        if (!social)
             return entries;
 
-        do
+        for (auto const& [friendGuid, info] : social->GetSocialMap())
         {
-            Field* fields = result->Fetch();
+            if (!(info.Flags & SOCIAL_FLAG_FRIEND))
+                continue;
 
             FriendEntry entry;
-            entry.friendLowGuid = fields[0].Get<uint32>();
-            entry.note = NormalizeNote(fields[1].Get<std::string>());
+            entry.friendLowGuid = friendGuid.GetCounter();
+            entry.note = NormalizeNote(info.Note);
 
             if (!entry.friendLowGuid)
                 continue;
 
             entries.push_back(entry);
-        } while (result->NextRow());
+        }
 
         return entries;
     }
@@ -213,22 +213,10 @@ namespace
         CharacterDatabase.CommitTransaction(trans);
     }
 
-    FriendMap& GetAccountPool(uint32 accountId)
+    void PopulatePoolFromResult(FriendMap& pool, QueryResult const& result)
     {
-        FriendMap& pool = gAccountFriendCache[accountId];
-
-        if (gLoadedAccounts.find(accountId) != gLoadedAccounts.end())
-            return pool;
-
-        gLoadedAccounts.insert(accountId);
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT `friend_guid`, `note` FROM `{}` WHERE `account_id` = {}",
-            TABLE_NAME,
-            accountId);
-
         if (!result)
-            return pool;
+            return;
 
         do
         {
@@ -243,8 +231,6 @@ namespace
             if (pool.size() >= SOCIALMGR_FRIEND_LIMIT)
                 break;
         } while (result->NextRow());
-
-        return pool;
     }
 
     void ClearAccountCache(uint32 accountId)
@@ -259,7 +245,7 @@ namespace
         if (!player)
             return sanitized;
 
-        auto entries = LoadCharacterFriends(player->GetGUID().GetCounter());
+        auto entries = LoadCharacterFriends(player);
         for (FriendEntry const& entry : entries)
         {
             if (!IsFriendValidForPlayer(player, entry.friendLowGuid))
@@ -298,15 +284,13 @@ namespace
         }
     }
 
-    void SyncPoolToCharacter(Player* player)
+    void SyncPoolToCharacter(Player* player, FriendMap& pool)
     {
         if (!player || !player->GetSession() || !player->GetSocial())
             return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
-        FriendMap& pool = GetAccountPool(accountId);
-        FriendMap characterMap =
-            ToFriendMap(LoadCharacterFriends(player->GetGUID().GetCounter()));
+        FriendMap characterMap = ToFriendMap(LoadCharacterFriends(player));
 
         uint32 seeded = 0;
         uint32 added = 0;
@@ -355,10 +339,7 @@ namespace
                 }
 
                 if (removed > 0)
-                {
-                    characterMap = ToFriendMap(
-                        LoadCharacterFriends(player->GetGUID().GetCounter()));
-                }
+                    characterMap = ToFriendMap(LoadCharacterFriends(player));
             }
 
             for (auto const& [friendLowGuid, poolNoteRaw] : pool)
@@ -436,12 +417,45 @@ namespace
 
         void OnPlayerLogin(Player* player) override
         {
-            if (!IsEnabled() || !IsSyncOnLoginEnabled())
+            if (!IsEnabled() || !IsSyncOnLoginEnabled() || !player ||
+                !player->GetSession())
                 return;
 
             // Pool table is created once at startup/config load (WorldScript
-            // below); re-issuing blocking DDL per login stalls the world thread.
-            SyncPoolToCharacter(player);
+            // below). The pool itself is loaded asynchronously so login never
+            // blocks the world thread; if another character of this account is
+            // already online the cached pool is used directly.
+            uint32 accountId = player->GetSession()->GetAccountId();
+            if (gLoadedAccounts.find(accountId) != gLoadedAccounts.end())
+            {
+                SyncPoolToCharacter(player, gAccountFriendCache[accountId]);
+                return;
+            }
+
+            ObjectGuid const playerGuid = player->GetGUID();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "SELECT `friend_guid`, `note` FROM `{}` WHERE `account_id` = {}",
+                TABLE_NAME,
+                accountId))
+                .WithCallback([playerGuid, accountId](QueryResult result)
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                // If another same-account login populated the pool while this
+                // query was in flight, keep the live copy (our snapshot may be
+                // stale) and only run the character sync.
+                if (gLoadedAccounts.find(accountId) == gLoadedAccounts.end())
+                {
+                    gLoadedAccounts.insert(accountId);
+                    FriendMap& pool = gAccountFriendCache[accountId];
+                    pool.clear();
+                    PopulatePoolFromResult(pool, result);
+                }
+
+                SyncPoolToCharacter(player, gAccountFriendCache[accountId]);
+            }));
         }
 
         void OnPlayerBeforeLogout(Player* player) override

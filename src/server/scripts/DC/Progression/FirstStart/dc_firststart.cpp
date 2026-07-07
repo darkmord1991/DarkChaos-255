@@ -752,10 +752,11 @@ public:
         bool debug = sConfigMgr->GetOption<bool>(
             DCFirstStart::Config::DEBUG, false);
 
-        bool hasFirstLoginMarker = DCFirstStart::HasFirstLoginMarker(player->GetGUID());
-
-        // Check for first login using marker + total played time
-        if (!hasFirstLoginMarker && player->GetTotalPlayedTime() == 0)
+        // Check for first login using total played time (in-memory) first, so
+        // the marker query only runs for genuinely brand-new characters
+        // instead of on every login of every character.
+        if (player->GetTotalPlayedTime() == 0 &&
+            !DCFirstStart::HasFirstLoginMarker(player->GetGUID()))
         {
             if (debug)
                 LOG_INFO("module.dc", "[DCFirstStart] First login detected for {}", player->GetName());

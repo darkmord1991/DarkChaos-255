@@ -12,8 +12,10 @@
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 
 #include <algorithm>
 #include <limits>
@@ -337,17 +339,8 @@ namespace
         {
         }
 
-        void OnPlayerLogin(Player* player) override
+        static void RunLoginSync(Player* player)
         {
-            if (!IsEnabled() || !IsSyncOnLoginEnabled() || !player ||
-                !player->GetSession())
-            {
-                return;
-            }
-
-            // Pool table is created once at startup/config load (WorldScript
-            // below); re-issuing blocking DDL per login stalls the world thread.
-
             uint32 accountId = player->GetSession()->GetAccountId();
             bool debug = IsDebugEnabled();
 
@@ -376,6 +369,67 @@ namespace
                     appliedCount,
                     prunedCount);
             }
+        }
+
+        void OnPlayerLogin(Player* player) override
+        {
+            if (!IsEnabled() || !IsSyncOnLoginEnabled() || !player ||
+                !player->GetSession())
+            {
+                return;
+            }
+
+            // Pool table is created once at startup/config load (WorldScript
+            // below). The pool itself is loaded asynchronously so login never
+            // blocks the world thread; a cached pool is used directly.
+            uint32 accountId = player->GetSession()->GetAccountId();
+            if (gLoadedAccounts.find(accountId) != gLoadedAccounts.end())
+            {
+                RunLoginSync(player);
+                return;
+            }
+
+            ObjectGuid const playerGuid = player->GetGUID();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "SELECT `achievement_id`, `completed_at` FROM `{}` "
+                "WHERE `account_id` = {}",
+                TABLE_NAME,
+                accountId))
+                .WithCallback([playerGuid, accountId](QueryResult result)
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                // Keep a pool that appeared while the query was in flight (our
+                // snapshot may be stale); otherwise populate from the result.
+                if (gLoadedAccounts.find(accountId) == gLoadedAccounts.end())
+                {
+                    gLoadedAccounts.insert(accountId);
+                    AchievementPool& pool = gAccountAchievementCache[accountId];
+                    pool.clear();
+
+                    if (result)
+                    {
+                        do
+                        {
+                            Field* fields = result->Fetch();
+                            uint32 achievementId = fields[0].Get<uint32>();
+                            uint32 date = fields[1].Get<uint32>();
+
+                            AchievementEntry const* achievement =
+                                sAchievementStore.LookupEntry(achievementId);
+
+                            if (!ShouldTrackAchievement(achievement))
+                                continue;
+
+                            pool[achievementId] = date;
+                        } while (result->NextRow());
+                    }
+                }
+
+                RunLoginSync(player);
+            }));
         }
 
         void OnPlayerAchievementComplete(

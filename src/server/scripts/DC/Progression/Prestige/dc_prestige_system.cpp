@@ -31,7 +31,9 @@
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
 #include "dc_prestige_api.h"
+#include "../../AddonExtension/dc_addon_namespace.h"
 #include "../../AddonExtension/dc_addon_prestige_notify.h"
+#include <functional>
 #include <sstream>
 #include <mutex>
 
@@ -185,6 +187,42 @@ public:
             prestigeCache[guid] = level;
         }
         return level;
+    }
+
+    // Cache-only read: never touches the database. Returns 0 until the cache
+    // has been warmed (WarmPrestigeCacheAsync / first GetPrestigeLevel call).
+    // Use on hot paths like per-tick updates.
+    uint32 GetCachedPrestigeLevel(ObjectGuid playerGuid)
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        auto it = prestigeCache.find(playerGuid.GetCounter());
+        return it != prestigeCache.end() ? it->second : 0;
+    }
+
+    // Load + cache the prestige level asynchronously (the cache is cold after
+    // every relog), then run the continuation on the world thread with the
+    // player re-resolved by guid. The continuation is skipped if the player
+    // logged out meanwhile.
+    void WarmPrestigeCacheAsync(ObjectGuid playerGuid, std::function<void(Player*, uint32)> continuation)
+    {
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            "SELECT prestige_level FROM dc_character_prestige WHERE guid = {}",
+            playerGuid.GetCounter()))
+            .WithCallback([this, playerGuid, continuation = std::move(continuation)](QueryResult result)
+        {
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            uint32 level = result ? result->Fetch()[0].Get<uint32>() : 0;
+            {
+                std::lock_guard<std::mutex> lock(cacheMutex);
+                prestigeCache[playerGuid.GetCounter()] = level;
+            }
+
+            if (continuation)
+                continuation(player, level);
+        }));
     }
 
     void SetPrestigeLevel(Player* player, uint32 level)
@@ -940,27 +978,28 @@ public:
         // Clear player flags that might prevent XP gain or cause display issues
         PrestigeSystem::instance()->ClearPrestigePlayerFlags(player);
 
-        // Apply prestige buffs on login
-        uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
-
-        if (prestigeLevel > 0)
+        // The prestige level is loaded asynchronously so login never blocks
+        // the world thread; buffs and welcome messages apply moments later in
+        // the continuation (which also warms the cache for OnPlayerUpdate).
+        PrestigeSystem::instance()->WarmPrestigeCacheAsync(player->GetGUID(),
+            [](Player* player, uint32 prestigeLevel)
         {
-            PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
+            if (prestigeLevel > 0)
+            {
+                PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
 
-            // Notify player of their prestige level
-            ChatHandler(player->GetSession()).PSendSysMessage("Welcome back! You are Prestige Level {} with {}% bonus stats.",
-                prestigeLevel, prestigeLevel * PrestigeSystem::instance()->GetStatBonusPercent());
-        }
+                // Notify player of their prestige level
+                ChatHandler(player->GetSession()).PSendSysMessage("Welcome back! You are Prestige Level {} with {}% bonus stats.",
+                    prestigeLevel, prestigeLevel * PrestigeSystem::instance()->GetStatBonusPercent());
+            }
 
-        // Check if player can prestige
-        if (PrestigeSystem::instance()->CanPrestige(player))
-        {
-            uint32 currentPrestige = PrestigeSystem::instance()->GetPrestigeLevel(player);
-            if (currentPrestige < PrestigeSystem::instance()->GetMaxPrestigeLevel())
+            // Check if player can prestige (cache is warm, so no DB hit)
+            if (PrestigeSystem::instance()->CanPrestige(player) &&
+                prestigeLevel < PrestigeSystem::instance()->GetMaxPrestigeLevel())
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700You have reached the required level! Type .prestige confirm to ascend!|r");
             }
-        }
+        });
     }
 
     void OnPlayerLogout(Player* player) override
@@ -986,7 +1025,9 @@ public:
         if (!PrestigeSystem::instance()->IsEnabled())
             return;
 
-        uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
+        // Cache-only read: this runs every tick and must never block on the
+        // database (login warms the cache asynchronously).
+        uint32 prestigeLevel = PrestigeSystem::instance()->GetCachedPrestigeLevel(player->GetGUID());
         if (prestigeLevel == 0)
             return;
 
