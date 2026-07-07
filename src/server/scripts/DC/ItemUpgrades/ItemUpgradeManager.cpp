@@ -813,7 +813,9 @@ namespace DarkChaos
                         if ((state.tier_id == 0 || state.tier_id == TIER_INVALID) && itemEntry)
                         {
                             uint8 mappedTier = GetItemTier(itemEntry);
-                            state.tier_id = mappedTier == TIER_INVALID ? TIER_LEVELING : mappedTier;
+                            if (mappedTier == TIER_INVALID)
+                                mappedTier = TIER_LEVELING;
+                            state.tier_id = mappedTier;
                         }
 
                         if (itemEntry)

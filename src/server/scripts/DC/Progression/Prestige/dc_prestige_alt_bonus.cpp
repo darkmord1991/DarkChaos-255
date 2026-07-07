@@ -11,9 +11,15 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "Chat.h"
+#include "StringFormat.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include <functional>
+#include <unordered_set>
+#include <vector>
 
 namespace
 {
@@ -30,8 +36,12 @@ namespace
     constexpr uint32 SPELL_ALT_BONUS_20 = 800043;  // 20% bonus visual
     constexpr uint32 SPELL_ALT_BONUS_25 = 800044;  // 25% bonus visual
 
-    // Cache for account max level character counts
+    // Cache for account max level character counts. Everything here (reads,
+    // writes, warm-triggers, and the async callback below) runs on the world
+    // thread only, so no locking is needed.
     std::unordered_map<uint32, uint32> g_AccountMaxLevelCache;
+    std::unordered_set<uint32> g_AccountMaxLevelWarmInFlight;
+    std::unordered_map<uint32, std::vector<std::function<void(uint32)>>> g_AccountMaxLevelWarmWaiters;
 
     class PrestigeAltBonusSystem
     {
@@ -72,36 +82,73 @@ namespace
 
         uint32 GetMaxLevel() const { return maxLevel; }
 
+        // Cache-only read: never touches the database. Returns 0 (no bonus)
+        // on a cold cache and kicks an async warm so the NEXT read is a hit.
+        // Safe to call from hot paths (OnPlayerGiveXP fires on every kill).
         uint32 GetMaxLevelCharCount(uint32 accountId)
         {
             if (!enabled)
                 return 0;
 
-            // Check cache first
             auto it = g_AccountMaxLevelCache.find(accountId);
             if (it != g_AccountMaxLevelCache.end())
                 return it->second;
 
-            // Query database for max level characters on this account
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
-                accountId, maxLevel
-            );
+            WarmMaxLevelCharCountAsync(accountId, nullptr);
+            return 0;
+        }
 
-            uint32 count = 0;
-            if (result)
+        // Load + cache the max-level character count asynchronously so the
+        // world thread never blocks on this SELECT (previously observed to
+        // stall World.UpdateSessions on a cold cache, e.g. right after a
+        // server restart). Concurrent callers for the same account share one
+        // in-flight query; every registered callback fires once it resolves.
+        void WarmMaxLevelCharCountAsync(uint32 accountId, std::function<void(uint32)> onReady)
+        {
+            if (!enabled)
+                return;
+
+            auto cached = g_AccountMaxLevelCache.find(accountId);
+            if (cached != g_AccountMaxLevelCache.end())
             {
-                Field* fields = result->Fetch();
-                count = fields[0].Get<uint32>();
+                if (onReady)
+                    onReady(cached->second);
+                return;
             }
 
-            // Cap at max bonus characters
-            if (count > maxBonusChars)
-                count = maxBonusChars;
+            if (onReady)
+                g_AccountMaxLevelWarmWaiters[accountId].push_back(std::move(onReady));
 
-            // Cache the result
-            g_AccountMaxLevelCache[accountId] = count;
-            return count;
+            if (!g_AccountMaxLevelWarmInFlight.insert(accountId).second)
+                return; // a warm-up query is already running for this account
+
+            uint32 const capturedMaxLevel = maxLevel;
+            uint32 const capturedMaxBonusChars = maxBonusChars;
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
+                accountId, capturedMaxLevel))
+                .WithCallback([accountId, capturedMaxBonusChars](QueryResult result)
+            {
+                uint32 count = 0;
+                if (result)
+                    count = result->Fetch()[0].Get<uint32>();
+
+                if (count > capturedMaxBonusChars)
+                    count = capturedMaxBonusChars;
+
+                g_AccountMaxLevelCache[accountId] = count;
+                g_AccountMaxLevelWarmInFlight.erase(accountId);
+
+                auto waitersIt = g_AccountMaxLevelWarmWaiters.find(accountId);
+                if (waitersIt == g_AccountMaxLevelWarmWaiters.end())
+                    return;
+
+                std::vector<std::function<void(uint32)>> waiters = std::move(waitersIt->second);
+                g_AccountMaxLevelWarmWaiters.erase(waitersIt);
+                for (auto const& waiter : waiters)
+                    if (waiter)
+                        waiter(count);
+            }));
         }
 
         uint32 CalculateXPBonus(Player* player)
@@ -223,22 +270,38 @@ namespace
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
 
-            uint32 bonusPercent = PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
+            // The max-level-char-count is warmed asynchronously (never blocks
+            // the world thread, even on a cold cache after a server restart);
+            // the buff + welcome message apply once the count is ready, which
+            // is immediate on a cache hit and deferred by one DB round-trip
+            // otherwise.
+            uint32 accountId = player->GetSession()->GetAccountId();
+            ObjectGuid const playerGuid = player->GetGUID();
 
-            // Apply visual buff
-            PrestigeAltBonusSystem::instance()->ApplyVisualBuff(player);
-
-            // Show welcome message if player has bonus
-            if (bonusPercent > 0)
+            PrestigeAltBonusSystem::instance()->WarmMaxLevelCharCountAsync(accountId,
+                [playerGuid](uint32 /*maxLevelCount*/)
             {
-                uint32 maxLevelCount = PrestigeAltBonusSystem::instance()->GetMaxLevelCharCount(
-                    player->GetSession()->GetAccountId());
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
 
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFF00FF00[Alt Bonus]|r You have {}% bonus XP from {} max-level character(s) on your account!",
-                    bonusPercent, maxLevelCount
-                );
-            }
+                uint32 bonusPercent = PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
+
+                // Apply visual buff
+                PrestigeAltBonusSystem::instance()->ApplyVisualBuff(player);
+
+                // Show welcome message if player has bonus
+                if (bonusPercent > 0)
+                {
+                    uint32 maxLevelCount = PrestigeAltBonusSystem::instance()->GetMaxLevelCharCount(
+                        player->GetSession()->GetAccountId());
+
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "|cFF00FF00[Alt Bonus]|r You have {}% bonus XP from {} max-level character(s) on your account!",
+                        bonusPercent, maxLevelCount
+                    );
+                }
+            });
         }
 
         void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
