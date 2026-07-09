@@ -5689,12 +5689,9 @@ local function EnsureFrame()
     frame.IconShadow:SetPoint("CENTER", frame.Icon, "CENTER", 1, -1)
     frame.IconShadow:SetVertexColor(0, 0, 0, 0.45)
 
-    frame.IconGlow = frame:CreateTexture(nil, "OVERLAY")
-    frame.IconGlow:SetTexture("Interface\\Minimap\\UI-Minimap-Ping-Expand")
-    frame.IconGlow:SetBlendMode("ADD")
-    frame.IconGlow:SetSize((frame.iconBaseWidth or ICON_WIDTH) * 2.1, (frame.iconBaseHeight or ICON_HEIGHT) * 1.85)
-    frame.IconGlow:SetPoint("CENTER", frame.Icon, "CENTER", 0, 0)
-    frame.IconGlow:SetVertexColor(1.0, 0.88, 0.30, 0.16)
+    -- No glow ring: the yellow "Ping-Expand" circle around the diamond read as
+    -- clutter (user request to remove it). frame.IconGlow stays nil; every use
+    -- site is already `if frame.IconGlow then`-guarded.
 
     frame.Arrow = frame:CreateTexture(nil, "OVERLAY")
     if TrySetTrackedArrowAtlas(frame.Arrow) then
