@@ -174,25 +174,24 @@ local NAV_STATE_INVALID = 0
 local NAV_STATE_OCCLUDED = 1
 local NAV_STATE_IN_RANGE = 2
 local NAV_STATE_DISABLED = 3
--- Arrival state (retail/Ascension Enum.NavigationState.InRadius): within the
--- objective radius the in-world marker all but fades out (0.1) and the quest
--- tracker line's in-range pulse takes over as the arrival cue.
+-- Arrival state (retail Enum.NavigationState.InRadius): within the objective
+-- radius the marker dims (the tracker line's in-range pulse joins as the
+-- arrival cue) but stays clearly visible -- it IS our in-world marker here.
 local NAV_STATE_IN_RADIUS = 4
 
--- Alpha model lifted verbatim from Ascension's SuperTracker.lua state table.
+-- Alpha model. NOTE: Ascension fades InRadius to 0.1 and hides beyond 1500yd
+-- because their native client draws a separate in-world 3D pin. We have no such
+-- pin -- this HUD diamond IS the supertracker -- so those rules made it
+-- invisible almost everywhere ("the arrow/diamond is missing"). Retail
+-- SuperTrackedFrame semantics instead: visible at any distance, dimmed when
+-- occluded/arrived, edge-clamped (never hidden) when off-screen.
 local NAV_TARGET_ALPHA_BY_STATE = {
     [NAV_STATE_INVALID] = 0.0,
     [NAV_STATE_OCCLUDED] = 0.6,
     [NAV_STATE_IN_RANGE] = 1.0,
     [NAV_STATE_DISABLED] = 0.0,
-    [NAV_STATE_IN_RADIUS] = 0.1,
+    [NAV_STATE_IN_RADIUS] = 0.75,
 }
-
--- Ascension's distance fades: beyond HIDE the marker is invisible ("dont show
--- too far"); beyond OCCLUDE an in-range marker drops to the occluded alpha
--- ("727 = mediumish farclip value").
-local NAV_DISTANCE_HIDE_YARDS = 1500
-local NAV_DISTANCE_OCCLUDE_YARDS = 727
 
 local math_abs = math.abs
 local math_atan2 = math.atan2
@@ -849,27 +848,22 @@ local function LerpNumber(current, target, t)
 end
 
 local function GetBlizzlikeEllipseRadii(settings)
-    local scale = (settings.ringRadius or 240) / 240
-    if scale < 0.5 then
-        scale = 0.5
-    elseif scale > 2.0 then
-        scale = 2.0
-    end
-
-    local majorAxis = 500 * scale
-    local minorAxis = 200 * scale
-
+    -- SCREEN-EDGE clamp ellipse (retail SuperTrackedFrame semantics). The old
+    -- 500x200 base was a small ring around screen CENTER -- i.e. around the
+    -- player -- so even correctly projected on-screen targets got dragged onto
+    -- it and slid around as the camera turned (the "diamond rotating around the
+    -- player" bug). The clamp boundary must hug the actual screen edges: real
+    -- projections inside it pass through UNCLAMPED and pin to the objective;
+    -- only genuinely off-screen targets ride the edge.
+    local majorAxis, minorAxis = 500, 200
     if UIParent and type(UIParent.GetWidth) == "function" and type(UIParent.GetHeight) == "function" then
         local uiWidth = UIParent:GetWidth() or 0
         local uiHeight = UIParent:GetHeight() or 0
         if uiWidth > 0 and uiHeight > 0 then
-            local safeMajor = math_max(120, (uiWidth * 0.5) - 56)
-            local safeMinor = math_max(80, (uiHeight * 0.5) - 56)
-            majorAxis = math_min(majorAxis, safeMajor)
-            minorAxis = math_min(minorAxis, safeMinor)
+            majorAxis = math_max(200, (uiWidth * 0.5) - 64)
+            minorAxis = math_max(140, (uiHeight * 0.5) - 96)
         end
     end
-
     return majorAxis, minorAxis
 end
 
@@ -910,7 +904,10 @@ local function GetEmulatedNavigationAlpha(frame, navState, isClamped, now)
     end
 
     local currentAlpha = (frame and type(frame.GetAlpha) == "function") and (frame:GetAlpha() or 0) or 0
-    return LerpNumber(currentAlpha, targetAlpha, 0.1)
+    -- 0.4 per ~0.15s tick reaches the target alpha in a few ticks. The old 0.1
+    -- factor took ~4 seconds -- combined with the transparency reset on every
+    -- target switch, the marker spent most of its life mid-fade (invisible).
+    return LerpNumber(currentAlpha, targetAlpha, 0.4)
 end
 
 local function GetNavStateName(navState)
@@ -6136,18 +6133,18 @@ local function UpdateMarker()
             usingNativeProjection = true
 
             if nativeNavState == NAV_STATE_INVALID then
-                -- The target has no valid screen position (behind the camera). Hide
-                -- the HUD marker outright -- otherwise the native (0,0) offset would
-                -- flash the diamond at screen center (on the player) before it fades.
-                -- Minimap pins were already refreshed earlier in this update.
-                state.target = target
-                state.lastPoiSource = target.poiSource
-                state.lastProjectedRadius = 0
-                state.lastClamped = true
-                state.lastNavState = NAV_STATE_INVALID
-                state.lastAlpha = 0
-                frame:Hide()
-                return
+                -- The target has no valid screen position (behind the camera).
+                -- RETAIL semantics: the pin is CLAMPED to the screen edge with its
+                -- directional arrow -- it never disappears when you turn around
+                -- (hiding it here was the "arrow/diamond is missing" bug). The
+                -- native returns (0,0) for this case, so discard its offsets and
+                -- fall through to the Lua bearing edge-pin below.
+                usingNativeProjection = false
+                nativeNavState = nil
+                projectedX = nil
+                projectedY = nil
+                rawX = nil
+                rawY = nil
             end
         elseif ok then
             local nowStamp = GetTime() or 0
@@ -6256,18 +6253,13 @@ local function UpdateMarker()
         end
     end
 
-    -- Ascension's SuperTracker overrides, applied on top of the resolved state:
-    -- arrival (InRadius) fades the in-world marker to 0.1 (the tracker line's
-    -- in-range pulse is the arrival cue); very distant targets hide entirely;
-    -- distant-but-tracked targets drop to the occluded alpha.
+    -- Arrival override only. (The old Ascension distance rules -- hide beyond
+    -- 1500yd, occlude beyond 727yd -- were removed: they assume a separate
+    -- native in-world pin, and on this client they just made the supertracker
+    -- invisible across the huge custom zones. Retail keeps the pin visible at
+    -- any distance; the distance text carries the range.)
     if arrived then
         navState = NAV_STATE_IN_RADIUS
-    elseif distanceYards then
-        if distanceYards > NAV_DISTANCE_HIDE_YARDS then
-            navState = NAV_STATE_INVALID
-        elseif navState == NAV_STATE_IN_RANGE and distanceYards > NAV_DISTANCE_OCCLUDE_YARDS then
-            navState = NAV_STATE_OCCLUDED
-        end
     end
 
     local alpha = GetEmulatedNavigationAlpha(frame, navState, clampedToEllipse, now)
@@ -6367,6 +6359,110 @@ local function UpdateMarker()
     end
 
     frame:Show()
+end
+
+-- Per-frame screen reposition (retail SuperTrackedFrame repositions EVERY frame).
+-- The full UpdateMarker tick (0.15s) owns target selection / alpha / text; this
+-- only re-projects the CURRENT target so the pin stays glued to the destination
+-- while the camera moves between ticks -- sampling the projection at ~6.7Hz made
+-- the diamond visibly swim behind the world ("position is not static").
+local function RepositionMarker()
+    local frame = state.frame
+    if not frame or not frame:IsShown() then
+        return
+    end
+    local target = state.target
+    if not target then
+        return
+    end
+    local settings = addon.settings and addon.settings.navigation
+    if not settings or not settings.enabled then
+        return
+    end
+    -- Arrived: UpdateMarker parks the marker above the character; leave it.
+    if state.arrivalInRange then
+        return
+    end
+
+    local ellipseMajorAxis, ellipseMinorAxis = GetBlizzlikeEllipseRadii(settings)
+    local projectedX, projectedY
+    local clamped = false
+
+    local getFrameState = state.nativeNavigationGetFrameState
+    if type(getFrameState) ~= "function" then
+        if type(_G.GetNavigationFrameState) == "function" then
+            getFrameState = _G.GetNavigationFrameState
+        elseif type(_G.C_Navigation_GetFrameState) == "function" then
+            getFrameState = _G.C_Navigation_GetFrameState
+        end
+    end
+
+    if type(getFrameState) == "function" then
+        local ok, nx, ny, stateValue, clampedValue = pcall(getFrameState)
+        if ok and type(nx) == "number" and type(ny) == "number" then
+            local navState = tonumber(stateValue)
+            if navState ~= NAV_STATE_INVALID then
+                local uiScale = (UIParent and UIParent:GetEffectiveScale()) or 1
+                if uiScale > 0 then
+                    nx = nx / uiScale
+                    ny = ny / uiScale
+                end
+                projectedX, projectedY = nx, ny
+                clamped = (clampedValue == true) or (navState == NAV_STATE_OCCLUDED)
+                if clamped then
+                    projectedX, projectedY = ClampPointToEllipse(nx, ny, ellipseMajorAxis, ellipseMinorAxis)
+                end
+            end
+        end
+    end
+
+    if not projectedX then
+        -- Bearing edge-pin fallback (also covers native INVALID = behind camera).
+        local px, py, mapId = GetPlayerMapPositionSafe()
+        if not px or not py or not mapId then
+            return
+        end
+        local vx = target.visualX or target.x
+        local vy = target.visualY or target.y
+        if not vx or not vy then
+            return
+        end
+        local dist, dx, dy = ComputeDistanceYards(mapId, px, py, vx, vy)
+        if type(dx) ~= "number" or type(dy) ~= "number" then
+            return
+        end
+        local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+        local _, relative = ComputeRelativeHeading(facing, px, py, vx, vy, dx, dy)
+        if type(relative) ~= "number" then
+            return
+        end
+        local pushRadius = ellipseMajorAxis + ellipseMinorAxis
+        projectedX, projectedY = ClampPointToEllipse(
+            math_sin(relative) * pushRadius,
+            math_cos(relative) * pushRadius,
+            ellipseMajorAxis,
+            ellipseMinorAxis
+        )
+        clamped = true
+    end
+
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", projectedX, projectedY)
+
+    -- Keep the directional arrow riding the ring position between full ticks.
+    if clamped and frame.Arrow and frame.Arrow:IsShown() and frame.Icon then
+        local length = math_sqrt((projectedX * projectedX) + (projectedY * projectedY))
+        if length > 0 then
+            local toArrowX = projectedX / length
+            local toArrowY = projectedY / length
+            if frame.Arrow.SetRotation then
+                frame.Arrow:SetRotation(-Atan2(toArrowX, toArrowY))
+            end
+            local navFrameRadius = math_max(frame.Icon:GetWidth() or 0, frame.Icon:GetHeight() or 0)
+            frame.Arrow:ClearAllPoints()
+            frame.Arrow:SetPoint("CENTER", frame, "CENTER", toArrowX * navFrameRadius, toArrowY * navFrameRadius)
+        end
+    end
 end
 
 function Navigation:SetManualWaypoint(x, y, mapId, label)
@@ -8079,6 +8175,9 @@ function Navigation.OnEnable()
 
         state.elapsed = state.elapsed + elapsed
         if state.elapsed < interval and not state.dirty then
+            -- Between full updates, re-project the current target every frame so
+            -- the pin stays glued to the destination while the camera moves.
+            RepositionMarker()
             return
         end
 

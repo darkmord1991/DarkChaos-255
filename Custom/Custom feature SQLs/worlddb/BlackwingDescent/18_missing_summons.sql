@@ -40,9 +40,12 @@ WHERE cmi.`DisplayID` IN (
   AND NOT EXISTS (SELECT 1 FROM `creature_model_info` a WHERE a.`DisplayID` = cmi.`DisplayID`);
 
 -- The DC client patch (patch-2) overrides the stock northrenddrake model with a broken HD retroport
--- (vertex explosion regardless of textures). Repoint the 3 BWD rares to stock proto-drake displays.
+-- (vertex explosion regardless of textures). Fixed properly: a clean staged rebake of the retail
+-- northrenddrake (model + skins + anims + drakeskin* variations) now ships in patch-5, which loads
+-- AFTER patch-2 and overrides the broken file globally. The 3 BWD rares use their real Cata
+-- displays again (33433/33097 = black drake skins on the northrend drake model).
 DELETE FROM `creature_template_model` WHERE `CreatureID` IN (42764, 42767, 42768);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
-    (42764, 0, 28044, 1.6, 1, 0),   -- Pyrecraw: red proto-drake
-    (42767, 0, 28040, 1.6, 1, 0),   -- Ivoroc: black proto-drake
-    (42768, 0, 28045, 1.5, 1, 0);   -- Maimgor: bronze proto-drake
+    (42764, 0, 33433, 1, 1, 0),   -- Pyrecraw: black drake
+    (42767, 0, 33433, 1, 1, 0),   -- Ivoroc: black drake
+    (42768, 0, 33097, 1, 1, 0);   -- Maimgor: black drake

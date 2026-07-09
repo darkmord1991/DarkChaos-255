@@ -231,6 +231,14 @@ struct boss_omnotron_defense_system : public BossAI
     {
         me->SetReactState(REACT_PASSIVE);
         _activatedGolemEntry = 0;
+
+        // Any golems still tracked from a prior summon cycle (e.g. Reset() re-firing
+        // without going through ACTION_STOP_ENCOUNTER first) must not be left alive
+        // underneath the fresh batch SummonCreatureGroup() is about to create.
+        for (ObjectGuid guid : _golemGuidVector)
+            if (Creature* golem = ObjectAccessor::GetCreature(*me, guid))
+                golem->DespawnOrUnsummon();
+        _golemGuidVector.clear();
     }
 
     void Reset() override
@@ -330,9 +338,10 @@ struct boss_omnotron_defense_system : public BossAI
                     }
                 }
 
+                _golemGuidVector.clear();
+
                 instance->SetBossState(DATA_OMNOTRON_DEFENSE_SYSTEM, FAIL);
                 RemoveDebuffsFromRaid();
-                summons.DespawnAll();
                 summons.DespawnAll();
                 break;
             case ACTION_FINISH_ENCOUNTER:

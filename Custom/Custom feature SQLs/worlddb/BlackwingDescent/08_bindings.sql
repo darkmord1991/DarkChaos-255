@@ -75,3 +75,27 @@ INSERT INTO `areatrigger_scripts` (`entry`, `ScriptName`) VALUES (6583, 'at_bwd_
 DELETE FROM `game_tele` WHERE `id` = 10614;
 INSERT INTO `game_tele` (`id`, `position_x`, `position_y`, `position_z`, `orientation`, `map`, `name`)
 VALUES (10614, -345.872, -224.344, 193.127, 0, 669, 'BlackwingDescentInside');
+
+-- ---------------------------------------------------------------------------
+-- gossip_menu + npc_text  (Orb of Culmination 203254 shipped with gossipID=0 in
+-- both cata_world and acore_world -- retail never authored gossip text for this
+-- trigger object, so interacting with it showed the client's blank "Greetings,
+-- <name>." fallback with no body. go_nefarians_end_orb_of_culmination only
+-- overrides GossipSelect, so the core's default type-2 gossip prep reads
+-- gameobject_template.Data0 to resolve the menu -- same pattern as Finkle's Cage.)
+-- ---------------------------------------------------------------------------
+DELETE FROM `broadcast_text` WHERE `ID` = 700900;
+INSERT INTO `broadcast_text`
+    (`ID`, `LanguageID`, `MaleText`, `FemaleText`, `EmoteID1`, `EmoteID2`, `EmoteID3`,
+     `EmoteDelay1`, `EmoteDelay2`, `EmoteDelay3`, `SoundEntriesId`, `EmotesID`, `Flags`, `VerifiedBuild`)
+VALUES
+    (700900, 0, 'A pulsing orb of crystallized shadow magic hums with barely-contained power. You can feel Nefarian''s will converging upon this place.', '', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+DELETE FROM `npc_text` WHERE `ID` = 700900;
+INSERT INTO `npc_text` (`ID`, `text0_0`, `text0_1`, `BroadcastTextID0`, `lang0`, `Probability0`)
+VALUES (700900, 'A pulsing orb of crystallized shadow magic hums with barely-contained power. You can feel Nefarian''s will converging upon this place.', '', 700900, 0, 1);
+
+DELETE FROM `gossip_menu` WHERE `MenuID` = 700900;
+INSERT INTO `gossip_menu` (`MenuID`, `TextID`) VALUES (700900, 700900);
+
+UPDATE `gameobject_template` SET `Data0` = 700900 WHERE `entry` = 203254;
