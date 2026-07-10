@@ -1,0 +1,11 @@
+-- ---------------------------------------------------------------------------
+-- creature_template.KillCredit1 offset fix  (Mount Hyjal, map 750)
+-- ---------------------------------------------------------------------------
+-- 3 entries still had the raw pre-offset Cata KillCredit1 value instead of
+-- the local +3,600,000 clone (ObjectMgr: "lists non-existing creature entry
+-- {} in KillCredit{}") -- the offset-cloning pipeline remapped every other
+-- field but missed KillCredit1 for these. The +3.6M targets already exist
+-- (Hovel Brute 3639642, Wormwing Screecher 3641027, Twilight Dragonkin
+-- 3641029) so this is a straight +3,600,000 correction, no new data needed.
+-- ---------------------------------------------------------------------------
+UPDATE `creature_template` SET `KillCredit1` = `KillCredit1` + 3600000 WHERE `entry` IN (3639643,3641030,3641028) AND `KillCredit1` IN (39642,41029,41027);

@@ -1366,65 +1366,91 @@ namespace DCCollection
         if (uint32 resolvedSpellId = ResolveCompanionSummonSpellFromSpell(spellId))
             spellId = resolvedSpellId;
 
-        // Static cache: spellId -> itemId mapping (0 means not found)
+        // Fully preloaded spellId -> teaching-item map. The old per-spell
+        // "WHERE spellid_N = {}" lookup was an UNINDEXED FULL SCAN of
+        // item_template (~150k rows on this server); the collection import
+        // calls this once per known companion, so a character with a few
+        // hundred pets stalled the world thread for ~18 seconds on the first
+        // login of a session. One scan up front replaces all of them.
         static std::unordered_map<uint32, uint32> s_companionItemCache;
-        [[maybe_unused]] static bool s_cacheInitialized = false;
+        static bool s_cacheLoaded = false;
 
-        // Check cache first
-        auto it = s_companionItemCache.find(spellId);
-        if (it != s_companionItemCache.end())
-            return it->second;
-
-        // Companion pets in 3.3.5a are typically taught by item_template (class=15, subclass=2).
-        QueryResult r = WorldDatabase.Query(
-            "SELECT MIN(entry) FROM item_template "
-            "WHERE class = 15 AND subclass = 2 AND ("
-            "  spellid_1 = {} OR spellid_2 = {} OR spellid_3 = {} OR spellid_4 = {} OR spellid_5 = {}"
-            ")",
-            spellId, spellId, spellId, spellId, spellId);
-
-        uint32 result = 0;
-        if (r)
+        if (!s_cacheLoaded)
         {
-            Field* f = r->Fetch();
-            if (!f[0].IsNull())
-                result = f[0].Get<uint32>();
+            s_cacheLoaded = true;
+
+            // Companion pets in 3.3.5a are taught by item_template rows with
+            // class=15, subclass=2. Keep MIN(entry) semantics when several
+            // items teach the same spell.
+            if (QueryResult r = WorldDatabase.Query(
+                "SELECT entry, spellid_1, spellid_2, spellid_3, spellid_4, spellid_5 "
+                "FROM item_template WHERE class = 15 AND subclass = 2"))
+            {
+                do
+                {
+                    Field* f = r->Fetch();
+                    uint32 entry = f[0].Get<uint32>();
+                    for (uint8 i = 1; i <= 5; ++i)
+                    {
+                        uint32 taughtSpellId = f[i].Get<uint32>();
+                        if (!taughtSpellId)
+                            continue;
+
+                        auto [it, inserted] = s_companionItemCache.try_emplace(taughtSpellId, entry);
+                        if (!inserted && entry < it->second)
+                            it->second = entry;
+                    }
+                } while (r->NextRow());
+            }
+
+            LOG_INFO("module.dc", "DC-Collection: companion teaching-item map preloaded ({} spells)",
+                s_companionItemCache.size());
         }
 
-        // Cache the result (including 0 for "not found")
-        s_companionItemCache[spellId] = result;
-        return result;
+        auto it = s_companionItemCache.find(spellId);
+        return it != s_companionItemCache.end() ? it->second : 0;
     }
 
     uint32 FindMountItemIdForSpell(uint32 spellId)
     {
-        // Static cache: spellId -> itemId mapping (0 means not found)
+        // Fully preloaded spellId -> teaching-item map (same fix as
+        // FindCompanionItemIdForSpell: the per-spell lookup was an unindexed
+        // full scan of item_template per uncached spell).
         static std::unordered_map<uint32, uint32> s_mountItemCache;
+        static bool s_cacheLoaded = false;
 
-        // Check cache first
-        auto it = s_mountItemCache.find(spellId);
-        if (it != s_mountItemCache.end())
-            return it->second;
-
-        // Mounts are typically taught by item_template (class=15, subclass=5).
-        QueryResult r = WorldDatabase.Query(
-            "SELECT MIN(entry) FROM item_template "
-            "WHERE class = 15 AND subclass = 5 AND ("
-            "  spellid_1 = {} OR spellid_2 = {} OR spellid_3 = {} OR spellid_4 = {} OR spellid_5 = {}"
-            ")",
-            spellId, spellId, spellId, spellId, spellId);
-
-        uint32 result = 0;
-        if (r)
+        if (!s_cacheLoaded)
         {
-            Field* f = r->Fetch();
-            if (!f[0].IsNull())
-                result = f[0].Get<uint32>();
+            s_cacheLoaded = true;
+
+            // Mounts are taught by item_template rows with class=15, subclass=5.
+            if (QueryResult r = WorldDatabase.Query(
+                "SELECT entry, spellid_1, spellid_2, spellid_3, spellid_4, spellid_5 "
+                "FROM item_template WHERE class = 15 AND subclass = 5"))
+            {
+                do
+                {
+                    Field* f = r->Fetch();
+                    uint32 entry = f[0].Get<uint32>();
+                    for (uint8 i = 1; i <= 5; ++i)
+                    {
+                        uint32 taughtSpellId = f[i].Get<uint32>();
+                        if (!taughtSpellId)
+                            continue;
+
+                        auto [it, inserted] = s_mountItemCache.try_emplace(taughtSpellId, entry);
+                        if (!inserted && entry < it->second)
+                            it->second = entry;
+                    }
+                } while (r->NextRow());
+            }
+
+            LOG_INFO("module.dc", "DC-Collection: mount teaching-item map preloaded ({} spells)",
+                s_mountItemCache.size());
         }
 
-        // Cache the result (including 0 for "not found")
-        s_mountItemCache[spellId] = result;
-        return result;
+        auto it = s_mountItemCache.find(spellId);
+        return it != s_mountItemCache.end() ? it->second : 0;
     }
 
     bool IsCompanionSpell(SpellInfo const* spellInfo)
