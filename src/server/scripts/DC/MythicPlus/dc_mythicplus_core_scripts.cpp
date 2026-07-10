@@ -68,6 +68,27 @@ public:
         RegisterMythicPlusAffixHandlers();
         LOG_INFO("server.loading", ">> Mythic+ system loaded successfully");
     }
+
+    void OnUpdate(uint32 diff) override
+    {
+        // Run-manager sweeps live here (world thread, once per second).
+        // They used to run from OnPlayerUpdate, where (a) the accumulated
+        // per-player diff hit the 1s gate N times faster with N dungeon
+        // players, and (b) the shared run-manager state was touched from
+        // multiple map-update threads.
+        _sweepTimer += diff;
+        if (_sweepTimer < 1000)
+            return;
+        _sweepTimer = 0;
+
+        sMythicRuns->ProcessCancellationTimers();
+        sMythicRuns->ProcessCancellationVotes();
+        sMythicRuns->ProcessCountdowns();
+        sMythicRuns->ProcessHudUpdates();
+    }
+
+private:
+    uint32 _sweepTimer = 0;
 };
 
 class MythicPlusCountdownSpellGate : public AllSpellScript
@@ -586,19 +607,9 @@ public:
         if (!map || !map->IsDungeon())
             return;
 
-        // Process cancellation timers and votes (runs every player update)
-        static uint32 _cancellationUpdateTimer = 0;
-        _cancellationUpdateTimer += diff;
-        if (_cancellationUpdateTimer >= 1000) // Check every 1 second
-        {
-            sMythicRuns->ProcessCancellationTimers();
-            sMythicRuns->ProcessCancellationVotes();
-            sMythicRuns->ProcessCountdowns();
-            sMythicRuns->ProcessHudUpdates();
-            _cancellationUpdateTimer = 0;
-        }
-
-        // Dispatch to affix handlers for periodic effects (e.g., Grievous)
+        // Run-manager sweeps moved to MythicPlusWorldScript::OnUpdate (world
+        // thread, real 1s cadence); only the per-player affix dispatch stays
+        // on the player-update path.
         sAffixMgr->OnPlayerUpdate(player, diff);
     }
 };

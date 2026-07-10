@@ -23,6 +23,7 @@
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "ObjectAccessor.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Config.h"
@@ -1814,147 +1815,130 @@ namespace
 
         LOG_DEBUG("server.scripts", "DC-Leaderboards: Account stats cache MISS for account {}", accountId);
 
-        // Build characters array - get all characters on this account
-        std::string charactersJson = "[";
-        bool first = true;
+        // Async rebuild. This used to run 1 + N-per-character + 4 blocking
+        // queries on the world thread (classic N+1); now the per-character M+
+        // rank is a correlated subquery, everything runs in two chained async
+        // queries, and the world thread only assembles JSON.
+        ObjectGuid const playerGuid = player->GetGUID();
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT c.guid, c.name, c.class, c.level, c.race "
+        std::string charsSql = Acore::StringFormat(
+            "SELECT c.name, c.class, c.level, "
+            "(SELECT COUNT(*) + 1 FROM dc_mplus_scores s1 "
+            "WHERE s1.season_id = (SELECT MAX(season_id) FROM dc_mplus_scores) "
+            "AND s1.best_level > ("
+            "    SELECT COALESCE(MAX(s2.best_level), 0) FROM dc_mplus_scores s2 WHERE s2.character_guid = c.guid"
+            ")) AS mplus_rank "
             "FROM characters c "
             "WHERE c.account = {} "
             "ORDER BY c.level DESC, c.name ASC",
             accountId);
 
-        if (result)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(charsSql)
+            .WithCallback([playerGuid, accountId](QueryResult result)
         {
-            do
+            std::string charactersJson = "[";
+            bool first = true;
+
+            if (result)
             {
-                Field* fields = result->Fetch();
-                uint32 guid = fields[0].Get<uint32>();
-                std::string name = fields[1].Get<std::string>();
-                uint8 classId = fields[2].Get<uint8>();
-                uint8 level = fields[3].Get<uint8>();
-
-                std::string className = GetClassNameFromId(classId);
-
-                // Try to get best rank for this character across any category
-                // For simplicity, just check M+ score as "best rank"
-                uint32 bestRank = 0;
-                std::string bestCategory = "";
-
-                // Check M+ best rank
-                QueryResult rankResult = CharacterDatabase.Query(
-                    "SELECT COUNT(*) + 1 FROM dc_mplus_scores s1 "
-                    "WHERE s1.season_id = (SELECT MAX(season_id) FROM dc_mplus_scores) "
-                    "AND s1.best_level > ("
-                    "    SELECT COALESCE(MAX(s2.best_level), 0) FROM dc_mplus_scores s2 WHERE s2.character_guid = {}"
-                    ")",
-                    guid);
-
-                if (rankResult)
+                do
                 {
-                    uint32 mplusRank = rankResult->Fetch()[0].Get<uint32>();
-                    if (mplusRank > 0 && (bestRank == 0 || mplusRank < bestRank))
+                    Field* fields = result->Fetch();
+                    std::string name = fields[0].Get<std::string>();
+                    uint8 classId = fields[1].Get<uint8>();
+                    uint8 level = fields[2].Get<uint8>();
+                    uint32 mplusRank = fields[3].Get<uint32>();
+
+                    std::string className = GetClassNameFromId(classId);
+
+                    // M+ score is currently the only ranked category.
+                    uint32 bestRank = 0;
+                    std::string bestCategory = "";
+                    if (mplusRank > 0)
                     {
                         bestRank = mplusRank;
                         bestCategory = "M+";
                     }
+
+                    if (!first) charactersJson += ",";
+                    first = false;
+
+                    charactersJson += "{";
+                    charactersJson += "\"name\":\"" + JsonEscape(name) + "\",";
+                    charactersJson += "\"class\":\"" + className + "\",";
+                    charactersJson += "\"level\":" + std::to_string(level) + ",";
+                    charactersJson += "\"bestRank\":" + std::to_string(bestRank) + ",";
+                    charactersJson += "\"bestCategory\":\"" + bestCategory + "\"";
+                    charactersJson += "}";
+
+                } while (result->NextRow());
+            }
+
+            charactersJson += "]";
+
+            // Aggregate account totals in one row of scalar subqueries.
+            std::string totalsSql = Acore::StringFormat(
+                "SELECT "
+                "(SELECT COALESCE(SUM(s.total_runs), 0) FROM dc_mplus_scores s JOIN characters c ON s.character_guid = c.guid WHERE c.account = {}), "
+                "(SELECT COALESCE(SUM(a.total_gold), 0) FROM dc_aoeloot_detailed_stats a JOIN characters c ON a.player_guid = c.guid WHERE c.account = {}), "
+                "(SELECT COALESCE(SUM(a.total_items), 0) FROM dc_aoeloot_detailed_stats a JOIN characters c ON a.player_guid = c.guid WHERE c.account = {}), "
+                "(SELECT COALESCE(SUM(h.battles_won), 0) FROM dc_hlbg_player_stats h JOIN characters c ON h.player_guid = c.guid WHERE c.account = {})",
+                accountId, accountId, accountId, accountId);
+
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(totalsSql)
+                .WithCallback([playerGuid, accountId, charactersJson](QueryResult totals)
+            {
+                uint32 totalMplusRuns = 0;
+                uint64 totalGold = 0;
+                uint32 totalItems = 0;
+                uint32 totalBgWins = 0;
+
+                if (totals)
+                {
+                    Field* fields = totals->Fetch();
+                    totalMplusRuns = fields[0].Get<uint32>();
+                    totalGold = fields[1].Get<uint64>();
+                    totalItems = fields[2].Get<uint32>();
+                    totalBgWins = fields[3].Get<uint32>();
                 }
 
-                if (!first) charactersJson += ",";
-                first = false;
+                std::string totalsJson = "{";
+                totalsJson += "\"Total M+ Runs\":" + std::to_string(totalMplusRuns);
+                totalsJson += ",\"Total Gold Looted\":" + std::to_string(totalGold / 10000);  // Convert copper to gold
+                totalsJson += ",\"Total Items Looted\":" + std::to_string(totalItems);
+                totalsJson += ",\"Total BG Wins\":" + std::to_string(totalBgWins);
+                totalsJson += "}";
 
-                charactersJson += "{";
-                charactersJson += "\"name\":\"" + JsonEscape(name) + "\",";
-                charactersJson += "\"class\":\"" + className + "\",";
-                charactersJson += "\"level\":" + std::to_string(level) + ",";
-                charactersJson += "\"bestRank\":" + std::to_string(bestRank) + ",";
-                charactersJson += "\"bestCategory\":\"" + bestCategory + "\"";
-                charactersJson += "}";
+                // Build full JSON response
+                std::string fullJson = "{\"characters\":" + charactersJson + ",\"totals\":" + totalsJson + "}";
 
-            } while (result->NextRow());
-        }
+                // ===== STORE IN CACHE =====
+                {
+                    std::lock_guard<std::mutex> lock(g_cacheMutex);
 
-        charactersJson += "]";
+                    // Opportunistic pruning: drop expired entries so the map
+                    // stays bounded by concurrently-active accounts instead of
+                    // "accounts ever seen".
+                    for (auto it = g_accountStatsCache.begin(); it != g_accountStatsCache.end();)
+                    {
+                        if (!it->second.IsValid())
+                            it = g_accountStatsCache.erase(it);
+                        else
+                            ++it;
+                    }
 
-        // Build totals object - aggregate stats across all account characters
-        std::string totalsJson = "{";
+                    AccountStatsCacheEntry cacheEntry;
+                    cacheEntry.jsonResponse = fullJson;
+                    cacheEntry.lastUpdate = time(nullptr);
+                    g_accountStatsCache[accountId] = std::move(cacheEntry);
+                    LOG_DEBUG("server.scripts", "DC-Leaderboards: Cached account stats for account {}", accountId);
+                }
 
-        // Total M+ runs
-        result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(s.total_runs), 0) "
-            "FROM dc_mplus_scores s "
-            "JOIN characters c ON s.character_guid = c.guid "
-            "WHERE c.account = {}",
-            accountId);
-
-        uint32 totalMplusRuns = 0;
-        if (result)
-            totalMplusRuns = result->Fetch()[0].Get<uint32>();
-
-        totalsJson += "\"Total M+ Runs\":" + std::to_string(totalMplusRuns);
-
-        // Total gold looted (AOE Loot)
-        // Schema: dc_aoeloot_detailed_stats.player_guid + total_gold (copper)
-        result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(a.total_gold), 0) "
-            "FROM dc_aoeloot_detailed_stats a "
-            "JOIN characters c ON a.player_guid = c.guid "
-            "WHERE c.account = {}",
-            accountId);
-
-        uint64 totalGold = 0;
-        if (result)
-            totalGold = result->Fetch()[0].Get<uint64>();
-
-        totalsJson += ",\"Total Gold Looted\":" + std::to_string(totalGold / 10000);  // Convert copper to gold
-
-        // Total items looted
-        // Schema: dc_aoeloot_detailed_stats.total_items
-        result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(a.total_items), 0) "
-            "FROM dc_aoeloot_detailed_stats a "
-            "JOIN characters c ON a.player_guid = c.guid "
-            "WHERE c.account = {}",
-            accountId);
-
-        uint32 totalItems = 0;
-        if (result)
-            totalItems = result->Fetch()[0].Get<uint32>();
-
-        totalsJson += ",\"Total Items Looted\":" + std::to_string(totalItems);
-
-        // HLBG total wins
-        result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(h.battles_won), 0) "
-            "FROM dc_hlbg_player_stats h "
-            "JOIN characters c ON h.player_guid = c.guid "
-            "WHERE c.account = {}",
-            accountId);
-
-        uint32 totalBgWins = 0;
-        if (result)
-            totalBgWins = result->Fetch()[0].Get<uint32>();
-
-        totalsJson += ",\"Total BG Wins\":" + std::to_string(totalBgWins);
-
-        totalsJson += "}";
-
-        // Build full JSON response
-        std::string fullJson = "{\"characters\":" + charactersJson + ",\"totals\":" + totalsJson + "}";
-
-        // ===== STORE IN CACHE =====
-        {
-            std::lock_guard<std::mutex> lock(g_cacheMutex);
-            AccountStatsCacheEntry cacheEntry;
-            cacheEntry.jsonResponse = fullJson;
-            cacheEntry.lastUpdate = time(nullptr);
-            g_accountStatsCache[accountId] = std::move(cacheEntry);
-            LOG_DEBUG("server.scripts", "DC-Leaderboards: Cached account stats for account {}", accountId);
-        }
-
-        // Send raw JSON message
-        SendRawJson(player, Opcode::SMSG_ACCOUNT_STATS, fullJson);
+                if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+                    if (player->GetSession())
+                        SendRawJson(player, Opcode::SMSG_ACCOUNT_STATS, fullJson);
+            }));
+        }));
     }
 
     // Error handler for future use

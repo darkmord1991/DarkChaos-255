@@ -576,12 +576,14 @@ namespace Upgrade
         if (upgradeState && upgradeState->has_persisted_state)
             currentLevel = upgradeState->upgrade_level;
 
+        // Static tier config comes from the manager's startup-loaded maps -
+        // this handler used to re-query the immutable dc_item_upgrade_tiers /
+        // dc_item_upgrade_costs tables on every request, blocking the world
+        // thread for data that never changes at runtime.
         uint32 maxLevel = 15;
-        QueryResult tierResult = WorldDatabase.Query(
-            "SELECT max_upgrade_level FROM dc_item_upgrade_tiers WHERE tier_id = {} AND season = 1",
-            tier);
-        if (tierResult)
-            maxLevel = (*tierResult)[0].Get<uint32>();
+        if (mgr)
+            if (uint8 tierMax = mgr->GetTierMaxLevel(static_cast<uint8>(tier)))
+                maxLevel = tierMax;
 
         if (targetLevel > maxLevel)
         {
@@ -596,18 +598,16 @@ namespace Upgrade
              return;
         }
 
-        // Costs
-        QueryResult costResult = WorldDatabase.Query(
-            "SELECT SUM(token_cost), SUM(essence_cost) FROM dc_item_upgrade_costs "
-            "WHERE tier_id = {} AND season = 1 AND upgrade_level BETWEEN {} AND {}",
-            tier, currentLevel + 1, targetLevel);
-
+        // Costs (summed from the manager's in-memory cost table)
         uint32 tokensNeeded = 0;
         uint32 essenceNeeded = 0;
-        if (costResult)
+        if (mgr)
         {
-             if (!(*costResult)[0].IsNull()) tokensNeeded = (*costResult)[0].Get<uint32>();
-             if (!(*costResult)[1].IsNull()) essenceNeeded = (*costResult)[1].Get<uint32>();
+            for (uint32 level = currentLevel + 1; level <= targetLevel; ++level)
+            {
+                tokensNeeded += mgr->GetUpgradeCost(static_cast<uint8>(tier), static_cast<uint8>(level));
+                essenceNeeded += mgr->GetEssenceCost(static_cast<uint8>(tier), static_cast<uint8>(level));
+            }
         }
 
         // Check currency
@@ -667,20 +667,15 @@ namespace Upgrade
         {
             outTokens = 0;
             outEssence = 0;
-            if (throughLevel == 0)
+            if (throughLevel == 0 || !mgr)
                 return;
 
-            QueryResult investedResult = WorldDatabase.Query(
-                "SELECT COALESCE(SUM(token_cost), 0), COALESCE(SUM(essence_cost), 0) FROM dc_item_upgrade_costs "
-                "WHERE tier_id = {} AND season = 1 AND upgrade_level <= {}",
-                tier, throughLevel);
-            if (!investedResult)
-                return;
-
-            if (!(*investedResult)[0].IsNull())
-                outTokens = (*investedResult)[0].Get<uint32>();
-            if (!(*investedResult)[1].IsNull())
-                outEssence = (*investedResult)[1].Get<uint32>();
+            // In-memory cost table (see the static-config note above).
+            for (uint32 level = 1; level <= throughLevel; ++level)
+            {
+                outTokens += mgr->GetUpgradeCost(static_cast<uint8>(tier), static_cast<uint8>(level));
+                outEssence += mgr->GetEssenceCost(static_cast<uint8>(tier), static_cast<uint8>(level));
+            }
         };
 
         uint32 investedTokens = upgradeState->tokens_invested;

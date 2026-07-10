@@ -25,6 +25,8 @@
 #include "Log.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
+#include "ObjectAccessor.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include <unordered_set>
@@ -568,71 +570,80 @@ private:
     {
         // questId currently unused in this implementation; keep parameter for future use
         (void)questId;
-        if (!player)
+        if (!player || (!isDailyQuest && !isWeeklyQuest && !isDungeonQuest))
             return;
 
-        // Achievement: First dungeon quest completed (ID 13500)
-        if (isDungeonQuest)
-        {
-            uint32 totalCompletions = DungeonQuestDB::GetDungeonQuestCompletions(player);
+        // Async: this runs on every quest turn-in, so the milestone reads must
+        // never block the world thread. Thresholds use >= plus a HasAchieved
+        // gate instead of == : UpdateStatistics writes asynchronously, so an
+        // exact-equality check raced the increment and could silently skip a
+        // milestone (or double-fire on a stale read).
+        ObjectGuid const playerGuid = player->GetGUID();
+        uint32 const guidLow = playerGuid.GetCounter();
 
-            if (totalCompletions == 1)
+        std::string sql = Acore::StringFormat(
+            "SELECT "
+            "COALESCE((SELECT stat_value FROM dc_character_dungeon_statistics WHERE guid = {} AND stat_name = 'daily_quests_completed'), 0), "
+            "COALESCE((SELECT stat_value FROM dc_character_dungeon_statistics WHERE guid = {} AND stat_name = 'weekly_quests_completed'), 0), "
+            "COALESCE((SELECT stat_value FROM dc_character_dungeon_statistics WHERE guid = {} AND stat_name = 'dungeon_quests_completed'), 0), "
+            "(SELECT COUNT(*) FROM dc_character_dungeon_quests_completed WHERE guid = {} AND quest_id BETWEEN {} AND {})",
+            guidLow, guidLow, guidLow, guidLow, QUEST_DUNGEON_MIN, QUEST_DUNGEON_MAX);
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([this, playerGuid, isDailyQuest, isWeeklyQuest, isDungeonQuest](QueryResult result)
+        {
+            if (!result)
+                return;
+
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            Field* fields = result->Fetch();
+            uint32 dailyCount = fields[0].Get<uint32>();
+            uint32 weeklyCount = fields[1].Get<uint32>();
+            uint32 dungeonCount = fields[2].Get<uint32>();
+            uint32 totalCompletions = fields[3].Get<uint32>();
+
+            auto awardOnce = [&](uint32 achievementId, char const* name, bool reached)
             {
-                AwardAchievement(player, 13500, "First Steps");
+                if (reached && !player->HasAchieved(achievementId))
+                    AwardAchievement(player, achievementId, name);
+            };
+
+            // Achievement: First dungeon quest completed (ID 13500)
+            if (isDungeonQuest)
+                awardOnce(13500, "First Steps", totalCompletions >= 1);
+
+            // Daily quest achievement milestones: 10, 25, 50, 100
+            if (isDailyQuest)
+            {
+                awardOnce(13501, "Daily Dedication (10)", dailyCount >= 10);
+                awardOnce(13502, "Daily Devotion (25)", dailyCount >= 25);
+                awardOnce(13503, "Daily Champion (50)", dailyCount >= 50);
+                awardOnce(13504, "Daily Legend (100)", dailyCount >= 100);
             }
-        }
 
-        // Daily quest achievement milestones
-        if (isDailyQuest)
-        {
-            uint32 dailyCount = DungeonQuestDB::GetStatisticValue(player, "daily_quests_completed");
+            // Weekly quest achievement milestones: 5, 10, 25, 50
+            if (isWeeklyQuest)
+            {
+                awardOnce(13505, "Weekly Warrior (5)", weeklyCount >= 5);
+                awardOnce(13506, "Weekly Champion (10)", weeklyCount >= 10);
+                awardOnce(13507, "Weekly Legend (25)", weeklyCount >= 25);
+                awardOnce(13508, "Weekly Master (50)", weeklyCount >= 50);
+            }
 
-            // Award milestones: 10, 25, 50, 100 dailies
-            if (dailyCount == 10)
-                AwardAchievement(player, 13501, "Daily Dedication (10)");
-            else if (dailyCount == 25)
-                AwardAchievement(player, 13502, "Daily Devotion (25)");
-            else if (dailyCount == 50)
-                AwardAchievement(player, 13503, "Daily Champion (50)");
-            else if (dailyCount == 100)
-                AwardAchievement(player, 13504, "Daily Legend (100)");
-        }
-
-        // Weekly quest achievement milestones
-        if (isWeeklyQuest)
-        {
-            uint32 weeklyCount = DungeonQuestDB::GetStatisticValue(player, "weekly_quests_completed");
-
-            // Award milestones: 5, 10, 25, 50 weeklies
-            if (weeklyCount == 5)
-                AwardAchievement(player, 13505, "Weekly Warrior (5)");
-            else if (weeklyCount == 10)
-                AwardAchievement(player, 13506, "Weekly Champion (10)");
-            else if (weeklyCount == 25)
-                AwardAchievement(player, 13507, "Weekly Legend (25)");
-            else if (weeklyCount == 50)
-                AwardAchievement(player, 13508, "Weekly Master (50)");
-        }
-
-        // Total dungeon quest milestones
-        if (isDungeonQuest)
-        {
-            uint32 dungeonCount = DungeonQuestDB::GetStatisticValue(player, "dungeon_quests_completed");
-
-            // Award milestones: 10, 25, 50, 100, 250, 500 dungeons
-            if (dungeonCount == 10)
-                AwardAchievement(player, 13509, "Dungeon Explorer (10)");
-            else if (dungeonCount == 25)
-                AwardAchievement(player, 13510, "Dungeon Adventurer (25)");
-            else if (dungeonCount == 50)
-                AwardAchievement(player, 13511, "Dungeon Champion (50)");
-            else if (dungeonCount == 100)
-                AwardAchievement(player, 13512, "Dungeon Master (100)");
-            else if (dungeonCount == 250)
-                AwardAchievement(player, 13513, "Dungeon Legend (250)");
-            else if (dungeonCount == 500)
-                AwardAchievement(player, 13514, "Dungeon Hero (500)");
-        }
+            // Total dungeon quest milestones: 10, 25, 50, 100, 250, 500
+            if (isDungeonQuest)
+            {
+                awardOnce(13509, "Dungeon Explorer (10)", dungeonCount >= 10);
+                awardOnce(13510, "Dungeon Adventurer (25)", dungeonCount >= 25);
+                awardOnce(13511, "Dungeon Champion (50)", dungeonCount >= 50);
+                awardOnce(13512, "Dungeon Master (100)", dungeonCount >= 100);
+                awardOnce(13513, "Dungeon Legend (250)", dungeonCount >= 250);
+                awardOnce(13514, "Dungeon Hero (500)", dungeonCount >= 500);
+            }
+        }));
     }
 
     // Award achievement helper

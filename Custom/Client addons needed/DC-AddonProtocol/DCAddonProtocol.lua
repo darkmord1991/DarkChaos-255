@@ -1306,6 +1306,14 @@ function DC:_CleanupChunkBuffers()
     for sender, buf in pairs(self._chunkBuffers) do
         if buf and buf.ts and (now - buf.ts) > timeoutSec then
             self._chunkBuffers[sender] = nil
+            -- Also drop the msg-id bookkeeping for this sender: it was only
+            -- freed on successful reassembly, so timed-out chunk streams
+            -- leaked one _chunkMsgIds entry per sender+chunk-count forever.
+            for baseKey in pairs(self._chunkMsgIds) do
+                if string.find(baseKey, tostring(sender), 1, true) then
+                    self._chunkMsgIds[baseKey] = nil
+                end
+            end
             self:LogNetEvent("timeout", "chunk", "Chunked message reassembly timed out", {
                 sender = sender,
                 received = buf.received,

@@ -54,11 +54,21 @@ WHERE ct.`entry` IN (43396,43400,43401,43402,41440,42844);
 
 -- ---------------------------------------------------------------------------
 -- creature_template_model  (scale -> DisplayScale; Cata display ids are placeholders)
+--
+-- 41440 (Aberration) is the one exception: cata_world's own modelid1 (35677) does not
+-- exist in CreatureDisplayInfo.dbc (checked against both Custom/CSV DBC/CreatureDisplayInfo.csv
+-- and the compiled Custom/DBCs/CreatureDisplayInfo.dbc -- absent from both, not a lookup-tool
+-- gap) -- this model was simply never retroported/baked, unlike the 6 main bosses. It still has
+-- a nonzero CreatureDisplayID, so Creature::InitEntry's GetFirstValidModel() boot-time "no model
+-- defined, can't load" guard is satisfied and the creature loads -- but it would render with an
+-- invalid displayid client-side. Substituting Prime Subject's (41841) verified-working displayid
+-- 20726 as a stand-in: both are Maloriak lab-experiment adds from the same encounter, so it's a
+-- reasonable placeholder until the real Aberration model gets its own retroport/bake pass.
 -- ---------------------------------------------------------------------------
 DELETE FROM `creature_template_model` WHERE `CreatureID` IN (43396,43400,43401,43402,41440,42844);
 
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`)
-SELECT ct.`entry`, 0, ct.`modelid1`, ct.`scale`, 1, 0 FROM `cata_world`.`creature_template` ct
+SELECT ct.`entry`, 0, CASE WHEN ct.`entry` = 41440 THEN 20726 ELSE ct.`modelid1` END, ct.`scale`, 1, 0 FROM `cata_world`.`creature_template` ct
     WHERE ct.`modelid1` > 0 AND ct.`entry` IN (43396,43400,43401,43402,41440,42844)
 UNION ALL
 SELECT ct.`entry`, 1, ct.`modelid2`, ct.`scale`, 1, 0 FROM `cata_world`.`creature_template` ct

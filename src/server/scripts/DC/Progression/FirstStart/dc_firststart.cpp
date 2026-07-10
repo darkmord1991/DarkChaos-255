@@ -658,31 +658,13 @@ namespace DCFirstStart
         if (!sConfigMgr->GetOption<bool>(Config::DC_PRESTIGE_BONUSES, true))
             return;
 
-        uint32 accountId = player->GetSession()->GetAccountId();
-
-        // Check for account prestige level
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT MAX(prestige_level) FROM dc_prestige_players WHERE account_id = {}", accountId);
-
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            uint32 prestigeLevel = fields[0].Get<uint32>();
-
-            if (prestigeLevel > 0)
-            {
-                // Apply account-wide bonuses (these are passive and don't require spells)
-                // The prestige system will handle actual bonus application
-                // Here we just notify the player
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cffa335ee[Prestige]:|r Your account has Prestige Level |cffffd700%u|r! "
-                    "Bonuses are applied automatically.", prestigeLevel);
-
-                if (debug)
-                    LOG_INFO("module.dc", "[DCFirstStart] Player {} has account prestige level {}",
-                             player->GetName(), prestigeLevel);
-            }
-        }
+        // Dead feature removed: this used to query dc_prestige_players, a
+        // table nothing in the codebase ever writes (the live prestige system
+        // stores per-guid levels in dc_character_prestige), so the message
+        // below never fired and the blocking query was pure waste. The
+        // prestige system itself announces the level at login.
+        (void)player;
+        (void)debug;
     }
 
     // DC Integration: Trigger DC-Welcome addon

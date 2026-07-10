@@ -4173,15 +4173,8 @@ function DC:RequestCommunityList(offset, limit, filter, sort)
     return ok
 end
 
-function DC:RequestCommunityFavorite(outfitId, add)
-    return SendCollectionCommunityRequest(self.Opcodes.CMSG_COMMUNITY_FAVORITE, {
-        id = outfitId,
-        add = add
-    }, {
-        owner = "collection",
-        responseOpcode = self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT,
-    })
-end
+-- NOTE: DC:RequestCommunityFavorite is defined once, further down with the
+-- other response handlers (an identical duplicate used to live here).
 
 function DC:RequestCommunityPublish(name, items, tags)
     local payload = {
@@ -7414,8 +7407,16 @@ function DC:HandleStats(data)
         end
     end
     
-    -- Handle recent additions if included
+    -- Handle recent additions if included. Trim to the same 50-entry cap the
+    -- incremental path enforces so an oversized server list can never persist
+    -- unbounded into SavedVariables.
     if data.recent then
+        if type(data.recent) == "table" then
+            while #data.recent > 50 do
+                table.remove(data.recent)
+            end
+        end
+
         if type(self.SetRecentAdditions) == "function" then
             self:SetRecentAdditions(data.recent)
         else

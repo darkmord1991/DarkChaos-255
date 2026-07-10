@@ -64,6 +64,19 @@ FROM `cata_world`.`vehicle_template_accessory`
 WHERE `entry` IN (41570,41442,42186,42166,42178,42179,42180,41378,43296,41376,41270);
 
 -- ---------------------------------------------------------------------------
+-- areatrigger  (server-side geometry for AT 6583 -- ObjectMgr::LoadAreaTriggers()
+-- reads this table, NOT the binary DBC; HandleAreaTriggerOpcode rejects any
+-- triggerId missing here before at_bwd_intro ever gets a chance to run. This row
+-- was absent entirely, so the Lord Victor Nefarius entrance RP could never fire.
+-- Geometry extracted from the real Cata 4.3.4 client (locale-enUS.MPQ) AreaTrigger.dbc,
+-- same box the client-side AreaTrigger.dbc row below uses. Live-reloadable via
+-- `.reload areatrigger` -- no worldserver restart required.
+-- ---------------------------------------------------------------------------
+DELETE FROM `areatrigger` WHERE `entry` = 6583;
+INSERT INTO `areatrigger` (`entry`, `map`, `x`, `y`, `z`, `radius`, `length`, `width`, `height`, `orientation`)
+VALUES (6583, 669, -346.411, -224.767, 200.0, 0.0, 10.0, 20.0, 20.0, 0.0);
+
+-- ---------------------------------------------------------------------------
 -- areatrigger_scripts  (Nefarian intro RP trigger; distinct from the entrance-teleport AT 6581)
 -- ---------------------------------------------------------------------------
 DELETE FROM `areatrigger_scripts` WHERE `entry` = 6583;

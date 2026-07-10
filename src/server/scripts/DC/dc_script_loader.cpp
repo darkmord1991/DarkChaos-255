@@ -99,7 +99,6 @@ void AddBattleForGilneasScripts();            // Gilneas/BattlegroundBFG.cpp
 void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG/hlbg_npc_thrall_warchief.cpp
 void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG/hlbg_npc_varian.cpp
 void AddSC_hl_scoreboard();                   // HinterlandBG/hlbg_scoreboard_npc.cpp
-void AddSC_hlbg_addon();                      // AddonExtension/dc_addon_hlbg.cpp
 void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG/hlbg_npc_battlemaster.cpp
 void AddSC_hlbg_battlemaster_hook();          // HinterlandBG/hlbg_battlemaster_hook.cpp
 void AddSC_hlbg_movement_handler();           // HinterlandBG/hlbg_movement_handler.cpp
@@ -344,7 +343,10 @@ void AddDCScripts()
     DC_LOAD(AddSC_npc_thrall_hinterlandbg);
     DC_LOAD(AddSC_hinterlandbg_Varian_wrynn);
     DC_LOAD(AddSC_hl_scoreboard);
-    DC_LOAD(AddSC_hlbg_addon);
+    // NOTE: the HLBG addon handler (AddSC_dc_addon_hlbg) is loaded via
+    // AddDCAddonExtensionScripts() below - registering it here as well created
+    // two HLBGLiveNativeServerScript instances, double-handling every live
+    // snapshot request.
     DC_LOAD(AddSC_npc_hinterlands_battlemaster);
     DC_LOAD(AddSC_hlbg_battlemaster_hook);
     DC_LOAD(AddSC_hlbg_movement_handler);

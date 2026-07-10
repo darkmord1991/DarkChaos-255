@@ -3833,44 +3833,6 @@ end
 -- SHOP CONTENT
 -- ============================================================================
 
-function DC:ShowShopContent()
-    -- NOTE: This file defines ShowShopContent() to support the embedded Shop tab.
-    -- Ensure we actually create/show the Shop UI; otherwise the tab appears black.
-    if not self.MainFrame then
-        self:CreateMainFrame()
-    end
-
-    if not self.ShopUI then
-        self:CreateShopUI()
-    end
-
-    self.ShopUI:Show()
-
-    -- Request data if needed (use ShopModule when available).
-    if self.ShopModule and type(self.ShopModule.RefreshShopItems) == "function" then
-        self.ShopModule:RefreshShopItems()
-    else
-        self:RequestShopItems()
-    end
-
-    if self.ShopModule and type(self.ShopModule.RefreshCurrency) == "function" then
-        self.ShopModule:RefreshCurrency()
-    elseif type(self.RequestCurrency) == "function" then
-        self:RequestCurrency()
-    end
-
-    -- Shop mount cards often rely on mount definitions for itemId/display fallback.
-    -- Refresh these occasionally so icons/previews resolve without opening Mounts first.
-    do
-        local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
-        local last = tonumber(self._lastShopMountDefsRefreshAt or 0) or 0
-        if type(self.RequestDefinitions) == "function" and (now <= 0 or (now - last) >= 20) then
-            self._lastShopMountDefsRefreshAt = now
-            self:RequestDefinitions("mounts", 0)
-        end
-    end
-
-    if type(self.UpdateShopUI) == "function" then
-        self:UpdateShopUI()
-    end
-end
+-- NOTE: DC:ShowShopContent lives in Shop\ShopUI.lua. A second copy here loaded
+-- earlier and silently lost; its currency + mount-definition refreshes were
+-- merged into the ShopUI version.

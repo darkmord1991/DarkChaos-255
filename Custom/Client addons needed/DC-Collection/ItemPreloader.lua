@@ -20,8 +20,9 @@ local ItemPreloader = DC.ItemPreloader
 -- ============================================================================
 
 ItemPreloader.Settings = {
-    batchSize = 50,           -- Items to process per batch
-    batchDelay = 0.05,        -- Delay between batches (seconds)
+    batchSize = 10,           -- Items to process per batch
+    batchDelay = 0.25,        -- Delay between batches (seconds)
+    maxItems = 1000,          -- Hard cap per session: each uncached item costs a server query
     enablePreload = true,     -- Enable/disable preloading
     showProgress = false,     -- Show progress messages (disabled by default to reduce spam)
 }
@@ -137,16 +138,23 @@ function ItemPreloader:PreloadCachedItemInfo()
         end
     end
     
-    -- Remove duplicates by converting to set and back
+    -- Remove duplicates, skip items the client already has cached (they cost
+    -- nothing to resolve later), and enforce the hard cap - previously the
+    -- whole appearance+set cache (unbounded) was pushed through SetHyperlink
+    -- at ~1000 items/second, each uncached item emitting a server query.
     local seen = {}
     local uniqueQueue = {}
+    local maxItems = self.Settings.maxItems or 1000
     for _, itemId in ipairs(self.queue) do
-        if not seen[itemId] then
+        if not seen[itemId] and not GetItemInfo(itemId) then
             seen[itemId] = true
             table.insert(uniqueQueue, itemId)
+            if #uniqueQueue >= maxItems then
+                break
+            end
         end
     end
-    
+
     self.queue = uniqueQueue
     self.totalItems = #self.queue
     self.currentIndex = 0

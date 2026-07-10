@@ -29,6 +29,29 @@ JOIN (SELECT `guid` AS old_guid, 9555000 + ROW_NUMBER() OVER (ORDER BY `guid`) A
 WHERE sg.`groupId` IN (400,402,435,436) AND sg.`spawnType` = 0;
 
 -- ---------------------------------------------------------------------------
+-- spawn_group_template + spawn_group (401 Growth Chambers -- boss_maloriak.cpp's
+-- JustRespawned() calls SpawnGroupSpawn(SPAWN_GROUP_GROWTH_CHAMBERS, true) but this group
+-- was never authored: it lives entirely in boss_maloriak.cpp rather than
+-- instance_blackwing_descent.cpp like 400/402/435/436, so it fell outside this file's
+-- original scope -- confirmed live via "Tried to spawn non-existing (or system) spawn
+-- group 401. Blocked." 401's members are GAMEOBJECTS (cata_world.spawn_group has
+-- spawnType=1, not 0, for this group -- the 20 growth-chamber pods scattered around
+-- Maloriak's room), so this reuses 04_spawns.sql's gameobject guid remap formula instead
+-- of the creature one above.
+-- ---------------------------------------------------------------------------
+DELETE FROM `spawn_group_template` WHERE `groupId` = 401;
+INSERT INTO `spawn_group_template` (`groupId`, `groupName`, `groupFlags`) VALUES
+    (401, 'Blackwing Descent - Growth Chambers', 4);
+
+DELETE FROM `spawn_group` WHERE `groupId` = 401;
+INSERT INTO `spawn_group` (`groupId`, `spawnType`, `spawnId`)
+SELECT sg.`groupId`, 1, m.`new_guid`
+FROM `cata_world`.`spawn_group` sg
+JOIN (SELECT `guid` AS old_guid, 9500000 + ROW_NUMBER() OVER (ORDER BY `guid`) AS new_guid FROM `cata_world`.`gameobject` WHERE `map` = 669) m
+    ON m.`old_guid` = sg.`spawnId`
+WHERE sg.`groupId` = 401 AND sg.`spawnType` = 1;
+
+-- ---------------------------------------------------------------------------
 -- creature_summon_groups (entry/map-keyed — no guid remap)
 -- ---------------------------------------------------------------------------
 DELETE FROM `creature_summon_groups` WHERE (`summonerType` = 0 AND `summonerId` IN (41376,41378,42186)) OR (`summonerType` = 2 AND `summonerId` = 669);

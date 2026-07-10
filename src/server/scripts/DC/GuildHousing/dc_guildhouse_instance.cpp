@@ -7,6 +7,7 @@
 #include "InstanceScript.h"
 #include "Player.h"
 
+#include <mutex>
 #include <unordered_map>
 
 // Instanced guild housing (Phase B migration) - per-instance script for the
@@ -28,10 +29,16 @@ namespace
     // guildId -> house raid-group GUID. The group lives while the guild's house
     // instance is occupied; the core reassigns leadership and disbands the group
     // automatically once the last member leaves.
+    // Mutex-guarded: OnPlayerEnter/OnPlayerLeave run on map-update threads, and
+    // with MapUpdate.Threads > 1 two different guild-house instances can touch
+    // this shared map concurrently.
+    std::mutex s_houseGroupsMutex;
     std::unordered_map<uint32, ObjectGuid> s_houseGroups;
 
     Group* FindHouseGroup(uint32 guildId)
     {
+        std::lock_guard<std::mutex> lock(s_houseGroupsMutex);
+
         auto it = s_houseGroups.find(guildId);
         if (it == s_houseGroups.end())
             return nullptr;
@@ -68,7 +75,10 @@ namespace
 
             group->ConvertToRaid();
             sGroupMgr->AddGroup(group);
-            s_houseGroups[guildId] = group->GetGUID();
+            {
+                std::lock_guard<std::mutex> lock(s_houseGroupsMutex);
+                s_houseGroups[guildId] = group->GetGUID();
+            }
             return;
         }
 
@@ -102,7 +112,10 @@ namespace
         // RemoveMember may have disbanded (and deleted) the group when it
         // emptied; drop our handle in that case.
         if (!sGroupMgr->GetGroupByGUID(groupGuid.GetCounter()))
+        {
+            std::lock_guard<std::mutex> lock(s_houseGroupsMutex);
             s_houseGroups.erase(guildId);
+        }
     }
 }
 

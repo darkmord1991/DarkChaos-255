@@ -248,17 +248,40 @@ end
 
 -- ============================================================
 -- 3.3.5a Compatibility - Timer replacement
+-- Single shared frame + queue (the old version allocated a new
+-- permanent frame per call).
 -- ============================================================
-local function DelayedCall(delay, func)
-    local frame = CreateFrame("Frame")
-    local elapsed = 0
-    frame:SetScript("OnUpdate", function(self, delta)
-        elapsed = elapsed + delta
-        if elapsed >= delay then
-            self:SetScript("OnUpdate", nil)
-            func()
+local DelayedCall
+do
+    local timerFrame
+    local timers = {}
+
+    DelayedCall = function(delay, func)
+        if type(func) ~= "function" then
+            return
         end
-    end)
+
+        if not timerFrame then
+            timerFrame = CreateFrame("Frame")
+            timerFrame:Hide()
+            timerFrame:SetScript("OnUpdate", function(self, delta)
+                for i = #timers, 1, -1 do
+                    local t = timers[i]
+                    t.remaining = t.remaining - delta
+                    if t.remaining <= 0 then
+                        table.remove(timers, i)
+                        pcall(t.callback)
+                    end
+                end
+                if #timers == 0 then
+                    self:Hide()
+                end
+            end)
+        end
+
+        table.insert(timers, { remaining = tonumber(delay) or 0, callback = func })
+        timerFrame:Show()
+    end
 end
 
 -- ============================================================

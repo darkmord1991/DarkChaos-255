@@ -168,6 +168,9 @@ namespace DarkChaos
             virtual PlayerSeasonData* GetPlayerSeasonData(uint32 player_guid) = 0;
             virtual bool UpdatePlayerSeasonData(uint32 player_guid, const PlayerSeasonData& data) = 0;
             virtual bool TransitionPlayerSeason(uint32 player_guid, uint32 new_season_id) = 0;
+            // Drop the cached per-player season data (call on logout so the
+            // cache stays bounded by online players).
+            virtual void InvalidatePlayerData(uint32 player_guid) = 0;
 
             // Event System
             virtual void FireSeasonEvent(uint32 season_id, SeasonEventType event_type) = 0;

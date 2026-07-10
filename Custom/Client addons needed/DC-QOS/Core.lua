@@ -937,27 +937,53 @@ function addon:GetQuestTrackingUtils()
     return questTrackingUtils
 end
 
--- 3.3.5a compatible delayed call
-function addon:DelayedCall(delay, func)
-    if type(func) ~= "function" then
-        self:Debug("DelayedCall ignored: callback is not a function")
-        return
-    end
+-- 3.3.5a compatible delayed call. Single shared frame + timer queue: the old
+-- implementation allocated a brand-new (never-reclaimed) frame per call, and
+-- hot callers like the aura-tooltip hook leaked one frame per buff hover.
+do
+    local timerFrame
+    local timers = {}
 
-    delay = tonumber(delay) or 0
-    if delay < 0 then
-        delay = 0
-    end
-
-    local frame = CreateFrame("Frame")
-    local elapsed = 0
-    frame:SetScript("OnUpdate", function(self, delta)
-        elapsed = elapsed + delta
-        if elapsed >= delay then
-            self:SetScript("OnUpdate", nil)
-            func()
+    local function EnsureTimerFrame()
+        if timerFrame then
+            return
         end
-    end)
+
+        timerFrame = CreateFrame("Frame")
+        timerFrame:Hide()
+        timerFrame:SetScript("OnUpdate", function(self, delta)
+            for i = #timers, 1, -1 do
+                local t = timers[i]
+                t.remaining = t.remaining - delta
+                if t.remaining <= 0 then
+                    table.remove(timers, i)
+                    local ok, err = pcall(t.callback)
+                    if not ok then
+                        addon:Debug("DelayedCall callback error: " .. tostring(err))
+                    end
+                end
+            end
+            if #timers == 0 then
+                self:Hide()
+            end
+        end)
+    end
+
+    function addon:DelayedCall(delay, func)
+        if type(func) ~= "function" then
+            self:Debug("DelayedCall ignored: callback is not a function")
+            return
+        end
+
+        delay = tonumber(delay) or 0
+        if delay < 0 then
+            delay = 0
+        end
+
+        EnsureTimerFrame()
+        table.insert(timers, { remaining = delay, callback = func })
+        timerFrame:Show()
+    end
 end
 
 -- Helper to create a checkbox with 3.3.5a compatibility

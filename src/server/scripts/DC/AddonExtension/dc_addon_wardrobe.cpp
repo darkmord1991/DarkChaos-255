@@ -2059,6 +2059,21 @@ namespace DCCollection
         static std::unordered_map<uint64, uint32> s_viewThrottleMap;
         uint64 throttleKey = (static_cast<uint64>(GetAccountId(player)) << 32) | id;
         uint32 now = getMSTime();
+
+        // Entries older than the throttle window are useless - sweep them
+        // occasionally so the map stays bounded instead of holding one
+        // permanent entry per (account, outfit) ever viewed.
+        if (s_viewThrottleMap.size() > 512)
+        {
+            for (auto sweepIt = s_viewThrottleMap.begin(); sweepIt != s_viewThrottleMap.end();)
+            {
+                if (getMSTimeDiff(sweepIt->second, now) >= 60000)
+                    sweepIt = s_viewThrottleMap.erase(sweepIt);
+                else
+                    ++sweepIt;
+            }
+        }
+
         auto [it, inserted] = s_viewThrottleMap.try_emplace(throttleKey, now);
         if (!inserted)
         {

@@ -494,6 +494,14 @@ namespace
             PrestigeChallengeSystem::instance()->LoadPlayerChallenges(player);
         }
 
+        void OnPlayerLogout(Player* player) override
+        {
+            // Drop the per-guid challenge cache so the map stays bounded by
+            // online players instead of "characters ever logged in".
+            if (player)
+                g_ActiveChallenges.erase(player->GetGUID().GetCounter());
+        }
+
         void OnPlayerKilledByCreature(Creature* killer, Player* player) override
         {
             PrestigeChallengeSystem::instance()->OnDeath(player, killer);

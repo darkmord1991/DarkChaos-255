@@ -2035,17 +2035,13 @@ namespace HLBG
 }  // namespace HLBG
 }  // namespace DCAddon
 
-// Register the unified HLBG addon handler
+// Register the unified HLBG addon handler. Loaded exclusively through
+// AddDCAddonExtensionScripts() - do not also register a legacy alias in
+// dc_script_loader.cpp, or every live-snapshot packet is handled twice.
 void AddSC_dc_addon_hlbg()
 {
     DCAddon::HLBG::RegisterHandlers();
     new DCAddon::HLBG::HLBGLiveNativeServerScript();
-}
-
-// Compatibility wrapper for legacy loader symbol
-void AddSC_hlbg_addon()
-{
-    AddSC_dc_addon_hlbg();
 }
 
 // ============================================================================

@@ -9,6 +9,7 @@
 
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "ObjectAccessor.h"
 #include "WorldSession.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
@@ -17,6 +18,7 @@
 #include "Log.h"
 #include "DatabaseEnv.h"
 #include "dc_addon_namespace.h"
+#include <unordered_set>
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "../Seasons/SeasonalRewardSystem.h"
@@ -331,87 +333,109 @@ namespace Seasons
         uint32 weeklyTokenCap = GetWeeklyTokenCap();
         uint32 weeklyEssenceCap = GetWeeklyEssenceCap();
 
-        uint32 weeklyTokensEarned = 0;
-        uint32 weeklyEssenceEarned = 0;
-        uint32 totalTokensEarned = 0;
-        uint32 totalEssenceEarned = 0;
-        uint32 questsCompleted = 0;
-        uint32 bossesKilled = 0;
-
-        if (QueryResult result = CharacterDatabase.Query(
+        // Async: this fires on every seasonal panel open, so the stats read
+        // must never block the world thread.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT total_tokens_earned, total_essence_earned, weekly_tokens_earned, weekly_essence_earned, "
             "quests_completed, (dungeon_bosses_killed + world_bosses_killed) "
             "FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
-            player->GetGUID().GetCounter(), seasonId))
+            playerGuid.GetCounter(), seasonId))
+            .WithCallback([playerGuid, seasonId, tokenItemId, essenceItemId,
+                currentTokens, currentEssence, weeklyTokenCap, weeklyEssenceCap](QueryResult result)
         {
-            Field* fields = result->Fetch();
-            totalTokensEarned = fields[0].Get<uint32>();
-            totalEssenceEarned = fields[1].Get<uint32>();
-            weeklyTokensEarned = fields[2].Get<uint32>();
-            weeklyEssenceEarned = fields[3].Get<uint32>();
-            questsCompleted = fields[4].Get<uint32>();
-            bossesKilled = fields[5].Get<uint32>();
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        DCAddon::JsonValue response;
-        response.SetObject();
-        response.Set("seasonId", static_cast<int32>(seasonId));
-        response.Set("tokenId", static_cast<int32>(tokenItemId));
-        response.Set("essenceId", static_cast<int32>(essenceItemId));
-        response.Set("tokens", static_cast<int32>(currentTokens));
-        response.Set("essence", static_cast<int32>(currentEssence));
-        response.Set("tokenCap", static_cast<int32>(weeklyTokenCap));
-        response.Set("essenceCap", static_cast<int32>(weeklyEssenceCap));
-        response.Set("weeklyTokens", static_cast<int32>(weeklyTokensEarned));
-        response.Set("weeklyEssence", static_cast<int32>(weeklyEssenceEarned));
-        response.Set("totalTokens", static_cast<int32>(totalTokensEarned));
-        response.Set("totalEssence", static_cast<int32>(totalEssenceEarned));
-        response.Set("quests", static_cast<int32>(questsCompleted));
-        response.Set("bosses", static_cast<int32>(bossesKilled));
-        SendSeasonalJson(player, Opcode::Season::SMSG_PROGRESS, response);
+            uint32 weeklyTokensEarned = 0;
+            uint32 weeklyEssenceEarned = 0;
+            uint32 totalTokensEarned = 0;
+            uint32 totalEssenceEarned = 0;
+            uint32 questsCompleted = 0;
+            uint32 bossesKilled = 0;
+
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                totalTokensEarned = fields[0].Get<uint32>();
+                totalEssenceEarned = fields[1].Get<uint32>();
+                weeklyTokensEarned = fields[2].Get<uint32>();
+                weeklyEssenceEarned = fields[3].Get<uint32>();
+                questsCompleted = fields[4].Get<uint32>();
+                bossesKilled = fields[5].Get<uint32>();
+            }
+
+            DCAddon::JsonValue response;
+            response.SetObject();
+            response.Set("seasonId", static_cast<int32>(seasonId));
+            response.Set("tokenId", static_cast<int32>(tokenItemId));
+            response.Set("essenceId", static_cast<int32>(essenceItemId));
+            response.Set("tokens", static_cast<int32>(currentTokens));
+            response.Set("essence", static_cast<int32>(currentEssence));
+            response.Set("tokenCap", static_cast<int32>(weeklyTokenCap));
+            response.Set("essenceCap", static_cast<int32>(weeklyEssenceCap));
+            response.Set("weeklyTokens", static_cast<int32>(weeklyTokensEarned));
+            response.Set("weeklyEssence", static_cast<int32>(weeklyEssenceEarned));
+            response.Set("totalTokens", static_cast<int32>(totalTokensEarned));
+            response.Set("totalEssence", static_cast<int32>(totalEssenceEarned));
+            response.Set("quests", static_cast<int32>(questsCompleted));
+            response.Set("bosses", static_cast<int32>(bossesKilled));
+            SendSeasonalJson(player, Opcode::Season::SMSG_PROGRESS, response);
+        }));
     }
 
     static void HandleGetRewards(Player* player, const ParsedMessage& msg)
     {
         uint32 seasonId = GetSeasonIdFromMsg(msg);
 
-        JsonValue rewards;
-        rewards.SetArray();
-
-        if (QueryResult result = CharacterDatabase.Query(
+        // Async: fired per panel open; must never block the world thread.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT id, week_timestamp, slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, "
             "slot3_tokens, slot3_essence, slots_unlocked "
             "FROM dc_player_seasonal_chests WHERE player_guid = {} AND season_id = {} AND collected = 0 "
             "ORDER BY week_timestamp DESC",
-            player->GetGUID().GetCounter(), seasonId))
+            playerGuid.GetCounter(), seasonId))
+            .WithCallback([playerGuid, seasonId](QueryResult result)
         {
-            do
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            JsonValue rewards;
+            rewards.SetArray();
+
+            if (result)
             {
-                Field* fields = result->Fetch();
-                uint32 chestId = fields[0].Get<uint32>();
-                uint64 weekTimestamp = fields[1].Get<uint64>();
-                uint32 totalTokens = fields[2].Get<uint32>() + fields[4].Get<uint32>() + fields[6].Get<uint32>();
-                uint32 totalEssence = fields[3].Get<uint32>() + fields[5].Get<uint32>() + fields[7].Get<uint32>();
-                uint8 slotsUnlocked = fields[8].Get<uint8>();
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint32 chestId = fields[0].Get<uint32>();
+                    uint64 weekTimestamp = fields[1].Get<uint64>();
+                    uint32 totalTokens = fields[2].Get<uint32>() + fields[4].Get<uint32>() + fields[6].Get<uint32>();
+                    uint32 totalEssence = fields[3].Get<uint32>() + fields[5].Get<uint32>() + fields[7].Get<uint32>();
+                    uint8 slotsUnlocked = fields[8].Get<uint8>();
 
-                JsonValue reward;
-                reward.SetObject();
-                reward.Set("id", JsonValue(chestId));
-                reward.Set("type", JsonValue("weekly_chest"));
-                reward.Set("weekTimestamp", JsonValue(static_cast<double>(weekTimestamp)));
-                reward.Set("tokens", JsonValue(totalTokens));
-                reward.Set("essence", JsonValue(totalEssence));
-                reward.Set("slotsUnlocked", JsonValue(slotsUnlocked));
-                rewards.Push(reward);
-            } while (result->NextRow());
-        }
+                    JsonValue reward;
+                    reward.SetObject();
+                    reward.Set("id", JsonValue(chestId));
+                    reward.Set("type", JsonValue("weekly_chest"));
+                    reward.Set("weekTimestamp", JsonValue(static_cast<double>(weekTimestamp)));
+                    reward.Set("tokens", JsonValue(totalTokens));
+                    reward.Set("essence", JsonValue(totalEssence));
+                    reward.Set("slotsUnlocked", JsonValue(slotsUnlocked));
+                    rewards.Push(reward);
+                } while (result->NextRow());
+            }
 
-        JsonValue response;
-        response.SetObject();
-        response.Set("seasonId", JsonValue(seasonId));
-        response.Set("count", JsonValue(static_cast<uint32>(rewards.Size())));
-        response.Set("rewards", rewards);
-        SendSeasonalJson(player, Opcode::Season::SMSG_REWARDS, response);
+            JsonValue response;
+            response.SetObject();
+            response.Set("seasonId", JsonValue(seasonId));
+            response.Set("count", JsonValue(static_cast<uint32>(rewards.Size())));
+            response.Set("rewards", rewards);
+            SendSeasonalJson(player, Opcode::Season::SMSG_REWARDS, response);
+        }));
     }
 
     static void HandleClaimReward(Player* player, const ParsedMessage& msg)
@@ -432,42 +456,62 @@ namespace Seasons
             return;
         }
 
-        QueryResult result = CharacterDatabase.Query(
+        // In-flight guard (world thread only): the read below is async, so
+        // without it a double-click could read collected=0 twice and award
+        // the chest twice. (The old synchronous read had the same race with
+        // its async UPDATE - this closes it for good.)
+        static std::unordered_set<uint32> s_claimsInFlight;
+        if (!s_claimsInFlight.insert(rewardId).second)
+        {
+            SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
+            return;
+        }
+
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, slot3_tokens, slot3_essence, collected "
             "FROM dc_player_seasonal_chests WHERE id = {} AND player_guid = {}",
-            rewardId, player->GetGUID().GetCounter());
-
-        if (!result)
+            rewardId, playerGuid.GetCounter()))
+            .WithCallback([playerGuid, rewardId](QueryResult result)
         {
-            SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
-            return;
-        }
+            s_claimsInFlight.erase(rewardId);
 
-        Field* fields = result->Fetch();
-        if (fields[6].Get<uint8>() != 0)
-        {
-            SendRewardClaimed(player, rewardId, CLAIM_ALREADY_CLAIMED, 0, 0);
-            return;
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        uint32 totalTokens = fields[0].Get<uint32>() + fields[2].Get<uint32>() + fields[4].Get<uint32>();
-        uint32 totalEssence = fields[1].Get<uint32>() + fields[3].Get<uint32>() + fields[5].Get<uint32>();
+            if (!result)
+            {
+                SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
+                return;
+            }
 
-        bool awarded = false;
-        if (sSeasonalRewards)
-            awarded = sSeasonalRewards->AwardBoth(player, totalTokens, totalEssence, "WeeklyChest", rewardId);
+            Field* fields = result->Fetch();
+            if (fields[6].Get<uint8>() != 0)
+            {
+                SendRewardClaimed(player, rewardId, CLAIM_ALREADY_CLAIMED, 0, 0);
+                return;
+            }
 
-        if (!awarded && (totalTokens > 0 || totalEssence > 0))
-        {
-            SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
-            return;
-        }
+            uint32 totalTokens = fields[0].Get<uint32>() + fields[2].Get<uint32>() + fields[4].Get<uint32>();
+            uint32 totalEssence = fields[1].Get<uint32>() + fields[3].Get<uint32>() + fields[5].Get<uint32>();
 
-        CharacterDatabase.Execute(
-            "UPDATE dc_player_seasonal_chests SET collected = 1, collected_at = CURRENT_TIMESTAMP WHERE id = {}",
-            rewardId);
+            bool awarded = false;
+            if (sSeasonalRewards)
+                awarded = sSeasonalRewards->AwardBoth(player, totalTokens, totalEssence, "WeeklyChest", rewardId);
 
-        SendRewardClaimed(player, rewardId, CLAIM_SUCCESS, 0, 0);
+            if (!awarded && (totalTokens > 0 || totalEssence > 0))
+            {
+                SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
+                return;
+            }
+
+            CharacterDatabase.Execute(
+                "UPDATE dc_player_seasonal_chests SET collected = 1, collected_at = CURRENT_TIMESTAMP WHERE id = {} AND collected = 0",
+                rewardId);
+
+            SendRewardClaimed(player, rewardId, CLAIM_SUCCESS, 0, 0);
+        }));
     }
 
     static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
@@ -492,57 +536,62 @@ namespace Seasons
             page = std::max<uint32>(1, msg.GetUInt32(1));
         }
 
-        uint32 totalEntries = 0;
-        if (QueryResult countRes = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM v_seasonal_leaderboard WHERE season_id = {}",
-            seasonId))
-        {
-            totalEntries = countRes->Fetch()[0].Get<uint32>();
-        }
-
         uint32 offset = (page - 1) * perPage;
 
-        JsonValue entries;
-        entries.SetArray();
-
-        QueryResult result = CharacterDatabase.Query(
+        // Async: one query serves the page, with the total riding along as a
+        // scalar subquery column, so the world thread never blocks.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT v.player_guid, c.name, v.total_tokens_earned, v.total_essence_earned, "
-            "v.quests_completed, v.bosses_killed, v.chests_claimed, v.token_rank, v.boss_rank "
+            "v.quests_completed, v.bosses_killed, v.chests_claimed, v.token_rank, v.boss_rank, "
+            "(SELECT COUNT(*) FROM v_seasonal_leaderboard WHERE season_id = {}) AS total_entries "
             "FROM v_seasonal_leaderboard v "
             "LEFT JOIN characters c ON c.guid = v.player_guid "
             "WHERE v.season_id = {} "
             "ORDER BY v.total_tokens_earned DESC "
             "LIMIT {}, {}",
-            seasonId, offset, perPage);
-
-        if (result)
+            seasonId, seasonId, offset, perPage))
+            .WithCallback([playerGuid, seasonId, page, perPage](QueryResult result)
         {
-            do
-            {
-                Field* fields = result->Fetch();
-                JsonValue entry;
-                entry.SetObject();
-                entry.Set("guid", JsonValue(fields[0].Get<uint32>()));
-                entry.Set("name", JsonValue(fields[1].Get<std::string>()));
-                entry.Set("tokens", JsonValue(fields[2].Get<uint32>()));
-                entry.Set("essence", JsonValue(fields[3].Get<uint32>()));
-                entry.Set("quests", JsonValue(fields[4].Get<uint32>()));
-                entry.Set("bosses", JsonValue(fields[5].Get<uint32>()));
-                entry.Set("chests", JsonValue(fields[6].Get<uint32>()));
-                entry.Set("tokenRank", JsonValue(fields[7].Get<uint32>()));
-                entry.Set("bossRank", JsonValue(fields[8].Get<uint32>()));
-                entries.Push(entry);
-            } while (result->NextRow());
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        JsonValue response;
-        response.SetObject();
-        response.Set("seasonId", JsonValue(seasonId));
-        response.Set("page", JsonValue(page));
-        response.Set("perPage", JsonValue(perPage));
-        response.Set("total", JsonValue(totalEntries));
-        response.Set("entries", entries);
-        SendSeasonalJson(player, SMSG_LEADERBOARD, response);
+            uint32 totalEntries = 0;
+
+            JsonValue entries;
+            entries.SetArray();
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    JsonValue entry;
+                    entry.SetObject();
+                    entry.Set("guid", JsonValue(fields[0].Get<uint32>()));
+                    entry.Set("name", JsonValue(fields[1].Get<std::string>()));
+                    entry.Set("tokens", JsonValue(fields[2].Get<uint32>()));
+                    entry.Set("essence", JsonValue(fields[3].Get<uint32>()));
+                    entry.Set("quests", JsonValue(fields[4].Get<uint32>()));
+                    entry.Set("bosses", JsonValue(fields[5].Get<uint32>()));
+                    entry.Set("chests", JsonValue(fields[6].Get<uint32>()));
+                    entry.Set("tokenRank", JsonValue(fields[7].Get<uint32>()));
+                    entry.Set("bossRank", JsonValue(fields[8].Get<uint32>()));
+                    entries.Push(entry);
+                    totalEntries = fields[9].Get<uint32>();
+                } while (result->NextRow());
+            }
+
+            JsonValue response;
+            response.SetObject();
+            response.Set("seasonId", JsonValue(seasonId));
+            response.Set("page", JsonValue(page));
+            response.Set("perPage", JsonValue(perPage));
+            response.Set("total", JsonValue(totalEntries));
+            response.Set("entries", entries);
+            SendSeasonalJson(player, SMSG_LEADERBOARD, response);
+        }));
     }
 
     static void HandleGetChallenges(Player* player, const ParsedMessage& /*msg*/)

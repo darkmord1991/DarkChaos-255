@@ -1258,16 +1258,25 @@ function DC:ShowShopContent()
             end
         end
 
-        -- Currency
-        local tokens, essence = (type(self.GetCurrencyBalances) == "function") and self:GetCurrencyBalances() or nil
-        tokens = tonumber(tokens) or (self.currency and self.currency.tokens) or 0
-        essence = tonumber(essence) or (self.currency and self.currency.emblems) or 0
-        if tokens == 0 and essence == 0 then
-            if type(self.ShopModule.RefreshCurrency) == "function" then
-                self.ShopModule:RefreshCurrency()
-            elseif type(self.RequestCurrency) == "function" then
-                self:RequestCurrency()
-            end
+        -- Currency: refresh unconditionally on tab open so balances are never
+        -- stale (a non-zero cached balance used to suppress the refresh).
+        if type(self.ShopModule.RefreshCurrency) == "function" then
+            self.ShopModule:RefreshCurrency()
+        elseif type(self.RequestCurrency) == "function" then
+            self:RequestCurrency()
+        end
+    end
+
+    -- Shop mount cards rely on mount definitions for itemId/display fallback.
+    -- Refresh these occasionally so icons/previews resolve without opening the
+    -- Mounts tab first (merged from the retired MainFrame copy of this
+    -- function, which silently lost to this one in load order).
+    do
+        local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+        local last = tonumber(self._lastShopMountDefsRefreshAt or 0) or 0
+        if type(self.RequestDefinitions) == "function" and (now <= 0 or (now - last) >= 20) then
+            self._lastShopMountDefsRefreshAt = now
+            self:RequestDefinitions("mounts", 0)
         end
     end
 

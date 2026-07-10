@@ -118,23 +118,34 @@ namespace DarkChaos
 
     /**
      * @brief Get the current season name (for display purposes).
+     * Cached per season id: unlike GetActiveSeasonId this used to issue a
+     * blocking WorldDatabase query on EVERY call (handshakes, gossip,
+     * reward displays). The name only changes with the season, so one
+     * lookup per season id per session suffices. World-thread only.
      * @return std::string Season name or "Season X" if not found
      */
     inline std::string GetActiveSeasonName()
     {
         uint32 seasonId = GetActiveSeasonId();
 
-        // Try WorldDatabase first (primary)
+        static uint32 cachedSeasonId = 0;
+        static std::string cachedSeasonName;
+
+        if (seasonId == cachedSeasonId && !cachedSeasonName.empty())
+            return cachedSeasonName;
+
+        std::string name = "Season " + std::to_string(seasonId);
         if (QueryResult result = WorldDatabase.Query(
             "SELECT season_name FROM dc_seasons WHERE season_id = {} LIMIT 1", seasonId))
         {
-            std::string name = (*result)[0].Get<std::string>();
-            if (!name.empty())
-                return name;
+            std::string dbName = (*result)[0].Get<std::string>();
+            if (!dbName.empty())
+                name = dbName;
         }
 
-        // Default format
-        return "Season " + std::to_string(seasonId);
+        cachedSeasonId = seasonId;
+        cachedSeasonName = name;
+        return name;
     }
 
 } // namespace DarkChaos

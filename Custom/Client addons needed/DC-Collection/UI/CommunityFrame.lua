@@ -567,48 +567,10 @@ function DC:PreviewCommunityOutfit(name, itemsString, outfitId)
      end
 end
 
-function DC:ApplyCommunityOutfit(itemsString)
-    DC:Print("Applying community outfit...")
-    
-    local items = {}
-    for id in string.gmatch(itemsString, "%d+") do
-        table.insert(items, tonumber(id))
-    end
-    
-    local missing = {}
-    local collected = {}
-    
-    for _, itemID in ipairs(items) do
-        -- Check if item is collected (transmog)
-        -- Assuming DC.collections.transmog[itemID] is true if collected
-        -- This logic assumes itemID is the key. 
-        if DC.collections and DC.collections.transmog and DC.collections.transmog[itemID] then
-             table.insert(collected, itemID)
-        else
-             table.insert(missing, itemID)
-        end
-    end
-    
-    -- Apply collected (Placeholder for actual equip logic)
-    if #collected > 0 then
-         if DC.EquipOutfitRaw then
-            DC:EquipOutfitRaw(collected)
-            DC:Print("Applied " .. #collected .. " items.")
-         else
-            DC:Print("Would apply " .. #collected .. " items (Equip logic missing).")
-         end
-    end
-    
-    -- Report missing
-    if #missing > 0 then
-        DC:Print("You are missing " .. #missing .. " items:")
-        for _, id in ipairs(missing) do
-             local name, link = GetItemInfo(id)
-             if not link then link = "Item " .. id end
-             DC:Print("- " .. link .. "  |cff00ccff|Hdc:wishlist:" .. id .. "|h[Add to Wishlist]|h|r")
-        end
-    end
-end
+-- NOTE: DC:ApplyCommunityOutfit lives in Modules\TransmogModule.lua (the real
+-- slot-mapping implementation). A placeholder copy here used to load later and
+-- silently override it with a stub that referenced a function that was never
+-- defined, which killed the "Apply" button on community outfits.
 
 function UI:ShowPublishPopup()
     UI:ShowCustomPublishFrame()

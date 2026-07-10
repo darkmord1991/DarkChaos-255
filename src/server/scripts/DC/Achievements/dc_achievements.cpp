@@ -203,32 +203,51 @@ public:
         if (questId < 700000 || questId > 700999)
             return;
 
-        uint32 completedCount = 0;
-        if (QueryResult result = CharacterDatabase.Query(
+        // Skip the count entirely once every tier is already earned.
+        if (player->HasAchieved(ACHIEVEMENT_CUSTOM_QUEST_NOVICE) &&
+            player->HasAchieved(ACHIEVEMENT_CUSTOM_QUEST_HERO) &&
+            player->HasAchieved(ACHIEVEMENT_CUSTOM_QUEST_MASTER))
+            return;
+
+        // Async: this fires on every custom-quest turn-in; the COUNT(*) must
+        // never block the world thread. The static world-side total rides
+        // along as a second column (quest_template is static at runtime).
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT COUNT(*) FROM character_queststatus_rewarded WHERE guid = {} AND quest BETWEEN 700000 AND 700999",
-            player->GetGUID().GetCounter()))
+            playerGuid.GetCounter()))
+            .WithCallback([this, playerGuid](QueryResult result)
         {
-            completedCount = result->Fetch()[0].Get<uint32>();
-        }
+            if (!result)
+                return;
 
-        if (completedCount >= 25)
-            CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_NOVICE);
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        if (completedCount >= 100)
-            CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_HERO);
+            uint32 completedCount = result->Fetch()[0].Get<uint32>();
 
-        static uint32 totalCustomQuests = 0;
-        if (totalCustomQuests == 0)
-        {
-            if (QueryResult totalResult = WorldDatabase.Query(
-                "SELECT COUNT(*) FROM quest_template WHERE ID BETWEEN 700000 AND 700999"))
+            if (completedCount >= 25)
+                CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_NOVICE);
+
+            if (completedCount >= 100)
+                CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_HERO);
+
+            static uint32 totalCustomQuests = 0;
+            if (totalCustomQuests == 0)
             {
-                totalCustomQuests = totalResult->Fetch()[0].Get<uint32>();
+                // One-time blocking read of a static world table (cached for
+                // the rest of the session).
+                if (QueryResult totalResult = WorldDatabase.Query(
+                    "SELECT COUNT(*) FROM quest_template WHERE ID BETWEEN 700000 AND 700999"))
+                {
+                    totalCustomQuests = totalResult->Fetch()[0].Get<uint32>();
+                }
             }
-        }
 
-        if (totalCustomQuests > 0 && completedCount >= totalCustomQuests)
-            CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_MASTER);
+            if (totalCustomQuests > 0 && completedCount >= totalCustomQuests)
+                CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_MASTER);
+        }));
     }
 
     // Area exploration

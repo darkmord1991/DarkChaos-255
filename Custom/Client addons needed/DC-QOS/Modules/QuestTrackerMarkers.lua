@@ -671,23 +671,31 @@ function Markers.EnsureWatchFrameQuestChrome(root)
     -- Navigation.UpdateMarker). Queried live here per-frame because tracker chrome
     -- updates are event-based and would go stale as the player walks; the arrival
     -- state and the pulseOnArrival setting are read from the Navigation module.
-    chrome:SetScript("OnUpdate", function(self)
+    chrome:SetScript("OnUpdate", function(self, elapsed)
         local pulse = self.trackPulse
         if not pulse then
             return
         end
 
-        local inRange = false
-        if self.__dcqosPulseEligible and self.__dcqosQuestId then
-            local navSettings = addon and addon.settings and addon.settings.navigation
-            local pulseOnArrival = not navSettings or navSettings.pulseOnArrival ~= false
-            local nav = addon and addon.Navigation
-            if pulseOnArrival and nav and type(nav.IsQuestInArrivalRange) == "function" then
-                inRange = nav:IsQuestInArrivalRange(self.__dcqosQuestId)
+        -- Throttle the range check (a distance calc) to ~10Hz; only the
+        -- cheap alpha animation runs per frame while in range.
+        self.__dcqosRangeCheckIn = (self.__dcqosRangeCheckIn or 0) - (elapsed or 0)
+        if self.__dcqosRangeCheckIn <= 0 then
+            self.__dcqosRangeCheckIn = 0.1
+
+            local inRange = false
+            if self.__dcqosPulseEligible and self.__dcqosQuestId then
+                local navSettings = addon and addon.settings and addon.settings.navigation
+                local pulseOnArrival = not navSettings or navSettings.pulseOnArrival ~= false
+                local nav = addon and addon.Navigation
+                if pulseOnArrival and nav and type(nav.IsQuestInArrivalRange) == "function" then
+                    inRange = nav:IsQuestInArrivalRange(self.__dcqosQuestId)
+                end
             end
+            self.__dcqosPulseInRange = inRange
         end
 
-        if inRange then
+        if self.__dcqosPulseInRange then
             local now = GetTime and GetTime() or 0
             pulse:SetAlpha(0.55 + 0.45 * (0.5 + 0.5 * math.sin(now * 7.5)))
         else

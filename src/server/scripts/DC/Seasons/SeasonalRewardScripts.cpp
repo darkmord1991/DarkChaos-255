@@ -8,6 +8,7 @@
  */
 
 #include "SeasonalRewardSystem.h"
+#include "SeasonalSystem.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Creature.h"
@@ -43,6 +44,17 @@ public:
                     "|cff00ff00[Seasonal Rewards]|r You have an uncollected weekly chest! Use |cffffcc00.season chest|r to claim it.");
             }
         }
+    }
+
+    // Drop cached per-player season data so the cache stays bounded by
+    // online players (it previously grew for the whole server uptime).
+    void OnPlayerLogout(Player* player) override
+    {
+        if (!player)
+            return;
+
+        if (auto* manager = DarkChaos::Seasonal::GetSeasonalManager())
+            manager->InvalidatePlayerData(player->GetGUID().GetCounter());
     }
 
     // Process quest rewards

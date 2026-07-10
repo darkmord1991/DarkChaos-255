@@ -522,7 +522,7 @@ namespace DarkChaos
             // Cache Management
             // =================================================================
 
-            void InvalidatePlayerData(uint32 player_guid)
+            void InvalidatePlayerData(uint32 player_guid) override
             {
                 auto it = player_data_.find(player_guid);
                 if (it != player_data_.end())
