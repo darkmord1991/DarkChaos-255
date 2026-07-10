@@ -21,10 +21,10 @@ HLBG_Stubs.lua
 HLBG_UI_Clean.lua
 
 # Core modules
+# (HLBG_Live/History/Stats removed: stats + history views are served by
+# DC-Leaderboards now; HLBG_Handlers carries the RequestStats/HistoryStr
+# fallbacks and every remaining call site is type()-guarded.)
 HLBG_Version.lua
-HLBG_Live.lua
-HLBG_History.lua
-HLBG_Stats.lua
 
 # Essential components for full functionality
 HLBG_HUD_Modern.lua

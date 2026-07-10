@@ -120,8 +120,10 @@ public:
             return false;
         }
 
-        GuildHouseManager::SpawnButlerNPC(player);
-        handler->SendSysMessage("Guild House Butler spawned.");
+        // Legacy phased butler spawning is gone: the butler is a static spawn
+        // on the guild-house map under the per-instance model. If he is
+        // missing here, the static spawn data needs fixing, not a command.
+        handler->SendSysMessage("The Butler is a built-in spawn of the guild house. If he is missing, report it to an administrator.");
         return true;
     }
 
@@ -222,12 +224,12 @@ public:
             return true;
         }
 
-        GuildHouseManager::CleanupGuildHouseSpawns(data->map, data->phase);
+        // Wipe the guild's dynamic instance content. Legacy phased world-spawn
+        // cleanup + core-NPC respawns removed (per-instance model: core NPCs
+        // are static map spawns).
         GuildHouseManager::ClearGuildContent(guild->GetId());
-        GuildHouseManager::SpawnTeleporterNPC(guild->GetId(), data->map, data->phase, data->posX, data->posY, data->posZ, data->ori);
-        GuildHouseManager::SpawnButlerNPC(guild->GetId(), data->map, data->phase, data->posX + 2.0f, data->posY, data->posZ, data->ori);
 
-        handler->PSendSysMessage("Reset spawns for guild '{}'.", guild->GetName());
+        handler->PSendSysMessage("Reset dynamic content for guild '{}'.", guild->GetName());
         return true;
     }
 
@@ -498,12 +500,12 @@ public:
         float posZ = fields[4].Get<float>();
         float ori = fields[5].Get<float>();
 
-        uint32 guildPhase = ::GetGuildPhase(guildId);
+        // phase column is a legacy artifact; isolation is per-instance now.
         CharacterDatabase.Query("INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
-            guildId, guildPhase, map, posX, posY, posZ, ori);
+            guildId, PHASEMASK_NORMAL, map, posX, posY, posZ, ori);
 
         // Update Cache
-        GuildHouseManager::UpdateGuildHouseData(guildId, GuildHouseData(guildPhase, map, posX, posY, posZ, ori, 0));
+        GuildHouseManager::UpdateGuildHouseData(guildId, GuildHouseData(PHASEMASK_NORMAL, map, posX, posY, posZ, ori, 0));
 
         handler->PSendSysMessage("Purchased Guild House for guild '{}' at location {} (no cost).", guild->GetName(), locationId);
         return true;

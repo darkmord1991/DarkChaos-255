@@ -184,17 +184,11 @@ public:
             player->ModifyMoney(-static_cast<int64>(resetCost));
         }
 
-        uint32 guildPhase = GetGuildPhase(player);
-
-        // Only clean up the CURRENT map location, we need to know where it is.
-        // For reset, we are at the location, or we query DB.
-        QueryResult result = CharacterDatabase.Query("SELECT `map` FROM `dc_guild_house` WHERE `guild` = {}", player->GetGuildId());
-        uint32 mapId = result ? result->Fetch()[0].Get<uint32>() : 1;
-
-        GuildHouseManager::CleanupGuildHouseSpawns(mapId, guildPhase);
+        // Reset = wipe the guild's dynamic instance content (butler purchases
+        // + decorations). Legacy phased world-spawn cleanup and teleporter/
+        // butler respawns are gone: core NPCs are static map spawns under the
+        // per-instance model.
         GuildHouseManager::ClearGuildContent(player->GetGuildId());
-        GuildHouseManager::SpawnTeleporterNPC(player);
-        GuildHouseManager::SpawnButlerNPC(player);
         ChatHandler(player->GetSession()).PSendSysMessage("Guild House has been reset.");
         return true;
     }
@@ -270,12 +264,13 @@ public:
                 return false;
             }
 
+            // phase column is a legacy artifact; isolation is per-instance now.
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
-                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
+                player->GetGuildId(), PHASEMASK_NORMAL, map, posX, posY, posZ, ori);
 
-            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 0));
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(PHASEMASK_NORMAL, map, posX, posY, posZ, ori, 0));
 
             player->ModifyMoney(-static_cast<int64>(cost));
 
@@ -358,13 +353,13 @@ public:
             float posZ = fields[3].Get<float>();
             float ori = fields[4].Get<float>();
 
+            // phase column is a legacy artifact; isolation is per-instance now.
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
-                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
+                player->GetGuildId(), PHASEMASK_NORMAL, map, posX, posY, posZ, ori);
 
-            // Update Cache potentially needed here if not handled by Spawn
-            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 0));
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(PHASEMASK_NORMAL, map, posX, posY, posZ, ori, 0));
 
             ChatHandler(player->GetSession()).PSendSysMessage("GM: Guild House purchased for free.");
             CloseGossipMenuFor(player);

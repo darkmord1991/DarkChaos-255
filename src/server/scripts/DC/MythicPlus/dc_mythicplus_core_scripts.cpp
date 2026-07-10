@@ -65,6 +65,7 @@ public:
         LOG_INFO("server.loading", ">> Loading Mythic+ system...");
         sMythicScaling->LoadDungeonProfiles();
         sMythicRuns->Reset();
+        sMythicRuns->LoadLootTable();
         RegisterMythicPlusAffixHandlers();
         LOG_INFO("server.loading", ">> Mythic+ system loaded successfully");
     }

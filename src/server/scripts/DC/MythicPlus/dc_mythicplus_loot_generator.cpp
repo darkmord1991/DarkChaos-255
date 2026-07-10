@@ -19,10 +19,12 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "Containers.h"
+#include "Random.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <vector>
 
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
@@ -56,6 +58,26 @@ struct LootQueryStage
     bool filterRole;
 };
 
+// In-memory copy of dc_vault_loot_table (JOIN-filtered against item_template
+// at load). Loaded once at startup on the world thread and immutable after,
+// so map-thread reads during boss kills need no locking. This replaces the
+// old per-pick "ORDER BY RAND() LIMIT 1" queries: one end-of-run reward roll
+// could issue up to ~400 synchronous randomized JOIN queries on the map
+// thread, stalling the whole instance at the moment of completion.
+struct LootTableRow
+{
+    uint32 itemId = 0;
+    uint32 itemLevelMin = 0;
+    uint32 itemLevelMax = 0;
+    uint32 classMask = 0;
+    uint8 roleMask = 0;
+    std::string specName;   // empty = all specs (NULL in the table)
+    std::string armorType;  // "Misc" = universal
+};
+
+std::vector<LootTableRow> s_lootTable;
+std::atomic<bool> s_lootTableLoaded{false};
+
 bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId)
 {
     if (!player)
@@ -65,15 +87,24 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
     if (classId == 0)
         return false;
 
+    if (!s_lootTableLoaded.load(std::memory_order_acquire) || s_lootTable.empty())
+        return false;
+
     uint32 classMask = DarkChaos::CrossSystem::VaultUtils::GetPlayerClassMask(player);
     if (classMask == 0) classMask = 1u << (classId - 1);
+
+    // Convention bridge: VaultUtils returns the standard WoW druid bit (1024),
+    // but the seed data was authored with the sequential convention where
+    // druid occupies bit 512. Bit 512 is unused by any class in the standard
+    // convention, so matching both is safe under either data set. (Without
+    // this, druids never matched class-filtered rows and always fell through
+    // to the unfiltered stage.)
+    if (classMask & 1024)
+        classMask |= 512;
 
     std::string spec = DarkChaos::CrossSystem::VaultUtils::GetPlayerSpec(player);
     std::string armor = DarkChaos::CrossSystem::VaultUtils::GetPlayerArmorType(player);
     uint8 roleMask = DarkChaos::CrossSystem::VaultUtils::GetPlayerRoleMask(player);
-
-    WorldDatabase.EscapeString(spec);
-    WorldDatabase.EscapeString(armor);
 
     static constexpr std::array<LootQueryStage, 5> stages = {{
         { true,  true,  true,  true  },
@@ -83,35 +114,69 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
         { false, false, false, false }
     }};
 
+    std::vector<uint32> candidates;
+    candidates.reserve(64);
+
     for (const LootQueryStage& stage : stages)
     {
-        std::string sql =
-            "SELECT v.item_id FROM dc_vault_loot_table v "
-            "INNER JOIN item_template it ON it.entry = v.item_id "
-            "WHERE it.Quality >= 2 AND it.name NOT LIKE 'NPC Equip %'";
+        candidates.clear();
 
-        if (stage.filterClass)
-            sql += Acore::StringFormat(" AND ((v.class_mask & {}) OR v.class_mask = 1023)", classMask);
-        if (stage.filterSpec)
-            sql += Acore::StringFormat(" AND (v.spec_name = '{}' OR v.spec_name IS NULL)", spec);
-        if (stage.filterArmor)
-            sql += Acore::StringFormat(" AND (v.armor_type = '{}' OR v.armor_type = 'Misc')", armor);
-        if (stage.filterRole)
-            sql += Acore::StringFormat(" AND ((v.role_mask & {}) OR v.role_mask = 7)", roleMask);
-
-        sql += Acore::StringFormat(
-            " AND v.item_level_min <= {} AND v.item_level_max >= {} ORDER BY RAND() LIMIT 1",
-            targetItemLevel, targetItemLevel);
-
-        if (QueryResult result = WorldDatabase.Query(sql))
+        for (LootTableRow const& row : s_lootTable)
         {
-            outItemId = result->Fetch()[0].Get<uint32>();
+            if (row.itemLevelMin > targetItemLevel || row.itemLevelMax < targetItemLevel)
+                continue;
+            if (stage.filterClass && !(row.classMask & classMask) && row.classMask != 1023)
+                continue;
+            if (stage.filterSpec && !row.specName.empty() && row.specName != spec)
+                continue;
+            if (stage.filterArmor && row.armorType != armor && row.armorType != "Misc")
+                continue;
+            if (stage.filterRole && !(row.roleMask & roleMask) && row.roleMask != 7)
+                continue;
+
+            candidates.push_back(row.itemId);
+        }
+
+        if (!candidates.empty())
+        {
+            outItemId = candidates[urand(0, candidates.size() - 1)];
             return true;
         }
     }
 
     return false;
 }
+}
+
+void MythicPlusRunManager::LoadLootTable()
+{
+    s_lootTable.clear();
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT v.item_id, v.item_level_min, v.item_level_max, v.class_mask, v.role_mask, v.spec_name, v.armor_type "
+        "FROM dc_vault_loot_table v "
+        "INNER JOIN item_template it ON it.entry = v.item_id "
+        "WHERE it.Quality >= 2 AND it.name NOT LIKE 'NPC Equip %'");
+
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            LootTableRow row;
+            row.itemId = fields[0].Get<uint32>();
+            row.itemLevelMin = fields[1].Get<uint32>();
+            row.itemLevelMax = fields[2].Get<uint32>();
+            row.classMask = fields[3].Get<uint32>();
+            row.roleMask = fields[4].Get<uint8>();
+            row.specName = fields[5].IsNull() ? std::string() : fields[5].Get<std::string>();
+            row.armorType = fields[6].Get<std::string>();
+            s_lootTable.push_back(std::move(row));
+        } while (result->NextRow());
+    }
+
+    s_lootTableLoaded.store(true, std::memory_order_release);
+    LOG_INFO("server.loading", ">> Mythic+ loot table preloaded: {} entries", s_lootTable.size());
 }
 
 // MythicPlusRunManager is at global scope, not in a namespace

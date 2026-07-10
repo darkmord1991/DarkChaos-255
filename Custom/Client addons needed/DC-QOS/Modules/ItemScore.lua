@@ -167,16 +167,38 @@ local function CreateScanTooltip()
     return scanTooltip
 end
 
+-- Memoization: every hover used to re-run 2-3 hidden SetHyperlink line-scans
+-- (the hovered item plus each equipped comparison item). Raw stats are
+-- weight-independent, so they cache per itemLink; equipped scores depend on
+-- the active stat weights, so that cache also keys on the chosen spec and
+-- clears whenever equipment changes.
+local statsCache = {}
+local statsCacheCount = 0
+local STATS_CACHE_MAX = 150
+
+local equippedScoreCache = { spec = nil, scores = {} }
+
+local cacheInvalidator = CreateFrame("Frame")
+cacheInvalidator:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+cacheInvalidator:SetScript("OnEvent", function()
+    -- Equipped items changed; their per-link stats stay valid, only the
+    -- slot->score mapping is stale.
+    equippedScoreCache.scores = {}
+end)
+
 local function GetItemStats(itemLink)
     if not itemLink then return nil end
-    
+
+    local cached = statsCache[itemLink]
+    if cached then return cached end
+
     local tooltip = CreateScanTooltip()
     tooltip:ClearLines()
     tooltip:SetHyperlink(itemLink)
-    
+
     local stats = {}
     local numLines = tooltip:NumLines()
-    
+
     for i = 2, numLines do  -- Skip first line (item name)
         local leftText = _G[tooltip:GetName() .. "TextLeft" .. i]
         if leftText then
@@ -195,7 +217,14 @@ local function GetItemStats(itemLink)
             end
         end
     end
-    
+
+    if statsCacheCount >= STATS_CACHE_MAX then
+        statsCache = {}
+        statsCacheCount = 0
+    end
+    statsCache[itemLink] = stats
+    statsCacheCount = statsCacheCount + 1
+
     return stats
 end
 
@@ -240,11 +269,25 @@ local function CalculateScore(itemStats)
 end
 
 local function GetEquippedScore(slot)
+    local spec = (addon.settings and addon.settings.itemScore and addon.settings.itemScore.currentSpec) or "auto"
+    if equippedScoreCache.spec ~= spec then
+        equippedScoreCache.spec = spec
+        equippedScoreCache.scores = {}
+    end
+
+    local cached = equippedScoreCache.scores[slot]
+    if cached ~= nil then return cached end
+
     local itemLink = GetInventoryItemLink("player", slot)
-    if not itemLink then return 0 end
-    
+    if not itemLink then
+        equippedScoreCache.scores[slot] = 0
+        return 0
+    end
+
     local stats = GetItemStats(itemLink)
-    return CalculateScore(stats)
+    local score = CalculateScore(stats)
+    equippedScoreCache.scores[slot] = score
+    return score
 end
 
 -- ============================================================

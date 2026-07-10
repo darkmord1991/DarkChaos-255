@@ -132,13 +132,8 @@ GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
 
     bool shouldUpdate = false;
 
-    // Fix invalid or legacy phase values.
-    uint32 expectedPhase = GetGuildPhase(guildId);
-    if (phase == 0 || phase == PHASEMASK_NORMAL)
-    {
-        phase = expectedPhase;
-        shouldUpdate = true;
-    }
+    // Legacy phase repair removed: isolation is per-instance now, so the phase
+    // column is a historical artifact and is left untouched.
 
     // Fix missing coordinates (e.g., 0/0/0) by falling back to the first location on the same map.
     if (std::fabs(posX) < 0.001f && std::fabs(posY) < 0.001f)
@@ -527,24 +522,9 @@ bool GuildHouseManager::RemoveGuildHouse(Guild* guild)
 
     uint32 guildId = guild->GetId();
 
-    // Fetch data first (will load from DB if not in cache)
-    GuildHouseData* data = GetGuildHouseData(guildId);
-
-    if (data)
-    {
-        uint32 mapId = data->map;
-        uint32 guildPhase = data->phase ? data->phase : GetGuildPhase(guildId);
-        CleanupGuildHouseSpawns(mapId, guildPhase);
-    }
-    else
-    {
-        // Fallback checks via DB handled in GetGuildHouseData mostly, but if we really have no record,
-        // we might check purely for phase cleanup.
-        // Assuming GetGuildPhase logic calculates default.
-         CleanupGuildHouseSpawns(1, GetGuildPhase(guildId));
-    }
-
-    // Wipe the guild's dynamic instance content (butler + decorations) too.
+    // Wipe the guild's dynamic instance content (butler + decorations).
+    // Legacy phaseMask world-spawn cleanup removed: all guild content lives in
+    // dc_guild_house_instance_spawns under the per-instance model.
     ClearGuildContent(guildId);
 
     // Remove from Cache
@@ -555,145 +535,13 @@ bool GuildHouseManager::RemoveGuildHouse(Guild* guild)
     return true;
 }
 
-void GuildHouseManager::CleanupGuildHouseSpawns(uint32 mapId, uint32 guildPhase)
-{
-    Map* map = sMapMgr->FindMap(mapId, 0);
-    if (!map)
-        return;
-
-    QueryResult creatureResult = WorldDatabase.Query(
-        "SELECT `guid` FROM `creature` WHERE `map` = {} AND `phaseMask` = {}",
-        mapId, guildPhase);
-
-    QueryResult gameobjResult = WorldDatabase.Query(
-        "SELECT `guid` FROM `gameobject` WHERE `map` = {} AND `phaseMask` = {}",
-        mapId, guildPhase);
-
-    if (creatureResult)
-    {
-        do
-        {
-            Field* fields = creatureResult->Fetch();
-            uint32 lowguid = fields[0].Get<uint32>();
-
-            if (CreatureData const* crData = sObjectMgr->GetCreatureData(lowguid))
-            {
-                if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(crData->id, lowguid)))
-                {
-                    creature->CombatStop();
-                    creature->DeleteFromDB();
-                    creature->AddObjectToRemoveList();
-                }
-            }
-        } while (creatureResult->NextRow());
-    }
-
-    if (gameobjResult)
-    {
-        do
-        {
-            Field* fields = gameobjResult->Fetch();
-            uint32 lowguid = fields[0].Get<uint32>();
-
-            if (GameObjectData const* goData = sObjectMgr->GetGameObjectData(lowguid))
-            {
-                if (GameObject* gobject = map->GetGameObject(ObjectGuid::Create<HighGuid::GameObject>(goData->id, lowguid)))
-                {
-                    gobject->SetRespawnTime(0);
-                    gobject->Delete();
-                    gobject->DeleteFromDB();
-                    gobject->CleanupsBeforeDelete();
-                }
-            }
-        } while (gameobjResult->NextRow());
-    }
-}
-
-bool GuildHouseManager::HasSpawn(uint32 mapId, uint32 phase, uint32 entry, bool isGameObject)
-{
-    if (isGameObject)
-    {
-        QueryResult result = WorldDatabase.Query("SELECT COUNT(*) FROM `gameobject` WHERE `map`={} AND `id`={} AND `phaseMask`={}", mapId, entry, phase);
-        if (result)
-            return result->Fetch()[0].Get<uint32>() > 0;
-    }
-    else
-    {
-        // Note: creature table uses `id1` for the entry column, not `id`
-        QueryResult result = WorldDatabase.Query("SELECT COUNT(*) FROM `creature` WHERE `map`={} AND `id1`={} AND `phaseMask`={}", mapId, entry, phase);
-        if (result)
-            return result->Fetch()[0].Get<uint32>() > 0;
-    }
-    return false;
-}
-
-void GuildHouseManager::SpawnTeleporterNPC(Player* player)
-{
-    if (!player || !player->GetGuildId()) return;
-
-    GuildHouseData* data = GetGuildHouseData(player->GetGuildId());
-    if (data)
-         SpawnTeleporterNPC(player->GetGuildId(), data->map, data->phase, data->posX, data->posY, data->posZ, data->ori);
-    else
-         SpawnTeleporterNPC(player->GetGuildId(), 1, GetGuildPhase(player->GetGuildId()), 16222.0f, 16270.0f, 13.1f, 4.7f);
-}
-
-void GuildHouseManager::SpawnTeleporterNPC(uint32 /*guildId*/, uint32 mapId, uint32 phase, float x, float y, float z, float o)
-{
-    Map* map = sMapMgr->FindMap(mapId, 0);
-    if (!map) return;
-
-    Creature* creature = new Creature();
-    if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, phase, 800002, 0, x, y, z, o))
-    {
-        delete creature;
-        LOG_INFO("modules.dc", "GUILDHOUSE: Unable to create Teleporter NPC!");
-        return;
-    }
-
-    creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), phase);
-    uint32 lowguid = creature->GetSpawnId();
-
-    creature->CleanupsBeforeDelete();
-    delete creature;
-    creature = new Creature();
-    if (creature->LoadCreatureFromDB(lowguid, map))
-        sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
-}
-
-void GuildHouseManager::SpawnButlerNPC(Player* player)
-{
-    if (!player || !player->GetGuildId()) return;
-
-    GuildHouseData* data = GetGuildHouseData(player->GetGuildId());
-    if (data)
-         SpawnButlerNPC(player->GetGuildId(), data->map, data->phase, data->posX + 2.0f, data->posY, data->posZ, data->ori);
-    else
-         SpawnButlerNPC(player->GetGuildId(), 1, GetGuildPhase(player->GetGuildId()), 16229.422f, 16283.675f, 13.175704f, 3.036652f);
-}
-
-void GuildHouseManager::SpawnButlerNPC(uint32 /*guildId*/, uint32 mapId, uint32 phase, float x, float y, float z, float o)
-{
-    Map* map = sMapMgr->FindMap(mapId, 0);
-    if (!map) return;
-
-    Creature* creature = new Creature();
-    if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, phase, 95104, 0, x, y, z, o))
-    {
-        delete creature;
-        LOG_INFO("modules.dc", "GUILDHOUSE: Unable to create Butler NPC!");
-        return;
-    }
-
-    creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), phase);
-    uint32 lowguid = creature->GetSpawnId();
-
-    creature->CleanupsBeforeDelete();
-    delete creature;
-    creature = new Creature();
-    if (creature->LoadCreatureFromDB(lowguid, map))
-        sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
-}
+// Legacy phasing machinery removed (CleanupGuildHouseSpawns, HasSpawn,
+// SpawnTeleporterNPC, SpawnButlerNPC): the guild house runs on per-guild
+// dungeon instances now. The teleporter/butler are ordinary static map
+// spawns loaded by the core, and purchased content lives in
+// dc_guild_house_instance_spawns; nothing writes phased world spawns anymore.
+// Any leftover phased rows from the old model (map 1, phaseMask >= 16) are a
+// one-time SQL cleanup, not a runtime concern.
 
 bool GuildHouseManager::HasPermission(Player* player, uint32 permission)
 {
@@ -765,8 +613,6 @@ bool GuildHouseManager::UndoAction(Player* player, uint32 logId)
     float z = fields[10].Get<float>();
     float o = fields[11].Get<float>();
 
-    uint32 phase = GetGuildPhase(player);
-
     Map* map = sMapMgr->FindMap(mapId, 0);
     if (!map) return false;
 
@@ -797,24 +643,16 @@ bool GuildHouseManager::UndoAction(Player* player, uint32 logId)
             }
         }
     }
-    // REVERT DELETE -> SPAWN
+    // REVERT DELETE -> SPAWN: legacy branch removed. It recreated a PHASED
+    // persistent world spawn, which the per-instance model no longer uses;
+    // deleted butler/decoration content is restored by re-purchasing or via
+    // the decoration editor, both of which write dc_guild_house_instance_spawns.
     else if (actionType == GH_ACTION_DELETE)
     {
-        if (entityType == GH_ENTITY_CREATURE)
-        {
-            Creature* creature = new Creature();
-            if (creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, phase, entityEntry, 0, x, y, z, o))
-            {
-                creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), phase);
-                uint32 lowguid = creature->GetSpawnId();
-                creature->CleanupsBeforeDelete();
-                delete creature;
-                creature = new Creature();
-                if (creature->LoadCreatureFromDB(lowguid, map))
-                    sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
-            }
-        }
-        // Objects similar... logic omitted for brevity, focusing on core
+        (void)entityEntry;
+        (void)x; (void)y; (void)z; (void)o;
+        ChatHandler(player->GetSession()).SendSysMessage(
+            "|cffff8800[Guild House]|r Undo of deletions is not supported anymore - re-place the content via the butler or decoration editor.");
     }
 
     // Remove Log Entry
@@ -874,27 +712,19 @@ bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId, bool i
         }
     }
 
-    // 1. Cleanup OLD location spawns
-    CleanupGuildHouseSpawns(currentData->map, currentData->phase);
-
-    // 2. Update DB with new location
+    // 1. Update DB with new location. (Legacy phased world-spawn cleanup and
+    // teleporter/butler respawns are gone: under the per-instance model the
+    // core NPCs are static map spawns and purchased content follows the guild
+    // via dc_guild_house_instance_spawns, so a move only repoints the house.)
     CharacterDatabase.Execute(
         "UPDATE `dc_guild_house` SET `map`={}, `positionX`={}, `positionY`={}, `positionZ`={}, `orientation`={} WHERE `guild`={}",
         newMap, posX, posY, posZ, ori, guildId);
 
-    // 3. Update Cache & Spawn at NEW location
-    // Note: Phase remains valid (guildId + 10)
+    // 2. Update Cache
     GuildHouseData newData(currentData->phase, newMap, posX, posY, posZ, ori, currentData->level);
     UpdateGuildHouseData(guildId, newData);
 
-    // 4. Ensure NEW location is also clean (in case we moved back to a map that had orphans)
-    CleanupGuildHouseSpawns(newMap, currentData->phase);
-
-    // 5. Respawn Core NPCs
-    SpawnTeleporterNPC(guildId, newMap, currentData->phase, posX, posY, posZ, ori);
-    SpawnButlerNPC(guildId, newMap, currentData->phase, posX + 2.0f, posY, posZ, ori);
-
-    // 6. Migrate any members who were inside the old instance to the new house. TeleportToGuildHouse
+    // 3. Migrate any members who were inside the old instance to the new house. TeleportToGuildHouse
     // mints/reuses the guild's instance on the NEW map (EnsureGuildInstanceId sees the persisted
     // instance no longer matches the guild's map after the UPDATE above) and binds the player to it, so
     // everyone who was in the old house lands together in the new map's instance instead of being left

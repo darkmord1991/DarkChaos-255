@@ -155,6 +155,9 @@ public:
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
 
     // Boss loot generation (retail-like spec-based drops)
+    // LoadLootTable preloads dc_vault_loot_table into memory at startup so
+    // reward rolls never query the database on the map thread.
+    void LoadLootTable();
     void GenerateBossLoot(Creature* boss, Map* map, InstanceState* state);
     uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
     uint32 GetTotalBossesForDungeon(uint32 mapId) const;

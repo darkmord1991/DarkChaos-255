@@ -95,12 +95,6 @@ public:
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
-    static bool ShouldKeepCreatureEntryOnDespawnAll(uint32 entry)
-    {
-        // Keep core management NPCs so the guild house remains usable.
-        return entry == 95103 /*manager*/ || entry == 95104 /*butler*/ || entry == 800002 /*teleporter*/;
-    }
-
     static bool SpawnPresetsHaveMapColumn()
     {
         static std::optional<bool> cached;
@@ -951,7 +945,7 @@ public:
             CharacterDatabase.Execute(
                 "INSERT INTO `dc_guild_house_purchase_log` (`created_at`, `guild_id`, `player_guid`, `player_name`, `map`, `phaseMask`, `spawn_type`, `entry`, `template_name`, `cost`) "
                 "VALUES (UNIX_TIMESTAMP(), {}, {}, '{}', {}, {}, 'CREATURE', {}, '{}', {})",
-                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
+                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), PHASEMASK_NORMAL, entry, safeSpawnedName, spawnCost);
 
             if (doBroadcast)
             {
@@ -1085,7 +1079,7 @@ public:
             CharacterDatabase.Execute(
                 "INSERT INTO `dc_guild_house_purchase_log` (`created_at`, `guild_id`, `player_guid`, `player_name`, `map`, `phaseMask`, `spawn_type`, `entry`, `template_name`, `cost`) "
                 "VALUES (UNIX_TIMESTAMP(), {}, {}, '{}', {}, {}, 'GAMEOBJECT', {}, '{}', {})",
-                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
+                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), PHASEMASK_NORMAL, entry, safeSpawnedName, spawnCost);
 
             if (doBroadcast)
             {
@@ -1177,98 +1171,14 @@ public:
         if (!player || !player->GetGuild())
             return;
 
-        uint32 guildPhase = GetGuildPhase(player);
-        uint32 mapId = player->GetMapId();
-        Map* map = player->GetMap();
-        if (!map)
-            return;
+        // Per-instance model: "despawn all" = wipe the guild's dynamic content
+        // rows (butler purchases + decorations); live objects clear on the next
+        // instance reload. The old implementation swept persistent world
+        // spawns by legacy guild phaseMask, which nothing creates anymore.
+        GuildHouseManager::ClearGuildContent(player->GetGuildId());
 
-        uint32 removedCreatures = 0;
-        uint32 removedGameObjects = 0;
-
-        QueryResult creatureResult = WorldDatabase.Query(
-            "SELECT `guid`, `id1` FROM `creature` WHERE `map` = {} AND `phaseMask` = {}",
-            mapId, guildPhase);
-
-        if (creatureResult)
-        {
-            do
-            {
-                Field* fields = creatureResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-                uint32 entry = fields[1].Get<uint32>();
-                if (ShouldKeepCreatureEntryOnDespawnAll(entry))
-                    continue;
-
-                // Prefer deleting the live object (works for dynamically spawned creatures).
-                // Use the per-map spawnId store, since ObjectGuid(entry, spawnId) can miss loaded objects.
-                Creature* creature = nullptr;
-                {
-                    auto bounds = map->GetCreatureBySpawnIdStore().equal_range(lowguid);
-                    if (bounds.first != bounds.second)
-                        creature = bounds.first->second;
-                }
-
-                if (creature)
-                {
-                    creature->CombatStop(true);
-                    creature->DeleteFromDB();
-                    creature->AddObjectToRemoveList();
-                    ++removedCreatures;
-                }
-                else
-                {
-                    // Fallback: ensure DB cleanup even if the creature isn't loaded.
-                    WorldDatabase.Execute("DELETE FROM `creature` WHERE `guid` = {}", lowguid);
-                    WorldDatabase.Execute("DELETE FROM `creature_addon` WHERE `guid` = {}", lowguid);
-                    ++removedCreatures;
-                }
-
-                // Clean cached spawn data if present.
-                sObjectMgr->DeleteCreatureData(lowguid);
-            } while (creatureResult->NextRow());
-        }
-
-        QueryResult gameobjResult = WorldDatabase.Query(
-            "SELECT `guid` FROM `gameobject` WHERE `map` = {} AND `phaseMask` = {}",
-            mapId, guildPhase);
-
-        if (gameobjResult)
-        {
-            do
-            {
-                Field* fields = gameobjResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-
-                GameObject* gobject = nullptr;
-                {
-                    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(lowguid);
-                    if (bounds.first != bounds.second)
-                        gobject = bounds.first->second;
-                }
-
-                if (gobject)
-                {
-                    gobject->SetRespawnTime(0);
-                    gobject->Delete();
-                    gobject->DeleteFromDB();
-                    ++removedGameObjects;
-                }
-                else
-                {
-                    WorldDatabase.Execute("DELETE FROM `gameobject` WHERE `guid` = {}", lowguid);
-                    WorldDatabase.Execute("DELETE FROM `gameobject_addon` WHERE `guid` = {}", lowguid);
-                    ++removedGameObjects;
-                }
-
-                sObjectMgr->DeleteGOData(lowguid);
-
-            } while (gameobjResult->NextRow());
-        }
-
-        ChatHandler(player->GetSession()).PSendSysMessage(
-            "GM: Despawned {} creatures and {} gameobjects on map {} phase {}.",
-            removedCreatures, removedGameObjects, mapId, guildPhase);
+        ChatHandler(player->GetSession()).SendSysMessage(
+            "GM: Cleared all purchased Guild House content. Re-enter the guild house to see the change.");
 
         if (Guild* guild = player->GetGuild())
         {

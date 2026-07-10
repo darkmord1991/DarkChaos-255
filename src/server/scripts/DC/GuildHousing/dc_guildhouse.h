@@ -52,36 +52,10 @@ inline bool IsGuildHouseMap(uint32 mapId)
     return false;
 }
 
-// Guild Phase Helpers
-//
-// IMPORTANT: WoW phases are BITMASKS. Two phases with overlapping bits will see each other.
-// To ensure isolation, each guild must use a UNIQUE POWER-OF-2 phase value.
-// Formula: (1 << (4 + (guildId % 27))) gives bits 4-30, supporting up to 27 concurrent guild houses.
-// Bits 0-3 are reserved for normal game phases (PHASEMASK_NORMAL = 1).
-//
-// If you need more than 27 guild houses, consider using separate map instances or
-// multiple guildhouse maps with each handling 27 guilds.
-//
-inline uint32 GetGuildPhase(uint32 guildId)
-{
-    if (guildId == 0)
-        return PHASEMASK_NORMAL; // No guild = normal phase
-
-    // Use power-of-2 for true isolation. Bits 4-30 = 27 unique phases.
-    // guildId % 27 maps guilds to bit positions 4-30.
-    uint32 bitPosition = 4 + ((guildId - 1) % 27);
-    return (1u << bitPosition);
-}
-
-inline uint32 GetGuildPhase(Guild* guild)
-{
-    return GetGuildPhase(guild ? guild->GetId() : 0);
-}
-
-inline uint32 GetGuildPhase(Player* player)
-{
-    return GetGuildPhase(player ? player->GetGuildId() : 0);
-}
+// Legacy GetGuildPhase (guildId % 27 -> phase bit) removed: isolation is
+// per-guild instance ids now (see EnsureGuildInstanceId). The phase column in
+// dc_guild_house and the GuildHouseData::phase field remain only for schema
+// compatibility; new rows write PHASEMASK_NORMAL and nothing reads them.
 
 struct GuildHouseData
 {
@@ -149,7 +123,6 @@ public:
     static bool RemoveButlerContent(Player* player, uint32 rowId, uint32* outRefundCopper = nullptr);
 
     static bool RemoveGuildHouse(Guild* guild);
-    static void CleanupGuildHouseSpawns(uint32 mapId, uint32 guildPhase);
 
     // Cache & Data Access
     static GuildHouseData* GetGuildHouseData(uint32 guildId);
@@ -159,13 +132,6 @@ public:
     static uint8 GetGuildHouseLevel(uint32 guildId);
     static bool SetGuildHouseLevel(uint32 guildId, uint8 level);
     static bool HasLocationEnabledColumn();
-
-    // Spawn Management
-    static bool HasSpawn(uint32 mapId, uint32 phase, uint32 entry, bool isGameObject);
-    static void SpawnTeleporterNPC(Player* player);
-    static void SpawnButlerNPC(Player* player);
-    static void SpawnTeleporterNPC(uint32 guildId, uint32 mapId, uint32 phase, float x, float y, float z, float o);
-    static void SpawnButlerNPC(uint32 guildId, uint32 mapId, uint32 phase, float x, float y, float z, float o);
 
     // Permissions
     static bool HasPermission(Player* player, uint32 permission);
