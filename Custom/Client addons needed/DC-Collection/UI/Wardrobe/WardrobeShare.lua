@@ -321,6 +321,10 @@ function Wardrobe:OnOutfitReceived(message, sender)
             timeout = 0,
             whileDead = true,
             hideOnEscape = true,
+            -- Escape must just close the popup: without this, StaticPopup's
+            -- escape handling runs OnCancel — i.e. Escape would open the
+            -- wardrobe and preview the outfit.
+            noCancelOnEscape = 1,
             preferredIndex = 3,
             OnAccept = function()  -- Apply
                 local o = Wardrobe._pendingSharedOutfit
@@ -356,6 +360,16 @@ if not Wardrobe._shareListener then
     f:RegisterEvent("CHAT_MSG_ADDON")
     f:SetScript("OnEvent", function(_, _, prefix, message, _, sender)
         if prefix == ADDON_PREFIX then
+            -- Anti-spam: each valid payload raises a modal popup, so rate-limit
+            -- per sender (anyone can whisper these).
+            local who = tostring(sender or ""):gsub("%-.*$", ""):lower()
+            local now = GetTime and GetTime() or 0
+            Wardrobe._shareSenderCooldowns = Wardrobe._shareSenderCooldowns or {}
+            local lastAt = Wardrobe._shareSenderCooldowns[who]
+            if lastAt and now > 0 and (now - lastAt) < 30 then
+                return
+            end
+            Wardrobe._shareSenderCooldowns[who] = now
             Wardrobe:OnOutfitReceived(message, sender)
         end
     end)

@@ -304,7 +304,7 @@ function Forms:Build(host)
     preview:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             self.rotating = true
-            self.prevX = GetCursorPosition()
+            self.prevX, self.prevY = GetCursorPosition()
         end
     end)
     preview:SetScript("OnMouseUp", function(self)
@@ -312,10 +312,18 @@ function Forms:Build(host)
     end)
     preview:SetScript("OnUpdate", function(self)
         if self.rotating then
-            local x = GetCursorPosition()
+            local x, y = GetCursorPosition()
             self.rotation = (self.rotation or 0) + (x - (self.prevX or x)) * 0.01
+            -- No pitch API on 3.3.5 models; vertical drag pans view height.
+            self.panZ = math.max(-1.5, math.min(1.5,
+                (self.panZ or 0) + (y - (self.prevY or y)) * 0.004))
+            -- Position first, facing LAST — position calls can stomp facing,
+            -- which made rotation appear dead while panning.
+            if self.SetPosition then
+                self:SetPosition(0, 0, self.panZ)
+            end
             self:SetFacing(self.rotation)
-            self.prevX = x
+            self.prevX, self.prevY = x, y
         end
     end)
     preview:SetScript("OnMouseWheel", function(self, delta)

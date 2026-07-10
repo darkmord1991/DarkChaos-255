@@ -726,14 +726,12 @@ function Wardrobe:ShowOutfitsContent()
         if self.frame.communityHost then self.frame.communityHost:Hide() end
         if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
         if self.frame.communityMineCheck then self.frame.communityMineCheck:Hide() end
-        if DC and DC.CommunityUI and DC.CommunityUI.frame then
-            DC.CommunityUI.frame:Hide()
-        end
 
         -- Hide items/sets specific controls
         if self.frame.orderBtn then self.frame.orderBtn:Hide() end
         if self.frame.filterBtn then self.frame.filterBtn:Hide() end
         if self.frame.qualityDropdown then self.frame.qualityDropdown:Hide() end
+        if self.frame.expansionDropdown then self.frame.expansionDropdown:Hide() end
         if self.frame.searchBox then self.frame.searchBox:Hide() end
         
         -- Hide slot filters
@@ -1002,7 +1000,7 @@ function Wardrobe:ShowOutfitContextMenu(outfit, anchor)
             { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true },
         }
 
-        local dropdown = CreateFrame("Frame", "DCWardrobeOutfitContextMenu", UIParent, "UIDropDownMenuTemplate")
+        local dropdown = DCWardrobeOutfitContextMenu or CreateFrame("Frame", "DCWardrobeOutfitContextMenu", UIParent, "UIDropDownMenuTemplate")
         EasyMenu(menu, dropdown, anchor or "cursor", 0, 0, "MENU")
         return
     end
@@ -1059,7 +1057,7 @@ function Wardrobe:ShowOutfitContextMenu(outfit, anchor)
         { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true },
     }
 
-    local dropdown = CreateFrame("Frame", "DCWardrobeOutfitContextMenu", UIParent, "UIDropDownMenuTemplate")
+    local dropdown = DCWardrobeOutfitContextMenu or CreateFrame("Frame", "DCWardrobeOutfitContextMenu", UIParent, "UIDropDownMenuTemplate")
     EasyMenu(menu, dropdown, anchor or "cursor", 0, 0, "MENU")
 end
 
@@ -1535,38 +1533,47 @@ function Wardrobe:RandomizeOutfit()
     local actualApplied = 0
     local actualCleared = 0
 
-    -- Clear relevant slots first so randomizer truly *replaces* existing transmogs.
+    -- Build ONE batch: a set entry for equipped slots with a pick, a clear
+    -- entry for equipped slots without one (so the randomizer still replaces
+    -- any existing transmog there). The old code sent a separate clear
+    -- request per equipped slot and then a set request per pick — up to ~28
+    -- individual server messages per dice click.
+    local canBatch = DC and type(DC.ApplyTransmogBatchByEquipmentSlot) == "function"
+    local batchEntries = canBatch and {} or nil
+
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
         local invSlotId = slotDef and slotDef.key and GetInventorySlotInfo(slotDef.key)
         if invSlotId and GetInventoryItemID("player", invSlotId) then
             local equipSlot = invSlotId - 1
-            if DC and type(DC.RequestClearTransmogByEquipmentSlot) == "function" then
-                DC:RequestClearTransmogByEquipmentSlot(equipSlot)
-                actualCleared = actualCleared + 1
-            end
-        end
-    end
-
-    for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
-        local p = picks and picks[slotDef.key]
-        if p then
-            -- Only apply if an item is equipped in that slot.
-            if p.inv and GetInventoryItemID("player", p.inv) then
-                local equipSlot = (p.inv or 0) - 1
-                -- Use the correct Protocol function
-                if DC.Protocol and type(DC.Protocol.RequestSetTransmogByEquipmentSlot) == "function" then
+            local p = picks and picks[slotDef.key]
+            if p and p.id then
+                if canBatch then
+                    table.insert(batchEntries, { slot = equipSlot, appearanceId = p.id, clear = false })
+                    actualApplied = actualApplied + 1
+                elseif DC.Protocol and type(DC.Protocol.RequestSetTransmogByEquipmentSlot) == "function" then
                     DC.Protocol:RequestSetTransmogByEquipmentSlot(equipSlot, p.id)
                     actualApplied = actualApplied + 1
                 elseif DC and type(DC.RequestSetTransmogByEquipmentSlot) == "function" then
                     DC:RequestSetTransmogByEquipmentSlot(equipSlot, p.id)
                     actualApplied = actualApplied + 1
                 end
-            end
-        else
-            if DC and DC.Print then
-                if DC and DC.Debug then DC:Debug("[RANDOMIZE] Slot " .. slotDef.key .. ": no pick available") end
+            else
+                if DC and DC.Debug then
+                    DC:Debug("[RANDOMIZE] Slot " .. slotDef.key .. ": no pick available, clearing")
+                end
+                if canBatch then
+                    table.insert(batchEntries, { slot = equipSlot, clear = true })
+                    actualCleared = actualCleared + 1
+                elseif DC and type(DC.RequestClearTransmogByEquipmentSlot) == "function" then
+                    DC:RequestClearTransmogByEquipmentSlot(equipSlot)
+                    actualCleared = actualCleared + 1
+                end
             end
         end
+    end
+
+    if canBatch and batchEntries and #batchEntries > 0 then
+        DC:ApplyTransmogBatchByEquipmentSlot(batchEntries)
     end
 
     if type(self.MarkUnsavedChanges) == "function" and actualApplied > 0 then
@@ -1676,6 +1683,18 @@ function Wardrobe:RefreshOutfitsGrid()
     end
 
     local totalOutfits = (DC.db and tonumber(DC.db.outfitsTotal)) or #outfits
+
+    -- Render from a scratch copy: the pin/merge logic below reorders and
+    -- truncates the list, and doing that in place on the cached DC.db table
+    -- corrupted the stored page (save-time duplicate checks and the delete
+    -- handler then operated on the truncated render view).
+    do
+        local displayOutfits = {}
+        for i = 1, #outfits do
+            displayOutfits[i] = outfits[i]
+        end
+        outfits = displayOutfits
+    end
     self.totalPages = math.max(1, math.ceil(totalOutfits / ITEMS_PER_PAGE))
     
     if DC and DC.Print then
@@ -1743,9 +1762,8 @@ function Wardrobe:RefreshOutfitsGrid()
                 table.insert(merged, o)
             end
         end
+        -- Display-only: never write the merged render view back to DC.db.
         outfits = merged
-        DC.db.outfits = merged
-        DC.db.outfitsOffset = 0
         equippedIndex = 1
     else
         -- Old behavior: pin within current page only.

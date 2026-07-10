@@ -675,6 +675,8 @@ function DC:LoadCache()
                 or (type(cachedOutfits) == "table" and cachedOutfits)
                 or {}
 
+            -- Wardrobe lives on DC.Wardrobe; there is no global by that name.
+            local Wardrobe = DC.Wardrobe
             if Wardrobe and type(Wardrobe.SerializeSlotsToJsonString) == "function" then
                 DC.db.outfitsBySignature = {}
                 for _, page in pairs(DC.db.outfitsPages) do

@@ -75,9 +75,6 @@ function Wardrobe:ShowItemsContent()
     if self.frame then
         if self.frame.modelTitle then self.frame.modelTitle:SetText("") end
         if self.frame.communityHost then self.frame.communityHost:Hide() end
-        if DC and DC.CommunityUI and DC.CommunityUI.frame then
-            DC.CommunityUI.frame:Hide()
-        end
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
         if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
         if self.frame.communityMineCheck then self.frame.communityMineCheck:Hide() end
@@ -89,6 +86,7 @@ function Wardrobe:ShowItemsContent()
         if self.frame.orderBtn then self.frame.orderBtn:Show() end
         if self.frame.filterBtn then self.frame.filterBtn:Show() end
         if self.frame.qualityDropdown then self.frame.qualityDropdown:Show() end
+        if self.frame.expansionDropdown then self.frame.expansionDropdown:Show() end
         if self.frame.searchBox then self.frame.searchBox:Show() end
         if self.frame.gridContainer then self.frame.gridContainer:Show() end
 
@@ -119,9 +117,6 @@ function Wardrobe:ShowSetsContent()
     if self.frame then
         if self.frame.modelTitle then self.frame.modelTitle:SetText("") end
         if self.frame.communityHost then self.frame.communityHost:Hide() end
-        if DC and DC.CommunityUI and DC.CommunityUI.frame then
-            DC.CommunityUI.frame:Hide()
-        end
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
         if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
         if self.frame.communityMineCheck then self.frame.communityMineCheck:Hide() end
@@ -133,6 +128,8 @@ function Wardrobe:ShowSetsContent()
         if self.frame.orderBtn then self.frame.orderBtn:Show() end
         if self.frame.filterBtn then self.frame.filterBtn:Show() end
         if self.frame.qualityDropdown then self.frame.qualityDropdown:Show() end
+        -- Expansion filter only applies to the Items appearance list.
+        if self.frame.expansionDropdown then self.frame.expansionDropdown:Hide() end
         if self.frame.searchBox then self.frame.searchBox:Show() end
         if self.frame.gridContainer then self.frame.gridContainer:Show() end
         if self.frame.gridFrame then self.frame.gridFrame:Show() end
@@ -500,9 +497,18 @@ function Wardrobe:RefreshGrid()
     local startIdx
     local totalShown
 
+    -- Expansion filter: the paged DLL query only honors itemId bounds when the
+    -- DLL exports QueryDCCollectionTransmogEx. On older DLLs fall back to the
+    -- full-list path below (BuildAppearanceList post-filters in Lua).
+    local expMinItemId, expMaxItemId = self:_GetExpansionItemIdBounds()
+    local expansionActive = (expMinItemId > 0 or expMaxItemId > 0)
+    local nativeHonorsExpansion = (not expansionActive) or
+        (type(QueryDCCollectionTransmogEx) == "function")
+
     if type(DC.HasNativeTransmogCatalog) == "function" and
        DC:HasNativeTransmogCatalog() and
-       type(QueryDCCollectionTransmog) == "function" then
+       type(QueryDCCollectionTransmog) == "function" and
+       nativeHonorsExpansion then
         -- Source-paged: ask the DLL for only the current page of appearances so
         -- the full (~54k) catalog never materialises as Lua tables. The DLL
         -- returns the page plus the full matched/collected totals for paging.
@@ -521,7 +527,7 @@ function Wardrobe:RefreshGrid()
             local need = perPage - (hideHere and 1 or 0)
             local ok, items, total, collected = pcall(QueryDCCollectionTransmog,
                 invCsv, quality, searchStr, showUncollected, sortMode,
-                matchedOffset, need)
+                matchedOffset, need, expMinItemId, expMaxItemId)
             if not ok or type(items) ~= "table" then items = {} end
             return items, tonumber(total) or 0, tonumber(collected) or 0, hideHere
         end
@@ -777,6 +783,64 @@ function Wardrobe:_NativeTransmogQueryArgs()
         (self.showUncollected and 1 or 0), (self.sortMode or "default")
 end
 
+-- Representative-itemId bounds for the current expansion filter, in the form
+-- the native QueryDCCollectionTransmogEx expects (0 = unbounded).
+function Wardrobe:_GetExpansionItemIdBounds()
+    local mode = self.selectedExpansionFilter
+    local maxStock = self.WOTLK_MAX_ITEM_ID or 56806
+    if mode == "classic" then
+        return 0, maxStock
+    elseif mode == "wotlkplus" then
+        return maxStock + 1, 0
+    end
+    return 0, 0
+end
+
+-- True when `itemId` passes the current expansion filter.
+-- "classic" = stock 3.3.5a entries, "wotlkplus" = retail downports (entries
+-- above WOTLK_MAX_ITEM_ID). Unknown/missing ids only pass "all".
+function Wardrobe:_ItemPassesExpansionFilter(itemId)
+    local mode = self.selectedExpansionFilter
+    if not mode or mode == "all" then
+        return true
+    end
+    local id = tonumber(itemId) or 0
+    if id <= 0 then
+        return false
+    end
+    local maxStock = self.WOTLK_MAX_ITEM_ID or 56806
+    if mode == "wotlkplus" then
+        return id > maxStock
+    end
+    return id <= maxStock
+end
+
+-- Post-filter for result lists produced by the native (DLL) catalog, which
+-- doesn't know about the expansion filter. Recomputes the collected/total
+-- counters over the surviving entries when the filter is active.
+function Wardrobe:_ApplyExpansionFilterToResults(results)
+    local mode = self.selectedExpansionFilter
+    if not mode or mode == "all" or type(results) ~= "table" then
+        return results
+    end
+
+    local out = {}
+    local collected = 0
+    for i = 1, #results do
+        local entry = results[i]
+        if entry and self:_ItemPassesExpansionFilter(entry.itemId) then
+            out[#out + 1] = entry
+            if entry.collected then
+                collected = collected + 1
+            end
+        end
+    end
+
+    self.totalCount = #out
+    self.collectedCount = collected
+    return out
+end
+
 function Wardrobe:BuildAppearanceList()
     local defsRev = (type(DC.GetDefinitionsRevision) == "function") and
         (DC:GetDefinitionsRevision("transmog") or 0) or 0
@@ -811,6 +875,7 @@ function Wardrobe:BuildAppearanceList()
         tostring(collRev),
         slotFilterKey,
         tostring(tonumber(self.selectedQualityFilter) or 0),
+        tostring(self.selectedExpansionFilter or "all"),
         tostring(self.showUncollected and 1 or 0),
         search,
         tostring(self.sortMode or "default"),
@@ -836,12 +901,21 @@ function Wardrobe:BuildAppearanceList()
         local invCsv, quality, searchStr, showUncollected, sortMode =
             self:_NativeTransmogQueryArgs()
 
+        -- Newer DLLs (QueryDCCollectionTransmogEx probe) filter by itemId
+        -- bounds natively; older ones ignore the extra args, so post-filter.
+        local expMinItemId, expMaxItemId = self:_GetExpansionItemIdBounds()
+        local nativeExpansion = type(QueryDCCollectionTransmogEx) == "function"
+
         local ok, qResults, qTotal, qCollected = pcall(QueryDCCollectionTransmog,
-            invCsv, quality, searchStr, showUncollected, sortMode)
+            invCsv, quality, searchStr, showUncollected, sortMode,
+            nil, nil, expMinItemId, expMaxItemId)
 
         if ok and type(qResults) == "table" then
             self.totalCount = tonumber(qTotal) or 0
             self.collectedCount = tonumber(qCollected) or 0
+            if not nativeExpansion then
+                qResults = self:_ApplyExpansionFilterToResults(qResults)
+            end
             self._appearanceListCache.transmog = {
                 key = cacheKey,
                 results = qResults,
@@ -1004,6 +1078,11 @@ function Wardrobe:BuildAppearanceList()
             end
         end
 
+        -- Expansion filtering (stock WotLK entries vs retail downports).
+        if valid and not self:_ItemPassesExpansionFilter(itemId) then
+            valid = false
+        end
+
         if valid and search then
             local matchFound = false
             
@@ -1159,11 +1238,28 @@ function Wardrobe:PreviewAppearance(itemId)
     -- Validate item exists and has data cached
     local itemName, itemLink = GetItemInfo(itemId)
     if not itemName then
-        -- Item not cached yet, queue for later
-        if not self.pendingPreviews then
-            self.pendingPreviews = {}
-        end
-        self.pendingPreviews[itemId] = true
+        -- Not cached yet — the GetItemInfo call above queried the server.
+        -- Retry briefly until the data arrives instead of silently dropping
+        -- the click (the old pendingPreviews queue was never consumed).
+        self._previewRetryFrame = self._previewRetryFrame or CreateFrame("Frame")
+        local f = self._previewRetryFrame
+        f.itemId = itemId
+        f.elapsed = 0
+        f.waited = 0
+        f:SetScript("OnUpdate", function(this, elapsed)
+            elapsed = elapsed or 0.016
+            this.elapsed = this.elapsed + elapsed
+            this.waited = this.waited + elapsed
+            if this.elapsed < 0.1 then return end
+            this.elapsed = 0
+            if GetItemInfo(this.itemId) then
+                this:Hide()
+                Wardrobe:PreviewAppearance(this.itemId)
+            elseif this.waited > 3 then
+                this:Hide()
+            end
+        end)
+        f:Show()
         return
     end
 
@@ -1285,7 +1381,7 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
 
     table.insert(menu, { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true })
 
-    local dropdown = CreateFrame("Frame", "DCWardrobeContextMenu", UIParent, "UIDropDownMenuTemplate")
+    local dropdown = DCWardrobeContextMenu or CreateFrame("Frame", "DCWardrobeContextMenu", UIParent, "UIDropDownMenuTemplate")
     EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
 end
 

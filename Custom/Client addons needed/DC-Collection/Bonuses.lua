@@ -102,9 +102,11 @@ function DC:ShowMountSpeedTooltip(anchor)
     for _, entry in ipairs(data.breakdown) do
         local statusText
         if entry.isPurchased then
-            statusText = "|cff00ff00" .. L["PURCHASED"] or "Purchased" .. "|r"
+            -- Parenthesize the fallback: ".." binds tighter than "or", and the
+            -- locale keys are optional, so the bare form concatenated nil.
+            statusText = "|cff00ff00" .. (L["PURCHASED"] or "Purchased") .. "|r"
         elseif entry.earned then
-            statusText = "|cff00ff00" .. L["EARNED"] or "Earned" .. "|r"
+            statusText = "|cff00ff00" .. (L["EARNED"] or "Earned") .. "|r"
         else
             statusText = string.format("|cffff9900%d/%d|r", entry.current or 0, entry.required)
         end

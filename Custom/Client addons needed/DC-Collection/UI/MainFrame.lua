@@ -11,12 +11,6 @@
 local DC = DCCollection
 local L = DC.L
 
--- TEMP load marker: proves THIS edited MainFrame.lua is the copy the client loaded.
--- If you do not see this line on /reload, the file is NOT deployed to the loaded addon folder.
-if DC and type(DC.Print) == "function" then
-    DC:Print("|cff66ccff[MountPreview]|r MainFrame.lua loaded - display-first fix + trace (build 2026-06-20g (playermodel probe))")
-end
-
 local addonNameGlobal = ...
 local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
 local BG_FELLEATHER = "Interface\\DC\\Shared\\FelLeather_512.tga"
@@ -534,7 +528,10 @@ end
 local FRAME_WIDTH = 1000 -- Increased width
 local FRAME_HEIGHT = 650 -- Increased height
 local TAB_HEIGHT = 28
-local HEADER_HEIGHT = 60
+-- Keep the header just tall enough for the three stacked stat lines; together
+-- with the -16 top offset this pulls the tab row (and everything below it)
+-- ~16px up, reclaiming the dead space under the title.
+local HEADER_HEIGHT = 48
 local FILTER_HEIGHT = 32
 local FOOTER_HEIGHT = 40
 
@@ -604,8 +601,10 @@ function DC:CreateMainFrame()
     frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
     frame:SetScript("OnEvent", function(self, event, ...)
         if event == "GET_ITEM_INFO_RECEIVED" then
+            -- Fires once per resolved item; a burst of streaming item data
+            -- must coalesce into one rebuild, not one rebuild per item.
             if DC.MainFrame and DC.MainFrame:IsShown() then
-                DC:RefreshCurrentTab()
+                DC:RequestRefreshCurrentTab(0.25)
             end
         end
     end)
@@ -669,8 +668,8 @@ end
 
 function DC:CreateHeader(parent)
     local header = CreateFrame("Frame", nil, parent)
-    header:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -20)
-    header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -20)
+    header:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -16)
+    header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -16)
     header:SetHeight(HEADER_HEIGHT)
     
     -- Stats display
@@ -942,7 +941,7 @@ function DC:CreateFilterBar(parent)
         local menu = {}
         DC:ShowOutfitMenu(menu)
         table.insert(menu, { text = L["CANCEL"] or "Cancel", notCheckable = true })
-        local dropdown = CreateFrame("Frame", "DCCollectionOutfitsMenu", UIParent, "UIDropDownMenuTemplate")
+        local dropdown = DCCollectionOutfitsMenu or CreateFrame("Frame", "DCCollectionOutfitsMenu", UIParent, "UIDropDownMenuTemplate")
         EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
     end)
     filterBar.transmogOutfitsBtn = transmogOutfitsBtn
@@ -1343,7 +1342,7 @@ function DC:CreateContentArea(parent)
     modelPanel.model:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             self.rotating = true
-            self.prevX = GetCursorPosition()
+            self.prevX, self.prevY = GetCursorPosition()
         end
     end)
 
@@ -1355,11 +1354,17 @@ function DC:CreateContentArea(parent)
 
     modelPanel.model:SetScript("OnUpdate", function(self)
         if self.rotating then
-            local x = GetCursorPosition()
+            local x, y = GetCursorPosition()
             local delta = (x - (self.prevX or x)) * 0.01
             self.rotation = (self.rotation or 0) + delta
+            -- No pitch API on 3.3.5 models; vertical drag pans view height.
+            self.panZ = math.max(-1.5, math.min(1.5,
+                (self.panZ or 0) + (y - (self.prevY or y)) * 0.004))
+            -- Position first, facing LAST — position/camera calls can stomp
+            -- the facing, which made rotation appear dead while panning.
+            self:SetPosition(self.zoom or 0, 0, self.panZ)
             self:SetFacing(self.rotation)
-            self.prevX = x
+            self.prevX, self.prevY = x, y
         end
     end)
 
@@ -1369,7 +1374,8 @@ function DC:CreateContentArea(parent)
         zoom = math.max(-1, math.min(1, zoom))
         self.zoom = zoom
         self:SetCamera(0)
-        self:SetPosition(zoom, 0, 0)
+        self:SetPosition(zoom, 0, self.panZ or 0)
+        self:SetFacing(self.rotation or 0)
     end)
 
     content.modelPanel = modelPanel
@@ -1574,8 +1580,8 @@ function DC:UpdateMountPreview(item)
             -- Log BEFORE loading: SetModel on a malformed/unconverted .m2 hard-crashes the
             -- client (ERROR #132, not catchable). If the client dies right after this line,
             -- THIS path is the broken model that needs re-converting.
-            if DC and type(DC.Print) == "function" then
-                DC:Print("[MountPreview] SetModel -> " .. modelPath)
+            if DC and type(DC.Debug) == "function" then
+                DC:Debug("[MountPreview] SetModel -> " .. modelPath)
             end
             local ok = pcall(p.model.SetModel, p.model, modelPath)
             if ok then
@@ -1624,77 +1630,12 @@ function DC:UpdateMountPreview(item)
         modelPath = DC.MountModelPaths[displayId]
     end
 
-    -- ONE-TIME capability probe: determine which render method actually draws on this
-    -- DressUpModel (SetDisplayInfo appears to fail; SetModel(<m2 path>) may be the answer).
-    if DC and type(DC.Print) == "function" and not DC._mountCapsDumped then
-        DC._mountCapsDumped = true
-        local m = p.model
-        local function gmv()
-            return (type(m.GetModel) == "function") and (m:GetModel() or "") or "<no-GetModel>"
-        end
-        DC:Print(string.format(
-            "[MountPreview] CAPS SetDisplayInfo=%s SetCreature=%s SetModel=%s GetModel=%s SetUnit=%s ClearModel=%s",
-            type(m.SetDisplayInfo), type(m.SetCreature), type(m.SetModel),
-            type(m.GetModel), type(m.SetUnit), type(m.ClearModel)))
-        -- STATE: is the path table loaded + is the toggle on? (explains path=nil)
-        local mmpCount = 0
-        if type(DC.MountModelPaths) == "table" then
-            for _ in pairs(DC.MountModelPaths) do mmpCount = mmpCount + 1 end
-        end
-        DC:Print(string.format(
-            "[MountPreview] STATE MountModelPaths=%s  gate(mountModelPreview)=%s  thisDisplay(%s)=%s",
-            (type(DC.MountModelPaths) == "table") and ("loaded:" .. mmpCount) or "NOT-LOADED",
-            tostring(DCCollectionDB and DCCollectionDB.mountModelPreview),
-            tostring(displayId or "nil"),
-            tostring((DC.MountModelPaths and displayId and DC.MountModelPaths[displayId]) or "nil")))
-        if type(m.SetDisplayInfo) == "function" then
-            local ok, err = pcall(m.SetDisplayInfo, m, displayId or 25280)
-            DC:Print("[MountPreview] PROBE SetDisplayInfo(" .. tostring(displayId or 25280)
-                .. ") ok=" .. tostring(ok) .. " err=" .. tostring(err) .. " GetModel='" .. gmv() .. "'")
-        end
-        if type(m.SetModel) == "function" then
-            local ok, err = pcall(m.SetModel, m, "Creature\\camel\\camelmount.m2")
-            DC:Print("[MountPreview] PROBE SetModel(camel) ok=" .. tostring(ok)
-                .. " err=" .. tostring(err) .. " GetModel='" .. gmv() .. "'")
-        end
-        if type(m.ClearModel) == "function" then pcall(m.ClearModel, m) end
-
-        -- EXPERIMENT: a PlayerModel widget should expose SetDisplayInfo, which the
-        -- DressUpModel above lacks. If SetDisplayInfo(displayId) renders BOTH a stock
-        -- (25280) and a custom (500803) display, it is the universal renderer: stock +
-        -- custom + correct per-variant texture (straight from the client DBC), no model
-        -- baking. Throwaway frame, probe only -- does not change the live preview yet.
-        local okPM, pm = pcall(CreateFrame, "PlayerModel", nil, p)
-        if okPM and pm then
-            pm:SetAllPoints()
-            pm:Hide()
-            local function pmg()
-                return (type(pm.GetModel) == "function") and (pm:GetModel() or "") or "<no-GetModel>"
-            end
-            DC:Print(string.format(
-                "[MountPreview] PLAYERMODEL caps: SetDisplayInfo=%s SetCreature=%s SetModel=%s",
-                type(pm.SetDisplayInfo), type(pm.SetCreature), type(pm.SetModel)))
-            if type(pm.SetDisplayInfo) == "function" then
-                local okS = pcall(pm.SetDisplayInfo, pm, 25280)
-                DC:Print("[MountPreview] PLAYERMODEL SetDisplayInfo(25280 STOCK) ok="
-                    .. tostring(okS) .. " GetModel='" .. pmg() .. "'")
-                if type(pm.ClearModel) == "function" then pcall(pm.ClearModel, pm) end
-                local okC = pcall(pm.SetDisplayInfo, pm, 500803)
-                DC:Print("[MountPreview] PLAYERMODEL SetDisplayInfo(500803 CUSTOM) ok="
-                    .. tostring(okC) .. " GetModel='" .. pmg() .. "'")
-                if type(pm.ClearModel) == "function" then pcall(pm.ClearModel, pm) end
-            end
-        else
-            DC:Print("[MountPreview] PLAYERMODEL create failed: " .. tostring(pm))
-        end
-    end
-
     local modelShown = ApplyMountModel(displayId, creatureId, modelPath)
 
-    -- TEMP diagnostic (DC:Print = always visible): what resolved + which renderer applied.
-    if DC and type(DC.Print) == "function" then
+    -- Diagnostic (debug channel): what resolved + which renderer applied.
+    if DC and type(DC.Debug) == "function" then
         local gm = (type(p.model.GetModel) == "function") and p.model:GetModel() or nil
-        DC:Print(string.format(
+        DC:Debug(string.format(
             "[MountPreview] %s id=%s displayId=%s creatureId=%s path=%s collected=%s -> %s via %s | GetModel(now)=%s",
             tostring(item.name or "?"), tostring(item.id or "?"),
             tostring(displayId or "nil"), tostring(creatureId or "nil"), tostring(modelPath or "nil"),
@@ -1725,10 +1666,10 @@ function DC:UpdateMountPreview(item)
             return
         end
 
-        -- TEMP diagnostic: the settled model path (what actually rendered, or <none>).
-        if DC and type(DC.Print) == "function" then
+        -- Diagnostic (debug channel): the settled model path (what actually rendered).
+        if DC and type(DC.Debug) == "function" then
             local gm = (type(p.model.GetModel) == "function") and p.model:GetModel() or nil
-            DC:Print(string.format("[MountPreview] %s settled: loaded=%s GetModel=%s",
+            DC:Debug(string.format("[MountPreview] %s settled: loaded=%s GetModel=%s",
                 tostring(item.name or "?"), HasLoadedModel(p.model) and "YES" or "NO",
                 (type(gm) == "string" and gm ~= "" and gm) or "<none>"))
         end
@@ -2048,59 +1989,20 @@ function DC:UpdateDetailsPanel(item)
             model:ClearModel()
             model.rotation = 0
             model.zoom = 0
+            model.panZ = 0
 
             if collType == "transmog" then
-                -- Transmog: Show player and try on item
+                -- Transmog: Show player and try on item.
+                -- Do NOT re-bind the drag/zoom scripts here: the creation-time
+                -- handlers (SetFacing/SetPosition-based) already provide rotate,
+                -- vertical pan and wheel zoom. The old re-bind replaced them
+                -- with SetRotation/SetCamDistanceScale versions — both retail
+                -- APIs that don't exist on 3.3.5 — silently killing rotation
+                -- and zoom on this panel after the first transmog selection.
                 model:SetUnit("player")
                 if model.Undress then
                     model:Undress()
                 end
-                if model.SetPortraitZoom then
-                    model:SetPortraitZoom(0)
-                end
-                if model.SetCamDistanceScale then
-                    model:SetCamDistanceScale(1.6)
-                end
-
-                -- Add interactive camera controls (zoom/rotation)
-                if not model.cameraDistance then
-                    model.cameraDistance = 1.0
-                end
-
-                -- Mouse wheel zoom
-                model:EnableMouseWheel(true)
-                model:SetScript("OnMouseWheel", function(self, delta)
-                    self.cameraDistance = math.max(0.3, math.min(3.0, (self.cameraDistance or 1.0) - delta * 0.1))
-                    if self.SetCamDistanceScale then
-                        self:SetCamDistanceScale(1.6 * self.cameraDistance)
-                    end
-                end)
-
-                -- Mouse drag rotation
-                model:SetScript("OnUpdate", function(self, elapsed)
-                    if self.isRotating then
-                        local cursorX = GetCursorPosition()
-                        local dx = cursorX - (self.lastCursorX or cursorX)
-                        self.lastCursorX = cursorX
-                        self.rotation = (self.rotation or 0) + dx * 0.01
-                        if self.SetRotation then
-                            self:SetRotation(self.rotation)
-                        end
-                    end
-                end)
-
-                model:SetScript("OnMouseDown", function(self, button)
-                    if button == "LeftButton" then
-                        self.isRotating = true
-                        self.lastCursorX = GetCursorPosition()
-                    end
-                end)
-
-                model:SetScript("OnMouseUp", function(self, button)
-                    if button == "LeftButton" then
-                        self.isRotating = false
-                    end
-                end)
 
                 local itemId = item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID) or item.id
                 itemId = tonumber(itemId) or itemId
@@ -2719,13 +2621,14 @@ function DC:PopulateMountList()
     if not self.MainFrame then return end
     
     local scrollChild = self.MainFrame.Content.mountListChild
-    
-    -- Clear existing items
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+
+    -- Hide pooled rows; frames are never garbage-collected, so rows are
+    -- created once and reused instead of being recreated each refresh.
+    scrollChild.rowPool = scrollChild.rowPool or {}
+    for _, row in ipairs(scrollChild.rowPool) do
+        row:Hide()
     end
-    
+
     -- Hide loading text if it exists
     if scrollChild.loadingText then
         scrollChild.loadingText:Hide()
@@ -2777,80 +2680,109 @@ function DC:PopulateMountList()
     local btnIndex = 0
     for i = startIdx, endIdx do
         local item = items[i]
-        local btn = CreateFrame("Button", nil, scrollChild)
+        local btn = scrollChild.rowPool[btnIndex + 1]
+        if not btn then
+            btn = CreateFrame("Button", nil, scrollChild)
+            -- Row position depends only on the pool index, so anchoring once
+            -- at creation is safe.
+            btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -btnIndex * (btnHeight + 2))
+
+            -- Background
+            btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+            btn.bg:SetAllPoints()
+
+            -- Icon
+            btn.icon = btn:CreateTexture(nil, "ARTWORK")
+            btn.icon:SetSize(40, 40)
+            btn.icon:SetPoint("LEFT", btn, "LEFT", 5, 0)
+
+            -- Name
+            btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            btn.name:SetPoint("TOPLEFT", btn.icon, "TOPRIGHT", 10, -5)
+
+            -- Source
+            btn.source = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            btn.source:SetPoint("TOPLEFT", btn.name, "BOTTOMLEFT", 0, -2)
+            btn.source:SetTextColor(0.6, 0.6, 0.6)
+
+            -- Favorite
+            btn.fav = btn:CreateTexture(nil, "OVERLAY")
+            btn.fav:SetSize(16, 16)
+            btn.fav:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -5, -5)
+            btn.fav:SetTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
+
+            -- Selected
+            btn.selected = btn:CreateTexture(nil, "BORDER")
+            btn.selected:SetAllPoints()
+            btn.selected:SetTexture(0.4, 0.4, 0.8, 0.5)
+
+            -- Highlight
+            btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+            btn.highlight:SetAllPoints()
+            btn.highlight:SetTexture(0.3, 0.3, 0.5, 0.3)
+
+            -- Handlers are bound once; per-refresh data lives in btn.itemData.
+            btn:SetScript("OnClick", function(selfBtn, button)
+                local data = selfBtn.itemData
+                if not data then return end
+                if button == "LeftButton" then
+                    DC.selectedItem = data
+                    DC:UpdateMountPreview(data)
+                    DC:PopulateMountList() -- Refresh to show selection
+                elseif button == "RightButton" then
+                    DC:OnItemRightClick(data)
+                    DC:UpdateMountPreview(data)
+                    DC:PopulateMountList()
+                end
+            end)
+            btn:SetScript("OnDragStart", function(selfBtn)
+                if selfBtn.itemData then
+                    PickupMountForActionBar(selfBtn.itemData)
+                end
+            end)
+            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            btn:RegisterForDrag("LeftButton")
+
+            scrollChild.rowPool[btnIndex + 1] = btn
+        end
+
+        btn.itemData = item
         btn:SetSize(btnWidth, btnHeight)
-        btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -btnIndex * (btnHeight + 2))
-        
-        -- Background
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
+
         if item.collected then
             btn.bg:SetTexture(0.15, 0.25, 0.15, 0.8)
         else
             btn.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
         end
-        
-        -- Icon
-        btn.icon = btn:CreateTexture(nil, "ARTWORK")
-        btn.icon:SetSize(40, 40)
-        btn.icon:SetPoint("LEFT", btn, "LEFT", 5, 0)
+
         btn.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
         if not item.collected then
             btn.icon:SetDesaturated(true)
             btn.icon:SetAlpha(0.5)
+        else
+            btn.icon:SetDesaturated(false)
+            btn.icon:SetAlpha(1)
         end
-        
-        -- Name
-        btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.name:SetPoint("TOPLEFT", btn.icon, "TOPRIGHT", 10, -5)
+
         btn.name:SetText(item.name or "Unknown")
         local r, g, b = GetRarityColor(self, item.rarity or 1)
         btn.name:SetTextColor(r, g, b)
-        
-        -- Source
-        btn.source = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.source:SetPoint("TOPLEFT", btn.name, "BOTTOMLEFT", 0, -2)
+
         btn.source:SetText(item.sourceText or self:FormatSource(item.source))
-        btn.source:SetTextColor(0.6, 0.6, 0.6)
-        
-        -- Favorite
+
         if item.is_favorite then
-            btn.fav = btn:CreateTexture(nil, "OVERLAY")
-            btn.fav:SetSize(16, 16)
-            btn.fav:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -5, -5)
-            btn.fav:SetTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
+            btn.fav:Show()
+        else
+            btn.fav:Hide()
         end
-        
-        -- Highlight
-        btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-        btn.highlight:SetAllPoints()
-        btn.highlight:SetTexture(0.3, 0.3, 0.5, 0.3)
-        
-        -- Selected
+
         if self.selectedItem and self.selectedItem.id == item.id then
-            btn.selected = btn:CreateTexture(nil, "BORDER")
-            btn.selected:SetAllPoints()
-            btn.selected:SetTexture(0.4, 0.4, 0.8, 0.5)
+            btn.selected:Show()
+        else
+            btn.selected:Hide()
         end
-        
-        -- Click
-        btn:SetScript("OnClick", function(selfBtn, button)
-            if button == "LeftButton" then
-                DC.selectedItem = item
-                DC:UpdateMountPreview(item)
-                DC:PopulateMountList() -- Refresh to show selection
-            elseif button == "RightButton" then
-                DC:OnItemRightClick(item)
-                DC:UpdateMountPreview(item)
-                DC:PopulateMountList()
-            end
-        end)
-        btn:SetScript("OnDragStart", function()
-            PickupMountForActionBar(item)
-        end)
-        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        btn:RegisterForDrag("LeftButton")
-        
+
+        btn:Show()
         btnIndex = btnIndex + 1
     end
     
@@ -2902,13 +2834,14 @@ function DC:PopulateGrid()
     end
     
     local scrollChild = self.MainFrame.Content.scrollChild
-    
-    -- Clear existing items and loading text
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+
+    -- Hide pooled cards; frames are never garbage-collected, so cards are
+    -- created once and reused instead of being recreated each refresh.
+    scrollChild.cardPool = scrollChild.cardPool or {}
+    for _, card in ipairs(scrollChild.cardPool) do
+        card:Hide()
     end
-    
+
     -- Hide loading text if it exists
     if scrollChild.loadingText then
         scrollChild.loadingText:Hide()
@@ -2962,10 +2895,17 @@ function DC:PopulateGrid()
     local row = 0
     local col = 0
     
+    local usedCards = 0
     for i = startIdx, endIdx do
         local item = items[i]
-        local card = self:CreateItemCard(scrollChild, item, col, row, cardSize, spacing)
-        
+        usedCards = usedCards + 1
+        local card = scrollChild.cardPool[usedCards]
+        if not card then
+            card = self:CreateItemCard(scrollChild)
+            scrollChild.cardPool[usedCards] = card
+        end
+        self:ConfigureItemCard(card, item, col, row, cardSize, spacing)
+
         col = col + 1
         if col >= cols then
             col = 0
@@ -2983,61 +2923,45 @@ function DC:PopulateGrid()
     SetWidgetEnabled(self.MainFrame.Footer.nextBtn, self.currentPage < totalPages)
 end
 
-function DC:CreateItemCard(parent, item, col, row, size, spacing)
+-- Creates the static parts of a pooled grid card once. Per-refresh state is
+-- applied by ConfigureItemCard; handlers are bound here a single time and
+-- read the current data from card.itemData.
+function DC:CreateItemCard(parent)
     local card = CreateFrame("Button", nil, parent)
-    card:SetSize(size, size)
-    card:SetPoint("TOPLEFT", parent, "TOPLEFT", col * (size + spacing), -row * (size + spacing))
-    
+
     -- Background based on collected state
     card.bg = card:CreateTexture(nil, "BACKGROUND")
     card.bg:SetAllPoints()
-    if item.collected then
-        card.bg:SetTexture(0.2, 0.4, 0.2, 0.8)
-    else
-        card.bg:SetTexture(0.3, 0.3, 0.3, 0.5)
-    end
-    
+
     -- Rarity border
-    local rarity = item.rarity or 1
-    local r, g, b = GetRarityColor(self, rarity)
     card.border = card:CreateTexture(nil, "BORDER")
     card.border:SetPoint("TOPLEFT", -2, 2)
     card.border:SetPoint("BOTTOMRIGHT", 2, -2)
-    card.border:SetTexture(r, g, b, 0.8)
-    
+
     -- Icon
     card.icon = card:CreateTexture(nil, "ARTWORK")
-    card.icon:SetSize(size - 20, size - 20)
     card.icon:SetPoint("TOP", card, "TOP", 0, -5)
-    card.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-    
-    if not item.collected then
-        card.icon:SetDesaturated(true)
-        card.icon:SetAlpha(0.5)
-    end
-    
+
     -- Name
     card.name = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     card.name:SetPoint("BOTTOM", card, "BOTTOM", 0, 3)
-    card.name:SetWidth(size - 4)
-    card.name:SetText(item.name or "Unknown")
     card.name:SetWordWrap(false)
-    
+
     -- Favorite indicator
-    if item.is_favorite then
-        card.favIcon = card:CreateTexture(nil, "OVERLAY")
-        card.favIcon:SetSize(16, 16)
-        card.favIcon:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, -2)
-        card.favIcon:SetTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
-    end
-    
+    card.favIcon = card:CreateTexture(nil, "OVERLAY")
+    card.favIcon:SetSize(16, 16)
+    card.favIcon:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, -2)
+    card.favIcon:SetTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
+
     -- Highlight
     card.highlight = card:CreateTexture(nil, "HIGHLIGHT")
     card.highlight:SetAllPoints()
     card.highlight:SetTexture(1, 1, 1, 0.2)
-    
+
     -- Click handlers
-    card:SetScript("OnClick", function(self, button)
+    card:SetScript("OnClick", function(selfCard, button)
+        local item = selfCard.itemData
+        if not item then return end
         if button == "LeftButton" then
             DC:OnItemLeftClick(item)
         elseif button == "RightButton" then
@@ -3045,20 +2969,58 @@ function DC:CreateItemCard(parent, item, col, row, size, spacing)
         end
     end)
     card:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    
+
     -- Tooltip
-    card:SetScript("OnEnter", function(self)
+    card:SetScript("OnEnter", function(selfCard)
+        local item = selfCard.itemData
         -- For heirlooms we preview on click (not hover) to match the requested UX.
         if not (item and item.type == "heirlooms") then
             DC:UpdateDetailsPanel(item)
         end
-        DC:ShowItemTooltip(self, item)
+        DC:ShowItemTooltip(selfCard, item)
     end)
     card:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    
+
     return card
+end
+
+function DC:ConfigureItemCard(card, item, col, row, size, spacing)
+    card.itemData = item
+    card:SetSize(size, size)
+    card:ClearAllPoints()
+    card:SetPoint("TOPLEFT", card:GetParent(), "TOPLEFT", col * (size + spacing), -row * (size + spacing))
+
+    if item.collected then
+        card.bg:SetTexture(0.2, 0.4, 0.2, 0.8)
+    else
+        card.bg:SetTexture(0.3, 0.3, 0.3, 0.5)
+    end
+
+    local r, g, b = GetRarityColor(self, item.rarity or 1)
+    card.border:SetTexture(r, g, b, 0.8)
+
+    card.icon:SetSize(size - 20, size - 20)
+    card.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    if not item.collected then
+        card.icon:SetDesaturated(true)
+        card.icon:SetAlpha(0.5)
+    else
+        card.icon:SetDesaturated(false)
+        card.icon:SetAlpha(1)
+    end
+
+    card.name:SetWidth(size - 4)
+    card.name:SetText(item.name or "Unknown")
+
+    if item.is_favorite then
+        card.favIcon:Show()
+    else
+        card.favIcon:Hide()
+    end
+
+    card:Show()
 end
 
 -- ============================================================================
@@ -3310,17 +3272,37 @@ end
 function DC:OnSearchChanged(text)
     self.currentPage = 1
 
-    if self.activeTab == "mounts" then
-        self:PopulateMountList()
-    elseif self.activeTab == "pets" then
-        if DC.PetJournal and DC.PetJournal.frame and DC.PetJournal.frame:IsShown() then
-            DC.PetJournal:UpdatePetList()
-        else
-            self:PopulateGrid()
-        end
-    else
-        self:PopulateGrid()
+    -- Debounce: OnTextChanged fires per keystroke and each repopulate is a
+    -- full list rebuild. Wait for a short typing pause, then rebuild once.
+    -- (The populate functions read the search box text directly, so nothing
+    -- is lost by deferring.)
+    self._searchDebounceFrame = self._searchDebounceFrame or CreateFrame("Frame")
+    local f = self._searchDebounceFrame
+    f._remaining = 0.30
+    if f._active then
+        return
     end
+    f._active = true
+    f:SetScript("OnUpdate", function(frame, elapsed)
+        frame._remaining = (frame._remaining or 0) - (elapsed or 0.016)
+        if frame._remaining > 0 then
+            return
+        end
+        frame._active = false
+        frame:SetScript("OnUpdate", nil)
+
+        if DC.activeTab == "mounts" then
+            DC:PopulateMountList()
+        elseif DC.activeTab == "pets" then
+            if DC.PetJournal and DC.PetJournal.frame and DC.PetJournal.frame:IsShown() then
+                DC.PetJournal:UpdatePetList()
+            else
+                DC:PopulateGrid()
+            end
+        else
+            DC:PopulateGrid()
+        end
+    end)
 end
 
 function DC:OnFilterChanged()
@@ -3431,7 +3413,7 @@ function DC:OnItemRightClick(item)
         end
 
         table.insert(menu, { text = L["CANCEL"], notCheckable = true })
-        local dropdown = CreateFrame("Frame", "DCCollectionContextMenu", UIParent, "UIDropDownMenuTemplate")
+        local dropdown = DCCollectionContextMenu or CreateFrame("Frame", "DCCollectionContextMenu", UIParent, "UIDropDownMenuTemplate")
         EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
         return
     end
@@ -3577,7 +3559,7 @@ function DC:OnItemRightClick(item)
     })
     
     -- Create and show dropdown
-    local dropdown = CreateFrame("Frame", "DCCollectionContextMenu", UIParent, "UIDropDownMenuTemplate")
+    local dropdown = DCCollectionContextMenu or CreateFrame("Frame", "DCCollectionContextMenu", UIParent, "UIDropDownMenuTemplate")
     EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
 end
 

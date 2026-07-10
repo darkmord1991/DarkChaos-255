@@ -75,6 +75,10 @@ function Wardrobe:_EnsureUnsavedChangesPopup()
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,
+        -- Escape must behave like the Cancel button (button3), not like
+        -- "Discard": StaticPopup's escape handling runs OnCancel, which here
+        -- discards the changes and executes the pending action.
+        noCancelOnEscape = 1,
         preferredIndex = 3,
     }
 end
@@ -210,7 +214,10 @@ Wardrobe.collectedCount = Wardrobe.collectedCount or 0
 Wardrobe.totalCount = Wardrobe.totalCount or 0
 Wardrobe.transmogDisabled = Wardrobe.transmogDisabled or false
 Wardrobe.spellVisualsDisabled = Wardrobe.spellVisualsDisabled or false
-Wardrobe.showUncollected = (Wardrobe.showUncollected ~= nil) and Wardrobe.showUncollected or true
+-- Not `x and y or true`: that idiom can never yield a stored `false`.
+if Wardrobe.showUncollected == nil then
+    Wardrobe.showUncollected = true
+end
 
 -- Stub functions to avoid nil-call errors before WardrobeOutfits.lua loads.
 -- Real implementations are in WardrobeOutfits.lua.
@@ -238,6 +245,16 @@ Wardrobe.QUALITY_FILTERS = {
     { id = 5,  text = "Legendary", color = { r = 1, g = 0.5, b = 0 } },        -- Orange
     { id = 6,  text = "Artifact",  color = { r = 0.9, g = 0.8, b = 0.5 } },    -- Gold
     { id = 7,  text = "Heirloom",  color = { r = 0.9, g = 0.8, b = 0.5 } },    -- Light gold
+}
+
+-- Expansion filter for the Items grid. Stock 3.3.5a item entries end at
+-- 56806; the retail downport pipeline keeps original retail entry ids, so
+-- every downported (Cata and later) appearance item sits above this bound.
+Wardrobe.WOTLK_MAX_ITEM_ID = 56806
+Wardrobe.EXPANSION_FILTERS = {
+    { id = "all",       text = "All Expansions" },
+    { id = "classic",   text = "Classic - WotLK" },
+    { id = "wotlkplus", text = "WotLK+ (Downports)" },
 }
 
 -- Sort modes for the "Order By" button (Items/Sets grid).
@@ -1065,8 +1082,11 @@ function Wardrobe:RefreshTransmogDefinitions()
     DC:Print("[Wardrobe] Refreshing transmog definitions from server...")
     local sent = DC:RequestDefinitions("transmog", 0)
     
-    -- Set up completion handler
-    local checkFrame = CreateFrame("Frame")
+    -- Set up completion handler (reuse one watcher frame across refreshes;
+    -- frames are never garbage-collected).
+    self._refreshCheckFrame = self._refreshCheckFrame or CreateFrame("Frame")
+    local checkFrame = self._refreshCheckFrame
+    checkFrame:Show()
     checkFrame.elapsed = 0
     checkFrame.lastCount = 0
     checkFrame.stableChecks = 0

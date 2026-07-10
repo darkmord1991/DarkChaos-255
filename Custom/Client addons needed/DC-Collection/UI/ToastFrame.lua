@@ -236,9 +236,10 @@ function ToastFrame:ShowSingleToast(toast, data)
     -- Fade in
     UIFrameFadeIn(toast, 0.3, 0, 1)
 
-    -- Play sound
+    -- Play sound. 3.3.5 PlaySound takes a sound NAME, not a numeric kit id —
+    -- PlaySound(8959) resolves to nothing and plays silence.
     if DC:GetSetting("notificationSound") ~= false then
-        PlaySound(8959) -- Or use 888 for achievement sound
+        PlaySound("igMainMenuOpen")
     end
 
     -- Auto dismiss after duration

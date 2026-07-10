@@ -336,18 +336,22 @@ function Wardrobe:_ApplyEmbeddedLayout()
         right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, bottomInset)
     end
 
-    -- Move Preview Toggle to Bottom Right (near page controls), nudged down.
+    -- Pager and preview-mode toggle stack below the grid. Anchoring the toggle
+    -- to the pager itself (instead of the panel edge) guarantees the two rows
+    -- can never overlap, whatever the panel/grid widths end up being.
+    if frame.pageFrame and frame.gridContainer then
+        frame.pageFrame:ClearAllPoints()
+        frame.pageFrame:SetPoint("TOP", frame.gridContainer, "BOTTOM", 0, -8)
+    end
     if previewModeFrame then
         previewModeFrame:ClearAllPoints()
         previewModeFrame:SetParent(frame)
-        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -10)
+        if frame.pageFrame then
+            previewModeFrame:SetPoint("TOP", frame.pageFrame, "BOTTOM", 0, -4)
+        else
+            previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -10)
+        end
         previewModeFrame:SetFrameStrata("HIGH")
-    end
-
-    -- Restore page frame position for embedded mode (nudged down a bit).
-    if frame.pageFrame and frame.gridContainer then
-        frame.pageFrame:ClearAllPoints()
-        frame.pageFrame:SetPoint("TOPLEFT", frame.gridContainer, "BOTTOMLEFT", 0, -12)
     end
 
     if frame.RefreshOutfitGridAnchors then
@@ -402,10 +406,15 @@ function Wardrobe:_ApplyStandaloneLayout()
         frame.pageFrame:SetPoint("BOTTOM", right, "BOTTOM", 0, -58)
     end
 
+    -- Keep the preview toggle attached to the pager so the two never overlap.
     if previewModeFrame then
         previewModeFrame:SetParent(right)
         previewModeFrame:ClearAllPoints()
-        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -58)
+        if frame.pageFrame then
+            previewModeFrame:SetPoint("LEFT", frame.pageFrame, "RIGHT", 12, 0)
+        else
+            previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -58)
+        end
     end
 
     if frame.RefreshOutfitGridAnchors then
@@ -455,7 +464,10 @@ function Wardrobe:ShowSortMenu(anchorButton)
         return
     end
 
-    local dropdown = CreateFrame("Frame", "DCWardrobeSortMenu", UIParent, "UIDropDownMenuTemplate")
+    -- Reuse one dropdown host frame; creating one per click leaks frames.
+    self._sortMenuDropdown = self._sortMenuDropdown or
+        CreateFrame("Frame", "DCWardrobeSortMenu", UIParent, "UIDropDownMenuTemplate")
+    local dropdown = self._sortMenuDropdown
     local menu = {}
 
     for _, mode in ipairs(self.SORT_MODES or {}) do
@@ -483,7 +495,10 @@ function Wardrobe:ShowSlotFilterMenu(anchorButton)
         return
     end
 
-    local dropdown = CreateFrame("Frame", "DCWardrobeSlotFilterMenu", UIParent, "UIDropDownMenuTemplate")
+    -- Reuse one dropdown host frame; creating one per click leaks frames.
+    self._slotFilterMenuDropdown = self._slotFilterMenuDropdown or
+        CreateFrame("Frame", "DCWardrobeSlotFilterMenu", UIParent, "UIDropDownMenuTemplate")
+    local dropdown = self._slotFilterMenuDropdown
     local menu = {}
 
     local function GetSlotFilterMenuLabel(filter)
@@ -976,10 +991,36 @@ function Wardrobe:CreateRightPanel(parent)
     UIDropDownMenu_SetText(qualityDropdown, "All Qualities")
     parent.qualityDropdown = qualityDropdown
 
+    -- Expansion filter dropdown (stock WotLK items vs retail downports)
+    local expansionDropdown = CreateFrame("Frame", "DCWardrobeExpansionDropdown", right, "UIDropDownMenuTemplate")
+    expansionDropdown:SetPoint("LEFT", qualityDropdown, "RIGHT", -24, 0)
+    UIDropDownMenu_SetWidth(expansionDropdown, 100)
+
+    UIDropDownMenu_Initialize(expansionDropdown, function(self, level)
+        for _, expInfo in ipairs(Wardrobe.EXPANSION_FILTERS or {}) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = expInfo.text
+            info.value = expInfo.id
+            info.func = function(btn)
+                Wardrobe.selectedExpansionFilter = btn.value
+                UIDropDownMenu_SetText(expansionDropdown, btn:GetText())
+                CloseDropDownMenus()
+                Wardrobe.currentPage = 1
+                Wardrobe:RefreshGrid()
+            end
+            info.checked = ((Wardrobe.selectedExpansionFilter or "all") == expInfo.id)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+
+    Wardrobe.selectedExpansionFilter = Wardrobe.selectedExpansionFilter or "all"
+    UIDropDownMenu_SetText(expansionDropdown, "All Expansions")
+    parent.expansionDropdown = expansionDropdown
+
     -- Universal search box (searches name, itemID, and displayID simultaneously)
     local searchBox = CreateFrame("EditBox", "DCWardrobeSearchBox", right, "InputBoxTemplate")
     searchBox:SetSize(130, 20)
-    searchBox:SetPoint("LEFT", qualityDropdown, "RIGHT", 10, 2)
+    searchBox:SetPoint("LEFT", expansionDropdown, "RIGHT", -10, 2)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
 
@@ -1453,12 +1494,19 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
             container:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 0, -34)
         end
 
+        -- Reserve vertical room for the preview toggle without anchoring to it:
+        -- the toggle is horizontally centered now, so anchoring BOTTOMRIGHT to
+        -- it would drag the grid's right edge away from the panel edge.
         local bottomAnchor = root.previewModeFrame
+        local reserve = 0
         if bottomAnchor and bottomAnchor.IsShown and bottomAnchor:IsShown() then
-            container:SetPoint("BOTTOMRIGHT", bottomAnchor, "TOPRIGHT", 0, 8)
-        else
-            container:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", 0, 0)
+            local anchorTop = bottomAnchor.GetTop and bottomAnchor:GetTop()
+            local panelBottom = rightPanel.GetBottom and rightPanel:GetBottom()
+            if anchorTop and panelBottom then
+                reserve = math.max(0, (anchorTop - panelBottom) + 8)
+            end
         end
+        container:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", 0, reserve)
     end
 
     root.RefreshOutfitGridAnchors = RefreshOutfitGridAnchors
@@ -1626,10 +1674,6 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
         btn.icon:SetTexture("Interface\\Icons\\INV_Chest_Cloth_17")
         btn.icon:Hide()
 
-        btn.icon:Hide()
-        
-        btn.icon:Hide()
-        
         -- Attach to root's outfitButtons array
         table.insert(root.outfitButtons, btn)
     end
@@ -1906,6 +1950,8 @@ function Wardrobe:ShowSlotContextMenu(slotDef)
     
     table.insert(menu, { text = "Cancel", notCheckable = true })
     
-    local dropdown = CreateFrame("Frame", "DCWardrobeSlotContextMenu", UIParent, "UIDropDownMenuTemplate")
-    EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
+    -- Reuse one dropdown host frame; creating one per click leaks frames.
+    self._slotContextMenuDropdown = self._slotContextMenuDropdown or
+        CreateFrame("Frame", "DCWardrobeSlotContextMenu", UIParent, "UIDropDownMenuTemplate")
+    EasyMenu(menu, self._slotContextMenuDropdown, "cursor", 0, 0, "MENU")
 end

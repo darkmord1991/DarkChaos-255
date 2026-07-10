@@ -126,7 +126,9 @@ function ShopModule:GetTokens()
 end
 
 function ShopModule:GetEmblems()
-    local _, essence = (type(DC.GetCurrencyBalances) == "function") and DC:GetCurrencyBalances() or nil
+    -- A call inside an and/or chain is truncated to one value, which dropped
+    -- the second return; select(2, ...) keeps the essence balance.
+    local essence = (type(DC.GetCurrencyBalances) == "function") and select(2, DC:GetCurrencyBalances()) or nil
     return tonumber(essence) or (DC.currency and DC.currency.emblems) or 0
 end
 

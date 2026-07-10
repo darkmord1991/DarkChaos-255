@@ -250,7 +250,9 @@ function DC:CreateWishlistItemFrame(parent, wish, yOffset)
     -- Background
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+    -- 3.3.5: solid-color fills go through SetTexture (SetColorTexture is WoD+
+    -- and only exists here if another addon polyfills it).
+    frame.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
     
     -- Get definition
     local def = self:GetDefinition(wish.type, wish.itemId)
@@ -280,7 +282,11 @@ function DC:CreateWishlistItemFrame(parent, wish, yOffset)
         rarityColor = self.RARITY_COLORS[rarity] or self.RARITY_COLORS[0]
     end
 
-    local r, g, b = unpack(rarityColor or {1, 1, 1})
+    -- Rarity colors are keyed tables ({ r=, g=, b=, hex= }), not arrays, so
+    -- unpack() would return nothing and feed nil into SetTextColor.
+    local r = (rarityColor and rarityColor.r) or 1
+    local g = (rarityColor and rarityColor.g) or 1
+    local b = (rarityColor and rarityColor.b) or 1
     
     frame.name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.name:SetPoint("TOPLEFT", frame.icon, "TOPRIGHT", 10, -5)
@@ -407,7 +413,8 @@ end
 function DC:ShowZoneWishlistNotification(items, zone)
     local notifySound = self:GetSetting("notificationSound")
     if notifySound then
-        PlaySound(8959) -- SOUNDKIT.UI_70_ARTIFACT_FORGE_APPEARANCE_COLOR_SELECT or similar
+        -- 3.3.5 PlaySound takes a sound NAME, not a numeric kit id.
+        PlaySound("igMainMenuOpen")
     end
 
     -- Show in chat

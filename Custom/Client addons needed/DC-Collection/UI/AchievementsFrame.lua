@@ -282,43 +282,35 @@ local function BuildCategoryTree(categories)
     return tree, catMap
 end
 
-local function CreateCategoryButton(parent, node, indent, frame)
-    local btnHeight = 24
-    local hasChildren = #node.children > 0
-    
+-- Creation only: frames are never garbage-collected on 3.3.5, so category
+-- buttons are pooled on the scroll child and reused across refreshes. All
+-- per-row data is set in ConfigureCategoryButton; the OnClick handler is
+-- bound once here and reads the fields set during configure.
+local function CreateCategoryButton(parent)
     local btn = CreateFrame("Button", nil, parent)
-    btn:SetSize(CATEGORY_WIDTH - indent, btnHeight)
-    btn.categoryId = node.id
-    
-    -- Expand/collapse icon for parent categories
-    if hasChildren then
-        btn.expandIcon = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.expandIcon:SetPoint("LEFT", btn, "LEFT", indent, 0)
-        btn.expandIcon:SetText(frame.expandedCategories[node.id] and "-" or "+")
-        btn.expandIcon:SetTextColor(0.8, 0.8, 0.8)
-    end
-    
+
+    -- Expand/collapse icon (hidden for leaf categories during configure)
+    btn.expandIcon = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btn.expandIcon:SetTextColor(0.8, 0.8, 0.8)
+
     -- Category text
     btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    btn.text:SetPoint("LEFT", btn, "LEFT", indent + (hasChildren and 15 or 5), 0)
-    btn.text:SetText(node.name)
-    
+
     -- Highlight
     btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-    
-    -- Selection visual
-    if frame.selectedCategory == node.id then
-        btn.text:SetTextColor(1, 1, 0)
-        local sel = btn:CreateTexture(nil, "BACKGROUND")
-        sel:SetAllPoints()
-        sel:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
-        sel:SetVertexColor(0.8, 0.8, 0, 0.5)
-    else
-        btn.text:SetTextColor(1, 0.82, 0)
-    end
-    
-    btn:SetScript("OnClick", function()
-        if hasChildren then
+
+    -- Selection visual (shown only while this row holds the selected category)
+    btn.selection = btn:CreateTexture(nil, "BACKGROUND")
+    btn.selection:SetAllPoints()
+    btn.selection:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
+    btn.selection:SetVertexColor(0.8, 0.8, 0, 0.5)
+    btn.selection:Hide()
+
+    btn:SetScript("OnClick", function(self)
+        local frame = self.ownerFrame
+        local node = self.node
+        if not frame or not node then return end
+        if self.hasChildren then
             -- Toggle expand/collapse
             frame.expandedCategories[node.id] = not frame.expandedCategories[node.id]
             frame:UpdateCategories()
@@ -329,36 +321,87 @@ local function CreateCategoryButton(parent, node, indent, frame)
             frame:UpdateAchievements(node.id)
         end
     end)
-    
-    return btn, btnHeight
+
+    return btn
 end
 
-local function RenderCategoryTree(parent, tree, frame, yOffset, indent)
+-- Configuration only: sets every visual/data field each refresh so no state
+-- can leak from the button's previous occupant. Indentation is per-refresh
+-- data, hence the ClearAllPoints + SetPoint on the inner regions.
+local function ConfigureCategoryButton(btn, node, indent, frame)
+    local btnHeight = 24
+    local hasChildren = #node.children > 0
+
+    btn.categoryId = node.id
+    btn.node = node
+    btn.hasChildren = hasChildren
+    btn.ownerFrame = frame
+    btn:SetSize(CATEGORY_WIDTH - indent, btnHeight)
+
+    -- Expand/collapse icon for parent categories
+    if hasChildren then
+        btn.expandIcon:ClearAllPoints()
+        btn.expandIcon:SetPoint("LEFT", btn, "LEFT", indent, 0)
+        btn.expandIcon:SetText(frame.expandedCategories[node.id] and "-" or "+")
+        btn.expandIcon:Show()
+    else
+        btn.expandIcon:Hide()
+    end
+
+    btn.text:ClearAllPoints()
+    btn.text:SetPoint("LEFT", btn, "LEFT", indent + (hasChildren and 15 or 5), 0)
+    btn.text:SetText(node.name)
+
+    -- Selection visual
+    if frame.selectedCategory == node.id then
+        btn.text:SetTextColor(1, 1, 0)
+        btn.selection:Show()
+    else
+        btn.text:SetTextColor(1, 0.82, 0)
+        btn.selection:Hide()
+    end
+
+    btn:Show()
+
+    return btnHeight
+end
+
+local function RenderCategoryTree(parent, tree, frame, yOffset, indent, poolIndex)
     yOffset = yOffset or 0
     indent = indent or 0
-    
+    poolIndex = poolIndex or 0
+
     for _, node in ipairs(tree) do
-        local btn, height = CreateCategoryButton(parent, node, indent, frame)
+        poolIndex = poolIndex + 1
+        local btn = parent.categoryPool[poolIndex]
+        if not btn then
+            btn = CreateCategoryButton(parent)
+            parent.categoryPool[poolIndex] = btn
+        end
+        local height = ConfigureCategoryButton(btn, node, indent, frame)
+        btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -yOffset)
         yOffset = yOffset + height
-        
+
         -- Render children if expanded
         if #node.children > 0 and frame.expandedCategories[node.id] then
-            yOffset = RenderCategoryTree(parent, node.children, frame, yOffset, indent + 15)
+            yOffset, poolIndex = RenderCategoryTree(parent, node.children, frame, yOffset, indent + 15, poolIndex)
         end
     end
-    
-    return yOffset
+
+    return yOffset, poolIndex
 end
 
 function AchievementsUI:UpdateCategories()
     if not self.frame or not self.frame.categoryChild then return end
     
     local child = self.frame.categoryChild
-    -- Clear existing
-    for _, c in ipairs({child:GetChildren()}) do
-        c:Hide()
-        c:SetParent(nil)
+    -- Hide all pooled buttons; RenderCategoryTree re-shows and reconfigures
+    -- the ones it uses. Never SetParent(nil): frames are never garbage-
+    -- collected, so detaching them each refresh leaked permanently.
+    child.categoryPool = child.categoryPool or {}
+    for _, btn in ipairs(child.categoryPool) do
+        btn:Hide()
     end
 
     -- Get Categories
@@ -403,15 +446,23 @@ function AchievementsUI:UpdateCategories()
     
     categories = uniqueCategories
     
-    -- If no categories found, show a message
+    -- If no categories found, show a message. Keep ONE fontstring and toggle
+    -- it: FontStrings are regions and can never be destroyed — creating one
+    -- per refresh both leaked and left the message permanently overlaid once
+    -- shown.
+    if not child.emptyText then
+        child.emptyText = child:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        child.emptyText:SetPoint("CENTER", child, "CENTER", 0, 0)
+        child.emptyText:SetText("No achievement categories found.\nAchievement data may not be loaded yet.")
+        child.emptyText:Hide()
+    end
     if #categories == 0 then
-        local msg = child:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        msg:SetPoint("CENTER", child, "CENTER", 0, 0)
-        msg:SetText("No achievement categories found.\nAchievement data may not be loaded yet.")
+        child.emptyText:Show()
         child:SetHeight(100)
         return
     end
-    
+    child.emptyText:Hide()
+
     -- Build tree structure
     local tree, catMap = BuildCategoryTree(categories)
     
@@ -450,10 +501,12 @@ function AchievementsUI:UpdateAchievements(categoryId)
     if not self.frame or not self.frame.achievementChild or not categoryId then return end
     
     local child = self.frame.achievementChild
-    -- Clear existing
-    for _, c in ipairs({child:GetChildren()}) do
-        c:Hide()
-        c:SetParent(nil)
+    -- Hide all pooled rows; rows in use are re-shown and fully reconfigured
+    -- below. Never SetParent(nil): frames are never garbage-collected, so
+    -- detaching them each refresh leaked permanently.
+    child.achievementPool = child.achievementPool or {}
+    for _, row in ipairs(child.achievementPool) do
+        row:Hide()
     end
 
     -- Get Achievements in Category
@@ -487,9 +540,16 @@ function AchievementsUI:UpdateAchievements(categoryId)
         
         local isCompleted = completed or accountCompleted
 
-        local btn = self:CreateAchievementButton(child, width, btnHeight)
+        local btn = child.achievementPool[i]
+        if not btn then
+            btn = self:CreateAchievementButton(child)
+            child.achievementPool[i] = btn
+        end
+        btn:SetSize(width, btnHeight)
+        btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -yOffset)
-        
+        btn:Show()
+
         -- Populate Data
         btn.name:SetText(name)
         btn.desc:SetText(description)
@@ -531,10 +591,13 @@ function AchievementsUI:UpdateAchievements(categoryId)
     child:SetHeight(yOffset)
 end
 
-function AchievementsUI:CreateAchievementButton(parent, width, height)
+-- Creation only: rows are pooled on the scroll child (child.achievementPool)
+-- and reused across refreshes. Size, position and all per-row data (name,
+-- desc, icon + desaturation, points, status, reward, bg/border colors) are
+-- set every refresh in UpdateAchievements.
+function AchievementsUI:CreateAchievementButton(parent)
     local btn = CreateFrame("Frame", nil, parent)
-    btn:SetSize(width, height)
-    
+
     if SHOW_ROW_BACKGROUND then
         -- Background
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")

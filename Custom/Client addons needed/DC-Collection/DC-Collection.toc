@@ -18,7 +18,6 @@ Protocol.lua
 Bonuses.lua
 Wishlist.lua
 DebugCommands.lua
-ItemPreloader.lua
 
 # Modules
 Modules\HeirloomModule.lua
@@ -41,7 +40,6 @@ Shop\ShopModule.lua
 UI\MyCollectionFrame.lua
 UI\MainFrame.lua
 UI\AchievementsFrame.lua
-UI\CommunityFrame.lua
 UI\WardrobeFrame.lua
 UI\FormFrame.lua
 UI\Wardrobe\WardrobeCore.lua

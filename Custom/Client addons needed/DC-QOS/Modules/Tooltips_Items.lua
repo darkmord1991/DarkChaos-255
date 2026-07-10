@@ -8,6 +8,33 @@ local TT = addon.TooltipsNS
 local Tooltips = TT.module
 
 -- ============================================================
+-- Equipped-item comparison (side-by-side ShoppingTooltips)
+-- ============================================================
+-- On stock 3.3.5 the FrameXML handler GameTooltip_OnTooltipSetItem pops the
+-- equipped comparison (ShoppingTooltip1/2) whenever an item tooltip is set and
+-- the COMPAREITEMS modifier is held (or alwaysCompareItems is on). On patched
+-- native clients the C++ item renderer fills the tooltip WITHOUT firing the
+-- Lua OnTooltipSetItem script, so that handler never runs and the equipped
+-- comparison never appears. Reproduce it here from our own Set* hooks.
+--
+-- Gated to native clients only: on stock clients the FrameXML handler already
+-- does this, so we must not fight it.
+local function TryShowCompareItem(tooltip)
+    if type(GetDCClientCapabilities) ~= "function" then return end
+    if not tooltip or not tooltip.shoppingTooltips then return end
+    if type(GameTooltip_ShowCompareItem) ~= "function" then return end
+
+    if IsModifiedClick("COMPAREITEMS") or GetCVarBool("alwaysCompareItems") then
+        GameTooltip_ShowCompareItem(tooltip)
+    else
+        for _, frame in pairs(tooltip.shoppingTooltips) do
+            frame:Hide()
+        end
+    end
+end
+TT.TryShowCompareItem = TryShowCompareItem
+
+-- ============================================================
 -- Item ID in Tooltips
 -- ============================================================
 local function AddItemId(tooltip, itemLink)
@@ -153,6 +180,7 @@ function TT.HookItemTooltips()
 
         AddItemId(self, itemLink)
         AddItemLevel(self, itemLink)
+        TryShowCompareItem(self)
         self:Show()
     end
 
@@ -233,6 +261,29 @@ function TT.HookItemTooltips()
         end
         AddItemTooltipDetails(self, itemLink)
     end)
-    
+
+    -- Toggle the equipped comparison when the COMPAREITEMS modifier changes while
+    -- a tooltip is already up. Stock does this via GameTooltip_OnUpdate polling;
+    -- on the native path our Set* hooks don't re-fire on a bare key press, so we
+    -- react to the key event directly. (Native-only path -- TryShowCompareItem
+    -- no-ops on stock clients where the FrameXML OnUpdate already handles it.)
+    if not TT.compareModifierFrame and type(GetDCClientCapabilities) == "function" then
+        local f = CreateFrame("Frame")
+        f:RegisterEvent("MODIFIER_STATE_CHANGED")
+        f:SetScript("OnEvent", function(_, _, key)
+            -- COMPAREITEMS defaults to SHIFT but can be rebound to ALT/CTRL;
+            -- MODIFIER_STATE_CHANGED only fires for modifier keys, so react to any.
+            if not GameTooltip:IsShown() then
+                return
+            end
+            local kind = GameTooltip._dcqosRefreshKind
+            local _, link = GameTooltip:GetItem()
+            if link or kind == "bag" or kind == "inventory" then
+                TryShowCompareItem(GameTooltip)
+            end
+        end)
+        TT.compareModifierFrame = f
+    end
+
     addon:Debug("Item tooltip hooks installed")
 end

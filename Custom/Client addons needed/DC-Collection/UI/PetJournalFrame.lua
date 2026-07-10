@@ -332,7 +332,7 @@ function PetJournal:CreateModelPreview(parent)
     model:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             self.rotating = true
-            self.prevX = GetCursorPosition()
+            self.prevX, self.prevY = GetCursorPosition()
         end
     end)
 
@@ -344,11 +344,19 @@ function PetJournal:CreateModelPreview(parent)
 
     model:SetScript("OnUpdate", function(self)
         if self.rotating then
-            local x = GetCursorPosition()
+            local x, y = GetCursorPosition()
             local delta = (x - (self.prevX or x)) * 0.01
             self.rotation = (self.rotation or 0) + delta
+            -- No pitch API on 3.3.5 models; vertical drag pans view height.
+            self.panZ = math.max(-1.5, math.min(1.5,
+                (self.panZ or 0) + (y - (self.prevY or y)) * 0.004))
+            -- Position first, facing LAST — position calls can stomp facing,
+            -- which made rotation appear dead while panning.
+            if self.SetPosition then
+                self:SetPosition(0, 0, self.panZ)
+            end
             self:SetFacing(self.rotation)
-            self.prevX = x
+            self.prevX, self.prevY = x, y
         end
     end)
 
@@ -507,6 +515,10 @@ end
 -- PET LIST POPULATION
 -- ============================================================================
 
+-- One-time row construction. Called at most once per pool slot (rows are
+-- pooled in scrollChild.rowPool by RefreshList and reused forever). All
+-- per-pet state is written by RefreshList; handlers read btn.petData at
+-- click time, so no per-refresh closures are needed.
 function PetJournal:CreatePetButton(parent, index)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetSize(parent:GetWidth() - 10, BUTTON_HEIGHT)
@@ -600,7 +612,7 @@ function PetJournal:CreatePetButton(parent, index)
 
         table.insert(menu, { text = (L and L["CANCEL"]) or "Cancel", notCheckable = true })
 
-        local dropdown = CreateFrame("Frame", "DCPetContextMenu", UIParent, "UIDropDownMenuTemplate")
+        local dropdown = DCPetContextMenu or CreateFrame("Frame", "DCPetContextMenu", UIParent, "UIDropDownMenuTemplate")
         EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
     end
 
@@ -699,13 +711,17 @@ function PetJournal:RefreshList()
     local pets = self.filteredPets
 
     local scrollChild = self.frame.listFrame.scrollChild
-    
-    -- Clear existing items
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+
+    -- Row frames are pooled and reused across refreshes (frames are never
+    -- garbage-collected, so recreating them every refresh would leak).
+    scrollChild.rowPool = scrollChild.rowPool or {}
+    local rowPool = scrollChild.rowPool
+
+    -- Hide all pooled rows; the loop below re-shows the ones in use.
+    for _, row in ipairs(rowPool) do
+        row:Hide()
     end
-    
+
     -- Hide loading text if it exists
     if scrollChild.loadingText then
         scrollChild.loadingText:Hide()
@@ -762,10 +778,15 @@ function PetJournal:RefreshList()
     local btnIndex = 1
     for i = startIdx, endIdx do
         local pet = pets[i]
-        local btn = self:CreatePetButton(scrollChild, btnIndex)
+        local btn = rowPool[btnIndex]
+        if not btn then
+            btn = self:CreatePetButton(scrollChild, btnIndex)
+            rowPool[btnIndex] = btn
+        end
+        btn:Show()
 
         btn.petData = pet
-        
+
         -- Use definition name if available, otherwise fallback to "Unknown"
         local name = pet.name
         if (not name or name == "") and pet.definition then

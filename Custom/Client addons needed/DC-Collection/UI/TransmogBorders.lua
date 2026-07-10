@@ -149,7 +149,7 @@ function TransmogBorders:UpdateCharacterBorders()
     
     for slotID, border in pairs(charBorders) do
         if border then
-            local hasTransmog = transmogState[tostring(slotID)] and tonumber(transmogState[tostring(slotID)]) > 0
+            local hasTransmog = (tonumber(transmogState[tostring(slotID)]) or 0) > 0
             if hasTransmog then
                 border:Show()
             else

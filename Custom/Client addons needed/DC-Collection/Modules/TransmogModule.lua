@@ -176,12 +176,36 @@ end
 -- SLOT UTILITIES
 -- ============================================================================
 
+-- Equipment-slot id -> display name (module-owned; the similarly named table
+-- in Protocol.lua is a local there and not visible here).
+local SLOT_NAMES = {
+    [0]  = "Head",
+    [2]  = "Shoulders",
+    [3]  = "Body",
+    [4]  = "Chest",
+    [5]  = "Waist",
+    [6]  = "Legs",
+    [7]  = "Feet",
+    [8]  = "Wrists",
+    [9]  = "Hands",
+    [14] = "Back",
+    [15] = "Main Hand",
+    [16] = "Off Hand",
+    [17] = "Ranged",
+    [18] = "Tabard",
+}
+
 function TransmogModule:GetSlotName(slotId)
     return SLOT_NAMES[slotId] or "Unknown"
 end
 
 function TransmogModule:GetSlots()
-    return DC.TRANSMOG_SLOTS
+    local slots = {}
+    for slotId in pairs(SLOT_NAMES) do
+        slots[#slots + 1] = slotId
+    end
+    table.sort(slots)
+    return slots
 end
 
 -- ============================================================================

@@ -152,7 +152,8 @@ function ToyModule:UseToy(itemId)
         end
     end
     
-    DC:RequestUseToy(itemId)
+    -- Route through the shared use/summon opcode (there is no DC:RequestUseToy).
+    DC:RequestUseItem("toys", itemId)
 end
 
 function ToyModule:UseRandomToy()

@@ -38,20 +38,20 @@ Wardrobe.CameraDB = {
     
     Human = {
         [2] = { -- Male
-            Head = { x = 0.8, y = 0, z = 0.15, facing = 0, sequence = 3 , sequence = 3 },
-            Shoulder = { x = 1.0, y = 0.1, z = 0.05, facing = 0.4, sequence = 3 , sequence = 3 },
-            Back = { x = 1.2, y = 0, z = 0, facing = 3.14, sequence = 3 , sequence = 3 },
-            Chest = { x = 1.0, y = 0, z = 0, facing = 0, sequence = 3 , sequence = 3 },
-            Shirt = { x = 1.0, y = 0, z = 0, facing = 0, sequence = 3 , sequence = 3 },
-            Tabard = { x = 1.0, y = 0, z = 0, facing = 0, sequence = 3 , sequence = 3 },
-            Wrist = { x = 0.9, y = 0.15, z = -0.1, facing = -0.8, sequence = 3 , sequence = 3 },
-            Hands = { x = 0.9, y = 0.15, z = -0.15, facing = -1.0, sequence = 3 , sequence = 3 },
-            Waist = { x = 1.0, y = 0, z = -0.15, facing = 0, sequence = 3 , sequence = 3 },
-            Legs = { x = 1.2, y = 0, z = -0.3, facing = 0, sequence = 3 , sequence = 3 },
-            Feet = { x = 1.0, y = 0, z = -0.65, facing = 0, sequence = 3 , sequence = 3 },
-            MainHand = { x = 1.1, y = 0.2, z = -0.2, facing = -0.7, sequence = 3 , sequence = 3 },
-            OffHand = { x = 1.1, y = -0.2, z = -0.2, facing = 0.7, sequence = 3 , sequence = 3 },
-            Ranged = { x = 1.2, y = 0.2, z = 0, facing = 0.5, sequence = 3 , sequence = 3 },
+            Head = { x = 0.8, y = 0, z = 0.15, facing = 0, sequence = 3 },
+            Shoulder = { x = 1.0, y = 0.1, z = 0.05, facing = 0.4, sequence = 3 },
+            Back = { x = 1.2, y = 0, z = 0, facing = 3.14, sequence = 3 },
+            Chest = { x = 1.0, y = 0, z = 0, facing = 0, sequence = 3 },
+            Shirt = { x = 1.0, y = 0, z = 0, facing = 0, sequence = 3 },
+            Tabard = { x = 1.0, y = 0, z = 0, facing = 0, sequence = 3 },
+            Wrist = { x = 0.9, y = 0.15, z = -0.1, facing = -0.8, sequence = 3 },
+            Hands = { x = 0.9, y = 0.15, z = -0.15, facing = -1.0, sequence = 3 },
+            Waist = { x = 1.0, y = 0, z = -0.15, facing = 0, sequence = 3 },
+            Legs = { x = 1.2, y = 0, z = -0.3, facing = 0, sequence = 3 },
+            Feet = { x = 1.0, y = 0, z = -0.65, facing = 0, sequence = 3 },
+            MainHand = { x = 1.1, y = 0.2, z = -0.2, facing = -0.7, sequence = 3 },
+            OffHand = { x = 1.1, y = -0.2, z = -0.2, facing = 0.7, sequence = 3 },
+            Ranged = { x = 1.2, y = 0.2, z = 0, facing = 0.5, sequence = 3 },
         },
         [3] = { -- Female
             Head = { x = 0.75, y = 0, z = 0.12, facing = 0, sequence = 3 },
@@ -623,6 +623,15 @@ function Wardrobe:_SetupModelController(model)
                 local dt = math.max(elapsed, 0.001)
                 -- Smoothed angular velocity so stutter frames don't spike release speed.
                 spinVel = spinVel * 0.4 + (dRot / dt) * 0.6
+                -- Vertical drag: the 3.3.5 Model widget has no pitch API
+                -- (SetFacing only rotates around the vertical axis), so map
+                -- up/down movement to camera height instead — same axis the
+                -- right-drag pan uses. This makes a single left-drag control
+                -- both rotation (x) and view height (y).
+                if dy ~= 0 then
+                    m.cameraZ = clamp((m.cameraZ or 0) + dy * Wardrobe.MODEL_PAN_STEP,
+                        Wardrobe.MODEL_Z_MIN, Wardrobe.MODEL_Z_MAX)
+                end
                 changed = true
             elseif dragging == "pan" then
                 m.cameraZ = clamp((m.cameraZ or 0) + dy * Wardrobe.MODEL_PAN_STEP,

@@ -53,7 +53,8 @@ function Wardrobe:ShowSetContextMenu(set)
         { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true },
     }
 
-    local dropdown = CreateFrame("Frame", "DCWardrobeSetContextMenu", UIParent, "UIDropDownMenuTemplate")
+    local dropdown = DCWardrobeSetContextMenu or
+        CreateFrame("Frame", "DCWardrobeSetContextMenu", UIParent, "UIDropDownMenuTemplate")
     EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
 end
 
@@ -79,8 +80,39 @@ function Wardrobe:RefreshSetsGrid()
         DC:Debug("Found " .. #list .. " sets.")
     end
 
+    local col = (DC.collections and DC.collections.transmog) or {}
+
+    -- Collections are primarily keyed by displayId (itemId keys are legacy);
+    -- check both so complete sets actually light up.
+    local function IsSetItemCollected(itemId)
+        if col[itemId] ~= nil then
+            return true
+        end
+        local displayId = self.GetAppearanceDisplayIdForItemId and
+            self:GetAppearanceDisplayIdForItemId(itemId)
+        return displayId ~= nil and col[displayId] ~= nil
+    end
+
+    -- Compute progress over ALL sets (not just the visible page) so the
+    -- "Sets: X / Y" summary doesn't change while paging.
     local collectedSets = 0
     local totalSets = #list
+    local progress = {}
+    for _, set in ipairs(list) do
+        local collectedCount, totalCount = 0, 0
+        if set.items then
+            totalCount = #set.items
+            for _, itemId in ipairs(set.items) do
+                if IsSetItemCollected(itemId) then
+                    collectedCount = collectedCount + 1
+                end
+            end
+        end
+        progress[set] = { collected = collectedCount, total = totalCount }
+        if totalCount > 0 and collectedCount == totalCount then
+            collectedSets = collectedSets + 1
+        end
+    end
 
     local startIdx = (self.currentPage - 1) * self.ITEMS_PER_PAGE + 1
 
@@ -106,23 +138,14 @@ function Wardrobe:RefreshSetsGrid()
 
             btn.icon:SetTexture(icon)
 
-            local collectedCount = 0
-            local totalCount = 0
-            local col = DC.collections and (DC.collections.transmog or {}) or {}
-            if set.items then
-                totalCount = #set.items
-                for _, itemId in ipairs(set.items) do
-                    if col[itemId] then
-                        collectedCount = collectedCount + 1
-                    end
-                end
-            end
+            local setProgress = progress[set] or { collected = 0, total = 0 }
+            local collectedCount = setProgress.collected
+            local totalCount = setProgress.total
 
             local setComplete = totalCount > 0 and collectedCount == totalCount
             if setComplete then
                 btn.icon:SetVertexColor(1, 1, 1)
                 btn.notCollected:Hide()
-                collectedSets = collectedSets + 1
             else
                 btn.icon:SetVertexColor(0.4, 0.4, 0.4)
                 btn.notCollected:Show()
@@ -148,7 +171,7 @@ function Wardrobe:RefreshSetsGrid()
                         if set.items then
                             for _, itemId in ipairs(set.items) do
                                 local name = GetItemInfo(itemId)
-                                local isCollected = col[itemId]
+                                local isCollected = IsSetItemCollected(itemId)
                                 if name then
                                     if isCollected then
                                         tip:AddLine(name, 0.1, 1, 0.1)
@@ -169,7 +192,7 @@ function Wardrobe:RefreshSetsGrid()
                     if set.items then
                         for _, itemId in ipairs(set.items) do
                             local name = GetItemInfo(itemId)
-                            local isCollected = col[itemId]
+                            local isCollected = IsSetItemCollected(itemId)
                             if name then
                                 if isCollected then
                                     GameTooltip:AddLine(name, 0.1, 1, 0.1)

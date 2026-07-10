@@ -24,7 +24,7 @@ DC.MODULE_ID = "COLL"  -- DCAddonProtocol module identifier
 -- ============================================================================
 -- C_TIMER SAFETY NET
 -- ============================================================================
--- Several DC-Collection files (ToastFrame, ItemPreloader, WardrobeCore) call
+-- Several DC-Collection files (ToastFrame, WardrobeCore) call
 -- C_Timer.After/NewTimer directly. On 3.3.5 C_Timer only exists if another
 -- addon polyfilled it first, so install a minimal shared-frame implementation
 -- when it's missing rather than relying on unrelated addons' load order.
@@ -2227,7 +2227,14 @@ end
 function events:PLAYER_EQUIPMENT_CHANGED(slotId, hasItem)
     -- When the player swaps an item, the server resets the visual natively.
     -- Send a transmog state sync request to intelligently re-apply overrides.
+    -- Coalesce bursts: a full gear swap (equipment manager / dual spec) fires
+    -- up to ~18 of these events at once — send one request, not eighteen.
+    if DC._equipChangedSyncPending then
+        return
+    end
+    DC._equipChangedSyncPending = true
     After(0.5, function()
+        DC._equipChangedSyncPending = nil
         if type(DC.RequestTransmogState) == "function" and DC:IsProtocolReady() then
             DC:RequestTransmogState()
         end

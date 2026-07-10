@@ -1,0 +1,20 @@
+-- ---------------------------------------------------------------------------
+-- creature_template_model  (Legion Dalaran, map 1413)  --  Hobart Grapplehammer
+-- ---------------------------------------------------------------------------
+-- Entry 3500078 "Hobart Grapplehammer" (Engineering Supplies vendor) points
+-- at custom displayId 501315, allocated in this project's 500xxx retroport
+-- sequence but never baked. nelt_world's own Hobart rows (entry 36379 etc)
+-- give modelid1=30098; the real Cata client's own CreatureDisplayInfo/
+-- CreatureModelData for 30098 resolve to ModelID 831 =
+-- Character\Goblin\Male\GoblinMale.mdx -- a stock playable-race body, not a
+-- standalone M2, so this is a "character-model NPC" in this project's own
+-- terminology (see Custom/tools/legion_dalaran/README.md) -- the same
+-- category as 224 other Legion Dalaran NPCs already resolved by substituting
+-- a stock 3.3.5a display of the same race/gender, not a custom bake.
+-- displayId 7136 ("Sovik", subname "Engineering Supplies" -- exact subname
+-- match) already uses ModelID 831, confirming it's the identical body type;
+-- reusing it directly needs no new DBC rows or asset extraction at all.
+-- (Supersedes the earlier 1685-placeholder UPDATE, which used the wrong
+-- race -- dwarf instead of goblin.)
+-- ---------------------------------------------------------------------------
+UPDATE `creature_template_model` SET `CreatureDisplayID` = 7136 WHERE `CreatureID` = 3500078 AND `CreatureDisplayID` = 1685;

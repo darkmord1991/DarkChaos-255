@@ -55,6 +55,11 @@
 
 local DC = DCCollection
 
+-- Forward declaration: defined further down but called from request senders
+-- declared earlier in the file. Without this, those call sites compile as a
+-- (nonexistent) global lookup and throw on the plain addon transport path.
+local ScheduleAwaitResponseDiagnostic
+
 -- Initialize Protocol namespace
 DC.Protocol = DC.Protocol or {}
 
@@ -168,6 +173,50 @@ DC.Opcodes = {
     SMSG_OPEN_UI             = 0x70,
     SMSG_ERROR               = 0x7F,
 }
+
+-- Response (SMSG) -> request (CMSG) opcode-name map, keyed by the numeric
+-- response opcode. Used by the dispatcher to clear the matching
+-- pendingRequests entries (which are keyed by REQUEST opcode) when the
+-- reply arrives. Responses that can answer multiple requests list them all;
+-- pushes with no originating request (SMSG_ITEM_LEARNED, SMSG_OPEN_UI,
+-- SMSG_ERROR, SMSG_WISHLIST_AVAILABLE) are intentionally absent.
+local RESPONSE_TO_REQUEST_OPCODES = {}
+do
+    local map = {
+        SMSG_HANDSHAKE_ACK             = { "CMSG_HANDSHAKE" },
+        SMSG_FULL_COLLECTION           = { "CMSG_GET_FULL_COLLECTION" },
+        SMSG_DELTA_SYNC                = { "CMSG_SYNC_COLLECTION" },
+        SMSG_STATS                     = { "CMSG_GET_STATS" },
+        SMSG_BONUSES                   = { "CMSG_GET_BONUSES" },
+        SMSG_DEFINITIONS               = { "CMSG_GET_DEFINITIONS" },
+        SMSG_COLLECTION                = { "CMSG_GET_COLLECTION" },
+        SMSG_TRANSMOG_STATE            = { "CMSG_GET_TRANSMOG_STATE", "CMSG_SET_TRANSMOG" },
+        SMSG_TRANSMOG_SLOT_ITEMS       = { "CMSG_GET_TRANSMOG_SLOT_ITEMS", "CMSG_SEARCH_TRANSMOG_ITEMS" },
+        SMSG_COLLECTED_APPEARANCES     = { "CMSG_GET_COLLECTED_APPEARANCES" },
+        SMSG_ITEM_SETS                 = { "CMSG_GET_ITEM_SETS" },
+        SMSG_SAVED_OUTFITS             = { "CMSG_GET_SAVED_OUTFITS" },
+        SMSG_SHOP_DATA                 = { "CMSG_GET_SHOP" },
+        SMSG_PURCHASE_RESULT           = { "CMSG_BUY_ITEM" },
+        SMSG_CURRENCIES                = { "CMSG_GET_CURRENCIES" },
+        SMSG_SHOP_HISTORY              = { "CMSG_GET_SHOP_HISTORY" },
+        SMSG_WISHLIST_DATA             = { "CMSG_GET_WISHLIST" },
+        SMSG_WISHLIST_UPDATED          = { "CMSG_ADD_WISHLIST", "CMSG_REMOVE_WISHLIST" },
+        SMSG_COMMUNITY_LIST            = { "CMSG_COMMUNITY_GET_LIST" },
+        SMSG_COMMUNITY_PUBLISH_RESULT  = { "CMSG_COMMUNITY_PUBLISH" },
+        SMSG_COMMUNITY_FAVORITE_RESULT = { "CMSG_COMMUNITY_FAVORITE" },
+        SMSG_COMMUNITY_UPDATE_RESULT   = { "CMSG_COMMUNITY_UPDATE" },
+        SMSG_COMMUNITY_DELETE_RESULT   = { "CMSG_COMMUNITY_DELETE" },
+        SMSG_INSPECT_TRANSMOG          = { "CMSG_INSPECT_TRANSMOG" },
+        SMSG_FORMS_DATA                = { "CMSG_GET_FORMS" },
+        SMSG_FORM_RESULT               = { "CMSG_SET_FORM", "CMSG_RESET_FORM" },
+    }
+    for smsgName, cmsgNames in pairs(map) do
+        local smsgOpcode = DC.Opcodes[smsgName]
+        if smsgOpcode then
+            RESPONSE_TO_REQUEST_OPCODES[smsgOpcode] = cmsgNames
+        end
+    end
+end
 
 -- ============================================================================
 -- PROTOCOL STATE
@@ -2425,7 +2474,7 @@ local ITEM_SETS_PAGING_DELAY_OPTIONS = {
     end,
 }
 
-local function ScheduleAwaitResponseDiagnostic(owner, options)
+function ScheduleAwaitResponseDiagnostic(owner, options)
     if not owner or type(owner.After) ~= "function" or type(options) ~= "table" then
         return
     end
@@ -4103,6 +4152,8 @@ function DC:OnMsg_SavedOutfits(data)
         outfit.slots = slots
 
         -- Build a signature index so the wardrobe can pin the equipped outfit on page 1.
+        -- (Wardrobe lives on DC.Wardrobe; there is no global by that name.)
+        local Wardrobe = DC.Wardrobe
         if Wardrobe and type(Wardrobe.SerializeSlotsToJsonString) == "function" and type(slots) == "table" then
             local sig = Wardrobe.SerializeSlotsToJsonString(slots)
             if sig and sig ~= "" then
@@ -4542,10 +4593,8 @@ function DC.OnProtocolMessage(payload)
     -- Track last-received timestamp per opcode (used by request timeouts).
     self._lastRecvOpcodeAt = self._lastRecvOpcodeAt or {}
     self._lastRecvOpcodeAt[opcode] = (type(GetTime) == "function") and GetTime() or time()
-    
-    -- Clear pending request
-    self.pendingRequests[opcode] = nil
-    
+
+
     -- Route to appropriate handler based on new opcodes
     if opcode == self.Opcodes.SMSG_HANDSHAKE_ACK then
         self:HandleHandshakeAck(data)
@@ -4611,6 +4660,23 @@ function DC.OnProtocolMessage(payload)
         self:Debug(string.format("Unknown opcode: 0x%02X", opcode))
         if type(self.LogNetEvent) == "function" then
             self:LogNetEvent("warn", "recv", "Unknown opcode", { opcode = opcode })
+        end
+    end
+
+    -- Clear the pending request(s) this response answers. pendingRequests is
+    -- keyed by the REQUEST (CMSG) opcode; the old `pendingRequests[opcode] = nil`
+    -- used the response opcode and never matched (the ranges don't overlap), so
+    -- stale entries lingered and could feed old offset/limit fallbacks to late
+    -- or server-pushed responses. Cleared AFTER routing because some handlers
+    -- (OnMsg_SavedOutfits, OnMsg_ItemSets) read their pending entry for
+    -- offset/limit fallbacks.
+    local requestNames = RESPONSE_TO_REQUEST_OPCODES[opcode]
+    if requestNames then
+        for i = 1, #requestNames do
+            local reqOpcode = self.Opcodes[requestNames[i]]
+            if reqOpcode then
+                self.pendingRequests[reqOpcode] = nil
+            end
         end
     end
 end
@@ -5303,36 +5369,8 @@ function DC:HandleDeltaSync(data)
     end
 end
 
--- Handle stats response
-function DC:HandleStatsLegacy(data)
-    self:Debug("Received stats")
-
-    self._statsLastReceivedAt = (type(GetTime) == "function" and GetTime()) or
-        (type(time) == "function" and time()) or 0
-    self:_MarkInflight("req:stats", nil)
-    if type(self._syncProgress) == "table" then
-        self:CompleteSyncProgressStep("stats", "stats")
-    end
-    
-    if data.stats then
-        self.stats = data.stats
-        -- Toys are disabled; ignore any server-provided toy stats.
-        self.stats.toys = nil
-    end
-    
-    -- Fire callback
-    if self.callbacks.onStatsReceived then
-        self.callbacks.onStatsReceived(data.stats)
-    end
-
-    if self.MainFrame and self.MainFrame:IsShown() then
-        if type(self.RequestRefreshCurrentTab) == "function" then
-            self:RequestRefreshCurrentTab()
-        else
-            self:RefreshCurrentTab()
-        end
-    end
-end
+-- NOTE: HandleStatsLegacy (a dead duplicate of the routed HandleStats, which
+-- also replaced DC.stats wholesale) was removed here.
 
 -- Handle bonuses response
 function DC:HandleBonuses(data)
@@ -6370,14 +6408,6 @@ function DC:_ScheduleTransmogIconRefresh()
                 end
             end
 
-            local transmogUIVisible = DC.TransmogUI and DC.TransmogUI.frame and
-                ((DC.TransmogUI.frame.IsVisible and DC.TransmogUI.frame:IsVisible()) or
-                 (DC.TransmogUI.frame.IsShown and DC.TransmogUI.frame:IsShown()))
-            if transmogUIVisible then
-                if type(DC.TransmogUI.UpdateSlotButtons) == "function" then
-                    pcall(function() DC.TransmogUI:UpdateSlotButtons() end)
-                end
-            end
         end
     end)
 
@@ -6497,11 +6527,7 @@ function DC:HandleTransmogState(data)
         pcall(function() self.Wardrobe:OnTransmogStateReceived(state) end)
     end
 
-    -- Refresh Transmog UI (if used) and borders even when no inventory events fire.
-    if self.TransmogUI and type(self.TransmogUI.OnTransmogStateReceived) == "function" then
-        pcall(function() self.TransmogUI:OnTransmogStateReceived(state, itemIds) end)
-    end
-
+    -- Refresh transmog borders even when no inventory events fire.
     if self.TransmogBorders and type(self.TransmogBorders.UpdateCharacterBorders) == "function" then
         pcall(function() self.TransmogBorders:UpdateCharacterBorders() end)
     end
@@ -6535,14 +6561,9 @@ function DC:HandleTransmogSlotItems(data)
         self:Print(string.format("[DC-Collection] Test: slot %d page %d items=%d total=%s", visualSlot or 0, page or 0, #items, tostring(total or "?")))
     end
     
-    -- Fire callback for TransmogUI to refresh
+    -- Fire callback for listeners to refresh
     if self.callbacks.onTransmogSlotItems then
         self.callbacks.onTransmogSlotItems(visualSlot, items, page, hasMore)
-    end
-    
-    -- Notify TransmogUI directly if it exists
-    if self.TransmogUI and self.TransmogUI.OnSlotItemsReceived then
-        self.TransmogUI:OnSlotItemsReceived(visualSlot, items, page, hasMore)
     end
 end
 
@@ -7198,126 +7219,11 @@ function DC:HandleCollection(data)
         self:TableCount(items), collType))
 end
 
-function DC:HandleMountSummoned(data)
-    if data.success then
-        local spellId = data.spellId
-        -- Update times_used in cache
-        if self.collections.mounts and self.collections.mounts[spellId] then
-            self.collections.mounts[spellId].times_used = 
-                (self.collections.mounts[spellId].times_used or 0) + 1
-        end
-    else
-        self:Print("|cffff0000" .. (data.error or DC.L["ERR_CANT_USE_NOW"]) .. "|r")
-    end
-end
-
-function DC:HandlePetSummoned(data)
-    if data.success then
-        -- Pet summoned successfully
-        local spellId = data.spellId
-        if self.collections.pets and self.collections.pets[spellId] then
-            self.collections.pets[spellId].times_used = 
-                (self.collections.pets[spellId].times_used or 0) + 1
-        end
-    else
-        self:Print("|cffff0000" .. (data.error or DC.L["ERR_CANT_USE_NOW"]) .. "|r")
-    end
-end
-
-function DC:HandleHeirloomSummoned(data)
-    if data.success then
-        self:Print(DC.L["HEIRLOOM_SUMMONED"] or "Heirloom added to your bags!")
-    else
-        self:Print("|cffff0000" .. (data.error or DC.L["ERR_BAGS_FULL"]) .. "|r")
-    end
-end
-
-function DC:HandleFavoriteToggled(data)
-    local rawType = data.type
-    local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
-    local itemId = data.itemId
-    local isFavorite = data.isFavorite
-    
-    self:CacheUpdateItem(collType, itemId, { is_favorite = isFavorite })
-    
-    -- Refresh UI if showing
-    if self.MainFrame and self.MainFrame:IsShown() then
-        if type(self.RequestRefreshCurrentTab) == "function" then
-            self:RequestRefreshCurrentTab()
-        else
-            self:RefreshCurrentTab()
-        end
-    end
-end
-
-function DC:HandleCurrency(data)
-    return self:HandleCurrencies(data)
-end
-
-function DC:HandleShopItems(data)
-    self.shopItems = data.items or {}
-    
-    -- Update shop UI if open
-    if self.ShopUI and self.ShopUI:IsShown() then
-        if type(self.UpdateShopUI) == "function" then
-            self:UpdateShopUI()
-        elseif type(self.PopulateShopItems) == "function" then
-            self:PopulateShopItems()
-        end
-    end
-    
-    self:Debug(string.format("Received %d shop items", #self.shopItems))
-end
-
-function DC:HandleShopResult(data)
-    if data.success then
-        -- Update currency
-        local newTokens = data.newTokens or data.tokens or data.token
-        local newEmblems = data.newEmblems or data.newEssence or data.emblems or data.essence or data.emblem
-        if type(newTokens) == "string" then newTokens = tonumber(newTokens) end
-        if type(newEmblems) == "string" then newEmblems = tonumber(newEmblems) end
-        self:CacheUpdateCurrency(newTokens, newEmblems)
-        
-        -- Show success message
-        local itemName = data.itemName or "Item"
-        self:Print(string.format(DC.L["SHOP_PURCHASE_SUCCESS"] or "Successfully purchased %s!", itemName))
-        
-        -- If the purchase was a collectible, trigger collection refresh
-        if data.collectionType then
-            self:RequestCollection(data.collectionType)
-        end
-        
-        -- If mount speed was purchased, update bonus
-        if data.mountSpeedBonus then
-            self.mountSpeedBonus = data.mountSpeedBonus
-            DCCollectionDB.mountSpeedBonus = data.mountSpeedBonus
-        end
-        
-        -- Refresh shop UI
-        if self.ShopUI and self.ShopUI:IsShown() then
-            self.ShopUI:Refresh()
-        end
-
-        -- Update MainFrame Header if shown
-        if self.MainFrame and self.MainFrame:IsShown() then
-            self:UpdateHeader()
-        end
-    else
-        self:Print("|cffff0000" .. (data.error or DC.L["ERR_SHOP_FAILED"]) .. "|r")
-    end
-end
-
-function DC:HandleWishlist(data)
-    self:HandleWishlistData(data)
-end
-
-function DC:HandleTitleSet(data)
-    if data.success then
-        -- Title set successfully
-    else
-        self:Print("|cffff0000" .. (data.error or DC.L["ERR_TITLE_NOT_OWNED"]) .. "|r")
-    end
-end
+-- NOTE: a block of never-routed handlers (HandleMountSummoned, HandlePetSummoned,
+-- HandleHeirloomSummoned, HandleFavoriteToggled, HandleCurrency, HandleShopItems,
+-- HandleShopResult, HandleWishlist, HandleTitleSet) was removed here — none were
+-- ever dispatched from OnProtocolMessage and several referenced undefined locale
+-- keys that would have raised concat-nil errors if wired up.
 
 function DC:HandleStats(data)
     self._statsLastReceivedAt = (type(GetTime) == "function" and GetTime()) or
@@ -7443,67 +7349,8 @@ function DC:HandleStats(data)
     end
 end
 
-function DC:HandleAchievements(data)
-    local list = data.achievements or {}
-    self.achievements = {}
-    
-    -- Convert list to lookup table
-    for k, v in pairs(list) do
-        if type(v) == "number" then
-            self.achievements[v] = true
-        elseif type(k) == "number" or type(k) == "string" then
-            -- Handle case where it might already be a map or mixed
-            self.achievements[k] = v
-        end
-    end
-    
-    -- Notify UI
-    if self.AchievementsUI and self.AchievementsUI:IsShown() then
-        self.AchievementsUI:Refresh()
-    end
-end
-
-function DC:HandleNewItem(data)
-    local collType = data.type
-    local itemId = data.itemId
-    local itemData = data.itemData
-    
-    -- Add to cache
-    self:CacheAddItem(collType, itemId, itemData)
-
-    if collType == "transmog" then
-        self.collectedAppearances = self.collectedAppearances or {}
-        self.collectedAppearances[itemId] = true
-    end
-    
-    -- Show notification
-    if self:GetSetting("showNewItemToast") then
-        local def = self:GetDefinition(collType, itemId)
-        local name = def and def.name or "Unknown"
-        self:ShowToast(collType, name, def and def.icon)
-    end
-    
-    -- Check if this was on wishlist
-    for i, wish in ipairs(self.wishlist) do
-        if wish.type == collType and wish.itemId == itemId then
-            table.remove(self.wishlist, i)
-            self:Print(DC.L["WISHLIST_OBTAINED"] or "Wishlist item obtained!")
-            break
-        end
-    end
-    
-    -- Trigger achievement check
-    self:CheckAchievements(collType)
-end
-
-function DC:HandleMountSpeedBonus(data)
-    self.mountSpeedBonus = data.bonus or 0
-    DCCollectionDB.mountSpeedBonus = self.mountSpeedBonus
-    
-    if data.bonus > 0 then
-        self:Debug(string.format("Mount speed bonus: +%d%%", data.bonus))
-    end
-end
+-- NOTE: never-routed HandleAchievements/HandleNewItem/HandleMountSpeedBonus
+-- were removed here (HandleNewItem also called an undefined RequestAchievements).
 
 -- NOTE: DC:HandleError is defined earlier with richer handling.
 -- Keep only one implementation to avoid accidentally ignoring server-provided `error` fields.
@@ -7609,13 +7456,6 @@ if not DC.ShowToast then
         local typeStr = DC.L["TAB_" .. string.upper(collType)] or collType
         self:Print(string.format("|cff00ff00New %s:|r %s", typeStr, itemName))
     end
-end
-
--- Check achievements after collection update
-function DC:CheckAchievements(collType)
-    -- Request achievement update from server
-    self:RequestAchievements()
-    self:RequestAchievements()
 end
 
 -- ============================================================================
@@ -7837,11 +7677,6 @@ function DC:HandleCommunityList(data)
     if not self.db then self.db = {} end
     self.db.communityOutfits = outfits
     
-    -- Notify CommunityUI (standalone)
-    if self.CommunityUI and self.CommunityUI.OnListReceived then
-        self.CommunityUI:OnListReceived(outfits)
-    end
-    
     -- Notify Wardrobe Community grid
     if self.Wardrobe and self.Wardrobe.RefreshCommunityGrid then
         self.Wardrobe:RefreshCommunityGrid()
@@ -7868,14 +7703,11 @@ function DC:HandleCommunityPublishResult(data)
 end
 
 function DC:HandleCommunityFavoriteResult(data)
-    local outfitId = data.id
-    local isAdd = data.add
-    if isAdd == nil then
-        isAdd = data.is_favorite
-    end
-    
-    if self.CommunityUI and self.CommunityUI.OnFavoriteResult then
-        self.CommunityUI:OnFavoriteResult(outfitId, isAdd)
+    -- The standalone CommunityUI consumer was removed; keep the routed
+    -- handler as a stub so the dispatcher stays valid.
+    if self.Debug then
+        self:Debug(string.format("Community favorite result: id=%s add=%s",
+            tostring(data and data.id), tostring(data and (data.add ~= nil and data.add or data.is_favorite))))
     end
 end
 
@@ -7893,11 +7725,6 @@ function DC:HandleCommunityUpdateResult(data)
     else
         self:Print("|cffff0000Failed to update outfit: " .. (errMsg or "Unknown error") .. "|r")
     end
-    
-    -- Notify UI
-    if self.CommunityUI and self.CommunityUI.OnUpdateResult then
-        self.CommunityUI:OnUpdateResult(success, outfitId, errMsg)
-    end
 end
 
 function DC:HandleCommunityDeleteResult(data)
@@ -7913,11 +7740,6 @@ function DC:HandleCommunityDeleteResult(data)
         end
     else
         self:Print("|cffff0000Failed to delete outfit: " .. (errMsg or "Unknown error") .. "|r")
-    end
-    
-    -- Notify UI
-    if self.CommunityUI and self.CommunityUI.OnDeleteResult then
-        self.CommunityUI:OnDeleteResult(success, outfitId, errMsg)
     end
 end
 

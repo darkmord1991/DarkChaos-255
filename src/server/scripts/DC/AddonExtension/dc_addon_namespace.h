@@ -33,6 +33,7 @@
 // Core headers expected to be provided by PCH or including file
 #include <string>
 #include <vector>
+#include <chrono>
 #include <functional>
 #include <unordered_map>
 #include <sstream>
@@ -1485,7 +1486,25 @@ namespace DCAddon
 
                 try
                 {
+                    // Slow-handler watchdog: handlers run synchronously on the
+                    // world thread, so any long one stalls the whole world
+                    // tick. Name the offender so the next
+                    // "World.UpdateSessions took Nms" spike is attributable
+                    // without forensics.
+                    auto const handlerStart = std::chrono::steady_clock::now();
+
                     it->second(player, msg);
+
+                    auto const handlerMs =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - handlerStart).count();
+                    if (handlerMs >= 100)
+                    {
+                        LOG_WARN("module.dc",
+                            "[MessageRouter] SLOW handler {}|0x{:02X} took {} ms (player={})",
+                            msg.GetModule(), msg.GetOpcode(), handlerMs,
+                            player ? player->GetName() : "NULL");
+                    }
                 }
                 catch (...)
                 {

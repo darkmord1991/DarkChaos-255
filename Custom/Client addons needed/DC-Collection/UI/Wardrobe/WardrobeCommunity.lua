@@ -35,6 +35,52 @@ end
 -- COMMUNITY OUTFITS SYSTEM
 -- ============================================================================
 
+-- Outfit slot values are displayIds (see WardrobeOutfits.ResolvePreviewItemId);
+-- DressUpModel:TryOn needs a real item entry. Map through the representative-
+-- item index first — a displayId frequently collides with an unrelated itemId,
+-- so trying the raw value first renders wrong/invisible pieces.
+local function ResolveCommunityPreviewItemId(rawId)
+    local n = tonumber(rawId)
+    if not n or n <= 0 then
+        return nil
+    end
+
+    local wardrobe = DC.Wardrobe
+    if wardrobe and type(wardrobe.GetRepresentativeItemIdForDisplayId) == "function" then
+        local mapped = wardrobe:GetRepresentativeItemIdForDisplayId(n)
+        if mapped and mapped > 0 then
+            return mapped
+        end
+    end
+
+    return n
+end
+
+-- Try on every slot value from a community outfit payload (JSON-ish string or
+-- table), resolving displayIds to item ids. Shared by the card grid and the
+-- click-to-preview handler.
+local function TryOnOutfitItems(model, items)
+    if not model or not items then
+        return
+    end
+
+    if type(items) == "string" then
+        for rawId in items:gmatch(':%s*(%d+)') do
+            local numId = ResolveCommunityPreviewItemId(rawId)
+            if numId then
+                pcall(model.TryOn, model, numId)
+            end
+        end
+    elseif type(items) == "table" then
+        for _, rawId in pairs(items) do
+            local numId = ResolveCommunityPreviewItemId(rawId)
+            if numId then
+                pcall(model.TryOn, model, numId)
+            end
+        end
+    end
+end
+
 local function NormalizeCommunityOwnerFlag(value)
     if value == nil then
         return nil
@@ -111,6 +157,7 @@ function Wardrobe:ShowCommunityContent()
         if self.frame.orderBtn then self.frame.orderBtn:Hide() end
         if self.frame.filterBtn then self.frame.filterBtn:Hide() end
         if self.frame.qualityDropdown then self.frame.qualityDropdown:Hide() end
+        if self.frame.expansionDropdown then self.frame.expansionDropdown:Hide() end
         if self.frame.searchBox then self.frame.searchBox:Hide() end
         
         -- Hide slot filters
@@ -184,17 +231,21 @@ end
 function Wardrobe:CreateCommunityGrid()
     if not self.frame or not self.frame.rightPanel then return end
     
+    -- Leave room above the grid for the tab row (0..-25) and the
+    -- "show only mine" checkbox row (-30..-54).
     local container = CreateFrame("Frame", nil, self.frame.rightPanel)
-    container:SetPoint("TOPLEFT", self.frame.rightPanel, "TOPLEFT", 10, -35)
+    container:SetPoint("TOPLEFT", self.frame.rightPanel, "TOPLEFT", 10, -58)
     container:SetPoint("BOTTOMRIGHT", self.frame.rightPanel, "BOTTOMRIGHT", -10, 50)
     container:Hide()
-    
+
     self.frame.communityGridContainer = container
-    
-    -- "Show only my published" checkbox (above the grid)
+
+    -- "Show only my published" checkbox: sits in the (empty on this tab)
+    -- filter-controls row, below the Items/Sets/Outfits/Community tab row so
+    -- it no longer overlaps the tab buttons.
     local mineCheck = CreateFrame("CheckButton", nil, self.frame.rightPanel, "UICheckButtonTemplate")
     mineCheck:SetSize(24, 24)
-    mineCheck:SetPoint("TOPLEFT", self.frame.rightPanel, "TOPLEFT", 10, -8)
+    mineCheck:SetPoint("TOPLEFT", self.frame.rightPanel, "TOPLEFT", 10, -30)
     mineCheck:SetChecked(false)
     mineCheck.text = mineCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     mineCheck.text:SetPoint("LEFT", mineCheck, "RIGHT", 2, 0)
@@ -392,10 +443,13 @@ function Wardrobe:RefreshCommunityGrid()
     if not buttons then
         self._pendingCommunityRefresh = true
 
-        if not self._communityRefreshRetryFrame then
-            local f = CreateFrame("Frame")
-            f.elapsed = 0
-            f.tries = 0
+        -- Keep and reuse ONE retry frame (frames are never garbage-collected;
+        -- dropping the reference just orphans it and the next early refresh
+        -- would create another).
+        local f = self._communityRefreshRetryFrame
+        if not f then
+            f = CreateFrame("Frame")
+            self._communityRefreshRetryFrame = f
             f:SetScript("OnUpdate", function(this, elapsed)
                 this.elapsed = (this.elapsed or 0) + (elapsed or 0)
                 if this.elapsed < 0.05 then return end
@@ -403,8 +457,7 @@ function Wardrobe:RefreshCommunityGrid()
                 this.tries = (this.tries or 0) + 1
 
                 if this.tries > 40 then
-                    this:SetScript("OnUpdate", nil)
-                    Wardrobe._communityRefreshRetryFrame = nil
+                    this:Hide()
                     return
                 end
 
@@ -412,16 +465,17 @@ function Wardrobe:RefreshCommunityGrid()
                     Wardrobe:RefreshCommunityGrid()
                 end
             end)
-            self._communityRefreshRetryFrame = f
         end
+        f.elapsed = 0
+        f.tries = 0
+        f:Show()
 
         return
     end
 
     self._pendingCommunityRefresh = nil
     if self._communityRefreshRetryFrame then
-        self._communityRefreshRetryFrame:SetScript("OnUpdate", nil)
-        self._communityRefreshRetryFrame = nil
+        self._communityRefreshRetryFrame:Hide()
     end
     
     -- Get community outfits from DC.db.communityOutfits (populated by OnMsg_CommunityList)
@@ -520,30 +574,15 @@ function Wardrobe:RefreshCommunityGrid()
                 end
             end
             
-            -- Setup Model Preview
+            -- Setup Model Preview. SetUnit resets to the fully-dressed player,
+            -- so it must come BEFORE Undress (the old order discarded the undress).
             btn.model:Show()
-            btn.model:Undress()
             btn.model:SetUnit("player")
+            btn.model:Undress()
             btn.model:SetFacing(0)
-            
+
             -- Try on items from the outfit
-            local items = outfit.items or outfit.items_string
-            if type(items) == "string" then
-                -- Parse JSON string: extract numeric item IDs
-                for itemId in items:gmatch(':%s*(%d+)') do
-                    local numId = tonumber(itemId)
-                    if numId and numId > 0 then
-                        btn.model:TryOn(numId)
-                    end
-                end
-            elseif type(items) == "table" then
-                for _, itemId in pairs(items) do
-                    local numId = tonumber(itemId)
-                    if numId and numId > 0 then
-                        btn.model:TryOn(numId)
-                    end
-                end
-            end
+            TryOnOutfitItems(btn.model, outfit.items or outfit.items_string)
             
             -- Tooltip
             btn:SetScript("OnEnter", function(selfBtn)
@@ -575,23 +614,8 @@ function Wardrobe:RefreshCommunityGrid()
             btn:SetScript("OnClick", function(selfBtn)
                 if self.frame and self.frame.model and selfBtn.outfit then
                     self.frame.model:Undress()
-                    
-                    local outfitItems = selfBtn.outfit.items or selfBtn.outfit.items_string
-                    if type(outfitItems) == "string" then
-                        for itemId in outfitItems:gmatch(':%s*(%d+)') do
-                            local numId = tonumber(itemId)
-                            if numId and numId > 0 then
-                                self.frame.model:TryOn(numId)
-                            end
-                        end
-                    elseif type(outfitItems) == "table" then
-                        for _, itemId in pairs(outfitItems) do
-                            local numId = tonumber(itemId)
-                            if numId and numId > 0 then
-                                self.frame.model:TryOn(numId)
-                            end
-                        end
-                    end
+                    TryOnOutfitItems(self.frame.model,
+                        selfBtn.outfit.items or selfBtn.outfit.items_string)
                 end
             end)
         else
