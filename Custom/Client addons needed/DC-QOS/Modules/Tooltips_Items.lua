@@ -19,17 +19,138 @@ local Tooltips = TT.module
 --
 -- Gated to native clients only: on stock clients the FrameXML handler already
 -- does this, so we must not fight it.
-local function TryShowCompareItem(tooltip)
+-- Maps a hovered item's equip location to the equipped inventory slot(s) it
+-- should be compared against (1-indexed INVSLOT_* ids).
+local INVTYPE_COMPARE_SLOTS = {
+    INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 },
+    INVTYPE_BODY = { 4 }, INVTYPE_CHEST = { 5 }, INVTYPE_ROBE = { 5 },
+    INVTYPE_WAIST = { 6 }, INVTYPE_LEGS = { 7 }, INVTYPE_FEET = { 8 },
+    INVTYPE_WRIST = { 9 }, INVTYPE_HAND = { 10 },
+    INVTYPE_FINGER = { 11, 12 }, INVTYPE_TRINKET = { 13, 14 },
+    INVTYPE_CLOAK = { 15 },
+    INVTYPE_WEAPON = { 16, 17 }, INVTYPE_2HWEAPON = { 16 },
+    INVTYPE_WEAPONMAINHAND = { 16 }, INVTYPE_WEAPONOFFHAND = { 17 },
+    INVTYPE_HOLDABLE = { 17 }, INVTYPE_SHIELD = { 17 },
+    INVTYPE_RANGED = { 18 }, INVTYPE_RANGEDRIGHT = { 18 },
+    INVTYPE_THROWN = { 18 }, INVTYPE_RELIC = { 18 },
+}
+
+-- Resolve the item link for the item a tooltip is currently showing, from the
+-- refresh info our Set* hooks stashed. Reliable even when GetItem() isn't.
+function TT.GetTrackedItemLink(tooltip)
+    if not tooltip then return nil end
+    local kind = tooltip._dcqosRefreshKind
+    if kind == "bag" then
+        local bag = tonumber(tooltip._dcqosRefreshBag)
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if bag ~= nil and slot ~= nil then
+            return GetContainerItemLink(bag, slot)
+        end
+    elseif kind == "inventory" then
+        local unit = tooltip._dcqosRefreshUnit
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if unit and slot ~= nil and UnitExists(unit) then
+            return GetInventoryItemLink(unit, slot)
+        end
+    end
+    return nil
+end
+
+-- Fallback comparison for "phantom" equipped items -- dynamically-generated
+-- item-upgrade clones that have a display (texture) but NO client item id/link,
+-- so the stock link-based SetCompareItem can't render them. We render each
+-- target equipped slot directly from its slot via SetInventoryItem, which the
+-- native tooltip path resolves from the server. Returns true if anything shown.
+-- Lay out whichever shopping tooltips are currently shown alongside the main
+-- tooltip, tops aligned (stock offsets them ~10px lower, which reads as a bug
+-- next to our own rendering). Anchors to whichever side has more room.
+local function LayoutShoppingTooltips(main)
+    local shoppingTooltips = main.shoppingTooltips
+    if not shoppingTooltips then return end
+
+    local side = "right"
+    local mainRight = main:GetRight()
+    if mainRight and mainRight > (GetScreenWidth() / 2) then
+        side = "left"
+    end
+
+    local prev = nil
+    for i = 1, #shoppingTooltips do
+        local st = shoppingTooltips[i]
+        if st and st:IsShown() then
+            st:ClearAllPoints()
+            if side == "left" then
+                st:SetPoint("TOPRIGHT", prev or main, "TOPLEFT", -3, 0)
+            else
+                st:SetPoint("TOPLEFT", prev or main, "TOPRIGHT", 3, 0)
+            end
+            prev = st
+        end
+    end
+end
+
+local function ShowSlotBasedCompare(main, equipLoc)
+    if not equipLoc then return false end
+    local slots = INVTYPE_COMPARE_SLOTS[equipLoc]
+    if not slots then return false end
+    local shoppingTooltips = main.shoppingTooltips
+    if not shoppingTooltips then return false end
+
+    for _, st in pairs(shoppingTooltips) do
+        st:Hide()
+    end
+
+    local shown = 0
+    for _, slot in ipairs(slots) do
+        -- Texture (not id/link) is what's reliable for phantom items.
+        if GetInventoryItemTexture("player", slot) then
+            local st = shoppingTooltips[shown + 1]
+            if st then
+                st:SetOwner(main, "ANCHOR_NONE")
+                st:SetInventoryItem("player", slot)
+                st:Show()
+                shown = shown + 1
+            end
+        end
+    end
+
+    if shown > 0 then
+        LayoutShoppingTooltips(main)
+    end
+    main._dcqosSlotCompareShown = (shown > 0) and true or nil
+    return shown > 0
+end
+
+local function TryShowCompareItem(tooltip, itemLink)
     if type(GetDCClientCapabilities) ~= "function" then return end
     if not tooltip or not tooltip.shoppingTooltips then return end
-    if type(GameTooltip_ShowCompareItem) ~= "function" then return end
 
-    if IsModifiedClick("COMPAREITEMS") or GetCVarBool("alwaysCompareItems") then
-        GameTooltip_ShowCompareItem(tooltip)
-    else
+    if not (IsModifiedClick("COMPAREITEMS") or GetCVarBool("alwaysCompareItems")) then
         for _, frame in pairs(tooltip.shoppingTooltips) do
             frame:Hide()
         end
+        tooltip._dcqosSlotCompareShown = nil
+        return
+    end
+
+    -- Stock path first: renders items that have resolvable client data.
+    if type(GameTooltip_ShowCompareItem) == "function" then
+        GameTooltip_ShowCompareItem(tooltip)
+    end
+
+    local st1 = tooltip.shoppingTooltips[1]
+    if st1 and st1:IsShown() then
+        -- Stock rendered the comparison; re-align its tops with the main tooltip.
+        LayoutShoppingTooltips(tooltip)
+        return
+    end
+
+    -- Nothing rendered (phantom upgrade items): fall back to slot-based
+    -- rendering keyed off the hovered item's equip location.
+    local link = itemLink or TT.GetTrackedItemLink(tooltip)
+    local equipLoc = link and select(9, GetItemInfo(link)) or nil
+    if equipLoc then
+        ShowSlotBasedCompare(tooltip, equipLoc)
     end
 end
 TT.TryShowCompareItem = TryShowCompareItem
@@ -180,7 +301,7 @@ function TT.HookItemTooltips()
 
         AddItemId(self, itemLink)
         AddItemLevel(self, itemLink)
-        TryShowCompareItem(self)
+        TryShowCompareItem(self, itemLink)
         self:Show()
     end
 
@@ -283,6 +404,21 @@ function TT.HookItemTooltips()
             end
         end)
         TT.compareModifierFrame = f
+    end
+
+    -- Guaranteed cleanup: when the tooltip hides (mouse leaves), hide any
+    -- slot-based comparison we rendered so it can't linger if OnTooltipCleared
+    -- doesn't fire on the native path.
+    if not GameTooltip._dcqosHookedCompareOnHide then
+        GameTooltip._dcqosHookedCompareOnHide = true
+        GameTooltip:HookScript("OnHide", function(self)
+            if self._dcqosSlotCompareShown and self.shoppingTooltips then
+                for _, st in pairs(self.shoppingTooltips) do
+                    st:Hide()
+                end
+            end
+            self._dcqosSlotCompareShown = nil
+        end)
     end
 
     addon:Debug("Item tooltip hooks installed")

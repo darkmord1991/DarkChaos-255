@@ -511,7 +511,86 @@ function TT.EnsureNativeTooltipPollFrame()
 
         nativeTooltipPollElapsed = 0
         PollActiveNativeTooltipData(GameTooltip)
+
+        TT.PollCompareItem(GameTooltip)
     end)
+end
+
+-- Equipped side-by-side comparison for the native item path. The C++ item
+-- renderer fills bag/equipment tooltips asynchronously, so the comparison often
+-- can't render on the initial synchronous hook (the item's equip data isn't set
+-- yet) and later async redraws wipe it. Re-assert it here every poll tick until
+-- it sticks. Bounded to equippable items with the modifier held, and capped so a
+-- slot with nothing equipped (comparison legitimately empty) doesn't churn.
+local COMPARE_MAX_TRIES = 20  -- ~1s at the 0.05s poll interval
+
+function TT.PollCompareItem(tooltip)
+    if type(GetDCClientCapabilities) ~= "function" then return end
+    if not tooltip or tooltip ~= GameTooltip then return end
+    if not tooltip.IsShown or not tooltip:IsShown() then return end
+    if not tooltip.shoppingTooltips then return end
+    if type(GameTooltip_ShowCompareItem) ~= "function" then return end
+
+    local kind = tooltip._dcqosRefreshKind
+    if kind ~= "bag" and kind ~= "inventory" then
+        return
+    end
+
+    local st1 = tooltip.shoppingTooltips[1]
+    if not st1 then return end
+
+    if not (IsModifiedClick("COMPAREITEMS") or GetCVarBool("alwaysCompareItems")) then
+        -- Modifier released while hovering: hide any lingering comparison.
+        if st1:IsShown() then
+            for _, frame in pairs(tooltip.shoppingTooltips) do
+                frame:Hide()
+            end
+        end
+        tooltip._dcqosCompareTries = 0
+        return
+    end
+
+    if st1:IsShown() then
+        -- Already displaying; reset the retry budget so a later async wipe gets
+        -- a fresh set of attempts.
+        tooltip._dcqosCompareTries = 0
+        return
+    end
+
+    if (tooltip._dcqosCompareTries or 0) >= COMPARE_MAX_TRIES then
+        return
+    end
+
+    -- Resolve the hovered item from the tracked bag/slot rather than
+    -- tooltip:GetItem(): the native async item path can leave GetItem() returning
+    -- nil even though the tooltip's C-side item (which GameTooltip_ShowCompareItem
+    -- reads) is set. GetContainerItemLink / GetInventoryItemLink are reliable.
+    local link
+    if kind == "bag" then
+        local bag = tonumber(tooltip._dcqosRefreshBag)
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if bag ~= nil and slot ~= nil then
+            link = GetContainerItemLink(bag, slot)
+        end
+    else -- "inventory"
+        local unit = tooltip._dcqosRefreshUnit
+        local slot = tonumber(tooltip._dcqosRefreshSlot)
+        if unit and slot ~= nil and UnitExists(unit) then
+            link = GetInventoryItemLink(unit, slot)
+        end
+    end
+
+    local equipLoc = link and select(9, GetItemInfo(link)) or nil
+    if not equipLoc or equipLoc == "" or equipLoc == "INVTYPE_BAG"
+        or equipLoc == "INVTYPE_QUIVER" or equipLoc == "INVTYPE_AMMO"
+        or equipLoc == "INVTYPE_NON_EQUIP" then
+        return
+    end
+
+    if TT.TryShowCompareItem then
+        TT.TryShowCompareItem(tooltip, link)
+    end
+    tooltip._dcqosCompareTries = (tooltip._dcqosCompareTries or 0) + 1
 end
 
 -- ============================================================
@@ -590,8 +669,17 @@ function TT.HookUnitTooltips()
     end
 
     local function ResetTooltipTransientState(self)
+        -- Hide the slot-based equipped comparison we rendered for phantom items;
+        -- stock only manages the shopping tooltips it populated itself.
+        if self._dcqosSlotCompareShown and self.shoppingTooltips then
+            for _, st in pairs(self.shoppingTooltips) do
+                st:Hide()
+            end
+        end
+        self._dcqosSlotCompareShown = nil
         self._dcqosNpcGuid = nil
         self._dcqosUpgradeShown = nil
+        self._dcqosCompareTries = nil
         self._dcqosRefreshKind = nil
         self._dcqosRefreshBag = nil
         self._dcqosRefreshSlot = nil

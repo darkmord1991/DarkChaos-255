@@ -2116,6 +2116,59 @@ SlashCmdList["DCQOS"] = function(msg)
     elseif msg == "shapetooltip" or msg == "shapetooltipdebug" then
         local tooltipsModule = addon.modules and addon.modules["Tooltips"]
         PrintShapeshiftTooltipDebug(tooltipsModule)
+    elseif msg == "cmpdiag" or msg == "comparediag" then
+        -- Diagnose equipped-item comparison: for each equipment slot report the
+        -- equipped item and whether its data is available client-side. Slots
+        -- where GetItemInfo() returns nil cannot be rendered by the native
+        -- SetCompareItem path, which is the suspected cause of missing compares.
+        addon:Print("Equipped-item compare diagnostic:", true)
+        print(string.format("  native client (GetDCClientCapabilities): %s",
+            (type(GetDCClientCapabilities) == "function") and "yes" or "no"))
+        print(string.format("  shoppingTooltips on GameTooltip: %s",
+            (GameTooltip and GameTooltip.shoppingTooltips) and "yes" or "no"))
+        print(string.format("  GameTooltip_ShowCompareItem: %s",
+            (type(GameTooltip_ShowCompareItem) == "function") and "yes" or "no"))
+        print(string.format("  COMPAREITEMS modifier held now: %s",
+            IsModifiedClick("COMPAREITEMS") and "yes" or "no"))
+        local slotNames = {
+            [1] = "Head", [3] = "Shoulder", [5] = "Chest", [6] = "Waist",
+            [7] = "Legs", [8] = "Feet", [9] = "Wrist", [10] = "Hands",
+            [11] = "Finger1", [12] = "Finger2", [13] = "Trinket1", [14] = "Trinket2",
+            [15] = "Back", [16] = "MainHand", [17] = "OffHand", [18] = "Ranged",
+        }
+        for slot = 1, 19 do
+            local id = GetInventoryItemID and GetInventoryItemID("player", slot) or nil
+            local tex = GetInventoryItemTexture("player", slot)
+            local link = GetInventoryItemLink("player", slot)
+            if id or tex or link then
+                local name, _, _, ilvl, _, _, _, _, equipLoc = link and GetItemInfo(link)
+                print(string.format("  slot %d (%s): id=%s tex=%s link=%s name=%s loc=%s",
+                    slot, slotNames[slot] or "?", tostring(id),
+                    tex and "yes" or "no",
+                    link and "yes" or "|cffff0000NIL|r",
+                    name and tostring(name) or "|cffff0000nil|r",
+                    tostring(equipLoc or "?")))
+            end
+        end
+
+        -- Decisive test: can a shopping tooltip render an equipped "phantom"
+        -- item (no client id/link) purely from its slot via SetInventoryItem?
+        -- The native item bridge renders asynchronously, so re-check after a
+        -- short delay. If NumLines > 0 the slot-based compare fix is viable.
+        if ShoppingTooltip1 and ShoppingTooltip1.SetInventoryItem then
+            ShoppingTooltip1:SetOwner(UIParent, "ANCHOR_NONE")
+            ShoppingTooltip1:SetInventoryItem("player", 16)  -- MainHand
+            ShoppingTooltip1:Show()
+            addon:DelayedCall(0.5, function()
+                local n = ShoppingTooltip1.NumLines and ShoppingTooltip1:NumLines() or 0
+                local ft = _G["ShoppingTooltip1TextLeft1"]
+                local first = ft and ft.GetText and ft:GetText()
+                addon:Print(string.format(
+                    "SetInventoryItem(player,16 MainHand) via slot -> NumLines=%d first=%s",
+                    n, tostring(first)), true)
+                ShoppingTooltip1:Hide()
+            end)
+        end
     elseif msg == "telemetry" or msg == "diag" or msg == "diagnostics" then
         local tooltipsModule = addon.modules and addon.modules["Tooltips"]
         local snapshot = tooltipsModule and tooltipsModule.GetTelemetrySnapshot and tooltipsModule.GetTelemetrySnapshot()

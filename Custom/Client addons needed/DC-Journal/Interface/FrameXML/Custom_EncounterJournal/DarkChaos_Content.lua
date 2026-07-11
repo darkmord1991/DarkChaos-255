@@ -212,12 +212,17 @@ DCJournal.AddInstance({
 })
 
 -- enc/sec ids are in the 9001xx/9002xx custom range so they never collide.
+-- `icon` (where a hand-made .blp exists in the client patch) is set explicitly
+-- because the fallback path -- Texture:SetPortrait(displayID), which just loads
+-- a static "Interface\PORTRAITS\Portrait_model_<id>.blp" -- only has art for a
+-- curated set of ids; it silently shows blank/mismatched art for the custom
+-- creature ids used here (see boss-list icon investigation, 2026-07-11).
 local giantIslesBosses = {
-    { enc = 900110, sec = 900210, display = 500234, entry = 400100, name = "Oondasta",
+    { enc = 900110, sec = 900210, display = 500234, entry = 400100, name = "Oondasta", icon = "Oondasta",
       lore = "The colossal devilsaur Oondasta, King of Dinosaurs, rampages across the Giant Isles, devouring all in its path. The Zandalari revere the beast as a living god and rally their warbands beneath its shadow." },
-    { enc = 900111, sec = 900211, display = 5291, entry = 400101, name = "Thok the Bloodthirsty",
+    { enc = 900111, sec = 900211, display = 5291, entry = 400101, name = "Thok the Bloodthirsty", icon = "Thok the Bloodthirsty",
       lore = "Thok the Bloodthirsty hunts without end, an immense primal devilsaur whose insatiable hunger leaves rivers of blood across the isles. Nothing that draws breath is safe from its jaws." },
-    { enc = 900112, sec = 900212, display = 8412, entry = 400102, name = "Nalak the Storm Lord",
+    { enc = 900112, sec = 900212, display = 8412, entry = 400102, name = "Nalak the Storm Lord", icon = "Nalak",
       lore = "Nalak, the Storm Lord, an ancient thunder lizard wreathed in crackling lightning, soars above the Giant Isles. The Zandalari worship it as an avatar of the tempest itself." },
     { enc = 900113, sec = 900213, display = 29487, entry = 400350, name = "Ancient Terror",
       lore = "Roused from the black depths beneath the Giant Isles, the Ancient Terror is a primordial horror older than memory. It rises to crush any who would claim the island's primal power." },
@@ -225,7 +230,7 @@ local giantIslesBosses = {
       lore = "Long thought lost beneath the waves, the ancient hydra Vorath the Drowned surges from the surrounding seas, lashing the shoreline with venom and tidal fury to defend its domain." },
     { enc = 900115, sec = 900215, display = 21899, entry = 400338, name = "General Rak'zor",
       lore = "General Rak'zor commands the Zandalari invasion of the Giant Isles -- a ruthless warlord who drives legions of trolls and war-beasts to conquer the islands in the name of his empire." },
-    { enc = 900116, sec = 900216, display = 8053, entry = 400522, name = "Reawakened Avatar of Hakkar",
+    { enc = 900116, sec = 900216, display = 8053, entry = 400522, name = "Reawakened Avatar of Hakkar", icon = "Avatar of Hakkar",
       lore = "Through blood and dark ritual the Zandalari have torn an avatar of Hakkar the Soulflayer into the world. The Blood God hungers without end, and the isles run red with sacrifice in its name." },
 }
 
@@ -250,6 +255,7 @@ for order, b in ipairs(giantIslesBosses) do
         name              = b.name,
         creatureDisplayID = b.display,
         creatureEntry     = b.entry,
+        icon              = b.icon and ("Interface\\EncounterJournal\\UI-EJ-BOSS-" .. b.icon) or nil,
     })
 end
 
@@ -323,7 +329,10 @@ local function AddBWDBoss(encID, rootID, order, name, encLore, overview, display
             type            = 2,
         })
     end
-    DCJournal.AddBossModel(encID, { name = name, creatureDisplayID = display, creatureEntry = entry })
+    DCJournal.AddBossModel(encID, {
+        name = name, creatureDisplayID = display, creatureEntry = entry,
+        icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-" .. name,
+    })
 end
 
 -- ---------------------------------------------------------------------
@@ -422,7 +431,10 @@ for i, golem in ipairs(omnotronGolems) do
             order = j, type = 2,
         })
     end
-    DCJournal.AddBossModel(900302, { name = golem.name, creatureDisplayID = golem.display, creatureEntry = golem.entry })
+    DCJournal.AddBossModel(900302, {
+        name = golem.name, creatureDisplayID = golem.display, creatureEntry = golem.entry,
+        icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-" .. golem.name,
+    })
 end
 
 DCJournal.AddLoot(900302, 59219)  -- Power Generator Hood
@@ -593,8 +605,14 @@ for i, a in ipairs(nefarianAbilities) do
     })
 end
 
-DCJournal.AddBossModel(900306, { name = "Onyxia", creatureDisplayID = 32569, creatureEntry = 41270 })
-DCJournal.AddBossModel(900306, { name = "Nefarian", creatureDisplayID = 32716, creatureEntry = 41376 })
+DCJournal.AddBossModel(900306, {
+    name = "Onyxia", creatureDisplayID = 32569, creatureEntry = 41270,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-OnyxiaBWD",
+})
+DCJournal.AddBossModel(900306, {
+    name = "Nefarian", creatureDisplayID = 32716, creatureEntry = 41376,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-NefarianBWD",
+})
 
 DCJournal.AddLoot(900306, 63682)  -- Helm of the Forlorn Vanquisher (tier token)
 DCJournal.AddLoot(900306, 63683)  -- Helm of the Forlorn Conqueror (tier token)
