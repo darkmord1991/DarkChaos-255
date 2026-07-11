@@ -48,3 +48,15 @@ SELECT
     clt.`Chance`, clt.`QuestRequired`, clt.`LootMode`, clt.`GroupId`, clt.`MinCount`, clt.`MaxCount`, clt.`Comment`
 FROM `cata_world`.`creature_loot_template` clt
 WHERE clt.`Entry` IN (41570,42180,41378,41442,43296,41376);
+
+-- ---------------------------------------------------------------------------
+-- Chimaeron: guaranteed key drop for Finkle Einhorn's cage (item 64663, see 10_items.sql).
+-- Direct row alongside the reference gear group above -- not part of it, always drops.
+-- Lock.dbc 1943 (Custom\CSV DBC\Lock.csv) requires item 64663 on gameobject_template 204929
+-- (Finkle's Cage door) -- needs a CSV DBC recompile + client patch deploy to take effect.
+-- ---------------------------------------------------------------------------
+DELETE FROM `creature_loot_template` WHERE `Entry` = 43296 AND `Item` = 64663;
+INSERT INTO `creature_loot_template`
+    (`Entry`, `Item`, `Reference`, `Chance`, `QuestRequired`, `LootMode`, `GroupId`, `MinCount`, `MaxCount`, `Comment`)
+VALUES
+    (43296, 64663, 0, 100, 0, 1, 0, 1, 1, 'Bile-Etched Brass Key -- opens Finkle Einhorn''s cage');

@@ -1,0 +1,15 @@
+-- ---------------------------------------------------------------------------
+-- Deepholm quest chain fix -- quest 28292 pointed at a non-existent NextQuestID
+-- ---------------------------------------------------------------------------
+-- More-db-errors audit pass (2026-07-11): quest_template_addon.NextQuestID for
+-- quest 28292 "That's No Pyramid!" (started by creature 44799 on Deepholm/646)
+-- was set to 28295. That quest ("Meetup with the Caravan") is real Blizzard
+-- content confirmed present in cata_world.quest_template, but it's a breadcrumb
+-- OUT of Deepholm into Tanaris/Uldum ("Head to the southern end of Kalimdor...")
+-- -- content this server doesn't have ported. RewardNextQuest (the auto-offer
+-- field) is already 0, so nothing auto-triggers; NextQuestID is only used for
+-- quest-chain bookkeeping/UI and referencing a non-existent quest is a load-time
+-- reference error either way. Nulling it out rather than fabricating a fake
+-- Tanaris follow-up quest -- the Deepholm chain correctly ends at 28292.
+-- ---------------------------------------------------------------------------
+UPDATE `quest_template_addon` SET `NextQuestID` = 0 WHERE `ID` = 28292;

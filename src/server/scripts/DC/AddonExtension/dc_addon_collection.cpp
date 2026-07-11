@@ -6733,13 +6733,27 @@ namespace DCCollection
                     MountedModelInfo mountedModel = resolveMountedModelInfo(spellId);
                     creatureId = mountedModel.creatureId;
 
-                    // Fallback for legacy rows where display_id was not set.
-                    // Some definitions reference teaching/trigger spells, so resolve through
-                    // spell chains until we find the mounted aura display.
-                    if (!displayId)
+                    // A stored display_id that isn't a real CreatureDisplayInfo
+                    // is worse than none: the client can't render it and shows a
+                    // blank preview (this happened to ~87 pre-WotLK mounts whose
+                    // display_id held orphaned import values like 59494). The
+                    // server's DBC set mirrors the deployed client patch, so
+                    // "not in sCreatureDisplayInfoStore" == "client can't render
+                    // it". Drop such values and fall back to the authoritative
+                    // spell -> creature -> model resolution.
+                    if (displayId && !sCreatureDisplayInfoStore.LookupEntry(displayId))
+                        displayId = 0;
+
+                    // Fallback for rows where display_id was unset or just
+                    // dropped above. Some definitions reference teaching/trigger
+                    // spells, so resolve through spell chains until we find the
+                    // mounted-aura display. Only accept a resolved id the client
+                    // can actually render, so we never re-send another orphan.
+                    if (!displayId && mountedModel.displayId &&
+                        sCreatureDisplayInfoStore.LookupEntry(mountedModel.displayId))
                     {
                         displayId = mountedModel.displayId;
-                        resolvedViaSpellScan = (displayId > 0);
+                        resolvedViaSpellScan = true;
                     }
 
                     trackMountDisplay(spellId, 1, resolvedViaSpellScan, displayId);
