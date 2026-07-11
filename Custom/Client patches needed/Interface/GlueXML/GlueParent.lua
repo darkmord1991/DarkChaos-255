@@ -28,6 +28,8 @@ CharModelFogInfo["NIGHTELF"] = { r=0.25, g=0.22, b=0.55, far=611 };
 CharModelFogInfo["TAUREN"] = { r=1.0, g=0.61, b=0.42, far=153 };
 CharModelFogInfo["SCOURGE"] = { r=0, g=0.22, b=0.22, far=26 };
 CharModelFogInfo["CHARACTERSELECT"] = { r=0.8, g=0.65, b=0.73, far=222 };
+CharModelFogInfo["GOBLIN"] = { r=0.5, g=0.5, b=0.5, far=270 };
+CharModelFogInfo["WORGEN"] = { r=0.25, g=0.25, b=0.35, far=300 };
 
 CharModelGlowInfo = { };
 CharModelGlowInfo["WORGEN"] = 0.0;
@@ -48,6 +50,8 @@ GlueAmbienceTracks["BLOODELF"] = "GlueScreenBloodElf";
 GlueAmbienceTracks["DARKPORTAL"] = "GlueScreenIntro";
 GlueAmbienceTracks["DEATHKNIGHT"] = "GlueScreenIntro";
 GlueAmbienceTracks["CHARACTERSELECT"] = "GlueScreenIntro";
+GlueAmbienceTracks["GOBLIN"] = "GlueScreenOrcTroll";
+GlueAmbienceTracks["WORGEN"] = "GlueScreenHuman";
 
 -- RaceLights[] duplicates the 3.2.2 color values in the models. Henceforth, the models no longer contain directional lights
 RaceLights = {
@@ -92,6 +96,16 @@ RaceLights = {
         {1,     0,  0.00000,        0.00000,        -1.00000,   1.0,    0.15000,    0.15000,    0.15000,    1.0,    0.00000,    0.00000,    0.00000},
         {1,     0,  -0.74919,       0.35208,        -0.56103,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.44706,    0.54510,    0.73725},
         {1,     0,  0.53162,        -0.84340,       0.07780,    1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.55,       0.338625,   0.148825},
+    },
+    GOBLIN = {
+        {1,     0,  0.00000,        0.00000,        -1.00000,   1.0,    0.15000,    0.15000,    0.15000,    1.0,    0.00000,    0.00000,    0.00000},
+        {1,     0,  -0.74919,       0.35208,        -0.56103,   1.0,    0.00000,    0.00000,    0.00000,    1.0,    0.44706,    0.54510,    0.73725},
+        {1,     0,  0.53162,        -0.84340,       0.07780,    1.0,    0.00000,    0.00000,    0.00000,    2.0,    0.55,       0.338625,   0.148825},
+    },
+    WORGEN = {
+        {1,     0,  0.000000,       0.000000,       -1.000000,   1.0,   0.27,       0.27,       .27,        1.0,    0,          0,          0},
+        {1,     0,  -0.45756075,    -0.58900136,    -0.66611975, 1.0,   0.000000,   0.000000,   0.000000,   1.0,    0.19882353, 0.34921569, 0.43588236 },
+        {1,     0,  -0.64623469,    0.57582057,     -0.50081086, 1.0,   0.000000,   0.000000,   0.000000,   2.0,    0.52196085, 0.44,       0.29764709 },
     },
 }
 
@@ -729,7 +743,7 @@ function SetBackgroundModel(model, name)
 	else
 		SetCharSelectBackground(path);
 	end
-	PlayGlueAmbience(GlueAmbienceTracks[nameupper], 4.0);
+	PlayGlueAmbience(GlueAmbienceTracks[nameupper] or GlueAmbienceTracks["CHARACTERSELECT"], 4.0);
 	SetLighting(model, nameupper)
 end
 
