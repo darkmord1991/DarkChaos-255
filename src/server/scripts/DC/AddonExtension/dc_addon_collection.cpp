@@ -6705,14 +6705,16 @@ namespace DCCollection
         {
         if (ct == CollectionType::MOUNT && WorldTableExists("dc_mount_definitions"))
         {
+            // NOTE: the teaching item id is resolved via the preloaded
+            // in-memory map (FindMountItemIdForSpell), NOT in SQL. The old
+            // correlated subquery ("SELECT MIN(i.entry) FROM item_template
+            // WHERE ... spellid_N = md.spell_id") ran an unindexed 150k-row
+            // item_template scan once PER MOUNT ROW inside MySQL - ~15s for
+            // ~600 mounts, stalling the world thread whenever the curated
+            // cache was cold.
             QueryResult r = WorldDatabase.Query(
-                "SELECT md.spell_id, md.name, md.icon, md.rarity, md.mount_type, md.source, md.display_id, "
-                "(SELECT MIN(i.entry) FROM item_template i "
-                " WHERE i.class = 15 AND i.subclass = 5 AND ("
-                "   i.spellid_1 = md.spell_id OR i.spellid_2 = md.spell_id OR i.spellid_3 = md.spell_id OR "
-                "   i.spellid_4 = md.spell_id OR i.spellid_5 = md.spell_id"
-                ")) AS item_id "
-                "FROM dc_mount_definitions md");
+                "SELECT spell_id, name, icon, rarity, mount_type, source, display_id "
+                "FROM dc_mount_definitions");
             if (r)
             {
                 do
@@ -6726,7 +6728,7 @@ namespace DCCollection
                     int32 mountType = f[4].Get<int32>();
                     std::string source = f[5].Get<std::string>();
                     uint32 displayId = f[6].Get<uint32>();
-                    uint32 itemId = f[7].Get<uint32>();
+                    uint32 itemId = FindMountItemIdForSpell(spellId);
                     uint32 creatureId = 0;
                     bool resolvedViaSpellScan = false;
 
