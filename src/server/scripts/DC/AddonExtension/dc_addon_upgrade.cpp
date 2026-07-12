@@ -20,7 +20,9 @@
 #include "Chat.h"
 #include "Spell.h"
 #include "SpellMgr.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "StringFormat.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeMechanics.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
@@ -106,6 +108,101 @@ namespace Upgrade
                 .Set("serverBag", serverBag)
                 .Set("serverSlot", serverSlot)
                 .Send(player);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Static world-table caches
+    //
+    // dc_item_upgrade_item_overrides and dc_heirloom_upgrade_costs are static
+    // world-config tables that used to be re-queried synchronously on the
+    // world thread for every addon request. They are loaded once on first use
+    // and kept for the lifetime of the process: changing either table
+    // requires a worldserver restart.
+    // -----------------------------------------------------------------------
+    namespace
+    {
+        std::mutex s_StaticCacheMutex;
+
+        bool s_ItemTierOverridesLoaded = false;
+        std::unordered_map<uint32, uint32> s_ItemTierOverrides; // item_id -> tier_id (season 1, active)
+
+        bool s_HeirloomCostsLoaded = false;
+        // (tier_id, upgrade_level) -> (token_cost, essence_cost)
+        std::map<std::pair<uint32, uint32>, std::pair<uint32, uint32>> s_HeirloomCosts;
+
+        // Returns true (and the tier) when an active season-1 override row
+        // exists for the item; mirrors the old per-request row lookup.
+        bool TryGetItemTierOverride(uint32 itemId, uint32& outTier)
+        {
+            std::lock_guard<std::mutex> lock(s_StaticCacheMutex);
+            if (!s_ItemTierOverridesLoaded)
+            {
+                s_ItemTierOverridesLoaded = true;
+                if (QueryResult result = WorldDatabase.Query(
+                    "SELECT item_id, tier_id FROM dc_item_upgrade_item_overrides WHERE season = 1 AND is_active = 1"))
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        s_ItemTierOverrides[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
+                    } while (result->NextRow());
+                }
+
+                LOG_INFO("dc.addon.upgrade",
+                    "Cached {} rows from dc_item_upgrade_item_overrides (season 1, active); restart to reload",
+                    s_ItemTierOverrides.size());
+            }
+
+            auto it = s_ItemTierOverrides.find(itemId);
+            if (it == s_ItemTierOverrides.end())
+                return false;
+
+            outTier = it->second;
+            return true;
+        }
+
+        // Sums heirloom token/essence costs for upgrade levels
+        // [fromLevel, toLevel] inclusive. Levels without a cost row contribute
+        // nothing (matches the old SQL SUM over the rows it found); when no
+        // rows match at all both totals stay 0, exactly like the previous
+        // NULL-SUM handling. An empty range (fromLevel > toLevel) also yields
+        // 0, matching BETWEEN with lo > hi.
+        void SumHeirloomCosts(uint32 tierId, uint32 fromLevel, uint32 toLevel,
+            uint32& outTokens, uint32& outEssence)
+        {
+            outTokens = 0;
+            outEssence = 0;
+
+            std::lock_guard<std::mutex> lock(s_StaticCacheMutex);
+            if (!s_HeirloomCostsLoaded)
+            {
+                s_HeirloomCostsLoaded = true;
+                if (QueryResult result = WorldDatabase.Query(
+                    "SELECT tier_id, upgrade_level, token_cost, essence_cost FROM dc_heirloom_upgrade_costs"))
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        s_HeirloomCosts[{ fields[0].Get<uint32>(), fields[1].Get<uint32>() }] =
+                            { fields[2].Get<uint32>(), fields[3].Get<uint32>() };
+                    } while (result->NextRow());
+                }
+
+                LOG_INFO("dc.addon.upgrade",
+                    "Cached {} rows from dc_heirloom_upgrade_costs; restart to reload",
+                    s_HeirloomCosts.size());
+            }
+
+            for (uint32 level = fromLevel; level <= toLevel; ++level)
+            {
+                auto it = s_HeirloomCosts.find({ tierId, level });
+                if (it != s_HeirloomCosts.end())
+                {
+                    outTokens += it->second.first;
+                    outEssence += it->second.second;
+                }
+            }
         }
     }
 
@@ -268,34 +365,64 @@ namespace Upgrade
         // Special Case: Heirloom items (any is_artifact tier)
         if (IsHeirloomEntry(baseEntry))
         {
-             QueryResult heirloomResult = CharacterDatabase.Query(
-                "SELECT upgrade_level FROM dc_heirloom_upgrades WHERE item_guid = {}",
-                itemGUID);
+            // ASYNC heirloom level fetch: this ran a synchronous
+            // CharacterDatabase query on the world thread per request.
+            ObjectGuid playerGuid = player->GetGUID();
+            ObjectGuid itemGuidFull = item->GetGUID();
+            std::string requestId = msg.GetRequestId();
+            std::string const sql = Acore::StringFormat(
+                "SELECT upgrade_level FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGUID);
 
-            uint32 upgradeLevel = 0;
-            if (heirloomResult)
-                upgradeLevel = (*heirloomResult)[0].Get<uint32>();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                .WithCallback([playerGuid, itemGuidFull, requestId, extBag, extSlot, itemGUID](QueryResult heirloomResult)
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
 
-            uint8 hlTier = mgr ? static_cast<uint8>(mgr->GetItemTier(baseEntry)) : 3u;
-            float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
-                static_cast<uint8>(upgradeLevel), hlTier);
+                Item* item = player->GetItemByGuid(itemGuidFull);
+                if (!item)
+                {
+                    JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
+                        .SetRequestId(requestId)
+                        .Set("success", false)
+                        .Set("serverBag", extBag)
+                        .Set("serverSlot", extSlot)
+                        .Set("errorMsg", "Item not found")
+                        .Send(player);
+                    return;
+                }
 
-            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
-                .SetRequestId(msg.GetRequestId())
-                .Set("success", true)
-                .Set("itemID", itemGUID)
-                .Set("itemEntry", baseEntry)
-                .Set("serverBag", extBag)
-                .Set("serverSlot", extSlot)
-                .Set("currentUpgrade", upgradeLevel)
-                .Set("maxUpgrade", GetHeirloomMaxLevel(baseEntry))
-                .Set("tier", static_cast<uint32>(hlTier))
-                .Set("tokenCost", 0u)
-                .Set("essenceCost", 0u)
-                .Set("baseIlvl", baseItemLevel)
-                .Set("upgradedIlvl", baseItemLevel)
-                .Set("statMultiplier", statMultiplier)
-                .Send(player);
+                uint32 baseEntry = item->GetEntry();
+                uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
+
+                uint32 upgradeLevel = 0;
+                if (heirloomResult)
+                    upgradeLevel = (*heirloomResult)[0].Get<uint32>();
+
+                DarkChaos::ItemUpgrade::UpgradeManager* mgr =
+                    DarkChaos::ItemUpgrade::GetUpgradeManager();
+                uint8 hlTier = mgr ? static_cast<uint8>(mgr->GetItemTier(baseEntry)) : 3u;
+                float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                    static_cast<uint8>(upgradeLevel), hlTier);
+
+                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
+                    .SetRequestId(requestId)
+                    .Set("success", true)
+                    .Set("itemID", itemGUID)
+                    .Set("itemEntry", baseEntry)
+                    .Set("serverBag", extBag)
+                    .Set("serverSlot", extSlot)
+                    .Set("currentUpgrade", upgradeLevel)
+                    .Set("maxUpgrade", GetHeirloomMaxLevel(baseEntry))
+                    .Set("tier", static_cast<uint32>(hlTier))
+                    .Set("tokenCost", 0u)
+                    .Set("essenceCost", 0u)
+                    .Set("baseIlvl", baseItemLevel)
+                    .Set("upgradedIlvl", baseItemLevel)
+                    .Set("statMultiplier", statMultiplier)
+                    .Send(player);
+            }));
             return;
         }
 
@@ -329,16 +456,16 @@ namespace Upgrade
             }
         }
 
-        // Fallback or override from table if mgr fails (redundant but safe)
+        // Fallback or override from table if mgr fails (redundant but safe).
+        // Served from the one-time s_ItemTierOverrides cache instead of a
+        // per-request WorldDatabase query.
         if (tier == 0 || tier == DarkChaos::ItemUpgrade::TIER_INVALID)
         {
-             QueryResult tierLookup = WorldDatabase.Query(
-                "SELECT tier_id FROM dc_item_upgrade_item_overrides WHERE item_id = {} AND season = 1 AND is_active = 1",
-                baseEntry);
-             if (tierLookup)
-                 tier = (*tierLookup)[0].Get<uint8>();
-             else
-                 tier = DarkChaos::ItemUpgrade::TIER_LEVELING;
+            uint32 overrideTier = 0;
+            if (TryGetItemTierOverride(baseEntry, overrideTier))
+                tier = static_cast<uint8>(overrideTier);
+            else
+                tier = DarkChaos::ItemUpgrade::TIER_LEVELING;
         }
 
         // Calculate stat multiplier and ilvl
@@ -794,25 +921,51 @@ namespace Upgrade
            }
 
         uint32 itemGuid = item->GetGUID().GetCounter();
-        QueryResult result = CharacterDatabase.Query("SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
 
-        uint32 level = 0;
-        uint32 package = 0;
-        if (result)
+        // ASYNC heirloom state fetch: this ran a synchronous CharacterDatabase
+        // query on the world thread per request.
+        ObjectGuid playerGuid = player->GetGUID();
+        ObjectGuid itemGuidFull = item->GetGUID();
+        std::string requestId = msg.GetRequestId();
+        std::string const sql = Acore::StringFormat(
+            "SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid, itemGuidFull, requestId, itemGuid](QueryResult result)
         {
-             level = (*result)[0].Get<uint32>();
-             package = (*result)[1].Get<uint32>();
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-           JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
-               .SetRequestId(msg.GetRequestId())
-               .Set("success", true)
-               .Set("itemGuid", itemGuid)
-               .Set("level", level)
-               .Set("packageId", package)
-               .Set("maxLevel", GetHeirloomMaxLevel(item->GetEntry()))
-               .Set("maxPackage", HEIRLOOM_MAX_PACKAGE_ID)
-               .Send(player);
+            Item* item = player->GetItemByGuid(itemGuidFull);
+            if (!item || !IsHeirloomEntry(item->GetEntry()))
+            {
+                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
+                    .SetRequestId(requestId)
+                    .Set("success", false)
+                    .Set("errorMsg", "Invalid Heirloom")
+                    .Send(player);
+                return;
+            }
+
+            uint32 level = 0;
+            uint32 package = 0;
+            if (result)
+            {
+                level = (*result)[0].Get<uint32>();
+                package = (*result)[1].Get<uint32>();
+            }
+
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
+                .SetRequestId(requestId)
+                .Set("success", true)
+                .Set("itemGuid", itemGuid)
+                .Set("level", level)
+                .Set("packageId", package)
+                .Set("maxLevel", GetHeirloomMaxLevel(item->GetEntry()))
+                .Set("maxPackage", HEIRLOOM_MAX_PACKAGE_ID)
+                .Send(player);
+        }));
     }
 
     static void HandleGetPackages(Player* player, const ParsedMessage& /*msg*/)
@@ -914,93 +1067,116 @@ namespace Upgrade
            }
 
         uint32 itemGuid = item->GetGUID().GetCounter();
-        QueryResult result = CharacterDatabase.Query("SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
 
-        uint32 currentLevel = 0;
-        uint32 currentPackage = 0;
-        if (result)
+        // ASYNC heirloom state fetch: this ran a synchronous CharacterDatabase
+        // query on the world thread per upgrade request. Validation, cost
+        // calculation, currency deduction and the DB writes all happen in the
+        // callback against the re-resolved player/item.
+        ObjectGuid playerGuid = player->GetGUID();
+        ObjectGuid itemGuidFull = item->GetGUID();
+        std::string requestId = msg.GetRequestId();
+        std::string const sql = Acore::StringFormat(
+            "SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid, itemGuidFull, requestId, itemGuid, targetLevel, packageId, itemTier](QueryResult result)
         {
-             currentLevel = (*result)[0].Get<uint32>();
-             currentPackage = (*result)[1].Get<uint32>();
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-          if (targetLevel < currentLevel && packageId == currentPackage)
-          {
-              JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
-                .SetRequestId(msg.GetRequestId())
-                .Set("success", false)
-                .Set("errorMsg", "Already higher level")
+            Item* item = player->GetItemByGuid(itemGuidFull);
+            if (!item || !IsHeirloomEntry(item->GetEntry()))
+            {
+                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                    .SetRequestId(requestId)
+                    .Set("success", false)
+                    .Set("errorMsg", "Invalid Heirloom")
+                    .Send(player);
+                return;
+            }
+
+            uint32 currentLevel = 0;
+            uint32 currentPackage = 0;
+            if (result)
+            {
+                currentLevel = (*result)[0].Get<uint32>();
+                currentPackage = (*result)[1].Get<uint32>();
+            }
+
+            if (targetLevel < currentLevel && packageId == currentPackage)
+            {
+                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                    .SetRequestId(requestId)
+                    .Set("success", false)
+                    .Set("errorMsg", "Already higher level")
+                    .Send(player);
+                return;
+            }
+
+            // Calculate Cost from the one-time s_HeirloomCosts cache (was a
+            // per-request SUM query against dc_heirloom_upgrade_costs).
+            uint32 tokensNeeded = 0;
+            uint32 essenceNeeded = 0;
+            SumHeirloomCosts(itemTier, currentLevel + 1, targetLevel, tokensNeeded, essenceNeeded);
+
+            // Check Currency
+            uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+            uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+
+            if (player->GetItemCount(tokenId) < tokensNeeded)
+            {
+                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                    .SetRequestId(requestId)
+                    .Set("success", false)
+                    .Set("errorMsg", "Not enough Tokens")
+                    .Send(player);
+                return;
+            }
+            if (player->GetItemCount(essenceId) < essenceNeeded)
+            {
+                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                    .SetRequestId(requestId)
+                    .Set("success", false)
+                    .Set("errorMsg", "Not enough Essence")
+                    .Send(player);
+                return;
+            }
+
+            // Perform
+            if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
+            if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
+
+            // Apply Enchantment
+            // Standard heirlooms:  900000 + (packageId * 100) + level
+            // Frontier heirlooms (tier 10): 920000 + (packageId * 100) + level
+            uint32 enchantBase = (itemTier == 10) ? FRONTIER_HEIRLOOM_ENCHANT_BASE_ID : HEIRLOOM_ENCHANT_BASE_ID;
+            uint32 enchantId = enchantBase + (packageId * 100) + targetLevel;
+
+            player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
+            item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());
+            player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
+
+            // Update DB (timestamps use column defaults)
+            CharacterDatabase.Execute("REPLACE INTO dc_heirloom_upgrades (player_guid, item_guid, item_entry, upgrade_level, package_id, enchant_id) VALUES ({}, {}, {}, {}, {}, {})",
+                player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), targetLevel, packageId, enchantId);
+
+            // Log
+            CharacterDatabase.Execute("INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, item_entry, from_level, to_level, from_package, to_package, enchant_id, token_cost, essence_cost) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+                player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), currentLevel, targetLevel, currentPackage, packageId, enchantId, tokensNeeded, essenceNeeded);
+
+            // Success
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                .SetRequestId(requestId)
+                .Set("success", true)
+                .Set("itemGuid", itemGuid)
+                .Set("newLevel", targetLevel)
+                .Set("packageId", packageId)
+                .Set("enchantId", enchantId)
                 .Send(player);
-              return;
-          }
 
-        // Calculate Cost
-        QueryResult costRes = WorldDatabase.Query("SELECT SUM(token_cost), SUM(essence_cost) FROM dc_heirloom_upgrade_costs WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}", itemTier, currentLevel + 1, targetLevel);
-
-        uint32 tokensNeeded = 0;
-        uint32 essenceNeeded = 0;
-        if (costRes)
-        {
-             if (!(*costRes)[0].IsNull()) tokensNeeded = (*costRes)[0].Get<uint32>();
-             if (!(*costRes)[1].IsNull()) essenceNeeded = (*costRes)[1].Get<uint32>();
-        }
-
-        // Check Currency
-        uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
-        uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
-
-           if (player->GetItemCount(tokenId) < tokensNeeded)
-           {
-               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
-                  .SetRequestId(msg.GetRequestId())
-                  .Set("success", false)
-                  .Set("errorMsg", "Not enough Tokens")
-                  .Send(player);
-               return;
-           }
-           if (player->GetItemCount(essenceId) < essenceNeeded)
-           {
-               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
-                  .SetRequestId(msg.GetRequestId())
-                  .Set("success", false)
-                  .Set("errorMsg", "Not enough Essence")
-                  .Send(player);
-               return;
-           }
-
-        // Perform
-        if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
-        if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
-
-        // Apply Enchantment
-        // Standard heirlooms:  900000 + (packageId * 100) + level
-        // Frontier heirlooms (tier 10): 920000 + (packageId * 100) + level
-        uint32 enchantBase = (itemTier == 10) ? FRONTIER_HEIRLOOM_ENCHANT_BASE_ID : HEIRLOOM_ENCHANT_BASE_ID;
-        uint32 enchantId = enchantBase + (packageId * 100) + targetLevel;
-
-        player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
-        item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());
-        player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
-
-        // Update DB (timestamps use column defaults)
-        CharacterDatabase.Execute("REPLACE INTO dc_heirloom_upgrades (player_guid, item_guid, item_entry, upgrade_level, package_id, enchant_id) VALUES ({}, {}, {}, {}, {}, {})",
-            player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), targetLevel, packageId, enchantId);
-
-        // Log
-        CharacterDatabase.Execute("INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, item_entry, from_level, to_level, from_package, to_package, enchant_id, token_cost, essence_cost) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
-            player->GetGUID().GetCounter(), itemGuid, item->GetEntry(), currentLevel, targetLevel, currentPackage, packageId, enchantId, tokensNeeded, essenceNeeded);
-
-        // Success
-        JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
-            .SetRequestId(msg.GetRequestId())
-            .Set("success", true)
-            .Set("itemGuid", itemGuid)
-            .Set("newLevel", targetLevel)
-            .Set("packageId", packageId)
-            .Set("enchantId", enchantId)
-            .Send(player);
-
-        SendCurrencyUpdate(player);
+            SendCurrencyUpdate(player);
+        }));
     }
 
     // Get player's selected package (exported for other systems)

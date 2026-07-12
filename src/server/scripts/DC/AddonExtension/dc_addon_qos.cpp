@@ -2584,6 +2584,46 @@ namespace DCQoS
         s_PlayerSettingsCache.erase(guid);
     }
 
+    // Pre-warm the per-player settings cache asynchronously at login so the
+    // synchronous DB fallback in GetPlayerSettingsCached (world-thread stall
+    // class) effectively never runs. A handler racing the warm still falls
+    // back to the one-off sync read safely.
+    void WarmPlayerSettingsCacheAsync(Player* player)
+    {
+        if (!player)
+            return;
+
+        uint32 guid = player->GetGUID().GetCounter();
+        {
+            std::lock_guard<std::mutex> lock(s_PlayerSettingsCacheMutex);
+            if (s_PlayerSettingsCache.find(guid) != s_PlayerSettingsCache.end())
+                return;
+        }
+
+        std::string const sql =
+            "SELECT setting_key, setting_value FROM dc_player_qos_settings WHERE guid = "
+            + std::to_string(guid);
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([guid](QueryResult result)
+        {
+            QoSSettings settings;
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    ApplyPlayerSetting(settings,
+                        fields[0].Get<std::string>(),
+                        fields[1].Get<std::string>());
+                } while (result->NextRow());
+            }
+
+            std::lock_guard<std::mutex> lock(s_PlayerSettingsCacheMutex);
+            s_PlayerSettingsCache.emplace(guid, std::move(settings));
+        }));
+    }
+
     void SavePlayerSetting(Player* player, const std::string& key, const std::string& value)
     {
         if (!player)
@@ -2658,6 +2698,76 @@ namespace DCQoS
         msg.Send(player);
     }
 
+    // ------------------------------------------------------------------
+    // Custom item/spell tooltip data caches.
+    // dc_item_custom_data / dc_spell_custom_data are small, static world
+    // tables, but SendItemInfo/SendSpellInfo fire on TOOLTIP HOVER -- the most
+    // frequent request in the entire addon protocol -- and each issued a
+    // synchronous WorldDatabase query on the world thread (the same class as
+    // the observed 18s World.UpdateSessions stalls). Load each table once and
+    // serve every hover from memory; the tables only change with world-DB
+    // content updates, which require a restart anyway.
+    // ------------------------------------------------------------------
+    struct CustomItemTooltipData
+    {
+        std::string note;
+        std::string source;
+        bool isCustom = false;
+    };
+
+    struct CustomSpellTooltipData
+    {
+        std::string note;
+        std::string modifiedValues;
+    };
+
+    static std::unordered_map<uint32, CustomItemTooltipData> const& GetCustomItemTooltipCache()
+    {
+        static std::unordered_map<uint32, CustomItemTooltipData> cache;
+        static bool loaded = false;
+        if (!loaded)
+        {
+            loaded = true;
+            if (QueryResult result = WorldDatabase.Query(
+                "SELECT item_id, custom_note, custom_source, is_custom FROM dc_item_custom_data"))
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    CustomItemTooltipData& entry = cache[fields[0].Get<uint32>()];
+                    entry.note = fields[1].Get<std::string>();
+                    entry.source = fields[2].Get<std::string>();
+                    entry.isCustom = fields[3].Get<bool>();
+                } while (result->NextRow());
+            }
+            LOG_INFO("module.dc", "[DCQoS] Cached {} custom item tooltip rows", cache.size());
+        }
+        return cache;
+    }
+
+    static std::unordered_map<uint32, CustomSpellTooltipData> const& GetCustomSpellTooltipCache()
+    {
+        static std::unordered_map<uint32, CustomSpellTooltipData> cache;
+        static bool loaded = false;
+        if (!loaded)
+        {
+            loaded = true;
+            if (QueryResult result = WorldDatabase.Query(
+                "SELECT spell_id, custom_note, modified_values FROM dc_spell_custom_data"))
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    CustomSpellTooltipData& entry = cache[fields[0].Get<uint32>()];
+                    entry.note = fields[1].Get<std::string>();
+                    entry.modifiedValues = fields[2].Get<std::string>();
+                } while (result->NextRow());
+            }
+            LOG_INFO("module.dc", "[DCQoS] Cached {} custom spell tooltip rows", cache.size());
+        }
+        return cache;
+    }
+
     void SendItemInfo(Player* player, uint32 itemId)
     {
         if (!player || !player->GetSession())
@@ -2687,18 +2797,14 @@ namespace DCQoS
         msg.Set("sellPrice", itemTemplate->SellPrice);
         msg.Set("buyPrice", itemTemplate->BuyPrice);
 
-        // Check for custom item data
-        QueryResult customResult = WorldDatabase.Query(
-            "SELECT custom_note, custom_source, is_custom FROM dc_item_custom_data WHERE item_id = {}",
-            itemId
-        );
-
-        if (customResult)
+        // Custom item data from the in-memory cache (never query the DB on the
+        // tooltip-hover path).
+        auto const& customItems = GetCustomItemTooltipCache();
+        if (auto itr = customItems.find(itemId); itr != customItems.end())
         {
-            Field* fields = customResult->Fetch();
-            msg.Set("customNote", fields[0].Get<std::string>());
-            msg.Set("customSource", fields[1].Get<std::string>());
-            msg.Set("isCustom", fields[2].Get<bool>());
+            msg.Set("customNote", itr->second.note);
+            msg.Set("customSource", itr->second.source);
+            msg.Set("isCustom", itr->second.isCustom);
         }
 
         msg.Send(player);
@@ -2890,17 +2996,13 @@ namespace DCQoS
         msg.Set("cooldown", spellInfo->RecoveryTime);
         msg.Set("category", spellInfo->GetCategory());
 
-        // Check for custom spell modifications
-        QueryResult customResult = WorldDatabase.Query(
-            "SELECT custom_note, modified_values FROM dc_spell_custom_data WHERE spell_id = {}",
-            spellId
-        );
-
-        if (customResult)
+        // Custom spell data from the in-memory cache (never query the DB on the
+        // tooltip-hover path).
+        auto const& customSpells = GetCustomSpellTooltipCache();
+        if (auto itr = customSpells.find(spellId); itr != customSpells.end())
         {
-            Field* fields = customResult->Fetch();
-            msg.Set("customNote", fields[0].Get<std::string>());
-            msg.Set("modifiedValues", fields[1].Get<std::string>());
+            msg.Set("customNote", itr->second.note);
+            msg.Set("modifiedValues", itr->second.modifiedValues);
         }
 
         msg.Send(player);
@@ -5252,6 +5354,10 @@ public:
     {
         if (!DCQoS::IsEnabled() || !player)
             return;
+
+        // Async settings-cache warm: keeps GetPlayerSettingsCached off the
+        // synchronous DB fallback for the whole session.
+        DCQoS::WarmPlayerSettingsCacheAsync(player);
 
         // Pre-push spell enrichment data so first-hover tooltips are instant.
         // Delayed 3 s to let the addon initialize and open its protocol channel.

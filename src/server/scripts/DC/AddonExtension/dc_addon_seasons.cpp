@@ -296,27 +296,40 @@ namespace Seasons
         uint32 seasonId = DarkChaos::GetActiveSeasonId();
         std::string seasonName = DarkChaos::GetActiveSeasonName();
 
-        uint32 startTime = 0;
-        uint32 endTime = 0;
-
-        if (QueryResult result = WorldDatabase.Query(
+        // Async: the last synchronous query in this file (every sibling handler
+        // was already converted) -- season metadata must not block the world
+        // thread on panel open.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(WorldDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT season_name, start_timestamp, end_timestamp FROM dc_seasons WHERE season_id = {}",
             seasonId))
+            .WithCallback([playerGuid, seasonId, seasonName](QueryResult result)
         {
-            Field* fields = result->Fetch();
-            std::string dbName = fields[0].Get<std::string>();
-            if (!dbName.empty())
-                seasonName = dbName;
-            startTime = fields[1].Get<uint64>();
-            endTime = fields[2].Get<uint64>();
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        uint32 now = static_cast<uint32>(time(nullptr));
-        uint32 daysRemaining = 0;
-        if (endTime > now)
-            daysRemaining = (endTime - now) / 86400;
+            std::string resolvedName = seasonName;
+            uint32 startTime = 0;
+            uint32 endTime = 0;
 
-        SendSeasonInfo(player, seasonId, seasonName, startTime, endTime, daysRemaining);
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                std::string dbName = fields[0].Get<std::string>();
+                if (!dbName.empty())
+                    resolvedName = dbName;
+                startTime = fields[1].Get<uint64>();
+                endTime = fields[2].Get<uint64>();
+            }
+
+            uint32 now = static_cast<uint32>(time(nullptr));
+            uint32 daysRemaining = 0;
+            if (endTime > now)
+                daysRemaining = (endTime - now) / 86400;
+
+            SendSeasonInfo(player, seasonId, resolvedName, startTime, endTime, daysRemaining);
+        }));
     }
 
     static void HandleGetProgress(Player* player, const ParsedMessage& msg)

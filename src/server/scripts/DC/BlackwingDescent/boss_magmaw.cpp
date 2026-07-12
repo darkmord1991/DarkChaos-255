@@ -388,7 +388,7 @@ struct boss_magmaw : public BossAI
                 events.ScheduleEvent(EVENT_IMPALE_SELF, 1s, 0, PHASE_IMPALED);
                 break;
             case ACTION_ENABLE_MOUNTING:
-                me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                me->SetNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
                 me->SetFlag(UNIT_FIELD_FLAGS_2, 0);
 
                 if (Creature* head = GetBodyPart(BODY_PART_EXPOSED_HEAD_1))
@@ -400,7 +400,7 @@ struct boss_magmaw : public BossAI
                 events.ScheduleEvent(EVENT_ANNOUNCE_PINCERS_EXPOSED, 1s, 0, PHASE_COMBAT);
                 break;
             case ACTION_DISABLE_MOUNTING:
-                me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
                 me->RemoveFlag(UNIT_FIELD_FLAGS_2, 0);
 
                 if (events.IsInPhase(PHASE_COMBAT))
@@ -1055,7 +1055,6 @@ class spell_magmaw_launch_hook : public AuraScript
         AfterEffectApply += AuraEffectApplyFn(spell_magmaw_launch_hook::AfterApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
-
 
 class spell_magmaw_eject_passenger : public SpellScript
 {

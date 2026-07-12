@@ -174,7 +174,6 @@ enum Data
     DATA_REMOVE_NOISY_PLAYER                = 2,
     DATA_LAST_SHIELD_USER                   = 3,
 
-
     // Getter
     DATA_IS_IN_AIR                          = 0,
     DATA_HAS_NOISY_PLAYER                   = 1,
@@ -247,7 +246,7 @@ struct boss_atramedes : public BossAI
 
     void KilledUnit(Unit* victim) override
     {
-        if (victim->GetTypeId() == TYPEID_PLAYER)
+        if (victim->IsPlayer())
             Talk(SAY_SLAY, victim);
     }
 
@@ -508,7 +507,7 @@ struct npc_atramedes_ancient_dwarven_shield : public NullCreatureAI
             DoCastSelf(SPELL_RESONATING_CLASH_GROUND);
 
         me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-        me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+        me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
     }
 
 private:
@@ -1119,7 +1118,7 @@ class spell_atramedes_apply_vehicle_periodic : public AuraScript
         PrepareAuraScript(spell_atramedes_apply_vehicle_periodic);
     void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        GetTarget()->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_PLAYER_VEHICLE);
+        GetTarget()->RemoveNpcFlag(UNIT_NPC_FLAG_PLAYER_VEHICLE);
     }
 
     void Register() override

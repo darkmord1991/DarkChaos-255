@@ -1411,6 +1411,131 @@ namespace DCCollection
         return it != s_companionItemCache.end() ? it->second : 0;
     }
 
+    // ------------------------------------------------------------------
+    // Item -> source index (boss drop / vendor / quest / any drop).
+    //
+    // The old buildSourceForItem ran up to FOUR per-item WorldDatabase
+    // queries; SendDefinitions calls it across every mount/pet with a blank
+    // stored source, so one cold definitions request could fire thousands of
+    // synchronous world queries in a single tick. This preloads the same
+    // static world tables ONCE and answers every lookup from memory.
+    // Editing those tables requires a worldserver restart to reflect here.
+    // ------------------------------------------------------------------
+    struct ItemSourceDropRow
+    {
+        std::string name;
+        uint32 entry = 0;
+        float chance = 0.0f;
+    };
+    struct ItemSourceVendorRow
+    {
+        std::string name;
+        uint32 entry = 0;
+    };
+    struct ItemSourceIndex
+    {
+        std::unordered_map<uint32, ItemSourceDropRow> bossDrop;   // best boss/elite drop
+        std::unordered_map<uint32, ItemSourceDropRow> anyDrop;    // best drop of any creature
+        std::unordered_map<uint32, ItemSourceVendorRow> vendor;   // first vendor
+        std::unordered_map<uint32, uint32> quest;                 // first quest reward
+    };
+
+    ItemSourceIndex const& GetItemSourceIndex()
+    {
+        static ItemSourceIndex s_index;
+        static bool s_loaded = false;
+        static std::mutex s_mutex;
+
+        std::lock_guard<std::mutex> lock(s_mutex);
+        if (s_loaded)
+            return s_index;
+        s_loaded = true;
+
+        // Creature drops: one scan builds both the boss-only map (rank >= 3 OR
+        // the 0x8000 unit_flag) and the any-creature map, keeping the
+        // highest-Chance row per item -- matching the old
+        // "ORDER BY clt.Chance DESC LIMIT 1" behaviour.
+        if (QueryResult r = WorldDatabase.Query(
+            "SELECT clt.Item, ct.name, ct.entry, clt.Chance, ct.rank, ct.unit_flags "
+            "FROM creature_loot_template clt "
+            "JOIN creature_template ct ON ct.lootid = clt.Entry"))
+        {
+            do
+            {
+                Field* f = r->Fetch();
+                uint32 itemId = f[0].Get<uint32>();
+                if (!itemId)
+                    continue;
+
+                ItemSourceDropRow row;
+                row.name = f[1].Get<std::string>();
+                row.entry = f[2].Get<uint32>();
+                row.chance = f[3].Get<float>();
+                uint32 rank = f[4].Get<uint8>();
+                uint32 unitFlags = f[5].Get<uint32>();
+
+                auto anyIt = s_index.anyDrop.find(itemId);
+                if (anyIt == s_index.anyDrop.end() || row.chance > anyIt->second.chance)
+                    s_index.anyDrop[itemId] = row;
+
+                if (rank >= 3 || (unitFlags & 32768) > 0)
+                {
+                    auto bossIt = s_index.bossDrop.find(itemId);
+                    if (bossIt == s_index.bossDrop.end() || row.chance > bossIt->second.chance)
+                        s_index.bossDrop[itemId] = row;
+                }
+            } while (r->NextRow());
+        }
+
+        // Vendors: keep the first vendor seen per item (old query used LIMIT 1
+        // with no ORDER BY, so which vendor won was already unspecified).
+        if (QueryResult r = WorldDatabase.Query(
+            "SELECT nv.item, ct.name, ct.entry "
+            "FROM npc_vendor nv "
+            "JOIN creature_template ct ON ct.entry = nv.entry"))
+        {
+            do
+            {
+                Field* f = r->Fetch();
+                uint32 itemId = f[0].Get<uint32>();
+                if (!itemId)
+                    continue;
+
+                ItemSourceVendorRow row;
+                row.name = f[1].Get<std::string>();
+                row.entry = f[2].Get<uint32>();
+                s_index.vendor.try_emplace(itemId, std::move(row));
+            } while (r->NextRow());
+        }
+
+        // Quest rewards: first quest that grants the item (old query LIMIT 1).
+        if (QueryResult r = WorldDatabase.Query(
+            "SELECT ID, RewardItem1, RewardItem2, RewardItem3, RewardItem4, "
+            "RewardChoiceItemID1, RewardChoiceItemID2, RewardChoiceItemID3, "
+            "RewardChoiceItemID4, RewardChoiceItemID5, RewardChoiceItemID6 "
+            "FROM quest_template"))
+        {
+            do
+            {
+                Field* f = r->Fetch();
+                uint32 questId = f[0].Get<uint32>();
+                for (uint8 i = 1; i <= 10; ++i)
+                {
+                    uint32 rewardItem = f[i].Get<uint32>();
+                    if (rewardItem)
+                        s_index.quest.try_emplace(rewardItem, questId);
+                }
+            } while (r->NextRow());
+        }
+
+        LOG_INFO("module.dc", "DC-Collection: item source index preloaded "
+            "(boss={}, any={}, vendor={}, quest={})",
+            s_index.bossDrop.size(), s_index.anyDrop.size(),
+            s_index.vendor.size(), s_index.quest.size());
+
+        return s_index;
+    }
+
     uint32 FindMountItemIdForSpell(uint32 spellId)
     {
         // Fully preloaded spellId -> teaching-item map (same fix as
@@ -2531,19 +2656,19 @@ namespace DCCollection
         return cached;
     }
 
-    std::vector<uint32> LoadLegacyTitleCollection(uint32 accountId)
+    // Builds the schema-variant-aware legacy-title SELECT. Returns an empty
+    // string when the legacy table/columns are absent. Shared by the sync
+    // LoadLegacyTitleCollection and the async login import chain (which must
+    // not run the SELECT on the world thread).
+    std::string BuildLegacyTitleCollectionQuery(uint32 accountId)
     {
-        std::vector<uint32> items;
-
         if (!CharacterTableExists("dc_title_collection"))
-            return items;
+            return std::string();
 
         std::string const& accountCol = GetLegacyTitleAccountColumn();
         std::string const& entryCol = GetLegacyTitleEntryColumn();
         if (entryCol.empty())
-            return items;
-
-        QueryResult result;
+            return std::string();
 
         if (!accountCol.empty())
         {
@@ -2551,34 +2676,43 @@ namespace DCCollection
             if (CharacterColumnExists("dc_title_collection", "unlocked"))
                 unlockedFilter = " AND unlocked = 1";
 
-            result = CharacterDatabase.Query(
+            return Acore::StringFormat(
                 "SELECT {} FROM dc_title_collection WHERE {} = {}{}",
                 entryCol,
                 accountCol,
                 accountId,
                 unlockedFilter);
         }
-        else
-        {
-            std::string const& guidCol = GetLegacyTitleGuidColumn();
-            std::string const& charsAccountCol = GetCharactersAccountColumn();
-            if (guidCol.empty() || charsAccountCol.empty())
-                return items;
 
-            std::string unlockedFilter;
-            if (CharacterColumnExists("dc_title_collection", "unlocked"))
-                unlockedFilter = " AND t.unlocked = 1";
+        std::string const& guidCol = GetLegacyTitleGuidColumn();
+        std::string const& charsAccountCol = GetCharactersAccountColumn();
+        if (guidCol.empty() || charsAccountCol.empty())
+            return std::string();
 
-            result = CharacterDatabase.Query(
-                "SELECT t.{} FROM dc_title_collection t "
-                "INNER JOIN characters c ON c.guid = t.{} "
-                "WHERE c.{} = {}{}",
-                entryCol,
-                guidCol,
-                charsAccountCol,
-                accountId,
-                unlockedFilter);
-        }
+        std::string unlockedFilter;
+        if (CharacterColumnExists("dc_title_collection", "unlocked"))
+            unlockedFilter = " AND t.unlocked = 1";
+
+        return Acore::StringFormat(
+            "SELECT t.{} FROM dc_title_collection t "
+            "INNER JOIN characters c ON c.guid = t.{} "
+            "WHERE c.{} = {}{}",
+            entryCol,
+            guidCol,
+            charsAccountCol,
+            accountId,
+            unlockedFilter);
+    }
+
+    std::vector<uint32> LoadLegacyTitleCollection(uint32 accountId)
+    {
+        std::vector<uint32> items;
+
+        std::string sql = BuildLegacyTitleCollectionQuery(accountId);
+        if (sql.empty())
+            return items;
+
+        QueryResult result = CharacterDatabase.Query(sql);
 
         if (result)
         {
@@ -2750,12 +2884,12 @@ namespace DCCollection
         return cached;
     }
 
-    bool ShouldRunTransmogLegacyImport(uint32 accountId)
+    // Session-static probe cache (caches the NEGATIVE result too, matching the
+    // pre-async behaviour: a missing migrations table falls back to the
+    // in-memory once-per-session set for the whole world session instead of
+    // re-probing on every login).
+    bool HasCollectionMigrationsTable()
     {
-        if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_ENABLED, true))
-            return false;
-
-        // Prefer a persistent migration flag when available.
         static bool checkedTable = false;
         static bool hasMigrationsTable = false;
         if (!checkedTable)
@@ -2763,8 +2897,27 @@ namespace DCCollection
             hasMigrationsTable = CharacterTableExists("dc_collection_migrations");
             checkedTable = true;
         }
+        return hasMigrationsTable;
+    }
 
-        if (hasMigrationsTable)
+    // Fallback gate used when dc_collection_migrations is absent: run the
+    // legacy transmog import once per server session per account.
+    bool ShouldRunTransmogLegacyImportSessionFallback(uint32 accountId)
+    {
+        static std::unordered_set<uint32> importedThisSession;
+        return importedThisSession.insert(accountId).second;
+    }
+
+    // Synchronous one-time gate, unchanged in behaviour from before the
+    // helper split above: prefer the persistent migration flag, otherwise
+    // fall back to the once-per-session set. (The login-chain async
+    // conversion is deferred; this keeps the import correct meanwhile.)
+    bool ShouldRunTransmogLegacyImport(uint32 accountId)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_ENABLED, true))
+            return false;
+
+        if (HasCollectionMigrationsTable())
         {
             QueryResult r = CharacterDatabase.Query(
                 "SELECT 1 FROM dc_collection_migrations WHERE account_id = {} AND migration_key = 'legacy_transmog_import_v1' LIMIT 1",
@@ -2772,18 +2925,12 @@ namespace DCCollection
             return r == nullptr;
         }
 
-        // Fallback: run once per server session per account.
-        static std::unordered_set<uint32> importedThisSession;
-        if (importedThisSession.find(accountId) != importedThisSession.end())
-            return false;
-
-        importedThisSession.insert(accountId);
-        return true;
+        return ShouldRunTransmogLegacyImportSessionFallback(accountId);
     }
 
     void MarkTransmogLegacyImportDone(uint32 accountId)
     {
-        if (!CharacterTableExists("dc_collection_migrations"))
+        if (!HasCollectionMigrationsTable())
             return;
 
         CharacterDatabase.Execute(
@@ -6240,68 +6387,44 @@ namespace DCCollection
             if (!itemId)
                 return src;
 
+            // Preloaded in-memory index (replaces the old 4-query-per-item N+1);
+            // same priority order: boss drop -> vendor -> quest -> any drop.
+            ItemSourceIndex const& index = GetItemSourceIndex();
+
             // Prefer boss drops.
-            if (QueryResult r = WorldDatabase.Query(
-                "SELECT ct.name, ct.entry, clt.Chance "
-                "FROM creature_loot_template clt "
-                "JOIN creature_template ct ON ct.lootid = clt.Entry "
-                "WHERE clt.Item = {} AND (ct.rank >= 3 OR (ct.unit_flags & 32768) > 0) "
-                "ORDER BY clt.Chance DESC LIMIT 1",
-                itemId))
+            if (auto it = index.bossDrop.find(itemId); it != index.bossDrop.end())
             {
-                Field* f = r->Fetch();
                 src.Set("type", DCAddon::JsonValue("drop"));
-                src.Set("boss", DCAddon::JsonValue(f[0].Get<std::string>()));
-                src.Set("creatureEntry", DCAddon::JsonValue(f[1].Get<uint32>()));
-                src.Set("dropRate", DCAddon::JsonValue(f[2].Get<float>()));
+                src.Set("boss", DCAddon::JsonValue(it->second.name));
+                src.Set("creatureEntry", DCAddon::JsonValue(it->second.entry));
+                src.Set("dropRate", DCAddon::JsonValue(it->second.chance));
                 return src;
             }
 
             // Vendors.
-            if (QueryResult r = WorldDatabase.Query(
-                "SELECT ct.name, ct.entry "
-                "FROM npc_vendor nv "
-                "JOIN creature_template ct ON ct.entry = nv.entry "
-                "WHERE nv.item = {} LIMIT 1",
-                itemId))
+            if (auto it = index.vendor.find(itemId); it != index.vendor.end())
             {
-                Field* f = r->Fetch();
                 src.Set("type", DCAddon::JsonValue("vendor"));
-                src.Set("npc", DCAddon::JsonValue(f[0].Get<std::string>()));
-                src.Set("npcEntry", DCAddon::JsonValue(f[1].Get<uint32>()));
+                src.Set("npc", DCAddon::JsonValue(it->second.name));
+                src.Set("npcEntry", DCAddon::JsonValue(it->second.entry));
                 return src;
             }
 
             // Quest rewards.
-            if (QueryResult r = WorldDatabase.Query(
-                "SELECT ID FROM quest_template WHERE "
-                "RewardItem1 = {} OR RewardItem2 = {} OR RewardItem3 = {} OR RewardItem4 = {} OR "
-                "RewardChoiceItemID1 = {} OR RewardChoiceItemID2 = {} OR RewardChoiceItemID3 = {} OR "
-                "RewardChoiceItemID4 = {} OR RewardChoiceItemID5 = {} OR RewardChoiceItemID6 = {} "
-                "LIMIT 1",
-                itemId, itemId, itemId, itemId,
-                itemId, itemId, itemId, itemId, itemId, itemId))
+            if (auto it = index.quest.find(itemId); it != index.quest.end())
             {
-                Field* f = r->Fetch();
                 src.Set("type", DCAddon::JsonValue("quest"));
-                src.Set("questId", DCAddon::JsonValue(f[0].Get<uint32>()));
+                src.Set("questId", DCAddon::JsonValue(it->second));
                 return src;
             }
 
             // Any creature drop.
-            if (QueryResult r = WorldDatabase.Query(
-                "SELECT ct.name, ct.entry, clt.Chance "
-                "FROM creature_loot_template clt "
-                "JOIN creature_template ct ON ct.lootid = clt.Entry "
-                "WHERE clt.Item = {} "
-                "ORDER BY clt.Chance DESC LIMIT 1",
-                itemId))
+            if (auto it = index.anyDrop.find(itemId); it != index.anyDrop.end())
             {
-                Field* f = r->Fetch();
                 src.Set("type", DCAddon::JsonValue("drop"));
-                src.Set("boss", DCAddon::JsonValue(f[0].Get<std::string>()));
-                src.Set("creatureEntry", DCAddon::JsonValue(f[1].Get<uint32>()));
-                src.Set("dropRate", DCAddon::JsonValue(f[2].Get<float>()));
+                src.Set("boss", DCAddon::JsonValue(it->second.name));
+                src.Set("creatureEntry", DCAddon::JsonValue(it->second.entry));
+                src.Set("dropRate", DCAddon::JsonValue(it->second.chance));
                 return src;
             }
 

@@ -10,6 +10,7 @@
 
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
 #include "Config.h"
@@ -194,23 +195,14 @@ namespace AOELoot
         return defaultValue;
     }
 
-    // Load settings from DB for player
+    static void SendSettingsSync(Player* player);
+
+    // Load settings from DB for player (async -- this used to run a synchronous
+    // CharacterDatabase query on the world thread on every login)
     // Uses dc_aoeloot_preferences (same table as dc_aoeloot_extensions.cpp)
-    static void LoadPlayerSettings(Player* player)
+    static void LoadPlayerSettingsAsync(Player* player, bool sendSyncAfter)
     {
-        uint32 guid = player->GetGUID().GetCounter();
-
-        PlayerAOESettings settings;
-        settings.enabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
-        settings.showMessages = DCAoELootExt::GetPlayerShowMessages(player->GetGUID());
-        settings.minQuality = DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
-        settings.autoSkin = DCAoELootExt::GetPlayerAutoSkin(player->GetGUID());
-        settings.smartLoot = DCAoELootExt::GetPlayerSmartLoot(player->GetGUID());
-        settings.autoVendorPoor = DCAoELootExt::GetPlayerAutoVendorPoor(player->GetGUID());
-        settings.goldOnly = DCAoELootExt::GetPlayerGoldOnly(player->GetGUID());
-        settings.lootRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
-
-        PreferenceSchemaInfo const& schema = GetPreferenceSchemaInfo();
+        PreferenceSchemaInfo const schema = GetPreferenceSchemaInfo();
 
         std::vector<std::string> columns =
         {
@@ -229,48 +221,71 @@ namespace AOELoot
         if (schema.hasLootRange)
             columns.push_back("loot_range");
 
+        ObjectGuid const playerGuid = player->GetGUID();
         std::string query = Acore::StringFormat(
             "SELECT {} FROM dc_aoeloot_preferences WHERE player_guid = {}",
-            DCUtils::JoinStringList(columns), guid);
+            DCUtils::JoinStringList(columns), playerGuid.GetCounter());
 
-        QueryResult result = CharacterDatabase.Query(query);
-        if (result)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(query)
+            .WithCallback([playerGuid, schema, sendSyncAfter](QueryResult result)
         {
-            Field* fields = result->Fetch();
-            uint8 idx = 0;
-            settings.enabled = fields[idx++].Get<bool>();
-            settings.minQuality = fields[idx++].Get<uint8>();
-            settings.autoSkin = fields[idx++].Get<bool>();
-            settings.smartLoot = fields[idx++].Get<bool>();
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-            if (schema.hasShowMessages)
-                settings.showMessages = fields[idx++].Get<bool>();
+            PlayerAOESettings settings;
+            settings.enabled = DCAoELootExt::IsPlayerAoELootEnabled(playerGuid);
+            settings.showMessages = DCAoELootExt::GetPlayerShowMessages(playerGuid);
+            settings.minQuality = DCAoELootExt::GetPlayerMinQuality(playerGuid);
+            settings.autoSkin = DCAoELootExt::GetPlayerAutoSkin(playerGuid);
+            settings.smartLoot = DCAoELootExt::GetPlayerSmartLoot(playerGuid);
+            settings.autoVendorPoor = DCAoELootExt::GetPlayerAutoVendorPoor(playerGuid);
+            settings.goldOnly = DCAoELootExt::GetPlayerGoldOnly(playerGuid);
+            settings.lootRange = DCAoELootExt::GetPlayerLootRange(playerGuid);
 
-            if (schema.hasAutoVendorPoor)
-                settings.autoVendorPoor = fields[idx++].Get<bool>();
-
-            if (schema.hasGoldOnly)
-                settings.goldOnly = fields[idx++].Get<bool>();
-
-            if (schema.hasLootRange)
+            if (result)
             {
-                settings.lootRange = fields[idx++].Get<float>();
-                if (settings.lootRange < 5.0f || settings.lootRange > 100.0f)
-                    settings.lootRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
+                Field* fields = result->Fetch();
+                uint8 idx = 0;
+                settings.enabled = fields[idx++].Get<bool>();
+                settings.minQuality = fields[idx++].Get<uint8>();
+                settings.autoSkin = fields[idx++].Get<bool>();
+                settings.smartLoot = fields[idx++].Get<bool>();
+
+                if (schema.hasShowMessages)
+                    settings.showMessages = fields[idx++].Get<bool>();
+
+                if (schema.hasAutoVendorPoor)
+                    settings.autoVendorPoor = fields[idx++].Get<bool>();
+
+                if (schema.hasGoldOnly)
+                    settings.goldOnly = fields[idx++].Get<bool>();
+
+                if (schema.hasLootRange)
+                {
+                    settings.lootRange = fields[idx++].Get<float>();
+                    if (settings.lootRange < 5.0f || settings.lootRange > 100.0f)
+                        settings.lootRange = DCAoELootExt::GetPlayerLootRange(playerGuid);
+                }
             }
-        }
 
-        DCAoELootExt::SetPlayerAoELootEnabled(player->GetGUID(), settings.enabled);
-        DCAoELootExt::SetPlayerShowMessages(player->GetGUID(), settings.showMessages);
-        DCAoELootExt::SetPlayerMinQuality(player->GetGUID(), settings.minQuality);
-        DCAoELootExt::SetPlayerAutoSkin(player->GetGUID(), settings.autoSkin);
-        DCAoELootExt::SetPlayerSmartLoot(player->GetGUID(), settings.smartLoot);
-        DCAoELootExt::SetPlayerAutoVendorPoor(player->GetGUID(), settings.autoVendorPoor);
-        DCAoELootExt::SetPlayerGoldOnly(player->GetGUID(), settings.goldOnly);
-        DCAoELootExt::SetPlayerLootRange(player->GetGUID(), settings.lootRange);
+            DCAoELootExt::SetPlayerAoELootEnabled(playerGuid, settings.enabled);
+            DCAoELootExt::SetPlayerShowMessages(playerGuid, settings.showMessages);
+            DCAoELootExt::SetPlayerMinQuality(playerGuid, settings.minQuality);
+            DCAoELootExt::SetPlayerAutoSkin(playerGuid, settings.autoSkin);
+            DCAoELootExt::SetPlayerSmartLoot(playerGuid, settings.smartLoot);
+            DCAoELootExt::SetPlayerAutoVendorPoor(playerGuid, settings.autoVendorPoor);
+            DCAoELootExt::SetPlayerGoldOnly(playerGuid, settings.goldOnly);
+            DCAoELootExt::SetPlayerLootRange(playerGuid, settings.lootRange);
 
-        std::lock_guard<std::mutex> lock(s_SettingsMutex);
-        s_PlayerSettings[guid] = settings;
+            {
+                std::lock_guard<std::mutex> lock(s_SettingsMutex);
+                s_PlayerSettings[playerGuid.GetCounter()] = settings;
+            }
+
+            if (sendSyncAfter)
+                SendSettingsSync(player);
+        }));
     }
 
     // Save settings to DB
@@ -361,44 +376,6 @@ namespace AOELoot
             DCUtils::JoinStringList(columns), DCUtils::JoinStringList(values), DCUtils::JoinStringList(updates)));
     }
 
-    // Get player stats - uses live in-memory stats from dc_aoeloot_extensions first,
-    // falls back to DB for persisted data (e.g. from previous sessions)
-    static void GetPlayerStats(Player* player, uint32& itemsLooted, uint32& goldLooted, uint32& skinned)
-    {
-        // First try to get live in-memory stats (updated in real-time by ac_aoeloot.cpp)
-        uint32 memItems = 0, memGold = 0, memUpgrades = 0;
-        DCAoELootExt::GetDetailedStats(player->GetGUID(), memItems, memGold, memUpgrades);
-
-        // If we have in-memory stats, use them directly
-        if (memItems > 0 || memGold > 0)
-        {
-            itemsLooted = memItems;
-            goldLooted = memGold;
-            skinned = memUpgrades; // upgradesFound maps to skinned in legacy schema
-            return;
-        }
-
-        // Fall back to database for previous session data
-        uint32 guid = player->GetGUID().GetCounter();
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COALESCE(total_items, 0), COALESCE(total_gold, 0), "
-            "COALESCE(skinned, 0) FROM dc_aoeloot_detailed_stats WHERE player_guid = {}", guid);
-
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            itemsLooted = fields[0].Get<uint32>();
-            goldLooted = fields[1].Get<uint32>();
-            skinned = fields[2].Get<uint32>();
-        }
-        else
-        {
-            itemsLooted = 0;
-            goldLooted = 0;
-            skinned = 0;
-        }
-    }
-
     // Send current settings to client
     static void SendSettingsSync(Player* player)
     {
@@ -416,12 +393,9 @@ namespace AOELoot
 
         if (needsLoad)
         {
-            LoadPlayerSettings(player);
-            std::lock_guard<std::mutex> lock(s_SettingsMutex);
-            auto it = s_PlayerSettings.find(guid);
-            if (it == s_PlayerSettings.end())
-                return;
-            snapshot = it->second;
+            // Async load repopulates the cache, then re-enters this function.
+            LoadPlayerSettingsAsync(player, true);
+            return;
         }
 
         snapshot.enabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
@@ -520,17 +494,51 @@ namespace AOELoot
         LOG_DEBUG("dc.addon.aoe", "Player {} set min quality to {}", player->GetName(), quality);
     }
 
-    // Handler: Get loot stats
+    // Handler: Get loot stats - uses live in-memory stats from dc_aoeloot_extensions
+    // first, falls back to DB (async) for persisted data from previous sessions
     static void HandleGetStats(Player* player, const ParsedMessage& /*msg*/)
     {
-        uint32 items, gold, skinned;
-        GetPlayerStats(player, items, gold, skinned);
+        // Live in-memory stats (updated in real-time by ac_aoeloot.cpp) answer
+        // without touching the database
+        uint32 memItems = 0, memGold = 0, memUpgrades = 0;
+        DCAoELootExt::GetDetailedStats(player->GetGUID(), memItems, memGold, memUpgrades);
 
-        Message(Module::AOE_LOOT, Opcode::AOE::SMSG_STATS)
-            .Add(items)
-            .Add(gold)
-            .Add(skinned)
-            .Send(player);
+        if (memItems > 0 || memGold > 0)
+        {
+            Message(Module::AOE_LOOT, Opcode::AOE::SMSG_STATS)
+                .Add(memItems)
+                .Add(memGold)
+                .Add(memUpgrades) // upgradesFound maps to skinned in legacy schema
+                .Send(player);
+            return;
+        }
+
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            "SELECT COALESCE(total_items, 0), COALESCE(total_gold, 0), "
+            "COALESCE(skinned, 0) FROM dc_aoeloot_detailed_stats WHERE player_guid = {}",
+            playerGuid.GetCounter()))
+            .WithCallback([playerGuid](QueryResult result)
+        {
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            uint32 items = 0, gold = 0, skinned = 0;
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                items = fields[0].Get<uint32>();
+                gold = fields[1].Get<uint32>();
+                skinned = fields[2].Get<uint32>();
+            }
+
+            Message(Module::AOE_LOOT, Opcode::AOE::SMSG_STATS)
+                .Add(items)
+                .Add(gold)
+                .Add(skinned)
+                .Send(player);
+        }));
     }
 
     // Handler: Set auto-skin
@@ -728,8 +736,7 @@ namespace AOELoot
         if (!MessageRouter::Instance().IsModuleEnabled(Module::AOE_LOOT))
             return;
 
-        LoadPlayerSettings(player);
-        SendSettingsSync(player);
+        LoadPlayerSettingsAsync(player, /*sendSyncAfter*/ true);
     }
 
     // Player logout hook - cleanup

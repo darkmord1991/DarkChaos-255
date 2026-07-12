@@ -11,6 +11,7 @@
 #include "Common.h"
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "dc_addon_groupfinder_mgr.h"
 #include "Group.h"
@@ -291,6 +292,111 @@ namespace GroupFinder
     }
 
     // ========================================================================
+    // DUNGEON CACHE
+    // ========================================================================
+    //
+    // dc_mplus_dungeons is a static world configuration table, but it used to
+    // be re-queried from the DB on every CMSG_GET_DUNGEON_LIST request. Load it
+    // once (lazily) into memory and serve every request from the cache.
+    // NOTE: changes to dc_mplus_dungeons require a worldserver restart to show.
+
+    namespace
+    {
+        struct DungeonCacheEntry
+        {
+            uint32 dungeonId = 0;
+            std::string name;
+            std::string shortName;
+            uint32 baseTimer = 0;
+            uint32 bossCount = 0;
+            uint32 difficultyRating = 0;
+        };
+
+        std::mutex sDungeonCacheMutex;
+        bool sDungeonCacheLoaded = false;
+        std::vector<DungeonCacheEntry> sDungeonCache;
+        std::string sDungeonListJson = "[]";    // pre-encoded SMSG_DUNGEON_LIST array
+
+        // Must be called with sDungeonCacheMutex held.
+        void LoadDungeonCacheLocked()
+        {
+            if (sDungeonCacheLoaded)
+                return;
+
+            sDungeonCacheLoaded = true;
+
+            // One-time synchronous read of a static world config table.
+            // Note: dungeon_id IS the map_id in this table.
+            QueryResult result = WorldDatabase.Query(
+                "SELECT dungeon_id, dungeon_name, short_name, base_timer, boss_count, difficulty_rating "
+                "FROM dc_mplus_dungeons WHERE season_enabled = 1 ORDER BY dungeon_name");
+
+            std::ostringstream dungeonArray;
+            dungeonArray << "[";
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+
+                    DungeonCacheEntry entry;
+                    entry.dungeonId = fields[0].Get<uint32>();
+                    entry.name = fields[1].Get<std::string>();
+                    entry.shortName = fields[2].Get<std::string>();
+                    entry.baseTimer = fields[3].Get<uint32>();
+                    entry.bossCount = fields[4].Get<uint32>();
+                    entry.difficultyRating = fields[5].Get<uint32>();
+
+                    if (!sDungeonCache.empty())
+                        dungeonArray << ",";
+
+                    dungeonArray << "{";
+                    dungeonArray << "\"id\":" << entry.dungeonId << ",";
+                    dungeonArray << "\"name\":\"" << entry.name << "\",";
+                    dungeonArray << "\"short\":\"" << entry.shortName << "\",";
+                    dungeonArray << "\"timer\":" << entry.baseTimer << ",";
+                    dungeonArray << "\"bosses\":" << entry.bossCount << ",";
+                    dungeonArray << "\"difficulty\":" << entry.difficultyRating << ",";
+                    dungeonArray << "\"mapId\":" << entry.dungeonId;  // dungeon_id IS the map_id
+                    dungeonArray << "}";
+
+                    sDungeonCache.push_back(std::move(entry));
+                } while (result->NextRow());
+            }
+
+            dungeonArray << "]";
+            sDungeonListJson = dungeonArray.str();
+
+            LOG_INFO("dc.addon", "Group Finder dungeon cache loaded {} season dungeons from dc_mplus_dungeons",
+                sDungeonCache.size());
+        }
+
+        // Pre-encoded dungeon list payload; outCount receives the row count.
+        std::string GetDungeonListJson(uint32& outCount)
+        {
+            std::lock_guard<std::mutex> lock(sDungeonCacheMutex);
+            LoadDungeonCacheLocked();
+            outCount = static_cast<uint32>(sDungeonCache.size());
+            return sDungeonListJson;
+        }
+
+        // Name lookup by dungeon_id (map id). Empty string when unknown --
+        // mirrors the NULL dungeon_name the old cross-DB LEFT JOIN produced.
+        std::string GetDungeonNameById(uint32 dungeonId)
+        {
+            std::lock_guard<std::mutex> lock(sDungeonCacheMutex);
+            LoadDungeonCacheLocked();
+
+            for (DungeonCacheEntry const& entry : sDungeonCache)
+                if (entry.dungeonId == dungeonId)
+                    return entry.name;
+
+            return "";
+        }
+    }
+
+    // ========================================================================
     // LISTING TYPES
     // ========================================================================
 
@@ -398,26 +504,6 @@ namespace GroupFinder
         }
 
         auto json = GetJsonData(msg);
-        // Player GUID used to check limits, ownership and DB queries
-        uint32 guid = player->GetGUID().GetCounter();
-
-        // Check if player already has max listings
-        QueryResult countResult = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_group_finder_listings WHERE leader_guid = {} AND status = 1",
-            guid);
-
-        if (countResult)
-        {
-            uint32 count = (*countResult)[0].Get<uint32>();
-            if (count >= s_MaxListingsPerPlayer)
-            {
-                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                    .Set("error", "Maximum listings reached")
-                    .Set("max", static_cast<int32>(s_MaxListingsPerPlayer))
-                    .Send(player);
-                return;
-            }
-        }
 
         std::string category = JsonGetString(json, "category", "");
         // Extract listing data
@@ -443,52 +529,85 @@ namespace GroupFinder
         if (difficultyId < 0 && json["difficulty"].IsNumber())
             difficultyId = json["difficulty"].AsInt32();
 
-        if (difficultyId < 0)
+        // ASYNC max-listings check: this ran a synchronous COUNT(*) on the
+        // world thread per create request. The parsed request fields are
+        // captured by value; the player is re-resolved in the callback.
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string const countSql = Acore::StringFormat(
+            "SELECT COUNT(*) FROM dc_group_finder_listings WHERE leader_guid = {} AND status = 1",
+            playerGuid.GetCounter());
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(countSql)
+            .WithCallback([playerGuid, listingType, dungeonId, dungeonName, keystoneLevel, minIlvl,
+                needTank, needHealer, needDps, note, difficultyId](QueryResult countResult)
         {
-            difficultyId = listingType == LISTING_RAID
-                ? static_cast<int32>(player->GetRaidDifficulty())
-                : static_cast<int32>(player->GetDungeonDifficulty());
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        // Get group GUID if in a group
-        uint32 groupGuid = 0;
-        if (Group* group = player->GetGroup())
-            groupGuid = group->GetGUID().GetCounter();
+            if (countResult)
+            {
+                uint32 count = (*countResult)[0].Get<uint32>();
+                if (count >= s_MaxListingsPerPlayer)
+                {
+                    JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                        .Set("error", "Maximum listings reached")
+                        .Set("max", static_cast<int32>(s_MaxListingsPerPlayer))
+                        .Send(player);
+                    return;
+                }
+            }
 
-        // Create listing object
-        DCAddon::GroupFinderListing listing;
-        listing.listingType = listingType;
-        listing.dungeonId = dungeonId;
-        listing.dungeonName = dungeonName;
-        listing.difficulty = static_cast<uint8>(difficultyId);
-        listing.keystoneLevel = keystoneLevel;
-        listing.minIlvl = minIlvl;
-        listing.needTank = needTank;
-        listing.needHealer = needHealer;
-        listing.needDps = needDps;
-        listing.note = note;
-        listing.groupGuid = groupGuid;
+            int32 resolvedDifficulty = difficultyId;
+            if (resolvedDifficulty < 0)
+            {
+                resolvedDifficulty = listingType == LISTING_RAID
+                    ? static_cast<int32>(player->GetRaidDifficulty())
+                    : static_cast<int32>(player->GetDungeonDifficulty());
+            }
 
-        // Create listing via manager (handles DB and cache)
-        uint32 listingId = sGroupFinderMgr.CreateListing(player, listing);
+            // Get group GUID if in a group
+            uint32 groupGuid = 0;
+            if (Group* group = player->GetGroup())
+                groupGuid = group->GetGUID().GetCounter();
 
-        if (listingId > 0)
-        {
-            InvalidateSearchListingsCache();
+            // Create listing object
+            DCAddon::GroupFinderListing listing;
+            listing.listingType = listingType;
+            listing.dungeonId = dungeonId;
+            listing.dungeonName = dungeonName;
+            listing.difficulty = static_cast<uint8>(resolvedDifficulty);
+            listing.keystoneLevel = keystoneLevel;
+            listing.minIlvl = minIlvl;
+            listing.needTank = needTank;
+            listing.needHealer = needHealer;
+            listing.needDps = needDps;
+            listing.note = note;
+            listing.groupGuid = groupGuid;
 
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_LISTING_CREATED)
-                .Set("success", true)
-                .Set("listingId", static_cast<int32>(listingId))
-                .Send(player);
+            // Create listing via manager (handles DB and cache).
+            // NOTE: the manager still performs one internal synchronous
+            // insert-id read-back under its own mutex (mgr left untouched).
+            uint32 listingId = sGroupFinderMgr.CreateListing(player, listing);
 
-            LOG_DEBUG("dc.groupfinder", "Player {} created listing #{}", player->GetName(), listingId);
-        }
-        else
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Failed to create listing")
-                .Send(player);
-        }
+            if (listingId > 0)
+            {
+                InvalidateSearchListingsCache();
+
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_LISTING_CREATED)
+                    .Set("success", true)
+                    .Set("listingId", static_cast<int32>(listingId))
+                    .Send(player);
+
+                LOG_DEBUG("dc.groupfinder", "Player {} created listing #{}", player->GetName(), listingId);
+            }
+            else
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Failed to create listing")
+                    .Send(player);
+            }
+        }));
     }
 
     // Search for available listings
@@ -592,27 +711,40 @@ namespace GroupFinder
             return;
         }
 
+        // NOTE: ApplyToListing stays synchronous; the manager performs its
+        // internal insert-id read-back under its own mutex (mgr left untouched).
         if (sGroupFinderMgr.ApplyToListing(player, listingId, roleMask, message))
         {
             InvalidateSearchListingsCache();
 
-            uint8 applicationStatus = GF_APP_PENDING;
-            QueryResult appResult = CharacterDatabase.Query(
+            // ASYNC status read-back: this ran a synchronous SELECT on the
+            // world thread per application to learn the stored status.
+            ObjectGuid playerGuid = player->GetGUID();
+            std::string const statusSql = Acore::StringFormat(
                 "SELECT status FROM dc_group_finder_applications "
                 "WHERE listing_id = {} AND player_guid = {} "
                 "ORDER BY id DESC LIMIT 1",
-                listingId, player->GetGUID().GetCounter());
+                listingId, playerGuid.GetCounter());
 
-            if (appResult)
-                applicationStatus = (*appResult)[0].Get<uint8>();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(statusSql)
+                .WithCallback([playerGuid](QueryResult appResult)
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
 
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
-                .Set("success", true)
-                .Set("status", applicationStatus == GF_APP_ACCEPTED ? "accepted" : "pending")
-                .Set("message", applicationStatus == GF_APP_ACCEPTED
-                    ? "Application accepted"
-                    : "Application submitted")
-                .Send(player);
+                uint8 applicationStatus = GF_APP_PENDING;
+                if (appResult)
+                    applicationStatus = (*appResult)[0].Get<uint8>();
+
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
+                    .Set("success", true)
+                    .Set("status", applicationStatus == GF_APP_ACCEPTED ? "accepted" : "pending")
+                    .Set("message", applicationStatus == GF_APP_ACCEPTED
+                        ? "Application accepted"
+                        : "Application submitted")
+                    .Send(player);
+            }));
         }
         else
         {
@@ -791,52 +923,60 @@ namespace GroupFinder
     // Get player's keystone and difficulty info
     static void HandleGetMyKeystone(Player* player, const ParsedMessage& /*msg*/)
     {
-        uint32 guid = player->GetGUID().GetCounter();
+        // ASYNC keystone fetch: this ran a synchronous cross-DB JOIN against
+        // acore_world.dc_mplus_dungeons on the world thread per request. The
+        // dungeon name now resolves from the in-memory dungeon cache instead.
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string const keySql = Acore::StringFormat(
+            "SELECT map_id, level FROM dc_mplus_keystones WHERE character_guid = {}",
+            playerGuid.GetCounter());
 
-        // Get keystone info
-        QueryResult keyResult = CharacterDatabase.Query(
-            "SELECT k.map_id, k.level, d.dungeon_name "
-            "FROM dc_mplus_keystones k "
-            "LEFT JOIN acore_world.dc_mplus_dungeons d ON k.map_id = d.dungeon_id "
-            "WHERE k.character_guid = {}",
-            guid);
-
-        // Get current difficulty
-        uint8 dungeonDiff = player->GetDungeonDifficulty();
-        uint8 raidDiff = player->GetRaidDifficulty();
-
-        std::string dungeonDiffName = "Normal";
-        if (dungeonDiff == DUNGEON_DIFFICULTY_HEROIC) dungeonDiffName = "Heroic";
-        else if (dungeonDiff == DUNGEON_DIFFICULTY_EPIC) dungeonDiffName = "Mythic";
-
-        std::string raidDiffName = "10-man Normal";
-        switch (raidDiff)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(keySql)
+            .WithCallback([playerGuid](QueryResult keyResult)
         {
-            case RAID_DIFFICULTY_10MAN_NORMAL: raidDiffName = "10-man Normal"; break;
-            case RAID_DIFFICULTY_25MAN_NORMAL: raidDiffName = "25-man Normal"; break;
-            case RAID_DIFFICULTY_10MAN_HEROIC: raidDiffName = "10-man Heroic"; break;
-            case RAID_DIFFICULTY_25MAN_HEROIC: raidDiffName = "25-man Heroic"; break;
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        JsonMessage json(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_KEYSTONE_INFO);
-        json.Set("dungeonDifficulty", static_cast<int32>(dungeonDiff));
-        json.Set("dungeonDifficultyName", dungeonDiffName);
-        json.Set("raidDifficulty", static_cast<int32>(raidDiff));
-        json.Set("raidDifficultyName", raidDiffName);
+            // Get current difficulty
+            uint8 dungeonDiff = player->GetDungeonDifficulty();
+            uint8 raidDiff = player->GetRaidDifficulty();
 
-        if (keyResult)
-        {
-            json.Set("hasKeystone", true);
-            json.Set("keystoneDungeonId", (*keyResult)[0].Get<int32>());
-            json.Set("keystoneLevel", (*keyResult)[1].Get<int32>());
-            json.Set("keystoneDungeonName", (*keyResult)[2].Get<std::string>());
-        }
-        else
-        {
-            json.Set("hasKeystone", false);
-        }
+            std::string dungeonDiffName = "Normal";
+            if (dungeonDiff == DUNGEON_DIFFICULTY_HEROIC) dungeonDiffName = "Heroic";
+            else if (dungeonDiff == DUNGEON_DIFFICULTY_EPIC) dungeonDiffName = "Mythic";
 
-        json.Send(player);
+            std::string raidDiffName = "10-man Normal";
+            switch (raidDiff)
+            {
+                case RAID_DIFFICULTY_10MAN_NORMAL: raidDiffName = "10-man Normal"; break;
+                case RAID_DIFFICULTY_25MAN_NORMAL: raidDiffName = "25-man Normal"; break;
+                case RAID_DIFFICULTY_10MAN_HEROIC: raidDiffName = "10-man Heroic"; break;
+                case RAID_DIFFICULTY_25MAN_HEROIC: raidDiffName = "25-man Heroic"; break;
+            }
+
+            JsonMessage json(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_KEYSTONE_INFO);
+            json.Set("dungeonDifficulty", static_cast<int32>(dungeonDiff));
+            json.Set("dungeonDifficultyName", dungeonDiffName);
+            json.Set("raidDifficulty", static_cast<int32>(raidDiff));
+            json.Set("raidDifficultyName", raidDiffName);
+
+            if (keyResult)
+            {
+                uint32 mapId = (*keyResult)[0].Get<uint32>();
+                json.Set("hasKeystone", true);
+                json.Set("keystoneDungeonId", (*keyResult)[0].Get<int32>());
+                json.Set("keystoneLevel", (*keyResult)[1].Get<int32>());
+                // Empty string mirrors the old LEFT JOIN's NULL dungeon_name.
+                json.Set("keystoneDungeonName", GetDungeonNameById(mapId));
+            }
+            else
+            {
+                json.Set("hasKeystone", false);
+            }
+
+            json.Send(player);
+        }));
     }
 
     // Set dungeon/raid difficulty
@@ -1066,25 +1206,6 @@ namespace GroupFinder
         }
 
         auto json = GetJsonData(msg);
-        uint32 guid = player->GetGUID().GetCounter();
-
-        // Check if player already has max scheduled events
-        QueryResult countResult = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_group_finder_scheduled_events WHERE leader_guid = {} AND status IN (1, 2)",
-            guid);
-
-        if (countResult)
-        {
-            uint32 count = (*countResult)[0].Get<uint32>();
-            if (count >= 5) // Max 5 active events per player
-            {
-                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                    .Set("error", "Maximum scheduled events reached")
-                    .Set("max", 5)
-                    .Send(player);
-                return;
-            }
-        }
 
         // Extract event data
         uint8 eventType = static_cast<uint8>(JsonGetInt(json, "eventType", LISTING_MYTHIC_PLUS));
@@ -1111,22 +1232,66 @@ namespace GroupFinder
         CharacterDatabase.EscapeString(safeDungeonName);
         CharacterDatabase.EscapeString(safeNote);
 
-        // Insert the event
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_group_finder_scheduled_events "
-            "(leader_guid, event_type, dungeon_id, dungeon_name, keystone_level, scheduled_time, max_signups, note, status) "
-            "VALUES ({}, {}, {}, '{}', {}, FROM_UNIXTIME({}), {}, '{}', 1)",
-            guid, eventType, dungeonId, safeDungeonName, keystoneLevel, scheduledTime, maxSignups, safeNote);
+        // ASYNC max-events check: this ran a synchronous COUNT(*) on the world
+        // thread per create request.
+        ObjectGuid playerGuid = player->GetGUID();
+        uint32 guidLow = playerGuid.GetCounter();
+        std::string const countSql = Acore::StringFormat(
+            "SELECT COUNT(*) FROM dc_group_finder_scheduled_events WHERE leader_guid = {} AND status IN (1, 2)",
+            guidLow);
 
-        // Get the event ID
-        QueryResult idResult = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
-        uint32 eventId = idResult ? (*idResult)[0].Get<uint32>() : 0;
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(countSql)
+            .WithCallback([playerGuid, guidLow, eventType, dungeonId, safeDungeonName, keystoneLevel,
+                scheduledTime, maxSignups, safeNote](QueryResult countResult)
+        {
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_CREATED)
-            .Set("success", eventId > 0)
-            .Set("eventId", static_cast<int32>(eventId))
-            .Set("message", eventId > 0 ? "Event created successfully" : "Failed to create event")
-            .Send(player);
+            if (countResult)
+            {
+                uint32 count = (*countResult)[0].Get<uint32>();
+                if (count >= 5) // Max 5 active events per player
+                {
+                    JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                        .Set("error", "Maximum scheduled events reached")
+                        .Set("max", 5)
+                        .Send(player);
+                    return;
+                }
+            }
+
+            // Insert the event (non-blocking)
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_group_finder_scheduled_events "
+                "(leader_guid, event_type, dungeon_id, dungeon_name, keystone_level, scheduled_time, max_signups, note, status) "
+                "VALUES ({}, {}, {}, '{}', {}, FROM_UNIXTIME({}), {}, '{}', 1)",
+                guidLow, eventType, dungeonId, safeDungeonName, keystoneLevel, scheduledTime, maxSignups, safeNote);
+
+            // Fetch the new event id WITHOUT LAST_INSERT_ID(): the old code ran
+            // SELECT LAST_INSERT_ID() on a different pooled connection than the
+            // INSERT, which is unreliable. Match on leader_guid + newest id
+            // instead (same idiom the mgr documents for this exact reason).
+            std::string const idSql = Acore::StringFormat(
+                "SELECT id FROM dc_group_finder_scheduled_events WHERE leader_guid = {} ORDER BY id DESC LIMIT 1",
+                guidLow);
+
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(idSql)
+                .WithCallback([playerGuid](QueryResult idResult)
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                uint32 eventId = idResult ? (*idResult)[0].Get<uint32>() : 0;
+
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_CREATED)
+                    .Set("success", eventId > 0)
+                    .Set("eventId", static_cast<int32>(eventId))
+                    .Set("message", eventId > 0 ? "Event created successfully" : "Failed to create event")
+                    .Send(player);
+            }));
+        }));
     }
 
     // Sign up for a scheduled event
@@ -1144,94 +1309,105 @@ namespace GroupFinder
         uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
         uint8 role = static_cast<uint8>(JsonGetInt(json, "role", 0));
         std::string note = JsonGetString(json, "note", "");
-        uint32 guid = player->GetGUID().GetCounter();
-
-        // Check if event exists and is open
-        QueryResult eventResult = CharacterDatabase.Query(
-            "SELECT leader_guid, max_signups, current_signups, status FROM dc_group_finder_scheduled_events WHERE id = {}",
-            eventId);
-
-        if (!eventResult)
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Event not found")
-                .Send(player);
-            return;
-        }
-
-        uint32 leaderGuid = (*eventResult)[0].Get<uint32>();
-        uint8 maxSignups = (*eventResult)[1].Get<uint8>();
-        uint8 currentSignups = (*eventResult)[2].Get<uint8>();
-        uint8 status = (*eventResult)[3].Get<uint8>();
-
-        // Can't signup for own event
-        if (leaderGuid == guid)
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Cannot sign up for your own event")
-                .Send(player);
-            return;
-        }
-
-        // Check if event is still open
-        if (status != 1) // 1 = open
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Event is no longer accepting signups")
-                .Send(player);
-            return;
-        }
-
-        // Check if full
-        if (currentSignups >= maxSignups)
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Event is full")
-                .Send(player);
-            return;
-        }
-
-        // Check if already signed up
-        QueryResult signupCheck = CharacterDatabase.Query(
-            "SELECT id FROM dc_group_finder_event_signups WHERE event_id = {} AND player_guid = {} AND status IN (0, 1)",
-            eventId, guid);
-
-        if (signupCheck)
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Already signed up for this event")
-                .Send(player);
-            return;
-        }
 
         // Escape user-provided note to prevent SQL injection
         std::string safeNote = note;
         CharacterDatabase.EscapeString(safeNote);
 
-        // Insert signup
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
-            "VALUES ({}, {}, '{}', {}, '{}', 0)",
-            eventId, guid, player->GetName(), role, safeNote);
+        // ASYNC event validation: this ran TWO synchronous reads (event row +
+        // duplicate-signup check) on the world thread per signup. One async
+        // round-trip carries the duplicate check as a subquery column.
+        ObjectGuid playerGuid = player->GetGUID();
+        uint32 guidLow = playerGuid.GetCounter();
+        std::string const eventSql = Acore::StringFormat(
+            "SELECT e.leader_guid, e.max_signups, e.current_signups, e.status, "
+            "(SELECT COUNT(*) FROM dc_group_finder_event_signups s "
+            "WHERE s.event_id = e.id AND s.player_guid = {} AND s.status IN (0, 1)) "
+            "FROM dc_group_finder_scheduled_events e WHERE e.id = {}",
+            guidLow, eventId);
 
-        // Update current signups count
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_scheduled_events SET current_signups = current_signups + 1 WHERE id = {}",
-            eventId);
-
-        // Check if event is now full
-        if (currentSignups + 1 >= maxSignups)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(eventSql)
+            .WithCallback([playerGuid, guidLow, eventId, role, safeNote](QueryResult eventResult)
         {
-            CharacterDatabase.Execute(
-                "UPDATE dc_group_finder_scheduled_events SET status = 2 WHERE id = {}",
-                eventId);
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_SIGNUP_RESULT)
-            .Set("success", true)
-            .Set("eventId", static_cast<int32>(eventId))
-            .Set("message", "Successfully signed up for event")
-            .Send(player);
+            if (!eventResult)
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Event not found")
+                    .Send(player);
+                return;
+            }
+
+            uint32 leaderGuid = (*eventResult)[0].Get<uint32>();
+            uint8 maxSignups = (*eventResult)[1].Get<uint8>();
+            uint8 currentSignups = (*eventResult)[2].Get<uint8>();
+            uint8 status = (*eventResult)[3].Get<uint8>();
+            bool alreadySignedUp = (*eventResult)[4].Get<uint64>() > 0;
+
+            // Can't signup for own event
+            if (leaderGuid == guidLow)
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Cannot sign up for your own event")
+                    .Send(player);
+                return;
+            }
+
+            // Check if event is still open
+            if (status != 1) // 1 = open
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Event is no longer accepting signups")
+                    .Send(player);
+                return;
+            }
+
+            // Check if full
+            if (currentSignups >= maxSignups)
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Event is full")
+                    .Send(player);
+                return;
+            }
+
+            // Check if already signed up
+            if (alreadySignedUp)
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Already signed up for this event")
+                    .Send(player);
+                return;
+            }
+
+            // Insert signup
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
+                "VALUES ({}, {}, '{}', {}, '{}', 0)",
+                eventId, guidLow, player->GetName(), role, safeNote);
+
+            // Update current signups count
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_scheduled_events SET current_signups = current_signups + 1 WHERE id = {}",
+                eventId);
+
+            // Check if event is now full
+            if (currentSignups + 1 >= maxSignups)
+            {
+                CharacterDatabase.Execute(
+                    "UPDATE dc_group_finder_scheduled_events SET status = 2 WHERE id = {}",
+                    eventId);
+            }
+
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_SIGNUP_RESULT)
+                .Set("success", true)
+                .Set("eventId", static_cast<int32>(eventId))
+                .Set("message", "Successfully signed up for event")
+                .Send(player);
+        }));
     }
 
     // Cancel signup for a scheduled event
@@ -1247,44 +1423,53 @@ namespace GroupFinder
 
         auto json = GetJsonData(msg);
         uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
-        uint32 guid = player->GetGUID().GetCounter();
 
-        // Check if signed up
-        QueryResult signupResult = CharacterDatabase.Query(
+        // ASYNC signup validation: this ran a synchronous SELECT on the world
+        // thread per cancel request.
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string const signupSql = Acore::StringFormat(
             "SELECT id FROM dc_group_finder_event_signups WHERE event_id = {} AND player_guid = {} AND status = 0",
-            eventId, guid);
+            eventId, playerGuid.GetCounter());
 
-        if (!signupResult)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(signupSql)
+            .WithCallback([playerGuid, eventId](QueryResult signupResult)
         {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Not signed up for this event")
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            if (!signupResult)
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Not signed up for this event")
+                    .Send(player);
+                return;
+            }
+
+            uint32 signupId = (*signupResult)[0].Get<uint32>();
+
+            // Cancel signup
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_event_signups SET status = 3 WHERE id = {}",
+                signupId);
+
+            // Decrement signup count
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_scheduled_events SET current_signups = current_signups - 1 WHERE id = {}",
+                eventId);
+
+            // Re-open event if it was full
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_scheduled_events SET status = 1 WHERE id = {} AND status = 2",
+                eventId);
+
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_SIGNUP_RESULT)
+                .Set("success", true)
+                .Set("eventId", static_cast<int32>(eventId))
+                .Set("cancelled", true)
+                .Set("message", "Signup cancelled successfully")
                 .Send(player);
-            return;
-        }
-
-        uint32 signupId = (*signupResult)[0].Get<uint32>();
-
-        // Cancel signup
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_event_signups SET status = 3 WHERE id = {}",
-            signupId);
-
-        // Decrement signup count
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_scheduled_events SET current_signups = current_signups - 1 WHERE id = {}",
-            eventId);
-
-        // Re-open event if it was full
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_scheduled_events SET status = 1 WHERE id = {} AND status = 2",
-            eventId);
-
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_SIGNUP_RESULT)
-            .Set("success", true)
-            .Set("eventId", static_cast<int32>(eventId))
-            .Set("cancelled", true)
-            .Set("message", "Signup cancelled successfully")
-            .Send(player);
+        }));
     }
 
     // Get upcoming scheduled events
@@ -1384,46 +1569,55 @@ namespace GroupFinder
 
         auto json = GetJsonData(msg);
         uint32 eventId = static_cast<uint32>(JsonGetInt(json, "eventId", 0));
-        uint32 guid = player->GetGUID().GetCounter();
 
-        // Check if player is the event leader
-        QueryResult eventResult = CharacterDatabase.Query(
+        // ASYNC leader-ownership check: this ran a synchronous SELECT on the
+        // world thread per cancel request.
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string const eventSql = Acore::StringFormat(
             "SELECT leader_guid FROM dc_group_finder_scheduled_events WHERE id = {} AND status IN (1, 2)",
             eventId);
 
-        if (!eventResult)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(eventSql)
+            .WithCallback([playerGuid, eventId](QueryResult eventResult)
         {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "Event not found")
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            if (!eventResult)
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Event not found")
+                    .Send(player);
+                return;
+            }
+
+            uint32 leaderGuid = (*eventResult)[0].Get<uint32>();
+            if (leaderGuid != playerGuid.GetCounter())
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "You are not the event leader")
+                    .Send(player);
+                return;
+            }
+
+            // Cancel event
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_scheduled_events SET status = 4 WHERE id = {}",
+                eventId);
+
+            // Cancel all signups
+            CharacterDatabase.Execute(
+                "UPDATE dc_group_finder_event_signups SET status = 3 WHERE event_id = {} AND status IN (0, 1)",
+                eventId);
+
+            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_CREATED)
+                .Set("success", true)
+                .Set("eventId", static_cast<int32>(eventId))
+                .Set("cancelled", true)
+                .Set("message", "Event cancelled successfully")
                 .Send(player);
-            return;
-        }
-
-        uint32 leaderGuid = (*eventResult)[0].Get<uint32>();
-        if (leaderGuid != guid)
-        {
-            JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
-                .Set("error", "You are not the event leader")
-                .Send(player);
-            return;
-        }
-
-        // Cancel event
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_scheduled_events SET status = 4 WHERE id = {}",
-            eventId);
-
-        // Cancel all signups
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_event_signups SET status = 3 WHERE event_id = {} AND status IN (0, 1)",
-            eventId);
-
-        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_CREATED)
-            .Set("success", true)
-            .Set("eventId", static_cast<int32>(eventId))
-            .Set("cancelled", true)
-            .Set("message", "Event cancelled successfully")
-            .Send(player);
+        }));
     }
 
     // ========================================================================
@@ -1539,54 +1733,17 @@ namespace GroupFinder
     // HANDLERS: DUNGEON & RAID LISTS
     // ========================================================================
 
-    // Get M+ dungeon list from database (current season)
+    // Get M+ dungeon list for the current season
     static void HandleGetDungeonList(Player* player, const ParsedMessage& /*msg*/)
     {
-        // Query dungeons enabled for current season
-        // Note: dungeon_id IS the map_id in this table
-        QueryResult result = WorldDatabase.Query(
-            "SELECT dungeon_id, dungeon_name, short_name, base_timer, boss_count, difficulty_rating "
-            "FROM dc_mplus_dungeons WHERE season_enabled = 1 ORDER BY dungeon_name");
+        // Served entirely from the lazily-loaded in-memory dungeon cache --
+        // no DB access on the request path (see DUNGEON CACHE above).
+        uint32 count = 0;
+        std::string dungeons = GetDungeonListJson(count);
 
         JsonMessage json(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_DUNGEON_LIST);
-
-        if (!result)
-        {
-            // Send empty list
-            json.Set("count", 0);
-            json.Set("dungeons", "[]");
-            json.Send(player);
-            return;
-        }
-
-        std::ostringstream dungeonArray;
-        dungeonArray << "[";
-        uint32 count = 0;
-
-        do
-        {
-            Field* fields = result->Fetch();
-            if (count > 0) dungeonArray << ",";
-
-            uint32 dungeonId = fields[0].Get<uint32>();
-
-            dungeonArray << "{";
-            dungeonArray << "\"id\":" << dungeonId << ",";
-            dungeonArray << "\"name\":\"" << fields[1].Get<std::string>() << "\",";
-            dungeonArray << "\"short\":\"" << fields[2].Get<std::string>() << "\",";
-            dungeonArray << "\"timer\":" << fields[3].Get<uint32>() << ",";
-            dungeonArray << "\"bosses\":" << fields[4].Get<uint32>() << ",";
-            dungeonArray << "\"difficulty\":" << fields[5].Get<uint32>() << ",";
-            dungeonArray << "\"mapId\":" << dungeonId;  // dungeon_id IS the map_id
-            dungeonArray << "}";
-
-            count++;
-        } while (result->NextRow());
-
-        dungeonArray << "]";
-
         json.Set("count", static_cast<int32>(count));
-        json.Set("dungeons", dungeonArray.str());
+        json.Set("dungeons", dungeons);
         json.Send(player);
 
         LOG_DEBUG("dc.addon", "Sent {} M+ dungeons to player {}", count, player->GetName());

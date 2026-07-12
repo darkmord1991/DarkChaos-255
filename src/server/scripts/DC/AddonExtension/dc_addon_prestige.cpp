@@ -25,6 +25,7 @@
 
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "WorldSession.h"
 #include "WorldPacket.h"
@@ -138,41 +139,43 @@ namespace DCPrestigeAddon
         if (!player || !player->GetSession())
             return;
 
-        bool enabled = PrestigeAPI::IsEnabled();
-        uint32 prestigeLevel = PrestigeAPI::GetPrestigeLevel(player);
-        uint32 maxPrestigeLevel = PrestigeAPI::GetMaxPrestigeLevel();
-        uint32 requiredLevel = PrestigeAPI::GetRequiredLevel();
-        uint32 statBonusPercent = PrestigeAPI::GetStatBonusPercent();
-        bool canPrestige = PrestigeAPI::CanPrestige(player);
-
-        // Query additional info from database
-        uint32 totalPrestiges = 0;
-        uint64 lastPrestigeTime = 0;
-
-        QueryResult result = CharacterDatabase.Query(
+        // Async: prestige counters must not block the world thread on panel open.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "SELECT total_prestiges, last_prestige_time FROM dc_character_prestige WHERE guid = {}",
-            player->GetGUID().GetCounter());
-
-        if (result)
+            playerGuid.GetCounter()))
+            .WithCallback([playerGuid](QueryResult result)
         {
-            Field* fields = result->Fetch();
-            totalPrestiges = fields[0].Get<uint32>();
-            lastPrestigeTime = fields[1].Get<uint64>();
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_INFO);
-        msg.Set("enabled", enabled);
-        msg.Set("prestigeLevel", prestigeLevel);
-        msg.Set("maxPrestigeLevel", maxPrestigeLevel);
-        msg.Set("requiredLevel", requiredLevel);
-        msg.Set("currentLevel", player->GetLevel());
-        msg.Set("canPrestige", canPrestige);
-        msg.Set("statBonusPercent", statBonusPercent);
-        msg.Set("totalBonusPercent", prestigeLevel * statBonusPercent);
-        msg.Set("totalPrestiges", totalPrestiges);
-        msg.Set("lastPrestigeTime", static_cast<uint32>(lastPrestigeTime));
+            uint32 totalPrestiges = 0;
+            uint64 lastPrestigeTime = 0;
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                totalPrestiges = fields[0].Get<uint32>();
+                lastPrestigeTime = fields[1].Get<uint64>();
+            }
 
-        SendPrestigeMessage(player, msg);
+            uint32 prestigeLevel = PrestigeAPI::GetPrestigeLevel(player);
+            uint32 statBonusPercent = PrestigeAPI::GetStatBonusPercent();
+
+            DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_INFO);
+            msg.Set("enabled", PrestigeAPI::IsEnabled());
+            msg.Set("prestigeLevel", prestigeLevel);
+            msg.Set("maxPrestigeLevel", PrestigeAPI::GetMaxPrestigeLevel());
+            msg.Set("requiredLevel", PrestigeAPI::GetRequiredLevel());
+            msg.Set("currentLevel", player->GetLevel());
+            msg.Set("canPrestige", PrestigeAPI::CanPrestige(player));
+            msg.Set("statBonusPercent", statBonusPercent);
+            msg.Set("totalBonusPercent", prestigeLevel * statBonusPercent);
+            msg.Set("totalPrestiges", totalPrestiges);
+            msg.Set("lastPrestigeTime", static_cast<uint32>(lastPrestigeTime));
+
+            SendPrestigeMessage(player, msg);
+        }));
     }
 
     /**

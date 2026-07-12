@@ -29,9 +29,11 @@
 #include "Config.h"
 #include "../CrossSystem/LeaderboardUtils.h"
 #include "../CrossSystem/CrossSystemSeasonHelper.h"
-#include <cstdio>  // for snprintf
+#include <cstdio>   // for snprintf
+#include <cstdlib>  // for strtoul
+#include <map>
 #include <sstream>
-#include <unordered_set>
+#include <unordered_map>
 #include <utility>  // for std::pair
 #include <mutex>    // for cache thread safety
 
@@ -239,12 +241,70 @@ namespace
                "_" + std::to_string(page) + "_" + std::to_string(limit);
     }
 
+    // ------------------------------------------------------------------
+    // In-memory mirror of dc_mplus_featured_dungeons (small config table:
+    // season_id, map_id, sort_order, dungeon_name). Loaded with ONE
+    // synchronous WorldDatabase query on first use per uptime (and again
+    // after HandleRefresh); every subsequent dungeon-name lookup and the
+    // per-season dungeon list are served from memory, which removes the
+    // former per-row N+1 name queries.
+    // ------------------------------------------------------------------
+    struct FeaturedDungeonCache
+    {
+        bool loaded = false;
+        std::map<std::pair<uint32, uint16>, std::string> nameBySeasonAndMap;
+        std::map<uint16, std::string> nameByMap;  // highest-season name per map (fallback)
+        std::map<uint32, std::vector<std::pair<uint16, std::string>>> dungeonsBySeason;  // ordered by sort_order
+    };
+
+    FeaturedDungeonCache g_dungeonCache;
+    std::mutex g_dungeonCacheMutex;
+
+    // Caller must hold g_dungeonCacheMutex.
+    void EnsureDungeonCacheLoaded()
+    {
+        if (g_dungeonCache.loaded)
+            return;
+
+        g_dungeonCache.nameBySeasonAndMap.clear();
+        g_dungeonCache.nameByMap.clear();
+        g_dungeonCache.dungeonsBySeason.clear();
+
+        // Ascending season order so nameByMap ends up holding the highest
+        // season's name per map, matching the old
+        // "ORDER BY season_id DESC LIMIT 1" fallback query.
+        if (QueryResult result = WorldDatabase.Query(
+            "SELECT season_id, map_id, dungeon_name FROM dc_mplus_featured_dungeons "
+            "ORDER BY season_id ASC, sort_order ASC"))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 seasonId = fields[0].Get<uint32>();
+                uint16 mapId = fields[1].Get<uint16>();
+                std::string name = fields[2].Get<std::string>();
+
+                g_dungeonCache.nameBySeasonAndMap[{seasonId, mapId}] = name;
+                g_dungeonCache.nameByMap[mapId] = name;
+                g_dungeonCache.dungeonsBySeason[seasonId].emplace_back(mapId, std::move(name));
+            } while (result->NextRow());
+        }
+
+        g_dungeonCache.loaded = true;
+    }
+
     // Clear all caches
     void ClearAllCaches()
     {
-        std::lock_guard<std::mutex> lock(g_cacheMutex);
-        g_leaderboardCache.clear();
-        g_accountStatsCache.clear();
+        {
+            std::lock_guard<std::mutex> lock(g_cacheMutex);
+            g_leaderboardCache.clear();
+            g_accountStatsCache.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_dungeonCacheMutex);
+            g_dungeonCache.loaded = false;  // reload dc_mplus_featured_dungeons on next use
+        }
         LOG_DEBUG("server.scripts", "DC-Leaderboards: All caches cleared");
     }
 
@@ -260,12 +320,60 @@ namespace
     // LEADERBOARD DATA FETCHERS
     // ========================================================================
 
-    // Get Mythic+ leaderboard
+    // Mythic+ leaderboard (history or per-player aggregate views)
     // Note: dc_mplus_scores table has: character_guid, season_id, map_id, best_level, best_score, last_run_ts, total_runs
-    std::vector<LeaderboardEntry> GetMythicPlusLeaderboard(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset,
-        uint32 requesterGuid = 0, bool myRunsOnly = false)
+    std::string BuildMythicPlusLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset,
+        uint32 requesterGuid, bool myRunsOnly)
+    {
+        if (subcat == "mplus_history")
+        {
+            if (myRunsOnly && requesterGuid > 0)
+            {
+                return Acore::StringFormat(
+                    "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
+                    "FROM dc_mplus_runs r "
+                    "JOIN characters c ON r.character_guid = c.guid "
+                    "WHERE r.season_id = {} AND r.character_guid = {} "
+                    "ORDER BY r.completed_at DESC, r.run_id DESC "
+                    "LIMIT {} OFFSET {}",
+                    seasonId, requesterGuid, limit, offset);
+            }
+
+            return Acore::StringFormat(
+                "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
+                "FROM dc_mplus_runs r "
+                "JOIN characters c ON r.character_guid = c.guid "
+                "WHERE r.season_id = {} "
+                "ORDER BY r.completed_at DESC, r.run_id DESC "
+                "LIMIT {} OFFSET {}",
+                seasonId, limit, offset);
+        }
+
+        // Use aggregate function aliases in ORDER BY for sql_mode=only_full_group_by compatibility
+        std::string orderBy = "best_level DESC, total_score DESC";
+        if (subcat == "mplus_runs")
+            orderBy = "total_runs DESC, best_level DESC";
+        else if (subcat == "mplus_score")
+            orderBy = "total_score DESC, best_level DESC";
+
+        // Aggregate per-player across all dungeons for the season
+        return Acore::StringFormat(
+            "SELECT c.name, c.class, MAX(s.best_level) as best_level, SUM(s.best_score) as total_score, SUM(s.total_runs) as total_runs "
+            "FROM dc_mplus_scores s "
+            "JOIN characters c ON s.character_guid = c.guid "
+            "WHERE s.season_id = {} "
+            "GROUP BY s.character_guid, c.name, c.class "
+            "ORDER BY {} "
+            "LIMIT {} OFFSET {}",
+            seasonId, orderBy, limit, offset);
+    }
+
+    std::vector<LeaderboardEntry> ParseMythicPlusLeaderboard(QueryResult result, const std::string& subcat,
+        uint32 seasonId, uint32 offset)
     {
         std::vector<LeaderboardEntry> entries;
+        if (!result)
+            return entries;
 
         if (subcat == "mplus_history")
         {
@@ -286,33 +394,6 @@ namespace
 
                 return std::string(buffer);
             };
-
-            QueryResult result = nullptr;
-            if (myRunsOnly && requesterGuid > 0)
-            {
-                result = CharacterDatabase.Query(
-                    "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
-                    "FROM dc_mplus_runs r "
-                    "JOIN characters c ON r.character_guid = c.guid "
-                    "WHERE r.season_id = {} AND r.character_guid = {} "
-                    "ORDER BY r.completed_at DESC, r.run_id DESC "
-                    "LIMIT {} OFFSET {}",
-                    seasonId, requesterGuid, limit, offset);
-            }
-            else
-            {
-                result = CharacterDatabase.Query(
-                    "SELECT c.name, c.class, r.keystone_level, r.map_id, COALESCE(r.completion_time, 0), r.success, DATE_FORMAT(r.completed_at, '%Y-%m-%d %H:%i') "
-                    "FROM dc_mplus_runs r "
-                    "JOIN characters c ON r.character_guid = c.guid "
-                    "WHERE r.season_id = {} "
-                    "ORDER BY r.completed_at DESC, r.run_id DESC "
-                    "LIMIT {} OFFSET {}",
-                    seasonId, limit, offset);
-            }
-
-            if (!result)
-                return entries;
 
             uint32 rank = offset + 1;
             do
@@ -339,32 +420,6 @@ namespace
 
             return entries;
         }
-
-        // Use aggregate function aliases in ORDER BY for sql_mode=only_full_group_by compatibility
-        std::string orderBy = "best_level DESC, total_score DESC";
-
-        if (subcat == "mplus_runs")
-        {
-            orderBy = "total_runs DESC, best_level DESC";
-        }
-        else if (subcat == "mplus_score")
-        {
-            orderBy = "total_score DESC, best_level DESC";
-        }
-
-        // Aggregate per-player across all dungeons for the season
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT c.name, c.class, MAX(s.best_level) as best_level, SUM(s.best_score) as total_score, SUM(s.total_runs) as total_runs "
-            "FROM dc_mplus_scores s "
-            "JOIN characters c ON s.character_guid = c.guid "
-            "WHERE s.season_id = {} "
-            "GROUP BY s.character_guid, c.name, c.class "
-            "ORDER BY {} "
-            "LIMIT {} OFFSET {}",
-            seasonId, orderBy, limit, offset);
-
-        if (!result)
-            return entries;
 
         uint32 rank = offset + 1;
         do
@@ -397,70 +452,46 @@ namespace
         return entries;
     }
 
-    // Get dungeon name from dc_mplus_featured_dungeons or fallback to map_id
+    // Get dungeon name from the in-memory dc_mplus_featured_dungeons cache:
+    // season-specific row -> highest-season row -> "Dungeon #<mapId>"
     std::string GetDungeonNameForMap(uint16 mapId, uint32 seasonId)
     {
-        // Try to get from dc_mplus_featured_dungeons (world database)
-        // This table has: season_id, map_id, sort_order, dungeon_name, notes
-        QueryResult result;
+        std::lock_guard<std::mutex> lock(g_dungeonCacheMutex);
+        EnsureDungeonCacheLoaded();
+
         if (seasonId > 0)
         {
-            result = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_featured_dungeons WHERE map_id = {} AND season_id = {} LIMIT 1",
-                mapId, seasonId);
+            auto it = g_dungeonCache.nameBySeasonAndMap.find({seasonId, mapId});
+            if (it != g_dungeonCache.nameBySeasonAndMap.end())
+                return it->second;
         }
 
-        // If not found for specific season, try any season
-        if (!result)
-        {
-            result = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_featured_dungeons WHERE map_id = {} ORDER BY season_id DESC LIMIT 1",
-                mapId);
-        }
+        auto it = g_dungeonCache.nameByMap.find(mapId);
+        if (it != g_dungeonCache.nameByMap.end())
+            return it->second;
 
-        if (result)
-            return result->Fetch()[0].Get<std::string>();
-
-        // Fallback to map ID
         return "Dungeon #" + std::to_string(mapId);
     }
 
-    // Get available M+ dungeons for a season from dc_mplus_featured_dungeons
+    // Get available M+ dungeons for a season from the in-memory cache
     std::vector<std::pair<uint16, std::string>> GetMythicPlusDungeons(uint32 seasonId)
     {
-        std::vector<std::pair<uint16, std::string>> dungeons;
+        std::lock_guard<std::mutex> lock(g_dungeonCacheMutex);
+        EnsureDungeonCacheLoaded();
 
-        // Get dungeons from dc_mplus_featured_dungeons for this season
-        // Table structure: season_id, map_id, sort_order, dungeon_name, notes
-        QueryResult result = WorldDatabase.Query(
-            "SELECT map_id, dungeon_name FROM dc_mplus_featured_dungeons "
-            "WHERE season_id = {} "
-            "ORDER BY sort_order ASC", seasonId);
+        auto it = g_dungeonCache.dungeonsBySeason.find(seasonId);
+        if (it != g_dungeonCache.dungeonsBySeason.end())
+            return it->second;
 
-        if (result)
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                uint16 mapId = fields[0].Get<uint16>();
-                std::string name = fields[1].Get<std::string>();
-                dungeons.emplace_back(mapId, name);
-            } while (result->NextRow());
-        }
-
-        return dungeons;
+        return {};
     }
 
-    // Get Mythic+ leaderboard for a specific dungeon
-    // v1.3.0: New function for per-dungeon leaderboards with dungeon name display
-    std::vector<LeaderboardEntry> GetMythicPlusDungeonLeaderboard(uint16 mapId, uint32 seasonId, uint32 limit, uint32 offset)
+    // Mythic+ leaderboard for a specific dungeon
+    // v1.3.0: per-dungeon leaderboards with dungeon name display
+    std::string BuildMythicPlusDungeonLeaderboardSql(uint16 mapId, uint32 seasonId, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
-        std::string dungeonName = GetDungeonNameForMap(mapId, seasonId);
-
         // Query best runs for this specific dungeon
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT c.name, c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
             "FROM dc_mplus_scores s "
             "JOIN characters c ON s.character_guid = c.guid "
@@ -468,9 +499,16 @@ namespace
             "ORDER BY s.best_level DESC, s.best_score DESC "
             "LIMIT {} OFFSET {}",
             seasonId, mapId, limit, offset);
+    }
 
+    std::vector<LeaderboardEntry> ParseMythicPlusDungeonLeaderboard(QueryResult result, uint16 mapId,
+        uint32 seasonId, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
         if (!result)
             return entries;
+
+        std::string dungeonName = GetDungeonNameForMap(mapId, seasonId);
 
         uint32 rank = offset + 1;
         do
@@ -492,14 +530,12 @@ namespace
         return entries;
     }
 
-    // Get Mythic+ best dungeon runs per player (shows their best dungeon)
+    // Mythic+ best dungeon runs per player (shows their best dungeon)
     // v1.3.0: Shows which dungeon each player performed best in
-    std::vector<LeaderboardEntry> GetMythicPlusBestRunsLeaderboard(uint32 seasonId, uint32 limit, uint32 offset)
+    std::string BuildMythicPlusBestRunsSql(uint32 seasonId, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
         // Get each player's best single dungeon run (highest level)
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT c.name, c.class, s.best_level, s.best_score, s.total_runs, s.map_id "
             "FROM dc_mplus_scores s "
             "JOIN characters c ON s.character_guid = c.guid "
@@ -510,7 +546,11 @@ namespace
             "ORDER BY s.best_level DESC, s.best_score DESC "
             "LIMIT {} OFFSET {}",
             seasonId, limit, offset);
+    }
 
+    std::vector<LeaderboardEntry> ParseMythicPlusBestRuns(QueryResult result, uint32 seasonId, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
         if (!result)
             return entries;
 
@@ -525,9 +565,8 @@ namespace
             entry.score = fields[2].Get<uint32>();  // best_level
             entry.mapId = fields[5].Get<uint16>();
 
-            // Get dungeon name from dc_mplus_featured_dungeons
-            std::string dungeonName = GetDungeonNameForMap(entry.mapId, seasonId);
-            entry.extra = dungeonName;
+            // Dungeon name comes from the in-memory featured-dungeons cache
+            entry.extra = GetDungeonNameForMap(entry.mapId, seasonId);
 
             entries.push_back(entry);
         } while (result->NextRow());
@@ -535,12 +574,10 @@ namespace
         return entries;
     }
 
-    // Get Seasonal leaderboard
+    // Seasonal leaderboard
     // Table: dc_player_seasonal_stats with fields: total_tokens_earned, total_essence_earned, quests_completed, bosses_killed
-    std::vector<LeaderboardEntry> GetSeasonalLeaderboard(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    std::string BuildSeasonalLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
         std::string orderBy = "d.total_tokens_earned DESC";
         std::string selectField = "d.total_tokens_earned";
 
@@ -560,7 +597,7 @@ namespace
             selectField = "(d.dungeon_bosses_killed + d.world_bosses_killed)";
         }
 
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT c.name, c.class, {}, d.total_tokens_earned, d.total_essence_earned, d.quests_completed "
             "FROM dc_player_seasonal_stats d "
             "JOIN characters c ON d.player_guid = c.guid "
@@ -568,7 +605,11 @@ namespace
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             selectField, seasonId, orderBy, limit, offset);
+    }
 
+    std::vector<LeaderboardEntry> ParseSeasonalLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
         if (!result)
             return entries;
 
@@ -597,42 +638,62 @@ namespace
         return entries;
     }
 
-    // Get Hinterland BG leaderboard
+    // Hinterland BG leaderboard
     // Sources:
     //   - v_hlbg_player_seasonal_stats: unified seasonal aggregation
     //   - dc_hlbg_player_stats: all-time kill/win/resource counters
-    std::vector<LeaderboardEntry> GetHLBGLeaderboard(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    bool IsHLBGOverallSubcategory(const std::string& subcat)
     {
-        std::vector<LeaderboardEntry> entries;
+        return subcat == "hlbg_kills" || subcat == "hlbg_alltime_wins" || subcat == "hlbg_resources";
+    }
 
-        // Check if we need overall stats (dc_hlbg_player_stats) or seasonal view data.
-        bool useOverallStats = (subcat == "hlbg_kills" || subcat == "hlbg_alltime_wins" || subcat == "hlbg_resources");
-
-        if (useOverallStats)
+    std::string BuildHLBGLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    {
+        if (IsHLBGOverallSubcategory(subcat))
         {
             // Use dc_hlbg_player_stats for all-time stats
             std::string orderBy = "h.total_kills DESC";
-
             if (subcat == "hlbg_alltime_wins")
-            {
                 orderBy = "h.battles_won DESC";
-            }
             else if (subcat == "hlbg_resources")
-            {
                 orderBy = "h.resources_captured DESC";
-            }
 
-            QueryResult result = CharacterDatabase.Query(
+            return Acore::StringFormat(
                 "SELECT c.name, c.class, h.battles_won, h.total_kills, h.total_deaths, h.resources_captured, h.battles_participated "
                 "FROM dc_hlbg_player_stats h "
                 "JOIN characters c ON h.player_guid = c.guid "
                 "ORDER BY {} "
                 "LIMIT {} OFFSET {}",
                 orderBy, limit, offset);
+        }
 
-            if (!result)
-                return entries;
+        // Use v_hlbg_player_seasonal_stats view for seasonal stats (unified schema)
+        std::string orderBy = "v.current_rating DESC";
+        if (subcat == "hlbg_wins")
+            orderBy = "v.wins DESC";
+        else if (subcat == "hlbg_winrate")
+            orderBy = "v.win_rate DESC";
+        else if (subcat == "hlbg_games")
+            orderBy = "v.games_played DESC";
 
+        return Acore::StringFormat(
+            "SELECT c.name, c.class, v.current_rating, v.wins, v.losses "
+            "FROM v_hlbg_player_seasonal_stats v "
+            "JOIN characters c ON v.guid = c.guid "
+            "WHERE v.season_id = {} "
+            "ORDER BY {} "
+            "LIMIT {} OFFSET {}",
+            seasonId, orderBy, limit, offset);
+    }
+
+    std::vector<LeaderboardEntry> ParseHLBGLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
+        if (!result)
+            return entries;
+
+        if (IsHLBGOverallSubcategory(subcat))
+        {
             uint32 rank = offset + 1;
             do
             {
@@ -675,80 +736,52 @@ namespace
 
                 entries.push_back(entry);
             } while (result->NextRow());
+
+            return entries;
         }
-        else
+
+        uint32 rank = offset + 1;
+        do
         {
-            // Use v_hlbg_player_seasonal_stats view for seasonal stats (unified schema)
-            std::string orderBy = "v.current_rating DESC";
+            Field* fields = result->Fetch();
+            LeaderboardEntry entry;
+            entry.rank = rank++;
+            entry.name = fields[0].Get<std::string>();
+            entry.className = GetClassNameFromId(fields[1].Get<uint8>());
+
+            uint32 wins = fields[3].Get<uint32>();
+            uint32 losses = fields[4].Get<uint32>();
+            uint32 totalGames = wins + losses;
+            float winRate = totalGames > 0 ? (static_cast<float>(wins) / totalGames * 100.0f) : 0.0f;
+
+            // Client UI expects wins/losses to render the extra column
+            entry.hasWinsLosses = true;
+            entry.wins = wins;
+            entry.losses = losses;
 
             if (subcat == "hlbg_wins")
             {
-                orderBy = "v.wins DESC";
+                entry.score = wins;
+                entry.extra = std::to_string(losses) + " losses";
             }
             else if (subcat == "hlbg_winrate")
             {
-                orderBy = "v.win_rate DESC";
+                entry.score = static_cast<uint32>(winRate * 10);  // Store as x10 for precision
+                entry.extra = std::to_string(totalGames) + " games";
             }
             else if (subcat == "hlbg_games")
             {
-                orderBy = "v.games_played DESC";
+                entry.score = totalGames;
+                entry.extra = std::to_string(wins) + "W/" + std::to_string(losses) + "L";
+            }
+            else  // hlbg_rating
+            {
+                entry.score = fields[2].Get<uint32>();
+                entry.extra = std::to_string(wins) + "W/" + std::to_string(losses) + "L";
             }
 
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT c.name, c.class, v.current_rating, v.wins, v.losses "
-                "FROM v_hlbg_player_seasonal_stats v "
-                "JOIN characters c ON v.guid = c.guid "
-                "WHERE v.season_id = {} "
-                "ORDER BY {} "
-                "LIMIT {} OFFSET {}",
-                seasonId, orderBy, limit, offset);
-
-            if (!result)
-                return entries;
-
-            uint32 rank = offset + 1;
-            do
-            {
-                Field* fields = result->Fetch();
-                LeaderboardEntry entry;
-                entry.rank = rank++;
-                entry.name = fields[0].Get<std::string>();
-                entry.className = GetClassNameFromId(fields[1].Get<uint8>());
-
-                uint32 wins = fields[3].Get<uint32>();
-                uint32 losses = fields[4].Get<uint32>();
-                uint32 totalGames = wins + losses;
-                float winRate = totalGames > 0 ? (static_cast<float>(wins) / totalGames * 100.0f) : 0.0f;
-
-                // Client UI expects wins/losses to render the extra column
-                entry.hasWinsLosses = true;
-                entry.wins = wins;
-                entry.losses = losses;
-
-                if (subcat == "hlbg_wins")
-                {
-                    entry.score = wins;
-                    entry.extra = std::to_string(losses) + " losses";
-                }
-                else if (subcat == "hlbg_winrate")
-                {
-                    entry.score = static_cast<uint32>(winRate * 10);  // Store as x10 for precision
-                    entry.extra = std::to_string(totalGames) + " games";
-                }
-                else if (subcat == "hlbg_games")
-                {
-                    entry.score = totalGames;
-                    entry.extra = std::to_string(wins) + "W/" + std::to_string(losses) + "L";
-                }
-                else  // hlbg_rating
-                {
-                    entry.score = fields[2].Get<uint32>();
-                    entry.extra = std::to_string(wins) + "W/" + std::to_string(losses) + "L";
-                }
-
-                entries.push_back(entry);
-            } while (result->NextRow());
-        }
+            entries.push_back(entry);
+        } while (result->NextRow());
 
         return entries;
     }
@@ -761,26 +794,51 @@ namespace
     // Schema tables:
     //   - dc_player_artifact_mastery (per artifact)
     // Legacy subcat "prestige_resets" still uses dc_character_prestige.
-    std::vector<LeaderboardEntry> GetPrestigeLeaderboard(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildPrestigeLeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
         // Legacy: prestige resets leaderboard
         if (subcat == "prestige_resets")
         {
-            std::string orderBy = "p.total_prestiges DESC, p.prestige_level DESC";
-            QueryResult result = CharacterDatabase.Query(
+            return Acore::StringFormat(
                 "SELECT c.name, c.class, p.prestige_level, p.total_prestiges, p.last_prestige_time "
                 "FROM dc_character_prestige p "
                 "JOIN characters c ON p.guid = c.guid "
                 "WHERE p.prestige_level > 0 OR p.total_prestiges > 0 "
-                "ORDER BY {} "
+                "ORDER BY p.total_prestiges DESC, p.prestige_level DESC "
                 "LIMIT {} OFFSET {}",
-                orderBy, limit, offset);
+                limit, offset);
+        }
 
-            if (!result)
-                return entries;
+        // Artifact Mastery leaderboards (default for "prestige" category)
+        std::string orderBy = "mastery_level DESC, total_points DESC";
+        if (subcat == "prestige_points")
+            orderBy = "total_points DESC, mastery_level DESC";
+        else if (subcat == "prestige_artifacts")
+            orderBy = "artifacts_unlocked DESC, total_points DESC";
 
+        return Acore::StringFormat(
+            "SELECT c.name, c.class, "
+            "MAX(am.mastery_level) as mastery_level, "
+            "SUM(am.total_points_earned) as total_points, "
+            "COUNT(DISTINCT IF(am.mastery_level > 0 OR am.unlocked_at IS NOT NULL, am.artifact_id, NULL)) as artifacts_unlocked "
+            "FROM dc_player_artifact_mastery am "
+            "JOIN characters c ON am.player_guid = c.guid "
+            "WHERE am.mastery_level > 0 OR am.total_points_earned > 0 OR am.unlocked_at IS NOT NULL "
+            "GROUP BY am.player_guid, c.name, c.class "
+            "ORDER BY {} "
+            "LIMIT {} OFFSET {}",
+            orderBy, limit, offset);
+    }
+
+    std::vector<LeaderboardEntry> ParsePrestigeLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
+        if (!result)
+            return entries;
+
+        // Legacy: prestige resets leaderboard
+        if (subcat == "prestige_resets")
+        {
             uint32 rank = offset + 1;
             do
             {
@@ -800,29 +858,6 @@ namespace
 
             return entries;
         }
-
-        // Artifact Mastery leaderboards (default for "prestige" category)
-        std::string orderBy = "mastery_level DESC, total_points DESC";
-        if (subcat == "prestige_points")
-            orderBy = "total_points DESC, mastery_level DESC";
-        else if (subcat == "prestige_artifacts")
-            orderBy = "artifacts_unlocked DESC, total_points DESC";
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT c.name, c.class, "
-            "MAX(am.mastery_level) as mastery_level, "
-            "SUM(am.total_points_earned) as total_points, "
-            "COUNT(DISTINCT IF(am.mastery_level > 0 OR am.unlocked_at IS NOT NULL, am.artifact_id, NULL)) as artifacts_unlocked "
-            "FROM dc_player_artifact_mastery am "
-            "JOIN characters c ON am.player_guid = c.guid "
-            "WHERE am.mastery_level > 0 OR am.total_points_earned > 0 OR am.unlocked_at IS NOT NULL "
-            "GROUP BY am.player_guid, c.name, c.class "
-            "ORDER BY {} "
-            "LIMIT {} OFFSET {}",
-            orderBy, limit, offset);
-
-        if (!result)
-            return entries;
 
         uint32 rank = offset + 1;
         do
@@ -859,29 +894,20 @@ namespace
         return entries;
     }
 
-    // Get Item Upgrade leaderboard
+    // Item Upgrade leaderboard
     // Uses dc_item_upgrades table: player_guid, tier_id, upgrade_level, tokens_invested, essence_invested
-    std::vector<LeaderboardEntry> GetUpgradeLeaderboard(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
+    std::string BuildUpgradeLeaderboardSql(const std::string& subcat, uint32 seasonId, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
         std::string orderBy = "total_tokens DESC";
-
         if (subcat == "upgrade_items")
-        {
             orderBy = "item_count DESC";
-        }
         else if (subcat == "upgrade_essence")
-        {
             orderBy = "total_essence DESC";
-        }
         else if (subcat == "upgrade_tier")
-        {
             orderBy = "highest_tier DESC, total_tokens DESC";
-        }
 
         // Aggregate upgrades per player from dc_item_upgrades
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT c.name, c.class, "
             "SUM(u.tokens_invested) as total_tokens, "
             "SUM(u.essence_invested) as total_essence, "
@@ -894,7 +920,11 @@ namespace
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             seasonId, orderBy, limit, offset);
+    }
 
+    std::vector<LeaderboardEntry> ParseUpgradeLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
         if (!result)
             return entries;
 
@@ -939,35 +969,30 @@ namespace
         return entries;
     }
 
-    // Get Duel leaderboard
+    // Duel leaderboard
     // Table: dc_duel_statistics with fields: player_guid, wins, losses, draws, total_damage_dealt
-    std::vector<LeaderboardEntry> GetDuelLeaderboard(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildDuelLeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
         std::string orderBy = "d.wins DESC";
-
         if (subcat == "duel_winrate")
-        {
             orderBy = "(CAST(d.wins AS FLOAT) / GREATEST(d.wins + d.losses, 1)) DESC";
-        }
         else if (subcat == "duel_total")
-        {
             orderBy = "(d.wins + d.losses + d.draws) DESC";
-        }
         else if (subcat == "duel_damage")
-        {
             orderBy = "d.total_damage_dealt DESC";
-        }
 
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT c.name, c.class, d.wins, d.losses, d.draws, d.total_damage_dealt "
             "FROM dc_duel_statistics d "
             "JOIN characters c ON d.player_guid = c.guid "
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             orderBy, limit, offset);
+    }
 
+    std::vector<LeaderboardEntry> ParseDuelLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
         if (!result)
             return entries;
 
@@ -1014,15 +1039,12 @@ namespace
         return entries;
     }
 
-    // Get AOE Loot leaderboard
+    // AOE Loot leaderboard
     // Table: dc_aoeloot_detailed_stats with quality breakdown columns
     // Simplified to 3 views: aoe_items (looted + quality), aoe_filtered (filtered + quality), aoe_gold
-    std::vector<LeaderboardEntry> GetAOELeaderboard(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildAOELeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
         std::string orderBy = "a.total_items DESC";
-
         if (subcat == "aoe_gold")
         {
             orderBy = "a.total_gold DESC";
@@ -1035,7 +1057,7 @@ namespace
         }
         // aoe_items uses default order by total_items
 
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT c.name, c.class, a.total_items, a.total_gold, a.upgrades, a.skinned, a.vendor_gold, "
             "COALESCE(a.quality_poor, 0), COALESCE(a.quality_common, 0), COALESCE(a.quality_uncommon, 0), "
             "COALESCE(a.quality_rare, 0), COALESCE(a.quality_epic, 0), COALESCE(a.quality_legendary, 0), "
@@ -1046,7 +1068,11 @@ namespace
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             orderBy, limit, offset);
+    }
 
+    std::vector<LeaderboardEntry> ParseAOELeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
         if (!result)
             return entries;
 
@@ -1150,21 +1176,16 @@ namespace
         return entries;
     }
 
-    // Get Achievement leaderboard
+    // Achievement leaderboard
     // Table: dc_player_achievements with fields: player_guid, achievement_id, progress, completed
-    std::vector<LeaderboardEntry> GetAchievementLeaderboard(const std::string& subcat, uint32 limit, uint32 offset)
+    std::string BuildAchievementLeaderboardSql(const std::string& subcat, uint32 limit, uint32 offset)
     {
-        std::vector<LeaderboardEntry> entries;
-
         std::string orderBy = "total_completed DESC";
-
         if (subcat == "achieve_progress")
-        {
             orderBy = "total_progress DESC";
-        }
 
         // Aggregate achievements per player
-        QueryResult result = CharacterDatabase.Query(
+        return Acore::StringFormat(
             "SELECT c.name, c.class, SUM(a.completed) as total_completed, SUM(a.progress) as total_progress "
             "FROM dc_player_achievements a "
             "JOIN characters c ON a.player_guid = c.guid "
@@ -1172,7 +1193,11 @@ namespace
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             orderBy, limit, offset);
+    }
 
+    std::vector<LeaderboardEntry> ParseAchievementLeaderboard(QueryResult result, const std::string& subcat, uint32 offset)
+    {
+        std::vector<LeaderboardEntry> entries;
         if (!result)
             return entries;
 
@@ -1205,12 +1230,11 @@ namespace
         return entries;
     }
 
-    // Get total entry count for pagination
-    uint32 GetTotalEntryCount(const std::string& category, const std::string& subcat, uint32 seasonId,
-        bool myRunsOnly = false, uint32 requesterGuid = 0)
+    // Build the total-entry-count query for pagination (all sources live in the
+    // character DB). Empty string = unknown category (no query to run).
+    std::string BuildTotalEntryCountSql(const std::string& category, const std::string& subcat, uint32 seasonId,
+        bool myRunsOnly, uint32 requesterGuid)
     {
-        QueryResult result = nullptr;
-
         // Handle seasonId = 0 as current season
         if (seasonId == 0)
             seasonId = GetCurrentSeasonId();
@@ -1220,93 +1244,236 @@ namespace
             if (subcat == "mplus_history")
             {
                 if (myRunsOnly && requesterGuid > 0)
-                {
-                    result = CharacterDatabase.Query(
+                    return Acore::StringFormat(
                         "SELECT COUNT(*) FROM dc_mplus_runs WHERE season_id = {} AND character_guid = {}",
                         seasonId, requesterGuid);
-                }
-                else
-                {
-                    result = CharacterDatabase.Query(
-                        "SELECT COUNT(*) FROM dc_mplus_runs WHERE season_id = {}", seasonId);
-                }
+                return Acore::StringFormat("SELECT COUNT(*) FROM dc_mplus_runs WHERE season_id = {}", seasonId);
             }
-            else
-            {
-                result = CharacterDatabase.Query(
-                    "SELECT COUNT(DISTINCT character_guid) FROM dc_mplus_scores WHERE season_id = {}", seasonId);
-            }
+            return Acore::StringFormat(
+                "SELECT COUNT(DISTINCT character_guid) FROM dc_mplus_scores WHERE season_id = {}", seasonId);
         }
-        else if (category == "seasons")
-        {
-            result = CharacterDatabase.Query(
+
+        if (category == "seasons")
+            return Acore::StringFormat(
                 "SELECT COUNT(*) FROM dc_player_seasonal_stats WHERE season_id = {}", seasonId);
-        }
-        else if (category == "hlbg")
+
+        if (category == "hlbg")
         {
-            // Check if using overall stats or seasonal
-            bool useOverallStats = (subcat == "hlbg_kills" || subcat == "hlbg_alltime_wins" || subcat == "hlbg_resources");
-            if (useOverallStats)
-            {
-                result = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_hlbg_player_stats");
-            }
-            else
-            {
-                result = CharacterDatabase.Query(
-                    "SELECT COUNT(DISTINCT guid) FROM v_hlbg_player_seasonal_stats WHERE season_id = {}", seasonId);
-            }
+            if (IsHLBGOverallSubcategory(subcat))
+                return "SELECT COUNT(*) FROM dc_hlbg_player_stats";
+            return Acore::StringFormat(
+                "SELECT COUNT(DISTINCT guid) FROM v_hlbg_player_seasonal_stats WHERE season_id = {}", seasonId);
         }
-        else if (category == "prestige")
-        {
-            result = CharacterDatabase.Query("SELECT COUNT(DISTINCT player_guid) FROM dc_player_artifact_mastery");
-        }
-        else if (category == "upgrade")
-        {
-            result = CharacterDatabase.Query(
+
+        if (category == "prestige")
+            return "SELECT COUNT(DISTINCT player_guid) FROM dc_player_artifact_mastery";
+
+        if (category == "upgrade")
+            return Acore::StringFormat(
                 "SELECT COUNT(DISTINCT player_guid) FROM dc_item_upgrades WHERE season = {} OR season = 0", seasonId);
-        }
-        else if (category == "duel")
-        {
-            result = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_duel_statistics");
-        }
-        else if (category == "aoe")
+
+        if (category == "duel")
+            return "SELECT COUNT(*) FROM dc_duel_statistics";
+
+        if (category == "aoe")
         {
             // Use dc_aoeloot_detailed_stats which is populated by dc_aoeloot_extensions.cpp
-            result = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_aoeloot_detailed_stats");
-        }
-        else if (category == "achieve")
-        {
-            result = CharacterDatabase.Query("SELECT COUNT(DISTINCT player_guid) FROM dc_player_achievements");
+            return "SELECT COUNT(*) FROM dc_aoeloot_detailed_stats";
         }
 
-        if (result)
-            return result->Fetch()[0].Get<uint32>();
+        if (category == "achieve")
+            return "SELECT COUNT(DISTINCT player_guid) FROM dc_player_achievements";
 
-        return 0;
+        return std::string();
     }
 
-    // Get player's rank in a leaderboard
-    uint32 GetPlayerRank(Player* player, const std::string& category, const std::string& subcat, uint32 seasonId)
+    // Build the player-rank query for HandleGetMyRank. Empty string = no rank
+    // source implemented for this category/subcategory.
+    // This is a simplified version - a full implementation would use window
+    // functions or subqueries to get the exact rank per category.
+    std::string BuildPlayerRankSql(uint32 requesterGuid, const std::string& category, const std::string& subcat,
+        uint32 seasonId)
     {
-        uint32 guid = player->GetGUID().GetCounter();
-        QueryResult result = nullptr;
-
-        // This is a simplified version - a full implementation would use window functions
-        // or subqueries to get the exact rank
         if (category == "mplus" && subcat == "mplus_key")
-        {
-            result = CharacterDatabase.Query(
+            return Acore::StringFormat(
                 "SELECT COUNT(*) + 1 FROM dc_mplus_scores s1 "
                 "WHERE s1.season_id = {} AND s1.best_level > "
                 "(SELECT best_level FROM dc_mplus_scores WHERE character_guid = {} AND season_id = {} LIMIT 1)",
-                seasonId, guid, seasonId);
-        }
+                seasonId, requesterGuid, seasonId);
         // Add more cases as needed...
 
-        if (result)
-            return result->Fetch()[0].Get<uint32>();
+        return std::string();
+    }
 
-        return 0;
+    // Extract the map id from a "mplus_dungeon_<mapId>" subcategory.
+    bool TryParseDungeonMapId(const std::string& subcategory, uint16& mapId)
+    {
+        if (subcategory.rfind("mplus_dungeon_", 0) != 0)
+            return false;
+        mapId = static_cast<uint16>(std::strtoul(subcategory.c_str() + 14, nullptr, 10));
+        return true;
+    }
+
+    // Dispatch: build the fetch SQL for a category/subcategory.
+    // Empty string = unknown category (respond with an empty leaderboard).
+    std::string BuildLeaderboardSql(const std::string& category, const std::string& subcategory, uint32 seasonId,
+        uint32 limit, uint32 offset, uint32 requesterGuid, bool myRunsOnly)
+    {
+        if (category == "mplus")
+        {
+            uint16 mapId = 0;
+            if (TryParseDungeonMapId(subcategory, mapId))
+                return BuildMythicPlusDungeonLeaderboardSql(mapId, seasonId, limit, offset);
+            if (subcategory == "mplus_bestruns")
+                return BuildMythicPlusBestRunsSql(seasonId, limit, offset);
+            return BuildMythicPlusLeaderboardSql(subcategory, seasonId, limit, offset, requesterGuid, myRunsOnly);
+        }
+        if (category == "seasons")
+            return BuildSeasonalLeaderboardSql(subcategory, seasonId, limit, offset);
+        if (category == "hlbg")
+            return BuildHLBGLeaderboardSql(subcategory, seasonId, limit, offset);
+        if (category == "prestige")
+            return BuildPrestigeLeaderboardSql(subcategory, limit, offset);
+        if (category == "upgrade")
+            return BuildUpgradeLeaderboardSql(subcategory, seasonId, limit, offset);
+        if (category == "duel")
+            return BuildDuelLeaderboardSql(subcategory, limit, offset);
+        if (category == "aoe")
+            return BuildAOELeaderboardSql(subcategory, limit, offset);
+        if (category == "achieve")
+            return BuildAchievementLeaderboardSql(subcategory, limit, offset);
+
+        return std::string();
+    }
+
+    // Dispatch: parse the fetch-query result with the matching row parser.
+    std::vector<LeaderboardEntry> ParseLeaderboardEntries(QueryResult result, const std::string& category,
+        const std::string& subcategory, uint32 seasonId, uint32 offset)
+    {
+        if (category == "mplus")
+        {
+            uint16 mapId = 0;
+            if (TryParseDungeonMapId(subcategory, mapId))
+                return ParseMythicPlusDungeonLeaderboard(result, mapId, seasonId, offset);
+            if (subcategory == "mplus_bestruns")
+                return ParseMythicPlusBestRuns(result, seasonId, offset);
+            return ParseMythicPlusLeaderboard(result, subcategory, seasonId, offset);
+        }
+        if (category == "seasons")
+            return ParseSeasonalLeaderboard(result, subcategory, offset);
+        if (category == "hlbg")
+            return ParseHLBGLeaderboard(result, subcategory, offset);
+        if (category == "prestige")
+            return ParsePrestigeLeaderboard(result, subcategory, offset);
+        if (category == "upgrade")
+            return ParseUpgradeLeaderboard(result, subcategory, offset);
+        if (category == "duel")
+            return ParseDuelLeaderboard(result, subcategory, offset);
+        if (category == "aoe")
+            return ParseAOELeaderboard(result, subcategory, offset);
+        if (category == "achieve")
+            return ParseAchievementLeaderboard(result, subcategory, offset);
+
+        return {};
+    }
+
+    // Serialize the SMSG_LEADERBOARD_DATA payload (shared by the cache-hit
+    // path and the async cache-miss callback).
+    std::string BuildLeaderboardJson(const std::string& category, const std::string& subcategory, uint32 page,
+        uint32 totalPages, uint32 totalEntries, std::vector<LeaderboardEntry> const& entries)
+    {
+        // Build entries array as JSON string
+        std::string entriesJson = "[";
+        for (size_t i = 0; i < entries.size(); ++i)
+        {
+            if (i > 0) entriesJson += ",";
+            entriesJson += "{";
+            entriesJson += "\"rank\":" + std::to_string(entries[i].rank) + ",";
+            entriesJson += "\"name\":\"" + JsonEscape(entries[i].name) + "\",";
+            entriesJson += "\"class\":\"" + JsonEscape(entries[i].className) + "\",";
+            entriesJson += "\"score\":" + std::to_string(entries[i].score) + ",";
+            // v1.3.0: Add score_str for large values (gold as uint64)
+            if (!entries[i].score_str.empty())
+                entriesJson += "\"score_str\":\"" + JsonEscape(entries[i].score_str) + "\",";
+            // v1.3.0: Add mapId for per-dungeon display
+            if (entries[i].mapId > 0)
+                entriesJson += "\"mapId\":" + std::to_string(entries[i].mapId) + ",";
+
+            // HLBG: provide structured fields expected by the addon UI
+            if (category == "hlbg")
+            {
+                if (entries[i].hasWinsLosses)
+                {
+                    entriesJson += "\"wins\":" + std::to_string(entries[i].wins) + ",";
+                    entriesJson += "\"losses\":" + std::to_string(entries[i].losses) + ",";
+                }
+
+                if (entries[i].hasKD)
+                {
+                    entriesJson += "\"kills\":" + std::to_string(entries[i].kills) + ",";
+                    entriesJson += "\"deaths\":" + std::to_string(entries[i].deaths) + ",";
+                    // Use a compact float representation (client handles tonumber)
+                    entriesJson += "\"kdRatio\":" + std::to_string(entries[i].kdRatio) + ",";
+                }
+            }
+
+            // AOE Loot: provide separate quality columns (v1.4.0 client)
+            if (category == "aoe" && (subcategory == "aoe_items" || subcategory == "aoe_filtered") && entries[i].hasQuality)
+            {
+                entriesJson += "\"qLeg\":" + std::to_string(entries[i].qLeg) + ",";
+                entriesJson += "\"qEpic\":" + std::to_string(entries[i].qEpic) + ",";
+                entriesJson += "\"qRare\":" + std::to_string(entries[i].qRare) + ",";
+                entriesJson += "\"qUncommon\":" + std::to_string(entries[i].qUncommon) + ",";
+            }
+
+            entriesJson += "\"extra\":\"" + JsonEscape(entries[i].extra) + "\"";
+            entriesJson += "}";
+        }
+        entriesJson += "]";
+
+        std::string fullJson = "{";
+        fullJson += "\"category\":\"" + JsonEscape(category) + "\",";
+        fullJson += "\"subcategory\":\"" + JsonEscape(subcategory) + "\",";
+        fullJson += "\"page\":" + std::to_string(page) + ",";
+        fullJson += "\"totalPages\":" + std::to_string(totalPages) + ",";
+        fullJson += "\"totalEntries\":" + std::to_string(totalEntries) + ",";
+        fullJson += "\"entries\":" + entriesJson;
+        fullJson += "}";
+        return fullJson;
+    }
+
+    // Store a freshly fetched page in the leaderboard cache (with the same
+    // oldest-entry eviction the synchronous path used).
+    void StoreLeaderboardCache(const std::string& cacheKey, std::vector<LeaderboardEntry> const& entries,
+        uint32 totalEntries)
+    {
+        std::lock_guard<std::mutex> lock(g_cacheMutex);
+
+        // Evict old entries if cache is too large
+        if (g_leaderboardCache.size() >= s_CacheConfig.maxCacheEntries)
+        {
+            // Simple eviction: remove oldest entries
+            time_t oldest = time(nullptr);
+            std::string oldestKey;
+            for (auto& [key, entry] : g_leaderboardCache)
+            {
+                if (entry.lastUpdate < oldest)
+                {
+                    oldest = entry.lastUpdate;
+                    oldestKey = key;
+                }
+            }
+            if (!oldestKey.empty())
+                g_leaderboardCache.erase(oldestKey);
+        }
+
+        LeaderboardCacheEntry cacheEntry;
+        cacheEntry.entries = entries;
+        cacheEntry.totalEntries = totalEntries;
+        cacheEntry.lastUpdate = time(nullptr);
+        g_leaderboardCache[cacheKey] = std::move(cacheEntry);
+
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: Cached {} entries for {}", entries.size(), cacheKey);
     }
 
     // ========================================================================
@@ -1396,157 +1563,69 @@ namespace
             }
         }
 
-        if (!useCache)
-        {
-            LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache MISS for {}", cacheKey);
-            // ===== FETCH FROM DATABASE =====
+        std::string requestToken = ExtractLeaderboardRequestToken(json);
 
-        if (category == "mplus")
+        if (useCache)
         {
-            // v1.3.0: Check for per-dungeon subcategory (format: mplus_dungeon_<mapId>)
-            if (subcategory.rfind("mplus_dungeon_", 0) == 0)
-            {
-                // Extract map ID from subcategory
-                std::string mapIdStr = subcategory.substr(14);  // After "mplus_dungeon_"
-                uint16 mapId = static_cast<uint16>(std::stoul(mapIdStr));
-                entries = GetMythicPlusDungeonLeaderboard(mapId, seasonId, limit, offset);
-            }
-            else if (subcategory == "mplus_bestruns")
-            {
-                // Best runs view - shows each player's best dungeon run with name
-                entries = GetMythicPlusBestRunsLeaderboard(seasonId, limit, offset);
-            }
-            else
-            {
-                entries = GetMythicPlusLeaderboard(subcategory, seasonId, limit, offset,
-                    player->GetGUID().GetCounter(), myRunsOnly);
-            }
+            std::string fullJson = BuildLeaderboardJson(category, subcategory, page, totalPages, totalEntries, entries);
+            SendRawJson(player, Opcode::SMSG_LEADERBOARD_DATA, fullJson);
+            SendLeaderboardResponseEnvelope(player, Opcode::SMSG_LEADERBOARD_DATA,
+                StatsFeature::LEADERBOARD, fullJson, requestToken);
+            return;
         }
-        else if (category == "seasons")
-            entries = GetSeasonalLeaderboard(subcategory, seasonId, limit, offset);
-        else if (category == "hlbg")
-            entries = GetHLBGLeaderboard(subcategory, seasonId, limit, offset);
-        else if (category == "prestige")
-            entries = GetPrestigeLeaderboard(subcategory, limit, offset);
-        else if (category == "upgrade")
-            entries = GetUpgradeLeaderboard(subcategory, seasonId, limit, offset);
-        else if (category == "duel")
-            entries = GetDuelLeaderboard(subcategory, limit, offset);
-        else if (category == "aoe")
-            entries = GetAOELeaderboard(subcategory, limit, offset);
-        else if (category == "achieve")
-            entries = GetAchievementLeaderboard(subcategory, limit, offset);
 
-        // Get total count for pagination
-        totalEntries = GetTotalEntryCount(category, subcategory, seasonId,
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache MISS for {}", cacheKey);
+
+        std::string fetchSql = BuildLeaderboardSql(category, subcategory, seasonId, limit, offset,
+            player->GetGUID().GetCounter(), myRunsOnly);
+
+        if (fetchSql.empty())
+        {
+            // Unknown category: same empty payload as before, without DB round-trips
+            std::string fullJson = BuildLeaderboardJson(category, subcategory, page, 1, 0, {});
+            SendRawJson(player, Opcode::SMSG_LEADERBOARD_DATA, fullJson);
+            SendLeaderboardResponseEnvelope(player, Opcode::SMSG_LEADERBOARD_DATA,
+                StatsFeature::LEADERBOARD, fullJson, requestToken);
+            return;
+        }
+
+        std::string countSql = BuildTotalEntryCountSql(category, subcategory, seasonId,
             myRunsOnly, player->GetGUID().GetCounter());
-        totalPages = (totalEntries + limit - 1) / limit;
-        if (totalPages < 1) totalPages = 1;
 
-            // ===== STORE IN CACHE =====
-            {
-                std::lock_guard<std::mutex> lock(g_cacheMutex);
+        // ===== ASYNC FETCH: entries query -> count query -> cache + respond =====
+        // Never capture Player* across queries; re-resolve from the guid at send time.
+        ObjectGuid const playerGuid = player->GetGUID();
+        std::string requestId = DCAddon::GetCurrentRequestId();
 
-                // Evict old entries if cache is too large
-                if (g_leaderboardCache.size() >= s_CacheConfig.maxCacheEntries)
-                {
-                    // Simple eviction: remove oldest entries
-                    time_t oldest = time(nullptr);
-                    std::string oldestKey;
-                    for (auto& [key, entry] : g_leaderboardCache)
-                    {
-                        if (entry.lastUpdate < oldest)
-                        {
-                            oldest = entry.lastUpdate;
-                            oldestKey = key;
-                        }
-                    }
-                    if (!oldestKey.empty())
-                        g_leaderboardCache.erase(oldestKey);
-                }
-
-                LeaderboardCacheEntry cacheEntry;
-                cacheEntry.entries = entries;
-                cacheEntry.totalEntries = totalEntries;
-                cacheEntry.lastUpdate = time(nullptr);
-                g_leaderboardCache[cacheKey] = std::move(cacheEntry);
-
-                LOG_DEBUG("server.scripts", "DC-Leaderboards: Cached {} entries for {}", entries.size(), cacheKey);
-            }
-        }  // End of if (!useCache)
-
-        // Build JSON response
-        DCAddon::JsonMessage response(MODULE_LEADERBOARD, Opcode::SMSG_LEADERBOARD_DATA);
-        response.Set("category", category);
-        response.Set("subcategory", subcategory);
-        response.Set("page", static_cast<int32>(page));
-        response.Set("totalPages", static_cast<int32>(totalPages));
-        response.Set("totalEntries", static_cast<int32>(totalEntries));
-
-        // Build entries array as JSON string
-        std::string entriesJson = "[";
-        for (size_t i = 0; i < entries.size(); ++i)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(fetchSql)
+            .WithCallback([playerGuid, category, subcategory, seasonId, page, limit, offset, cacheKey,
+                countSql, requestId, requestToken](QueryResult result)
         {
-            if (i > 0) entriesJson += ",";
-            entriesJson += "{";
-            entriesJson += "\"rank\":" + std::to_string(entries[i].rank) + ",";
-            entriesJson += "\"name\":\"" + JsonEscape(entries[i].name) + "\",";
-            entriesJson += "\"class\":\"" + JsonEscape(entries[i].className) + "\",";
-            entriesJson += "\"score\":" + std::to_string(entries[i].score) + ",";
-            // v1.3.0: Add score_str for large values (gold as uint64)
-            if (!entries[i].score_str.empty())
-                entriesJson += "\"score_str\":\"" + JsonEscape(entries[i].score_str) + "\",";
-            // v1.3.0: Add mapId for per-dungeon display
-            if (entries[i].mapId > 0)
-                entriesJson += "\"mapId\":" + std::to_string(entries[i].mapId) + ",";
+            std::vector<LeaderboardEntry> entries =
+                ParseLeaderboardEntries(result, category, subcategory, seasonId, offset);
 
-            // HLBG: provide structured fields expected by the addon UI
-            if (category == "hlbg")
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(countSql)
+                .WithCallback([playerGuid, category, subcategory, page, limit, cacheKey, requestId, requestToken,
+                    entries = std::move(entries)](QueryResult countResult)
             {
-                if (entries[i].hasWinsLosses)
-                {
-                    entriesJson += "\"wins\":" + std::to_string(entries[i].wins) + ",";
-                    entriesJson += "\"losses\":" + std::to_string(entries[i].losses) + ",";
-                }
+                uint32 totalEntries = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
+                uint32 totalPages = (totalEntries + limit - 1) / limit;
+                if (totalPages < 1)
+                    totalPages = 1;
 
-                if (entries[i].hasKD)
-                {
-                    entriesJson += "\"kills\":" + std::to_string(entries[i].kills) + ",";
-                    entriesJson += "\"deaths\":" + std::to_string(entries[i].deaths) + ",";
-                    // Use a compact float representation (client handles tonumber)
-                    entriesJson += "\"kdRatio\":" + std::to_string(entries[i].kdRatio) + ",";
-                }
-            }
+                // Cache even if the requester logged off meanwhile
+                StoreLeaderboardCache(cacheKey, entries, totalEntries);
 
-            // AOE Loot: provide separate quality columns (v1.4.0 client)
-            if (category == "aoe" && (subcategory == "aoe_items" || subcategory == "aoe_filtered") && entries[i].hasQuality)
-            {
-                entriesJson += "\"qLeg\":" + std::to_string(entries[i].qLeg) + ",";
-                entriesJson += "\"qEpic\":" + std::to_string(entries[i].qEpic) + ",";
-                entriesJson += "\"qRare\":" + std::to_string(entries[i].qRare) + ",";
-                entriesJson += "\"qUncommon\":" + std::to_string(entries[i].qUncommon) + ",";
-            }
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
 
-            entriesJson += "\"extra\":\"" + JsonEscape(entries[i].extra) + "\"";
-            entriesJson += "}";
-        }
-        entriesJson += "]";
-
-        // Unfortunately we need to build this manually since JsonValue doesn't support nested arrays easily
-        // Send as a complete JSON string
-        std::string fullJson = "{";
-        fullJson += "\"category\":\"" + JsonEscape(category) + "\",";
-        fullJson += "\"subcategory\":\"" + JsonEscape(subcategory) + "\",";
-        fullJson += "\"page\":" + std::to_string(page) + ",";
-        fullJson += "\"totalPages\":" + std::to_string(totalPages) + ",";
-        fullJson += "\"totalEntries\":" + std::to_string(totalEntries) + ",";
-        fullJson += "\"entries\":" + entriesJson;
-        fullJson += "}";
-
-        SendRawJson(player, Opcode::SMSG_LEADERBOARD_DATA, fullJson);
-        SendLeaderboardResponseEnvelope(player, Opcode::SMSG_LEADERBOARD_DATA,
-            StatsFeature::LEADERBOARD, fullJson,
-            ExtractLeaderboardRequestToken(json));
+                std::string fullJson = BuildLeaderboardJson(category, subcategory, page, totalPages, totalEntries, entries);
+                SendRawJson(player, Opcode::SMSG_LEADERBOARD_DATA, fullJson, requestId);
+                SendLeaderboardResponseEnvelope(player, Opcode::SMSG_LEADERBOARD_DATA,
+                    StatsFeature::LEADERBOARD, fullJson, requestToken);
+            }));
+        }));
     }
 
     void HandleGetCategories(Player* player, const DCAddon::ParsedMessage& /*msg*/)
@@ -1558,6 +1637,19 @@ namespace
         DCAddon::JsonMessage response(MODULE_LEADERBOARD, Opcode::SMSG_CATEGORIES);
         response.Set("success", true);
         response.Set("count", 8);
+        response.Send(player);
+    }
+
+    void SendMyRankResponse(Player* player, const std::string& category, const std::string& subcategory,
+        uint32 rank, uint32 total)
+    {
+        float percentile = total > 0 ? (static_cast<float>(rank) / total * 100.0f) : 0.0f;
+
+        DCAddon::JsonMessage response(MODULE_LEADERBOARD, Opcode::SMSG_MY_RANK);
+        response.Set("category", category);
+        response.Set("subcategory", subcategory);
+        response.Set("rank", static_cast<int32>(rank));
+        response.Set("percentile", static_cast<double>(percentile));
         response.Send(player);
     }
 
@@ -1576,16 +1668,51 @@ namespace
         if (seasonId == 0)
             seasonId = GetCurrentSeasonId();
 
-        uint32 rank = GetPlayerRank(player, category, subcategory, seasonId);
-        uint32 total = GetTotalEntryCount(category, subcategory, seasonId);
-        float percentile = total > 0 ? (static_cast<float>(rank) / total * 100.0f) : 0.0f;
+        ObjectGuid const playerGuid = player->GetGUID();
+        std::string rankSql = BuildPlayerRankSql(playerGuid.GetCounter(), category, subcategory, seasonId);
+        std::string countSql = BuildTotalEntryCountSql(category, subcategory, seasonId, false, 0);
 
-        DCAddon::JsonMessage response(MODULE_LEADERBOARD, Opcode::SMSG_MY_RANK);
-        response.Set("category", category);
-        response.Set("subcategory", subcategory);
-        response.Set("rank", static_cast<int32>(rank));
-        response.Set("percentile", static_cast<double>(percentile));
-        response.Send(player);
+        if (countSql.empty())
+        {
+            // Unknown category: same zeroed response as before, without DB round-trips
+            SendMyRankResponse(player, category, subcategory, 0, 0);
+            return;
+        }
+
+        // Only some categories have a rank query; the count query always runs.
+        if (rankSql.empty())
+        {
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(countSql)
+                .WithCallback([playerGuid, category, subcategory](QueryResult countResult)
+            {
+                uint32 total = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
+
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                SendMyRankResponse(player, category, subcategory, 0, total);
+            }));
+            return;
+        }
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(rankSql)
+            .WithCallback([playerGuid, category, subcategory, countSql](QueryResult rankResult)
+        {
+            uint32 rank = rankResult ? rankResult->Fetch()[0].Get<uint32>() : 0;
+
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(countSql)
+                .WithCallback([playerGuid, category, subcategory, rank](QueryResult countResult)
+            {
+                uint32 total = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
+
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                SendMyRankResponse(player, category, subcategory, rank, total);
+            }));
+        }));
     }
 
     void HandleRefresh(Player* player, const DCAddon::ParsedMessage& /*msg*/)
@@ -1602,58 +1729,19 @@ namespace
         response.Send(player);
     }
 
-    // Helper struct for table test results
-    struct TableTestResult
-    {
-        std::string name;
-        bool exists;
-        uint32 count;
+    // Leaderboard tables/views living in the character DB; dc_seasons lives
+    // in the world DB and is probed separately.
+    std::vector<std::string> const TestTablesCharacterDb = {
+        "dc_mplus_scores",
+        "dc_player_seasonal_stats",
+        "v_hlbg_player_seasonal_stats",
+        "dc_hlbg_player_stats",
+        "dc_character_prestige",
+        "dc_item_upgrades",
+        "dc_duel_statistics",
+        "dc_aoeloot_detailed_stats",
+        "dc_player_achievements"
     };
-
-    // Tables that are in WorldDatabase instead of CharacterDatabase
-    static const std::unordered_set<std::string> WorldDatabaseTables = {
-        "dc_seasons"
-    };
-
-    // Test if a table exists and get row count
-    TableTestResult TestTable(const std::string& tableName)
-    {
-        TableTestResult result;
-        result.name = tableName;
-        result.exists = false;
-        result.count = 0;
-
-        // Use correct database based on table name
-        bool useWorld = WorldDatabaseTables.count(tableName) > 0;
-
-        // Try to count rows - if table doesn't exist, this will fail
-        try
-        {
-            QueryResult countResult;
-            if (useWorld)
-            {
-                countResult = WorldDatabase.Query(
-                    "SELECT COUNT(*) FROM {}", tableName);
-            }
-            else
-            {
-                countResult = CharacterDatabase.Query(
-                    "SELECT COUNT(*) FROM {}", tableName);
-            }
-
-            if (countResult)
-            {
-                result.exists = true;
-                result.count = countResult->Fetch()[0].Get<uint32>();
-            }
-        }
-        catch (...)
-        {
-            result.exists = false;
-        }
-
-        return result;
-    }
 
     void HandleTestTables(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
@@ -1662,52 +1750,83 @@ namespace
 
         LOG_INFO("server.scripts", "DC-Leaderboards: Testing database tables for player {}", player->GetName());
 
-        // Test all leaderboard-related tables and views
-        std::vector<std::string> tables = {
-            "dc_mplus_scores",
-            "dc_player_seasonal_stats",
-            "v_hlbg_player_seasonal_stats",
-            "dc_hlbg_player_stats",
-            "dc_character_prestige",
-            "dc_item_upgrades",
-            "dc_duel_statistics",
-            "dc_aoeloot_detailed_stats",
-            "dc_player_achievements",
-            "dc_seasons"
-        };
-
-        // Build JSON response manually for array support
-        std::string tablesJson = "[";
-        bool first = true;
-
-        for (auto const& tableName : tables)
+        // One UNION ALL count query covers all character-DB tables, chained
+        // with a single world-DB count for dc_seasons.
+        std::string charSql;
+        for (auto const& tableName : TestTablesCharacterDb)
         {
-            TableTestResult result = TestTable(tableName);
-
-            if (!first) tablesJson += ",";
-            first = false;
-
-            tablesJson += "{";
-            tablesJson += "\"name\":\"" + JsonEscape(result.name) + "\",";
-            tablesJson += "\"exists\":" + std::string(result.exists ? "true" : "false") + ",";
-            tablesJson += "\"count\":" + std::to_string(result.count);
-            tablesJson += "}";
-
-            LOG_DEBUG("server.scripts", "  Table {}: exists={}, count={}",
-                result.name, result.exists, result.count);
+            if (!charSql.empty())
+                charSql += " UNION ALL ";
+            charSql += Acore::StringFormat("SELECT '{}' AS name, COUNT(*) AS cnt FROM {}", tableName, tableName);
         }
-        tablesJson += "]";
 
-        // Get current season
-        uint32 currentSeason = GetCurrentSeasonId();
+        ObjectGuid const playerGuid = player->GetGUID();
+        std::string requestId = DCAddon::GetCurrentRequestId();
 
-        // Build full JSON response
-        std::string fullJson = "{";
-        fullJson += "\"tables\":" + tablesJson + ",";
-        fullJson += "\"currentSeason\":" + std::to_string(currentSeason);
-        fullJson += "}";
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(charSql)
+            .WithCallback([playerGuid, requestId](QueryResult charResult)
+        {
+            // If the UNION fails wholesale (e.g. one table missing), charResult
+            // is null and every character table is reported exists=false/0 --
+            // the same signal a failed per-table count used to give.
+            std::unordered_map<std::string, uint32> counts;
+            if (charResult)
+            {
+                do
+                {
+                    Field* fields = charResult->Fetch();
+                    counts[fields[0].Get<std::string>()] = fields[1].Get<uint32>();
+                } while (charResult->NextRow());
+            }
 
-        SendRawJson(player, Opcode::SMSG_TEST_RESULTS, fullJson);
+            std::string tablesJson = "[";
+            bool first = true;
+            for (auto const& tableName : TestTablesCharacterDb)
+            {
+                auto it = counts.find(tableName);
+                bool exists = it != counts.end();
+                uint32 count = exists ? it->second : 0;
+
+                if (!first) tablesJson += ",";
+                first = false;
+
+                tablesJson += "{";
+                tablesJson += "\"name\":\"" + JsonEscape(tableName) + "\",";
+                tablesJson += "\"exists\":" + std::string(exists ? "true" : "false") + ",";
+                tablesJson += "\"count\":" + std::to_string(count);
+                tablesJson += "}";
+
+                LOG_DEBUG("server.scripts", "  Table {}: exists={}, count={}", tableName, exists, count);
+            }
+
+            DCAddon::EnqueueQueryCallback(WorldDatabase.AsyncQuery("SELECT COUNT(*) FROM dc_seasons")
+                .WithCallback([playerGuid, requestId, tablesJson](QueryResult worldResult)
+            {
+                bool seasonsExists = worldResult != nullptr;
+                uint32 seasonsCount = worldResult ? worldResult->Fetch()[0].Get<uint32>() : 0;
+
+                LOG_DEBUG("server.scripts", "  Table dc_seasons: exists={}, count={}", seasonsExists, seasonsCount);
+
+                std::string allTablesJson = tablesJson;
+                allTablesJson += ",{";
+                allTablesJson += "\"name\":\"dc_seasons\",";
+                allTablesJson += "\"exists\":" + std::string(seasonsExists ? "true" : "false") + ",";
+                allTablesJson += "\"count\":" + std::to_string(seasonsCount);
+                allTablesJson += "}]";
+
+                // Build full JSON response
+                std::string fullJson = "{";
+                fullJson += "\"tables\":" + allTablesJson + ",";
+                fullJson += "\"currentSeason\":" + std::to_string(GetCurrentSeasonId());
+                fullJson += "}";
+
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                SendRawJson(player, Opcode::SMSG_TEST_RESULTS, fullJson, requestId);
+            }));
+        }));
     }
 
     void HandleGetSeasons(Player* player, const DCAddon::ParsedMessage& /*msg*/)
@@ -1717,37 +1836,46 @@ namespace
 
         LOG_DEBUG("server.scripts", "DC-Leaderboards: Getting seasons list for player {}", player->GetName());
 
-        // Build seasons array
-        std::string seasonsJson = "[";
-        bool first = true;
+        ObjectGuid const playerGuid = player->GetGUID();
+        std::string requestId = DCAddon::GetCurrentRequestId();
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT season_id, season_state FROM dc_seasons ORDER BY season_id DESC LIMIT 10");
-
-        if (result)
+        DCAddon::EnqueueQueryCallback(WorldDatabase.AsyncQuery(
+            "SELECT season_id, season_state FROM dc_seasons ORDER BY season_id DESC LIMIT 10")
+            .WithCallback([playerGuid, requestId](QueryResult result)
         {
-            do
+            // Build seasons array
+            std::string seasonsJson = "[";
+            bool first = true;
+
+            if (result)
             {
-                Field* fields = result->Fetch();
-                uint32 seasonId = fields[0].Get<uint32>();
-                bool isActive = fields[1].Get<uint8>() == 1;
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint32 seasonId = fields[0].Get<uint32>();
+                    bool isActive = fields[1].Get<uint8>() == 1;
 
-                if (!first) seasonsJson += ",";
-                first = false;
+                    if (!first) seasonsJson += ",";
+                    first = false;
 
-                seasonsJson += "{";
-                seasonsJson += "\"id\":" + std::to_string(seasonId) + ",";
-                seasonsJson += "\"active\":" + std::string(isActive ? "true" : "false");
-                seasonsJson += "}";
-            } while (result->NextRow());
-        }
+                    seasonsJson += "{";
+                    seasonsJson += "\"id\":" + std::to_string(seasonId) + ",";
+                    seasonsJson += "\"active\":" + std::string(isActive ? "true" : "false");
+                    seasonsJson += "}";
+                } while (result->NextRow());
+            }
 
-        seasonsJson += "]";
+            seasonsJson += "]";
 
-        // Build full JSON response
-        std::string fullJson = "{\"seasons\":" + seasonsJson + "}";
+            // Build full JSON response
+            std::string fullJson = "{\"seasons\":" + seasonsJson + "}";
 
-        SendRawJson(player, Opcode::SMSG_SEASONS_LIST, fullJson);
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            SendRawJson(player, Opcode::SMSG_SEASONS_LIST, fullJson, requestId);
+        }));
     }
 
     // v1.3.0: Handle request for available M+ dungeons

@@ -823,7 +823,9 @@ namespace DCCollection
 
         auto unlocked = std::make_shared<std::unordered_set<uint32>>();
 
-        // Load from dc_transmog_collection table
+        // Load from dc_transmog_collection table. Intentionally synchronous:
+        // this is a cache-miss-only path, so it blocks the world thread at
+        // most once per account per server uptime.
         QueryResult result = CharacterDatabase.Query(
             "SELECT display_id FROM dc_transmog_collection WHERE account_id = {}",
             accountId);
@@ -1054,15 +1056,11 @@ namespace DCCollection
             SendAddonItemSetsPayload(player, payload);
         }
 
-        void BuildTransmogStatePayload(Player* player, DCAddon::JsonValue& state,
-            DCAddon::JsonValue& itemIds)
+        void BuildTransmogStatePayload(Player* player, QueryResult const& result,
+            DCAddon::JsonValue& state, DCAddon::JsonValue& itemIds)
         {
             state.SetObject();
             itemIds.SetObject();
-
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}",
-                player->GetGUID().GetCounter());
 
             if (!result)
                 return;
@@ -1096,24 +1094,40 @@ namespace DCCollection
 
         EnsureCharacterTransmogTable();
 
-        DCAddon::JsonValue state;
-        DCAddon::JsonValue itemIds;
-        BuildTransmogStatePayload(player, state, itemIds);
+        // Async read: every callsite treats this as a fire-and-forget tail
+        // call, so building the payload (and re-applying the visible item
+        // fields) can safely happen once the query result arrives.
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string sql = Acore::StringFormat(
+            "SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}",
+            playerGuid.GetCounter());
 
-        if (ResolveTransmogStateTransport(player).UsesNative())
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid](QueryResult result)
         {
-            DCAddon::JsonValue payload;
-            payload.SetObject();
-            payload.Set("state", state);
-            payload.Set("itemIds", itemIds);
-            SendNativeTransmogState(player, payload.Encode());
-            return;
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_TRANSMOG_STATE);
-        msg.Set("state", state);
-        msg.Set("itemIds", itemIds);
-        msg.Send(player);
+            DCAddon::JsonValue state;
+            DCAddon::JsonValue itemIds;
+            BuildTransmogStatePayload(player, result, state, itemIds);
+
+            if (ResolveTransmogStateTransport(player).UsesNative())
+            {
+                DCAddon::JsonValue payload;
+                payload.SetObject();
+                payload.Set("state", state);
+                payload.Set("itemIds", itemIds);
+                SendNativeTransmogState(player, payload.Encode());
+                return;
+            }
+
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_TRANSMOG_STATE);
+            msg.Set("state", state);
+            msg.Set("itemIds", itemIds);
+            msg.Send(player);
+        }));
     }
 
     uint32 NormalizeSavedOutfitSlotValue(uint32 rawValue)
@@ -1866,47 +1880,56 @@ namespace DCCollection
                 accountId, accountId, whereClause, orderBy, offset, limit);
         }
 
-        // Synchronous query (max 50 rows) to guarantee a response even if DB errors prevent async callbacks.
-        QueryResult result = CharacterDatabase.Query(sql);
-
-        DCAddon::JsonValue outfits;
-        outfits.SetArray();
-        uint32 outfitCount = 0;
-        if (result)
+        // Async read: DCAddon::EnqueueQueryCallback's globally ticked
+        // processor guarantees the callback runs, so no synchronous fallback
+        // is needed to guarantee a response.
+        ObjectGuid playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid, accountId, offset, limit](QueryResult result)
         {
-            do
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            DCAddon::JsonValue outfits;
+            outfits.SetArray();
+            uint32 outfitCount = 0;
+            if (result)
             {
-                Field* f = result->Fetch();
-                DCAddon::JsonValue obj;
-                obj.SetObject();
-                obj.Set("id", f[0].Get<uint32>());
-                obj.Set("name", f[1].Get<std::string>());
-                obj.Set("author", f[2].Get<std::string>());
-                obj.Set("items", f[3].Get<std::string>());
-                obj.Set("upvotes", f[4].Get<uint32>());
-                obj.Set("downvotes", f[5].Get<uint32>());
-                obj.Set("downloads", f[6].Get<uint32>());
-                obj.Set("is_favorite", f[7].Get<bool>());
-                obj.Set("my_vote", f[8].Get<int32>());
-                obj.Set("views", f[9].Get<uint32>());
-                obj.Set("tags", f[10].Get<std::string>());
-                obj.Set("author_account_id", f[11].Get<uint32>());
-                obj.Set("author_guid", f[12].Get<uint32>());
-                obj.Set("created_at", f[13].Get<std::string>());
-                obj.Set("is_owner", f[11].Get<uint32>() == accountId);
-                outfits.Push(obj);
-                outfitCount++;
-            } while (result->NextRow());
-        }
+                do
+                {
+                    Field* f = result->Fetch();
+                    DCAddon::JsonValue obj;
+                    obj.SetObject();
+                    obj.Set("id", f[0].Get<uint32>());
+                    obj.Set("name", f[1].Get<std::string>());
+                    obj.Set("author", f[2].Get<std::string>());
+                    obj.Set("items", f[3].Get<std::string>());
+                    obj.Set("upvotes", f[4].Get<uint32>());
+                    obj.Set("downvotes", f[5].Get<uint32>());
+                    obj.Set("downloads", f[6].Get<uint32>());
+                    obj.Set("is_favorite", f[7].Get<bool>());
+                    obj.Set("my_vote", f[8].Get<int32>());
+                    obj.Set("views", f[9].Get<uint32>());
+                    obj.Set("tags", f[10].Get<std::string>());
+                    obj.Set("author_account_id", f[11].Get<uint32>());
+                    obj.Set("author_guid", f[12].Get<uint32>());
+                    obj.Set("created_at", f[13].Get<std::string>());
+                    obj.Set("is_owner", f[11].Get<uint32>() == accountId);
+                    outfits.Push(obj);
+                    outfitCount++;
+                } while (result->NextRow());
+            }
 
-        LOG_INFO("module.dc", "[DCWardrobe] Sending SMSG_COMMUNITY_LIST to {} (count={} offset={} limit={})",
-            player->GetName(), outfitCount, offset, limit);
+            LOG_INFO("module.dc", "[DCWardrobe] Sending SMSG_COMMUNITY_LIST to {} (count={} offset={} limit={})",
+                player->GetName(), outfitCount, offset, limit);
 
-        DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
-        response.Set("outfits", outfits);
-        SendCommunityPayload(player,
-            DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST,
-            ExtractJsonPayload(response));
+            DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
+            response.Set("outfits", outfits);
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST,
+                ExtractJsonPayload(response));
+        }));
     }
 
     void HandleCommunityPublish(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1982,35 +2005,39 @@ namespace DCCollection
         // Allow only one vote per player/outfit to prevent vote spamming.
         EnsureCommunityTables();
 
-        if (QueryResult existing = CharacterDatabase.Query(Acore::StringFormat(
+        std::string checkSql = Acore::StringFormat(
             "SELECT vote FROM dc_collection_community_votes WHERE account_id = {} AND outfit_id = {} LIMIT 1",
-            accountId, id)))
-        {
-            (void)existing;
-            return;
-        }
+            accountId, id);
 
-        CharacterDatabase.Execute(Acore::StringFormat(
-            "INSERT INTO dc_collection_community_votes (account_id, outfit_id, vote) VALUES ({}, {}, {})",
-            accountId, id, value));
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(checkSql)
+            .WithCallback([accountId, id, value](QueryResult existing)
+        {
+            // A vote already exists for this account/outfit: return silently.
+            if (existing)
+                return;
 
-        if (value > 0)
-        {
             CharacterDatabase.Execute(Acore::StringFormat(
-                "UPDATE dc_collection_community_outfits "
-                "SET upvotes = upvotes + 1, weekly_votes = weekly_votes + 1 "
-                "WHERE id = {}",
-                id));
-        }
-        else
-        {
-            CharacterDatabase.Execute(Acore::StringFormat(
-                "UPDATE dc_collection_community_outfits "
-                "SET downvotes = downvotes + 1, "
-                "weekly_votes = CASE WHEN weekly_votes > 0 THEN weekly_votes - 1 ELSE 0 END "
-                "WHERE id = {}",
-                id));
-        }
+                "INSERT INTO dc_collection_community_votes (account_id, outfit_id, vote) VALUES ({}, {}, {})",
+                accountId, id, value));
+
+            if (value > 0)
+            {
+                CharacterDatabase.Execute(Acore::StringFormat(
+                    "UPDATE dc_collection_community_outfits "
+                    "SET upvotes = upvotes + 1, weekly_votes = weekly_votes + 1 "
+                    "WHERE id = {}",
+                    id));
+            }
+            else
+            {
+                CharacterDatabase.Execute(Acore::StringFormat(
+                    "UPDATE dc_collection_community_outfits "
+                    "SET downvotes = downvotes + 1, "
+                    "weekly_votes = CASE WHEN weekly_votes > 0 THEN weekly_votes - 1 ELSE 0 END "
+                    "WHERE id = {}",
+                    id));
+            }
+        }));
     }
 
     void HandleCommunityFavorite(Player* player, const DCAddon::ParsedMessage& msg)
@@ -2103,42 +2130,11 @@ namespace DCCollection
         std::string tags = "";
         if (json.HasKey("tags")) tags = json["tags"].AsString();
 
-        uint32 playerGuid = player->GetGUID().GetCounter();
+        uint32 playerGuidLow = player->GetGUID().GetCounter();
         uint32 accountId = GetAccountId(player);
 
-        // Verify ownership before updating
-        std::string checkSql = Acore::StringFormat(
-            "SELECT author_account_id, author_guid FROM dc_collection_community_outfits WHERE id = {}",
-            id);
-
-        QueryResult checkResult = CharacterDatabase.Query(checkSql);
-
-        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT);
-
-        if (!checkResult)
-        {
-            res.Set("success", false);
-            res.Set("error", "Outfit not found");
-            SendCommunityPayload(player,
-                DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
-                ExtractJsonPayload(res));
-            return;
-        }
-
-        Field* ownerFields = checkResult->Fetch();
-        uint32 authorAccountId = ownerFields[0].Get<uint32>();
-        uint32 authorGuid = ownerFields[1].Get<uint32>();
-        bool isOwner = (authorAccountId != 0) ? (authorAccountId == accountId) : (authorGuid == playerGuid);
-        if (!isOwner)
-        {
-            res.Set("success", false);
-            res.Set("error", "You are not the owner of this outfit");
-            SendCommunityPayload(player,
-                DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
-                ExtractJsonPayload(res));
-            return;
-        }
-
+        // Build the UPDATE up-front from the request payload so the async
+        // callback only needs to capture value types.
         CharacterDatabase.EscapeString(name);
         CharacterDatabase.EscapeString(items);
         CharacterDatabase.EscapeString(tags);
@@ -2147,16 +2143,56 @@ namespace DCCollection
             "UPDATE dc_collection_community_outfits SET name = '{}', items_string = '{}', tags = '{}' WHERE id = {}",
             name, items, tags, id);
 
-        CharacterDatabase.Execute(updateSql);
+        // Verify ownership before updating
+        std::string checkSql = Acore::StringFormat(
+            "SELECT author_account_id, author_guid FROM dc_collection_community_outfits WHERE id = {}",
+            id);
 
-        res.Set("success", true);
-        res.Set("id", id);
-        SendCommunityPayload(player,
-            DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
-            ExtractJsonPayload(res));
+        ObjectGuid playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(checkSql)
+            .WithCallback([playerGuid, playerGuidLow, accountId, id, updateSql](QueryResult checkResult)
+        {
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        LOG_INFO("module.dc", "[DCWardrobe] Player {} updated community outfit id={}",
-            player->GetName(), id);
+            DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT);
+
+            if (!checkResult)
+            {
+                res.Set("success", false);
+                res.Set("error", "Outfit not found");
+                SendCommunityPayload(player,
+                    DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
+                    ExtractJsonPayload(res));
+                return;
+            }
+
+            Field* ownerFields = checkResult->Fetch();
+            uint32 authorAccountId = ownerFields[0].Get<uint32>();
+            uint32 authorGuid = ownerFields[1].Get<uint32>();
+            bool isOwner = (authorAccountId != 0) ? (authorAccountId == accountId) : (authorGuid == playerGuidLow);
+            if (!isOwner)
+            {
+                res.Set("success", false);
+                res.Set("error", "You are not the owner of this outfit");
+                SendCommunityPayload(player,
+                    DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
+                    ExtractJsonPayload(res));
+                return;
+            }
+
+            CharacterDatabase.Execute(updateSql);
+
+            res.Set("success", true);
+            res.Set("id", id);
+            SendCommunityPayload(player,
+                DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT,
+                ExtractJsonPayload(res));
+
+            LOG_INFO("module.dc", "[DCWardrobe] Player {} updated community outfit id={}",
+                player->GetName(), id);
+        }));
     }
 
     void HandleCommunityDelete(Player* player, const DCAddon::ParsedMessage& msg)
@@ -2171,7 +2207,7 @@ namespace DCCollection
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
 
-        uint32 playerGuid = player->GetGUID().GetCounter();
+        uint32 playerGuidLow = player->GetGUID().GetCounter();
         uint32 accountId = GetAccountId(player);
 
         // Verify ownership before deleting
@@ -2179,54 +2215,61 @@ namespace DCCollection
             "SELECT author_account_id, author_guid FROM dc_collection_community_outfits WHERE id = {}",
             id);
 
-        QueryResult checkResult = CharacterDatabase.Query(checkSql);
-
-        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT);
-
-        if (!checkResult)
+        ObjectGuid playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(checkSql)
+            .WithCallback([playerGuid, playerGuidLow, accountId, id](QueryResult checkResult)
         {
-            res.Set("success", false);
-            res.Set("error", "Outfit not found");
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT);
+
+            if (!checkResult)
+            {
+                res.Set("success", false);
+                res.Set("error", "Outfit not found");
+                SendCommunityPayload(player,
+                    DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
+                    ExtractJsonPayload(res));
+                return;
+            }
+
+            Field* ownerFields = checkResult->Fetch();
+            uint32 authorAccountId = ownerFields[0].Get<uint32>();
+            uint32 authorGuid = ownerFields[1].Get<uint32>();
+            bool isOwner = (authorAccountId != 0) ? (authorAccountId == accountId) : (authorGuid == playerGuidLow);
+            if (!isOwner)
+            {
+                res.Set("success", false);
+                res.Set("error", "You are not the owner of this outfit");
+                SendCommunityPayload(player,
+                    DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
+                    ExtractJsonPayload(res));
+                return;
+            }
+
+            // Delete the outfit
+            std::string deleteSql = Acore::StringFormat(
+                "DELETE FROM dc_collection_community_outfits WHERE id = {}",
+                id);
+            CharacterDatabase.Execute(deleteSql);
+
+            // Also delete any favorites referencing this outfit
+            std::string deleteFavsSql = Acore::StringFormat(
+                "DELETE FROM dc_collection_community_favorites WHERE outfit_id = {}",
+                id);
+            CharacterDatabase.Execute(deleteFavsSql);
+
+            res.Set("success", true);
+            res.Set("id", id);
             SendCommunityPayload(player,
                 DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
                 ExtractJsonPayload(res));
-            return;
-        }
 
-        Field* ownerFields = checkResult->Fetch();
-        uint32 authorAccountId = ownerFields[0].Get<uint32>();
-        uint32 authorGuid = ownerFields[1].Get<uint32>();
-        bool isOwner = (authorAccountId != 0) ? (authorAccountId == accountId) : (authorGuid == playerGuid);
-        if (!isOwner)
-        {
-            res.Set("success", false);
-            res.Set("error", "You are not the owner of this outfit");
-            SendCommunityPayload(player,
-                DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
-                ExtractJsonPayload(res));
-            return;
-        }
-
-        // Delete the outfit
-        std::string deleteSql = Acore::StringFormat(
-            "DELETE FROM dc_collection_community_outfits WHERE id = {}",
-            id);
-        CharacterDatabase.Execute(deleteSql);
-
-        // Also delete any favorites referencing this outfit
-        std::string deleteFavsSql = Acore::StringFormat(
-            "DELETE FROM dc_collection_community_favorites WHERE outfit_id = {}",
-            id);
-        CharacterDatabase.Execute(deleteFavsSql);
-
-        res.Set("success", true);
-        res.Set("id", id);
-        SendCommunityPayload(player,
-            DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT,
-            ExtractJsonPayload(res));
-
-        LOG_INFO("module.dc", "[DCWardrobe] Player {} deleted community outfit id={}",
-            player->GetName(), id);
+            LOG_INFO("module.dc", "[DCWardrobe] Player {} deleted community outfit id={}",
+                player->GetName(), id);
+        }));
     }
 
     // Inspection Handler
@@ -2256,26 +2299,37 @@ namespace DCCollection
             return;
         }
 
-        // Query DB for transmog entries
-        QueryResult result = CharacterDatabase.Query("SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}", (uint32)targetGuid);
+        // Query DB for transmog entries (async, response is built in the callback)
+        std::string sql = Acore::StringFormat(
+            "SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}",
+            static_cast<uint32>(targetGuid));
 
-        DCAddon::JsonValue slots;
-        slots.SetObject();
-
-        if (result)
+        ObjectGuid playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid, targetGuid](QueryResult result)
         {
-            do
-            {
-                Field* f = result->Fetch();
-                // Format: "slot": itemId
-                slots.Set(std::to_string(f[0].Get<uint32>()), f[1].Get<uint32>());
-            } while (result->NextRow());
-        }
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_INSPECT_TRANSMOG);
-        res.Set("slots", slots);
-        res.Set("target", std::to_string(targetGuid)); // Use string to preserve large GUID precision
-        res.Send(player);
+            DCAddon::JsonValue slots;
+            slots.SetObject();
+
+            if (result)
+            {
+                do
+                {
+                    Field* f = result->Fetch();
+                    // Format: "slot": itemId
+                    slots.Set(std::to_string(f[0].Get<uint32>()), f[1].Get<uint32>());
+                } while (result->NextRow());
+            }
+
+            DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_INSPECT_TRANSMOG);
+            res.Set("slots", slots);
+            res.Set("target", std::to_string(targetGuid)); // Use string to preserve large GUID precision
+            res.Send(player);
+        }));
     }
 
      // Get correct Item IDs for Item Sets
@@ -2626,39 +2680,52 @@ namespace DCCollection
         // If clientId is 0, generate new ID. Otherwise update existing.
         if (clientId == 0)
         {
-            // Check outfit limit synchronously to avoid callback chain issues
             uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
 
-            std::string countQuery = "SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
-            QueryResult countResult = CharacterDatabase.Query(countQuery);
+            // One async round-trip fetches both the outfit count (limit check)
+            // and the next free outfit id.
+            std::string statsQuery =
+                "SELECT COUNT(*), COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = "
+                + std::to_string(accountId);
 
-            uint32 currentCount = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
-            LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: account {} has {} outfits (max {})", accountId, currentCount, maxOutfits);
-
-            if (currentCount >= maxOutfits)
+            ObjectGuid playerGuid = player->GetGUID();
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(statsQuery)
+                .WithCallback([playerGuid, accountId, maxOutfits, name, icon, items, msg](QueryResult statsResult)
             {
-                LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: limit reached for account {}", accountId);
-                DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
-                res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
-                res.Send(player);
-                return;
-            }
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
 
-            // Get next available ID synchronously
-            std::string maxQuery = "SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
-            QueryResult maxResult = CharacterDatabase.Query(maxQuery);
-            uint32 newId = maxResult ? maxResult->Fetch()[0].Get<uint32>() : 1;
+                uint32 currentCount = 0;
+                uint32 newId = 1;
+                if (statsResult)
+                {
+                    Field* fields = statsResult->Fetch();
+                    currentCount = fields[0].Get<uint32>();
+                    newId = fields[1].Get<uint32>();
+                }
 
-            LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: inserting new outfit id={} for account {}", newId, accountId);
+                LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: account {} has {} outfits (max {})", accountId, currentCount, maxOutfits);
 
-            std::string insertSql = "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items) VALUES (" +
-                std::to_string(accountId) + ", " + std::to_string(newId) + ", '" + name + "', '" + icon + "', '" + items + "')";
+                if (currentCount >= maxOutfits)
+                {
+                    LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: limit reached for account {}", accountId);
+                    DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+                    res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
+                    res.Send(player);
+                    return;
+                }
 
-            // Execute INSERT synchronously
-            CharacterDatabase.Execute(insertSql);
+                LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: inserting new outfit id={} for account {}", newId, accountId);
 
-            LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: insert complete, refreshing outfits for player");
-            HandleGetSavedOutfits(player, msg);
+                std::string insertSql = "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items) VALUES (" +
+                    std::to_string(accountId) + ", " + std::to_string(newId) + ", '" + name + "', '" + icon + "', '" + items + "')";
+
+                CharacterDatabase.Execute(insertSql);
+
+                LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: insert complete, refreshing outfits for player");
+                HandleGetSavedOutfits(player, msg);
+            }));
         }
         else
         {

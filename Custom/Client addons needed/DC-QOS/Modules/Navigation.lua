@@ -897,6 +897,15 @@ local function GetEmulatedNavigationAlpha(frame, navState, isClamped, now)
         targetAlpha = 1
     end
 
+    -- Retail/Ascension SuperTracker: fade to half when the mouse is over the
+    -- marker so it never obscures what the player is pointing at.
+    if targetAlpha > 0 and frame and type(frame.IsMouseOver) == "function" then
+        local overOk, isOver = pcall(frame.IsMouseOver, frame)
+        if overOk and isOver then
+            targetAlpha = targetAlpha * 0.5
+        end
+    end
+
     if state.transparentUntil and state.transparentUntil > now then
         targetAlpha = 0
     else
@@ -2718,14 +2727,42 @@ local function EnsureRetailNavigationApiShims()
                 usedWorldProjection,
                 distanceYards = CallNativeNavigationProjectionForMapPoint(point.uiMapID, point.x, point.y)
 
-            if screenX ~= nil and screenY ~= nil then
-                return screenX,
-                    screenY,
-                    navState or NAV_STATE_DISABLED,
-                    clamped == true,
+            if screenX ~= nil and screenY ~= nil and tonumber(navState) ~= NAV_STATE_INVALID then
+                -- PING-MIRROR conversion: the native returns ABSOLUTE
+                -- PercToScreenPos coordinates; this API's contract is a
+                -- UIParent-CENTER offset (what the group markers anchor with),
+                -- so convert exactly like PingSystem.lua and edge-clamp here.
+                local uiScale = (UIParent and type(UIParent.GetEffectiveScale) == "function" and UIParent:GetEffectiveScale()) or 1
+                if uiScale > 0 then
+                    screenX = screenX / uiScale
+                    screenY = screenY / uiScale
+                end
+                local uiCenterX, uiCenterY
+                if UIParent and type(UIParent.GetCenter) == "function" then
+                    uiCenterX, uiCenterY = UIParent:GetCenter()
+                end
+                uiCenterX = uiCenterX or (((UIParent and UIParent:GetWidth()) or 0) * 0.5)
+                uiCenterY = uiCenterY or (((UIParent and UIParent:GetHeight()) or 0) * 0.5)
+                screenX = screenX - uiCenterX
+                screenY = screenY - uiCenterY
+
+                local settings = addon.settings and addon.settings.navigation or {}
+                local ellipseMajorAxis, ellipseMinorAxis = GetBlizzlikeEllipseRadii(settings)
+                local projectedX, projectedY, wasClamped = ClampPointToEllipse(screenX, screenY, ellipseMajorAxis, ellipseMinorAxis)
+                local resolvedState = tonumber(navState) or NAV_STATE_IN_RANGE
+                if wasClamped and resolvedState == NAV_STATE_IN_RANGE then
+                    resolvedState = NAV_STATE_OCCLUDED
+                end
+
+                return projectedX,
+                    projectedY,
+                    resolvedState,
+                    (clamped == true) or (wasClamped == true),
                     usedWorldProjection == true,
                     distanceYards
             end
+            -- Native unavailable or target behind the camera (INVALID): fall
+            -- through to the bearing-based edge estimate below.
 
             local playerX, playerY, playerMapId = GetPlayerMapPositionSafe()
             if not playerX or not playerY or playerMapId ~= point.uiMapID then
@@ -3264,7 +3301,7 @@ local function GetQuestPoiLock(questId, mapId, playerX, playerY)
     return lock.x, lock.y, lock.source
 end
 
-local function AddQuestPoiCachePoint(questId, x, y, mapId, source)
+local function AddQuestPoiCachePoint(questId, x, y, mapId, source, worldZ)
     questId = tonumber(questId)
     if not questId or questId <= 0 then
         return
@@ -3303,8 +3340,43 @@ local function AddQuestPoiCachePoint(questId, x, y, mapId, source)
         y = y,
         mapId = mapId,
         source = source,
+        -- True world height (from QuestMapData spawn data) so the native
+        -- supertracker projection can pin the marker on the real ground.
+        worldZ = tonumber(worldZ),
     })
     bucket.updatedAt = GetTime() or 0
+end
+
+-- The nearest world-Z the quest's cached POIs know for a picked map point. The
+-- cluster/lock machinery between the cache and the final target does not carry
+-- Z, so resolve it by proximity to the final visual coordinates instead.
+local function FindCachedWorldZ(questId, mapId, x, y)
+    questId = tonumber(questId)
+    if not questId or questId <= 0 or not x or not y then
+        return nil
+    end
+    local bucket = state.questPoiCache and state.questPoiCache[questId]
+    if not bucket or type(bucket.points) ~= "table" then
+        return nil
+    end
+    local bestZ, bestDistSq
+    for i = 1, #bucket.points do
+        local point = bucket.points[i]
+        if point and point.worldZ and (not mapId or point.mapId == mapId) then
+            local dx = (point.x or 0) - x
+            local dy = (point.y or 0) - y
+            local distSq = (dx * dx) + (dy * dy)
+            if not bestDistSq or distSq < bestDistSq then
+                bestDistSq = distSq
+                bestZ = point.worldZ
+            end
+        end
+    end
+    -- Only trust a height sampled reasonably close to the picked point.
+    if bestDistSq and bestDistSq <= (0.08 * 0.08) then
+        return bestZ
+    end
+    return nil
 end
 
 local function AddQuestPoiBoundaryPoints(questId, points, mapId, source)
@@ -3772,7 +3844,7 @@ local function SeedQuestPoiCacheFromMapData(questId, mapId, preferTurnIn)
             local x = marker and tonumber(marker.x)
             local y = marker and tonumber(marker.y)
             if markerMapId and markerMapId > 0 and x and y then
-                AddQuestPoiCachePoint(questId, x, y, markerMapId, source)
+                AddQuestPoiCachePoint(questId, x, y, markerMapId, source, marker and marker.z)
                 seededAny = true
                 if not mapId or markerMapId == mapId then
                     seededOnMap = true
@@ -5930,12 +6002,19 @@ local function UpdateMarker()
     -- Keep native supertrack state aligned with the currently focused quest POI
     -- so native navigation frame projection can resolve active target geometry.
     if target and type(target.x) == "number" and type(target.y) == "number" and tonumber(mapId) then
+        -- True ground height for the picked point (QuestMapData spawn Z). Passed
+        -- to the native waypoint so the projection pins the marker on the real
+        -- ground instead of tracing/approximating (the "floating in the sky /
+        -- pinned on the mountain face" class of bugs).
+        local waypointWorldZ = FindCachedWorldZ(tonumber(target.questId), tonumber(mapId), visualX, visualY)
+
         local nativeSyncKey = string.format(
-            "%d:%.5f:%.5f:%s",
+            "%d:%.5f:%.5f:%s:%s",
             tonumber(mapId) or 0,
             tonumber(visualX) or 0,
             tonumber(visualY) or 0,
-            tostring(target.questId or "")
+            tostring(target.questId or ""),
+            tostring(waypointWorldZ or "")
         )
 
         if nativeSyncKey ~= state.lastNativeNavigationSyncKey then
@@ -5952,7 +6031,7 @@ local function UpdateMarker()
             end
 
             if type(state.nativeSetSuperTrackedQuestWaypointForMap) == "function" then
-                pcall(state.nativeSetSuperTrackedQuestWaypointForMap, tonumber(mapId), visualX, visualY)
+                pcall(state.nativeSetSuperTrackedQuestWaypointForMap, tonumber(mapId), visualX, visualY, waypointWorldZ)
             end
         end
     end
@@ -6093,15 +6172,28 @@ local function UpdateMarker()
     if useNativeProjection then
         local ok, nativeX, nativeY, stateValue, clampedValue, worldProjectionValue = pcall(getNativeNavigationFrameState)
         if ok and type(nativeX) == "number" and type(nativeY) == "number" then
-            -- The native projection returns offsets in raw screen pixels, but the
-            -- marker is anchored to UIParent CENTER, whose offsets are in UIParent
-            -- units. Convert so an on-screen target sits exactly on the world spot
-            -- (matches how the ping system divides by the effective scale).
+            -- PING-MIRROR conversion. The native returns the target's ABSOLUTE
+            -- PercToScreenPos coordinates (exactly like the ping pipeline's
+            -- ConvertCoordsToScreenSpace); convert to a UIParent CENTER offset
+            -- the way PingSystem.lua does: divide by the effective scale, then
+            -- subtract UIParent's true centre. (Deriving the centre natively via
+            -- PercToScreenPos(0.5, 0.5) was wrong on the X axis and displaced
+            -- every projection horizontally.)
             local uiScale = (UIParent and type(UIParent.GetEffectiveScale) == "function" and UIParent:GetEffectiveScale()) or 1
             if uiScale and uiScale > 0 then
                 nativeX = nativeX / uiScale
                 nativeY = nativeY / uiScale
             end
+            local uiCenterX, uiCenterY
+            if UIParent and type(UIParent.GetCenter) == "function" then
+                uiCenterX, uiCenterY = UIParent:GetCenter()
+            end
+            if not uiCenterX or not uiCenterY then
+                uiCenterX = ((UIParent and UIParent:GetWidth()) or 0) * 0.5
+                uiCenterY = ((UIParent and UIParent:GetHeight()) or 0) * 0.5
+            end
+            nativeX = nativeX - uiCenterX
+            nativeY = nativeY - uiCenterY
 
             projectedX = nativeX
             projectedY = nativeY
@@ -6113,14 +6205,22 @@ local function UpdateMarker()
                 nativeUsedWorldProjection = worldProjectionValue
             end
 
-            clampedToEllipse = (clampedValue == true) or (nativeNavState == NAV_STATE_OCCLUDED)
+            -- Edge clamping is Lua-owned now (the native no longer clamps): an
+            -- off-viewport target rides the screen-edge ellipse with the arrow.
+            local outsideEllipse = false
+            if ellipseMajorAxis > 0 and ellipseMinorAxis > 0 then
+                outsideEllipse = ((nativeX * nativeX) / (ellipseMajorAxis * ellipseMajorAxis))
+                    + ((nativeY * nativeY) / (ellipseMinorAxis * ellipseMinorAxis)) > 1
+            end
+            clampedToEllipse = (clampedValue == true) or (nativeNavState == NAV_STATE_OCCLUDED) or outsideEllipse
 
-            -- Retail behavior: only clamp to edge indicator when nav reports
-            -- occluded/clamped. Unclamped native positions should be used as-is.
             if clampedToEllipse then
                 local clampedX, clampedY = ClampPointToEllipse(nativeX, nativeY, ellipseMajorAxis, ellipseMinorAxis)
                 projectedX = clampedX
                 projectedY = clampedY
+                if nativeNavState == NAV_STATE_IN_RANGE then
+                    nativeNavState = NAV_STATE_OCCLUDED
+                end
             end
 
             if nativeNavState == nil then
@@ -6399,13 +6499,30 @@ local function RepositionMarker()
         if ok and type(nx) == "number" and type(ny) == "number" then
             local navState = tonumber(stateValue)
             if navState ~= NAV_STATE_INVALID then
+                -- Ping-mirror: absolute screen coords -> UIParent centre offset.
                 local uiScale = (UIParent and UIParent:GetEffectiveScale()) or 1
                 if uiScale > 0 then
                     nx = nx / uiScale
                     ny = ny / uiScale
                 end
+                local uiCenterX, uiCenterY
+                if UIParent and type(UIParent.GetCenter) == "function" then
+                    uiCenterX, uiCenterY = UIParent:GetCenter()
+                end
+                if not uiCenterX or not uiCenterY then
+                    uiCenterX = ((UIParent and UIParent:GetWidth()) or 0) * 0.5
+                    uiCenterY = ((UIParent and UIParent:GetHeight()) or 0) * 0.5
+                end
+                nx = nx - uiCenterX
+                ny = ny - uiCenterY
+
                 projectedX, projectedY = nx, ny
-                clamped = (clampedValue == true) or (navState == NAV_STATE_OCCLUDED)
+                local outsideEllipse = false
+                if ellipseMajorAxis > 0 and ellipseMinorAxis > 0 then
+                    outsideEllipse = ((nx * nx) / (ellipseMajorAxis * ellipseMajorAxis))
+                        + ((ny * ny) / (ellipseMinorAxis * ellipseMinorAxis)) > 1
+                end
+                clamped = (clampedValue == true) or (navState == NAV_STATE_OCCLUDED) or outsideEllipse
                 if clamped then
                     projectedX, projectedY = ClampPointToEllipse(nx, ny, ellipseMajorAxis, ellipseMinorAxis)
                 end
@@ -7802,6 +7919,64 @@ Navigation._EnsureSlashCommand = function()
                         addon:Print("  |cffffcc00-> map->world is failing (WorldMapArea read). Fully restart WoW so the latest DLL is loaded (not just /reload).|r", true)
                     end
                 end
+            end
+
+            -- Axis-convention probe: projects the PLAYER's own position. The
+            -- character renders just below screen centre, so the sign of offY
+            -- reveals the raw screen-space orientation (Y-up vs Y-down) with
+            -- live data. offY < 0 => raw output is Y-up (UIParent-like).
+            local function ToUiOffset(absX, absY)
+                local uiScale = (UIParent and UIParent:GetEffectiveScale()) or 1
+                if uiScale <= 0 then uiScale = 1 end
+                local cx, cy
+                if UIParent and type(UIParent.GetCenter) == "function" then
+                    cx, cy = UIParent:GetCenter()
+                end
+                cx = cx or (((UIParent and UIParent:GetWidth()) or 0) * 0.5)
+                cy = cy or (((UIParent and UIParent:GetHeight()) or 0) * 0.5)
+                return (absX / uiScale) - cx, (absY / uiScale) - cy
+            end
+
+            local probeFn = rawget(_G, "GetNavigationProjectionProbe")
+            if type(probeFn) == "function" then
+                local pok, absX, absY, p2x, p2y, p2z, behind = pcall(probeFn)
+                if pok and type(absX) == "number" then
+                    local ox, oy = ToUiOffset(absX, absY)
+                    addon:Print(string.format(
+                        "  probe(player): abs=(%.1f, %.1f)  uiOffset=(%.1f, %.1f)  pos2d=(%.4f, %.4f, %.3f)  behind=%s",
+                        absX, absY, ox, oy, p2x or 0, p2y or 0, p2z or 0, tostring(behind)
+                    ), true)
+                elseif pok then
+                    addon:Print("  probe(player): nil (no player/projection)", true)
+                end
+            end
+
+            -- Target-side probe: the native's raw output for the CURRENT
+            -- supertracked waypoint (what the HUD marker actually consumes),
+            -- plus the final UIParent-space values after the Lua conversion.
+            local fsFn = rawget(_G, "GetNavigationFrameState")
+                or rawget(_G, "C_Navigation_GetFrameState")
+            if type(fsFn) == "function" then
+                local fok, nx, ny, navSt, navCl, navWp = pcall(fsFn)
+                if fok and type(nx) == "number" then
+                    local ox, oy = ToUiOffset(nx, ny)
+                    addon:Print(string.format(
+                        "  frameState(target): abs=(%.1f, %.1f)  uiOffset=(%.1f, %.1f)  state=%s clamped=%s worldProj=%s",
+                        nx, ny, ox, oy,
+                        tostring(navSt), tostring(navCl), tostring(navWp)
+                    ), true)
+                elseif fok then
+                    addon:Print("  frameState(target): nil (no waypoint / projection unavailable)", true)
+                end
+            end
+            if state.frame and state.frame.GetPoint and state.frame:GetNumPoints() > 0 then
+                local pt, _, relPt, fx, fy = state.frame:GetPoint(1)
+                addon:Print(string.format(
+                    "  marker frame: pt=%s->%s off=(%.1f, %.1f) shown=%s alpha=%.2f scale=%.2f",
+                    tostring(pt), tostring(relPt), fx or 0, fy or 0,
+                    tostring(state.frame:IsShown()), state.frame:GetAlpha() or 0,
+                    state.frame:GetScale() or 1
+                ), true)
             end
 
             if target and target.x and target.y then

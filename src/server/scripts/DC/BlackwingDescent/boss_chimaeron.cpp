@@ -210,7 +210,7 @@ struct boss_chimaeron : public BossAI
 
     void KilledUnit(Unit* victim) override
     {
-        if (victim->GetTypeId() == TYPEID_PLAYER)
+        if (victim->IsPlayer())
         {
             _killedPlayerCount++;
             if (_killedPlayerCount == 3)
@@ -404,7 +404,7 @@ struct npc_chimaeron_finkle_einhorn : public ScriptedAI
     void Reset() override
     {
         if (_instance->GetBossState(DATA_CHIMAERON) == DONE)
-            me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
         else
             _events.ScheduleEvent(EVENT_CALL_FOR_HELP, 14s, 22s);
     }
@@ -418,7 +418,7 @@ struct npc_chimaeron_finkle_einhorn : public ScriptedAI
                 break;
             case ACTION_ENCOUNTER_STARTED:
                 _events.Reset();
-                me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                 break;
             default:
                 break;

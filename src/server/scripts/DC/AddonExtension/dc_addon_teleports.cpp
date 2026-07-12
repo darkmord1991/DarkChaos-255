@@ -10,6 +10,7 @@
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Config.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "WorldSession.h"
 #include "DatabaseEnv.h"
@@ -46,60 +47,68 @@ namespace DCAddon
         if (limit > 200)
             limit = 200;
 
-        QueryResult countRes = WorldDatabase.Query("SELECT COUNT(*) FROM game_tele");
-        uint32 total = 0;
-        if (countRes)
-            total = (*countRes)[0].Get<uint32>();
+        // ASYNC page fetch. This used to run TWO synchronous WorldDatabase
+        // queries (count + page) on the world thread per UI open -- the same
+        // class as the observed 18s World.UpdateSessions stalls. One async
+        // round-trip carries the total as a subquery column.
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string const pageSql =
+            "SELECT id, name, map, position_x, position_y, position_z, orientation, "
+            "(SELECT COUNT(*) FROM game_tele) AS total "
+            "FROM game_tele ORDER BY name LIMIT "
+            + std::to_string(offset) + "," + std::to_string(limit);
 
-        if (offset > total)
-            offset = total;
-
-        std::ostringstream q;
-        q << "SELECT id, name, map, position_x, position_y, position_z, orientation FROM game_tele ORDER BY name LIMIT "
-          << offset << "," << limit;
-        QueryResult result = WorldDatabase.Query(q.str().c_str());
-
-        JsonMessage response(Module::TELEPORTS, Opcode::Teleports::SMSG_SEND_LIST);
-        response.Set("offset", offset);
-        response.Set("limit", limit);
-        response.Set("total", total);
-        response.Set("reset", reset);
-
-        JsonValue arr;
-        arr.SetArray();
-
-        if (result)
+        DCAddon::EnqueueQueryCallback(WorldDatabase.AsyncQuery(pageSql)
+            .WithCallback([playerGuid, offset, limit, reset](QueryResult result)
         {
-            do
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            JsonMessage response(Module::TELEPORTS, Opcode::Teleports::SMSG_SEND_LIST);
+            response.Set("offset", offset);
+            response.Set("limit", limit);
+            response.Set("reset", reset);
+
+            JsonValue arr;
+            arr.SetArray();
+
+            uint32 total = 0;
+            if (result)
             {
-                Field* fields = result->Fetch();
-                uint32 id = fields[0].Get<uint32>();
-                std::string name = fields[1].Get<std::string>();
-                uint16 map = fields[2].Get<uint16>();
-                float x = fields[3].Get<float>();
-                float y = fields[4].Get<float>();
-                float z = fields[5].Get<float>();
-                float o = fields[6].Get<float>();
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint32 id = fields[0].Get<uint32>();
+                    std::string name = fields[1].Get<std::string>();
+                    uint16 map = fields[2].Get<uint16>();
+                    float x = fields[3].Get<float>();
+                    float y = fields[4].Get<float>();
+                    float z = fields[5].Get<float>();
+                    float o = fields[6].Get<float>();
+                    total = fields[7].Get<uint32>();
 
-                JsonValue obj;
-                obj.SetObject();
-                obj.Set("id", JsonValue(id));
-                obj.Set("name", JsonValue(name));
-                obj.Set("map", JsonValue(static_cast<uint32>(map)));
-                obj.Set("x", JsonValue(static_cast<double>(x)));
-                obj.Set("y", JsonValue(static_cast<double>(y)));
-                obj.Set("z", JsonValue(static_cast<double>(z)));
-                obj.Set("o", JsonValue(static_cast<double>(o)));
-                arr.Push(obj);
+                    JsonValue obj;
+                    obj.SetObject();
+                    obj.Set("id", JsonValue(id));
+                    obj.Set("name", JsonValue(name));
+                    obj.Set("map", JsonValue(static_cast<uint32>(map)));
+                    obj.Set("x", JsonValue(static_cast<double>(x)));
+                    obj.Set("y", JsonValue(static_cast<double>(y)));
+                    obj.Set("z", JsonValue(static_cast<double>(z)));
+                    obj.Set("o", JsonValue(static_cast<double>(o)));
+                    arr.Push(obj);
 
-            } while (result->NextRow());
-        }
+                } while (result->NextRow());
+            }
 
-        response.Set("teleports", arr);
-        uint32 returned = static_cast<uint32>(arr.Size());
-        bool done = (total == 0) ? true : ((offset + returned) >= total);
-        response.Set("done", done);
-        response.Send(player);
+            response.Set("total", total);
+            response.Set("teleports", arr);
+            uint32 returned = static_cast<uint32>(arr.Size());
+            bool done = (total == 0) ? true : ((offset + returned) >= total);
+            response.Set("done", done);
+            response.Send(player);
+        }));
     }
 
     void RegisterHandlers()

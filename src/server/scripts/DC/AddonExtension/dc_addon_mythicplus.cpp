@@ -14,6 +14,7 @@
 #include "WorldPacket.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "ObjectAccessor.h"
 #include "DatabaseEnv.h"
 #include "Config.h"
 #include "Log.h"
@@ -25,6 +26,7 @@
 #include <algorithm>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DCAddon
 {
@@ -162,79 +164,14 @@ namespace MythicPlus
             return count;
         }
 
-        uint32 GetRaidBossesForWeek(uint32 guidLow, uint32 weekStart, uint32 weekEnd)
-        {
-            uint32 raidBosses = 0;
+        // (The old per-metric sync helpers -- GetRaidBossesForWeek,
+        // GetMPlusRunsForWeek, GetPvpWinsForWeek, IsVaultRewardClaimed -- were
+        // removed: their only caller, SendVaultAvailableNotification, is fully
+        // async now and folds the scalar metrics into one round-trip.)
 
-            if (QueryResult raidRes = CharacterDatabase.Query(
-                "SELECT i.map, i.completedEncounters "
-                "FROM character_instance ci "
-                "JOIN instance i ON i.id = ci.instance "
-                "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {}",
-                guidLow, weekStart, weekEnd))
-            {
-                do
-                {
-                    Field* fields = raidRes->Fetch();
-                    uint32 mapId = fields[0].Get<uint32>();
-                    uint32 completedEncounters = fields[1].Get<uint32>();
-
-                    MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-                    if (!mapEntry || !mapEntry->IsRaid())
-                        continue;
-
-                    raidBosses += CountBits32(completedEncounters);
-                } while (raidRes->NextRow());
-            }
-
-            return raidBosses;
-        }
-
-        uint32 GetMPlusRunsForWeek(uint32 guidLow, uint32 seasonId,
-            uint32 weekStart, uint32 weekEnd)
-        {
-            if (QueryResult runsRes = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_mplus_runs "
-                "WHERE character_guid = {} AND season_id = {} AND success = 1 "
-                "AND completed_at >= FROM_UNIXTIME({}) "
-                "AND completed_at < FROM_UNIXTIME({})",
-                guidLow, seasonId, weekStart, weekEnd))
-            {
-                return (*runsRes)[0].Get<uint32>();
-            }
-
-            return 0;
-        }
-
-        uint32 GetPvpWinsForWeek(uint32 guidLow, uint32 weekStart, uint32 weekEnd)
-        {
-            if (QueryResult pvpRes = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM pvpstats_players p "
-                "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
-                "WHERE p.character_guid = {} AND p.winner = 1 "
-                "AND b.date >= FROM_UNIXTIME({}) "
-                "AND b.date < FROM_UNIXTIME({})",
-                guidLow, weekStart, weekEnd))
-            {
-                return (*pvpRes)[0].Get<uint32>();
-            }
-
-            return 0;
-        }
-
-        bool IsVaultRewardClaimed(uint32 guidLow, uint32 seasonId,
-            uint32 claimWeekStart)
-        {
-            if (QueryResult claimRes = CharacterDatabase.Query(
-                "SELECT reward_claimed FROM dc_weekly_vault "
-                "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                guidLow, seasonId, claimWeekStart))
-            {
-                return (*claimRes)[0].Get<bool>();
-            }
-
-            return false;
-        }
+        void FinishVaultAvailableNotification(Player* player, uint32 mplusRuns,
+            uint32 raidBosses, uint32 pvpWins, uint32 claimWeekStart,
+            uint32 claimWeekEnd, uint32 currentWeekStart);
 
         void SendVaultAvailableNotification(Player* player)
         {
@@ -251,16 +188,90 @@ namespace MythicPlus
             uint32 claimWeekStart = currentWeekStart - WEEK_SECONDS;
             uint32 claimWeekEnd = claimWeekStart + WEEK_SECONDS;
 
-            if (IsVaultRewardClaimed(guidLow, seasonId, claimWeekStart))
-                return;
+            // ASYNC login burst. This used to run FOUR synchronous queries
+            // (claim state, M+ runs, raid instances, pvp wins) on the world
+            // thread for EVERY login/entering-world -- multiplied across
+            // concurrent logins after a restart (the 18s-stall class). One
+            // async round-trip carries the three scalars via subqueries; the
+            // raid rows need C++ filtering (sMapStore IsRaid), so they ride
+            // along as a second async stage only when still needed.
+            ObjectGuid playerGuid = player->GetGUID();
 
-            uint32 mplusRuns = GetMPlusRunsForWeek(
-                guidLow, seasonId, claimWeekStart, claimWeekEnd);
-            uint32 raidBosses = GetRaidBossesForWeek(
-                guidLow, claimWeekStart, claimWeekEnd);
-            uint32 pvpWins = GetPvpWinsForWeek(
-                guidLow, claimWeekStart, claimWeekEnd);
+            std::string const scalarSql =
+                "SELECT "
+                "COALESCE((SELECT reward_claimed FROM dc_weekly_vault WHERE character_guid = " + std::to_string(guidLow)
+                    + " AND season_id = " + std::to_string(seasonId)
+                    + " AND week_start = " + std::to_string(claimWeekStart) + "), 0) AS claimed, "
+                "(SELECT COUNT(*) FROM dc_mplus_runs WHERE character_guid = " + std::to_string(guidLow)
+                    + " AND season_id = " + std::to_string(seasonId)
+                    + " AND success = 1 AND completed_at >= FROM_UNIXTIME(" + std::to_string(claimWeekStart)
+                    + ") AND completed_at < FROM_UNIXTIME(" + std::to_string(claimWeekEnd) + ")) AS mplus_runs, "
+                "(SELECT COUNT(*) FROM pvpstats_players p JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id"
+                    " WHERE p.character_guid = " + std::to_string(guidLow)
+                    + " AND p.winner = 1 AND b.date >= FROM_UNIXTIME(" + std::to_string(claimWeekStart)
+                    + ") AND b.date < FROM_UNIXTIME(" + std::to_string(claimWeekEnd) + ")) AS pvp_wins";
 
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(scalarSql)
+                .WithCallback([playerGuid, guidLow, claimWeekStart, claimWeekEnd,
+                    currentWeekStart](QueryResult scalarResult)
+            {
+                if (!scalarResult)
+                    return;
+
+                Field* scalarFields = scalarResult->Fetch();
+                bool claimed = scalarFields[0].Get<uint8>() != 0;
+                uint32 mplusRuns = scalarFields[1].Get<uint32>();
+                uint32 pvpWins = scalarFields[2].Get<uint32>();
+
+                if (claimed)
+                    return;
+
+                if (!ObjectAccessor::FindPlayer(playerGuid))
+                    return;
+
+                std::string const raidSql =
+                    "SELECT i.map, i.completedEncounters "
+                    "FROM character_instance ci "
+                    "JOIN instance i ON i.id = ci.instance "
+                    "WHERE ci.guid = " + std::to_string(guidLow)
+                    + " AND i.resettime >= " + std::to_string(claimWeekStart)
+                    + " AND i.resettime < " + std::to_string(claimWeekEnd);
+
+                DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(raidSql)
+                    .WithCallback([playerGuid, mplusRuns, pvpWins, claimWeekStart,
+                        claimWeekEnd, currentWeekStart](QueryResult raidResult)
+                {
+                    Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                    if (!player || !player->GetSession())
+                        return;
+
+                    uint32 raidBosses = 0;
+                    if (raidResult)
+                    {
+                        do
+                        {
+                            Field* fields = raidResult->Fetch();
+                            uint32 mapId = fields[0].Get<uint32>();
+                            uint32 completedEncounters = fields[1].Get<uint32>();
+
+                            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+                            if (!mapEntry || !mapEntry->IsRaid())
+                                continue;
+
+                            raidBosses += CountBits32(completedEncounters);
+                        } while (raidResult->NextRow());
+                    }
+
+                    FinishVaultAvailableNotification(player, mplusRuns, raidBosses,
+                        pvpWins, claimWeekStart, claimWeekEnd, currentWeekStart);
+                }));
+            }));
+        }
+
+        void FinishVaultAvailableNotification(Player* player, uint32 mplusRuns,
+            uint32 raidBosses, uint32 pvpWins, uint32 claimWeekStart,
+            uint32 claimWeekEnd, uint32 currentWeekStart)
+        {
             auto raidThreshold = [](uint8 slotInTrack) -> uint32
             {
                 if (slotInTrack == 1)
@@ -492,157 +503,85 @@ namespace MythicPlus
         HandleKeystoneActivationCancel(player);
     }
 
-    // Send Great Vault info
-    void SendVaultInfo(Player* player, bool openWindow)
+    // ========================================================================
+    // GREAT VAULT INFO (async)
+    // ========================================================================
+
+    struct RecentRunEntry
     {
-        uint32 guidLow = player->GetGUID().GetCounter();
-        uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
+        uint16 mapId = 0;
+        uint8 keystoneLevel = 0;
+        uint32 completionTime = 0;
+        bool success = false;
+        uint32 completedAt = 0;
+        std::string mapName;
+    };
 
-        constexpr uint32 SECONDS_PER_WEEK = 7u * 24u * 60u * 60u;
-
-        // Retail-like grace window:
-        // - show claimable rewards from LAST week
-        // - show current-week progress separately
-        uint32 progressWeekStart = sMythicRuns->GetWeekStartTimestamp();
-        uint32 progressWeekEnd = progressWeekStart + SECONDS_PER_WEEK;
-        uint32 nextWeekStart = progressWeekEnd;
-
-        uint32 claimWeekStart = progressWeekStart >= SECONDS_PER_WEEK ? (progressWeekStart - SECONDS_PER_WEEK) : 0;
-        uint32 claimWeekEnd = claimWeekStart + SECONDS_PER_WEEK;
-
-        auto CountBits32 = [](uint32 value) -> uint32
-        {
-            uint32 count = 0;
-            while (value)
-            {
-                value &= (value - 1);
-                ++count;
-            }
-            return count;
-        };
-
-        auto GetMPlusLevelsForWeek = [&](uint32 weekStart, uint32 weekEnd) -> std::vector<uint8>
-        {
-            std::vector<uint8> levels;
-            if (QueryResult runsResult = CharacterDatabase.Query(
-                "SELECT keystone_level FROM dc_mplus_runs "
-                "WHERE character_guid = {} AND season_id = {} AND success = 1 "
-                "AND completed_at >= FROM_UNIXTIME({}) AND completed_at < FROM_UNIXTIME({}) "
-                "ORDER BY keystone_level DESC LIMIT 8",
-                guidLow, seasonId, weekStart, weekEnd))
-            {
-                do
-                {
-                    levels.push_back((*runsResult)[0].Get<uint8>());
-                } while (runsResult->NextRow());
-            }
-            return levels;
-        };
-
-        auto GetRaidBossesForWeek = [&](uint32 weekStart, uint32 weekEnd) -> uint32
-        {
-            uint32 raidBosses = 0;
-            if (QueryResult raidRes = CharacterDatabase.Query(
-                "SELECT i.map, i.completedEncounters "
-                "FROM character_instance ci "
-                "JOIN instance i ON i.id = ci.instance "
-                "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {}",
-                guidLow, weekStart, weekEnd))
-            {
-                do
-                {
-                    Field* fields = raidRes->Fetch();
-                    uint32 mapId = fields[0].Get<uint32>();
-                    uint32 completedEncounters = fields[1].Get<uint32>();
-
-                    MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-                    if (!mapEntry || !mapEntry->IsRaid())
-                        continue;
-
-                    raidBosses += CountBits32(completedEncounters);
-                } while (raidRes->NextRow());
-            }
-            return raidBosses;
-        };
-
-        auto GetPvpWinsForWeek = [&](uint32 weekStart, uint32 weekEnd) -> uint32
-        {
-            uint32 pvpWins = 0;
-            if (QueryResult pvpRes = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM pvpstats_players p "
-                "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
-                "WHERE p.character_guid = {} AND p.winner = 1 "
-                "AND b.date >= FROM_UNIXTIME({}) AND b.date < FROM_UNIXTIME({})",
-                guidLow, weekStart, weekEnd))
-            {
-                pvpWins = (*pvpRes)[0].Get<uint32>();
-            }
-            return pvpWins;
-        };
-
-        struct RecentRunEntry
-        {
-            uint16 mapId = 0;
-            uint8 keystoneLevel = 0;
-            uint32 completionTime = 0;
-            bool success = false;
-            uint32 completedAt = 0;
-            std::string mapName;
-        };
+    // Accumulated state carried by value between the async stages of
+    // SendVaultInfo (stage 1: tagged rows, stage 2: scalars, stage 3:
+    // optional reward-pool read + finisher).
+    struct VaultInfoData
+    {
+        uint32 guidLow = 0;
+        uint32 seasonId = 0;
+        uint32 progressWeekStart = 0;
+        uint32 progressWeekEnd = 0;
+        uint32 nextWeekStart = 0;
+        uint32 claimWeekStart = 0;
+        uint32 claimWeekEnd = 0;
+        bool openWindow = false;
 
         std::vector<RecentRunEntry> recentRuns;
-        if (QueryResult runHistoryResult = CharacterDatabase.Query(
-            "SELECT map_id, keystone_level, COALESCE(completion_time, 0), success, UNIX_TIMESTAMP(completed_at) "
-            "FROM dc_mplus_runs "
-            "WHERE character_guid = {} AND season_id = {} "
-            "ORDER BY completed_at DESC, run_id DESC "
-            "LIMIT 9",
-            guidLow, seasonId))
-        {
-            do
-            {
-                Field* fields = runHistoryResult->Fetch();
-                RecentRunEntry run;
-                run.mapId = fields[0].Get<uint16>();
-                run.keystoneLevel = fields[1].Get<uint8>();
-                run.completionTime = fields[2].Get<uint32>();
-                run.success = fields[3].Get<uint8>() != 0;
-                run.completedAt = fields[4].Get<uint32>();
-
-                std::string runMapName = "Map " + std::to_string(run.mapId);
-                if (MapEntry const* mapEntry = sMapStore.LookupEntry(run.mapId))
-                {
-                    char const* dbMapName = mapEntry->name[0];
-                    if (dbMapName && dbMapName[0] != '\0')
-                        runMapName = dbMapName;
-                }
-
-                run.mapName = runMapName;
-                recentRuns.push_back(run);
-            } while (runHistoryResult->NextRow());
-        }
-
-        // Claim state applies to CLAIM WEEK.
+        std::vector<uint8> mplusLevelsProgress;
+        std::vector<uint8> mplusLevelsClaim;
+        uint32 raidBossesProgress = 0;
+        uint32 raidBossesClaim = 0;
+        uint32 pvpWinsProgress = 0;
+        uint32 pvpWinsClaim = 0;
         bool claimed = false;
-        uint8 claimedSlot = 0;
-        if (claimWeekStart != 0)
-        {
-            CharacterDatabase.DirectExecute(
-                "INSERT IGNORE INTO dc_weekly_vault (character_guid, season_id, week_start) VALUES ({}, {}, {})",
-                guidLow, seasonId, claimWeekStart);
+        int32 claimedSlot = -1;
+        uint32 unlockedCountClaim = 0;
+    };
 
-            if (QueryResult claimResult = CharacterDatabase.Query(
-                "SELECT reward_claimed, claimed_slot FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                guidLow, seasonId, claimWeekStart))
-            {
-                Field* fields = claimResult->Fetch();
-                claimed = fields[0].Get<bool>();
-                claimedSlot = fields[1].Get<uint8>();
-            }
-        }
+    static uint32 VaultRaidThreshold(uint8 slotInTrack)
+    {
+        if (slotInTrack == 1)
+            return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold1", 2);
+        if (slotInTrack == 2)
+            return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold2", 4);
+        return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold3", 6);
+    }
+
+    static uint32 VaultPvpThreshold(uint8 slotInTrack)
+    {
+        if (slotInTrack == 1)
+            return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold1", 1);
+        if (slotInTrack == 2)
+            return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold2", 4);
+        return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold3", 8);
+    }
+
+    // Final stage of SendVaultInfo: pure CPU + config JSON assembly. All DB
+    // reads happened in the async stages that populated data/rewardBySlot.
+    static void FinishSendVaultInfo(Player* player, VaultInfoData const& data,
+        std::unordered_map<uint8, std::pair<uint32, uint32>> const& rewardBySlot)
+    {
+        bool claimed = data.claimed;
+        int32 claimedSlot = data.claimedSlot;
+        bool openWindow = data.openWindow;
+        uint32 claimWeekStart = data.claimWeekStart;
+        uint32 progressWeekStart = data.progressWeekStart;
+        uint32 nextWeekStart = data.nextWeekStart;
+        uint32 raidBossesProgress = data.raidBossesProgress;
+        uint32 raidBossesClaim = data.raidBossesClaim;
+        uint32 pvpWinsProgress = data.pvpWinsProgress;
+        uint32 pvpWinsClaim = data.pvpWinsClaim;
+        uint32 unlockedCountClaim = data.unlockedCountClaim;
+        std::vector<RecentRunEntry> const& recentRuns = data.recentRuns;
+        std::vector<uint8> const& mplusLevelsProgress = data.mplusLevelsProgress;
+        std::vector<uint8> const& mplusLevelsClaim = data.mplusLevelsClaim;
 
         // Mythic+ stats
-        std::vector<uint8> mplusLevelsProgress = GetMPlusLevelsForWeek(progressWeekStart, progressWeekEnd);
         uint8 mplusRunsProgress = static_cast<uint8>(mplusLevelsProgress.size());
         uint8 mplusHighest = mplusRunsProgress > 0 ? mplusLevelsProgress[0] : 0;
 
@@ -654,7 +593,6 @@ namespace MythicPlus
         if (mplusLevelsProgress.size() >= 8)
             mplusSlotLevelProgress[3] = mplusLevelsProgress[7];
 
-        std::vector<uint8> mplusLevelsClaim = claimWeekStart != 0 ? GetMPlusLevelsForWeek(claimWeekStart, claimWeekEnd) : std::vector<uint8>();
         uint8 mplusRunsClaim = static_cast<uint8>(mplusLevelsClaim.size());
 
         auto mplusThreshold = [&](uint8 slotInTrack) -> uint8 { return sMythicRuns->GetVaultThreshold(slotInTrack); };
@@ -662,33 +600,13 @@ namespace MythicPlus
         auto mplusUnlockedClaim = [&](uint8 slotInTrack) -> bool { return mplusRunsClaim >= mplusThreshold(slotInTrack); };
 
         // Raid stats
-        uint32 raidBossesProgress = GetRaidBossesForWeek(progressWeekStart, progressWeekEnd);
-        uint32 raidBossesClaim = claimWeekStart != 0 ? GetRaidBossesForWeek(claimWeekStart, claimWeekEnd) : 0;
-
-        auto raidThreshold = [&](uint8 slotInTrack) -> uint32
-        {
-            if (slotInTrack == 1)
-                return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold1", 2);
-            if (slotInTrack == 2)
-                return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold2", 4);
-            return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold3", 6);
-        };
+        auto raidThreshold = [](uint8 slotInTrack) -> uint32 { return VaultRaidThreshold(slotInTrack); };
 
         auto raidUnlockedProgress = [&](uint8 slotInTrack) -> bool { return raidBossesProgress >= raidThreshold(slotInTrack); };
         auto raidUnlockedClaim = [&](uint8 slotInTrack) -> bool { return raidBossesClaim >= raidThreshold(slotInTrack); };
 
         // PvP stats
-        uint32 pvpWinsProgress = GetPvpWinsForWeek(progressWeekStart, progressWeekEnd);
-        uint32 pvpWinsClaim = claimWeekStart != 0 ? GetPvpWinsForWeek(claimWeekStart, claimWeekEnd) : 0;
-
-        auto pvpThreshold = [&](uint8 slotInTrack) -> uint32
-        {
-            if (slotInTrack == 1)
-                return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold1", 1);
-            if (slotInTrack == 2)
-                return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold2", 4);
-            return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold3", 8);
-        };
+        auto pvpThreshold = [](uint8 slotInTrack) -> uint32 { return VaultPvpThreshold(slotInTrack); };
 
         auto pvpUnlockedProgress = [&](uint8 slotInTrack) -> bool { return pvpWinsProgress >= pvpThreshold(slotInTrack); };
         auto pvpUnlockedClaim = [&](uint8 slotInTrack) -> bool { return pvpWinsClaim >= pvpThreshold(slotInTrack); };
@@ -706,28 +624,9 @@ namespace MythicPlus
             return 200u + (static_cast<uint32>(keyLevel) * 3u);
         };
 
-        // Generate claim-week rewards lazily on open (idempotent generation).
-        uint32 unlockedCountClaim = 0;
-        for (uint8 i = 1; i <= 3; ++i)
-        {
-            if (raidUnlockedClaim(i)) ++unlockedCountClaim;
-            if (mplusUnlockedClaim(i)) ++unlockedCountClaim;
-            if (pvpUnlockedClaim(i)) ++unlockedCountClaim;
-        }
-
-        if (claimWeekStart != 0 && !claimed && unlockedCountClaim > 0)
-        {
-            sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, claimWeekStart);
-        }
-
-        // Claim-week reward pool
-        std::unordered_map<uint8, std::pair<uint32, uint32>> rewardBySlot;
-        if (claimWeekStart != 0)
-        {
-            auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, claimWeekStart);
-            for (auto const& [slotIndex, itemId, itemLevel] : rewards)
-                rewardBySlot[slotIndex] = { itemId, itemLevel };
-        }
+        // unlockedCountClaim, lazy reward generation and the claim-week
+        // reward-pool read all happened in the async stages of SendVaultInfo
+        // before this finisher was invoked (data / rewardBySlot parameters).
 
         auto MakeClaimSlotObj = [&](uint8 globalSlot, uint8 slotInTrack, uint32 threshold, uint32 progress, bool isUnlocked) -> JsonValue
         {
@@ -1048,6 +947,255 @@ namespace MythicPlus
             .Send(player);
     }
 
+    // Send Great Vault info.
+    //
+    // ASYNC: the synchronous prologue only touches in-memory manager state,
+    // then a staged chain of async CharacterDatabase queries (matching the
+    // SendVaultAvailableNotification pattern) gathers everything the response
+    // needs. Stage 1 collects all row-shaped inputs in one tagged UNION ALL
+    // round-trip, stage 2 collects the scalars, stage 3 optionally reads the
+    // claim-week reward pool, then FinishSendVaultInfo assembles + sends the
+    // JSON response.
+    void SendVaultInfo(Player* player, bool openWindow)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        constexpr uint32 SECONDS_PER_WEEK = 7u * 24u * 60u * 60u;
+
+        VaultInfoData data;
+        data.guidLow = player->GetGUID().GetCounter();
+        data.seasonId = sMythicRuns->GetCurrentSeasonId();
+        data.openWindow = openWindow;
+
+        // Retail-like grace window:
+        // - show claimable rewards from LAST week
+        // - show current-week progress separately
+        data.progressWeekStart = sMythicRuns->GetWeekStartTimestamp();
+        data.progressWeekEnd = data.progressWeekStart + SECONDS_PER_WEEK;
+        data.nextWeekStart = data.progressWeekEnd;
+        data.claimWeekStart = data.progressWeekStart >= SECONDS_PER_WEEK
+            ? (data.progressWeekStart - SECONDS_PER_WEEK) : 0;
+        data.claimWeekEnd = data.claimWeekStart + SECONDS_PER_WEEK;
+
+        ObjectGuid playerGuid = player->GetGUID();
+
+        if (data.claimWeekStart != 0)
+        {
+            // Non-blocking seed of the claim row (was DirectExecute). The
+            // stage-2 scalar read tolerates a missing row (missing row ==
+            // unclaimed, claimedSlot -1), so ordering versus this insert
+            // does not matter.
+            CharacterDatabase.Execute(Acore::StringFormat(
+                "INSERT IGNORE INTO dc_weekly_vault (character_guid, season_id, week_start) VALUES ({}, {}, {})",
+                data.guidLow, data.seasonId, data.claimWeekStart));
+        }
+
+        // Stage 1: every row-shaped input in ONE round-trip via a tagged
+        // UNION ALL normalized to fixed columns (tag, a, b, c, d, e). MySQL
+        // requires each ordered/limited SELECT in a UNION to be parenthesized.
+        std::string rowsSql = Acore::StringFormat(
+            "(SELECT 'run' AS tag, map_id AS a, keystone_level AS b, COALESCE(completion_time, 0) AS c, "
+            "success AS d, UNIX_TIMESTAMP(completed_at) AS e FROM dc_mplus_runs "
+            "WHERE character_guid = {} AND season_id = {} "
+            "ORDER BY completed_at DESC, run_id DESC LIMIT 9)"
+            " UNION ALL "
+            "(SELECT 'mlp', keystone_level, 0, 0, 0, 0 FROM dc_mplus_runs "
+            "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+            "AND completed_at >= FROM_UNIXTIME({}) AND completed_at < FROM_UNIXTIME({}) "
+            "ORDER BY keystone_level DESC LIMIT 8)"
+            " UNION ALL "
+            "(SELECT 'rbp', i.map, i.completedEncounters, 0, 0, 0 "
+            "FROM character_instance ci JOIN instance i ON i.id = ci.instance "
+            "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {})",
+            data.guidLow, data.seasonId,
+            data.guidLow, data.seasonId, data.progressWeekStart, data.progressWeekEnd,
+            data.guidLow, data.progressWeekStart, data.progressWeekEnd);
+
+        if (data.claimWeekStart != 0)
+        {
+            rowsSql += Acore::StringFormat(
+                " UNION ALL "
+                "(SELECT 'mlc', keystone_level, 0, 0, 0, 0 FROM dc_mplus_runs "
+                "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                "AND completed_at >= FROM_UNIXTIME({}) AND completed_at < FROM_UNIXTIME({}) "
+                "ORDER BY keystone_level DESC LIMIT 8)"
+                " UNION ALL "
+                "(SELECT 'rbc', i.map, i.completedEncounters, 0, 0, 0 "
+                "FROM character_instance ci JOIN instance i ON i.id = ci.instance "
+                "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {})",
+                data.guidLow, data.seasonId, data.claimWeekStart, data.claimWeekEnd,
+                data.guidLow, data.claimWeekStart, data.claimWeekEnd);
+        }
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(rowsSql)
+            .WithCallback([playerGuid, data](QueryResult rowsResult) mutable
+        {
+            if (!ObjectAccessor::FindPlayer(playerGuid))
+                return;
+
+            if (rowsResult)
+            {
+                do
+                {
+                    Field* fields = rowsResult->Fetch();
+                    std::string tag = fields[0].Get<std::string>();
+                    if (tag == "run")
+                    {
+                        RecentRunEntry run;
+                        run.mapId = fields[1].Get<uint16>();
+                        run.keystoneLevel = fields[2].Get<uint8>();
+                        run.completionTime = fields[3].Get<uint32>();
+                        run.success = fields[4].Get<uint8>() != 0;
+                        run.completedAt = fields[5].Get<uint32>();
+
+                        std::string runMapName = "Map " + std::to_string(run.mapId);
+                        if (MapEntry const* mapEntry = sMapStore.LookupEntry(run.mapId))
+                        {
+                            char const* dbMapName = mapEntry->name[0];
+                            if (dbMapName && dbMapName[0] != '\0')
+                                runMapName = dbMapName;
+                        }
+
+                        run.mapName = runMapName;
+                        data.recentRuns.push_back(std::move(run));
+                    }
+                    else if (tag == "mlp")
+                    {
+                        data.mplusLevelsProgress.push_back(fields[1].Get<uint8>());
+                    }
+                    else if (tag == "mlc")
+                    {
+                        data.mplusLevelsClaim.push_back(fields[1].Get<uint8>());
+                    }
+                    else if (tag == "rbp" || tag == "rbc")
+                    {
+                        uint32 mapId = fields[1].Get<uint32>();
+                        uint32 completedEncounters = fields[2].Get<uint32>();
+
+                        MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+                        if (!mapEntry || !mapEntry->IsRaid())
+                            continue;
+
+                        if (tag == "rbp")
+                            data.raidBossesProgress += CountBits32(completedEncounters);
+                        else
+                            data.raidBossesClaim += CountBits32(completedEncounters);
+                    }
+                } while (rowsResult->NextRow());
+            }
+
+            // Stage 2: the scalars in one round-trip. Claim-week fragments
+            // are only emitted when a claim week exists.
+            std::string const pvpProgressSql = Acore::StringFormat(
+                "(SELECT COUNT(*) FROM pvpstats_players p "
+                "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
+                "WHERE p.character_guid = {} AND p.winner = 1 "
+                "AND b.date >= FROM_UNIXTIME({}) AND b.date < FROM_UNIXTIME({}))",
+                data.guidLow, data.progressWeekStart, data.progressWeekEnd);
+
+            std::string scalarSql;
+            if (data.claimWeekStart != 0)
+            {
+                scalarSql = Acore::StringFormat(
+                    "SELECT "
+                    "COALESCE((SELECT reward_claimed FROM dc_weekly_vault "
+                    "WHERE character_guid = {} AND season_id = {} AND week_start = {}), 0), "
+                    "COALESCE((SELECT claimed_slot FROM dc_weekly_vault "
+                    "WHERE character_guid = {} AND season_id = {} AND week_start = {}), -1), "
+                    "{}, "
+                    "(SELECT COUNT(*) FROM pvpstats_players p "
+                    "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
+                    "WHERE p.character_guid = {} AND p.winner = 1 "
+                    "AND b.date >= FROM_UNIXTIME({}) AND b.date < FROM_UNIXTIME({}))",
+                    data.guidLow, data.seasonId, data.claimWeekStart,
+                    data.guidLow, data.seasonId, data.claimWeekStart,
+                    pvpProgressSql,
+                    data.guidLow, data.claimWeekStart, data.claimWeekEnd);
+            }
+            else
+            {
+                scalarSql = Acore::StringFormat("SELECT 0, -1, {}, 0", pvpProgressSql);
+            }
+
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(scalarSql)
+                .WithCallback([playerGuid, data](QueryResult scalarResult) mutable
+            {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player || !player->GetSession())
+                    return;
+
+                if (scalarResult)
+                {
+                    Field* fields = scalarResult->Fetch();
+                    data.claimed = fields[0].Get<uint8>() != 0;
+                    data.claimedSlot = fields[1].Get<int32>();
+                    data.pvpWinsProgress = fields[2].Get<uint32>();
+                    data.pvpWinsClaim = fields[3].Get<uint32>();
+                }
+
+                uint8 mplusRunsClaim = static_cast<uint8>(data.mplusLevelsClaim.size());
+                data.unlockedCountClaim = 0;
+                for (uint8 i = 1; i <= 3; ++i)
+                {
+                    if (data.raidBossesClaim >= VaultRaidThreshold(i))
+                        ++data.unlockedCountClaim;
+                    if (mplusRunsClaim >= sMythicRuns->GetVaultThreshold(i))
+                        ++data.unlockedCountClaim;
+                    if (data.pvpWinsClaim >= VaultPvpThreshold(i))
+                        ++data.unlockedCountClaim;
+                }
+
+                if (data.claimWeekStart == 0)
+                {
+                    // No claim week: nothing to generate or read from the
+                    // reward pool.
+                    FinishSendVaultInfo(player, data, {});
+                    return;
+                }
+
+                if (!data.claimed && data.unlockedCountClaim > 0)
+                {
+                    // Intentionally synchronous: GenerateVaultRewardPool
+                    // self-skips once the pool rows exist, so this heavy
+                    // GreatVaultMgr call runs at most once per player per
+                    // week. Making GreatVaultMgr fully async is a separate
+                    // refactor.
+                    sMythicRuns->GenerateVaultRewardPool(data.guidLow, data.seasonId, data.claimWeekStart);
+                }
+
+                // Stage 3: claim-week reward pool. Must run strictly AFTER
+                // the possible generation above, which inserts the rows this
+                // reads (same SQL GetVaultRewardPool runs, inlined async).
+                std::string poolSql = Acore::StringFormat(
+                    "SELECT slot_index, item_id, item_level FROM dc_vault_reward_pool "
+                    "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+                    data.guidLow, data.seasonId, data.claimWeekStart);
+
+                DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(poolSql)
+                    .WithCallback([playerGuid, data](QueryResult poolResult)
+                {
+                    Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                    if (!player || !player->GetSession())
+                        return;
+
+                    std::unordered_map<uint8, std::pair<uint32, uint32>> rewardBySlot;
+                    if (poolResult)
+                    {
+                        do
+                        {
+                            Field* fields = poolResult->Fetch();
+                            rewardBySlot[fields[0].Get<uint8>()] =
+                                { fields[1].Get<uint32>(), fields[2].Get<uint32>() };
+                        } while (poolResult->NextRow());
+                    }
+
+                    FinishSendVaultInfo(player, data, rewardBySlot);
+                }));
+            }));
+        }));
+    }
+
     void SendOpenVault(Player* player)
     {
         SendVaultInfo(player, true);
@@ -1153,6 +1301,7 @@ namespace MythicPlus
         bool m_tableEnsured = false;
         bool m_queryInFlight = false;
         std::optional<QueryCallback> m_pendingQuery;
+        std::unordered_set<uint64> m_refreshInFlight;  // keys with an async single-key refresh outstanding
 
         static constexpr char const* HUD_CACHE_TABLE = "dc_mplus_hud_cache";
         static constexpr uint32 POLL_INTERVAL_MS = 1000;
@@ -1167,6 +1316,9 @@ namespace MythicPlus
             if (m_tableEnsured)
                 return;
 
+            // Intentionally synchronous: guarded by m_tableEnsured, this
+            // schema ensure runs exactly once per uptime and must complete
+            // before the first async read against the table is issued.
             CharacterDatabase.DirectExecute(
                 "CREATE TABLE IF NOT EXISTS `{}` ("
                 "  `instance_key` BIGINT UNSIGNED NOT NULL,"
@@ -1256,6 +1408,66 @@ namespace MythicPlus
             return false;
         }
 
+        // Async single-key fetch/refresh. At most one refresh per key is
+        // outstanding (m_refreshInFlight); the callback updates m_cache /
+        // m_missingKeys / m_lastSeenUpdate / m_cacheValidation exactly as the
+        // old synchronous lookup did. Handed to DCAddon::EnqueueQueryCallback
+        // so the callback cannot be silently dropped (a discarded
+        // QueryCallback never fires). Capturing `this` is safe: HudCacheMgr
+        // is a function-local static singleton (see Instance()) and the
+        // enqueued callbacks are invoked on the world thread.
+        void RequestKeyRefresh(uint64 instanceKey)
+        {
+            if (!m_refreshInFlight.insert(instanceKey).second)
+                return;  // refresh for this key already outstanding
+
+            EnsureTable();
+
+            std::string sql = Acore::StringFormat(
+                "SELECT payload, updated_at FROM `{}` WHERE instance_key = {} LIMIT 1",
+                HUD_CACHE_TABLE, instanceKey);
+
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+                .WithCallback([this, instanceKey](QueryResult result)
+            {
+                m_refreshInFlight.erase(instanceKey);
+
+                time_t now = time(nullptr);
+                if (!result)
+                {
+                    // Row vanished (or never existed): drop any stale cache
+                    // entry and let the miss backoff take over.
+                    m_cache.erase(instanceKey);
+                    m_missingKeys[instanceKey] = now;
+                    return;
+                }
+
+                Field* fields = result->Fetch();
+                std::string payload = fields[0].Get<std::string>();
+                uint64 updated = fields[1].Get<uint64>();
+
+                if (payload.empty())
+                {
+                    m_cache.erase(instanceKey);
+                    m_missingKeys[instanceKey] = now;
+                    return;
+                }
+
+                CacheEntry& entry = m_cache[instanceKey];
+                entry.payload = payload;
+                entry.updatedAt = updated;
+                entry.instanceKey = instanceKey;
+
+                if (updated > m_lastSeenUpdate)
+                    m_lastSeenUpdate = updated;
+
+                m_missingKeys.erase(instanceKey);
+                m_cacheValidation[instanceKey] = now;
+            }));
+        }
+
+        // Serve-stale-and-refresh-async: never blocks the world thread on a
+        // per-key DB lookup.
         CacheEntry* FetchSnapshot(uint64 instanceKey, bool forceValidate = false)
         {
             if (instanceKey == 0)
@@ -1278,82 +1490,28 @@ namespace MythicPlus
                     }
                 }
 
-                if (!shouldValidate)
-                    return &it->second;
-
-                m_cacheValidation[instanceKey] = now;
-                EnsureTable();
-
-                QueryResult result = CharacterDatabase.Query(
-                    "SELECT payload, updated_at FROM `{}` WHERE instance_key = {} LIMIT 1",
-                    HUD_CACHE_TABLE, instanceKey);
-
-                if (!result)
+                // Serve the (possibly stale) cached entry immediately; the
+                // async refresh updates m_cache and the 1-second Update()
+                // loop re-delivers changed payloads via m_playerSnapshots,
+                // so freshness arrives one tick later.
+                if (shouldValidate)
                 {
-                    m_cache.erase(it);
-                    m_missingKeys[instanceKey] = now;
-                    return nullptr;
+                    m_cacheValidation[instanceKey] = now;
+                    RequestKeyRefresh(instanceKey);
                 }
 
-                Field* fields = result->Fetch();
-                std::string payload = fields[0].Get<std::string>();
-                uint64 updated = fields[1].Get<uint64>();
-
-                if (payload.empty())
-                {
-                    m_cache.erase(it);
-                    m_missingKeys[instanceKey] = now;
-                    return nullptr;
-                }
-
-                it = m_cache.find(instanceKey);
-                if (it == m_cache.end())
-                    return nullptr;
-
-                it->second.payload = payload;
-                it->second.updatedAt = updated;
-                it->second.instanceKey = instanceKey;
-
-                if (updated > m_lastSeenUpdate)
-                    m_lastSeenUpdate = updated;
-
-                m_missingKeys.erase(instanceKey);
                 return &it->second;
             }
 
-            // Check backoff
+            // Cache miss: respect the backoff so misses don't spam, kick off
+            // the async fetch and return nothing this tick. When the callback
+            // finds a row it populates m_cache and clears the missing-key
+            // backoff; the next Update() tick (or client request) delivers.
             if (CacheMissBackoff(instanceKey))
                 return nullptr;
 
-            EnsureTable();
-
-            // Query database
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT payload, updated_at FROM `{}` WHERE instance_key = {} LIMIT 1",
-                HUD_CACHE_TABLE, instanceKey);
-
-            if (!result)
-                return nullptr;
-
-            Field* fields = result->Fetch();
-            std::string payload = fields[0].Get<std::string>();
-            uint64 updated = fields[1].Get<uint64>();
-
-            if (payload.empty())
-                return nullptr;
-
-            // Cache it
-            CacheEntry& entry = m_cache[instanceKey];
-            entry.payload = payload;
-            entry.updatedAt = updated;
-            entry.instanceKey = instanceKey;
-
-            if (updated > m_lastSeenUpdate)
-                m_lastSeenUpdate = updated;
-
-            m_cacheValidation[instanceKey] = now;
-            m_missingKeys.erase(instanceKey);
-            return &entry;
+            RequestKeyRefresh(instanceKey);
+            return nullptr;
         }
 
         void ApplyCacheQueryResult(QueryResult result)

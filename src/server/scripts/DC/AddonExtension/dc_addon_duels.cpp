@@ -82,20 +82,36 @@ namespace DCDuelAddon
      *   "lastOpponentName": string
      * }
      */
+    void SendPlayerStatsResponse(Player* player, QueryResult result);
+
     void SendPlayerStats(Player* player, ObjectGuid targetGuid)
     {
         if (!player || !player->GetSession())
             return;
 
-        // Query from database
-        QueryResult result = CharacterDatabase.Query(
+        // ASYNC stats fetch: this ran a synchronous CharacterDatabase query on
+        // the world thread per stats request (18s-stall class).
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string const sql =
             "SELECT d.wins, d.losses, d.draws, d.total_damage_dealt, d.total_damage_taken, "
             "d.longest_duel_seconds, d.shortest_win_seconds, d.last_duel_time, d.last_opponent_guid, c.name "
             "FROM dc_duel_statistics d "
             "LEFT JOIN characters c ON c.guid = d.last_opponent_guid "
-            "WHERE d.player_guid = {}",
-            targetGuid.GetCounter());
+            "WHERE d.player_guid = " + std::to_string(targetGuid.GetCounter());
 
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid](QueryResult result)
+        {
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            SendPlayerStatsResponse(player, result);
+        }));
+    }
+
+    void SendPlayerStatsResponse(Player* player, QueryResult result)
+    {
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_STATS);
 
         if (!result)
@@ -186,20 +202,25 @@ namespace DCDuelAddon
             orderBy = "d.total_damage_dealt DESC, d.wins DESC";
         }
 
-        // Get total count
-        QueryResult countResult = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM dc_duel_statistics WHERE wins > 0 OR losses > 0");
-        uint32 totalCount = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
-
-        // Get leaderboard entries
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT c.name, c.class, d.wins, d.losses, d.draws, d.total_damage_dealt "
+        // ASYNC page fetch. This used to run TWO synchronous queries (count +
+        // page) on the world thread per leaderboard request (18s-stall class).
+        // One async round-trip carries the total as a subquery column.
+        ObjectGuid playerGuid = player->GetGUID();
+        std::string const pageSql =
+            "SELECT c.name, c.class, d.wins, d.losses, d.draws, d.total_damage_dealt, "
+            "(SELECT COUNT(*) FROM dc_duel_statistics WHERE wins > 0 OR losses > 0) AS total_count "
             "FROM dc_duel_statistics d "
             "INNER JOIN characters c ON c.guid = d.player_guid "
             "WHERE d.wins > 0 OR d.losses > 0 "
-            "ORDER BY {} "
-            "LIMIT {} OFFSET {}",
-            orderBy, limit, offset);
+            "ORDER BY " + orderBy +
+            " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(pageSql)
+            .WithCallback([playerGuid, sortBy, page, limit, offset](QueryResult result)
+        {
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
         // Build JSON response
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_LEADERBOARD);
@@ -208,6 +229,7 @@ namespace DCDuelAddon
         std::string entriesJson = "[";
         uint32 rank = offset + 1;
         bool first = true;
+        uint32 totalCount = 0;
 
         if (result)
         {
@@ -220,6 +242,7 @@ namespace DCDuelAddon
                 uint32 losses = fields[3].Get<uint32>();
                 uint32 draws = fields[4].Get<uint32>();
                 uint32 damageDealt = fields[5].Get<uint32>();
+                totalCount = fields[6].Get<uint32>();
 
                 uint32 total = wins + losses + draws;
                 double winRate = total > 0 ? (static_cast<double>(wins) / static_cast<double>(total)) * 100.0 : 0.0;
@@ -264,6 +287,7 @@ namespace DCDuelAddon
         msg.Set("limit", limit);
 
         msg.Send(player);
+        }));
     }
 
     /**
