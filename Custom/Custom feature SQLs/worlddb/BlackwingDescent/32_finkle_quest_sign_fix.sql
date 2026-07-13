@@ -1,0 +1,13 @@
+-- ---------------------------------------------------------------------------
+-- Quest 700709 "A Favor for Finkle" -- RequiredNpcOrGo sign error
+-- ---------------------------------------------------------------------------
+-- More-db-errors audit pass (2026-07-13): "Quest 700709 has RequiredNpcOrGo1
+-- = -44202 but gameobject 44202 does not exist, quest can't be done."
+-- Negative RequiredNpcOrGo means GameObject (ObjectMgr::LoadQuests: `id < 0
+-- && !GetGameObjectTemplate(-id)`), but 44202 "Finkle Einhorn" is a CREATURE
+-- (confirmed present in creature_template) -- a sign error in the original
+-- 12_quests.sql authoring, not a missing-content gap. Talk-to objectives
+-- work fine with a positive RequiredNpcOrGo (SetSpecialFlag sets
+-- KILL|CAST|SPEAKTO together regardless of sign). Fixed to +44202.
+-- ---------------------------------------------------------------------------
+UPDATE `quest_template` SET `RequiredNpcOrGo1` = 44202 WHERE `ID` = 700709 AND `RequiredNpcOrGo1` = -44202;

@@ -1,0 +1,23 @@
+-- ---------------------------------------------------------------------------
+-- QuestType regression fix (Emissary Blackscale's 10 quests, 700701-700710)
+-- ---------------------------------------------------------------------------
+-- More-db-errors audit pass (2026-07-13): boot log "Quest N has `Method` = 62,
+-- expected values are 0, 1 or 2" for all 10 quests. This is a REGRESSION from
+-- 12_quests.sql's own "QuestType corrected 2 -> 62 (QUEST_TYPE_RAID)" note --
+-- that fix mis-diagnosed which column drives raid-quest visibility.
+--
+-- Quest::Quest(Field* questRecord) (src/server/game/Quests/QuestDef.cpp) reads:
+--   Method = questRecord[1]   -- 2nd column = `QuestType`, validated against {0,1,2} only
+--   Type   = questRecord[5]   -- 6th column = `QuestInfoID`
+-- and Quest::IsRaidQuest() (same file) switches on `Type` (i.e. QuestInfoID),
+-- NOT `Method`/QuestType. 12_quests.sql's own header already noted
+-- "QuestInfoID 62 ... was already correct" BEFORE this fix touched anything --
+-- meaning the raid-gating column was fine all along, and setting QuestType to
+-- 62 too just broke the separate Method validation for no gameplay benefit.
+--
+-- Fix: revert QuestType back to 2 (a valid Method value for a normal,
+-- turn-in-required quest) on all 10 rows. QuestInfoID is left at 62 --
+-- untouched, since that's the field that actually makes IsRaidQuest() return
+-- true and let raid groups see these quests.
+-- ---------------------------------------------------------------------------
+UPDATE `quest_template` SET `QuestType` = 2 WHERE `ID` BETWEEN 700701 AND 700710 AND `QuestType` = 62;

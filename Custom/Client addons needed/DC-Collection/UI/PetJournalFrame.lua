@@ -40,6 +40,23 @@ local PET_PREVIEW_VISUAL_FALLBACKS = {
     },
 }
 
+-- Custom (displayId >= 100000) pets whose .m2 uses DBC-driven replaceable
+-- texture slots (MONSTER_1/2/3) instead of fully-embedded textures -- for
+-- these, SetModel(path) alone never applies CreatureDisplayInfo and renders
+-- (partially) white, so creature/display attempts must come BEFORE the raw
+-- model attempt, same as the stock-pet ordering. Only add an id here once
+-- confirmed via a direct M2 texture-slot read (do not guess) -- reordering
+-- for a baked custom model with fully-embedded textures would make it WORSE
+-- (SetCreature/SetDisplayInfo may "succeed" on a blank/wrong result before
+-- the correct SetModel attempt is ever tried).
+-- 500230 Baby Devilsaur: MD20 texture slot0=type11(MONSTER_1, TV1=
+--   'babydevilsaur_yellow'), slot3=type12(MONSTER_2, TV2 backfilled to
+--   'babydevilsaur_5916001' 2026-07-13); only slots1/2 (armor/fx decals) are
+--   embedded. Confirmed 2026-07-13.
+local FORCE_TEXTURED_ATTEMPTS_FIRST = {
+    [500230] = true,
+}
+
 local function GetWishlistButtonText(isWishlisted)
     if isWishlisted then
         return (L and (L["REMOVE_FROM_WISHLIST"] or L["REMOVE_WISHLIST"] or
@@ -1145,6 +1162,7 @@ function PetJournal:SelectPet(petData)
     -- white SetModel geometry (the blank-white Blue Murloc Egg, display 15369).
     -- Custom/downported displays live at 500000+; stock ones are far lower.
     local isCustomDisplay = resolvedDisplayKey ~= nil and resolvedDisplayKey >= 100000
+        and not (resolvedDisplayKey and FORCE_TEXTURED_ATTEMPTS_FIRST[resolvedDisplayKey])
 
     if petData.collected then
         -- Companion id from GetCompanionInfo is a textured CreatureDisplayInfo id.

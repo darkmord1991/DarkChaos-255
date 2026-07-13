@@ -57,7 +57,9 @@ local function GetRarityColor(self, rarity)
     end
 
     local c = rarityColors[r] or { 1, 1, 1 }
-    return c[1], c[2], c[3]
+    -- DC.RarityColors (Core.lua) uses named keys {r=,g=,b=}; the local
+    -- fallback table above uses array indices {r,g,b} -- accept either shape.
+    return c.r or c[1] or 1, c.g or c[2] or 1, c.b or c[3] or 1
 end
 
 local function ApplyStableModelCamera(model, options)
