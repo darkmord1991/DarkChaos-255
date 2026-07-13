@@ -1134,20 +1134,35 @@ function PetJournal:SelectPet(petData)
         attempts[#attempts + 1] = { kind = kind, value = value }
     end
 
-    -- SetCreature() is the only renderer that binds the creature's skin
-    -- (textured); SetModel(path) loads the geometry but renders white. Prefer
-    -- SetCreature and let VerifyModelLoaded wait for a possible creature-query
-    -- round-trip before falling back to the untextured SetModel(path).
+    -- SetCreature(displayId) binds the creature's skin (textured). For a STOCK
+    -- creature, SetModel(path) loads only geometry and renders WHITE, so it
+    -- must come AFTER the textured renderers. For a DOWNPORTED pet the path
+    -- points at a baked .m2 (texture embedded), so there SetModel IS the
+    -- reliable textured renderer and SetCreature on the custom display isn't.
+    --
+    -- The previous order tried SetModel(path) before displayId and never tried
+    -- SetCreature(displayId) at all, so stock uncollected pets stopped on the
+    -- white SetModel geometry (the blank-white Blue Murloc Egg, display 15369).
+    -- Custom/downported displays live at 500000+; stock ones are far lower.
+    local isCustomDisplay = resolvedDisplayKey ~= nil and resolvedDisplayKey >= 100000
+
     if petData.collected then
+        -- Companion id from GetCompanionInfo is a textured CreatureDisplayInfo id.
         PushAttempt("creature", resolvedCompanionCreatureId)
-        PushAttempt("creature", resolvedDefinitionCreatureId)
+    end
+
+    if isCustomDisplay then
         PushAttempt("model", modelPath)
+        PushAttempt("creature", resolvedDisplayId)
         PushAttempt("display", resolvedDisplayId)
     else
-        PushAttempt("creature", resolvedDefinitionCreatureId)
-        PushAttempt("model", modelPath)
+        PushAttempt("creature", resolvedDisplayId)
         PushAttempt("display", resolvedDisplayId)
+        PushAttempt("model", modelPath)
     end
+
+    -- Raw definition id is often the teaching-item entry (renders blank); last.
+    PushAttempt("creature", resolvedDefinitionCreatureId)
 
     local attemptIndex = 1
     local function ApplyNextAttempt()

@@ -1497,9 +1497,11 @@ namespace DCCollection
             do
             {
                 Field* f = r->Fetch();
-                uint32 itemId = f[0].Get<uint32>();
-                if (!itemId)
+                int32 signedItemId = f[0].Get<int32>();
+                // Negative item id means this row is a reference to another vendor's list, not a real item.
+                if (signedItemId <= 0)
                     continue;
+                uint32 itemId = uint32(signedItemId);
 
                 ItemSourceVendorRow row;
                 row.name = f[1].Get<std::string>();

@@ -1598,59 +1598,36 @@ function DC:UpdateMountPreview(item)
             end
         end
 
-        -- Stock / until-WotLK mounts (no custom path). The authoritative
-        -- renderable id is displayId -- a CreatureDisplayInfo id the client
-        -- natively owns for every pre-WotLK mount. The raw creatureId the
-        -- server sends is the mounted-aura MiscValue, i.e. a server creature
-        -- ENTRY; SetCreature(entry) renders nothing on this client, yet pcall
-        -- still "succeeds", so trying it first silently blanked uncollected
-        -- mounts (collected ones only worked because their creatureId came
-        -- from GetCompanionInfo, which is already a display id).
-        --
-        -- So: try displayId first, and require that a model ACTUALLY loaded
-        -- (HasLoadedModel) -- pcall success alone is not proof -- before
-        -- accepting an attempt. Only fall back to the raw creatureId last.
-        if not modelShown then
-            local candidates = {}
-            if displayId then
-                candidates[#candidates + 1] =
-                    { fn = TrySetDisplay, id = displayId,
-                      via = "SetDisplayInfo(displayId=" .. displayId .. ")" }
-                candidates[#candidates + 1] =
-                    { fn = TrySetCreature, id = displayId,
-                      via = "SetCreature(displayId=" .. displayId .. ")" }
-            end
-            if creatureId and creatureId ~= displayId then
-                candidates[#candidates + 1] =
-                    { fn = TrySetCreature, id = creatureId,
-                      via = "SetCreature(creatureId=" .. creatureId .. ")" }
-            end
+        -- Whether "creatureId" is a client-renderable value depends on how it
+        -- was resolved:
+        --   * COLLECTED mounts: ResolveMountPreviewCreatureId returns the
+        --     companion id from GetCompanionInfo, which IS a CreatureDisplayInfo
+        --     id -> SetCreature renders it. This is the long-working path.
+        --   * UNCOLLECTED mounts: it returns the server-sent creatureId, i.e.
+        --     the mounted-aura MiscValue = a creature ENTRY. SetCreature(entry)
+        --     renders nothing on this client, yet pcall still "succeeds", so
+        --     trying it first silently blanked uncollected mounts.
+        -- So only try creatureId FIRST for collected mounts; for uncollected,
+        -- go straight to the authoritative displayId and only fall back to the
+        -- raw creatureId as a last resort (covers rows where it happens to be a
+        -- display id and displayId was missing).
+        if not modelShown and item and item.collected and creatureId then
+            modelShown = TrySetCreature(creatureId)
+            if modelShown then appliedVia = "SetCreature(creatureId=" .. creatureId .. ")" end
+        end
 
-            local firstAccepted = nil
-            for _, c in ipairs(candidates) do
-                if c.fn(c.id) then
-                    if HasLoadedModel(p.model) then
-                        modelShown = true
-                        appliedVia = c.via
-                        break
-                    end
-                    -- pcall accepted the id but the model isn't visible yet
-                    -- (e.g. still streaming). Remember the FIRST such attempt
-                    -- so we can re-apply and trust it if nothing verifies.
-                    if not firstAccepted then
-                        firstAccepted = c
-                    end
-                end
+        if not modelShown and displayId then
+            modelShown = TrySetDisplay(displayId)
+            if modelShown then appliedVia = "SetDisplayInfo(displayId=" .. displayId .. ")" end
+            if not modelShown then
+                modelShown = TrySetCreature(displayId)
+                if modelShown then appliedVia = "SetCreature(displayId=" .. displayId .. ")" end
             end
+        end
 
-            -- Nothing verified as loaded: re-apply the first accepted attempt
-            -- (so the model reflects the best candidate, not the last one
-            -- tried) and trust it -- the deferred VerifyModelLoaded re-checks.
-            if not modelShown and firstAccepted then
-                firstAccepted.fn(firstAccepted.id)
-                modelShown = true
-                appliedVia = firstAccepted.via .. " (unverified)"
-            end
+        if not modelShown and creatureId then
+            modelShown = TrySetCreature(creatureId)
+            if modelShown then appliedVia = "SetCreature(creatureId=" .. creatureId .. ")" end
         end
 
         p._dcLastAppliedVia = appliedVia
