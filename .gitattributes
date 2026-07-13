@@ -28,3 +28,36 @@
 
 # Ignore sql/* files
 data/sql/*    linguist-documentation
+
+# Binary game/asset data - must NOT go through text/eol normalization.
+# The blanket "* text eol=lf" rule above only auto-detects text files heuristically at
+# checkin time; it does not reliably exempt binary formats, and has been silently
+# corrupting committed binary blobs (CRLF byte pairs that occur incidentally inside
+# binary data get collapsed to LF). "binary" is git's built-in shorthand for
+# "-diff -merge -text", which fully disables normalization/diff/merge for these paths.
+*.dbc      binary
+*.dbc.*    binary
+*.cdbc     binary
+*.blp      binary
+*.BLP      binary
+*.tga      binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.ico      binary
+*.psd      binary
+*.ogg      binary
+*.mp3      binary
+*.wav      binary
+*.ttf      binary
+*.otf      binary
+*.m2       binary
+*.skin     binary
+*.mpq      binary
+*.MPQ      binary
+*.rar      binary
+*.zip      binary
+*.exe      binary
+*.dll      binary
+*.pyc      binary
+*.xlsx     binary
