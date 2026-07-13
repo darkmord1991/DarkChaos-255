@@ -1,0 +1,16 @@
+-- ---------------------------------------------------------------------------
+-- creature_template_model  (Legion Dalaran, map 1413)  --  Hobart Grapplehammer (RETRY)
+-- ---------------------------------------------------------------------------
+-- 2026_07_10_02_dc_legion_dalaran_1413_hobart_model_placeholder.sql never
+-- actually took effect: its UPDATE was guarded on
+-- `CreatureDisplayID = 1685` (the assumed prior dwarf-placeholder value), but
+-- the live row for entry 3500078 was actually still 501315 (the never-baked
+-- custom id) at the time that file was written/run -- the WHERE clause
+-- matched zero rows and the UPDATE silently no-op'd. Re-verified 2026-07-13
+-- (more-db-errors audit pass) that the live DB still has CreatureDisplayID
+-- 501315 for this entry, confirming the original fix never landed. Same
+-- target value (7136 "Sovik", ModelID 831 GoblinMale.mdx, exact subname
+-- match "Engineering Supplies") -- just correcting the guard to match the
+-- real current value instead of the wrong assumed one.
+-- ---------------------------------------------------------------------------
+UPDATE `creature_template_model` SET `CreatureDisplayID` = 7136 WHERE `CreatureID` = 3500078 AND `CreatureDisplayID` = 501315;

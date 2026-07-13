@@ -1,0 +1,12 @@
+-- =====================================================================
+-- Molten Front -- 79  Twilight Slavedriver AIName/ScriptName conflict
+-- ---------------------------------------------------------------------
+-- More-db-errors audit pass (2026-07-13): "Creature entry (3639438) has
+-- SmartAI enabled but no SmartAI entries in the database" -- but this
+-- creature already has a real, registered C++ CreatureScript
+-- (npc_twilight_slavedriver, zone_mount_hyjal.cpp) wired via ScriptName.
+-- AIName='SmartAI' was left set alongside it, which makes the SmartAI
+-- factory try to load smart_scripts (finds none, warns) instead of using
+-- the intended ScriptName-driven AI. Clearing AIName lets ScriptName win.
+-- =====================================================================
+UPDATE `creature_template` SET `AIName` = '' WHERE `entry` = 3639438 AND `AIName` = 'SmartAI' AND `ScriptName` = 'npc_twilight_slavedriver';

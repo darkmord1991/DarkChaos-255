@@ -103,16 +103,12 @@ INSERT INTO acore_world.spell_script_names (`spell_id`,`ScriptName`) VALUES
 (93593, 'spell_tortolla_save_turtle');
 
 -- ---------------------------------------------------------------------
--- TODO (blocked): graduation podium spells. spell_inspiration_graduation /
+-- RESOLVED 2026-07-13 (see 78_molten_front_graduation_spells.sql): the
+-- graduation podium spells were blocked on OverrideSpellData.dbc row 270,
+-- which existed in no available DB. Extracted directly from the real Cata
+-- 4.3.4 client (K:/Cata/Data/enUS/locale-enUS.MPQ) -- row 270 = Spells
+-- 74934/74935/74937/74947 (Flags=1). All 4 downported for real (not
+-- hand-authored) and wired to spell_inspiration_graduation /
 -- spell_divisiveness_graduation / spell_crazy_graduation /
--- spell_step_down_graduation hook 4 stock Cata player spells granted by
--- aura 293 (SPELL_AURA_OVERRIDE_SPELLS) on 74948 with MiscValue 270 =
--- OverrideSpellData.dbc row 270. That row (and the 4 spell ids it lists)
--- exists in no available DB (acore overridespelldata_dbc, nelt_world and
--- cata_world all lack it) -- it must be read from a Cata 4.3.4 client
--- OverrideSpellData.dbc / wago.tools export. Once known:
---   1. INSERT the overridespelldata_dbc row 270 (+ client DBC append),
---   2. author the 4 spells (EFFECT_0 SCRIPT_EFFECT + one AfterHit dummy),
---   3. wire the 4 spell_script_names rows.
--- Until then the Graduation Speech quest (25315) cannot present choices.
+-- spell_step_down_graduation via spell_script_names.
 -- ---------------------------------------------------------------------
