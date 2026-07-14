@@ -59,8 +59,8 @@ DELETE FROM `creature_model_info` WHERE `DisplayID` = 38483;
 INSERT INTO `creature_model_info` (`DisplayID`,`BoundingRadius`,`CombatReach`,`Gender`,`DisplayID_Other_Gender`,`VerifiedBuild`) VALUES
 (38483,2,3,0,0,NULL);
 
-UPDATE `quest_template` SET `RequiredNpcOrGo1` = 3653234 WHERE `ID` = 29264 AND `RequiredNpcOrGo1` = 53234;
-UPDATE `quest_template` SET `RequiredNpcOrGo1` = 3653093 WHERE `ID` = 29272 AND `RequiredNpcOrGo1` = 53093;
+UPDATE `quest_template` SET `RequiredNpcOrGo1` = 3653093 WHERE `ID` = 29264 AND `RequiredNpcOrGo1` = 53093;
+UPDATE `quest_template` SET `RequiredNpcOrGo1` = 3653234 WHERE `ID` = 29272 AND `RequiredNpcOrGo1` = 53234;
 UPDATE `quest_template`
   SET `RequiredNpcOrGo1` = 3653886, `RequiredNpcOrGo2` = 3652891
   WHERE `ID` = 29210 AND `RequiredNpcOrGo1` = 53886 AND `RequiredNpcOrGo2` = 52891;

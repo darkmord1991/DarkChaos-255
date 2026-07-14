@@ -1,0 +1,11 @@
+-- ---------------------------------------------------------------------------
+-- creature_text -- silence Sound references with no matching Sound.dbc entry
+-- ---------------------------------------------------------------------------
+-- "CreatureTextMgr: Entry 3675024, Group G in table `creature_texts` has
+-- Sound S but sound does not exist." (Aronus). Same cause/fix as
+-- BlackwingDescent/35_ -- real Cata voice-line SoundEntries ids never
+-- downported (would need audio-asset extraction, explicitly deferred).
+-- Cosmetic (engine already falls back to no sound). Nulled per user
+-- request (2026-07-14).
+-- ---------------------------------------------------------------------------
+UPDATE `creature_text` SET `Sound` = 0 WHERE `CreatureID` = 3675024 AND `Sound` IN (20950,20951,20952);

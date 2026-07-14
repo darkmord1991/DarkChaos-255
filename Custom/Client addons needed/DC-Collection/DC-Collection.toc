@@ -52,6 +52,7 @@ UI\Wardrobe\WardrobeCommunity.lua
 UI\Wardrobe\WardrobeShare.lua
 UI\ToastFrame.lua
 UI\PetJournalFrame.lua
+UI\BeastmasterFrame.lua
 UI\CharacterFrameButton.lua
 UI\TransmogBorders.lua
 Shop\ShopUI.lua

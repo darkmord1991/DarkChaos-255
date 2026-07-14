@@ -47,6 +47,12 @@ public:
     [[nodiscard]] uint32 GetFreeSlots() const;
     [[nodiscard]] uint32 GetBagSize() const { return GetUInt32Value(CONTAINER_FIELD_NUM_SLOTS); }
 
+    // Heirloom containers grow their usable slot count with the owner's level.
+    // Single source of truth shared by the inventory loader (Player::_LoadItem, so grown
+    // slots exist before contents restore) and the runtime scaler (heirloom_scaling_255),
+    // so the two never disagree. Capped at MAX_BAG_SIZE (36) - the client's per-bag limit.
+    static uint32 GetHeirloomBagSlots(uint32 ownerLevel);
+
     // DB operations
     // overwrite virtual Item::SaveToDB
     void SaveToDB(CharacterDatabaseTransaction trans) override;

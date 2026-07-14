@@ -25,7 +25,7 @@ L["WELCOME_SUBTITLE"] = "Your command center for custom progression, addons, and
 
 L["TAB_WHATS_NEW"] = "What's New"
 L["TAB_GETTING_STARTED"] = "Getting Started"
-L["TAB_FEATURES"] = "Server Features"
+L["TAB_FEATURES"] = "Features"
 L["TAB_ADDONS"] = "Addons"
 L["TAB_PROGRESS"] = "Progress"
 L["TAB_ENDGAME"] = "Endgame"
@@ -79,7 +79,7 @@ L["GETTING_STARTED_HEADER"] = "New Player Guide"
 L["GETTING_STARTED_STEPS"] = {
     {
         title = "|cffffd700Step 1: Open the Welcome Hub|r",
-        text = "Use this addon as your landing page. The Addons tab opens the DarkChaos client tools, while Progress and Season show your live progression data.",
+        text = "Use this addon as your landing page. The Addons tab opens the DarkChaos client tools, the Progress tab shows your stats and current season, and Endgame surfaces live keys, world windows, and PvP.",
     },
     {
         title = "|cffffd700Step 2: Follow the Level Milestones|r",

@@ -34,6 +34,7 @@ void AddSC_dc_addon_collection();
 void AddSC_dc_addon_forms();
 void AddSC_dc_addon_graveyard();
 void AddSC_dc_addon_death_markers();
+void AddSC_dc_addon_beastmaster();
 
 namespace DCAddon { void AddTeleportScripts(); }
 namespace DCAddon { void AddQuestFlowScripts(); }
@@ -90,4 +91,8 @@ void AddDCAddonExtensionScripts()
     // Death markers (world-map pins for Hardcore / Iron Prestige deaths); loads persisted
     // markers from dc_death_markers on startup.
     AddSC_dc_addon_death_markers();
+
+    // Beastmaster hunter-pet catalog (browse + preview + adopt); reads roster
+    // from dc_beastmaster_pets.
+    AddSC_dc_addon_beastmaster();
 }

@@ -299,11 +299,17 @@ function PetJournal:CreatePetList(parent)
         rightInset = 25,
         bottomInset = 5,
         height = 25,
-        pagerWidth = 110,
+        -- Wider pager + "adjacent" button layout (buttons positioned relative
+        -- to the page text itself, not a fixed pager-frame edge) so double-digit
+        -- page numbers ("12 / 24") don't overlap the </> buttons -- the old
+        -- fixed 110px edge-anchored layout only had ~40px of safe text room.
+        pagerWidth = 150,
         pagerHeight = 20,
         buttonTemplate = "UIPanelButtonTemplate",
         buttonWidth = 30,
         buttonHeight = 20,
+        buttonLayout = "adjacent",
+        buttonGap = 8,
         pageText = "1/1",
         onPrev = function() PetJournal:PrevPage() end,
         onNext = function() PetJournal:NextPage() end,
@@ -817,7 +823,11 @@ function PetJournal:RefreshList()
         btn.name:SetTextColor(r, g, b)
 
         local sourceText = DC:FormatSource(pet.source)
-        btn.source:SetText(sourceText or "")
+        local rowDisplayId = ToPositiveNumber(pet.definition and
+            (pet.definition.displayId or pet.definition.display_id))
+        local rowIdSuffix = rowDisplayId and
+            string.format(" |cff808080[Display %d]|r", rowDisplayId) or ""
+        btn.source:SetText((sourceText or "") .. rowIdSuffix)
 
         if pet.is_favorite then
             btn.favStar:Show()
@@ -878,7 +888,10 @@ function PetJournal:SelectPet(petData)
     infoFrame.name:SetTextColor(r, g, b)
 
     local sourceText = DC:FormatSource(petData.source)
-    infoFrame.source:SetText(sourceText or "")
+    local previewDisplayId = ToPositiveNumber(def.displayId or def.display_id)
+    local previewIdSuffix = previewDisplayId and
+        string.format(" |cff808080[Display %d]|r", previewDisplayId) or ""
+    infoFrame.source:SetText((sourceText or "") .. previewIdSuffix)
 
     if infoFrame.favBtn then
         local favTex = infoFrame.favBtn:GetNormalTexture()

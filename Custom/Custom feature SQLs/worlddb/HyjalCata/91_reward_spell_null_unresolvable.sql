@@ -1,0 +1,11 @@
+-- ---------------------------------------------------------------------------
+-- quest_template.RewardSpell -- null out confirmed-unresolvable spell id
+-- ---------------------------------------------------------------------------
+-- Quest 29338 "Into Unrelenting Flame" has `RewardSpell` = 100562 but the
+-- spell does not exist. Already on this session's confirmed "genuinely
+-- unresolvable" list (see [[db-errors-quest-loading-2026-07-13]] --
+-- absent from stock WotLK, the full Cata 4.3.4 dump, AND dense-neighbor-
+-- checked). Nulled at the user's explicit request to silence the boot log;
+-- the quest never had a working spell reward on this fork.
+-- ---------------------------------------------------------------------------
+UPDATE `quest_template` SET `RewardSpell` = 0 WHERE `ID` = 29338 AND `RewardSpell` = 100562;

@@ -248,6 +248,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_gomove.cpp
     AddonExtension/dc_addon_decorations.cpp
     AddonExtension/dc_addon_teleports.cpp
+    AddonExtension/dc_addon_beastmaster.cpp
 )
 
 # DC Collection System - Retail-like collection management (Split Structure)

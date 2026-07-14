@@ -1618,7 +1618,9 @@ local function CreateSettingsPanel()
                       "  /welcome - Open the welcome screen\n" ..
                       "  /faq - Open the FAQ section\n" ..
                       "  /dcaddons - Open the addons hub\n" ..
-                      "  /dcprogress - Open the progress tab\n" ..
+                      "  /dcprogress - Open your progress & season tab\n" ..
+                      "  /dcendgame - Open the endgame director\n" ..
+                      "  /seasonal - Toggle the season tracker HUD\n" ..
                       "  /discord - Copy the Discord invite link")
 
     -- Finalize scroll child height
@@ -1724,4 +1726,4 @@ end)
 -- Addon Loaded Message
 -- =============================================================================
 
-Print("v1.0.0 loaded. Use |cfffff000/welcome|r to open.")
+Print("v" .. (DCWelcome.VERSION or "2.0.0") .. " loaded. Use |cfffff000/welcome|r to open.")

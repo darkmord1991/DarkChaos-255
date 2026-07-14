@@ -1,13 +1,14 @@
 /*
  * Heirloom Cache GameObjects Script
  *
- * Handles custom loot caches for Heirloom Tier 3 items.
- * - OnGossipHello: Directly adds heirloom items to player inventory (no bind dialogs)
- * - Visibility: Cache is hidden for players who cannot currently receive cache items
- * - Despawns after looting
+ * Handles the world "cache" gameobjects for the Tier 3 heirloom set
+ * (gameobject_template 1991001-1991048). Each cache grants exactly ONE heirloom -
+ * the item listed in its gameobject_loot_template row - directly to the looter,
+ * bypassing the loot window and any bind-confirmation dialogs.
  *
- * This script hardcodes heirloom items to completely bypass the loot system
- * and bind confirmation dialogs on the client side.
+ * A cache is hidden (CanBeSeen = false) and refuses to open (OnGossipHello) for any
+ * player who already owns that heirloom - either physically (inventory/bank) or as an
+ * account-wide DC Collection unlock - so players never see or loot a duplicate.
  */
 
 #include "GameObjectScript.h"
@@ -15,25 +16,78 @@
 #include "Player.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
+#include "Chat.h"
+#include "DatabaseEnv.h"
 #include "Log.h"
+#include "../AddonExtension/dc_addon_collection.h"
+
+#include <ctime>
+#include <unordered_map>
+#include <utility>
 
 namespace
 {
-    constexpr uint32 HEIRLOOM_SHIRT_ITEM = 300365;
-    constexpr uint32 HEIRLOOM_BAG_ITEM = 300366;
-
-    bool CanReceiveItemNow(Player* player, uint32 itemId)
+    // Resolve the single heirloom item a cache grants, from its chest lootId (Data1).
+    // Cached per lootId after the first lookup so CanBeSeen never queries the DB on a
+    // visibility tick (only once per distinct cache type, ever).
+    uint32 ResolveCacheHeirloomItem(GameObject* go)
     {
-        if (!player)
-            return false;
+        static std::unordered_map<uint32, uint32> s_lootItemCache;
 
-        ItemPosCountVec dest;
-        return player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1) == EQUIP_ERR_OK;
+        if (!go)
+            return 0;
+
+        uint32 const lootId = go->GetGOInfo()->GetLootId();
+        if (!lootId)
+            return 0;
+
+        auto const cached = s_lootItemCache.find(lootId);
+        if (cached != s_lootItemCache.end())
+            return cached->second;
+
+        uint32 itemId = 0;
+        if (QueryResult result = WorldDatabase.Query(
+                "SELECT `Item` FROM `gameobject_loot_template` WHERE `Entry` = {} ORDER BY `Chance` DESC LIMIT 1", lootId))
+        {
+            itemId = (*result)[0].Get<uint32>();
+        }
+
+        s_lootItemCache[lootId] = itemId;
+        return itemId;
     }
 
-    bool CanLootAnyHeirloomCacheItem(Player* player)
+    // True when the player already owns/collected the heirloom.
+    // Physical possession is an in-memory check; the account-wide collection lookup is a
+    // DB query cached per (account, item) for 60s so repeated visibility checks stay cheap.
+    bool AlreadyHasHeirloom(Player* player, uint32 itemId)
     {
-        return CanReceiveItemNow(player, HEIRLOOM_SHIRT_ITEM) || CanReceiveItemNow(player, HEIRLOOM_BAG_ITEM);
+        if (!player || !itemId)
+            return false;
+
+        // Immediate, no DB: covers the item just looted (or otherwise held/banked).
+        if (player->HasItemCount(itemId, 1, true))
+            return true;
+
+        WorldSession const* session = player->GetSession();
+        if (!session)
+            return false;
+
+        uint32 const accountId = session->GetAccountId();
+        if (!accountId)
+            return false;
+
+        static std::unordered_map<uint64, std::pair<time_t, bool>> s_ownedCache;
+        uint64 const key = (static_cast<uint64>(accountId) << 32) | itemId;
+        time_t const now = time(nullptr);
+
+        auto const cached = s_ownedCache.find(key);
+        if (cached != s_ownedCache.end() && (now - cached->second.first) < 60)
+            return cached->second.second;
+
+        bool const owned = DCCollection::HasCollectionItem(
+            accountId, DCCollection::CollectionType::HEIRLOOM, itemId);
+        s_ownedCache[key] = { now, owned };
+        return owned;
     }
 }
 
@@ -54,7 +108,12 @@ public:
             if (seer->IsGameMaster())
                 return true;
 
-            return CanLootAnyHeirloomCacheItem(const_cast<Player*>(seer));
+            uint32 const itemId = ResolveCacheHeirloomItem(me);
+            if (!itemId)
+                return true; // Misconfigured cache (no loot) - stay visible so it is noticed.
+
+            // Hide the cache once the player owns/collected its heirloom.
+            return !AlreadyHasHeirloom(const_cast<Player*>(seer), itemId);
         }
     };
 
@@ -68,50 +127,37 @@ public:
         if (!player || !go)
             return false;
 
-        // Keep interaction logic consistent with visibility logic.
-        if (!CanLootAnyHeirloomCacheItem(player))
+        uint32 const itemId = ResolveCacheHeirloomItem(go);
+        if (!itemId)
         {
             player->SendEquipError(EQUIP_ERR_ITEM_NOT_FOUND, nullptr, nullptr);
             return true;
         }
 
-        // Check if already looted
+        // Keep interaction consistent with visibility: no duplicates.
+        if (AlreadyHasHeirloom(player, itemId))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("You have already collected this heirloom.");
+            return true;
+        }
+
+        // Already looted / mid-despawn.
         if (go->getLootState() == GO_ACTIVATED || go->getLootState() == GO_JUST_DEACTIVATED)
-        {
             return false;
-        }
 
-        // Add heirloom items directly to inventory
-        uint32 itemsAdded = 0;
-
-        // Item 300365 - Heirloom Shirt (Transmog cosmetic, all classes)
-        if (player->AddItem(HEIRLOOM_SHIRT_ITEM, 1))
+        if (!player->AddItem(itemId, 1))
         {
-            LOG_DEBUG("scripts.dc", "go_heirloom_cache: Added Heirloom Shirt (300365) to player {}", player->GetName());
-            itemsAdded++;
+            player->SendEquipError(EQUIP_ERR_BAG_FULL, nullptr, nullptr);
+            return true;
         }
 
-        // Item 300366 - Heirloom Bag (all classes)
-        if (player->AddItem(HEIRLOOM_BAG_ITEM, 1))
-        {
-            LOG_DEBUG("scripts.dc", "go_heirloom_cache: Added Heirloom Bag (300366) to player {}", player->GetName());
-            itemsAdded++;
-        }
+        LOG_DEBUG("scripts.dc", "go_heirloom_cache: player {} looted heirloom {} from cache entry {}",
+            player->GetName(), itemId, go->GetEntry());
 
-        if (itemsAdded == 0)
-        {
-            player->SendEquipError(EQUIP_ERR_ITEM_NOT_FOUND, nullptr, nullptr);
-            LOG_DEBUG("scripts.dc", "go_heirloom_cache: Player {} received no items - inventory full", player->GetName());
-        }
-
-        // Mark chest as looted
+        // Consume the cache (consumable=1 in gameobject_template -> despawns).
         go->SetLootState(GO_ACTIVATED, player);
         go->SetGoState(GO_STATE_ACTIVE);
-
-        LOG_DEBUG("scripts.dc", "go_heirloom_cache: Player {} looted heirloom cache entry {} (items added: {})",
-            player->GetName(), go->GetEntry(), itemsAdded);
-
-        return true; // Handled - don't process default behavior
+        return true;
     }
 };
 

@@ -6050,6 +6050,14 @@ Item* Player::_LoadItem(CharacterDatabaseTransaction trans, uint32 zoneId, uint3
         item = NewItemOrBag(proto);
         if (item->LoadFromDB(itemGuid, GetGUID(), fields, itemEntry))
         {
+            // Heirloom containers grow their slot count with owner level. Bag::LoadFromDB just
+            // reset NUM_SLOTS to the (base) template value, so re-apply the level-based size now -
+            // BEFORE this bag's contents are restored later in _LoadInventory - otherwise items in
+            // the grown slots (index >= base ContainerSlots) fail CanStoreItem and get mailed away.
+            if (proto->Class == ITEM_CLASS_CONTAINER && proto->Quality == ITEM_QUALITY_HEIRLOOM)
+                if (Bag* heirloomBag = item->ToBag())
+                    heirloomBag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, Bag::GetHeirloomBagSlots(GetLevel()));
+
             CharacterDatabasePreparedStatement* stmt = nullptr;
 
             // Do not allow to have item limited to another map/zone in alive state

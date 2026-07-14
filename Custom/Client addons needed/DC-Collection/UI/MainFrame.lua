@@ -747,6 +747,20 @@ function DC:CreateTabBar(parent)
             icon = "Interface\\Icons\\Ability_Druid_CatForm" })
     end
 
+    -- Beastmaster tab: hunter-only (combat pets). Place it right after Pets.
+    if select(2, UnitClass("player")) == "HUNTER" then
+        local pos = #tabs + 1
+        for i, t in ipairs(tabs) do
+            if t.key == "pets" then
+                pos = i + 1
+                break
+            end
+        end
+        table.insert(tabs, pos, { key = "beast",
+            text = L["TAB_BEASTMASTER"] or "Beastmaster",
+            icon = "Interface\\Icons\\Ability_Hunter_BeastCall" })
+    end
+
     tabBar.tabs = {}
     local tabWidth = (FRAME_WIDTH - 20) / #tabs
     
@@ -1476,7 +1490,10 @@ function DC:UpdateMountPreview(item)
     p.info.name:SetTextColor(r, g, b)
 
     local sourceText = item.sourceText or self:FormatSource(item.source)
-    p.info.source:SetText(sourceText or "")
+    local previewDisplayId = ResolveMountPreviewDisplayId(item)
+    local previewIdSuffix = previewDisplayId and
+        string.format(" |cff808080[Display %d]|r", previewDisplayId) or ""
+    p.info.source:SetText((sourceText or "") .. previewIdSuffix)
 
     p.info.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 
@@ -2353,6 +2370,7 @@ function DC:SelectTab(tabKey)
     if DC.AchievementsUI then DC.AchievementsUI:Hide() end
     if DC.MyCollection then DC.MyCollection:Hide() end
     if DC.PetJournal and DC.PetJournal.frame then DC.PetJournal.frame:Hide() end
+    if DC.Beastmaster and DC.Beastmaster.frame then DC.Beastmaster.frame:Hide() end
     if self.ShopUI then self.ShopUI:Hide() end
 
     if tabKey == "overview" then
@@ -2405,6 +2423,14 @@ function DC:SelectTab(tabKey)
             -- Use the PetJournal's Show() so it can request data, seed fallbacks,
             -- and auto-select the first pet for preview.
             DC.PetJournal:Show()
+        end
+    elseif tabKey == "beast" then
+        -- Show Beastmaster hunter-pet catalog
+        if DC.Beastmaster then
+            if not DC.Beastmaster.frame then
+                DC.Beastmaster:Create(content)
+            end
+            DC.Beastmaster:Show()
         end
     elseif tabKey == "achievements" then
         -- Show Achievements UI
@@ -2787,7 +2813,11 @@ function DC:PopulateMountList()
         local r, g, b = GetRarityColor(self, item.rarity or 1)
         btn.name:SetTextColor(r, g, b)
 
-        btn.source:SetText(item.sourceText or self:FormatSource(item.source))
+        local rowSourceText = item.sourceText or self:FormatSource(item.source)
+        local rowDisplayId = ResolveMountPreviewDisplayId(item)
+        local rowIdSuffix = rowDisplayId and
+            string.format(" |cff808080[Display %d]|r", rowDisplayId) or ""
+        btn.source:SetText((rowSourceText or "") .. rowIdSuffix)
 
         if item.is_favorite then
             btn.fav:Show()
@@ -3315,6 +3345,12 @@ function DC:OnSearchChanged(text)
         elseif DC.activeTab == "pets" then
             if DC.PetJournal and DC.PetJournal.frame and DC.PetJournal.frame:IsShown() then
                 DC.PetJournal:UpdatePetList()
+            else
+                DC:PopulateGrid()
+            end
+        elseif DC.activeTab == "beast" then
+            if DC.Beastmaster and DC.Beastmaster.frame and DC.Beastmaster.frame:IsShown() then
+                DC.Beastmaster:UpdateList()
             else
                 DC:PopulateGrid()
             end

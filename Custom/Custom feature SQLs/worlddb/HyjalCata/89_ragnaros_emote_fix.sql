@@ -1,0 +1,15 @@
+-- ---------------------------------------------------------------------------
+-- Ragnaros (3638806) creature_text -- fabricated Emote id
+-- ---------------------------------------------------------------------------
+-- "CreatureTextMgr: Entry 3638806, Group 0 in table `creature_texts` has
+-- Emote 100 but emote does not exist." Checked Emotes.dbc id 100 against
+-- BOTH stock WotLK and a fresh decode of the real Cata 4.3.4 client's
+-- Emotes.dbc (locale-enUS.MPQ) -- id 100 does not exist in either (real ids
+-- jump 94 -> 113 with nothing between). Not a downport gap, just a
+-- fabricated placeholder value in the original row authoring. Engine
+-- already substitutes EMOTE_ONESHOT_NONE (0) at load when this happens, so
+-- this is cosmetic -- nulled to make the stored data self-consistent
+-- instead of relying on the runtime fallback (same convention as the
+-- gameobject rotation-quaternion fixes).
+-- ---------------------------------------------------------------------------
+UPDATE `creature_text` SET `Emote` = 0 WHERE `CreatureID` = 3638806 AND `GroupID` = 0 AND `ID` = 0 AND `Emote` = 100;

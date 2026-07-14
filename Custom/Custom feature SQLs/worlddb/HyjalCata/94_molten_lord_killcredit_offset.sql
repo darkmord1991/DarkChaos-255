@@ -1,0 +1,11 @@
+-- ---------------------------------------------------------------------------
+-- Molten Lord (3653310) KillCredit1 -- raw cata id, needs the +3,600,000 offset
+-- ---------------------------------------------------------------------------
+-- "Creature (Entry: 3653310) lists non-existing creature entry 53308 in
+-- `KillCredit1`." Self-inflicted from HyjalCata/84_'s cross-DB copy, which
+-- carried KillCredit1 straight from cata_world without remapping it to the
+-- +3,600,000 clone offset -- same bug class as the RequiredNpcOrGo remap
+-- fixed earlier in that same file. 53308 is Flamewaker Centurion, which
+-- exists in this DB at 3653308.
+-- ---------------------------------------------------------------------------
+UPDATE `creature_template` SET `KillCredit1` = 3653308 WHERE `entry` = 3653310 AND `KillCredit1` = 53308;

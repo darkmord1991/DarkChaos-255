@@ -1,0 +1,18 @@
+-- ---------------------------------------------------------------------------
+-- Mobus (3650009) -- CRITICAL: non-existing CreatureDisplayID can crash client
+-- ---------------------------------------------------------------------------
+-- "Creature (Entry: 3650009) lists non-existing CreatureDisplayID id (37338),
+-- this can crash the client." / "does not have any existing display id in
+-- creature_template_model." cata_world's own data points Mobus (a rank-2
+-- rare, HealthModifier=150) at display 37338 "WhaleShark" -- a real Cata
+-- model that was never baked for this 3.3.5 client (flagged and deferred in
+-- an earlier round, see memory). The boot log now confirms this is an
+-- active client-crash risk, not just a cosmetic gap, so it can't stay
+-- deferred: repointed to the stock WotLK "Mammoth Shark" model (creature
+-- 12125, CreatureDisplayID 12207) as an interim placeholder -- already a
+-- valid, shipped display, thematically close (large shark), scaled up
+-- (DisplayScale 3.0) to read as a giant rare-boss-tier version instead of a
+-- normal-sized shark. Revisit with a real WhaleShark model bake later if
+-- desired; this only removes the crash risk.
+-- ---------------------------------------------------------------------------
+UPDATE `creature_template_model` SET `CreatureDisplayID` = 12207, `DisplayScale` = 3.0 WHERE `CreatureID` = 3650009 AND `CreatureDisplayID` = 37338;

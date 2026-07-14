@@ -39,31 +39,16 @@
  */
 
 namespace {
-    constexpr uint32 HEIRLOOM_BAG_MIN_SLOTS   = 16;
-    constexpr uint32 HEIRLOOM_BAG_MAX_SLOTS   = 36; // Client hard cap
-    constexpr uint32 HEIRLOOM_BAG_MAX_LEVEL   = 130;
+    constexpr uint32 HEIRLOOM_SHIRT_ITEM      = 300365; // Heirloom Adventurer's Shirt (quest reward)
     constexpr float HEIRLOOM_MAX_SCALING_BOOST = 4.0f;
     constexpr float HEIRLOOM_PROGRESSIVE_CURVE = 0.08f;
 
+    // Level -> slot count. Delegates to Bag::GetHeirloomBagSlots so the runtime scaler and the
+    // inventory loader (Player::_LoadItem) always agree - a mismatch would strand items in the
+    // grown slots on relog.
     uint32 CalculateHeirloomBagSlots(uint32 playerLevel)
     {
-        if (playerLevel <= 1)
-            return HEIRLOOM_BAG_MIN_SLOTS;
-
-        if (playerLevel >= HEIRLOOM_BAG_MAX_LEVEL)
-            return HEIRLOOM_BAG_MAX_SLOTS;
-
-        float progression = float(playerLevel - 1) / float(HEIRLOOM_BAG_MAX_LEVEL - 1);
-        float slotGain = float(HEIRLOOM_BAG_MAX_SLOTS - HEIRLOOM_BAG_MIN_SLOTS);
-        uint32 scaledSlots = HEIRLOOM_BAG_MIN_SLOTS + uint32(progression * slotGain);
-
-        if (scaledSlots > HEIRLOOM_BAG_MAX_SLOTS)
-            return HEIRLOOM_BAG_MAX_SLOTS;
-
-        if (scaledSlots < HEIRLOOM_BAG_MIN_SLOTS)
-            return HEIRLOOM_BAG_MIN_SLOTS;
-
-        return scaledSlots;
+        return Bag::GetHeirloomBagSlots(playerLevel);
     }
 
     void ApplyHeirloomBagScaling(Player* player, Bag* bag)
@@ -252,29 +237,59 @@ public:
 
     void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
     {
-        ApplyHeirloomBagScaling(player);
+        if (!player)
+            return;
 
-        // Send a message to player about bag slots update (if changed)
-        for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+        // Scale every equipped heirloom bag and announce any that actually gained slots.
+        // (Capturing before/after per bag - the old check compared against the already-applied
+        // size, so it never fired.)
+        auto processRange = [player](uint8 startSlot, uint8 endSlot)
         {
-            if (Bag* bag = player->GetBagByPos(slot))
+            for (uint8 slot = startSlot; slot < endSlot; ++slot)
             {
+                Bag* bag = player->GetBagByPos(slot);
+                if (!bag)
+                    continue;
+
                 ItemTemplate const* proto = bag->GetTemplate();
-                if (proto && proto->Quality == ITEM_QUALITY_HEIRLOOM && proto->Class == ITEM_CLASS_CONTAINER)
-                {
-                    uint32 desiredSlots = CalculateHeirloomBagSlots(player->GetLevel());
-                    if (bag->GetBagSize() != desiredSlots)
-                    {
-                        ChatHandler(player->GetSession()).PSendSysMessage("Your heirloom bag has been upgraded! Relog or re-equip to see the new slots.");
-                    }
-                }
+                if (!proto || proto->Quality != ITEM_QUALITY_HEIRLOOM || proto->Class != ITEM_CLASS_CONTAINER)
+                    continue;
+
+                uint32 const before = bag->GetBagSize();
+                ApplyHeirloomBagScaling(player, bag);
+                uint32 const after = bag->GetBagSize();
+
+                if (after > before)
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "|cffe6cc80[Heirloom]|r Your {} grew to {} bag slots (+{})! Reopen the bag to use the new space.",
+                        proto->Name1, after, after - before);
             }
-        }
+        };
+
+        processRange(INVENTORY_SLOT_BAG_START, INVENTORY_SLOT_BAG_END);
+        processRange(BANK_SLOT_BAG_START, BANK_SLOT_BAG_END);
     }
 
     void OnPlayerLogin(Player* player) override
     {
         ApplyHeirloomBagScaling(player);
+    }
+
+    // Auto-equip the Heirloom Adventurer's Shirt into the (empty) shirt slot when a
+    // quest awards it, so the player wears it immediately without opening their bags.
+    void OnPlayerQuestRewardItem(Player* player, Item* item, uint32 /*count*/) override
+    {
+        if (!player || !item || item->GetEntry() != HEIRLOOM_SHIRT_ITEM)
+            return;
+
+        uint16 dest;
+        // swap=false makes CanEquipItem fail if the shirt slot is already occupied,
+        // so we never displace a shirt the player is intentionally wearing.
+        if (player->CanEquipItem(NULL_SLOT, dest, item, false) != EQUIP_ERR_OK)
+            return;
+
+        player->RemoveItem(item->GetBagSlot(), item->GetSlot(), true);
+        player->EquipItem(dest, item, true);
     }
 };
 

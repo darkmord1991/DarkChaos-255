@@ -329,10 +329,34 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
     
     local playerText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     playerText:SetPoint("TOPLEFT", 20, yOffset)
-    playerText:SetText(string.format("|cff%02x%02x%02x%s|r - Level %d", 
+    playerText:SetText(string.format("|cff%02x%02x%02x%s|r - Level %d",
         classColor.r * 255, classColor.g * 255, classColor.b * 255,
         playerName, playerLevel))
-    yOffset = yOffset - 35
+    yOffset = yOffset - 24
+
+    -- Season summary (merged from the former Season tab)
+    local function BuildSeasonLine()
+        local season = (DCWelcome.GetCurrentSeason and DCWelcome:GetCurrentSeason()) or { id = 1, name = "Season 1" }
+        local info = (DCWelcome.GetServerInfo and DCWelcome:GetServerInfo()) or {}
+        local endsText = "Active"
+        if season.endTimestamp and season.endTimestamp > 0 then
+            endsText = "Ends " .. date("%Y-%m-%d", season.endTimestamp)
+        end
+        return string.format(
+            "|cffffd700Season:|r |cff00ccff%s|r  |cff555555•|r  %s  |cff555555•|r  |cff888888Online:|r |cffffff00%s|r",
+            season.name or ("Season " .. (season.id or 1)),
+            endsText,
+            tostring(info.playersOnline or "—"))
+    end
+
+    local seasonLine = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    seasonLine:SetPoint("TOPLEFT", 20, yOffset)
+    seasonLine:SetWidth(540)
+    seasonLine:SetJustifyH("LEFT")
+    seasonLine:SetText(BuildSeasonLine())
+    scrollChild.seasonLine = seasonLine
+    scrollChild.BuildSeasonLine = BuildSeasonLine
+    yOffset = yOffset - 28
     
     -- ==========================================================================
     -- Stat Boxes Row 1 (M+ Rating, Prestige, Season Rank, Achievements)
@@ -562,12 +586,37 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
     refreshBtn:SetScript("OnClick", function()
         DCWelcome:RequestProgressData()  -- Request from server (includes alt bonus)
         scrollChild:Refresh()
-        
+
         if DCWelcomeDB and DCWelcomeDB.enableSounds then
             PlaySound("igMainMenuOptionCheckBoxOn")
         end
     end)
-    
+
+    -- Season actions (merged from the former Season tab)
+    local trackerBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+    trackerBtn:SetSize(130, 25)
+    trackerBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 10, 0)
+    trackerBtn:SetText("Season Tracker")
+    trackerBtn:SetScript("OnClick", function()
+        if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.ToggleProgressTracker then
+            DCWelcome.Seasons:ToggleProgressTracker()
+        else
+            DCWelcome.Print("Season tracker is not available.")
+        end
+    end)
+
+    local lbBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+    lbBtn:SetSize(130, 25)
+    lbBtn:SetPoint("LEFT", trackerBtn, "RIGHT", 10, 0)
+    lbBtn:SetText("Leaderboards")
+    lbBtn:SetScript("OnClick", function()
+        if DCWelcome and DCWelcome.OpenLeaderboards then
+            DCWelcome:OpenLeaderboards("seasons")
+        else
+            DCWelcome.Print("Leaderboards addon not loaded.")
+        end
+    end)
+
     yOffset = yOffset - 40
     
     -- Set scroll child height
@@ -579,7 +628,12 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
     
     function scrollChild:Refresh()
         local progress = DCWelcome:GetProgress()
-        
+
+        -- Update season summary line (name / end date / players online)
+        if self.seasonLine and self.BuildSeasonLine then
+            self.seasonLine:SetText(self.BuildSeasonLine())
+        end
+
         -- Update stat boxes
         if self.statBoxes then
             if progress.mythicRating then

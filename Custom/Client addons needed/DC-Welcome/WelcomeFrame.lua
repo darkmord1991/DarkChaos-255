@@ -305,7 +305,8 @@ local function PopulateGettingStarted(scrollChild)
         { cmd = "/welcome", desc = "Open this welcome screen" },
         { cmd = "/faq", desc = "Open FAQ section" },
         { cmd = "/dcaddons", desc = "Open the addon hub" },
-        { cmd = "/dcprogress", desc = "Open progression overview" },
+        { cmd = "/dcprogress", desc = "Open your progress & season overview" },
+        { cmd = "/dcendgame", desc = "Open the endgame director (keys, world, PvP)" },
         { cmd = "/hotspot", desc = "View current hotspot zones" },
         { cmd = "/discord", desc = "Get Discord invite link" },
     }
@@ -880,109 +881,6 @@ local function CreateLinkCard(parent, linkInfo, yOffset)
     return card
 end
 
--- =============================================================================
--- Season Preview Tab
--- =============================================================================
-
-local function PopulateSeasonPreview(scrollChild)
-    local yOffset = -10
-    local season = DCWelcome:GetCurrentSeason() or { id = 1, name = "Season 1", endTimestamp = 0 }
-    local info = DCWelcome:GetServerInfo() or {}
-    local progress = (DCWelcome.GetProgress and DCWelcome:GetProgress()) or {}
-
-    -- Season Title Header
-    local header = CreateFontString(scrollChild, "GameFontNormalLarge")
-    header:SetPoint("TOP", 0, yOffset)
-    header:SetText(season.name or ("Season " .. (season.id or 1)))
-    header:SetTextColor(1, 0.82, 0) -- Gold
-    yOffset = yOffset - 30
-
-    -- Status / Time Remaining
-    local statusText = CreateFontString(scrollChild, "GameFontHighlight")
-    statusText:SetPoint("TOP", 0, yOffset)
-    if season.endTimestamp and season.endTimestamp > 0 then
-        -- Simple calculation, assuming os.time() matches server time roughly or just display date
-        local date = date("%Y-%m-%d", season.endTimestamp) 
-        statusText:SetText("Ends: " .. date)
-    else
-        statusText:SetText("Status: Active and synced from the server")
-    end
-    yOffset = yOffset - 40
-
-    -- Season Stats / Overview
-    local overviewHeader = CreateFontString(scrollChild, "GameFontNormal")
-    overviewHeader:SetPoint("TOPLEFT", 10, yOffset)
-    overviewHeader:SetText("|cffffd700Season Overview:|r")
-    yOffset = yOffset - 25
-
-    local stats = {
-        "Season Rank: " .. tostring(progress.seasonRank or "Unranked"),
-        "Season Points: " .. tostring(progress.seasonPoints or 0),
-        "Keys This Week: " .. tostring(progress.keysThisWeek or 0),
-        "Great Vault Progress: " .. tostring(progress.weeklyVaultProgress or 0),
-        "Players Online: " .. tostring(info.playersOnline or "Unknown"),
-    }
-
-    for _, stat in ipairs(stats) do
-        local statText = CreateFontString(scrollChild, "GameFontHighlight")
-        statText:SetPoint("TOPLEFT", 20, yOffset)
-        statText:SetText("• " .. stat)
-        yOffset = yOffset - 20
-    end
-    yOffset = yOffset - 20
-
-    -- Progress notes
-    local rewardHeader = CreateFontString(scrollChild, "GameFontNormal")
-    rewardHeader:SetPoint("TOPLEFT", 10, yOffset)
-    rewardHeader:SetText("|cffffd700Progress Notes:|r")
-    yOffset = yOffset - 25
-
-    local rewards = {
-        { name = "Season tracker commands are available with /seasonal, /season, and /dcseasons.", type = "Tracker" },
-        { name = "Weekly token and essence caps are live values sent by the server.", type = "Sync" },
-        { name = "Use DC-Leaderboards for standings and rankings when that addon is loaded.", type = "Leaderboards" },
-        { name = "Progress tab combines seasonal data with Mythic+ and Prestige progress.", type = "Overview" },
-    }
-
-    for _, reward in ipairs(rewards) do
-        local rText = CreateFontString(scrollChild, "GameFontHighlight")
-        rText:SetPoint("TOPLEFT", 20, yOffset)
-        rText:SetWidth(SCROLL_WIDTH - 60)
-        rText:SetJustifyH("LEFT")
-        rText:SetText("• " .. reward.name)
-        yOffset = yOffset - rText:GetStringHeight() - 6
-    end
-
-    -- Action buttons
-    yOffset = yOffset - 30
-    local lbBtn = CreateFrame("Button", "DCWelcomeSeasonLBBtn", scrollChild, "UIPanelButtonTemplate")
-    lbBtn:SetSize(160, 30)
-    lbBtn:SetPoint("TOP", -85, yOffset)
-    lbBtn:SetText("View Leaderboards")
-    lbBtn:SetScript("OnClick", function()
-        if DCWelcome and DCWelcome.OpenLeaderboards then
-            DCWelcome:OpenLeaderboards("seasons")
-        elseif DCWelcome and DCWelcome.Print then
-            DCWelcome.Print("Leaderboard addon not loaded.")
-        end
-    end)
-
-    local trackerBtn = CreateFrame("Button", "DCWelcomeSeasonTrackerBtn", scrollChild, "UIPanelButtonTemplate")
-    trackerBtn:SetSize(160, 30)
-    trackerBtn:SetPoint("LEFT", lbBtn, "RIGHT", 10, 0)
-    trackerBtn:SetText("Toggle Tracker")
-    trackerBtn:SetScript("OnClick", function()
-        if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.ToggleProgressTracker then
-            DCWelcome.Seasons:ToggleProgressTracker()
-        else
-            DCWelcome.Print("Season tracker is not available.")
-        end
-    end)
-    yOffset = yOffset - 40
-
-    scrollChild:SetHeight(math.abs(yOffset) + 20)
-end
-
 local function PopulateCommunity(scrollChild)
     local yOffset = -10
     local info = DCWelcome:GetServerInfo() or {}
@@ -1107,15 +1005,17 @@ function DCWelcome:CreateWelcomeFrame()
     tabContainer:SetSize(FRAME_WIDTH - 30, TAB_HEIGHT)
     tabContainer:SetPoint("TOP", 0, -55)
     
-    -- Create tabs (7 tabs with adjusted width to fit)
+    -- Create tabs (8 tabs with adjusted width to fit)
+    -- Each icon is unique across the tab bar and distinct from the feature/stat
+    -- icons it could be confused with (Progress no longer reuses the Mythic+
+    -- trophy; Addons no longer reuses the per-card settings gear).
     local tabs = {
         { id = "whatsnew", label = L["TAB_WHATS_NEW"], icon = "Interface\\Icons\\Spell_Holy_Restoration" },
         { id = "getstarted", label = L["TAB_GETTING_STARTED"], icon = "Interface\\Icons\\INV_Misc_Book_09" },
         { id = "features", label = L["TAB_FEATURES"], icon = "Interface\\Icons\\Spell_Nature_EnchantArmor" },
-        { id = "addons", label = L["TAB_ADDONS"] or "Addons", icon = "Interface\\Icons\\Trade_Engineering" },
-        { id = "progress", label = L["TAB_PROGRESS"] or "Progress", icon = "Interface\\Icons\\Achievement_challengemode_gold" },
+        { id = "addons", label = L["TAB_ADDONS"] or "Addons", icon = "Interface\\Icons\\INV_Misc_Gear_01" },
+        { id = "progress", label = L["TAB_PROGRESS"] or "Progress", icon = "Interface\\Icons\\INV_Misc_Note_02" },
         { id = "endgame", label = L["TAB_ENDGAME"] or "Endgame", icon = "Interface\\Icons\\INV_Misc_PocketWatch_01" },
-        { id = "season", label = L["TAB_SEASON"] or "Season", icon = "Interface\\Icons\\Achievement_Zone_Hyjal" },
         { id = "faq", label = L["TAB_FAQ"], icon = "Interface\\Icons\\INV_Misc_QuestionMark" },
         { id = "community", label = L["TAB_LINKS"], icon = SERVER_PORTAL_ICON },
     }
@@ -1146,7 +1046,6 @@ function DCWelcome:CreateWelcomeFrame()
     contentFrames.endgame = CreateScrollableContent(frame, "endgame")
     contentFrames.faq = CreateScrollableContent(frame, "faq")
     contentFrames.community = CreateScrollableContent(frame, "community")
-    contentFrames.season = CreateScrollableContent(frame, "season")
     
     -- Store content frames reference for other modules
     DCWelcome.contentFrames = contentFrames
@@ -1167,7 +1066,6 @@ function DCWelcome:CreateWelcomeFrame()
     
     PopulateFAQ(contentFrames.faq.scrollChild)
     PopulateCommunity(contentFrames.community.scrollChild)
-    PopulateSeasonPreview(contentFrames.season.scrollChild)
     
     -- Bottom buttons
     local bottomBtns = CreateFrame("Frame", nil, frame)

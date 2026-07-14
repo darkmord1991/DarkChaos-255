@@ -97,6 +97,7 @@ namespace DCAddon
         constexpr const char* DECORATION    = "DECO";   // Guild house decorations (player-facing placement)
         constexpr const char* GRAVEYARD     = "GRVY";   // Return-to-graveyard button (death helper)
         constexpr const char* QUEST_POPUPS  = "QPOP";   // Auto-quest offer / remote turn-in popups (retail-style)
+        constexpr const char* BEASTMASTER   = "BEAST";  // Hunter pet catalog (browse + preview + adopt)
     }
 
     // ========================================================================
@@ -523,6 +524,16 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_RETURN = 0x01; // Client: teleport my released ghost to nearest graveyard
             constexpr uint8 SMSG_RESULT = 0x10; // Server: optional result/ack (JSON)
+        }
+
+        // Beastmaster opcodes (hunter pet catalog: browse, preview, adopt)
+        namespace Beastmaster
+        {
+            constexpr uint8 CMSG_GET_CATALOG  = 0x01; // Client: request the adoptable pet catalog
+            constexpr uint8 CMSG_ADOPT        = 0x02; // Client: adopt a pet by creatureId (JSON)
+
+            constexpr uint8 SMSG_CATALOG      = 0x10; // Server: full catalog payload (JSON array)
+            constexpr uint8 SMSG_ADOPT_RESULT = 0x11; // Server: result of an adopt attempt (JSON)
         }
 
         // World Content opcodes (hotspots, world bosses, events aggregated)
