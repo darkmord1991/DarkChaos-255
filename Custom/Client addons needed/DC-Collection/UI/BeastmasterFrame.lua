@@ -43,6 +43,25 @@ local BUTTON_HEIGHT  = 48
 local ITEMS_PER_PAGE = 12
 local CATALOG_REFRESH_THROTTLE = 20 -- seconds
 
+-- Downported/custom creature displays live above this id (see SelectPet's
+-- isCustomDisplay check and Data/PetModelPaths.lua's own convention). Shared here
+-- so the "WotLK+ (Downports)" expansion filter uses the exact same boundary as
+-- model resolution.
+local CUSTOM_DISPLAY_FLOOR = 100000
+-- Custom-added pets (downports, Molten Front, etc.) use creature_template entries far
+-- above stock WotLK creatures (which cap well under 100000). Used by the WotLK+ filter.
+local CUSTOM_ENTRY_FLOOR = 100000
+
+local FILTER_FAMILY_ALL = "__ALL__"
+
+-- Mirrors UI/Wardrobe/WardrobeCore.lua's EXPANSION_FILTERS (Wardrobe.WOTLK_MAX_ITEM_ID)
+-- so the two tabs read the same, matching Beastmaster's own displayId-based boundary.
+local EXPANSION_FILTERS = {
+    { id = "all",       text = "All Expansions" },
+    { id = "classic",   text = "Classic - WotLK" },
+    { id = "wotlkplus", text = "WotLK+ (Downports)" },
+}
+
 local ADOPT_ERRORS = {
     not_a_hunter           = "Only hunters can adopt pets.",
     not_in_catalog         = "That pet is not available.",
@@ -142,8 +161,10 @@ function Beastmaster:CreatePetList(parent)
     bg:SetAllPoints()
     bg:SetTexture(0, 0, 0, 0.4)
 
+    self:CreateFilterRow(listFrame)
+
     local scrollFrame = CreateFrame("ScrollFrame", "DCBeastmasterScrollFrame", listFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 5, -5)
+    scrollFrame:SetPoint("TOPLEFT", listFrame.filterRow, "BOTTOMLEFT", 5, -3)
     scrollFrame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -25, 35)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
@@ -176,6 +197,158 @@ function Beastmaster:CreatePetList(parent)
 
     listFrame.pageFrame = pageFrame
     parent.listFrame = listFrame
+end
+
+-- ============================================================================
+-- FAMILY / EXPANSION FILTER ROW
+-- ============================================================================
+
+function Beastmaster:CreateFilterRow(listFrame)
+    -- Stacked (not side-by-side): the list panel is only LIST_WIDTH (280px) wide, and
+    -- Blizzard's UIDropDownMenuTemplate chrome is significantly wider than the value
+    -- passed to UIDropDownMenu_SetWidth, so two dropdowns side by side would overlap
+    -- or clip in a panel this narrow.
+    local row = CreateFrame("Frame", nil, listFrame)
+    row:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 5, -26)
+    row:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -5, -26)
+    row:SetHeight(70) -- two stock UIDropDownMenuTemplate frames (~32px tall each) stacked, + gap
+
+    local familyDropdown = CreateFrame("Frame", "DCBeastmasterFamilyDropdown", row, "UIDropDownMenuTemplate")
+    familyDropdown:SetPoint("TOPLEFT", row, "TOPLEFT", -16, 0)
+    UIDropDownMenu_SetWidth(familyDropdown, LIST_WIDTH - 60)
+    UIDropDownMenu_SetText(familyDropdown, "Family: All")
+
+    -- ~32 pet families overflow a single flat dropdown off the top of the screen
+    -- (WoW 3.3.5 dropdowns don't scroll and auto-flip upward when placed high), so
+    -- the families are chunked into alphabetical submenus. Top level stays short
+    -- ("All" + a handful of range entries); each range opens a side submenu.
+    local FAMILY_CHUNK = 10
+    local function PickFamily(familyName)
+        Beastmaster.selectedFamilyFilter = familyName
+        UIDropDownMenu_SetText(familyDropdown,
+            familyName == FILTER_FAMILY_ALL and "Family: All" or ("Family: " .. familyName))
+        CloseDropDownMenus()
+        Beastmaster:UpdateList()
+    end
+
+    UIDropDownMenu_Initialize(familyDropdown, function(self, level, menuList)
+        local families = Beastmaster:GetAvailableFamilies()
+
+        if level == 1 then
+            local allInfo = UIDropDownMenu_CreateInfo()
+            allInfo.text = "All"
+            allInfo.notCheckable = true
+            allInfo.func = function() PickFamily(FILTER_FAMILY_ALL) end
+            UIDropDownMenu_AddButton(allInfo, level)
+
+            -- Short list: no need to chunk.
+            if #families <= FAMILY_CHUNK + 2 then
+                for _, familyName in ipairs(families) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = familyName
+                    info.notCheckable = true
+                    info.func = function() PickFamily(familyName) end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+                return
+            end
+
+            for i = 1, #families, FAMILY_CHUNK do
+                local last = math.min(i + FAMILY_CHUNK - 1, #families)
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = families[i] .. "  -  " .. families[last]
+                info.notCheckable = true
+                info.hasArrow = true
+                info.menuList = tostring(i)
+                UIDropDownMenu_AddButton(info, level)
+            end
+        elseif level == 2 and menuList then
+            local startIdx = tonumber(menuList) or 1
+            for j = startIdx, math.min(startIdx + FAMILY_CHUNK - 1, #families) do
+                local familyName = families[j]
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = familyName
+                info.notCheckable = true
+                info.func = function() PickFamily(familyName) end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end
+    end)
+
+    row.familyDropdown = familyDropdown
+    self.selectedFamilyFilter = self.selectedFamilyFilter or FILTER_FAMILY_ALL
+
+    local expansionDropdown = CreateFrame("Frame", "DCBeastmasterExpansionDropdown", row, "UIDropDownMenuTemplate")
+    expansionDropdown:SetPoint("TOPLEFT", familyDropdown, "BOTTOMLEFT", 0, 3)
+    UIDropDownMenu_SetWidth(expansionDropdown, LIST_WIDTH - 60)
+    UIDropDownMenu_SetText(expansionDropdown, "All Expansions")
+
+    UIDropDownMenu_Initialize(expansionDropdown, function(self, level)
+        for _, expInfo in ipairs(EXPANSION_FILTERS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = expInfo.text
+            info.value = expInfo.id
+            info.func = function(btn)
+                Beastmaster.selectedExpansionFilter = btn.value
+                UIDropDownMenu_SetText(expansionDropdown, btn:GetText())
+                CloseDropDownMenus()
+                Beastmaster:UpdateList()
+            end
+            info.checked = ((Beastmaster.selectedExpansionFilter or "all") == expInfo.id)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+
+    row.expansionDropdown = expansionDropdown
+    self.selectedExpansionFilter = self.selectedExpansionFilter or "all"
+
+    listFrame.filterRow = row
+end
+
+-- Distinct family names present in the current catalog, alphabetically sorted.
+-- Recomputed on demand (not cached) so a fresh catalog fetch is reflected
+-- immediately the next time the dropdown is opened.
+function Beastmaster:GetAvailableFamilies()
+    local seen = {}
+    local families = {}
+    for _, p in ipairs(self.catalog or {}) do
+        local name = p.familyName
+        if name and name ~= "" and not seen[name] then
+            seen[name] = true
+            families[#families + 1] = name
+        end
+    end
+    table.sort(families)
+    return families
+end
+
+-- True when `pet` passes the currently selected family + expansion filters.
+function Beastmaster:PetPassesFilters(pet)
+    local familyFilter = self.selectedFamilyFilter
+    if familyFilter and familyFilter ~= FILTER_FAMILY_ALL then
+        if (pet.familyName or "") ~= familyFilter then
+            return false
+        end
+    end
+
+    local expansionFilter = self.selectedExpansionFilter
+    if expansionFilter and expansionFilter ~= "all" then
+        -- A "WotLK+ downport" is a custom-added pet. The downports REUSE retail
+        -- CreatureDisplayInfo ids (all < CUSTOM_DISPLAY_FLOOR, e.g. Fenryr 64466), so
+        -- displayId alone can't classify them - key on the custom creature ENTRY range
+        -- instead (DC custom pets: Thok 400101, Molten Front 365xxxx, downports 99xxxx;
+        -- stock WotLK creatures are all well below 100000).
+        local displayId = ToPositiveNumber(pet.displayId) or 0
+        local creatureId = ToPositiveNumber(pet.creatureId) or 0
+        local isCustom = creatureId >= CUSTOM_ENTRY_FLOOR or displayId >= CUSTOM_DISPLAY_FLOOR
+        if expansionFilter == "wotlkplus" and not isCustom then
+            return false
+        elseif expansionFilter == "classic" and isCustom then
+            return false
+        end
+    end
+
+    return true
 end
 
 -- ============================================================================
@@ -358,7 +531,7 @@ function Beastmaster:UpdateList()
     local pets = {}
     for _, p in ipairs(self.catalog or {}) do
         local hay = string.lower((p.name or "") .. " " .. (p.familyName or "") .. " " .. (p.category or ""))
-        if searchText == "" or string.find(hay, searchText, 1, true) then
+        if (searchText == "" or string.find(hay, searchText, 1, true)) and self:PetPassesFilters(p) then
             table.insert(pets, p)
         end
     end
@@ -499,11 +672,38 @@ function Beastmaster:SelectPet(petData)
         return type(currentModel) == "string" and currentModel ~= ""
     end
 
-    local creatureId = ToPositiveNumber(petData.creatureId)
     local displayId = ToPositiveNumber(petData.displayId)
+    -- The real creature_template ENTRY. Unlike companion pets (which only have a
+    -- display id), Beastmaster catalogs genuine creatures, so SetCreature(entry) -- the
+    -- SAME textured path mounts/in-world creatures use -- is available. On this client
+    -- it binds the CreatureDisplayInfo skin (SetModel(path) can't); it only needs the
+    -- creature cached, which SetCreature itself triggers via a creature-query round-trip
+    -- (the async re-check below waits for that before falling back to the white SetModel).
+    local creatureId = ToPositiveNumber(petData.creatureId)
     local resolvedDisplayKey = displayId
-    local modelPath = (DC and DC.PetModelPaths and resolvedDisplayKey and
-        DC.PetModelPaths[resolvedDisplayKey]) or nil
+    local modelPath = (DC and DC.BeastmasterModelPaths and resolvedDisplayKey and
+        DC.BeastmasterModelPaths[resolvedDisplayKey]) or nil
+
+    -- Preferred textured renderer: the SetCreatureDisplay DLL native (WotLKExtensions)
+    -- binds the CreatureDisplayInfo skin from a display id directly -- the same native
+    -- the Shapeshift/Forms preview relies on (UI/FormFrame.lua). SetModel(path) loads
+    -- only geometry (renders WHITE for stock creatures) and SetDisplayInfo/SetCreature
+    -- are unreliable on this client, so this native is what actually textures an
+    -- un-owned creature. It is a global; gated so the tab still works (falling back to
+    -- the white SetModel) if the DLL build without it is running.
+    local function TrySetCreatureDisplay(displayInfoId)
+        if not displayInfoId or displayInfoId <= 0 or type(SetCreatureDisplay) ~= "function" then
+            return false
+        end
+        local ok, res = pcall(SetCreatureDisplay, model, displayInfoId)
+        if ok and (res == true or res == 1) then
+            if type(model.Show) == "function" then model:Show() end
+            if type(model.SetAlpha) == "function" then model:SetAlpha(1) end
+            ResetModelPose()
+            return true
+        end
+        return false
+    end
 
     local function TrySetCreature(modelId)
         if not modelId or modelId <= 0 or type(model.SetCreature) ~= "function" then
@@ -559,6 +759,8 @@ function Beastmaster:SelectPet(petData)
     local function TryApply(kind, value)
         if kind == "model" then
             return TrySetModelPath(value)
+        elseif kind == "creaturedisplay" then
+            return TrySetCreatureDisplay(value)
         elseif kind == "display" then
             return TrySetDisplay(value)
         else
@@ -581,22 +783,35 @@ function Beastmaster:SelectPet(petData)
         attempts[#attempts + 1] = { kind = kind, value = value }
     end
 
-    -- Downported/custom displays (>= 100000) bake textures into the .m2, so
-    -- SetModel(path) is the reliable textured renderer -- try it first. Stock
-    -- creatures render WHITE from a raw SetModel, so the textured
-    -- SetCreature/SetDisplayInfo attempts come first for them.
-    local isCustomDisplay = resolvedDisplayKey ~= nil and resolvedDisplayKey >= 100000
+    -- Textured-preview strategy (see Custom/Documentation/Pet_Form_Preview_Texture_Native.md):
+    -- on 3.3.5 SetModel(path) shows geometry only (WHITE for stock creatures),
+    -- SetDisplayInfo is a no-op, and only the creature-display load path binds the
+    -- CreatureDisplayInfo skin. Two ways to reach it, cheapest first:
+    --   1. SetCreatureDisplay native  -- ideal, but currently a no-op stub (DLL native
+    --      not built yet); harmless to try, wins automatically once the DLL ships.
+    --   2. SetCreature(creatureId)    -- the ENTRY id. This is the mount path: it
+    --      textures once the creature is cached, and triggers the caching query itself.
+    --      The async re-check waits out the round-trip before giving up. (SetCreature
+    --      with the displayId is also tried, since this client build's SetCreature has
+    --      been observed to accept a display id too.)
+    --   3. SetModel(path)             -- correct SHAPE, white for stock; but for
+    --      downported (>= 100000) displays the .m2 has the skin BAKED IN, so it is fully
+    --      textured there and therefore leads for custom displays.
+    --   4. SetDisplayInfo(displayId)  -- no-op on 3.3.5, last-ditch only.
+    local isCustomDisplay = resolvedDisplayKey ~= nil and resolvedDisplayKey >= CUSTOM_DISPLAY_FLOOR
 
     if isCustomDisplay then
         PushAttempt("model", modelPath)
+        PushAttempt("creaturedisplay", displayId)
         PushAttempt("creature", creatureId)
-        PushAttempt("display", displayId)
         PushAttempt("creature", displayId)
-    else
-        PushAttempt("creature", creatureId)
         PushAttempt("display", displayId)
+    else
+        PushAttempt("creaturedisplay", displayId)
+        PushAttempt("creature", creatureId)
         PushAttempt("creature", displayId)
         PushAttempt("model", modelPath)
+        PushAttempt("display", displayId)
     end
 
     local attemptIndex = 1

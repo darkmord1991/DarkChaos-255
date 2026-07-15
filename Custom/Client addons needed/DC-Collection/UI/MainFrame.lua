@@ -2345,7 +2345,7 @@ function DC:SelectTab(tabKey)
         content:SetPoint("TOPLEFT", self.MainFrame.TabBar, "BOTTOMLEFT", 0, -2)
         content:SetPoint("BOTTOMRIGHT", self.MainFrame, "BOTTOMRIGHT", -10,
             WARDROBE_CONTENT_BOTTOM_INSET)
-    elseif tabKey == "shop" or tabKey == "pets" then
+    elseif tabKey == "shop" or tabKey == "pets" or tabKey == "beast" then
         if footer then footer:Hide() end
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", self.MainFrame.FilterBar, "BOTTOMLEFT", 0, 0)

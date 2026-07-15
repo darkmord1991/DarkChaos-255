@@ -66,11 +66,14 @@ namespace {
         if (currentSlots == desiredSlots)
             return;
 
-        // Update the bag slot count
+        // Update the bag slot count. NUM_SLOTS isn't itself persisted (Player::_LoadItem
+        // recomputes it from the owner's level on every load) - only the item's dirty state
+        // matters here. Route through SetState(..., player) so it goes through the normal
+        // update queue; calling Item::SaveToDB() directly would force the item to
+        // ITEM_UNCHANGED and could suppress a still-pending character_inventory write for
+        // this item (e.g. right after StoreNewItem+equip), silently orphaning it on next save.
         bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, desiredSlots);
-
-        // Save the updated bag to database
-        bag->SaveToDB(nullptr);
+        bag->SetState(ITEM_CHANGED, player);
     }
 
     void ApplyHeirloomBagScaling(Player* player)

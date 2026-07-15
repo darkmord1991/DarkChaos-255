@@ -29,6 +29,7 @@ Data\ShopStatic.lua
 Data\FormModelPaths.lua
 Data\PetModelPaths.lua
 Data\MountModelPaths.lua
+Data\BeastmasterModelPaths.lua
 Modules\PetModule.lua
 Modules\TitleModule.lua
 Modules\ToyModule.lua

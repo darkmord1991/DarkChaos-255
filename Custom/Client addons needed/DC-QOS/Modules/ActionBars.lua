@@ -103,10 +103,9 @@ local function ReanchorAuxiliaryBars(anchorFrame, gap)
 
     local bars = {
         _G.PossessBarFrame,
-        _G.PetActionBarFrame,
-        -- Keep stance/presence bars on Blizzard's default overlay anchor.
-        -- Reanchoring these frames moves warrior stances and DK presences
-        -- away from their expected blizzlike position.
+        -- Keep stance/presence/pet bars on Blizzard's default overlay anchor.
+        -- Reanchoring these frames moves warrior stances, DK presences, and
+        -- the hunter/warlock pet bar away from their expected blizzlike position.
     }
 
     for _, bar in ipairs(bars) do
@@ -152,7 +151,7 @@ local function CaptureBlizzardFormBarAnchors()
     end
 
     local anchors = {}
-    for _, frameName in ipairs({"StanceBarFrame", "ShapeshiftBarFrame"}) do
+    for _, frameName in ipairs({"StanceBarFrame", "ShapeshiftBarFrame", "PetActionBarFrame"}) do
         local frame = _G[frameName]
         if frame and frame.GetPoint then
             local point, relativeTo, relativePoint, xOfs, yOfs = frame:GetPoint(1)
@@ -192,6 +191,9 @@ local function RestoreBlizzardFormBarAnchors()
     end
     if type(ShapeshiftBar_Update) == "function" then
         ShapeshiftBar_Update()
+    end
+    if type(PetActionBar_Update) == "function" then
+        PetActionBar_Update()
     end
 end
 
