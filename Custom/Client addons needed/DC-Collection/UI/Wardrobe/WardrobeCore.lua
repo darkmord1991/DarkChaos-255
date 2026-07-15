@@ -423,6 +423,40 @@ function Wardrobe:IsAppearanceCollected(itemId)
     return DC.collections.transmog[itemId] ~= nil
 end
 
+-- Unfiltered collected/total counts straight from the native (DLL) catalog —
+-- the same source the Wardrobe grid itself queries. The "My Collection"
+-- overview card uses this (when available) instead of the server's
+-- dc_collection_items/dc_collection_definitions tally, which can drift out
+-- of sync with the DLL catalog and show a different number than what the
+-- Wardrobe tab actually displays.
+function Wardrobe:GetOverviewStats()
+    if not (DC and type(DC.HasNativeTransmogCatalog) == "function" and
+        DC:HasNativeTransmogCatalog() and type(QueryDCCollectionTransmog) == "function") then
+        return nil
+    end
+
+    if type(DC._SyncNativeTransmogCollected) == "function" then
+        DC:_SyncNativeTransmogCollected(false)
+    end
+
+    -- invCsv="", quality=-1, search="", showUncollected=1, sortMode="default",
+    -- offset=0, need=1 (just enough to force a full scan without building a page),
+    -- expMin/expMax=0 (unbounded) -> counts the whole catalog, ignoring whatever
+    -- slot/quality/expansion filter the Wardrobe UI currently has selected.
+    local ok, _, total, collected = pcall(QueryDCCollectionTransmog,
+        "", -1, "", 1, "default", 0, 1, 0, 0)
+    if not ok then
+        return nil
+    end
+
+    total = tonumber(total) or 0
+    if total <= 0 then
+        return nil
+    end
+
+    return { collected = tonumber(collected) or 0, total = total }
+end
+
 -- Clear the itemId -> displayId cache. Call this when definitions are reloaded.
 function Wardrobe:ClearItemIdToDisplayIdCache()
     self.itemIdToDisplayId = nil

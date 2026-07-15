@@ -66,29 +66,6 @@ void Bag::RemoveFromWorld()
     Item::RemoveFromWorld();
 }
 
-uint32 Bag::GetHeirloomBagSlots(uint32 ownerLevel)
-{
-    constexpr uint32 HEIRLOOM_MIN_SLOTS = 16;
-    constexpr uint32 HEIRLOOM_MAX_SLOTS = MAX_BAG_SIZE; // 36 - client hard cap per bag
-    constexpr uint32 HEIRLOOM_SLOT_MAX_LEVEL = 130;
-
-    if (ownerLevel <= 1)
-        return HEIRLOOM_MIN_SLOTS;
-
-    if (ownerLevel >= HEIRLOOM_SLOT_MAX_LEVEL)
-        return HEIRLOOM_MAX_SLOTS;
-
-    float const progression = float(ownerLevel - 1) / float(HEIRLOOM_SLOT_MAX_LEVEL - 1);
-    uint32 slots = HEIRLOOM_MIN_SLOTS + uint32(progression * float(HEIRLOOM_MAX_SLOTS - HEIRLOOM_MIN_SLOTS));
-
-    if (slots < HEIRLOOM_MIN_SLOTS)
-        slots = HEIRLOOM_MIN_SLOTS;
-    if (slots > HEIRLOOM_MAX_SLOTS)
-        slots = HEIRLOOM_MAX_SLOTS;
-
-    return slots;
-}
-
 bool Bag::Create(ObjectGuid::LowType guidlow, uint32 itemid, Player const* owner)
 {
     ItemTemplate const* itemProto = sObjectMgr->GetItemTemplate(itemid);

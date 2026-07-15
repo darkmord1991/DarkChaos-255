@@ -46,6 +46,30 @@ local COLLECTION_TYPES = {
     { key = "heirlooms", name = "Heirlooms",   icon = "Interface\\Icons\\INV_Sword_43",                    color = {0.9, 0.8, 0.5} },
 }
 
+-- Class-gated quick-access shortcuts (Forms/Beastmaster). These don't have a
+-- collected/total concept in this addon's data model, so the card just opens
+-- the tab instead of showing a progress bar. Mirrors the same class checks
+-- MainFrame.lua uses to decide whether the Forms/Beastmaster tabs exist at all.
+local function BuildOverviewCardTypes()
+    local types = {}
+    for _, typeDef in ipairs(COLLECTION_TYPES) do
+        types[#types + 1] = typeDef
+    end
+
+    if DC and DC.FormModule and type(DC.FormModule.PlayerHasForms) == "function"
+        and DC.FormModule:PlayerHasForms() then
+        types[#types + 1] = { key = "forms", name = "Forms",
+            icon = "Interface\\Icons\\Ability_Druid_CatForm", color = {0.4, 0.9, 0.6}, noStats = true }
+    end
+
+    if select(2, UnitClass("player")) == "HUNTER" then
+        types[#types + 1] = { key = "beast", name = "Beastmaster",
+            icon = "Interface\\Icons\\Ability_Hunter_BeastCall", color = {0.9, 0.5, 0.3}, noStats = true }
+    end
+
+    return types
+end
+
 -- ============================================================================
 -- UTILITY FUNCTIONS
 -- ============================================================================
@@ -71,6 +95,16 @@ local function GetCollectionStats(collType)
         if ok and type(stats) == "table" and type(stats.total) == "number" and stats.total > 0 then
             return {
                 collected = tonumber(stats.owned) or 0,
+                total = stats.total,
+            }
+        end
+    end
+
+    if collType == "transmog" and DC and DC.Wardrobe and type(DC.Wardrobe.GetOverviewStats) == "function" then
+        local ok, stats = pcall(DC.Wardrobe.GetOverviewStats, DC.Wardrobe)
+        if ok and type(stats) == "table" and type(stats.total) == "number" and stats.total > 0 then
+            return {
+                collected = tonumber(stats.collected) or 0,
                 total = stats.total,
             }
         end
@@ -549,12 +583,11 @@ function MyCollection:Create(parent)
     local statsContainer = CreateFrame("Frame", nil, frame)
     statsContainer:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -15)
     statsContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, 0)
-    statsContainer:SetHeight(STAT_CARD_HEIGHT * 2 + 20)
     frame.statsContainer = statsContainer
 
     -- Create stat cards
     frame.statCards = {}
-    self:CreateStatCards(frame)
+    self:CreateStatCards(frame, BuildOverviewCardTypes())
 
     -- Recent Additions section
     local recentHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -600,16 +633,21 @@ end
 -- STAT CARDS
 -- ============================================================================
 
-function MyCollection:CreateStatCards(parent)
+function MyCollection:CreateStatCards(parent, typesList)
     local container = parent.statsContainer
     local cols = 3
     local padding = 10
     local cardWidth = STAT_CARD_WIDTH
     local cardHeight = STAT_CARD_HEIGHT
 
-    local total = #COLLECTION_TYPES
+    typesList = typesList or COLLECTION_TYPES
+    parent.cardTypes = typesList
+    local total = #typesList
 
-    for i, typeDef in ipairs(COLLECTION_TYPES) do
+    local rows = math.max(1, math.ceil(total / cols))
+    container:SetHeight(rows * (cardHeight + padding) + 10)
+
+    for i, typeDef in ipairs(typesList) do
         local row = math.floor((i - 1) / cols)
         local col = (i - 1) % cols
 
@@ -653,20 +691,28 @@ function MyCollection:CreateStatCards(parent)
         -- Count text
         card.count = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
         card.count:SetPoint("TOPLEFT", card.name, "BOTTOMLEFT", 0, -5)
-        card.count:SetText("0 / 0")
 
-        -- Mini progress bar
-        card.bar = CreateFrame("StatusBar", nil, card)
-        card.bar:SetSize(cardWidth - 54, 6)
-        card.bar:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 44, 10)
-        card.bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-        card.bar:SetStatusBarColor(typeDef.color[1], typeDef.color[2], typeDef.color[3])
-        card.bar:SetMinMaxValues(0, 1)
-        card.bar:SetValue(0)
+        if typeDef.noStats then
+            -- Quick-access shortcut (Forms/Beastmaster): no collected/total
+            -- concept in this addon's data model, so just invite the click.
+            card.count:SetText("Click to open")
+            card.count:SetTextColor(0.7, 0.7, 0.7)
+        else
+            card.count:SetText("0 / 0")
 
-        card.bar.bg = card.bar:CreateTexture(nil, "BACKGROUND")
-        card.bar.bg:SetAllPoints()
-        card.bar.bg:SetTexture(0, 0, 0, 0.5)
+            -- Mini progress bar
+            card.bar = CreateFrame("StatusBar", nil, card)
+            card.bar:SetSize(cardWidth - 54, 6)
+            card.bar:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 44, 10)
+            card.bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+            card.bar:SetStatusBarColor(typeDef.color[1], typeDef.color[2], typeDef.color[3])
+            card.bar:SetMinMaxValues(0, 1)
+            card.bar:SetValue(0)
+
+            card.bar.bg = card.bar:CreateTexture(nil, "BACKGROUND")
+            card.bar.bg:SetAllPoints()
+            card.bar.bg:SetTexture(0, 0, 0, 0.5)
+        end
 
         -- Click to open that collection tab
         card:SetScript("OnClick", function()
@@ -681,11 +727,13 @@ function MyCollection:CreateStatCards(parent)
             self.bg:SetTexture(0.2, 0.2, 0.2, 0.9)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine(typeDef.name)
-            local stats = GetCollectionStats(typeDef.key)
-            GameTooltip:AddLine(string.format("Collected: %d / %d", stats.collected, stats.total), 1, 1, 1)
-            if stats.total > 0 then
-                local pct = math.floor((stats.collected / stats.total) * 100)
-                GameTooltip:AddLine(string.format("Progress: %d%%", pct), 0.7, 0.7, 0.7)
+            if not typeDef.noStats then
+                local stats = GetCollectionStats(typeDef.key)
+                GameTooltip:AddLine(string.format("Collected: %d / %d", stats.collected, stats.total), 1, 1, 1)
+                if stats.total > 0 then
+                    local pct = math.floor((stats.collected / stats.total) * 100)
+                    GameTooltip:AddLine(string.format("Progress: %d%%", pct), 0.7, 0.7, 0.7)
+                end
             end
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Click to view", 0.7, 0.7, 0.7)
@@ -904,14 +952,16 @@ function MyCollection:UpdateStatCards()
     if not self.frame or not self.frame.statCards then return end
 
     for key, card in pairs(self.frame.statCards) do
-        local stats = GetCollectionStats(key)
-        card.count:SetText(string.format("%d / %d", stats.collected, stats.total))
+        if not (card.typeDef and card.typeDef.noStats) then
+            local stats = GetCollectionStats(key)
+            card.count:SetText(string.format("%d / %d", stats.collected, stats.total))
 
-        local pct = 0
-        if stats.total > 0 then
-            pct = stats.collected / stats.total
+            local pct = 0
+            if stats.total > 0 then
+                pct = stats.collected / stats.total
+            end
+            card.bar:SetValue(pct)
         end
-        card.bar:SetValue(pct)
     end
 end
 

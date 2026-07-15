@@ -13,6 +13,8 @@
 #include "DatabaseEnv.h"
 #include "Chat.h"
 
+#include <vector>
+
 /*
  * Heirloom Scaling Extension to Level 255
  *
@@ -43,53 +45,135 @@ namespace {
     constexpr float HEIRLOOM_MAX_SCALING_BOOST = 4.0f;
     constexpr float HEIRLOOM_PROGRESSIVE_CURVE = 0.08f;
 
-    // Level -> slot count. Delegates to Bag::GetHeirloomBagSlots so the runtime scaler and the
-    // inventory loader (Player::_LoadItem) always agree - a mismatch would strand items in the
-    // grown slots on relog.
-    uint32 CalculateHeirloomBagSlots(uint32 playerLevel)
+    // Heirloom bag slot growth is tiered items, not a live-growing field: the 3.3.5
+    // client's bag window (and its tooltip) read a container's slot count from the
+    // static per-itemID item-info cache, not the live per-instance object field, so
+    // resizing an existing bag in place never renders more slots client-side even
+    // though the server-side field updates correctly (confirmed against the client's
+    // own tooltip code and independently by TrinityCore devs - "the slots are quite
+    // hardcoded", https://talk.trinitycore.org/t/how-to-get-larger-bags/30730). Each
+    // tier below is a real, separate item_template row; leveling up swaps the
+    // equipped bag for the next tier via UpgradeHeirloomBagIfNeeded.
+    struct HeirloomBagTier
     {
-        return Bag::GetHeirloomBagSlots(playerLevel);
+        uint32 entry;
+        uint32 slots;
+        uint32 minLevel;
+    };
+
+    constexpr HeirloomBagTier HEIRLOOM_BAG_TIERS[] = {
+        { 300366, 16,   1 },
+        { 302607, 20,  26 },
+        { 302608, 24,  51 },
+        { 302609, 28,  76 },
+        { 302610, 32, 101 },
+        { 302611, 36, 126 },
+    };
+    constexpr size_t HEIRLOOM_BAG_TIER_COUNT = sizeof(HEIRLOOM_BAG_TIERS) / sizeof(HEIRLOOM_BAG_TIERS[0]);
+
+    int32 FindHeirloomBagTierIndex(uint32 itemEntry)
+    {
+        for (size_t i = 0; i < HEIRLOOM_BAG_TIER_COUNT; ++i)
+            if (HEIRLOOM_BAG_TIERS[i].entry == itemEntry)
+                return static_cast<int32>(i);
+
+        return -1;
     }
 
-    void ApplyHeirloomBagScaling(Player* player, Bag* bag)
+    int32 DesiredHeirloomBagTierIndex(uint32 playerLevel)
+    {
+        int32 tier = 0;
+        for (size_t i = 0; i < HEIRLOOM_BAG_TIER_COUNT; ++i)
+            if (playerLevel >= HEIRLOOM_BAG_TIERS[i].minLevel)
+                tier = static_cast<int32>(i);
+
+        return tier;
+    }
+
+    // Swaps an equipped heirloom bag for the next tier once the owner's level
+    // qualifies. Only call this from contexts outside the item-equip call stack
+    // (OnPlayerLevelChanged, OnPlayerLogin) - it destroys and recreates the item,
+    // and Player::EquipItem() still holds/returns its own pItem pointer to its
+    // caller right after firing OnPlayerEquip, so destroying that same item from
+    // inside OnPlayerEquip would hand the engine a dangling pointer.
+    //
+    // Contents are relocated via the same CanStoreItem/StoreItem path every other
+    // item move uses (not manual Bag::StoreItem surgery), so a player with nowhere
+    // else to put their stuff just skips the upgrade this pass instead of risking
+    // a partial/duplicated move; it retries next trigger.
+    void UpgradeHeirloomBagIfNeeded(Player* player, Bag* bag)
     {
         if (!player || !bag)
             return;
 
-        ItemTemplate const* proto = bag->GetTemplate();
-        if (!proto || proto->Quality != ITEM_QUALITY_HEIRLOOM || proto->Class != ITEM_CLASS_CONTAINER)
+        int32 const currentTier = FindHeirloomBagTierIndex(bag->GetEntry());
+        if (currentTier < 0)
             return;
 
-        uint32 desiredSlots = CalculateHeirloomBagSlots(player->GetLevel());
-        uint32 currentSlots = bag->GetBagSize();
-
-        if (currentSlots == desiredSlots)
+        int32 const desiredTier = DesiredHeirloomBagTierIndex(player->GetLevel());
+        if (desiredTier <= currentTier)
             return;
 
-        // Update the bag slot count. NUM_SLOTS isn't itself persisted (Player::_LoadItem
-        // recomputes it from the owner's level on every load) - only the item's dirty state
-        // matters here. Route through SetState(..., player) so it goes through the normal
-        // update queue; calling Item::SaveToDB() directly would force the item to
-        // ITEM_UNCHANGED and could suppress a still-pending character_inventory write for
-        // this item (e.g. right after StoreNewItem+equip), silently orphaning it on next save.
-        bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, desiredSlots);
-        bag->SetState(ITEM_CHANGED, player);
-    }
+        uint8 const bagSlot = bag->GetSlot();
+        if (bagSlot < INVENTORY_SLOT_BAG_START || bagSlot >= INVENTORY_SLOT_BAG_END)
+            return; // equipped bag-bar slots only, never bank
 
-    void ApplyHeirloomBagScaling(Player* player)
-    {
-        if (!player)
-            return;
-
-        auto updateRange = [player](uint8 startSlot, uint8 endSlot)
+        struct StagedItem
         {
-            for (uint8 slot = startSlot; slot < endSlot; ++slot)
-                if (Bag* bag = player->GetBagByPos(slot))
-                    ApplyHeirloomBagScaling(player, bag);
+            Item* item;
+            uint8 originalSlot;
         };
 
-        updateRange(INVENTORY_SLOT_BAG_START, INVENTORY_SLOT_BAG_END);
-        updateRange(BANK_SLOT_BAG_START, BANK_SLOT_BAG_END);
+        std::vector<StagedItem> staged;
+        for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+            if (Item* contained = bag->GetItemByPos(static_cast<uint8>(i)))
+                staged.push_back({ contained, static_cast<uint8>(i) });
+
+        std::vector<Item*> relocated;
+        relocated.reserve(staged.size());
+        bool allRelocated = true;
+
+        for (StagedItem const& entry : staged)
+        {
+            ItemPosCountVec dest;
+            if (player->CanStoreItem(NULL_BAG, NULL_SLOT, dest, entry.item, false) != EQUIP_ERR_OK)
+            {
+                allRelocated = false;
+                break;
+            }
+
+            player->RemoveItem(bagSlot, entry.originalSlot, true);
+            player->StoreItem(dest, entry.item, true);
+            relocated.push_back(entry.item);
+        }
+
+        if (!allRelocated)
+        {
+            // Not enough free space elsewhere to hold this bag's contents - put back
+            // whatever was already moved and try again next trigger.
+            for (Item* item : relocated)
+            {
+                ItemPosCountVec dest;
+                if (player->CanStoreItem(bagSlot, NULL_SLOT, dest, item, false) == EQUIP_ERR_OK)
+                {
+                    player->RemoveItem(item->GetBagSlot(), item->GetSlot(), true);
+                    player->StoreItem(dest, item, true);
+                }
+            }
+
+            return;
+        }
+
+        HeirloomBagTier const& nextTier = HEIRLOOM_BAG_TIERS[desiredTier];
+        player->DestroyItem(INVENTORY_SLOT_BAG_0, bagSlot, true);
+
+        uint16 const pos = static_cast<uint16>((INVENTORY_SLOT_BAG_0 << 8) | bagSlot);
+        if (Item* newBag = player->EquipNewItem(pos, nextTier.entry, true))
+        {
+            player->SendNewItem(newBag, 1, true, false);
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cffe6cc80[Heirloom]|r Your bag grew to {} slots!", nextTier.slots);
+        }
     }
 
     uint32 GetNearestAvailableScalingLevel(uint32 requestedLevel)
@@ -192,31 +276,6 @@ public:
         maxDamage *= scalingBoost;
     }
 
-    // Hook when player equips an item to scale bag slots for heirloom bags
-    void OnPlayerEquip(Player* player, Item* item, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
-    {
-        if (!player || !item)
-            return;
-
-        ItemTemplate const* proto = item->GetTemplate();
-        if (!proto)
-            return;
-
-        // Only process heirloom bags
-        if (proto->Quality != ITEM_QUALITY_HEIRLOOM)
-            return;
-
-        if (proto->Class != ITEM_CLASS_CONTAINER)
-            return;
-
-        // Cast to Bag to access bag-specific functions
-        Bag* bag = item->ToBag();
-        if (!bag)
-            return;
-
-        ApplyHeirloomBagScaling(player, bag);
-    }
-
     // Hook to bypass level requirements for heirloom items
     // Allows heirlooms to be equipped at any level up to 255
     bool OnPlayerCanUseItem(Player* player, ItemTemplate const* proto, InventoryResult& result) override
@@ -238,44 +297,30 @@ public:
         return true;
     }
 
+    // Equipped heirloom bags only (never bank) - swaps each to the tier matching the
+    // player's new level. Safe here (unlike OnPlayerEquip): this isn't nested inside
+    // Player::EquipItem()'s own call stack, so destroying/recreating the item can't
+    // hand back a dangling pointer to anything still using it.
     void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
     {
         if (!player)
             return;
 
-        // Scale every equipped heirloom bag and announce any that actually gained slots.
-        // (Capturing before/after per bag - the old check compared against the already-applied
-        // size, so it never fired.)
-        auto processRange = [player](uint8 startSlot, uint8 endSlot)
-        {
-            for (uint8 slot = startSlot; slot < endSlot; ++slot)
-            {
-                Bag* bag = player->GetBagByPos(slot);
-                if (!bag)
-                    continue;
-
-                ItemTemplate const* proto = bag->GetTemplate();
-                if (!proto || proto->Quality != ITEM_QUALITY_HEIRLOOM || proto->Class != ITEM_CLASS_CONTAINER)
-                    continue;
-
-                uint32 const before = bag->GetBagSize();
-                ApplyHeirloomBagScaling(player, bag);
-                uint32 const after = bag->GetBagSize();
-
-                if (after > before)
-                    ChatHandler(player->GetSession()).PSendSysMessage(
-                        "|cffe6cc80[Heirloom]|r Your {} grew to {} bag slots (+{})! Reopen the bag to use the new space.",
-                        proto->Name1, after, after - before);
-            }
-        };
-
-        processRange(INVENTORY_SLOT_BAG_START, INVENTORY_SLOT_BAG_END);
-        processRange(BANK_SLOT_BAG_START, BANK_SLOT_BAG_END);
+        for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+            if (Bag* bag = player->GetBagByPos(slot))
+                UpgradeHeirloomBagIfNeeded(player, bag);
     }
 
+    // Catches the case where a bag was granted (or last logged out) below the tier
+    // its owner's current level now qualifies for.
     void OnPlayerLogin(Player* player) override
     {
-        ApplyHeirloomBagScaling(player);
+        if (!player)
+            return;
+
+        for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
+            if (Bag* bag = player->GetBagByPos(slot))
+                UpgradeHeirloomBagIfNeeded(player, bag);
     }
 
     // Auto-equip the Heirloom Adventurer's Shirt into the (empty) shirt slot when a

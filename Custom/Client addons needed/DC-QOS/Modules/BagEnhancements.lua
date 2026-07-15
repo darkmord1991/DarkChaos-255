@@ -101,6 +101,7 @@ local newItems = {}     -- [bag:slot] = time
 local searchBoxes = {}  -- [frameName] = EditBox
 local activeSortState = nil
 local LayoutFrame
+local RefreshShownFrames
 
 local SORT_BUTTON_TEXT = "Sort"
 local SORT_BUSY_TEXT = "Busy"
@@ -429,6 +430,15 @@ local function ContinueBagSort()
                 end
 
                 state.swapCount = state.swapCount + 1
+
+                -- Refresh immediately so the player sees each item settle
+                -- into place as the sort progresses, instead of the frame
+                -- sitting static until the whole sort finishes.
+                if addon.settings.bags.oneBag and frames[state.frameDefName]
+                    and frames[state.frameDefName]:IsShown() then
+                    LayoutFrame(state.frameDefName)
+                end
+
                 addon:DelayedCall(SORT_STEP_DELAY, ContinueBagSort)
                 return
             end
@@ -952,28 +962,16 @@ local function OnBagUpdate(bag)
     end
     
     if settings.oneBag then
-        -- OneBag Mode - refresh all matching frames
-        local refreshed = false
-        for name, def in pairs(FRAMES) do
-            if bag == nil then
-                -- Nil bag = refresh all shown frames
-                if frames[name] and frames[name]:IsShown() then
-                    LayoutFrame(name)
-                    refreshed = true
-                end
-            else
-                for _, b in ipairs(def.bags) do
-                    if b == bag then
-                        if frames[name] and frames[name]:IsShown() then
-                            LayoutFrame(name)
-                            refreshed = true
-                        end
-                        break
-                    end
-                end
-            end
-        end
-        if addon.Debug and refreshed then
+        -- OneBag Mode - always refresh shown frames.
+        -- Filtering by the reported bagID used to skip refreshes whose bagID
+        -- didn't match a frame's slot list. That filter missed cases like
+        -- replacing an equipped bag (dragging a new bag onto slot 1-4):
+        -- the container's identity/size changes but the event doesn't always
+        -- reliably report the affected bagID, leaving the OneBag view stale
+        -- until it was closed and reopened. A full layout refresh is cheap,
+        -- so just always do it for any bag-content change while shown.
+        RefreshShownFrames()
+        if addon.Debug then
             addon:Debug("OneBag frame refreshed for bag " .. ToDebugString(bag))
         end
     else
@@ -990,7 +988,7 @@ local function OnBagUpdate(bag)
     end
 end
 
-local function RefreshShownFrames()
+RefreshShownFrames = function()
     local settings = addon.settings.bags
     if settings.oneBag then
         if frames.inventory and frames.inventory:IsShown() then LayoutFrame("inventory") end
@@ -1295,6 +1293,8 @@ function BagEnhancements.OnEnable()
     ev:RegisterEvent("BAG_UPDATE_COOLDOWN")
     ev:RegisterEvent("ITEM_PUSH")
     ev:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
+    ev:RegisterEvent("PLAYERBANKBAGSLOTS_CHANGED")
+    ev:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
     ev:RegisterEvent("BANKFRAME_OPENED")
     ev:RegisterEvent("BANKFRAME_CLOSED")
     
@@ -1320,6 +1320,12 @@ function BagEnhancements.OnEnable()
             elseif not settings.oneBag and BankFrame and BankFrame:IsShown() then
                 UpdateDefaultBankFrame()
             end
+        elseif event == "PLAYERBANKBAGSLOTS_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
+            -- Bag slots (backpack bags 1-4, bank bags) are equipment slots.
+            -- Unequipping an empty bag removes its container without any
+            -- item changing bags, so no BAG_UPDATE fires for it at all -
+            -- these events are the only signal that a slot's bag came off.
+            RefreshShownFrames()
         elseif event == "ITEM_PUSH" then
             local bag, slot = ...
             bag = tonumber(bag) or bag
