@@ -305,39 +305,9 @@ namespace Hotspot
                 .Set("id", hotspotId));
     }
 
-    // Broadcast hotspot spawn to all players
-    void BroadcastHotspotSpawn(uint32 id, uint32 mapId, uint32 zoneId,
-                               const std::string& zoneName, float x, float y, float z,
-                               uint32 duration, uint32 bonus)
-    {
-        // Build hotspot object with all fields
-        JsonValue hs = BuildHotspotObject(id, mapId, zoneId, zoneName, x, y, z, duration, bonus);
-
-        // Build message
-        JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_SPAWN);
-        msg.Set("hotspot", hs);
-
-        // Send to all online players
-        sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
-            SendHotspotMessage(player, msg);
-        });
-
-        LOG_DEBUG("dc.addon", "Broadcast hotspot spawn: id={} map={} zone={}", id, mapId, zoneId);
-    }
-
-    // Broadcast hotspot expiration
-    void BroadcastHotspotExpire(uint32 id)
-    {
-        JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_EXPIRE);
-        msg.Set("id", id);
-
-        // Send to all online players
-        sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
-            SendHotspotMessage(player, msg);
-        });
-
-        LOG_DEBUG("dc.addon", "Broadcast hotspot expire: id={}", id);
-    }
+    // Note: spawn/expire pushes to clients are broadcast via the WORLD module
+    // (see HotspotMgr::RegisterHotspot / CleanupExpiredHotspots). The HOTSPOT
+    // module here serves on-demand list/info/teleport requests only.
 
     // Register all handlers
     void RegisterHandlers()

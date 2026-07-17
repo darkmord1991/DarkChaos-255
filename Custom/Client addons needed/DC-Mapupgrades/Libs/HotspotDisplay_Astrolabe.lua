@@ -42,6 +42,11 @@ Ast.MapBounds = {
     [530] = { minX = -5821.359, maxX = 5821.359, minY = -4468.039, maxY = 12996.04 }, -- Outland (Map 530, Area 0 "Expansion01")
     [571] = { minX = -1240.89, maxX = 10593.38, minY = -8534.246, maxY = 9217.152 },  -- Northrend (Map 571, Area 0 "Northrend")
     [37] = { minX = -1116, maxX = 1756, minY = -1884, maxY = 2427 },                -- Azshara Crater (Map 37, Area 268)
+    -- DC Cata downport maps: no WorldMapArea entry exists yet, so these are an
+    -- APPROXIMATION derived from the server spawn footprint. Replace with the
+    -- real LocLeft/Right/Top/Bottom once WorldMapArea rows 4923/4924 are authored.
+    [750] = { minX = 3390, maxX = 5780, minY = -4990, maxY = -1270 },               -- DC Hyjal (Map 750, Area 4923) [approx]
+    [751] = { minX = 630,  maxX = 3500, minY = -6140, maxY = -810 },                -- DC Plaguelands (Map 751, Area 4924) [approx]
 }
 
 -- Convert absolute world-space coordinates into normalized 0..1 range when bounds available

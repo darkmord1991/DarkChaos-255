@@ -1148,13 +1148,6 @@ Hotspots.MaxPerZone = 2
 #
 Hotspots.RespawnDelay = 30
 
-#
-#    Hotspots.InitialPopulateCount
-#        Description: Number of hotspots to spawn immediately on server start
-#        Default:     5
-#
-Hotspots.InitialPopulateCount = 5
-
 # -----------------------------------------------------------------------------
 # Visual Effects
 # -----------------------------------------------------------------------------
@@ -1175,24 +1168,22 @@ Hotspots.AuraSpell = 800001
 
 #
 #    Hotspots.SpawnVisualMarker
-#        Description: Spawn a GameObject marker at hotspot locations
-#        Default:     1 (Enabled)
+#        Description: Spawn an in-world GameObject marker at hotspot locations.
+#                     Off by default: the DC-Mapupgrades addon map/minimap pins
+#                     are the primary in-world cue. Enable only if you also set
+#                     a suitable MarkerGameObjectEntry.
+#        Default:     0 (Disabled)
 #
-Hotspots.SpawnVisualMarker = 1
+Hotspots.SpawnVisualMarker = 0
 
 #
 #    Hotspots.MarkerGameObjectEntry
-#        Description: GameObject entry ID for visual marker
+#        Description: GameObject entry spawned when SpawnVisualMarker = 1.
+#                     NOTE: 179976 is "Beer Keg 01" on this server (not a flag);
+#                     pick a neutral beacon (e.g. a light beam) before enabling.
 #        Default:     179976
 #
 Hotspots.MarkerGameObjectEntry = 179976
-
-#
-#    Hotspots.MinimapIcon
-#        Description: Minimap icon type (1 = Golden arrow)
-#        Default:     1
-#
-Hotspots.MinimapIcon = 1
 
 #
 #    Hotspots.AnnounceRadius
@@ -1210,14 +1201,16 @@ Hotspots.AnnounceRadius = 500.0
 #        Description: Comma-separated map IDs where hotspots may spawn.
 #                     Restricted to the custom leveling maps:
 #                     37 = Azshara Crater (1-80), 1410 = Hyjal Frontier
-#                     (80-130), 850 = Stratholme Valley (130-160).
+#                     (80-130), 850 = Stratholme Valley (130-160),
+#                     750 = DC Hyjal (Mount Hyjal downport),
+#                     751 = DC Plaguelands (Eastern Plaguelands downport).
 #                     Other options: 1405 = Isles of Giants, 0/1/530/571 =
 #                     vanilla continents. Maps must exist in the deployed
 #                     Map.dbc and be non-instanced; invalid entries are
 #                     skipped with a startup warning.
 #        Default:     "0,1,530,571,37"
 #
-Hotspots.EnabledMaps = "37,850,1410"
+Hotspots.EnabledMaps = "37,850,1410,750,751"
 
 #
 #    Hotspots.EnabledZones
@@ -1225,11 +1218,11 @@ Hotspots.EnabledMaps = "37,850,1410"
 #                     only in these zones (zone IDs are globally unique).
 #                     268 = Azshara Crater, 6100 = Hyjal Frontier,
 #                     6000 = Stratholme Valley, 5006 = Isles of Giants,
-#                     616 = Hyjal (Kalimdor). Empty = all non-city zones on
-#                     the enabled maps.
+#                     4923 = DC Hyjal (Mount Hyjal), 4924 = DC Plaguelands.
+#                     Empty = all non-city zones on the enabled maps.
 #        Default:     ""
 #
-Hotspots.EnabledZones = "268,6000,6100"
+Hotspots.EnabledZones = "268,6000,6100,4923,4924"
 
 #
 #    Hotspots.ExcludedZones
@@ -1267,38 +1260,6 @@ Hotspots.AnnounceExpire = 1
 #        Default:     0 (Disabled)
 #
 Hotspots.SendAddonPackets = 0
-
-#
-#    Hotspots.IncludeTextureInAddon
-#        Description: Include explicit texture field in HOTSPOT_ADDON payloads
-#        Default:     0 (Disabled)
-#
-Hotspots.IncludeTextureInAddon = 0
-
-#
-#    Hotspots.BuffTexture
-#        Description: Explicit texture path for HOTSPOT_ADDON (if enabled)
-#        Default:     ""
-#
-Hotspots.BuffTexture = ""
-
-# -----------------------------------------------------------------------------
-# Admin Settings
-# -----------------------------------------------------------------------------
-
-#
-#    Hotspots.GMBypassLimit
-#        Description: Allow GM commands to bypass MaxActive limit
-#        Default:     1 (Enabled)
-#
-Hotspots.GMBypassLimit = 1
-
-#
-#    Hotspots.AllowWorldwideSpawn
-#        Description: Enable .hotspot spawnworld admin command
-#        Default:     1 (Enabled)
-#
-Hotspots.AllowWorldwideSpawn = 1
 
 # -----------------------------------------------------------------------------
 # Hotspot Objectives

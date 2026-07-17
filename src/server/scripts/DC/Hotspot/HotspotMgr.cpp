@@ -2,6 +2,7 @@
 #include "HotspotDefines.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "SpellAuras.h"
 #include "Config.h"
 #include "World.h"
 #include "Chat.h"
@@ -190,20 +191,14 @@ void HotspotMgr::LoadConfig()
     sHotspotsConfig.minActive = sConfigMgr->GetOption<uint32>("Hotspots.MinActive", 1);
     sHotspotsConfig.maxPerZone = sConfigMgr->GetOption<uint32>("Hotspots.MaxPerZone", 2);
     sHotspotsConfig.respawnDelay = sConfigMgr->GetOption<uint32>("Hotspots.RespawnDelay", 30);
-    sHotspotsConfig.initialPopulateCount = sConfigMgr->GetOption<uint32>("Hotspots.InitialPopulateCount", 0);
     sHotspotsConfig.auraSpell = sConfigMgr->GetOption<uint32>("Hotspots.AuraSpell", 800001);
     sHotspotsConfig.buffSpell = sConfigMgr->GetOption<uint32>("Hotspots.BuffSpell", 800001);
-    sHotspotsConfig.minimapIcon = sConfigMgr->GetOption<uint32>("Hotspots.MinimapIcon", 1);
     sHotspotsConfig.announceRadius = sConfigMgr->GetOption<float>("Hotspots.AnnounceRadius", 500.0f);
-    sHotspotsConfig.includeTextureInAddon = sConfigMgr->GetOption<bool>("Hotspots.IncludeTextureInAddon", false);
-    sHotspotsConfig.buffTexture = sConfigMgr->GetOption<std::string>("Hotspots.BuffTexture", "");
     sHotspotsConfig.announceSpawn = sConfigMgr->GetOption<bool>("Hotspots.AnnounceSpawn", true);
     sHotspotsConfig.announceExpire = sConfigMgr->GetOption<bool>("Hotspots.AnnounceExpire", true);
-    sHotspotsConfig.spawnVisualMarker = sConfigMgr->GetOption<bool>("Hotspots.SpawnVisualMarker", true);
+    sHotspotsConfig.spawnVisualMarker = sConfigMgr->GetOption<bool>("Hotspots.SpawnVisualMarker", false);
     sHotspotsConfig.markerGameObjectEntry = sConfigMgr->GetOption<uint32>("Hotspots.MarkerGameObjectEntry", 179976);
     sHotspotsConfig.sendAddonPackets = sConfigMgr->GetOption<bool>("Hotspots.SendAddonPackets", false);
-    sHotspotsConfig.gmBypassLimit = sConfigMgr->GetOption<bool>("Hotspots.GMBypassLimit", true);
-    sHotspotsConfig.allowWorldwideSpawn = sConfigMgr->GetOption<bool>("Hotspots.AllowWorldwideSpawn", true);
 
     // Objectives support
     sHotspotsConfig.objectivesEnabled = sConfigMgr->GetOption<bool>("Hotspots.Objectives.Enable", true);
@@ -353,10 +348,17 @@ struct CustomZoneBox
 };
 static constexpr CustomZoneBox CUSTOM_ZONE_BOXES[] =
 {
-    { 268,  -1116.0f,  1756.0f,  -1884.0f,  2427.0f   }, // Azshara Crater (map 37)
+    // Azshara Crater (map 37): tightened from the full world-map image extent to
+    // the actual creature/player spawn footprint so hotspots stop landing on the
+    // crater's unreachable outer rim.
+    { 268,   -700.0f,  1250.0f,  -450.0f,   1200.0f   }, // Azshara Crater (map 37)
     { 5006,  5334.3f,  6932.32f,  2.91f,    2132.02f  }, // Isles of Giants (map 1405)
     { 6000,  2066.67f, 4333.33f, -5166.67f, -1766.67f }, // Stratholme Valley (map 850)
     { 6100,  4479.17f, 6145.83f, -4025.0f,  -1525.0f  }, // Hyjal Frontier (map 1410)
+    // Cata downport maps have no WorldMapArea entry, so these fallback boxes are
+    // authoritative. Derived from live creature spawn extents on each map.
+    { 4923,  3390.0f,  5780.0f, -4990.0f,  -1270.0f  }, // Mount Hyjal / DC Hyjal (map 750)
+    { 4924,   630.0f,  3500.0f, -6140.0f,   -810.0f  }, // Plaguelands / DC Plaguelands (map 751)
 };
 
 void HotspotMgr::BuildZoneSampleBoxes()
@@ -679,6 +681,61 @@ void HotspotMgr::SpawnPendingMarkers()
     }
 }
 
+void HotspotMgr::RegisterHotspot(Hotspot& h)
+{
+    h.id = _nextHotspotId++;
+    h.spawnTime = GameTime::GetGameTime().count();
+    h.expireTime = h.spawnTime + (sHotspotsConfig.duration * MINUTE);
+    h.gameObjectGuid = ObjectGuid::Empty;
+
+    // Visual marker: created immediately only if the target grid is already
+    // resident, so spawning never pulls terrain off disk. Otherwise
+    // SpawnPendingMarkers (10s cleanup cadence) creates it once a player
+    // loads the area — until then nobody is there to see it anyway.
+    if (sHotspotsConfig.spawnVisualMarker)
+        if (Map* m = GetBaseMapSafe(h.mapId))
+            if (m->IsGridLoaded(h.x, h.y))
+                h.gameObjectGuid = CreateHotspotMarker(m, h);
+
+    _grid.Add(h);
+    SaveHotspotToDB(h);
+
+    LOG_INFO("scripts.dc", "Spawned Hotspot #{} on map {} zone {}", h.id, h.mapId, h.zoneId);
+
+    if (!sHotspotsConfig.announceSpawn)
+        return;
+
+    std::string zoneName = GetSafeZoneName(h.zoneId);
+    std::string mapName = "Unknown Map";
+    if (const MapEntry* me = sMapStore.LookupEntry(h.mapId)) mapName = me->name[0];
+
+    std::ostringstream ss;
+    ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot in " << mapName << " (" << zoneName << ")! +" << sHotspotsConfig.experienceBonus << "% XP";
+
+    // One global announce; players on the map previously got it twice
+    // (broadcast + per-map loop).
+    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str(), nullptr);
+
+    // Send WRLD packet
+    DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
+    DCAddon::JsonValue j; j.SetObject();
+    j.Set("id", DCAddon::JsonValue((int)h.id));
+    j.Set("mapId", DCAddon::JsonValue((int)h.mapId));
+    j.Set("zoneId", DCAddon::JsonValue((int)h.zoneId));
+    j.Set("x", DCAddon::JsonValue(h.x));
+    j.Set("y", DCAddon::JsonValue(h.y));
+    j.Set("z", DCAddon::JsonValue(h.z));
+    j.Set("action", DCAddon::JsonValue("spawn"));
+    hotspotsArr.Push(j);
+
+    DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+    wmsg.Set("hotspots", hotspotsArr);
+
+    for (auto const& sess : sWorldSessionMgr->GetAllSessions())
+        if (Player* p = sess.second->GetPlayer())
+            wmsg.Send(p);
+}
+
 bool HotspotMgr::SpawnHotspot()
 {
     if (!sHotspotsConfig.enabled) return false;
@@ -692,64 +749,27 @@ bool HotspotMgr::SpawnHotspot()
         return false;
     }
 
-    uint32 mapId = point.mapId;
-    uint32 zoneId = point.zoneId;
-    float x = point.x;
-    float y = point.y;
-    float z = point.z;
+    Hotspot h;
+    h.mapId = point.mapId; h.zoneId = point.zoneId;
+    h.x = point.x; h.y = point.y; h.z = point.z;
+    RegisterHotspot(h);
+    return true;
+}
+
+bool HotspotMgr::SpawnHotspotAt(uint32 mapId, uint32 zoneId, float x, float y, float z)
+{
+    if (!sHotspotsConfig.enabled)
+        return false;
+
+    // GM-placed hotspots skip the pool/eligibility sampling and the maxActive
+    // cap, but the map must still exist as a hostable base map.
+    if (!GetBaseMapSafe(mapId))
+        return false;
 
     Hotspot h;
-    h.id = _nextHotspotId++;
-    h.mapId = mapId; h.zoneId = zoneId; h.x = x; h.y = y; h.z = z;
-    h.spawnTime = GameTime::GetGameTime().count();
-    h.expireTime = h.spawnTime + (sHotspotsConfig.duration * MINUTE);
-
-    // Visual marker: created immediately only if the target grid is already
-    // resident, so spawning never pulls terrain off disk. Otherwise
-    // SpawnPendingMarkers (10s cleanup cadence) creates it once a player
-    // loads the area — until then nobody is there to see it anyway.
-    if (sHotspotsConfig.spawnVisualMarker)
-        if (Map* m = GetBaseMapSafe(mapId))
-            if (m->IsGridLoaded(x, y))
-                h.gameObjectGuid = CreateHotspotMarker(m, h);
-
-    _grid.Add(h);
-    SaveHotspotToDB(h);
-
-    LOG_INFO("scripts.dc", "Spawned Hotspot #{} on map {} zone {}", h.id, h.mapId, h.zoneId);
-
-    if (sHotspotsConfig.announceSpawn)
-    {
-        std::string zoneName = GetSafeZoneName(h.zoneId);
-        std::string mapName = "Unknown Map";
-        if (const MapEntry* me = sMapStore.LookupEntry(h.mapId)) mapName = me->name[0];
-
-        std::ostringstream ss;
-        ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot in " << mapName << " (" << zoneName << ")! +" << sHotspotsConfig.experienceBonus << "% XP";
-
-        // One global announce; players on the map previously got it twice
-        // (broadcast + per-map loop).
-        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str(), nullptr);
-
-        // Send WRLD packet
-        DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
-        DCAddon::JsonValue j; j.SetObject();
-        j.Set("id", DCAddon::JsonValue((int)h.id));
-        j.Set("mapId", DCAddon::JsonValue((int)h.mapId));
-        j.Set("zoneId", DCAddon::JsonValue((int)h.zoneId));
-        j.Set("x", DCAddon::JsonValue(h.x));
-        j.Set("y", DCAddon::JsonValue(h.y));
-        j.Set("z", DCAddon::JsonValue(h.z));
-        j.Set("action", DCAddon::JsonValue("spawn"));
-        hotspotsArr.Push(j);
-
-        DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
-        wmsg.Set("hotspots", hotspotsArr);
-
-        for (auto const& sess : sWorldSessionMgr->GetAllSessions())
-            if (Player* p = sess.second->GetPlayer())
-                wmsg.Send(p);
-    }
+    h.mapId = mapId; h.zoneId = zoneId;
+    h.x = x; h.y = y; h.z = z;
+    RegisterHotspot(h);
     return true;
 }
 
@@ -809,15 +829,10 @@ void HotspotMgr::CleanupExpiredHotspots()
     for (Hotspot const& activeHotspot : _grid.GetAll())
         activeHotspotIds.insert(activeHotspot.id);
 
-    // Clean player expiry and stale one-time grant entries.
+    // Drop one-time grant entries for hotspots that are no longer active, so a
+    // player re-buffs on the next (distinct) hotspot they enter.
     {
         std::lock_guard<std::mutex> lock(_playerDataLock);
-        for (auto it = _playerExpiry.begin(); it != _playerExpiry.end(); )
-        {
-            if (it->second <= now) it = _playerExpiry.erase(it);
-            else ++it;
-        }
-
         for (auto playerIt = _playerGrantedHotspots.begin(); playerIt != _playerGrantedHotspots.end(); )
         {
             auto& granted = playerIt->second;
@@ -860,7 +875,6 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
         bool hasResults = false;
         {
             std::lock_guard<std::mutex> lock(_playerDataLock);
-            _playerExpiry.erase(playerGuid);
 
             // End objective session once the aura is gone and player is outside hotspot context.
             if (!isInHotspotContext && sHotspotsConfig.objectivesEnabled)
@@ -908,15 +922,26 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
     if (!EnsurePrimaryHotspotAura(player))
         return;
 
+    // Clamp the buff to the hotspot's remaining lifetime. Spell 800001's own
+    // DurationIndex would otherwise let the XP bonus outlive the hotspot the
+    // player entered (and if that index is ever set to permanent, never expire).
+    if (Aura* aura = player->GetAura(GetPrimaryHotspotAuraSpell()))
+    {
+        int32 remainingMs = static_cast<int32>((hotspot->expireTime - GameTime::GetGameTime().count()) * IN_MILLISECONDS);
+        if (remainingMs > 0 && (aura->GetDuration() <= 0 || aura->GetDuration() > remainingMs))
+        {
+            aura->SetMaxDuration(remainingMs);
+            aura->SetDuration(remainingMs);
+        }
+    }
+
     uint32 bonus = sHotspotsConfig.experienceBonus;
 
     if (player->GetSession())
         ChatHandler(player->GetSession()).SendNotification("Hotspot joined: +{}% experience", bonus);
 
-    time_t expiryTime = hotspot->expireTime;
     {
         std::lock_guard<std::mutex> lock(_playerDataLock);
-        _playerExpiry[playerGuid] = expiryTime;
         _playerGrantedHotspots[playerGuid].insert(targetId);
 
         if (sHotspotsConfig.objectivesEnabled)
@@ -1017,30 +1042,16 @@ std::string HotspotMgr::GetZoneName(uint32 zoneId)
     return GetSafeZoneName(zoneId);
 }
 
-// ============================================================================
-// Missing Function Implementations
-// ============================================================================
-
+// Exposed to other DC systems (stresstest, addon world/hotspot handlers).
 uint32 GetHotspotXPBonusPercentage()
 {
     return sHotspotsConfig.experienceBonus;
-}
-
-Hotspot* GetPlayerHotspot(Player* player)
-{
-    if (!player) return nullptr;
-    return const_cast<Hotspot*>(sHotspotMgr->GetPlayerHotspot(player));
 }
 
 Hotspot const* HotspotMgr::GetPlayerHotspot(Player* player)
 {
     if (!player) return nullptr;
     return _grid.GetForPlayer(player);
-}
-
-bool CanSpawnInZone(uint32 zoneId)
-{
-    return sHotspotMgr->CanSpawnInZone(zoneId);
 }
 
 uint32 HotspotMgr::GetZoneHotspotCount(uint32 zoneId)

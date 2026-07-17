@@ -47,8 +47,6 @@ private:
     std::vector<HotspotZoneSampleBox> _zoneSampleBoxes;
     // Per-player objectives tracking
     std::unordered_map<ObjectGuid, HotspotObjectives> _playerObjectives;
-    // Per-player server-side expiry check
-    std::unordered_map<ObjectGuid, time_t> _playerExpiry;
     // Per-player one-time hotspot grants (hotspotId or dungeon grant id)
     std::unordered_map<ObjectGuid, std::unordered_set<uint32>> _playerGrantedHotspots;
     // Per-player tracking for XP calc
@@ -68,6 +66,10 @@ private:
     // Create markers for hotspots whose target grid has since been loaded by
     // a player; spawning itself never forces terrain off disk.
     void SpawnPendingMarkers();
+    // Register a fully-populated hotspot: assign id, create the marker if the
+    // grid is resident, persist, add to the grid and announce. Shared by the
+    // pooled spawner and the explicit-coordinate (GM command) path.
+    void RegisterHotspot(Hotspot& h);
 
 public:
     static HotspotMgr* instance();
@@ -77,6 +79,9 @@ public:
     void LoadConfig();
     void LoadFromDB();
     bool SpawnHotspot();
+    // Spawn a hotspot at explicit coordinates (GM command path). Bypasses the
+    // pool/eligibility sampling; still validates the map exists and is a base map.
+    bool SpawnHotspotAt(uint32 mapId, uint32 zoneId, float x, float y, float z);
     void CleanupExpiredHotspots();
 
     // Spawn point pool: load persisted points, and lazily discover new ones

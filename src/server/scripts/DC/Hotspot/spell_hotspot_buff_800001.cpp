@@ -3,8 +3,9 @@
  *
  * Spell ID: 800001 (Custom hotspot buff)
  *
- * This spell script handles the XP bonus for players inside hotspots.
- * When the aura is active, all experience gained is multiplied by the hotspot XP bonus percentage.
+ * This is the visible aura players carry while a hotspot buff is active; it only
+ * logs apply/remove. The actual XP multiplier is applied server-side in
+ * HotspotMgr::OnPlayerGiveXP (which checks HasAura(800001)), not here.
  */
 
 #include "ScriptMgr.h"
@@ -12,10 +13,6 @@
 #include "SpellScript.h"
 #include "SpellAuraEffects.h"
 #include "Config.h"
-
-// Forward declarations - these are defined in ac_hotspots.cpp
-extern uint32 GetHotspotXPBonusPercentage();
-extern uint32 GetHotspotBuffSpellId();
 
 // Aura Effect Script: Handle the XP bonus application
 class spell_hotspot_buff_800001_aura : public AuraScript

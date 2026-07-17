@@ -3,10 +3,10 @@
 #include "CommandScript.h"
 #include "Player.h"
 #include "GameTime.h"
+#include "StringConvert.h"
 #include "../Hotspot/HotspotMgr.h"
 #include "../Hotspot/HotspotDefines.h"
 #include "../Hotspot/HotspotGrid.h"
-#include "../AddonExtension/dc_addon_namespace.h"
 
 class HotspotsCommandScript : public CommandScript
 {
@@ -18,14 +18,14 @@ public:
         using namespace Acore::ChatCommands;
         static ChatCommandTable hotspotsCommandTable =
         {
-            ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Acore::ChatCommands::Console::No),
-            ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("list",      HandleHotspotsListCommand,      SEC_GAMEMASTER,    Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("spawn",     HandleHotspotsSpawnCommand,     SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
             ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
-            ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
-            ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
-            ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
-            ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Acore::ChatCommands::Console::No),
-            ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Acore::ChatCommands::Console::No)
+            ChatCommandBuilder("dump",      HandleHotspotsDumpCommand,      SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("clear",     HandleHotspotsClearCommand,     SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("reload",    HandleHotspotsReloadCommand,    SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("tp",        HandleHotspotsTeleportCommand,  SEC_GAMEMASTER,    Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("status",    HandleHotspotsStatusCommand,    SEC_PLAYER,        Acore::ChatCommands::Console::No)
         };
 
         static ChatCommandTable commandTable =
@@ -83,51 +83,21 @@ public:
         return true;
     }
 
-    // SpawnHere implementation would require exposing raw Add/Spawn methods with coords in Mgr.
-    // For now, I'll simplify or skip custom spawn logic unless required,
-    // BUT user asked for "commands add them in again", implying full restoration.
-    // Since sHotspotMgr->SpawnHotspot() is random, SpawnHere logic needs to be in this file using Grid directly
-    // OR added to Mgr. Let's start with basic access via Grid/Mgr public methods.
-    // Mgr exposes GetGrid() but that's const usually for read? The header had generic getter?
-    // Let's assume we can add directly to Grid if we include Header.
-    // HotspotMgr.h declares: HotspotGrid& GetGrid() { return _grid; } (Assumed standard pattern)
-    // Wait, in my previous step creating HotspotMgr.h (which wasn't fully shown but inferred),
-    // I need to ensure I can mutate the grid or add a 'ForceSpawnAt' to Mgr.
-    // Let's add a `SpawnHotspotAt` to Mgr? No, let's keep it simple here if possible.
-    // The previous code did:
-    /*
-        Hotspot hotspot; ...
-        sActiveHotspots.push_back(hotspot);
-        SaveHotspotToDB(hotspot);
-    */
-    // I can do that through Mgr if I expose a "AddHotspot(Hotspot h)" method.
-    // For now, I'll just skip SpawnHere if I can't easily add it, or hacking it.
-    // Actually, let's just use what we have.
-
+    // Place a hotspot at the GM's exact position (bypasses pool/eligibility/cap).
     static bool HandleHotspotsSpawnHereCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
-        if (!player) return false;
+        if (!player)
+            return false;
 
-        Hotspot h;
-        h.id = sHotspotMgr->GenerateNextId();
-        h.mapId = player->GetMapId();
-        h.zoneId = player->GetZoneId();
-        h.x = player->GetPositionX();
-        h.y = player->GetPositionY();
-        h.z = player->GetPositionZ();
-        h.spawnTime = GameTime::GetGameTime().count();
-        h.expireTime = h.spawnTime + (sHotspotsConfig.duration * 60);
+        if (!sHotspotMgr->SpawnHotspotAt(player->GetMapId(), player->GetZoneId(),
+                player->GetPositionX(), player->GetPositionY(), player->GetPositionZ()))
+        {
+            handler->SendSysMessage("Failed to spawn a hotspot here (system disabled or map not hostable).");
+            return true;
+        }
 
-        // We lack a public "Add" on Mgr.
-        // PROPER FIX: I should have added `SpawnHotspotAt` to Mgr.
-        // I will just note this implementation limitation for now or better yet,
-        // Assuming I can't change Mgr interface easily in this turn without viewing it again:
-        // Access Grid via Friend? No.
-        // Let's rely on Spawn (Random) for now, or just leave SpawnHere returning "Not implemented in refactor".
-        // Use: sHotspotMgr->SpawnHotspot() works fine for random.
-
-        handler->SendSysMessage("SpawnAt not fully implemented in refactor yet. Use .hotspot spawn");
+        handler->SendSysMessage("Spawned a hotspot at your location.");
         return true;
     }
 
@@ -139,20 +109,18 @@ public:
 
     static bool HandleHotspotsClearCommand(ChatHandler* handler, char const* /*args*/)
     {
-         handler->SendSysMessage("Clearing all hotspots...");
-         sHotspotMgr->ClearAll();
+        handler->SendSysMessage("Clearing all hotspots...");
+        sHotspotMgr->ClearAll();
 
-         // Respawn min active if configured
-         if (sHotspotsConfig.minActive > 0)
-         {
-             handler->SendSysMessage("Respawning minimum active hotspots...");
-             // Simple loop to respawn logic via Cleanup/Update cycle or manual
-             // We can just call CleanupExpiredHotspots which handles minActive respawn!
-             sHotspotMgr->CleanupExpiredHotspots();
-         }
+        // CleanupExpiredHotspots also refills toward minActive when configured.
+        if (sHotspotsConfig.minActive > 0)
+        {
+            handler->SendSysMessage("Respawning minimum active hotspots...");
+            sHotspotMgr->CleanupExpiredHotspots();
+        }
 
-         handler->SendSysMessage("Done.");
-         return true;
+        handler->SendSysMessage("Done.");
+        return true;
     }
 
     static bool HandleHotspotsReloadCommand(ChatHandler* handler, char const* /*args*/)
@@ -162,25 +130,84 @@ public:
         return true;
     }
 
-    static bool HandleHotspotsTeleportCommand(ChatHandler* handler, char const* /*args*/)
+    // ".hotspot tp [id]" - teleport to a specific hotspot, or the first active one.
+    static bool HandleHotspotsTeleportCommand(ChatHandler* handler, char const* args)
     {
-        // ... (Teleport logic using grid) ...
-        auto all = sHotspotMgr->GetGrid().GetAll();
-        if (all.empty()) { handler->SendSysMessage("No hotspots."); return true; }
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
 
-        const Hotspot* target = &all[0];
-        // optional ID parsing...
+        std::vector<Hotspot> all = sHotspotMgr->GetGrid().GetAll();
+        if (all.empty())
+        {
+            handler->SendSysMessage("No active hotspots.");
+            return true;
+        }
 
-        Player* player = handler->GetSession()->GetPlayer();
-        player->TeleportTo(target->mapId, target->x, target->y, target->z, 0.0f);
+        Hotspot const* target = nullptr;
+
+        if (args)
+            while (*args == ' ' || *args == '\t')
+                ++args;
+
+        if (args && *args)
+        {
+            if (Optional<uint32> id = Acore::StringTo<uint32>(args))
+            {
+                for (Hotspot const& h : all)
+                    if (h.id == *id)
+                    {
+                        target = &h;
+                        break;
+                    }
+
+                if (!target)
+                {
+                    handler->PSendSysMessage("No active hotspot with id {}.", *id);
+                    return true;
+                }
+            }
+            else
+            {
+                handler->SendSysMessage("Usage: .hotspot tp [id]");
+                return true;
+            }
+        }
+
+        if (!target)
+            target = &all.front();
+
+        player->TeleportTo(target->mapId, target->x, target->y, target->z, player->GetOrientation());
+        handler->PSendSysMessage("Teleporting to hotspot #{}.", target->id);
         return true;
     }
 
+    // ".hotspot status" - player-facing summary of the current hotspot state.
     static bool HandleHotspotsStatusCommand(ChatHandler* handler, char const* /*args*/)
     {
-        // Silence unused parameter warnings for now
-        (void)handler;
-        // TODO: Implement status output (hotspot list / player status)
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        handler->PSendSysMessage("Hotspots: {} | Active: {}",
+            sHotspotsConfig.enabled ? "enabled" : "disabled",
+            sHotspotMgr->GetGrid().Count());
+
+        if (Hotspot const* here = sHotspotMgr->GetPlayerHotspot(player))
+        {
+            time_t remaining = here->expireTime - GameTime::GetGameTime().count();
+            handler->PSendSysMessage("You are inside hotspot #{} ({}) - {}m left, +{}% XP.",
+                here->id, sHotspotMgr->GetZoneName(here->zoneId),
+                remaining / 60, sHotspotsConfig.experienceBonus);
+        }
+        else
+        {
+            handler->SendSysMessage("You are not currently inside a hotspot.");
+        }
+
+        bool buffed = (sHotspotsConfig.auraSpell && player->HasAura(sHotspotsConfig.auraSpell)) ||
+                      (sHotspotsConfig.buffSpell && player->HasAura(sHotspotsConfig.buffSpell));
+        handler->PSendSysMessage("XP buff: {}", buffed ? "active" : "inactive");
         return true;
     }
 };
