@@ -12,9 +12,11 @@
 
 #include "Config.h"
 #include "Log.h"
+#include "Player.h"
 #include "ScriptMgr.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
+#include "dc_prestige_api.h"
 
 namespace
 {
@@ -30,7 +32,16 @@ namespace
         void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& canBeRecalculated)
         {
             canBeRecalculated = true; // allow config reloads to update active auras
-            amount = static_cast<int32>(PrestigeLevel * g_CachedStatBonusPercent);
+            int32 total = static_cast<int32>(PrestigeLevel * g_CachedStatBonusPercent);
+
+            // Layer in the player's accumulated prestige-challenge stat bonus (Iron/Speed/
+            // Solo rewards). Read from an in-memory cache kept in sync at login/grant time
+            // in dc_prestige_challenges.cpp - never query the database from this hot path.
+            if (Unit* owner = GetUnitOwner())
+                if (Player* player = owner->ToPlayer())
+                    total += static_cast<int32>(PrestigeAPI::GetTotalChallengeStatBonus(player));
+
+            amount = total;
         }
 
         void Register() override

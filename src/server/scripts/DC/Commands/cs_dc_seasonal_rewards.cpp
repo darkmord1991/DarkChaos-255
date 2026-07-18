@@ -8,6 +8,7 @@
  */
 
 #include "../Seasons/SeasonalRewardSystem.h"
+#include "../Seasons/SeasonalSystem.h"
 #include "ScriptMgr.h"
 #include "Chat.h"
 #include "Player.h"
@@ -48,7 +49,7 @@ public:
     {
         handler->SendSysMessage("Reloading seasonal reward configuration...");
         sSeasonalRewards->ReloadConfiguration();
-        handler->PSendSysMessage("Configuration reloaded! Active season: %u",
+        handler->PSendSysMessage("Configuration reloaded! Active season: {}",
             sSeasonalRewards->GetConfig().activeSeason);
         return true;
     }
@@ -59,17 +60,17 @@ public:
         const SeasonalConfig& config = sSeasonalRewards->GetConfig();
 
         handler->SendSysMessage("=== Seasonal Reward System Info ===");
-        handler->PSendSysMessage("Enabled: %s", config.enabled ? "Yes" : "No");
-        handler->PSendSysMessage("Active Season: %u", config.activeSeason);
-        handler->PSendSysMessage("Token Item: %u, Essence Item: %u",
+        handler->PSendSysMessage("Enabled: {}", config.enabled ? "Yes" : "No");
+        handler->PSendSysMessage("Active Season: {}", config.activeSeason);
+        handler->PSendSysMessage("Token Item: {}, Essence Item: {}",
             config.tokenItemId, config.essenceItemId);
-        handler->PSendSysMessage("Weekly Caps: %u tokens, %u essence",
+        handler->PSendSysMessage("Weekly Caps: {} tokens, {} essence",
             config.weeklyTokenCap == 0 ? 999999 : config.weeklyTokenCap,
             config.weeklyEssenceCap == 0 ? 999999 : config.weeklyEssenceCap);
-        handler->PSendSysMessage("Multipliers: Quest=%.2f, Creature=%.2f, WorldBoss=%.2f, Event=%.2f",
+        handler->PSendSysMessage("Multipliers: Quest={:.2f}, Creature={:.2f}, WorldBoss={:.2f}, Event={:.2f}",
             config.questMultiplier, config.creatureMultiplier,
             config.worldBossMultiplier, config.eventBossMultiplier);
-        handler->PSendSysMessage("Weekly Reset: Day %u (0=Sun), Hour %u",
+        handler->PSendSysMessage("Weekly Reset: Day {} (0=Sun), Hour {}",
             config.resetDay, config.resetHour);
 
         return true;
@@ -90,20 +91,20 @@ public:
 
         if (!stats)
         {
-            handler->PSendSysMessage("No seasonal stats found for %s", player->GetName().c_str());
+            handler->PSendSysMessage("No seasonal stats found for {}", player->GetName().c_str());
             return true;
         }
 
-        handler->PSendSysMessage("=== Seasonal Stats for %s ===", player->GetName().c_str());
-        handler->PSendSysMessage("Season ID: %u", stats->seasonId);
-        handler->PSendSysMessage("Total Earned: %u tokens, %u essence",
+        handler->PSendSysMessage("=== Seasonal Stats for {} ===", player->GetName().c_str());
+        handler->PSendSysMessage("Season ID: {}", stats->seasonId);
+        handler->PSendSysMessage("Total Earned: {} tokens, {} essence",
             stats->seasonalTokensEarned, stats->seasonalEssenceEarned);
-        handler->PSendSysMessage("Weekly Earned: %u tokens, %u essence",
+        handler->PSendSysMessage("Weekly Earned: {} tokens, {} essence",
             stats->weeklyTokensEarned, stats->weeklyEssenceEarned);
-        handler->PSendSysMessage("Activities: %u quests, %u creatures, %u dungeon bosses, %u world bosses",
+        handler->PSendSysMessage("Activities: {} quests, {} creatures, {} dungeon bosses, {} world bosses",
             stats->questsCompleted, stats->creaturesKilled,
             stats->dungeonBossesKilled, stats->worldBossesKilled);
-        handler->PSendSysMessage("Prestige Level: %u", stats->prestigeLevel);
+        handler->PSendSysMessage("Prestige Level: {}", stats->prestigeLevel);
 
         return true;
     }
@@ -130,7 +131,7 @@ public:
 
         if (success)
         {
-            handler->PSendSysMessage("Awarded %u tokens and %u essence to %s",
+            handler->PSendSysMessage("Awarded {} tokens and {} essence to {}",
                 tokens, essence, player->GetName().c_str());
             return true;
         }
@@ -152,7 +153,7 @@ public:
             return false;
         }
 
-        handler->PSendSysMessage("Resetting seasonal data for %s...", player->GetName().c_str());
+        handler->PSendSysMessage("Resetting seasonal data for {}...", player->GetName().c_str());
         sSeasonalRewards->ResetPlayerSeason(player);
         handler->SendSysMessage("Season data has been archived and reset.");
 
@@ -162,8 +163,19 @@ public:
     // .season setseason <id>
     static bool HandleSeasonSetSeasonCommand(ChatHandler* handler, uint32 seasonId)
     {
-        handler->PSendSysMessage("Changing active season to %u...", seasonId);
-        sSeasonalRewards->SetActiveSeason(seasonId);
+        handler->PSendSysMessage("Changing active season to {}...", seasonId);
+
+        // Route through the generic seasonal engine so registered systems (item upgrades,
+        // seasonal rewards itself, ...) get their on_season_event/on_player_season_change
+        // callbacks fired instead of silently missing the transition.
+        uint32 oldSeasonId = sSeasonalRewards->GetConfig().activeSeason;
+        bool transitioned = false;
+        if (DarkChaos::Seasonal::SeasonalManager* seasonalMgr = DarkChaos::Seasonal::GetSeasonalManager())
+            transitioned = seasonalMgr->TransitionSeason(oldSeasonId, seasonId);
+
+        if (!transitioned)
+            sSeasonalRewards->SetActiveSeason(seasonId);
+
         handler->SendSysMessage("Active season changed! This change is temporary until config is updated.");
 
         return true;
@@ -187,7 +199,7 @@ public:
         }
 
         sSeasonalRewards->SetMultiplier(type, value);
-        handler->PSendSysMessage("Set %s multiplier to %.2f", type.c_str(), value);
+        handler->PSendSysMessage("Set {} multiplier to {:.2f}", type.c_str(), value);
 
         return true;
     }
@@ -215,16 +227,16 @@ public:
         }
 
         handler->PSendSysMessage("=== Weekly Chest ===");
-        handler->PSendSysMessage("Slots Unlocked: %u / 3", chest->slotsUnlocked);
+        handler->PSendSysMessage("Slots Unlocked: {} / 3", chest->slotsUnlocked);
 
         if (chest->slotsUnlocked >= 1)
-            handler->PSendSysMessage("Slot 1: %u tokens, %u essence",
+            handler->PSendSysMessage("Slot 1: {} tokens, {} essence",
                 chest->slot1Tokens, chest->slot1Essence);
         if (chest->slotsUnlocked >= 2)
-            handler->PSendSysMessage("Slot 2: %u tokens, %u essence",
+            handler->PSendSysMessage("Slot 2: {} tokens, {} essence",
                 chest->slot2Tokens, chest->slot2Essence);
         if (chest->slotsUnlocked >= 3)
-            handler->PSendSysMessage("Slot 3: %u tokens, %u essence",
+            handler->PSendSysMessage("Slot 3: {} tokens, {} essence",
                 chest->slot3Tokens, chest->slot3Essence);
 
         handler->SendSysMessage("Type |cffffcc00.season chest collect|r to claim your rewards!");

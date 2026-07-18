@@ -7,7 +7,7 @@
  * - Spawn/respawn timer management
  *
  * Usage in boss scripts:
- *   void JustAppeared() { sWorldBossMgr->OnBossSpawned(me); }
+ *   void JustRespawned() override { ScriptedAI::JustRespawned(); sWorldBossMgr->OnBossSpawned(me); }
  *   void JustEngagedWith(Unit*) { sWorldBossMgr->OnBossEngaged(me); }
  *   void JustDied(Unit*) { sWorldBossMgr->OnBossDied(me); }
  * ============================================================================

@@ -84,6 +84,11 @@ public:
     std::vector<AffixType> GetActiveAffixes(Map* map) const;
     uint8 GetKeystoneLevel(Map* map) const;
 
+    // Per-instance key matching _instanceStates, exposed so IAffixHandler implementations
+    // can key their own per-run state and avoid clobbering concurrent instances of the
+    // same dungeon.
+    uint64 MakeInstanceKey(const Map* map) const;
+
 private:
     MythicPlusAffixManager() = default;
 
@@ -96,7 +101,6 @@ private:
     std::unordered_map<AffixType, std::unique_ptr<IAffixHandler>> _handlers;
     std::unordered_map<uint64, InstanceAffixState> _instanceStates; // Key combines instance + map ID
 
-    uint64 MakeInstanceKey(const Map* map) const;
     InstanceAffixState* GetInstanceState(Map* map);
 };
 

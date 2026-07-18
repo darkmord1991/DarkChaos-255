@@ -93,6 +93,7 @@ set(SCRIPTS_DC_AC
     AC/ac_guard_npc.cpp
     AC/ac_flightmasters.cpp
     AC/ac_quest_npc_800009.cpp
+    AC/dc_downport_taxi.cpp
     HinterlandBG/hlbg_npc_thrall_warchief.cpp
     HinterlandBG/hlbg_npc_varian.cpp
     HinterlandBG/hlbg_npc_battlemaster.cpp
@@ -121,7 +122,6 @@ set(SCRIPTS_DC_DungeonQuests
     DungeonQuests/DungeonQuestSystem.cpp
     DungeonQuests/DungeonQuestMasterFollower.cpp
     DungeonQuests/npc_universal_quest_master.cpp
-    DungeonQuests/npc_dungeon_quest_daily_weekly.cpp
 )
 
 # DC Item Upgrade System implementation
@@ -249,6 +249,9 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_decorations.cpp
     AddonExtension/dc_addon_teleports.cpp
     AddonExtension/dc_addon_beastmaster.cpp
+    AddonExtension/dc_addon_forms.cpp
+    AddonExtension/dc_addon_graveyard.cpp
+    AddonExtension/dc_addon_questflow.cpp
 )
 
 # DC Collection System - Retail-like collection management (Split Structure)
@@ -326,6 +329,34 @@ set(SCRIPTS_DC_Teleporters
     Teleporters/dc_teleporter.cpp
 )
 
+# Blackwing Descent raid (Cata downport, map chunks + boss scripts)
+set(SCRIPTS_DC_BlackwingDescent
+    BlackwingDescent/blackwing_descent.cpp
+    BlackwingDescent/instance_blackwing_descent.cpp
+    BlackwingDescent/boss_magmaw.cpp
+    BlackwingDescent/boss_omnotron_defense_system.cpp
+    BlackwingDescent/boss_maloriak.cpp
+    BlackwingDescent/boss_atramedes.cpp
+    BlackwingDescent/boss_chimaeron.cpp
+    BlackwingDescent/boss_nefarians_end.cpp
+)
+
+# Mount Hyjal + Molten Front zones (Cata downport, map 750)
+set(SCRIPTS_DC_MountHyjal
+    MountHyjal/zone_mount_hyjal.cpp
+    MountHyjal/zone_molten_front.cpp
+)
+
+# Deepholm zone (Cata downport)
+set(SCRIPTS_DC_Deepholm
+    Deepholm/zone_deepholm.cpp
+)
+
+# Custom playable race support (Worgen/Goblin)
+set(SCRIPTS_DC_Races
+    Races/dc_worgoblin.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
@@ -368,6 +399,10 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Commands}
     ${SCRIPTS_DC_GuildHousing}
     ${SCRIPTS_DC_Teleporters}
+    ${SCRIPTS_DC_BlackwingDescent}
+    ${SCRIPTS_DC_MountHyjal}
+    ${SCRIPTS_DC_Deepholm}
+    ${SCRIPTS_DC_Races}
 )
 
 # The DC HinterlandBG config was merged into the consolidated

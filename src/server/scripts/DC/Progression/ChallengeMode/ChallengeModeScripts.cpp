@@ -45,9 +45,10 @@ void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& 
 
     // Persist in challenge mode DB tracking (authoritative lock)
     ChallengeModeDatabase::InitializeTracking(victim->GetGUID());
-    ChallengeModeDatabase::SyncActiveModesFromSettings(victim);
-    ChallengeModeDatabase::RecordHardcoreDeath(victim->GetGUID(), victim, killerEntry, killerName);
-    ChallengeModeDatabase::LockCharacter(victim->GetGUID());
+    uint32 const activeModes = ChallengeModeDatabase::ComputeActiveModesFromSettings(victim);
+    ChallengeModeDatabase::UpdateActiveModes(victim->GetGUID(), activeModes);
+    ChallengeModeDatabase::RecordHardcoreDeath(victim->GetGUID(), victim, killerEntry, killerName, activeModes);
+    ChallengeModeDatabase::LockCharacter(victim->GetGUID(), activeModes);
 
     // Global announcement
     std::ostringstream ss;
@@ -97,6 +98,10 @@ public:
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, victim))
             return;
 
+        // If we already processed the death (e.g., OnPlayerJustDied/PvP callbacks), don't run twice.
+        if (victim->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
+            return;
+
         HandleHardcoreDeath(victim, killer ? killer->GetEntry() : 0, killer ? killer->GetName() : "Unknown");
         DCAddon::DeathMarkers::RecordChallengeDeath(victim, killer, "hardcore", "Hardcore");
 
@@ -107,6 +112,10 @@ public:
     void OnPlayerPVPKill(Player* killer, Player* victim) override
     {
         if (!sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, victim))
+            return;
+
+        // If we already processed the death (e.g., OnPlayerJustDied/creature callbacks), don't run twice.
+        if (victim->GetPlayerSetting("mod-challenge-modes", HARDCORE_DEAD).value == 1)
             return;
 
         // A self-inflicted death (e.g. falling) also fires this hook with killer == victim;

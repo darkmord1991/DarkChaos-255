@@ -102,6 +102,7 @@ enum Actions
     ACTION_WAKE_UP_CHIMAERON        = 1,
     ACTION_START_FEUD               = 2,
     ACTION_END_FEUD                 = 3,
+    ACTION_MASSACRE_AFTERMATH       = 4,
 
     // Fikle Einhorn
     ACTION_CHIMAERON_DIED           = 1,
@@ -140,6 +141,7 @@ struct boss_chimaeron : public BossAI
     {
         me->SetReactState(REACT_PASSIVE);
         _knockOutChance = 40;
+        _killedPlayerCount = 0;
     }
 
     void Reset() override
@@ -237,14 +239,24 @@ struct boss_chimaeron : public BossAI
         }
     }
 
-    void OnSpellCastFinished(SpellInfo const* spell, SpellFinishReason reason)
+    void DoAction(int32 action) override
     {
-        if (reason != SPELL_FINISHED_SUCCESSFUL_CAST)
-            return;
-
-        switch (spell->Id)
+        switch (action)
         {
-            case SPELL_MASSACRE:
+            case ACTION_WAKE_UP_CHIMAERON:
+                events.ScheduleEvent(EVENT_SNORT, 6s, 0, PHASE_ASLEEP);
+                break;
+            case ACTION_START_FEUD:
+                _isInFeud = true;
+                if (IsHeroic())
+                    if (Creature* nefarius = instance->GetCreature(DATA_LORD_VICTOR_NEFARIUS_GENERIC))
+                        if (nefarius->IsAIEnabled)
+                            nefarius->AI()->DoAction(ACTION_STOP_FEUD);
+                break;
+            case ACTION_END_FEUD:
+                _isInFeud = false;
+                break;
+            case ACTION_MASSACRE_AFTERMATH:
             {
                 // Hotfix (2011-01-05): "Chimaeron now resets his melee attack cycle after each Massacre and removes the Double Attack buff."
                 me->RemoveAurasDueToSpell(SPELL_DOUBLE_ATTACK);
@@ -276,28 +288,6 @@ struct boss_chimaeron : public BossAI
                     _knockOutChance += 20;
                 break;
             }
-            default:
-                break;
-        }
-    }
-
-    void DoAction(int32 action) override
-    {
-        switch (action)
-        {
-            case ACTION_WAKE_UP_CHIMAERON:
-                events.ScheduleEvent(EVENT_SNORT, 6s, 0, PHASE_ASLEEP);
-                break;
-            case ACTION_START_FEUD:
-                _isInFeud = true;
-                if (IsHeroic())
-                    if (Creature* nefarius = instance->GetCreature(DATA_LORD_VICTOR_NEFARIUS_GENERIC))
-                        if (nefarius->IsAIEnabled)
-                            nefarius->AI()->DoAction(ACTION_STOP_FEUD);
-                break;
-            case ACTION_END_FEUD:
-                _isInFeud = false;
-                break;
             default:
                 break;
         }
@@ -693,6 +683,23 @@ class spell_chimaeron_shadow_whip : public SpellScript
         OnEffectHitTarget += SpellEffectFn(spell_chimaeron_shadow_whip::HandleDummyEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
+
+// 82848 - Massacre
+class spell_chimaeron_massacre : public SpellScript
+{
+        PrepareSpellScript(spell_chimaeron_massacre);
+    void HandleAfterCast()
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+            if (caster->IsAIEnabled)
+                caster->AI()->DoAction(ACTION_MASSACRE_AFTERMATH);
+    }
+
+    void Register() override
+    {
+        AfterCast += SpellCastFn(spell_chimaeron_massacre::HandleAfterCast);
+    }
+};
 }
 
 void AddSC_boss_chimaeron()
@@ -709,4 +716,5 @@ void AddSC_boss_chimaeron()
     RegisterSpellScript(spell_chimaeron_reroute_power);
     RegisterSpellScript(spell_chimaeron_feud);
     RegisterSpellScript(spell_chimaeron_shadow_whip);
+    RegisterSpellScript(spell_chimaeron_massacre);
 }

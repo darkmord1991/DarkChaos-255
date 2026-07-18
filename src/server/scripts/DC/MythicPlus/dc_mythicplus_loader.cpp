@@ -11,7 +11,6 @@ void AddSC_dungeon_portal_selector();
 void AddSC_go_mythic_plus_font_of_power();
 void AddSC_npc_great_vault();
 void AddSC_npc_mythic_token_vendor();
-void AddSC_mythic_plus_commands();
 void AddSC_npc_keystone_vendor();
 void AddSC_item_mythic_keystone();
 
@@ -22,7 +21,6 @@ void AddMythicPlusScripts()
     AddSC_go_mythic_plus_font_of_power();
     AddSC_npc_great_vault();
     AddSC_npc_mythic_token_vendor();
-    // AddSC_mythic_plus_commands(); // Moved to DC Commands section in dc_script_loader.cpp
     AddSC_npc_keystone_vendor();
     AddSC_item_mythic_keystone();
 }

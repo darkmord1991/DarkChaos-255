@@ -30,6 +30,7 @@
 
 #include "dc_giant_isles_invasion_internal.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/CrossSystem/RewardDistributor.h"
 
 #include <array>
 #include <map>
@@ -429,7 +430,7 @@ namespace
                     uint32 remainSec = (lastEnd + INVASION_COOLDOWN) - now;
                     LOG_INFO("scripts.dc", "Giant Isles Invasion: manual trigger denied for {} due cooldown (remaining={} sec)", starter->GetName(), remainSec);
                     ChatHandler(starter->GetSession()).PSendSysMessage(
-                        "The horn is silent for now. Cooldown remaining: %u min.",
+                        "The horn is silent for now. Cooldown remaining: {} min.",
                         remainSec / 60);
                     return;
                 }
@@ -2291,11 +2292,13 @@ namespace
                 if (ritualDisrupted)
                     tokens += 5u;
 
-                player->AddItem(WAR_TOKEN_ITEM, tokens);
+                // DistributeItem mails the reward on full bags — no silent token loss.
+                DarkChaos::CrossSystem::GetRewardDistributor()->DistributeItem(
+                    player, WAR_TOKEN_ITEM, tokens, DarkChaos::CrossSystem::SystemId::None, "giant_isles_invasion");
 
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Invasion]|r Beach secured. Personal contribution: %u kills. "
-                    "Awarded %u War-Tokens.",
+                    "|cff00ff00[Invasion]|r Beach secured. Personal contribution: {} kills. "
+                    "Awarded {} War-Tokens.",
                     personalKills, tokens);
             });
         }

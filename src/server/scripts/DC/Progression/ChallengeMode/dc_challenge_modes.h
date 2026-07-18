@@ -70,66 +70,14 @@ public:
     static ChallengeModes* instance();
 
     bool challengesEnabled, hardcoreEnable, semiHardcoreEnable, selfCraftedEnable, itemQualityLevelEnable, slowXpGainEnable, verySlowXpGainEnable, questXpOnlyEnable, ironManEnable, ironManPlusEnable;
-    uint32 hardcoreDisableLevel, semiHardcoreDisableLevel, selfCraftedDisableLevel, itemQualityLevelDisableLevel, slowXpGainDisableLevel, verySlowXpGainDisableLevel, questXpOnlyDisableLevel, ironManDisableLevel, ironManPlusDisableLevel, hardcoreItemRewardAmount, semiHardcoreItemRewardAmount, selfCraftedItemRewardAmount, itemQualityLevelItemRewardAmount, slowXpGainItemRewardAmount, verySlowXpGainItemRewardAmount, questXpOnlyItemRewardAmount, ironManItemRewardAmount, ironManPlusItemRewardAmount;
+    uint32 hardcoreDisableLevel, semiHardcoreDisableLevel, selfCraftedDisableLevel, itemQualityLevelDisableLevel, slowXpGainDisableLevel, verySlowXpGainDisableLevel, questXpOnlyDisableLevel, ironManDisableLevel, ironManPlusDisableLevel;
     float hardcoreXpBonus, semiHardcoreXpBonus, selfCraftedXpBonus, itemQualityLevelXpBonus, questXpOnlyXpBonus, slowXpGainBonus, verySlowXpGainBonus, ironManXpBonus, ironManPlusXpBonus;
-    std::unordered_map<uint8, uint32> hardcoreTitleRewards, semiHardcoreTitleRewards, selfCraftedTitleRewards, itemQualityLevelTitleRewards, slowXpGainTitleRewards, verySlowXpGainTitleRewards, questXpOnlyTitleRewards, ironManTitleRewards, ironManPlusTitleRewards;
-    std::unordered_map<uint8, uint32> hardcoreItemRewards, semiHardcoreItemRewards, selfCraftedItemRewards, itemQualityLevelItemRewards, slowXpGainItemRewards, verySlowXpGainItemRewards, questXpOnlyItemRewards, ironManItemRewards, ironManPlusItemRewards;
-    std::unordered_map<uint8, uint32> hardcoreTalentRewards, semiHardcoreTalentRewards, selfCraftedTalentRewards, itemQualityLevelTalentRewards, slowXpGainTalentRewards, verySlowXpGainTalentRewards, questXpOnlyTalentRewards, ironManTalentRewards, ironManPlusTalentRewards;
-    std::unordered_map<uint8, uint32> hardcoreAchievementReward, semiHardcoreAchievementReward, selfCraftedAchievementReward, itemQualityLevelAchievementReward, slowXpGainAchievementReward, verySlowXpGainAchievementReward, questXpOnlyAchievementReward, ironManAchievementReward, ironManPlusAchievementReward;
-
-    std::unordered_map<std::string, std::unordered_map<uint8, uint32>*> rewardConfigMap =
-            {
-                    { "Hardcore.TitleRewards",                &hardcoreTitleRewards                 },
-                    { "SemiHardcore.TitleRewards",            &semiHardcoreTitleRewards             },
-                    { "SelfCrafted.TitleRewards",             &selfCraftedTitleRewards              },
-                    { "ItemQualityLevel.TitleRewards",        &itemQualityLevelTitleRewards         },
-                    { "SlowXpGain.TitleRewards",              &slowXpGainTitleRewards               },
-                    { "VerySlowXpGain.TitleRewards",          &verySlowXpGainTitleRewards           },
-                    { "QuestXpOnly.TitleRewards",             &questXpOnlyTitleRewards              },
-                    { "IronMan.TitleRewards",                 &ironManTitleRewards                  },
-                    { "IronManPlus.TitleRewards",             &ironManPlusTitleRewards              },
-
-                    { "Hardcore.TalentRewards",               &hardcoreTalentRewards                },
-                    { "SemiHardcore.TalentRewards",           &semiHardcoreTalentRewards            },
-                    { "SelfCrafted.TalentRewards",            &selfCraftedTalentRewards             },
-                    { "ItemQualityLevel.TalentRewards",       &itemQualityLevelTalentRewards        },
-                    { "SlowXpGain.TalentRewards",             &slowXpGainTalentRewards              },
-                    { "VerySlowXpGain.TalentRewards",         &verySlowXpGainTalentRewards          },
-                    { "QuestXpOnly.TalentRewards",            &questXpOnlyTalentRewards             },
-                    { "IronMan.TalentRewards",                &ironManTalentRewards                 },
-                    { "IronManPlus.TalentRewards",            &ironManPlusTalentRewards             },
-
-                    { "Hardcore.ItemRewards",                 &hardcoreItemRewards                  },
-                    { "SemiHardcore.ItemRewards",             &semiHardcoreItemRewards              },
-                    { "SelfCrafted.ItemRewards",              &selfCraftedItemRewards               },
-                    { "ItemQualityLevel.ItemRewards",         &itemQualityLevelItemRewards          },
-                    { "SlowXpGain.ItemRewards",               &slowXpGainItemRewards                },
-                    { "VerySlowXpGain.ItemRewards",           &verySlowXpGainItemRewards            },
-                    { "QuestXpOnly.ItemRewards",              &questXpOnlyItemRewards               },
-                    { "IronMan.ItemRewards",                  &ironManItemRewards                   },
-                    { "IronManPlus.ItemRewards",              &ironManPlusItemRewards               },
-
-                    { "Hardcore.AchievementReward",           &hardcoreAchievementReward            },
-                    { "SemiHardcore.AchievementReward",       &semiHardcoreAchievementReward        },
-                    { "SelfCrafted.AchievementReward",        &selfCraftedAchievementReward         },
-                    { "ItemQualityLevel.AchievementReward",   &itemQualityLevelAchievementReward    },
-                    { "SlowXpGain.AchievementReward",         &slowXpGainAchievementReward          },
-                    { "VerySlowXpGain.AchievementReward",     &verySlowXpGainAchievementReward      },
-                    { "QuestXpOnly.AchievementReward",        &questXpOnlyAchievementReward         },
-                        { "IronMan.AchievementReward",            &ironManAchievementReward             },
-                        { "IronManPlus.AchievementReward",        &ironManPlusAchievementReward         }
-            };
 
     [[nodiscard]] bool enabled() const { return challengesEnabled; }
     [[nodiscard]] bool challengeEnabled(ChallengeModeSettings setting) const;
     [[nodiscard]] uint32 getDisableLevel(ChallengeModeSettings setting) const;
     [[nodiscard]] float getXpBonusForChallenge(ChallengeModeSettings setting) const;
     bool challengeEnabledForPlayer(ChallengeModeSettings setting, Player* player) const;
-    [[nodiscard]] const std::unordered_map<uint8, uint32> *getTitleMapForChallenge(ChallengeModeSettings setting) const;
-    [[nodiscard]] const std::unordered_map<uint8, uint32> *getTalentMapForChallenge(ChallengeModeSettings setting) const;
-    [[nodiscard]] const std::unordered_map<uint8, uint32> *getItemMapForChallenge(ChallengeModeSettings setting) const;
-    [[nodiscard]] const std::unordered_map<uint8, uint32> *getAchievementMapForChallenge(ChallengeModeSettings setting) const;
-    [[nodiscard]] uint32 getItemRewardAmount(ChallengeModeSettings setting) const;
 
     void RefreshChallengeAuras(Player* player);
 };
@@ -142,6 +90,5 @@ std::string GetChallengeTitle(ChallengeModeSettings setting);
 
 // Script registration
 void AddSC_dc_challenge_modes();
-void AddSC_challenge_mode_shrine(); // ChallengeModeShrine.cpp
 
 #endif //AZEROTHCORE_DC_CHALLENGEMODES_H

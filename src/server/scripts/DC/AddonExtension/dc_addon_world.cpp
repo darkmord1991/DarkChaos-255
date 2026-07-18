@@ -19,7 +19,6 @@
 #include "WorldState.h"
 #include "Log.h"
 #include "MapMgr.h"
-#include "DatabaseEnv.h"
 #include "ObjectMgr.h"
 
 #include "DC/CrossSystem/CrossSystemMapCoords.h"
@@ -29,14 +28,11 @@
 
 #include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"
+#include "../Hotspot/HotspotMgr.h"
 
 #include <ctime>
 #include <mutex>
 #include <vector>
-
-// Some builds comment out sWorldMapAreaStore in DBCStores.h, but still define it in DBCStores.cpp.
-// Declare it here in the global namespace so we link against the correct symbol.
-extern DBCStorage<WorldMapAreaEntry> sWorldMapAreaStore;
 
 // Local includes to reuse hotspot helper functions
 extern uint32 GetHotspotXPBonusPercentage();
@@ -119,53 +115,43 @@ namespace World
     static std::mutex sWorldContentCacheLock;
     static CachedWorldContentPayload sCachedWorldContentPayload;
 
-    // Helper: Build hotspots array using existing table
+    // Helper: Build hotspots array from the in-memory authoritative grid
+    // (sHotspotMgr), avoiding a world-thread DB round-trip on every
+    // GET_CONTENT request / handshake snapshot.
     static JsonValue BuildHotspotArray()
     {
         JsonValue arr; arr.SetArray();
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT id, map_id, zone_id, x, y, z, (expire_time - UNIX_TIMESTAMP()) as dur FROM dc_hotspots_active WHERE expire_time > UNIX_TIMESTAMP()"
-        );
-
         uint32 xpBonus = GetHotspotXPBonusPercentage();
+        time_t now = GameTime::GetGameTime().count();
 
-        if (!result)
-            return arr;
-
-        do
+        for (::Hotspot const& hotspot : sHotspotMgr->GetGrid().GetAll())
         {
-            uint32 id = (*result)[0].Get<uint32>();
-            uint32 mapId = (*result)[1].Get<uint32>();
-            uint32 zoneId = (*result)[2].Get<uint32>();
-            float x = (*result)[3].Get<float>();
-            float y = (*result)[4].Get<float>();
-            float z = (*result)[5].Get<float>();
-            int64 dur = (*result)[6].Get<int64>();
+            int64 dur = static_cast<int64>(hotspot.expireTime - now);
+            if (dur <= 0)
+                continue;
 
             // Zone name via DBC
             std::string zoneName = "Unknown Zone";
-            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(zoneId))
+            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
             {
                 if (area->area_name[0] && area->area_name[0][0])
                     zoneName = area->area_name[0];
             }
 
-            if (dur <= 0) continue;
-
             JsonValue h; h.SetObject();
-            h.Set("id", JsonValue(id));
-            h.Set("mapId", JsonValue(mapId));
-            h.Set("zoneId", JsonValue(zoneId));
+            h.Set("id", JsonValue(hotspot.id));
+            h.Set("mapId", JsonValue(hotspot.mapId));
+            h.Set("zoneId", JsonValue(hotspot.zoneId));
             h.Set("zoneName", JsonValue(zoneName));
-            h.Set("x", JsonValue(x));
-            h.Set("y", JsonValue(y));
-            h.Set("z", JsonValue(z));
+            h.Set("x", JsonValue(hotspot.x));
+            h.Set("y", JsonValue(hotspot.y));
+            h.Set("z", JsonValue(hotspot.z));
             h.Set("timeRemaining", JsonValue(static_cast<uint32>(dur)));
             h.Set("bonusPercent", JsonValue(xpBonus));
             h.Set("name", JsonValue("Hotspot"));
             arr.Push(h);
-        } while (result->NextRow());
+        }
 
         return arr;
     }

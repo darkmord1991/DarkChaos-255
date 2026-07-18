@@ -109,7 +109,12 @@ namespace Rewards
                 return AwardEssence(player, amount, sourceSystem, triggerEvent, sourceName, sourceId);
         }
 
-        // Non-seasonal item: deliver directly.
+        // Non-seasonal item: deliver through the centralized distributor so the
+        // mail-on-full-bag fallback matches AwardTokens/AwardEssence above.
+        if (RewardDistributor* distributor = RewardDistributor::instance())
+            return distributor->DistributeItem(player, itemId, amount, sourceSystem, sourceName);
+
+        // Fallback: direct grant if the distributor is unavailable.
         return player->AddItem(itemId, amount);
     }
 

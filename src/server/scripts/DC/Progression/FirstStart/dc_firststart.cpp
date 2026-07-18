@@ -30,6 +30,7 @@
 #include "Chat.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "World.h"
 #include "WorldSession.h"
 #include "SpellMgr.h"
@@ -174,34 +175,12 @@ namespace DCFirstStart
     // Helper: Parse comma-separated list of IDs
     std::vector<uint32> ParseIdList(const std::string& list)
     {
+        // DCUtils::ParseUInt32List keeps id 0; this callsite has always dropped it, so filter it out here.
         std::vector<uint32> result;
-        if (list.empty())
-            return result;
-
-        std::istringstream iss(list);
-        std::string token;
-        while (std::getline(iss, token, ','))
+        for (uint32 id : DCUtils::ParseUInt32List(list))
         {
-            // Trim whitespace
-            token.erase(0, token.find_first_not_of(" \t\n\r"));
-            token.erase(token.find_last_not_of(" \t\n\r") + 1);
-            if (token.empty())
-                continue;
-
-            try
-            {
-                uint32 id = static_cast<uint32>(std::stoul(token));
-                if (id > 0)
-                    result.push_back(id);
-            }
-            catch (std::exception const& e)
-            {
-                LOG_DEBUG("scripts.dc", "FirstStart: Invalid token '{}' in config list: {}", token, e.what());
-            }
-            catch (...)
-            {
-                LOG_DEBUG("scripts.dc", "FirstStart: Invalid token '{}' in config list (unknown error)", token);
-            }
+            if (id > 0)
+                result.push_back(id);
         }
         return result;
     }

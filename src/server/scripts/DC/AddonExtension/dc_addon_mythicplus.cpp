@@ -21,6 +21,7 @@
 #include "DBCStores.h"
 #include "../MythicPlus/dc_mythicplus_run_manager.h"
 #include "../MythicPlus/dc_mythicplus_constants.h"
+#include "../Seasons/DCWeeklyResetHub.h"
 #include "dc_addon_mythicplus.h"
 
 #include <algorithm>
@@ -328,37 +329,46 @@ namespace MythicPlus
     {
         // Query player's current keystone from dc_mplus_keystones
         uint32 guid = player->GetGUID().GetCounter();
+        ObjectGuid playerGuid = player->GetGUID();
 
-        QueryResult result = CharacterDatabase.Query(
+        std::string const sql = Acore::StringFormat(
             "SELECT k.map_id, k.level, COALESCE(d.dungeon_name, '') "
             "FROM dc_mplus_keystones k "
             "LEFT JOIN acore_world.dc_mplus_dungeons d ON k.map_id = d.dungeon_id "
             "WHERE k.character_guid = {}",
             guid);
 
-        if (result)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid](QueryResult result)
         {
-            uint32 dungeonId = (*result)[0].Get<uint32>();
-            uint32 level = (*result)[1].Get<uint32>();
-            bool depleted = false;  // dc_mplus_keystones doesn't have depleted column
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
 
-            std::string const joinedName = (*result)[2].Get<std::string>();
-            std::string dungeonName = joinedName.empty() ? "Unknown" : joinedName;
+            if (result)
+            {
+                uint32 dungeonId = (*result)[0].Get<uint32>();
+                uint32 level = (*result)[1].Get<uint32>();
+                bool depleted = false;  // dc_mplus_keystones doesn't have depleted column
 
-            Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
-                .Add(1)  // has keystone
-                .Add(dungeonId)
-                .Add(dungeonName)
-                .Add(level)
-                .Add(depleted)
-                .Send(player);
-        }
-        else
-        {
-            Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
-                .Add(0)  // no keystone
-                .Send(player);
-        }
+                std::string const joinedName = (*result)[2].Get<std::string>();
+                std::string dungeonName = joinedName.empty() ? "Unknown" : joinedName;
+
+                Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
+                    .Add(1)  // has keystone
+                    .Add(dungeonId)
+                    .Add(dungeonName)
+                    .Add(level)
+                    .Add(depleted)
+                    .Send(player);
+            }
+            else
+            {
+                Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_KEY_INFO)
+                    .Add(0)  // no keystone
+                    .Send(player);
+            }
+        }));
     }
 
     // Send current week's affixes
@@ -404,49 +414,58 @@ namespace MythicPlus
     static void SendBestRuns(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
+        ObjectGuid playerGuid = player->GetGUID();
 
-        QueryResult result = CharacterDatabase.Query(
+        std::string const sql = Acore::StringFormat(
             "SELECT dungeon_id, level, completion_time, deaths, season "
             "FROM dc_mplus_best_runs WHERE player_guid = {} ORDER BY level DESC LIMIT 10",
             guid);
 
-        std::string runList;
-        std::string jsonRuns = "[";
-        if (result)
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid](QueryResult result)
         {
-            bool first = true;
-            do
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player || !player->GetSession())
+                return;
+
+            std::string runList;
+            std::string jsonRuns = "[";
+            if (result)
             {
-                if (!first) runList += ";";
-                if (!first) jsonRuns += ",";
-                first = false;
+                bool first = true;
+                do
+                {
+                    if (!first) runList += ";";
+                    if (!first) jsonRuns += ",";
+                    first = false;
 
-                uint32 dungeonId = (*result)[0].Get<uint32>();
-                uint32 level = (*result)[1].Get<uint32>();
-                uint32 time = (*result)[2].Get<uint32>();
-                uint32 deaths = (*result)[3].Get<uint32>();
-                uint32 season = (*result)[4].Get<uint32>();
+                    uint32 dungeonId = (*result)[0].Get<uint32>();
+                    uint32 level = (*result)[1].Get<uint32>();
+                    uint32 time = (*result)[2].Get<uint32>();
+                    uint32 deaths = (*result)[3].Get<uint32>();
+                    uint32 season = (*result)[4].Get<uint32>();
 
-                runList += std::to_string(dungeonId) + ":" + std::to_string(level) + ":"
-                        + std::to_string(time) + ":" + std::to_string(deaths) + ":"
-                        + std::to_string(season);
+                    runList += std::to_string(dungeonId) + ":" + std::to_string(level) + ":"
+                            + std::to_string(time) + ":" + std::to_string(deaths) + ":"
+                            + std::to_string(season);
 
-                jsonRuns += "{\"dungeonId\":" + std::to_string(dungeonId)
-                        + ",\"level\":" + std::to_string(level)
-                        + ",\"completionTime\":" + std::to_string(time)
-                        + ",\"deaths\":" + std::to_string(deaths)
-                        + ",\"season\":" + std::to_string(season) + "}";
-            } while (result->NextRow());
-        }
-        jsonRuns += "]";
+                    jsonRuns += "{\"dungeonId\":" + std::to_string(dungeonId)
+                            + ",\"level\":" + std::to_string(level)
+                            + ",\"completionTime\":" + std::to_string(time)
+                            + ",\"deaths\":" + std::to_string(deaths)
+                            + ",\"season\":" + std::to_string(season) + "}";
+                } while (result->NextRow());
+            }
+            jsonRuns += "]";
 
-        Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_BEST_RUNS)
-            .Add(runList)
-            .Send(player);
+            Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_BEST_RUNS)
+                .Add(runList)
+                .Send(player);
 
-        std::string const jsonPayload = std::string("{\"runs\":") + jsonRuns + "}";
-        SendStatsResponseEnvelope(player, Opcode::MPlus::SMSG_BEST_RUNS,
-            StatsFeature::BEST_RUNS, jsonPayload, std::string());
+            std::string const jsonPayload = std::string("{\"runs\":") + jsonRuns + "}";
+            SendStatsResponseEnvelope(player, Opcode::MPlus::SMSG_BEST_RUNS,
+                StatsFeature::BEST_RUNS, jsonPayload, std::string());
+        }));
     }
 
     // Handler: Get keystone info
@@ -961,8 +980,6 @@ namespace MythicPlus
         if (!player || !player->GetSession())
             return;
 
-        constexpr uint32 SECONDS_PER_WEEK = 7u * 24u * 60u * 60u;
-
         VaultInfoData data;
         data.guidLow = player->GetGUID().GetCounter();
         data.seasonId = sMythicRuns->GetCurrentSeasonId();
@@ -972,11 +989,11 @@ namespace MythicPlus
         // - show claimable rewards from LAST week
         // - show current-week progress separately
         data.progressWeekStart = sMythicRuns->GetWeekStartTimestamp();
-        data.progressWeekEnd = data.progressWeekStart + SECONDS_PER_WEEK;
+        data.progressWeekEnd = data.progressWeekStart + DarkChaos::Seasons::SECONDS_PER_WEEK;
         data.nextWeekStart = data.progressWeekEnd;
-        data.claimWeekStart = data.progressWeekStart >= SECONDS_PER_WEEK
-            ? (data.progressWeekStart - SECONDS_PER_WEEK) : 0;
-        data.claimWeekEnd = data.claimWeekStart + SECONDS_PER_WEEK;
+        data.claimWeekStart = data.progressWeekStart >= DarkChaos::Seasons::SECONDS_PER_WEEK
+            ? (data.progressWeekStart - DarkChaos::Seasons::SECONDS_PER_WEEK) : 0;
+        data.claimWeekEnd = data.claimWeekStart + DarkChaos::Seasons::SECONDS_PER_WEEK;
 
         ObjectGuid playerGuid = player->GetGUID();
 
@@ -1737,7 +1754,7 @@ namespace MythicPlus
     {
         // Calculate current week number
         uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
-        uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
+        uint32 weekNumber = (weekStart / DarkChaos::Seasons::SECONDS_PER_WEEK) % 52;
 
         JsonValue affixArray;
         affixArray.SetArray();
@@ -1860,7 +1877,7 @@ namespace MythicPlus
     {
         time_t now = time(nullptr);
         // Simple week calculation from epoch
-        return static_cast<uint32>((now / 604800) % 52);
+        return static_cast<uint32>((now / DarkChaos::Seasons::SECONDS_PER_WEEK) % 52);
     }
 
 }  // namespace MythicPlus

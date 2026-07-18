@@ -546,6 +546,29 @@ public:
 
     bool OnQuestAccept(Player* player, Creature* /*creature*/, Quest const* quest) override
     {
+        if (!CanAcceptDifficultyQuest(player, quest->GetQuestId()))
+        {
+            QuestDifficulty difficulty = GetQuestDifficulty(quest->GetQuestId());
+            std::string reason;
+            switch (difficulty)
+            {
+                case DIFFICULTY_HEROIC:
+                    reason = "You must complete this dungeon on Normal difficulty 5 times before accepting this Heroic quest.";
+                    break;
+                case DIFFICULTY_MYTHIC:
+                    reason = "You must complete this dungeon on Heroic difficulty 10 times before accepting this Mythic quest.";
+                    break;
+                case DIFFICULTY_MYTHIC_PLUS:
+                    reason = "You must complete this dungeon on Mythic difficulty 20 times before accepting this Mythic+ quest.";
+                    break;
+                default:
+                    reason = "You have not met the requirements to accept this quest.";
+                    break;
+            }
+            SendDifficultyMessage(player, difficulty, reason);
+            return false;
+        }
+
         if (quest->GetQuestId() >= QUEST_DAILY_MIN && quest->GetQuestId() <= QUEST_DUNGEON_MAX)
         {
             ChatHandler(player->GetSession()).SendNotification(

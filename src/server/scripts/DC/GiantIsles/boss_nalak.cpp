@@ -131,8 +131,10 @@ public:
             me->SetPower(POWER_MANA, me->GetMaxPower(POWER_MANA));
         }
 
-        void JustAppeared()
+        void JustRespawned() override
         {
+            ScriptedAI::JustRespawned();
+
             // Notify addon clients via centralized WorldBossMgr
             sWorldBossMgr->OnBossSpawned(me);
         }

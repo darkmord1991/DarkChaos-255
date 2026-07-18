@@ -134,8 +134,10 @@ public:
             hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
         }
 
-        void JustAppeared()
+        void JustRespawned() override
         {
+            ScriptedAI::JustRespawned();
+
             // Notify addon clients via centralized WorldBossMgr
             sWorldBossMgr->OnBossSpawned(me);
         }

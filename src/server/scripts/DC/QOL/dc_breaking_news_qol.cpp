@@ -9,6 +9,7 @@
 #include "../AddonExtension/dc_addon_breaking_news.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "../CrossSystem/CrossSystemDbSchema.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 
 #include <ctime>
 #include <sstream>
@@ -120,23 +121,7 @@ namespace
         if (!unixTimestamp)
             return "0";
 
-        std::time_t rawTime = static_cast<std::time_t>(unixTimestamp);
-        std::tm timeInfo = {};
-
-#ifdef _WIN32
-        if (localtime_s(&timeInfo, &rawTime) != 0)
-            return std::to_string(unixTimestamp);
-#else
-        if (!localtime_r(&rawTime, &timeInfo))
-            return std::to_string(unixTimestamp);
-#endif
-
-        char buffer[32] = {};
-        if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S",
-                &timeInfo) == 0)
-            return std::to_string(unixTimestamp);
-
-        return buffer;
+        return DCUtils::FormatLocalTimestamp(static_cast<time_t>(unixTimestamp));
     }
 
     bool TryParsePositiveUInt32(std::string const& token, uint32& value)

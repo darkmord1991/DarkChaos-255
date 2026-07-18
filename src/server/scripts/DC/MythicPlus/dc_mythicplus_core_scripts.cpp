@@ -543,22 +543,6 @@ public:
                  player->GetName(), map->GetId(), map->GetInstanceId());
     }
 
-    void OnPlayerLeaveWorld(Player* player)
-    {
-        if (!player)
-            return;
-
-        Map* map = player->GetMap();
-        if (!map || !map->IsDungeon())
-            return;
-
-        // Player leaving during an active Mythic+ run (teleport/zone change)
-        sMythicRuns->InitiateCancellation(map);
-
-        LOG_INFO("mythic.run", "Player {} left world during active run on map {} instance {}",
-                 player->GetName(), map->GetId(), map->GetInstanceId());
-    }
-
     void OnPlayerGiveReputation(Player* player, int32 /*factionID*/, float& amount, ReputationSource repSource) override
     {
         if (!player || amount <= 0.0f)
@@ -627,6 +611,14 @@ public:
 
         sMythicRuns->HandleInstanceReset(map);
         sAffixMgr->DeactivateAffixes(map);
+    }
+
+    void OnPlayerLeaveAll(Map* map, Player* player) override
+    {
+        if (!player || !map || !map->IsDungeon())
+            return;
+
+        sMythicRuns->InitiateCancellation(map);
     }
 };
 

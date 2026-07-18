@@ -158,7 +158,6 @@ void AddSC_dc_phased_duels();                 // PhasedDuels/dc_phased_duels.cpp
 // --- Dungeon quest system ---
 void AddSC_DungeonQuestSystem();              // DungeonQuests/DungeonQuestSystem.cpp
 void AddSC_DungeonQuestMasterFollower();      // DungeonQuests/DungeonQuestMasterFollower.cpp
-void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests/npc_dungeon_quest_daily_weekly.cpp
 void AddSC_npc_universal_quest_master();      // DungeonQuests/npc_universal_quest_master.cpp
 
 // --- Addon extension system ---
@@ -435,7 +434,6 @@ void AddDCScripts()
     LogSection("Dungeon Quest System (late-load stage)");
     DC_LOAD(AddSC_DungeonQuestSystem);
     DC_LOAD(AddSC_DungeonQuestMasterFollower);
-    DC_LOAD(AddSC_npc_dungeon_quest_daily_weekly);
     DC_LOAD(AddSC_npc_universal_quest_master);
 
     LogSection("DC Commands (unified .dc command hub)");

@@ -310,7 +310,7 @@ public:
         oss << "  Essence: " << total_essence << "\n";
         oss << "  Tokens: " << total_tokens << "\n";
 
-        handler->PSendSysMessage(oss.str().c_str());
+        handler->PSendSysMessage("{}", oss.str());
         return true;
     }
 
@@ -351,7 +351,7 @@ public:
         oss << "|cff00ff00Final Multiplier:|r " << final_mult << "x ("
             << ((final_mult - 1.0f) * 100.0f) << "% bonus)\n";
 
-        handler->PSendSysMessage(oss.str().c_str());
+        handler->PSendSysMessage("{}", oss.str());
         return true;
     }
 
@@ -392,23 +392,24 @@ public:
         oss << "|cff00ff00iLvL Bonus:|r " << (int)bonus << "\n";
         oss << "|cff00ff00Upgraded Item Level:|r " << upgraded_ilvl << "\n";
 
-        handler->PSendSysMessage(oss.str().c_str());
+        handler->PSendSysMessage("{}", oss.str());
         return true;
     }
 
     static bool HandleMechResetCommand(ChatHandler* handler, const char* args)
     {
         Player* target = nullptr;
-        std::string player_name;
 
         if (*args)
         {
-            if (sscanf(args, "%99s", player_name.data()) != 1)
+            char nameBuf[100] = {};
+            if (sscanf(args, "%99s", nameBuf) != 1)
             {
-                handler->PSendSysMessage("|cffff0000Invalid player name|r");
+                handler->PSendSysMessage("|cffff0000Usage: .upgrade mech reset <name>|r");
                 return false;
             }
 
+            std::string player_name = nameBuf;
             target = ObjectAccessor::FindPlayerByName(player_name);
         }
         else
@@ -436,12 +437,12 @@ public:
 
         if (count == 0)
         {
-            handler->PSendSysMessage("|cffff0000%s has no upgraded items|r", target->GetName().c_str());
+            handler->PSendSysMessage("|cffff0000{} has no upgraded items|r", target->GetName().c_str());
             return false;
         }
 
         // Confirm action
-        handler->PSendSysMessage("|cffff0000WARNING:|r About to reset %u upgrades for %s",
+        handler->PSendSysMessage("|cffff0000WARNING:|r About to reset {} upgrades for {}",
             count, target->GetName().c_str());
         handler->PSendSysMessage("|cffff0000Type the command again to confirm|r");
 
@@ -452,7 +453,7 @@ public:
         std::string deleteSql = Acore::StringFormat("DELETE FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
         CharacterDatabase.Execute(deleteSql.c_str());
 
-        handler->PSendSysMessage("|cff00ff00Successfully reset %u items for %s|r",
+        handler->PSendSysMessage("|cff00ff00Successfully reset {} items for {}|r",
             count, target->GetName().c_str());
 
         return true;
@@ -516,12 +517,12 @@ public:
         if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
             targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency, amount, 1, target, true))
         {
-            handler->PSendSysMessage("Added %u %s to player %s", amount,
+            handler->PSendSysMessage("Added {} {} to player {}", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
 
             // Send notification to player
             ChatHandler playerHandler(target->GetSession());
-            playerHandler.PSendSysMessage("|cff00ff00You received %u %s from GM.|r", amount,
+            playerHandler.PSendSysMessage("|cff00ff00You received {} {} from GM.|r", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
         }
         else
@@ -570,10 +571,10 @@ public:
         if (DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
             targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency, amount, 1, target, true))
         {
-            handler->PSendSysMessage("Removed %u %s from player %s", amount,
+            handler->PSendSysMessage("Removed {} {} from player {}", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
             ChatHandler targetHandler(target->GetSession());
-            targetHandler.PSendSysMessage("|cffff0000%u %s was removed by GM.|r", amount,
+            targetHandler.PSendSysMessage("|cffff0000{} {} was removed by GM.|r", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
         }
         else
@@ -641,7 +642,7 @@ public:
                 return true;
             }
 
-            handler->PSendSysMessage("Set %s to %u for player %s",
+            handler->PSendSysMessage("Set {} to {} for player {}",
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", amount, target->GetName().c_str());
         }
         else
@@ -684,8 +685,8 @@ public:
         uint32 essence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE);
 
         handler->SendSysMessage(("=== Token Info for " + player->GetName() + " ===").c_str());
-        handler->PSendSysMessage("Upgrade Tokens: %u", tokens);
-        handler->PSendSysMessage("Artifact Essence: %u", essence);
+        handler->PSendSysMessage("Upgrade Tokens: {}", tokens);
+        handler->PSendSysMessage("Artifact Essence: {}", essence);
 
         return true;
     }
@@ -716,10 +717,10 @@ public:
         uint8 highestTier = mgr->GetPlayerHighestTier(playerGuid);
 
         handler->SendSysMessage(("=== Upgrade Status for " + player->GetName() + " ===").c_str());
-        handler->PSendSysMessage("Season: %u", season);
-        handler->PSendSysMessage("Upgrade Tokens: %u", tokens);
-        handler->PSendSysMessage("Artifact Essence: %u", essence);
-        handler->PSendSysMessage("Highest tier reached: %u", highestTier);
+        handler->PSendSysMessage("Season: {}", season);
+        handler->PSendSysMessage("Upgrade Tokens: {}", tokens);
+        handler->PSendSysMessage("Artifact Essence: {}", essence);
+        handler->PSendSysMessage("Highest tier reached: {}", highestTier);
         handler->SendSysMessage("Equipped Items:");
 
         uint32 equippedCount = 0;
@@ -745,9 +746,9 @@ public:
             equippedCount++;
         }
 
-        handler->PSendSysMessage("Equipped items tracked: %u", equippedCount);
-        handler->PSendSysMessage("Items with upgrades applied: %u", upgradedCount);
-        handler->PSendSysMessage("Items with a next upgrade available: %u", upgradeableCount);
+        handler->PSendSysMessage("Equipped items tracked: {}", equippedCount);
+        handler->PSendSysMessage("Items with upgrades applied: {}", upgradedCount);
+        handler->PSendSysMessage("Items with a next upgrade available: {}", upgradeableCount);
         return true;
     }
 
@@ -789,7 +790,7 @@ public:
         if (upgradeCount == 0)
             handler->SendSysMessage("All equipped items are already at their current upgrade cap.");
         else
-            handler->PSendSysMessage("Total upgradeable items: %u", upgradeCount);
+            handler->PSendSysMessage("Total upgradeable items: {}", upgradeCount);
 
         return true;
     }
@@ -830,11 +831,11 @@ public:
 
         handler->PSendSysMessage("=== Item Info ===");
         handler->SendSysMessage(("Item: " + std::string(itemTemplate->Name1)).c_str());
-        handler->PSendSysMessage("Item Entry: %u", itemId);
-        handler->PSendSysMessage("Item Level: %u", itemTemplate->ItemLevel);
-        handler->PSendSysMessage("Upgrade Tier: %u", tier);
-        handler->PSendSysMessage("Max Upgrade Level: %u", maxLevel);
-        handler->PSendSysMessage("First Upgrade Cost: %u tokens / %u essence",
+        handler->PSendSysMessage("Item Entry: {}", itemId);
+        handler->PSendSysMessage("Item Level: {}", itemTemplate->ItemLevel);
+        handler->PSendSysMessage("Upgrade Tier: {}", tier);
+        handler->PSendSysMessage("Max Upgrade Level: {}", maxLevel);
+        handler->PSendSysMessage("First Upgrade Cost: {} tokens / {} essence",
             firstUpgradeTokens, firstUpgradeEssence);
 
         uint8 equippedSlot = EQUIPMENT_SLOT_END;
@@ -852,17 +853,17 @@ public:
         uint8 currentLevel = state ? state->upgrade_level : 0;
         uint16 upgradedItemLevel = mgr->GetUpgradedItemLevel(equippedItem->GetGUID().GetCounter(), itemTemplate->ItemLevel);
 
-        handler->PSendSysMessage("Equipped Slot: %s", GetEquipmentSlotLabel(equippedSlot));
-        handler->PSendSysMessage("Current Upgrade Level: %u / %u", currentLevel, maxLevel);
-        handler->PSendSysMessage("Current Effective iLvL: %u", upgradedItemLevel);
-        handler->PSendSysMessage("Total Invested: %u tokens / %u essence",
+        handler->PSendSysMessage("Equipped Slot: {}", GetEquipmentSlotLabel(equippedSlot));
+        handler->PSendSysMessage("Current Upgrade Level: {} / {}", currentLevel, maxLevel);
+        handler->PSendSysMessage("Current Effective iLvL: {}", upgradedItemLevel);
+        handler->PSendSysMessage("Total Invested: {} tokens / {} essence",
             state ? state->tokens_invested : 0,
             state ? state->essence_invested : 0);
 
         if (maxLevel > 0 && currentLevel < maxLevel)
         {
             uint8 nextLevel = currentLevel + 1;
-            handler->PSendSysMessage("Next Upgrade Cost: %u tokens / %u essence",
+            handler->PSendSysMessage("Next Upgrade Cost: {} tokens / {} essence",
                 mgr->GetUpgradeCost(tier, nextLevel),
                 mgr->GetEssenceCost(tier, nextLevel));
         }
@@ -898,13 +899,13 @@ public:
             uint32 count_today = respecMgr->GetRespecCountToday(player->GetGUID().GetCounter());
 
             handler->PSendSysMessage("|cffffd700===== Respec Information =====|r");
-            handler->PSendSysMessage("|cff00ff00Respecs Today:|r %u / %u",
+            handler->PSendSysMessage("|cff00ff00Respecs Today:|r {} / {}",
                 count_today, respecMgr->GetConfig().daily_respec_limit);
 
             if (cooldown > 0)
             {
                 uint32 minutes = cooldown / 60;
-                handler->PSendSysMessage("|cffff0000Cooldown remaining:|r %u minutes", minutes);
+                handler->PSendSysMessage("|cffff0000Cooldown remaining:|r {} minutes", minutes);
             }
             else
             {
@@ -934,8 +935,8 @@ public:
                   uint32 tokens, essence;
                   respecMgr->CalculateRespecCost(player->GetGUID().GetCounter(), true, tokens, essence);
                   handler->PSendSysMessage("WARNING: About to reset ALL item upgrades.");
-                  handler->PSendSysMessage("Cost: %u Tokens, %u Essence.", tokens, essence);
-                  handler->PSendSysMessage("Refund: %u%% of invested resources.", respecMgr->GetConfig().refund_percent);
+                  handler->PSendSysMessage("Cost: {} Tokens, {} Essence.", tokens, essence);
+                  handler->PSendSysMessage("Refund: {}% of invested resources.", respecMgr->GetConfig().refund_percent);
                   handler->PSendSysMessage("Type '.upgrade adv respec all confirm' to proceed.");
                   return true;
              }
@@ -974,7 +975,7 @@ public:
         {
             for (auto const& ach : achievements)
             {
-                handler->PSendSysMessage("|cff00ff00[%s]|r: %s", ach.name.c_str(), ach.description.c_str());
+                handler->PSendSysMessage("|cff00ff00[{}]|r: {}", ach.name.c_str(), ach.description.c_str());
             }
         }
         return true;
@@ -994,11 +995,11 @@ public:
 
         GuildUpgradeStats stats = guildMgr->GetGuildStats(player->GetGuildId());
 
-        handler->PSendSysMessage("|cffffd700===== Guild Upgrade Stats: %s =====|r", stats.guild_name.c_str());
-        handler->PSendSysMessage("Tier: %u", guildMgr->GetGuildTier(player->GetGuildId()));
-        handler->PSendSysMessage("Members with upgrades: %u / %u", stats.members_with_upgrades, stats.total_members);
-        handler->PSendSysMessage("Total Items Upgraded: %u", stats.total_items_upgraded);
-        handler->PSendSysMessage("Total Essence Invested: %u", stats.total_essence_invested);
+        handler->PSendSysMessage("|cffffd700===== Guild Upgrade Stats: {} =====|r", stats.guild_name.c_str());
+        handler->PSendSysMessage("Tier: {}", guildMgr->GetGuildTier(player->GetGuildId()));
+        handler->PSendSysMessage("Members with upgrades: {} / {}", stats.members_with_upgrades, stats.total_members);
+        handler->PSendSysMessage("Total Items Upgraded: {}", stats.total_items_upgraded);
+        handler->PSendSysMessage("Total Essence Invested: {}", stats.total_essence_invested);
 
         return true;
     }
@@ -1025,10 +1026,10 @@ public:
         if (info)
         {
             handler->PSendSysMessage("|cffffd700===== Artifact Mastery =====|r");
-            handler->PSendSysMessage("Title: %s", info->GetMasteryTitle().c_str());
-            handler->PSendSysMessage("Rank: %u (Points: %u)", info->mastery_rank, info->total_mastery_points);
-            handler->PSendSysMessage("Progress to next rank: %u%%", info->GetProgressToNextRank());
-            handler->PSendSysMessage("Fully upgraded items: %u", info->items_fully_upgraded);
+            handler->PSendSysMessage("Title: {}", info->GetMasteryTitle().c_str());
+            handler->PSendSysMessage("Rank: {} (Points: {})", info->mastery_rank, info->total_mastery_points);
+            handler->PSendSysMessage("Progress to next rank: {}%", info->GetProgressToNextRank());
+            handler->PSendSysMessage("Fully upgraded items: {}", info->items_fully_upgraded);
         }
         else
         {
@@ -1065,7 +1066,7 @@ public:
         if (levelCapMgr)
         {
             levelCapMgr->UnlockTier(target->GetGUID().GetCounter(), tierId);
-            handler->PSendSysMessage("Unlocked tier %u for %s", tierId, target->GetName().c_str());
+            handler->PSendSysMessage("Unlocked tier {} for {}", tierId, target->GetName().c_str());
         }
         else
         {
@@ -1089,9 +1090,9 @@ public:
         uint32 spentTokens = costMgr->GetWeeklySpending(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN);
 
         handler->PSendSysMessage("|cffffd700===== Weekly Spending =====|r");
-        handler->PSendSysMessage("Essence: %u / %u (Hard Cap: %u)",
+        handler->PSendSysMessage("Essence: {} / {} (Hard Cap: {})",
             spentEssence, config.softcap_weekly_essence, config.hardcap_weekly_essence);
-        handler->PSendSysMessage("Tokens: %u / %u (Hard Cap: %u)",
+        handler->PSendSysMessage("Tokens: {} / {} (Hard Cap: {})",
             spentTokens, config.softcap_weekly_tokens, config.hardcap_weekly_tokens);
 
         return true;
@@ -1138,7 +1139,7 @@ public:
         }
 
         levelCapMgr->SetPlayerTierCap(target->GetGUID().GetCounter(), tierId, maxLevel);
-        handler->PSendSysMessage("Set tier %u max level to %u for %s.",
+        handler->PSendSysMessage("Set tier {} max level to {} for {}.",
             tierId, maxLevel, target->GetName().c_str());
 
         return true;
@@ -1195,11 +1196,11 @@ public:
         }
 
         handler->PSendSysMessage("|cffffd700===== Test Set Granted =====|r");
-        handler->PSendSysMessage("|cff00ff00Class:|r %s", player->GetName().c_str());
-        handler->PSendSysMessage("|cff00ff00Gear Set:|r %s", gearSet.description.c_str());
-        handler->PSendSysMessage("|cff00ff00Items Added:|r %u", itemsAdded);
-        handler->PSendSysMessage("|cff00ff00Upgrade Essence:|r %u", essenceAmount);
-        handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r %u", tokenAmount);
+        handler->PSendSysMessage("|cff00ff00Class:|r {}", player->GetName().c_str());
+        handler->PSendSysMessage("|cff00ff00Gear Set:|r {}", gearSet.description.c_str());
+        handler->PSendSysMessage("|cff00ff00Items Added:|r {}", itemsAdded);
+        handler->PSendSysMessage("|cff00ff00Upgrade Essence:|r {}", essenceAmount);
+        handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r {}", tokenAmount);
         handler->PSendSysMessage("|cff00ffffYou can now test the upgrade system!|r");
 
         return true;
@@ -1216,7 +1217,7 @@ public:
 
         uint32 season = GetCurrentSeasonId();
         mgr->LoadUpgradeData(season);
-        handler->PSendSysMessage("Item upgrade tier data reloaded for season %u.", season);
+        handler->PSendSysMessage("Item upgrade tier data reloaded for season {}.", season);
         return true;
     }
 
@@ -1246,8 +1247,8 @@ public:
         uint32 days = season_duration / 86400;
 
         handler->PSendSysMessage("|cffffd700===== Season Information =====|r");
-        handler->PSendSysMessage("|cff00ff00Current Season:|r %s (ID: %u)", season_name.c_str(), season_id);
-        handler->PSendSysMessage("|cff00ff00Season Duration:|r %u days", days);
+        handler->PSendSysMessage("|cff00ff00Current Season:|r {} (ID: {})", season_name.c_str(), season_id);
+        handler->PSendSysMessage("|cff00ff00Season Duration:|r {} days", days);
 
         // Get player's season stats
         Player* player = handler->GetSession()->GetPlayer();
@@ -1264,12 +1265,12 @@ public:
                 fields = result->Fetch();
                 handler->PSendSysMessage("");
                 handler->PSendSysMessage("|cffffd700=== Your Season Stats ===|r");
-                handler->PSendSysMessage("|cff00ff00Essence Earned:|r %u (Spent: %u)",
+                handler->PSendSysMessage("|cff00ff00Essence Earned:|r {} (Spent: {})",
                     fields[0].Get<uint32>(), fields[2].Get<uint32>());
-                handler->PSendSysMessage("|cff00ff00Tokens Earned:|r %u (Spent: %u)",
+                handler->PSendSysMessage("|cff00ff00Tokens Earned:|r {} (Spent: {})",
                     fields[1].Get<uint32>(), fields[3].Get<uint32>());
-                handler->PSendSysMessage("|cff00ff00Items Upgraded:|r %u", fields[4].Get<uint32>());
-                handler->PSendSysMessage("|cff00ff00Total Upgrades:|r %u", fields[5].Get<uint32>());
+                handler->PSendSysMessage("|cff00ff00Items Upgraded:|r {}", fields[4].Get<uint32>());
+                handler->PSendSysMessage("|cff00ff00Total Upgrades:|r {}", fields[5].Get<uint32>());
             }
         }
 
@@ -1296,12 +1297,12 @@ public:
         else
             entries = leaderboardMgr->GetUpgradeLeaderboard(season_id, 10);
 
-        handler->PSendSysMessage("|cffffd700===== %s Leaderboard =====|r", type.c_str());
+        handler->PSendSysMessage("|cffffd700===== {} Leaderboard =====|r", type.c_str());
         handler->PSendSysMessage("");
 
         for (auto const& entry : entries)
         {
-            handler->PSendSysMessage("#%u - %s (Score: %u, Items: %u, Prestige: %u)",
+            handler->PSendSysMessage("#{} - {} (Score: {}, Items: {}, Prestige: {})",
                 entry.rank, entry.player_name.c_str(), entry.score,
                 entry.items_upgraded, entry.prestige_points);
         }
@@ -1325,14 +1326,14 @@ public:
         auto history = historyMgr->GetPlayerHistory(player->GetGUID().GetCounter(), limit);
 
         handler->PSendSysMessage("|cffffd700===== Your Upgrade History =====|r");
-        handler->PSendSysMessage("(Showing last %u upgrades)", limit);
+        handler->PSendSysMessage("(Showing last {} upgrades)", limit);
         handler->PSendSysMessage("");
 
         for (auto const& entry : history)
         {
             std::string time_buf = DarkChaos::CrossSystem::Utils::FormatLocalTimestamp(entry.timestamp, "%Y-%m-%d %H:%M");
 
-            handler->PSendSysMessage("%s: Item %u (%u->%u) | Cost: %uE/%uT | iLvl: %u->%u",
+            handler->PSendSysMessage("{}: Item {} ({}->{}) | Cost: {}E/{}T | iLvl: {}->{}",
                 time_buf.c_str(), entry.item_id, entry.upgrade_from, entry.upgrade_to,
                 entry.essence_cost, entry.token_cost, entry.old_ilvl, entry.new_ilvl);
         }
@@ -1351,13 +1352,13 @@ public:
 
         uint32 new_season_id = static_cast<uint32>(std::strtoul(args, nullptr, 10));
 
-        handler->PSendSysMessage("Starting global season reset to Season %u...", new_season_id);
+        handler->PSendSysMessage("Starting global season reset to Season {}...", new_season_id);
 
         auto resetMgr = GetSeasonResetManager();
         if (resetMgr)
         {
              resetMgr->ExecuteGlobalSeasonReset(new_season_id);
-             handler->PSendSysMessage("Season reset complete! Season %u is now active.", new_season_id);
+             handler->PSendSysMessage("Season reset complete! Season {} is now active.", new_season_id);
         }
         else
         {

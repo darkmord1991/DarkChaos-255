@@ -64,6 +64,12 @@ namespace
     // Cache active challenges per player
     std::unordered_map<uint32, std::vector<ChallengeProgress>> g_ActiveChallenges;
 
+    // Cache of each player's accumulated challenge-reward stat bonus percent (sum of
+    // dc_prestige_challenge_rewards.stat_bonus_percent). Populated at login and kept in
+    // sync on grant so the prestige aura's CalculateAmount (a hot recalculation path)
+    // never has to touch the database directly.
+    std::unordered_map<uint32, uint32> g_ChallengeStatBonusCache;
+
     class PrestigeChallengeSystem
     {
     public:
@@ -145,6 +151,31 @@ namespace
                     ChatHandler(player->GetSession()).PSendSysMessage(
                         "|cFFFFD700You have {} active prestige challenge(s)!|r", challenges.size());
                 }
+            }));
+        }
+
+        void LoadChallengeStatBonus(Player* player)
+        {
+            if (!player)
+                return;
+
+            uint32 const guid = player->GetGUID().GetCounter();
+
+            // Load asynchronously so login never blocks the world thread; the cache is
+            // filled in by the continuation once the sum comes back.
+            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "SELECT SUM(stat_bonus_percent) FROM dc_prestige_challenge_rewards WHERE guid = {}",
+                guid))
+                .WithCallback([guid](QueryResult result)
+            {
+                uint32 totalBonus = 0;
+                if (result)
+                {
+                    Field* fields = result->Fetch();
+                    totalBonus = fields[0].Get<uint32>();
+                }
+
+                g_ChallengeStatBonusCache[guid] = totalBonus;
             }));
         }
 
@@ -442,11 +473,16 @@ namespace
             }
 
             // Grant permanent stat bonus (stored in database)
+            uint32 const guid = player->GetGUID().GetCounter();
             CharacterDatabase.Execute(
                 "INSERT INTO dc_prestige_challenge_rewards (guid, challenge_type, stat_bonus_percent, granted_time) "
                 "VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
-                player->GetGUID().GetCounter(), static_cast<uint32>(challengeType), statBonus
+                guid, static_cast<uint32>(challengeType), statBonus
             );
+
+            // Keep the cached total in sync so the prestige aura picks up the new bonus
+            // immediately, without waiting for a re-login.
+            g_ChallengeStatBonusCache[guid] += statBonus;
 
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFFD700You gained +{}% permanent stat bonus!|r", statBonus);
@@ -457,18 +493,8 @@ namespace
             if (!player)
                 return 0;
 
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT SUM(stat_bonus_percent) FROM dc_prestige_challenge_rewards WHERE guid = {}",
-                player->GetGUID().GetCounter()
-            );
-
-            if (result)
-            {
-                Field* fields = result->Fetch();
-                return fields[0].Get<uint32>();
-            }
-
-            return 0;
+            auto it = g_ChallengeStatBonusCache.find(player->GetGUID().GetCounter());
+            return it != g_ChallengeStatBonusCache.end() ? it->second : 0;
         }
 
     private:
@@ -492,6 +518,7 @@ namespace
             // Loads asynchronously; the "active challenges" chat line is sent
             // from the load continuation once the data is in.
             PrestigeChallengeSystem::instance()->LoadPlayerChallenges(player);
+            PrestigeChallengeSystem::instance()->LoadChallengeStatBonus(player);
         }
 
         void OnPlayerLogout(Player* player) override
@@ -499,7 +526,11 @@ namespace
             // Drop the per-guid challenge cache so the map stays bounded by
             // online players instead of "characters ever logged in".
             if (player)
-                g_ActiveChallenges.erase(player->GetGUID().GetCounter());
+            {
+                uint32 const guid = player->GetGUID().GetCounter();
+                g_ActiveChallenges.erase(guid);
+                g_ChallengeStatBonusCache.erase(guid);
+            }
         }
 
         void OnPlayerKilledByCreature(Creature* killer, Player* player) override

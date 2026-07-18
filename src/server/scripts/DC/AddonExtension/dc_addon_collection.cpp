@@ -3271,6 +3271,136 @@ namespace DCCollection
         CharacterDatabase.CommitTransaction(trans);
     }
 
+    // State for the batch-teach tick below. Owned by a single shared_ptr; the tick
+    // reschedules itself by capturing that shared_ptr into the *next* event's lambda,
+    // but the state itself never stores a std::function (or anything else) that holds
+    // a shared_ptr back to itself, so there is no reference cycle for KillAllEvents to
+    // fail to break on logout.
+    struct TeachBatchState
+    {
+        Player* player;
+        std::vector<uint32> spellsToTeach;
+        size_t index;
+        uint32 taughtTotal;
+        uint32 titlesApplied;
+        uint32 batchSize;
+        uint32 batchDelayMs;
+    };
+
+    void TeachCollectedSpellsBatchTick(std::shared_ptr<TeachBatchState> const& state)
+    {
+        Player* player = state->player;
+        if (!player || !player->GetSession())
+            return;
+
+        size_t idx = state->index;
+        size_t const total = state->spellsToTeach.size();
+        uint32 taughtThisTick = 0;
+        std::vector<uint32> taughtSpellIds;
+        taughtSpellIds.reserve(state->batchSize);
+
+        while (idx < total && taughtThisTick < state->batchSize)
+        {
+            uint32 spellId = state->spellsToTeach[idx++];
+            if (!spellId)
+                continue;
+
+            if (player->HasSpell(spellId))
+                continue;
+
+            if (!player->IsSpellFitByClassAndRace(spellId))
+                continue;
+
+            // Add silently (no "You have learned..." spam).
+            player->addSpell(spellId, SPEC_MASK_ALL, true, false, false);
+            ++taughtThisTick;
+            ++state->taughtTotal;
+            taughtSpellIds.push_back(spellId);
+        }
+
+        // Persist taught spells now, so logout doesn't need to flush a huge spell delta.
+        // Also mark them as UNCHANGED to avoid SaveToDB doing redundant INSERTs.
+        if (!taughtSpellIds.empty())
+        {
+            auto trans = CharacterDatabase.BeginTransaction();
+
+            std::ostringstream sql;
+            sql << "INSERT INTO character_spell (guid, spell, specMask) VALUES ";
+
+            ObjectGuid::LowType const guidLow = player->GetGUID().GetCounter();
+            bool first = true;
+            for (uint32 taughtSpellId : taughtSpellIds)
+            {
+                if (!taughtSpellId)
+                    continue;
+
+                // Ensure it actually got added.
+                if (!player->HasSpell(taughtSpellId))
+                    continue;
+
+                if (!first)
+                    sql << ",";
+                first = false;
+                sql << "(" << guidLow << "," << taughtSpellId << "," << uint32(SPEC_MASK_ALL) << ")";
+
+                // Mark as unchanged to prevent redundant saving later.
+                PlayerSpellMap& spellMap = const_cast<PlayerSpellMap&>(player->GetSpellMap());
+                auto it = spellMap.find(taughtSpellId);
+                if (it != spellMap.end() && it->second && (it->second->State == PLAYERSPELL_NEW || it->second->State == PLAYERSPELL_CHANGED))
+                    it->second->State = PLAYERSPELL_UNCHANGED;
+            }
+
+            // Ensure specMask is updated if the row already exists.
+            sql << " ON DUPLICATE KEY UPDATE specMask = VALUES(specMask)";
+
+            if (!first)
+                trans->Append(sql.str());
+
+            CharacterDatabase.CommitTransaction(trans);
+        }
+
+        state->index = idx;
+
+        if (idx < total)
+        {
+            player->m_Events.AddEventAtOffset([state]() { TeachCollectedSpellsBatchTick(state); },
+                std::chrono::milliseconds(state->batchDelayMs));
+        }
+        else
+        {
+            // If we taught many spells at once, AchievementMgr may have accumulated a lot of changed criteria.
+            // Flushing those changes here can significantly reduce the time spent during logout SaveToDB.
+            if (state->taughtTotal > 0 && sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE, true))
+            {
+                if (AchievementMgr* achievementMgr = player->GetAchievementMgr())
+                {
+                    auto const t0 = std::chrono::steady_clock::now();
+
+                    auto trans = CharacterDatabase.BeginTransaction();
+                    achievementMgr->SaveToDB(trans);
+                    CharacterDatabase.CommitTransaction(trans);
+
+                    auto const dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+                    if (dtMs >= 250)
+                        LOG_INFO("module.dc", "DC-Collection: Flushed achievement progress after accountwide sync in {} ms.", dtMs);
+                }
+            }
+
+            if (state->taughtTotal > 0 &&
+                sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ANNOUNCE, false))
+            {
+                if (WorldSession* session = player->GetSession())
+                {
+                    ChatHandler handler(session);
+                    handler.PSendSysMessage(
+                        "DC-Collection: Accountwide sync complete ({} spells taught, {} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
+                        state->taughtTotal,
+                        state->titlesApplied);
+                }
+            }
+        }
+    }
+
     // Teach the given spells in timed batches on the player's event queue.
     // Runs on the world thread; ticks re-arm via player->m_Events, so they stop
     // automatically when the player leaves the world.
@@ -3281,135 +3411,17 @@ namespace DCCollection
         std::sort(spellsToTeach.begin(), spellsToTeach.end());
         spellsToTeach.erase(std::unique(spellsToTeach.begin(), spellsToTeach.end()), spellsToTeach.end());
 
-        uint32 const effectiveBatchSize = std::max<uint32>(1u, batchSize);
-        uint32 const effectiveBatchDelayMs = std::max<uint32>(1u, batchDelayMs);
-
-        auto spellsPtr = std::make_shared<std::vector<uint32>>(std::move(spellsToTeach));
-        auto indexPtr = std::make_shared<size_t>(0);
-        auto tickPtr = std::make_shared<std::function<void()>>();
-        auto taughtTotalPtr = std::make_shared<uint32>(0);
-
-        *tickPtr = [player, spellsPtr, indexPtr, taughtTotalPtr, effectiveBatchSize, effectiveBatchDelayMs, tickPtr, titlesApplied]()
-        {
-            if (!player || !player->GetSession())
-            {
-                // Break shared_ptr self-capture cycle on early exit.
-                *tickPtr = std::function<void()>();
-                return;
-            }
-
-            size_t idx = *indexPtr;
-            size_t const total = spellsPtr->size();
-            uint32 taughtThisTick = 0;
-            std::vector<uint32> taughtSpellIds;
-            taughtSpellIds.reserve(effectiveBatchSize);
-
-            while (idx < total && taughtThisTick < effectiveBatchSize)
-            {
-                uint32 spellId = (*spellsPtr)[idx++];
-                if (!spellId)
-                    continue;
-
-                if (player->HasSpell(spellId))
-                    continue;
-
-                if (!player->IsSpellFitByClassAndRace(spellId))
-                    continue;
-
-                // Add silently (no "You have learned..." spam).
-                player->addSpell(spellId, SPEC_MASK_ALL, true, false, false);
-                ++taughtThisTick;
-                ++(*taughtTotalPtr);
-                taughtSpellIds.push_back(spellId);
-            }
-
-            // Persist taught spells now, so logout doesn't need to flush a huge spell delta.
-            // Also mark them as UNCHANGED to avoid SaveToDB doing redundant INSERTs.
-            if (!taughtSpellIds.empty())
-            {
-                auto trans = CharacterDatabase.BeginTransaction();
-
-                std::ostringstream sql;
-                sql << "INSERT INTO character_spell (guid, spell, specMask) VALUES ";
-
-                ObjectGuid::LowType const guidLow = player->GetGUID().GetCounter();
-                bool first = true;
-                for (uint32 taughtSpellId : taughtSpellIds)
-                {
-                    if (!taughtSpellId)
-                        continue;
-
-                    // Ensure it actually got added.
-                    if (!player->HasSpell(taughtSpellId))
-                        continue;
-
-                    if (!first)
-                        sql << ",";
-                    first = false;
-                    sql << "(" << guidLow << "," << taughtSpellId << "," << uint32(SPEC_MASK_ALL) << ")";
-
-                    // Mark as unchanged to prevent redundant saving later.
-                    PlayerSpellMap& spellMap = const_cast<PlayerSpellMap&>(player->GetSpellMap());
-                    auto it = spellMap.find(taughtSpellId);
-                    if (it != spellMap.end() && it->second && (it->second->State == PLAYERSPELL_NEW || it->second->State == PLAYERSPELL_CHANGED))
-                        it->second->State = PLAYERSPELL_UNCHANGED;
-                }
-
-                // Ensure specMask is updated if the row already exists.
-                sql << " ON DUPLICATE KEY UPDATE specMask = VALUES(specMask)";
-
-                if (!first)
-                    trans->Append(sql.str());
-
-                CharacterDatabase.CommitTransaction(trans);
-            }
-
-            *indexPtr = idx;
-
-            if (idx < total)
-            {
-                player->m_Events.AddEventAtOffset(*tickPtr, std::chrono::milliseconds(effectiveBatchDelayMs));
-            }
-            else
-            {
-                // If we taught many spells at once, AchievementMgr may have accumulated a lot of changed criteria.
-                // Flushing those changes here can significantly reduce the time spent during logout SaveToDB.
-                if (*taughtTotalPtr > 0 && sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE, true))
-                {
-                    if (AchievementMgr* achievementMgr = player->GetAchievementMgr())
-                    {
-                        auto const t0 = std::chrono::steady_clock::now();
-
-                        auto trans = CharacterDatabase.BeginTransaction();
-                        achievementMgr->SaveToDB(trans);
-                        CharacterDatabase.CommitTransaction(trans);
-
-                        auto const dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
-                        if (dtMs >= 250)
-                            LOG_INFO("module.dc", "DC-Collection: Flushed achievement progress after accountwide sync in {} ms.", dtMs);
-                    }
-                }
-
-                if (*taughtTotalPtr > 0 &&
-                    sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ANNOUNCE, false))
-                {
-                    if (WorldSession* session = player->GetSession())
-                    {
-                        ChatHandler handler(session);
-                        handler.PSendSysMessage(
-                            "DC-Collection: Accountwide sync complete ({} spells taught, {} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
-                            *taughtTotalPtr,
-                            titlesApplied);
-                    }
-                }
-
-                // Break shared_ptr self-capture cycle once work is complete.
-                *tickPtr = std::function<void()>();
-            }
-        };
+        auto state = std::make_shared<TeachBatchState>();
+        state->player = player;
+        state->spellsToTeach = std::move(spellsToTeach);
+        state->index = 0;
+        state->taughtTotal = 0;
+        state->titlesApplied = titlesApplied;
+        state->batchSize = std::max<uint32>(1u, batchSize);
+        state->batchDelayMs = std::max<uint32>(1u, batchDelayMs);
 
         // Kick off immediately (still outside the login handler).
-        (*tickPtr)();
+        TeachCollectedSpellsBatchTick(state);
     }
 
     void SyncAccountWideCollectionsToCharacter(Player* player)
@@ -6039,7 +6051,7 @@ namespace DCCollection
         // titleId = 0 means clear title
         if (titleId == 0)
         {
-            player->SetTitle(nullptr);
+            player->SetCurrentTitle(nullptr, true);
             if (titleDebugEnabled)
                 LOG_INFO("module.dc",
                     "DC-Collection[TitleDebug] HandleSetTitle clear account={} guid={}",

@@ -139,60 +139,9 @@ namespace DCCollection
     void RebuildPetDefinitionsFromLocalData();
 
     // =======================================================================
-    // Transmog Functions
-    // =======================================================================
-    uint32 GetItemDisplayId(ItemTemplate const* proto);
-    bool IsItemEligibleForTransmogUnlock(ItemTemplate const* proto);
-    AppearanceIndex BuildTransmogAppearanceIndex();
-    AppearanceIndex const& GetTransmogAppearanceIndexCached();
-    TransmogAppearanceVariant* FindAnyVariant(uint32 displayId);
-    TransmogAppearanceVariant* FindBestVariantForSlot(uint32 displayId, uint8 slot, ItemTemplate const* equippedProto);
-
-    bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId);
-    void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId);
-    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string_view sourceType, bool notifyPlayer = true);
-    void SendTransmogState(Player* player);
-
-    std::string BuildTransmogVariantKey(uint32 displayId, uint32 inventoryType, uint32 itemClass, uint32 itemSubClass);
-    bool IsInvTypeCompatibleForSlot(uint8 slot, uint32 invType);
-    bool IsWeaponCompatible(uint32 subClass1, uint32 subClass2);
-    bool IsAppearanceCompatible(uint8 slot, ItemTemplate const* equipped, TransmogAppearanceVariant const& appearance);
-
-    uint8 VisualSlotToEquipmentSlot(uint32 visualSlot);
-    std::vector<uint32> GetInvTypesForVisualSlot(uint32 visualSlot);
-    std::vector<uint32> GetCollectedAppearancesForSlot(Player* player, uint32 visualSlot, std::string const& searchFilter = "");
-
-    // =======================================================================
-    // Collection Data Functions
-    // =======================================================================
-    void SendCollection(Player* player, uint8 type);
-    void SendDefinitions(Player* player, uint8 type, uint32 offset = 0, uint32 limit = 0);
-    void SendItemSetDefinitions(Player* player);
-
-    // Wishlist
-    std::vector<std::pair<uint8, uint32>> LoadWishlist(uint32 accountId);
-    bool AddToWishlist(uint32 accountId, uint8 type, uint32 entryId);
-    bool RemoveFromWishlist(uint32 accountId, uint8 type, uint32 entryId);
-    void SendWishlist(Player* player);
-
     // Stats and bonuses
-    void SendStats(Player* player, uint8 type);
-    void SendBonuses(Player* player);
-    void SendCurrencies(Player* player);
+    // =======================================================================
     void UpdateMountSpeedBonuses(Player* player);
-
-    // =======================================================================
-    // User Actions
-    // =======================================================================
-    void HandleSummonMount(Player* player, uint32 spellId, bool random);
-    void HandleSetTitle(Player* player, uint32 titleId);
-    void HandleSummonHeirloom(Player* player, uint32 itemId);
-
-    // =======================================================================
-    // Shop Functions
-    // =======================================================================
-    void SendShopItems(Player* player, uint8 type);
-    bool TryBuyShopItem(Player* player, uint8 type, uint32 entryId);
 
 }  // namespace DCCollection
 

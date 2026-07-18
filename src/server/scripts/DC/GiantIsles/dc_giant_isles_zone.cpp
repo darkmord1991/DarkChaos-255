@@ -319,24 +319,24 @@ static void SendBossStatusList(Player* player)
 
         if (!info)
         {
-            handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFFAAAAAAUnregistered|r", displayName);
+            handler.PSendSysMessage(" - |cFFFFFF00{}|r: |cFFAAAAAAUnregistered|r", displayName);
             return;
         }
 
         if (info->isActive)
         {
-            handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFF00FF00Active|r", displayName);
+            handler.PSendSysMessage(" - |cFFFFFF00{}|r: |cFF00FF00Active|r", displayName);
             return;
         }
 
         if (info->respawnCountdown > 0)
         {
             std::string t = FormatShortDuration(info->respawnCountdown);
-            handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFFFFFF00Respawn in %s|r", displayName, t.c_str());
+            handler.PSendSysMessage(" - |cFFFFFF00{}|r: |cFFFFFF00Respawn in {}|r", displayName, t.c_str());
             return;
         }
 
-        handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFFAAAAAAUnknown|r", displayName);
+        handler.PSendSysMessage(" - |cFFFFFF00{}|r: |cFFAAAAAAUnknown|r", displayName);
     };
 
     // Preferred: use the WorldBossMgr zone registrations.
@@ -441,7 +441,7 @@ public:
         bool bossActive = sWorldBossMgr && sWorldBossMgr->IsBossActive(activeBoss);
 
         ChatHandler(player->GetSession()).PSendSysMessage(
-            "|cFFFF8000[Giant Isles]|r Today's world boss: |cFFFFFF00%s|r in |cFF00FF00%s|r%s",
+            "|cFFFF8000[Giant Isles]|r Today's world boss: |cFFFFFF00{}|r in |cFF00FF00{}|r{}",
             bossName.c_str(), location.c_str(), bossActive ? " |cFF00FF00(Active)|r" : "");
 
         SendBossStatusList(player);
@@ -802,7 +802,7 @@ public:
                     case NPC_NALAK: bossName = "Nalak the Storm Lord"; break;
                 }
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cFF00FF00Ancient Voice:|r Today, |cFFFFFF00%s|r roams the isles. "
+                    "|cFF00FF00Ancient Voice:|r Today, |cFFFFFF00{}|r roams the isles. "
                     "Gather your allies and face the challenge!", bossName.c_str());
                 break;
             }

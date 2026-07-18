@@ -9,6 +9,7 @@
 #include "../HinterlandBG/HLBGService.h"
 #include "../HinterlandBG/dc_hlbg_spectator.h"
 #include "../HinterlandBG/hlbg_constants.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 #include <sstream>
 #include <algorithm>
 #include "DatabaseEnv.h"
@@ -86,7 +87,7 @@ namespace
 
     bool TryParsePlayableTeam(std::string teamToken, TeamId& teamId)
     {
-        std::transform(teamToken.begin(), teamToken.end(), teamToken.begin(), ::tolower);
+        teamToken = DCUtils::ToLower(teamToken);
         if (teamToken == "alliance" || teamToken == "a")
         {
             teamId = TEAM_ALLIANCE;
@@ -107,7 +108,7 @@ namespace
         if (TryParsePlayableTeam(teamToken, teamId))
             return true;
 
-        std::transform(teamToken.begin(), teamToken.end(), teamToken.begin(), ::tolower);
+        teamToken = DCUtils::ToLower(teamToken);
         if (teamToken == "draw" || teamToken == "neutral" || teamToken == "tie")
         {
             teamId = TEAM_NEUTRAL;
@@ -226,7 +227,7 @@ public:
             return false;
 
         std::string arg = args ? args : "";
-        std::transform(arg.begin(), arg.end(), arg.begin(), ::tolower);
+        arg = DCUtils::ToLower(arg);
 
         if (arg == "leave" || arg == "stop")
         {
@@ -250,7 +251,7 @@ public:
         if (args && *args)
         {
             std::string v(args);
-            std::transform(v.begin(), v.end(), v.begin(), ::tolower);
+            v = DCUtils::ToLower(v);
             set = (v == "on" || v == "1" || v == "true");
         }
         HLBGService::Instance().SetStatsIncludeManualResets(set);

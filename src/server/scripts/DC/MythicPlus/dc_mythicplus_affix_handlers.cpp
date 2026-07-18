@@ -141,7 +141,7 @@ public:
 class GrievousAffixHandler : public IAffixHandler
 {
 private:
-    std::unordered_map<ObjectGuid, uint32> _playerTimers;
+    std::unordered_map<uint64 /* instanceKey */, std::unordered_map<ObjectGuid, uint32>> _playerTimers;
     static constexpr uint32 CHECK_INTERVAL = 3000; // 3 seconds
 
 public:
@@ -153,14 +153,14 @@ public:
                "dealing increasing damage over time until healed above 90%.";
     }
 
-    void OnAffixActivate(Map* /*map*/, uint8 /*keystoneLevel*/) override
+    void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
     {
-        _playerTimers.clear();
+        _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
-    void OnAffixDeactivate(Map* /*map*/) override
+    void OnAffixDeactivate(Map* map) override
     {
-        _playerTimers.clear();
+        _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
     void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
@@ -174,8 +174,12 @@ public:
         if (!player || player->isDead())
             return;
 
+        Map* map = player->GetMap();
+        if (!map)
+            return;
+
         ObjectGuid guid = player->GetGUID();
-        uint32& timer = _playerTimers[guid];
+        uint32& timer = _playerTimers[sAffixMgr->MakeInstanceKey(map)][guid];
 
         if (timer > diff)
         {
@@ -225,7 +229,7 @@ class TyrannicalAffixHandler : public IAffixHandler
 {
 private:
     uint8 _keystoneLevel = 0;
-    std::unordered_set<ObjectGuid> _scaledCreatures;
+    std::unordered_map<uint64 /* instanceKey */, std::unordered_set<ObjectGuid>> _scaledCreatures;
 
 public:
     AffixType GetType() const override { return AFFIX_TYRANNICAL; }
@@ -235,16 +239,16 @@ public:
         return "Boss enemies have 40% more health and inflict 15% more damage.";
     }
 
-    void OnAffixActivate(Map* /*map*/, uint8 keystoneLevel) override
+    void OnAffixActivate(Map* map, uint8 keystoneLevel) override
     {
         _keystoneLevel = keystoneLevel;
-        _scaledCreatures.clear();
+        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
-    void OnAffixDeactivate(Map* /*map*/) override
+    void OnAffixDeactivate(Map* map) override
     {
         _keystoneLevel = 0;
-        _scaledCreatures.clear();
+        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
     void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
@@ -266,7 +270,11 @@ public:
         if (!creature || !sMythicRuns->IsBossCreature(creature))
             return;
 
-        if (!_scaledCreatures.insert(creature->GetGUID()).second)
+        Map* map = creature->GetMap();
+        if (!map)
+            return;
+
+        if (!_scaledCreatures[sAffixMgr->MakeInstanceKey(map)].insert(creature->GetGUID()).second)
             return;
 
         // +40% HP for bosses
@@ -287,7 +295,7 @@ public:
 class FortifiedAffixHandler : public IAffixHandler
 {
 private:
-    std::unordered_set<ObjectGuid> _scaledCreatures;
+    std::unordered_map<uint64 /* instanceKey */, std::unordered_set<ObjectGuid>> _scaledCreatures;
 
 public:
     AffixType GetType() const override { return AFFIX_FORTIFIED; }
@@ -297,14 +305,14 @@ public:
         return "Non-boss enemies have 20% more health and inflict 30% more damage.";
     }
 
-    void OnAffixActivate(Map* /*map*/, uint8 /*keystoneLevel*/) override
+    void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
     {
-        _scaledCreatures.clear();
+        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
     }
 
-    void OnAffixDeactivate(Map* /*map*/) override
+    void OnAffixDeactivate(Map* map) override
     {
-        _scaledCreatures.clear();
+        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
     }
     void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
 
@@ -325,7 +333,11 @@ public:
         if (!creature || sMythicRuns->IsBossCreature(creature))
             return;
 
-        if (!_scaledCreatures.insert(creature->GetGUID()).second)
+        Map* map = creature->GetMap();
+        if (!map)
+            return;
+
+        if (!_scaledCreatures[sAffixMgr->MakeInstanceKey(map)].insert(creature->GetGUID()).second)
             return;
 
         // +20% HP for non-bosses

@@ -32,17 +32,9 @@ static BattlegroundHLBG* GetHLBG(Player* preferredPlayer = nullptr)
 
 static const char* GetWeatherDisplayName(uint32 weatherType)
 {
-    switch (weatherType)
-    {
-        case 1:
-            return "Rain";
-        case 2:
-            return "Snow";
-        case 3:
-            return "Storm";
-        default:
-            return "Fine";
-    }
+    // Delegate to the canonical table in hlbg_constants.h; this call site's
+    // out-of-range values default to "Fine" instead of "Unknown".
+    return GetWeatherName(weatherType, "Fine");
 }
 
 static bool TryConsumeGossipCooldown(Player* player, uint32 cooldownMs)

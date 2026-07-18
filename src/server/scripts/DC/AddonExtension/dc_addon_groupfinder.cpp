@@ -1241,8 +1241,8 @@ namespace GroupFinder
             guidLow);
 
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(countSql)
-            .WithCallback([playerGuid, guidLow, eventType, dungeonId, safeDungeonName, keystoneLevel,
-                scheduledTime, maxSignups, safeNote](QueryResult countResult)
+            .WithCallback([playerGuid, guidLow, eventType, dungeonId, dungeonName, safeDungeonName, keystoneLevel,
+                scheduledTime, maxSignups, note, safeNote](QueryResult countResult)
         {
             Player* player = ObjectAccessor::FindPlayer(playerGuid);
             if (!player || !player->GetSession())
@@ -1277,13 +1277,33 @@ namespace GroupFinder
                 guidLow);
 
             DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(idSql)
-                .WithCallback([playerGuid](QueryResult idResult)
+                .WithCallback([playerGuid, guidLow, eventType, dungeonId, dungeonName, keystoneLevel,
+                    scheduledTime, maxSignups, note](QueryResult idResult)
             {
                 Player* player = ObjectAccessor::FindPlayer(playerGuid);
                 if (!player || !player->GetSession())
                     return;
 
                 uint32 eventId = idResult ? (*idResult)[0].Get<uint32>() : 0;
+
+                if (eventId > 0)
+                {
+                    ScheduledEvent cachedEvent;
+                    cachedEvent.id = eventId;
+                    cachedEvent.leaderGuid = guidLow;
+                    cachedEvent.eventType = eventType;
+                    cachedEvent.dungeonId = dungeonId;
+                    cachedEvent.title = dungeonName;
+                    cachedEvent.description = note;
+                    cachedEvent.keystoneLevel = keystoneLevel;
+                    cachedEvent.scheduledTime = static_cast<time_t>(scheduledTime);
+                    cachedEvent.maxSignups = maxSignups;
+                    cachedEvent.currentSignups = 0;
+                    cachedEvent.status = GF_EVENT_OPEN;
+                    cachedEvent.createdAt = GameTime::GetGameTime().count();
+
+                    sGroupFinderMgr.CacheEvent(cachedEvent);
+                }
 
                 JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_CREATED)
                     .Set("success", eventId > 0)
@@ -1327,7 +1347,7 @@ namespace GroupFinder
             guidLow, eventId);
 
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(eventSql)
-            .WithCallback([playerGuid, guidLow, eventId, role, safeNote](QueryResult eventResult)
+            .WithCallback([playerGuid, guidLow, eventId, role, note, safeNote](QueryResult eventResult)
         {
             Player* player = ObjectAccessor::FindPlayer(playerGuid);
             if (!player || !player->GetSession())
@@ -1402,6 +1422,17 @@ namespace GroupFinder
                     eventId);
             }
 
+            EventSignup cachedSignup;
+            cachedSignup.eventId = eventId;
+            cachedSignup.playerGuid = guidLow;
+            cachedSignup.playerName = player->GetName();
+            cachedSignup.role = role;
+            cachedSignup.note = note;
+            cachedSignup.status = GF_APP_PENDING;
+            cachedSignup.createdAt = GameTime::GetGameTime().count();
+
+            sGroupFinderMgr.CacheSignup(cachedSignup);
+
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_SIGNUP_RESULT)
                 .Set("success", true)
                 .Set("eventId", static_cast<int32>(eventId))
@@ -1462,6 +1493,8 @@ namespace GroupFinder
             CharacterDatabase.Execute(
                 "UPDATE dc_group_finder_scheduled_events SET status = 1 WHERE id = {} AND status = 2",
                 eventId);
+
+            sGroupFinderMgr.RemoveCachedSignup(eventId, playerGuid.GetCounter());
 
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_SIGNUP_RESULT)
                 .Set("success", true)
@@ -1610,6 +1643,8 @@ namespace GroupFinder
             CharacterDatabase.Execute(
                 "UPDATE dc_group_finder_event_signups SET status = 3 WHERE event_id = {} AND status IN (0, 1)",
                 eventId);
+
+            sGroupFinderMgr.CancelCachedEvent(eventId);
 
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_EVENT_CREATED)
                 .Set("success", true)

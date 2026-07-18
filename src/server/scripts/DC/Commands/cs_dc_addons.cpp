@@ -38,6 +38,7 @@
 #include "ScriptMgr.h"
 #include "Map.h"
 #include "Group.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DC/MythicPlus/dc_mythicplus_difficulty_scaling.h"
 #include "../Progression/FirstStart/dc_firststart_learnspells.h"
 
@@ -356,9 +357,7 @@ public:
             }
 
             std::string diffArg((*it).data(), (*it).size());
-            std::string diffNorm;
-            for (char c : diffArg)
-                diffNorm.push_back(std::tolower(static_cast<unsigned char>(c)));
+            std::string diffNorm = DCUtils::ToLower(diffArg);
 
             if (diffNorm == "info")
             {
@@ -514,9 +513,7 @@ public:
             }
 
             std::string reloadArg((*it).data(), (*it).size());
-            std::string reloadNorm;
-            for (char c : reloadArg)
-                reloadNorm.push_back(std::tolower(static_cast<unsigned char>(c)));
+            std::string reloadNorm = DCUtils::ToLower(reloadArg);
 
             if (reloadNorm == "mythic" || reloadNorm == "mythicplus" || reloadNorm == "m+")
             {

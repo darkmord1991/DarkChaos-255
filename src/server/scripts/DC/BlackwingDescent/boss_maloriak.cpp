@@ -249,13 +249,23 @@ std::unordered_map<uint8, VialData> vialData =
 
 struct boss_maloriak : public BossAI
 {
-    boss_maloriak(Creature* creature) : BossAI(creature, DATA_MALORIAK),
-        _currentVial(0), _usedVialsCount(0), _vialsPerCycle(IsHeroic() ? 3 : 2), _releasedAberrationsCount(0) { }
+    boss_maloriak(Creature* creature) : BossAI(creature, DATA_MALORIAK)
+    {
+        Initialize();
+    }
+
+    void Initialize()
+    {
+        _currentVial = 0;
+        _usedVialsCount = 0;
+        _vialsPerCycle = IsHeroic() ? 3 : 2;
+        _releasedAberrationsCount = 0;
+    }
 
     void Reset() override
     {
         _Reset();
-        ;
+        Initialize();
     }
 
     void JustRespawned() override

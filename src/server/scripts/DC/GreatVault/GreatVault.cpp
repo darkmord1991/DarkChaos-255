@@ -1,6 +1,7 @@
 #include "GreatVault.h"
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
 #include "DC/MythicPlus/dc_mythicplus_run_manager.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "DBCStores.h"
@@ -32,7 +33,7 @@ namespace
         TRACK_PVP   = 2
     };
 
-    constexpr uint32 SECONDS_PER_WEEK = 7u * 24u * 60u * 60u;
+    using DarkChaos::Seasons::SECONDS_PER_WEEK;
 
     void DecodeGlobalSlotIndex(uint8 globalSlot, uint8& outTrackId, uint8& outSlotInTrack)
     {

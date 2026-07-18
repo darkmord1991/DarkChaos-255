@@ -278,15 +278,12 @@ static std::string SerializeIgnoredItems(std::unordered_set<uint32> const& ignor
     std::vector<uint32> sortedIds(ignoredItemIds.begin(), ignoredItemIds.end());
     std::sort(sortedIds.begin(), sortedIds.end());
 
-    std::ostringstream ss;
-    for (size_t i = 0; i < sortedIds.size(); ++i)
-    {
-        if (i > 0)
-            ss << ',';
-        ss << sortedIds[i];
-    }
+    std::vector<std::string> tokens;
+    tokens.reserve(sortedIds.size());
+    for (uint32 id : sortedIds)
+        tokens.push_back(std::to_string(id));
 
-    return ss.str();
+    return DCUtils::JoinStringList(tokens, ",");
 }
 
 static void ParseIgnoredItems(std::string const& csv, std::unordered_set<uint32>& ignoredItemIds)
@@ -296,29 +293,11 @@ static void ParseIgnoredItems(std::string const& csv, std::unordered_set<uint32>
     if (csv.empty())
         return;
 
-    std::stringstream ss(csv);
-    std::string token;
-
-    while (std::getline(ss, token, ','))
+    // DCUtils::ParseUInt32List keeps id 0; drop it here to match legacy CSV semantics.
+    for (uint32 itemId : DCUtils::ParseUInt32List(csv))
     {
-        token.erase(std::remove_if(token.begin(), token.end(), [](unsigned char c)
-        {
-            return std::isspace(c) != 0;
-        }), token.end());
-
-        if (token.empty())
-            continue;
-
-        try
-        {
-            uint32 itemId = static_cast<uint32>(std::stoul(token));
-            if (itemId > 0)
-                ignoredItemIds.insert(itemId);
-        }
-        catch (...)
-        {
-            // Ignore malformed item IDs in legacy CSV payloads.
-        }
+        if (itemId > 0)
+            ignoredItemIds.insert(itemId);
     }
 }
 

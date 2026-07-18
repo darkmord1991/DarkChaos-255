@@ -197,34 +197,24 @@ namespace HinterlandBGConstants
         }
     }
 
-    // Legacy affix name mapping (for backward compatibility — same display name).
-    inline const char* GetLegacyAffixName(uint8 affixCode)
-    {
-        return GetAffixName(affixCode);
-    }
-
     // -------------------------------------------------------------------------
     // Weather Names
     // -------------------------------------------------------------------------
-    inline const char* GetWeatherName(uint32 weatherType)
+    // Canonical weather-name lookup (values match WEATHER_TYPE_* in SharedDefines.h).
+    // outOfRangeDefault lets call sites override the fallback text without needing
+    // their own copy of the table.
+    inline const char* GetWeatherName(uint32 weatherType, const char* outOfRangeDefault = "Unknown")
     {
         switch (weatherType)
         {
-            case 0: return "Fine";
-            case 1: return "Rain";
-            case 2: return "Snow";
-            case 3: return "Storm";
-            default: return "Unknown";
+            case 0:  return "Fine";
+            case 1:  return "Rain";
+            case 2:  return "Snow";
+            case 3:  return "Storm";
+            case 86: return "Thunders";
+            case 90: return "BlackRain";
+            default: return outOfRangeDefault;
         }
-    }
-
-    // Extended weather name mapping
-    inline const char* GetExtendedWeatherName(uint32 weatherType)
-    {
-        static const char* names[] = {
-            "Clear", "Rain", "Snow", "Sandstorm", "Storm", "Thunders", "BlackRain"
-        };
-        return (weatherType < (sizeof(names) / sizeof(names[0]))) ? names[weatherType] : "Weather";
     }
 
     // -------------------------------------------------------------------------

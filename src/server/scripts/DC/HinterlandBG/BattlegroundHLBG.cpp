@@ -13,6 +13,7 @@
 #include "WorldStateDefines.h"
 
 #include "../AddonExtension/dc_addon_hlbg.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "HLBGService.h"
 #include "hlbg.h"
 #include "hlbg_constants.h"
@@ -145,28 +146,7 @@ namespace
 
     std::vector<uint32> ParseCsvU32(std::string const& input)
     {
-        std::vector<uint32> values;
-        std::size_t start = 0;
-        while (start < input.size())
-        {
-            std::size_t comma = input.find(',', start);
-            std::string token = input.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-            try
-            {
-                if (!token.empty())
-                    values.push_back(static_cast<uint32>(std::stoul(token)));
-            }
-            catch (...)
-            {
-            }
-
-            if (comma == std::string::npos)
-                break;
-
-            start = comma + 1;
-        }
-
-        return values;
+        return DCUtils::ParseUInt32List(input);
     }
 
     std::unordered_map<uint32, uint32> ParseEntryCounts(std::string const& input)

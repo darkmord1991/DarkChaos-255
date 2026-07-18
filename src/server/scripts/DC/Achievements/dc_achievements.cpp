@@ -160,13 +160,7 @@ public:
             CompleteAchievement(player, ACHIEVEMENT_LEVEL_255);
 
             // Check for server first
-            if (TryClaimServerFirst(player, "first_255"))
-            {
-                if (debug >= 1)
-                    LOG_INFO("scripts.dc", "DC.Achievements: Server First claimed: first_255 by {}", player->GetName());
-                CompleteAchievement(player, ACHIEVEMENT_FIRST_255);
-                AnnounceServerFirst(player, "First to Level 255");
-            }
+            TryClaimServerFirst(player, "first_255", ACHIEVEMENT_FIRST_255, "First to Level 255");
         }
 
         // Challenge mode achievements
@@ -278,10 +272,10 @@ private:
         }
     }
 
-    bool TryClaimServerFirst(Player* player, std::string const& category)
+    void TryClaimServerFirst(Player* player, std::string const& category, uint32 achievementId, std::string const& description)
     {
         if (!player)
-            return false;
+            return;
 
         // Table has UNIQUE(category). This makes the claim authoritative.
         CharacterDatabase.Execute(
@@ -289,15 +283,27 @@ private:
             category, player->GetGUID().GetCounter(), player->GetName()
         );
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT player_guid FROM dc_server_firsts WHERE category = '{}' LIMIT 1", category
-        );
+        // Resolve the claim asynchronously so the caller never blocks the
+        // world thread; the continuation runs on the world thread and
+        // re-resolves the player by guid.
+        ObjectGuid const playerGuid = player->GetGUID();
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            "SELECT player_guid FROM dc_server_firsts WHERE category = '{}' LIMIT 1", category))
+            .WithCallback([this, playerGuid, category, achievementId, description](QueryResult result)
+        {
+            if (!result || result->Fetch()[0].Get<uint32>() != playerGuid.GetCounter())
+                return;
 
-        if (!result)
-            return false;
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player)
+                return;
 
-        Field* fields = result->Fetch();
-        return fields[0].Get<uint32>() == player->GetGUID().GetCounter();
+            if (GetDebugLevel() >= 1)
+                LOG_INFO("scripts.dc", "DC.Achievements: Server First claimed: {} by {}", category, player->GetName());
+
+            CompleteAchievement(player, achievementId);
+            AnnounceServerFirst(player, description);
+        }));
     }
 
     void AnnounceServerFirst(Player* player, std::string const& achievement)
@@ -591,13 +597,13 @@ public:
 
         if (!ach)
         {
-            handler->PSendSysMessage("ERROR: Achievement %u not found in store!", prestige1);
+            handler->PSendSysMessage("ERROR: Achievement {} not found in store!", prestige1);
         }
         else
         {
             std::string achName = ach->name[0] ? std::string(ach->name[0]) : "Unknown";
-            handler->PSendSysMessage("Found Achievement %u: %s", prestige1, achName.c_str());
-            handler->PSendSysMessage("Category: %u | Points: %u | Flags: %u", ach->categoryId, ach->points, ach->flags);
+            handler->PSendSysMessage("Found Achievement {}: {}", prestige1, achName);
+            handler->PSendSysMessage("Category: {} | Points: {} | Flags: {}", ach->categoryId, ach->points, ach->flags);
         }
 
         // Check category
@@ -618,11 +624,11 @@ public:
             if (achievement)
             {
                 std::string name = achievement->name[0] ? std::string(achievement->name[0]) : "Unknown";
-                handler->PSendSysMessage("  %u - %s", i, name.c_str());
+                handler->PSendSysMessage("  {} - {}", i, name);
             }
             else
             {
-                handler->PSendSysMessage("  %u - NOT FOUND", i);
+                handler->PSendSysMessage("  {} - NOT FOUND", i);
             }
         }
 

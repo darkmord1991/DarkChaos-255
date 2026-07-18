@@ -570,24 +570,6 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DEATHS, state->deaths);
     UpdateHud(state, map, true, "death");
 
-    if (!IsDeathBudgetEnabled())
-        return;
-
-    DungeonProfile* profile = sMythicScaling->GetDungeonProfile(state->mapId);
-    if (!profile)
-        return;
-
-    if (state->deaths >= profile->deathBudget)
-    {
-        HandleFailState(state, "Death budget exceeded", true);
-    }
-    else
-    {
-        uint32 remaining = (profile->deathBudget > state->deaths) ? (profile->deathBudget - state->deaths) : 0;
-        if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
-            ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. {} remaining.", remaining);
-    }
-
     // Track per-player deaths
     state->deathsByPlayer[player->GetGUID().GetCounter()]++;
 
@@ -601,6 +583,23 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
     {
         state->deathsByBoss[killer->GetEntry()]++;
     }
+
+    if (!IsDeathBudgetEnabled())
+        return;
+
+    DungeonProfile* profile = sMythicScaling->GetDungeonProfile(state->mapId);
+    if (!profile)
+        return;
+
+    if (state->deaths >= profile->deathBudget)
+    {
+        HandleFailState(state, "Death budget exceeded", true);
+        return;
+    }
+
+    uint32 remaining = (profile->deathBudget > state->deaths) ? (profile->deathBudget - state->deaths) : 0;
+    if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
+        ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. {} remaining.", remaining);
 }
 
 void MythicPlusRunManager::HandleBossEvade(Creature* creature)
@@ -1310,12 +1309,18 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
     RecordRunResult(state, false, 0);
     sMythicSpectator.UnregisterActiveRun(state->instanceId);
     ClearHudSnapshot(state);
-    _instanceStates.erase(state->instanceKey);
 
-    if (downgradeKeystone && state->ownerGuid)
+    ObjectGuid ownerGuid = state->ownerGuid;
+    uint32 instanceId = state->instanceId;
+    uint32 mapId = state->mapId;
+    uint64 instanceKey = state->instanceKey;
+
+    _instanceStates.erase(instanceKey);
+
+    if (downgradeKeystone && ownerGuid)
     {
         // Future: award downgraded keystone back to owner
-        LOG_INFO("mythic.run", "Mythic+ run failed for instance {} (map {})", state->instanceId, state->mapId);
+        LOG_INFO("mythic.run", "Mythic+ run failed for instance {} (map {})", instanceId, mapId);
     }
 }
 
@@ -2260,9 +2265,11 @@ void MythicPlusRunManager::ProcessCancellationTimers()
         if (itr != _instanceStates.end())
         {
             InstanceState& state = itr->second;
+            uint32 instanceId = state.instanceId;
+            uint32 mapId = state.mapId;
             HandleFailState(&state, "Run abandoned - all players left", true);
             LOG_INFO("mythic.run", "Auto-cancelled abandoned run for instance {} (map {})",
-                     state.instanceId, state.mapId);
+                     instanceId, mapId);
         }
     }
 }
@@ -3052,23 +3059,6 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
             AIO().Msg(player, MythicPlusConstants::Hud::AIO_ADDON_NAME, MythicPlusConstants::Hud::AIO_MSG_UPDATE, data);
     }
 #endif
-}
-
-// ============================================================
-// Item Level Calculation for Boss Loot
-// ============================================================
-
-uint32 MythicPlusRunManager::GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const
-{
-    // Retail-like scaling: Base ilvl + (keystone level * scaling factor)
-    // Base: 226 (Shadowlands S1 M+0)
-    // Each level adds 3 item levels up to +10, then 4 per level
-    uint32 baseItemLevel = sConfigMgr->GetOption<uint32>("MythicPlus.BaseItemLevel", 226);
-
-    if (keystoneLevel <= 10)
-        return baseItemLevel + (keystoneLevel * 3);
-    else
-        return baseItemLevel + (10 * 3) + ((keystoneLevel - 10) * 4);
 }
 
 uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const

@@ -670,13 +670,16 @@ namespace DCWelcome
         if (feature.empty())
             return;
 
+        std::string escapedFeature = feature;
+        CharacterDatabase.EscapeString(escapedFeature);
+
         // Record that player has seen this feature intro
         CharacterDatabase.Execute(
             "INSERT INTO dc_player_seen_features (guid, feature, seen_at, dismissed) "
             "VALUES ({}, '{}', NOW(), 1) "
             "ON DUPLICATE KEY UPDATE seen_at = NOW(), dismissed = 1",
             player->GetGUID().GetCounter(),
-            feature
+            escapedFeature
         );
     }
 

@@ -114,7 +114,8 @@ void BattlegroundBFG::PostUpdateImpl(uint32 diff)
                     // Message to chatlog
                     char buf[256];
                     ChatMsg type = teamId == TEAM_ALLIANCE ? CHAT_MSG_BG_SYSTEM_ALLIANCE : CHAT_MSG_BG_SYSTEM_HORDE;
-                    sprintf(buf, sObjectMgr->GetAcoreString(LANG_BG_BFG_NODE_TAKEN, sWorld->GetDefaultDbcLocale()).c_str(), (teamId == TEAM_ALLIANCE) ? sObjectMgr->GetAcoreString(LANG_BG_BFG_ALLY, sWorld->GetDefaultDbcLocale()).c_str() : sObjectMgr->GetAcoreString(LANG_BG_BFG_HORDE, sWorld->GetDefaultDbcLocale()).c_str(), _GetNodeNameId(node));
+                    std::string nodeName = sObjectMgr->GetAcoreString(_GetNodeNameId(node), sWorld->GetDefaultDbcLocale());
+                    snprintf(buf, sizeof(buf), sObjectMgr->GetAcoreString(LANG_BG_BFG_NODE_TAKEN, sWorld->GetDefaultDbcLocale()).c_str(), (teamId == TEAM_ALLIANCE) ? sObjectMgr->GetAcoreString(LANG_BG_BFG_ALLY, sWorld->GetDefaultDbcLocale()).c_str() : sObjectMgr->GetAcoreString(LANG_BG_BFG_HORDE, sWorld->GetDefaultDbcLocale()).c_str(), nodeName.c_str());
                     WorldPacket data;
                     ChatHandler::BuildChatPacket(data, type, LANG_UNIVERSAL, nullptr, nullptr, buf);
                     SendPacketToAll(&data);
@@ -268,7 +269,7 @@ void BattlegroundBFG::FillInitialWorldStates(WorldPackets::WorldState::InitWorld
 
     // Node occupied states
     for (uint8 node = 0; node < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++node)
-        for (uint8 i = 1; i < GILNEAS_BG_DYNAMIC_NODES_COUNT; ++i)
+        for (uint8 i = GILNEAS_BG_NODE_STATUS_ALLY_CONTESTED; i <= GILNEAS_BG_NODE_STATUS_HORDE_OCCUPIED; ++i)
             packet.Worldstates.emplace_back(_capturePointInfo[node]._iconCapture + plusArray[i], (_capturePointInfo[node]._state == i) ? 1 : 0);
 
     // How many bases each team owns (currently tracked but not used in worldstates)

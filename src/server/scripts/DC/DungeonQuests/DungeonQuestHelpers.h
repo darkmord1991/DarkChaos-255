@@ -23,6 +23,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <chrono>
+#include <mutex>
 
 namespace DungeonQuestHelpers {
 
@@ -45,6 +46,9 @@ struct PlayerStatsCache
 };
 
 // Global cache map (GUID -> cached stats)
+// Mutex-guarded: PlayerScript hooks run on map-update threads, and with
+// MapUpdate.Threads > 1 different maps' hooks can touch this shared cache concurrently.
+inline std::mutex g_PlayerStatsCacheMutex;
 inline std::unordered_map<uint64, PlayerStatsCache> g_PlayerStatsCache;
 inline constexpr uint32 CACHE_TTL_SECONDS = 30;
 
@@ -61,14 +65,17 @@ inline PlayerStatsCache GetCachedPlayerStats(Player* player)
     auto now = std::chrono::steady_clock::now();
 
     // Check if cache exists and is still valid
-    auto it = g_PlayerStatsCache.find(guid);
-    if (it != g_PlayerStatsCache.end())
     {
-        auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.timestamp).count();
-        if (age < CACHE_TTL_SECONDS)
+        std::lock_guard<std::mutex> lock(g_PlayerStatsCacheMutex);
+        auto it = g_PlayerStatsCache.find(guid);
+        if (it != g_PlayerStatsCache.end())
         {
-            LOG_DEBUG("scripts.dungeonquest", "Using cached stats for GUID {} (age: {}s)", guid, age);
-            return it->second;
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.timestamp).count();
+            if (age < CACHE_TTL_SECONDS)
+            {
+                LOG_DEBUG("scripts.dungeonquest", "Using cached stats for GUID {} (age: {}s)", guid, age);
+                return it->second;
+            }
         }
     }
 
@@ -110,7 +117,10 @@ inline PlayerStatsCache GetCachedPlayerStats(Player* player)
     }
 
     // Update cache
-    g_PlayerStatsCache[guid] = cache;
+    {
+        std::lock_guard<std::mutex> lock(g_PlayerStatsCacheMutex);
+        g_PlayerStatsCache[guid] = cache;
+    }
 
     return cache;
 }
@@ -124,7 +134,10 @@ inline void InvalidatePlayerStatsCache(Player* player)
         return;
 
     uint64 guid = player->GetGUID().GetCounter();
-    g_PlayerStatsCache.erase(guid);
+    {
+        std::lock_guard<std::mutex> lock(g_PlayerStatsCacheMutex);
+        g_PlayerStatsCache.erase(guid);
+    }
 
     LOG_DEBUG("scripts.dungeonquest", "Invalidated stats cache for GUID {}", guid);
 }

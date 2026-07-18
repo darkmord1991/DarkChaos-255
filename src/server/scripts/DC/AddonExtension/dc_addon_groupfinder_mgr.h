@@ -230,14 +230,17 @@ namespace DCAddon
         void FormGroupFromListing(uint32 listingId);
 
         // Scheduled Events
-        uint32 CreateEvent(Player* player, const ScheduledEvent& event);
-        bool CancelEvent(Player* player, uint32 eventId);
-        bool SignupForEvent(Player* player, uint32 eventId, uint8 role, const std::string& note);
-        bool CancelEventSignup(Player* player, uint32 eventId);
-        bool ConfirmEventSignup(Player* leader, uint32 eventId, uint32 playerGuid);
         std::vector<ScheduledEvent> GetUpcomingEvents(uint8 eventType);
         std::vector<EventSignup> GetEventSignups(uint32 eventId);
         std::vector<PlayerEventSignup> GetPlayerEventSignups(uint32 playerGuid);
+
+        // Scheduled Event cache mutators - the handlers write the DB directly
+        // (async), then call these to keep _events/_eventSignups in sync so
+        // other players (and the creator) see the change without a restart.
+        void CacheEvent(ScheduledEvent const& event);
+        void CacheSignup(EventSignup const& signup);
+        void RemoveCachedSignup(uint32 eventId, uint32 playerGuid);
+        void CancelCachedEvent(uint32 eventId);
 
         // Player Rating
         uint16 GetPlayerMythicRating(uint32 playerGuid);

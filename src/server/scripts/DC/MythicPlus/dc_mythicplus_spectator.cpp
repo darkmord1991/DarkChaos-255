@@ -538,8 +538,8 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
     WatchPlayer(player, targetPlayer);
 
     ChatHandler(player->GetSession()).PSendSysMessage(
-        "|cff00ff00[M+ Spectator]|r Now spectating +%u %s. Use |cffffd700.spectate watch <player>|r to switch views.",
-        run.keystoneLevel, run.leaderName.c_str());
+        "|cff00ff00[M+ Spectator]|r Now spectating +{} {}. Use |cffffd700.spectate watch <player>|r to switch views.",
+        run.keystoneLevel, run.leaderName);
 
     // Announce to participants if enabled
     if (_config.announceNewSpectators)
@@ -549,7 +549,7 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
             if (Player* p = ref.GetSource())
             {
                 ChatHandler(p->GetSession()).PSendSysMessage(
-                    "|cff00ff00[M+ Spectator]|r %s has joined as a spectator.", player->GetName().c_str());
+                    "|cff00ff00[M+ Spectator]|r {} has joined as a spectator.", player->GetName());
             }
         }
     }
@@ -690,7 +690,7 @@ bool MythicSpectatorManager::WatchPlayer(Player* spectator, Player* target)
         spectator->CastSpell(target, SPECTATOR_BINDSIGHT_SPELL, true);
 
     ChatHandler(spectator->GetSession()).PSendSysMessage(
-        "|cff00ff00[M+ Spectator]|r Now watching %s.", target->GetName().c_str());
+        "|cff00ff00[M+ Spectator]|r Now watching {}.", target->GetName());
 
     return true;
 }
@@ -1107,12 +1107,12 @@ void MythicSpectatorManager::SendInviteLink(Player* sender, Player* recipient, u
 
     // Send clickable link to recipient
     ChatHandler(recipient->GetSession()).PSendSysMessage(
-        "|cff00ff00[M+ Spectator]|r %s invites you to watch their +%u %s run! "
-        "|cffffd700|Hspectate:%s|h[Click to Join]|h|r or type: .spectate code %s",
-        sender->GetName().c_str(), run ? run->keystoneLevel : 0, mapName.c_str(), code.c_str(), code.c_str());
+        "|cff00ff00[M+ Spectator]|r {} invites you to watch their +{} {} run! "
+        "|cffffd700|Hspectate:{}|h[Click to Join]|h|r or type: .spectate code {}",
+        sender->GetName(), run ? run->keystoneLevel : 0, mapName, code, code);
 
     ChatHandler(sender->GetSession()).PSendSysMessage(
-        "|cff00ff00[M+ Spectator]|r Invite sent to %s.", recipient->GetName().c_str());
+        "|cff00ff00[M+ Spectator]|r Invite sent to {}.", recipient->GetName());
 }
 
 void MythicSpectatorManager::BroadcastInviteToGuild(Player* sender, uint32 instanceId)
@@ -1403,8 +1403,8 @@ bool MythicSpectatorManager::StartReplayPlayback(Player* player, uint32 replayId
         mapName = mapEntry->name[0];
 
     ChatHandler(player->GetSession()).PSendSysMessage(
-        "|cff00ff00[M+ Spectator]|r Replay %u loaded (%s, +%u). Type .spectate leave to stop.",
-        replayId, mapName.c_str(), uint32(replay.keystoneLevel));
+        "|cff00ff00[M+ Spectator]|r Replay {} loaded ({}, +{}). Type .spectate leave to stop.",
+        replayId, mapName, uint32(replay.keystoneLevel));
 
     return true;
 }

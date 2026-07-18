@@ -983,8 +983,8 @@ namespace HLBG
                     query = Acore::StringFormat(
                         "SELECT guid, player_name, current_rating, wins "
                         "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY current_rating DESC LIMIT %u",
+                        "WHERE season_id = {} "
+                        "ORDER BY current_rating DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -992,8 +992,8 @@ namespace HLBG
                     query = Acore::StringFormat(
                         "SELECT guid, player_name, wins, games_played "
                         "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY wins DESC LIMIT %u",
+                        "WHERE season_id = {} "
+                        "ORDER BY wins DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1001,8 +1001,8 @@ namespace HLBG
                     query = Acore::StringFormat(
                         "SELECT guid, player_name, CAST(win_rate * 100 AS UNSIGNED), games_played "
                         "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u AND games_played >= 5 "
-                        "ORDER BY win_rate DESC LIMIT %u",
+                        "WHERE season_id = {} AND games_played >= 5 "
+                        "ORDER BY win_rate DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1010,8 +1010,8 @@ namespace HLBG
                     query = Acore::StringFormat(
                         "SELECT guid, player_name, games_played, wins "
                         "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY games_played DESC LIMIT %u",
+                        "WHERE season_id = {} "
+                        "ORDER BY games_played DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1019,8 +1019,8 @@ namespace HLBG
                     query = Acore::StringFormat(
                         "SELECT guid, player_name, total_kills, avg_kills_per_game "
                         "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY total_kills DESC LIMIT %u",
+                        "WHERE season_id = {} "
+                        "ORDER BY total_kills DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1028,8 +1028,8 @@ namespace HLBG
                     query = Acore::StringFormat(
                         "SELECT guid, player_name, total_resources_captured, games_played "
                         "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u "
-                        "ORDER BY total_resources_captured DESC LIMIT %u",
+                        "WHERE season_id = {} "
+                        "ORDER BY total_resources_captured DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1037,8 +1037,8 @@ namespace HLBG
                     query = Acore::StringFormat(
                         "SELECT guid, player_name, CAST(kd_ratio * 100 AS UNSIGNED), games_played "
                         "FROM `v_hlbg_player_seasonal_stats` "
-                        "WHERE season_id = %u AND total_deaths > 0 "
-                        "ORDER BY kd_ratio DESC LIMIT %u",
+                        "WHERE season_id = {} AND total_deaths > 0 "
+                        "ORDER BY kd_ratio DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1058,9 +1058,9 @@ namespace HLBG
                         "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS extra "
                         "FROM `dc_hlbg_match_participants` p "
                         "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = %u "
+                        "WHERE p.season_id = {} "
                         "GROUP BY p.guid "
-                        "ORDER BY score DESC LIMIT %u",
+                        "ORDER BY score DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1071,9 +1071,9 @@ namespace HLBG
                         "COUNT(*) AS extra "
                         "FROM `dc_hlbg_match_participants` p "
                         "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = %u "
+                        "WHERE p.season_id = {} "
                         "GROUP BY p.guid "
-                        "ORDER BY score DESC LIMIT %u",
+                        "ORDER BY score DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1084,10 +1084,10 @@ namespace HLBG
                         "COUNT(*) AS extra "
                         "FROM `dc_hlbg_match_participants` p "
                         "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = %u "
+                        "WHERE p.season_id = {} "
                         "GROUP BY p.guid "
                         "HAVING COUNT(*) >= 5 "
-                        "ORDER BY score DESC LIMIT %u",
+                        "ORDER BY score DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1098,9 +1098,9 @@ namespace HLBG
                         "SUM(CASE WHEN wh.winner_tid = p.team THEN 1 ELSE 0 END) AS extra "
                         "FROM `dc_hlbg_match_participants` p "
                         "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = %u "
+                        "WHERE p.season_id = {} "
                         "GROUP BY p.guid "
-                        "ORDER BY score DESC LIMIT %u",
+                        "ORDER BY score DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1111,9 +1111,9 @@ namespace HLBG
                         "CAST(ROUND(COALESCE(SUM(p.kills), 0) / NULLIF(COUNT(*), 0), 0) AS UNSIGNED) AS extra "
                         "FROM `dc_hlbg_match_participants` p "
                         "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = %u "
+                        "WHERE p.season_id = {} "
                         "GROUP BY p.guid "
-                        "ORDER BY score DESC LIMIT %u",
+                        "ORDER BY score DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1124,9 +1124,9 @@ namespace HLBG
                         "COUNT(*) AS extra "
                         "FROM `dc_hlbg_match_participants` p "
                         "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = %u "
+                        "WHERE p.season_id = {} "
                         "GROUP BY p.guid "
-                        "ORDER BY score DESC LIMIT %u",
+                        "ORDER BY score DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1137,10 +1137,10 @@ namespace HLBG
                         "COUNT(*) AS extra "
                         "FROM `dc_hlbg_match_participants` p "
                         "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                        "WHERE p.season_id = %u "
+                        "WHERE p.season_id = {} "
                         "GROUP BY p.guid "
                         "HAVING COALESCE(SUM(p.deaths), 0) > 0 "
-                        "ORDER BY score DESC LIMIT %u",
+                        "ORDER BY score DESC LIMIT {}",
                         season, limit);
                     break;
 
@@ -1202,20 +1202,20 @@ namespace HLBG
                 jsonEntries += ",";
 
             jsonEntries += Acore::StringFormat(
-                "{\"rank\":%u,\"guid\":%u,\"name\":\"%s\",\"score\":%u,\"extra\":%u}",
+                "{{\"rank\":{},\"guid\":{},\"name\":\"{}\",\"score\":{},\"extra\":{}}}",
                 entries[i].rank,
                 entries[i].playerGuid,
-                entries[i].playerName.c_str(),
+                JsonEscape(entries[i].playerName),
                 entries[i].score,
                 entries[i].extra);
         }
         jsonEntries += "]";
 
         outResponse = Acore::StringFormat(
-            "{\"leaderboardType\":%u,\"season\":%u,\"entries\":%s}",
+            "{{\"leaderboardType\":{},\"season\":{},\"entries\":{}}}",
             leaderboardType,
             season,
-            jsonEntries.c_str());
+            jsonEntries);
         return true;
     }
 
@@ -1292,7 +1292,7 @@ namespace HLBG
                 "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.damage_done), 0) / COUNT(*), 0) END "
                 "FROM `dc_hlbg_match_participants` p "
                 "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                "WHERE p.guid = %u AND p.season_id = %u",
+                "WHERE p.guid = {} AND p.season_id = {}",
                 playerGuid, season);
         }
         else if (HasSeasonalStatView())
@@ -1310,7 +1310,7 @@ namespace HLBG
                 "IFNULL(avg_kills_per_game, 0), "
                 "IFNULL(avg_damage_per_game, 0) "
                 "FROM `v_hlbg_player_seasonal_stats` "
-                "WHERE guid = %u AND season_id = %u",
+                "WHERE guid = {} AND season_id = {}",
                 playerGuid, season);
         }
         else
@@ -1334,18 +1334,18 @@ namespace HLBG
         Field* fields = result->Fetch();
 
         outJson = Acore::StringFormat(
-            "{"
-            "\"rating\":%d,"
-            "\"wins\":%u,"
-            "\"losses\":%u,"
-            "\"games\":%u,"
-            "\"winRate\":%.2f,"
-            "\"kills\":%u,"
-            "\"deaths\":%u,"
-            "\"kdRatio\":%.2f,"
-            "\"avgKills\":%.2f,"
-            "\"avgDamage\":%.0f"
-            "}",
+            "{{"
+            "\"rating\":{},"
+            "\"wins\":{},"
+            "\"losses\":{},"
+            "\"games\":{},"
+            "\"winRate\":{:.2f},"
+            "\"kills\":{},"
+            "\"deaths\":{},"
+            "\"kdRatio\":{:.2f},"
+            "\"avgKills\":{:.2f},"
+            "\"avgDamage\":{:.0f}"
+            "}}",
             fields[0].Get<int32>(),
             fields[1].Get<uint32>(),
             fields[2].Get<uint32>(),
@@ -1391,7 +1391,7 @@ namespace HLBG
                 "CASE WHEN COUNT(*) = 0 THEN 0 ELSE ROUND(COALESCE(SUM(p.damage_done), 0) / COUNT(*), 0) END "
                 "FROM `dc_hlbg_match_participants` p "
                 "LEFT JOIN `dc_hlbg_winner_history` wh ON p.match_id = wh.id "
-                "WHERE p.guid = %u",
+                "WHERE p.guid = {}",
                 playerGuid);
         }
         else
@@ -1412,16 +1412,16 @@ namespace HLBG
 
             query = Acore::StringFormat(
                 "SELECT "
-                "IFNULL(%s, 0), "
-                "IFNULL(%s, 0), "
-                "IFNULL(%s, 0), "
-                "IFNULL(%s, 0), "
-                "IFNULL(%s, 0), "
-                "IFNULL(%s, 0), "
-                "IFNULL(%s, 0), "
-                "IFNULL(%s, 0) "
+                "IFNULL({}, 0), "
+                "IFNULL({}, 0), "
+                "IFNULL({}, 0), "
+                "IFNULL({}, 0), "
+                "IFNULL({}, 0), "
+                "IFNULL({}, 0), "
+                "IFNULL({}, 0), "
+                "IFNULL({}, 0) "
                 "FROM `v_hlbg_player_alltime_stats` "
-                "WHERE guid = %u",
+                "WHERE guid = {}",
                 columns.totalMatches,
                 columns.totalWins,
                 columns.totalLosses,
@@ -1448,16 +1448,16 @@ namespace HLBG
         Field* fields = result->Fetch();
 
         outJson = Acore::StringFormat(
-            "{"
-            "\"totalMatches\":%u,"
-            "\"lifetimeWins\":%u,"
-            "\"lifetimeLosses\":%u,"
-            "\"lifetimeKills\":%u,"
-            "\"lifetimeDeaths\":%u,"
-            "\"kdRatio\":%.2f,"
-            "\"avgKills\":%.2f,"
-            "\"avgDamage\":%.0f"
-            "}",
+            "{{"
+            "\"totalMatches\":{},"
+            "\"lifetimeWins\":{},"
+            "\"lifetimeLosses\":{},"
+            "\"lifetimeKills\":{},"
+            "\"lifetimeDeaths\":{},"
+            "\"kdRatio\":{:.2f},"
+            "\"avgKills\":{:.2f},"
+            "\"avgDamage\":{:.0f}"
+            "}}",
             fields[0].Get<uint32>(),
             fields[1].Get<uint32>(),
             fields[2].Get<uint32>(),

@@ -192,6 +192,20 @@ enum MountHyjalEvents
     EVENT_LOGOSH_2,
     EVENT_LOGOSH_3,
 
+    EVENT_FANDRAL_CHECK,
+    EVENT_OGRE_SPAWN_CONTROLLER,
+    EVENT_SLAVEDRIVER_CHECK,
+    EVENT_TWILIGHT_SLAVE_CHECK,
+    EVENT_FLAMEWARD_CHECK,
+    EVENT_FLAMEWARD_DESPAWN,
+    EVENT_AESSINA_CHECK,
+    EVENT_TORTOLLA_CHECK,
+    EVENT_SMOLDEROS_DOG_CHECK,
+    EVENT_GRUDGE_MATCH_BREATH,
+    EVENT_GRUDGE_MATCH_COSMETIC,
+    EVENT_WINGS_OF_AVIANA_CHECK,
+    EVENT_PUNT_CHILD_CHECK,
+
     ACTION_GRADUATION_1,
     ACTION_GRADUATION_2,
     ACTION_GRADUATION_3,
@@ -548,6 +562,7 @@ public:
                 _playerGUID = player->GetGUID();
                 me->GetMotionMaster()->MoveFollow(player, 1.f, 1.f * M_PI);
                 CastWithDelay(me, 500, me, SPELL_FANDRALS_CHAINS);
+                _events.ScheduleEvent(EVENT_FANDRAL_CHECK, Milliseconds(1000));
             }
             else
                 me->DespawnOrUnsummon();
@@ -571,31 +586,37 @@ public:
         {
             DoMeleeAttackIfReady();
 
-            if (_checkTimer <= diff)
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
             {
-                _checkTimer = 2000;
-
-                if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                switch (eventId)
                 {
-                    if (!player->IsAlive())
-                        me->DespawnOrUnsummon();
+                case EVENT_FANDRAL_CHECK:
+                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    {
+                        if (!player->IsAlive())
+                            me->DespawnOrUnsummon();
 
-                    if (player->HasAura(SPELL_AURA_PHASE_2048))
-                        player->RemoveAura(SPELL_AURA_PHASE_2048);
+                        if (player->HasAura(SPELL_AURA_PHASE_2048))
+                            player->RemoveAura(SPELL_AURA_PHASE_2048);
 
-                    if (player->GetQuestStatus(QUEST_THROUGH_THE_DREAM) == QUEST_STATUS_NONE)
-                        me->DespawnOrUnsummon();
+                        if (player->GetQuestStatus(QUEST_THROUGH_THE_DREAM) == QUEST_STATUS_NONE)
+                            me->DespawnOrUnsummon();
 
-                    if (me->GetDistance(player) > 80.f)
-                        me->DespawnOrUnsummon();
+                        if (me->GetDistance(player) > 80.f)
+                            me->DespawnOrUnsummon();
+                    }
+                    _events.ScheduleEvent(EVENT_FANDRAL_CHECK, Milliseconds(2000));
+                    break;
+                default:
+                    break;
                 }
             }
-            else _checkTimer -= diff;
-
         }
     private:
         ObjectGuid _playerGUID;
-        uint16 _checkTimer = 1000;
+        EventMap _events;
     };
 
     CreatureAI* GetAI(Creature* creature) const
@@ -630,21 +651,30 @@ public:
         void Reset()
         {
             me->setActive(true);
+            _events.ScheduleEvent(EVENT_OGRE_SPAWN_CONTROLLER, Milliseconds(5000));
         }
 
         void UpdateAI(uint32 const diff)
         {
-            if (_checkTimer <= diff)
-            {
-                _checkTimer = 60000;
+            _events.Update(diff);
 
-                if (auto ogr = me->SummonCreature(NPC_PROVEDITOR, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.5f, me->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 900000))
-                    ogr->setActive(true);
+            while (uint32 eventId = _events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                case EVENT_OGRE_SPAWN_CONTROLLER:
+                    if (auto ogr = me->SummonCreature(NPC_PROVEDITOR, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.5f, me->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 900000))
+                        ogr->setActive(true);
+
+                    _events.ScheduleEvent(EVENT_OGRE_SPAWN_CONTROLLER, Milliseconds(60000));
+                    break;
+                default:
+                    break;
+                }
             }
-            else _checkTimer -= diff;
         }
     private:
-        uint16 _checkTimer = 5000;
+        EventMap _events;
     };
 
     CreatureAI* GetAI(Creature* creature) const
@@ -764,6 +794,8 @@ public:
         {
             if (auto owner = summoner->ToCreature())
                 _proveditorGUID = owner->GetGUID();
+
+            _events.ScheduleEvent(EVENT_SLAVEDRIVER_CHECK, Milliseconds(1000));
         }
 
         void JustEngagedWith(Unit* /*who*/)
@@ -777,37 +809,44 @@ public:
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
 
-            if (_checkTimer <= diff)
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
             {
-                _checkTimer = 1000;
-
-                if (auto prove = ObjectAccessor::GetCreature(*me, _proveditorGUID))
+                switch (eventId)
                 {
-                    if (!prove->IsInCombat())
+                case EVENT_SLAVEDRIVER_CHECK:
+                    if (auto prove = ObjectAccessor::GetCreature(*me, _proveditorGUID))
                     {
-                        me->GetMotionMaster()->MoveFollow(prove, 0.6f, 1.5f * M_PI, MOTION_SLOT_ACTIVE);
-                        me->GetThreatMgr().ClearAllThreat();
+                        if (!prove->IsInCombat())
+                        {
+                            me->GetMotionMaster()->MoveFollow(prove, 0.6f, 1.5f * M_PI, MOTION_SLOT_ACTIVE);
+                            me->GetThreatMgr().ClearAllThreat();
 
-                        if (me->IsInCombat())
-                            if (auto victim = me->GetVictim())
-                                prove->AI()->AttackStart(victim);
-                    }
-                    else
-                    {
-                        me->GetMotionMaster()->Clear();
+                            if (me->IsInCombat())
+                                if (auto victim = me->GetVictim())
+                                    prove->AI()->AttackStart(victim);
+                        }
+                        else
+                        {
+                            me->GetMotionMaster()->Clear();
 
-                        if (!me->IsInCombat())
-                            if (auto victim = prove->GetVictim())
-                                me->AI()->AttackStart(victim);
+                            if (!me->IsInCombat())
+                                if (auto victim = prove->GetVictim())
+                                    me->AI()->AttackStart(victim);
+                        }
                     }
+                    _events.ScheduleEvent(EVENT_SLAVEDRIVER_CHECK, Milliseconds(1000));
+                    break;
+                default:
+                    break;
                 }
             }
-            else _checkTimer -= diff;
         }
 
     private:
         ObjectGuid _proveditorGUID;
-        uint16 _checkTimer = 1000;
+        EventMap _events;
     };
 
     CreatureAI* GetAI(Creature* creature) const
@@ -836,6 +875,8 @@ public:
             me->SetReactState(REACT_PASSIVE);
             CastWithDelay(me, 200, me, SPELL_HOLD_BURDEN);
             _opponentsDead = false;
+
+            _events.ScheduleEvent(EVENT_TWILIGHT_SLAVE_CHECK, Milliseconds(1000));
         }
 
         void SetData(uint32 data, uint32 /*state*/)
@@ -860,57 +901,64 @@ public:
         {
             DoMeleeAttackIfReady();
 
-            if (_checkTimer <= diff)
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
             {
-                _checkTimer = 800;
-
-                if (auto prove = ObjectAccessor::GetCreature(*me, _proveditorGUID))
+                switch (eventId)
                 {
-                    if (!prove->IsInCombat())
+                case EVENT_TWILIGHT_SLAVE_CHECK:
+                    if (auto prove = ObjectAccessor::GetCreature(*me, _proveditorGUID))
                     {
-                        switch (_whichSlave)
+                        if (!prove->IsInCombat())
                         {
-                        case 1:
-                            me->SetControlled(false, UNIT_STATE_ROOT);
-                            me->GetMotionMaster()->MoveFollow(prove, 2.0f, 0.7f * M_PI);
-                            break;
-                        case 2:
-                            me->SetControlled(false, UNIT_STATE_ROOT);
-                            me->GetMotionMaster()->MoveFollow(prove, 2.0f, 1.0f * M_PI);
-                            break;
-                        case 3:
-                            me->SetControlled(false, UNIT_STATE_ROOT);
-                            me->GetMotionMaster()->MoveFollow(prove, 2.0f, 1.3f * M_PI);
-                            break;
-                        default:
-                            break;
+                            switch (_whichSlave)
+                            {
+                            case 1:
+                                me->SetControlled(false, UNIT_STATE_ROOT);
+                                me->GetMotionMaster()->MoveFollow(prove, 2.0f, 0.7f * M_PI);
+                                break;
+                            case 2:
+                                me->SetControlled(false, UNIT_STATE_ROOT);
+                                me->GetMotionMaster()->MoveFollow(prove, 2.0f, 1.0f * M_PI);
+                                break;
+                            case 3:
+                                me->SetControlled(false, UNIT_STATE_ROOT);
+                                me->GetMotionMaster()->MoveFollow(prove, 2.0f, 1.3f * M_PI);
+                                break;
+                            default:
+                                break;
+                            }
                         }
-                    }
-                    else
-                    {
-                        me->GetMotionMaster()->Clear();
-                        me->SetControlled(true, UNIT_STATE_ROOT);
-                    }
+                        else
+                        {
+                            me->GetMotionMaster()->Clear();
+                            me->SetControlled(true, UNIT_STATE_ROOT);
+                        }
 
-                    if (!_opponentsDead)
-                    {
-                        if (auto driver = ObjectAccessor::GetCreature(*me, _slavedriverGUID))
+                        if (!_opponentsDead)
                         {
-                            if (!driver->IsAlive())
-                                if (!prove->IsAlive())
-                                {
-                                    _opponentsDead = true;
-                                    me->GetMotionMaster()->Clear();
-                                    me->RemoveAura(SPELL_HOLD_BURDEN);
-                                    me->CastSpell(me, SPELL_SUMMON_SUPPLIES);
-                                    CastWithDelay(me, 2500, me, SPELL_FEAR_VISUAL);
-                                    me->DespawnOrUnsummon( Milliseconds(6000));
-                                }
+                            if (auto driver = ObjectAccessor::GetCreature(*me, _slavedriverGUID))
+                            {
+                                if (!driver->IsAlive())
+                                    if (!prove->IsAlive())
+                                    {
+                                        _opponentsDead = true;
+                                        me->GetMotionMaster()->Clear();
+                                        me->RemoveAura(SPELL_HOLD_BURDEN);
+                                        me->CastSpell(me, SPELL_SUMMON_SUPPLIES);
+                                        CastWithDelay(me, 2500, me, SPELL_FEAR_VISUAL);
+                                        me->DespawnOrUnsummon( Milliseconds(6000));
+                                    }
+                            }
                         }
                     }
+                    _events.ScheduleEvent(EVENT_TWILIGHT_SLAVE_CHECK, Milliseconds(800));
+                    break;
+                default:
+                    break;
                 }
             }
-            else _checkTimer -= diff;
         }
 
     private:
@@ -918,7 +966,7 @@ public:
         uint8 _whichSlave = 0;
         ObjectGuid _proveditorGUID;
         ObjectGuid _slavedriverGUID;
-        uint16 _checkTimer = 1000;
+        EventMap _events;
     };
 
     CreatureAI* GetAI(Creature* creature) const
@@ -1039,6 +1087,9 @@ public:
                 TalkWithDelay(me->AI(), 1000, 0, _playerGUID);
                 _events.ScheduleEvent(EVENT_FLAMEWARD_1, Milliseconds(3000));
             }
+
+            _events.ScheduleEvent(EVENT_FLAMEWARD_CHECK, Milliseconds(1000));
+            _events.ScheduleEvent(EVENT_FLAMEWARD_DESPAWN, Milliseconds(299900));
         }
 
         void JustDied(Unit* /* killer */)
@@ -1072,54 +1123,45 @@ public:
         {
             _events.Update(diff);
 
-            if (_checkTimer <= diff)
-            {
-                _checkTimer = 1000;
-
-                if (_started)
-                {
-                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                    {
-                        if (!player->IsAlive())
-                        {
-                            _started = false;
-                            _summons.DespawnAll();
-                            me->DespawnOrUnsummon();
-                            AiTalk(me->AI(), 2, _playerGUID);
-                        }
-
-                        if (me->GetDistance(player) >= 60.f)
-                        {
-                            _started = false;
-                            _summons.DespawnAll();
-                            me->DespawnOrUnsummon();
-                        }
-
-                        if (player->GetQuestStatus(QUEST_PREPPING_THE_SOIL) == QUEST_STATUS_NONE)
-                        {
-                            _started = false;
-                            _summons.DespawnAll();
-                            me->DespawnOrUnsummon();
-                        }
-                    }
-                }
-            }
-            else _checkTimer -= diff;
-
-            if (_despawnTimer <= diff)
-            {
-                _despawnTimer = 100000;
-
-                _started = false;
-                _summons.DespawnAll();
-                me->DespawnOrUnsummon();
-            }
-            else _despawnTimer -= diff;
-
             while (uint32 eventId = _events.ExecuteEvent())
             {
                 switch (eventId)
                 {
+                case EVENT_FLAMEWARD_CHECK:
+                    if (_started)
+                    {
+                        if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                        {
+                            if (!player->IsAlive())
+                            {
+                                _started = false;
+                                _summons.DespawnAll();
+                                me->DespawnOrUnsummon();
+                                AiTalk(me->AI(), 2, _playerGUID);
+                            }
+
+                            if (me->GetDistance(player) >= 60.f)
+                            {
+                                _started = false;
+                                _summons.DespawnAll();
+                                me->DespawnOrUnsummon();
+                            }
+
+                            if (player->GetQuestStatus(QUEST_PREPPING_THE_SOIL) == QUEST_STATUS_NONE)
+                            {
+                                _started = false;
+                                _summons.DespawnAll();
+                                me->DespawnOrUnsummon();
+                            }
+                        }
+                    }
+                    _events.ScheduleEvent(EVENT_FLAMEWARD_CHECK, Milliseconds(1000));
+                    break;
+                case EVENT_FLAMEWARD_DESPAWN:
+                    _started = false;
+                    _summons.DespawnAll();
+                    me->DespawnOrUnsummon();
+                    break;
                 case EVENT_FLAMEWARD_1:
                     _counter = 1;
 
@@ -1218,8 +1260,6 @@ public:
         uint16 _counter = 0;
         uint32 _flamewardHelperGUID = 0;  // low GUID counter (compared against spawn-GUID constants)
         ObjectGuid _playerGUID;
-        uint16 _checkTimer = 1000;
-        uint64 _despawnTimer = 299900;
     };
 
     CreatureAI* GetAI(Creature* creature) const
@@ -1262,6 +1302,8 @@ public:
                 _playerGUID = player->GetGUID();
                 CastWithDelay(player, 100, me, SPELL_RIDE_VEHICLE);
             }
+
+            _events.ScheduleEvent(EVENT_AESSINA_CHECK, Milliseconds(1000));
         }
 
         void PassengerBoarded(Unit* passenger, int8 seatId, bool apply)
@@ -1296,33 +1338,29 @@ public:
 
         void UpdateAI(uint32 const diff)
         {
-            if (_checkTimer <= diff)
-            {
-                _checkTimer = 1000;
-
-                if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                {
-                    if (!player->IsAlive())
-                    {
-                        _summons.DespawnAll();
-                        me->DespawnOrUnsummon();
-                    }
-
-                    if (me->GetDistance(player) >= 50.f)
-                    {
-                        _summons.DespawnAll();
-                        me->DespawnOrUnsummon();
-                    }
-                }
-            }
-            else _checkTimer -= diff;
-
             _events.Update(diff);
 
             while (uint32 eventId = _events.ExecuteEvent())
             {
                 switch (eventId)
                 {
+                case EVENT_AESSINA_CHECK:
+                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    {
+                        if (!player->IsAlive())
+                        {
+                            _summons.DespawnAll();
+                            me->DespawnOrUnsummon();
+                        }
+
+                        if (me->GetDistance(player) >= 50.f)
+                        {
+                            _summons.DespawnAll();
+                            me->DespawnOrUnsummon();
+                        }
+                    }
+                    _events.ScheduleEvent(EVENT_AESSINA_CHECK, Milliseconds(1000));
+                    break;
                 case EVENT_AESSINA_VEH_1:
                     me->SetControlled(false, UNIT_STATE_ROOT);
                     me->GetMotionMaster()->MovePoint(1, 5135.51f, -1756.11f, 1349.144f); // AC: dropped 4.3.4 'generatePath=false' bool
@@ -1379,7 +1417,6 @@ public:
             }
         }
     private:
-        uint16 _checkTimer = 1000;
         ObjectGuid _playerGUID;
         ObjectGuid _aessinaGUID;
         EventMap _events;
@@ -1424,6 +1461,8 @@ public:
                 _playerGUID = player->GetGUID();
                 me->GetMotionMaster()->MoveFollow(player, 0.7f, 0.3f * M_PI);
             }
+
+            _events.ScheduleEvent(EVENT_TORTOLLA_CHECK, Milliseconds(1000));
         }
         void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
         {
@@ -1443,57 +1482,6 @@ public:
         {
             DoMeleeAttackIfReady();
 
-            if (_checkTimer <= diff)
-            {
-                _checkTimer = 1000;
-
-                if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                {
-                    if (player->GetQuestStatus(QUEST_THE_STRENGTH_OF_TORTOLLA) == QUEST_STATUS_INCOMPLETE)
-                    {
-                        if (!_inProgress)
-                        {
-                            if (auto trigger = me->FindNearestCreature(NPC_QUEST_EVENT_TRIGGER, 10.f))
-                            {
-                                _inProgress = true;
-                                me->CastSpell(me, SPELL_ROOT);
-                                me->SetFacingToObject(trigger);
-                                me->CastSpell(trigger, SPELL_NEMESIS_CRYSTAL_EXAMINATION);
-                                trigger->CastSpell(player, SPELL_NEMESIS_CRYSTAL_EXAMINATION);
-                                AiTalk(me->AI(), 0, _playerGUID);
-                                _events.ScheduleEvent(EVENT_CHILD_OF_TORTOLLA_1, Milliseconds(6000));
-                            }
-                        }
-                    }
-
-                    if (!player->IsAlive())
-                    {
-                        me->DespawnOrUnsummon();
-                        player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
-                    }
-
-                    if (player->GetQuestStatus(QUEST_THE_STRENGTH_OF_TORTOLLA) == QUEST_STATUS_NONE ||
-                        player->GetQuestStatus(QUEST_FINISH_NEMESIS) == QUEST_STATUS_REWARDED)
-                    {
-                        me->DespawnOrUnsummon();
-                        player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
-                    }
-
-                    if (me->GetReactState() != REACT_PASSIVE)
-                    {
-                        me->SetReactState(REACT_PASSIVE);
-                        me->GetMotionMaster()->MoveFollow(player, 0.7f, 0.3f * M_PI);
-                    }
-
-                    if (me->GetDistance(player) > 80.f)
-                    {
-                        me->DespawnOrUnsummon();
-                        player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
-                    }
-                }
-            }
-            else _checkTimer -= diff;
-
             _events.Update(diff);
 
             if (me->HasUnitState(UNIT_STATE_CASTING))
@@ -1503,6 +1491,53 @@ public:
             {
                 switch (eventId)
                 {
+                case EVENT_TORTOLLA_CHECK:
+                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    {
+                        if (player->GetQuestStatus(QUEST_THE_STRENGTH_OF_TORTOLLA) == QUEST_STATUS_INCOMPLETE)
+                        {
+                            if (!_inProgress)
+                            {
+                                if (auto trigger = me->FindNearestCreature(NPC_QUEST_EVENT_TRIGGER, 10.f))
+                                {
+                                    _inProgress = true;
+                                    me->CastSpell(me, SPELL_ROOT);
+                                    me->SetFacingToObject(trigger);
+                                    me->CastSpell(trigger, SPELL_NEMESIS_CRYSTAL_EXAMINATION);
+                                    trigger->CastSpell(player, SPELL_NEMESIS_CRYSTAL_EXAMINATION);
+                                    AiTalk(me->AI(), 0, _playerGUID);
+                                    _events.ScheduleEvent(EVENT_CHILD_OF_TORTOLLA_1, Milliseconds(6000));
+                                }
+                            }
+                        }
+
+                        if (!player->IsAlive())
+                        {
+                            me->DespawnOrUnsummon();
+                            player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
+                        }
+
+                        if (player->GetQuestStatus(QUEST_THE_STRENGTH_OF_TORTOLLA) == QUEST_STATUS_NONE ||
+                            player->GetQuestStatus(QUEST_FINISH_NEMESIS) == QUEST_STATUS_REWARDED)
+                        {
+                            me->DespawnOrUnsummon();
+                            player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
+                        }
+
+                        if (me->GetReactState() != REACT_PASSIVE)
+                        {
+                            me->SetReactState(REACT_PASSIVE);
+                            me->GetMotionMaster()->MoveFollow(player, 0.7f, 0.3f * M_PI);
+                        }
+
+                        if (me->GetDistance(player) > 80.f)
+                        {
+                            me->DespawnOrUnsummon();
+                            player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
+                        }
+                    }
+                    _events.ScheduleEvent(EVENT_TORTOLLA_CHECK, Milliseconds(1000));
+                    break;
                 case EVENT_CHILD_OF_TORTOLLA_1:
                     me->RemoveAura(SPELL_ROOT);
                     break;
@@ -1514,7 +1549,6 @@ public:
     private:
         bool _inProgress = false;
         ObjectGuid _playerGUID;
-        uint16 _checkTimer = 1000;
         EventMap _events;
     };
 
@@ -1555,6 +1589,8 @@ public:
                 CastWithDelay(me, 100, me, SPELL_IMMUNITY_ALL);
                 _events.ScheduleEvent(EVENT_AGILITY_TRAINER_1, Milliseconds(500));
             }
+
+            _events.ScheduleEvent(EVENT_AGILITY_TRAINER_2, Milliseconds(1000));
         }
 
         void UpdateAI(uint32 const diff)
@@ -1601,13 +1637,6 @@ public:
                 }
             }
 
-            if (_checkTimer <= diff)
-            {
-                _checkTimer = 1000;
-                me->SetHomePosition(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
-            }
-            else _checkTimer -= diff;
-
             _events.Update(diff);
 
             while (uint32 eventId = _events.ExecuteEvent())
@@ -1620,6 +1649,10 @@ public:
                     if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                         me->AI()->AttackStart(player);
                     break;
+                case EVENT_AGILITY_TRAINER_2:
+                    me->SetHomePosition(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
+                    _events.ScheduleEvent(EVENT_AGILITY_TRAINER_2, Milliseconds(1000));
+                    break;
                 default:
                     break;
                 }
@@ -1628,7 +1661,6 @@ public:
     private:
         bool _inProgress = false;
         ObjectGuid _playerGUID;
-        uint16 _checkTimer = 1000;
         EventMap _events;
     };
 
@@ -2216,6 +2248,8 @@ public:
 
             if (auto player = summoner->ToPlayer())
                 _playerGUID = player->GetGUID();
+
+            _events.ScheduleEvent(EVENT_SMOLDEROS_DOG_CHECK, Milliseconds(1000));
         }
 
         void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
@@ -2231,38 +2265,45 @@ public:
         {
             DoMeleeAttackIfReady();
 
-            if (_checkTimer <= diff)
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
             {
-                _checkTimer = 1000;
-
-                if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                switch (eventId)
                 {
-                    if (!player->IsAlive())
-                        me->DespawnOrUnsummon();
-
-                    if (player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_NONE
-                        || player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_COMPLETE
-                        || player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_REWARDED)
+                case EVENT_SMOLDEROS_DOG_CHECK:
+                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                     {
-                        me->SetControlled(true, UNIT_STATE_ROOT);
-                        me->DespawnOrUnsummon( Milliseconds(6000));
-                    }
+                        if (!player->IsAlive())
+                            me->DespawnOrUnsummon();
 
-                    if (me->GetReactState() != REACT_PASSIVE)
-                    {
-                        me->SetReactState(REACT_PASSIVE);
-                        me->GetMotionMaster()->MoveFollow(player, 0.7f, 0.3f * M_PI);
-                    }
+                        if (player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_NONE
+                            || player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_COMPLETE
+                            || player->GetQuestStatus(QUEST_WALKING_THE_DOG) == QUEST_STATUS_REWARDED)
+                        {
+                            me->SetControlled(true, UNIT_STATE_ROOT);
+                            me->DespawnOrUnsummon( Milliseconds(6000));
+                        }
 
-                    if (me->GetDistance(player) > 100.f)
-                        me->DespawnOrUnsummon();
+                        if (me->GetReactState() != REACT_PASSIVE)
+                        {
+                            me->SetReactState(REACT_PASSIVE);
+                            me->GetMotionMaster()->MoveFollow(player, 0.7f, 0.3f * M_PI);
+                        }
+
+                        if (me->GetDistance(player) > 100.f)
+                            me->DespawnOrUnsummon();
+                    }
+                    _events.ScheduleEvent(EVENT_SMOLDEROS_DOG_CHECK, Milliseconds(1000));
+                    break;
+                default:
+                    break;
                 }
             }
-            else _checkTimer -= diff;
         }
     private:
         ObjectGuid _playerGUID;
-        uint16 _checkTimer = 1000;
+        EventMap _events;
     };
 
     CreatureAI* GetAI(Creature* creature) const
@@ -2316,7 +2357,11 @@ public:
             if (!_butcherKilled)
             {
                 if (point == 1)
+                {
                     _fight = true;
+                    _events.ScheduleEvent(EVENT_GRUDGE_MATCH_BREATH, Milliseconds(1000));
+                    _events.ScheduleEvent(EVENT_GRUDGE_MATCH_COSMETIC, Milliseconds(1000));
+                }
             }
             else
             {
@@ -2337,23 +2382,7 @@ public:
 
             if (_fight)
             {
-                if (auto butcher = me->FindNearestCreature(NPC_BUTCHER, 30.f))
-                {
-                    if (_checkTimer <= diff)
-                    {
-                        _checkTimer = 6500;
-                        me->CastSpell(butcher, SPELL_LITTLE_BIG_FLAME_BREATH);
-                    }
-                    else _checkTimer -= diff;
-
-                    if (_checkTimer2 <= diff)
-                    {
-                        _checkTimer2 = 2000;
-                        butcher->CastSpell(me, SPELL_ATTACK_COSMETIC);
-                    }
-                    else _checkTimer2 -= diff;
-                }
-                else
+                if (!me->FindNearestCreature(NPC_BUTCHER, 30.f))
                 {
                     _butcherKilled = true;
                     _fight = false;
@@ -2370,6 +2399,33 @@ public:
                 }
             }
 
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                case EVENT_GRUDGE_MATCH_BREATH:
+                    if (_fight)
+                        if (auto butcher = me->FindNearestCreature(NPC_BUTCHER, 30.f))
+                        {
+                            me->CastSpell(butcher, SPELL_LITTLE_BIG_FLAME_BREATH);
+                            _events.ScheduleEvent(EVENT_GRUDGE_MATCH_BREATH, Milliseconds(6500));
+                        }
+                    break;
+                case EVENT_GRUDGE_MATCH_COSMETIC:
+                    if (_fight)
+                        if (auto butcher = me->FindNearestCreature(NPC_BUTCHER, 30.f))
+                        {
+                            butcher->CastSpell(me, SPELL_ATTACK_COSMETIC);
+                            _events.ScheduleEvent(EVENT_GRUDGE_MATCH_COSMETIC, Milliseconds(2000));
+                        }
+                    break;
+                default:
+                    break;
+                }
+            }
+
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
@@ -2378,8 +2434,7 @@ public:
         bool _butcherKilled = false;
         ObjectGuid _butcherGUID;
         ObjectGuid _grommkoGUID;
-        uint16 _checkTimer = 1000;
-        uint16 _checkTimer2 = 1000;
+        EventMap _events;
     };
 
     CreatureAI* GetAI(Creature* creature) const
@@ -2410,6 +2465,8 @@ public:
 
             if (auto player = summoner->ToPlayer())
                 _playerGUID = player->GetGUID();
+
+            _events.ScheduleEvent(EVENT_EMERALD_DRAKE_2, Milliseconds(1000));
         }
 
         void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
@@ -2423,54 +2480,50 @@ public:
 
         void UpdateAI(uint32 const diff) override
         {
-            if (_checkTimer <= diff)
-            {
-                _checkTimer = 1000;
-
-                if (_isInCorrectArea)
-                {
-                    if (me->GetAreaId() != 4998
-                        && me->GetAreaId() != 4991
-                        && me->GetAreaId() != 4995
-                        && me->GetAreaId() != 4984
-                        && me->GetAreaId() != 4994)
-                    {
-                        _isInCorrectArea = false;
-                        AiTalk(me->AI(), 0, _playerGUID);
-                        _events.ScheduleEvent(EVENT_EMERALD_DRAKE_1, Milliseconds(10000));
-                    }
-                }
-                else
-                {
-                    if (me->GetAreaId() == 4998
-                        || me->GetAreaId() == 4984
-                        || me->GetAreaId() == 4991
-                        || me->GetAreaId() == 4995
-                        || me->GetAreaId() == 4994)
-                    {
-                        _events.CancelEvent(EVENT_EMERALD_DRAKE_1);
-                        _isInCorrectArea = true;
-                    }
-                }
-
-                if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                {
-                    if (player->GetQuestStatus(QUEST_SLASH_AND_BURN) == QUEST_STATUS_NONE ||
-                        player->GetQuestStatus(QUEST_SLASH_AND_BURN) == QUEST_STATUS_REWARDED)
-                    {
-                        me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
-                        me->DespawnOrUnsummon();
-                    }
-                }
-            }
-            else _checkTimer -= diff;
-
             _events.Update(diff);
 
             while (uint32 eventId = _events.ExecuteEvent())
             {
                 switch (eventId)
                 {
+                case EVENT_EMERALD_DRAKE_2:
+                    if (_isInCorrectArea)
+                    {
+                        if (me->GetAreaId() != 4998
+                            && me->GetAreaId() != 4991
+                            && me->GetAreaId() != 4995
+                            && me->GetAreaId() != 4984
+                            && me->GetAreaId() != 4994)
+                        {
+                            _isInCorrectArea = false;
+                            AiTalk(me->AI(), 0, _playerGUID);
+                            _events.ScheduleEvent(EVENT_EMERALD_DRAKE_1, Milliseconds(10000));
+                        }
+                    }
+                    else
+                    {
+                        if (me->GetAreaId() == 4998
+                            || me->GetAreaId() == 4984
+                            || me->GetAreaId() == 4991
+                            || me->GetAreaId() == 4995
+                            || me->GetAreaId() == 4994)
+                        {
+                            _events.CancelEvent(EVENT_EMERALD_DRAKE_1);
+                            _isInCorrectArea = true;
+                        }
+                    }
+
+                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    {
+                        if (player->GetQuestStatus(QUEST_SLASH_AND_BURN) == QUEST_STATUS_NONE ||
+                            player->GetQuestStatus(QUEST_SLASH_AND_BURN) == QUEST_STATUS_REWARDED)
+                        {
+                            me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
+                            me->DespawnOrUnsummon();
+                        }
+                    }
+                    _events.ScheduleEvent(EVENT_EMERALD_DRAKE_2, Milliseconds(1000));
+                    break;
                 case EVENT_EMERALD_DRAKE_1:
                     me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
                     me->DespawnOrUnsummon( Milliseconds(100));
@@ -2482,7 +2535,6 @@ public:
         }
     private:
         bool _isInCorrectArea = false;
-        uint32 _checkTimer = 1000;
         ObjectGuid _playerGUID;
 
         EventMap _events;
@@ -2533,6 +2585,7 @@ public:
             // 1 - inspire / 2 - incite / 3 - pander
             _satisfyAnswer = urand(1, 3);
             _waitinForAnswer = true;
+            _events.ScheduleEvent(EVENT_GRADUATION_1, Milliseconds(15000));
             auto initiates = SelectNearbyUnits(me, NPC_TWILIGHT_INITIATE, 25.f);
 
             if (!initiates.empty())
@@ -2731,19 +2784,6 @@ public:
 
         void UpdateAI(uint32 const diff)
         {
-            if (_eventStarted)
-            {
-                if (_waitinForAnswer)
-                {
-                    if (_checkTimer <= diff)
-                    {
-                        _checkTimer = 17000;
-                        _events.ScheduleEvent(EVENT_GRADUATION_1, Milliseconds(15000));
-                    }
-                    else _checkTimer -= diff;
-                }
-            }
-
             _events.Update(diff);
 
             while (uint32 eventId = _events.ExecuteEvent())
@@ -2782,7 +2822,6 @@ public:
         bool _waitinForAnswer = false;
         uint8 _satisfyAnswer = 0; // 1 - inspire / 2 - incite / 3 - pander
         ObjectGuid _playerGUID;
-        uint16 _checkTimer = 1000;
         uint16 _noPlayerTimer = 1000;
         EventMap _events;
     };
@@ -2960,6 +2999,8 @@ public:
 
             if (auto player = summoner->ToPlayer())
                 _playerGUID = player->GetGUID();
+
+            _events.ScheduleEvent(EVENT_WINGS_OF_AVIANA_CHECK, Milliseconds(1000));
         }
 
         void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
@@ -2982,64 +3023,60 @@ public:
 
         void UpdateAI(uint32 const diff) override
         {
-            if (_checkTimer <= diff)
-            {
-                _checkTimer = 1000;
-
-                if (_isInCorrectArea)
-                {
-                    if (me->GetAreaId() != 5018
-                        && me->GetAreaId() != 5013
-                        && me->GetAreaId() != 4989
-                        && me->GetAreaId() != 5015
-                        && me->GetAreaId() != 5781
-                        && me->GetAreaId() != 5022
-                        && me->GetAreaId() != 5019
-                        && me->GetAreaId() != 5087
-                        && me->GetAreaId() != 4861
-                        && me->GetAreaId() != 5016)
-                    {
-                        _isInCorrectArea = false;
-                        AiTalk(me->AI(), 0, _playerGUID);
-                        _events.ScheduleEvent(EVENT_WINGS_OF_AVIANA_1, Milliseconds(10000));
-                    }
-                }
-                else
-                {
-                    if (me->GetAreaId() == 5018
-                        || me->GetAreaId() == 5013
-                        || me->GetAreaId() == 4989
-                        || me->GetAreaId() == 5015
-                        || me->GetAreaId() == 5781
-                        || me->GetAreaId() == 5022
-                        || me->GetAreaId() == 5019
-                        || me->GetAreaId() == 5087
-                        || me->GetAreaId() == 4861
-                        || me->GetAreaId() == 5016)
-                    {
-                        _events.CancelEvent(EVENT_WINGS_OF_AVIANA_1);
-                        _isInCorrectArea = true;
-                    }
-                }
-
-                if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                {
-                    if (player->GetQuestStatus(QUEST_CALL_THE_FLOCK) == QUEST_STATUS_NONE ||
-                        player->GetQuestStatus(QUEST_CALL_THE_FLOCK) == QUEST_STATUS_REWARDED)
-                    {
-                        me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
-                        me->DespawnOrUnsummon();
-                    }
-                }
-            }
-            else _checkTimer -= diff;
-
             _events.Update(diff);
 
             while (uint32 eventId = _events.ExecuteEvent())
             {
                 switch (eventId)
                 {
+                case EVENT_WINGS_OF_AVIANA_CHECK:
+                    if (_isInCorrectArea)
+                    {
+                        if (me->GetAreaId() != 5018
+                            && me->GetAreaId() != 5013
+                            && me->GetAreaId() != 4989
+                            && me->GetAreaId() != 5015
+                            && me->GetAreaId() != 5781
+                            && me->GetAreaId() != 5022
+                            && me->GetAreaId() != 5019
+                            && me->GetAreaId() != 5087
+                            && me->GetAreaId() != 4861
+                            && me->GetAreaId() != 5016)
+                        {
+                            _isInCorrectArea = false;
+                            AiTalk(me->AI(), 0, _playerGUID);
+                            _events.ScheduleEvent(EVENT_WINGS_OF_AVIANA_1, Milliseconds(10000));
+                        }
+                    }
+                    else
+                    {
+                        if (me->GetAreaId() == 5018
+                            || me->GetAreaId() == 5013
+                            || me->GetAreaId() == 4989
+                            || me->GetAreaId() == 5015
+                            || me->GetAreaId() == 5781
+                            || me->GetAreaId() == 5022
+                            || me->GetAreaId() == 5019
+                            || me->GetAreaId() == 5087
+                            || me->GetAreaId() == 4861
+                            || me->GetAreaId() == 5016)
+                        {
+                            _events.CancelEvent(EVENT_WINGS_OF_AVIANA_1);
+                            _isInCorrectArea = true;
+                        }
+                    }
+
+                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                    {
+                        if (player->GetQuestStatus(QUEST_CALL_THE_FLOCK) == QUEST_STATUS_NONE ||
+                            player->GetQuestStatus(QUEST_CALL_THE_FLOCK) == QUEST_STATUS_REWARDED)
+                        {
+                            me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
+                            me->DespawnOrUnsummon();
+                        }
+                    }
+                    _events.ScheduleEvent(EVENT_WINGS_OF_AVIANA_CHECK, Milliseconds(1000));
+                    break;
                 case EVENT_WINGS_OF_AVIANA_1:
                     me->CastSpell(me, SPELL_EJECT_ALL_PASSENGERS);
                     me->DespawnOrUnsummon( Milliseconds(100));
@@ -3052,7 +3089,6 @@ public:
     private:
         bool _gotAchievement = false;
         bool _isInCorrectArea = false;
-        uint32 _checkTimer = 1000;
         ObjectGuid _playerGUID;
 
         EventMap _events;
@@ -3174,40 +3210,49 @@ public:
             me->setActive(true);
             me->SetReactState(REACT_PASSIVE);
             me->SetPhaseMask(32, true);
+
+            _events.ScheduleEvent(EVENT_PUNT_CHILD_CHECK, Milliseconds(100));
         }
 
         void UpdateAI(uint32 const diff)
         {
-            if (_checkTimer <= diff)
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
             {
-                _checkTimer = 20000;
-
-                if (me->IsInWater())
+                switch (eventId)
                 {
-                    if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                case EVENT_PUNT_CHILD_CHECK:
+                    if (me->IsInWater())
                     {
-                        player->KilledMonsterCredit(NPC_PUTING_SEASON_CREDIT);
-                        me->DespawnOrUnsummon( Milliseconds(6000));
-                    }
-                }
-                else
-                {
-                    me->DespawnOrUnsummon( Milliseconds(6000));
-
-                    if (me->FindNearestCreature(NPC_FLAME_ELEMENTAL, 3.f))
-                    {
-                        me->CastSpell(me, SPELL_KNOCKBACK_ELEMENTAL);
-
                         if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                            player->CastSpell(player, SPELL_AND_THE_MEEK_SHALL_INHERIT_KALIMDOR_CHILD_UPDATE);
+                        {
+                            player->KilledMonsterCredit(NPC_PUTING_SEASON_CREDIT);
+                            me->DespawnOrUnsummon( Milliseconds(6000));
+                        }
                     }
+                    else
+                    {
+                        me->DespawnOrUnsummon( Milliseconds(6000));
+
+                        if (me->FindNearestCreature(NPC_FLAME_ELEMENTAL, 3.f))
+                        {
+                            me->CastSpell(me, SPELL_KNOCKBACK_ELEMENTAL);
+
+                            if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                                player->CastSpell(player, SPELL_AND_THE_MEEK_SHALL_INHERIT_KALIMDOR_CHILD_UPDATE);
+                        }
+                    }
+                    _events.ScheduleEvent(EVENT_PUNT_CHILD_CHECK, Milliseconds(20000));
+                    break;
+                default:
+                    break;
                 }
             }
-            else _checkTimer -= diff;
         }
     private:
         ObjectGuid _playerGUID;
-        uint32 _checkTimer = 100;
+        EventMap _events;
     };
 
     CreatureAI* GetAI(Creature* creature) const

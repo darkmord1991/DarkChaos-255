@@ -263,7 +263,7 @@ public:
 
         if (!ship)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR:|r Failed to spawn ship! Check creature_template for entry %u", NPC_SHIP_HITBOX);
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR:|r Failed to spawn ship! Check creature_template for entry {}", NPC_SHIP_HITBOX);
             PendingShipSpawn.erase(player->GetGUID());
             return;
         }
@@ -426,6 +426,7 @@ public:
                 LOG_ERROR("scripts.dc", "Giant Isles Cannon: Failed to spawn ship creature for player {}", player->GetName());
                 // Try to send a message to player about failure
                 ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Ship spawn failed!");
+                PendingShipSpawn.erase(player->GetGUID());
                 return;
             }
 

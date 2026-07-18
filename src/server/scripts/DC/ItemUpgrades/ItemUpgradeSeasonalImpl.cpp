@@ -330,7 +330,7 @@ public:
 
         QueryResult result = CharacterDatabase.Query(
             "SELECT d.player_guid, c.name, d.upgrades_applied, d.items_upgraded, "
-            "p.total_prestige_points, p.prestige_rank "
+            "p.total_mastery_points, p.mastery_rank "
             "FROM dc_player_season_data d "
             "LEFT JOIN characters c ON c.guid = d.player_guid "
             "LEFT JOIN dc_player_artifact_mastery p ON p.player_guid = d.player_guid "
@@ -366,12 +366,12 @@ public:
         std::vector<LeaderboardEntry> leaderboard;
 
         QueryResult result = CharacterDatabase.Query(
-            "SELECT p.player_guid, c.name, p.total_prestige_points, p.prestige_rank, "
+            "SELECT p.player_guid, c.name, p.total_mastery_points, p.mastery_rank, "
             "d.items_upgraded, d.upgrades_applied "
             "FROM dc_player_artifact_mastery p "
             "LEFT JOIN characters c ON c.guid = p.player_guid "
             "LEFT JOIN dc_player_season_data d ON d.player_guid = p.player_guid AND d.season_id = {} "
-            "ORDER BY p.total_prestige_points DESC "
+            "ORDER BY p.total_mastery_points DESC "
             "LIMIT {}",
             season_id, limit);
 
@@ -405,7 +405,7 @@ public:
             "SELECT d.player_guid, c.name, "
             "(CAST(d.upgrades_applied AS FLOAT) / GREATEST(d.essence_spent, 1)) as efficiency, "
             "d.upgrades_applied, d.items_upgraded, "
-            "p.total_prestige_points, p.prestige_rank "
+            "p.total_mastery_points, p.mastery_rank "
             "FROM dc_player_season_data d "
             "LEFT JOIN characters c ON c.guid = d.player_guid "
             "LEFT JOIN dc_player_artifact_mastery p ON p.player_guid = d.player_guid "
@@ -459,7 +459,7 @@ public:
             "  (SELECT COUNT(*) + 1 FROM dc_player_season_data d2 "
             "   WHERE d2.season_id = d1.season_id AND d2.upgrades_applied > d1.upgrades_applied), "
             "  (SELECT COUNT(*) + 1 FROM dc_player_artifact_mastery p2 "
-            "   WHERE p2.total_prestige_points > p1.total_prestige_points), "
+            "   WHERE p2.total_mastery_points > p1.total_mastery_points), "
             "  0, UNIX_TIMESTAMP() "
             "FROM dc_player_season_data d1 "
             "LEFT JOIN dc_player_artifact_mastery p1 ON p1.player_guid = d1.player_guid "

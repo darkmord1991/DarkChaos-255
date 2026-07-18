@@ -32,7 +32,7 @@ namespace DbSchema
                 return true;
         }
 
-        if (!WorldDatabase.Query("SHOW TABLES LIKE '{}'", tableName))
+        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))
             return false;
 
         std::lock_guard<std::mutex> lock(mutex);
@@ -56,7 +56,7 @@ namespace DbSchema
         if (!WorldTableExists(tableName))
             return false;
 
-        if (!WorldDatabase.Query("SHOW COLUMNS FROM `{}` LIKE '{}'", tableName, columnName))
+        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))
             return false;
 
         std::lock_guard<std::mutex> lock(mutex);
@@ -75,7 +75,7 @@ namespace DbSchema
                 return true;
         }
 
-        if (!CharacterDatabase.Query("SHOW TABLES LIKE '{}'", tableName))
+        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))
             return false;
 
         std::lock_guard<std::mutex> lock(mutex);
@@ -99,7 +99,7 @@ namespace DbSchema
         if (!CharacterTableExists(tableName))
             return false;
 
-        if (!CharacterDatabase.Query("SHOW COLUMNS FROM `{}` LIKE '{}'", tableName, columnName))
+        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))
             return false;
 
         std::lock_guard<std::mutex> lock(mutex);

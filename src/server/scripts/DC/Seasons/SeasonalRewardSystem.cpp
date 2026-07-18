@@ -19,6 +19,7 @@
 #include "Quests/QuestDef.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
+#include "DC/CrossSystem/RewardDistributor.h"
 #include <sstream>
 #include <mutex>
 #include <unordered_set>
@@ -245,14 +246,10 @@ namespace DarkChaos
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffffff00Weekly cap reached! Rewards reduced from {} to {}.|r", amount, actualAmount);
             }
 
-            // Award item
-            ItemPosCountVec dest;
-            InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, actualAmount);
-            if (msg == EQUIP_ERR_OK)
+            // Award item; DistributeItem mails it via the Postmaster if bags are full (no silent data loss).
+            if (DarkChaos::CrossSystem::GetRewardDistributor()->DistributeItem(
+                    player, itemId, actualAmount, DarkChaos::CrossSystem::SystemId::SeasonalRewards, source))
             {
-                Item* item = player->StoreNewItem(dest, itemId, true);
-                player->SendNewItem(item, actualAmount, true, false);
-
                 // Update stats
                 PlayerSeasonStats* stats = GetOrCreatePlayerStats(player);
                 if (isToken)
@@ -295,7 +292,7 @@ namespace DarkChaos
             }
             else
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Inventory full! Cannot award seasonal rewards.|r");
+                ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Failed to award seasonal rewards.|r");
                 return false;
             }
         }
@@ -746,16 +743,18 @@ namespace DarkChaos
 
             uint32 playerGuid = player->GetGUID().GetCounter();
 
-            // Archive to history
-            std::string archiveSql = Acore::StringFormat("INSERT INTO dc_player_seasonal_stats_history "
+            // Archive then delete atomically - both must succeed together or neither applies,
+            // otherwise a crash between the two calls could lose or duplicate the stats row.
+            SQLTransaction trans = CharacterDatabase.BeginTransaction();
+
+            trans->Append("INSERT INTO dc_player_seasonal_stats_history "
                 "SELECT * FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
                 playerGuid, config_.activeSeason);
-            CharacterDatabase.Execute(archiveSql.c_str());
 
-            // Delete current stats
-            std::string deleteSql = Acore::StringFormat("DELETE FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
+            trans->Append("DELETE FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
                 playerGuid, config_.activeSeason);
-            CharacterDatabase.Execute(deleteSql.c_str());
+
+            CharacterDatabase.CommitTransaction(trans);
 
             // Remove from cache
             playerStats_.erase(playerGuid);

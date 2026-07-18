@@ -100,7 +100,7 @@ namespace
             if (balance < offer->cost)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cffff2020[Quartermaster]|r You need %u War-Tokens for that, and carry only %u.",
+                    "|cffff2020[Quartermaster]|r You need {} War-Tokens for that, and carry only {}.",
                     offer->cost, balance);
                 SendQuartermasterMenu(player, creature);
                 return true;
@@ -122,7 +122,7 @@ namespace
                 player->SendNewItem(item, offer->count, true, false);
 
             ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cff00ff00[Quartermaster]|r Trade complete. %u War-Tokens spent (%u remaining).",
+                "|cff00ff00[Quartermaster]|r Trade complete. {} War-Tokens spent ({} remaining).",
                 offer->cost, player->GetItemCount(WAR_TOKEN_ITEM));
 
             LOG_DEBUG("scripts.dc", "Giant Isles war economy: {} bought item {} x{} for {} tokens",
@@ -138,7 +138,7 @@ namespace
             uint32 balance = player->GetItemCount(WAR_TOKEN_ITEM);
 
             ChatHandler(player->GetSession()).PSendSysMessage(
-                "|cff00ccff[Quartermaster]|r You carry %u Zandalari War-Tokens.", balance);
+                "|cff00ccff[Quartermaster]|r You carry {} Zandalari War-Tokens.", balance);
 
             for (QuartermasterOffer const& o : Offers)
                 AddGossipItemFor(player, GOSSIP_ICON_VENDOR, o.label, GOSSIP_SENDER_MAIN, o.action);

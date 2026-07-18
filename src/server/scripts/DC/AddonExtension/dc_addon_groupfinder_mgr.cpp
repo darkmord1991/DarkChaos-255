@@ -966,106 +966,6 @@ void GroupFinderMgr::NotifyGroupReady(uint32 listingId)
 // SCHEDULED EVENTS
 // ========================================================================
 
-uint32 GroupFinderMgr::CreateEvent(Player* player, const ScheduledEvent& event)
-{
-    std::lock_guard<std::mutex> lock(_mutex);
-
-    uint32 guid = player->GetGUID().GetCounter();
-
-    std::string safeTitle = event.title;
-    CharacterDatabase.EscapeString(safeTitle);
-    std::string safeDesc = event.description;
-    CharacterDatabase.EscapeString(safeDesc);
-
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_group_finder_scheduled_events "
-        "(leader_guid, event_type, dungeon_id, dungeon_name, keystone_level, scheduled_time, max_signups, note, status) "
-        "VALUES ({}, {}, {}, '{}', {}, FROM_UNIXTIME({}), {}, '{}', 1)",
-        guid, event.eventType, event.dungeonId, safeTitle, event.keystoneLevel,
-        event.scheduledTime, event.maxSignups, safeDesc);
-
-    QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
-    uint32 eventId = result ? (*result)[0].Get<uint32>() : 0;
-
-    if (eventId > 0)
-    {
-        ScheduledEvent newEvent = event;
-        newEvent.id = eventId;
-        newEvent.leaderGuid = guid;
-        newEvent.status = GF_EVENT_OPEN;
-        newEvent.createdAt = GameTime::GetGameTime().count();
-
-        _events[eventId] = newEvent;
-    }
-
-    return eventId;
-}
-
-bool GroupFinderMgr::SignupForEvent(Player* player, uint32 eventId, uint8 role, const std::string& note)
-{
-    std::lock_guard<std::mutex> lock(_mutex);
-
-    auto it = _events.find(eventId);
-    if (it == _events.end() || it->second.status != GF_EVENT_OPEN)
-        return false;
-
-    if (it->second.currentSignups >= it->second.maxSignups)
-        return false;
-
-    uint32 guid = player->GetGUID().GetCounter();
-
-    // Check if already signed up
-    auto& signups = _eventSignups[eventId];
-    for (auto const& signup : signups)
-    {
-        if (signup.playerGuid == guid)
-            return false;
-    }
-
-    std::string safeNote = note;
-    CharacterDatabase.EscapeString(safeNote);
-    std::string safePlayerName = player->GetName();
-    CharacterDatabase.EscapeString(safePlayerName);
-
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
-        "VALUES ({}, {}, '{}', {}, '{}', 0)",
-        eventId, guid, safePlayerName, role, safeNote);
-
-    QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
-    uint32 signupId = result ? (*result)[0].Get<uint32>() : 0;
-
-    if (signupId > 0)
-    {
-        EventSignup signup;
-        signup.id = signupId;
-        signup.eventId = eventId;
-        signup.playerGuid = guid;
-        signup.playerName = player->GetName();
-        signup.role = role;
-        signup.note = note;
-        signup.status = GF_APP_PENDING;
-        signup.createdAt = GameTime::GetGameTime().count();
-
-        signups.push_back(signup);
-
-        it->second.currentSignups++;
-        CharacterDatabase.Execute(
-            "UPDATE dc_group_finder_scheduled_events SET current_signups = {} WHERE id = {}",
-            it->second.currentSignups, eventId);
-
-        if (it->second.currentSignups >= it->second.maxSignups)
-        {
-            it->second.status = GF_EVENT_FULL;
-            CharacterDatabase.Execute(
-                "UPDATE dc_group_finder_scheduled_events SET status = 2 WHERE id = {}",
-                eventId);
-        }
-    }
-
-    return signupId > 0;
-}
-
 std::vector<ScheduledEvent> GroupFinderMgr::GetUpcomingEvents(uint8 eventType)
 {
     std::lock_guard<std::mutex> lock(_mutex);
@@ -1145,6 +1045,75 @@ std::vector<PlayerEventSignup> GroupFinderMgr::GetPlayerEventSignups(uint32 play
         });
 
     return results;
+}
+
+void GroupFinderMgr::CacheEvent(ScheduledEvent const& event)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    _events[event.id] = event;
+}
+
+void GroupFinderMgr::CacheSignup(EventSignup const& signup)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    _eventSignups[signup.eventId].push_back(signup);
+
+    auto it = _events.find(signup.eventId);
+    if (it != _events.end())
+    {
+        ++it->second.currentSignups;
+        if (it->second.currentSignups >= it->second.maxSignups)
+            it->second.status = GF_EVENT_FULL;
+    }
+}
+
+void GroupFinderMgr::RemoveCachedSignup(uint32 eventId, uint32 playerGuid)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    auto signupsIt = _eventSignups.find(eventId);
+    if (signupsIt != _eventSignups.end())
+    {
+        for (EventSignup& signup : signupsIt->second)
+        {
+            if (signup.playerGuid == playerGuid && signup.status == GF_APP_PENDING)
+            {
+                signup.status = GF_APP_CANCELLED;
+                break;
+            }
+        }
+    }
+
+    auto eventIt = _events.find(eventId);
+    if (eventIt != _events.end())
+    {
+        if (eventIt->second.currentSignups > 0)
+            --eventIt->second.currentSignups;
+
+        if (eventIt->second.status == GF_EVENT_FULL)
+            eventIt->second.status = GF_EVENT_OPEN;
+    }
+}
+
+void GroupFinderMgr::CancelCachedEvent(uint32 eventId)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    auto eventIt = _events.find(eventId);
+    if (eventIt != _events.end())
+        eventIt->second.status = GF_EVENT_CANCELLED;
+
+    auto signupsIt = _eventSignups.find(eventId);
+    if (signupsIt != _eventSignups.end())
+    {
+        for (EventSignup& signup : signupsIt->second)
+        {
+            if (signup.status == GF_APP_PENDING || signup.status == GF_APP_ACCEPTED)
+                signup.status = GF_APP_CANCELLED;
+        }
+    }
 }
 
 // ========================================================================

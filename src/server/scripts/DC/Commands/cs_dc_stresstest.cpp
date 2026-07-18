@@ -8484,8 +8484,11 @@ public:
             return true;
         }
 
-        bool infinite = (loops == 0);
-        if (!infinite && loops > 10000)
+        // GM safety: this is a synchronous world-thread command - never allow an unbounded
+        // per-iteration sleep, and never allow loops=0 to mean "run forever".
+        sleepMs = std::min<uint32>(sleepMs, 5000);
+        bool infinite = false;
+        if (loops == 0 || loops > 10000)
             loops = 10000;
 
         std::vector<uint64> timesUs;
@@ -8584,7 +8587,7 @@ public:
     {
         // Usage:
         // .stresstest loopreport <suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]
-        // loops=0 means infinite.
+        // loops=0 clamps to a bounded maximum (10000) - it no longer runs forever.
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOPREPORT ===|r");
 
         std::string suite;
@@ -8634,13 +8637,17 @@ public:
 
         if (suite.empty())
         {
-            handler->SendSysMessage("Usage: .stresstest loopreport <suite> [loops] [sleepMs] [topN] [details] [format=json|csv] [suiteArgs...] (loops=0 is infinite)");
+            handler->SendSysMessage("Usage: .stresstest loopreport <suite> [loops] [sleepMs] [topN] [details] [format=json|csv] [suiteArgs...] (loops=0 clamps to 10000)");
             return true;
         }
 
         bool printDetails = details != 0;
-        bool infinite = (loops == 0);
-        if (!infinite && loops > 10000)
+
+        // GM safety: this is a synchronous world-thread command - never allow an unbounded
+        // per-iteration sleep, and never allow loops=0 to mean "run forever".
+        sleepMs = std::min<uint32>(sleepMs, 5000);
+        bool infinite = false;
+        if (loops == 0 || loops > 10000)
             loops = 10000;
 
         handler->SendSysMessage(Acore::StringFormat("Suite: {} | Loops: {} | SleepMs: {} | TopN: {} | Details: {} | Format: {}",

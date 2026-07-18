@@ -7,6 +7,7 @@
 
 #include "SessionContext.h"
 #include "CrossSystemManager.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
 #include "GameTime.h"
 #include "Log.h"
 #include "Player.h"
@@ -236,7 +237,7 @@ namespace CrossSystem
         r.createdAt = GameTime::GetGameTime().count();
 
         if (r.expiresAt == 0)
-            r.expiresAt = r.createdAt + (7 * 24 * 60 * 60);  // Default 7 days
+            r.expiresAt = r.createdAt + DarkChaos::Seasons::SECONDS_PER_WEEK;  // Default 7 days
 
         pendingRewards_.push_back(r);
         isDirty_ = true;

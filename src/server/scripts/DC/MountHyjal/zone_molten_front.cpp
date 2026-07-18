@@ -509,15 +509,6 @@ public:
                 controller->AI()->DoAction(ACTION_FORLORN_RESET_CONTROLLER);
         }
 
-        // 4.3.4 escort hook; harmless extra method on the AC base (not an override).
-        void EscortAbandonTooFarDespawn()
-        {
-            _summons.DespawnAll();
-
-            if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
-                controller->AI()->DoAction(ACTION_FORLORN_RESET_CONTROLLER);
-        }
-
         void WaypointReached(uint32 waypointId) override
         {
             switch (waypointId)
@@ -594,7 +585,9 @@ public:
                         Start(true, _playerGUID);
                         me->SetReactState(REACT_AGGRESSIVE);
                         SetDespawnAtEnd(false);
-                        SetDespawnAtFar(true);
+                        // Engine auto-despawn-at-far disabled; _checkPlayerTimer below performs the
+                        // real far-abandon check (replaces the dead 4.3.4 EscortAbandonTooFarDespawn() hook).
+                        SetDespawnAtFar(false);
                         _started = true;
                     }
 
@@ -633,6 +626,25 @@ public:
             }
             else _timer -= uiDiff;
 
+            if (_checkPlayerTimer <= uiDiff)
+            {
+                _checkPlayerTimer = 1000;
+
+                if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                {
+                    if (_started && me->GetDistance(player) > 80.f)
+                    {
+                        _summons.DespawnAll();
+
+                        if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
+                            controller->AI()->DoAction(ACTION_FORLORN_RESET_CONTROLLER);
+
+                        me->DespawnOrUnsummon();
+                    }
+                }
+            }
+            else _checkPlayerTimer -= uiDiff;
+
             while (uint32 eventId = _events.ExecuteEvent())
             {
                 switch (eventId)
@@ -668,6 +680,7 @@ public:
         EventMap _events;
         ObjectGuid _playerGUID, _controllerGUID;
         uint32 _timer = 4000;
+        uint32 _checkPlayerTimer = 1000;
         SummonList _summons;
     };
 
@@ -1083,15 +1096,6 @@ public:
                 controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
         }
 
-        // 4.3.4 escort hook; harmless extra method on the AC base (not an override).
-        void EscortAbandonTooFarDespawn()
-        {
-            _summons.DespawnAll();
-
-            if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
-                controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
-        }
-
         void WaypointReached(uint32 waypointId) override
         {
             switch (waypointId)
@@ -1239,6 +1243,17 @@ public:
                         if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
                             controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
                     }
+                    // Real far-abandon check (replaces the dead 4.3.4 EscortAbandonTooFarDespawn() hook).
+                    // _started is cleared once the fight phase begins (waypoint 14), so this only
+                    // applies during the actual escort walk.
+                    else if (_started && me->GetDistance(player) > 80.f)
+                    {
+                        _summons.DespawnAll();
+                        me->DespawnOrUnsummon();
+
+                        if (Creature* controller = ObjectAccessor::GetCreature(*me, _controllerGUID))
+                            controller->AI()->DoAction(ACTION_INTO_THE_FIRE_RESET_CONTROLLER);
+                    }
                 }
             }
             else _checkPlayerTimer -= uiDiff;
@@ -1250,7 +1265,9 @@ public:
                 case EVENT_INTO_THE_FIRE_ESCORT_1:
                     me->CastSpell(me, SPELL_ENVELOPING_WINDS, true);
                     SetDespawnAtEnd(false);
-                    SetDespawnAtFar(true);
+                    // Engine auto-despawn-at-far disabled; _checkPlayerTimer below performs the
+                    // real far-abandon check (replaces the dead 4.3.4 EscortAbandonTooFarDespawn() hook).
+                    SetDespawnAtFar(false);
                     if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                         me->AI()->Talk(1, player);
                     Start(false, _playerGUID);
@@ -1676,13 +1693,6 @@ public:
                 me->AI()->Talk(9, player);
         }
 
-        // 4.3.4 escort hook; harmless extra method on the AC base (not an override).
-        void EscortAbandonTooFarDespawn()
-        {
-            if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                me->AI()->Talk(10, player);
-        }
-
         void WaypointReached(uint32 waypointId) override
         {
             Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID);
@@ -1739,6 +1749,13 @@ public:
                 {
                     if (!player->IsAlive())
                         me->DespawnOrUnsummon();
+
+                    // Real far-abandon check (replaces the dead 4.3.4 EscortAbandonTooFarDespawn() hook).
+                    if (_escortStarted && me->GetDistance(player) > 80.f)
+                    {
+                        me->AI()->Talk(10, player);
+                        me->DespawnOrUnsummon();
+                    }
 
                     if (_isPlayerAround)
                     {
@@ -1798,8 +1815,11 @@ public:
                     break;
                 case EVENT_ANREN_ESCORT_7:
                     SetDespawnAtEnd(false);
-                    SetDespawnAtFar(true);
+                    // Engine auto-despawn-at-far disabled; _checkPlayerTimer below performs the
+                    // real far-abandon check (replaces the dead 4.3.4 EscortAbandonTooFarDespawn() hook).
+                    SetDespawnAtFar(false);
                     Start(true, _playerGUID);
+                    _escortStarted = true;
                     break;
                 case EVENT_ANREN_ESCORT_8:
                     me->GetMotionMaster()->MoveJump(AnrenJumpPos[6], 10.f, 20.f);
@@ -1839,6 +1859,7 @@ public:
     private:
         bool _isPlayerAround = true;
         bool _running = false;
+        bool _escortStarted = false;
         EventMap _events;
         ObjectGuid _playerGUID;
         uint32 _checkPlayerTimer = 2000;

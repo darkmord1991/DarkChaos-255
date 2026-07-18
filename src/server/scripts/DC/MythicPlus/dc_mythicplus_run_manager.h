@@ -159,7 +159,6 @@ public:
     // reward rolls never query the database on the map thread.
     void LoadLootTable();
     void GenerateBossLoot(Creature* boss, Map* map, InstanceState* state);
-    uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
     uint32 GetTotalBossesForDungeon(uint32 mapId) const;
     bool IsMythicPlusActive(Map* map) const;
     bool IsMythicPlusDungeon(uint32 mapId) const;

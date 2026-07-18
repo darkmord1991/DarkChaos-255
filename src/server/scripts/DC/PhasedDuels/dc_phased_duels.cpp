@@ -998,8 +998,8 @@ public:
             uint32 total = wins + losses + draws;
             float winRate = total > 0 ? (float(wins) / float(total)) * 100.0f : 0.0f;
 
-            handler->PSendSysMessage("|cffffd700%u.|r %s - %u W / %u L (%.1f%%)",
-                                      rank++, name.c_str(), wins, losses, winRate);
+            handler->PSendSysMessage("|cffffd700{}.|r {} - {} W / {} L ({:.1f}%)",
+                                      rank++, name, wins, losses, winRate);
         }
         while (result->NextRow());
 
@@ -1023,7 +1023,7 @@ public:
         if (player)
             sPlayerDuelStats.erase(player->GetGUID());
 
-        handler->PSendSysMessage("Duel statistics reset for %s.", target->GetName().c_str());
+        handler->PSendSysMessage("Duel statistics reset for {}.", target->GetName());
         return true;
     }
 

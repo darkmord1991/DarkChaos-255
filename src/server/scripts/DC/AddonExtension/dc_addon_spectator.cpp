@@ -17,10 +17,79 @@
 
 #include "../MythicPlus/dc_mythicplus_spectator.h"
 
+#include <mutex>
+
 namespace DCAddon
 {
 namespace Spectator
 {
+    // ========================================================================
+    // DUNGEON NAME CACHE
+    // ========================================================================
+    //
+    // dc_mplus_dungeons is a static world configuration table, but it used to
+    // be re-queried from the DB on every HandleRequestSpectate call and on
+    // every entry in the HandleListRuns loop (up to 20 blocking queries per
+    // request). Load it once (lazily) into memory and serve every lookup from
+    // the cache. Mirrors the GetDungeonNameById pattern in
+    // dc_addon_groupfinder.cpp.
+    // NOTE: changes to dc_mplus_dungeons require a worldserver restart to show.
+
+    namespace
+    {
+        struct DungeonNameCacheEntry
+        {
+            uint32 dungeonId = 0;
+            std::string name;
+        };
+
+        std::mutex sDungeonNameCacheMutex;
+        bool sDungeonNameCacheLoaded = false;
+        std::vector<DungeonNameCacheEntry> sDungeonNameCache;
+
+        // Must be called with sDungeonNameCacheMutex held.
+        void LoadDungeonNameCacheLocked()
+        {
+            if (sDungeonNameCacheLoaded)
+                return;
+
+            sDungeonNameCacheLoaded = true;
+
+            // One-time synchronous read of a static world config table.
+            QueryResult result = WorldDatabase.Query(
+                "SELECT dungeon_id, dungeon_name FROM dc_mplus_dungeons");
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+
+                    DungeonNameCacheEntry entry;
+                    entry.dungeonId = fields[0].Get<uint32>();
+                    entry.name = fields[1].Get<std::string>();
+                    sDungeonNameCache.push_back(std::move(entry));
+                } while (result->NextRow());
+            }
+
+            LOG_INFO("dc.addon", "Spectator dungeon name cache loaded {} dungeons from dc_mplus_dungeons",
+                sDungeonNameCache.size());
+        }
+
+        // Name lookup by dungeon_id (map id). Empty string when unknown.
+        std::string GetDungeonNameById(uint32 dungeonId)
+        {
+            std::lock_guard<std::mutex> lock(sDungeonNameCacheMutex);
+            LoadDungeonNameCacheLocked();
+
+            for (DungeonNameCacheEntry const& entry : sDungeonNameCache)
+                if (entry.dungeonId == dungeonId)
+                    return entry.name;
+
+            return "";
+        }
+    }
+
     // Handler: Request to spectate a run
     static void HandleRequestSpectate(Player* player, const ParsedMessage& msg)
     {
@@ -54,11 +123,9 @@ namespace Spectator
         std::string dungeonName = "Unknown Dungeon";
         if (mapId)
         {
-            QueryResult dungeonResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
-                mapId);
-            if (dungeonResult)
-                dungeonName = (*dungeonResult)[0].Get<std::string>();
+            std::string cachedName = GetDungeonNameById(mapId);
+            if (!cachedName.empty())
+                dungeonName = cachedName;
         }
 
         Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_START)
@@ -117,11 +184,9 @@ namespace Spectator
                 break;
 
             std::string dungeonName = "Unknown";
-            QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
-                run.mapId);
-            if (nameResult)
-                dungeonName = (*nameResult)[0].Get<std::string>();
+            std::string cachedName = GetDungeonNameById(run.mapId);
+            if (!cachedName.empty())
+                dungeonName = cachedName;
 
             uint32 partySize = run.participantNames.empty()
                 ? 5u
@@ -148,10 +213,18 @@ namespace Spectator
         std::string option = msg.GetString(0);
         bool enabled = msg.GetBool(1);
 
+        // Options: showTimer, showDeaths, showBosses, showDamage, showHealing
+        if (option != "showTimer" && option != "showDeaths" && option != "showBosses" &&
+            option != "showDamage" && option != "showHealing")
+        {
+            LOG_DEBUG("dc.addon.spec", "Player {} sent unknown HUD option {}",
+                      player->GetName(), option);
+            return;
+        }
+
         // Store player's HUD preferences
         uint32 guid = player->GetGUID().GetCounter();
 
-        // Options: showTimer, showDeaths, showBosses, showDamage, showHealing
         CharacterDatabase.Execute(
             "INSERT INTO dc_spectator_settings (player_guid, setting_key, setting_value) "
             "VALUES ({}, '{}', {}) ON DUPLICATE KEY UPDATE setting_value = {}",

@@ -19,6 +19,7 @@
 #include "Creature.h"
 #include "TemporarySummon.h"
 #include "Map.h"
+#include "MapMgr.h"
 #include "Group.h"
 #include "ObjectAccessor.h"
 #include "Chat.h"
@@ -29,15 +30,30 @@
 #include "DatabaseEnv.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
+#include <mutex>
 #include <unordered_map>
 
 using namespace Acore::ChatCommands;
 using namespace DungeonQuest;
 using namespace DungeonQuestHelpers;
 
+// Info needed to resolve a follower creature that may live on a DIFFERENT map
+// than the player's current one (e.g. the player instant-transferred straight
+// from one quest-master dungeon into another).
+struct QuestMasterFollowerInfo
+{
+    ObjectGuid creatureGuid;
+    uint32 mapId = 0;
+    uint32 instanceId = 0;
+};
+
 // Storage for active quest master followers
-// Key: Player GUID (leader), Value: Creature GUID (follower)
-static std::unordered_map<ObjectGuid, ObjectGuid> sQuestMasterFollowers;
+// Key: Player GUID (leader), Value: follower location info
+// Mutex-guarded: PlayerScript/GroupScript hooks run on map-update threads, and
+// with MapUpdate.Threads > 1 different maps' hooks can touch these shared maps concurrently.
+static std::mutex sQuestMasterFollowersMutex;
+static std::unordered_map<ObjectGuid, QuestMasterFollowerInfo> sQuestMasterFollowers;
+static std::mutex sDungeonDisplayIdCacheMutex;
 static std::unordered_map<uint32, uint32> sDungeonDisplayIdCache;
 
 // Helper: Get the appropriate quest master entry for a map.
@@ -62,9 +78,12 @@ static uint32 GetQuestMasterEntryForMap(uint32 mapId)
 // Helper: Get display ID for a map (cached)
 static uint32 GetDisplayIdForMap(uint32 mapId)
 {
-    auto it = sDungeonDisplayIdCache.find(mapId);
-    if (it != sDungeonDisplayIdCache.end())
-        return it->second;
+    {
+        std::lock_guard<std::mutex> lock(sDungeonDisplayIdCacheMutex);
+        auto it = sDungeonDisplayIdCache.find(mapId);
+        if (it != sDungeonDisplayIdCache.end())
+            return it->second;
+    }
 
     uint32 displayId = 16466; // Default display: Human Male Quest Giver
     QueryResult displayResult = WorldDatabase.Query(
@@ -74,12 +93,17 @@ static uint32 GetDisplayIdForMap(uint32 mapId)
     if (displayResult)
         displayId = (*displayResult)[0].Get<uint32>();
 
-    sDungeonDisplayIdCache[mapId] = displayId;
+    {
+        std::lock_guard<std::mutex> lock(sDungeonDisplayIdCacheMutex);
+        sDungeonDisplayIdCache[mapId] = displayId;
+    }
     return displayId;
 }
 
-// Helper: Spawn quest master follower for player
-static Creature* SpawnQuestMasterFollower(Player* player)
+// Helper: Spawn quest master follower for player.
+// On success, if outEntry is non-null, receives the resolved quest-master NPC
+// entry so callers don't need to re-query GetQuestMasterEntryForMap themselves.
+static Creature* SpawnQuestMasterFollower(Player* player, uint32* outEntry = nullptr)
 {
     if (!player || !player->GetMap())
         return nullptr;
@@ -88,11 +112,50 @@ static Creature* SpawnQuestMasterFollower(Player* player)
     if (!entry)
         return nullptr;
 
+    if (outEntry)
+        *outEntry = entry;
+
+    uint32 const mapId = player->GetMapId();
+    uint32 const instanceId = player->GetInstanceId();
+
+    // If the player still has a follower recorded on a DIFFERENT map/instance
+    // (e.g. they instant-transferred straight from one quest-master dungeon
+    // into another), despawn the stale one first. ObjectAccessor is scoped to
+    // the player's CURRENT map, so it can never reach a creature left behind on
+    // the old map - resolve it via sMapMgr instead.
+    QuestMasterFollowerInfo stale;
+    bool hasStale = false;
+    {
+        std::lock_guard<std::mutex> lock(sQuestMasterFollowersMutex);
+        auto it = sQuestMasterFollowers.find(player->GetGUID());
+        if (it != sQuestMasterFollowers.end() &&
+            (it->second.mapId != mapId || it->second.instanceId != instanceId))
+        {
+            stale = it->second;
+            hasStale = true;
+            sQuestMasterFollowers.erase(it);
+        }
+    }
+
+    if (hasStale)
+    {
+        if (Map* oldMap = sMapMgr->FindMap(stale.mapId, stale.instanceId))
+        {
+            if (Creature* oldFollower = oldMap->GetCreature(stale.creatureGuid))
+            {
+                oldFollower->DespawnOrUnsummon(0ms);
+                LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Despawned stale follower on map {} for player {}",
+                          stale.mapId, player->GetName());
+            }
+        }
+    }
+
     // Check if one is already nearby (handling grid unload/reload edge cases)
     if (Creature* existing = player->FindNearestCreature(entry, 50.0f))
     {
         // Re-link it if we lost track
-        sQuestMasterFollowers[player->GetGUID()] = existing->GetGUID();
+        std::lock_guard<std::mutex> lock(sQuestMasterFollowersMutex);
+        sQuestMasterFollowers[player->GetGUID()] = QuestMasterFollowerInfo{ existing->GetGUID(), mapId, instanceId };
         return existing;
     }
 
@@ -130,7 +193,10 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         summon->GetMotionMaster()->MoveFollow(player, 2.0f, M_PI); // 2 yards behind
 
         // Store mapping
-        sQuestMasterFollowers[player->GetGUID()] = summon->GetGUID();
+        {
+            std::lock_guard<std::mutex> lock(sQuestMasterFollowersMutex);
+            sQuestMasterFollowers[player->GetGUID()] = QuestMasterFollowerInfo{ summon->GetGUID(), mapId, instanceId };
+        }
 
         LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Follower {} stored for player {}",
                   summon->GetGUID().ToString(), player->GetName());
@@ -147,17 +213,27 @@ static void DespawnQuestMasterFollower(Player* player, bool notify = false)
     if (!player)
         return;
 
-    auto it = sQuestMasterFollowers.find(player->GetGUID());
-    if (it == sQuestMasterFollowers.end())
-        return;
-
-    if (Creature* follower = ObjectAccessor::GetCreature(*player, it->second))
+    QuestMasterFollowerInfo info;
     {
-        follower->DespawnOrUnsummon(0ms);
-        LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Despawned follower for player {}", player->GetName());
+        std::lock_guard<std::mutex> lock(sQuestMasterFollowersMutex);
+        auto it = sQuestMasterFollowers.find(player->GetGUID());
+        if (it == sQuestMasterFollowers.end())
+            return;
+
+        info = it->second;
+        sQuestMasterFollowers.erase(it);
     }
 
-    sQuestMasterFollowers.erase(it);
+    // Resolve via the follower's OWN recorded map/instance, not the player's
+    // current one - the player may already have moved on by the time this runs.
+    if (Map* followerMap = sMapMgr->FindMap(info.mapId, info.instanceId))
+    {
+        if (Creature* follower = followerMap->GetCreature(info.creatureGuid))
+        {
+            follower->DespawnOrUnsummon(0ms);
+            LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Despawned follower for player {}", player->GetName());
+        }
+    }
 
     if (notify)
     {
@@ -165,17 +241,21 @@ static void DespawnQuestMasterFollower(Player* player, bool notify = false)
     }
 }
 
-// Helper: Get active follower for player
+// Helper: Get active follower for player (only if it's still on the player's CURRENT map)
 static Creature* GetQuestMasterFollower(Player* player)
 {
     if (!player)
         return nullptr;
 
+    std::lock_guard<std::mutex> lock(sQuestMasterFollowersMutex);
     auto it = sQuestMasterFollowers.find(player->GetGUID());
     if (it == sQuestMasterFollowers.end())
         return nullptr;
 
-    return ObjectAccessor::GetCreature(*player, it->second);
+    if (it->second.mapId != player->GetMapId() || it->second.instanceId != player->GetInstanceId())
+        return nullptr; // stale entry left behind on a previous map
+
+    return ObjectAccessor::GetCreature(*player, it->second.creatureGuid);
 }
 
 // PlayerScript to handle automatic spawn/despawn
@@ -224,11 +304,14 @@ public:
             return;
 
         // Spawn follower for solo players or any dungeon participant
-        if (Creature* follower = SpawnQuestMasterFollower(player))
+        uint32 entry = 0;
+        if (Creature* follower = SpawnQuestMasterFollower(player, &entry))
         {
-            uint32 entry = GetQuestMasterEntryForMap(mapId);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[DungeonQuest DEBUG]|r Master spawned - Entry: {} Flags: {} Follow: YES",
-                                                               entry, static_cast<uint32>(follower->GetNpcFlags()));
+            if (sConfigMgr->GetOption<bool>(CONFIG_DEBUG_ENABLE, false))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[DungeonQuest DEBUG]|r Master spawned - Entry: {} Flags: {} Follow: YES",
+                                                                   entry, static_cast<uint32>(follower->GetNpcFlags()));
+            }
             ChatHandler(player->GetSession()).PSendSysMessage("A Quest Master has joined you!");
         }
     }

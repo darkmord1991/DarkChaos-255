@@ -249,7 +249,7 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
         return;
     }
 
-    uint32 targetItemLevel = GetItemLevelForKeystoneLevel(state->keystoneLevel);
+    uint32 targetItemLevel = MythicPlusConstants::GetItemLevelForKeystoneLevel(state->keystoneLevel);
 
     // Randomize selection order so winners are unpredictable
     std::vector<Player*> shuffled = participants;

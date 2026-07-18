@@ -353,8 +353,8 @@ public:
         {
             CharacterDatabase.Execute(
                 "UPDATE dc_player_artifact_mastery "
-                "SET total_prestige_points = total_prestige_points + {}, "
-                "prestige_points_this_rank = prestige_points_this_rank + {} "
+                "SET total_mastery_points = total_mastery_points + {}, "
+                "mastery_points_this_rank = mastery_points_this_rank + {} "
                 "WHERE player_guid = {}",
                 ach->reward_prestige_points, ach->reward_prestige_points, player_guid);
         }
@@ -539,7 +539,6 @@ public:
         result = CharacterDatabase.Query(
             "SELECT COUNT(DISTINCT u.player_guid), SUM(u.upgrade_level), "
             "COUNT(DISTINCT u.item_guid), AVG(u.stat_multiplier), "
-            "AVG(u.tier_id), "
             "SUM(u.essence_invested), SUM(u.tokens_invested) "
             "FROM {} u "
             "INNER JOIN guild_member gm ON gm.guid = u.player_guid "
@@ -552,9 +551,9 @@ public:
             stats.members_with_upgrades = fields[0].Get<uint32>();
             stats.total_guild_upgrades = fields[1].Get<uint32>();
             stats.total_items_upgraded = fields[2].Get<uint32>();
-            stats.average_ilvl_increase = fields[4].Get<float>();
-            stats.total_essence_invested = fields[5].Get<uint32>();
-            stats.total_tokens_invested = fields[6].Get<uint32>();
+            stats.average_ilvl_increase = fields[3].Get<float>();
+            stats.total_essence_invested = fields[4].Get<uint32>();
+            stats.total_tokens_invested = fields[5].Get<uint32>();
         }
 
         stats.last_updated = time(nullptr);

@@ -11,6 +11,19 @@
 
 namespace DC
 {
+    // Resolves a zone's display name from AreaTable.dbc, falling back to "Unknown" if the
+    // zone id has no entry or the entry has no localized name.
+    static std::string GetZoneNameFromDBC(uint32 zoneId)
+    {
+        std::string zoneName = "Unknown";
+        if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
+        {
+            if (area->area_name[0] && area->area_name[0][0])
+                zoneName = area->area_name[0];
+        }
+        return zoneName;
+    }
+
     WorldBossMgr* WorldBossMgr::Instance()
     {
         static WorldBossMgr instance;
@@ -215,13 +228,7 @@ namespace DC
         b.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(zoneId)));
 
         // Zone name from DBC
-        std::string zoneName = "Unknown";
-        if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(zoneId))
-        {
-            if (area->area_name[0] && area->area_name[0][0])
-                zoneName = area->area_name[0];
-        }
-        b.Set("zone", DCAddon::JsonValue(zoneName));
+        b.Set("zone", DCAddon::JsonValue(GetZoneNameFromDBC(zoneId)));
 
         // Normalized coordinates for map pin placement
         float nx = 0.0f, ny = 0.0f;
@@ -305,11 +312,7 @@ namespace DC
             }
 
             // Zone name from DBC
-            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(info.zoneId))
-            {
-                if (area->area_name[0] && area->area_name[0][0])
-                    b.Set("zone", DCAddon::JsonValue(area->area_name[0]));
-            }
+            b.Set("zone", DCAddon::JsonValue(GetZoneNameFromDBC(info.zoneId)));
 
             arr.Push(b);
         }

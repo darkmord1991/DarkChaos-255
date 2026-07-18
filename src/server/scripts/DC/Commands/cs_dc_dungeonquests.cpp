@@ -39,6 +39,7 @@
 #include "WorldDatabase.h"
 #include "CharacterDatabase.h"
 #include "Creature.h"
+#include "StringConvert.h"
 #include "../DungeonQuests/DungeonQuestConstants.h"
 #include "../DungeonQuests/DungeonQuestHelpers.h"
 #include <string>
@@ -143,12 +144,12 @@ namespace DC_DungeonQuests
                 (type == "dungeon" && questId >= DungeonQuest::QUEST_DUNGEON_MIN && questId <= DungeonQuest::QUEST_DUNGEON_MAX))
             {
                 std::string questType = GetQuestType(questId);
-                handler->PSendSysMessage("[%u] %s (%s)", questId, questName.c_str(), questType.c_str());
+                handler->PSendSysMessage("[{}] {} ({})", questId, questName.c_str(), questType.c_str());
                 ++count;
             }
         } while (result->NextRow());
 
-        handler->PSendSysMessage("Total: %d quests", count);
+        handler->PSendSysMessage("Total: {} quests", count);
         return true;
     }
 
@@ -160,7 +161,13 @@ namespace DC_DungeonQuests
             return false;
         }
 
-        uint32 questId = std::stoul(args);
+        Optional<uint32> questIdOpt = Acore::StringTo<uint32>(args);
+        if (!questIdOpt)
+        {
+            SendCommandError(handler, "Usage: .dcquests info <quest_id>");
+            return false;
+        }
+        uint32 questId = *questIdOpt;
 
         // Fetch quest by id directly
         QueryResult result = WorldDatabase.Query(
@@ -169,7 +176,7 @@ namespace DC_DungeonQuests
 
         if (!result)
         {
-            handler->PSendSysMessage("Quest %u not found!", questId);
+            handler->PSendSysMessage("Quest {} not found!", questId);
             return false;
         }
 
@@ -180,11 +187,11 @@ namespace DC_DungeonQuests
         uint16 flags = fields[3].Get<uint16>();
 
         handler->SendSysMessage("Quest Information:");
-        handler->PSendSysMessage("  ID: %u", id);
-        handler->PSendSysMessage("  Title: %s", title.c_str());
-        handler->PSendSysMessage("  Description: %s", description.c_str());
-        handler->PSendSysMessage("  Type: %s", GetQuestType(id).c_str());
-        handler->PSendSysMessage("  Flags: 0x%04X", flags);
+        handler->PSendSysMessage("  ID: {}", id);
+        handler->PSendSysMessage("  Title: {}", title.c_str());
+        handler->PSendSysMessage("  Description: {}", description.c_str());
+        handler->PSendSysMessage("  Type: {}", GetQuestType(id).c_str());
+        handler->PSendSysMessage("  Flags: 0x{:04X}", flags);
 
         // Check if daily/weekly
         if (flags & 0x0800) handler->SendSysMessage("  - DAILY quest (resets every 24h)");
@@ -206,7 +213,7 @@ namespace DC_DungeonQuests
         uint32 tokenId = 0;
         uint32 count = 1;
 
-        if (sscanf(args, "%s %u %u", playerName, &tokenId, &count) < 2)
+        if (sscanf(args, "%12s %u %u", playerName, &tokenId, &count) < 2)
         {
             SendCommandError(handler, "Usage: .dcquests give-token <player_name> <token_id> [count]");
             return false;
@@ -215,14 +222,14 @@ namespace DC_DungeonQuests
         // Validate token ID
         if (tokenId < TOKEN_EXPLORER || tokenId > TOKEN_SPEEDRUNNER)
         {
-            handler->PSendSysMessage("Invalid token ID! Valid range: %u-%u", uint32(TOKEN_EXPLORER), uint32(TOKEN_SPEEDRUNNER));
+            handler->PSendSysMessage("Invalid token ID! Valid range: {}-{}", uint32(TOKEN_EXPLORER), uint32(TOKEN_SPEEDRUNNER));
             return false;
         }
 
         Player* player = ObjectAccessor::FindPlayerByName(playerName);
         if (!player)
         {
-            handler->PSendSysMessage("Player '%s' not found!", playerName);
+            handler->PSendSysMessage("Player '{}' not found!", playerName);
             return false;
         }
 
@@ -231,7 +238,7 @@ namespace DC_DungeonQuests
         InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, tokenId, count);
         if (msg != EQUIP_ERR_OK)
         {
-            handler->PSendSysMessage("Cannot give tokens to %s: inventory full!", playerName);
+            handler->PSendSysMessage("Cannot give tokens to {}: inventory full!", playerName);
             return false;
         }
 
@@ -239,7 +246,7 @@ namespace DC_DungeonQuests
         if (item)
         {
             player->SendNewItem(item, count, true, false);
-            handler->PSendSysMessage("Given %u token(s) [ID: %u] to %s", count, tokenId, playerName);
+            handler->PSendSysMessage("Given {} token(s) [ID: {}] to {}", count, tokenId, playerName);
             DebugLog("Tokens given to player: " + std::string(playerName) + " (ID: " + std::to_string(tokenId) + ")");
             return true;
         }
@@ -258,7 +265,7 @@ namespace DC_DungeonQuests
         char playerName[MAX_PLAYER_NAME + 1];
         uint32 questId = 0;
 
-        if (sscanf(args, "%s %u", playerName, &questId) != 2)
+        if (sscanf(args, "%12s %u", playerName, &questId) != 2)
         {
             SendCommandError(handler, "Usage: .dcquests reward <player_name> <quest_id>");
             return false;
@@ -267,7 +274,7 @@ namespace DC_DungeonQuests
         Player* player = ObjectAccessor::FindPlayerByName(playerName);
         if (!player)
         {
-            handler->PSendSysMessage("Player '%s' not found!", playerName);
+            handler->PSendSysMessage("Player '{}' not found!", playerName);
             return false;
         }
 
@@ -275,7 +282,7 @@ namespace DC_DungeonQuests
         Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
         if (!quest)
         {
-            handler->PSendSysMessage("Quest %u not found in database!", questId);
+            handler->PSendSysMessage("Quest {} not found in database!", questId);
             return false;
         }
 
@@ -335,7 +342,7 @@ namespace DC_DungeonQuests
 
     if (!fields)
     {
-        handler->PSendSysMessage("No reward configuration found for quest %u", questId);
+        handler->PSendSysMessage("No reward configuration found for quest {}", questId);
         return false;
     }
 
@@ -348,7 +355,7 @@ namespace DC_DungeonQuests
         if (msg == EQUIP_ERR_OK)
         {
             player->StoreNewItem(dest, rewardTokenId, true);
-            handler->PSendSysMessage("Rewarded %u token(s) to %s for quest %u (%.1fx multiplier)",
+            handler->PSendSysMessage("Rewarded {} token(s) to {} for quest {} ({:.1f}x multiplier)",
                                     finalCount, playerName, questId, rewardMultiplier);
             DebugLog("Quest reward given - Player: " + std::string(playerName) + ", Quest: " + std::to_string(questId));
         }
@@ -371,12 +378,16 @@ namespace DC_DungeonQuests
         char playerName[MAX_PLAYER_NAME + 1];
         uint32 questId = 0;
 
-        sscanf(args, "%s %u", playerName, &questId);
+        if (sscanf(args, "%12s %u", playerName, &questId) < 1)
+        {
+            SendCommandError(handler, "Usage: .dcquests progress <player_name> [quest_id]");
+            return false;
+        }
 
         Player* player = ObjectAccessor::FindPlayerByName(playerName);
         if (!player)
         {
-            handler->PSendSysMessage("Player '%s' not found!", playerName);
+            handler->PSendSysMessage("Player '{}' not found!", playerName);
             return false;
         }
 
@@ -385,7 +396,7 @@ namespace DC_DungeonQuests
             // Check specific quest
             if (player->HasQuest(questId))
             {
-                handler->PSendSysMessage("Player has active quest: %u", questId);
+                handler->PSendSysMessage("Player has active quest: {}", questId);
                 if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
                     handler->SendSysMessage("Status: COMPLETED");
                 else if (player->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
@@ -393,20 +404,20 @@ namespace DC_DungeonQuests
             }
             else
             {
-                handler->PSendSysMessage("Player does not have quest %u", questId);
+                handler->PSendSysMessage("Player does not have quest {}", questId);
             }
         }
         else
         {
             // Show all DC dungeon quests for player
-            handler->PSendSysMessage("DC Dungeon Quests for %s:", playerName);
+            handler->PSendSysMessage("DC Dungeon Quests for {}:", playerName);
             handler->SendSysMessage("Daily Quests:");
             for (uint32 i = DungeonQuest::QUEST_DAILY_MIN; i <= DungeonQuest::QUEST_DAILY_MAX; ++i)
             {
                 if (player->GetQuestStatus(i) != QUEST_STATUS_NONE)
                 {
                     const char* status = player->GetQuestStatus(i) == QUEST_STATUS_COMPLETE ? "COMPLETED" : "IN PROGRESS";
-                    handler->PSendSysMessage("  [%u] - %s", i, status);
+                    handler->PSendSysMessage("  [{}] - {}", i, status);
                 }
             }
             handler->SendSysMessage("Weekly Quests:");
@@ -415,7 +426,7 @@ namespace DC_DungeonQuests
                 if (player->GetQuestStatus(i) != QUEST_STATUS_NONE)
                 {
                     const char* status = player->GetQuestStatus(i) == QUEST_STATUS_COMPLETE ? "COMPLETED" : "IN PROGRESS";
-                    handler->PSendSysMessage("  [%u] - %s", i, status);
+                    handler->PSendSysMessage("  [{}] - {}", i, status);
                 }
             }
         }
@@ -435,12 +446,16 @@ namespace DC_DungeonQuests
         char playerName[MAX_PLAYER_NAME + 1];
         uint32 questId = 0;
 
-        sscanf(args, "%s %u", playerName, &questId);
+        if (sscanf(args, "%12s %u", playerName, &questId) < 1)
+        {
+            SendCommandError(handler, "Usage: .dcquests reset <player_name> [quest_id]");
+            return false;
+        }
 
         Player* player = ObjectAccessor::FindPlayerByName(playerName);
         if (!player)
         {
-            handler->PSendSysMessage("Player '%s' not found!", playerName);
+            handler->PSendSysMessage("Player '{}' not found!", playerName);
             return false;
         }
 
@@ -448,7 +463,7 @@ namespace DC_DungeonQuests
         {
             // Reset specific quest
             player->SetQuestStatus(questId, QUEST_STATUS_NONE);
-            handler->PSendSysMessage("Quest %u reset for player %s", questId, playerName);
+            handler->PSendSysMessage("Quest {} reset for player {}", questId, playerName);
             DebugLog("Quest reset - Player: " + std::string(playerName) + ", Quest: " + std::to_string(questId));
         }
         else
@@ -458,7 +473,7 @@ namespace DC_DungeonQuests
                 player->SetQuestStatus(i, QUEST_STATUS_NONE);
             for (uint32 i = DungeonQuest::QUEST_WEEKLY_MIN; i <= DungeonQuest::QUEST_WEEKLY_MAX; ++i)
                 player->SetQuestStatus(i, QUEST_STATUS_NONE);
-            handler->PSendSysMessage("All DC dungeon quests reset for player %s", playerName);
+            handler->PSendSysMessage("All DC dungeon quests reset for player {}", playerName);
             DebugLog("All quests reset for player: " + std::string(playerName));
         }
 
@@ -489,7 +504,7 @@ namespace DC_DungeonQuests
             }
         }
 
-        handler->PSendSysMessage("DC Dungeon Quest debug mode: %s", DEBUG_MODE ? "ENABLED" : "DISABLED");
+        handler->PSendSysMessage("DC Dungeon Quest debug mode: {}", DEBUG_MODE ? "ENABLED" : "DISABLED");
         return true;
     }
 
@@ -504,7 +519,7 @@ namespace DC_DungeonQuests
         char playerName[MAX_PLAYER_NAME + 1];
         uint32 achievementId = 0;
 
-        if (sscanf(args, "%s %u", playerName, &achievementId) != 2)
+        if (sscanf(args, "%12s %u", playerName, &achievementId) != 2)
         {
             SendCommandError(handler, "Usage: .dcquests achievement <player_name> <achievement_id>");
             return false;
@@ -513,12 +528,19 @@ namespace DC_DungeonQuests
         Player* player = ObjectAccessor::FindPlayerByName(playerName);
         if (!player)
         {
-            handler->PSendSysMessage("Player '%s' not found!", playerName);
+            handler->PSendSysMessage("Player '{}' not found!", playerName);
             return false;
         }
 
-    player->CompletedAchievement(sAchievementMgr->GetAchievement(achievementId));
-        handler->PSendSysMessage("Achievement %u awarded to %s", achievementId, playerName);
+        AchievementEntry const* achievement = sAchievementMgr->GetAchievement(achievementId);
+        if (!achievement)
+        {
+            handler->PSendSysMessage("Achievement {} not found!", achievementId);
+            return false;
+        }
+
+        player->CompletedAchievement(achievement);
+        handler->PSendSysMessage("Achievement {} awarded to {}", achievementId, playerName);
         DebugLog("Achievement awarded - Player: " + std::string(playerName) + ", Achievement: " + std::to_string(achievementId));
         return true;
     }
@@ -534,7 +556,7 @@ namespace DC_DungeonQuests
         char playerName[MAX_PLAYER_NAME + 1];
         uint32 titleId = 0;
 
-        if (sscanf(args, "%s %u", playerName, &titleId) != 2)
+        if (sscanf(args, "%12s %u", playerName, &titleId) != 2)
         {
             SendCommandError(handler, "Usage: .dcquests title <player_name> <title_id>");
             return false;
@@ -543,19 +565,19 @@ namespace DC_DungeonQuests
         Player* player = ObjectAccessor::FindPlayerByName(playerName);
         if (!player)
         {
-            handler->PSendSysMessage("Player '%s' not found!", playerName);
+            handler->PSendSysMessage("Player '{}' not found!", playerName);
             return false;
         }
 
         CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId);
         if (!titleEntry)
         {
-            handler->PSendSysMessage("Title %u not found!", titleId);
+            handler->PSendSysMessage("Title {} not found!", titleId);
             return false;
         }
 
         player->SetTitle(titleEntry);
-        handler->PSendSysMessage("Title %u awarded to %s", titleId, playerName);
+        handler->PSendSysMessage("Title {} awarded to {}", titleId, playerName);
         DebugLog("Title awarded - Player: " + std::string(playerName) + ", Title: " + std::to_string(titleId));
         return true;
     }
@@ -573,7 +595,7 @@ namespace DC_DungeonQuests
         LOG_INFO("scripts.dc", "DCQuests Audit: {} enabled dungeons without quest mappings", audit.missingDungeons);
         LOG_INFO("scripts.dc", "DCQuests Audit: {} duplicate dungeon quest mappings", audit.duplicateMappings);
 
-        handler->PSendSysMessage("Audit complete. Missing quest_template entries: %u. Dungeons without mappings: %u. Duplicate mappings: %u.",
+        handler->PSendSysMessage("Audit complete. Missing quest_template entries: {}. Dungeons without mappings: {}. Duplicate mappings: {}.",
                                  audit.missingQuestTemplate, audit.missingDungeons, audit.duplicateMappings);
         return true;
     }
