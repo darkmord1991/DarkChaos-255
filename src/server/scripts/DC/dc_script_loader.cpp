@@ -188,6 +188,7 @@ void AddSC_cs_dc_guildhouse();                // Commands/cs_dc_guildhouse.cpp
 void AddSC_dc_stresstest();                   // Commands/cs_dc_stresstest.cpp
 void AddSC_dc_challenge_modes_commandscript();
 // Commands/cs_dc_challenge_modes.cpp
+void AddSC_dc_worldboss_commandscript();       // Commands/cs_dc_worldboss.cpp
 
 // --- Guild housing ---
 void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
@@ -449,6 +450,7 @@ void AddDCScripts()
     // Hotspot commands are loaded in AddSC_ac_hotspots.
     DC_LOAD(AddSC_dc_stresstest);
     DC_LOAD(AddSC_dc_challenge_modes_commandscript);
+    DC_LOAD(AddSC_dc_worldboss_commandscript);
 
 #undef DC_LOAD
 

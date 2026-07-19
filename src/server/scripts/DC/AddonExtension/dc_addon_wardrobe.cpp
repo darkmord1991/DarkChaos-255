@@ -9,6 +9,7 @@
 #include "../../ScriptPCH.h"
 #include "dc_addon_collection.h"
 #include "dc_addon_namespace.h"
+#include "dc_addon_utils.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "MapMgr.h"
@@ -733,17 +734,10 @@ namespace DCCollection
     static std::unordered_map<uint32, std::unordered_set<uint32>> sessionNotifiedAppearances;
     static std::mutex s_WardrobeMutex;  // Thread safety for wardrobe caches
 
+    // Centralized in DCAddon::Utils; thin forwarder keeps local call sites intact.
     static void AppendUnsignedJsonNumber(std::string& out, uint32 value)
     {
-        char buffer[16];
-        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
-        if (ec != std::errc())
-        {
-            out += std::to_string(value);
-            return;
-        }
-
-        out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+        DCAddon::Utils::AppendUnsignedJsonNumber(out, value);
     }
 
     static uint32 ComputeCollectedAppearancesSyncVersion(

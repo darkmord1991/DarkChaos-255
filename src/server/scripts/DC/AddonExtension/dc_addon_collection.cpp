@@ -24,6 +24,7 @@
 
 #include "../../ScriptPCH.h"
 #include "dc_addon_namespace.h"
+#include "dc_addon_utils.h"
 #include "dc_addon_collection.h"
 #include "../CrossSystem/CrossSystemUtilities.h"
 
@@ -148,44 +149,26 @@ namespace DCCollection
             return (hash << 13) | (hash >> 19);
         }
 
+        // JSON number/key emitters are centralized in DCAddon::Utils; these thin
+        // forwarders keep this file's many internal call sites unchanged.
         inline void AppendUnsignedJsonNumber(std::string& out, uint32 value)
         {
-            char buffer[16];
-            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
-            if (ec != std::errc())
-            {
-                out += std::to_string(value);
-                return;
-            }
-
-            out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+            DCAddon::Utils::AppendUnsignedJsonNumber(out, value);
         }
 
         inline void AppendSignedJsonNumber(std::string& out, int32 value)
         {
-            char buffer[16];
-            auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
-            if (ec != std::errc())
-            {
-                out += std::to_string(value);
-                return;
-            }
-
-            out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+            DCAddon::Utils::AppendSignedJsonNumber(out, value);
         }
 
         inline void AppendFloatingJsonNumber(std::string& out, double value)
         {
-            std::ostringstream stream;
-            stream << std::setprecision(15) << value;
-            out += stream.str();
+            DCAddon::Utils::AppendFloatingJsonNumber(out, value);
         }
 
         inline void AppendJsonKey(std::string& out, char const* key)
         {
-            out.push_back('"');
-            out += key;
-            out += "\":";
+            DCAddon::Utils::AppendJsonKey(out, key);
         }
 
         inline void AppendJsonUInt32Array(std::string& out,

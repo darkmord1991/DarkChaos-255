@@ -10,11 +10,13 @@
 #include "CrossSystemManager.h"
 #include "CrossSystemAdapters.h"
 #include "CrossSystemWorldBossMgr.h"
+#include "Chat.h"
 #include "Creature.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "StringFormat.h"
 #include "World.h"
 #include "dc_update_profiler.h"
 
@@ -31,6 +33,12 @@ class CrossSystemWorldScript : public WorldScript
 {
 public:
     CrossSystemWorldScript() : WorldScript("dc_cross_system_world") {}
+
+    void OnAfterConfigLoad(bool /*reload*/) override
+    {
+        // Loads at startup and again on `.reload config`.
+        sWorldBossMgr->LoadConfig();
+    }
 
     void OnStartup() override
     {
@@ -127,6 +135,55 @@ public:
 };
 
 // =========================================================================
+// World Boss Loot Lockout - Global Loot Hooks
+// =========================================================================
+
+class CrossSystemWorldBossLootScript : public GlobalScript
+{
+public:
+    CrossSystemWorldBossLootScript() : GlobalScript("dc_world_boss_loot") {}
+
+    // Item-level eligibility. Called many times (per item, per group viewer), so it stays SILENT.
+    // Per CALL_ENABLED_BOOLEAN_HOOKS, returning true here BLOCKS the item for this player.
+    bool OnAllowedForPlayerLootCheck(Player const* player, ObjectGuid source) override
+    {
+        return IsLockedForBoss(player, source.GetEntry());
+    }
+
+    // Corpse open. Fires once in Player::SendLoot; the natural place for the one-shot message.
+    bool OnAllowedToLootContainerCheck(Player const* player, ObjectGuid source) override
+    {
+        uint32 const entry = source.GetEntry();
+        if (!IsLockedForBoss(player, entry))
+            return false; // allow
+
+        if (player)
+        {
+            std::string name = "this world boss";
+            if (DarkChaos::CrossSystem::WorldBossInfo* info = sWorldBossMgr->GetBossInfo(entry))
+                name = info->displayName;
+
+            uint32 const remaining = sWorldBossMgr->GetLockoutRemaining(player, entry);
+            ChatHandler(player->GetSession()).SendSysMessage(
+                Acore::StringFormat("|cffff2020Loot lockout:|r you have already claimed {} this reset. Available again in {}.",
+                                    name, WorldBossMgr::FormatDuration(remaining)));
+        }
+        return true; // block opening the corpse (engine also sends LOOT_ERROR_DIDNT_KILL)
+    }
+
+private:
+    // True only when the source is one of our registered world bosses AND the player is locked out.
+    static bool IsLockedForBoss(Player const* player, uint32 entry)
+    {
+        if (!sWorldBossMgr->IsLockoutEnabled() || !player)
+            return false;
+        if (!sWorldBossMgr->GetBossInfo(entry)) // not a managed world boss -> never interfere
+            return false;
+        return sWorldBossMgr->IsPlayerLockedOut(player, entry);
+    }
+};
+
+// =========================================================================
 // Registration
 // =========================================================================
 
@@ -134,6 +191,7 @@ void AddSC_dc_cross_system_scripts()
 {
     new CrossSystemWorldScript();
     new CrossSystemPlayerScript();
+    new CrossSystemWorldBossLootScript();
 }
 
 // =========================================================================

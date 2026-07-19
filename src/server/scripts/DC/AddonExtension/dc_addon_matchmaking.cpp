@@ -10,6 +10,7 @@
 
 #include "dc_addon_matchmaking.h"
 #include "dc_addon_namespace.h"
+#include "dc_addon_utils.h"
 #include "dc_addon_groupfinder_mgr.h"
 
 #include "Common.h"
@@ -56,17 +57,8 @@ namespace Matchmaking
             return { 2, 3, 5 };       // 10-man
         }
 
-        bool ClassCanTank(uint8 c)
-        {
-            return c == CLASS_WARRIOR || c == CLASS_PALADIN
-                || c == CLASS_DEATH_KNIGHT || c == CLASS_DRUID;
-        }
-
-        bool ClassCanHeal(uint8 c)
-        {
-            return c == CLASS_PRIEST || c == CLASS_PALADIN
-                || c == CLASS_SHAMAN || c == CLASS_DRUID;
-        }
+        // Class->role CAPABILITY is centralized in DCAddon::Utils::ClassCanTank/
+        // ClassCanHeal (static class-based; not the player's current spec role).
 
         char const* RoleName(uint8 role)
         {
@@ -269,9 +261,9 @@ namespace Matchmaking
         // Validate the solo role selection; party members use their full class
         // capability so the matcher has the most freedom to fill the group.
         uint8 cls = player->getClass();
-        if ((roles & QROLE_TANK) && !ClassCanTank(cls))
+        if ((roles & QROLE_TANK) && !Utils::ClassCanTank(cls))
             roles &= ~QROLE_TANK;
-        if ((roles & QROLE_HEALER) && !ClassCanHeal(cls))
+        if ((roles & QROLE_HEALER) && !Utils::ClassCanHeal(cls))
             roles &= ~QROLE_HEALER;
         if (roles == 0)
             roles = QROLE_DPS;
@@ -336,8 +328,8 @@ namespace Matchmaking
         auto fullRoles = [](uint8 c) -> uint8
         {
             uint8 r = QROLE_DPS;
-            if (ClassCanTank(c)) r |= QROLE_TANK;
-            if (ClassCanHeal(c)) r |= QROLE_HEALER;
+            if (Utils::ClassCanTank(c)) r |= QROLE_TANK;
+            if (Utils::ClassCanHeal(c)) r |= QROLE_HEALER;
             return r;
         };
 

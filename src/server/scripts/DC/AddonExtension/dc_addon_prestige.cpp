@@ -38,20 +38,21 @@
 
 namespace DCPrestigeAddon
 {
-    // Module identifier - must match client-side and DCAddonNamespace.h
-    constexpr const char* MODULE = "PRES";
+    // Module id + opcodes are sourced from the canonical registry in
+    // dc_addon_namespace.h so the two can never drift (previously these were
+    // hand-copied literal constants kept in sync by comment).
+    constexpr const char* MODULE = DCAddon::Module::PRESTIGE;
 
-    // Opcodes - match DCAddonNamespace.h Opcode::Prestige
     namespace Opcode
     {
         // Client -> Server
-        constexpr uint8 CMSG_GET_INFO              = 0x01;  // Request prestige info
-        constexpr uint8 CMSG_GET_BONUSES           = 0x02;  // Request stat bonuses breakdown
+        constexpr uint8 CMSG_GET_INFO              = DCAddon::Opcode::Prestige::CMSG_GET_INFO;
+        constexpr uint8 CMSG_GET_BONUSES           = DCAddon::Opcode::Prestige::CMSG_GET_BONUSES;
 
         // Server -> Client
-        constexpr uint8 SMSG_INFO                  = 0x10;  // Prestige level info
-        constexpr uint8 SMSG_BONUSES               = 0x11;  // Stat bonuses breakdown
-        constexpr uint8 SMSG_LEVEL_UP              = 0x12;  // Notification: prestige level up
+        constexpr uint8 SMSG_INFO                  = DCAddon::Opcode::Prestige::SMSG_INFO;
+        constexpr uint8 SMSG_BONUSES               = DCAddon::Opcode::Prestige::SMSG_BONUSES;
+        constexpr uint8 SMSG_LEVEL_UP              = DCAddon::Opcode::Prestige::SMSG_LEVEL_UP;
     }
 
     // Configuration

@@ -2412,7 +2412,14 @@ local function JsonParseValue()
             JsonSkipWS()
             local sep = _jbyte(_jstr, _jpos)
             if sep == J_RB then _jpos = _jpos + 1; break end
-            if sep == J_COMMA then _jpos = _jpos + 1 end
+            if sep == J_COMMA then
+                _jpos = _jpos + 1
+            else
+                -- Malformed/unexpected token (e.g. "[x]"). JsonParseValue()
+                -- returned without advancing _jpos, so bail out instead of
+                -- spinning forever (mirrors the object loop's break above).
+                break
+            end
         end
         return arr
     end

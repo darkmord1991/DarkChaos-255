@@ -9,6 +9,7 @@
  */
 
 #include "dc_addon_namespace.h"
+#include "dc_addon_utils.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
@@ -17,78 +18,13 @@
 
 #include "../MythicPlus/dc_mythicplus_spectator.h"
 
-#include <mutex>
-
 namespace DCAddon
 {
 namespace Spectator
 {
-    // ========================================================================
-    // DUNGEON NAME CACHE
-    // ========================================================================
-    //
-    // dc_mplus_dungeons is a static world configuration table, but it used to
-    // be re-queried from the DB on every HandleRequestSpectate call and on
-    // every entry in the HandleListRuns loop (up to 20 blocking queries per
-    // request). Load it once (lazily) into memory and serve every lookup from
-    // the cache. Mirrors the GetDungeonNameById pattern in
-    // dc_addon_groupfinder.cpp.
-    // NOTE: changes to dc_mplus_dungeons require a worldserver restart to show.
-
-    namespace
-    {
-        struct DungeonNameCacheEntry
-        {
-            uint32 dungeonId = 0;
-            std::string name;
-        };
-
-        std::mutex sDungeonNameCacheMutex;
-        bool sDungeonNameCacheLoaded = false;
-        std::vector<DungeonNameCacheEntry> sDungeonNameCache;
-
-        // Must be called with sDungeonNameCacheMutex held.
-        void LoadDungeonNameCacheLocked()
-        {
-            if (sDungeonNameCacheLoaded)
-                return;
-
-            sDungeonNameCacheLoaded = true;
-
-            // One-time synchronous read of a static world config table.
-            QueryResult result = WorldDatabase.Query(
-                "SELECT dungeon_id, dungeon_name FROM dc_mplus_dungeons");
-
-            if (result)
-            {
-                do
-                {
-                    Field* fields = result->Fetch();
-
-                    DungeonNameCacheEntry entry;
-                    entry.dungeonId = fields[0].Get<uint32>();
-                    entry.name = fields[1].Get<std::string>();
-                    sDungeonNameCache.push_back(std::move(entry));
-                } while (result->NextRow());
-            }
-
-            LOG_INFO("dc.addon", "Spectator dungeon name cache loaded {} dungeons from dc_mplus_dungeons",
-                sDungeonNameCache.size());
-        }
-
-        // Name lookup by dungeon_id (map id). Empty string when unknown.
-        std::string GetDungeonNameById(uint32 dungeonId)
-        {
-            std::lock_guard<std::mutex> lock(sDungeonNameCacheMutex);
-            LoadDungeonNameCacheLocked();
-
-            for (DungeonNameCacheEntry const& entry : sDungeonNameCache)
-                if (entry.dungeonId == dungeonId)
-                    return entry.name;
-
-            return "";
-        }
-    }
+    // Dungeon-name resolution is centralized in DCAddon::Utils::GetDungeonNameByMapId
+    // (authoritative, cached, reads world.dc_dungeon_setup). The M+ map ids used
+    // here resolve identically to the old dc_mplus_dungeons lookup.
 
     // Handler: Request to spectate a run
     static void HandleRequestSpectate(Player* player, const ParsedMessage& msg)
@@ -123,7 +59,7 @@ namespace Spectator
         std::string dungeonName = "Unknown Dungeon";
         if (mapId)
         {
-            std::string cachedName = GetDungeonNameById(mapId);
+            std::string cachedName = Utils::GetDungeonNameByMapId(mapId);
             if (!cachedName.empty())
                 dungeonName = cachedName;
         }
@@ -184,7 +120,7 @@ namespace Spectator
                 break;
 
             std::string dungeonName = "Unknown";
-            std::string cachedName = GetDungeonNameById(run.mapId);
+            std::string cachedName = Utils::GetDungeonNameByMapId(run.mapId);
             if (!cachedName.empty())
                 dungeonName = cachedName;
 

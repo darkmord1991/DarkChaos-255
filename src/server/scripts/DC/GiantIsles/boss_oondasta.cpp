@@ -123,7 +123,7 @@ public:
             sWorldBossMgr->OnBossSpawned(me);
         }
 
-        void JustEngagedWith(Unit* /*who*/) override
+        void JustEngagedWith(Unit* who) override
         {
             Talk(SAY_AGGRO);
 
@@ -137,7 +137,15 @@ public:
             events.ScheduleEvent(EVENT_HP_CHECK, 5s);
 
             // Notify addon clients via centralized WorldBossMgr
-            sWorldBossMgr->OnBossEngaged(me);
+            sWorldBossMgr->OnBossEngaged(me, who);
+        }
+
+        void JustReachedHome() override
+        {
+            ScriptedAI::JustReachedHome();
+
+            // Release the anti-grief combat phase when the encounter resets (wipe/evade).
+            sWorldBossMgr->RestoreBossPhase(me);
         }
 
         void JustDied(Unit* /*killer*/) override

@@ -33,6 +33,7 @@
 #include "PathGenerator.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_utils.h"
 
 #include <vector>
 #include <list>
@@ -254,20 +255,11 @@ struct PreferenceSchemaInfo
 
 static PreferenceSchemaInfo sPreferenceSchema;
 
+// Centralized in DCAddon::Utils::EscapeSql (full backslash escaping — strictly
+// safer than the previous bare single-quote doubling).
 static std::string EscapeSqlString(std::string const& input)
 {
-    std::string escaped;
-    escaped.reserve(input.size());
-
-    for (char c : input)
-    {
-        if (c == '\'')
-            escaped += "''";
-        else
-            escaped.push_back(c);
-    }
-
-    return escaped;
+    return DCAddon::Utils::EscapeSql(input);
 }
 
 static std::string SerializeIgnoredItems(std::unordered_set<uint32> const& ignoredItemIds)

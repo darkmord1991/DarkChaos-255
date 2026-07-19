@@ -44,7 +44,8 @@
 #   Section 18: Leaderboard System
 #
 # PART VII - WORLD CONTENT
-#   Section 19: Invasion System
+#   Section 19:  Invasion System
+#   Section 19A: World Bosses (Giant Isles)
 #
 # PART VIII - TESTING & DEVELOPMENT
 #   Section 20: Fake Players System
@@ -3860,6 +3861,77 @@ DC.Leaderboards.MaxCacheEntries = 100
 #  No active runtime config keys are currently wired for this section.
 #
 ###############################################################################
+
+
+###############################################################################
+#
+#  SECTION 19A: WORLD BOSSES (Giant Isles)
+#
+#  Loot lockout and optional anti-grief phasing for the centralized world-boss
+#  manager (CrossSystemWorldBossMgr) that drives Oondasta / Thok / Nalak.
+#
+#  IMPORTANT: the loot lockout persists through the core player-settings system
+#  (character_settings table), which only writes to the DB when
+#  "EnablePlayerSettings = 1" is set in the MAIN worldserver.conf. That key is
+#  NOT redeclared here (doing so would duplicate the main config and warn at
+#  startup). With EnablePlayerSettings = 0 the lockout is tracked in memory only
+#  and resets on relog/restart; the server logs a WARN under "scripts.dc" at
+#  startup in that case.
+#
+###############################################################################
+
+#
+#    DC.WorldBoss.Lockout.Enable
+#        Description: Per-character, per-boss loot lockout. When enabled, a
+#                     character that already claimed a world boss cannot loot it
+#                     again until the lockout window expires (retail-style).
+#        Default:     1 (Enabled)
+#
+DC.WorldBoss.Lockout.Enable = 1
+
+#
+#    DC.WorldBoss.Lockout.Seconds
+#        Description: Length of the loot-lockout window in seconds, measured from
+#                     the kill. With 3 bosses on a daily rotation, 7 days means a
+#                     given boss is lootable roughly every other appearance.
+#        Default:     604800 (7 days)
+#
+DC.WorldBoss.Lockout.Seconds = 604800
+
+#
+#    DC.WorldBoss.Lockout.GraceSeconds
+#        Description: Grace window (seconds) after a kill during which the group
+#                     that tagged the boss may still loot (and re-open) the fresh
+#                     corpse even though they are now locked. Must comfortably
+#                     exceed the corpse loot duration.
+#        Default:     300 (5 minutes)
+#
+DC.WorldBoss.Lockout.GraceSeconds = 300
+
+#
+#    DC.WorldBoss.Phase.OnEngage
+#        Description: Anti-grief phasing. When enabled, engaging a world boss
+#                     moves the boss AND the engaging group into a private combat
+#                     phase so uninvolved players cannot tag-steal or grief.
+#                     NOTE: this is a single binary phase, so it is ONE GROUP AT A
+#                     TIME -- the first group to engage owns the boss until it
+#                     dies, wipes, or evades. It does NOT create simultaneous
+#                     per-group copies. These bosses were designed as server-wide
+#                     zergs, so this is OFF by default; enable only if you want
+#                     small-group ownership.
+#        Default:     0 (Disabled)
+#
+DC.WorldBoss.Phase.OnEngage = 0
+
+#
+#    DC.WorldBoss.Phase.Mask
+#        Description: Phase-mask bit used for the boss combat phase when
+#                     DC.WorldBoss.Phase.OnEngage = 1. Uses a high, distinctive
+#                     bit to avoid colliding with the low bits the Phased Duels
+#                     and zone systems allocate. Only relevant when phasing is on.
+#        Default:     1073741824 (0x40000000)
+#
+DC.WorldBoss.Phase.Mask = 1073741824
 
 
 ###############################################################################

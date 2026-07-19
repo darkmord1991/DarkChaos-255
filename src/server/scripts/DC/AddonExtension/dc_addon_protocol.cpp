@@ -11,6 +11,7 @@
 #include "Common.h"
 #include "dc_addon_collection.h"
 #include "dc_addon_namespace.h"
+#include "dc_addon_utils.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "WorldSession.h"
@@ -2117,46 +2118,11 @@ static void InsertProtocolLogRow(ProtocolLogContext const& context,
         processingTimeMs);
 }
 
+// Thin alias over the centralized escaper (DCAddon::Utils::EscapeSql) so this
+// file's ~25 call sites keep working while the escaping logic lives in one place.
 static std::string EscapeSQLString(std::string s)
 {
-    std::string escaped;
-    escaped.reserve(s.size() * 2);
-
-    for (unsigned char c : s)
-    {
-        switch (c)
-        {
-            case '\0':
-                escaped += "\\0";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '\'':
-                escaped += "\\'";
-                break;
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\x1A':
-                escaped += "\\Z";
-                break;
-            default:
-                escaped.push_back(static_cast<char>(c));
-                break;
-        }
-    }
-
-    return escaped;
+    return DCAddon::Utils::EscapeSql(s);
 }
 
 static std::string SanitizeStatsTransport(std::string transport)

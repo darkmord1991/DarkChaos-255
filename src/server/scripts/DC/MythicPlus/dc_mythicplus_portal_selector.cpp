@@ -18,6 +18,7 @@
 #include "StringFormat.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "../AddonExtension/dc_addon_utils.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "ObjectAccessor.h"
 #include <algorithm>
@@ -62,16 +63,11 @@ bool IsMythicDungeonTeleporter(uint32 entryId)
 
 std::string GetDungeonNameByMapId(uint32 dungeonMapId)
 {
-    QueryResult result = WorldDatabase.Query(
-        "SELECT dungeon_name FROM dc_dungeon_setup WHERE map_id = {}",
-        dungeonMapId);
-
-    if (result)
-    {
-        std::string name = result->Fetch()[0].Get<std::string>();
-        if (!name.empty())
-            return name;
-    }
+    // Centralized cached lookup (world.dc_dungeon_setup); keep the local
+    // numeric fallback for map ids that aren't in the table.
+    std::string name = DCAddon::Utils::GetDungeonNameByMapId(dungeonMapId);
+    if (!name.empty())
+        return name;
 
     return Acore::StringFormat("Dungeon {}", dungeonMapId);
 }

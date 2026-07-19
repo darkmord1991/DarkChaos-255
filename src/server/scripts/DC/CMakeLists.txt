@@ -309,6 +309,7 @@ set(SCRIPTS_DC_Commands
     Commands/cs_dc_repair.cpp
     Commands/cs_dc_guildhouse.cpp
     Commands/cs_dc_stresstest.cpp
+    Commands/cs_dc_worldboss.cpp
 )
 
 # DC Guild Housing

@@ -10,6 +10,7 @@
 
 #include "Common.h"
 #include "dc_addon_namespace.h"
+#include "dc_addon_utils.h"
 #include "ScriptMgr.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -681,27 +682,14 @@ namespace GroupFinder
         uint8 classId = player->getClass();
         bool roleValid = true;
 
-        // Check Tank role
-        if (roleMask & 1) // GF_ROLE_TANK
-        {
-            if (classId != CLASS_WARRIOR && classId != CLASS_PALADIN &&
-                classId != CLASS_DEATH_KNIGHT && classId != CLASS_DRUID)
-                roleValid = false;
-        }
+        // Class->role capability check (centralized in DCAddon::Utils).
+        if ((roleMask & 1) && !Utils::ClassCanTank(classId))   // GF_ROLE_TANK
+            roleValid = false;
 
-        // Check Healer role
-        if (roleMask & 2) // GF_ROLE_HEALER
-        {
-            if (classId != CLASS_PALADIN && classId != CLASS_PRIEST &&
-                classId != CLASS_SHAMAN && classId != CLASS_DRUID)
-                roleValid = false;
-        }
+        if ((roleMask & 2) && !Utils::ClassCanHeal(classId))   // GF_ROLE_HEALER
+            roleValid = false;
 
-        // Check DPS role (everyone can DPS)
-        if (roleMask & 4) // GF_ROLE_DPS
-        {
-            // All classes can DPS
-        }
+        // GF_ROLE_DPS (4): every class can DPS, no check needed.
 
         if (!roleValid)
         {

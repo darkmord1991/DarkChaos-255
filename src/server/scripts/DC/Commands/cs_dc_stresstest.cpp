@@ -26,6 +26,7 @@
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "../AddonExtension/dc_addon_death_markers.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "../AddonExtension/dc_addon_utils.h"
 #include <chrono>
 #include <array>
 #include <charconv>
@@ -4842,47 +4843,26 @@ namespace DCPerfTest
         return (hash << 13) | (hash >> 19);
     }
 
-    inline void AppendUnsignedJsonNumberForStress(std::string& out,
-        uint32 value)
+    // JSON emitters centralized in DCAddon::Utils; thin forwarders keep the
+    // stress-harness call sites (and the forward decl above) intact.
+    inline void AppendUnsignedJsonNumberForStress(std::string& out, uint32 value)
     {
-        char buffer[16];
-        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
-        if (ec != std::errc())
-        {
-            out += std::to_string(value);
-            return;
-        }
-
-        out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+        DCAddon::Utils::AppendUnsignedJsonNumber(out, value);
     }
 
-    inline void AppendSignedJsonNumberForStress(std::string& out,
-        int32 value)
+    inline void AppendSignedJsonNumberForStress(std::string& out, int32 value)
     {
-        char buffer[16];
-        auto [ptr, ec] = std::to_chars(buffer, buffer + sizeof(buffer), value);
-        if (ec != std::errc())
-        {
-            out += std::to_string(value);
-            return;
-        }
-
-        out.append(buffer, static_cast<std::size_t>(ptr - buffer));
+        DCAddon::Utils::AppendSignedJsonNumber(out, value);
     }
 
-    inline void AppendFloatingJsonNumberForStress(std::string& out,
-        double value)
+    inline void AppendFloatingJsonNumberForStress(std::string& out, double value)
     {
-        std::ostringstream stream;
-        stream << std::setprecision(15) << value;
-        out += stream.str();
+        DCAddon::Utils::AppendFloatingJsonNumber(out, value);
     }
 
     inline void AppendJsonKeyForStress(std::string& out, char const* key)
     {
-        out.push_back('"');
-        out += key;
-        out += "\":";
+        DCAddon::Utils::AppendJsonKey(out, key);
     }
 
     static void AppendSequentialJsonArrayForStress(std::string& out,
