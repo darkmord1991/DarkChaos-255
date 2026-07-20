@@ -510,13 +510,13 @@ function GF:PopulateMythicGroups(groups)
     if panel.loadingText then panel.loadingText:Hide() end
     
     local scrollChild = panel.scrollChild
-    
-    -- Clear existing rows
-    for _, child in ipairs({ scrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+
+    -- Clear existing rows (pooled: hide, don't destroy)
+    panel.groupRowPool = panel.groupRowPool or {}
+    for _, row in ipairs(panel.groupRowPool) do
+        row:Hide()
     end
-    
+
     -- Handle empty state
     if not groups or #groups == 0 then
         if panel.emptyText then panel.emptyText:Show() end
@@ -534,64 +534,117 @@ function GF:PopulateMythicGroups(groups)
     local yOffset = 0
     local rowHeight = 52
     local altColor = false
-    
+    local playerName = UnitName("player")
+
     for i, group in ipairs(groups) do
-        local row = CreateFrame("Button", nil, scrollChild)
+        local row = panel.groupRowPool[i]
+        if not row then
+            row = CreateFrame("Button", nil, scrollChild)
+
+            -- Alternating row colors (subtle)
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+
+            -- Hover highlight
+            row.highlight = row:CreateTexture(nil, "HIGHLIGHT")
+            row.highlight:SetAllPoints()
+            row.highlight:SetColorTexture(0.2, 0.4, 0.6, 0.3)
+
+            -- Left accent bar (key level color)
+            row.accent = row:CreateTexture(nil, "ARTWORK")
+            row.accent:SetPoint("TOPLEFT", 0, 0)
+            row.accent:SetPoint("BOTTOMLEFT", 0, 0)
+            row.accent:SetWidth(4)
+
+            -- Key level badge
+            row.levelBadge = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            row.levelBadge:SetPoint("LEFT", 12, 4)
+
+            -- Dungeon name
+            row.dungeonText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.dungeonText:SetPoint("TOPLEFT", 50, -8)
+
+            -- Leader name with markers
+            row.leaderText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.leaderText:SetPoint("TOPLEFT", 50, -24)
+
+            -- Roles needed (icons)
+            row.rolesFrame = CreateFrame("Frame", nil, row)
+            row.rolesFrame:SetPoint("LEFT", 350, 0)
+            row.rolesFrame:SetSize(100, 24)
+
+            row.tankIcon = row.rolesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.tankIcon:SetText(ROLE_ICONS.tank)
+
+            row.healIcon = row.rolesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.healIcon:SetText(ROLE_ICONS.healer)
+
+            row.dpsIcons = {}
+            for d = 1, 3 do
+                local dpsIcon = row.rolesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                dpsIcon:SetText(ROLE_ICONS.dps)
+                row.dpsIcons[d] = dpsIcon
+            end
+
+            -- Note (if any)
+            row.noteText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.noteText:SetPoint("BOTTOMLEFT", 50, 6)
+            row.noteText:SetWidth(280)
+            row.noteText:SetJustifyH("LEFT")
+
+            -- Special border/glow for own groups
+            row.ownBorder = row:CreateTexture(nil, "OVERLAY")
+            row.ownBorder:SetPoint("TOPLEFT", 0, 0)
+            row.ownBorder:SetPoint("BOTTOMRIGHT", 0, 0)
+            row.ownBorder:SetColorTexture(0, 1, 0, 0.1)
+
+            -- Action button (right side) - different for own groups vs others
+            row.actionBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.actionBtn:SetSize(70, 22)
+            row.actionBtn:SetPoint("RIGHT", -10, 0)
+
+            -- Row click to select
+            row:SetScript("OnClick", function(self, button)
+                if button == "LeftButton" then
+                    -- Could show details panel
+                end
+            end)
+
+            panel.groupRowPool[i] = row
+        end
+
+        row:SetParent(scrollChild)
+        row:ClearAllPoints()
         row:SetSize(scrollChild:GetWidth() - 4, rowHeight - 2)
         row:SetPoint("TOPLEFT", 2, -yOffset)
-        
-        -- Alternating row colors (subtle)
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
+
         if altColor then
             row.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
         else
             row.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
         end
         altColor = not altColor
-        
-        -- Hover highlight
-        row.highlight = row:CreateTexture(nil, "HIGHLIGHT")
-        row.highlight:SetAllPoints()
-        row.highlight:SetColorTexture(0.2, 0.4, 0.6, 0.3)
-        
-        -- Left accent bar (key level color)
-        local accent = row:CreateTexture(nil, "ARTWORK")
-        accent:SetPoint("TOPLEFT", 0, 0)
-        accent:SetPoint("BOTTOMLEFT", 0, 0)
-        accent:SetWidth(4)
+
         -- Color based on key level
         local level = group.level or 2
         if level >= 20 then
-            accent:SetColorTexture(1.0, 0.5, 0.0, 1) -- Orange for high keys
+            row.accent:SetColorTexture(1.0, 0.5, 0.0, 1) -- Orange for high keys
         elseif level >= 15 then
-            accent:SetColorTexture(0.64, 0.21, 0.93, 1) -- Purple
+            row.accent:SetColorTexture(0.64, 0.21, 0.93, 1) -- Purple
         elseif level >= 10 then
-            accent:SetColorTexture(0.0, 0.44, 0.87, 1) -- Blue
+            row.accent:SetColorTexture(0.0, 0.44, 0.87, 1) -- Blue
         else
-            accent:SetColorTexture(0.12, 0.75, 0.12, 1) -- Green
+            row.accent:SetColorTexture(0.12, 0.75, 0.12, 1) -- Green
         end
-        
-        -- Key level badge
-        local levelBadge = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        levelBadge:SetPoint("LEFT", 12, 4)
-        levelBadge:SetText("|cffffffff+" .. level .. "|r")
-        
-        -- Dungeon name
-        local dungeonText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        dungeonText:SetPoint("TOPLEFT", 50, -8)
-        dungeonText:SetText(group.dungeon or "Unknown Dungeon")
-        
-        -- Leader name with markers
-        local leaderText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        leaderText:SetPoint("TOPLEFT", 50, -24)
-        
+
+        row.levelBadge:SetText("|cffffffff+" .. level .. "|r")
+        row.dungeonText:SetText(group.dungeon or "Unknown Dungeon")
+
         local leaderName = group.leader or "Unknown"
         local markerText = ""
         local leaderColor = "888888"
-        
+
         -- Check if this is player's own group
-        local playerName = UnitName("player")
         if group.isOwn or leaderName == playerName then
             markerText = " |cff00ff00[Your Group]|r"
             leaderColor = "00ff00"
@@ -604,83 +657,73 @@ function GF:PopulateMythicGroups(groups)
             markerText = " |cff44ff44[Guild]|r"
             leaderColor = "44ff44"
         end
-        
-        leaderText:SetText("|cff" .. leaderColor .. leaderName .. "|r" .. markerText)
-        
-        -- Roles needed (icons)
-        local rolesFrame = CreateFrame("Frame", nil, row)
-        rolesFrame:SetPoint("LEFT", 350, 0)
-        rolesFrame:SetSize(100, 24)
-        
+
+        row.leaderText:SetText("|cff" .. leaderColor .. leaderName .. "|r" .. markerText)
+
         local roleX = 0
         if not group.tank then
-            local tankIcon = rolesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            tankIcon:SetPoint("LEFT", roleX, 0)
-            tankIcon:SetText(ROLE_ICONS.tank)
+            row.tankIcon:ClearAllPoints()
+            row.tankIcon:SetPoint("LEFT", roleX, 0)
+            row.tankIcon:Show()
             roleX = roleX + 18
+        else
+            row.tankIcon:Hide()
         end
         if not group.healer then
-            local healIcon = rolesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            healIcon:SetPoint("LEFT", roleX, 0)
-            healIcon:SetText(ROLE_ICONS.healer)
+            row.healIcon:ClearAllPoints()
+            row.healIcon:SetPoint("LEFT", roleX, 0)
+            row.healIcon:Show()
             roleX = roleX + 18
+        else
+            row.healIcon:Hide()
         end
         local dpsNeeded = 3 - (group.dps or 0)
-        for j = 1, dpsNeeded do
-            local dpsIcon = rolesFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            dpsIcon:SetPoint("LEFT", roleX, 0)
-            dpsIcon:SetText(ROLE_ICONS.dps)
-            roleX = roleX + 18
+        for d = 1, 3 do
+            local dpsIcon = row.dpsIcons[d]
+            if d <= dpsNeeded then
+                dpsIcon:ClearAllPoints()
+                dpsIcon:SetPoint("LEFT", roleX, 0)
+                dpsIcon:Show()
+                roleX = roleX + 18
+            else
+                dpsIcon:Hide()
+            end
         end
-        
+
         -- Note (if any)
         if group.note and group.note ~= "" then
-            local noteText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            noteText:SetPoint("BOTTOMLEFT", 50, 6)
-            noteText:SetWidth(280)
-            noteText:SetJustifyH("LEFT")
-            noteText:SetText("|cff666666" .. group.note .. "|r")
+            row.noteText:SetText("|cff666666" .. group.note .. "|r")
+            row.noteText:Show()
+        else
+            row.noteText:Hide()
         end
-        
+
         -- Check if this is player's own group for button logic
         local isOwnGroup = group.isOwn or (group.leader == playerName)
-        
-        -- Action button (right side) - different for own groups vs others
-        local actionBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        actionBtn:SetSize(70, 22)
-        actionBtn:SetPoint("RIGHT", -10, 0)
-        
+
         if isOwnGroup then
             -- Own group - show Cancel button
-            actionBtn:SetText("Cancel")
-            actionBtn:GetFontString():SetTextColor(1, 0.3, 0.3)
-            actionBtn:SetScript("OnClick", function()
+            row.actionBtn:SetText("Cancel")
+            row.actionBtn:GetFontString():SetTextColor(1, 0.3, 0.3)
+            row.actionBtn:SetScript("OnClick", function()
                 GF:CancelGroup(group.id)
             end)
-            
-            -- Add special border/glow for own groups
-            local ownBorder = row:CreateTexture(nil, "OVERLAY")
-            ownBorder:SetPoint("TOPLEFT", 0, 0)
-            ownBorder:SetPoint("BOTTOMRIGHT", 0, 0)
-            ownBorder:SetColorTexture(0, 1, 0, 0.1)
+            row.ownBorder:Show()
         else
             -- Other groups - show Sign Up button
-            actionBtn:SetText("Sign Up")
-            actionBtn:SetScript("OnClick", function()
+            row.actionBtn:SetText("Sign Up")
+            row.actionBtn:GetFontString():SetTextColor(1, 1, 1)
+            row.actionBtn:SetScript("OnClick", function()
                 GF:ApplyToGroup(group.id)
             end)
+            row.ownBorder:Hide()
         end
-        
-        -- Row click to select
-        row:SetScript("OnClick", function(self, button)
-            if button == "LeftButton" then
-                -- Could show details panel
-            end
-        end)
-        
+
+        row:Show()
+
         yOffset = yOffset + rowHeight
     end
-    
+
     scrollChild:SetHeight(math.max(yOffset, 1))
 end
 
@@ -1947,12 +1990,12 @@ function GF:RefreshApplicantPanel()
     local frame = self.ApplicantFrame
     local scrollChild = frame.scrollChild
     
-    -- Clear existing rows
-    for _, child in ipairs({ scrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+    -- Clear existing rows (pooled: hide, don't destroy)
+    frame.applicantRowPool = frame.applicantRowPool or {}
+    for _, row in ipairs(frame.applicantRowPool) do
+        row:Hide()
     end
-    
+
     -- Get applicants for current listing
     local listingId = myActiveListingId
     local applicants = listingId and pendingApplicants[listingId] or {}
@@ -1972,60 +2015,93 @@ function GF:RefreshApplicantPanel()
     local rowHeight = 44
     
     for i, applicant in ipairs(applicants) do
-        local row = CreateFrame("Frame", nil, scrollChild)
+        local row = frame.applicantRowPool[i]
+        if not row then
+            row = CreateFrame("Frame", nil, scrollChild)
+
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+
+            -- Name with class color and markers
+            row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.nameText:SetPoint("TOPLEFT", 10, -6)
+
+            -- Class text (smaller, below name)
+            row.classText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.classText:SetPoint("TOPLEFT", 10, -20)
+
+            -- Role
+            row.roleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.roleText:SetPoint("LEFT", 120, 0)
+
+            -- Item Level (color coded)
+            row.ilvlText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.ilvlText:SetPoint("LEFT", 190, 0)
+
+            -- M+ Rating (color coded)
+            row.ratingText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.ratingText:SetPoint("LEFT", 240, 0)
+
+            -- Accept button
+            row.acceptBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.acceptBtn:SetSize(50, 20)
+            row.acceptBtn:SetPoint("LEFT", 310, 5)
+            row.acceptBtn:SetText("Invite")
+            row.acceptBtn:GetFontString():SetTextColor(0.4, 1, 0.4)
+
+            -- Decline button
+            row.declineBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.declineBtn:SetSize(50, 20)
+            row.declineBtn:SetPoint("LEFT", 310, -15)
+            row.declineBtn:SetText("Decline")
+            row.declineBtn:GetFontString():SetTextColor(1, 0.4, 0.4)
+
+            -- Message indicator
+            row.msgIcon = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.msgIcon:SetPoint("LEFT", 95, 0)
+            row.msgIcon:SetText("|cff888888✉|r")
+
+            frame.applicantRowPool[i] = row
+        end
+
+        row:SetParent(scrollChild)
+        row:ClearAllPoints()
         row:SetSize(scrollChild:GetWidth() - 4, rowHeight - 2)
         row:SetPoint("TOPLEFT", 2, -yOffset)
-        
+
         -- Alternating background
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
         if i % 2 == 0 then
             row.bg:SetColorTexture(0.08, 0.08, 0.10, 1)
         else
             row.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
         end
-        
+
         -- Friend/Guild highlight
         if applicant.isGuild then
             row.bg:SetColorTexture(0.05, 0.12, 0.05, 1)
         elseif applicant.isFriend then
             row.bg:SetColorTexture(0.05, 0.08, 0.12, 1)
         end
-        
-        -- Name with class color and markers
-        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        nameText:SetPoint("TOPLEFT", 10, -6)
+
         local colorCode = CLASS_COLORS[applicant.class:upper()] or "FFFFFF"
         local markerStr = ""
         if applicant.isFriend then markerStr = markerStr .. " |cff00ccff★|r" end
         if applicant.isGuild then markerStr = markerStr .. " |cff44ff44♦|r" end
-        nameText:SetText("|cff" .. colorCode .. applicant.name .. "|r" .. markerStr)
-        
-        -- Class text (smaller, below name)
-        local classText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        classText:SetPoint("TOPLEFT", 10, -20)
+        row.nameText:SetText("|cff" .. colorCode .. applicant.name .. "|r" .. markerStr)
+
         local className = applicant.class:sub(1,1):upper() .. applicant.class:sub(2):lower()
-        classText:SetText("|cff888888" .. className .. "|r")
-        
-        -- Role
-        local roleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        roleText:SetPoint("LEFT", 120, 0)
-        roleText:SetText(ROLE_DISPLAY[applicant.role] or applicant.role)
-        
-        -- Item Level (color coded)
-        local ilvlText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ilvlText:SetPoint("LEFT", 190, 0)
+        row.classText:SetText("|cff888888" .. className .. "|r")
+
+        row.roleText:SetText(ROLE_DISPLAY[applicant.role] or applicant.role)
+
         local ilvl = applicant.itemLevel or 0
         local ilvlColor = "ffffff"
         if ilvl >= 264 then ilvlColor = "a335ee" -- Epic (ICC level)
         elseif ilvl >= 245 then ilvlColor = "0070dd" -- Rare+
         elseif ilvl >= 219 then ilvlColor = "1eff00" -- Uncommon
         else ilvlColor = "888888" end
-        ilvlText:SetText("|cff" .. ilvlColor .. ilvl .. "|r")
-        
-        -- M+ Rating (color coded)
-        local ratingText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ratingText:SetPoint("LEFT", 240, 0)
+        row.ilvlText:SetText("|cff" .. ilvlColor .. ilvl .. "|r")
+
         local rating = applicant.rating or 0
         local ratingColor = "ffffff"
         if rating >= 3000 then ratingColor = "ff8000" -- Orange (very high)
@@ -2034,30 +2110,18 @@ function GF:RefreshApplicantPanel()
         elseif rating >= 1500 then ratingColor = "1eff00" -- Green
         elseif rating >= 1000 then ratingColor = "ffff00" -- Yellow
         else ratingColor = "888888" end
-        ratingText:SetText("|cff" .. ratingColor .. rating .. "|r")
-        
-        -- Accept button
-        local acceptBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        acceptBtn:SetSize(50, 20)
-        acceptBtn:SetPoint("LEFT", 310, 5)
-        acceptBtn:SetText("Invite")
-        acceptBtn:GetFontString():SetTextColor(0.4, 1, 0.4)
-        acceptBtn.applicantIndex = i
-        acceptBtn:SetScript("OnClick", function(self)
+        row.ratingText:SetText("|cff" .. ratingColor .. rating .. "|r")
+
+        row.acceptBtn.applicantIndex = i
+        row.acceptBtn:SetScript("OnClick", function(self)
             GF:AcceptApplicant(listingId, applicant.guid, applicant.name)
         end)
-        
-        -- Decline button
-        local declineBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        declineBtn:SetSize(50, 20)
-        declineBtn:SetPoint("LEFT", 310, -15)
-        declineBtn:SetText("Decline")
-        declineBtn:GetFontString():SetTextColor(1, 0.4, 0.4)
-        declineBtn.applicantIndex = i
-        declineBtn:SetScript("OnClick", function(self)
+
+        row.declineBtn.applicantIndex = i
+        row.declineBtn:SetScript("OnClick", function(self)
             GF:DeclineApplicant(listingId, applicant.guid, applicant.name, i)
         end)
-        
+
         -- Message tooltip on hover
         if applicant.message and applicant.message ~= "" then
             row:EnableMouse(true)
@@ -2070,16 +2134,19 @@ function GF:RefreshApplicantPanel()
                 GameTooltip:Show()
             end)
             row:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            
-            -- Message indicator
-            local msgIcon = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            msgIcon:SetPoint("LEFT", 95, 0)
-            msgIcon:SetText("|cff888888✉|r")
+            row.msgIcon:Show()
+        else
+            row:EnableMouse(false)
+            row:SetScript("OnEnter", nil)
+            row:SetScript("OnLeave", nil)
+            row.msgIcon:Hide()
         end
-        
+
+        row:Show()
+
         yOffset = yOffset + rowHeight
     end
-    
+
     scrollChild:SetHeight(math.max(yOffset, 1))
 end
 

@@ -262,7 +262,7 @@ end
 
 function AzerothAdmin:OnEnable()
   -- self:SetDebugging(true) -- Deprecated in Ace3
-  ma_toptext:SetText(Locale["char"].." "..Locale["guid"]..tonumber(UnitGUID("player"),16))
+  ma_toptext:SetText(Locale["char"].." "..Locale["guid"]..tonumber(UnitGUID("player")))
   ma_top2text:SetText(Locale["realm"])
   self:SearchReset()
   -- refresh server information
@@ -3156,39 +3156,12 @@ function pairsByKeys(t, f)
 end
 
 -- STYLE FUNCTIONS
-function AzerothAdmin:ToggleTransparency()
-  if self.db.profile.style.transparency.backgrounds < 1.0 then
-    self.db.profile.style.transparency.backgrounds = 1.0
-  else
-    self.db.profile.style.transparency.backgrounds = 0.5
-  end
-  ReloadUI()
-end
-
 function AzerothAdmin:ChangeTransparency(element)
   if element == "frames" then
     AzerothAdmin.db.profile.style.transparency.frames = string.format("%.2f", ma_frmtrslider:GetValue())
   elseif element == "buttons" then
     AzerothAdmin.db.profile.style.transparency.buttons = string.format("%.2f", ma_btntrslider:GetValue())
   end
-end
-
-function AzerothAdmin:ToggleTooltips()
-  if self.db.profile.style.showtooltips then
-    self.db.profile.style.showtooltips = false
-  else
-    self.db.profile.style.showtooltips = true
-  end
-  ReloadUI()
-end
-
-function AzerothAdmin:ToggleMinimenu()
-  if self.db.profile.style.showminimenu then
-    self.db.profile.style.showminimenu = false
-  else
-    self.db.profile.style.showminimenu = true
-  end
-  ReloadUI()
 end
 
 function AzerothAdmin:ChangeFrameStrata(strata)

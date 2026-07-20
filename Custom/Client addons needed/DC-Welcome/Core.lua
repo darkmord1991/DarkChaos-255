@@ -1513,7 +1513,7 @@ local function CreateSettingsPanel()
     _G["DCWelcome_ShowMilestonesText"]:SetText("Show level milestone notifications")
     showMilestonesCheck:SetScript("OnClick", function(self)
         DCWelcomeDB = DCWelcomeDB or {}
-        DCWelcomeDB.showMilestones = self:GetChecked()
+        DCWelcomeDB.showMilestones = (self:GetChecked() and true or false)
     end)
     yPos = yPos - 40
     
@@ -1524,7 +1524,7 @@ local function CreateSettingsPanel()
     _G["DCWelcome_EnableCommunicationText"]:SetText("Enable server communication (DCAddonProtocol)")
     commCheck:SetScript("OnClick", function(self)
         DCWelcomeDB = DCWelcomeDB or {}
-        DCWelcomeDB.enableCommunication = self:GetChecked()
+        DCWelcomeDB.enableCommunication = (self:GetChecked() and true or false)
     end)
     yPos = yPos - 40
 

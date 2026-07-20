@@ -248,12 +248,12 @@ function GF:PopulateScheduledEvents(events)
     local scrollChild = self.ScheduledTabContent.scrollChild
     if not scrollChild then return end
     
-    -- Clear existing
-    for _, child in ipairs({ scrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+    -- Clear existing (pooled rows: hide, don't destroy)
+    self.scheduledRowPool = self.scheduledRowPool or {}
+    for _, row in ipairs(self.scheduledRowPool) do
+        row:Hide()
     end
-    
+
     -- Get width from scroll frame or default
     local scrollFrame = scrollChild:GetParent()
     local contentWidth = scrollFrame and scrollFrame:GetWidth() or 500
@@ -278,72 +278,87 @@ function GF:PopulateScheduledEvents(events)
         local maxSignups = event.maxSignups or 0
         local confirmed = event.confirmed or event.currentSignups or 0
 
-        local row = CreateFrame("Frame", nil, scrollChild)
+        local row = self.scheduledRowPool[i]
+        if not row then
+            row = CreateFrame("Frame", nil, scrollChild)
+
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+            row.bg:SetColorTexture(0.1, 0.12, 0.15, 0.9)
+
+            -- Event type icon/badge
+            row.typeBadge = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.typeBadge:SetPoint("TOPLEFT", 10, -8)
+
+            -- Title
+            row.titleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            row.titleText:SetPoint("LEFT", row.typeBadge, "RIGHT", 10, 0)
+
+            -- Date/Time
+            row.dateText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            row.dateText:SetPoint("TOPRIGHT", -90, -8)
+
+            -- Description
+            row.descText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.descText:SetPoint("TOPLEFT", 10, -28)
+            row.descText:SetPoint("RIGHT", -100, 0)
+            row.descText:SetJustifyH("LEFT")
+            row.descText:SetTextColor(0.7, 0.7, 0.7)
+
+            -- Organizer
+            row.orgText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.orgText:SetPoint("BOTTOMLEFT", 10, 20)
+
+            -- Signups
+            row.signupText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.signupText:SetPoint("BOTTOMLEFT", 10, 6)
+
+            -- Sign Up button
+            row.signupBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.signupBtn:SetSize(80, 26)
+            row.signupBtn:SetPoint("RIGHT", -10, 0)
+
+            self.scheduledRowPool[i] = row
+        end
+
+        row:SetParent(scrollChild)
+        row:ClearAllPoints()
         row:SetSize(contentWidth - 40, rowHeight - 4)
         row:SetPoint("TOPLEFT", 5, -yOffset)
-        
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
-        row.bg:SetColorTexture(0.1, 0.12, 0.15, 0.9)
-        
-        -- Event type icon/badge
-        local typeBadge = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        typeBadge:SetPoint("TOPLEFT", 10, -8)
+
         if eventType == EVENT_TYPES.MYTHIC_PLUS then
-            typeBadge:SetText("|cff32c4ff[M+]|r")
+            row.typeBadge:SetText("|cff32c4ff[M+]|r")
         elseif eventType == EVENT_TYPES.RAID then
-            typeBadge:SetText("|cffff9900[RAID]|r")
+            row.typeBadge:SetText("|cffff9900[RAID]|r")
         elseif eventType == EVENT_TYPES.PVP then
-            typeBadge:SetText("|cffff4444[PVP]|r")
+            row.typeBadge:SetText("|cffff4444[PVP]|r")
         else
-            typeBadge:SetText("|cff888888[EVENT]|r")
+            row.typeBadge:SetText("|cff888888[EVENT]|r")
         end
-        
-        -- Title
-        local titleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        titleText:SetPoint("LEFT", typeBadge, "RIGHT", 10, 0)
-        titleText:SetText(title)
-        
-        -- Date/Time
-        local dateText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        dateText:SetPoint("TOPRIGHT", -90, -8)
-        dateText:SetText("|cff44ff44" .. (scheduledTime or "") .. "|r")
-        
-        -- Description
-        local descText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        descText:SetPoint("TOPLEFT", 10, -28)
-        descText:SetPoint("RIGHT", -100, 0)
-        descText:SetJustifyH("LEFT")
-        descText:SetText(description)
-        descText:SetTextColor(0.7, 0.7, 0.7)
-        
-        -- Organizer
-        local orgText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        orgText:SetPoint("BOTTOMLEFT", 10, 20)
-        orgText:SetText("Organizer: |cffffffff" .. organizer .. "|r")
-        
-        -- Signups
-        local signupText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        signupText:SetPoint("BOTTOMLEFT", 10, 6)
+
+        row.titleText:SetText(title)
+        row.dateText:SetText("|cff44ff44" .. (scheduledTime or "") .. "|r")
+        row.descText:SetText(description)
+        row.orgText:SetText("Organizer: |cffffffff" .. organizer .. "|r")
+
         local signupColor = signups >= maxSignups and "ffaa44" or "44ff44"
-        signupText:SetText(string.format("Signups: |cff%s%d/%d|r  (Confirmed: %d)",
+        row.signupText:SetText(string.format("Signups: |cff%s%d/%d|r  (Confirmed: %d)",
             signupColor, signups, maxSignups, confirmed))
-        
-        -- Sign Up button
-        local signupBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        signupBtn:SetSize(80, 26)
-        signupBtn:SetPoint("RIGHT", -10, 0)
-        
+
         if signups >= maxSignups and maxSignups > 0 then
-            signupBtn:SetText("Full")
-            signupBtn:Disable()
+            row.signupBtn:SetText("Full")
+            row.signupBtn:Disable()
+            row.signupBtn:SetScript("OnClick", nil)
         else
-            signupBtn:SetText("Sign Up")
-            signupBtn:SetScript("OnClick", function()
+            row.signupBtn:SetText("Sign Up")
+            row.signupBtn:Enable()
+            row.signupBtn:SetScript("OnClick", function()
                 GF:SignUpForEvent(event.eventId or event.id, title)
             end)
         end
-        
+
+        row:Show()
+
         yOffset = yOffset + rowHeight
     end
     

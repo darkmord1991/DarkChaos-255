@@ -205,21 +205,29 @@ function DCInfoBar:ActivatePlugin(pluginId)
     if self.bar then
         self.bar:CreatePluginButton(plugin)
     end
-    
-    -- Call plugin's OnActivate if exists
-    if plugin.OnActivate then
-        self._activatingPluginId = pluginId
-        plugin:OnActivate()
-        self._activatingPluginId = nil
+
+    -- Call plugin's OnActivate if exists, but only for plugins transitioning
+    -- from inactive to active. RefreshAllPlugins() re-invokes ActivatePlugin()
+    -- for every enabled plugin on every settings/side/priority change, and
+    -- OnActivate is not idempotent (it registers handlers/hooks/frames), so
+    -- re-firing it here would leak duplicate registrations.
+    self._activePluginIds = self._activePluginIds or {}
+    if not self._activePluginIds[pluginId] then
+        self._activePluginIds[pluginId] = true
+        if plugin.OnActivate then
+            self._activatingPluginId = pluginId
+            plugin:OnActivate()
+            self._activatingPluginId = nil
+        end
     end
-    
+
     self:Debug("Activated plugin: " .. pluginId)
 end
 
 function DCInfoBar:DeactivatePlugin(pluginId)
     local plugin = self.plugins[pluginId]
     if not plugin then return end
-    
+
     -- Remove from active list
     for side, list in pairs(self.activePlugins) do
         for i, p in ipairs(list) do
@@ -229,12 +237,18 @@ function DCInfoBar:DeactivatePlugin(pluginId)
             end
         end
     end
-    
+
     -- Hide button
     if plugin.button then
         plugin.button:Hide()
     end
-    
+
+    -- Clear the active-tracking flag so a later ActivatePlugin() call
+    -- (e.g. re-enabling the plugin) fires OnActivate() again.
+    if self._activePluginIds then
+        self._activePluginIds[pluginId] = nil
+    end
+
     -- Call plugin's OnDeactivate if exists
     if plugin.OnDeactivate then
         plugin:OnDeactivate()

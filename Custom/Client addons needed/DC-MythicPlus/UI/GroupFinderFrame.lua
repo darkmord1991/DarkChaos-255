@@ -850,9 +850,9 @@ end
 function GF:CompactClearRows()
     if not self.compactScrollChild then return end
 
-    for _, child in ipairs({ self.compactScrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+    self.compactRowPool = self.compactRowPool or {}
+    for _, row in ipairs(self.compactRowPool) do
+        row:Hide()
     end
 end
 
@@ -923,68 +923,92 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
     local textInset = showThumb and 62 or 10
     local textWidth = showThumb and 110 or 162
 
-    for _, entry in ipairs(entries) do
-        local row = CreateFrame("Button", nil, scrollChild)
+    self.compactRowPool = self.compactRowPool or {}
+
+    for i, entry in ipairs(entries) do
+        local row = self.compactRowPool[i]
+        if not row then
+            row = CreateFrame("Button", nil, scrollChild)
+
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+
+            row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.name:SetJustifyH("LEFT")
+
+            row.leader = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.leader:SetJustifyH("LEFT")
+
+            row.meta = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.meta:SetPoint("TOPRIGHT", -8, -8)
+            row.meta:SetWidth(116)
+            row.meta:SetJustifyH("RIGHT")
+
+            row.roles = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            row.roles:SetPoint("BOTTOMRIGHT", -8, 7)
+
+            row:SetScript("OnEnter", function(self)
+                if self ~= GF.compactSelectedRow and self.bg then
+                    SetRetailBlueMenuBackground(self.bg, "selected")
+                end
+            end)
+            row:SetScript("OnLeave", function(self)
+                if self ~= GF.compactSelectedRow and self.bg then
+                    SetRetailBlueMenuBackground(self.bg, "normal")
+                end
+            end)
+            row:SetScript("OnClick", function(self)
+                GF:CompactSelectRow(self, self.entry)
+            end)
+
+            self.compactRowPool[i] = row
+        end
+
+        row:SetParent(scrollChild)
+        row:ClearAllPoints()
         row:SetSize(rowWidth, rowHeight - 2)
         row:SetPoint("TOPLEFT", 4, -yOffset)
         row.entry = entry
 
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
         SetRetailBlueMenuBackground(row.bg, "normal")
 
         if showThumb then
-            local thumb = row:CreateTexture(nil, "ARTWORK")
-            thumb:SetSize(48, 48)
-            thumb:SetPoint("LEFT", 6, 0)
+            if not row.thumb then
+                local thumb = row:CreateTexture(nil, "ARTWORK")
+                thumb:SetSize(48, 48)
+                thumb:SetPoint("LEFT", 6, 0)
+                row.thumb = thumb
+            end
             local candidates = GetEntryDungeonArtCandidates(entry)
-            if not ApplyTextureCandidates(thumb, candidates,
+            if not ApplyTextureCandidates(row.thumb, candidates,
                 "Interface\\LFGFrame\\UI-LFG-DUNGEON-WAILINGCAVERNS") then
-                thumb:SetTexture("Interface\\Icons\\Achievement_ChallengeMode_Gold")
+                row.thumb:SetTexture("Interface\\Icons\\Achievement_ChallengeMode_Gold")
             end
             -- crop the (often landscape) art to a square cell
-            thumb:SetTexCoord(0, 1, 0, 1)
-            row.thumb = thumb
+            row.thumb:SetTexCoord(0, 1, 0, 1)
+            row.thumb:Show()
+        elseif row.thumb then
+            row.thumb:Hide()
         end
 
-        local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        name:SetPoint("TOPLEFT", textInset, -7)
-        name:SetWidth(textWidth)
-        name:SetJustifyH("LEFT")
-        name:SetText(CompactEntryName(entry, kind))
+        row.name:ClearAllPoints()
+        row.name:SetPoint("TOPLEFT", textInset, -7)
+        row.name:SetWidth(textWidth)
+        row.name:SetText(CompactEntryName(entry, kind))
 
-        local leader = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        leader:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
-        leader:SetWidth(textWidth)
-        leader:SetJustifyH("LEFT")
-        leader:SetText(entry.leader or entry.leaderName or entry.owner or "")
+        row.leader:ClearAllPoints()
+        row.leader:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -4)
+        row.leader:SetWidth(textWidth)
+        row.leader:SetText(entry.leader or entry.leaderName or entry.owner or "")
 
-        local meta = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        meta:SetPoint("TOPRIGHT", -8, -8)
-        meta:SetWidth(116)
-        meta:SetJustifyH("RIGHT")
-        meta:SetText(CompactEntryMeta(entry, kind))
+        row.meta:SetText(CompactEntryMeta(entry, kind))
 
-        local roles = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        roles:SetPoint("BOTTOMRIGHT", -8, 7)
-        roles:SetText(string.format("T:%s H:%s D:%s",
+        row.roles:SetText(string.format("T:%s H:%s D:%s",
             tostring(entry.needTank or entry.tanks or entry.tank or 0),
             tostring(entry.needHealer or entry.healers or entry.healer or 0),
             tostring(entry.needDps or entry.dps or 0)))
 
-        row:SetScript("OnEnter", function(self)
-            if self ~= GF.compactSelectedRow and self.bg then
-                SetRetailBlueMenuBackground(self.bg, "selected")
-            end
-        end)
-        row:SetScript("OnLeave", function(self)
-            if self ~= GF.compactSelectedRow and self.bg then
-                SetRetailBlueMenuBackground(self.bg, "normal")
-            end
-        end)
-        row:SetScript("OnClick", function(self)
-            GF:CompactSelectRow(self, self.entry)
-        end)
+        row:Show()
 
         yOffset = yOffset + rowHeight
     end
@@ -2968,9 +2992,9 @@ function GF:RenderMyQueues()
     local scrollChild = frame.scrollChild
     local applications = self.myApplications or {}
 
-    for _, child in ipairs({ scrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+    self.myQueuesRowPool = self.myQueuesRowPool or {}
+    for _, row in ipairs(self.myQueuesRowPool) do
+        row:Hide()
     end
 
     if #applications == 0 then
@@ -2985,47 +3009,64 @@ function GF:RenderMyQueues()
     local rowHeight = 58
 
     for index, app in ipairs(applications) do
-        local row = CreateFrame("Frame", nil, scrollChild)
+        local row = self.myQueuesRowPool[index]
+        if not row then
+            row = CreateFrame("Frame", nil, scrollChild)
+
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+
+            row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.title:SetPoint("TOPLEFT", 10, -8)
+
+            row.info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.info:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -4)
+
+            row.status = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            row.status:SetPoint("TOPRIGHT", -100, -8)
+            row.status:SetText("|cff00ff00Pending|r")
+
+            row.footer = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            row.footer:SetPoint("BOTTOMLEFT", 10, 8)
+
+            row.cancelBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.cancelBtn:SetSize(80, 22)
+            row.cancelBtn:SetPoint("RIGHT", -10, 0)
+            row.cancelBtn:SetText("Withdraw")
+            row.cancelBtn:SetScript("OnClick", function(self)
+                GF:CancelMyApplication(self.listingId)
+            end)
+
+            self.myQueuesRowPool[index] = row
+        end
+
+        row:SetParent(scrollChild)
+        row:ClearAllPoints()
         row:SetSize(scrollChild:GetWidth() - 8, rowHeight - 4)
         row:SetPoint("TOPLEFT", 4, -yOffset)
 
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
         if index % 2 == 0 then
             SetSolidTexture(row.bg, 0.08, 0.08, 0.10, 1)
         else
             SetSolidTexture(row.bg, 0.06, 0.06, 0.08, 1)
         end
 
-        local title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        title:SetPoint("TOPLEFT", 10, -8)
-        title:SetText((app.dungeonName or app.dungeon or "Unknown Listing") .. "  |cff888888(" .. (app.difficultyName or "Unknown") .. ")|r")
-
-        local info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        info:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
-        info:SetText(string.format("Leader: %s  |  Role: %s", app.leader or "Unknown", FormatRoleMask(app.role)))
-
-        local status = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        status:SetPoint("TOPRIGHT", -100, -8)
-        status:SetText("|cff00ff00Pending|r")
+        row.title:SetText((app.dungeonName or app.dungeon or "Unknown Listing") .. "  |cff888888(" .. (app.difficultyName or "Unknown") .. ")|r")
+        row.info:SetText(string.format("Leader: %s  |  Role: %s", app.leader or "Unknown", FormatRoleMask(app.role)))
 
         if app.note and app.note ~= "" then
-            local note = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-            note:SetPoint("BOTTOMLEFT", 10, 8)
-            note:SetText(app.note)
+            row.footer:SetText(app.note)
+            row.footer:Show()
         elseif tonumber(app.keystoneLevel or 0) > 0 then
-            local meta = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-            meta:SetPoint("BOTTOMLEFT", 10, 8)
-            meta:SetText("Key Level: +" .. tonumber(app.keystoneLevel or 0))
+            row.footer:SetText("Key Level: +" .. tonumber(app.keystoneLevel or 0))
+            row.footer:Show()
+        else
+            row.footer:Hide()
         end
 
-        local cancelBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        cancelBtn:SetSize(80, 22)
-        cancelBtn:SetPoint("RIGHT", -10, 0)
-        cancelBtn:SetText("Withdraw")
-        cancelBtn:SetScript("OnClick", function()
-            GF:CancelMyApplication(app.listingId)
-        end)
+        row.cancelBtn.listingId = app.listingId
+
+        row:Show()
 
         yOffset = yOffset + rowHeight
     end

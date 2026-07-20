@@ -1887,19 +1887,19 @@ do
         -- If no bag space, only loot gold/currency
         if not hasBagSpace then
             for i = numItems, 1, -1 do
-                local lootIcon, lootName, lootQuantity, currencyID, lootQuality, locked, isQuestItem, questId, isActive = GetLootSlotInfo(i)
+                local lootIcon, lootName, lootQuantity, lootQuality, locked = GetLootSlotInfo(i)
                 local slotType = GetLootSlotType(i)
-                
+
                 -- Only loot currency (gold) if no bag space
-                if slotType == LOOT_SLOT_MONEY or currencyID then
+                if slotType == LOOT_SLOT_MONEY then
                     LootSlot(i)
                 end
             end
         else
             -- Normal fast looting - loot all items
             for i = numItems, 1, -1 do
-                local lootIcon, lootName, lootQuantity, currencyID, lootQuality, locked, isQuestItem, questId, isActive = GetLootSlotInfo(i)
-                
+                local lootIcon, lootName, lootQuantity, lootQuality, locked = GetLootSlotInfo(i)
+
                 -- Skip locked items (need roll, etc)
                 if not locked then
                     LootSlot(i)
@@ -1909,7 +1909,6 @@ do
     end
     
     -- Event handler for loot window opening
-    fastLootFrame:RegisterEvent("LOOT_READY")
     fastLootFrame:RegisterEvent("LOOT_OPENED")
     fastLootFrame:RegisterEvent("LOOT_CLOSED")
     
@@ -1917,7 +1916,7 @@ do
         local settings = addon.settings
         if not settings.fastLoot then return end
         
-        if event == "LOOT_READY" or event == "LOOT_OPENED" then
+        if event == "LOOT_OPENED" then
             -- Auto loot is handled by WoW's auto-loot setting
             -- We just speed up the looting process
             isLooting = true

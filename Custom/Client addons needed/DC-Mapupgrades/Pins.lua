@@ -747,9 +747,11 @@ function Pins:Init(state)
             self:ScheduleWorldPinUpdate() 
             
             -- Check again in 0.2, 0.5, and 1.0 seconds to catch delayed initialization
-            C_Timer.After(0.2, RetryMapCheck)
-            C_Timer.After(0.5, RetryMapCheck)
-            C_Timer.After(1.0, RetryMapCheck)
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.2, RetryMapCheck)
+                C_Timer.After(0.5, RetryMapCheck)
+                C_Timer.After(1.0, RetryMapCheck)
+            end
         end)
         WorldMapFrame:HookScript("OnSizeChanged", function() self:ScheduleWorldPinUpdate() end)
     end

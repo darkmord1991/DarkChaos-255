@@ -20,7 +20,13 @@ DC.itemScanCacheTime = DC.itemScanCacheTime or 0;
 DC.itemScanCacheLifetime = DC.itemScanCacheLifetime or 5; -- 5 seconds cache lifetime
 
 -- Runtime caches
+-- NOTE: itemUpgradeCache is split into two identity-scoped tables to avoid
+-- entry-ID-keyed data (standard items) colliding with GUID-keyed data
+-- (heirloom items sharing the same base item entry). See dc_script_loader
+-- audit notes; do not resurrect a single shared itemUpgradeCache table.
 DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+DC.itemUpgradeCacheByEntry = DC.itemUpgradeCacheByEntry or {};
+DC.itemUpgradeCacheByGuid = DC.itemUpgradeCacheByGuid or {};
 DC.itemLocationCache = DC.itemLocationCache or {};
 DC.itemTooltipCache = DC.itemTooltipCache or {};
 
@@ -251,6 +257,8 @@ end
 
 function DC.ClearAllCaches()
 	DC.itemUpgradeCache = {};
+	DC.itemUpgradeCacheByEntry = {};
+	DC.itemUpgradeCacheByGuid = {};
 	DC.itemLocationCache = {};
 	DC.itemTooltipCache = {};
 	DC.itemScanCache = {};

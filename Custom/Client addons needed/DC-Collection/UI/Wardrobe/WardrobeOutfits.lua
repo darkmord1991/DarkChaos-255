@@ -1100,16 +1100,11 @@ function Wardrobe:LoadOutfit(outfit)
     for slotKey, appearanceId in pairs(slots) do
         local invSlotId
 
-        -- Support both string keys ("HeadSlot") and numeric keys (0-based equipment slot or 1-based inventory slot).
+        -- Support both string keys ("HeadSlot") and numeric keys (0-based equipment slot,
+        -- matching the transmog/equipment-state convention used elsewhere in this addon).
         if type(slotKey) == "number" or (type(slotKey) == "string" and tonumber(slotKey)) then
             local slotNum = tonumber(slotKey)
-            if slotNum == 0 then
-                invSlotId = 1
-            elseif slotNum and slotNum > 0 and slotNum <= 19 then
-                -- Treat as 1-based inventory slot.
-                invSlotId = slotNum
-            elseif slotNum and slotNum >= 0 and slotNum <= 18 then
-                -- Fallback: treat as 0-based equipment slot.
+            if slotNum then
                 invSlotId = slotNum + 1
             end
         else
@@ -1869,11 +1864,7 @@ function Wardrobe:RefreshOutfitsGrid()
                                 local invSlotId
                                 if type(slotKey) == "number" or (type(slotKey) == "string" and tonumber(slotKey)) then
                                     local slotNum = tonumber(slotKey)
-                                    if slotNum == 0 then
-                                        invSlotId = 1
-                                    elseif slotNum and slotNum > 0 and slotNum <= 19 then
-                                        invSlotId = slotNum
-                                    elseif slotNum and slotNum >= 0 and slotNum <= 18 then
+                                    if slotNum then
                                         invSlotId = slotNum + 1
                                     end
                                 else

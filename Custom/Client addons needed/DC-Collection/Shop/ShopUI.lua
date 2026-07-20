@@ -721,7 +721,10 @@ end
 function DC:UpdateShopCurrencyDisplay()
     if not self.ShopUI then return end
 
-    local tokens, essence = (type(self.GetCurrencyBalances) == "function") and self:GetCurrencyBalances() or nil
+    local tokens, essence
+    if type(self.GetCurrencyBalances) == "function" then
+        tokens, essence = self:GetCurrencyBalances()
+    end
     tokens = tonumber(tokens) or (self.currency and self.currency.tokens) or 0
     essence = tonumber(essence) or (self.currency and self.currency.emblems) or 0
     

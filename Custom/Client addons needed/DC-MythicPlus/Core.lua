@@ -1474,7 +1474,7 @@ trackerFrame:SetScript("OnEvent", function(self, event, ...)
 
     -- COMBAT_LOG_EVENT_UNFILTERED signature differs slightly across clients,
     -- but for 3.3.5 we can rely on positional args.
-    local timestamp, subevent, hideCaster,
+    local timestamp, subevent,
         sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
         destGUID, destName, destFlags, destRaidFlags = ...
 
@@ -1503,17 +1503,17 @@ trackerFrame:SetScript("OnEvent", function(self, event, ...)
 
         if subevent == "SWING_DAMAGE" then
             -- ... destRaidFlags, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
-            amount, overkill, school = select(10, ...)
+            amount, overkill, school = select(11, ...)
             spellName = "Melee"
         elseif subevent == "ENVIRONMENTAL_DAMAGE" then
             -- ... destRaidFlags, environmentalType, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
             local envType
-            envType, amount, overkill, school = select(10, ...)
+            envType, amount, overkill, school = select(11, ...)
             spellName = tostring(envType or "Environmental")
         else
             -- ... destRaidFlags, spellId, spellName, spellSchool, amount, overkill, ...
             local spellId
-            spellId, spellName, school, amount, overkill = select(10, ...)
+            spellId, spellName, school, amount, overkill = select(11, ...)
         end
 
         rememberHit(destGUID, {

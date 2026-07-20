@@ -211,6 +211,11 @@ DCWelcome.TitleFix = DCWelcome.TitleFix or {}
 DCWelcome.TitleFix.DEFAULT_TITLES = DEFAULT_TITLES
 
 local function InitializeTitleFix()
+    if DCWelcome.TitleFix._installed then
+        return
+    end
+    DCWelcome.TitleFix._installed = true
+
     local function NormalizeTitleName(name)
         if type(name) ~= "string" then
             return ""
@@ -451,9 +456,8 @@ InitializeTitleFix()
 local titleFixFrame = CreateFrame("Frame")
 titleFixFrame:RegisterEvent("ADDON_LOADED")
 titleFixFrame:RegisterEvent("PLAYER_LOGIN")
-titleFixFrame:RegisterEvent("CHARACTER_SHEET_OPEN")
 titleFixFrame:SetScript("OnEvent", function(self, event, addonName)
-    if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" or event == "CHARACTER_SHEET_OPEN" then
+    if (event == "ADDON_LOADED" and addonName == "DC-Welcome") or event == "PLAYER_LOGIN" then
         InitializeTitleFix()
     end
 end)

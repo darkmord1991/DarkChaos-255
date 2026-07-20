@@ -1218,6 +1218,8 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 	elseif subcmd == "cache" then
 		if args[2] == "clear" then
 			DC.itemUpgradeCache = {};
+			DC.itemUpgradeCacheByEntry = {};
+			DC.itemUpgradeCacheByGuid = {};
 			DC.itemLocationCache = {};
 			DC.itemScanCache = {};
 			DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DC ItemUpgrade:|r Cache cleared.");
@@ -1279,11 +1281,13 @@ function DC.RegisterDCProtocolHandlers()
 		end
 		
 		if info and info.itemID then
-			-- Store in cache
-			DC.itemUpgradeCache = DC.itemUpgradeCache or {}
-			DC.itemUpgradeCache[info.itemID] = info
-			
+			-- Store in cache (keyed by item template/entry ID, not GUID)
+			DC.itemUpgradeCacheByEntry = DC.itemUpgradeCacheByEntry or {}
+			DC.itemUpgradeCacheByEntry[info.itemID] = info
+
 			-- Trigger UI update if we have a pending item
+			-- (pendingUpgrade.itemID is an entry ID here too, so this comparison
+			-- stays entry-vs-entry and is unaffected by the cache split above)
 			if DC.pendingUpgrade and DC.pendingUpgrade.itemID == info.itemID then
 				DC.pendingUpgrade = nil
 				if DarkChaos_ItemUpgrade_UpdateUI then
@@ -1327,26 +1331,26 @@ function DC.RegisterDCProtocolHandlers()
 		if success then
 			-- Upgrade successful
 			local prevLevel, tier, maxUpgrade
-			if DC.itemUpgradeCache and DC.itemUpgradeCache[itemId] then
-				prevLevel = DC.itemUpgradeCache[itemId].currentUpgrade
-				tier = DC.itemUpgradeCache[itemId].tier
-				maxUpgrade = DC.itemUpgradeCache[itemId].maxUpgrade
+			if DC.itemUpgradeCacheByEntry and DC.itemUpgradeCacheByEntry[itemId] then
+				prevLevel = DC.itemUpgradeCacheByEntry[itemId].currentUpgrade
+				tier = DC.itemUpgradeCacheByEntry[itemId].tier
+				maxUpgrade = DC.itemUpgradeCacheByEntry[itemId].maxUpgrade
 			end
 
 			DC.PlaySound("LEVELUPSOUND");
-			
-			-- Update cache
-			DC.itemUpgradeCache = DC.itemUpgradeCache or {}
-			DC.itemUpgradeCache[itemId] = DC.itemUpgradeCache[itemId] or {}
-			DC.itemUpgradeCache[itemId].currentUpgrade = newLevel;
+
+			-- Update cache (itemId here is the item template/entry ID, not a GUID)
+			DC.itemUpgradeCacheByEntry = DC.itemUpgradeCacheByEntry or {}
+			DC.itemUpgradeCacheByEntry[itemId] = DC.itemUpgradeCacheByEntry[itemId] or {}
+			DC.itemUpgradeCacheByEntry[itemId].currentUpgrade = newLevel;
 			if resultTier > 0 then
-				DC.itemUpgradeCache[itemId].tier = resultTier;
+				DC.itemUpgradeCacheByEntry[itemId].tier = resultTier;
 			end
 			if resultMaxUpgrade > 0 then
-				DC.itemUpgradeCache[itemId].maxUpgrade = resultMaxUpgrade;
+				DC.itemUpgradeCacheByEntry[itemId].maxUpgrade = resultMaxUpgrade;
 			end
-			DC.itemUpgradeCache[itemId].tokenCost = nextTokenCost;
-			DC.itemUpgradeCache[itemId].essenceCost = nextEssenceCost;
+			DC.itemUpgradeCacheByEntry[itemId].tokenCost = nextTokenCost;
+			DC.itemUpgradeCacheByEntry[itemId].essenceCost = nextEssenceCost;
 
 			if DC.CacheCostInfo and resultTier > 0 and resultMaxUpgrade > 0 and newLevel < resultMaxUpgrade then
 				DC.CacheCostInfo(resultTier, newLevel, newLevel + 1, nextTokenCost, nextEssenceCost);
@@ -1534,12 +1538,14 @@ function DC.RegisterDCProtocolHandlers()
 		
 		local items = data.items or data
 		if items and type(items) == "table" then
-			DC.itemUpgradeCache = DC.itemUpgradeCache or {}
+			-- Keyed by item template/entry ID (see the "bag:slot:guid:entry:tier"
+			-- string format below, which keys by the captured entry, not guid).
+			DC.itemUpgradeCacheByEntry = DC.itemUpgradeCacheByEntry or {}
 			for _, item in ipairs(items) do
 				if type(item) == "table" then
 					local itemId = item.itemId or item.itemID
 					if itemId then
-						DC.itemUpgradeCache[itemId] = {
+						DC.itemUpgradeCacheByEntry[itemId] = {
 							itemID = itemId,
 							currentUpgrade = item.currentUpgrade or 0,
 							maxUpgrade = item.maxUpgrade or 10,
@@ -1550,7 +1556,7 @@ function DC.RegisterDCProtocolHandlers()
 					local bag, slot, guid, entry, tier = string.match(item, "^(%d+):(%d+):(%d+):(%d+):(%d+)")
 					if entry then
 						local entryId = tonumber(entry)
-						DC.itemUpgradeCache[entryId] = {
+						DC.itemUpgradeCacheByEntry[entryId] = {
 							itemID = entryId,
 							currentUpgrade = 0,
 							maxUpgrade = 10,
@@ -1594,13 +1600,13 @@ function DC.RegisterDCProtocolHandlers()
 				DC.currentItem.heirloomPackageId = packageId
 			end
 			if itemGuid then
-				DC.itemUpgradeCache = DC.itemUpgradeCache or {}
-				local cached = DC.itemUpgradeCache[itemGuid] or {}
+				DC.itemUpgradeCacheByGuid = DC.itemUpgradeCacheByGuid or {}
+				local cached = DC.itemUpgradeCacheByGuid[itemGuid] or {}
 				cached.itemID = cached.itemID or itemGuid
 				cached.currentUpgrade = level or cached.currentUpgrade
 				cached.maxUpgrade = maxLevel or cached.maxUpgrade
 				cached.heirloomPackageId = packageId or cached.heirloomPackageId
-				DC.itemUpgradeCache[itemGuid] = cached
+				DC.itemUpgradeCacheByGuid[itemGuid] = cached
 			end
 			if DarkChaos_ItemUpgrade_UpdateUI then
 				DarkChaos_ItemUpgrade_UpdateUI()
@@ -1663,12 +1669,12 @@ function DC.RegisterDCProtocolHandlers()
 				DC.currentItem.awaitingServerInfo = false
 			end
 			if itemGuid then
-				DC.itemUpgradeCache = DC.itemUpgradeCache or {}
-				local cached = DC.itemUpgradeCache[itemGuid] or {}
+				DC.itemUpgradeCacheByGuid = DC.itemUpgradeCacheByGuid or {}
+				local cached = DC.itemUpgradeCacheByGuid[itemGuid] or {}
 				cached.itemID = cached.itemID or itemGuid
 				cached.currentUpgrade = newLevel or cached.currentUpgrade
 				cached.heirloomPackageId = packageId or cached.heirloomPackageId
-				DC.itemUpgradeCache[itemGuid] = cached
+				DC.itemUpgradeCacheByGuid[itemGuid] = cached
 			end
 			if packageId and packageId > 0 then
 				DC.selectedStatPackage = packageId
@@ -1936,6 +1942,8 @@ function DC.CreateCommPanel()
 	
 	CreateButton("ClearCache", "Clear Cache", 1, 2, function()
 		DC.itemUpgradeCache = {}
+		DC.itemUpgradeCacheByEntry = {}
+		DC.itemUpgradeCacheByGuid = {}
 		DC.itemLocationCache = {}
 		DC.itemScanCache = {}
 		Print("All caches cleared")

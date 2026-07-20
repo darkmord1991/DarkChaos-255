@@ -640,7 +640,6 @@ local function OpenHLBGFromPVP()
     end
 end
 
-local HLBG_BATTLEGROUND_TYPE_ID = 20
 local HLBG_PVP_DESCRIPTION =
     "Hinterland BG is a 25v25 battleground with rotating affixes that can alter damage, movement, and resource pressure each match. " ..
     "Teams compete for map control and resource advantage while adapting to the active affix."
@@ -651,8 +650,8 @@ local function GetHLBGBattlegroundIndex()
     end
 
     for i = 1, GetNumBattlegroundTypes() do
-        local localizedName, canEnter, _, _, battlegroundTypeId = GetBattlegroundInfo(i)
-        if localizedName and canEnter and (tonumber(battlegroundTypeId) == HLBG_BATTLEGROUND_TYPE_ID or localizedName == "Hinterland BG") then
+        local localizedName, canEnter = GetBattlegroundInfo(i)
+        if localizedName and canEnter and localizedName == "Hinterland BG" then
             return i
         end
     end
@@ -702,8 +701,8 @@ local function UpdateHLBGPvPDescription(BGindex)
         return
     end
 
-    local _, _, _, _, battlegroundTypeId = GetBattlegroundInfo(selectedIndex)
-    if tonumber(battlegroundTypeId) ~= HLBG_BATTLEGROUND_TYPE_ID then
+    local localizedName = GetBattlegroundInfo(selectedIndex)
+    if localizedName ~= "Hinterland BG" then
         return
     end
 
@@ -1348,74 +1347,6 @@ SlashCmdList['HLBGREPARSE'] = function()
                 DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r Reparse error '..tostring(err))
             end
         end
-    end
-end
--- Slash command to check HLBG functions and force test
-SLASH_HLBGTEST1 = '/hlbgtest'
-SlashCmdList['HLBGTEST'] = function()
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r HistoryStr type: %s', type(HLBG.HistoryStr)))
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r History type: %s', type(HLBG.History)))
-        local keys = {}
-        for k,v in pairs(HLBG or {}) do
-            keys[#keys + 1] = tostring(k)
-        end
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG Test:|r HLBG keys: %s', table.concat(keys, ', ')))
-        if type(HLBG.HistoryStr) == 'function' then
-            local testTSV = "1\t1\tSeason 1: Test\t2025-10-07 20:00:00\tDraw\t0\tmanual\n2\t1\tSeason 1: Test\t2025-10-07 19:00:00\tAlliance\t1\tauto"
-            local ok, err = pcall(HLBG.HistoryStr, testTSV, 1, 15, 2, 'id', 'DESC')
-            if ok then
-                DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Test:|r HistoryStr test call succeeded')
-            else
-                DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG Test:|r HistoryStr test error: '..tostring(err))
-            end
-        else
-            -- Try to manually load the History module
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Test:|r Attempting to load History module manually...')
-        end
-    end
-end
--- Force show HLBG window and create tabs manually
-SLASH_HLBGSHOW1 = '/hlbgshow'
-SlashCmdList['HLBGSHOW'] = function()
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempting to show HLBG window and create tabs...')
-        -- Try to show main frame
-        if HLBG.UI and HLBG.UI.Frame then
-            HLBG.UI.Frame:Show()
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Main frame shown')
-        else
-            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r No main frame found')
-        end
-        -- Check for tabs
-        if HLBG.UI and HLBG.UI.Tabs then
-            HLBG.UI.Tabs:Show()
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Tabs container shown')
-        else
-            DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r No tabs container found')
-        end
-        -- Try to force create History UI
-        if type(HLBG._ensureUI) == 'function' then
-            pcall(HLBG._ensureUI, 'History')
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempted to ensure History UI')
-        end
-        -- Try UpdateHistoryDisplay if available
-        if type(HLBG.UpdateHistoryDisplay) == 'function' then
-            pcall(HLBG.UpdateHistoryDisplay)
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Attempted UpdateHistoryDisplay')
-        end
-        -- Show tab status
-        local tabCount = 0
-        if HLBG.UI and HLBG.UI.Tabs then
-            for i=1,10 do
-                local tab = _G["HLBG_Tab_"..i]
-                if tab then tabCount = tabCount + 1 end
-            end
-        end
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Found %d tabs', tabCount))
-        -- Report stored data
-        local rowCount = HLBG and HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows or 0
-        DEFAULT_CHAT_FRAME:AddMessage(string.format('|cFF33FF99HLBG:|r Stored rows: %d', rowCount))
     end
 end
 -- Simple emergency window

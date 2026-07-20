@@ -104,7 +104,7 @@ function Adapter:RequestLeaderboard(leaderboardType, season, limit, callback)
     }
 
     -- Send request via DCAddonProtocol
-    DC:Request("HLBG", 0x01, requestData)
+    DC:Request("HLBG", 0x20, requestData)
     
     -- Store callback for async response
     if not self._pendingCallbacks then
@@ -135,7 +135,7 @@ function Adapter:RequestPlayerStats(season, callback)
         token = requestToken,
         cacheKey = cacheKey,
     }
-    DC:Request("HLBG", 0x02, { season = season, requestToken = requestToken })
+    DC:Request("HLBG", 0x21, { season = season, requestToken = requestToken })
     
     if not self._statsCallbacks then
         self._statsCallbacks = {}
@@ -156,7 +156,7 @@ function Adapter:RequestAllTimeStats(callback)
         token = requestToken,
         cacheKey = "alltime",
     }
-    DC:Request("HLBG", 0x03, { requestToken = requestToken })
+    DC:Request("HLBG", 0x22, { requestToken = requestToken })
     
     if not self._allTimeCallbacks then
         self._allTimeCallbacks = {}
@@ -172,18 +172,18 @@ end
 function Adapter:RegisterHandlers()
     if not DC then return false end
     
-    -- Leaderboard data response (0x10)
-    DC:RegisterHandler("HLBG", 0x10, function(data)
+    -- Leaderboard data response (0x30)
+    DC:RegisterHandler("HLBG", 0x30, function(data)
         Adapter:OnLeaderboardData(data)
     end)
-    
-    -- Player seasonal stats response (0x11)
-    DC:RegisterHandler("HLBG", 0x11, function(data)
+
+    -- Player seasonal stats response (0x31)
+    DC:RegisterHandler("HLBG", 0x31, function(data)
         Adapter:OnPlayerStats(data)
     end)
-    
-    -- All-time stats response (0x12)
-    DC:RegisterHandler("HLBG", 0x12, function(data)
+
+    -- All-time stats response (0x32)
+    DC:RegisterHandler("HLBG", 0x32, function(data)
         Adapter:OnAllTimeStats(data)
     end)
     

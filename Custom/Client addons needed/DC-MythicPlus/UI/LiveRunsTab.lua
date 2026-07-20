@@ -543,13 +543,13 @@ function GF:PopulateLiveRuns(runs)
     if not scrollChild then return end
 
     runs = ResolveRunsPayload(runs)
-    
-    -- Clear existing
-    for _, child in ipairs({ scrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+
+    -- Clear existing (pooled rows: hide, don't destroy)
+    self.liveRunsRowPool = self.liveRunsRowPool or {}
+    for _, row in ipairs(self.liveRunsRowPool) do
+        row:Hide()
     end
-    
+
     local normalizedRuns = {}
     for _, run in ipairs(runs) do
         local normalized = NormalizeRunEntry(run)
@@ -570,74 +570,93 @@ function GF:PopulateLiveRuns(runs)
         return
     end
 
-    for _, run in ipairs(normalizedRuns) do
-        local row = CreateFrame("Frame", nil, scrollChild)
+    for i, run in ipairs(normalizedRuns) do
+        local row = self.liveRunsRowPool[i]
+        if not row then
+            row = CreateFrame("Frame", nil, scrollChild)
+
+            -- Background with timer-based color
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+
+            -- Dungeon + Level
+            row.dungeonText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            row.dungeonText:SetPoint("TOPLEFT", 10, -8)
+
+            -- Timer info
+            row.timerText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            row.timerText:SetPoint("TOPLEFT", 10, -28)
+
+            -- Progress + Deaths
+            row.progressText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.progressText:SetPoint("TOPLEFT", 10, -44)
+
+            -- Leader + Privacy
+            row.leaderText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.leaderText:SetPoint("BOTTOMLEFT", 10, 6)
+
+            -- Spectator count
+            row.specText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.specText:SetPoint("TOPRIGHT", -90, -8)
+
+            -- Watch button
+            row.watchBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.watchBtn:SetSize(70, 26)
+            row.watchBtn:SetPoint("RIGHT", -10, 0)
+
+            self.liveRunsRowPool[i] = row
+        end
+
+        row:SetParent(scrollChild)
+        row:ClearAllPoints()
         row:SetSize(scrollChild:GetWidth() - 10, rowHeight - 4)
         row:SetPoint("TOPLEFT", 5, -yOffset)
-        
-        -- Background with timer-based color
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
-        
+
         -- Color based on timer status (mock logic)
         local timerColor = { 0.1, 0.15, 0.1, 0.9 } -- Green (on time)
         if run.deaths > 3 then
             timerColor = { 0.2, 0.1, 0.1, 0.9 } -- Red (depleted/behind)
         end
         row.bg:SetColorTexture(unpack(timerColor))
-        
-        -- Dungeon + Level
-        local dungeonText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        dungeonText:SetPoint("TOPLEFT", 10, -8)
-        dungeonText:SetText(string.format("|cff32c4ff+%d|r %s", run.level, run.dungeon))
-        
-        -- Timer info
-        local timerText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        timerText:SetPoint("TOPLEFT", 10, -28)
-        timerText:SetText(string.format("Timer: %s  |  Remaining: |cff%s%s|r",
+
+        row.dungeonText:SetText(string.format("|cff32c4ff+%d|r %s", run.level, run.dungeon))
+
+        row.timerText:SetText(string.format("Timer: %s  |  Remaining: |cff%s%s|r",
             run.timer,
             tostring(run.timerRemaining):match("^%-") and "ff4444" or "44ff44",
             run.timerRemaining))
-        
-        -- Progress + Deaths
-        local progressText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        progressText:SetPoint("TOPLEFT", 10, -44)
-        progressText:SetText(string.format("Progress: |cff32c4ff%s|r  |  Deaths: |cff%s%d|r",
+
+        row.progressText:SetText(string.format("Progress: |cff32c4ff%s|r  |  Deaths: |cff%s%d|r",
             run.progress,
             run.deaths > 0 and "ffaa44" or "44ff44",
             run.deaths))
-        
-        -- Leader + Privacy
-        local leaderText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        leaderText:SetPoint("BOTTOMLEFT", 10, 6)
+
         local privacyStr = "Public"
         if run.privacy == SPECTATOR_PRIVACY.FRIENDS then privacyStr = "|cff44aaff(Friends Only)|r" end
         if run.privacy == SPECTATOR_PRIVACY.GUILD then privacyStr = "|cff44ff44(Guild Only)|r" end
-        leaderText:SetText(string.format("|cff888888Leader: %s  %s|r", run.leader, privacyStr))
-        
-        -- Spectator count
-        local specText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        specText:SetPoint("TOPRIGHT", -90, -8)
-        specText:SetText(string.format("|cffaaaaaa%d/%d|r watchers", run.spectators, run.maxSpectators))
-        
-        -- Watch button
-        local watchBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        watchBtn:SetSize(70, 26)
-        watchBtn:SetPoint("RIGHT", -10, 0)
-        
+        row.leaderText:SetText(string.format("|cff888888Leader: %s  %s|r", run.leader, privacyStr))
+
+        row.specText:SetText(string.format("|cffaaaaaa%d/%d|r watchers", run.spectators, run.maxSpectators))
+
         if run.maxSpectators > 0 and run.spectators >= run.maxSpectators then
-            watchBtn:SetText("Full")
-            watchBtn:Disable()
+            row.watchBtn:SetText("Full")
+            row.watchBtn:Disable()
+            row.watchBtn:SetScript("OnClick", nil)
         else
-            watchBtn:SetText("Watch")
-            watchBtn:SetScript("OnClick", function()
-                GF:RequestSpectate(run.runId, run.leader)
+            row.watchBtn:SetText("Watch")
+            row.watchBtn:Enable()
+            row.watchBtn.runId = run.runId
+            row.watchBtn.leader = run.leader
+            row.watchBtn:SetScript("OnClick", function(self)
+                GF:RequestSpectate(self.runId, self.leader)
             end)
         end
-        
+
+        row:Show()
+
         yOffset = yOffset + rowHeight
     end
-    
+
     scrollChild:SetHeight(yOffset)
 end
 

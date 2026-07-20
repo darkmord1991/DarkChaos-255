@@ -2773,7 +2773,7 @@ SlashCmdList["DCLEADERBOARDS"] = function(msg)
         LB:SelectCategory("achieve")
     elseif cmd == "testtables" or cmd == "tables" or cmd == "dbtest" then
         -- Quick test of database tables
-        LB:TestTables()
+        LB:TestDatabaseTables()
     elseif cmd == "seasons" then
         -- Request available seasons
         LB:RequestSeasons()
@@ -2781,20 +2781,20 @@ SlashCmdList["DCLEADERBOARDS"] = function(msg)
         -- Set season for testing: /lb setseason 2
         local seasonId = tonumber(cmd:match("^setseason%s+(%d+)"))
         if seasonId then
-            LB.settings.selectedSeasonId = seasonId
+            LB:SetSetting("selectedSeasonId", seasonId)
             Print("Selected season ID: " .. seasonId .. " (0 = current)")
             Print("Refresh leaderboards to see data for this season")
         end
     elseif cmd == "debug" or cmd == "verbose" then
         -- Toggle verbose logging
-        LB.settings.verboseLogging = not LB.settings.verboseLogging
-        Print("Verbose logging: " .. (LB.settings.verboseLogging and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
+        LB:SetSetting("verboseLogging", not LB:GetSetting("verboseLogging"))
+        Print("Verbose logging: " .. (LB:GetSetting("verboseLogging") and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
     elseif cmd == "protocol" then
         -- Show protocol info
         Print("=== DC-Leaderboards Protocol Info ===")
         Print("Module: " .. LB.MODULE)
         Print("DC Protocol: " .. (DC and "Available" or "Not loaded"))
-        Print("Selected Season: " .. (LB.settings.selectedSeasonId or 0) .. " (0 = current)")
+        Print("Selected Season: " .. (LB:GetSetting("selectedSeasonId") or 0) .. " (0 = current)")
         Print("Opcodes:")
         Print("  CMSG_GET_LEADERBOARD: 0x01")
         Print("  CMSG_GET_MY_RANK: 0x02")

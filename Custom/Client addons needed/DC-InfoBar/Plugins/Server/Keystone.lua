@@ -197,15 +197,18 @@ function KeystonePlugin:GenerateAbbrev(name)
 end
 
 function KeystonePlugin:OnActivate()
-    -- Register for bag updates
-    local frame = CreateFrame("Frame")
-    frame:RegisterEvent("BAG_UPDATE")
-    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    frame:SetScript("OnEvent", function()
-        self:ScanInventoryForKeystone()
-        self._elapsed = 999  -- Force update
-    end)
-    
+    -- Register for bag updates (one-time: re-activation must not stack another frame/handler)
+    if not DCInfoBar._keystoneBagFrame then
+        local frame = CreateFrame("Frame")
+        frame:RegisterEvent("BAG_UPDATE")
+        frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        frame:SetScript("OnEvent", function()
+            self:ScanInventoryForKeystone()
+            self._elapsed = 999  -- Force update
+        end)
+        DCInfoBar._keystoneBagFrame = frame
+    end
+
     -- Initial scan
     self:ScanInventoryForKeystone()
     

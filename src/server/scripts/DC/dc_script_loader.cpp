@@ -73,6 +73,20 @@ void AddSC_boss_atramedes();                    // BlackwingDescent/boss_atramed
 void AddSC_boss_chimaeron();                    // BlackwingDescent/boss_chimaeron.cpp
 void AddSC_boss_nefarians_end();                // BlackwingDescent/boss_nefarians_end.cpp
 
+// --- Castle Nathria raid (map 2296) ---
+void AddSC_instance_castle_nathria();           // CastleNathria/instance_castle_nathria.cpp
+void AddSC_zone_castle_nathria();               // CastleNathria/zone_castle_nathria.cpp
+void AddSC_boss_shriekwing();                   // CastleNathria/boss_shriekwing.cpp
+void AddSC_boss_huntsman_altimor();             // CastleNathria/boss_huntsman_altimor.cpp
+void AddSC_boss_hungering_destroyer();          // CastleNathria/boss_hungering_destroyer.cpp
+void AddSC_boss_sun_kings_salvation();          // CastleNathria/boss_sun_kings_salvation.cpp
+void AddSC_boss_artificer_xymox();              // CastleNathria/boss_artificer_xymox.cpp
+void AddSC_boss_lady_inerva_darkvein();         // CastleNathria/boss_lady_inerva_darkvein.cpp
+void AddSC_boss_council_of_blood();             // CastleNathria/boss_council_of_blood.cpp
+void AddSC_boss_sludgefist();                   // CastleNathria/boss_sludgefist.cpp
+void AddSC_boss_stone_legion_generals();        // CastleNathria/boss_stone_legion_generals.cpp
+void AddSC_boss_sire_denathrius();              // CastleNathria/boss_sire_denathrius.cpp
+
 // --- Mount Hyjal downport (map 750) ---
 void AddSC_dc_mount_hyjal_ported();           // MountHyjal/zone_mount_hyjal.cpp
 void AddSC_dc_molten_front();                 // MountHyjal/zone_molten_front.cpp
@@ -316,6 +330,20 @@ void AddDCScripts()
     DC_LOAD(AddSC_boss_atramedes);
     DC_LOAD(AddSC_boss_chimaeron);
     DC_LOAD(AddSC_boss_nefarians_end);
+
+    LogSection("Castle Nathria Raid (map 2296)");
+    DC_LOAD(AddSC_instance_castle_nathria);
+    DC_LOAD(AddSC_zone_castle_nathria);
+    DC_LOAD(AddSC_boss_shriekwing);
+    DC_LOAD(AddSC_boss_huntsman_altimor);
+    DC_LOAD(AddSC_boss_hungering_destroyer);
+    DC_LOAD(AddSC_boss_sun_kings_salvation);
+    DC_LOAD(AddSC_boss_artificer_xymox);
+    DC_LOAD(AddSC_boss_lady_inerva_darkvein);
+    DC_LOAD(AddSC_boss_council_of_blood);
+    DC_LOAD(AddSC_boss_sludgefist);
+    DC_LOAD(AddSC_boss_stone_legion_generals);
+    DC_LOAD(AddSC_boss_sire_denathrius);
 
     LogSection("Mount Hyjal Downport (map 750)");
     DC_LOAD(AddSC_dc_mount_hyjal_ported);

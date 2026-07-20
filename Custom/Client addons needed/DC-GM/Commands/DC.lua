@@ -764,7 +764,13 @@ function AzerothAdmin:UnregisterSelectedDCKey()
   local key = AzerothAdmin.selectedDCHandlerKey
   if not key then return end
   -- confirmation dialog
-  local module, opcode, isJson = string.match(key, "^(.-)_(.-)(_json)?$")
+  local isJson = false
+  local baseKey = key
+  if key:sub(-5) == "_json" then
+    isJson = true
+    baseKey = key:sub(1, -6)
+  end
+  local module, opcode = baseKey:match("^(.-)_(.-)$")
   local action = (isJson and "JSON " or "") .. string.format("Unregister all handlers for %s:%s?", module or "?", tostring(opcode) or "?")
   StaticPopupDialogs["AZEROTHADMIN_DC_UNREG_KEY"] = StaticPopupDialogs["AZEROTHADMIN_DC_UNREG_KEY"] or {
     text = "%s",
@@ -797,7 +803,13 @@ function AzerothAdmin:UnregisterSelectedDCHandlerFunction(idx)
   if not h then return end
   local fn = h[idx]
   if not fn then return end
-  local module, opcode, isJson = string.match(key, "^(.-)_(.-)(_json)?$")
+  local isJson = false
+  local baseKey = key
+  if key:sub(-5) == "_json" then
+    isJson = true
+    baseKey = key:sub(1, -6)
+  end
+  local module, opcode = baseKey:match("^(.-)_(.-)$")
   -- Build text for confirmation
   local di = nil
   if type(fn) == 'function' and debug and debug.getinfo then di = debug.getinfo(fn, 'Sln') end

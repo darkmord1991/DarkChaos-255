@@ -291,7 +291,8 @@ function Wardrobe:CreateCommunityGrid()
         btn.model:SetSize(120, 100)
         btn.model:SetPoint("TOP", 0, -10)
         btn.model:SetFacing(0)
-        
+        btn.model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+
         -- Outfit name
         btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         btn.name:SetPoint("BOTTOM", btn, "BOTTOM", 0, 45)

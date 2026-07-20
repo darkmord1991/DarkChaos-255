@@ -73,9 +73,7 @@ function Wardrobe:SerializeOutfitForLink(outfit)
         local invSlotId
         if type(slotKey) == "number" or tonumber(slotKey) then
             local n = tonumber(slotKey)
-            if n and n >= 1 and n <= 19 then
-                invSlotId = n
-            elseif n and n >= 0 and n <= 18 then
+            if n then
                 invSlotId = n + 1
             end
         elseif type(slotKey) == "string" then

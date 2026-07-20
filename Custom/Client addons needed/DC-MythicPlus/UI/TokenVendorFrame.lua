@@ -42,6 +42,7 @@ local state = {
     selectedSlot = nil, -- numeric token slot
     choices = nil,
     filteredChoices = nil,
+    purchaseInFlight = false,
 }
 
 local function trim(str)
@@ -73,8 +74,8 @@ local function getTalentSummary()
     local tabs = {}
 
     for tab = 1, numTabs do
-        local name, _, pointsSpent = GetTalentTabInfo(tab)
-        pointsSpent = tonumber(pointsSpent) or 0
+        local _, name, _, _, pointsSpent = GetTalentTabInfo(tab)
+        pointsSpent = pointsSpent or 0
         tabs[tab] = { name = name, points = pointsSpent }
         if pointsSpent > bestPoints then
             bestPoints = pointsSpent
@@ -313,6 +314,40 @@ local function safeItemTexture(itemId)
     return "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
+-- Bounded retry for items whose GetItemInfo cache hasn't warmed up yet (icons
+-- show a placeholder until then). Mirrors GreatVaultFrame.lua's
+-- PrefetchItem/QueueSlotRefresh pattern: max 6 attempts, 0.35s apart.
+local itemIconRetryCounts = {}
+local pendingIconRefresh = {}
+local iconPrefetchTooltip
+
+local function PrefetchItemIcon(itemId)
+    if not itemId then return end
+    if not iconPrefetchTooltip then
+        iconPrefetchTooltip = CreateFrame("GameTooltip", "DCMP_TokenVendorScanTooltip", UIParent, "GameTooltipTemplate")
+        iconPrefetchTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    end
+    iconPrefetchTooltip:SetHyperlink("item:" .. itemId)
+end
+
+local function QueueIconRefresh(itemId)
+    if not itemId then return end
+    if pendingIconRefresh[itemId] then return end
+
+    local tries = (itemIconRetryCounts[itemId] or 0) + 1
+    itemIconRetryCounts[itemId] = tries
+    if tries > 6 then return end
+
+    pendingIconRefresh[itemId] = true
+    PrefetchItemIcon(itemId)
+    C_Timer.After(0.35, function()
+        pendingIconRefresh[itemId] = nil
+        if UI.Refresh then
+            UI:Refresh()
+        end
+    end)
+end
+
 local function CreateDisplayFrame(parent, iconPath, tooltipTitle, tooltipText)
     local f = CreateFrame("Button", nil, parent)
     f:SetSize(120, 24)
@@ -349,13 +384,6 @@ local function ensureFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
-
-    frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-    frame:SetScript("OnEvent", function(self, event, ...)
-        if event == "GET_ITEM_INFO_RECEIVED" then
-            UI:Refresh()
-        end
-    end)
 
     -- Background (WotLK/Retail style)
     frame:SetBackdrop({
@@ -552,9 +580,11 @@ local function ensureFrame()
         b.highlight:SetAlpha(0.3)
 
         b:SetScript("OnClick", function()
+            if state.purchaseInFlight then return end
             if not state.filteredChoices or not state.filteredChoices[i] then return end
             local it = state.filteredChoices[i]
             if not state.selectedTier or not state.selectedSlot then return end
+            state.purchaseInFlight = true
             DC:Request(MPLUS, 0x83, { itemId = it.itemId, itemLevel = state.selectedTier, slot = state.selectedSlot })
         end)
         b:SetScript("OnEnter", function(self)
@@ -656,6 +686,11 @@ function UI:Refresh()
         if it then
             b.itemId = it.itemId
             b.icon:SetTexture(safeItemTexture(it.itemId))
+            if GetItemInfo(it.itemId) then
+                itemIconRetryCounts[it.itemId] = nil
+            else
+                QueueIconRefresh(it.itemId)
+            end
 
             local name = tostring(it.name or ("Item #" .. tostring(it.itemId)))
             name = colorizeByQuality(name, tonumber(it.quality))
@@ -719,6 +754,7 @@ local function RegisterProtocolHandlers()
     end)
 
     DC:RegisterHandler(MPLUS, 0x84, function(payload)
+    state.purchaseInFlight = false
     if type(payload) == "table" then
         if payload.message then
             ensureFrame()

@@ -447,30 +447,64 @@ function GF:PopulateRaidGroups(groups)
         panel.resultsText:SetText("|cff888888Results: " .. #(groups or {}) .. "|r")
     end
     
-    -- Clear existing
-    for _, child in ipairs({ scrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+    -- Clear existing (pooled: hide, don't destroy)
+    panel.raidGroupsRowPool = panel.raidGroupsRowPool or {}
+    for _, row in ipairs(panel.raidGroupsRowPool) do
+        row:Hide()
     end
-    
+
     local yOffset = 0
     local rowHeight = 65
     local playerName = UnitName("player")
-    
+
     for i, group in ipairs(groups) do
-        local row = CreateFrame("Frame", nil, scrollChild)
+        local row = panel.raidGroupsRowPool[i]
+        if not row then
+            row = CreateFrame("Frame", nil, scrollChild)
+
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+
+            -- Raid name + difficulty
+            row.raidText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            row.raidText:SetPoint("TOPLEFT", 10, -8)
+
+            -- Progress + Leader with markers
+            row.infoText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            row.infoText:SetPoint("TOPLEFT", 10, -28)
+
+            -- Spots available
+            row.spotsText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            row.spotsText:SetPoint("TOPRIGHT", -90, -8)
+
+            -- Note
+            row.noteText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.noteText:SetPoint("BOTTOMLEFT", 10, 6)
+
+            -- Special overlay for own groups
+            row.ownOverlay = row:CreateTexture(nil, "OVERLAY")
+            row.ownOverlay:SetAllPoints()
+            row.ownOverlay:SetColorTexture(0, 1, 0, 0.05)
+
+            -- Action button - different for own groups vs others
+            row.actionBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.actionBtn:SetSize(70, 22)
+            row.actionBtn:SetPoint("RIGHT", -10, 0)
+
+            panel.raidGroupsRowPool[i] = row
+        end
+
+        row:SetParent(scrollChild)
+        row:ClearAllPoints()
         row:SetSize(scrollChild:GetWidth() - 10, rowHeight - 4)
         row:SetPoint("TOPLEFT", 5, -yOffset)
-        
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
-        
+
         -- Highlight own/friend/guild groups with different background
         local leaderName = group.leader or "Unknown"
         local isOwn = group.isOwn or leaderName == playerName
         local isFriend = GF:IsPlayerFriend(leaderName)
         local isGuild = GF:IsPlayerInGuild(leaderName)
-        
+
         if isOwn then
             row.bg:SetColorTexture(0.1, 0.2, 0.1, 0.95)  -- Green tint for own
         elseif isFriend then
@@ -480,13 +514,9 @@ function GF:PopulateRaidGroups(groups)
         else
             row.bg:SetColorTexture(0.1, 0.12, 0.15, 0.9)
         end
-        
-        -- Raid name + difficulty
-        local raidText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        raidText:SetPoint("TOPLEFT", 10, -8)
-        raidText:SetText(string.format("%s |cffaaaaaa(%s)|r", group.raid, group.difficulty))
-        
-        -- Progress + Leader with markers
+
+        row.raidText:SetText(string.format("%s |cffaaaaaa(%s)|r", group.raid, group.difficulty))
+
         local markerText = ""
         local leaderColor = "ffffff"
         if isOwn then
@@ -499,52 +529,42 @@ function GF:PopulateRaidGroups(groups)
             markerText = " |cff44ff44[Guild]|r"
             leaderColor = "44ff44"
         end
-        
-        local infoText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        infoText:SetPoint("TOPLEFT", 10, -28)
-        infoText:SetText(string.format("Progress: |cff32c4ff%s|r  |  Leader: |cff%s%s|r%s", 
+
+        row.infoText:SetText(string.format("Progress: |cff32c4ff%s|r  |  Leader: |cff%s%s|r%s",
             group.progress, leaderColor, leaderName, markerText))
-        
-        -- Spots available
-        local spotsText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        spotsText:SetPoint("TOPRIGHT", -90, -8)
-        spotsText:SetText(string.format("|cff00ff00%d spots|r", group.spots))
-        
-        -- Note
+
+        row.spotsText:SetText(string.format("|cff00ff00%d spots|r", group.spots))
+
         if group.note and group.note ~= "" and group.note ~= group.progress then
-            local noteText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            noteText:SetPoint("BOTTOMLEFT", 10, 6)
-            noteText:SetText("|cff888888" .. group.note .. "|r")
+            row.noteText:SetText("|cff888888" .. group.note .. "|r")
+            row.noteText:Show()
+        else
+            row.noteText:Hide()
         end
-        
-        -- Action button - different for own groups vs others
-        local actionBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        actionBtn:SetSize(70, 22)
-        actionBtn:SetPoint("RIGHT", -10, 0)
-        
+
         if isOwn then
             -- Own group - show Cancel button
-            actionBtn:SetText("Cancel")
-            actionBtn:GetFontString():SetTextColor(1, 0.3, 0.3)
-            actionBtn:SetScript("OnClick", function()
+            row.actionBtn:SetText("Cancel")
+            row.actionBtn:GetFontString():SetTextColor(1, 0.3, 0.3)
+            row.actionBtn:SetScript("OnClick", function()
                 GF:CancelRaidGroup(group.id)
             end)
-            
-            -- Add special overlay for own groups
-            local ownOverlay = row:CreateTexture(nil, "OVERLAY")
-            ownOverlay:SetAllPoints()
-            ownOverlay:SetColorTexture(0, 1, 0, 0.05)
+            row.ownOverlay:Show()
         else
             -- Other groups - show Apply button
-            actionBtn:SetText("Apply")
-            actionBtn:SetScript("OnClick", function()
+            row.actionBtn:SetText("Apply")
+            row.actionBtn:GetFontString():SetTextColor(1, 1, 1)
+            row.actionBtn:SetScript("OnClick", function()
                 GF:ApplyToRaid(group.id, group.raid)
             end)
+            row.ownOverlay:Hide()
         end
-        
+
+        row:Show()
+
         yOffset = yOffset + rowHeight
     end
-    
+
     scrollChild:SetHeight(yOffset)
 end
 

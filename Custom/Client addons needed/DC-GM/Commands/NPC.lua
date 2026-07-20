@@ -369,6 +369,11 @@ function AzerothAdminCommands.NPCUnFreeze_Way()
   AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
 end
 
+function AzerothAdminCommands.NPCUnFreeze_Random()
+  local NPC_target = UnitName("target")
+  AzerothAdmin:ChatMsg(".npc setmovetype random")
+end
+
 function AzerothAdminCommands.WayRun()
   AzerothAdmin:ChatMsg(".wp run")
 end

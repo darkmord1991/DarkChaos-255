@@ -32,7 +32,9 @@ if not DCHLBGDB then
     end
 end
 -- Ensure all expected keys exist with sensible defaults
-DCHLBGDB.hudEnabled = (DCHLBGDB.hudEnabled ~= nil) and DCHLBGDB.hudEnabled or true
+if DCHLBGDB.hudEnabled == nil then
+    DCHLBGDB.hudEnabled = true
+end
 DCHLBGDB.debugMode = DCHLBGDB.debugMode or false
 DCHLBGDB.showHudEverywhere = DCHLBGDB.showHudEverywhere or false
 DCHLBGDB.hudScale = DCHLBGDB.hudScale or 1.0

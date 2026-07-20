@@ -685,6 +685,7 @@ function Wardrobe:CreateLeftPanel(parent)
     local model = CreateFrame("DressUpModel", "DCWardrobeModel", modelFrame)
     model:SetAllPoints()
     model:SetUnit("player")
+    model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
     model._dcPreviewSequence = Wardrobe.PREVIEW_IDLE_SEQUENCE or 0
     if type(Wardrobe.StabilizePreviewModel) == "function" then
         Wardrobe:StabilizePreviewModel(model, model._dcPreviewSequence)

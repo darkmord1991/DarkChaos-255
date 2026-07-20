@@ -127,30 +127,39 @@ function LocationPlugin:OnActivate()
     DCInfoBar.serverData.hotspots = DCInfoBar.serverData.hotspots or {}
     
     -- Monitor chat for .gps command output to get server coordinates
-    local originalAddMessage = ChatFrame1.AddMessage
-    ChatFrame1.AddMessage = function(self, msg, ...)
-        if msg and type(msg) == "string" then
-            -- Parse .gps output: "X: 5752.5776 Y: 1325.3961 Z: 24.627499 Orientation: 5.4110045"
-            local x, y, z, o = string.match(msg, "X:%s*([%d%.%-]+)%s*Y:%s*([%d%.%-]+)%s*Z:%s*([%d%.%-]+)%s*Orientation:%s*([%d%.%-]+)")
-            if x and y and z and o then
-                LocationPlugin._serverX = tonumber(x) or 0
-                LocationPlugin._serverY = tonumber(y) or 0
-                LocationPlugin._serverZ = tonumber(z) or 0
-                LocationPlugin._orientation = tonumber(o) or 0
-                LocationPlugin._hasServerCoords = true
+    -- (one-time hook: re-activation must not stack another wrapper around AddMessage)
+    if not DCInfoBar._locationChatHooked then
+        DCInfoBar._locationChatHooked = true
+        local originalAddMessage = ChatFrame1.AddMessage
+        ChatFrame1.AddMessage = function(self, msg, ...)
+            if msg and type(msg) == "string" then
+                -- Parse .gps output: "X: 5752.5776 Y: 1325.3961 Z: 24.627499 Orientation: 5.4110045"
+                local x, y, z, o = string.match(msg, "X:%s*([%d%.%-]+)%s*Y:%s*([%d%.%-]+)%s*Z:%s*([%d%.%-]+)%s*Orientation:%s*([%d%.%-]+)")
+                if x and y and z and o then
+                    LocationPlugin._serverX = tonumber(x) or 0
+                    LocationPlugin._serverY = tonumber(y) or 0
+                    LocationPlugin._serverZ = tonumber(z) or 0
+                    LocationPlugin._orientation = tonumber(o) or 0
+                    LocationPlugin._hasServerCoords = true
+                end
+
+                -- Also parse ZoneX/ZoneY from .gps output
+                local zoneX, zoneY = string.match(msg, "ZoneX:%s*([%d%.%-]+)%s*ZoneY:%s*([%d%.%-]+)")
+                if zoneX and zoneY then
+                    -- These match our calculated coordinates
+                    -- Just validate they're consistent
+                end
             end
-            
-            -- Also parse ZoneX/ZoneY from .gps output
-            local zoneX, zoneY = string.match(msg, "ZoneX:%s*([%d%.%-]+)%s*ZoneY:%s*([%d%.%-]+)")
-            if zoneX and zoneY then
-                -- These match our calculated coordinates
-                -- Just validate they're consistent
-            end
+            return originalAddMessage(self, msg, ...)
         end
-        return originalAddMessage(self, msg, ...)
     end
-    
-    -- Register handlers for hotspot data
+
+    -- Register handlers for hotspot data (one-time: don't re-register on every re-activation)
+    if DCInfoBar._locationHandlersRegistered then
+        return
+    end
+    DCInfoBar._locationHandlersRegistered = true
+
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
         -- SMSG_HOTSPOT_LIST (0x10) - List of active hotspots
@@ -303,13 +312,7 @@ function LocationPlugin:OnUpdate(elapsed)
     self._mapId = GetCurrentMapContinent() or 0
     self._zoneId = GetCurrentMapZone() or 0
     self._areaId = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
-    
-    -- Get real instance map ID for custom zones
-    local _, _, _, _, _, _, _, instanceMapId = GetInstanceInfo()
-    if instanceMapId then
-        self._instanceMapId = instanceMapId
-    end
-    
+
     -- Check if in a hotspot zone
     self._inHotspot = false
     self._currentHotspot = nil
@@ -490,13 +493,7 @@ function LocationPlugin:OnTooltip(tooltip)
     -- Zone/Map IDs section
     tooltip:AddLine(" ")
     tooltip:AddLine("|cff32c4ffMap Information:|r")
-    
-    -- Get real map ID from instance info
-    local _, _, _, _, _, _, _, instanceMapId = GetInstanceInfo()
-    if instanceMapId then
-        tooltip:AddDoubleLine("  Map ID:", instanceMapId, 0.7, 0.7, 0.7, 1, 0.82, 0)
-    end
-    
+
     -- Continent/Zone IDs from map system
     if self._mapId and self._mapId > 0 then
         tooltip:AddDoubleLine("  Continent:", self._mapId, 0.7, 0.7, 0.7, 1, 1, 1)

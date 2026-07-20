@@ -366,13 +366,23 @@ end
 
 function GF:RefreshWorldContentList()
     if not self.worldScrollChild then return end
-    
-    -- Clear existing entries
-    for _, child in pairs({ self.worldScrollChild:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
+
+    -- Clear existing entries (pooled: hide, don't destroy)
+    self.worldContentRowPool = self.worldContentRowPool or {}
+    for _, row in ipairs(self.worldContentRowPool) do
+        row:Hide()
     end
-    
+
+    -- A refresh may reshuffle which item lands on which pooled slot, so any
+    -- previous selection reference (and the highlight tied to it) is stale.
+    if self.selectedWorldEntry then
+        self.selectedWorldEntry.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+        self.selectedWorldEntry = nil
+    end
+    if self.worldTeleportBtn then
+        self.worldTeleportBtn:Disable()
+    end
+
     -- Clear any existing no-data text
     if self.worldNoDataText then
         self.worldNoDataText:Hide()
@@ -413,11 +423,14 @@ function GF:RefreshWorldContentList()
         return
     end
     
-    -- Create entry for each item
+    -- Create entry for each item (reuse pooled entries by index)
     for i, item in ipairs(items) do
-        local entry = self:CreateWorldContentEntry(self.worldScrollChild, item, filter)
+        local entry = self:CreateWorldContentEntry(self.worldScrollChild, item, filter, self.worldContentRowPool[i])
+        self.worldContentRowPool[i] = entry
+        entry:ClearAllPoints()
         entry:SetPoint("TOPLEFT", 0, yOffset)
         entry:SetPoint("TOPRIGHT", 0, yOffset)
+        entry:Show()
         yOffset = yOffset - 50
     end
     
@@ -453,87 +466,92 @@ function GF:UpdateWorldGroups(groups, category)
     end
 end
 
-function GF:CreateWorldContentEntry(parent, item, contentType)
-    local entry = CreateFrame("Button", nil, parent)
-    entry:SetHeight(46)
-    
-    entry.bg = entry:CreateTexture(nil, "BACKGROUND")
-    entry.bg:SetAllPoints()
+function GF:CreateWorldContentEntry(parent, item, contentType, entry)
+    if not entry then
+        entry = CreateFrame("Button", nil, parent)
+        entry:SetHeight(46)
+
+        entry.bg = entry:CreateTexture(nil, "BACKGROUND")
+        entry.bg:SetAllPoints()
+
+        -- Icon
+        entry.icon = entry:CreateTexture(nil, "ARTWORK")
+        entry.icon:SetSize(36, 36)
+        entry.icon:SetPoint("LEFT", 8, 0)
+
+        -- Name
+        entry.nameText = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        entry.nameText:SetPoint("TOPLEFT", entry.icon, "TOPRIGHT", 10, -4)
+
+        -- Info line
+        entry.infoText = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        entry.infoText:SetPoint("TOPLEFT", entry.nameText, "BOTTOMLEFT", 0, -2)
+
+        -- Time remaining (if applicable)
+        entry.timeText = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        entry.timeText:SetPoint("RIGHT", -10, 0)
+
+        -- Click handling
+        entry:SetScript("OnClick", function(self)
+            GF:SelectWorldEntry(self)
+        end)
+
+        entry:SetScript("OnEnter", function(self)
+            self.bg:SetColorTexture(0.1, 0.1, 0.15, 1)
+        end)
+        entry:SetScript("OnLeave", function(self)
+            if GF.selectedWorldEntry ~= self then
+                self.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+            end
+        end)
+    end
+
+    entry:SetParent(parent)
     entry.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
-    
-    -- Icon
-    local icon = entry:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(36, 36)
-    icon:SetPoint("LEFT", 8, 0)
-    
+
     if contentType == "boss" then
-        icon:SetTexture("Interface\\Icons\\Achievement_Boss_Archimonde")
+        entry.icon:SetTexture("Interface\\Icons\\Achievement_Boss_Archimonde")
     elseif contentType == "hotspot" then
-        icon:SetTexture("Interface\\Icons\\Spell_Fire_Burnout")
+        entry.icon:SetTexture("Interface\\Icons\\Spell_Fire_Burnout")
     else
-        icon:SetTexture("Interface\\Icons\\INV_Misc_GroupLooking")
+        entry.icon:SetTexture("Interface\\Icons\\INV_Misc_GroupLooking")
     end
-    entry.icon = icon
-    
-    -- Name
-    local name = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -4)
+
     if contentType == "hotspot" then
-        name:SetText(item.zoneName or item.zone or "Unknown Zone")
+        entry.nameText:SetText(item.zoneName or item.zone or "Unknown Zone")
     elseif contentType == "quest" or contentType == "other" then
-        name:SetText(item.dungeonName or item.dungeon or item.raid or item.name or "Unknown Group")
+        entry.nameText:SetText(item.dungeonName or item.dungeon or item.raid or item.name or "Unknown Group")
     else
-        name:SetText(item.name or "Unknown")
+        entry.nameText:SetText(item.name or "Unknown")
     end
-    entry.nameText = name
-    
-    -- Info line
-    local info = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    info:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -2)
-    
+
     if contentType == "boss" then
         local status = item.status == "active" and "|cff00ff00ACTIVE|r" or "|cffff8800Spawns in " .. (item.spawnIn or "?") .. "|r"
-        info:SetText((item.zoneName or item.zone or "Unknown Zone") .. " - " .. status)
+        entry.infoText:SetText((item.zoneName or item.zone or "Unknown Zone") .. " - " .. status)
     elseif contentType == "hotspot" then
         local bonus = item.bonusPercent or item.bonus or 0
-        info:SetText((item.name or "Hotspot") .. " - |cff00ff00+" .. bonus .. "% Bonus|r")
+        entry.infoText:SetText((item.name or "Hotspot") .. " - |cff00ff00+" .. bonus .. "% Bonus|r")
     elseif contentType == "quest" or contentType == "other" then
         local leader = item.leader or "Unknown"
         local note = item.note or "Open group listing"
-        info:SetText("Leader: " .. leader .. " - " .. note)
+        entry.infoText:SetText("Leader: " .. leader .. " - " .. note)
     else
-        info:SetText(item.description or "No description")
+        entry.infoText:SetText(item.description or "No description")
     end
-    entry.infoText = info
-    
-    -- Time remaining (if applicable)
+
     if item.timeRemaining and item.timeRemaining > 0 then
-        local time = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        time:SetPoint("RIGHT", -10, 0)
         local mins = math.floor(item.timeRemaining / 60)
         local secs = item.timeRemaining % 60
-        time:SetText(string.format("|cffffff00%d:%02d|r", mins, secs))
-        entry.timeText = time
+        entry.timeText:SetText(string.format("|cffffff00%d:%02d|r", mins, secs))
+        entry.timeText:Show()
+    else
+        entry.timeText:Hide()
     end
-    
+
     -- Store data
     entry.data = item
     entry.contentType = contentType
-    
-    -- Click handling
-    entry:SetScript("OnClick", function(self)
-        GF:SelectWorldEntry(self)
-    end)
-    
-    entry:SetScript("OnEnter", function(self)
-        self.bg:SetColorTexture(0.1, 0.1, 0.15, 1)
-    end)
-    entry:SetScript("OnLeave", function(self)
-        if GF.selectedWorldEntry ~= self then
-            self.bg:SetColorTexture(0.06, 0.06, 0.08, 1)
-        end
-    end)
-    
+
     return entry
 end
 

@@ -799,47 +799,64 @@ function DCInfoBar:ShowPluginOptions(pluginId)
     popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
 
     ApplyLeaderboardsStyle(popup)
-    
+
+    -- The popup frame itself is reused by name (CreateFrame with an existing
+    -- global name returns the SAME frame), but its per-open content (title,
+    -- checkboxes, plugin-specific options, done button) was previously being
+    -- created fresh directly on `popup` every call and never cleaned up,
+    -- stacking duplicate widgets on top of each other across repeated opens.
+    -- Fix: put all per-open content in a dedicated child container and
+    -- throw the old one away before building a new one.
+    if popup._content then
+        popup._content:Hide()
+        popup._content:SetParent(nil)
+        popup._content = nil
+    end
+
+    local content = CreateFrame("Frame", nil, popup)
+    content:SetAllPoints(popup)
+    popup._content = content
+
     -- Title
-    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -10)
     title:SetText((plugin.name or pluginId) .. " Options")
-    
+
     -- Close button
-    local closeBtn = CreateFrame("Button", nil, popup)
+    local closeBtn = CreateFrame("Button", nil, content)
     closeBtn:SetSize(20, 20)
     closeBtn:SetPoint("TOPRIGHT", -5, -5)
     closeBtn.text = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     closeBtn.text:SetPoint("CENTER")
     closeBtn.text:SetText("X")
     closeBtn:SetScript("OnClick", function() popup:Hide() end)
-    
+
     local yOffset = -40
-    
+
     -- Show Label
-    local labelCB = self:CreateCheckbox(popup, "Show Label", 20, yOffset, function(checked)
+    local labelCB = self:CreateCheckbox(content, "Show Label", 20, yOffset, function(checked)
         self:SetPluginSetting(pluginId, "showLabel", checked)
     end, pluginSettings.showLabel ~= false)
     yOffset = yOffset - 30
-    
-    -- Show Icon  
-    local iconCB = self:CreateCheckbox(popup, "Show Icon", 20, yOffset, function(checked)
+
+    -- Show Icon
+    local iconCB = self:CreateCheckbox(content, "Show Icon", 20, yOffset, function(checked)
         self:SetPluginSetting(pluginId, "showIcon", checked)
     end, pluginSettings.showIcon ~= false)
     yOffset = yOffset - 40
-    
+
     -- Plugin-specific options would go here
     -- Each plugin can register additional options
     if plugin.OnCreateOptions then
-        yOffset = plugin:OnCreateOptions(popup, yOffset)
+        yOffset = plugin:OnCreateOptions(content, yOffset)
     end
-    
+
     -- Done button
-    local doneBtn = self:CreateButton(popup, "Done", 90, -210, 120, function()
+    local doneBtn = self:CreateButton(content, "Done", 90, -210, 120, function()
         popup:Hide()
         self:RefreshAllPlugins()
     end)
-    
+
     popup:Show()
 end
 

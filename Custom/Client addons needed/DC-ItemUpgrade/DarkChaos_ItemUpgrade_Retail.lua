@@ -1268,13 +1268,16 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		if cacheCmd == "clear" then
 			-- Clear caches
 			DC.itemUpgradeCache = {};
+			DC.itemUpgradeCacheByEntry = {};
+			DC.itemUpgradeCacheByGuid = {};
 			DC.itemLocationCache = {};
 			DC.itemScanCache = {};
 			DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DC ItemUpgrade:|r Item cache cleared.");
 		else
 			-- Show cache stats
 			local upgradeCount = 0;
-			for _ in pairs(DC.itemUpgradeCache or {}) do upgradeCount = upgradeCount + 1; end
+			for _ in pairs(DC.itemUpgradeCacheByEntry or {}) do upgradeCount = upgradeCount + 1; end
+			for _ in pairs(DC.itemUpgradeCacheByGuid or {}) do upgradeCount = upgradeCount + 1; end
 			local locationCount = 0;
 			for _ in pairs(DC.itemLocationCache or {}) do locationCount = locationCount + 1; end
 			local scanCount = 0;
@@ -1392,6 +1395,8 @@ function DarkChaos_ItemUpgrade_ShowQuickSettings()
 			notCheckable = true,
 			func = function()
 				DC.itemUpgradeCache = {};
+				DC.itemUpgradeCacheByEntry = {};
+				DC.itemUpgradeCacheByGuid = {};
 				DC.itemLocationCache = {};
 				DC.itemScanCache = {};
 				DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DC ItemUpgrade:|r Item cache cleared.");
@@ -1403,7 +1408,7 @@ function DarkChaos_ItemUpgrade_ShowQuickSettings()
 	
 	-- Use EasyMenu if available (common in 3.3.5 addons), otherwise use dropdown
 	if EasyMenu then
-		local menuFrame = CreateFrame("Frame", "DarkChaos_ItemUpgrade_QuickMenu", UIParent, "UIDropDownMenuTemplate");
+		local menuFrame = _G["DarkChaos_ItemUpgrade_QuickMenu"] or CreateFrame("Frame", "DarkChaos_ItemUpgrade_QuickMenu", UIParent, "UIDropDownMenuTemplate");
 		EasyMenu(menu, menuFrame, "cursor", 0, 0, "MENU");
 	else
 		-- Fallback: Create dropdown menu manually
@@ -1628,6 +1633,8 @@ DC.queryQueueList = DC.queryQueueList or {};
 DC.queryQueueMap = DC.queryQueueMap or {};
 DC.queryInFlight = DC.queryInFlight or nil;
 DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+DC.itemUpgradeCacheByEntry = DC.itemUpgradeCacheByEntry or {};
+DC.itemUpgradeCacheByGuid = DC.itemUpgradeCacheByGuid or {};
 DC.itemLocationCache = DC.itemLocationCache or {};
 
 -- Currency item IDs: Initialize from DCAddonProtocol if available
@@ -1803,12 +1810,14 @@ end
 
 function DarkChaos_ItemUpgrade_GetCachedDataForLocation(serverBag, serverSlot)
 	local key = BuildLocationKey(serverBag, serverSlot);
+	-- Despite the name, itemLocationCache stores the item template/entry ID
+	-- for standard (non-heirloom) items, populated by HandleJsonItemInfo below.
 	local guid = DC.itemLocationCache[key];
 	if not guid then
 		return nil;
 	end
 
-	local cached = DC.itemUpgradeCache[guid];
+	local cached = DC.itemUpgradeCacheByEntry[guid];
 	if not cached then
 		return nil;
 	end
@@ -1927,8 +1936,10 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 		-- For heirlooms, show the installed stat package
 		if isHeirloom then
 			local packageId = data.heirloomPackageId or data.packageId;
-			if (not packageId or packageId <= 0) and data.guid and DC.itemUpgradeCache and DC.itemUpgradeCache[data.guid] then
-				packageId = DC.itemUpgradeCache[data.guid].heirloomPackageId;
+			-- data here comes from the entry-keyed cache (via GetCachedDataForLocation /
+			-- HandleJsonItemInfo), so data.guid actually holds the item entry ID.
+			if (not packageId or packageId <= 0) and data.guid and DC.itemUpgradeCacheByEntry and DC.itemUpgradeCacheByEntry[data.guid] then
+				packageId = DC.itemUpgradeCacheByEntry[data.guid].heirloomPackageId;
 			end
 			if packageId and packageId > 0 and DC.STAT_PACKAGES and DC.STAT_PACKAGES[packageId] then
 				local pkg = DC.STAT_PACKAGES[packageId];
@@ -2054,6 +2065,9 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 		return;
 	end
 
+	-- NOTE: despite the "guid" name, this prefers info.itemID/itemId (the item
+	-- template/entry ID) - this handler is entry-keyed, not GUID-keyed. See
+	-- SMSG_HEIRLOOM_INFO/RESULT below for the genuinely per-instance GUID path.
 	local guid = tonumber(info.itemID or info.itemId or info.guid) or 0;
 	if guid == 0 then
 		DC.Debug("SMSG_ITEM_INFO missing item GUID for " .. tostring(responseLocationKey or "unknown") .. "; finalizing queued request");
@@ -2061,7 +2075,7 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 		return;
 	end
 
-	local existing = (DC.itemUpgradeCache and DC.itemUpgradeCache[guid]) or nil;
+	local existing = (DC.itemUpgradeCacheByEntry and DC.itemUpgradeCacheByEntry[guid]) or nil;
 	local itemEntry = tonumber(info.itemEntry) or 0;
 	local data = {
 		guid = guid,
@@ -2089,8 +2103,8 @@ function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
 		end
 	end
 
-	DC.itemUpgradeCache = DC.itemUpgradeCache or {};
-	DC.itemUpgradeCache[guid] = data;
+	DC.itemUpgradeCacheByEntry = DC.itemUpgradeCacheByEntry or {};
+	DC.itemUpgradeCacheByEntry[guid] = data;
 
 	local matchedInFlight = false;
 	if DC.queryInFlight then
@@ -2653,7 +2667,9 @@ function DarkChaos_ItemUpgrade_OnTooltipSetInspectItem(tooltip, unit, slot)
 	if not itemId then return; end
 	
 	-- Check if this item ID matches any upgraded item in our cache
-	for guid, data in pairs(DC.itemUpgradeCache or {}) do
+	-- (search the entry-keyed table only: GUID-keyed heirloom entries don't
+	-- carry a reliable item-entry field to compare against here)
+	for guid, data in pairs(DC.itemUpgradeCacheByEntry or {}) do
 		if GetCanonicalItemEntry(data) == itemId then
 			DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data);
 			return;
@@ -2681,7 +2697,9 @@ function DarkChaos_ItemUpgrade_OnTooltipSetHyperlink(tooltip, link)
 	if not itemId then return; end
 	
 	-- Check if this is a known upgraded item in our cache
-	for guid, data in pairs(DC.itemUpgradeCache or {}) do
+	-- (search the entry-keyed table only: GUID-keyed heirloom entries don't
+	-- carry a reliable item-entry field to compare against here)
+	for guid, data in pairs(DC.itemUpgradeCacheByEntry or {}) do
 		if GetCanonicalItemEntry(data) == itemId then
 			DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data);
 			return;
@@ -4878,7 +4896,9 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	local serverSlot = GetServerSlotFromClient(bag, slot);
 	local texture = GetItemTextureForLocation(bag, slot, link);
  	local locationKey = BuildLocationKey(serverBag, serverSlot);
-	local cached = DC.itemUpgradeCache and DC.itemLocationCache and DC.itemLocationCache[locationKey] and DC.itemUpgradeCache[DC.itemLocationCache[locationKey]];
+	-- itemLocationCache stores the item entry ID for standard items, so this
+	-- looks the item up in the entry-keyed cache table.
+	local cached = DC.itemUpgradeCacheByEntry and DC.itemLocationCache and DC.itemLocationCache[locationKey] and DC.itemUpgradeCacheByEntry[DC.itemLocationCache[locationKey]];
 
 	-- Use pooled object for current item
 	local pooledItem = DC.GetPooledItemState();
@@ -5498,13 +5518,13 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			local correctTier = (DC.currentItem and DC.currentItem.tier)
 				or (DC.HEIRLOOM_ITEMS and DC.HEIRLOOM_ITEMS[heirloomItemId] and DC.HEIRLOOM_ITEMS[heirloomItemId].tier)
 				or 3;
-			DC.itemUpgradeCache = DC.itemUpgradeCache or {};
-			DC.itemUpgradeCache[itemGUID] = DC.itemUpgradeCache[itemGUID] or {};
-			DC.itemUpgradeCache[itemGUID].currentUpgrade = newLevel;
-			DC.itemUpgradeCache[itemGUID].heirloomPackageId = packageId;
-			DC.itemUpgradeCache[itemGUID].tier = correctTier;
+			DC.itemUpgradeCacheByGuid = DC.itemUpgradeCacheByGuid or {};
+			DC.itemUpgradeCacheByGuid[itemGUID] = DC.itemUpgradeCacheByGuid[itemGUID] or {};
+			DC.itemUpgradeCacheByGuid[itemGUID].currentUpgrade = newLevel;
+			DC.itemUpgradeCacheByGuid[itemGUID].heirloomPackageId = packageId;
+			DC.itemUpgradeCacheByGuid[itemGUID].tier = correctTier;
 			if DC.currentItem and DC.currentItem.maxUpgrade then
-				DC.itemUpgradeCache[itemGUID].maxUpgrade = DC.currentItem.maxUpgrade;
+				DC.itemUpgradeCacheByGuid[itemGUID].maxUpgrade = DC.currentItem.maxUpgrade;
 			end
 			
 			-- Re-enable upgrade button
@@ -5564,10 +5584,11 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				itemGUID, currentLevel, packageId, maxLevel, maxPackages));
 			
 			-- Update cache with heirloom package data
-			if DC.itemUpgradeCache[itemGUID] then
-				DC.itemUpgradeCache[itemGUID].heirloomPackageId = packageId;
-				DC.itemUpgradeCache[itemGUID].currentUpgrade = currentLevel;
-				DC.itemUpgradeCache[itemGUID].maxUpgrade = maxLevel;
+			DC.itemUpgradeCacheByGuid = DC.itemUpgradeCacheByGuid or {};
+			if DC.itemUpgradeCacheByGuid[itemGUID] then
+				DC.itemUpgradeCacheByGuid[itemGUID].heirloomPackageId = packageId;
+				DC.itemUpgradeCacheByGuid[itemGUID].currentUpgrade = currentLevel;
+				DC.itemUpgradeCacheByGuid[itemGUID].maxUpgrade = maxLevel;
 			end
 			
 			-- Update current item with heirloom data
@@ -5735,7 +5756,8 @@ local function DC_ScanEquippedItems()
 	-- We don't actually need to query - the server sends DCUPGRADE_QUERY responses automatically
 	-- Just make sure our caches are initialized
 	DC.itemLocationCache = DC.itemLocationCache or {};
-	DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+	DC.itemUpgradeCacheByEntry = DC.itemUpgradeCacheByEntry or {};
+	DC.itemUpgradeCacheByGuid = DC.itemUpgradeCacheByGuid or {};
 	
 	-- Count how many items we have cached upgrade data for
 	local cachedCount = 0;

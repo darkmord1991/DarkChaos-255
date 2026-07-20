@@ -145,21 +145,33 @@ function SeasonPlugin:OnActivate()
     end
     
     local function RegisterHandlers()
-        local DC = rawget(_G, "DCAddonProtocol")
-        if not DC then
-            -- Retry after delay
-            local retryFrame = CreateFrame("Frame")
-            retryFrame.elapsed = 0
-            retryFrame:SetScript("OnUpdate", function(self, elapsed)
-                self.elapsed = self.elapsed + elapsed
-                if self.elapsed >= 2 then
-                    self:SetScript("OnUpdate", nil)
-                    RegisterHandlers()
-                end
-            end)
+        -- One-time setup: re-activation (RefreshAllPlugins) must not re-register
+        -- handlers or stack duplicate poll frames.
+        if SeasonPlugin._handlersRegistered then
             return
         end
-        
+
+        local DC = rawget(_G, "DCAddonProtocol")
+        if not DC then
+            -- Retry after delay (guarded so repeated OnActivate calls don't stack pollers)
+            if not SeasonPlugin._retryFrame then
+                local retryFrame = CreateFrame("Frame")
+                retryFrame.elapsed = 0
+                retryFrame:SetScript("OnUpdate", function(self, elapsed)
+                    self.elapsed = self.elapsed + elapsed
+                    if self.elapsed >= 2 then
+                        self:SetScript("OnUpdate", nil)
+                        SeasonPlugin._retryFrame = nil
+                        RegisterHandlers()
+                    end
+                end)
+                SeasonPlugin._retryFrame = retryFrame
+            end
+            return
+        end
+
+        SeasonPlugin._handlersRegistered = true
+
         -- Register handler for season response (SMSG_CURRENT = 0x10)
         DC:RegisterHandler("SEAS", 0x10, function(data)
             if data then
@@ -252,27 +264,30 @@ function SeasonPlugin:OnActivate()
         end
         
         -- Retry after delay if no data (increased retries)
-        local retryFrame = CreateFrame("Frame")
-        retryFrame.elapsed = 0
-        retryFrame.retries = 0
-        retryFrame:SetScript("OnUpdate", function(self, elapsed)
-            self.elapsed = self.elapsed + elapsed
-            if self.elapsed >= 3 then
-                self.elapsed = 0
-                self.retries = self.retries + 1
-                
-                if self.retries >= 5 then
-                    self:SetScript("OnUpdate", nil)
-                    return
+        if not SeasonPlugin._dataRetryFrame then
+            local retryFrame = CreateFrame("Frame")
+            retryFrame.elapsed = 0
+            retryFrame.retries = 0
+            retryFrame:SetScript("OnUpdate", function(self, elapsed)
+                self.elapsed = self.elapsed + elapsed
+                if self.elapsed >= 3 then
+                    self.elapsed = 0
+                    self.retries = self.retries + 1
+
+                    if self.retries >= 5 then
+                        self:SetScript("OnUpdate", nil)
+                        return
+                    end
+
+                    if not SeasonPlugin._dataReceived then
+                        RequestSeasonData()
+                    else
+                        self:SetScript("OnUpdate", nil)
+                    end
                 end
-                
-                if not SeasonPlugin._dataReceived then
-                    RequestSeasonData()
-                else
-                    self:SetScript("OnUpdate", nil)
-                end
-            end
-        end)
+            end)
+            SeasonPlugin._dataRetryFrame = retryFrame
+        end
     end
     
     RegisterHandlers()

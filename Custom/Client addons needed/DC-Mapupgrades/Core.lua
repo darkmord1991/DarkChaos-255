@@ -302,6 +302,24 @@ function Core:SetEntityPosition(entityId)
     return false, "not_found"
 end
 
+local function NormalizePossibleNormalizedPos(nx, ny)
+    nx = tonumber(nx)
+    ny = tonumber(ny)
+    if not nx or not ny then return nil, nil end
+
+    -- Avoid placing unknown positions at top-left.
+    if nx == 0 and ny == 0 then return nil, nil end
+
+    -- Accept percentage coords (0-100) and normalize.
+    if (nx > 1 or ny > 1) and nx <= 100 and ny <= 100 then
+        nx = nx / 100
+        ny = ny / 100
+    end
+
+    if nx < 0 or nx > 1 or ny < 0 or ny > 1 then return nil, nil end
+    return nx, ny
+end
+
 function Core:ImportWorldBossesFromInfoBar()
     if not state.db then return 0, "settings_not_loaded" end
     EnsureEntityTables(state.db)
@@ -571,24 +589,6 @@ function Core:HandleWorldResolveResult(data)
     if Pins and Pins.Refresh then
         Pins:Refresh()
     end
-end
-
-local function NormalizePossibleNormalizedPos(nx, ny)
-    nx = tonumber(nx)
-    ny = tonumber(ny)
-    if not nx or not ny then return nil, nil end
-
-    -- Avoid placing unknown positions at top-left.
-    if nx == 0 and ny == 0 then return nil, nil end
-
-    -- Accept percentage coords (0-100) and normalize.
-    if (nx > 1 or ny > 1) and nx <= 100 and ny <= 100 then
-        nx = nx / 100
-        ny = ny / 100
-    end
-
-    if nx < 0 or nx > 1 or ny < 0 or ny > 1 then return nil, nil end
-    return nx, ny
 end
 
 local function CopyInto(src, dest)

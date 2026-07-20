@@ -403,22 +403,22 @@ end
 
 function AzerothAdminCommands.CharRename()
     local cname = ma_charactertarget:GetText()
-    AzerothAdmin:ChatMsg(".character rename")
+    AzerothAdmin:ChatMsg(".character rename "..cname)
 end
 
 function AzerothAdminCommands.CharCustomize()
     local cname = ma_charactertarget:GetText()
-    AzerothAdmin:ChatMsg(".character customize")
+    AzerothAdmin:ChatMsg(".character customize "..cname)
 end
 
 function AzerothAdminCommands.CharChangeRace()
     local cname = ma_charactertarget:GetText()
-    AzerothAdmin:ChatMsg(".character changerace")
+    AzerothAdmin:ChatMsg(".character changerace "..cname)
 end
 
 function AzerothAdminCommands.CharChangeFaction()
     local cname = ma_charactertarget:GetText()
-    AzerothAdmin:ChatMsg(".character changefaction")
+    AzerothAdmin:ChatMsg(".character changefaction "..cname)
 end
 
 function AzerothAdminCommands.CharCombatStop()
