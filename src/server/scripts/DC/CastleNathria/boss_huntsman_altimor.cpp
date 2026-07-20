@@ -80,6 +80,19 @@ enum Spells
     // The events reuse their spell ids, as in the source.
 };
 
+enum Events
+{
+    EVENT_SPREADSHOT = 1,  // was raw SPELL_SPREADSHOT
+    EVENT_VICIOUS_LUNGE_CIRCLE = 2,  // was raw SPELL_VICIOUS_LUNGE_CIRCLE
+    EVENT_SINSEEKER = 3,  // was raw SPELL_SINSEEKER
+    EVENT_JAGGED_CLAWS = 4,  // was raw SPELL_JAGGED_CLAWS
+    EVENT_RIP_SOUL = 5,  // was raw SPELL_RIP_SOUL
+    EVENT_SHADES_OF_BARGAST = 6,  // was raw SPELL_SHADES_OF_BARGAST
+    EVENT_CRUSHING_STONE = 7,  // was raw SPELL_CRUSHING_STONE
+    EVENT_PETRIFYING_HOWL = 8,  // was raw SPELL_PETRIFYING_HOWL
+    EVENT_DEATHLY_ROAR = 9  // was raw SPELL_DEATHLY_ROAR
+};
+
 // NOTE: no creature_text in DB yet for 165066 (see Custom/.../worlddb/CastleNathria/09_creature_text.sql);
 // Talk() group ids preserved from the source AI.
 enum Texts
@@ -111,11 +124,11 @@ struct boss_huntsman_altimor : public BossAI
     {
         _JustEngagedWith();
         Talk(SAY_AGGRO);    // NOTE: no creature_text in DB yet
-        events.ScheduleEvent(SPELL_SPREADSHOT, 6s);
+        events.ScheduleEvent(EVENT_SPREADSHOT, 6s);
         // Source quirk kept: SPELL_VICIOUS_LUNGE_CIRCLE is scheduled on the boss but only
         // Margore's AI handles it -- the pop is a no-op here.
-        events.ScheduleEvent(SPELL_VICIOUS_LUNGE_CIRCLE, 17s);
-        events.ScheduleEvent(SPELL_SINSEEKER, 27s);
+        events.ScheduleEvent(EVENT_VICIOUS_LUNGE_CIRCLE, 17s);
+        events.ScheduleEvent(EVENT_SINSEEKER, 27s);
         if (Creature* margore = me->FindNearestCreature(NPC_MARGORE, 100.0f, true))
             margore->AI()->DoZoneInCombat();
     }
@@ -159,29 +172,29 @@ struct boss_huntsman_altimor : public BossAI
     {
         switch (eventId)
         {
-            case SPELL_SPREADSHOT:
+            case EVENT_SPREADSHOT:
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 {
                     me->SetFacingToObject(target);
-                    me->CastSpell(target, SPELL_SPREADSHOT, false);
+                    me->CastSpell(target, SPELL_SPREADSHOT);
                 }
                 events.Repeat(20s);
                 break;
-            case SPELL_SINSEEKER:
+            case EVENT_SINSEEKER:
             {
                 UnitList targetList;
                 SelectTargetList(targetList, 3, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
                 {
-                    me->CastSpell(nullptr, SPELL_SINSEEKER, false);     // one cast per target, as in the source
+                    me->CastSpell(me, SPELL_SINSEEKER);     // one cast per target, as in the source
                     // Source captured the raw target pointer into the scheduler; rerouted via ObjectGuid.
                     ObjectGuid targetGuid = target->GetGUID();
                     scheduler.Schedule(100ms, [this, targetGuid](TaskContext /*context*/)
                     {
                         if (Unit* target = ObjectAccessor::GetUnit(*me, targetGuid))
                         {
-                            me->CastSpell(target, SPELL_SINSEEKER_INIT_DAMAGE, true);
-                            me->CastSpell(target, SPELL_SINSEEKER_PERIODIC_DAMAGE, true);
+                            me->CastSpell(target, SPELL_SINSEEKER_INIT_DAMAGE, TRIGGERED_FULL_MASK);
+                            me->CastSpell(target, SPELL_SINSEEKER_PERIODIC_DAMAGE, TRIGGERED_FULL_MASK);
                         }
                     });
                 }
@@ -241,16 +254,16 @@ struct npc_altimor_pet : public ScriptedAI
         switch (me->GetEntry())
         {
             case NPC_MARGORE:
-                events.ScheduleEvent(SPELL_JAGGED_CLAWS, 5s);
-                events.ScheduleEvent(SPELL_VICIOUS_LUNGE_CIRCLE, 10s);
+                events.ScheduleEvent(EVENT_JAGGED_CLAWS, 5s);
+                events.ScheduleEvent(EVENT_VICIOUS_LUNGE_CIRCLE, 10s);
                 break;
             case NPC_BARGAST:
-                events.ScheduleEvent(SPELL_RIP_SOUL, 5s);
-                events.ScheduleEvent(SPELL_SHADES_OF_BARGAST, 10s);
+                events.ScheduleEvent(EVENT_RIP_SOUL, 5s);
+                events.ScheduleEvent(EVENT_SHADES_OF_BARGAST, 10s);
                 break;
             case NPC_HECUTIS:
-                events.ScheduleEvent(SPELL_CRUSHING_STONE, 5s);
-                events.ScheduleEvent(SPELL_PETRIFYING_HOWL, 10s);
+                events.ScheduleEvent(EVENT_CRUSHING_STONE, 5s);
+                events.ScheduleEvent(EVENT_PETRIFYING_HOWL, 10s);
                 break;
             default:
                 break;
@@ -268,29 +281,29 @@ struct npc_altimor_pet : public ScriptedAI
     {
         switch (eventId)
         {
-            case SPELL_JAGGED_CLAWS:
+            case EVENT_JAGGED_CLAWS:
                 DoCastVictim(SPELL_JAGGED_CLAWS, false);
                 events.Repeat(10s, 20s);
                 break;
-            case SPELL_VICIOUS_LUNGE_CIRCLE:
+            case EVENT_VICIOUS_LUNGE_CIRCLE:
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 {
                     if (Creature* altimor = me->FindNearestCreature(NPC_HUNTSMAN_ALTIMOR, 100.0f, true))
                         altimor->AI()->Talk(SAY_VICIOUS_LUNGE);     // NOTE: no creature_text in DB yet
                     me->SetFacingToObject(target);
-                    me->CastSpell(target, SPELL_VICIOUS_LUNGE_CIRCLE, true);
+                    me->CastSpell(target, SPELL_VICIOUS_LUNGE_CIRCLE, TRIGGERED_FULL_MASK);
                     me->AddAura(SPELL_VICIOUS_LUNGE_MARK, target);
                     // Source captured the raw target pointer into the scheduler; rerouted via ObjectGuid.
                     ObjectGuid targetGuid = target->GetGUID();
                     scheduler.Schedule(6100ms, [this, targetGuid](TaskContext /*context*/)
                     {
                         if (Unit* target = ObjectAccessor::GetUnit(*me, targetGuid))
-                            me->CastSpell(target, SPELL_CHARGE, true);
+                            me->CastSpell(target, SPELL_CHARGE, TRIGGERED_FULL_MASK);
                     });
                 }
                 events.Repeat(30s, 35s);
                 break;
-            case SPELL_RIP_SOUL:
+            case EVENT_RIP_SOUL:
                 // Source quirk kept: SPELL_RIP_SOUL is only used as event id; the soul is
                 // summoned directly instead of being torn out via the spell.
                 if (Creature* altimor = me->FindNearestCreature(NPC_HUNTSMAN_ALTIMOR, 100.0f, true))
@@ -299,7 +312,7 @@ struct npc_altimor_pet : public ScriptedAI
                     me->SummonCreature(NPC_RIPPED_SOUL, *target, TEMPSUMMON_TIMED_DESPAWN, 60000);   // source left the despawn timer defaulted
                 events.Repeat(10s, 20s);
                 break;
-            case SPELL_SHADES_OF_BARGAST:
+            case EVENT_SHADES_OF_BARGAST:
             {
                 // Source condition (!IsHeroic() || !IsMythic()) was always true; the intent
                 // (1 shade on normal, 2 on heroic/mythic) is restored here.
@@ -313,11 +326,11 @@ struct npc_altimor_pet : public ScriptedAI
                 events.Repeat(30s, 35s);
                 break;
             }
-            case SPELL_CRUSHING_STONE:
+            case EVENT_CRUSHING_STONE:
                 me->AddAura(SPELL_CRUSHING_STONE, me);
                 events.Repeat(2s);
                 break;
-            case SPELL_PETRIFYING_HOWL:
+            case EVENT_PETRIFYING_HOWL:
             {
                 DoCastAOE(SPELL_PETRIFYING_HOWL, false);
                 UnitList targetList;
@@ -384,7 +397,7 @@ struct npc_shade_of_bargast : public ScriptedAI
     {
         if (InstanceScript* instance = me->GetInstanceScript())
             instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
-        events.ScheduleEvent(SPELL_DEATHLY_ROAR, 3s);
+        events.ScheduleEvent(EVENT_DEATHLY_ROAR, 3s);
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -429,7 +442,7 @@ struct npc_ripped_soul : public ScriptedAI
         if (Creature* altimor = me->FindNearestCreature(NPC_HUNTSMAN_ALTIMOR, 100.0f, true))
         {
             if (IsHeroic())
-                me->CastSpell(nullptr, SPELL_RIPPED_SOUL_AOE, true);
+                me->CastSpell(nullptr, SPELL_RIPPED_SOUL_AOE, TRIGGERED_FULL_MASK);
             Unit::DealDamage(me, me, me->GetMaxHealth() / 2);   // spawns at half health
             me->SetWalk(true);
             me->GetMotionMaster()->MoveFollow(altimor, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
@@ -470,7 +483,7 @@ class spell_vicious_lunge_damage : public SpellScript
         SetHitDamage(GetHitDamage() / int32(_targetCount));
         if (Unit* caster = GetCaster())
             if (caster->GetMap()->IsHeroic())
-                caster->CastSpell(GetHitUnit(), SPELL_VICIOUS_WOUND, true);
+                caster->CastSpell(GetHitUnit(), SPELL_VICIOUS_WOUND, TRIGGERED_FULL_MASK);
     }
 
     void Register() override

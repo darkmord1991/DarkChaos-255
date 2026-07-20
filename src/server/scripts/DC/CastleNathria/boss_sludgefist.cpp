@@ -76,8 +76,12 @@ enum Spells
 
 enum Events
 {
-    EVENT_ENERGY_GAIN = 1
-    // The remaining events reuse their spell ids, as in the source.
+    EVENT_ENERGY_GAIN = 1,
+    EVENT_COLOSSAL_ROAR_CAST = 2,  // was raw SPELL_COLOSSAL_ROAR_CAST
+    EVENT_GIANT_FISTS_DAMAGE = 3,  // was raw SPELL_GIANT_FISTS_DAMAGE
+    EVENT_FALLING_RUMBLE_MISSILE = 4,  // was raw SPELL_FALLING_RUMBLE_MISSILE
+    EVENT_DESTRUCTIVE_STOMP = 5,  // was raw SPELL_DESTRUCTIVE_STOMP
+    EVENT_SEISMIC_SHIFT_TRIGGER = 6  // was raw SPELL_SEISMIC_SHIFT_TRIGGER
 };
 
 enum Texts
@@ -137,12 +141,12 @@ struct boss_sludgefist : public BossAI
         _JustEngagedWith();
         Talk(SAY_AGGRO);
         events.ScheduleEvent(EVENT_ENERGY_GAIN, 1s);
-        events.ScheduleEvent(SPELL_COLOSSAL_ROAR_CAST, 1s);
-        events.ScheduleEvent(SPELL_GIANT_FISTS_DAMAGE, 2s);
-        events.ScheduleEvent(SPELL_FALLING_RUMBLE_MISSILE, 12s);
-        events.ScheduleEvent(SPELL_DESTRUCTIVE_STOMP, 17s);
+        events.ScheduleEvent(EVENT_COLOSSAL_ROAR_CAST, 1s);
+        events.ScheduleEvent(EVENT_GIANT_FISTS_DAMAGE, 2s);
+        events.ScheduleEvent(EVENT_FALLING_RUMBLE_MISSILE, 12s);
+        events.ScheduleEvent(EVENT_DESTRUCTIVE_STOMP, 17s);
         if (IsHeroic()) // TODO(port): Mythic-only on retail; 3.3.5 heroic is the nearest difficulty
-            events.ScheduleEvent(SPELL_SEISMIC_SHIFT_TRIGGER, 16s);
+            events.ScheduleEvent(EVENT_SEISMIC_SHIFT_TRIGGER, 16s);
     }
 
     void ExecuteEvent(uint32 eventId) override
@@ -175,38 +179,38 @@ struct boss_sludgefist : public BossAI
                 me->ModifyPower(POWER_ENERGY, 2);
                 events.Repeat(1s);
                 break;
-            case SPELL_GIANT_FISTS_DAMAGE:
+            case EVENT_GIANT_FISTS_DAMAGE:
                 if (Unit* target = SelectTarget(SelectTargetMethod::MinDistance, 0, 10.0f, true))
                 {
-                    me->CastSpell(target, SPELL_GIANT_FISTS_DAMAGE, true);
+                    me->CastSpell(target, SPELL_GIANT_FISTS_DAMAGE, TRIGGERED_FULL_MASK);
                     // Source: the blow lands twice when no other player shares it within 10 yards.
                     if (!HasOtherPlayerNear(target, 10.0f))
-                        me->CastSpell(target, SPELL_GIANT_FISTS_DAMAGE, true);
+                        me->CastSpell(target, SPELL_GIANT_FISTS_DAMAGE, TRIGGERED_FULL_MASK);
                 }
                 events.Repeat(2s);
                 break;
-            case SPELL_DESTRUCTIVE_STOMP:
+            case EVENT_DESTRUCTIVE_STOMP:
                 Talk(SAY_ANNOUNCE_DESTRUCTIVE_STOMP);
                 Talk(SAY_DESTRUCTIVE_STOMP);
                 DoCastAOE(SPELL_DESTRUCTIVE_STOMP);
                 events.Repeat(20s, 25s);
                 break;
-            case SPELL_FALLING_RUMBLE_MISSILE:
+            case EVENT_FALLING_RUMBLE_MISSILE:
             {
                 UnitList targetList;
                 SelectTargetList(targetList, 5, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
                 {
-                    me->CastSpell(target, SPELL_FALLING_RUMBLE_MISSILE, true);
+                    me->CastSpell(target, SPELL_FALLING_RUMBLE_MISSILE, TRIGGERED_FULL_MASK);
                     // TODO(port): at_stonequake gave these pools enter/exit aura handling; static
                     // ground casts only until the spell_dbc downports exist (persistent-area-aura).
-                    me->CastSpell(target, SPELL_STONEQUAKE_CREATE_AT_ONE, true);
-                    me->CastSpell(target, SPELL_STONEQUAKE_CREATE_AT_TWO, true);
+                    me->CastSpell(target, SPELL_STONEQUAKE_CREATE_AT_ONE, TRIGGERED_FULL_MASK);
+                    me->CastSpell(target, SPELL_STONEQUAKE_CREATE_AT_TWO, TRIGGERED_FULL_MASK);
                 }
                 events.Repeat(15s, 18s);
                 break;
             }
-            case SPELL_COLOSSAL_ROAR_CAST:
+            case EVENT_COLOSSAL_ROAR_CAST:
                 DoCastAOE(SPELL_COLOSSAL_ROAR_CAST);
                 // TODO(port): source fired the damage from an OnSpellFinished hook; the 3.3.5
                 // CreatureAI has no such hook, so the impact is scheduled off the cast start.
@@ -216,7 +220,7 @@ struct boss_sludgefist : public BossAI
                 });
                 events.Repeat(30s);
                 break;
-            case SPELL_SEISMIC_SHIFT_TRIGGER:
+            case EVENT_SEISMIC_SHIFT_TRIGGER:
                 DoCastSelf(SPELL_SEISMIC_SHIFT_TRIGGER, true);
                 // TODO(port): OnSpellFinished substitute -- the trigger cast is instant, apply now.
                 ForEachPlayerInRoom([this](Player* player)
@@ -226,7 +230,7 @@ struct boss_sludgefist : public BossAI
                     scheduler.Schedule(4100ms, [this, playerGuid](TaskContext /*context*/)
                     {
                         if (Unit* target = ObjectAccessor::GetUnit(*me, playerGuid))
-                            me->CastSpell(target, SPELL_SEISMIC_SHIFT_DAMAGE, true);
+                            me->CastSpell(target, SPELL_SEISMIC_SHIFT_DAMAGE, TRIGGERED_FULL_MASK);
                     });
                 });
                 events.Repeat(28s);
@@ -253,7 +257,7 @@ struct boss_sludgefist : public BossAI
                     return;
 
                 _chargeHitGuids.insert(player->GetGUID());
-                me->CastSpell(player, SPELL_HEADLESS_CHARGE_MAIN, true);
+                me->CastSpell(player, SPELL_HEADLESS_CHARGE_MAIN, TRIGGERED_FULL_MASK);
             });
             context.Repeat(200ms);
         });

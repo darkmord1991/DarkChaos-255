@@ -380,7 +380,7 @@ private:
         SelectTargetList(targets, urand(3, 4), SelectTargetMethod::Random, 0, 100.0f, true);
         for (Unit* target : targets)
         {
-            me->CastSpell(target, SPELL_IMPALE_MARK, true); // TODO(spell_dbc)
+            me->CastSpell(target, SPELL_IMPALE_MARK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
             ObjectGuid targetGuid = target->GetGUID();
             scheduler.Schedule(6100ms, [this, targetGuid](TaskContext /*context*/)
             {
@@ -388,9 +388,9 @@ private:
                 if (!target)
                     return;
 
-                me->CastSpell(target, SPELL_IMPALE_DAMAGE, true); // TODO(spell_dbc)
+                me->CastSpell(target, SPELL_IMPALE_DAMAGE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
                 if (target->HasAura(SPELL_CARNAGE_PERIODIC))
-                    me->CastSpell(target, SPELL_CARNAGE_PERIODIC, true); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_CARNAGE_PERIODIC, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
 
                 if (IsHeroic())
                 {
@@ -491,7 +491,7 @@ struct boss_sire_denathrius : public BossAI
                 me->CastSpell(nullptr, SPELL_SHATTERING_PAIN_TRIGGER); // TODO(spell_dbc)
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 25.0f, true))
                 {
-                    me->CastSpell(target, SPELL_SHATTERING_PAIN_DAMAGE, true); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_SHATTERING_PAIN_DAMAGE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
                     scheduler.Schedule(3100ms, [this](TaskContext /*context*/)
                     {
                         me->CastSpell(nullptr, SPELL_SHATTERING_PAIN_DAMAGE_KNOCK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
@@ -673,7 +673,7 @@ private:
         if (!target)
             return;
 
-        remornia->CastSpell(target, SPELL_RAVAGE_CAST_DUMMY, false); // TODO(spell_dbc)
+        remornia->CastSpell(target, SPELL_RAVAGE_CAST_DUMMY); // TODO(spell_dbc)
         ObjectGuid remorniaGuid = remornia->GetGUID();
         ObjectGuid targetGuid = target->GetGUID();
         scheduler.Schedule(6100ms, [this, remorniaGuid, targetGuid](TaskContext /*context*/)
@@ -736,7 +736,7 @@ private:
         {
             for (Unit* target : targets)
             {
-                me->CastSpell(target, SPELL_FEEDING_TIME_MARK, true); // TODO(spell_dbc)
+                me->CastSpell(target, SPELL_FEEDING_TIME_MARK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
                 ObjectGuid targetGuid = target->GetGUID();
                 scheduler.Schedule(5100ms, [this, targetGuid](TaskContext /*context*/)
                 {
@@ -748,7 +748,7 @@ private:
                     // until the summon spell exists in spell_dbc.
                     for (uint8 i = 0; i < 2; ++i)
                         me->SummonCreature(NPC_ECHO_OF_SIN, target->GetRandomNearPosition(8.0f), TEMPSUMMON_MANUAL_DESPAWN);
-                    me->CastSpell(target, SPELL_FEEDING_TIME_DRAIN_HEALTH, true); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_FEEDING_TIME_DRAIN_HEALTH, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
                 });
             }
         }
@@ -764,8 +764,8 @@ private:
                     if (!target)
                         return;
 
-                    target->CastSpell(target, SPELL_NIGHT_HUNTER_MISSILE, true); // TODO(spell_dbc)
-                    me->CastSpell(target, SPELL_NIGHT_HUNTER_DAMAGE, true);      // TODO(spell_dbc)
+                    target->CastSpell(target, SPELL_NIGHT_HUNTER_MISSILE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_NIGHT_HUNTER_DAMAGE, TRIGGERED_FULL_MASK);      // TODO(spell_dbc)
                 });
             }
         }
@@ -791,9 +791,9 @@ private:
                 if (!player)
                     return;
 
-                me->CastSpell(player, SPELL_BLOOD_PRICE_EFFECT, true);    // TODO(spell_dbc)
-                me->CastSpell(player, SPELL_BLOOD_PRICE_DAMAGE, true);    // TODO(spell_dbc)
-                me->CastSpell(player, SPELL_BLOOD_PRICE_KNOCKBACK, true); // TODO(spell_dbc)
+                me->CastSpell(player, SPELL_BLOOD_PRICE_EFFECT, TRIGGERED_FULL_MASK);    // TODO(spell_dbc)
+                me->CastSpell(player, SPELL_BLOOD_PRICE_DAMAGE, TRIGGERED_FULL_MASK);    // TODO(spell_dbc)
+                me->CastSpell(player, SPELL_BLOOD_PRICE_KNOCKBACK, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
             });
         }
     }
@@ -816,8 +816,8 @@ private:
 
                     // TODO(port): Smoldering Ire spawned SL AreaTriggers; casts kept for the
                     // DB-authoring phase.
-                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT, true);   // TODO(spell_dbc)
-                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT_2, true); // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT, TRIGGERED_FULL_MASK);   // TODO(spell_dbc)
+                    me->CastSpell(target, SPELL_SMOLDERING_IRE_CREATE_AT_2, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
                 });
             }
         }
@@ -946,7 +946,7 @@ struct npc_echo_of_sin : public ScriptedAI
 
     void IsSummonedBy(WorldObject* /*summoner*/) override
     {
-        SetCombatMovement(false);
+        me->GetMotionMaster()->MoveIdle();
         me->SetReactState(REACT_PASSIVE);
         me->CastSpell(nullptr, SPELL_PAINFUL_MEMORIES_CHANNEL); // TODO(spell_dbc)
     }
@@ -957,7 +957,7 @@ struct npc_nightcloak : public ScriptedAI
 {
     npc_nightcloak(Creature* creature) : ScriptedAI(creature)
     {
-        SetCombatMovement(false);
+        me->GetMotionMaster()->MoveIdle();
     }
 
     void Reset() override
@@ -1081,7 +1081,7 @@ class aura_burden_sin : public AuraScript
         if (!GetCaster() || !GetTarget())
             return;
 
-        GetCaster()->CastSpell(GetTarget(), SPELL_BURDEN_OF_SIN_DAMAGE, true); // TODO(spell_dbc)
+        GetCaster()->CastSpell(GetTarget(), SPELL_BURDEN_OF_SIN_DAMAGE, TRIGGERED_FULL_MASK); // TODO(spell_dbc)
     }
 
     void Register() override

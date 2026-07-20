@@ -81,8 +81,10 @@ enum Spells
 
 enum Events
 {
-    EVENT_GAIN_ENERGY = 1
-    // The remaining events reuse their spell ids, as in the source.
+    EVENT_GAIN_ENERGY = 1,
+    EVENT_GREATER_CASTIGNATION_CAST = 2,  // was raw SPELL_GREATER_CASTIGNATION_CAST
+    EVENT_FIERY_STRIKE = 3,  // was raw SPELL_FIERY_STRIKE
+    EVENT_EMBER_BLAST_CAST = 4  // was raw SPELL_EMBER_BLAST_CAST
 };
 
 enum Actions
@@ -197,11 +199,11 @@ struct boss_sun_kings_salvation : public BossAI
         switch (summon->GetEntry())
         {
             case NPC_VILE_OCCULTIST:
-                summon->CastSpell(nullptr, SPELL_SUMMON_ESSENCE_FONT, true);
+                summon->CastSpell(summon, SPELL_SUMMON_ESSENCE_FONT, TRIGGERED_FULL_MASK);
                 break;
             case NPC_PESTERING_FIEND:
                 if (IsHeroic()) // source: heroic + mythic; no mythic on 3.3.5
-                    summon->CastSpell(nullptr, SPELL_FRAGMENTATION, true);
+                    summon->CastSpell(nullptr, SPELL_FRAGMENTATION, TRIGGERED_FULL_MASK);
                 break;
             default:
                 break;
@@ -317,7 +319,7 @@ struct npc_high_torturer_darithos : public ScriptedAI
 
         // NOTE: the source scheduled its signature cast once and never repeated it
         // (its OnSpellFinished handler was empty); kept as-is.
-        events.ScheduleEvent(SPELL_GREATER_CASTIGNATION_CAST, 6s);
+        events.ScheduleEvent(EVENT_GREATER_CASTIGNATION_CAST, 6s);
     }
 
     void JustReachedHome() override
@@ -340,8 +342,8 @@ struct npc_high_torturer_darithos : public ScriptedAI
         {
             switch (eventId)
             {
-                case SPELL_GREATER_CASTIGNATION_CAST:
-                    me->CastSpell(nullptr, SPELL_GREATER_CASTIGNATION_CAST, false);
+                case EVENT_GREATER_CASTIGNATION_CAST:
+                    me->CastSpell(nullptr, SPELL_GREATER_CASTIGNATION_CAST);
                     break;
                 default:
                     break;
@@ -393,7 +395,7 @@ struct npc_shade_of_kaelthas : public ScriptedAI
                     if (!phoenix || !phoenix->IsAlive() || !phoenix->HasAura(SPELL_SMOLDERING_PLUMAGE_PERIODIC_TRIGER))
                         return;
 
-                    phoenix->CastSpell(nullptr, SPELL_SMOLDERING_REMNANTS_CREATE_AT_ONE, true);
+                    phoenix->CastSpell(nullptr, SPELL_SMOLDERING_REMNANTS_CREATE_AT_ONE, TRIGGERED_FULL_MASK);
                     context.Repeat(2500ms);
                 });
                 break;
@@ -409,8 +411,8 @@ struct npc_shade_of_kaelthas : public ScriptedAI
             _instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
 
         events.ScheduleEvent(EVENT_GAIN_ENERGY, 1s);
-        events.ScheduleEvent(SPELL_FIERY_STRIKE, 3s);
-        events.ScheduleEvent(SPELL_EMBER_BLAST_CAST, 10s);
+        events.ScheduleEvent(EVENT_FIERY_STRIKE, 3s);
+        events.ScheduleEvent(EVENT_EMBER_BLAST_CAST, 10s);
     }
 
     void UpdateAI(uint32 diff) override
@@ -431,7 +433,7 @@ struct npc_shade_of_kaelthas : public ScriptedAI
             me->SetPower(POWER_ENERGY, 0);
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
             {
-                me->CastSpell(target, SPELL_BLAZING_SURGE, false);
+                me->CastSpell(target, SPELL_BLAZING_SURGE);
                 ObjectGuid targetGuid = target->GetGUID();
                 scheduler.Schedule(3100ms, [this, targetGuid](TaskContext /*context*/)
                 {
@@ -457,18 +459,18 @@ struct npc_shade_of_kaelthas : public ScriptedAI
                     me->ModifyPower(POWER_ENERGY, 5);
                     events.Repeat(1s);
                     break;
-                case SPELL_FIERY_STRIKE:
+                case EVENT_FIERY_STRIKE:
                     if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                     {
                         me->SetFacingToObject(target);
-                        me->CastSpell(target, SPELL_FIERY_STRIKE, false);
+                        me->CastSpell(target, SPELL_FIERY_STRIKE);
                     }
                     events.Repeat(15s, 20s);
                     break;
-                case SPELL_EMBER_BLAST_CAST:
+                case EVENT_EMBER_BLAST_CAST:
                     // NOTE: not repeated in the source either.
                     if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
-                        me->CastSpell(target, SPELL_EMBER_BLAST_CAST, false);
+                        me->CastSpell(target, SPELL_EMBER_BLAST_CAST);
                     break;
                 default:
                     break;

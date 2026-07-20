@@ -81,6 +81,20 @@ enum Spells
     SPELL_STASIS_TRAP_STUN              = 326302    // TODO(spell_dbc): SL spell, needs downport row
 };
 
+enum Events
+{
+    EVENT_HYPERLIGHT_SPARK = 1,  // was raw SPELL_HYPERLIGHT_SPARK
+    EVENT_DIMENSIONAL_TEAR_CAST = 2,  // was raw SPELL_DIMENSIONAL_TEAR_CAST
+    EVENT_GLYPH_OF_DESTRUCTION = 3,  // was raw SPELL_GLYPH_OF_DESTRUCTION
+    EVENT_RIFT_BLAST_CAST = 4,  // was raw SPELL_RIFT_BLAST_CAST
+    EVENT_CRYSTAL_OF_PHANTASM = 5,  // was raw SPELL_CRYSTAL_OF_PHANTASM
+    EVENT_STASIS_TRAP_CAST = 6,  // was raw SPELL_STASIS_TRAP_CAST
+    EVENT_ROOT_OF_EXTINCTION_CAST = 7,  // was raw SPELL_ROOT_OF_EXTINCTION_CAST
+    EVENT_SEED_OF_EXTINCTION_CAST = 8,  // was raw SPELL_SEED_OF_EXTINCTION_CAST
+    EVENT_WITHERING_TOUCH_MISSILE = 9,  // was raw SPELL_WITHERING_TOUCH_MISSILE
+    EVENT_EDGE_OF_ANNIHILATION_CAST = 10  // was raw SPELL_EDGE_OF_ANNIHILATION_CAST
+};
+
 enum Texts
 {
     // creature_text GroupIDs for entry 166644 (Custom/.../worlddb/CastleNathria/09_creature_text.sql).
@@ -123,13 +137,13 @@ struct boss_artificer_xymox : public BossAI
     {
         _JustEngagedWith();
         Talk(SAY_AGGRO);
-        events.ScheduleEvent(SPELL_HYPERLIGHT_SPARK, 4800ms);
-        events.ScheduleEvent(SPELL_DIMENSIONAL_TEAR_CAST, 13s);
-        events.ScheduleEvent(SPELL_GLYPH_OF_DESTRUCTION, 8s);
-        events.ScheduleEvent(SPELL_RIFT_BLAST_CAST, 19s);
-        events.ScheduleEvent(SPELL_CRYSTAL_OF_PHANTASM, 25s);
+        events.ScheduleEvent(EVENT_HYPERLIGHT_SPARK, 4800ms);
+        events.ScheduleEvent(EVENT_DIMENSIONAL_TEAR_CAST, 13s);
+        events.ScheduleEvent(EVENT_GLYPH_OF_DESTRUCTION, 8s);
+        events.ScheduleEvent(EVENT_RIFT_BLAST_CAST, 19s);
+        events.ScheduleEvent(EVENT_CRYSTAL_OF_PHANTASM, 25s);
         if (IsHeroic()) // source: heroic + mythic; no mythic on 3.3.5
-            events.ScheduleEvent(SPELL_STASIS_TRAP_CAST, 10s);
+            events.ScheduleEvent(EVENT_STASIS_TRAP_CAST, 10s);
     }
 
     void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask) override
@@ -140,18 +154,18 @@ struct boss_artificer_xymox : public BossAI
         {
             _stageTwo = true;
             events.Reset();
-            events.ScheduleEvent(SPELL_HYPERLIGHT_SPARK, 4800ms);
-            events.ScheduleEvent(SPELL_DIMENSIONAL_TEAR_CAST, 13s);
-            events.ScheduleEvent(SPELL_GLYPH_OF_DESTRUCTION, 8s);
-            events.ScheduleEvent(SPELL_RIFT_BLAST_CAST, 19s);
+            events.ScheduleEvent(EVENT_HYPERLIGHT_SPARK, 4800ms);
+            events.ScheduleEvent(EVENT_DIMENSIONAL_TEAR_CAST, 13s);
+            events.ScheduleEvent(EVENT_GLYPH_OF_DESTRUCTION, 8s);
+            events.ScheduleEvent(EVENT_RIFT_BLAST_CAST, 19s);
             if (IsHeroic())
             {
-                events.ScheduleEvent(SPELL_STASIS_TRAP_CAST, 10s);
-                events.ScheduleEvent(SPELL_CRYSTAL_OF_PHANTASM, 25s);
+                events.ScheduleEvent(EVENT_STASIS_TRAP_CAST, 10s);
+                events.ScheduleEvent(EVENT_CRYSTAL_OF_PHANTASM, 25s);
             }
-            events.ScheduleEvent(SPELL_ROOT_OF_EXTINCTION_CAST, 3s);
-            events.ScheduleEvent(SPELL_SEED_OF_EXTINCTION_CAST, 45s);
-            events.ScheduleEvent(SPELL_WITHERING_TOUCH_MISSILE, 50s);
+            events.ScheduleEvent(EVENT_ROOT_OF_EXTINCTION_CAST, 3s);
+            events.ScheduleEvent(EVENT_SEED_OF_EXTINCTION_CAST, 45s);
+            events.ScheduleEvent(EVENT_WITHERING_TOUCH_MISSILE, 50s);
         }
 
         if (HealthBelowPct(40) && !_stageThree)
@@ -162,16 +176,16 @@ struct boss_artificer_xymox : public BossAI
             if (Creature* root = me->FindNearestCreature(NPC_ROOT_OF_EXTINCTION, 100.0f, true))
                 root->DespawnOrUnsummon();
 
-            events.ScheduleEvent(SPELL_HYPERLIGHT_SPARK, 4800ms);
-            events.ScheduleEvent(SPELL_DIMENSIONAL_TEAR_CAST, 13s);
-            events.ScheduleEvent(SPELL_GLYPH_OF_DESTRUCTION, 8s);
-            events.ScheduleEvent(SPELL_RIFT_BLAST_CAST, 19s);
+            events.ScheduleEvent(EVENT_HYPERLIGHT_SPARK, 4800ms);
+            events.ScheduleEvent(EVENT_DIMENSIONAL_TEAR_CAST, 13s);
+            events.ScheduleEvent(EVENT_GLYPH_OF_DESTRUCTION, 8s);
+            events.ScheduleEvent(EVENT_RIFT_BLAST_CAST, 19s);
             if (IsHeroic())
             {
-                events.ScheduleEvent(SPELL_STASIS_TRAP_CAST, 10s);
-                events.ScheduleEvent(SPELL_CRYSTAL_OF_PHANTASM, 25s);
+                events.ScheduleEvent(EVENT_STASIS_TRAP_CAST, 10s);
+                events.ScheduleEvent(EVENT_CRYSTAL_OF_PHANTASM, 25s);
             }
-            events.ScheduleEvent(SPELL_EDGE_OF_ANNIHILATION_CAST, 3s);
+            events.ScheduleEvent(EVENT_EDGE_OF_ANNIHILATION_CAST, 3s);
         }
     }
 
@@ -181,16 +195,16 @@ struct boss_artificer_xymox : public BossAI
         // CreatureAI has no such hook, so impacts are scheduled off the cast start (~SL cast time).
         switch (eventId)
         {
-            case SPELL_HYPERLIGHT_SPARK:
+            case EVENT_HYPERLIGHT_SPARK:
                 ForEachPlayerInRoom([this](Player* player)
                 {
-                    me->CastSpell(player, SPELL_HYPERLIGHT_SPARK, false);
+                    me->CastSpell(player, SPELL_HYPERLIGHT_SPARK);
                 });
                 events.Repeat(14s, 18s);
                 break;
-            case SPELL_DIMENSIONAL_TEAR_CAST:
+            case EVENT_DIMENSIONAL_TEAR_CAST:
                 Talk(SAY_DIMENSIONAL_TEAR);
-                me->CastSpell(nullptr, SPELL_DIMENSIONAL_TEAR_CAST, false);
+                me->CastSpell(nullptr, SPELL_DIMENSIONAL_TEAR_CAST);
                 scheduler.Schedule(3s, [this](TaskContext /*context*/)
                 {
                     UnitList targetList;
@@ -202,17 +216,17 @@ struct boss_artificer_xymox : public BossAI
                         scheduler.Schedule(8100ms, [this, targetGuid](TaskContext /*context*/)
                         {
                             if (Unit* target = ObjectAccessor::GetUnit(*me, targetGuid))
-                                me->CastSpell(target, SPELL_DIMENSIONAL_TEAR_EXP, true);
+                                me->CastSpell(target, SPELL_DIMENSIONAL_TEAR_EXP, TRIGGERED_FULL_MASK);
                         });
                     }
                 });
                 events.Repeat(40s);
                 break;
-            case SPELL_GLYPH_OF_DESTRUCTION:
+            case EVENT_GLYPH_OF_DESTRUCTION:
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 100.0f, true))
                 {
                     Talk(SAY_GLYPH_OF_DESTRUCTION);
-                    me->CastSpell(target, SPELL_GLYPH_OF_DESTRUCTION, false);
+                    me->CastSpell(target, SPELL_GLYPH_OF_DESTRUCTION);
                     ObjectGuid targetGuid = target->GetGUID();
                     scheduler.Schedule(3s, [this, targetGuid](TaskContext /*context*/)
                     {
@@ -222,13 +236,13 @@ struct boss_artificer_xymox : public BossAI
                     scheduler.Schedule(7s, [this, targetGuid](TaskContext /*context*/) // 3s cast + 4s fuse
                     {
                         if (Unit* target = ObjectAccessor::GetUnit(*me, targetGuid))
-                            me->CastSpell(target, SPELL_GLYPH_OF_DESTRUCTION_EXP, true);
+                            me->CastSpell(target, SPELL_GLYPH_OF_DESTRUCTION_EXP, TRIGGERED_FULL_MASK);
                     });
                 }
                 events.Repeat(30s);
                 break;
-            case SPELL_RIFT_BLAST_CAST:
-                me->CastSpell(nullptr, SPELL_RIFT_BLAST_CAST, false);
+            case EVENT_RIFT_BLAST_CAST:
+                me->CastSpell(nullptr, SPELL_RIFT_BLAST_CAST);
                 // NOTE: the source re-blasted every rift in the grid per summon; simplified to
                 // one blast per freshly summoned rift.
                 scheduler.Schedule(3s, [this](TaskContext /*context*/)
@@ -240,31 +254,31 @@ struct boss_artificer_xymox : public BossAI
                             if (Unit* blastTarget = SelectTarget(SelectTargetMethod::Random, 0, 30.0f, true))
                             {
                                 rift->SetFacingToObject(blastTarget);
-                                rift->CastSpell(blastTarget, SPELL_RIFT_BLAST_DAMAGE, false);
+                                rift->CastSpell(blastTarget, SPELL_RIFT_BLAST_DAMAGE);
                             }
                 });
                 events.Repeat(45s);
                 break;
-            case SPELL_CRYSTAL_OF_PHANTASM:
+            case EVENT_CRYSTAL_OF_PHANTASM:
                 Talk(SAY_CRYSTAL_OF_PHANTASM);
-                me->CastSpell(nullptr, SPELL_CRYSTAL_OF_PHANTASM, false);
+                me->CastSpell(nullptr, SPELL_CRYSTAL_OF_PHANTASM);
                 scheduler.Schedule(3s, [this](TaskContext /*context*/)
                 {
                     me->SummonCreature(NPC_FLEETING_SPIRIT, me->GetPosition(), TEMPSUMMON_MANUAL_DESPAWN);
                 });
                 events.Repeat(50s);
                 break;
-            case SPELL_ROOT_OF_EXTINCTION_CAST:
+            case EVENT_ROOT_OF_EXTINCTION_CAST:
                 Talk(SAY_ROOT_OF_EXTINCTION);
-                me->CastSpell(nullptr, SPELL_ROOT_OF_EXTINCTION_CAST, false);
+                me->CastSpell(nullptr, SPELL_ROOT_OF_EXTINCTION_CAST);
                 scheduler.Schedule(3s, [this](TaskContext /*context*/)
                 {
                     me->SummonCreature(NPC_ROOT_OF_EXTINCTION, RootOfExtinctionSpawnPos, TEMPSUMMON_MANUAL_DESPAWN);
                 });
                 break;
-            case SPELL_SEED_OF_EXTINCTION_CAST:
+            case EVENT_SEED_OF_EXTINCTION_CAST:
                 Talk(SAY_SEED_OF_EXTINCTION);
-                me->CastSpell(nullptr, SPELL_SEED_OF_EXTINCTION_CAST, false);
+                me->CastSpell(nullptr, SPELL_SEED_OF_EXTINCTION_CAST);
                 // TODO(port): mythic spawned 8 seeds; no mythic on 3.3.5, always 4.
                 scheduler.Schedule(3s, [this](TaskContext /*context*/)
                 {
@@ -273,27 +287,27 @@ struct boss_artificer_xymox : public BossAI
                 });
                 events.Repeat(45s);
                 break;
-            case SPELL_WITHERING_TOUCH_MISSILE:
+            case EVENT_WITHERING_TOUCH_MISSILE:
                 DoCastRandomTarget(SPELL_WITHERING_TOUCH_MISSILE, 0, 100.0f, true, true);
                 events.Repeat(21s);
                 break;
-            case SPELL_EDGE_OF_ANNIHILATION_CAST:
+            case EVENT_EDGE_OF_ANNIHILATION_CAST:
                 Talk(SAY_EDGE_OF_ANNIHILATION);
-                me->CastSpell(nullptr, SPELL_EDGE_OF_ANNIHILATION_CAST, false);
+                me->CastSpell(nullptr, SPELL_EDGE_OF_ANNIHILATION_CAST);
                 scheduler.Schedule(3s, [this](TaskContext /*context*/)
                 {
                     me->SummonCreature(NPC_EDGE_OF_ANNIHILATION, EdgeOfAnnihilationSpawnPos, TEMPSUMMON_MANUAL_DESPAWN);
                 });
                 break;
-            case SPELL_STASIS_TRAP_CAST:
+            case EVENT_STASIS_TRAP_CAST:
             {
                 Talk(SAY_STASIS_TRAP);
-                me->CastSpell(nullptr, SPELL_STASIS_TRAP_CAST, true);
+                me->CastSpell(nullptr, SPELL_STASIS_TRAP_CAST, TRIGGERED_FULL_MASK);
                 UnitList targetList;
                 SelectTargetList(targetList, 3, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
                 {
-                    me->CastSpell(target, SPELL_STASIS_TRAP_TRIGGER, true);
+                    me->CastSpell(target, SPELL_STASIS_TRAP_TRIGGER, TRIGGERED_FULL_MASK);
                     // TODO(port): the trigger created a Stasis Trap AreaTrigger (at_stasis_trap);
                     // substituted with the NPC_STASIS_TRAP trigger creature. Its stun
                     // (SPELL_STASIS_TRAP_STUN) needs the spell_dbc downport authored as a
@@ -332,7 +346,7 @@ struct boss_artificer_xymox : public BossAI
             {
                 summon->SetFaction(35);
                 summon->SetNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
-                summon->CastSpell(nullptr, SPELL_ROOT_OF_EXTINCTION_CREATE_AT, false);
+                summon->CastSpell(nullptr, SPELL_ROOT_OF_EXTINCTION_CREATE_AT);
                 ObjectGuid seedGuid = summon->GetGUID();
                 scheduler.Schedule(18100ms, [this, seedGuid](TaskContext /*context*/)
                 {
@@ -340,7 +354,7 @@ struct boss_artificer_xymox : public BossAI
                     if (!seed)
                         return;
 
-                    seed->CastSpell(nullptr, SPELL_SEED_OF_EXTINCTION_EXP, true);
+                    seed->CastSpell(nullptr, SPELL_SEED_OF_EXTINCTION_EXP, TRIGGERED_FULL_MASK);
                     seed->DespawnOrUnsummon();
                 });
                 break;
@@ -353,7 +367,7 @@ struct boss_artificer_xymox : public BossAI
                 summon->AddAura(SPELL_EDGE_OF_ANNIHILATION_VISUAL, summon);
                 ForEachPlayerInRoom([summon](Player* player)
                 {
-                    summon->CastSpell(player, SPELL_AURA_OF_DREAD, true);
+                    summon->CastSpell(player, SPELL_AURA_OF_DREAD, TRIGGERED_FULL_MASK);
                 });
                 break;
             default:
@@ -408,12 +422,12 @@ struct npc_root_of_extinction : public ScriptedAI
 {
     npc_root_of_extinction(Creature* creature) : ScriptedAI(creature)
     {
-        SetCombatMovement(false);
+        me->GetMotionMaster()->MoveIdle();
     }
 
     void Reset() override
     {
-        me->CastSpell(nullptr, SPELL_ROOT_OF_EXTINCTION_VISUAL, true);
+        me->CastSpell(nullptr, SPELL_ROOT_OF_EXTINCTION_VISUAL, TRIGGERED_FULL_MASK);
     }
 };
 

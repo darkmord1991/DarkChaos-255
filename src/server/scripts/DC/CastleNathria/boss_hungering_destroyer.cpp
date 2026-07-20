@@ -69,7 +69,12 @@ enum Spells
 
 enum Events
 {
-    EVENT_GAIN_ENERGY = 1
+    EVENT_GAIN_ENERGY = 1,
+    EVENT_GLUTTONOUS_MIASMA = 2,  // was raw SPELL_GLUTTONOUS_MIASMA
+    EVENT_OVERWHELM = 3,  // was raw SPELL_OVERWHELM
+    EVENT_VOLATILE_EJECTION_CAST = 4,  // was raw SPELL_VOLATILE_EJECTION_CAST
+    EVENT_DESOLATE = 5,  // was raw SPELL_DESOLATE
+    EVENT_CONSUME = 6  // was raw SPELL_CONSUME
 };
 
 // NOTE: no creature_text in DB yet for 164261 (see Custom/.../worlddb/CastleNathria/09_creature_text.sql);
@@ -93,13 +98,13 @@ struct boss_hungering_destroyer : public BossAI
     {
         _JustEngagedWith();
         events.ScheduleEvent(EVENT_GAIN_ENERGY, 1s);
-        events.ScheduleEvent(SPELL_GLUTTONOUS_MIASMA, 3s);
-        events.ScheduleEvent(SPELL_OVERWHELM, 5s);
-        events.ScheduleEvent(SPELL_VOLATILE_EJECTION_CAST, 10s);
-        events.ScheduleEvent(SPELL_DESOLATE, 22s);
+        events.ScheduleEvent(EVENT_GLUTTONOUS_MIASMA, 3s);
+        events.ScheduleEvent(EVENT_OVERWHELM, 5s);
+        events.ScheduleEvent(EVENT_VOLATILE_EJECTION_CAST, 10s);
+        events.ScheduleEvent(EVENT_DESOLATE, 22s);
         // Source quirk kept: SPELL_CONSUME has no switch case -- the pop only matters as an
         // extra tick of the full-energy check below (Consume is energy-driven).
-        events.ScheduleEvent(SPELL_CONSUME, 92s);
+        events.ScheduleEvent(EVENT_CONSUME, 92s);
     }
 
     void ExecuteEvent(uint32 eventId) override
@@ -109,7 +114,7 @@ struct boss_hungering_destroyer : public BossAI
         if (me->GetPower(POWER_ENERGY) == 100)
         {
             me->SetPower(POWER_ENERGY, 0);
-            me->CastSpell(nullptr, SPELL_CONSUME, false);
+            me->CastSpell(me, SPELL_CONSUME);
         }
 
         switch (eventId)
@@ -118,11 +123,11 @@ struct boss_hungering_destroyer : public BossAI
                 me->ModifyPower(POWER_ENERGY, 1);
                 events.Repeat(1s);
                 break;
-            case SPELL_OVERWHELM:
+            case EVENT_OVERWHELM:
                 DoCastVictim(SPELL_OVERWHELM, false);
                 events.Repeat(20s);
                 break;
-            case SPELL_GLUTTONOUS_MIASMA:
+            case EVENT_GLUTTONOUS_MIASMA:
             {
                 UnitList targetList;
                 SelectTargetList(targetList, 3, SelectTargetMethod::Random, 0, 100.0f, true);
@@ -131,11 +136,11 @@ struct boss_hungering_destroyer : public BossAI
                 events.Repeat(24s);
                 break;
             }
-            case SPELL_VOLATILE_EJECTION_CAST:
-                me->CastSpell(nullptr, SPELL_VOLATILE_EJECTION_CAST, false);
+            case EVENT_VOLATILE_EJECTION_CAST:
+                me->CastSpell(nullptr, SPELL_VOLATILE_EJECTION_CAST);
                 events.Repeat(30s);
                 break;
-            case SPELL_DESOLATE:
+            case EVENT_DESOLATE:
                 DoCastAOE(SPELL_DESOLATE, false);
                 events.Repeat(60s);
                 break;
@@ -169,7 +174,7 @@ class aura_expunge : public AuraScript
     void HandleRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (GetTarget()->GetMap()->IsHeroic())
-            GetTarget()->CastSpell(nullptr, SPELL_OBLITERATING_RIFT_CREATE_AT, true);
+            GetTarget()->CastSpell(nullptr, SPELL_OBLITERATING_RIFT_CREATE_AT, TRIGGERED_FULL_MASK);
     }
 
     void Register() override
@@ -189,13 +194,13 @@ class aura_gluttonous_miasma : public AuraScript
     {
         if (GetCaster() && GetTarget())
         {
-            GetTarget()->CastSpell(nullptr, SPELL_GLUTTONOUS_MIASMA_DAMAGE, true);
-            GetTarget()->CastSpell(nullptr, SPELL_GLUTTONOUS_MIASMA_HEAL, true);
+            GetTarget()->CastSpell(nullptr, SPELL_GLUTTONOUS_MIASMA_DAMAGE, TRIGGERED_FULL_MASK);
+            GetTarget()->CastSpell(nullptr, SPELL_GLUTTONOUS_MIASMA_HEAL, TRIGGERED_FULL_MASK);
         }
 
         // Mythic-only Essence Sap, but the source fired it on heroic as well -- kept.
         if (GetTarget()->GetMap()->IsHeroic())
-            GetTarget()->CastSpell(nullptr, SPELL_ESSENCE_SAP, true);
+            GetTarget()->CastSpell(nullptr, SPELL_ESSENCE_SAP, TRIGGERED_FULL_MASK);
     }
 
     void Register() override

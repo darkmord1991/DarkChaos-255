@@ -87,8 +87,16 @@ enum Spells
 
 enum Events
 {
-    EVENT_STONEFORM_ADDS = 1
-    // The remaining events reuse their spell ids, as in the source.
+    EVENT_STONEFORM_ADDS = 1,
+    EVENT_STONE_SPIKE_MISSILE = 2,  // was raw SPELL_STONE_SPIKE_MISSILE
+    EVENT_STONE_BREAKERS_COMBO = 3,  // was raw SPELL_STONE_BREAKERS_COMBO
+    EVENT_SERRATED_SWIPE = 4,  // was raw SPELL_SERRATED_SWIPE
+    EVENT_HEART_REND = 5,  // was raw SPELL_HEART_REND
+    EVENT_WICKED_BLADE = 6,  // was raw SPELL_WICKED_BLADE
+    EVENT_RICOCHETING_SHURIKEN = 7,  // was raw SPELL_RICOCHETING_SHURIKEN
+    EVENT_STONE_FIST = 8,  // was raw SPELL_STONE_FIST
+    EVENT_SEISMIC_UPHEAVAL_MISSILE = 9,  // was raw SPELL_SEISMIC_UPHEAVAL_MISSILE
+    EVENT_REVERBERATING_ERUPTION_MARK = 10  // was raw SPELL_REVERBERATING_ERUPTION_MARK
 };
 
 enum Actions
@@ -182,14 +190,14 @@ struct boss_stone_legion_generals : public BossAI
         {
             case NPC_GENERAL_GRASHAAL:
                 Talk(SAY_GRASHAAL_AGGRO);
-                events.ScheduleEvent(SPELL_STONE_SPIKE_MISSILE, 5s);
-                events.ScheduleEvent(SPELL_STONE_BREAKERS_COMBO, 30s);
+                events.ScheduleEvent(EVENT_STONE_SPIKE_MISSILE, 5s);
+                events.ScheduleEvent(EVENT_STONE_BREAKERS_COMBO, 30s);
                 break;
             case NPC_GENERAL_KAAL:
                 Talk(SAY_KAAL_AGGRO);
-                events.ScheduleEvent(SPELL_SERRATED_SWIPE, 5s);
-                events.ScheduleEvent(SPELL_HEART_REND, 10s);
-                events.ScheduleEvent(SPELL_WICKED_BLADE, 15s);
+                events.ScheduleEvent(EVENT_SERRATED_SWIPE, 5s);
+                events.ScheduleEvent(EVENT_HEART_REND, 10s);
+                events.ScheduleEvent(EVENT_WICKED_BLADE, 15s);
                 break;
             default:
                 break;
@@ -200,20 +208,20 @@ struct boss_stone_legion_generals : public BossAI
     {
         switch (eventId)
         {
-            case SPELL_STONE_SPIKE_MISSILE:
+            case EVENT_STONE_SPIKE_MISSILE:
             {
                 UnitList targetList;
                 SelectTargetList(targetList, 5, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
-                    me->CastSpell(target, SPELL_STONE_SPIKE_MISSILE, true);
+                    me->CastSpell(target, SPELL_STONE_SPIKE_MISSILE, TRIGGERED_FULL_MASK);
                 events.Repeat(15s, 20s);
                 break;
             }
-            case SPELL_STONE_BREAKERS_COMBO:
+            case EVENT_STONE_BREAKERS_COMBO:
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 {
                     Talk(SAY_GRASHAAL_ANNOUNCE_CRYSTALIZE);
-                    me->CastSpell(target, SPELL_CRYSTALIZE_CHANNEL, false);
+                    me->CastSpell(target, SPELL_CRYSTALIZE_CHANNEL);
                     ObjectGuid targetGuid = target->GetGUID();
                     scheduler.Schedule(5100ms, [this, targetGuid](TaskContext /*context*/)
                     {
@@ -221,24 +229,24 @@ struct boss_stone_legion_generals : public BossAI
                         if (!target)
                             return;
 
-                        me->CastSpell(target, SPELL_CRYSTALLINE_BURST_DAMAGE, true);
+                        me->CastSpell(target, SPELL_CRYSTALLINE_BURST_DAMAGE, TRIGGERED_FULL_MASK);
                         ForEachPlayerNear(target, 8.0f, [this](Player* player)
                         {
-                            me->CastSpell(player, SPELL_CRYSTALLINE_BURST_DAMAGE, true);
+                            me->CastSpell(player, SPELL_CRYSTALLINE_BURST_DAMAGE, TRIGGERED_FULL_MASK);
                         });
-                        me->CastSpell(target, SPELL_PULVERIZING_METEOR_MISSILE, false);
+                        me->CastSpell(target, SPELL_PULVERIZING_METEOR_MISSILE);
                     });
                 }
                 events.Repeat(60s);
                 break;
-            case SPELL_SERRATED_SWIPE:
+            case EVENT_SERRATED_SWIPE:
                 DoCastVictim(SPELL_SERRATED_SWIPE);
                 events.Repeat(20s);
                 break;
-            case SPELL_HEART_REND:
+            case EVENT_HEART_REND:
             {
                 Talk(SAY_KAAL_HEART_REND);
-                me->CastSpell(me, SPELL_HEART_REND, false);
+                me->CastSpell(me, SPELL_HEART_REND);
                 UnitList targetList;
                 SelectTargetList(targetList, 4, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
@@ -246,7 +254,7 @@ struct boss_stone_legion_generals : public BossAI
                 events.Repeat(25s);
                 break;
             }
-            case SPELL_WICKED_BLADE:
+            case EVENT_WICKED_BLADE:
                 Talk(SAY_KAAL_WICKED_BLADE);
                 DoCastAOE(SPELL_WICKED_BLADE);
                 events.Repeat(30s);
@@ -256,17 +264,17 @@ struct boss_stone_legion_generals : public BossAI
                 for (uint8 i = 0; i < 3; ++i)
                     me->SummonCreature(NPC_STONE_LEGION_COMMANDO, me->GetRandomNearPosition(25.0f), TEMPSUMMON_MANUAL_DESPAWN);
                 break;
-            case SPELL_RICOCHETING_SHURIKEN:
+            case EVENT_RICOCHETING_SHURIKEN:
                 Talk(SAY_KAAL_SHURIKEN);
                 DoCastRandomTarget(SPELL_RICOCHETING_SHURIKEN, 0, 100.0f, true, false);
                 events.Repeat(15s);
                 break;
-            case SPELL_STONE_FIST:
+            case EVENT_STONE_FIST:
                 Talk(SAY_GRASHAAL_STONE_FIST);
                 DoCastVictim(SPELL_STONE_FIST);
                 events.Repeat(20s);
                 break;
-            case SPELL_SEISMIC_UPHEAVAL_MISSILE:
+            case EVENT_SEISMIC_UPHEAVAL_MISSILE:
                 Talk(SAY_GRASHAAL_SEISMIC);
                 // Five 1s waves over the raid (source counted per player hit - per-wave was the intent).
                 _seismicCount = 0;
@@ -274,14 +282,14 @@ struct boss_stone_legion_generals : public BossAI
                 {
                     ForEachPlayerNear(me, 100.0f, [this](Player* player)
                     {
-                        me->CastSpell(player, SPELL_SEISMIC_UPHEAVAL_MISSILE, true);
+                        me->CastSpell(player, SPELL_SEISMIC_UPHEAVAL_MISSILE, TRIGGERED_FULL_MASK);
                     });
                     if (++_seismicCount < 5)
                         context.Repeat(1s);
                 });
                 events.Repeat(30s);
                 break;
-            case SPELL_REVERBERATING_ERUPTION_MARK:
+            case EVENT_REVERBERATING_ERUPTION_MARK:
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 {
                     Position const pos = target->GetPosition();
@@ -333,7 +341,7 @@ struct boss_stone_legion_generals : public BossAI
         if (summon->GetEntry() != NPC_STONE_LEGION_COMMANDO)
             return;
 
-        summon->CastSpell(summon, SPELL_ANIMA_ORB_CREATE_AT, true);
+        summon->CastSpell(summon, SPELL_ANIMA_ORB_CREATE_AT, TRIGGERED_FULL_MASK);
         // TODO(port): at_anima_orb let a player walk over the dropped orb to charge Renathal;
         // without an AreaTrigger runtime the anima is granted directly on the Commando's death.
         if (Creature* renathal = me->FindNearestCreature(NPC_PRINCE_RENATHAL_END, 200.0f, true))
@@ -363,8 +371,8 @@ struct boss_stone_legion_generals : public BossAI
                 {
                     case NPC_GENERAL_KAAL:
                         Talk(SAY_KAAL_PHASE_TWO);
-                        events.ScheduleEvent(SPELL_WICKED_BLADE, 5s);
-                        events.ScheduleEvent(SPELL_RICOCHETING_SHURIKEN, 10s);
+                        events.ScheduleEvent(EVENT_WICKED_BLADE, 5s);
+                        events.ScheduleEvent(EVENT_RICOCHETING_SHURIKEN, 10s);
                         break;
                     case NPC_GENERAL_GRASHAAL:
                         Talk(SAY_GRASHAAL_ENGAGE);
@@ -372,10 +380,10 @@ struct boss_stone_legion_generals : public BossAI
                         me->SetDisableGravity(false);
                         me->GetMotionMaster()->MoveFall();
                         me->SetReactState(REACT_AGGRESSIVE);
-                        events.ScheduleEvent(SPELL_STONE_BREAKERS_COMBO, 5s);
-                        events.ScheduleEvent(SPELL_STONE_FIST, 10s);
-                        events.ScheduleEvent(SPELL_SEISMIC_UPHEAVAL_MISSILE, 15s);
-                        events.ScheduleEvent(SPELL_REVERBERATING_ERUPTION_MARK, 20s);
+                        events.ScheduleEvent(EVENT_STONE_BREAKERS_COMBO, 5s);
+                        events.ScheduleEvent(EVENT_STONE_FIST, 10s);
+                        events.ScheduleEvent(EVENT_SEISMIC_UPHEAVAL_MISSILE, 15s);
+                        events.ScheduleEvent(EVENT_REVERBERATING_ERUPTION_MARK, 20s);
                         break;
                     default:
                         break;
@@ -388,15 +396,15 @@ struct boss_stone_legion_generals : public BossAI
                 {
                     case NPC_GENERAL_GRASHAAL:
                         Talk(SAY_GRASHAAL_PHASE_THREE);
-                        events.ScheduleEvent(SPELL_STONE_SPIKE_MISSILE, 5s);
-                        events.ScheduleEvent(SPELL_STONE_FIST, 10s);
-                        events.ScheduleEvent(SPELL_STONE_BREAKERS_COMBO, 30s);
+                        events.ScheduleEvent(EVENT_STONE_SPIKE_MISSILE, 5s);
+                        events.ScheduleEvent(EVENT_STONE_FIST, 10s);
+                        events.ScheduleEvent(EVENT_STONE_BREAKERS_COMBO, 30s);
                         break;
                     case NPC_GENERAL_KAAL:
                         Talk(SAY_KAAL_PHASE_THREE);
-                        events.ScheduleEvent(SPELL_SERRATED_SWIPE, 5s);
-                        events.ScheduleEvent(SPELL_HEART_REND, 10s);
-                        events.ScheduleEvent(SPELL_WICKED_BLADE, 15s);
+                        events.ScheduleEvent(EVENT_SERRATED_SWIPE, 5s);
+                        events.ScheduleEvent(EVENT_HEART_REND, 10s);
+                        events.ScheduleEvent(EVENT_WICKED_BLADE, 15s);
                         break;
                     default:
                         break;
@@ -505,7 +513,7 @@ struct npc_prince_renathal_stone_legion : public ScriptedAI
         if (!general)
             return;
 
-        me->CastSpell(general, SPELL_SHATTERING_BLAST, false);
+        me->CastSpell(general, SPELL_SHATTERING_BLAST);
         ObjectGuid generalGuid = general->GetGUID();
         scheduler.Schedule(5100ms, [this, generalGuid, phaseAction](TaskContext /*context*/)
         {

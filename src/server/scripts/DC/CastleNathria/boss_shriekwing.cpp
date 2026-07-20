@@ -81,8 +81,12 @@ enum Events
     EVENT_GAIN_ENERGY           = 1,
     EVENT_PHASE_ONE             = 2,
     EVENT_ECHOING_SONAR_SPAWN   = 3,
-    EVENT_ECHOING_SCREECH_SPAWN = 4
-    // The remaining events reuse their spell ids, as in the source.
+    EVENT_ECHOING_SCREECH_SPAWN = 4,
+    EVENT_EXSANGUINATING_BITE = 5,  // was raw SPELL_EXSANGUINATING_BITE
+    EVENT_ECHOLOCATION_MARK = 6,  // was raw SPELL_ECHOLOCATION_MARK
+    EVENT_BLIND_SWIPE_CAST = 7,  // was raw SPELL_BLIND_SWIPE_CAST
+    EVENT_WAVE_OF_BLOOD = 8,  // was raw SPELL_WAVE_OF_BLOOD
+    EVENT_EARSPITTING_SHRIEK_CAST = 9  // was raw SPELL_EARSPITTING_SHRIEK_CAST
 };
 
 enum Texts
@@ -118,10 +122,10 @@ struct boss_shriekwing : public BossAI
         _JustEngagedWith();
         _earSpitting = 0;
         events.ScheduleEvent(EVENT_GAIN_ENERGY, 1s);
-        events.ScheduleEvent(SPELL_EXSANGUINATING_BITE, 5s);
-        events.ScheduleEvent(SPELL_ECHOLOCATION_MARK, 13s);
-        events.ScheduleEvent(SPELL_BLIND_SWIPE_CAST, 19s);
-        events.ScheduleEvent(SPELL_WAVE_OF_BLOOD, 12s);
+        events.ScheduleEvent(EVENT_EXSANGUINATING_BITE, 5s);
+        events.ScheduleEvent(EVENT_ECHOLOCATION_MARK, 13s);
+        events.ScheduleEvent(EVENT_BLIND_SWIPE_CAST, 19s);
+        events.ScheduleEvent(EVENT_WAVE_OF_BLOOD, 12s);
         if (IsHeroic())
             events.ScheduleEvent(EVENT_ECHOING_SCREECH_SPAWN, 23s);
         // TODO(port): mythic-only Blood Lantern summon (NPC_BLOOD_LANTERN, scale 2.0,
@@ -145,7 +149,7 @@ struct boss_shriekwing : public BossAI
             Talk(SAY_ANNOUNCE_BLOOD_SHROUD);
             me->CastSpell(me, SPELL_BLOOD_SHROUD_CAST);
             events.ScheduleEvent(EVENT_ECHOING_SONAR_SPAWN, 1s);
-            events.ScheduleEvent(SPELL_EARSPITTING_SHRIEK_CAST, 3s);
+            events.ScheduleEvent(EVENT_EARSPITTING_SHRIEK_CAST, 3s);
             events.ScheduleEvent(EVENT_PHASE_ONE, 40s);
         }
 
@@ -155,39 +159,39 @@ struct boss_shriekwing : public BossAI
                 me->SetReactState(REACT_AGGRESSIVE);
                 events.Reset();
                 events.ScheduleEvent(EVENT_GAIN_ENERGY, 1s);
-                events.ScheduleEvent(SPELL_EXSANGUINATING_BITE, 5s);
-                events.ScheduleEvent(SPELL_ECHOLOCATION_MARK, 8s);
-                events.ScheduleEvent(SPELL_BLIND_SWIPE_CAST, 13s);
-                events.ScheduleEvent(SPELL_WAVE_OF_BLOOD, 18s);
+                events.ScheduleEvent(EVENT_EXSANGUINATING_BITE, 5s);
+                events.ScheduleEvent(EVENT_ECHOLOCATION_MARK, 8s);
+                events.ScheduleEvent(EVENT_BLIND_SWIPE_CAST, 13s);
+                events.ScheduleEvent(EVENT_WAVE_OF_BLOOD, 18s);
                 break;
             case EVENT_GAIN_ENERGY:
                 me->ModifyPower(POWER_ENERGY, 1);
                 events.Repeat(1s);
                 break;
-            case SPELL_ECHOLOCATION_MARK:
+            case EVENT_ECHOLOCATION_MARK:
             {
                 UnitList targetList;
                 SelectTargetList(targetList, 3, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
                 {
-                    me->CastSpell(target, SPELL_ECHOLOCATION_MARK, true);
+                    me->CastSpell(target, SPELL_ECHOLOCATION_MARK, TRIGGERED_FULL_MASK);
                     ObjectGuid targetGuid = target->GetGUID();
                     scheduler.Schedule(8s, [this, targetGuid](TaskContext /*context*/)
                     {
                         if (Unit* target = ObjectAccessor::GetUnit(*me, targetGuid))
                         {
-                            me->CastSpell(target, SPELL_DESCENT, true);
-                            me->CastSpell(target, SPELL_SANGUINE_ICHOR_CREATE_AT, true);
+                            me->CastSpell(target, SPELL_DESCENT, TRIGGERED_FULL_MASK);
+                            me->CastSpell(target, SPELL_SANGUINE_ICHOR_CREATE_AT, TRIGGERED_FULL_MASK);
                         }
                     });
                 }
                 events.Repeat(25s);
                 break;
             }
-            case SPELL_EXSANGUINATING_BITE:
+            case EVENT_EXSANGUINATING_BITE:
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 30.0f))
                 {
-                    me->CastSpell(target, SPELL_EXSANGUINATING_BITE, false);
+                    me->CastSpell(target, SPELL_EXSANGUINATING_BITE);
                     me->AddAura(SPELL_EXSANGUINATED_DEBUFF, target);
                     if (Aura* exsanguinated = target->GetAura(SPELL_EXSANGUINATED_DEBUFF))
                     {
@@ -218,24 +222,24 @@ struct boss_shriekwing : public BossAI
                 }
                 events.Repeat(20s);
                 break;
-            case SPELL_BLIND_SWIPE_CAST:
+            case EVENT_BLIND_SWIPE_CAST:
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f))
                 {
                     me->SetFacingToObject(target);
-                    me->CastSpell(target, SPELL_BLIND_SWIPE_CAST, false);
+                    me->CastSpell(target, SPELL_BLIND_SWIPE_CAST);
                 }
                 events.Repeat(30s);
                 break;
-            case SPELL_WAVE_OF_BLOOD:
+            case EVENT_WAVE_OF_BLOOD:
             {
                 UnitList targetList;
                 SelectTargetList(targetList, 3, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
-                    me->CastSpell(target, SPELL_WAVE_OF_BLOOD, false);
+                    me->CastSpell(target, SPELL_WAVE_OF_BLOOD);
                 events.Repeat(36s);
                 break;
             }
-            case SPELL_EARSPITTING_SHRIEK_CAST:
+            case EVENT_EARSPITTING_SHRIEK_CAST:
                 ++_earSpitting;
                 if (_earSpitting != 3)  // source quirk: the third blind phase skips the shriek
                 {
@@ -246,9 +250,9 @@ struct boss_shriekwing : public BossAI
                         if (!player || player->IsGameMaster() || !me->IsWithinDistInMap(player, 100.0f))
                             continue;
 
-                        me->CastSpell(player, SPELL_EARSPITTING_SHRIEK_PERIODIC, true);
+                        me->CastSpell(player, SPELL_EARSPITTING_SHRIEK_PERIODIC, TRIGGERED_FULL_MASK);
                         if (player->IsWithinLOSInMap(me))
-                            me->CastSpell(player, SPELL_SANGUINE_ICHOR_CREATE_AT, true);
+                            me->CastSpell(player, SPELL_SANGUINE_ICHOR_CREATE_AT, TRIGGERED_FULL_MASK);
                     }
                 }
                 break;
@@ -270,7 +274,7 @@ struct boss_shriekwing : public BossAI
                 // TODO(port): at_echoing_screech applied SPELL_HORRIFIED + SPELL_DEADLY_DESCENT to
                 // touched players from a moving AreaTrigger; static pools only on 3.3.5.
                 for (uint8 i = 0; i < 10; ++i)
-                    me->CastSpell(me, SPELL_ECHOING_SCREECH_CREATE_AT, true);
+                    me->CastSpell(me, SPELL_ECHOING_SCREECH_CREATE_AT, TRIGGERED_FULL_MASK);
                 break;
             default:
                 break;

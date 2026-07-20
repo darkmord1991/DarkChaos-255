@@ -141,10 +141,10 @@ struct boss_lady_inerva_darkvein : public BossAI
                 events.Repeat(1s);
                 break;
             case EVENT_EXPOSE_DESIRES:
-                me->CastSpell(nullptr, SPELL_EXPOSE_DESIRES, true);
+                me->CastSpell(me, SPELL_EXPOSE_DESIRES, TRIGGERED_FULL_MASK);
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 100.0f, true))
                 {
-                    me->CastSpell(target, SPELL_EXPOSE_DESIRES_DAMAGE, false);
+                    me->CastSpell(target, SPELL_EXPOSE_DESIRES_DAMAGE);
                     me->AddAura(SPELL_WARPED_DESIRES_DEBUFF, target);
                 }
                 events.Repeat(19s);
@@ -152,7 +152,7 @@ struct boss_lady_inerva_darkvein : public BossAI
             case EVENT_EXPOSED_COGNITION:
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 100.0f, true))
                 {
-                    me->CastSpell(target, SPELL_EXPOSE_DESIRES_DAMAGE, false);
+                    me->CastSpell(target, SPELL_EXPOSE_DESIRES_DAMAGE);
                     me->AddAura(SPELL_WARPED_DESIRES_DEBUFF, target);
                     if (Unit* cognitionTarget = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                         me->AddAura(SPELL_SHARED_COGNITION, cognitionTarget);
@@ -172,7 +172,7 @@ struct boss_lady_inerva_darkvein : public BossAI
                 events.Repeat(66s);
                 break;
             case EVENT_BOTTLED_ANIMA:
-                me->CastSpell(nullptr, SPELL_BOTTLED_ANIMA_CAST, false);
+                me->CastSpell(nullptr, SPELL_BOTTLED_ANIMA_CAST);
                 ForEachPlayerInRoom([this](Player* player)
                 {
                     // NOTE: the source rolled a random near-position and discarded it, dropping
@@ -209,22 +209,22 @@ struct boss_lady_inerva_darkvein : public BossAI
                 UnitList targetList;
                 SelectTargetList(targetList, 3, SelectTargetMethod::Random, 0, 100.0f, true);
                 for (Unit* target : targetList)
-                    me->CastSpell(target, SPELL_SHARED_SUFFERING, true);
+                    me->CastSpell(target, SPELL_SHARED_SUFFERING, TRIGGERED_FULL_MASK);
                 events.Repeat(50s);
                 break;
             }
             case EVENT_LIGHTLY_CONCENTRATED_ANIMA:
-                me->CastSpell(nullptr, SPELL_LIGHTLY_CONCETRATED_ANIMA, false);
+                me->CastSpell(nullptr, SPELL_LIGHTLY_CONCETRATED_ANIMA);
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 {
-                    me->CastSpell(target, SPELL_CONCETRATED_ANIMA_PERIODIC, true);
+                    me->CastSpell(target, SPELL_CONCETRATED_ANIMA_PERIODIC, TRIGGERED_FULL_MASK);
                     me->AddAura(SPELL_ROOTED_IN_ANIMA, target);
                     if (IsHeroic()) // source: heroic + mythic; no mythic on 3.3.5
                         DoCastRandomTarget(SPELL_CONCETRATED_ANIMA_PERIODIC, 0, 100.0f, true, true);
                 }
                 break;
             case EVENT_HIGHLY_CONCENTRATED_ANIMA:
-                me->CastSpell(nullptr, SPELL_HIGHLY_CONCETRATED_ANIMA_CAST, false);
+                me->CastSpell(nullptr, SPELL_HIGHLY_CONCETRATED_ANIMA_CAST);
                 ForEachPlayerInRoom([this](Player* player)
                 {
                     if (!player->HasAura(SPELL_CONCENTRATED_ANIMA))

@@ -241,7 +241,7 @@ struct boss_council_of_blood : public BossAI
             case EVENT_DRAIN_ESSENCE:
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 {
-                    me->CastSpell(target, SPELL_DRAIN_ESSENCE_CHANNEL, false);
+                    me->CastSpell(target, SPELL_DRAIN_ESSENCE_CHANNEL);
                     me->AddAura(SPELL_DRAIN_ESSENCE_PERIODIC_DAMAGE, target);
                     me->AddAura(SPELL_DRAIN_ESSENCE_MOD_HEALTH, target);
                 }
@@ -272,8 +272,8 @@ struct boss_council_of_blood : public BossAI
                 {
                     ForEachPlayerInRoom([this](Player* player)
                     {
-                        me->CastSpell(player, SPELL_PRIDEFUL_ERUPTION_MISSILE, true);
-                        me->CastSpell(player, SPELL_PRIDEFUL_ERUPTION_DAMAGE, true);
+                        me->CastSpell(player, SPELL_PRIDEFUL_ERUPTION_MISSILE, TRIGGERED_FULL_MASK);
+                        me->CastSpell(player, SPELL_PRIDEFUL_ERUPTION_DAMAGE, TRIGGERED_FULL_MASK);
                     });
                 });
                 events.Repeat(35s);
@@ -281,9 +281,9 @@ struct boss_council_of_blood : public BossAI
             case EVENT_SOUL_SPIKES:
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 100.0f, true))
                 {
-                    me->CastSpell(target, SPELL_SOUL_SPIKES_PERIODIC_DUMMY, false);
-                    me->CastSpell(target, SPELL_SOUL_SPIKES_DAMAGE, true);
-                    me->CastSpell(target, SPELL_SOUL_SPIKES_DEBUFF, true);
+                    me->CastSpell(target, SPELL_SOUL_SPIKES_PERIODIC_DUMMY);
+                    me->CastSpell(target, SPELL_SOUL_SPIKES_DAMAGE, TRIGGERED_FULL_MASK);
+                    me->CastSpell(target, SPELL_SOUL_SPIKES_DEBUFF, TRIGGERED_FULL_MASK);
                 }
                 events.Repeat(40s);
                 break;
@@ -293,14 +293,14 @@ struct boss_council_of_blood : public BossAI
                 break;
             case EVENT_UNDYING_SHIELD:
                 if (Creature* attendant = me->SummonCreature(NPC_DUTIFUL_ATTENDANT, me->GetRandomNearPosition(30.0f), TEMPSUMMON_MANUAL_DESPAWN))
-                    me->CastSpell(attendant, SPELL_UNDYING_SHIELD, false);
+                    me->CastSpell(attendant, SPELL_UNDYING_SHIELD);
                 events.Repeat(30s);
                 break;
             case EVENT_EVASIVE_LUNGE:
                 if (Unit* target = SelectTarget(SelectTargetMethod::MaxThreat, 0, 100.0f, true))
                 {
-                    me->CastSpell(target, SPELL_EVASIVE_LUNGE_TELEPORT, false);
-                    me->CastSpell(target, SPELL_EVASIVE_LUNGE_DAMAGE, true);
+                    me->CastSpell(target, SPELL_EVASIVE_LUNGE_TELEPORT);
+                    me->CastSpell(target, SPELL_EVASIVE_LUNGE_DAMAGE, TRIGGERED_FULL_MASK);
                 }
                 events.Repeat(20s);
                 break;
@@ -311,7 +311,7 @@ struct boss_council_of_blood : public BossAI
                 {
                     ForEachPlayerInRoom([this](Player* player)
                     {
-                        me->CastSpell(player, SPELL_DARK_RECITAL_TRIGGER, true);
+                        me->CastSpell(player, SPELL_DARK_RECITAL_TRIGGER, TRIGGERED_FULL_MASK);
                     });
                 });
                 events.Repeat(30s);
@@ -586,7 +586,7 @@ struct npc_afterimage : public ScriptedAI
                 scheduler.Schedule(2s, [this](TaskContext context)
                 {
                     if (Creature* attendant = me->SummonCreature(NPC_DUTIFUL_ATTENDANT, me->GetRandomNearPosition(30.0f), TEMPSUMMON_MANUAL_DESPAWN))
-                        me->CastSpell(attendant, SPELL_UNDYING_SHIELD, false);
+                        me->CastSpell(attendant, SPELL_UNDYING_SHIELD);
                     context.Repeat(30s);
                 });
                 break;
