@@ -157,6 +157,7 @@ struct boss_sun_kings_salvation : public BossAI
                 _eventActive = false;
                 scheduler.CancelAll();
                 summons.DespawnAll();
+                DespawnPhoenixes();
                 // NOTE: the source also replaced all unit flags with UNIT_FLAG_PVP_ATTACKABLE
                 // right after re-adding NON_ATTACKABLE (contradictory); the replace was dropped.
                 me->SetUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
@@ -254,6 +255,18 @@ struct boss_sun_kings_salvation : public BossAI
             FinishEvent();
     }
 
+    // The Reborn Phoenixes are summoned by the SHADE, not this boss, so they are not in this
+    // AI's SummonList and summons.DespawnAll() misses them -- sweep them explicitly on every
+    // encounter-teardown path (found by the 2026-07-20 port audit: they leaked permanently on
+    // wipe/win/Kael-death; the shade only cleans them up in its own JustDied).
+    void DespawnPhoenixes()
+    {
+        std::list<Creature*> phoenixList;
+        GetCreatureListWithEntryInGrid(phoenixList, me, NPC_REBORN_PHOENIX, 200.0f);
+        for (Creature* phoenix : phoenixList)
+            phoenix->DespawnOrUnsummon();
+    }
+
     void FinishEvent()
     {
         _eventActive = false;
@@ -261,6 +274,7 @@ struct boss_sun_kings_salvation : public BossAI
         instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
         instance->SetBossState(DATA_SUN_KINGS_SALVATION, DONE);
         summons.DespawnAll();
+        DespawnPhoenixes();
         me->SetUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
         me->SetFaction(35);
         // Loot comes from the statically spawned Cache of the Sun King chest (GO 357752, loot
@@ -276,6 +290,7 @@ struct boss_sun_kings_salvation : public BossAI
         instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
         instance->SetBossState(DATA_SUN_KINGS_SALVATION, FAIL);
         summons.DespawnAll();
+        DespawnPhoenixes();
     }
 
     void EnterEvadeMode(EvadeReason why) override

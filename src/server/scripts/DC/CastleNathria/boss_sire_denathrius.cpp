@@ -252,6 +252,21 @@ struct npc_remornia : public ScriptedAI
             _zones.push_back({ trigger->GetGUID(), auraId, radius });
     }
 
+    // The source removed the previous Desolation AreaTrigger before recasting (RemoveAura on the
+    // CREATE_AT); mirror that per-aura so repeated Ravage orders REPLACE the zone instead of
+    // accumulating up to 6 minutes of stacked pools (2026-07-20 port-audit finding).
+    void ClearGroundZonesByAura(uint32 auraId)
+    {
+        std::erase_if(_zones, [this, auraId](GroundZone const& zone)
+        {
+            if (zone.AuraId != auraId)
+                return false;
+            if (Creature* trigger = ObjectAccessor::GetCreature(*me, zone.TriggerGuid))
+                trigger->DespawnOrUnsummon();
+            return true;
+        });
+    }
+
     void ClearGroundZones()
     {
         for (GroundZone const& zone : _zones)
@@ -685,7 +700,11 @@ private:
             Unit* target = ObjectAccessor::GetUnit(*me, targetGuid);
             Position impact = target ? target->GetPosition() : remornia->GetPosition();
             if (npc_remornia* remorniaAI = CAST_AI(npc_remornia, remornia->AI()))
+            {
+                // Source removed the previous Desolation AT before recasting -- replace, don't stack.
+                remorniaAI->ClearGroundZonesByAura(SPELL_DESOLATION_AT_DAMAGE);
                 remorniaAI->AddGroundZone(impact, SPELL_DESOLATION_AT_DAMAGE, 6.0f, 360000); // 6 min, as the source AT
+            }
         });
     }
 
