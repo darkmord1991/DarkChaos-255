@@ -35,6 +35,11 @@
 #include "WorldSession.h"
 #include "SpellMgr.h"
 #include "ObjectMgr.h"
+#include "QuestDef.h"
+#include "GuildMgr.h"
+#include "Guild.h"
+#include "Channel.h"
+#include "ChannelMgr.h"
 #include "CharacterDatabase.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
@@ -107,6 +112,19 @@ namespace DCFirstStart
         // Dual Spec
         constexpr const char* DUALSPEC_ENABLE = "DCFirstStart.DualSpec.Enable";
         constexpr const char* DUALSPEC_LEVEL = "DCFirstStart.DualSpec.Level";
+
+        // Onboarding: welcome quest, starter guild, newcomer chat
+        constexpr const char* WELCOME_QUEST_ENABLE = "DCFirstStart.WelcomeQuest.Enable";
+        constexpr const char* WELCOME_QUEST_ID = "DCFirstStart.WelcomeQuest.Id";
+        constexpr const char* STARTER_GUILD_ENABLE = "DCFirstStart.StarterGuild.Enable";
+        constexpr const char* STARTER_GUILD_NAME_ALLIANCE = "DCFirstStart.StarterGuild.NameAlliance";
+        constexpr const char* STARTER_GUILD_NAME_HORDE = "DCFirstStart.StarterGuild.NameHorde";
+        constexpr const char* STARTER_GUILD_AUTOCREATE = "DCFirstStart.StarterGuild.AutoCreate";
+        constexpr const char* STARTER_GUILD_MOTD = "DCFirstStart.StarterGuild.Motd";
+        constexpr const char* STARTER_GUILD_INFO = "DCFirstStart.StarterGuild.Info";
+        constexpr const char* NEWCOMER_CHAT_ENABLE = "DCFirstStart.NewcomerChat.Enable";
+        constexpr const char* NEWCOMER_CHAT_CHANNEL = "DCFirstStart.NewcomerChat.ChannelName";
+        constexpr const char* NEWCOMER_CHAT_MAXLEVEL = "DCFirstStart.NewcomerChat.MaxLevel";
     }
 
     // Class names for config lookups
@@ -663,6 +681,133 @@ namespace DCFirstStart
             LOG_INFO("module.dc", "[DCFirstStart] Marked {} for DC-Welcome first-login trigger", player->GetName());
     }
 
+    // Onboarding: auto-grant the "Welcome to Azshara Crater" quest (820056) on
+    // first login so every fresh character starts with it in their log.
+    void GrantWelcomeQuest(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::WELCOME_QUEST_ENABLE, true))
+            return;
+
+        uint32 questId = sConfigMgr->GetOption<uint32>(Config::WELCOME_QUEST_ID, 820056);
+        if (!questId)
+            return;
+
+        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+        if (!quest)
+        {
+            if (debug)
+                LOG_WARN("module.dc", "[DCFirstStart] Welcome quest {} not found in quest_template", questId);
+            return;
+        }
+
+        // Already have it in the log, completed, or turned in? Leave it alone.
+        if (player->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+            return;
+
+        if (!player->CanTakeQuest(quest, false) || !player->CanAddQuest(quest, false))
+        {
+            if (debug)
+                LOG_INFO("module.dc", "[DCFirstStart] {} cannot take welcome quest {} (requirements or full log)",
+                         player->GetName(), questId);
+            return;
+        }
+
+        player->AddQuestAndCheckCompletion(quest, nullptr);
+
+        if (debug)
+            LOG_INFO("module.dc", "[DCFirstStart] Granted welcome quest {} to {}", questId, player->GetName());
+    }
+
+    // Onboarding: auto-join a per-faction "newcomer" guild on first login. Guilds
+    // are single-faction, so Alliance and Horde use separate guilds/names. If the
+    // guild does not exist yet and AutoCreate is on, it is bootstrapped with this
+    // first newcomer as its leader.
+    void JoinStarterGuild(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::STARTER_GUILD_ENABLE, true))
+            return;
+
+        // Respect players who are already in a guild (e.g. re-run/edge cases).
+        if (player->GetGuildId())
+            return;
+
+        std::string guildName = (player->GetTeamId() == TEAM_ALLIANCE)
+            ? sConfigMgr->GetOption<std::string>(Config::STARTER_GUILD_NAME_ALLIANCE, "Alliance Newcomers")
+            : sConfigMgr->GetOption<std::string>(Config::STARTER_GUILD_NAME_HORDE, "Horde Newcomers");
+
+        if (guildName.empty())
+            return;
+
+        if (Guild* guild = sGuildMgr->GetGuildByName(guildName))
+        {
+            if (guild->AddMember(player->GetGUID()) && debug)
+                LOG_INFO("module.dc", "[DCFirstStart] Added {} to starter guild '{}'", player->GetName(), guildName);
+            return;
+        }
+
+        if (!sConfigMgr->GetOption<bool>(Config::STARTER_GUILD_AUTOCREATE, true))
+        {
+            if (debug)
+                LOG_WARN("module.dc", "[DCFirstStart] Starter guild '{}' missing and AutoCreate is off", guildName);
+            return;
+        }
+
+        // Bootstrap: create the guild with this player as leader.
+        Guild* guild = new Guild();
+        if (!guild->Create(player, guildName))
+        {
+            delete guild;
+            if (debug)
+                LOG_WARN("module.dc", "[DCFirstStart] Failed to create starter guild '{}'", guildName);
+            return;
+        }
+
+        sGuildMgr->AddGuild(guild);
+
+        // Give the fresh guild an identity so newcomers don't land in a blank
+        // shell. The creating player is leader and has the required rights.
+        std::string motd = sConfigMgr->GetOption<std::string>(Config::STARTER_GUILD_MOTD,
+            "Welcome to the newcomer guild! Ask your questions in guild chat or the Newcomer channel - and have fun out there!");
+        std::string info = sConfigMgr->GetOption<std::string>(Config::STARTER_GUILD_INFO,
+            "Automatic starter guild for new characters. Feel free to leave once you find a home - no hard feelings!");
+
+        if (!motd.empty())
+            guild->HandleSetMOTD(player->GetSession(), motd);
+        if (!info.empty())
+            guild->HandleSetInfo(player->GetSession(), info);
+
+        if (debug)
+            LOG_INFO("module.dc", "[DCFirstStart] Created starter guild '{}' with leader {}", guildName, player->GetName());
+    }
+
+    // Onboarding: (re)join a custom "newcomer" help channel. Called on every login
+    // because custom channels are not auto-restored across sessions.
+    void JoinNewcomerChannel(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::NEWCOMER_CHAT_ENABLE, true))
+            return;
+
+        uint32 maxLevel = sConfigMgr->GetOption<uint32>(Config::NEWCOMER_CHAT_MAXLEVEL, 0);
+        if (maxLevel > 0 && player->GetLevel() > maxLevel)
+            return;
+
+        std::string channelName = sConfigMgr->GetOption<std::string>(Config::NEWCOMER_CHAT_CHANNEL, "Newcomer");
+        if (channelName.empty())
+            return;
+
+        ChannelMgr* cMgr = ChannelMgr::forTeam(player->GetTeamId());
+        if (!cMgr)
+            return;
+
+        // channel_id 0 = custom (non-DBC) channel.
+        if (Channel* channel = cMgr->GetJoinChannel(channelName, 0))
+        {
+            channel->JoinChannel(player, "");
+            if (debug)
+                LOG_INFO("module.dc", "[DCFirstStart] {} joined newcomer channel '{}'", player->GetName(), channelName);
+        }
+    }
+
     // Main function: Give all first login rewards
     void GiveFirstLoginRewards(Player* player)
     {
@@ -688,6 +833,8 @@ namespace DCFirstStart
         GrantMobileTeleporter(player, debug);
         ApplyPrestigeBonuses(player, debug);
         TriggerWelcomeAddon(player, debug);
+        GrantWelcomeQuest(player, debug);
+        JoinStarterGuild(player, debug);
 
         if (debug)
             LOG_INFO("module.dc", "[DCFirstStart] Completed first login rewards for {}", player->GetName());
@@ -725,6 +872,10 @@ public:
             DCFirstStart::GiveFirstLoginRewards(player);
             DCFirstStart::MarkFirstLoginComplete(player->GetGUID());
         }
+
+        // Newcomer chat: (re)join on every login so the custom help channel
+        // persists across sessions (custom channels are not auto-restored).
+        DCFirstStart::JoinNewcomerChannel(player, debug);
 
         // Announce module if enabled
         bool announce = sConfigMgr->GetOption<bool>(

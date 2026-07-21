@@ -3439,6 +3439,48 @@ DCFirstStart.SeasonalTokens.Amount = 100
 DCFirstStart.MobileTeleporter.Enable = 1
 DCFirstStart.MobileTeleporter.ItemId = 0
 
+#
+#    DCFirstStart.WelcomeQuest.*
+#        Description: Auto-grant a quest to every fresh character on first login.
+#                     Default is the "Welcome to Azshara Crater" quest (820056),
+#                     given by Hervikus the Chaotic near the starting camp.
+#        Enable:      1 = grant on first login, 0 = off
+#        Id:          quest_template ID to add to the new character's log
+#
+DCFirstStart.WelcomeQuest.Enable = 1
+DCFirstStart.WelcomeQuest.Id = 820056
+
+#
+#    DCFirstStart.StarterGuild.*
+#        Description: Auto-join fresh characters into a "newcomer" guild on first
+#                     login. Guilds are single-faction, so Alliance and Horde use
+#                     separate guilds/names (names must be unique server-wide).
+#        Enable:      1 = auto-join on first login, 0 = off
+#        NameAlliance/NameHorde: guild names per faction
+#        AutoCreate:  1 = create the guild (with the first newcomer as leader) if
+#                     it does not exist; 0 = only join if you pre-created it
+#
+DCFirstStart.StarterGuild.Enable = 1
+DCFirstStart.StarterGuild.NameAlliance = "Alliance Newcomers"
+DCFirstStart.StarterGuild.NameHorde = "Horde Newcomers"
+DCFirstStart.StarterGuild.AutoCreate = 1
+DCFirstStart.StarterGuild.Motd = "Welcome to the newcomer guild! Ask your questions in guild chat or the Newcomer channel - and have fun out there!"
+DCFirstStart.StarterGuild.Info = "Automatic starter guild for new characters. Feel free to leave once you find a home - no hard feelings!"
+
+#
+#    DCFirstStart.NewcomerChat.*
+#        Description: Auto-join a custom help/chat channel on every login so new
+#                     players have a place to ask questions.
+#        Enable:      1 = auto-join, 0 = off
+#        ChannelName: name of the custom channel (per-faction unless two-side
+#                     channel interaction is enabled in worldserver.conf)
+#        MaxLevel:    0 = everyone joins (veterans can help); set e.g. 20 to keep
+#                     the channel to leveling players only
+#
+DCFirstStart.NewcomerChat.Enable = 1
+DCFirstStart.NewcomerChat.ChannelName = "Newcomer"
+DCFirstStart.NewcomerChat.MaxLevel = 0
+
 
 ###############################################################################
 #

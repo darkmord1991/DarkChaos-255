@@ -106,7 +106,7 @@ public:
                 scheduler.Schedule(1s, [this](TaskContext /*ctx*/)
                 {
                     if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), targetPlayerGuid))
-                        me->Whisper("Follow me, I will show you around the Ashzara Crater!", LANG_UNIVERSAL, player);
+                        me->Whisper("Follow me, I will show you around the Azshara Crater!", LANG_UNIVERSAL, player);
                 });
 
                 // Start moving to the first station immediately
@@ -155,7 +155,7 @@ public:
                     scheduler.Schedule(1000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), guidedPlayer))
-                            me->Whisper("Ashzara Crater is vast — from the volcanic ridges to the ancient ruins, every zone holds new dangers and treasures!", LANG_UNIVERSAL, player);
+                            me->Whisper("Azshara Crater is vast — from the volcanic ridges to the ancient ruins, every zone holds new dangers and treasures!", LANG_UNIVERSAL, player);
                     }).Schedule(2000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), guidedPlayer))
@@ -231,7 +231,7 @@ public:
             // === Quest 820056: Welcome — OnQuestAccept ===
             case Q_WELCOME:
                 // creature:SendUnitSay("A warm Welcome to DC-WoW! We wish you all the fun! HÖHÖHÖ", 0)
-                creature->Say("Welcome to the Ashzara Crater, brave soul! May your journey through these untamed lands be glorious!", LANG_UNIVERSAL);
+                creature->Say("Welcome to the Azshara Crater, brave soul! May your journey through these untamed lands be glorious!", LANG_UNIVERSAL);
                 break;
 
             // === Quest 820057: LevelArea Show AC — OnQuestAccept ===
