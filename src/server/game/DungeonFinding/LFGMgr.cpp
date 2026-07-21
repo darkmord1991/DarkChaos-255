@@ -514,7 +514,7 @@ namespace lfg
             else if (ar)
             {
                 // Check required items
-                for (const ProgressionRequirement* itemRequirement : ar->items)
+                for (ProgressionRequirement const* itemRequirement : ar->items)
                 {
                     if (!itemRequirement->checkLeaderOnly || !group || group->GetLeaderGUID() == player->GetGUID())
                     {
@@ -530,7 +530,7 @@ namespace lfg
                 }
 
                 //Check for quests
-                for (const ProgressionRequirement* questRequirement : ar->quests)
+                for (ProgressionRequirement const* questRequirement : ar->quests)
                 {
                     if (!questRequirement->checkLeaderOnly || !group || group->GetLeaderGUID() == player->GetGUID())
                     {
@@ -552,7 +552,7 @@ namespace lfg
                 }
 
                 //Check if player has the required achievements
-                for (const ProgressionRequirement* achievementRequirement : ar->achievements)
+                for (ProgressionRequirement const* achievementRequirement : ar->achievements)
                 {
                     if (!achievementRequirement->checkLeaderOnly || !group || group->GetLeaderGUID() == player->GetGUID())
                     {
@@ -596,7 +596,7 @@ namespace lfg
        @param[in]     dungeons Dungeons the player/group is applying for
        @param[in]     comment Player selected comment
     */
-    void LFGMgr::JoinLfg(Player* player, uint8 roles, LfgDungeonSet& dungeons, const std::string& comment)
+    void LFGMgr::JoinLfg(Player* player, uint8 roles, LfgDungeonSet& dungeons, std::string const& comment)
     {
         if (!player || dungeons.empty())
             return;
@@ -920,7 +920,7 @@ namespace lfg
                     queue.RemoveFromQueue(gguid);
                     uint32 dungeonId = GetDungeon(gguid);
                     SetState(gguid, LFG_STATE_NONE);
-                    const LfgGuidSet& players = GetPlayers(gguid);
+                    LfgGuidSet const& players = GetPlayers(gguid);
                     for (LfgGuidSet::const_iterator it = players.begin(); it != players.end(); ++it)
                     {
                         SetState(*it, LFG_STATE_NONE);
@@ -1319,7 +1319,7 @@ namespace lfg
         }
     }
 
-    void LFGMgr::RBPacketAppendGroup(const RBInternalInfo& info, ByteBuffer& buffer)
+    void LFGMgr::RBPacketAppendGroup(RBInternalInfo const& info, ByteBuffer& buffer)
     {
         buffer << info.groupGuid;
         uint32 flags = LFG_UPDATE_FLAG_COMMENT | LFG_UPDATE_FLAG_ROLES | LFG_UPDATE_FLAG_BINDED;
@@ -1335,7 +1335,7 @@ namespace lfg
         buffer << (uint32)info.encounterMask;
     }
 
-    void LFGMgr::RBPacketAppendPlayer(const RBInternalInfo& info, ByteBuffer& buffer)
+    void LFGMgr::RBPacketAppendPlayer(RBInternalInfo const& info, ByteBuffer& buffer)
     {
         buffer << info.guid;
         uint32 flags = LFG_UPDATE_FLAG_CHARACTERINFO | LFG_UPDATE_FLAG_ROLES | LFG_UPDATE_FLAG_COMMENT | (info.groupGuid ? LFG_UPDATE_FLAG_GROUPGUID : LFG_UPDATE_FLAG_BINDED) | (info.isGroupLeader ? LFG_UPDATE_FLAG_GROUPLEADER : 0) | (!info.groupGuid || info.isGroupLeader ? LFG_UPDATE_FLAG_AREA : 0);
@@ -1468,7 +1468,7 @@ namespace lfg
             if (GetState(gguid) == LFG_STATE_QUEUED)
             {
                 SetState(gguid, LFG_STATE_NONE);
-                const LfgGuidSet& players = GetPlayers(gguid);
+                LfgGuidSet const& players = GetPlayers(gguid);
                 for (LfgGuidSet::const_iterator it = players.begin(); it != players.end(); ++it)
                 {
                     SetState(*it, LFG_STATE_NONE);
@@ -2316,7 +2316,7 @@ namespace lfg
        @param[in]     guid Group guid
        @param[in]     dungeonId Dungeonid
     */
-    void LFGMgr::FinishDungeon(ObjectGuid gguid, const uint32 dungeonId, const Map* currMap)
+    void LFGMgr::FinishDungeon(ObjectGuid gguid, const uint32 dungeonId, Map const* currMap)
     {
         uint32 gDungeonId = GetDungeon(gguid);
         if (gDungeonId != dungeonId)
@@ -2334,7 +2334,7 @@ namespace lfg
         SetState(gguid, LFG_STATE_FINISHED_DUNGEON);
         _SaveToDB(gguid); // pussywizard
 
-        const LfgGuidSet& players = GetPlayers(gguid);
+        LfgGuidSet const& players = GetPlayers(gguid);
         for (LfgGuidSet::const_iterator it = players.begin(); it != players.end(); ++it)
         {
             ObjectGuid guid = (*it);
@@ -2345,7 +2345,7 @@ namespace lfg
             }
 
             uint32 rDungeonId = 0;
-            const LfgDungeonSet& dungeons = GetSelectedDungeons(guid);
+            LfgDungeonSet const& dungeons = GetSelectedDungeons(guid);
             if (!dungeons.empty())
                 rDungeonId = (*dungeons.begin());
 
@@ -2392,6 +2392,10 @@ namespace lfg
 
             LfgReward const* reward = GetRandomDungeonReward(rDungeonId, player->GetLevel());
             if (!reward)
+                continue;
+
+            // CAIS full restriction: grant no dungeon reward and leave the daily available for later
+            if (player->HasPlayerFlag(PLAYER_FLAGS_NO_PLAY_TIME))
                 continue;
 
             bool done = false;
@@ -2523,7 +2527,7 @@ namespace lfg
         return roles;
     }
 
-    const std::string& LFGMgr::GetComment(ObjectGuid guid)
+    std::string const& LFGMgr::GetComment(ObjectGuid guid)
     {
         LOG_DEBUG("lfg", "LFGMgr::GetComment: [{}] = {}", guid.ToString(), PlayersStore[guid].GetComment());
         return PlayersStore[guid].GetComment();
@@ -2693,7 +2697,7 @@ namespace lfg
 
     void LFGMgr::AddPlayerQueuedForRandomDungeonToGroup(ObjectGuid gguid, ObjectGuid guid)
     {
-        const LfgDungeonSet& dungeons = GetSelectedDungeons(guid);
+        LfgDungeonSet const& dungeons = GetSelectedDungeons(guid);
         if (dungeons.empty())
             return;
 

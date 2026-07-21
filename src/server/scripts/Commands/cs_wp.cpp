@@ -75,7 +75,7 @@ public:
     *
     * @return true - command did succeed, false - something went wrong
     */
-    static bool HandleWpAddCommand(ChatHandler* handler, const char* args)
+    static bool HandleWpAddCommand(ChatHandler* handler, char const* args)
     {
         // optional
         char* path_number = nullptr;
@@ -382,7 +382,7 @@ public:
         return true;
     }
 
-    static bool HandleWpLoadCommand(ChatHandler* handler, const char* args)
+    static bool HandleWpLoadCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -496,7 +496,7 @@ public:
         return true;
     }
 
-    static bool HandleWpReloadCommand(ChatHandler* handler, const char* args)
+    static bool HandleWpReloadCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -511,7 +511,7 @@ public:
         return true;
     }
 
-    static bool HandleWpUnLoadCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleWpUnLoadCommand(ChatHandler* handler, char const* /*args*/)
     {
         Creature* target = handler->getSelectedCreature();
 
@@ -552,7 +552,7 @@ public:
         return true;
     }
 
-    static bool HandleWpEventCommand(ChatHandler* handler, const char* args)
+    static bool HandleWpEventCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -824,7 +824,7 @@ public:
         return true;
     }
 
-    static bool HandleWpModifyCommand(ChatHandler* handler, const char* args)
+    static bool HandleWpModifyCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -1031,7 +1031,7 @@ public:
             return true;
         }                                                       // move
 
-        const char* text = arg_str;
+        char const* text = arg_str;
 
         if (text == 0)
         {
@@ -1053,7 +1053,7 @@ public:
         return true;
     }
 
-    static bool HandleWpShowCommand(ChatHandler* handler, const char* args)
+    static bool HandleWpShowCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
