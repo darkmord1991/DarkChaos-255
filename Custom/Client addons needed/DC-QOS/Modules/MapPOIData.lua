@@ -20,6 +20,97 @@ end
 
 local MapPOIData = {}
 
+-- Shared POI type registry, keyed by the `t` value the server sends. Both
+-- renderers read their icon and label from here -- the world map (QuestMapPins)
+-- and the minimap (MapPOIMinimap) -- so a new POI kind needs only a new `t`
+-- value server-side plus one entry below to show up in both places.
+--
+-- Icon paths MUST exist in the 3.3.5 asset set. The client silently draws
+-- nothing for an unknown path -- a wrong one is an invisible pin, not an
+-- error -- and absence from FrameXML proves nothing, because the engine
+-- references these service icons itself. Every path below was verified to be
+-- present in the client's locale-enGB.MPQ before use.
+--
+-- `texCoord` (optional) trims the border off Interface\Icons art so it sits
+-- flush next to the borderless Minimap\Tracking icons.
+MapPOIData.TYPES = {
+    flight = {
+        order = 1,
+        label = "Flight Master",
+        worldIcon = "Interface\\Minimap\\Tracking\\FlightMaster",
+        minimapIcon = "Interface\\Minimap\\Tracking\\FlightMaster",
+        borderColor = { 0.24, 0.62, 0.28, 0.62 },
+        iconColor = { 1.0, 1.0, 1.0, 1.0 },
+    },
+    inn = {
+        order = 2,
+        label = "Innkeeper",
+        worldIcon = "Interface\\Minimap\\Tracking\\Innkeeper",
+        minimapIcon = "Interface\\Minimap\\Tracking\\Innkeeper",
+        borderColor = { 0.72, 0.52, 0.22, 0.62 },
+        iconColor = { 1.0, 1.0, 1.0, 1.0 },
+    },
+    mail = {
+        order = 3,
+        label = "Mailbox",
+        worldIcon = "Interface\\Minimap\\Tracking\\Mailbox",
+        minimapIcon = "Interface\\Minimap\\Tracking\\Mailbox",
+        borderColor = { 0.58, 0.58, 0.64, 0.62 },
+        iconColor = { 1.0, 1.0, 1.0, 1.0 },
+    },
+    teleporter = {
+        order = 4,
+        label = "Teleporter",
+        -- No Minimap\Tracking equivalent exists for portals; this is a spell
+        -- icon, so its border is trimmed to match the others.
+        worldIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        texCoord = { 0.08, 0.92, 0.08, 0.92 },
+        borderColor = { 0.55, 0.35, 0.85, 0.62 },
+        iconColor = { 1.0, 1.0, 1.0, 1.0 },
+    },
+}
+
+-- Per-type visibility is shared by both renderers, so toggling a marker type
+-- affects the world map and the minimap together.
+function MapPOIData:IsTypeEnabled(poiType)
+    local info = self:GetTypeInfo(poiType)
+    if not info then
+        return false
+    end
+
+    local settings = addon.settings and addon.settings.mapPoiTypes
+    local value = settings and settings[poiType]
+    if value == nil then
+        return info.defaultEnabled ~= false
+    end
+    return value ~= false
+end
+
+function MapPOIData:GetTypeInfo(poiType)
+    if type(poiType) ~= "string" then
+        return nil
+    end
+    return self.TYPES[poiType]
+end
+
+-- Registered type keys in a stable draw order.
+function MapPOIData:GetTypeKeys()
+    local keys = {}
+    for key in pairs(self.TYPES) do
+        keys[#keys + 1] = key
+    end
+    table.sort(keys, function(left, right)
+        local leftOrder = self.TYPES[left].order or 100
+        local rightOrder = self.TYPES[right].order or 100
+        if leftOrder ~= rightOrder then
+            return leftOrder < rightOrder
+        end
+        return left < right
+    end)
+    return keys
+end
+
 local state = {
     list = {},             -- array of { type, name, map, x, y, z }
     byType = {},           -- type -> array of POIs (same tables as list)
@@ -100,15 +191,17 @@ local function OnPOIResponse(data)
 
     if done then
         state.complete = true
-        -- Refresh the map pins once, now that the full set is available.
-        local qmp = type(addon.GetModule) == "function" and addon:GetModule("QuestMapPins") or nil
-        if qmp and type(qmp.Refresh) == "function" then
-            if type(addon.DelayedCall) == "function" then
-                addon:DelayedCall(0, function()
-                    qmp:Refresh()
-                end)
-            else
-                qmp:Refresh()
+        -- Refresh every renderer once, now that the full set is available.
+        for _, moduleName in ipairs({ "QuestMapPins", "MapPOIMinimap" }) do
+            local renderer = type(addon.GetModule) == "function" and addon:GetModule(moduleName) or nil
+            if renderer and type(renderer.Refresh) == "function" then
+                if type(addon.DelayedCall) == "function" then
+                    addon:DelayedCall(0, function()
+                        renderer:Refresh()
+                    end)
+                else
+                    renderer:Refresh()
+                end
             end
         end
     elseif state.requested and #list > 0 then

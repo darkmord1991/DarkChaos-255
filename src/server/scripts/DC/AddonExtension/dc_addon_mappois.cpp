@@ -2,21 +2,32 @@
  * Dark Chaos - Map POI Addon Handler (MPOI)
  * =========================================
  *
- * Serves world-map POI markers to the client (DC-QOS QuestMapPins renders
- * them). The first (and currently only) POI type is "flight": every
- * flight-master spawn in the world, so custom maps without a client taxi map
- * (Azshara Crater 37, DC Hyjal 750, DC Plaguelands 751, Hyjal Frontier 1410)
- * still show their flight masters on the world map with a name tooltip.
+ * Serves world-map / minimap POI markers to the client (DC-QOS renders them:
+ * QuestMapPins on the world map, MapPOIMinimap on the minimap). This exists
+ * mainly for the custom maps that have no client-side service art at all
+ * (Azshara Crater 37, DC Hyjal 750, DC Plaguelands 751, Hyjal Frontier 1410),
+ * where a flight master or innkeeper is otherwise invisible until you walk
+ * into it.
  *
- * Flight masters are detected from live spawn data, so new spawns appear
- * without any server or client change:
- *  - creature_template.npcflag & UNIT_NPC_FLAG_FLIGHTMASTER (DBC-taxi NPCs), or
- *  - a script name containing "flightmaster" (gossip-based custom flight
- *    masters such as acflightmaster*, npc_dc_downport_flightmaster).
+ * Everything is detected from live spawn data, so new spawns appear without
+ * any server or client change:
+ *  - "flight"     creature npcflag & UNIT_NPC_FLAG_FLIGHTMASTER, or a script
+ *                 name containing "flightmaster" (gossip-driven custom flight
+ *                 masters such as acflightmaster*, npc_dc_downport_flightmaster).
+ *  - "inn"        creature npcflag & UNIT_NPC_FLAG_INNKEEPER.
+ *  - "teleporter" creature with one of the teleporter script names below.
+ *                 Matched EXACTLY, never by name text: the world is full of
+ *                 "... Teleport Bunny" / "Invisible Stalker ... teleport" /
+ *                 "Portal Trainer" entries that must not become map markers.
+ *  - "mail"       gameobject_template.type == GAMEOBJECT_TYPE_MAILBOX.
  *
  * The POI list is static world data: it is scanned once on first request and
  * cached. Requests are answered from memory (no DB round-trip); responses are
  * paged like the TELE list and faction-filtered per player.
+ *
+ * A POI whose name matches its type's default label is sent without a name
+ * (every mailbox is called "Mailbox"); both renderers already fall back to the
+ * type label, which keeps the once-per-session payload down.
  *
  * Copyright (C) 2026 Dark Chaos Development Team
  */
@@ -24,23 +35,61 @@
 #include "dc_addon_namespace.h"
 #include "Config.h"
 #include "DBCStores.h"
+#include "GameObjectData.h"
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "SharedDefines.h"
 #include "UnitDefines.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
+#include <string>
 #include <vector>
 
 namespace DCAddon
 {
 namespace MapPOIs
 {
+    // POI type keys. Must match the entries in the client-side registry
+    // (DC-QOS/Modules/MapPOIData.lua -> MapPOIData.TYPES).
+    namespace PoiType
+    {
+        constexpr char const* FLIGHT     = "flight";
+        constexpr char const* INN        = "inn";
+        constexpr char const* MAIL       = "mail";
+        constexpr char const* TELEPORTER = "teleporter";
+    }
+
+    // Default label per type; a POI named exactly this is sent without a name.
+    // Keep in sync with the `label` fields in the client registry.
+    static char const* DefaultLabelFor(char const* type)
+    {
+        if (std::strcmp(type, PoiType::FLIGHT) == 0)
+            return "Flight Master";
+        if (std::strcmp(type, PoiType::INN) == 0)
+            return "Innkeeper";
+        if (std::strcmp(type, PoiType::MAIL) == 0)
+            return "Mailbox";
+        if (std::strcmp(type, PoiType::TELEPORTER) == 0)
+            return "Teleporter";
+        return "";
+    }
+
+    // Exact creature ScriptName values that mark a usable teleporter NPC.
+    static constexpr char const* kTeleporterScripts[] =
+    {
+        "dc_teleporter_creature_script", // DC-WoW Teleporter (entry 800002)
+        "npc_dungeon_portal_selector",   // Portal Keeper / Dungeon Teleporter
+    };
+
     struct MapPOI
     {
-        std::string name;
+        std::string name;           // empty => client falls back to the type label
+        char const* type = nullptr;
+        uint32 entry = 0;           // spawn template entry, for duplicate collapsing
         uint32 map = 0;
         float x = 0.0f;
         float y = 0.0f;
@@ -48,27 +97,98 @@ namespace MapPOIs
         uint32 hostileMask = 0;     // FactionTemplate hostile mask (0 = visible to everyone)
     };
 
-    // Two spawns of the same entry closer than this are one map marker
-    // (paired/duplicate spawns at the same taxi node).
+    // Two spawns of the same template closer than this are one map marker
+    // (paired/duplicate spawns at the same taxi node or doorway).
     constexpr float DUPLICATE_SPAWN_RANGE = 25.0f;
+
+    static std::string ToLower(std::string const& value)
+    {
+        std::string lowered(value);
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return lowered;
+    }
 
     static bool IsFlightMasterScriptName(std::string const& scriptName)
     {
         if (scriptName.empty())
             return false;
 
-        std::string lowered(scriptName);
-        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::string const lowered = ToLower(scriptName);
         return lowered.find("flightmaster") != std::string::npos
             || lowered.find("flight_master") != std::string::npos;
     }
 
-    static std::vector<MapPOI> BuildFlightMasterList()
+    static bool IsTeleporterScriptName(std::string const& scriptName)
+    {
+        if (scriptName.empty())
+            return false;
+
+        for (char const* candidate : kTeleporterScripts)
+            if (scriptName == candidate)
+                return true;
+
+        return false;
+    }
+
+    // Classify a creature spawn. Returns nullptr when it is not a POI.
+    // A creature that is several things at once (an innkeeper who is also a
+    // flight master) is reported as the most travel-relevant one.
+    static char const* ClassifyCreature(CreatureTemplate const* proto, CreatureData const& data)
+    {
+        // Effective flags, matching ObjectMgr::ChooseCreatureFlags: a non-zero
+        // spawn npcflag REPLACES the template's rather than adding to it, so a
+        // spawn that overrides the flags away must not be marked.
+        uint32 const npcflag = data.npcflag ? data.npcflag : proto->npcflag;
+        std::string const& templateScript = sObjectMgr->GetScriptName(proto->ScriptID);
+        std::string const& spawnScript = sObjectMgr->GetScriptName(data.ScriptId);
+
+        if ((npcflag & UNIT_NPC_FLAG_FLIGHTMASTER)
+            || IsFlightMasterScriptName(templateScript)
+            || IsFlightMasterScriptName(spawnScript))
+            return PoiType::FLIGHT;
+
+        if (IsTeleporterScriptName(templateScript) || IsTeleporterScriptName(spawnScript))
+            return PoiType::TELEPORTER;
+
+        if (npcflag & UNIT_NPC_FLAG_INNKEEPER)
+            return PoiType::INN;
+
+        return nullptr;
+    }
+
+    static bool IsDuplicateOf(std::vector<MapPOI> const& pois, MapPOI const& candidate)
+    {
+        for (MapPOI const& existing : pois)
+        {
+            if (existing.entry != candidate.entry || existing.map != candidate.map
+                || std::strcmp(existing.type, candidate.type) != 0)
+                continue;
+
+            float const dx = existing.x - candidate.x;
+            float const dy = existing.y - candidate.y;
+            if ((dx * dx) + (dy * dy) <= DUPLICATE_SPAWN_RANGE * DUPLICATE_SPAWN_RANGE)
+                return true;
+        }
+
+        return false;
+    }
+
+    static void AddPOI(std::vector<MapPOI>& pois, MapPOI&& poi)
+    {
+        if (IsDuplicateOf(pois, poi))
+            return;
+
+        // Drop a name that only repeats the type label the client already shows.
+        if (poi.name == DefaultLabelFor(poi.type))
+            poi.name.clear();
+
+        pois.push_back(std::move(poi));
+    }
+
+    static std::vector<MapPOI> BuildPOIList()
     {
         std::vector<MapPOI> pois;
-        // entry per POI, parallel to pois: needed only for duplicate collapsing
-        std::vector<uint32> poiEntries;
 
         for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
         {
@@ -76,33 +196,14 @@ namespace MapPOIs
             if (!proto)
                 continue;
 
-            bool const flagged = (proto->npcflag & UNIT_NPC_FLAG_FLIGHTMASTER) != 0
-                || (data.npcflag & UNIT_NPC_FLAG_FLIGHTMASTER) != 0;
-            bool const scripted = IsFlightMasterScriptName(sObjectMgr->GetScriptName(proto->ScriptID))
-                || IsFlightMasterScriptName(sObjectMgr->GetScriptName(data.ScriptId));
-            if (!flagged && !scripted)
-                continue;
-
-            // Collapse duplicate spawns of the same NPC at the same taxi node.
-            bool duplicate = false;
-            for (size_t i = 0; i < pois.size(); ++i)
-            {
-                if (poiEntries[i] != data.id || pois[i].map != data.mapid)
-                    continue;
-
-                float const dx = pois[i].x - data.posX;
-                float const dy = pois[i].y - data.posY;
-                if ((dx * dx) + (dy * dy) <= DUPLICATE_SPAWN_RANGE * DUPLICATE_SPAWN_RANGE)
-                {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if (duplicate)
+            char const* type = ClassifyCreature(proto, data);
+            if (!type)
                 continue;
 
             MapPOI poi;
             poi.name = proto->Name;
+            poi.type = type;
+            poi.entry = data.id;
             poi.map = data.mapid;
             poi.x = data.posX;
             poi.y = data.posY;
@@ -110,18 +211,56 @@ namespace MapPOIs
             if (FactionTemplateEntry const* faction = sFactionTemplateStore.LookupEntry(proto->faction))
                 poi.hostileMask = faction->hostileMask;
 
-            pois.push_back(std::move(poi));
-            poiEntries.push_back(data.id);
+            AddPOI(pois, std::move(poi));
         }
 
-        LOG_INFO("dc.addon", "MapPOI (MPOI): cached {} flight-master map markers", pois.size());
+        for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
+        {
+            GameObjectTemplate const* proto = sObjectMgr->GetGameObjectTemplate(data.id);
+            if (!proto || proto->type != GAMEOBJECT_TYPE_MAILBOX)
+                continue;
+
+            MapPOI poi;
+            poi.name = proto->name;
+            poi.type = PoiType::MAIL;
+            poi.entry = data.id;
+            poi.map = data.mapid;
+            poi.x = data.posX;
+            poi.y = data.posY;
+            poi.z = data.posZ;
+            // Gameobjects carry no faction template, so mailboxes are shown to
+            // everyone. Faction-restricted mailboxes are handled by the client
+            // never being told about spawns it cannot reach anyway.
+
+            AddPOI(pois, std::move(poi));
+        }
+
+        uint32 flightCount = 0;
+        uint32 innCount = 0;
+        uint32 mailCount = 0;
+        uint32 teleporterCount = 0;
+        for (MapPOI const& poi : pois)
+        {
+            if (std::strcmp(poi.type, PoiType::FLIGHT) == 0)
+                ++flightCount;
+            else if (std::strcmp(poi.type, PoiType::INN) == 0)
+                ++innCount;
+            else if (std::strcmp(poi.type, PoiType::MAIL) == 0)
+                ++mailCount;
+            else if (std::strcmp(poi.type, PoiType::TELEPORTER) == 0)
+                ++teleporterCount;
+        }
+
+        LOG_INFO("dc.addon",
+            "MapPOI (MPOI): cached {} map markers ({} flight, {} inn, {} mail, {} teleporter)",
+            pois.size(), flightCount, innCount, mailCount, teleporterCount);
         return pois;
     }
 
     // Built on first request (world thread), immutable afterwards.
-    static std::vector<MapPOI> const& GetFlightMasterPOIs()
+    static std::vector<MapPOI> const& GetPOIs()
     {
-        static std::vector<MapPOI> const pois = BuildFlightMasterList();
+        static std::vector<MapPOI> const pois = BuildPOIList();
         return pois;
     }
 
@@ -158,7 +297,7 @@ namespace MapPOIs
             ? FACTION_MASK_ALLIANCE : FACTION_MASK_HORDE;
 
         std::vector<MapPOI const*> visible;
-        for (MapPOI const& poi : GetFlightMasterPOIs())
+        for (MapPOI const& poi : GetPOIs())
             if (!(poi.hostileMask & teamMask))
                 visible.push_back(&poi);
 
@@ -176,8 +315,9 @@ namespace MapPOIs
             MapPOI const* poi = visible[i];
             JsonValue obj;
             obj.SetObject();
-            obj.Set("t", JsonValue("flight"));
-            obj.Set("n", JsonValue(poi->name));
+            obj.Set("t", JsonValue(poi->type));
+            if (!poi->name.empty())
+                obj.Set("n", JsonValue(poi->name));
             obj.Set("m", JsonValue(poi->map));
             obj.Set("x", JsonValue(static_cast<double>(poi->x)));
             obj.Set("y", JsonValue(static_cast<double>(poi->y)));

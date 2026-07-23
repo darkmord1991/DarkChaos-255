@@ -18,7 +18,7 @@ local QuestMapPins = {
             showObjectives = true,
             hideTrivialStarts = true,
             showTeleports = false,
-            showFlightMasters = true,
+            showMapPOIs = true,
         },
     },
 }
@@ -427,31 +427,47 @@ local function GetVisibleMarkers(currentMapId)
         end
     end
 
-    -- Flight-master markers (server-fed MapPOIData; the layer custom maps
-    -- without a taxi map rely on to show their flight masters at all).
-    if settings.showFlightMasters ~= false and mapUtils and type(mapUtils.WorldToMapPosition) == "function"
-        and addon.MapPOIData and type(addon.MapPOIData.GetPOIsByType) == "function" then
+    -- Server-fed map POIs (MapPOIData). Currently flight masters -- the layer
+    -- custom maps without a taxi map rely on to show them at all. Icons and
+    -- labels come from MapPOIData.TYPES, shared with the minimap layer
+    -- (MapPOIMinimap), so a new POI kind renders in both places at once.
+    if settings.showMapPOIs ~= false and mapUtils and type(mapUtils.WorldToMapPosition) == "function"
+        and addon.MapPOIData and type(addon.MapPOIData.GetPOIsByType) == "function"
+        and type(addon.MapPOIData.GetTypeKeys) == "function" then
         -- Lazily sync the POI list the first time the layer is shown.
         if type(addon.MapPOIData.EnsureRequested) == "function" then
             addon.MapPOIData:EnsureRequested()
         end
 
-        local flightMasters = addon.MapPOIData:GetPOIsByType("flight")
-        if type(flightMasters) == "table" then
-            for i = 1, #flightMasters do
-                local poi = flightMasters[i]
-                local normX, normY = mapUtils.WorldToMapPosition(currentMapId, poi.map, poi.x, poi.y)
-                if normX and normY then
-                    markers[#markers + 1] = {
-                        category = "flightmaster",
-                        mapId = currentMapId,
-                        x = normX,
-                        y = normY,
-                        title = poi.name or "Flight Master",
-                        worldMap = poi.map,
-                        worldX = poi.x,
-                        worldY = poi.y,
-                    }
+        local poiData = addon.MapPOIData
+        local typeKeys = poiData:GetTypeKeys()
+        for keyIndex = 1, #typeKeys do
+            local poiType = typeKeys[keyIndex]
+            local typeInfo = poiData:GetTypeInfo(poiType)
+            local pois = poiData:GetPOIsByType(poiType)
+
+            if typeInfo and type(pois) == "table" and poiData:IsTypeEnabled(poiType) then
+                for i = 1, #pois do
+                    local poi = pois[i]
+                    local normX, normY = mapUtils.WorldToMapPosition(currentMapId, poi.map, poi.x, poi.y)
+                    if normX and normY then
+                        markers[#markers + 1] = {
+                            category = "poi",
+                            poiType = poiType,
+                            poiLabel = typeInfo.label,
+                            poiIcon = typeInfo.worldIcon,
+                            poiTexCoord = typeInfo.texCoord,
+                            poiBorderColor = typeInfo.borderColor,
+                            poiIconColor = typeInfo.iconColor,
+                            mapId = currentMapId,
+                            x = normX,
+                            y = normY,
+                            title = poi.name or typeInfo.label or "Point of Interest",
+                            worldMap = poi.map,
+                            worldX = poi.x,
+                            worldY = poi.y,
+                        }
+                    end
                 end
             end
         end
@@ -468,7 +484,7 @@ local function GetVisibleMarkers(currentMapId)
             if marker.category == "teleport" then
                 return 15
             end
-            if marker.category == "flightmaster" then
+            if marker.category == "poi" then
                 return 12
             end
             if marker.category == "objective" then
@@ -530,8 +546,8 @@ local function GetMarkerKindLabel(marker)
     if marker.category == "teleport" then
         return "Teleport"
     end
-    if marker.category == "flightmaster" then
-        return "Flight Master"
+    if marker.category == "poi" then
+        return marker.poiLabel or "Point of Interest"
     end
     return "Quest"
 end
@@ -710,7 +726,7 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
     local recurrenceType = marker.recurrenceType
     local isTracked = marker.isTracked == true
     local baseSize = marker.category == "objective" and 15 or 20
-    if marker.category == "teleport" or marker.category == "flightmaster" then
+    if marker.category == "teleport" or marker.category == "poi" then
         baseSize = 16
     end
     if isTracked then
@@ -737,10 +753,20 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
         texture = TELEPORT_ICON_TEXTURE
         borderR, borderG, borderB, borderA = 0.55, 0.35, 0.85, 0.62
         iconR, iconG, iconB, iconA = 0.82, 0.72, 1.0, 1.0
-    elseif marker.category == "flightmaster" then
-        texture = FLIGHTMASTER_ICON_TEXTURE
-        borderR, borderG, borderB, borderA = 0.24, 0.62, 0.28, 0.62
-        iconR, iconG, iconB, iconA = 1.0, 1.0, 1.0, 1.0
+    elseif marker.category == "poi" then
+        texture = marker.poiIcon or FLIGHTMASTER_ICON_TEXTURE
+        local border = marker.poiBorderColor
+        if type(border) == "table" then
+            borderR, borderG, borderB, borderA = border[1], border[2], border[3], border[4]
+        else
+            borderR, borderG, borderB, borderA = 0.24, 0.62, 0.28, 0.62
+        end
+        local iconColor = marker.poiIconColor
+        if type(iconColor) == "table" then
+            iconR, iconG, iconB, iconA = iconColor[1], iconColor[2], iconColor[3], iconColor[4]
+        else
+            iconR, iconG, iconB, iconA = 1.0, 1.0, 1.0, 1.0
+        end
     elseif recurrenceType == "daily" then
         texture = DAILY_ICON_TEXTURE
         borderR, borderG, borderB, borderA = 0.26, 0.48, 0.78, 0.58
@@ -765,8 +791,11 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
     button.glow:SetAlpha(glowAlpha)
     button.icon:SetTexture(texture)
     button.icon:SetVertexColor(iconR, iconG, iconB, iconA)
-    if marker.category == "objective" then
-        button.icon:SetTexCoord(0, 1, 0, 1)
+
+    -- Trim the border off Interface\Icons art (POI types opt in via texCoord).
+    local texCoord = marker.poiTexCoord
+    if type(texCoord) == "table" then
+        button.icon:SetTexCoord(texCoord[1] or 0, texCoord[2] or 1, texCoord[3] or 0, texCoord[4] or 1)
     else
         button.icon:SetTexCoord(0, 1, 0, 1)
     end
@@ -1007,9 +1036,9 @@ function QuestMapPins.CreateSettings(parent)
     local flightCb = addon:CreateCheckbox(parent)
     flightCb:SetPoint("TOPLEFT", 16, yOffset)
     flightCb.Text:SetText("Show flight masters on the world map")
-    flightCb:SetChecked(settings.showFlightMasters ~= false)
+    flightCb:SetChecked(settings.showMapPOIs ~= false)
     flightCb:SetScript("OnClick", function(self)
-        addon:SetSetting("questMapPins.showFlightMasters", self:GetChecked())
+        addon:SetSetting("questMapPins.showMapPOIs", self:GetChecked())
         if self:GetChecked() and addon.MapPOIData
             and type(addon.MapPOIData.EnsureRequested) == "function" then
             addon.MapPOIData:EnsureRequested()

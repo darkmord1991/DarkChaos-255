@@ -753,6 +753,147 @@ function addon:GetMapUtils()
         return normX, normY
     end
 
+    -- ========================================================================
+    -- Minimap projection
+    -- ========================================================================
+    -- Places a normalized map position onto the minimap as a pixel offset from
+    -- its center, honouring minimap rotation and the current zoom level. The
+    -- math mirrors the live-group pins in Navigation.lua (which keeps its own
+    -- file-local copy); this shared version lets any module draw minimap pins
+    -- without duplicating it again.
+
+    -- Visible minimap diameter in yards per zoom step (0-5).
+    local MINIMAP_DIAMETER_YARDS = {
+        indoor = {
+            [0] = 300,
+            [1] = 240,
+            [2] = 180,
+            [3] = 120,
+            [4] = 80,
+            [5] = 50,
+        },
+        outdoor = {
+            [0] = 466 + (2 / 3),
+            [1] = 400,
+            [2] = 333 + (1 / 3),
+            [3] = 266 + (2 / 3),
+            [4] = 200,
+            [5] = 133 + (1 / 3),
+        },
+    }
+
+    local function Atan2(y, x)
+        if math.atan2 then
+            return math.atan2(y, x)
+        end
+
+        if x > 0 then
+            return math.atan(y / x)
+        end
+        if x < 0 and y >= 0 then
+            return math.atan(y / x) + math.pi
+        end
+        if x < 0 and y < 0 then
+            return math.atan(y / x) - math.pi
+        end
+        if x == 0 and y > 0 then
+            return math.pi / 2
+        end
+        if x == 0 and y < 0 then
+            return -math.pi / 2
+        end
+        return 0
+    end
+
+    local function NormalizeRadians(angle)
+        while angle > math.pi do
+            angle = angle - (2 * math.pi)
+        end
+        while angle < -math.pi do
+            angle = angle + (2 * math.pi)
+        end
+        return angle
+    end
+
+    function mapUtils.IsMinimapRotating()
+        return type(GetCVar) == "function" and GetCVar("rotateMinimap") == "1"
+    end
+
+    -- The client mirrors minimapZoom onto minimapInsideZoom while indoors, which
+    -- is the conventional way to detect the indoor zoom table on 3.3.5.
+    function mapUtils.IsMinimapIndoors()
+        if type(GetCVar) ~= "function" then
+            return false
+        end
+
+        local outsideZoom = tostring(GetCVar("minimapZoom") or "")
+        local insideZoom = tostring(GetCVar("minimapInsideZoom") or "")
+        return outsideZoom == insideZoom
+    end
+
+    function mapUtils.GetMinimapDiameterYards()
+        if not Minimap or type(Minimap.GetZoom) ~= "function" then
+            return MINIMAP_DIAMETER_YARDS.outdoor[1]
+        end
+
+        local zoom = tonumber(Minimap:GetZoom()) or 1
+        local zoomTable = mapUtils.IsMinimapIndoors()
+            and MINIMAP_DIAMETER_YARDS.indoor
+            or MINIMAP_DIAMETER_YARDS.outdoor
+
+        return zoomTable[zoom] or zoomTable[1] or MINIMAP_DIAMETER_YARDS.outdoor[1]
+    end
+
+    -- Returns pixelX, pixelY (offsets from the minimap center), the distance in
+    -- yards, and whether the point sits outside the visible ring (in which case
+    -- the returned offset is clamped onto that ring -- callers decide whether to
+    -- draw an edge marker or hide the pin). Returns nil when the position cannot
+    -- be projected.
+    function mapUtils.ProjectToMinimap(mapId, playerX, playerY, targetX, targetY, radiusPx)
+        radiusPx = tonumber(radiusPx)
+        if not radiusPx or radiusPx <= 0 then
+            return nil
+        end
+
+        if not playerX or not playerY or not targetX or not targetY then
+            return nil
+        end
+
+        local distanceYards, dxYards, dyYards =
+            mapUtils.ComputeDistanceYards(mapId, playerX, playerY, targetX, targetY)
+        if not distanceYards then
+            return nil
+        end
+
+        local diameterYards = mapUtils.GetMinimapDiameterYards()
+        if not diameterYards or diameterYards <= 0 then
+            return nil
+        end
+
+        -- Map Y grows toward the south, so invert both deltas to line the angle
+        -- up with the on-screen direction.
+        local direction = Atan2(-dxYards, -dyYards)
+        if direction > 0 then
+            direction = (2 * math.pi) - direction
+        else
+            direction = -direction
+        end
+
+        local heading = direction
+        if mapUtils.IsMinimapRotating() then
+            local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
+            heading = NormalizeRadians(direction - facing)
+        end
+
+        local projected = (distanceYards / (diameterYards * 0.5)) * radiusPx
+        local isClamped = projected > radiusPx
+        if isClamped then
+            projected = radiusPx
+        end
+
+        return math.sin(heading) * projected, math.cos(heading) * projected, distanceYards, isClamped
+    end
+
     self._mapUtils = mapUtils
     return mapUtils
 end

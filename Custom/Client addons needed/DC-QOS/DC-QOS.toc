@@ -209,6 +209,7 @@ Modules\QuestFrames.lua
 Modules\TeleportData.lua
 Modules\MapPOIData.lua
 Modules\QuestMapPins.lua
+Modules\MapPOIMinimap.lua
 Modules\QuestPopups.lua
 Modules\DruidFix.lua
 Modules\ExtendedStats\ExtendedStats.lua
