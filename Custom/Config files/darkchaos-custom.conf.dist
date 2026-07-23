@@ -3468,6 +3468,25 @@ DCFirstStart.StarterGuild.Motd = "Welcome to the newcomer guild! Ask your questi
 DCFirstStart.StarterGuild.Info = "Automatic starter guild for new characters. Feel free to leave once you find a home - no hard feelings!"
 
 #
+#    DCFirstStart.StarterGuild.SystemLeaderGuid{Alliance,Horde}
+#        Description: Ownership-proofing for the starter guild. Without this,
+#                     whichever real player happens to trigger guild creation
+#                     (the very first newcomer) becomes its Guild Master and
+#                     could rename/disband/loot-lock it like any other guild.
+#                     To prevent that, create ONE character per faction on an
+#                     account nobody plays (random/unknown password, or the
+#                     account disabled for login), find its character GUID
+#                     (`.character info` or the `characters`.`guid` column),
+#                     and set it here. On the guild's first creation, the
+#                     bootstrap creator is auto-demoted to a normal member and
+#                     this system character is promoted to Guild Master -
+#                     nobody can ever log into it to touch the guild.
+#        Default:     0 (disabled - the bootstrap creator stays leader)
+#
+DCFirstStart.StarterGuild.SystemLeaderGuidAlliance = 0
+DCFirstStart.StarterGuild.SystemLeaderGuidHorde = 0
+
+#
 #    DCFirstStart.NewcomerChat.*
 #        Description: Auto-join a custom help/chat channel on every login so new
 #                     players have a place to ask questions.

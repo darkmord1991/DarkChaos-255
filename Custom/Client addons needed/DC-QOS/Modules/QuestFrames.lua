@@ -3088,6 +3088,39 @@ local function UpdateQuestInfoTitles()
     end
 end
 
+-- The reward value lines pair a QuestFont label with an embossed
+-- NumberFontNormalLarge value ("Experience: 450") that reads terribly on the
+-- map's parchment. Force clean glyphs with a soft shadow on both, and let the
+-- value reuse the label's font + colour so the line reads as one piece. Runs
+-- after the recursive stylers, which keep each string's original font file.
+local function StyleQuestRewardValueText()
+    for _, prefix in ipairs({
+        "QuestInfoXPFrame", "QuestInfoHonorFrame",
+        "QuestInfoArenaPointsFrame", "QuestInfoTalentFrame",
+    }) do
+        local label = _G[prefix .. "ReceiveText"]
+        local value = _G[prefix .. "Points"]
+        local font = label and label.GetFont and label:GetFont() or nil
+        for _, text in ipairs({ label, value }) do
+            if text and font and text.SetFont then
+                text:SetFont(font, 13, "")
+                if text.SetShadowColor then
+                    text:SetShadowColor(0, 0, 0, 0.65)
+                end
+                if text.SetShadowOffset then
+                    text:SetShadowOffset(1, -1)
+                end
+            end
+        end
+        if label and value and label.GetTextColor and value.SetTextColor then
+            local r, g, b = label:GetTextColor()
+            if r then
+                value:SetTextColor(r, g, b)
+            end
+        end
+    end
+end
+
 local function StyleWorldMapQuestPanels()
     ApplyCombinedWorldMapLayout()
 
@@ -3101,9 +3134,8 @@ local function StyleWorldMapQuestPanels()
         end
     end
 
-    if WorldMapTrackQuest then
-        addon:StyleActionButton(WorldMapTrackQuest)
-    end
+    -- WorldMapTrackQuest stays a plain stock checkbox: the StyleActionButton
+    -- box/border frame around it read as clutter on the map art.
 
     StyleWorldMapQuestRows()
 
@@ -3113,6 +3145,7 @@ local function StyleWorldMapQuestPanels()
         local isComplete = selectedQuestInfo.isComplete or false
         StyleWorldMapQuestDetailTextRecursive(WorldMapQuestDetailScrollFrame, 0, selectedQuestInfo.title, isTracked, isComplete)
         StyleWorldMapQuestDetailTextRecursive(WorldMapQuestRewardScrollFrame, 0, selectedQuestInfo.title, isTracked, isComplete, true)
+        StyleQuestRewardValueText()
     end
 end
 
@@ -3204,21 +3237,7 @@ local function StyleQuestText()
         ApplyFontStyle(_G[name], 11, preferStockChrome and 0 or 1, sectionR, sectionG, sectionB)
     end
 
-    -- The reward XP value rendered with a heavy embossed/outlined number font that
-    -- was hard to read. Force a clean (no-outline) glyph with a readable shadow.
-    local xpText = _G["QuestInfoXPFrameReceiveText"]
-    if xpText and xpText.GetFont and xpText.SetFont then
-        local font = (xpText.__dcqosQuestFont and xpText.__dcqosQuestFont.font) or (xpText:GetFont())
-        if font then
-            xpText:SetFont(font, 13, "")
-        end
-        if xpText.SetShadowColor then
-            xpText:SetShadowColor(0, 0, 0, 0.65)
-        end
-        if xpText.SetShadowOffset then
-            xpText:SetShadowOffset(1, -1)
-        end
-    end
+    StyleQuestRewardValueText()
 
     UpdateQuestInfoTitles()
 end

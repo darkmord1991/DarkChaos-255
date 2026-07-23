@@ -70,10 +70,31 @@ end
 
 -- ---------------------------------------------------------------- fit scale
 
+-- Top inset in UIParent units: directly below the DC info bar when it is
+-- shown (the window docks under it), else the configured fallback.
+local function GetTopInset()
+    local s = GetSettings()
+    local bar = _G["DCInfoBarFrame"]
+    if bar and bar.GetBottom and (not bar.IsShown or bar:IsShown()) and UIParent then
+        local bottom = bar:GetBottom()
+        local uiTop = UIParent.GetTop and UIParent:GetTop()
+        if bottom and uiTop then
+            local barScale = bar.GetEffectiveScale and bar:GetEffectiveScale() or 1
+            local uiScale = UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+            local inset = uiTop - (bottom * barScale / uiScale)
+            if inset >= 0 and inset <= 120 then
+                return inset
+            end
+        end
+    end
+    return s.topInset
+end
+
 -- Height available between the info bar (top) and the bottom action bars.
 local function GetBandHeight()
     local s = GetSettings()
     local uiH = (UIParent and UIParent:GetHeight()) or 768
+    local topInset = GetTopInset()
     local barTop = 0
     for _, nm in ipairs({ "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight" }) do
         local f = _G[nm]
@@ -84,8 +105,8 @@ local function GetBandHeight()
     end
     local bottom = (barTop > 0) and barTop or s.bottomInset
     if bottom < 60 then bottom = 60 elseif bottom > 260 then bottom = 260 end
-    local h = uiH - s.topInset - bottom
-    if h < 200 then h = uiH - s.topInset - s.bottomInset end
+    local h = uiH - topInset - bottom
+    if h < 200 then h = uiH - topInset - s.bottomInset end
     return h
 end
 
@@ -178,13 +199,16 @@ local function ApplyScaleAndPosition()
     if not WorldMapFrame or InCombat() then
         return
     end
-    WorldMapFrame:SetScale(GetWindowScale())
+    local scale = GetWindowScale()
+    WorldMapFrame:SetScale(scale)
     WorldMapFrame:ClearAllPoints()
     local saved = GetSettings().point
     if saved and saved.p then
         WorldMapFrame:SetPoint(saved.p, UIParent, saved.p, saved.x or 0, saved.y or 0)
     else
-        WorldMapFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        -- Dock directly under the info bar. SetPoint offsets are in the
+        -- frame's own scaled space, hence the division.
+        WorldMapFrame:SetPoint("TOP", UIParent, "TOP", 0, -(GetTopInset() + 2) / scale)
     end
 end
 
@@ -204,6 +228,27 @@ local function Reapply()
     ApplyQuestView()
     ApplyScaleAndPosition()
     state.reapplying = false
+end
+
+-- The zone map (WorldMapDetailTile1..12) is a 4x3 grid of 256px tiles =
+-- 1024x768, but the canvas is only 1002x668: Blizzard-format zone BLPs pad
+-- the last 22px column / 100px row with opaque black. The stock map hid that
+-- overhang inside its black surround; on this client's parchment/book art it
+-- hangs past the map's bottom/right edge as black bars covering the quest
+-- book and list. Crop the padding off the edge tiles (safe: no tile anchors
+-- to an edge tile's far side). Sizes/texcoords survive SetTexture, so once
+-- at setup is enough.
+local function CropDetailTilePadding()
+    for i = 1, 12 do
+        local tile = _G["WorldMapDetailTile" .. i]
+        if tile and tile.SetTexCoord then
+            local w = (i % 4 == 0) and 234 or 256
+            local h = (i > 8) and 156 or 256
+            tile:SetWidth(w)
+            tile:SetHeight(h)
+            tile:SetTexCoord(0, w / 256, 0, h / 256)
+        end
+    end
 end
 
 -- One-time: make WorldMapFrame a movable, top-level window (Mapster's OnEnable
@@ -231,6 +276,8 @@ local function SetupWindow()
 
     if BlackoutWorld then BlackoutWorld:Hide() end
     if WorldMapTitleButton then WorldMapTitleButton:Hide() end
+
+    CropDetailTilePadding()
 
     -- Release keyboard capture so chat opens while the map is up (ESC still
     -- closes via UISpecialFrames).
@@ -327,6 +374,15 @@ function WorldMapWindow.OnEnable()
         return
     end
     state.active = true
+
+    -- v2 layout: the default anchor moved from screen-centre to "docked under
+    -- the info bar". Old saved drag points would pin the window to the old
+    -- default, so clear them once.
+    local s = GetSettings()
+    if s.layoutVersion ~= 2 then
+        s.layoutVersion = 2
+        s.point = nil
+    end
 
     SetupWindow()
     InstallViewHooks()

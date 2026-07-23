@@ -38,6 +38,7 @@
 #include "QuestDef.h"
 #include "GuildMgr.h"
 #include "Guild.h"
+#include "CharacterCache.h"
 #include "Channel.h"
 #include "ChannelMgr.h"
 #include "CharacterDatabase.h"
@@ -122,6 +123,8 @@ namespace DCFirstStart
         constexpr const char* STARTER_GUILD_AUTOCREATE = "DCFirstStart.StarterGuild.AutoCreate";
         constexpr const char* STARTER_GUILD_MOTD = "DCFirstStart.StarterGuild.Motd";
         constexpr const char* STARTER_GUILD_INFO = "DCFirstStart.StarterGuild.Info";
+        constexpr const char* STARTER_GUILD_SYSTEM_LEADER_ALLIANCE = "DCFirstStart.StarterGuild.SystemLeaderGuidAlliance";
+        constexpr const char* STARTER_GUILD_SYSTEM_LEADER_HORDE = "DCFirstStart.StarterGuild.SystemLeaderGuidHorde";
         constexpr const char* NEWCOMER_CHAT_ENABLE = "DCFirstStart.NewcomerChat.Enable";
         constexpr const char* NEWCOMER_CHAT_CHANNEL = "DCFirstStart.NewcomerChat.ChannelName";
         constexpr const char* NEWCOMER_CHAT_MAXLEVEL = "DCFirstStart.NewcomerChat.MaxLevel";
@@ -718,6 +721,51 @@ namespace DCFirstStart
             LOG_INFO("module.dc", "[DCFirstStart] Granted welcome quest {} to {}", questId, player->GetName());
     }
 
+    // Onboarding: transfer starter-guild leadership to a dedicated "system"
+    // character so no real player ever owns/controls it. The system character
+    // is created once by staff on an account nobody logs into (random/unknown
+    // password, or login disabled) - see DCFirstStart.StarterGuild.SystemLeaderGuid*
+    // in the config. If unset (0), missing, or the wrong faction, this is a
+    // no-op and the bootstrap creator simply remains the (ordinary) leader.
+    void PromoteSystemGuildLeader(Guild* guild, Player* bootstrapCreator, bool debug)
+    {
+        char const* key = (bootstrapCreator->GetTeamId() == TEAM_ALLIANCE)
+            ? Config::STARTER_GUILD_SYSTEM_LEADER_ALLIANCE
+            : Config::STARTER_GUILD_SYSTEM_LEADER_HORDE;
+
+        uint32 systemLowGuid = sConfigMgr->GetOption<uint32>(key, 0);
+        if (!systemLowGuid)
+            return;
+
+        ObjectGuid systemGuid = ObjectGuid::Create<HighGuid::Player>(systemLowGuid);
+
+        // GetCharacterTeamByGuid() returns 0 for an unknown guid, which is also
+        // the value of TEAM_ALLIANCE - so existence must be checked separately,
+        // or a missing/typo'd Alliance system guid would silently "match".
+        if (!sCharacterCache->HasCharacterCacheEntry(systemGuid) ||
+            sCharacterCache->GetCharacterTeamByGuid(systemGuid) != bootstrapCreator->GetTeamId())
+        {
+            if (debug)
+                LOG_WARN("module.dc", "[DCFirstStart] Configured system guild leader (guid {}) missing or wrong faction; {} remains leader of '{}'",
+                          systemLowGuid, bootstrapCreator->GetName(), guild->GetName());
+            return;
+        }
+
+        if (!guild->AddMember(systemGuid))
+        {
+            if (debug)
+                LOG_WARN("module.dc", "[DCFirstStart] Failed to add system guild leader (guid {}) to '{}'", systemLowGuid, guild->GetName());
+            return;
+        }
+
+        guild->ChangeMemberRank(systemGuid, GR_GUILDMASTER);
+        guild->ChangeMemberRank(bootstrapCreator->GetGUID(), GR_INITIATE);
+
+        if (debug)
+            LOG_INFO("module.dc", "[DCFirstStart] Transferred leadership of '{}' to system character (guid {}); {} is now a regular member",
+                      guild->GetName(), systemLowGuid, bootstrapCreator->GetName());
+    }
+
     // Onboarding: auto-join a per-faction "newcomer" guild on first login. Guilds
     // are single-faction, so Alliance and Horde use separate guilds/names. If the
     // guild does not exist yet and AutoCreate is on, it is bootstrapped with this
@@ -778,6 +826,8 @@ namespace DCFirstStart
 
         if (debug)
             LOG_INFO("module.dc", "[DCFirstStart] Created starter guild '{}' with leader {}", guildName, player->GetName());
+
+        PromoteSystemGuildLeader(guild, player, debug);
     }
 
     // Onboarding: (re)join a custom "newcomer" help channel. Called on every login
