@@ -35,6 +35,7 @@ void AddSC_dc_addon_forms();
 void AddSC_dc_addon_graveyard();
 void AddSC_dc_addon_death_markers();
 void AddSC_dc_addon_beastmaster();
+void AddSC_dc_addon_mappois();
 
 namespace DCAddon { void AddTeleportScripts(); }
 namespace DCAddon { void AddQuestFlowScripts(); }
@@ -95,4 +96,7 @@ void AddDCAddonExtensionScripts()
     // Beastmaster hunter-pet catalog (browse + preview + adopt); reads roster
     // from dc_beastmaster_pets.
     AddSC_dc_addon_beastmaster();
+
+    // Map POI markers (flight masters on world maps without a taxi map)
+    AddSC_dc_addon_mappois();
 }

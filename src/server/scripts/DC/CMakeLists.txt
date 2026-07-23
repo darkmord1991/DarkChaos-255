@@ -248,6 +248,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_gomove.cpp
     AddonExtension/dc_addon_decorations.cpp
     AddonExtension/dc_addon_teleports.cpp
+    AddonExtension/dc_addon_mappois.cpp
     AddonExtension/dc_addon_beastmaster.cpp
     AddonExtension/dc_addon_forms.cpp
     AddonExtension/dc_addon_graveyard.cpp

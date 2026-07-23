@@ -18,6 +18,7 @@ local QuestMapPins = {
             showObjectives = true,
             hideTrivialStarts = true,
             showTeleports = false,
+            showFlightMasters = true,
         },
     },
 }
@@ -30,6 +31,7 @@ local DAILY_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "dailyquesticon"
 local DAILY_ACTIVE_ICON_TEXTURE = QUEST_TEXTURE_ROOT .. "dailyactivequesticon"
 local OBJECTIVE_ICON_TEXTURE = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_3"
 local TELEPORT_ICON_TEXTURE = "Interface\\Icons\\Spell_Arcane_Blink"
+local FLIGHTMASTER_ICON_TEXTURE = "Interface\\TaxiFrame\\UI-Taxi-Icon-Green"
 local GLOW_TEXTURE = "Interface\\Minimap\\UI-Minimap-Ping"
 
 local state = {
@@ -425,6 +427,36 @@ local function GetVisibleMarkers(currentMapId)
         end
     end
 
+    -- Flight-master markers (server-fed MapPOIData; the layer custom maps
+    -- without a taxi map rely on to show their flight masters at all).
+    if settings.showFlightMasters ~= false and mapUtils and type(mapUtils.WorldToMapPosition) == "function"
+        and addon.MapPOIData and type(addon.MapPOIData.GetPOIsByType) == "function" then
+        -- Lazily sync the POI list the first time the layer is shown.
+        if type(addon.MapPOIData.EnsureRequested) == "function" then
+            addon.MapPOIData:EnsureRequested()
+        end
+
+        local flightMasters = addon.MapPOIData:GetPOIsByType("flight")
+        if type(flightMasters) == "table" then
+            for i = 1, #flightMasters do
+                local poi = flightMasters[i]
+                local normX, normY = mapUtils.WorldToMapPosition(currentMapId, poi.map, poi.x, poi.y)
+                if normX and normY then
+                    markers[#markers + 1] = {
+                        category = "flightmaster",
+                        mapId = currentMapId,
+                        x = normX,
+                        y = normY,
+                        title = poi.name or "Flight Master",
+                        worldMap = poi.map,
+                        worldX = poi.x,
+                        worldY = poi.y,
+                    }
+                end
+            end
+        end
+    end
+
     table.sort(markers, function(left, right)
         local function Priority(marker)
             if marker.isTracked then
@@ -435,6 +467,9 @@ local function GetVisibleMarkers(currentMapId)
             end
             if marker.category == "teleport" then
                 return 15
+            end
+            if marker.category == "flightmaster" then
+                return 12
             end
             if marker.category == "objective" then
                 return 20
@@ -494,6 +529,9 @@ local function GetMarkerKindLabel(marker)
     end
     if marker.category == "teleport" then
         return "Teleport"
+    end
+    if marker.category == "flightmaster" then
+        return "Flight Master"
     end
     return "Quest"
 end
@@ -672,7 +710,7 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
     local recurrenceType = marker.recurrenceType
     local isTracked = marker.isTracked == true
     local baseSize = marker.category == "objective" and 15 or 20
-    if marker.category == "teleport" then
+    if marker.category == "teleport" or marker.category == "flightmaster" then
         baseSize = 16
     end
     if isTracked then
@@ -699,6 +737,10 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
         texture = TELEPORT_ICON_TEXTURE
         borderR, borderG, borderB, borderA = 0.55, 0.35, 0.85, 0.62
         iconR, iconG, iconB, iconA = 0.82, 0.72, 1.0, 1.0
+    elseif marker.category == "flightmaster" then
+        texture = FLIGHTMASTER_ICON_TEXTURE
+        borderR, borderG, borderB, borderA = 0.24, 0.62, 0.28, 0.62
+        iconR, iconG, iconB, iconA = 1.0, 1.0, 1.0, 1.0
     elseif recurrenceType == "daily" then
         texture = DAILY_ICON_TEXTURE
         borderR, borderG, borderB, borderA = 0.26, 0.48, 0.78, 0.58
@@ -840,6 +882,8 @@ function QuestMapPins.OnInitialize()
         "quest starts",
         "kill markers",
         "turn in",
+        "flight master",
+        "taxi",
     })
 end
 
@@ -955,6 +999,20 @@ function QuestMapPins.CreateSettings(parent)
         if self:GetChecked() and addon.TeleportData
             and type(addon.TeleportData.EnsureRequested) == "function" then
             addon.TeleportData:EnsureRequested()
+        end
+        QueueRefresh(0)
+    end)
+    yOffset = yOffset - 28
+
+    local flightCb = addon:CreateCheckbox(parent)
+    flightCb:SetPoint("TOPLEFT", 16, yOffset)
+    flightCb.Text:SetText("Show flight masters on the world map")
+    flightCb:SetChecked(settings.showFlightMasters ~= false)
+    flightCb:SetScript("OnClick", function(self)
+        addon:SetSetting("questMapPins.showFlightMasters", self:GetChecked())
+        if self:GetChecked() and addon.MapPOIData
+            and type(addon.MapPOIData.EnsureRequested) == "function" then
+            addon.MapPOIData:EnsureRequested()
         end
         QueueRefresh(0)
     end)

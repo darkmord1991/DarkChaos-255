@@ -515,6 +515,13 @@ DC.AddonProtocol.Collection.Enable = 1
 DC.AddonProtocol.Forms.Enable = 1
 
 #
+#    DC.AddonProtocol.Beastmaster.Enable
+#        Description: Enable BEAST prefix for the Beastmaster hunter-pet catalog/adopt addon sync
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Beastmaster.Enable = 1
+
+#
 #    DC.AddonProtocol.Prestige.Enable
 #        Description: Enable DC addon protocol for Prestige system
 #        Default:     1 (Enabled)
@@ -576,6 +583,13 @@ DC.AddonProtocol.Hotspot.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Teleports.Enable = 1
+
+#
+#    DC.AddonProtocol.MapPOI.Enable
+#        Description: Enable Map POI module (world-map flight-master markers)
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.MapPOI.Enable = 1
 
 #
 #    DC.AddonProtocol.Events.Enable

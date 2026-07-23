@@ -98,6 +98,7 @@ namespace DCAddon
         constexpr const char* GRAVEYARD     = "GRVY";   // Return-to-graveyard button (death helper)
         constexpr const char* QUEST_POPUPS  = "QPOP";   // Auto-quest offer / remote turn-in popups (retail-style)
         constexpr const char* BEASTMASTER   = "BEAST";  // Hunter pet catalog (browse + preview + adopt)
+        constexpr const char* MAP_POI       = "MPOI";   // World-map POI markers (flight masters, ...)
     }
 
     // ========================================================================
@@ -506,6 +507,14 @@ namespace DCAddon
         {
             constexpr uint8 CMSG_REQUEST_LIST      = 0x01; // Client requests list
             constexpr uint8 SMSG_SEND_LIST         = 0x10; // Server sends list (JSON)
+        }
+
+        // Map POI opcodes (world-map markers such as flight masters on custom
+        // maps without a taxi map; see dc_addon_mappois.cpp)
+        namespace MapPOI
+        {
+            constexpr uint8 CMSG_REQUEST_LIST      = 0x01; // Client requests POI list (JSON: offset/limit/reset[/type])
+            constexpr uint8 SMSG_SEND_LIST         = 0x10; // Server sends paged POI list (JSON)
         }
 
         // Auto-quest popup opcodes (retail-style zone quest offers + remote turn-in;

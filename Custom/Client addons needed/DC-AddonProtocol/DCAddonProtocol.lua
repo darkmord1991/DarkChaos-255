@@ -1401,6 +1401,7 @@ DC.ModuleNames = {
     GRPF = "Group Finder",
     GOMV = "GOMove",
     TELE = "Teleports",
+    MPOI = "Map POIs",
     EVNT = "Events",
     WRLD = "World",
     COLL = "Collection",
@@ -2541,6 +2542,7 @@ DC.Module = {
     GROUP_FINDER = "GRPF",
     GOMOVE = "GOMV",
     TELEPORTS = "TELE",
+    MAP_POI = "MPOI",
     EVENTS = "EVNT",
     WORLD = "WRLD",
     COLLECTION = "COLL",
@@ -2746,6 +2748,10 @@ DC.Opcode = {
         SMSG_EVENT_REMOVE = 0x12,
     },
     Teleports = {
+        CMSG_REQUEST_LIST = 0x01,
+        SMSG_SEND_LIST = 0x10,
+    },
+    MapPOI = {
         CMSG_REQUEST_LIST = 0x01,
         SMSG_SEND_LIST = 0x10,
     },

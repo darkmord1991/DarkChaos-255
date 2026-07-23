@@ -207,6 +207,7 @@ Modules\QuestMapData.lua
 Modules\QuestTrackerMarkers.lua
 Modules\QuestFrames.lua
 Modules\TeleportData.lua
+Modules\MapPOIData.lua
 Modules\QuestMapPins.lua
 Modules\QuestPopups.lua
 Modules\DruidFix.lua
