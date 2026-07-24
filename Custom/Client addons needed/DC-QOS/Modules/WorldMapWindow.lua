@@ -367,6 +367,58 @@ local function InstallViewHooks()
     end
 end
 
+-- ------------------------------------------------------------ zone dropdown
+-- Blizzard's ToggleDropDownMenu HARDCODES the popup (DropDownList1) to scale 1
+-- for WorldMapContinentDropDown / WorldMapZoneDropDown -- it assumes the stock
+-- FULLSCREEN map scale. Our window runs the map at WorldMapFrame:GetScale()
+-- (~0.7) docked at the TOP of the screen, so that scale-1 list is oversized and,
+-- for the two zone-heavy continents (Kalimdor, Eastern Kingdoms), tall enough
+-- that stock's own off-screen check (ToggleDropDownMenu: y - height/2 < 0) flips
+-- it UPWARD -- off the top edge -- where it clips into a black box over the info
+-- bar. Northrend/Outland have few enough zones that the list stays short and
+-- opens downward, which is why only the big continents break. Re-scale the popup
+-- to match the windowed map and force it to open downward, clamped on screen, so
+-- every zone stays reachable.
+local dropDownFixHooked = false
+
+local function FixWorldMapDropDownList(dropDownFrame)
+    local dd = dropDownFrame or _G["UIDROPDOWNMENU_OPEN_MENU"]
+    if dd ~= WorldMapZoneDropDown and dd ~= WorldMapContinentDropDown then
+        return
+    end
+    local list = _G["DropDownList1"]
+    if not (list and list.IsShown and list:IsShown()) then
+        return
+    end
+
+    local scale = (WorldMapFrame and WorldMapFrame.GetScale and WorldMapFrame:GetScale()) or 1
+    if not scale or scale <= 0 then
+        scale = 1
+    end
+    list:SetScale(scale)
+    if list.SetClampedToScreen then
+        list:SetClampedToScreen(true)
+    end
+
+    -- Re-anchor downward from the dropdown's left cap (stock default placement),
+    -- overriding any upward/offscreen flip stock applied for the tall lists.
+    local anchor = _G[dd:GetName() .. "Left"] or dd
+    list:ClearAllPoints()
+    list:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 8, 22)
+end
+
+local function InstallDropDownFix()
+    if dropDownFixHooked or type(hooksecurefunc) ~= "function" then
+        return
+    end
+    hooksecurefunc("ToggleDropDownMenu", function(level, _, dropDownFrame)
+        if state.active and (level == nil or level == 1) then
+            FixWorldMapDropDownList(dropDownFrame)
+        end
+    end)
+    dropDownFixHooked = true
+end
+
 -- ---------------------------------------------------------------- lifecycle
 
 function WorldMapWindow.OnEnable()
@@ -386,6 +438,7 @@ function WorldMapWindow.OnEnable()
 
     SetupWindow()
     InstallViewHooks()
+    InstallDropDownFix()
 
     if not state.eventFrame then
         state.eventFrame = CreateFrame("Frame")

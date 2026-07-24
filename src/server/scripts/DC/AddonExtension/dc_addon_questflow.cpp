@@ -283,7 +283,12 @@ namespace DCAddon
 
     void RegisterQuestFlowHandlers()
     {
-        if (!IsEnabled())
+        // QPOP is intentionally not part of the central module table in
+        // dc_addon_protocol.cpp, so it enables itself with the router here
+        // (same self-contained pattern as DC-Graveyard/DC-Welcome).
+        bool const enabled = IsEnabled();
+        MessageRouter::Instance().SetModuleEnabled(Module::QUEST_POPUPS, enabled);
+        if (!enabled)
             return;
 
         DC_REGISTER_HANDLER(Module::QUEST_POPUPS, Opcode::QuestPopups::CMSG_ACCEPT_QUEST, HandleAcceptQuest);
