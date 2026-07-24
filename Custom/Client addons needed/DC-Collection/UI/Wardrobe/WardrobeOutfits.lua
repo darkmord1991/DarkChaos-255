@@ -621,16 +621,15 @@ local function GetCurrentOutfitSlots()
     end
 
     for _, slotDef in ipairs(Wardrobe.EQUIPMENT_SLOTS) do
-        local invSlotId = GetInventorySlotInfo(slotDef.key)
-        if invSlotId then
-            local itemId = GetInventoryItemID("player", invSlotId)
-            if itemId then
-                -- Use the same lookup as SaveCurrentOutfit so IsSameSlots() matches
-                -- the just-saved outfit without waiting for a server round-trip.
-                local value = GetSavedOutfitSlotValue(invSlotId)
-                if value ~= nil then
-                    slots[slotDef.key] = value
-                end
+        -- Occupancy is texture-based so upgrade-clone items (whose entry the client
+        -- cannot resolve) still contribute their applied appearance to the outfit.
+        local invSlotId, occupied = Wardrobe:GetSlotOccupancy(slotDef.key)
+        if invSlotId and occupied then
+            -- Use the same lookup as SaveCurrentOutfit so IsSameSlots() matches
+            -- the just-saved outfit without waiting for a server round-trip.
+            local value = GetSavedOutfitSlotValue(invSlotId)
+            if value ~= nil then
+                slots[slotDef.key] = value
             end
         end
     end
@@ -843,20 +842,18 @@ function Wardrobe:SaveCurrentOutfit(name, overwriteId)
     }
 
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
-        local invSlotId = GetInventorySlotInfo(slotDef.key)
-        if invSlotId then
-            local itemId = GetInventoryItemID("player", invSlotId)
-            if itemId then
-                local valueToSave = GetSavedOutfitSlotValue(invSlotId)
-                if valueToSave ~= nil then
-                    outfit.slots[slotDef.key] = valueToSave
-                end
-                
-                -- Capture icon from chest/head for main icon if not set
-                if (slotDef.key == "ChestSlot" or slotDef.key == "HeadSlot") and outfit.icon == "Interface\\Icons\\INV_Chest_Cloth_17" then
-                     local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemId)
-                     if tex then outfit.icon = tex end
-                end
+        -- Texture-based occupancy so upgrade-clone slots are captured too.
+        local invSlotId, occupied, itemId = Wardrobe:GetSlotOccupancy(slotDef.key)
+        if invSlotId and occupied then
+            local valueToSave = GetSavedOutfitSlotValue(invSlotId)
+            if valueToSave ~= nil then
+                outfit.slots[slotDef.key] = valueToSave
+            end
+
+            -- Capture icon from chest/head for main icon if not set
+            if itemId and (slotDef.key == "ChestSlot" or slotDef.key == "HeadSlot") and outfit.icon == "Interface\\Icons\\INV_Chest_Cloth_17" then
+                 local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemId)
+                 if tex then outfit.icon = tex end
             end
         end
     end
@@ -1111,8 +1108,9 @@ function Wardrobe:LoadOutfit(outfit)
             invSlotId = GetInventorySlotInfo(slotKey)
         end
 
-        -- Only apply if the player has an item equipped in that slot.
-        if invSlotId and GetInventoryItemID("player", invSlotId) then
+        -- Only apply if the player has an item equipped in that slot. Texture
+        -- fallback covers upgrade-clone items whose entry the client can't resolve.
+        if invSlotId and (GetInventoryItemID("player", invSlotId) or GetInventoryItemTexture("player", invSlotId)) then
             local equipmentSlot = invSlotId - 1
 
             local n = tonumber(appearanceId) or 0
@@ -1423,6 +1421,12 @@ function Wardrobe:RandomizeOutfit()
 
             local equippedItemId = GetInventoryItemID("player", invSlotId)
             if not equippedItemId then
+                -- Upgrade-clone items have no resolvable entry. If something is
+                -- equipped (texture present) we can't compare types, so allow the
+                -- candidate rather than excluding the whole slot.
+                if GetInventoryItemTexture("player", invSlotId) then
+                    return true
+                end
                 return false
             end
 
@@ -1538,7 +1542,7 @@ function Wardrobe:RandomizeOutfit()
 
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
         local invSlotId = slotDef and slotDef.key and GetInventorySlotInfo(slotDef.key)
-        if invSlotId and GetInventoryItemID("player", invSlotId) then
+        if invSlotId and (GetInventoryItemID("player", invSlotId) or GetInventoryItemTexture("player", invSlotId)) then
             local equipSlot = invSlotId - 1
             local p = picks and picks[slotDef.key]
             if p and p.id then

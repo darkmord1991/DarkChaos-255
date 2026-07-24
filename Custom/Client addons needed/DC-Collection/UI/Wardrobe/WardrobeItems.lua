@@ -1396,10 +1396,13 @@ function Wardrobe:ApplyAppearance(appearance)
         return
     end
 
-    local invSlotId = GetInventorySlotInfo(slot.key)
+    local invSlotId, occupied = Wardrobe:GetSlotOccupancy(slot.key)
     if not invSlotId then return end
 
-    if not GetInventoryItemID("player", invSlotId) then
+    -- Occupancy is texture-based so transmog can still be applied to upgrade-clone
+    -- items (50736/50737 etc.) whose entry the client cannot resolve. The server
+    -- only needs the equipment slot to set the appearance.
+    if not occupied then
         if DC and DC.Print then
             DC:Print("No item equipped in that slot.")
         end

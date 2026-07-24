@@ -288,6 +288,24 @@ function Wardrobe:SafeGetText(key, fallback)
     return fallback
 end
 
+-- Resolve equipment-slot occupancy in a way that also handles DarkChaos
+-- item-upgrade clones (e.g. 50736/50737). Those items equip and render normally,
+-- but the client cannot resolve their entry: GetInventoryItemID and
+-- GetInventoryItemLink both return nil, while GetInventoryItemTexture still
+-- returns the item's icon (which is how Blizzard's own paperdoll draws them).
+-- Detect occupancy from the texture so such items are not misreported as empty.
+-- Returns: invSlotId (or nil), occupied (bool), itemId (number|nil), texture (string|nil)
+function Wardrobe:GetSlotOccupancy(slotKey)
+    local invSlotId = GetInventorySlotInfo(slotKey)
+    if not invSlotId then
+        return nil, false, nil, nil
+    end
+    local itemId = GetInventoryItemID("player", invSlotId)
+    local texture = GetInventoryItemTexture("player", invSlotId)
+    local occupied = (itemId ~= nil) or (texture ~= nil)
+    return invSlotId, occupied, itemId, texture
+end
+
 function Wardrobe:GetSlotIcon(slotKey)
     local invSlotId, textureName = GetInventorySlotInfo(slotKey)
     if invSlotId then
@@ -297,6 +315,12 @@ function Wardrobe:GetSlotIcon(slotKey)
             if texture then
                 return texture
             end
+        end
+        -- Upgrade-clone items have no resolvable entry but the client still
+        -- exposes their icon via GetInventoryItemTexture.
+        local invTexture = GetInventoryItemTexture("player", invSlotId)
+        if invTexture then
+            return invTexture
         end
         -- Return the default slot texture if no item is equipped
         if textureName then

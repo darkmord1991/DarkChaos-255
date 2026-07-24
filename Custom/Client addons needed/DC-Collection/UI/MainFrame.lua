@@ -938,7 +938,9 @@ function DC:CreateFilterBar(parent)
             if DC.Print then DC:Print("Select a slot first.") end
             return
         end
-        if not GetInventoryItemID("player", invSlotId) then
+        -- Texture fallback covers upgrade-clone items whose entry the client
+        -- cannot resolve via GetInventoryItemID.
+        if not GetInventoryItemID("player", invSlotId) and not GetInventoryItemTexture("player", invSlotId) then
             if DC.Print then DC:Print("No item equipped in that slot.") end
             return
         end

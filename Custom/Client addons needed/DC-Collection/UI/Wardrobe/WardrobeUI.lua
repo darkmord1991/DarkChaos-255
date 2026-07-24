@@ -800,24 +800,26 @@ function Wardrobe:CreateLeftPanel(parent)
 
         btn:SetScript("OnEnter", function(selfBtn)
             GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(slotDef.label, 1, 1, 1)
-            local invSlotId = GetInventorySlotInfo(slotDef.key)
-            if invSlotId then
-                local itemId = GetInventoryItemID("player", invSlotId)
-                if itemId then
-                    GameTooltip:SetHyperlink("item:" .. itemId)
-                    GameTooltip:AddLine(" ")
-                    
-                    -- Show transmog status
-                    local eqSlot = invSlotId - 1
-                    local state = DC.transmogState or {}
-                    local applied = state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) ~= 0
-                    if applied then
-                        GameTooltip:AddLine("Appearance applied", 1, 0.82, 0)
-                    end
-                else
-                    GameTooltip:AddLine("No item equipped", 0.8, 0.8, 0.8)
+            local invSlotId, occupied = Wardrobe:GetSlotOccupancy(slotDef.key)
+            if invSlotId and occupied then
+                -- SetInventoryItem is slot-based, so it resolves the item even for
+                -- upgrade-clone items whose entry GetInventoryItemID/Link cannot
+                -- return (this is how the paperdoll shows their tooltip).
+                if not GameTooltip:SetInventoryItem("player", invSlotId) then
+                    GameTooltip:AddLine(slotDef.label, 1, 1, 1)
                 end
+                GameTooltip:AddLine(" ")
+
+                -- Show transmog status
+                local eqSlot = invSlotId - 1
+                local state = DC.transmogState or {}
+                local applied = state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) ~= 0
+                if applied then
+                    GameTooltip:AddLine("Appearance applied", 1, 0.82, 0)
+                end
+            else
+                GameTooltip:AddLine(slotDef.label, 1, 1, 1)
+                GameTooltip:AddLine("No item equipped", 0.8, 0.8, 0.8)
             end
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Click to select and preview", 0.7, 0.7, 0.7)
