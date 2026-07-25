@@ -94,21 +94,30 @@ namespace
         AiTalk(dynamic_cast<CreatureAI*>(ai), textGroup, whisperGuid);
     }
 
-    // MoveSmoothPath(mm, pointsArray, count): 4.3.4's MoveSmoothPath took a raw
+    // MoveSmoothPath(who, pointsArray, count): 4.3.4's MoveSmoothPath took a raw
     // G3D::Vector3[]+count and splined through every node, firing MovementInform
-    // per node. 3.3.5's nearest equivalent is MoveSplinePath, which takes a
-    // Movement::PointsArray* and reports completion once as ESCORT_MOTION_TYPE.
-    // CAVEAT: intermediate per-waypoint MovementInform callbacks are NOT emitted,
-    // so the per-"point" switch logic in those AIs only sees the final node.
-    inline void MoveSmoothPath(MotionMaster* mm, G3D::Vector3 const* path, uint32 count)
+    // per node. 3.3.5's equivalent is MoveSplinePath.
+    //
+    // The unit's CURRENT position must be element 0. MoveSplineInit::Launch does
+    // `args.path[0] = real_position` unconditionally, so whatever sits in slot 0
+    // is discarded; and SplineHandler reports `currentPathIdx() - 1`, so with a
+    // leading position node the reported id equals the authored index exactly.
+    // Without it every id is off by one AND the final node is never reported,
+    // which silently killed the terminal `case` in several of the AIs below.
+    // Same idiom as boss_captain_skarloc.
+    //
+    // (The old note here claiming intermediate MovementInform callbacks are not
+    // emitted was wrong: SplineHandler fires on Result_NextSegment too.)
+    inline void MoveSmoothPath(Unit* who, G3D::Vector3 const* path, uint32 count)
     {
-        if (!mm || !path || !count)
+        if (!who || !path || !count)
             return;
         Movement::PointsArray points;
-        points.reserve(count);
+        points.reserve(count + 1);
+        points.push_back(G3D::Vector3(who->GetPositionX(), who->GetPositionY(), who->GetPositionZ()));
         for (uint32 i = 0; i < count; ++i)
             points.push_back(path[i]);
-        mm->MoveSplinePath(&points);
+        who->GetMotionMaster()->MoveSplinePath(&points);
     }
 
     // SelectNearbyUnits(who, entry, range): 4.3.4 returned a unit list of a given
@@ -326,12 +335,12 @@ public:
                     me->SetDisableGravity(true);
                     me->SetSpeed(MOVE_FLIGHT, 1.2f);
                     me->AI()->DoCast(SPELL_FLIGHT_SPEED_180);
-                    MoveSmoothPath(me->GetMotionMaster(), AronusVehiclePath1, AronusVehiclePathSize1);
+                    MoveSmoothPath(me, AronusVehiclePath1, AronusVehiclePathSize1);
                     events.ScheduleEvent(EVENT_TIMER_FADE, Milliseconds(2000));
                     break;
                 case EVENT_TIMER_1:
                     AiTalk(me->AI(), 0, playerGUID);
-                    MoveSmoothPath(me->GetMotionMaster(), AronusVehiclePath2, AronusVehiclePathSize2);
+                    MoveSmoothPath(me, AronusVehiclePath2, AronusVehiclePathSize2);
                     me->RemoveAura(SPELL_FLIGHT_SPEED_180);
                     me->AI()->DoCast(SPELL_FLIGHT_SPEED_280);
                     flyphase = 2;
@@ -347,7 +356,7 @@ public:
                     break;
                 case EVENT_TIMER_3:
                     AiTalk(me->AI(), 2, playerGUID);
-                    MoveSmoothPath(me->GetMotionMaster(), AronusVehiclePath3, AronusVehiclePathSize3);
+                    MoveSmoothPath(me, AronusVehiclePath3, AronusVehiclePathSize3);
                     me->RemoveAura(SPELL_FLIGHT_SPEED_280);
                     me->AI()->DoCast(SPELL_FLIGHT_SPEED_300);
                     me->SetSpeed(MOVE_FLIGHT, 2.5f);
@@ -425,7 +434,9 @@ enum EmeraldFlame
 {
     QUEST_FLAMES_FROM_ABOVE = 25574,
     SPELL_TWILIGHT_BREATH = 78954,
-    OBJECT_FLAMES_1 = 203065,
+    // +3,600,000 clone -- the raw Cata 203065 has no gameobject_template row,
+    // so all five SummonGameObject calls below returned nullptr.
+    OBJECT_FLAMES_1 = 3803065,
 };
 
 uint32 const EmeraldFlamePathSize = 10;
@@ -454,7 +465,7 @@ public:
 
         void IsSummonedBy(WorldObject* /*summoner*/) override
         {
-            MoveSmoothPath(me->GetMotionMaster(), EmeraldFlamePath, EmeraldFlamePathSize);
+            MoveSmoothPath(me, EmeraldFlamePath, EmeraldFlamePathSize);
         }
 
         void MovementInform(uint32 type, uint32 point)
@@ -505,49 +516,68 @@ public:
     }
 };
 
-// enum Inferno
-// {
-//     SPELL_INFERNO_TICK_AURA   = 74813,
-//     SPELL_INFERNO_AOE         = 74817,
-// };
+enum Inferno
+{
+    SPELL_INFERNO_TICK_AURA = 74813,
+    SPELL_INFERNO_AOE       = 74817,
+};
+
+// Restored from the commented-out 4.3.4 port. Both spells resolve (spell_dbc
+// 74813 "Inferno", periodic-trigger aura, 1 s period; 74817 the AoE), and
+// creature 3640147 carries 74813 both as a creature_template_addon aura and via
+// SmartAI -- without this script the aura ticks its stock trigger and the
+// escalating Inferno does no damage at all.
 //
-// class spell_inferno_tick : public SpellScriptLoader
-// {
-// public:
-//     spell_inferno_tick() : SpellScriptLoader("spell_inferno_tick") { }
-//
-//     class spell_inferno_tick_AuraScript : public AuraScript
-//     {
-//         PrepareAuraScript(spell_inferno_tick_AuraScript);
-//
-//         bool Validate(SpellInfo const* /*spellInfo*/)
-//         {
-//             if (!sSpellMgr->GetSpellInfo(SPELL_INFERNO_TICK_AURA))
-//                 return false;
-//
-//             return true;
-//             TC_LOG_ERROR("sql.sql", "SPELL_INFERNO_TICK_AURA returned true");
-//         }
-//
-//         void HandleProc(AuraEffect const* aurEff, ProcEventInfo& /*eventInfo*/)
-//         {
-//             int32 damageForTick[8] = { 1500, 1500, 2000, 2000, 3000, 3000, 5000, 5000 };
-//
-//             GetCaster()->CastCustomSpell(GetCaster(), SPELL_INFERNO_AOE, &damageForTick[aurEff->GetTotalTicks() - 1], NULL, NULL, true);
-//             TC_LOG_ERROR("sql.sql", "Inferno hits!");
-//         }
-//
-//         void Register()
-//         {
-//             OnEffectPeriodic += AuraEffectPeriodicFn(spell_inferno_tick_AuraScript::HandleProc, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
-//         }
-//     };
-//
-//     AuraScript* GetAuraScript() const
-//     {
-//         return new spell_inferno_tick_AuraScript();
-//     }
-// };
+// Two things had to change versus the original:
+//   * it indexed damageForTick with `GetTotalTicks() - 1`, which is the TOTAL
+//     tick count (constant for the whole aura), not the current tick -- so every
+//     tick dealt the same damage, and any duration longer than 8 ticks read off
+//     the end of the array. GetTickNumber() is the 1-based current tick; it is
+//     clamped so a longer duration simply holds the top value.
+//   * TC_LOG_ERROR (and a stray unreachable one after `return true`) dropped.
+class spell_inferno_tick : public SpellScriptLoader
+{
+public:
+    spell_inferno_tick() : SpellScriptLoader("spell_inferno_tick") { }
+
+    class spell_inferno_tick_AuraScript : public AuraScript
+    {
+        PrepareAuraScript(spell_inferno_tick_AuraScript);
+
+        bool Validate(SpellInfo const* /*spellInfo*/) override
+        {
+            return sSpellMgr->GetSpellInfo(SPELL_INFERNO_AOE) != nullptr;
+        }
+
+        void HandleProc(AuraEffect const* aurEff)
+        {
+            Unit* caster = GetCaster();
+            if (!caster)
+                return;
+
+            static constexpr int32 damageForTick[8] = { 1500, 1500, 2000, 2000, 3000, 3000, 5000, 5000 };
+
+            uint32 tick = aurEff->GetTickNumber();
+            if (!tick)
+                tick = 1;
+            if (tick > 8)
+                tick = 8;
+
+            int32 damage = damageForTick[tick - 1];
+            caster->CastCustomSpell(caster, SPELL_INFERNO_AOE, &damage, nullptr, nullptr, true);
+        }
+
+        void Register() override
+        {
+            OnEffectPeriodic += AuraEffectPeriodicFn(spell_inferno_tick_AuraScript::HandleProc, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        }
+    };
+
+    AuraScript* GetAuraScript() const override
+    {
+        return new spell_inferno_tick_AuraScript();
+    }
+};
 
 enum QuestThroughtheDream
 {
@@ -743,7 +773,9 @@ public:
 
             me->SetHomePosition(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
 
-            if (point == 48)
+            // waypoint_data path 39436 has 17 points (1..17) on this fork; 48 was the
+            // Cata path length and never arrived, so the caravan never cleaned itself up.
+            if (point == 17)
             {
                 _summons.DespawnAll();
                 me->DespawnOrUnsummon();
@@ -1099,7 +1131,11 @@ public:
 
             if (auto locationhelper = me->FindNearestCreature(NPC_FLAMEWARD_HELPER, 10.f))
             {
-                _flamewardHelperGUID = locationhelper->GetGUID().GetCounter();
+                // GetSpawnId(), NOT GetGUID().GetCounter(): the latter is the map's
+                // runtime object counter (Creature::LoadCreatureFromDB assigns it via
+                // GenerateLowGuid), so it never equals the DB spawn ids below and the
+                // switch always fell through to default -- no Ashbearer ever spawned.
+                _flamewardHelperGUID = locationhelper->GetSpawnId();
 
                 _started = true;
                 TalkWithDelay(me->AI(), 1000, 0, _playerGUID);
@@ -1644,7 +1680,10 @@ public:
                     me->DespawnOrUnsummon();
                 }
 
-                if (player->GetAreaId() != 4994)
+                // 4994 is the raw Cata sub-area; DC map 750 bakes a single area id
+            // (DC_HYJAL_AREAID 4923), so this test failed on the very first tick
+            // and auto-failed the quest. Two sibling AIs were already patched.
+            if (player->GetAreaId() != DC_HYJAL_AREAID)
                 {
                     me->SetControlled(true, UNIT_STATE_ROOT);
                     AiTalk(me->AI(), 2, _playerGUID);
@@ -3201,7 +3240,7 @@ public:
             //    {
             //    case EVENT_STUNT_HORSE_1:
             //        me->SetControlled(false, UNIT_STATE_ROOT);
-            //        MoveSmoothPath(me->GetMotionMaster(), StoutHorsePath, StoutHorsePathSize);
+            //        MoveSmoothPath(me, StoutHorsePath, StoutHorsePathSize);
             //        break;
             //    default:
             //        break;
@@ -3256,27 +3295,43 @@ public:
                 switch (eventId)
                 {
                 case EVENT_PUNT_CHILD_CHECK:
+                    // The 4.3.4 original polled at 100 ms and then every 20 s, but the
+                    // "else" branch already scheduled a 6 s despawn -- so the turtle was
+                    // always gone before the second poll, and the only sample ever taken
+                    // was the one 100 ms after the punt, while it is still in the air.
+                    // Result: quest 29101 needs 5 water landings and could never score
+                    // one. (The flaw is upstream, not a port regression.)
+                    // Poll every 500 ms instead and only commit to an outcome -- and to
+                    // the despawn -- once the turtle has actually come down.
                     if (me->IsInWater())
                     {
                         if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                        {
                             player->KilledMonsterCredit(NPC_PUTING_SEASON_CREDIT);
-                            me->DespawnOrUnsummon( Milliseconds(6000));
-                        }
+
+                        me->DespawnOrUnsummon( Milliseconds(6000));
+                        break;
                     }
-                    else
+
+                    if (me->FindNearestCreature(NPC_FLAME_ELEMENTAL, 3.f))
+                    {
+                        me->CastSpell(me, SPELL_KNOCKBACK_ELEMENTAL);
+
+                        if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+                            player->CastSpell(player, SPELL_AND_THE_MEEK_SHALL_INHERIT_KALIMDOR_CHILD_UPDATE);
+
+                        me->DespawnOrUnsummon( Milliseconds(6000));
+                        break;
+                    }
+
+                    // Still airborne (or landed on dry ground): keep watching, but give
+                    // up after 30 s so a punt that goes nowhere still cleans itself up.
+                    if (++_puntChecks >= 60)
                     {
                         me->DespawnOrUnsummon( Milliseconds(6000));
-
-                        if (me->FindNearestCreature(NPC_FLAME_ELEMENTAL, 3.f))
-                        {
-                            me->CastSpell(me, SPELL_KNOCKBACK_ELEMENTAL);
-
-                            if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                                player->CastSpell(player, SPELL_AND_THE_MEEK_SHALL_INHERIT_KALIMDOR_CHILD_UPDATE);
-                        }
+                        break;
                     }
-                    _events.ScheduleEvent(EVENT_PUNT_CHILD_CHECK, Milliseconds(20000));
+
+                    _events.ScheduleEvent(EVENT_PUNT_CHILD_CHECK, Milliseconds(500));
                     break;
                 default:
                     break;
@@ -3285,6 +3340,7 @@ public:
         }
     private:
         ObjectGuid _playerGUID;
+        uint32 _puntChecks = 0;
         EventMap _events;
     };
 
@@ -3478,11 +3534,11 @@ public:
                 case EVENT_LOGOSH_1:
                     _pathmode = 1;
                     me->SetControlled(false, UNIT_STATE_ROOT);
-                    MoveSmoothPath(me->GetMotionMaster(), LogoshPath, LogoshPathSize);
+                    MoveSmoothPath(me, LogoshPath, LogoshPathSize);
                     break;
                 case EVENT_LOGOSH_2:
                     _pathmode++;
-                    MoveSmoothPath(me->GetMotionMaster(), LogoshPath2, LogoshPathSize2);
+                    MoveSmoothPath(me, LogoshPath2, LogoshPathSize2);
                     break;
                 case EVENT_LOGOSH_3:
                     if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
@@ -3513,7 +3569,7 @@ void AddSC_dc_mount_hyjal_ported()
     new npc_aronus_vehicle();
     new first_quest_mount_hyjal_playerscript();
     new npc_emerald_flameweaver_infiltrators();
-    //new spell_inferno_tick(); // TODO
+    new spell_inferno_tick();
     new npc_archdruid_fandral_staghelm_dream();
     new npc_spawn_ogres_and_slaves_controller();
     new npc_twilight_proveditor();

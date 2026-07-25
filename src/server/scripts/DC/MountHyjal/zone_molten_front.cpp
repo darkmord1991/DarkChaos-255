@@ -57,13 +57,18 @@ static std::list<Player*> GetPlayersInRange(WorldObject* who, float range, bool 
 }
 
 // MoveSmoothPath(Vector3[], size) is gone; build a PointsArray and feed MoveSplinePath.
+// Element 0 MUST be the unit's current position: MoveSplineInit::Launch overwrites
+// args.path[0] with real_position, and SplineHandler reports currentPathIdx() - 1,
+// so the leading node is what makes the reported id match the authored index.
+// Without it every id is off by one and the last node is never reported.
 static void DoMoveSmoothPath(Unit* who, G3D::Vector3 const* path, uint32 size)
 {
     if (!who || !path || !size)
         return;
 
     Movement::PointsArray points;
-    points.reserve(size);
+    points.reserve(size + 1);
+    points.push_back(G3D::Vector3(who->GetPositionX(), who->GetPositionY(), who->GetPositionZ()));
     for (uint32 i = 0; i < size; ++i)
         points.push_back(path[i]);
 
@@ -1926,7 +1931,13 @@ public:
                         }
                     }
 
-                    Unit::Kill(player, me);
+                    // Do NOT Unit::Kill here. DamageTaken is invoked from inside
+                    // Unit::DealDamage (Unit.cpp:993) and DealDamage carries on
+                    // afterwards to apply `damage` and run its own death handling --
+                    // killing now means the rest of that call operates on a corpse
+                    // (double JustDied, double loot, ThreatMgr mutated under it).
+                    // Defer to the next tick instead.
+                    _pendingKillerGUID = player->GetGUID();
                 }
             }
         }
@@ -1958,6 +1969,19 @@ public:
 
         void UpdateAI(uint32 diff) override
         {
+            // Deferred kill scheduled by DamageTaken (see the note there).
+            if (_pendingKillerGUID)
+            {
+                ObjectGuid killer = _pendingKillerGUID;
+                _pendingKillerGUID.Clear();
+
+                if (me->IsAlive())
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, killer))
+                        Unit::Kill(player, me);
+
+                return;
+            }
+
             DoMeleeAttackIfReady();
 
             if (!UpdateVictim())
@@ -1994,6 +2018,7 @@ public:
         bool _deservesAchiv = true;
         EventMap _events;
         ObjectGuid _playerGUID;
+        ObjectGuid _pendingKillerGUID;
         uint16 _checkTimer = 1000;
     };
 
