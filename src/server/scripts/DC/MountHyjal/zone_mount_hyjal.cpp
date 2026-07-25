@@ -380,10 +380,23 @@ public:
     }
 };
 
+// The DC terrain downport bakes ONE uniform area id per map into every MCNK
+// (map 750 -> 4923 "Hyjal Frontier", map 861 -> 4925 "The Molten Front"), so the
+// original Cata sub-area ids these scripts were written against are never
+// reported in-world. Several of those ids were also repurposed by other DC
+// custom maps (e.g. 5017 is now on map 1405), so they cannot simply be added to
+// AreaTable for this continent -- the checks below accept the DC ids instead.
+enum DCHyjalAreas
+{
+    DC_HYJAL_AREAID = 4923,
+    DC_MOLTEN_FRONT_AREAID = 4925,
+};
+
 enum EnterMountHyjalZone
 {
-    MOUNT_HYJAL_ZONEID = 616,
-    SCORCHED_PLAIN_AREAID = 5017,
+    // was Cata zone 616 / area 5017 (Scorched Plain) -- see DCHyjalAreas above
+    MOUNT_HYJAL_ZONEID = DC_HYJAL_AREAID,
+    SCORCHED_PLAIN_AREAID = DC_HYJAL_AREAID,
     AS_HYJAL_BURNS_QUESTID = 25316,
     SPELL_SUMMON_ARONUS = 151010,
 };
@@ -1010,11 +1023,16 @@ enum QuestPrepping
     NPC_KILL_CREDIT_OBJ_2 = 3640462,
 
     NPC_FLAMEWARD_HELPER = 3675029,
-    NPC_FLAMEWARD_HELPER_GUID_1 = 3858933,
-    NPC_FLAMEWARD_HELPER_GUID_2 = 3858937,
-    NPC_FLAMEWARD_HELPER_GUID_3 = 3858936,
-    NPC_FLAMEWARD_HELPER_GUID_4 = 3858935,
-    NPC_FLAMEWARD_HELPER_GUID_5 = 3858934,
+    // Spawn GUIDs of the five NPC_FLAMEWARD_HELPER anchors, one per Ashbearer
+    // ring below. Laid down by HyjalCata/119_flameward_helper_spawns.sql in the
+    // order the AshSpawnPosition arrays expect. The values these replaced were
+    // nelt_world spawn guids (258933-937) with the creature-ENTRY offset applied
+    // to them by mistake, so the switch below could never match.
+    NPC_FLAMEWARD_HELPER_GUID_1 = 15400001,
+    NPC_FLAMEWARD_HELPER_GUID_2 = 15400002,
+    NPC_FLAMEWARD_HELPER_GUID_3 = 15400003,
+    NPC_FLAMEWARD_HELPER_GUID_4 = 15400004,
+    NPC_FLAMEWARD_HELPER_GUID_5 = 15400005,
 
     SPELL_COSMETIC_SHIELD = 75454,
 };
@@ -2493,7 +2511,8 @@ public:
                             && me->GetAreaId() != 4991
                             && me->GetAreaId() != 4995
                             && me->GetAreaId() != 4984
-                            && me->GetAreaId() != 4994)
+                            && me->GetAreaId() != 4994
+                            && me->GetAreaId() != DC_HYJAL_AREAID)
                         {
                             _isInCorrectArea = false;
                             AiTalk(me->AI(), 0, _playerGUID);
@@ -2506,7 +2525,8 @@ public:
                             || me->GetAreaId() == 4984
                             || me->GetAreaId() == 4991
                             || me->GetAreaId() == 4995
-                            || me->GetAreaId() == 4994)
+                            || me->GetAreaId() == 4994
+                            || me->GetAreaId() == DC_HYJAL_AREAID)
                         {
                             _events.CancelEvent(EVENT_EMERALD_DRAKE_1);
                             _isInCorrectArea = true;
@@ -2860,7 +2880,10 @@ public:
         }
         void Register()
         {
-            OnEffectHitTarget += SpellEffectFn(spell_inspiration_graduation_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+            // Cata 4.3.4 EFFECT_0 of this spell is DUMMY, not SCRIPT_EFFECT -- binding
+            // SCRIPT_EFFECT made the handler silently never run ("did not match dbc
+            // effect data" at boot).
+            OnEffectHitTarget += SpellEffectFn(spell_inspiration_graduation_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
         }
     };
     SpellScript* GetSpellScript() const
@@ -2897,7 +2920,10 @@ public:
         }
         void Register()
         {
-            OnEffectHitTarget += SpellEffectFn(spell_divisiveness_graduation_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+            // Cata 4.3.4 EFFECT_0 of this spell is DUMMY, not SCRIPT_EFFECT -- binding
+            // SCRIPT_EFFECT made the handler silently never run ("did not match dbc
+            // effect data" at boot).
+            OnEffectHitTarget += SpellEffectFn(spell_divisiveness_graduation_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
         }
     };
     SpellScript* GetSpellScript() const
@@ -2934,7 +2960,10 @@ public:
         }
         void Register()
         {
-            OnEffectHitTarget += SpellEffectFn(spell_crazy_graduation_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+            // Cata 4.3.4 EFFECT_0 of this spell is DUMMY, not SCRIPT_EFFECT -- binding
+            // SCRIPT_EFFECT made the handler silently never run ("did not match dbc
+            // effect data" at boot).
+            OnEffectHitTarget += SpellEffectFn(spell_crazy_graduation_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
         }
     };
     SpellScript* GetSpellScript() const
@@ -3041,7 +3070,9 @@ public:
                             && me->GetAreaId() != 5019
                             && me->GetAreaId() != 5087
                             && me->GetAreaId() != 4861
-                            && me->GetAreaId() != 5016)
+                            && me->GetAreaId() != 5016
+                            && me->GetAreaId() != DC_HYJAL_AREAID
+                            && me->GetAreaId() != DC_MOLTEN_FRONT_AREAID)
                         {
                             _isInCorrectArea = false;
                             AiTalk(me->AI(), 0, _playerGUID);
@@ -3059,7 +3090,9 @@ public:
                             || me->GetAreaId() == 5019
                             || me->GetAreaId() == 5087
                             || me->GetAreaId() == 4861
-                            || me->GetAreaId() == 5016)
+                            || me->GetAreaId() == 5016
+                            || me->GetAreaId() == DC_HYJAL_AREAID
+                            || me->GetAreaId() == DC_MOLTEN_FRONT_AREAID)
                         {
                             _events.CancelEvent(EVENT_WINGS_OF_AVIANA_1);
                             _isInCorrectArea = true;

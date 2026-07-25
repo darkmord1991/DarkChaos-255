@@ -2067,7 +2067,9 @@ public:
 
         void Register() override
         {
-            OnEffectHitTarget += SpellEffectFn(spell_molten_behemoth_fiery_boulder_SpellScript::HandleHit, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
+            // Cata 4.3.4 Fiery Boulder is TRIGGER_MISSILE / DUMMY -- EFFECT_1 is DUMMY,
+            // not SCHOOL_DAMAGE, so the old binding never fired.
+            OnEffectHitTarget += SpellEffectFn(spell_molten_behemoth_fiery_boulder_SpellScript::HandleHit, EFFECT_1, SPELL_EFFECT_DUMMY);
         }
     };
 

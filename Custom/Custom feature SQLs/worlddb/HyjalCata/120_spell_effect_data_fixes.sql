@@ -1,0 +1,33 @@
+-- ---------------------------------------------------------------------------
+-- 120  Hyjal round-14 -- spell_dbc effect data the C++ scripts cannot bind to
+-- ---------------------------------------------------------------------------
+-- Boot log (ScriptMgr, "did not match dbc effect data - handler ... won't be
+-- executed"):
+--     Spell 73982 / 73983  EFFECT_0 Name 77   spell_answer_yes_master / _no_master
+--     Spell 74934 / 74935 / 74937            spell_*_graduation
+--     Spell 97247          EFFECT_1 Name 2   spell_molten_behemoth_fiery_boulder
+--
+-- Checked each against the real Cata 4.3.4 SpellEffect.dbc:
+--   74934/74935/74937 -- EFFECT_0 really is DUMMY(3), EFFECT_1 is TRIGGER_SPELL_2.
+--   97247             -- EFFECT_0 is TRIGGER_MISSILE(32), EFFECT_1 is DUMMY(3).
+-- For those four the imported data is FAITHFUL and it is the ported C++ that
+-- bound the wrong effect type, so they are fixed in source instead (see
+-- zone_mount_hyjal.cpp / zone_molten_front.cpp -- SPELL_EFFECT_SCRIPT_EFFECT /
+-- SPELL_EFFECT_SCHOOL_DAMAGE -> SPELL_EFFECT_DUMMY).  Needs a worldserver
+-- rebuild, no DB change.
+--
+-- 73982 "Yes" / 73983 "No" are the exception and DO need a data fix.  Both of
+-- their effects are Cata effect id 160, which has no meaning on 3.3.5 -- the
+-- downporter's clamp (>= 165) let it through, so the rows import cleanly but
+-- resolve to a handler that does nothing.  In Cata those two effects trigger
+-- the correct/incorrect follow-up (74010/74011 and 74012/74013); on this core
+-- that branch lives in spell_answer_yes_master / spell_answer_no_master, which
+-- read the caster's aura and cast the right follow-up themselves.  So EFFECT_0
+-- becomes SPELL_EFFECT_SCRIPT_EFFECT (77) -- the hook the scripts already bind
+-- -- and EFFECT_1 is cleared so the dead second effect stops occupying a slot.
+-- These are the "Ask Alysra" / mental-training answer spells in the Hyjal
+-- Guardians-of-Hyjal chain.
+-- ---------------------------------------------------------------------------
+
+UPDATE `spell_dbc` SET `Effect_1` = 77, `Effect_2` = 0, `EffectTriggerSpell_2` = 0
+WHERE `ID` IN (73982,73983) AND `Effect_1` = 160;

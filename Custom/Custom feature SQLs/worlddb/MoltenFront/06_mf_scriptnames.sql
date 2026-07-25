@@ -1,0 +1,14 @@
+-- =====================================================================
+-- Molten Front -- 06  (SUPERSEDED -- do not run this file directly)
+-- ---------------------------------------------------------------------
+-- This file used to SOURCE ../HyjalCata/31_scriptnames.sql and
+-- ../HyjalCata/46_neltharion_fixups.sql to re-apply ScriptName wiring after
+-- 01_mf_templates.sql clones fresh entries. HeidiSQL does not reliably resolve
+-- a SOURCE statement nested inside another SOURCE'd file (confirmed: silent
+-- syntax error, the two files never actually ran), so apply_all.sql now
+-- SOURCEs 31_scriptnames.sql / 46_neltharion_fixups.sql DIRECTLY at the top
+-- level instead of through this wrapper.
+--
+-- This file is intentionally inert (no statements) to avoid being a landmine
+-- if run standalone. See apply_all.sql for the real wiring order.
+-- =====================================================================
