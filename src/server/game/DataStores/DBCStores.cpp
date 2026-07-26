@@ -649,6 +649,34 @@ void LoadDBCStores(std::string const& dataPath)
         exit(1);
     }
 
+    // The level-indexed GT* game tables are addressed at a fixed GT_MAX_LEVEL
+    // stride ((class - 1) * GT_MAX_LEVEL + level - 1, or cr * GT_MAX_LEVEL + ...).
+    // If a table still holds retail 100-level data the stride silently reads the
+    // wrong class/rating block instead of failing, which corrupts crit, dodge and
+    // every rating conversion with no diagnostic at all. Note these stores are
+    // populated from the world `gt*_dbc` TABLES, not the .dbc files: GT files
+    // carry no id column, so DBCFileLoader rejects the "df" format and the file
+    // load is always a silent no-op. Check the row counts explicitly.
+    {
+        auto checkGtRows = [](char const* name, uint32 rows, uint32 blocks)
+        {
+            uint32 const expected = blocks * GT_MAX_LEVEL;
+            if (rows != expected)
+                LOG_ERROR("server.loading", "GT table '{}' has {} rows, expected {} ({} blocks x {} levels). "
+                          "Level-dependent lookups will read the wrong block. Apply the pending gt*_dbc SQL update.",
+                          name, rows, expected, blocks, GT_MAX_LEVEL);
+        };
+
+        checkGtRows("gtoctregenhp_dbc", sGtOCTRegenHPStore.GetNumRows(), MAX_CLASSES - 1);
+        checkGtRows("gtregenhpperspt_dbc", sGtRegenHPPerSptStore.GetNumRows(), MAX_CLASSES - 1);
+        checkGtRows("gtregenmpperspt_dbc", sGtRegenMPPerSptStore.GetNumRows(), MAX_CLASSES - 1);
+        checkGtRows("gtchancetomeleecrit_dbc", sGtChanceToMeleeCritStore.GetNumRows(), MAX_CLASSES - 1);
+        checkGtRows("gtchancetospellcrit_dbc", sGtChanceToSpellCritStore.GetNumRows(), MAX_CLASSES - 1);
+        checkGtRows("gtcombatratings_dbc", sGtCombatRatingsStore.GetNumRows(), GT_MAX_RATING);
+        checkGtRows("gtnpcmanacostscaler_dbc", sGtNPCManaCostScalerStore.GetNumRows(), 1);
+        checkGtRows("gtbarbershopcostbase_dbc", sGtBarberShopCostBaseStore.GetNumRows(), 1);
+    }
+
     LOG_INFO("server.loading", ">> Initialized {} Data Stores in {} ms", DBCFileCount, GetMSTimeDiffToNow(oldMSTime));
     LOG_INFO("server.loading", " ");
 }

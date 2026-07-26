@@ -81,8 +81,10 @@
 #include "SkillExtraItems.h"
 #include "SmartAI.h"
 #include "SpellMgr.h"
+#include "StringConvert.h"
 #include "TaskScheduler.h"
 #include "TicketMgr.h"
+#include "Tokenize.h"
 #include "Transport.h"
 #include "TransportMgr.h"
 #include "UpdateTime.h"
@@ -381,6 +383,7 @@ void World::SetInitialWorldSettings()
     LOG_INFO("server.loading", "Initialize Data Stores...");
     LoadDBCStores(_dataPath);
     DetectDBCLang();
+    LoadRestAreaOverrides();
 
     // Load cinematic cameras
     LoadM2Cameras(_dataPath);
@@ -1062,6 +1065,43 @@ void World::SetInitialWorldSettings()
         LOG_INFO("server.loading", "AzerothCore Dry Run Completed, Terminating.");
         exit(0);
     }
+}
+
+/// Flag extra areas as rest zones so DarkChaos custom hubs (guild houses, Hyjal
+/// and Molten Front sanctuaries, Giant Isles safe zones, ...) behave like inns.
+/// AreaTable.dbc has no rest flag for custom zones, and patching the DBC would
+/// require a matching client patch, so the flags are OR'd in at load instead -
+/// same approach SpellMgr::LoadSpellInfoCorrections already uses for Kharanos.
+/// Everything downstream (Player::UpdateArea -> SetRestFlag -> IsInRestArea)
+/// then works with no per-zone code.
+void World::LoadRestAreaOverrides()
+{
+    std::string const areaIds = sConfigMgr->GetOption<std::string>("DC.RestAreas.ExtraAreaIds", "");
+    if (areaIds.empty())
+        return;
+
+    uint32 count = 0;
+    for (std::string_view token : Acore::Tokenize(areaIds, ',', false))
+    {
+        Optional<uint32> areaId = Acore::StringTo<uint32>(token);
+        if (!areaId)
+        {
+            LOG_ERROR("server.loading", "DC.RestAreas.ExtraAreaIds: '{}' is not a valid area id, skipped.", token);
+            continue;
+        }
+
+        AreaTableEntry* area = const_cast<AreaTableEntry*>(sAreaTableStore.LookupEntry(*areaId));
+        if (!area)
+        {
+            LOG_ERROR("server.loading", "DC.RestAreas.ExtraAreaIds: area {} does not exist in AreaTable.dbc, skipped.", *areaId);
+            continue;
+        }
+
+        area->flags |= AREA_FLAG_REST_ZONE_ALLIANCE | AREA_FLAG_REST_ZONE_HORDE;
+        ++count;
+    }
+
+    LOG_INFO("server.loading", ">> Flagged {} extra area(s) as rest zones", count);
 }
 
 void World::DetectDBCLang()

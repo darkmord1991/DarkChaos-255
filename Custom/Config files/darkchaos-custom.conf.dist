@@ -116,6 +116,38 @@ Rate.Health.Above80 = 1
 Rate.Mana.Above80 = 1
 
 #
+#    Rate.Health.RestArea
+#    Rate.Mana.RestArea
+#        Description: Regeneration multiplier applied while the player is in a
+#                     "safe area": an inn, a capital city, or any area carrying
+#                     AREA_FLAG_REST_ZONE_* (including the extra areas listed in
+#                     DC.RestAreas.ExtraAreaIds below).
+#                     Applied on top of Rate.Health / Rate.Mana and the Above80
+#                     multipliers. Out-of-combat recovery only - in-combat
+#                     regeneration is unaffected, and rage/runic power still
+#                     decay normally.
+#        Default:     3 - (Rate.Health.RestArea)
+#                     3 - (Rate.Mana.RestArea)
+#
+Rate.Health.RestArea = 3
+Rate.Mana.RestArea = 3
+
+#
+#    DC.RestAreas.ExtraAreaIds
+#        Description: Comma-separated AreaTable.dbc ids to additionally treat as
+#                     rest zones, for DarkChaos custom hubs that Blizzard's
+#                     AreaTable has no rest flag for (guild houses, Hyjal and
+#                     Molten Front sanctuaries, Giant Isles safe zones, ...).
+#                     Each id gets AREA_FLAG_REST_ZONE_ALLIANCE and
+#                     AREA_FLAG_REST_ZONE_HORDE OR'd in at startup.
+#                     Note this also accrues rested XP in those areas; that is
+#                     inert for characters at the level cap.
+#        Example:     "5001,5002,5003"
+#        Default:     "" (Disabled)
+#
+DC.RestAreas.ExtraAreaIds = ""
+
+#
 #    Visibility.ObjectSparkles.Lootables
 #        Description: Retail-like sparkle effect on non-quest gameobjects that
 #                     are usable/lootable for everyone. Bitmask of categories.

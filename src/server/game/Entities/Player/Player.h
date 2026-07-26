@@ -1246,6 +1246,9 @@ public:
     void SetRestFlag(RestFlag restFlag, uint32 triggerId = 0);
     void RemoveRestFlag(RestFlag restFlag);
     [[nodiscard]] uint32 GetInnTriggerId() const { return _innTriggerId; }
+    // In any "safe area": an inn, a capital city, or an AREA_FLAG_REST_ZONE_* area.
+    // Drives the Rate.Health.RestArea / Rate.Mana.RestArea regeneration bonus.
+    [[nodiscard]] bool IsInRestArea() const { return _restFlagMask != 0; }
 
     PetStable* GetPetStable() { return m_petStable.get(); }
     PetStable& GetOrInitPetStable();

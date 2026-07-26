@@ -1,15 +1,14 @@
 /*
  * Copyright (C) 2016+ DarkChaos <www.azerothcore.org>, released under AGPL v3.
  *
- * Hyjal Frontier (map 1410) - zone-wide hooks.
+ * Hyjal Frontier (map 750) - zone-wide hooks.
  *
  * Responsibilities (stubbed):
  *   - OnMapChange: welcome broadcast + safe-respawn clamping for invalid
- *     coordinates (pre-Noggit finalization).
- *   - OnUpdateZone: per-tier weather (Scorched Groves = fire storm, Nordrassil
- *     Roots = calm, etc.).
+ *     coordinates.
+ *   - OnUpdateZone: zone entry announce / ambience.
  *   - OnPlayerEnterMap: grant the "Emberwood Pilgrim" aura (custom buff for
- *     XP curve bonus while inside map 1410).
+ *     XP curve bonus while inside the zone).
  *
  * All logic is intentionally TODO'd so this file compiles as a no-op until
  * the zone is actually balanced.
@@ -22,15 +21,24 @@
 
 namespace Hyjal
 {
-    // Keep these in sync with AreaTable.dbc rows 6100-6106.
-    static constexpr uint32 MAP_HYJAL_FRONTIER  = 1410;
-    static constexpr uint32 ZONE_HYJAL_FRONTIER = 6100;
-    static constexpr uint32 ZONE_FOOTHILLS      = 6101;
-    static constexpr uint32 ZONE_SCORCHED       = 6102;
-    static constexpr uint32 ZONE_SUMMIT         = 6103;
-    static constexpr uint32 ZONE_NORDRASSIL     = 6104;
-    static constexpr uint32 ZONE_JAINA_CAMP     = 6105;
-    static constexpr uint32 ZONE_THRALL_CAMP    = 6106;
+    // Retargeted from the superseded map 1410 `Hyjal130` clone to the Cata
+    // downport that actually carries the content.
+    //
+    // There are no sub-zones to switch on: the DC terrain downport bakes ONE
+    // uniform area id per map into every MCNK, so map 750 always reports 4923
+    // and map 861 always reports 4925. The old 6101-6106 tier constants had no
+    // in-world counterpart here and were removed rather than left dangling.
+    // Same reasoning and the same ids as `DCHyjalAreas` in
+    // src/server/scripts/DC/MountHyjal/zone_mount_hyjal.cpp.
+    static constexpr uint32 MAP_HYJAL_FRONTIER  = 750;
+    static constexpr uint32 MAP_MOLTEN_FRONT    = 861;
+    static constexpr uint32 ZONE_HYJAL_FRONTIER = 4923;
+    static constexpr uint32 ZONE_MOLTEN_FRONT   = 4925;
+
+    inline bool IsHyjalMap(uint32 mapId)
+    {
+        return mapId == MAP_HYJAL_FRONTIER || mapId == MAP_MOLTEN_FRONT;
+    }
 }
 
 class hyjal_frontier_zone : public PlayerScript
@@ -43,7 +51,7 @@ public:
         if (!player || !player->GetMap())
             return;
 
-        if (player->GetMapId() != Hyjal::MAP_HYJAL_FRONTIER)
+        if (!Hyjal::IsHyjalMap(player->GetMapId()))
             return;
 
         // TODO: welcome broadcast (DC broadcast system).
@@ -54,19 +62,14 @@ public:
 
     void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
     {
-        if (!player || player->GetMapId() != Hyjal::MAP_HYJAL_FRONTIER)
+        if (!player || !Hyjal::IsHyjalMap(player->GetMapId()))
             return;
 
         switch (newZone)
         {
             case Hyjal::ZONE_HYJAL_FRONTIER:
-            case Hyjal::ZONE_FOOTHILLS:
-            case Hyjal::ZONE_SCORCHED:
-            case Hyjal::ZONE_SUMMIT:
-            case Hyjal::ZONE_NORDRASSIL:
-            case Hyjal::ZONE_JAINA_CAMP:
-            case Hyjal::ZONE_THRALL_CAMP:
-                // TODO: per-tier weather + tier entry announce.
+            case Hyjal::ZONE_MOLTEN_FRONT:
+                // TODO: zone entry announce + ambience.
                 break;
             default:
                 break;

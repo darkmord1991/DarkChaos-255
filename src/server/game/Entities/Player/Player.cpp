@@ -1945,6 +1945,10 @@ void Player::Regenerate(Powers power)
                 if (GetLevel() > 80)
                     ManaIncreaseRate *= sWorld->getRate(RATE_POWER_MANA_ABOVE_80);
 
+                // Resting in an inn, a capital or a faction rest area recovers faster
+                if (IsInRestArea())
+                    ManaIncreaseRate *= sWorld->getRate(RATE_POWER_MANA_REST_AREA);
+
                 if (recentCast) // Trinity Updates Mana in intervals of 2s, which is correct
                     addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER + AsUnderlyingType(POWER_MANA)) *  ManaIncreaseRate * 0.001f * m_regenTimer;
                 else
@@ -2062,6 +2066,10 @@ void Player::RegenerateHealth()
 
     if (GetLevel() > 80)
         HealthIncreaseRate *= sWorld->getRate(RATE_HEALTH_ABOVE_80);
+
+    // Resting in an inn, a capital or a faction rest area recovers faster
+    if (IsInRestArea())
+        HealthIncreaseRate *= sWorld->getRate(RATE_HEALTH_REST_AREA);
 
     float addvalue = 0.0f;
 
@@ -5358,16 +5366,75 @@ uint32 Player::GetShieldBlockValue() const
     return uint32(value);
 }
 
+// The GT* tables (gtOCTRegenHP, gtRegenHPPerSpt, gtRegenMPPerSpt, ...) hold one
+// contiguous block of "levels" rows per playable class, ordered by class id
+// 1..(MAX_CLASSES - 1) i.e. CLASS_WARRIOR..CLASS_DRUID. The slot for the unused
+// class id 10 (CLASS_UNK) exists but is zero-filled, so the number of class
+// blocks is (MAX_CLASSES - 1) == 11, NOT MAX_CLASSES (12).
+//
+// Derive the per-class row count from the loaded store so the index is correct
+// whether the table still holds retail 100-level data or was extended to
+// GT_MAX_LEVEL (255). Note the .dbc files never load (GT files have no id column,
+// so DBCFileLoader rejects the "df" format) - these stores are populated purely
+// from the world `gt*_dbc` tables, and GetNumRows() reflects those.
+// GetNumRows() returns maxId + 1, so dividing by the block count yields the
+// per-class level count for both 0-based and 1-based id layouts
+// (e.g. 2805/11 == 2806/11 == 255, 1100/11 == 1101/11 == 100).
+template <typename T>
+static uint32 GetGtClassLevelIndex(DBCStorage<T> const& store, uint32 pclass, uint32 level)
+{
+    constexpr uint32 GT_CLASS_BLOCKS = MAX_CLASSES - 1; // class ids 1..11
+
+    if (pclass < 1)
+        pclass = 1;
+    else if (pclass > GT_CLASS_BLOCKS)
+        pclass = GT_CLASS_BLOCKS;
+
+    uint32 rows = store.GetNumRows();
+    if (rows >= GT_CLASS_BLOCKS)
+    {
+        uint32 entriesPerClass = rows / GT_CLASS_BLOCKS;
+        if (entriesPerClass > 0)
+        {
+            uint32 clampedLevel = std::min(level, entriesPerClass);
+            uint32 index = (pclass - 1) * entriesPerClass + clampedLevel - 1;
+            if (index < rows)
+                return index;
+        }
+    }
+
+    uint32 fallbackLevel = std::min<uint32>(level, GT_MAX_LEVEL);
+    return (pclass - 1) * GT_MAX_LEVEL + fallbackLevel - 1;
+}
+
+// gtCombatRatings is laid out as GT_MAX_RATING (32) contiguous level blocks, one
+// per CombatRating, so the class-block helper above cannot be reused for it.
+static uint32 GetGtRatingLevelIndex(DBCStorage<GtCombatRatingsEntry> const& store, uint32 cr, uint32 level)
+{
+    uint32 rows = store.GetNumRows();
+    if (rows >= GT_MAX_RATING)
+    {
+        uint32 entriesPerRating = rows / GT_MAX_RATING;
+        if (entriesPerRating > 0)
+        {
+            uint32 clampedLevel = std::min(level, entriesPerRating);
+            uint32 index = cr * entriesPerRating + clampedLevel - 1;
+            if (index < rows)
+                return index;
+        }
+    }
+
+    uint32 fallbackLevel = std::min<uint32>(level, GT_MAX_LEVEL);
+    return cr * GT_MAX_LEVEL + fallbackLevel - 1;
+}
+
 float Player::GetMeleeCritFromAgility()
 {
     uint32 level = GetLevel();
     uint32 pclass = getClass();
 
-    if (level > GT_MAX_LEVEL)
-        level = GT_MAX_LEVEL;
-
     GtChanceToMeleeCritBaseEntry const* critBase  = sGtChanceToMeleeCritBaseStore.LookupEntry(pclass - 1);
-    GtChanceToMeleeCritEntry     const* critRatio = sGtChanceToMeleeCritStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    GtChanceToMeleeCritEntry     const* critRatio = sGtChanceToMeleeCritStore.LookupEntry(GetGtClassLevelIndex(sGtChanceToMeleeCritStore, pclass, level));
     if (!critBase || !critRatio)
         return 0.0f;
 
@@ -5411,11 +5478,8 @@ void Player::GetDodgeFromAgility(float& diminishing, float& nondiminishing)
     uint32 level = GetLevel();
     uint32 pclass = getClass();
 
-    if (level > GT_MAX_LEVEL)
-        level = GT_MAX_LEVEL;
-
     // Dodge per agility is proportional to crit per agility, which is available from DBC files
-    GtChanceToMeleeCritEntry  const* dodgeRatio = sGtChanceToMeleeCritStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    GtChanceToMeleeCritEntry  const* dodgeRatio = sGtChanceToMeleeCritStore.LookupEntry(GetGtClassLevelIndex(sGtChanceToMeleeCritStore, pclass, level));
     if (!dodgeRatio || pclass > MAX_CLASSES)
         return;
 
@@ -5433,11 +5497,8 @@ float Player::GetSpellCritFromIntellect()
     uint32 level = GetLevel();
     uint32 pclass = getClass();
 
-    if (level > GT_MAX_LEVEL)
-        level = GT_MAX_LEVEL;
-
     GtChanceToSpellCritBaseEntry const* critBase  = sGtChanceToSpellCritBaseStore.LookupEntry(pclass - 1);
-    GtChanceToSpellCritEntry     const* critRatio = sGtChanceToSpellCritStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    GtChanceToSpellCritEntry     const* critRatio = sGtChanceToSpellCritStore.LookupEntry(GetGtClassLevelIndex(sGtChanceToSpellCritStore, pclass, level));
     if (!critBase || !critRatio)
         return 0.0f;
 
@@ -5449,14 +5510,16 @@ float Player::GetRatingMultiplier(CombatRating cr) const
 {
     uint32 level = GetLevel();
 
-    if (level > GT_MAX_LEVEL)
-        level = GT_MAX_LEVEL;
-
-    GtCombatRatingsEntry const* Rating = sGtCombatRatingsStore.LookupEntry(cr * GT_MAX_LEVEL + level - 1);
+    GtCombatRatingsEntry const* Rating = sGtCombatRatingsStore.LookupEntry(GetGtRatingLevelIndex(sGtCombatRatingsStore, cr, level));
     // gtOCTClassCombatRatingScalarStore.dbc starts with 1, CombatRating with zero, so cr+1
     GtOCTClassCombatRatingScalarEntry const* classRating = sGtOCTClassCombatRatingScalarStore.LookupEntry((getClass() - 1) * GT_MAX_RATING + cr + 1);
     if (!Rating || !classRating)
         return 1.0f;                                        // By default use minimum coefficient (not must be called)
+
+    // Ratings 25..31 are retail zero-padding; dividing by them yields +Inf, and
+    // rating * Inf then renders as "-1.#J%" on the character sheet.
+    if (Rating->ratio <= 0.0f)
+        return 1.0f;
 
     return classRating->ratio / Rating->ratio;
 }
@@ -5478,44 +5541,6 @@ float Player::GetExpertiseDodgeOrParryReduction(WeaponAttackType attType) const
             break;
     }
     return 0.0f;
-}
-
-// The GT* tables (gtOCTRegenHP, gtRegenHPPerSpt, gtRegenMPPerSpt, ...) hold one
-// contiguous block of "levels" rows per playable class, ordered by class id
-// 1..(MAX_CLASSES - 1) i.e. CLASS_WARRIOR..CLASS_DRUID. The slot for the unused
-// class id 10 (CLASS_UNK) exists but is zero-filled, so the number of class
-// blocks is (MAX_CLASSES - 1) == 11, NOT MAX_CLASSES (12).
-//
-// Derive the per-class row count from the loaded DBC so the index is correct
-// whether the table still ships retail 100-level data or was extended to
-// GT_MAX_LEVEL (255). GetNumRows() returns maxId + 1, so dividing by the block
-// count yields the per-class level count for both 0-based and 1-based id
-// layouts (e.g. 2805/11 == 2806/11 == 255, 1100/11 == 1101/11 == 100).
-template <typename T>
-static uint32 GetGtClassLevelIndex(DBCStorage<T> const& store, uint32 pclass, uint32 level)
-{
-    constexpr uint32 GT_CLASS_BLOCKS = MAX_CLASSES - 1; // class ids 1..11
-
-    if (pclass < 1)
-        pclass = 1;
-    else if (pclass > GT_CLASS_BLOCKS)
-        pclass = GT_CLASS_BLOCKS;
-
-    uint32 rows = store.GetNumRows();
-    if (rows >= GT_CLASS_BLOCKS)
-    {
-        uint32 entriesPerClass = rows / GT_CLASS_BLOCKS;
-        if (entriesPerClass > 0)
-        {
-            uint32 clampedLevel = std::min(level, entriesPerClass);
-            uint32 index = (pclass - 1) * entriesPerClass + clampedLevel - 1;
-            if (index < rows)
-                return index;
-        }
-    }
-
-    uint32 fallbackLevel = std::min<uint32>(level, GT_MAX_LEVEL);
-    return (pclass - 1) * GT_MAX_LEVEL + fallbackLevel - 1;
 }
 
 float Player::OCTRegenHPPerSpirit()

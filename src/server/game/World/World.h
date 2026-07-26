@@ -278,6 +278,7 @@ private:
     LocaleConstant _defaultDbcLocale;                     // from config for one from loaded DBC locales
     uint32 _availableDbcLocaleMask;                       // by loaded DBC
     void DetectDBCLang();
+    void LoadRestAreaOverrides();
     bool _allowMovement;
     std::string _dataPath;
 
