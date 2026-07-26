@@ -111,6 +111,7 @@ enum MoltenFrontEvents
     EVENT_INTO_THE_FIRE_ESCORT_1,
     EVENT_INTO_THE_FIRE_END_GRIP_1,
     EVENT_WINDCALLER_ATTACK_EVENT_1,
+    EVENT_WINDCALLER_ATTACK_EVENT_2,
     EVENT_TRAINED_HAWK_1,
     EVENT_ANREN_ESCORT_1,
     EVENT_ANREN_ESCORT_2,
@@ -181,7 +182,17 @@ public:
         void JustDied(Unit* /*killer*/) override
         {
             if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+            {
                 player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
+
+                // The wisp IS the escort objective -- losing it has to fail the quest,
+                // or the player is left with an in-progress "Wisp Away" that can never
+                // complete and cannot be abandoned-and-retried cleanly.  This is the
+                // one behaviour the suppressed SmartAI had (DEATH -> FAIL_QUEST 29143)
+                // that the ported script dropped; see the round-23b audit.
+                if (player->GetQuestStatus(QUEST_WISP_AWAY) == QUEST_STATUS_INCOMPLETE)
+                    player->FailQuest(QUEST_WISP_AWAY);
+            }
         }
 
         void SpellHit(Unit* who, SpellInfo const* spellInfo) override
@@ -977,6 +988,7 @@ enum QuestIntoTheFire
     NPC_PYRELORD_2 = 3652683,
     SPELL_ENVELOPING_WINDS = 98566,
     SPELL_WRATH = 96427,
+    SPELL_FAERIE_FIRE = 6950,
 };
 
 const Position SummonQuestNpcsPos2[] =
@@ -1219,6 +1231,7 @@ public:
             if (who->GetEntry() == NPC_PYRELORD_2)
             {
                 _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_1, Milliseconds(urand(2000, 4000)));
+                _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_2, Milliseconds(urand(0, 6000)));
             }
         }
 
@@ -1282,6 +1295,14 @@ public:
                     if (Unit* victim = me->GetVictim())
                         me->CastSpell(victim, SPELL_WRATH, false);
                     _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_1, Milliseconds(urand(3000, 5000)));
+                    break;
+                // Reinstated from the SmartAI this script suppresses (entry 3653355 id 10):
+                // UPDATE_IC initial 0-6000, repeat 15000-25000, CAST 6950 on VICTIM with
+                // cast flag 2 = SMARTCAST_TRIGGERED, hence triggered = true here.
+                case EVENT_WINDCALLER_ATTACK_EVENT_2:
+                    if (Unit* victim = me->GetVictim())
+                        me->CastSpell(victim, SPELL_FAERIE_FIRE, true);
+                    _events.ScheduleEvent(EVENT_WINDCALLER_ATTACK_EVENT_2, Milliseconds(urand(15000, 25000)));
                     break;
                 default:
                     break;

@@ -40,10 +40,13 @@ DELETE FROM `graveyard_zone` WHERE `GhostZone` BETWEEN 6100 AND 6106;
 DELETE FROM `game_graveyard` WHERE `ID` BETWEEN 15000 AND 15003;
 
 -- 3. Real graveyards for both maps.
+-- 15014 (Thrall's Vanguard) is intentionally absent until the Horde camp has a
+-- verified GroundZ == FloorZ coordinate -- a graveyard is a forced teleport, so a
+-- bad z there would drop every Horde corpse run through the floor. Horde players
+-- resurrect at the neutral Hyjal graveyards below in the meantime.
 DELETE FROM `game_graveyard` WHERE `ID` BETWEEN 15013 AND 15019;
 INSERT INTO `game_graveyard` (`ID`, `Map`, `x`, `y`, `z`, `Comment`) VALUES
-(15013, 750, 4445.00, -2085.00, 1208.30, 'Mount Hyjal - Jaina''s Encampment (Alliance)'),
-(15014, 750, 5346.00, -2170.00, 1274.60, 'Mount Hyjal - Thrall''s Vanguard (Horde)'),
+(15013, 750, 4443.50, -2077.47, 1206.25, 'Mount Hyjal - Jaina''s Encampment (Alliance)'),
 (15015, 750, 5135.00, -1731.00, 1335.50, 'Mount Hyjal - Nordrassil / Sanctuary of Malorne'),
 (15016, 750, 4930.00, -2705.00, 1433.40, 'Mount Hyjal - Shrine of Aviana'),
 (15017, 750, 5552.00, -3601.00, 1569.80, 'Mount Hyjal - southern summit camp'),
@@ -55,7 +58,6 @@ INSERT INTO `game_graveyard` (`ID`, `Map`, `x`, `y`, `z`, `Comment`) VALUES
 DELETE FROM `graveyard_zone` WHERE `ID` BETWEEN 15013 AND 15019;
 INSERT INTO `graveyard_zone` (`ID`, `GhostZone`, `Faction`, `Comment`) VALUES
 (15013, 4923, 469, 'Mount Hyjal - Alliance camp'),
-(15014, 4923,  67, 'Mount Hyjal - Horde camp'),
 (15015, 4923,   0, 'Mount Hyjal - Nordrassil'),
 (15016, 4923,   0, 'Mount Hyjal - Shrine of Aviana'),
 (15017, 4923,   0, 'Mount Hyjal - southern summit'),
