@@ -6786,6 +6786,31 @@ function DC:HandleDefinitions(data)
         self:_MarkInflight("req:defs:pets", nil)
     end
 
+    -- Non-transmog types: if the server says our definitions are current but
+    -- the local cache is actually empty (e.g. SavedVariables kept a stale
+    -- syncVersion after the cached catalog was dropped), force one full
+    -- re-download with syncVersion=0 instead of staying empty forever.
+    -- (Transmog has its own version of this guard further below.)
+    if collType ~= "transmog" and
+        (upToDate == true or upToDate == 1 or upToDate == "1") then
+        local bucket = type(self.definitions) == "table" and
+            self.definitions[collType]
+        local isEmpty = type(bucket) ~= "table" or next(bucket) == nil
+        local hasLocal = type(self.HasLocalCollectionDefinitions) == "function"
+            and self:HasLocalCollectionDefinitions(collType)
+        if isEmpty and not hasLocal then
+            self._defsForcedFullDownload = self._defsForcedFullDownload or {}
+            if not self._defsForcedFullDownload[collType] then
+                self._defsForcedFullDownload[collType] = true
+                self:Debug(string.format(
+                    "%s definitions reported up-to-date but local cache is empty; forcing full download",
+                    tostring(collType)))
+                self:SetSyncVersion(collType, 0)
+                self:RequestDefinitions(collType, 0)
+            end
+        end
+    end
+
     -- Mount preview diagnostics: surface when server definitions are missing
     -- model/display hints. Full-table scan, so debug mode only - definition
     -- pages arrive in bursts during the login sync.

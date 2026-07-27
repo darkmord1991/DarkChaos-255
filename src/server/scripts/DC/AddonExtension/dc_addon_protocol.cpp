@@ -2561,6 +2561,21 @@ namespace DCAddon
         if (!player || !player->GetSession())
             return false;
 
+        // The client DLL reads the native body into a fixed 64 KB buffer
+        // (kDcNativeMessageBodyMaxLength = 65535 in WotLKExtensions
+        // CNetClient.cpp); larger bodies arrive truncated and fail to parse.
+        // Refuse the native route so callers fall back to the chunked
+        // addon-message transport, which has no size limit.
+        constexpr size_t MAX_NATIVE_MESSAGE_BODY_BYTES = 60000;
+        if (body.size() > MAX_NATIVE_MESSAGE_BODY_BYTES)
+        {
+            LOG_DEBUG("module.dc", "[DCAddon] Native message body too large "
+                "({} bytes) for module={} opcode={}; falling back to chunked "
+                "addon transport", body.size(), module,
+                static_cast<uint32>(opcode));
+            return false;
+        }
+
         uint32 capability = GetModuleNativeCapability(module);
         if (capability == 0)
             return false;

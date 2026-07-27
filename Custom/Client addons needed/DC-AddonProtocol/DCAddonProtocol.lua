@@ -609,14 +609,36 @@ end
 
 function DC:GetNativeExtensionDataRevisions()
     local getter = rawget(_G, "GetDCClientDataRevisions")
-    if type(getter) == "function" then
-        local ok, revisions = pcall(getter)
-        if ok and type(revisions) == "table" then
-            return revisions
+    if type(getter) ~= "function" then
+        return nil
+    end
+
+    local ok, revisions = pcall(getter)
+    if not ok or type(revisions) ~= "table" then
+        return nil
+    end
+
+    -- The DLL values are per-session load counters (bumped on each LoadDB),
+    -- not content revisions, so they can never match the server's required
+    -- revision. Prefer the generator-embedded content revisions from the
+    -- DC-Collection completeness manifest: the same values are stamped into
+    -- the world DB (dc_client_data_revisions), so the handshake comparison
+    -- succeeds exactly when the deployed client CDBC build is current.
+    local collection = rawget(_G, "DCCollection")
+    if type(collection) == "table" then
+        local manifest = collection.COLLECTION_STATIC_MANIFEST
+        if type(manifest) == "table" and
+            type(manifest.dataRevisions) == "table" then
+            for key, value in pairs(manifest.dataRevisions) do
+                local numeric = tonumber(value)
+                if numeric and numeric > 0 then
+                    revisions[key] = numeric
+                end
+            end
         end
     end
 
-    return nil
+    return revisions
 end
 
 function DC:GetNativeTooltipRuntimeSignature()

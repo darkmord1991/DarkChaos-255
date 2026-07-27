@@ -1354,7 +1354,11 @@ local function ComputeRelativeHeading(facing, playerX, playerY, targetX, targetY
         direction = -direction
     end
 
-    local relative = NormalizeRadians(direction - (facing or 0))
+    -- `direction` is CLOCKWISE from north (callers feed it to sin/cos as
+    -- x = sin, y = cos), while GetPlayerFacing grows COUNTER-clockwise
+    -- (north = 0, west = +pi/2). Rotating into the facing-up frame is therefore
+    -- an addition -- subtracting mirrors the bearing across the facing axis.
+    local relative = NormalizeRadians(direction + (facing or 0))
     return direction, relative
 end
 

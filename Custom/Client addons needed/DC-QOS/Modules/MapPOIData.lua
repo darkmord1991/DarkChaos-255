@@ -33,12 +33,19 @@ local MapPOIData = {}
 --
 -- `texCoord` (optional) trims the border off Interface\Icons art so it sits
 -- flush next to the borderless Minimap\Tracking icons.
+--
+-- `minimap = false` keeps a type on the world map only, for POIs the client
+-- already blips on the minimap itself.
 MapPOIData.TYPES = {
     flight = {
         order = 1,
         label = "Flight Master",
         worldIcon = "Interface\\Minimap\\Tracking\\FlightMaster",
-        minimapIcon = "Interface\\Minimap\\Tracking\\FlightMaster",
+        -- The engine already draws a green taxi boot on the minimap for every
+        -- flight master in range, on custom maps too, so a second pin there is
+        -- just noise. The world-map layer still earns its keep: it also shows
+        -- the flight masters the player has not discovered yet.
+        minimap = false,
         borderColor = { 0.24, 0.62, 0.28, 0.62 },
         iconColor = { 1.0, 1.0, 1.0, 1.0 },
     },
@@ -85,6 +92,13 @@ function MapPOIData:IsTypeEnabled(poiType)
         return info.defaultEnabled ~= false
     end
     return value ~= false
+end
+
+-- Whether a type is drawn on the minimap at all. Types the client already
+-- blips itself (flight masters) opt out here and stay world-map only.
+function MapPOIData:IsTypeOnMinimap(poiType)
+    local info = self:GetTypeInfo(poiType)
+    return info ~= nil and info.minimap ~= false
 end
 
 function MapPOIData:GetTypeInfo(poiType)

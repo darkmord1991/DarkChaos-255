@@ -4330,11 +4330,36 @@ namespace DCCollection
         entry.defs = DCAddon::JsonValue();
     }
 
+    // Client data revisions can be stamped into the world DB by the CDBC
+    // generator (tools/generate_dc_collection_cdbc.py writes
+    // dc_client_data_revisions alongside the CDBC/manifest outputs). When a
+    // stamp exists it is authoritative: the client addon reports the same
+    // generator-embedded value from its manifest, so the handshake revision
+    // check passes exactly when the deployed client CDBC build matches the
+    // build the DB says is current. Without a stamp we fall back to the
+    // runtime content hash (which a client can never match — the DLL only
+    // reports a load counter — so the native-DBC path stays disabled).
+    static uint32 ReadStampedClientDataRevision(char const* feature)
+    {
+        if (!WorldTableExists("dc_client_data_revisions"))
+            return 0;
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT revision FROM dc_client_data_revisions WHERE feature = '{}'",
+            feature);
+        if (!result)
+            return 0;
+
+        return (*result)[0].Get<uint32>();
+    }
+
     uint32 GetCollectionCategoriesRevisionCached()
     {
         return GetCachedStaticDataRevision(GetCategoriesRevisionCache(),
             []() -> uint32
             {
+                if (uint32 stamped = ReadStampedClientDataRevision("collectionCategories"))
+                    return stamped;
                 return BuildCollectionCategoriesRevision();
             });
     }
@@ -4344,6 +4369,8 @@ namespace DCCollection
         return GetCachedStaticDataRevision(GetSourcesRevisionCache(),
             []() -> uint32
             {
+                if (uint32 stamped = ReadStampedClientDataRevision("collectionSources"))
+                    return stamped;
                 return BuildCollectionSourcesRevision();
             });
     }
@@ -4353,6 +4380,8 @@ namespace DCCollection
         return GetCachedStaticDataRevision(GetShopRevisionCache(),
             []() -> uint32
             {
+                if (uint32 stamped = ReadStampedClientDataRevision("collectionShop"))
+                    return stamped;
                 return BuildCollectionShopRevision();
             });
     }
@@ -4362,6 +4391,8 @@ namespace DCCollection
         return GetCachedStaticDataRevision(GetSetsRevisionCache(),
             []() -> uint32
             {
+                if (uint32 stamped = ReadStampedClientDataRevision("collectionSets"))
+                    return stamped;
                 return BuildCollectionSetsRevision();
             });
     }
@@ -4413,10 +4444,18 @@ namespace DCCollection
             msg.Send(player);
         }
 
+        // The client DLL reads native wave1 payloads into a fixed 64 KB buffer
+        // (kCollectionWave1PayloadMaxLength = 65535 in WotLKExtensions
+        // CNetClient.cpp); anything larger arrives truncated and fails JSON
+        // parsing. Keep headroom below that cap and route oversized payloads
+        // through the chunked addon-message transport instead.
+        constexpr size_t NATIVE_WAVE1_MAX_PAYLOAD_BYTES = 60000;
+
         void SendCollectionWave1Payload(Player* player,
             uint8 logicalOpcode, std::string const& payload)
         {
-            if (ResolveCollectionWave1Transport(player).UsesNative())
+            if (payload.size() <= NATIVE_WAVE1_MAX_PAYLOAD_BYTES &&
+                ResolveCollectionWave1Transport(player).UsesNative())
             {
                 SendNativeCollectionWave1Payload(player, logicalOpcode,
                     payload);

@@ -2,14 +2,15 @@
 -- DC-QoS: Map POI Minimap Pins
 -- ============================================================
 -- Minimap counterpart to the world-map POI layer in QuestMapPins. Renders the
--- server-fed POIs from MapPOIData (currently flight masters) as minimap blips
--- with a name tooltip, so a flight master can be spotted from the minimap the
--- same way quest markers are -- which matters most on the custom maps that have
--- no client taxi map at all (Azshara Crater, DC Hyjal, DC Plaguelands, Hyjal
--- Frontier).
+-- server-fed POIs from MapPOIData as minimap blips with a name tooltip, so a
+-- service NPC can be spotted from the minimap the same way quest markers are --
+-- which matters most on the custom maps (Azshara Crater, DC Hyjal, DC
+-- Plaguelands, Hyjal Frontier).
 --
 -- Icons and labels come from MapPOIData.TYPES, so a new POI kind shows up here
--- automatically once it is registered there.
+-- automatically once it is registered there. A type that sets `minimap = false`
+-- stays on the world map only -- flight masters do, because the engine already
+-- draws its own green taxi boot for them here.
 --
 -- Positioning uses the shared mapUtils.ProjectToMinimap helper, which honours
 -- minimap rotation and zoom. Like the client's own minimap POI blips, a pin is
@@ -72,6 +73,16 @@ local function GetPinSize()
         size = MAX_PIN_SIZE
     end
     return size
+end
+
+-- A type can opt out of the minimap (MapPOIData.TYPES[t].minimap == false) when
+-- the client already blips it there itself -- flight masters get a green taxi
+-- boot from the engine, so they stay world-map only.
+local function IsTypeOnMinimap(poiData, poiType)
+    if type(poiData.IsTypeOnMinimap) ~= "function" then
+        return true
+    end
+    return poiData:IsTypeOnMinimap(poiType)
 end
 
 local function HidePinsFrom(startIndex)
@@ -234,7 +245,8 @@ function MapPOIMinimap:Refresh()
         local typeInfo = poiData:GetTypeInfo(poiType)
         local pois = poiData:GetPOIsByType(poiType)
 
-        if typeInfo and type(pois) == "table" and poiData:IsTypeEnabled(poiType) then
+        if typeInfo and type(pois) == "table"
+            and IsTypeOnMinimap(poiData, poiType) and poiData:IsTypeEnabled(poiType) then
             for i = 1, #pois do
                 local poi = pois[i]
                 -- WorldToMapPosition rejects points that are not on the map area
@@ -345,7 +357,7 @@ function MapPOIMinimap.CreateSettings(parent)
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetWidth(460)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Shows server-provided map markers (currently flight masters) on the minimap, following minimap rotation and zoom. Useful on custom maps that have no flight-master map of their own.")
+    desc:SetText("Shows server-provided map markers (innkeepers, mailboxes, teleporters) on the minimap, following minimap rotation and zoom. Flight masters are world-map only -- the client already blips those on the minimap itself.")
 
     local yOffset = -76
 
@@ -388,7 +400,11 @@ function MapPOIMinimap.CreateSettings(parent)
             local typeInfo = poiData:GetTypeInfo(poiType)
             local typeCb = addon:CreateCheckbox(parent)
             typeCb:SetPoint("TOPLEFT", 28, yOffset)
-            typeCb.Text:SetText(typeInfo and typeInfo.label or poiType)
+            local typeLabel = typeInfo and typeInfo.label or poiType
+            if not IsTypeOnMinimap(poiData, poiType) then
+                typeLabel = typeLabel .. " (world map only)"
+            end
+            typeCb.Text:SetText(typeLabel)
             typeCb:SetChecked(poiData:IsTypeEnabled(poiType))
             typeCb:SetScript("OnClick", function(self)
                 addon:SetSetting("mapPoiTypes." .. poiType, self:GetChecked())

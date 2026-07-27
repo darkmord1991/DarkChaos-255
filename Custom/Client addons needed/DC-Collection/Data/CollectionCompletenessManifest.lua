@@ -90,5 +90,11 @@ DC.COLLECTION_STATIC_MANIFEST = {
         missingPreview = {
         },
     },
+    dataRevisions = {
+        collectionCategories = 1684590543,
+        collectionSources = 1565973567,
+        collectionShop = 96056661,
+        collectionSets = 1487497015,
+    },
 }
 DC.COLLECTION_STATIC_MANIFEST_VERSION = 1

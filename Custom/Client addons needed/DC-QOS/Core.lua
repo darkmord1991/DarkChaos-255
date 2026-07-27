@@ -881,8 +881,13 @@ function addon:GetMapUtils()
 
         local heading = direction
         if mapUtils.IsMinimapRotating() then
+            -- `direction` is measured CLOCKWISE from north (east = +pi/2, to match
+            -- the sin/cos use below), while GetPlayerFacing grows COUNTER-clockwise
+            -- (north = 0, west = +pi/2). Rotating into the facing-up frame is
+            -- therefore an addition -- subtracting mirrors every pin across the
+            -- player's facing axis.
             local facing = (type(GetPlayerFacing) == "function") and (GetPlayerFacing() or 0) or 0
-            heading = NormalizeRadians(direction - facing)
+            heading = NormalizeRadians(direction + facing)
         end
 
         local projected = (distanceYards / (diameterYards * 0.5)) * radiusPx
