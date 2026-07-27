@@ -134,10 +134,74 @@ local state = {
     received = 0,
     handlerRegistered = false,
     pageLimit = 100,
+    version = 0,           -- server content version of the cached list
 }
 
 local function GetDC()
     return rawget(_G, "DCAddonProtocol")
+end
+
+-- The POI list is static world data (~60 KB per full sync), so it is cached
+-- in SavedVariables per faction and re-validated with the server's content
+-- version instead of being re-downloaded every session. Old servers ignore
+-- the `v` field and send the full list; old caches simply miss and refill.
+local function GetFactionCacheKey()
+    local faction = UnitFactionGroup and UnitFactionGroup("player")
+    return (faction == "Horde") and "Horde" or "Alliance"
+end
+
+local function GetSavedCache()
+    local db = rawget(_G, "DCQoSDB")
+    if type(db) ~= "table" then
+        return nil
+    end
+    local cache = db.mapPoiCache
+    if type(cache) ~= "table" then
+        return nil
+    end
+    local entry = cache[GetFactionCacheKey()]
+    if type(entry) ~= "table" or type(entry.list) ~= "table" or
+        not tonumber(entry.v) then
+        return nil
+    end
+    return entry
+end
+
+local function StoreSavedCache(version, list)
+    local db = rawget(_G, "DCQoSDB")
+    if type(db) ~= "table" then
+        return
+    end
+    db.mapPoiCache = db.mapPoiCache or {}
+    db.mapPoiCache[GetFactionCacheKey()] = { v = version, list = list }
+end
+
+local function RebuildByType()
+    state.byType = {}
+    for i = 1, #state.list do
+        local poi = state.list[i]
+        local bucket = state.byType[poi.type]
+        if not bucket then
+            bucket = {}
+            state.byType[poi.type] = bucket
+        end
+        bucket[#bucket + 1] = poi
+    end
+end
+
+local function RefreshRenderers()
+    for _, moduleName in ipairs({ "QuestMapPins", "MapPOIMinimap" }) do
+        local renderer = type(addon.GetModule) == "function" and addon:GetModule(moduleName) or nil
+        if renderer and type(renderer.Refresh) == "function" then
+            if type(addon.DelayedCall) == "function" then
+                addon:DelayedCall(0, function()
+                    renderer:Refresh()
+                end)
+            else
+                renderer:Refresh()
+            end
+        end
+    end
 end
 
 function MapPOIData:RequestPage(offset, reset)
@@ -146,11 +210,22 @@ function MapPOIData:RequestPage(offset, reset)
         return
     end
 
-    DC:Request("MPOI", 0x01, {
+    local request = {
         offset = tonumber(offset) or 0,
         limit = state.pageLimit,
         reset = reset and true or false,
-    })
+    }
+
+    -- On the first page, offer our cached version so an unchanged server
+    -- list is answered with a tiny upToDate ack instead of the full pages.
+    if request.offset == 0 then
+        local cached = GetSavedCache()
+        if cached then
+            request.v = tonumber(cached.v)
+        end
+    end
+
+    DC:Request("MPOI", 0x01, request)
 end
 
 local function OnPOIResponse(data)
@@ -158,9 +233,33 @@ local function OnPOIResponse(data)
         return
     end
 
+    -- Server confirmed our SavedVariables cache is current: promote it to the
+    -- live state without any page traffic.
+    if data.upToDate == true then
+        local cached = GetSavedCache()
+        if cached then
+            state.list = cached.list
+            state.version = tonumber(cached.v) or 0
+            state.total = #state.list
+            state.received = #state.list
+            state.complete = true
+            RebuildByType()
+            RefreshRenderers()
+        else
+            -- We sent a version but lost the cache in the meantime; refetch.
+            state.requested = true
+            MapPOIData:RequestPage(0, true)
+        end
+        return
+    end
+
     local list = data.pois
     if type(list) ~= "table" then
         return
+    end
+
+    if tonumber(data.v) then
+        state.version = tonumber(data.v)
     end
 
     local offset = tonumber(data.offset or 0) or 0
@@ -205,19 +304,13 @@ local function OnPOIResponse(data)
 
     if done then
         state.complete = true
-        -- Refresh every renderer once, now that the full set is available.
-        for _, moduleName in ipairs({ "QuestMapPins", "MapPOIMinimap" }) do
-            local renderer = type(addon.GetModule) == "function" and addon:GetModule(moduleName) or nil
-            if renderer and type(renderer.Refresh) == "function" then
-                if type(addon.DelayedCall) == "function" then
-                    addon:DelayedCall(0, function()
-                        renderer:Refresh()
-                    end)
-                else
-                    renderer:Refresh()
-                end
-            end
+        -- Persist the full list so the next session can version-check
+        -- instead of re-downloading.
+        if state.version and state.version > 0 then
+            StoreSavedCache(state.version, state.list)
         end
+        -- Refresh every renderer once, now that the full set is available.
+        RefreshRenderers()
     elseif state.requested and #list > 0 then
         -- Continue paging only for a sync we initiated (avoids looping on
         -- stray responses driven by other addons).
@@ -249,6 +342,21 @@ function MapPOIData:EnsureRequested()
     local DC = GetDC()
     if not DC or type(DC.Request) ~= "function" then
         return
+    end
+
+    -- Serve the cached list immediately so pins render without waiting for
+    -- the server round-trip; the version check then confirms it (tiny ack)
+    -- or replaces it (full page sync overwrites via reset).
+    if #state.list == 0 then
+        local cached = GetSavedCache()
+        if cached then
+            state.list = cached.list
+            state.version = tonumber(cached.v) or 0
+            state.total = #state.list
+            state.received = #state.list
+            RebuildByType()
+            RefreshRenderers()
+        end
     end
 
     state.requested = true

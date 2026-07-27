@@ -264,6 +264,48 @@ namespace MapPOIs
         return pois;
     }
 
+    // Content signature of the per-team visible POI list. The list is
+    // immutable for the lifetime of the world process, so this is computed
+    // once per team and lets clients skip re-downloading a list they already
+    // have cached (they echo the version back with the request).
+    static uint32 ComputeVisibleListVersion(uint32 teamMask)
+    {
+        uint32 hash = 5381;
+        auto mix = [&hash](uint32 value)
+        {
+            hash = ((hash * 131) + value + 17) % 2147483647u;
+            if (hash == 0)
+                hash = 1;
+        };
+
+        for (MapPOI const& poi : GetPOIs())
+        {
+            if (poi.hostileMask & teamMask)
+                continue;
+
+            for (char const* ch = poi.type; ch && *ch; ++ch)
+                mix(static_cast<unsigned char>(*ch));
+            for (unsigned char ch : poi.name)
+                mix(ch);
+            mix(poi.map);
+            mix(static_cast<uint32>(static_cast<int32>(poi.x)));
+            mix(static_cast<uint32>(static_cast<int32>(poi.y)));
+            mix(static_cast<uint32>(static_cast<int32>(poi.z)));
+        }
+
+        return hash;
+    }
+
+    static uint32 GetVisibleListVersion(uint32 teamMask)
+    {
+        static uint32 const allianceVersion =
+            ComputeVisibleListVersion(FACTION_MASK_ALLIANCE);
+        static uint32 const hordeVersion =
+            ComputeVisibleListVersion(FACTION_MASK_HORDE);
+        return (teamMask == FACTION_MASK_ALLIANCE)
+            ? allianceVersion : hordeVersion;
+    }
+
     static void HandleRequestList(Player* player, ParsedMessage const& msg)
     {
         if (!player)
@@ -272,6 +314,7 @@ namespace MapPOIs
         uint32 offset = 0;
         uint32 limit = 60;
         bool reset = true;
+        uint32 clientVersion = 0;
 
         if (IsJsonMessage(msg))
         {
@@ -284,6 +327,8 @@ namespace MapPOIs
                     limit = req["limit"].AsUInt32();
                 if (req.HasKey("reset") && req["reset"].IsBool())
                     reset = req["reset"].AsBool();
+                if (req.HasKey("v") && req["v"].IsNumber())
+                    clientVersion = req["v"].AsUInt32();
             }
         }
 
@@ -296,6 +341,22 @@ namespace MapPOIs
         uint32 const teamMask = (player->GetTeamId(true) == TEAM_ALLIANCE)
             ? FACTION_MASK_ALLIANCE : FACTION_MASK_HORDE;
 
+        uint32 const listVersion = GetVisibleListVersion(teamMask);
+
+        // Version short-circuit: the client already holds this exact list in
+        // its SavedVariables cache; skip the multi-page payload entirely.
+        if (clientVersion != 0 && clientVersion == listVersion && offset == 0)
+        {
+            JsonMessage ack(Module::MAP_POI, Opcode::MapPOI::SMSG_SEND_LIST);
+            ack.Set("upToDate", true);
+            ack.Set("v", listVersion);
+            ack.Set("offset", 0u);
+            ack.Set("total", 0u);
+            ack.Set("done", true);
+            ack.Send(player);
+            return;
+        }
+
         std::vector<MapPOI const*> visible;
         for (MapPOI const& poi : GetPOIs())
             if (!(poi.hostileMask & teamMask))
@@ -307,6 +368,7 @@ namespace MapPOIs
         response.Set("offset", offset);
         response.Set("limit", limit);
         response.Set("reset", reset);
+        response.Set("v", listVersion);
 
         JsonValue arr;
         arr.SetArray();

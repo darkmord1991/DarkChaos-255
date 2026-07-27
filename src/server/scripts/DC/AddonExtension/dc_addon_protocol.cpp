@@ -2694,6 +2694,21 @@ namespace DCAddon
         if (!player || !player->GetSession())
             return false;
 
+        // The client DLL reads the envelope payload into a fixed 16 KB buffer
+        // (kDCNativeEnvelopePayloadMaxLength = 16384 in WotLKExtensions
+        // CNetClient.cpp); an oversized payload would arrive truncated and
+        // poison the envelope cache with unparseable JSON. Envelope sends are
+        // stage-2 mirrors of data already delivered over the addon-chat
+        // transport, so skipping the mirror loses nothing.
+        constexpr size_t MAX_NATIVE_ENVELOPE_PAYLOAD_BYTES = 15000;
+        if (payload.size() > MAX_NATIVE_ENVELOPE_PAYLOAD_BYTES)
+        {
+            LOG_DEBUG("module.dc", "[DCAddon] Native envelope payload too "
+                "large ({} bytes) for module={} feature={}; skipping mirror",
+                payload.size(), module, feature);
+            return false;
+        }
+
         WorldPacket data(::SMSG_DC_NATIVE_ENVELOPE,
             module.size() + feature.size() + action.size() + payload.size()
                 + context.size() + 5);
