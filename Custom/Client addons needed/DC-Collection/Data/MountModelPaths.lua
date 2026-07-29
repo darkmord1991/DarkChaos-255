@@ -1215,4 +1215,11 @@ DC.MountModelPaths = DC.MountModelPaths or {
     [503346] = "mountpreview\\stormcrowmount_solar\\stormcrowmount_solar_503346.m2",
     [503347] = "mountpreview\\viciousflyingnerubian2\\viciousflyingnerubian2_horde_503347.m2",
     [503348] = "mountpreview\\wolfdraenor\\wolfdraenor_felmount_503348.m2",
+    [503525] = "mountpreview\\encrypted08\\encrypted08_503525.m2",
+    [503526] = "mountpreview\\encrypted09\\encrypted09_503526.m2",
+    [503527] = "mountpreview\\encrypted16\\encrypted16_503527.m2",
+    [503528] = "mountpreview\\encrypted21\\encrypted21_503528.m2",
+    [503529] = "mountpreview\\encrypted22\\encrypted22_503529.m2",
+    [503532] = "mountpreview\\ridinghorse\\ridinghorsespectral_503532.m2",
+    [503533] = "mountpreview\\saber3mount\\saber3mount_503533.m2",
 }

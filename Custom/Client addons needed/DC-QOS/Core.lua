@@ -182,10 +182,13 @@ addon.defaults = {
         largerWorldMap = true,
         extendedCameraZoom = true,
         maxZoomFactor = 4,
-        buffFrameMove = false,
-        buffFrameOffsetX = 10,
-        buffFrameOffsetY = -20,
-        playerFrameOffsetY = -3,
+        buffFrameMove = true,
+        buffFrameOffsetX = -210,
+        buffFrameOffsetY = -6,
+        -- NOTE: buffFrameAnchorVersion is intentionally NOT in the defaults:
+        -- MergeDefaults would stamp it into existing SavedVariables before
+        -- the one-time migration in Interface.lua ever saw the old value.
+        playerFrameOffsetY = 0,
     },
 
     -- Action Bars

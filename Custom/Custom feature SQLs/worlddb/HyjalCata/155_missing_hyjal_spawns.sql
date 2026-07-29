@@ -1,5 +1,6 @@
 -- ---------------------------------------------------------------------------
 -- 155  Hyjal round-25 -- the spawns the downport never brought across
+--      (amended: excludes unique service NPCs -- see 158_)
 -- ---------------------------------------------------------------------------
 -- REVISED: this file originally measured the gap against `nelt_world` and found
 -- 277 spawns.  That was the wrong yardstick.  `nelt_world` is a private
@@ -71,6 +72,16 @@ WHERE c.map = 1
   AND c.position_y BETWEEN -4980 AND -1279
   AND EXISTS (SELECT 1 FROM acore_world.creature_template ct WHERE ct.entry = c.id + 3600000)
   AND c.id NOT IN (75014, 52177, 39431, 39436, 39438)
+  -- Unique SERVICE NPCs are out of scope for a density top-up.  Their
+  -- placement belongs to the original port plus 154_'s de-duplication, and
+  -- letting this file own them too is what broke it the first time: 154_
+  -- de-duplicates by NAME at 40 yards, this file guarded by ENTRY at 10, so
+  -- everything in the 10-40 band came back -- including rows 154_ had just
+  -- deleted, which by then had nothing within 10 yards at all.  A flat
+  -- exclusion is used instead of a wider radius, because radius-matching
+  -- between two files is exactly the fragile part.  See 158_.
+  AND NOT EXISTS (SELECT 1 FROM acore_world.creature_template ctn
+                  WHERE ctn.entry = c.id + 3600000 AND (ctn.npcflag & 130) <> 0)
   AND NOT EXISTS (
         SELECT 1 FROM acore_world.creature a
         WHERE a.map = 750 AND a.id = c.id + 3600000
@@ -78,11 +89,24 @@ WHERE c.map = 1
           AND ABS(a.position_x - c.position_x) < 10
           AND ABS(a.position_y - c.position_y) < 10);
 
+-- MovementType is copied from cata_world, which means some rows arrive as
+-- WAYPOINT (2) or Cata-only (3).  Those need creature_addon.path_id +
+-- waypoint_data, which **159_ imports** -- it must be applied after this file
+-- or those spawns log "doesn't have waypoint path id: 0" on every respawn.
+--
 -- MovementType 1 (random) needs a non-zero wander_distance or the core logs
 -- "MovementType=1 but with wander_distance=0, replace by idle movement".
-UPDATE `creature` SET `MovementType` = 0
+UPDATE `creature` SET `MovementType` = 0, `wander_distance` = 0
 WHERE `guid` BETWEEN 15500000 AND 15599999
   AND `MovementType` = 1 AND `wander_distance` = 0;
+
+-- ...and the converse: an idle mover must not keep a wander distance, or the
+-- core logs "MovementType=0 (idle) have wander_distance<>0, set to 0" on every
+-- boot. 159_ forces MovementType to 0 for pathless waypoint movers, which is
+-- how Blazewing and Ban'thalos ended up contradictory -- see 162_.
+UPDATE `creature` SET `wander_distance` = 0
+WHERE `guid` BETWEEN 15500000 AND 15599999
+  AND `MovementType` = 0 AND `wander_distance` <> 0;
 
 -- ---------------------------------------------------------------------------
 -- Gameobjects, by contrast, are essentially complete

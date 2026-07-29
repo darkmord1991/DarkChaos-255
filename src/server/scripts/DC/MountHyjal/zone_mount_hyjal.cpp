@@ -569,7 +569,12 @@ public:
 
         void Register() override
         {
-            OnEffectPeriodic += AuraEffectPeriodicFn(spell_inferno_tick_AuraScript::HandleProc, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+            // EFFECT_1, not EFFECT_0: spell 74813 "Inferno" is effects [0, 6, 6]
+            // with auras [0, 23, 26], so SPELL_AURA_PERIODIC_TRIGGER_SPELL (23)
+            // sits on effect index 1.  Binding index 0 registers fine but the
+            // handler never runs -- the core reports it as "did not match dbc
+            // effect data", which is easy to miss among the boot warnings.
+            OnEffectPeriodic += AuraEffectPeriodicFn(spell_inferno_tick_AuraScript::HandleProc, EFFECT_1, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
         }
     };
 

@@ -2592,8 +2592,29 @@ end
 -- ============================================================
 -- Buff/Aura Frame Position
 -- ============================================================
+-- Vertical inset reserved for the DC-InfoBar: everything we place along the
+-- top edge hangs off UIParent shifted down by this amount so nothing crosses
+-- into the bar. When the bar frame isn't created yet (addon load order) we
+-- assume its default height rather than anchoring to the screen top, so the
+-- frames never start underneath it and get corrected to the exact height by
+-- the delayed re-applies.
+local function GetTopBarInset()
+    local bar = _G.DCInfoBarFrame
+    if bar and bar:IsShown() then
+        local bottom = bar:GetBottom()
+        local screenTop = UIParent:GetTop() or UIParent:GetHeight()
+        if bottom and screenTop and bottom > screenTop * 0.5 then
+            return bottom - screenTop
+        end
+        return 0 -- bar docked to the bottom of the screen
+    end
+    return -22 -- DC-InfoBar default height
+end
+
 local function ApplyBuffFramePosition()
     if InCombatLockdown() then return end
+
+    local offsetY = GetTopBarInset() + buffFrameState.offsetY
 
     if BuffFrame then
         if not buffFrameState.buffPoint then
@@ -2604,7 +2625,7 @@ local function ApplyBuffFramePosition()
         BuffFrame:SetUserPlaced(true)
         BuffFrame._dcqosRepositioning = true
         BuffFrame:ClearAllPoints()
-        BuffFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", buffFrameState.offsetX, buffFrameState.offsetY)
+        BuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", buffFrameState.offsetX, offsetY)
         BuffFrame._dcqosRepositioning = nil
 
         if not buffFrameState.hookInstalled then
@@ -2613,7 +2634,7 @@ local function ApplyBuffFramePosition()
                 if not buffFrameState.active or self._dcqosRepositioning then return end
                 self._dcqosRepositioning = true
                 self:ClearAllPoints()
-                self:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", buffFrameState.offsetX, buffFrameState.offsetY)
+                self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", buffFrameState.offsetX, GetTopBarInset() + buffFrameState.offsetY)
                 self._dcqosRepositioning = nil
             end)
         end
@@ -2625,7 +2646,7 @@ local function ApplyBuffFramePosition()
         end
 
         TemporaryEnchantFrame:ClearAllPoints()
-        TemporaryEnchantFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", buffFrameState.offsetX, buffFrameState.offsetY)
+        TemporaryEnchantFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", buffFrameState.offsetX, offsetY)
     end
 end
 
@@ -2669,6 +2690,24 @@ end
 
 local function SetupBuffFramePosition()
     local settings = addon.settings.interface
+
+    -- One-time migration (v3): the anchor used to hang off MinimapCluster's
+    -- left edge, so offsets saved for that geometry are meaningless against
+    -- the new below-the-infobar anchor. Reset them and enable the feature.
+    -- Also drop the old -3 player-frame nudge that caused downward drift.
+    -- (v2 was burned: it briefly lived in the defaults, so MergeDefaults
+    -- stamped it into saved profiles without the migration ever running.)
+    if (settings.buffFrameAnchorVersion or 1) < 3 then
+        settings.buffFrameAnchorVersion = 3
+        settings.buffFrameMove = true
+        settings.buffFrameOffsetX = -210
+        settings.buffFrameOffsetY = -6
+        if settings.playerFrameOffsetY == -3 then
+            settings.playerFrameOffsetY = 0
+        end
+        addon:SaveSettings()
+    end
+
     if not settings.enabled or not settings.buffFrameMove then return end
 
     buffFrameState.active = true
@@ -2695,6 +2734,7 @@ local function SetupBuffFramePosition()
     -- Also try after a short delay for late-loading UI
     addon:DelayedCall(0.5, ApplyBuffFramePosition)
     addon:DelayedCall(2.0, ApplyBuffFramePosition)
+    addon:DelayedCall(5.0, ApplyBuffFramePosition)
 end
 
 -- ============================================================
@@ -2776,26 +2816,46 @@ end
 -- ============================================================
 -- Player Frame Offset
 -- ============================================================
+-- Stock X anchors from FrameXML; both frames share one Y so they stay level.
+local UNIT_FRAME_ANCHORS = {
+    { name = "PlayerFrame", x = -19 },
+    { name = "TargetFrame", x = 250 },
+}
+
 local function SetupPlayerFrameOffset()
     local settings = addon.settings.interface
     if not settings.enabled then return end
-    
-    local yOffset = settings.playerFrameOffsetY or -3
-    
+
+    local yOffset = settings.playerFrameOffsetY or 0
+
     local function ApplyOffset()
         if InCombatLockdown() then return end
-        if not PlayerFrame then return end
-        
-        -- Get current position and nudge down
-        local point, relativeTo, relativePoint, x, y = PlayerFrame:GetPoint()
-        if point then
-            PlayerFrame:ClearAllPoints()
-            PlayerFrame:SetPoint(point, relativeTo, relativePoint, x, (y or 0) + yOffset)
+
+        -- The unit-frame texture carries ~16px of transparent padding above
+        -- the visible art (that's the margin stock UI shows below the screen
+        -- edge). Pull the frame rect up by most of it so the art sits just a
+        -- few px under the info bar without crossing into it.
+        local top = GetTopBarInset() + 12 + yOffset
+
+        -- Re-assert absolute anchors: relative nudges accumulated drift via
+        -- module re-enables and the client layout cache once a frame counted
+        -- as user-placed. Explicit Frame Mover placements still win.
+        local fm = addon.settings.frameMover
+        for _, info in ipairs(UNIT_FRAME_ANCHORS) do
+            local frame = _G[info.name]
+            if frame and not (fm and fm.enabled and fm.frames and fm.frames[info.name]) then
+                frame:ClearAllPoints()
+                frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", info.x, top)
+                if frame.IsUserPlaced and frame:IsUserPlaced() then
+                    pcall(frame.SetUserPlaced, frame, false)
+                end
+            end
         end
     end
-    
-    -- Apply after UI loads
+
+    -- Apply after UI loads (and again once late-loading bars have settled)
     addon:DelayedCall(0.5, ApplyOffset)
+    addon:DelayedCall(2.0, ApplyOffset)
 end
 
 -- ============================================================

@@ -16,6 +16,15 @@ local function NotifyTalent(message, level, opts)
     end
 end
 
+-- 3.3.5 StaticPopup frames do not expose a .editBox member; resolve it
+-- from the frame name so the name/import/export dialogs work everywhere.
+local function GetPopupEditBox(dialog)
+    if not dialog then return nil end
+    if dialog.editBox then return dialog.editBox end
+    local name = dialog.GetName and dialog:GetName()
+    return name and _G[name .. "EditBox"] or nil
+end
+
 -- ============================================================
 -- Module Configuration
 -- ============================================================
@@ -964,13 +973,27 @@ function TalentManager:ApplyTemplate(templateName, pet)
     return true
 end
 
+-- Applying a build is asynchronous: LearnTalent() computes the requested
+-- rank from client-known data, which only advances after the server
+-- confirms the previous point. A synchronous loop can therefore only
+-- grant ONE rank per talent no matter how often it calls LearnTalent.
+-- Instead we send one "wave" (at most one new rank per talent, in tier
+-- order) and continue on talent-update events until the build matches
+-- or stops making progress.
+local pendingApply = nil
+
 function TalentManager:DoApplyTemplate(template, pet)
     if not pet then
         self:BackupCurrentSpec()
     end
+    pendingApply = { template = template, pet = pet, passes = 0 }
+    self:ContinueApply()
+end
 
+function TalentManager:ContinueApply()
+    if not pendingApply then return end
+    local template, pet = pendingApply.template, pendingApply.pet
     local current = GetCurrentTalents(pet)
-    local learned = 0
     local class = template.class or template.talents.class or GetPlayerClass()
     local prereqs = BuildPrereqCache(class, pet)
 
@@ -984,7 +1007,7 @@ function TalentManager:DoApplyTemplate(template, pet)
         end
     end
 
-    -- Apply talents in tier order
+    local missing, requested = 0, 0
     for tier = 1, maxTier do
         for tab = 1, 3 do
             for i = 1, #(template.talents[tab] or {}) do
@@ -992,27 +1015,56 @@ function TalentManager:DoApplyTemplate(template, pet)
                 if info and info.tier == tier then
                     local targetRank = template.talents[tab][i] or 0
                     local currentRank = current[tab] and current[tab][i] or 0
-
-                    while currentRank < targetRank do
-                        LearnTalent(tab, i, pet)
-                        currentRank = currentRank + 1
-                        current[tab][i] = currentRank
-                        learned = learned + 1
+                    if currentRank < targetRank then
+                        missing = missing + (targetRank - currentRank)
+                        if IsTalentAvailable(current, tab, i, pet) then
+                            LearnTalent(tab, i, pet)
+                            requested = requested + 1
+                        end
                     end
                 end
             end
         end
     end
 
-    if not pet and template.name then
-        self:SetActiveLoadout(template.name)
+    if missing == 0 then
+        local name = template.name
+        pendingApply = nil
+        if not pet and name then
+            self:SetActiveLoadout(name)
+        end
+        NotifyTalent("Loadout applied: " .. (name or "?"), "success", { title = "Talents" })
+        self:NotifyGlyphDiff(template)
+        self:RefreshLoadoutUI()
+        self:UpdateTalentDisplay()
+        return
     end
 
-    NotifyTalent("Loadout applied: " .. (template.name or "?") .. " (" .. learned .. " points spent)", "success", { title = "Talents" })
-    self:NotifyGlyphDiff(template)
+    pendingApply.passes = pendingApply.passes + 1
+    if requested == 0 or pendingApply.passes > 150 then
+        pendingApply = nil
+        NotifyTalent("Loadout partially applied: " .. missing .. " point(s) could not be learned", "warning", { title = "Talents" })
+        self:RefreshLoadoutUI()
+        self:UpdateTalentDisplay()
+    end
+end
 
-    self:RefreshLoadoutUI()
-    self:UpdateTalentDisplay()
+-- Debounced continuation, driven by talent-update events
+function TalentManager:QueueContinueApply()
+    if not pendingApply then return end
+    if addon.DelayedCall then
+        if pendingApply.queued then return end
+        pendingApply.queued = true
+        local snapshot = pendingApply
+        addon:DelayedCall(0.15, function()
+            if pendingApply == snapshot then
+                pendingApply.queued = nil
+                TalentManager:ContinueApply()
+            end
+        end)
+    else
+        self:ContinueApply()
+    end
 end
 
 -- ============================================================
@@ -1475,6 +1527,17 @@ function TalentManager:BackupCurrentSpec()
 end
 
 -- ============================================================
+-- UI Constants
+-- ============================================================
+
+local TALENT_BUTTON_SIZE = 34
+local TALENT_SPACING_X = 44
+local TALENT_SPACING_Y = 44
+local TREE_WIDTH = 210
+local TREE_HEIGHT = 480
+local TREE_TOP_OFFSET = 35
+
+-- ============================================================
 -- UI: Drawing Lines (Prerequisites)
 -- ============================================================
 
@@ -1514,49 +1577,38 @@ local function DrawPrereqLine(parent, fromButton, toButton, color)
     local parentLeft = parent:GetLeft() or 0
     local parentTop = parent:GetTop() or 0
     
-    -- Convert to parent-relative coords
+    -- Convert to parent-relative coords (down-positive)
     local x1 = fromX - parentLeft
-    local y1 = parentTop - fromY - TALENT_BUTTON_SIZE / 2  -- Bottom of prereq button
+    local y1 = parentTop - fromY + TALENT_BUTTON_SIZE / 2  -- bottom edge of prereq button
     local x2 = toX - parentLeft
-    local y2 = parentTop - toY + TALENT_BUTTON_SIZE / 2  -- Top of target button
-    
+    local y2 = parentTop - toY - TALENT_BUTTON_SIZE / 2    -- top edge of target button
+
     -- Draw vertical line from bottom of prereq down
     local vLine1 = GetLine(parent)
     local midY = (y1 + y2) / 2
-    vLine1:SetSize(4, math.abs(midY - y1))
-    vLine1:SetPoint("TOPLEFT", parent, "TOPLEFT", x1 - 2, -y1)
+    vLine1:SetSize(2, math.max(1, midY - y1))
+    vLine1:SetPoint("TOPLEFT", parent, "TOPLEFT", x1 - 1, -y1)
     vLine1:SetVertexColor(color.r, color.g, color.b, color.a or 1)
     table.insert(lines, vLine1)
-    
+
     -- If columns differ, draw horizontal connector
     if math.abs(x1 - x2) > 4 then
         local hLine = GetLine(parent)
-        hLine:SetSize(math.abs(x2 - x1) + 4, 4)
-        hLine:SetPoint("TOPLEFT", parent, "TOPLEFT", math.min(x1, x2) - 2, -midY)
+        hLine:SetSize(math.abs(x2 - x1) + 2, 2)
+        hLine:SetPoint("TOPLEFT", parent, "TOPLEFT", math.min(x1, x2) - 1, -midY)
         hLine:SetVertexColor(color.r, color.g, color.b, color.a or 1)
         table.insert(lines, hLine)
     end
-    
+
     -- Draw vertical line to top of target
     local vLine2 = GetLine(parent)
-    vLine2:SetSize(4, math.abs(y2 - midY))
-    vLine2:SetPoint("TOPLEFT", parent, "TOPLEFT", x2 - 2, -midY)
+    vLine2:SetSize(2, math.max(1, y2 - midY))
+    vLine2:SetPoint("TOPLEFT", parent, "TOPLEFT", x2 - 1, -midY)
     vLine2:SetVertexColor(color.r, color.g, color.b, color.a or 1)
     table.insert(lines, vLine2)
     
     return lines
 end
-
--- ============================================================
--- UI Constants
--- ============================================================
-
-local TALENT_BUTTON_SIZE = 34
-local TALENT_SPACING_X = 44
-local TALENT_SPACING_Y = 44
-local TREE_WIDTH = 210
-local TREE_HEIGHT = 480
-local TREE_TOP_OFFSET = 35
 
 -- ============================================================
 -- UI: Talent Button Visual Update
@@ -1592,9 +1644,9 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
         button.slot:Show()
     end
     
-    -- Readability: only talents you actually spent points in render in
-    -- full color; available-but-unspent talents stay desaturated so the
-    -- build is recognizable at a glance.
+    -- Spent talents get a coloured ring (green partial, gold maxed);
+    -- available talents keep their full-colour icon so the trees don't
+    -- read as one grey wall; locked talents go dark + desaturated.
     if prereqsSet and displayRank > 0 then
         SetTalentButtonDesaturated(button, false)
 
@@ -1630,15 +1682,17 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
             end
         end
     elseif prereqsSet then
-        -- Available but unspent: bright grayscale + subtle green hint
-        SetTalentButtonDesaturated(button, true, 0.9, 0.9, 0.9)
-
+        -- Available but unspent: full colour, slightly dimmed
+        SetTalentButtonDesaturated(button, false)
+        if button.icon then
+            button.icon:SetVertexColor(0.85, 0.85, 0.85)
+        end
         if button.slot then
-            button.slot:SetVertexColor(0.8, 0.8, 0.8)
+            button.slot:SetVertexColor(0.75, 0.75, 0.75)
         end
         if button.glow then
             button.glow:SetVertexColor(0.1, 1, 0.1)
-            button.glow:SetAlpha(0.15)
+            button.glow:SetAlpha(0.12)
         end
     else
         -- Prerequisites NOT met: dark desaturated, no glow
@@ -1713,18 +1767,19 @@ local function CreateTalentButton(parent, tab, index, pet)
     icon:SetVertexColor(1, 1, 1)
     button.icon = icon
     
-    -- Slot border (Blizzard talent button border - exact from TalentButtonTemplate)
-    local slot = button:CreateTexture(nil, "OVERLAY")
-    slot:SetSize(TALENT_BUTTON_SIZE + 14, TALENT_BUTTON_SIZE + 14)
+    -- Slot border: classic quickslot ring drawn behind the icon.
+    -- (TalentFrame-Parts is a retail HelpPlate atlas on this client and
+    -- rendered as a stray grey bar under every talent.)
+    local slot = button:CreateTexture(nil, "BORDER")
+    slot:SetSize(TALENT_BUTTON_SIZE + 28, TALENT_BUTTON_SIZE + 28)
     slot:SetPoint("CENTER")
-    slot:SetTexture("Interface\\TalentFrame\\TalentFrame-Parts")
-    slot:SetTexCoord(0, 0.546875, 0, 0.546875)  -- Square border portion
-    slot:SetVertexColor(0.5, 0.5, 0.5)  -- Gray by default (locked)
+    slot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    slot:SetVertexColor(0.7, 0.7, 0.7)
     button.slot = slot
-    
+
     -- Glow border for available/maxed talents (colored overlay)
     local glow = button:CreateTexture(nil, "OVERLAY", nil, 1)
-    glow:SetSize(TALENT_BUTTON_SIZE + 14, TALENT_BUTTON_SIZE + 14)
+    glow:SetSize(TALENT_BUTTON_SIZE + 24, TALENT_BUTTON_SIZE + 24)
     glow:SetPoint("CENTER")
     glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     glow:SetBlendMode("ADD")
@@ -1838,6 +1893,27 @@ end
 -- UI: Create Tree Frame
 -- ============================================================
 
+-- WotLK ships each tree's background as four tiles (320x384 total:
+-- TopLeft 256x256, TopRight 64x256, BottomLeft 256x128, BottomRight
+-- 64x128); a single-file path renders nothing. Sizes are recomputed
+-- here so the art follows the panel when trees grow past 11 tiers.
+local function LayoutTreeBackground(frame)
+    if not frame.bgPieces then return end
+    local w = (frame:GetWidth() or TREE_WIDTH) - 2
+    local h = (frame:GetHeight() or (TREE_HEIGHT + TREE_TOP_OFFSET)) - TREE_TOP_OFFSET - 1
+    if w <= 0 or h <= 0 then return end
+    local leftW = w * (256 / 320)
+    local topH = h * (256 / 384)
+    for _, tex in ipairs(frame.bgPieces) do
+        local p = tex.piece
+        tex:SetSize(w * p.wf, h * p.hf)
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", frame, "TOPLEFT",
+            1 + (p.col == 1 and leftW or 0),
+            -(TREE_TOP_OFFSET + (p.row == 1 and topH or 0)))
+    end
+end
+
 local function CreateTalentTreeFrame(parent, tab, pet)
     local treeNames = GetTreeNames()
     local treeIcons = GetTreeIcons()
@@ -1863,18 +1939,33 @@ local function CreateTalentTreeFrame(parent, tab, pet)
     headerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     headerBg:SetVertexColor(0, 0, 0, 0.35)
 
-    -- Tree background (keep WotLK tree art, dimmed)
-    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
-    bg:SetPoint("TOPLEFT", 1, -TREE_TOP_OFFSET)
-    bg:SetPoint("BOTTOMRIGHT", -1, 1)
-    if treeData and treeData.backgrounds and treeData.backgrounds[tab] then
-        bg:SetTexture("Interface\\TalentFrame\\" .. treeData.backgrounds[tab])
-        bg:SetAlpha(0.25)
+    -- Tree background (WotLK four-tile tree art, dimmed)
+    local baseArt = treeData and treeData.backgrounds and treeData.backgrounds[tab]
+    if baseArt then
+        local prefix = "Interface\\TalentFrame\\" .. baseArt
+        frame.bgPieces = {}
+        local pieces = {
+            { suffix = "-TopLeft",     wf = 256 / 320, hf = 256 / 384, col = 0, row = 0 },
+            { suffix = "-TopRight",    wf = 64 / 320,  hf = 256 / 384, col = 1, row = 0 },
+            { suffix = "-BottomLeft",  wf = 256 / 320, hf = 128 / 384, col = 0, row = 1 },
+            { suffix = "-BottomRight", wf = 64 / 320,  hf = 128 / 384, col = 1, row = 1 },
+        }
+        for _, p in ipairs(pieces) do
+            local tex = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
+            tex:SetTexture(prefix .. p.suffix)
+            tex:SetAlpha(0.45)
+            tex.piece = p
+            table.insert(frame.bgPieces, tex)
+        end
+        LayoutTreeBackground(frame)
     else
+        local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
+        bg:SetPoint("TOPLEFT", 1, -TREE_TOP_OFFSET)
+        bg:SetPoint("BOTTOMRIGHT", -1, 1)
         bg:SetTexture(BG_FELLEATHER)
         bg:SetAlpha(0.20)
+        frame.bg = bg
     end
-    frame.bg = bg
 
     -- Tree icon
     local treeIcon = frame:CreateTexture(nil, "ARTWORK")
@@ -1939,7 +2030,8 @@ function TalentManager:ShowSaveDialog()
         button1 = ACCEPT,
         button2 = CANCEL,
         OnAccept = function(dialog)
-            local name = dialog.editBox:GetText()
+            local editBox = GetPopupEditBox(dialog)
+            local name = editBox and editBox:GetText()
             if name and name ~= "" then
                 local ok, msg = TalentManager:CreateTemplate(name)
                 if ok then
@@ -1969,7 +2061,8 @@ function TalentManager:ShowRenameDialog(name)
         button1 = ACCEPT,
         button2 = CANCEL,
         OnAccept = function(dialog)
-            local newName = dialog.editBox:GetText()
+            local editBox = GetPopupEditBox(dialog)
+            local newName = editBox and editBox:GetText()
             if newName and newName ~= "" and dialog.data then
                 local ok, msg = TalentManager:RenameTemplate(dialog.data, newName)
                 if not ok and msg then
@@ -2017,7 +2110,8 @@ function TalentManager:ShowSendDialog(name)
         button1 = ACCEPT,
         button2 = CANCEL,
         OnAccept = function(dialog)
-            local target = dialog.editBox:GetText()
+            local editBox = GetPopupEditBox(dialog)
+            local target = editBox and editBox:GetText()
             if target and target ~= "" and dialog.data then
                 TalentManager:SendTemplateToPlayer(dialog.data, target)
             end
@@ -2530,9 +2624,12 @@ function TalentManager:ShowExportDialog(text, title)
         hasEditBox = 1,
         button1 = OKAY,
         OnShow = function(self)
-            self.editBox:SetText(self.data or "")
-            self.editBox:HighlightText()
-            self.editBox:SetFocus()
+            local editBox = GetPopupEditBox(self)
+            if editBox then
+                editBox:SetText(self.data or "")
+                editBox:HighlightText()
+                editBox:SetFocus()
+            end
         end,
         EditBoxOnEscapePressed = function(self) self:GetParent():Hide() end,
         timeout = 0, whileDead = 1, hideOnEscape = 1,
@@ -2541,8 +2638,11 @@ function TalentManager:ShowExportDialog(text, title)
     local dialog = StaticPopup_Show("DCQOS_EXPORT_TEMPLATE")
     if dialog then
         dialog.data = text
-        dialog.editBox:SetText(text)
-        dialog.editBox:HighlightText()
+        local editBox = GetPopupEditBox(dialog)
+        if editBox then
+            editBox:SetText(text)
+            editBox:HighlightText()
+        end
     end
 end
 
@@ -2552,7 +2652,8 @@ function TalentManager:ShowImportDialog()
         hasEditBox = 1,
         button1 = ACCEPT, button2 = CANCEL,
         OnAccept = function(self)
-            local str = self.editBox:GetText()
+            local editBox = GetPopupEditBox(self)
+            local str = editBox and editBox:GetText()
             if str and str ~= "" then
                 local success, msg = TalentManager:ImportFromString(str)
                 if success then
@@ -2673,28 +2774,48 @@ end
 
 function TalentManager:PopulateTalentTrees(pet)
     if not mainFrame then return end
-    
+
+    local overallMaxTier = 1
+
     for tab = 1, 3 do
         local tree = mainFrame.trees[tab]
         if tree then
-            for _, button in pairs(tree.talentButtons) do
+            -- Reuse existing buttons: talent identity is static per class,
+            -- ranks/icons are refreshed in UpdateTalentDisplay. Recreating
+            -- them on every open/spec switch leaked frames.
+            if tree.poolPet ~= (pet and true or false) then
+                for _, button in pairs(tree.buttonPool or {}) do
+                    button:Hide()
+                end
+                tree.buttonPool = {}
+                tree.poolPet = (pet and true or false)
+            end
+            for _, button in pairs(tree.buttonPool) do
                 button:Hide()
             end
             tree.talentButtons = {}
-            
+
             for _, lines in pairs(tree.prereqLines or {}) do
                 for _, line in ipairs(lines) do ReleaseLine(line) end
             end
             tree.prereqLines = {}
-            
+
             local numTalents = SafeGetNumTalents(tab, nil, pet)
             local maxColumn = 1
             for i = 1, numTalents do
-                local button = CreateTalentButton(tree.container, tab, i, pet)
+                local button = tree.buttonPool[i]
+                if not button then
+                    button = CreateTalentButton(tree.container, tab, i, pet)
+                    tree.buttonPool[i] = button
+                end
                 if button then
+                    button:Show()
                     tree.talentButtons[i] = button
                     if button.column and button.column > maxColumn then
                         maxColumn = button.column
+                    end
+                    if button.tier and button.tier > overallMaxTier then
+                        overallMaxTier = button.tier
                     end
                 end
             end
@@ -2710,10 +2831,24 @@ function TalentManager:PopulateTalentTrees(pet)
             for _, button in pairs(tree.talentButtons) do
                 local x = xBase + (button.column - 1) * TALENT_SPACING_X
                 local y = -(button.tier - 1) * TALENT_SPACING_Y
+                button:ClearAllPoints()
                 button:SetPoint("TOPLEFT", x, y)
             end
         end
     end
+
+    -- DC-255 trees can exceed the stock 11 tiers; grow the frame to fit
+    local neededTreeHeight = TREE_TOP_OFFSET + 2 + (overallMaxTier - 1) * TALENT_SPACING_Y + TALENT_BUTTON_SIZE + 10
+    local treeHeight = math.max(TREE_HEIGHT + TREE_TOP_OFFSET, neededTreeHeight)
+    for tab = 1, 3 do
+        local tree = mainFrame.trees[tab]
+        if tree then
+            tree:SetHeight(treeHeight)
+            LayoutTreeBackground(tree)
+        end
+    end
+    mainFrame.treesFrame:SetHeight(treeHeight)
+    mainFrame:SetHeight(72 + treeHeight + 14)
 end
 
 -- ============================================================
@@ -3143,6 +3278,7 @@ function TalentManager:Initialize()
     
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "CHARACTER_POINTS_CHANGED" or event == "PLAYER_TALENT_UPDATE" then
+            TalentManager:QueueContinueApply()
             TalentManager:UpdateTalentDisplay()
         elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
             TalentManager:UpdateTalentDisplay()
