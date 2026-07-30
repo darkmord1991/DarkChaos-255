@@ -740,6 +740,19 @@ end
 -- SHOW / HIDE
 -- ============================================================================
 
+-- Called by DC:HandleEnchantVisuals once the server answers. The choices only surface in the
+-- slot right-click menu, which is rebuilt each time it opens, so there is nothing to redraw
+-- unless the model is showing a weapon whose glow just changed.
+function Wardrobe:OnEnchantVisualsUpdated()
+    if not self.frame or not self.frame:IsShown() then
+        return
+    end
+
+    if type(self.UpdateModel) == "function" then
+        pcall(function() self:UpdateModel() end)
+    end
+end
+
 function Wardrobe:RequestTransmogStateDebounced(reason)
     if not DC or type(DC.RequestTransmogState) ~= "function" then
         return
@@ -760,6 +773,12 @@ function Wardrobe:RequestTransmogStateDebounced(reason)
         end
         self._transmogStateDebouncePending = nil
         DC:RequestTransmogState()
+
+        -- Piggyback the enchant-glow state on the same refresh so the slot context
+        -- menu always has an up-to-date list without its own timer.
+        if type(DC.RequestEnchantVisuals) == "function" then
+            DC:RequestEnchantVisuals()
+        end
     end
 
     if C_Timer and type(C_Timer.After) == "function" then

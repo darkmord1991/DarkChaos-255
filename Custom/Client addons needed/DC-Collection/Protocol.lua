@@ -115,7 +115,11 @@ DC.Opcodes = {
     CMSG_GET_COLLECTED_APPEARANCES = 0x36,
     CMSG_GET_TRANSMOG_STATE      = 0x37,
     CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38,
-    
+
+    -- Client -> Server: Weapon enchant visuals (cosmetic only)
+    CMSG_SET_ENCHANT_VISUAL      = 0x3E,
+    CMSG_GET_ENCHANT_VISUALS     = 0x3F,
+
     -- Client -> Server: Community (0x53+ range to avoid collision with Outfit opcodes)
     CMSG_COMMUNITY_GET_LIST   = 0x53,
     CMSG_COMMUNITY_PUBLISH    = 0x54,
@@ -144,6 +148,7 @@ DC.Opcodes = {
     SMSG_COLLECTED_APPEARANCES   = 0x4A,
     SMSG_ITEM_SETS               = 0x4B,
     SMSG_SAVED_OUTFITS           = 0x4C,
+    SMSG_ENCHANT_VISUALS         = 0x4D,
 
     -- Server -> Client: Community
     SMSG_COMMUNITY_LIST       = 0x63,
@@ -195,6 +200,7 @@ do
         SMSG_COLLECTED_APPEARANCES     = { "CMSG_GET_COLLECTED_APPEARANCES" },
         SMSG_ITEM_SETS                 = { "CMSG_GET_ITEM_SETS" },
         SMSG_SAVED_OUTFITS             = { "CMSG_GET_SAVED_OUTFITS" },
+        SMSG_ENCHANT_VISUALS           = { "CMSG_GET_ENCHANT_VISUALS", "CMSG_SET_ENCHANT_VISUAL" },
         SMSG_SHOP_DATA                 = { "CMSG_GET_SHOP" },
         SMSG_PURCHASE_RESULT           = { "CMSG_BUY_ITEM" },
         SMSG_CURRENCIES                = { "CMSG_GET_CURRENCIES" },
@@ -4622,6 +4628,8 @@ function DC.OnProtocolMessage(payload)
         self:OnMsg_ItemSets(data)
     elseif opcode == self.Opcodes.SMSG_SAVED_OUTFITS then
         self:OnMsg_SavedOutfits(data)
+    elseif opcode == self.Opcodes.SMSG_ENCHANT_VISUALS then
+        self:HandleEnchantVisuals(data)
     elseif opcode == self.Opcodes.SMSG_SHOP_DATA then
         self:HandleShopData(data)
     elseif opcode == self.Opcodes.SMSG_PURCHASE_RESULT then
@@ -6412,6 +6420,72 @@ function DC:_ScheduleTransmogIconRefresh()
     end)
 
     self._transmogIconRefreshFrame = f
+end
+
+-- Weapon enchant visuals (cosmetic). Server payload:
+--   { state = { ["15"] = enchantId, ... }, available = { {id=, name=}, ... }, enabled = bool }
+function DC:HandleEnchantVisuals(data)
+    data = data or {}
+
+    -- Slot keys arrive as "15"/"16"/"17"; some JSON decoders hand them back as numbers.
+    local state = {}
+    if type(data.state) == "table" then
+        for k, v in pairs(data.state) do
+            local slot = tonumber(k)
+            local enchantId = tonumber(v)
+            if slot and enchantId then
+                state[tostring(slot)] = enchantId
+            end
+        end
+    end
+
+    local available = {}
+    if type(data.available) == "table" then
+        for _, option in pairs(data.available) do
+            if type(option) == "table" and tonumber(option.id) then
+                table.insert(available, { id = tonumber(option.id), name = tostring(option.name or "") })
+            end
+        end
+
+        table.sort(available, function(a, b)
+            if a.name == b.name then
+                return a.id < b.id
+            end
+            return a.name < b.name
+        end)
+    end
+
+    self.enchantVisualState = state
+    self.enchantVisualOptions = available
+    self.enchantVisualEnabled = data.enabled ~= false
+
+    DCCollectionCharDB = DCCollectionCharDB or {}
+    DCCollectionCharDB.enchantVisuals = state
+
+    if self.Wardrobe and type(self.Wardrobe.OnEnchantVisualsUpdated) == "function" then
+        pcall(function() self.Wardrobe:OnEnchantVisualsUpdated() end)
+    end
+end
+
+-- Ask the server for the current per-slot choices and the selectable list.
+function DC:RequestEnchantVisuals()
+    return self:SendMessage(self.Opcodes.CMSG_GET_ENCHANT_VISUALS, {})
+end
+
+-- Apply or clear a cosmetic enchant glow. Pass enchantId = nil (or 0) to clear.
+function DC:SetEnchantVisual(equipmentSlot, enchantId)
+    equipmentSlot = tonumber(equipmentSlot)
+    if not equipmentSlot then
+        return false
+    end
+
+    enchantId = tonumber(enchantId) or 0
+
+    return self:SendMessage(self.Opcodes.CMSG_SET_ENCHANT_VISUAL, {
+        slot = equipmentSlot,
+        enchantId = enchantId,
+        clear = enchantId == 0,
+    })
 end
 
 function DC:HandleTransmogState(data)

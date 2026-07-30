@@ -1834,6 +1834,33 @@ DCCollection.Transmog.Definitions.IncludeSources = 0
 #
 DCCollection.Transmog.VirtualSets.Enabled = 1
 
+#
+#    DCCollection.EnchantVisual.Enable
+#        Description: Let players pick a cosmetic weapon enchant glow from the
+#                     wardrobe slot right-click menu (main hand, off hand and
+#                     ranged only).
+#
+#                     This is appearance-only. The choice rewrites the permanent
+#                     half of the visible-item enchantment field for observers;
+#                     the item's real enchantment is never modified, so no stats,
+#                     procs or charges are granted, and a temporary enchant such
+#                     as a sharpening stone still shows through.
+#        Default:     1 (Enabled)
+#
+DCCollection.EnchantVisual.Enable = 1
+
+#
+#    DCCollection.EnchantVisual.AllowedEnchantIds
+#        Description: Comma-separated SpellItemEnchantment IDs players may pick.
+#                     Leave empty to offer every enchant that has a visual
+#                     (SpellItemEnchantment.aura_id != 0 and ID <= 65535 -- the
+#                     field only carries 16 bits). Unusable IDs are dropped with
+#                     a warning at startup.
+#        Example:     3225, 3273, 3789, 2673
+#        Default:     "" (all enchants that have a visual)
+#
+DCCollection.EnchantVisual.AllowedEnchantIds = ""
+
 # Transmog Unlock Triggers
 DCCollection.Transmog.UnlockOnEquip = 1
 DCCollection.Transmog.UnlockOnCreate = 1

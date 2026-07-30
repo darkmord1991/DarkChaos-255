@@ -1,0 +1,127 @@
+-- =====================================================================
+-- Deepholm Downport  --  47  Waypoint/movement + Xariona dupe + Zero Power
+-- ---------------------------------------------------------------------
+-- Boot-log pass 2026-07-20. Four distinct issues, all on map 646:
+--
+--   WaypointMovementGenerator::DoInitialize: creature Yuldris Smolderfury
+--   (Entry: 44371) doesn't have waypoint path id: 0
+--   ... creature Xariona (Entry: 50061) doesn't have waypoint path id: 9244515
+--   ... creature Gyreworm (Entry: 44257) doesn't have waypoint path id: 9490260
+--   CastSpell: unknown spell 87239 by caster (Entry: 50061)
+--
+-- The two "path id: <nonzero>" cases are a REGRESSION caused by this folder's
+-- own 41_missing_waypoints.sql, which deleted the paths and silently re-inserted
+-- nothing (it queried nelt_world using the already-offset ids). 41_ has been
+-- rewritten in place to be correct and idempotent -- APPLY 41_ FOR THAT FIX;
+-- it is not duplicated here.
+--
+-- This file covers the remaining three.
+-- Apply against acore_world. Idempotent.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- A) Yuldris Smolderfury (44371, guid 9715185) -- MovementType 2 -> 0
+-- ---------------------------------------------------------------------
+-- Asks for WAYPOINT_MOTION_TYPE with no creature_addon row at all, so it
+-- resolves to path id 0 and logs on every respawn. Unlike Gyreworm/Xariona
+-- this is NOT recoverable -- checked both sources:
+--   * nelt_world (guid 215185, the spawn this one was imported from -- exact
+--     position match 1257.61/663.3): MovementType=2 with NO creature_addon
+--     row either, i.e. the source itself is broken the same way;
+--   * cata_world (guid 354414, same creature ~3 yards away at 1260.59/663.715):
+--     MovementType=0, waypointPathId=0.
+-- cata_world is the Blizzard-side authority here and says this rare elite does
+-- not patrol, so normalise to idle rather than inventing a route. Yuldris is
+-- deliberately NOT given random wander (26_B's un-static pass excludes rares;
+-- 44371 is absent from its id list) -- a stationary rare is the source
+-- behaviour, not an oversight.
+-- ---------------------------------------------------------------------
+UPDATE `creature` SET `MovementType` = 0 WHERE `guid` = 9715185 AND `id` = 44371 AND `MovementType` = 2;
+
+-- ---------------------------------------------------------------------
+-- B) Duplicate Xariona + the cross-map pool that hid Julak-Doom
+-- ---------------------------------------------------------------------
+-- Deepholm had TWO Xariona spawns stacked at identical coordinates
+-- (965.375, 983.912, 445.214):
+--   * guid 9746396, entry 50061 -- raw id, ScriptName npc_deepholm_xariona,
+--     pool 9060017 "Deepholm-Nel". The real, scripted world boss. KEPT.
+--   * guid 15000012, entry 3650061 -- a +3,600,000 offset clone with no
+--     ScriptName, pool 130060017 "Hyjal-Nel". REMOVED below.
+--
+-- Both trace back to the SAME source row (nelt_world.creature guid 246396,
+-- entry 50061, map 646) -- it was imported twice, by two different zone
+-- importers, because of how the source pool is shaped (see below). The clone
+-- is also the ONLY offset-band (>= 3,600,000) spawn anywhere on map 646, while
+-- all ~10,240 other offset spawns sit on maps 750/751/861 where that
+-- convention belongs; Deepholm uses RAW entry ids throughout. Deleting it is
+-- unambiguous -- it is a second copy of a spawn that already exists correctly,
+-- and the surviving one is the one the C++ AI actually binds to.
+--
+-- WHY IT HAPPENED (worth recording -- this is a systemic import artefact, not
+-- a one-off): nelt_world pool 60017 is a single deliberate 6-member
+-- "worldboss Pool" with max_limit = 2 -- Cataclysm's rotating world bosses,
+-- two up at a time, spanning maps 0, 1 and 646 (Xariona 50061, Julak-Doom
+-- 50089 x2, Akma'hat 50063, Twilight Firebird 40650, and 50009). Each DC zone
+-- importer copied that whole cross-map pool but kept only the members landing
+-- on its own map, remapped them with ITS zone's offset, and rewrote max_limit
+-- to 1. So Xariona was picked up by the Deepholm importer (raw, correct) AND
+-- again by the Hyjal importer (offset, wrong map).
+--
+-- The knock-on effect on Plaguelands: pool 130060017 ended up holding Hyjal's
+-- Twilight Firebird (12246389, map 750), the stray Xariona clone (map 646) and
+-- BOTH Plaguelands Julak-Doom spawns (15000014/15000015, map 751) -- four
+-- bosses across three continents competing for max_limit=1. Julak-Doom was
+-- therefore absent ~3/4 of the time for no design reason.
+--
+-- Fix below: drop the clone and its pool row. Pool 130060017 then holds the
+-- Twilight Firebird (map 750, correct for a "Hyjal-Nel" pool) plus the two
+-- Plaguelands Julak-Dooms -- those are re-homed into their own Plaguelands
+-- pool by the COMPANION FILE `Plaguelands/60_julak_pool_and_waypoints.sql`,
+-- which is where they belong by folder convention (pool band 131,000,000 is
+-- Plaguelands; 130,000,000 is Hyjal). Apply both; order does not matter, the
+-- statements are independent.
+--
+-- NOT ATTEMPTED HERE, deliberately: reconstructing nelt's original single
+-- 6-boss / max_limit=2 rotation. That spans three zone folders and is a design
+-- call (per-zone pools mean every zone always has its own boss available,
+-- which may well be what DC wants) -- flagged, not silently decided.
+-- ---------------------------------------------------------------------
+DELETE FROM `pool_creature` WHERE `guid` = 15000012;
+DELETE FROM `creature_addon` WHERE `guid` = 15000012;
+DELETE FROM `creature` WHERE `guid` = 15000012 AND `id` = 3650061;
+
+-- ---------------------------------------------------------------------
+-- C) spell_dbc 87239 "Zero Power" -- Xariona's on-spawn power drain
+-- ---------------------------------------------------------------------
+-- "CastSpell: unknown spell 87239". zone_deepholm.cpp SPELL_ZERO_POWER; the
+-- file's own header already flagged it as one of the Cata-era ids absent from
+-- 3.3.5 ("the AI logic is faithful and fails safe -- those casts no-op until
+-- the spells are authored"). It IS reachable at runtime (the boot log proves
+-- Xariona casts it), so it is authored here rather than left no-opping.
+--
+-- Downported from Cata 4.3.4 Spell.dbc + SpellEffect.dbc (build 15601, cached
+-- at k:/tmp/cata-dbc/) via this folder's own tools/spell_downport.py, then
+-- widened 232 -> 234 cols the same way tools/gen_spell_dbc_sql.py does
+-- (csv[0:13] + unk_320_2 + ShapeshiftExclude + unk_320_3 + csv[14:]).
+--
+-- Both effects survive the 3.3.5 clamps intact and mean the same thing here:
+--   Effect_1 = 6 (APPLY_AURA) / EffectAura_1 = 110 (MOD_POWER_REGEN_PERCENT),
+--             MiscValue 3 (POWER_ENERGY), BasePoints -100  -> regen off
+--   Effect_2 = 137 (SPELL_EFFECT_ENERGIZE_PCT), BasePoints -100  -> drain to 0
+-- Neither is >= TOTAL_SPELL_EFFECTS (165) nor >= TOTAL_AURAS (317), so nothing
+-- was clamped to 0 -- this is the real spell, not a neutered placeholder. (The
+-- clamp exists because Cata-only effect ids crash LoadSpellInfoStore -- see
+-- 25_spell_dbc_range_fix.sql.)
+--
+-- SERVER-SIDE ONLY, deliberately: this fork merges the binary Spell.dbc with
+-- acore_world.spell_dbc at load, and Zero Power is a silent mechanic with no
+-- tooltip, icon or visual for a player to see. No Custom/CSV DBC/Spell.csv row
+-- or client redeploy is needed. (84093 / 84364 / 96123 -- the intro-flight
+-- wyvern kit -- remain deliberately absent; zone_deepholm.cpp documents that
+-- path as superseded by a portal-GO + SmartAI teleport, so those casts are
+-- unreachable and would only add dead rows.)
+-- ---------------------------------------------------------------------
+DELETE FROM `spell_dbc` WHERE `ID` = 87239;
+
+INSERT INTO `spell_dbc` VALUES
+('87239','0','0','0','159383808','268435488','540672','1048576','128','393225','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','1','0','0','0','0','0','0','0','0','0','0','0','21','3','0','0','0','0','1','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','-1','0','0','6','137','0','0','0','0','0','0','0','-100','-100','0','0','0','0','1','1','0','0','0','0','0','0','0','110','0','0','0','0','0','0','0','0','0','0','0','0','0','0','3','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','Zero Power','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','16712190','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','1','1','0','0','0','0','0','0','0','1','0','0','0','0','0','0','0','0');

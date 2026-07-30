@@ -66,6 +66,7 @@
 #include "OutdoorPvPMgr.h"
 #include "Pet.h"
 #include "PetitionMgr.h"
+#include "PlayerAppearanceOverride.h"
 #include "QuestDef.h"
 #include "RBAC.h"
 #include "Realm.h"
@@ -15431,7 +15432,17 @@ void Player::_SaveCharacter(bool create, CharacterDatabaseTransaction trans)
         ss.str("");
         // cache equipment...
         for (uint32 i = 0; i < EQUIPMENT_SLOT_END * 2; ++i)
-            ss << GetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + i) << ' ';
+        {
+            uint32 visibleEntry = GetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + i);
+
+            // Entry and enchantment fields interleave; the even indices are the entries.
+            // Let an appearance system (transmog) decide what character select renders,
+            // since this blob never passes through the per-observer values-update path.
+            if ((i % 2) == 0)
+                visibleEntry = Acore::AppearanceOverride::Resolve(this, static_cast<uint8>(i / 2), visibleEntry);
+
+            ss << visibleEntry << ' ';
+        }
 
         // ...and bags for enum opcode
         for (uint32 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
@@ -15571,7 +15582,17 @@ void Player::_SaveCharacter(bool create, CharacterDatabaseTransaction trans)
         ss.str("");
         // cache equipment...
         for (uint32 i = 0; i < EQUIPMENT_SLOT_END * 2; ++i)
-            ss << GetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + i) << ' ';
+        {
+            uint32 visibleEntry = GetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + i);
+
+            // Entry and enchantment fields interleave; the even indices are the entries.
+            // Let an appearance system (transmog) decide what character select renders,
+            // since this blob never passes through the per-observer values-update path.
+            if ((i % 2) == 0)
+                visibleEntry = Acore::AppearanceOverride::Resolve(this, static_cast<uint8>(i / 2), visibleEntry);
+
+            ss << visibleEntry << ' ';
+        }
 
         // ...and bags for enum opcode
         for (uint32 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)

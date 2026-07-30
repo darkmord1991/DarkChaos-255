@@ -600,6 +600,10 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_TRANSMOG_STATE      = 0x37;  // Request current per-slot state
             constexpr uint8 CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38;  // Apply all pending preview slots at once
 
+            // Client -> Server: Weapon enchant visuals (cosmetic only; grants no stats or procs)
+            constexpr uint8 CMSG_SET_ENCHANT_VISUAL  = 0x3E; // Choose/clear a weapon enchant glow
+            constexpr uint8 CMSG_GET_ENCHANT_VISUALS = 0x3F; // Request current choices + allowed list
+
             // Client -> Server: Outfits
             constexpr uint8 CMSG_SAVE_OUTFIT         = 0x39; // Save current equipment set
             constexpr uint8 CMSG_DELETE_OUTFIT       = 0x3A; // Delete saved outfit
@@ -609,7 +613,8 @@ namespace DCAddon
             constexpr uint8 SMSG_TRANSMOG_SLOT_ITEMS   = 0x49;  // Appearances for a slot response
             constexpr uint8 SMSG_COLLECTED_APPEARANCES = 0x4A;  // All collected displayIds
             constexpr uint8 SMSG_ITEM_SETS             = 0x4B;  // Item Sets definition payload
-            constexpr uint8 SMSG_SAVED_OUTFITS         = 0x4C;  // Saved Outfits payload
+            constexpr uint8 SMSG_SAVED_OUTFITS         = 0x4C;
+    constexpr uint8 SMSG_ENCHANT_VISUALS       = 0x4D;  // Saved Outfits payload
 
             // Server -> Client: Sync/Data
             constexpr uint8 SMSG_HANDSHAKE_ACK       = 0x40;  // Handshake response

@@ -26,6 +26,7 @@
 #include "dc_addon_namespace.h"
 #include "dc_addon_utils.h"
 #include "dc_addon_collection.h"
+#include "dc_wardrobe_visuals.h"
 #include "../CrossSystem/CrossSystemUtilities.h"
 
 void AddSC_dc_addon_wardrobe(); // Forward declaration
@@ -8159,14 +8160,10 @@ namespace DCCollection
                         it->second.bySlot[slot].realEntry = currentEntry;
                 }
 
-                if (row.fakeEntry)
-                {
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), row.fakeEntry);
-                }
-                else
-                {
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
-                }
+                // The visible-item fields keep the real item; WardrobeVisuals substitutes
+                // the appearance per observer. A stored 0 means "hide this slot", which is
+                // an appearance choice and is cached as such.
+                WardrobeVisuals::SetSlot(player, slot, row.fakeEntry);
             }
         }
 
@@ -8399,6 +8396,8 @@ namespace DCCollection
                     if (it != TransmogCacheByGuid().end())
                         it->second.bySlot.erase(slot);
                 }
+
+                WardrobeVisuals::ClearSlot(player, slot);
                 return;
             }
 
@@ -8430,6 +8429,8 @@ namespace DCCollection
                         if (it != TransmogCacheByGuid().end())
                             it->second.bySlot.erase(slot);
                     }
+
+                    WardrobeVisuals::ClearSlot(player, slot);
                     return;
                 }
             }
@@ -8450,16 +8451,9 @@ namespace DCCollection
                 }
             }
 
-            if (fakeEntry)
-            {
-                // Override visible entry ID field (slot uses PLAYER_VISIBLE_ITEM_1_ENTRYID + slot*2)
-                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
-            }
-            else
-            {
-                // fakeEntry == 0 means "hide this slot" (transmog state should survive login/equip).
-                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
-            }
+            // fakeEntry == 0 means "hide this slot"; both cases are an appearance the
+            // observer-side patch applies, so the field itself is left holding the real item.
+            WardrobeVisuals::SetSlot(player, slot, fakeEntry);
         }
 
         void OnPlayerEquip(Player* player, Item* it, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
@@ -8533,6 +8527,7 @@ namespace DCCollection
             EraseSessionNotifiedAppearances(guid);
 
             EraseCharacterTransmogCache(guid);
+            WardrobeVisuals::Erase(player->GetGUID());
 
             // Allow the pet creature-cache pre-warm to fire again next session
             // (the client creature cache is cleared on relog).

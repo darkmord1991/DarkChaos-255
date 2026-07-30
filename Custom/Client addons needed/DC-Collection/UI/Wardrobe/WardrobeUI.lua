@@ -1923,6 +1923,45 @@ function Wardrobe:ShowSlotContextMenu(slotDef)
         })
     end
     
+    -- Cosmetic weapon enchant glow. Weapon slots only; the server rejects anything else.
+    if eqSlot == 15 or eqSlot == 16 or eqSlot == 17 then
+        local options = DC.enchantVisualOptions
+        local current = (DC.enchantVisualState or {})[tostring(eqSlot)]
+
+        if DC.enchantVisualEnabled ~= false and type(options) == "table" and #options > 0 then
+            local submenu = {}
+
+            table.insert(submenu, {
+                text = "None",
+                checked = not current or current == 0,
+                func = function()
+                    if DC.SetEnchantVisual then
+                        DC:SetEnchantVisual(eqSlot, 0)
+                    end
+                end,
+            })
+
+            for _, option in ipairs(options) do
+                table.insert(submenu, {
+                    text = (option.name ~= "" and option.name) or ("Enchant " .. option.id),
+                    checked = current == option.id,
+                    func = function()
+                        if DC.SetEnchantVisual then
+                            DC:SetEnchantVisual(eqSlot, option.id)
+                        end
+                    end,
+                })
+            end
+
+            table.insert(menu, {
+                text = "Enchant Glow",
+                notCheckable = true,
+                hasArrow = true,
+                menuList = submenu,
+            })
+        end
+    end
+
     if itemId then
         table.insert(menu, {
             text = "Link Item",

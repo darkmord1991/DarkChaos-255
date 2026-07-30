@@ -18,6 +18,7 @@
 #include "AreaDefines.h"
 #include "PetDefines.h"
 #include "Player.h"
+#include "PlayerAppearanceOverride.h"
 #include "SpellAuraEffects.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
@@ -750,8 +751,20 @@ class spell_dk_dancing_rune_weapon_visual : public AuraScript
         PreventDefaultAction();
         if (Unit* owner = GetUnitOwner()->ToTempSummon()->GetSummonerUnit())
         {
-            GetUnitOwner()->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, owner->GetUInt32Value(PLAYER_VISIBLE_ITEM_16_ENTRYID));
-            GetUnitOwner()->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, owner->GetUInt32Value(PLAYER_VISIBLE_ITEM_17_ENTRYID));
+            uint32 mainHand = owner->GetUInt32Value(PLAYER_VISIBLE_ITEM_16_ENTRYID);
+            uint32 offHand = owner->GetUInt32Value(PLAYER_VISIBLE_ITEM_17_ENTRYID);
+
+            // Those fields hold the real equipped weapons; transmog is applied per observer
+            // and cannot reach a creature's virtual-item slots, so resolve the appearance
+            // explicitly or the copy wields gear the owner does not appear to be holding.
+            if (Player const* ownerPlayer = owner->ToPlayer())
+            {
+                mainHand = Acore::AppearanceOverride::Resolve(ownerPlayer, EQUIPMENT_SLOT_MAINHAND, mainHand);
+                offHand = Acore::AppearanceOverride::Resolve(ownerPlayer, EQUIPMENT_SLOT_OFFHAND, offHand);
+            }
+
+            GetUnitOwner()->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, mainHand);
+            GetUnitOwner()->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, offHand);
             GetUnitOwner()->SetFloatValue(UNIT_FIELD_COMBATREACH, 0.01f);
         }
     }

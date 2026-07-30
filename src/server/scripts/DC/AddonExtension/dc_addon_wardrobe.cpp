@@ -10,8 +10,10 @@
 #include "dc_addon_collection.h"
 #include "dc_addon_namespace.h"
 #include "dc_addon_utils.h"
+#include "dc_wardrobe_visuals.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "DBCStores.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "DatabaseEnv.h"
@@ -73,6 +75,14 @@ namespace DCCollection
 
     // When true, group appearances by base name to generate "Virtual Sets" on the fly.
     constexpr const char* TRANSMOG_VIRTUAL_SETS_ENABLED = "DCCollection.Transmog.VirtualSets.Enabled";
+
+    // Cosmetic weapon enchant glows. These only rewrite the permanent half of the visible-item
+    // enchantment field for observers; the item's real enchantment is never touched, so no
+    // stats, procs or charges are granted.
+    constexpr const char* ENCHANT_VISUAL_ENABLE = "DCCollection.EnchantVisual.Enable";
+    // CSV of allowed SpellItemEnchantment IDs. Empty means "every enchant with a visual",
+    // derived from the DBC.
+    constexpr const char* ENCHANT_VISUAL_ALLOWED_IDS = "DCCollection.EnchantVisual.AllowedEnchantIds";
 
     // =======================================================================
     // Transmog Helper Implementations
@@ -518,6 +528,9 @@ namespace DCCollection
             }
         });
     }
+
+    // dc_character_enchant_visual is created by the characters-DB migration
+    // (data/sql/updates/pending_db_characters), not at runtime.
 
     uint8 VisualSlotToEquipmentSlot(uint32 visualSlot)
     {
@@ -1073,11 +1086,9 @@ namespace DCCollection
                 state.Set(std::to_string(slot), displayId);
                 itemIds.Set(std::to_string(slot), fakeEntry);
 
-                // Re-apply the appearance so the visible slots stay correct
-                // across login/map changes before the UI refreshes.
-                if (fakeEntry > 0)
-                    player->SetUInt32Value(
-                        PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+                // The appearance is no longer written into the wearer's visible-item
+                // fields here -- those stay truthful and WardrobeVisuals substitutes the
+                // transmog per observer. This builder only reports state to the UI.
             } while (result->NextRow());
         }
     }
@@ -1227,7 +1238,7 @@ namespace DCCollection
          {
              CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
              InvalidateCharacterTransmogCache(guid);
-             player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), equippedItem->GetEntry());
+             WardrobeVisuals::ClearSlot(player, slot);
              SendTransmogState(player);
              return;
          }
@@ -1239,7 +1250,7 @@ namespace DCCollection
                  "REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})",
                  guid, static_cast<uint32>(slot), equippedItem->GetEntry());
              InvalidateCharacterTransmogCache(guid);
-             player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
+             WardrobeVisuals::SetSlot(player, slot, 0);
              SendTransmogState(player);
              return;
          }
@@ -1299,7 +1310,7 @@ namespace DCCollection
 
          InvalidateCharacterTransmogCache(guid);
 
-         player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+         WardrobeVisuals::SetSlot(player, slot, fakeEntry);
          LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} APPLIED fakeEntry={}",
              player->GetName(), static_cast<uint32>(slot), displayId, fakeEntry);
          SendTransmogState(player);
@@ -1308,6 +1319,290 @@ namespace DCCollection
     void HandleGetTransmogState(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         SendTransmogState(player);
+    }
+
+    // =======================================================================
+    // Weapon enchant visuals
+    //
+    // Purely cosmetic. The chosen SpellItemEnchantment id replaces the permanent half of the
+    // wearer's visible-item enchantment field for observers only (see dc_wardrobe_visuals);
+    // Item::SetEnchantment is never called, so nothing is granted mechanically.
+    // =======================================================================
+
+    /** Weapon slots that can carry a visible enchant glow. */
+    bool IsEnchantVisualSlot(uint8 slot)
+    {
+        return slot == EQUIPMENT_SLOT_MAINHAND
+            || slot == EQUIPMENT_SLOT_OFFHAND
+            || slot == EQUIPMENT_SLOT_RANGED;
+    }
+
+    /**
+     * An enchant is only offerable when the client can actually render it: it must exist in
+     * the DBC, carry a non-zero item visual, and fit in the 16 bits the update field gives it.
+     */
+    bool IsRenderableEnchant(uint32 enchantId)
+    {
+        if (!enchantId || enchantId > 0xFFFF)
+            return false;
+
+        SpellItemEnchantmentEntry const* entry = sSpellItemEnchantmentStore.LookupEntry(enchantId);
+
+        return entry && entry->aura_id != 0;
+    }
+
+    /**
+     * Allowed ids, from config when set, otherwise every renderable enchant in the DBC.
+     * Rebuilt on demand and cached; config changes take effect on the next server start,
+     * matching how the rest of this module reads its options.
+     */
+    std::vector<uint32> const& GetAllowedEnchantVisuals()
+    {
+        static std::vector<uint32> allowed;
+        static std::once_flag once;
+
+        std::call_once(once, []()
+        {
+            std::string const csv = sConfigMgr->GetOption<std::string>(ENCHANT_VISUAL_ALLOWED_IDS, "");
+
+            if (!csv.empty())
+            {
+                size_t start = 0;
+                while (start <= csv.size())
+                {
+                    size_t const comma = csv.find(',', start);
+                    std::string token = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+
+                    // Trim surrounding whitespace so "1, 2 ,3" parses.
+                    size_t const first = token.find_first_not_of(" \t\r\n");
+                    size_t const last = token.find_last_not_of(" \t\r\n");
+                    if (first != std::string::npos)
+                        token = token.substr(first, last - first + 1);
+                    else
+                        token.clear();
+
+                    if (!token.empty())
+                    {
+                        uint32 value = 0;
+                        auto const result = std::from_chars(token.data(), token.data() + token.size(), value);
+
+                        if (result.ec == std::errc() && IsRenderableEnchant(value))
+                            allowed.push_back(value);
+                        else
+                            LOG_WARN("module.dc", "[DCWardrobe] EnchantVisual: ignoring unusable configured enchant id '{}'", token);
+                    }
+
+                    if (comma == std::string::npos)
+                        break;
+
+                    start = comma + 1;
+                }
+            }
+            else
+            {
+                for (uint32 id = 1; id < sSpellItemEnchantmentStore.GetNumRows(); ++id)
+                    if (IsRenderableEnchant(id))
+                        allowed.push_back(id);
+            }
+
+            LOG_INFO("module.dc", "[DCWardrobe] EnchantVisual: {} selectable enchant visual(s) ({})",
+                allowed.size(), csv.empty() ? "derived from DBC" : "from config whitelist");
+        });
+
+        return allowed;
+    }
+
+    bool IsEnchantVisualAllowed(uint32 enchantId)
+    {
+        auto const& allowed = GetAllowedEnchantVisuals();
+
+        return std::find(allowed.begin(), allowed.end(), enchantId) != allowed.end();
+    }
+
+    void SendEnchantVisuals(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        ObjectGuid const playerGuid = player->GetGUID();
+        std::string const sql = Acore::StringFormat(
+            "SELECT slot, enchant_id FROM dc_character_enchant_visual WHERE guid = {}",
+            playerGuid.GetCounter());
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid](QueryResult result)
+        {
+            Player* owner = ObjectAccessor::FindPlayer(playerGuid);
+            if (!owner || !owner->GetSession())
+                return;
+
+            DCAddon::JsonValue state;
+            state.SetObject();
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint32 const slot = fields[0].Get<uint32>();
+                    uint32 const enchantId = fields[1].Get<uint32>();
+
+                    state.Set(std::to_string(slot), enchantId);
+                } while (result->NextRow());
+            }
+
+            // The picker needs id + name; the client has no DBC access for these.
+            DCAddon::JsonValue available;
+            available.SetArray();
+
+            for (uint32 enchantId : GetAllowedEnchantVisuals())
+            {
+                SpellItemEnchantmentEntry const* entry = sSpellItemEnchantmentStore.LookupEntry(enchantId);
+                if (!entry)
+                    continue;
+
+                DCAddon::JsonValue option;
+                option.SetObject();
+                option.Set("id", enchantId);
+
+                char const* name = entry->description[LOCALE_enUS];
+                option.Set("name", std::string(name ? name : ""));
+
+                available.Push(option);
+            }
+
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_ENCHANT_VISUALS);
+            msg.Set("state", state);
+            msg.Set("available", available);
+            msg.Set("enabled", sConfigMgr->GetOption<bool>(ENCHANT_VISUAL_ENABLE, true));
+            msg.Send(owner);
+        }));
+    }
+
+    void HandleGetEnchantVisuals(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    {
+        SendEnchantVisuals(player);
+    }
+
+    void HandleSetEnchantVisual(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!DCAddon::IsJsonMessage(msg))
+            return;
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint8 const slot = static_cast<uint8>(json["slot"].AsUInt32());
+        bool const clear = json.HasKey("clear") ? json["clear"].AsBool() : false;
+        uint32 const enchantId = json.HasKey("enchantId") ? json["enchantId"].AsUInt32() : 0;
+
+        auto sendError = [&](char const* reason, uint32 code)
+        {
+            DCAddon::JsonMessage err(MODULE, DCAddon::Opcode::Collection::SMSG_ERROR);
+            err.Set("error", std::string("Enchant visual rejected: ") + reason);
+            err.Set("code", code);
+
+            DCAddon::JsonValue perSlot;
+            perSlot.SetObject();
+            perSlot.Set(std::to_string(slot), DCAddon::JsonValue(reason));
+            err.Set("perSlot", perSlot);
+            err.Send(player);
+        };
+
+        if (!sConfigMgr->GetOption<bool>(ENCHANT_VISUAL_ENABLE, true))
+        {
+            sendError("feature_disabled", 1200);
+            return;
+        }
+
+        if (!IsEnchantVisualSlot(slot))
+        {
+            sendError("invalid_slot", 1201);
+            return;
+        }
+
+        uint32 const guid = player->GetGUID().GetCounter();
+
+        if (clear || enchantId == 0)
+        {
+            CharacterDatabase.Execute("DELETE FROM dc_character_enchant_visual WHERE guid = {} AND slot = {}",
+                guid, static_cast<uint32>(slot));
+
+            WardrobeVisuals::ClearEnchant(player, slot);
+            SendEnchantVisuals(player);
+            return;
+        }
+
+        // A glow with no weapon under it would render on an empty hand.
+        Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+        if (!equippedItem)
+        {
+            sendError("no_item_equipped", 1202);
+            return;
+        }
+
+        if (equippedItem->GetTemplate()->Class != ITEM_CLASS_WEAPON)
+        {
+            sendError("not_a_weapon", 1203);
+            return;
+        }
+
+        if (!IsRenderableEnchant(enchantId))
+        {
+            sendError("no_visual", 1204);
+            return;
+        }
+
+        if (!IsEnchantVisualAllowed(enchantId))
+        {
+            sendError("not_allowed", 1205);
+            return;
+        }
+
+        CharacterDatabase.Execute(
+            "REPLACE INTO dc_character_enchant_visual (guid, slot, enchant_id) VALUES ({}, {}, {})",
+            guid, static_cast<uint32>(slot), enchantId);
+
+        WardrobeVisuals::SetEnchant(player, slot, enchantId);
+
+        LOG_INFO("module.dc", "[DCWardrobe] SetEnchantVisual: player={}, slot={} enchantId={}",
+            player->GetName(), static_cast<uint32>(slot), enchantId);
+
+        SendEnchantVisuals(player);
+    }
+
+    /** Repopulates the resident enchant cache on login, mirroring the transmog login path. */
+    void LoadEnchantVisualsOnLogin(Player* player)
+    {
+        if (!player)
+            return;
+
+        ObjectGuid const playerGuid = player->GetGUID();
+        std::string const sql = Acore::StringFormat(
+            "SELECT slot, enchant_id FROM dc_character_enchant_visual WHERE guid = {}",
+            playerGuid.GetCounter());
+
+        DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid](QueryResult result)
+        {
+            if (!result)
+                return;
+
+            Player* owner = ObjectAccessor::FindPlayer(playerGuid);
+            if (!owner)
+                return;
+
+            do
+            {
+                Field* fields = result->Fetch();
+                uint8 const slot = static_cast<uint8>(fields[0].Get<uint32>());
+                uint32 const enchantId = fields[1].Get<uint32>();
+
+                if (IsEnchantVisualSlot(slot) && IsRenderableEnchant(enchantId))
+                    WardrobeVisuals::SetEnchant(owner, slot, enchantId);
+            } while (result->NextRow());
+        }));
     }
 
     void HandleApplyTransmogPreview(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1401,7 +1696,7 @@ namespace DCCollection
                 if (clear)
                 {
                     trans->Append("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, (uint32)equipmentSlot);
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), equippedItem->GetEntry());
+                    WardrobeVisuals::ClearSlot(player, equipmentSlot);
                     applied++;
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("cleared"));
                     continue;
@@ -1411,7 +1706,7 @@ namespace DCCollection
                 if (displayId == 0)
                 {
                     trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})", guid, (uint32)equipmentSlot, equippedItem->GetEntry());
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), 0);
+                    WardrobeVisuals::SetSlot(player, equipmentSlot, 0);
                     applied++;
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("hidden"));
                     continue;
@@ -1467,7 +1762,7 @@ namespace DCCollection
 
                 uint32 fakeEntry = appearance->canonicalItemId;
                 trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})", guid, (uint32)equipmentSlot, fakeEntry, equippedItem->GetEntry());
-                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), fakeEntry);
+                WardrobeVisuals::SetSlot(player, equipmentSlot, fakeEntry);
                 applied++;
                 perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("applied"));
             }
@@ -1561,12 +1856,12 @@ namespace DCCollection
              if (slotValue.IsNull())
              {
                  trans->Append("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, (uint32)equipmentSlot);
-                 player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), equippedItem->GetEntry());
+                 WardrobeVisuals::ClearSlot(player, equipmentSlot);
              }
              else if (slotValue.AsUInt32() == 0)
              {
                  trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})", guid, (uint32)equipmentSlot, equippedItem->GetEntry());
-                 player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), 0);
+                 WardrobeVisuals::SetSlot(player, equipmentSlot, 0);
              }
              else
              {
@@ -1580,7 +1875,7 @@ namespace DCCollection
                  if (!skipCompatCheck && !FindBestVariantForSlot(displayId, equipmentSlot, equippedItem->GetTemplate())) continue;
 
                  trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})", guid, (uint32)equipmentSlot, itemId, equippedItem->GetEntry());
-                 player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), itemId);
+                 WardrobeVisuals::SetSlot(player, equipmentSlot, itemId);
              }
         }
 
@@ -3035,12 +3330,21 @@ namespace DCCollection
     public:
         WardrobePlayerScript() : PlayerScript("WardrobePlayerScript") {}
 
+        void OnPlayerLogin(Player* player) override
+        {
+            // Transmog rows are loaded by CollectionPlayerScript; enchant visuals are ours.
+            LoadEnchantVisualsOnLogin(player);
+        }
+
         void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override
         {
-            // Clean up character-specific transmog data when character is deleted
+            // Clean up character-specific transmog data when character is deleted.
+
             uint32 lowGuid = guid.GetCounter();
             CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {}", lowGuid);
+            CharacterDatabase.Execute("DELETE FROM dc_character_enchant_visual WHERE guid = {}", lowGuid);
             InvalidateCharacterTransmogCache(lowGuid);
+            WardrobeVisuals::Erase(guid);
             LOG_DEBUG("module.dc", "[DCWardrobe] Cleaned up transmog data for deleted character (GUID {})", lowGuid);
         }
     };
@@ -3207,6 +3511,7 @@ void AddSC_dc_addon_wardrobe()
 {
     new DCCollection::WardrobePlayerScript();
     new DCCollection::WardrobeMiscScript();
+    DCCollection::WardrobeVisuals::Register();
     new CollectionTransmogNativeServerScript();
     new CollectionItemSetsNativeServerScript();
 
@@ -3226,6 +3531,10 @@ void AddSC_dc_addon_wardrobe()
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_GET_COLLECTED_APPEARANCES, &HandleGetCollectedAppearances);
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_GET_TRANSMOG_STATE, &HandleGetTransmogState);
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_APPLY_TRANSMOG_PREVIEW, &HandleApplyTransmogPreview);
+
+    // Weapon enchant visuals (cosmetic)
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_SET_ENCHANT_VISUAL, &HandleSetEnchantVisual);
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_GET_ENCHANT_VISUALS, &HandleGetEnchantVisuals);
 
     // Community
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_COMMUNITY_GET_LIST, &HandleCommunityGetList);
