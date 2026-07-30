@@ -37,8 +37,16 @@ namespace
         char const* name;
     };
 
-    // Keep in sync with Custom/CSV DBC/TaxiNodes.csv (ids 421-437). Names and
-    // coordinates are the matched retail Cata taxi nodes (gen_taxi.py).
+    // Keep in sync with Custom/CSV DBC/TaxiNodes.csv (ids 338-345, 421-437,
+    // 446-447). Names and coordinates are the matched retail Cata taxi nodes
+    // (gen_taxi.py).
+    //
+    // Map 750 is a coordinate-preserving copy of the Hyjal corner of Kalimdor,
+    // so it also contains the surrounding Winterspring / Felwood / Azshara /
+    // Moonglade flight points. Those got their own node ids (338-345, 446-447)
+    // because the stock Kalimdor nodes (44/52/53/65/166) must keep pointing at
+    // continent 1. Everlook and Moonglade have the usual per-faction node pair,
+    // labelled here so the gossip list does not show two identical entries.
     constexpr FlightNode kNodes[] =
     {
         // Mount Hyjal (map 750)
@@ -47,6 +55,14 @@ namespace
         { 423, 750, 4987.87f, -2676.19f, 1426.36f, "Shrine of Aviana, Hyjal" },
         { 424, 750, 5584.06f, -3569.84f, 1570.60f, "Nordrassil, Hyjal" },
         { 425, 750, 4059.40f, -3966.75f,  970.15f, "Gates of Sothann, Hyjal" },
+        // Kalimdor edge of map 750 -- reachable by flight from the Hyjal nodes
+        { 338, 750, 3661.52f, -4390.38f,  113.05f, "Valormok, Azshara" },
+        { 339, 750, 3978.74f, -1316.42f,  250.11f, "Emerald Sanctuary, Felwood" },
+        { 343, 750, 6205.88f, -1949.63f,  571.29f, "Talonbranch Glade, Felwood" },
+        { 344, 750, 6796.80f, -4742.39f,  701.50f, "Everlook, Winterspring (Alliance)" },
+        { 345, 750, 6813.06f, -4611.12f,  710.67f, "Everlook, Winterspring (Horde)" },
+        { 446, 750, 7458.45f, -2487.21f,  462.33f, "Moonglade (Alliance)" },
+        { 447, 750, 7470.39f, -2123.38f,  492.34f, "Moonglade (Horde)" },
         // Plaguelands (map 751)
         { 426, 751,  931.32f, -1430.11f,   64.67f, "Chillwind Camp, Western Plaguelands" },
         { 427, 751, 2270.20f, -5343.11f,   86.97f, "Light's Hope Chapel, Eastern Plaguelands" },
@@ -63,6 +79,12 @@ namespace
     };
 
     constexpr char const* TAXI_ICON = "Interface\\Icons\\Ability_Mount_Wyvern_01";
+
+    // A flight master must actually be standing AT its node. Without this a
+    // flight master far from every listed node would silently adopt the nearest
+    // one (however distant) and sell flights departing from somewhere else.
+    constexpr float MAX_NODE_DISTANCE = 100.0f;
+    constexpr float MAX_NODE_DISTANCE_SQ = MAX_NODE_DISTANCE * MAX_NODE_DISTANCE;
 
     // Resolve the flight node this creature stands on (nearest node on its map).
     FlightNode const* CurrentNode(Creature const* creature)
@@ -86,6 +108,12 @@ namespace
                 bestDist = dist;
             }
         }
+
+        if (best && bestDist > MAX_NODE_DISTANCE_SQ)
+        {
+            return nullptr;
+        }
+
         return best;
     }
 
