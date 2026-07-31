@@ -34,6 +34,7 @@ EndScriptData */
 #include "SmartScript.h"
 #include "ObjectAccessor.h"   // AC: Unit::GetPlayer/GetCreature -> ObjectAccessor::*
 #include "MotionMaster.h"     // AC: Movement::PointsArray for MoveSmoothPath shim
+#include "WaypointMgr.h"      // AC: sWaypointMgr, to read path 39436's first node
 #include "GridNotifiers.h"    // AC: player-in-range searcher for GetPlayersInRange shim
 #include "CellImpl.h"
 
@@ -283,7 +284,7 @@ public:
                 playerGUID = player->GetGUID();
         }
 
-        void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply)
+        void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply) override
         {
             flyphase = 1;
             if (apply && passenger->IsPlayer())
@@ -322,7 +323,7 @@ public:
         }
         void WaypointReached(uint32 /*waypointId*/) {}
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             events.Update(diff);
 
@@ -383,7 +384,7 @@ public:
         EventMap events;
         ObjectGuid playerGUID;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_aronus_vehicleAI(creature);
     }
@@ -468,7 +469,7 @@ public:
             MoveSmoothPath(me, EmeraldFlamePath, EmeraldFlamePathSize);
         }
 
-        void MovementInform(uint32 type, uint32 point)
+        void MovementInform(uint32 type, uint32 point) override
         {
             if (type != ESCORT_MOTION_TYPE)
                 return;
@@ -510,7 +511,7 @@ public:
             }
         }
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_emerald_flameweaver_infiltratorsAI(creature);
     }
@@ -544,15 +545,32 @@ public:
     {
         PrepareAuraScript(spell_inferno_tick_AuraScript);
 
-        bool Validate(SpellInfo const* /*spellInfo*/) override
+        bool Validate(SpellInfo const* spellInfo) override
         {
-            return sSpellMgr->GetSpellInfo(SPELL_INFERNO_AOE) != nullptr;
+            if (!sSpellMgr->GetSpellInfo(SPELL_INFERNO_AOE))
+                return false;
+
+            // Fail LOUDLY at load if the periodic-trigger aura ever moves off
+            // effect 0 again, instead of silently doing nothing (see Register).
+            return spellInfo->Effects[EFFECT_0].ApplyAuraName == SPELL_AURA_PERIODIC_TRIGGER_SPELL;
         }
 
         void HandleProc(AuraEffect const* aurEff)
         {
-            Unit* caster = GetCaster();
-            if (!caster)
+            // Suppress the aura's own default trigger. spell_dbc 74813 has
+            // EffectTriggerSpell_1 = 18947 "Inferno Dummy Effect", which is a
+            // do-nothing dummy -- letting it fire every tick alongside our real
+            // damage cast is pure noise. (Cross-checked against CataTC's
+            // spell_mh_inferno, which does the same.)
+            PreventDefaultAction();
+
+            // GetTarget(), not GetCaster(): this is a self-applied burning aura
+            // (creature 3640147 carries it via creature_template_addon), so the
+            // two are the same unit in practice -- but GetTarget() is always
+            // valid inside an AuraScript, whereas GetCaster() goes null if the
+            // summoner despawns, which silently stopped the damage.
+            Unit* target = GetTarget();
+            if (!target)
                 return;
 
             static constexpr int32 damageForTick[8] = { 1500, 1500, 2000, 2000, 3000, 3000, 5000, 5000 };
@@ -564,17 +582,24 @@ public:
                 tick = 8;
 
             int32 damage = damageForTick[tick - 1];
-            caster->CastCustomSpell(caster, SPELL_INFERNO_AOE, &damage, nullptr, nullptr, true);
+            target->CastCustomSpell(target, SPELL_INFERNO_AOE, &damage, nullptr, nullptr, true);
         }
 
         void Register() override
         {
-            // EFFECT_1, not EFFECT_0: spell 74813 "Inferno" is effects [0, 6, 6]
-            // with auras [0, 23, 26], so SPELL_AURA_PERIODIC_TRIGGER_SPELL (23)
-            // sits on effect index 1.  Binding index 0 registers fine but the
-            // handler never runs -- the core reports it as "did not match dbc
-            // effect data", which is easy to miss among the boot warnings.
-            OnEffectPeriodic += AuraEffectPeriodicFn(spell_inferno_tick_AuraScript::HandleProc, EFFECT_1, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+            // EFFECT_0. This previously bound EFFECT_1 on the strength of a
+            // comment claiming 74813 was effects [0, 6, 6] / auras [0, 23, 26].
+            // The live spell_dbc row is effects [6, 6, 6] / auras [23, 26, 25]
+            // -- so SPELL_AURA_PERIODIC_TRIGGER_SPELL (23) is on DBC column
+            // EffectAura_1, i.e. code index EFFECT_0, and EFFECT_1 is aura 26
+            // (MOD_ROOT).
+            //
+            // Binding the wrong index is not a soft failure: SpellScript::_Validate
+            // logs "did not match dbc effect data ... won't be executed" and DROPS
+            // the handler, so the escalating Inferno damage never ran at all --
+            // exactly the bug this script exists to fix. Remember DBC columns are
+            // 1-based in the table and 0-based in code.
+            OnEffectPeriodic += AuraEffectPeriodicFn(spell_inferno_tick_AuraScript::HandleProc, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
         }
     };
 
@@ -616,7 +641,7 @@ public:
                 me->DespawnOrUnsummon();
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* who, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_FANDRAL_PING)
             {
@@ -630,7 +655,7 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -667,7 +692,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_archdruid_fandral_staghelm_dreamAI(creature);
     }
@@ -685,6 +710,15 @@ enum QuestEndSupply
     SPELL_FEAR_VISUAL = 151111,
 
     WAYPOINT_PATH = 39436,
+
+    // How long a caravan may live, and how often a controller looks for a free
+    // slot. These no longer multiply into a standing crowd: the controller now
+    // waits for its previous caravan to be gone before sending another out.
+    CARAVAN_DESPAWN_MS = 900000,    // 15 min -- ample to walk the whole route
+    CARAVAN_CHECK_MS = 15000,
+
+    // MovePoint id for the pathed approach to the route's first node.
+    POINT_PATH_START = 1001,
 };
 
 class npc_spawn_ogres_and_slaves_controller : public CreatureScript
@@ -696,13 +730,15 @@ public:
     {
         npc_spawn_ogres_and_slaves_controllerAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void Reset()
+        void Reset() override
         {
             me->setActive(true);
+            _caravanGUID.Clear();
+            _events.Reset();
             _events.ScheduleEvent(EVENT_OGRE_SPAWN_CONTROLLER, Milliseconds(5000));
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             _events.Update(diff);
 
@@ -711,21 +747,44 @@ public:
                 switch (eventId)
                 {
                 case EVENT_OGRE_SPAWN_CONTROLLER:
-                    if (auto ogr = me->SummonCreature(NPC_PROVEDITOR, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.5f, me->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 900000))
-                        ogr->setActive(true);
+                {
+                    // ONE caravan per controller at a time.
+                    //
+                    // This used to summon unconditionally every 60s while each
+                    // Proveditor lived for 900s, so every controller accumulated
+                    // 15 of them -- and cata_world places TEN of these controllers
+                    // along the road (all ten are correct Blizzard data). That is
+                    // ~150 Proveditors standing around, each dragging a slave
+                    // driver and three slaves behind it.
+                    //
+                    // A caravan ends by despawning itself at the last waypoint
+                    // (see npc_twilight_proveditorAI::MovementInform) or by being
+                    // killed, so gating on the previous one keeps the road busy
+                    // without it silting up.
+                    Creature* previous = ObjectAccessor::GetCreature(*me, _caravanGUID);
+                    if (!previous || !previous->IsAlive())
+                    {
+                        if (Creature* proveditor = me->SummonCreature(NPC_PROVEDITOR, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.5f, me->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, CARAVAN_DESPAWN_MS))
+                        {
+                            proveditor->setActive(true);
+                            _caravanGUID = proveditor->GetGUID();
+                        }
+                    }
 
-                    _events.ScheduleEvent(EVENT_OGRE_SPAWN_CONTROLLER, Milliseconds(60000));
+                    _events.ScheduleEvent(EVENT_OGRE_SPAWN_CONTROLLER, Milliseconds(CARAVAN_CHECK_MS));
                     break;
+                }
                 default:
                     break;
                 }
             }
         }
     private:
+        ObjectGuid _caravanGUID;
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_spawn_ogres_and_slaves_controllerAI(creature);
     }
@@ -742,27 +801,76 @@ public:
 
         void IsSummonedBy(WorldObject* /*summoner*/) override
         {
-            if (auto slavedriver = me->SummonCreature(NPC_SLAVE_DRIVER, 5127.52f, -2356.76f, 1414.76f, 5.387f, TEMPSUMMON_TIMED_DESPAWN, 900000))
+            // Escort positions are RELATIVE to the Proveditor now.
+            //
+            // They used to be three hardcoded literals around
+            // (5127.5, -2356.8, 1414.8). That spot is next to the westernmost
+            // controller only -- but ten controllers spread along ~500 yards of
+            // road all summon through this same code, so for nine of them the
+            // whole escort materialised far away at a z that did not match the
+            // local ground, then MoveFollow'd across the zone to catch up,
+            // clipping through terrain the entire way.
+            //
+            // GetNearPosition() also resolves real ground height at the target
+            // spot, which a fixed literal cannot do for ten different locations.
+            Position driverPos = me->GetNearPosition(3.0f, me->GetOrientation() + float(M_PI));
+            if (auto slavedriver = me->SummonCreature(NPC_SLAVE_DRIVER, driverPos, TEMPSUMMON_TIMED_DESPAWN, CARAVAN_DESPAWN_MS))
             {
                 slavedriver->setActive(true);
 
-                if (auto slave1 = me->SummonCreature(NPC_TWILIGHT_SLAVE, 5129.259f, -2351.40f, 1414.31f, 4.85f, TEMPSUMMON_TIMED_DESPAWN, 900000))
-                    if (auto slave2 = me->SummonCreature(NPC_TWILIGHT_SLAVE, 5126.129f, -2349.87f, 1413.75f, 5.20f, TEMPSUMMON_TIMED_DESPAWN, 900000))
-                        if (auto slave3 = me->SummonCreature(NPC_TWILIGHT_SLAVE, 5125.000f, -2352.95f, 1414.10f, 5.97f, TEMPSUMMON_TIMED_DESPAWN, 900000))
-                        {
-                            slave1->setActive(true);
-                            slave1->AI()->SetData(1, 1);
-                            slave2->setActive(true);
-                            slave2->AI()->SetData(2, 1);
-                            slave3->setActive(true);
-                            slave3->AI()->SetData(3, 1);
+                // Fan the three slaves out behind the Proveditor at the same
+                // relative angles their MoveFollow offsets use once moving
+                // (0.7pi / 1.0pi / 1.3pi), so they start in formation instead of
+                // snapping into it.
+                float const slaveAngles[3] = { 0.7f, 1.0f, 1.3f };
+                uint8 summoned = 0;
 
-                            me->GetMotionMaster()->MovePath(WAYPOINT_PATH, FORCED_MOVEMENT_NONE);
-                        }
+                for (uint8 i = 0; i < 3; ++i)
+                {
+                    Position slavePos = me->GetNearPosition(5.0f, me->GetOrientation() + slaveAngles[i] * float(M_PI));
+                    if (auto slave = me->SummonCreature(NPC_TWILIGHT_SLAVE, slavePos, TEMPSUMMON_TIMED_DESPAWN, CARAVAN_DESPAWN_MS))
+                    {
+                        slave->setActive(true);
+                        slave->AI()->SetData(i + 1, 1);
+                        ++summoned;
+                    }
+                }
+
+                // Same all-or-nothing rule the nested ifs enforced before: a
+                // half-formed caravan does not set off.
+                if (summoned == 3)
+                    StartRoute();
             }
         }
 
-        void JustSummoned(Creature* summoned)
+        // Join the patrol route without walking through the mountain.
+        //
+        // waypoint_data path 39436 covers only the EASTERN half of the road --
+        // its first node is at (5427.9, -2284.1, 1453.8) -- while six of the ten
+        // controllers sit on the western half, up to ~350 yards away and ~44
+        // yards below it. MovePath() splines straight at node 1 with no navmesh,
+        // which is exactly what sent those caravans through the terrain.
+        // MovePoint() with generatePath (its default) walks around it instead,
+        // and the route proper starts on arrival (see MovementInform).
+        void StartRoute()
+        {
+            if (WaypointPath const* path = sWaypointMgr->GetPath(WAYPOINT_PATH))
+            {
+                if (!path->Nodes.empty())
+                {
+                    WaypointNode const& first = path->Nodes.front();
+                    if (me->GetExactDist(first.X, first.Y, first.Z) > 15.0f)
+                    {
+                        me->GetMotionMaster()->MovePoint(POINT_PATH_START, first.X, first.Y, first.Z);
+                        return;
+                    }
+                }
+            }
+
+            me->GetMotionMaster()->MovePath(WAYPOINT_PATH, FORCED_MOVEMENT_NONE);
+        }
+
+        void JustSummoned(Creature* summoned) override
         {
             _summons.Summon(summoned);
         }
@@ -771,8 +879,18 @@ public:
         {
         }
 
-        void MovementInform(uint32 type, uint32 point)
+        void MovementInform(uint32 type, uint32 point) override
         {
+            // Arrived at the route's first node under real pathfinding -- hand
+            // over to the waypoint generator from here.
+            if (type == POINT_MOTION_TYPE)
+            {
+                if (point == POINT_PATH_START)
+                    me->GetMotionMaster()->MovePath(WAYPOINT_PATH, FORCED_MOVEMENT_NONE);
+
+                return;
+            }
+
             if (type != WAYPOINT_MOTION_TYPE)
                 return;
 
@@ -787,7 +905,7 @@ public:
             }
         }
 
-        void JustEngagedWith(Unit* /*who*/)
+        void JustEngagedWith(Unit* /*who*/) override
         {
             _events.ScheduleEvent(EVENT_PROVEDITOR_1, Milliseconds(urand(4000, 12000)));
         }
@@ -818,14 +936,13 @@ public:
         }
 
     private:
-        bool _pathStarted = false;
         EventMap _events;
         SummonList _summons;
         ObjectGuid _slavedriverGUID;
         uint16 _checkTimer = 2000;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_twilight_proveditorAI(creature);
     }
@@ -848,11 +965,11 @@ public:
             _events.ScheduleEvent(EVENT_SLAVEDRIVER_CHECK, Milliseconds(1000));
         }
 
-        void JustEngagedWith(Unit* /*who*/)
+        void JustEngagedWith(Unit* /*who*/) override
         {
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -899,7 +1016,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_twilight_slavedriverAI(creature);
     }
@@ -929,7 +1046,7 @@ public:
             _events.ScheduleEvent(EVENT_TWILIGHT_SLAVE_CHECK, Milliseconds(1000));
         }
 
-        void SetData(uint32 data, uint32 /*state*/)
+        void SetData(uint32 data, uint32 /*state*/) override
         {
             switch (data)
             {
@@ -947,7 +1064,7 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -1019,7 +1136,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_twilight_slaveAI(creature);
     }
@@ -1151,13 +1268,13 @@ public:
             _events.ScheduleEvent(EVENT_FLAMEWARD_DESPAWN, Milliseconds(299900));
         }
 
-        void JustDied(Unit* /* killer */)
+        void JustDied(Unit* /* killer */) override
         {
             AiTalk(me->AI(), 2, _playerGUID);
             _summons.DespawnAll();
         }
 
-        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_DUMMY_PING_2)
             {
@@ -1321,7 +1438,7 @@ public:
         ObjectGuid _playerGUID;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_activated_flamewardAI(creature);
     }
@@ -1365,7 +1482,7 @@ public:
             _events.ScheduleEvent(EVENT_AESSINA_CHECK, Milliseconds(1000));
         }
 
-        void PassengerBoarded(Unit* passenger, int8 seatId, bool apply)
+        void PassengerBoarded(Unit* passenger, int8 seatId, bool apply) override
         {
             if (apply && passenger->IsPlayer())
             {
@@ -1395,7 +1512,7 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             _events.Update(diff);
 
@@ -1481,7 +1598,7 @@ public:
         EventMap _events;
         SummonList _summons;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_aessina_miracle_vehicleAI(creature);
     }
@@ -1523,7 +1640,7 @@ public:
 
             _events.ScheduleEvent(EVENT_TORTOLLA_CHECK, Milliseconds(1000));
         }
-        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_PING_CHILD)
             {
@@ -1531,13 +1648,13 @@ public:
             }
         }
 
-        void JustDied(Unit* /*killer*/)
+        void JustDied(Unit* /*killer*/) override
         {
             if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 player->RemoveAura(SPELL_CHILD_OF_TORTOLLA_AURA);
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -1611,7 +1728,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_strength_of_tortollaAI(creature);
     }
@@ -1652,52 +1769,81 @@ public:
             _events.ScheduleEvent(EVENT_AGILITY_TRAINER_2, Milliseconds(1000));
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
-            if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
+            // Every branch below ends the encounter, so each one RETURNS.
+            //
+            // They used to fall through into each other, which was an outright
+            // quest-breaker: when the player died, the first branch despawned the
+            // trainer but execution carried on into the "< 1 yard" check -- and a
+            // corpse is essentially always within a yard of the trainer chasing
+            // it -- so dying during Agility Training also called
+            // FailQuest(QUEST_AGILITY_TRAINING). The same fall-through let the
+            // fail branches run after the QUEST_STATUS_COMPLETE branch had
+            // already decided the run was a success.
+            //
+            // Throttled to once a second: this used to do two GetQuestStatus
+            // lookups plus two GetDistance calls on EVERY tick for the whole
+            // duration of the chase, and none of these conditions can change
+            // meaningfully faster than that.
+            if (_checkTimer <= diff)
             {
-                if (!player->IsAlive())
-                {
-                    me->DespawnOrUnsummon();
-                    player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
-                }
+                _checkTimer = 1000;
 
-                if (player->GetQuestStatus(QUEST_AGILITY_TRAINING) == QUEST_STATUS_NONE ||
-                    player->GetQuestStatus(QUEST_AGILITY_TRAINING) == QUEST_STATUS_COMPLETE)
+                if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 {
-                    player->CombatStop();
-                    me->DespawnOrUnsummon();
-                }
+                    if (!player->IsAlive())
+                    {
+                        player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
+                        me->DespawnOrUnsummon();
+                        return;
+                    }
 
-                if (me->GetDistance(player) > 80.f)
-                {
-                    player->CombatStop();
-                    me->DespawnOrUnsummon();
-                    player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
-                }
-                else if (me->GetDistance(player) < 1.f)
-                {
-                    me->SetControlled(true, UNIT_STATE_ROOT);
-                    AiTalk(me->AI(), 1, _playerGUID);
-                    player->FailQuest(QUEST_AGILITY_TRAINING);
-                    player->CombatStop();
-                    player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
-                    me->DespawnOrUnsummon();
-                }
+                    QuestStatus const status = player->GetQuestStatus(QUEST_AGILITY_TRAINING);
+                    if (status == QUEST_STATUS_NONE || status == QUEST_STATUS_COMPLETE)
+                    {
+                        player->CombatStop();
+                        me->DespawnOrUnsummon();
+                        return;
+                    }
 
-                // 4994 is the raw Cata sub-area; DC map 750 bakes a single area id
-            // (DC_HYJAL_AREAID 4923), so this test failed on the very first tick
-            // and auto-failed the quest. Two sibling AIs were already patched.
-            if (player->GetAreaId() != DC_HYJAL_AREAID)
-                {
-                    me->SetControlled(true, UNIT_STATE_ROOT);
-                    AiTalk(me->AI(), 2, _playerGUID);
-                    player->FailQuest(QUEST_AGILITY_TRAINING);
-                    player->CombatStop();
-                    player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
-                    me->DespawnOrUnsummon();
+                    float const distance = me->GetDistance(player);
+                    if (distance > 80.f)
+                    {
+                        player->CombatStop();
+                        player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
+                        me->DespawnOrUnsummon();
+                        return;
+                    }
+
+                    if (distance < 1.f)
+                    {
+                        me->SetControlled(true, UNIT_STATE_ROOT);
+                        AiTalk(me->AI(), 1, _playerGUID);
+                        player->FailQuest(QUEST_AGILITY_TRAINING);
+                        player->CombatStop();
+                        player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
+                        me->DespawnOrUnsummon();
+                        return;
+                    }
+
+                    // 4994 is the raw Cata sub-area; DC map 750 bakes a single area id
+                    // (DC_HYJAL_AREAID 4923), so this test failed on the very first tick
+                    // and auto-failed the quest. Two sibling AIs were already patched.
+                    if (player->GetAreaId() != DC_HYJAL_AREAID)
+                    {
+                        me->SetControlled(true, UNIT_STATE_ROOT);
+                        AiTalk(me->AI(), 2, _playerGUID);
+                        player->FailQuest(QUEST_AGILITY_TRAINING);
+                        player->CombatStop();
+                        player->RemoveAura(SPELL_AGILITY_TRAINING_AURA);
+                        me->DespawnOrUnsummon();
+                        return;
+                    }
                 }
             }
+            else
+                _checkTimer -= diff;
 
             _events.Update(diff);
 
@@ -1721,12 +1867,12 @@ public:
             }
         }
     private:
-        bool _inProgress = false;
+        uint32 _checkTimer = 1000;
         ObjectGuid _playerGUID;
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_blazing_trainer_agility_trainingAI(creature);
     }
@@ -1807,7 +1953,7 @@ public:
                 player->SetControlled(true, UNIT_STATE_ROOT);
             }
         }
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* who, SpellInfo const* spellInfo) override
         {
 
             if (spellInfo->Id == SPELL_PING_ORB)
@@ -1829,7 +1975,7 @@ public:
                         me->DespawnOrUnsummon();
                     }
         }
-        void JustDied(Unit* /*killer*/)
+        void JustDied(Unit* /*killer*/) override
         {
             if (auto player = ObjectAccessor::GetPlayer(*me, playerGUID))
             {
@@ -1862,7 +2008,7 @@ public:
                 }
             }
         }
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             events.Update(diff);
 
@@ -2038,7 +2184,7 @@ public:
         ObjectGuid playerGUID;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_orb_of_ascensionAI(creature);
     }
@@ -2314,7 +2460,7 @@ public:
             _events.ScheduleEvent(EVENT_SMOLDEROS_DOG_CHECK, Milliseconds(1000));
         }
 
-        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_FEED_SPAWN_OF_SMOLDEROS)
             {
@@ -2323,7 +2469,7 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             DoMeleeAttackIfReady();
 
@@ -2368,7 +2514,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_spawn_of_smolderos_dogAI(creature);
     }
@@ -2411,7 +2557,7 @@ public:
             me->SetReactState(REACT_PASSIVE);
         }
 
-        void MovementInform(uint32 type, uint32 point)
+        void MovementInform(uint32 type, uint32 point) override
         {
             if (type != POINT_MOTION_TYPE)
                 return;
@@ -2438,26 +2584,33 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        // Resolve the Butcher from the guid captured in IsSummonedBy instead of
+        // sweeping the grid. FindNearestCreature() walks map cells; doing that
+        // every single tick of an entire fight (and again in both timed events)
+        // was pure waste when the guid was already sitting in a member.
+        Creature* GetLivingButcher()
+        {
+            Creature* butcher = ObjectAccessor::GetCreature(*me, _butcherGUID);
+            return (butcher && butcher->IsAlive()) ? butcher : nullptr;
+        }
+
+        void UpdateAI(uint32 const diff) override
         {
             DoMeleeAttackIfReady();
 
-            if (_fight)
+            if (_fight && !GetLivingButcher())
             {
-                if (!me->FindNearestCreature(NPC_BUTCHER, 30.f))
+                _butcherKilled = true;
+                _fight = false;
+                me->GetMotionMaster()->MovePoint(2, 4753.262f, -4237.679f, 894.65f);
+
+                if (auto grommko = ObjectAccessor::GetCreature(*me, _grommkoGUID))
                 {
-                    _butcherKilled = true;
-                    _fight = false;
-                    me->GetMotionMaster()->MovePoint(2, 4753.262f, -4237.679f, 894.65f);
+                    grommko->AI()->Talk(0);
+                    grommko->SetFaction(14);
 
-                    if (auto grommko = ObjectAccessor::GetCreature(*me, _grommkoGUID))
-                    {
-                        grommko->AI()->Talk(0);
-                        grommko->SetFaction(14);
-
-                        if (auto player = grommko->SelectNearestPlayer(40.f))
-                            grommko->AI()->AttackStart(player);
-                    }
+                    if (auto player = grommko->SelectNearestPlayer(40.f))
+                        grommko->AI()->AttackStart(player);
                 }
             }
 
@@ -2467,29 +2620,32 @@ public:
             {
                 switch (eventId)
                 {
+                // Both loops reschedule UNCONDITIONALLY while the fight is on.
+                // The reschedule used to sit inside the "did we find the Butcher"
+                // check, so a single transient miss killed the loop permanently
+                // and the fight went silent for the rest of its duration.
                 case EVENT_GRUDGE_MATCH_BREATH:
                     if (_fight)
-                        if (auto butcher = me->FindNearestCreature(NPC_BUTCHER, 30.f))
-                        {
+                    {
+                        if (Creature* butcher = GetLivingButcher())
                             me->CastSpell(butcher, SPELL_LITTLE_BIG_FLAME_BREATH);
-                            _events.ScheduleEvent(EVENT_GRUDGE_MATCH_BREATH, Milliseconds(6500));
-                        }
+
+                        _events.ScheduleEvent(EVENT_GRUDGE_MATCH_BREATH, Milliseconds(6500));
+                    }
                     break;
                 case EVENT_GRUDGE_MATCH_COSMETIC:
                     if (_fight)
-                        if (auto butcher = me->FindNearestCreature(NPC_BUTCHER, 30.f))
-                        {
+                    {
+                        if (Creature* butcher = GetLivingButcher())
                             butcher->CastSpell(me, SPELL_ATTACK_COSMETIC);
-                            _events.ScheduleEvent(EVENT_GRUDGE_MATCH_COSMETIC, Milliseconds(2000));
-                        }
+
+                        _events.ScheduleEvent(EVENT_GRUDGE_MATCH_COSMETIC, Milliseconds(2000));
+                    }
                     break;
                 default:
                     break;
                 }
             }
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
         }
     private:
         bool _fight = false;
@@ -2499,7 +2655,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_spawn_of_smolderos_grudge_matchAI(creature);
     }
@@ -2531,7 +2687,7 @@ public:
             _events.ScheduleEvent(EVENT_EMERALD_DRAKE_2, Milliseconds(1000));
         }
 
-        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_DUMMY_PING)
             {
@@ -2603,7 +2759,7 @@ public:
 
         EventMap _events;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_emerald_drake_slash_burnAI(creature);
     }
@@ -2632,7 +2788,7 @@ public:
     {
         npc_graduation_speech_controllerAI(Creature* creature) : ScriptedAI(creature) {}
 
-        void Reset()
+        void Reset() override
         {
             me->setActive(true);
             _eventStarted = false;
@@ -2688,7 +2844,7 @@ public:
             }
         }
 
-        void DoAction(int32 const actionId)
+        void DoAction(int32 const actionId) override
         {
             if (actionId == ACTION_GRADUATION_1)  // inspiration
             {
@@ -2830,7 +2986,7 @@ public:
             }
         }
 
-        void SpellHit(Unit* who, SpellInfo const* spellInfo)
+        void SpellHit(Unit* who, SpellInfo const* spellInfo) override
         {
             if (!_eventStarted)
             {
@@ -2846,7 +3002,7 @@ public:
             }
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             _events.Update(diff);
 
@@ -2890,7 +3046,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_graduation_speech_controllerAI(creature);
     }
@@ -3076,7 +3232,7 @@ public:
             _events.ScheduleEvent(EVENT_WINGS_OF_AVIANA_CHECK, Milliseconds(1000));
         }
 
-        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo)
+        void SpellHit(Unit* /*who*/, SpellInfo const* spellInfo) override
         {
             if (spellInfo->Id == SPELL_SOAR)
             {
@@ -3170,7 +3326,7 @@ public:
 
         EventMap _events;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_wings_of_aviana_dailyAI(creature);
     }
@@ -3204,59 +3360,68 @@ public:
                 _playerGUID = player->GetGUID();
         }
 
-        void PassengerBoarded(Unit* passenger, int8 /* seatId */, bool apply)
+        // (The empty `if (apply && passenger->IsPlayer()) {}` branch that used to
+        // lead this function did nothing and is gone.)
+        void PassengerBoarded(Unit* passenger, int8 /* seatId */, bool apply) override
         {
-            if (apply && passenger->IsPlayer())
-            {
-            }
-
             if (!apply && passenger->IsPlayer())
             {
                 passenger->RemoveAura(SPELL_VISUAL_HOLD_CHILD);
                 me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
-                me->DespawnOrUnsummon( Milliseconds(8000));
+                _dismounted = true;
+                me->DespawnOrUnsummon(Milliseconds(8000));
             }
         }
 
-        void UpdateAI(uint32 const /*diff*/)
+        void UpdateAI(uint32 const diff) override
         {
+            // Once PassengerBoarded has scheduled the 8s courtesy despawn, stop
+            // re-testing: the distance check below would otherwise immediately
+            // re-despawn the same creature at 100ms and cut that window short.
+            if (_dismounted)
+                return;
+
+            // Throttled to twice a second. This previously ran two GetQuestStatus
+            // lookups and a GetDistance on every tick for as long as the vehicle
+            // existed; neither condition can change faster than that.
+            if (_checkTimer > diff)
+            {
+                _checkTimer -= diff;
+                return;
+            }
+
+            _checkTimer = 500;
+
+            // Each branch below ends the vehicle, so both return rather than
+            // falling through into one another.
             if (auto player = ObjectAccessor::GetPlayer(*me, _playerGUID))
             {
-                if (player->GetQuestStatus(QUEST_PUNTING_SEASON) == QUEST_STATUS_NONE ||
-                    player->GetQuestStatus(QUEST_PUNTING_SEASON) == QUEST_STATUS_REWARDED)
+                QuestStatus const status = player->GetQuestStatus(QUEST_PUNTING_SEASON);
+                if (status == QUEST_STATUS_NONE || status == QUEST_STATUS_REWARDED)
                 {
                     player->ExitVehicle();
                     me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
-                    me->DespawnOrUnsummon( Milliseconds(100));
+                    me->DespawnOrUnsummon(Milliseconds(100));
+                    return;
                 }
 
                 if (me->GetDistance(player) >= 10.f)
                 {
                     me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
-                    me->DespawnOrUnsummon( Milliseconds(100));
+                    me->DespawnOrUnsummon(Milliseconds(100));
+                    return;
                 }
             }
-
-            //_events.Update(diff);
-            //
-            //while (uint32 eventId = _events.ExecuteEvent())
-            //{
-            //    switch (eventId)
-            //    {
-            //    case EVENT_STUNT_HORSE_1:
-            //        me->SetControlled(false, UNIT_STATE_ROOT);
-            //        MoveSmoothPath(me, StoutHorsePath, StoutHorsePathSize);
-            //        break;
-            //    default:
-            //        break;
-            //    }
-            //}
         }
     private:
+        // The commented-out EventMap pump and its EVENT_STUNT_HORSE_1 case were
+        // removed along with the now-unused `_events` member -- this AI schedules
+        // no events, so the pump could never have run anything.
+        bool _dismounted = false;
+        uint32 _checkTimer = 500;
         ObjectGuid _playerGUID;
-        EventMap _events;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_turtle_punterAI(creature);
     }
@@ -3291,7 +3456,7 @@ public:
             _events.ScheduleEvent(EVENT_PUNT_CHILD_CHECK, Milliseconds(100));
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             _events.Update(diff);
 
@@ -3349,7 +3514,7 @@ public:
         EventMap _events;
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_punt_child_of_tortollaAI(creature);
     }
@@ -3428,7 +3593,12 @@ enum QuestLycanthoth
     QUEST_LYCANTHOTH_A = 25273,
     SPELL_SUMMON_SPIRIT_OF_GOLDRINN = 74078, // 39627
     SPELL_SUMMON_SPIRIT_OF_LOGOSH = 74077, // 39622
-    SPELL_TELEPORT_1 = 151415,
+    // SPELL_TELEPORT_1 = 151415 removed: it was referenced exactly once -- here,
+    // in this enum -- and never cast. It is also the ONLY id in either Hyjal
+    // file with no `spell_dbc` row, i.e. a custom id (>150000) that was reserved
+    // and then never authored. Nothing to fix server-side; the constant was the
+    // only trace of it, so it goes rather than sitting here looking like a
+    // missing spell.
 
     NPC_BUNNY_TRIGGER = 3675197,
 };
@@ -3476,7 +3646,7 @@ public:
             }
         }
 
-        void PassengerBoarded(Unit* passenger, int8 /* seatId */, bool apply)
+        void PassengerBoarded(Unit* passenger, int8 /* seatId */, bool apply) override
         {
             if (apply && passenger->IsPlayer())
             {
@@ -3489,7 +3659,7 @@ public:
             }
         }
 
-        void MovementInform(uint32 type, uint32 point)
+        void MovementInform(uint32 type, uint32 point) override
         {
             if (type != ESCORT_MOTION_TYPE)
                 return;
@@ -3528,7 +3698,7 @@ public:
             //}
         }
 
-        void UpdateAI(uint32 const diff)
+        void UpdateAI(uint32 const diff) override
         {
             _events.Update(diff);
 
@@ -3563,9 +3733,430 @@ public:
         ObjectGuid _playerGUID;
         EventMap _events;
     };
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_spirit_of_logosh_goldrinn_vehicleAI(creature);
+    }
+};
+
+// ===========================================================================
+// CataTC content port (2026-07-20)
+// ---------------------------------------------------------------------------
+// Ported from "cata stuff/CataTC/src/server/scripts/Kalimdor/zone_mount_hyjal.cpp"
+// (an independent modern-TrinityCore implementation of the same Cata zone) into
+// this fork's 3.3.5 API. These are behaviours the Project-Neltharion source this
+// file was originally ported from simply did not implement.
+//
+// Why these and not the rest of CataTC's file -- checked against our own data
+// rather than ported blind:
+//   * npc_mh_faerie_dragon + npc_mh_twilight_inciter FIX A BROKEN QUEST. Quest
+//     25370 "Inciting the Elements" requires 4 kills of Twilight Inciter
+//     (39926) -- and 39926 has ZERO spawns in this DB. It is summon-only, and
+//     the summon chain (Feed Berries -> dragon walks off -> Spot Infiltrator)
+//     is exactly what was never ported, so the quest is uncompletable today.
+//   * npc_mh_raging_firestorm drives 22 already-spawned but inert Raging
+//     Firestorms (3639939), including the Grove Warden counter-attack.
+//   * at_mh_hyjal_barrow_dens completes quest 25325 "Through the Dream", which
+//     exists here with no objectives and so has no other completion path.
+//
+// DELIBERATELY NOT PORTED -- these would be dead code in THIS DB (verified, not
+// assumed):
+//   * spell_mh_flamebreaker (75206) -- nothing here casts it, and its trigger
+//     74723 summons creature 40080, which exists in neither raw nor +3,600,000
+//     form.
+//   * spell_mh_weakening (75192) -- nothing here casts it.
+//   * spell_mh_summon_emerald_flameweaver (76212) -- nothing here casts it, and
+//     we already script that NPC via npc_emerald_flameweaver_infiltrators.
+//   * spell_mh_fandral_creator_aura (76237) -- the spell exists, but Fandral's
+//     entry (raw 40180 / clone 3640180) does not exist in this DB at all.
+//   * npc_mh_aronus / spell_mh_ragnaros -- the "As Hyjal Burns" intro flight,
+//     excluded by request: this project deliberately replaced it with a
+//     portal-GO + SmartAI teleport (see the file header).
+//
+// Entry-id note: the summon chain carries RAW Cata creature ids in its spell
+// data (74514 summons 39926), and this DB has a fully-configured raw 39926
+// template (level 80, hostile faction 2232, one model) while no +3,600,000
+// clone exists -- and quest 25370 credits the raw id too. So Twilight Inciter
+// is bound at 39926, NOT offset. Faerie Dragon, Raging Firestorm, Grove Warden
+// and Laina follow the normal Hyjal +3,600,000 convention.
+// ===========================================================================
+
+enum IncitingTheElements
+{
+    // Texts -- creature_text groups supplied by the companion SQL (178_).
+    SAY_FEED_BERRIES                    = 0,
+    SAY_FIGHT_INFILTRATOR               = 1,
+    SAY_INFILTRATOR_SPOTTED             = 0,
+
+    EVENT_FIND_INFILTRATOR              = 1,
+    EVENT_INFILTRATOR_TALK_SPOTTED      = 2,
+    EVENT_INFILTRATOR_ATTACK            = 3,
+    EVENT_INFILTRATOR_SHADOWSTEP        = 4,
+    EVENT_INFILTRATOR_BACKSTAB          = 5,
+
+    POINT_SUMMON_INFILTRATOR            = 1,
+
+    SPELL_FEED_BERRIES                  = 74513,
+    SPELL_FORCECAST_SPOT_INFILTRATOR    = 74515,
+    SPELL_INFILTRATOR_STEALTH           = 30991,
+    SPELL_INFILTRATOR_SHADOWSTEP        = 80576,
+    SPELL_INFILTRATOR_BACKSTAB          = 37685,
+};
+
+class npc_mh_faerie_dragon : public CreatureScript
+{
+public:
+    npc_mh_faerie_dragon() : CreatureScript("npc_mh_faerie_dragon") { }
+
+    struct npc_mh_faerie_dragonAI : public ScriptedAI
+    {
+        npc_mh_faerie_dragonAI(Creature* creature) : ScriptedAI(creature) { }
+
+        void Reset() override
+        {
+            _eventInProgress = false;
+            _actorGUID.Clear();
+            _events.Reset();
+            me->GetMotionMaster()->MoveRandom(7.0f);
+        }
+
+        // 3.3.5 signature takes Unit*, where modern TC passes WorldObject*.
+        void SpellHit(Unit* caster, SpellInfo const* spellInfo) override
+        {
+            if (!caster || !spellInfo || spellInfo->Id != SPELL_FEED_BERRIES || _eventInProgress)
+                return;
+
+            _eventInProgress = true;
+            _actorGUID = caster->GetGUID();
+
+            me->GetMotionMaster()->Clear();
+            me->StopMoving();
+            AiTalk(me->AI(), SAY_FEED_BERRIES, _actorGUID);
+            _events.ScheduleEvent(EVENT_FIND_INFILTRATOR, Milliseconds(2500));
+        }
+
+        void UpdateAI(uint32 const diff) override
+        {
+            _events.Update(diff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 eventId = _events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                case EVENT_FIND_INFILTRATOR:
+                {
+                    // Wander up to 30y away and "find" the hidden infiltrator
+                    // there. MovePosition() resolves real ground height for the
+                    // destination, so this does not pick a point inside terrain.
+                    Position pos = me->GetPosition();
+                    me->MovePosition(pos, 30.0f, frand(0.0f, 2.0f * float(M_PI)));
+                    me->SetWalk(true);
+                    me->GetMotionMaster()->MovePoint(POINT_SUMMON_INFILTRATOR, pos);
+                    break;
+                }
+                default:
+                    break;
+                }
+            }
+        }
+
+        void MovementInform(uint32 type, uint32 id) override
+        {
+            if (type != POINT_MOTION_TYPE && type != EFFECT_MOTION_TYPE)
+                return;
+
+            if (id != POINT_SUMMON_INFILTRATOR)
+                return;
+
+            // The PLAYER must be the one to cast the summon, so the Twilight
+            // Inciter belongs to them and the kill credits their quest. 74515 is
+            // a FORCE_CAST whose trigger 74514 is the actual summon of 39926.
+            if (Player* player = ObjectAccessor::GetPlayer(*me, _actorGUID))
+            {
+                AiTalk(me->AI(), SAY_FIGHT_INFILTRATOR, _actorGUID);
+                DoCast(player, SPELL_FORCECAST_SPOT_INFILTRATOR);
+            }
+
+            me->DespawnOrUnsummon(Milliseconds(3000));
+        }
+
+    private:
+        EventMap _events;
+        ObjectGuid _actorGUID;
+        bool _eventInProgress = false;
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_mh_faerie_dragonAI(creature);
+    }
+};
+
+class npc_mh_twilight_inciter : public CreatureScript
+{
+public:
+    npc_mh_twilight_inciter() : CreatureScript("npc_mh_twilight_inciter") { }
+
+    struct npc_mh_twilight_inciterAI : public ScriptedAI
+    {
+        npc_mh_twilight_inciterAI(Creature* creature) : ScriptedAI(creature) { }
+
+        void Reset() override
+        {
+            _spotted = false;
+            _events.Reset();
+            me->SetReactState(REACT_PASSIVE);
+            me->SetUnitFlag(UNIT_FLAG_IMMUNE_TO_PC);
+        }
+
+        void JustEngagedWith(Unit* /*who*/) override
+        {
+            _events.ScheduleEvent(EVENT_INFILTRATOR_SHADOWSTEP, Milliseconds(25000));
+        }
+
+        void IsSummonedBy(WorldObject* summoner) override
+        {
+            DoCastSelf(SPELL_INFILTRATOR_STEALTH);
+
+            if (summoner)
+            {
+                _summonerGUID = summoner->GetGUID();
+
+                if (Unit* unit = summoner->ToUnit())
+                    me->SetFacingToObject(unit);
+            }
+
+            _events.ScheduleEvent(EVENT_INFILTRATOR_TALK_SPOTTED, Milliseconds(1500));
+            _events.ScheduleEvent(EVENT_INFILTRATOR_ATTACK, Milliseconds(5500));
+        }
+
+        void UpdateAI(uint32 const diff) override
+        {
+            // It sits stealthed and passive before the ambush, so the usual
+            // "no victim -> bail" guard must only apply once it has revealed.
+            if (_spotted && !UpdateVictim())
+                return;
+
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                case EVENT_INFILTRATOR_TALK_SPOTTED:
+                    AiTalk(me->AI(), SAY_INFILTRATOR_SPOTTED, _summonerGUID);
+                    break;
+                case EVENT_INFILTRATOR_ATTACK:
+                    _spotted = true;
+                    me->SetReactState(REACT_AGGRESSIVE);
+                    me->RemoveUnitFlag(UNIT_FLAG_IMMUNE_TO_PC);
+
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, _summonerGUID))
+                        AttackStart(target);
+                    break;
+                case EVENT_INFILTRATOR_SHADOWSTEP:
+                    DoCastVictim(SPELL_INFILTRATOR_SHADOWSTEP);
+                    _events.ScheduleEvent(EVENT_INFILTRATOR_BACKSTAB, Milliseconds(1000));
+                    _events.Repeat(Milliseconds(30000));
+                    break;
+                case EVENT_INFILTRATOR_BACKSTAB:
+                    DoCastVictim(SPELL_INFILTRATOR_BACKSTAB);
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            DoMeleeAttackIfReady();
+        }
+
+    private:
+        EventMap _events;
+        ObjectGuid _summonerGUID;
+        bool _spotted = false;
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_mh_twilight_inciterAI(creature);
+    }
+};
+
+enum RagingFirestormDefines
+{
+    NPC_MH_GROVE_WARDEN         = 3639941,
+    NPC_MH_LAINA_NIGHTSKY       = 3639927,
+
+    SPELL_MH_SUMMON_TREES       = 74565,
+    SPELL_GOUT_OF_FLAME         = 80549,
+
+    EVENT_GOUT_OF_FLAME         = 1,
+
+    POINT_GROVE_WARDEN_ADVANCE  = 10,
+    POINT_GROVE_WARDEN_RETURN   = 11,
+
+    QUEST_MH_THROUGH_THE_DREAM  = 25325,
+};
+
+Position const GroveWardenSummonPositions[6] =
+{
+    { 5041.51f, -1730.29f, 1323.29f, 1.6057f },
+    { 5031.45f, -1734.11f, 1322.15f, 1.6057f },
+    { 5033.78f, -1732.86f, 1322.35f, 1.6057f },
+    { 5034.65f, -1729.32f, 1322.30f, 1.6057f },
+    { 5042.12f, -1734.71f, 1323.35f, 1.6057f },
+    { 5033.48f, -1737.55f, 1322.51f, 1.6057f }
+};
+
+Position const GroveWardenWaypointPosition1 = { 5026.774f, -1657.001f, 1326.920f, 0.0f };
+Position const GroveWardenWaypointPosition2 = { 5028.423f, -1645.738f, 1327.722f, 0.0f };
+
+class npc_mh_raging_firestorm : public CreatureScript
+{
+public:
+    npc_mh_raging_firestorm() : CreatureScript("npc_mh_raging_firestorm") { }
+
+    struct npc_mh_raging_firestormAI : public ScriptedAI
+    {
+        npc_mh_raging_firestormAI(Creature* creature) : ScriptedAI(creature)
+        {
+            // Only the firestorms burning near the grove get a Grove Warden
+            // defender; the rest of the 22 spawns are ordinary mobs.
+            _allowWardenCombat = me->GetExactDist2d(GroveWardenWaypointPosition1) < 140.0f;
+        }
+
+        void AttackStart(Unit* victim) override
+        {
+            // A Grove Warden only fights once it has actually walked into
+            // contact -- without this the firestorm yanks it across the grove
+            // the instant it is summoned.
+            if (victim && victim->IsCreature() && victim->GetEntry() == NPC_MH_GROVE_WARDEN &&
+                victim->GetExactDist2d(me) > me->GetCombatReach())
+                return;
+
+            ScriptedAI::AttackStart(victim);
+        }
+
+        void Reset() override
+        {
+            _events.Reset();
+
+            if (_allowWardenCombat)
+                SummonGroveWarden();
+        }
+
+        void JustEngagedWith(Unit* /*who*/) override
+        {
+            _events.ScheduleEvent(EVENT_GOUT_OF_FLAME, Milliseconds(8000), Milliseconds(10000));
+        }
+
+        void UpdateAI(uint32 const diff) override
+        {
+            UpdateVictim();
+
+            _events.Update(diff);
+
+            while (uint32 eventId = _events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                case EVENT_GOUT_OF_FLAME:
+                    DoCastVictim(SPELL_GOUT_OF_FLAME);
+                    _events.Repeat(Milliseconds(21000));
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            DoMeleeAttackIfReady();
+        }
+
+    private:
+        void SummonGroveWarden()
+        {
+            Creature* warden = DoSummon(NPC_MH_GROVE_WARDEN, GroveWardenSummonPositions[urand(0, 5)], 20000);
+            if (!warden)
+                return;
+
+            warden->DespawnOrUnsummon(Milliseconds(180000));
+            warden->SetDisplayFromModel(0);
+
+            if (Creature* laina = warden->FindNearestCreature(NPC_MH_LAINA_NIGHTSKY, 20.0f))
+                warden->CastSpell(laina, SPELL_MH_SUMMON_TREES, true);
+
+            // CataTC chains this with MoveSplineInit + a lambda on Creature's
+            // m_Events keyed off the spline's own travel time. 3.3.5 has no such
+            // deferred-event API here, so the identical shape is expressed as
+            // two MovePoint hops driven by MovementInform (npc_mh_grove_warden
+            // below): out to the grove edge, then back to the spawn point.
+            Position const& waypointPos =
+                (me->GetExactDist2d(GroveWardenWaypointPosition1) < me->GetExactDist2d(GroveWardenWaypointPosition2))
+                ? GroveWardenWaypointPosition2 : GroveWardenWaypointPosition1;
+
+            warden->SetHomePosition(warden->GetPositionX(), warden->GetPositionY(), warden->GetPositionZ(), warden->GetOrientation());
+            warden->GetMotionMaster()->MovePoint(POINT_GROVE_WARDEN_ADVANCE,
+                waypointPos.GetPositionX(), waypointPos.GetPositionY(), waypointPos.GetPositionZ());
+        }
+
+        EventMap _events;
+        bool _allowWardenCombat = false;
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_mh_raging_firestormAI(creature);
+    }
+};
+
+// Companion to the firestorm above: walks home again after reaching the grove
+// edge. Its own AI rather than a callback because the summoning firestorm may
+// already be dead by the time the warden arrives.
+class npc_mh_grove_warden : public CreatureScript
+{
+public:
+    npc_mh_grove_warden() : CreatureScript("npc_mh_grove_warden") { }
+
+    struct npc_mh_grove_wardenAI : public ScriptedAI
+    {
+        npc_mh_grove_wardenAI(Creature* creature) : ScriptedAI(creature) { }
+
+        void MovementInform(uint32 type, uint32 id) override
+        {
+            if (type != POINT_MOTION_TYPE || id != POINT_GROVE_WARDEN_ADVANCE)
+                return;
+
+            Position const home = me->GetHomePosition();
+            me->GetMotionMaster()->MovePoint(POINT_GROVE_WARDEN_RETURN,
+                home.GetPositionX(), home.GetPositionY(), home.GetPositionZ());
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_mh_grove_wardenAI(creature);
+    }
+};
+
+class at_mh_hyjal_barrow_dens : public AreaTriggerScript
+{
+public:
+    at_mh_hyjal_barrow_dens() : AreaTriggerScript("at_mh_hyjal_barrow_dens") { }
+
+    // NOTE: 3.3.5 passes `AreaTrigger const*` here; modern TC (and CataTC)
+    // passes `AreaTriggerEntry const*`. Getting this wrong compiles as a NEW
+    // overload that silently never fires -- `override` is what catches it.
+    bool OnTrigger(Player* player, AreaTrigger const* /*trigger*/) override
+    {
+        // Quest 25325 "Through the Dream" exists here with no objectives at all,
+        // so walking into the Barrow Dens is its only completion path.
+        if (player && player->GetQuestStatus(QUEST_MH_THROUGH_THE_DREAM) == QUEST_STATUS_INCOMPLETE)
+            player->CompleteQuest(QUEST_MH_THROUGH_THE_DREAM);
+
+        return true;
     }
 };
 
@@ -3606,4 +4197,11 @@ void AddSC_dc_mount_hyjal_ported()
     new spell_tortolla_save_turtle();
     new spell_drop_turtle();
     new npc_spirit_of_logosh_goldrinn_vehicle();
+
+    // CataTC content port
+    new npc_mh_faerie_dragon();
+    new npc_mh_twilight_inciter();
+    new npc_mh_raging_firestorm();
+    new npc_mh_grove_warden();
+    new at_mh_hyjal_barrow_dens();
 }

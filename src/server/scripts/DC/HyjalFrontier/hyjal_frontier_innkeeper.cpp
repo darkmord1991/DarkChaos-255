@@ -17,16 +17,27 @@ class npc_hyjal_innkeeper : public CreatureScript
 public:
     npc_hyjal_innkeeper() : CreatureScript("npc_hyjal_innkeeper") { }
 
-    bool OnGossipHello(Player* player, Creature* creature) override
+    bool OnGossipHello(Player* /*player*/, Creature* /*creature*/) override
     {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        // Default innkeeper menu (SetHomebind / bind point) is handled by the
-        // NPCFLAG_INNKEEPER bit; we only override to optionally add
-        // tier-progression flavor text here.
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
+        // MUST return false.
+        //
+        // The old body built its own menu and returned true. That is what broke
+        // the innkeeper: WorldSession::HandleGossipHelloOpcode only calls
+        // Player::PrepareGossipMenu() + SendPreparedGossip() when the script
+        // returns FALSE, and PrepareGossipMenu() is what turns the npcflag bits
+        // into menu entries. Returning true therefore suppressed the
+        // NPCFLAG_INNKEEPER "Make this inn your home" option entirely -- players
+        // could not set their hearthstone at Innkeeper Cerelina (830023) at all.
+        // The comment that used to sit here claimed the npcflag handled itself;
+        // it does not, and nothing in this file ever added the bind option back.
+        //
+        // Returning false hands the whole menu (quests AND the innkeeper bind,
+        // vendor, etc.) back to the core, which is exactly the default flow this
+        // stub always meant to inherit. The hook is kept so tier-progression
+        // flavour text can be added later -- but anything added here must either
+        // keep returning false, or call PrepareGossipMenu() itself before
+        // sending, or it will re-break the bind option the same way.
+        return false;
     }
 };
 

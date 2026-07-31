@@ -251,7 +251,7 @@ function MapPOIMinimap:Refresh()
                 local poi = pois[i]
                 -- WorldToMapPosition rejects points that are not on the map area
                 -- currently under the player, so this doubles as the map filter.
-                local normX, normY = mapUtils.WorldToMapPosition(uiMapId, poi.map, poi.x, poi.y)
+                local normX, normY = mapUtils.WorldToMapPosition(uiMapId, poi.map, poi.x, poi.y, true)
                 if normX and normY then
                     local pixelX, pixelY, distanceYards, isClamped =
                         mapUtils.ProjectToMinimap(uiMapId, playerX, playerY, normX, normY, radiusPx)

@@ -409,7 +409,7 @@ local function GetVisibleMarkers(currentMapId)
         if type(teleports) == "table" then
             for i = 1, #teleports do
                 local teleport = teleports[i]
-                local normX, normY = mapUtils.WorldToMapPosition(currentMapId, teleport.map, teleport.x, teleport.y)
+                local normX, normY = mapUtils.WorldToMapPosition(currentMapId, teleport.map, teleport.x, teleport.y, true)
                 if normX and normY then
                     markers[#markers + 1] = {
                         category = "teleport",
@@ -449,7 +449,7 @@ local function GetVisibleMarkers(currentMapId)
             if typeInfo and type(pois) == "table" and poiData:IsTypeEnabled(poiType) then
                 for i = 1, #pois do
                     local poi = pois[i]
-                    local normX, normY = mapUtils.WorldToMapPosition(currentMapId, poi.map, poi.x, poi.y)
+                    local normX, normY = mapUtils.WorldToMapPosition(currentMapId, poi.map, poi.x, poi.y, true)
                     if normX and normY then
                         markers[#markers + 1] = {
                             category = "poi",

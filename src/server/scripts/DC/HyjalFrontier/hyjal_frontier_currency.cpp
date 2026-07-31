@@ -24,18 +24,23 @@ class npc_hyjal_emberwood_vendor : public CreatureScript
 public:
     npc_hyjal_emberwood_vendor() : CreatureScript("npc_hyjal_emberwood_vendor") { }
 
-    bool OnGossipHello(Player* player, Creature* creature) override
+    bool OnGossipHello(Player* /*player*/, Creature* /*creature*/) override
     {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        // Present the stock list via standard vendor flow.
-        // TODO: filter by current "Tree Health" tier.
-        if (creature->IsVendor())
-            player->GetSession()->SendListInventory(creature->GetGUID());
-
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
+        // Return false and let the core drive it.
+        //
+        // The old body force-opened the shop with SendListInventory() AND sent a
+        // gossip window in the same breath -- two overlapping frames -- then
+        // returned true, which suppressed Player::PrepareGossipMenu() and with it
+        // the normal "I'd like to browse your goods" entry. This NPC is
+        // npcflag 129 (GOSSIP|VENDOR), so the core produces exactly the right
+        // menu (quests + browse goods) on its own.
+        //
+        // TODO (unchanged, and NOT what the old code did): gate the stock list by
+        // the zone-wide "Tree Health" tier. That belongs in `npc_vendor` +
+        // `conditions` (CONDITION_SOURCE_TYPE_NPC_VENDOR), not in this hook --
+        // filtering here cannot affect what the core sends and would need the
+        // whole vendor flow reimplemented to work.
+        return false;
     }
 };
 

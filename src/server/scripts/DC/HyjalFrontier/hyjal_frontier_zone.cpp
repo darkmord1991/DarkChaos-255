@@ -3,15 +3,22 @@
  *
  * Hyjal Frontier (map 750) - zone-wide hooks.
  *
- * Responsibilities (stubbed):
- *   - OnMapChange: welcome broadcast + safe-respawn clamping for invalid
- *     coordinates.
- *   - OnUpdateZone: zone entry announce / ambience.
- *   - OnPlayerEnterMap: grant the "Emberwood Pilgrim" aura (custom buff for
- *     XP curve bonus while inside the zone).
+ * STATUS: still a deliberate no-op. Audited 2026-07-20 -- the hooks themselves
+ * are correct and harmless; what is missing is CONTENT, not code, and each item
+ * is blocked on a specific asset that does not exist yet:
  *
- * All logic is intentionally TODO'd so this file compiles as a no-op until
- * the zone is actually balanced.
+ *   - "Emberwood Pilgrim" aura (XP-curve bonus while in the zone):
+ *     BLOCKED. There is no Emberwood spell in `spell_dbc` at all (checked by
+ *     name). Needs a custom spell authored + a client-side Spell.dbc row before
+ *     anything can be cast here -- see the CSV-DBC pipeline.
+ *   - Welcome broadcast / zone-entry announce + ambience:
+ *     BLOCKED on the text itself; no strings written. Wire through the DC
+ *     broadcast system once they exist.
+ *   - Safe-respawn clamping for invalid coordinates:
+ *     Not started. Only worth doing if bad spawn coords actually show up.
+ *
+ * Do NOT "implement" these by inventing a spell id or announce text -- the ids
+ * have to exist in the DB/DBC first or the cast silently no-ops.
  */
 
 #include "ScriptMgr.h"

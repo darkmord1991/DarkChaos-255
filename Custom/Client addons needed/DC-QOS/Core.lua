@@ -721,7 +721,56 @@ function addon:GetMapUtils()
     -- gameMapId (optional) rejects points that only coincidentally share these
     -- coordinates on a different continent. Returns normX, normY, or nil when the
     -- area has no bounds data / the point falls outside it.
-    function mapUtils.WorldToMapPosition(uiMapId, gameMapId, worldX, worldY)
+    --
+    -- WorldMapArea rectangles are loose bounding boxes, so several zones on the
+    -- same map routinely overlap a point (on map 750 a single spot can sit
+    -- inside Hyjal, Winterspring, Felwood, Darkshore and Ashenvale at once).
+    -- A point is assigned to the SMALLEST zone rectangle that contains it, which
+    -- is the one whose zone it really is: a zone's own box hugs it, while the
+    -- boxes it bleeds into are the larger neighbours. Rows with areaId 0 are
+    -- continent-wide and keep every point on the map.
+    local exclusiveOwnerCache = {}
+
+    local function ResolveOwningArea(gameMapId, worldX, worldY)
+        gameMapId = tonumber(gameMapId)
+        if not gameMapId then
+            return nil
+        end
+
+        -- POI/teleport positions are fixed world data, so a resolved owner
+        -- stays valid for the session; memoize per point to keep map redraws
+        -- off the full bounds scan.
+        local key = gameMapId .. ":" .. string.format("%.0f:%.0f", worldX, worldY)
+        local cached = exclusiveOwnerCache[key]
+        if cached ~= nil then
+            return (cached ~= false) and cached or nil
+        end
+
+        local bestId, bestArea
+        for id, entry in pairs(addon.MapAreaBounds or {}) do
+            local areaMapId, left, right, top, bottom, areaId =
+                entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]
+            if areaMapId == gameMapId and areaId and areaId ~= 0
+                and left and right and top and bottom
+                and left ~= right and top ~= bottom then
+                local normX = (left - worldY) / (left - right)
+                local normY = (top - worldX) / (top - bottom)
+                if normX >= 0 and normX <= 1 and normY >= 0 and normY <= 1 then
+                    local rectArea = math.abs(left - right) * math.abs(top - bottom)
+                    if not bestArea or rectArea < bestArea then
+                        bestId, bestArea = id, rectArea
+                    end
+                end
+            end
+        end
+
+        exclusiveOwnerCache[key] = bestId or false
+        return bestId
+    end
+
+    -- exclusive (optional): when true, a point that lies inside several zone
+    -- rectangles is drawn only on the one it belongs to.
+    function mapUtils.WorldToMapPosition(uiMapId, gameMapId, worldX, worldY, exclusive)
         uiMapId = tonumber(uiMapId)
         worldX = tonumber(worldX)
         worldY = tonumber(worldY)
@@ -731,12 +780,17 @@ function addon:GetMapUtils()
 
         local boundsTable = addon.MapAreaBounds
         -- MapAreaBounds is keyed by raw WorldMapArea.ID; uiMapId is ID + 1.
-        local entry = boundsTable and (boundsTable[uiMapId - 1] or boundsTable[uiMapId])
+        local entryId = uiMapId - 1
+        local entry = boundsTable and boundsTable[entryId]
+        if not entry and boundsTable then
+            entryId, entry = uiMapId, boundsTable[uiMapId]
+        end
         if not entry then
             return nil
         end
 
-        local areaMapId, left, right, top, bottom = entry[1], entry[2], entry[3], entry[4], entry[5]
+        local areaMapId, left, right, top, bottom, areaId =
+            entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]
         if gameMapId ~= nil and areaMapId ~= nil and areaMapId >= 0
             and tonumber(gameMapId) ~= tonumber(areaMapId) then
             return nil
@@ -751,6 +805,14 @@ function addon:GetMapUtils()
         local normY = (top - worldX) / (top - bottom)
         if normX < 0 or normX > 1 or normY < 0 or normY > 1 then
             return nil
+        end
+
+        -- Zone rows only: a continent row (areaId 0) shows the whole map.
+        if exclusive and areaId and areaId ~= 0 then
+            local owner = ResolveOwningArea(areaMapId, worldX, worldY)
+            if owner and owner ~= entryId then
+                return nil
+            end
         end
 
         return normX, normY

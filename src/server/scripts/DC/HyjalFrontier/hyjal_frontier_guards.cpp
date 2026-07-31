@@ -18,12 +18,11 @@
 
 namespace
 {
-    enum HyjalGuardGossip
-    {
-        GOSSIP_FLIGHTMASTER   = 1,
-        GOSSIP_INNKEEPER      = 2,
-        GOSSIP_QUARTERMASTER  = 3,
-    };
+    // NOTE: the GOSSIP_FLIGHTMASTER / GOSSIP_INNKEEPER / GOSSIP_QUARTERMASTER
+    // action ids that used to live here were never referenced by anything --
+    // the "directions" gossip they were meant for was never written. Removed
+    // rather than left as dangling constants; re-add them WITH the menu when
+    // the directions feature is actually implemented.
 }
 
 class npc_hyjal_guard_alliance : public CreatureScript
@@ -42,14 +41,16 @@ public:
         return new npc_hyjal_guard_allianceAI(creature);
     }
 
-    bool OnGossipHello(Player* player, Creature* creature) override
+    // Return false: let the core build the menu (quests + any npcflag options).
+    // Overriding it to send a bare menu and return true suppressed
+    // Player::PrepareGossipMenu() -- harmless while these guards carry npcflag 0,
+    // but the same defect that broke the innkeeper and flightmaster stubs, so it
+    // is not left lying around. TODO (unchanged): add directional gossip items
+    // once the Hyjal Frontier service-NPC positions are settled -- and when doing
+    // so, keep returning false or call PrepareGossipMenu() explicitly first.
+    bool OnGossipHello(Player* /*player*/, Creature* /*creature*/) override
     {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        // TODO: add directional gossip items once NPC positions are known.
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
+        return false;
     }
 };
 
@@ -68,13 +69,10 @@ public:
         return new npc_hyjal_guard_hordeAI(creature);
     }
 
-    bool OnGossipHello(Player* player, Creature* creature) override
+    // See the Alliance guard above -- same reason for returning false.
+    bool OnGossipHello(Player* /*player*/, Creature* /*creature*/) override
     {
-        if (creature->IsQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
+        return false;
     }
 };
 

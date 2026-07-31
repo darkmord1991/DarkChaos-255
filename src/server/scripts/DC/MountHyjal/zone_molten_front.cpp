@@ -252,6 +252,20 @@ public:
             }
         }
 
+        // Shared teardown for the three "escort is over" cases -- they were three
+        // copy-pasted blocks that had already drifted apart (one of them ordered
+        // the aura removal differently), so they are folded into one place.
+        void EndEscort(Player* player)
+        {
+            _summons.DespawnAll();
+            player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
+
+            if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
+                portal->DespawnOrUnsummon();
+
+            me->DespawnOrUnsummon();
+        }
+
         void UpdateAI(uint32 diff) override
         {
             DoMeleeAttackIfReady();
@@ -262,35 +276,28 @@ public:
 
                 if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
                 {
+                    // Each of the three teardown branches RETURNS. They used to
+                    // fall through into one another and, worse, into the
+                    // re-follow branch at the bottom -- so an escort that had
+                    // just despawned itself still re-cast Sanctuary and issued a
+                    // fresh MoveFollow on the way out.
                     if (!player->IsAlive())
                     {
-                        _summons.DespawnAll();
-                        me->DespawnOrUnsummon();
-                        player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
-
-                        if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
-                            portal->DespawnOrUnsummon();
+                        EndEscort(player);
+                        return;
                     }
 
-                    if (player->GetQuestStatus(QUEST_WISP_AWAY) == QUEST_STATUS_NONE ||
-                        player->GetQuestStatus(QUEST_WISP_AWAY) == QUEST_STATUS_REWARDED)
+                    QuestStatus const status = player->GetQuestStatus(QUEST_WISP_AWAY);
+                    if (status == QUEST_STATUS_NONE || status == QUEST_STATUS_REWARDED)
                     {
-                        _summons.DespawnAll();
-                        me->DespawnOrUnsummon();
-                        player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
-
-                        if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
-                            portal->DespawnOrUnsummon();
+                        EndEscort(player);
+                        return;
                     }
 
                     if (me->GetDistance(player) > 80.f)
                     {
-                        _summons.DespawnAll();
-                        player->RemoveAura(SPELL_PORTAL_WISP_GUARDIAN_AURA);
-                        me->DespawnOrUnsummon();
-
-                        if (Creature* portal = ObjectAccessor::GetCreature(*me, _portalGUID))
-                            portal->DespawnOrUnsummon();
+                        EndEscort(player);
+                        return;
                     }
 
                     if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE && !_inAction)
