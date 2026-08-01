@@ -41,11 +41,15 @@ MapPOIData.TYPES = {
         order = 1,
         label = "Flight Master",
         worldIcon = "Interface\\Minimap\\Tracking\\FlightMaster",
-        -- The engine already draws a green taxi boot on the minimap for every
-        -- flight master in range, on custom maps too, so a second pin there is
-        -- just noise. The world-map layer still earns its keep: it also shows
-        -- the flight masters the player has not discovered yet.
-        minimap = false,
+        minimapIcon = "Interface\\Minimap\\Tracking\\FlightMaster",
+        -- The client draws its own marker over an UNDISCOVERED flight point, so
+        -- a pin there would just stack on top of it. `requiresDiscovery` holds
+        -- this type back until the point is known and that marker is gone -- at
+        -- which point the client draws nothing and the pin is the only hint that
+        -- a flight master is nearby. Discovery state comes from the server
+        -- (MPOI SMSG_KNOWN_TAXI); 3.3.5 exposes no taxi mask to Lua.
+        minimap = true,
+        requiresDiscovery = true,
         borderColor = { 0.24, 0.62, 0.28, 0.62 },
         iconColor = { 1.0, 1.0, 1.0, 1.0 },
     },
@@ -126,7 +130,7 @@ function MapPOIData:GetTypeKeys()
 end
 
 local state = {
-    list = {},             -- array of { type, name, map, x, y, z }
+    list = {},             -- array of { type, name, map, x, y, z, taxiNode }
     byType = {},           -- type -> array of POIs (same tables as list)
     requested = false,     -- we have kicked off a sync
     complete = false,      -- the full list has been received
@@ -135,6 +139,8 @@ local state = {
     handlerRegistered = false,
     pageLimit = 100,
     version = 0,           -- server content version of the cached list
+    knownTaxi = nil,       -- set of discovered taxi node ids, nil until answered
+    knownTaxiRequested = false,
 }
 
 local function GetDC()
@@ -284,6 +290,8 @@ local function OnPOIResponse(data)
                 x = x,
                 y = y,
                 z = tonumber(raw.z),
+                -- Flight POIs only; absent when the server matched no taxi node.
+                taxiNode = tonumber(raw.k),
             }
             state.list[#state.list + 1] = poi
 
@@ -318,6 +326,80 @@ local function OnPOIResponse(data)
     end
 end
 
+-- ============================================================
+-- Flight-point discovery
+-- ============================================================
+-- 3.3.5 gives Lua no way to read the player's taxi mask outside an open taxi
+-- map, so the server answers with the node ids this character has discovered
+-- (MPOI CMSG_REQUEST_KNOWN_TAXI -> SMSG_KNOWN_TAXI). Renderers use it to hold
+-- the flight pin back while the client's own undiscovered-flight-point marker
+-- is on screen.
+--
+-- Until the first answer arrives `knownTaxi` is nil, which reads as "not
+-- discovered" -- the conservative side, since drawing nothing is better than
+-- doubling up on the client's marker.
+local function OnKnownTaxiResponse(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local nodes = data.nodes
+    local known = {}
+    if type(nodes) == "table" then
+        for i = 1, #nodes do
+            local node = tonumber(nodes[i])
+            if node then
+                known[node] = true
+            end
+        end
+    end
+
+    state.knownTaxi = known
+    RefreshRenderers()
+end
+
+-- Re-asks the server for the discovered set. Cheap (a few hundred ids at most),
+-- so it is re-run on the events that can follow a discovery rather than being
+-- pushed, which would need a taxi hook the core does not expose.
+function MapPOIData:RefreshKnownTaxi()
+    self:EnsureHandler()
+
+    local DC = GetDC()
+    if not DC or type(DC.Request) ~= "function" then
+        return
+    end
+
+    state.knownTaxiRequested = true
+    DC:Request("MPOI", 0x02, {})
+end
+
+function MapPOIData:IsTaxiNodeKnown(node)
+    node = tonumber(node)
+    if not node then
+        return false
+    end
+    return state.knownTaxi ~= nil and state.knownTaxi[node] == true
+end
+
+-- Whether a POI may be drawn on the minimap right now. Types that opt into
+-- `requiresDiscovery` (flight masters) are held back until their flight point
+-- is known; a POI the server could not match to a taxi node has no discovery
+-- state to wait on, so it is drawn.
+function MapPOIData:IsMinimapVisibleNow(poi)
+    if type(poi) ~= "table" then
+        return false
+    end
+
+    local info = self:GetTypeInfo(poi.type)
+    if not info or info.requiresDiscovery ~= true then
+        return true
+    end
+    if not poi.taxiNode then
+        return true
+    end
+    return self:IsTaxiNodeKnown(poi.taxiNode)
+end
+
 function MapPOIData:EnsureHandler()
     if state.handlerRegistered then
         return
@@ -329,6 +411,7 @@ function MapPOIData:EnsureHandler()
     end
 
     DC:RegisterHandler("MPOI", 0x10, OnPOIResponse)
+    DC:RegisterHandler("MPOI", 0x11, OnKnownTaxiResponse)
     state.handlerRegistered = true
 end
 
@@ -361,6 +444,10 @@ function MapPOIData:EnsureRequested()
 
     state.requested = true
     self:RequestPage(0, true)
+
+    if not state.knownTaxiRequested then
+        self:RefreshKnownTaxi()
+    end
 end
 
 function MapPOIData:GetPOIs()

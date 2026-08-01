@@ -1,0 +1,156 @@
+-- ---------------------------------------------------------------------------
+-- 179  Map 750 quest audit -- unfinishable quests and stranded quest offers
+-- ---------------------------------------------------------------------------
+-- Full audit of every quest whose questgiver is spawned on map 750, checking
+-- four things: that each quest can be turned in, that its chain links resolve,
+-- that its objectives point at things that exist and can actually be reached,
+-- and that its items/rewards exist.
+--
+-- CLEAN, no action needed (verified, so nobody re-checks them):
+--   * Chain integrity is intact -- every PrevQuestID / NextQuestID /
+--     RewardNextQuest referenced by a map-750 quest resolves to a real
+--     quest_template row. Zero dangling links.
+--   * Every RequiredItemId and every RewardItem / RewardChoiceItemID on a
+--     map-750 quest exists in item_template. Zero missing items.
+--
+-- Two real problems found. Part A fixes the one with a clear right answer;
+-- Part B is inventory-only because fixing it needs a design decision.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- A) 28 quests offered on map 750 that can NEVER be turned in
+-- ---------------------------------------------------------------------------
+-- These are +100,000 quest clones attached to the +3,700,000 creature clone
+-- band (the Felwood/Moonglade/Winterspring NPCs cloned into the Hyjal
+-- Frontier -- Golhine the Hooded 3709465, Loganaar 3712042, Rabine Saturna
+-- 3711801, Donova Snowden 3709298, Haleh 3710929, Tajarri 3711799, ...).
+--
+-- The clone pass copied each NPC's `creature_queststarter` rows but NOT the
+-- NPCs that END those quests. Verified exhaustively:
+--   * all 28 have a starter on map 750 and NO questender row anywhere;
+--   * none of them carry QUEST_FLAGS_AUTOCOMPLETE (0x10000) or
+--     QUEST_FLAGS_TRACKING (0x400), so they genuinely require a turn-in NPC;
+--   * every one of the 23 distinct expected ender clones (raw id + 3,700,000)
+--     is ABSENT from creature_template -- checked id by id, not inferred;
+--   * the original raw ender NPCs all exist and are spawned, but on maps
+--     0 / 1 / 530 / 571 -- never on 750.
+-- So a player accepts them and is stranded permanently.
+--
+-- WHY REMOVING THE OFFER IS THE FIX, rather than adding enders:
+-- look at who ends these quests -- King Magni Bronzebeard, Thrall, Anachronos,
+-- Crusader Bridenbrad, Arch Druid Fandral Staghelm, Duke Nicholas Zverenhoff.
+-- These are Ironforge / Orgrimmar / Caverns of Time / Icecrown / Moonglade
+-- quest chains. They are not Hyjal Frontier content and were never designed to
+-- be; they came along as collateral when the NPCs were bulk-cloned into the
+-- zone. Wiring cross-continent turn-ins would make them *completable* but would
+-- also create genuinely nonsensical flows (pick up a quest in Hyjal, fly to
+-- Ironforge, fly back), and would drag whole vanilla chains into a level-80+
+-- zone. Dropping the offer restores the NPCs to what the clone pass presumably
+-- wanted them for -- presence, vendors, trainers, flavour.
+--
+-- ALTERNATIVE, if you DO want them as real zone content: instead of the DELETE
+-- below, add the matching turn-ins. The mapping is exact and already known --
+--   INSERT INTO `creature_questender` (`id`,`quest`) VALUES
+--   (11802,100030),(11802,100272),(3663,100967),(3663,100981),(13220,101124),
+--   (9299,103912),(9117,104005),(10267,104810),(7916,104901),(10267,104907),
+--   (5901,105158),(10976,105162),(10304,105245),(3516,105253),(10926,105601),
+--   (10840,106028),(10839,106029),(11039,106030),(12837,106482),(9996,106605),
+--   (2784,108484),(4949,108485),(15192,108741),(9619,109063),(22832,110955),
+--   (22832,110978),(30562,113075);
+-- -- (that is 27 of the 28; 105084 "Falling to Corruption" has no ender even in
+-- -- its raw form, so it would need one authored either way.)
+--
+-- This DELETE is narrowly scoped: only +100,000 quests, only on NPCs actually
+-- spawned on map 750, and only where no turn-in exists anywhere. It touches no
+-- quest_template row, so nothing is destroyed -- re-adding the starter rows
+-- restores the previous state exactly.
+-- ---------------------------------------------------------------------------
+DELETE FROM `creature_queststarter`
+WHERE `quest` IN (100030,100272,100967,100981,101124,103912,104005,104810,104901,
+                  104907,105084,105158,105162,105245,105253,105601,106028,106029,
+                  106030,106482,106605,108484,108485,108741,109063,110955,110978,113075)
+  AND `id` IN (SELECT DISTINCT `id` FROM `creature` WHERE `map` = 750);
+
+-- ---------------------------------------------------------------------------
+-- B) "Lightning in a Bottle" -- turn-in restored
+-- ---------------------------------------------------------------------------
+-- Quests 25353 (Alliance) / 25355 (Horde) are real Hyjal storyline content and
+-- are the only two of the broken Cata-band quests that are fully fixable right
+-- now: their objectives are already satisfiable, only the turn-in row was
+-- missing.
+--
+-- cata_world ends them at Spirit of Lo'Gosh (39622) / Spirit of Goldrinn
+-- (39627). Both clone templates exist here (3639622 / 3639627), both carry our
+-- `npc_spirit_of_logosh_goldrinn_vehicle` ScriptName, and both summon spells
+-- (74077 / 74078) are present in spell_dbc -- so the spirits are reachable even
+-- though they have no static spawns, which is correct for summoned NPCs.
+-- ---------------------------------------------------------------------------
+DELETE FROM `creature_questender` WHERE `quest` IN (25353,25355);
+
+INSERT INTO `creature_questender` (`id`,`quest`) VALUES
+(3639622,25353),
+(3639627,25353),
+(3639622,25355);
+
+-- ---------------------------------------------------------------------------
+-- C) NOT FIXED HERE -- inventory of what still blocks map-750 quests
+-- ---------------------------------------------------------------------------
+-- Recorded so this audit does not have to be repeated. Each needs content
+-- authored, not a link corrected, which is why none of it is guessed at below.
+--
+-- C1. Cata-band quests with no turn-in because the ender clone was never
+--     created (template absent entirely):
+--       25411 "A New Master"            -> needs 3640093
+--       25663 "An Offering for Aviana"  -> needs 3641068
+--       27398 "The Battle Is Won..."    -> needs 3645226
+--       27399 "The Battle Is Won..."    -> needs 3645244
+--       28732 "This Can Only Mean..."   -> needs 3649476
+--       29202 "The Fate of Runetotem"   -> needs 3652986
+--       29284 "Aid of the Ancients"     -> needs 3652488
+--     and 29326 "The Nordrassil Summit" -> 3654312 Aggra: template EXISTS but
+--     has zero spawns anywhere, so it only needs a spawn, not a clone.
+--     (25297, 25300 and 29437 have no ender in cata_world either -- they are
+--     script/event-completed upstream and need their event porting, not a row.)
+--
+-- C2. Quests whose objective is a "credit marker" creature that NOTHING grants.
+--     These markers are never spawned by design -- they are awarded via
+--     KilledMonsterCredit -- so "0 spawns" is expected and is NOT the bug. The
+--     bug is that no script, SmartAI action 33, or spell effect 134 anywhere
+--     awards them. Verified per id across smart_scripts, spell_dbc and the DC
+--     C++ tree:
+--       39806 (25330 Waste of Flesh), 39824 (25299 Mental Training),
+--       40056 (25404 If You're Not Against Us...), 40099 (25411 A New Master),
+--       40284 (25462 / 29161 The Bears Up There), 40334 (25464 Baron Geddon),
+--       40440 (25499 Agility Training), 41079 (25663 Offering for Aviana),
+--       41169/41170 (25731 A Bird in Hand), 41218 (25764 Egg Hunt),
+--       41310 (25807 An Ancient Reborn), 41510 (25881 Lost Wardens)
+--     NOTE the contrast: the credits our C++ DOES award are the +3,600,000
+--     CLONE ids (3640618, 3640461, 3640462, 3652177, 3639673) and their quests
+--     were already remapped to match in an earlier pass. The list above is the
+--     remainder that still reference RAW Cata credit ids with nothing on the
+--     granting side. Fixing one means either adding the credit call to the
+--     relevant script/SmartAI, or repointing the objective -- both need to know
+--     which event is supposed to award it, so neither is guessed at here.
+--
+-- C3. 25272 / 25273 "Lycanthoth the Corruptor" are doubly blocked: no turn-in
+--     row AND their objective creature Lycanthoth (39446) has no spawns and no
+--     clone template. Needs the NPC itself before the quest means anything.
+--
+-- C4. The 291xx Molten Front dailies (Echoes of Nemesis, Rage Against the
+--     Flames, Call the Flock, Wings Aflame, Nature's Blessing, The Call of the
+--     Pack, Leyara, ...) reference real creatures -- Nemesis 52383, Millagazor
+--     52649, Pyrachnis 52749, Lylagar 52766, Leyara 53014, Alysra 54314,
+--     Charred Invader 52816 -- that have zero spawns anywhere. This is the
+--     already-known map-861 blocker (the deep Molten Front NPC layer was never
+--     spawned), not a new finding, and it is out of scope for map 750.
+--
+-- ---------------------------------------------------------------------------
+-- Verification after applying:
+--   -- should drop from 43 to 14 (the C1/C3 Cata-band remainder):
+--   SELECT COUNT(*) FROM creature_queststarter cq
+--   JOIN quest_template q ON q.ID = cq.quest
+--   WHERE cq.id IN (SELECT DISTINCT id FROM creature WHERE map=750)
+--     AND cq.quest NOT IN (SELECT quest FROM creature_questender)
+--     AND cq.quest NOT IN (SELECT quest FROM gameobject_questender)
+--     AND (q.Flags & 65536) = 0 AND (q.Flags & 1024) = 0;
+-- ---------------------------------------------------------------------------

@@ -1,0 +1,65 @@
+-- ---------------------------------------------------------------------------
+-- 187  Darkshore (map 750) -- wire the two flight masters 184_ flagged
+-- ---------------------------------------------------------------------------
+-- 184_ imported the Cata Darkshore layer including its two flight masters, but
+-- deliberately left them unwired because a working flight point on map 750 needs
+-- FOUR coordinated changes, not just a ScriptName. The other three are done:
+--
+--   1. gen_taxi.py  -- NODE_IDS += {350, 351}, NODEMAP += the two entries, and
+--                      the script re-run.  DONE:
+--                        network 27 -> 29 nodes, 342 -> 404 paths,
+--                        0 synthesised arcs (every route is a real Blizzard path)
+--   2. DBC deploy   -- TaxiNodes / TaxiPath / TaxiPathNode recompiled with
+--                      csv2wdbc.py and written into BOTH the server dbc dir and
+--                      the two client archives that matter, patch-4.MPQ and
+--                      enGB/patch-enGB-3.MPQ (the enGB chain outranks patch-4,
+--                      so deploying to patch-4 alone would be shadowed).
+--                      Verified byte-identical on read-back.  DONE.
+--   3. kNodes[]     -- entries added to dc_downport_taxi.cpp; map 750 does NOT
+--                      use the stock client taxi map, the gossip flight master
+--                      resolves its own node from this table and silently offers
+--                      nothing if the creature is >100 yards from every entry.
+--                      Compiles clean.  DONE -- NEEDS A WORLDSERVER REBUILD.
+--   4. ScriptName   -- this file.
+--
+-- WHY THESE COME FROM THE CATA TABLES, unlike Valormok next door: Blizzard
+-- REUSED taxi node id 26 in the revamp. Stock 26 is "Auberdine"; cata 26 is
+-- "Lor'danel"; they are 1,428 yards apart because Auberdine was destroyed.
+-- Measured against the imported (cata-positioned) flight masters:
+--     Teldira Moonfeather -> cata  26 = 2.3 yd   (stock 26 = 1,427.7 yd)
+--     Delanea             -> cata 339 = 2.0 yd   (no stock node exists at all --
+--                            Grove of the Ancients only became a flight point
+--                            in Cataclysm)
+-- Taking the stock node would have dropped players in the ruins of Auberdine.
+-- This is the mirror image of the Azshara call, where STOCK was the right pick.
+--
+-- Node ids 350 and 351 were chosen because they are absent from TaxiNodes.csv
+-- entirely and sit next to the existing custom 346/347/349 block. The hard cap
+-- is 448 (TaxiMaskSize = 14 uint32 = 448 bits, DBCStructure.h).
+--
+-- Apply against acore_world AFTER 184_, then REBUILD worldserver and
+-- REDISTRIBUTE THE CLIENT (the DBCs changed). Idempotent.
+-- ---------------------------------------------------------------------------
+
+UPDATE `creature_template`
+   SET `ScriptName` = 'npc_dc_downport_flightmaster'
+ WHERE `entry` IN (3703841,   -- Teldira Moonfeather, Hippogryph Master, Lor'danel
+                   3733253);  -- Delanea, Flight Master, Grove of the Ancients
+
+-- ---------------------------------------------------------------------------
+-- Verification after applying + rebuild + client redistribution:
+--   SELECT entry, name, subname, npcflag, ScriptName FROM creature_template
+--    WHERE entry IN (3703841,3733253);
+--     -- both npcflag & 8192 (FLIGHTMASTER) and ScriptName set
+--
+--   -- both should have exactly one spawn on map 750:
+--   SELECT id, COUNT(*), ROUND(position_x), ROUND(position_y) FROM creature
+--    WHERE map=750 AND id IN (3703841,3733253) GROUP BY id;
+--     -- 3703841 near (7462, -327)  = node 350, 2.3 yd
+--     -- 3733253 near (4970,  146)  = node 351, 2.0 yd
+--
+-- In game: talk to either. The gossip list should offer flights to the rest of
+-- the map-750 network. If the list comes up EMPTY, the worldserver binary is
+-- stale -- that is the kNodes[] 100-yard guard failing because the rebuild in
+-- step 3 was skipped, not a data problem.
+-- ---------------------------------------------------------------------------

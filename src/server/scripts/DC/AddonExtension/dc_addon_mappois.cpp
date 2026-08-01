@@ -29,6 +29,12 @@
  * (every mailbox is called "Mailbox"); both renderers already fall back to the
  * type label, which keeps the once-per-session payload down.
  *
+ * Flight POIs additionally carry the TaxiNodes.dbc id they stand on, and
+ * CMSG_REQUEST_KNOWN_TAXI answers with the subset this character has already
+ * discovered. That is the only way the addon can tell the two apart: the client
+ * marks an UNDISCOVERED flight point itself but exposes no taxi mask to Lua, so
+ * the minimap layer waits for discovery before drawing its own pin.
+ *
  * Copyright (C) 2026 Dark Chaos Development Team
  */
 
@@ -95,11 +101,18 @@ namespace MapPOIs
         float y = 0.0f;
         float z = 0.0f;
         uint32 hostileMask = 0;     // FactionTemplate hostile mask (0 = visible to everyone)
+        uint32 taxiNode = 0;        // flight POIs: TaxiNodes.dbc id, 0 when unmatched
     };
 
     // Two spawns of the same template closer than this are one map marker
     // (paired/duplicate spawns at the same taxi node or doorway).
     constexpr float DUPLICATE_SPAWN_RANGE = 25.0f;
+
+    // A flight master stands at the taxi node it serves, so the nearest node on
+    // the same map within this range is that master's node. Generous enough for
+    // masters posted a little away from the landing pad, tight enough that two
+    // nodes in one settlement do not cross-match.
+    constexpr float TAXI_NODE_MATCH_RANGE = 60.0f;
 
     static std::string ToLower(std::string const& value)
     {
@@ -157,6 +170,35 @@ namespace MapPOIs
         return nullptr;
     }
 
+    // TaxiNodes.dbc id a flight master serves, or 0 when nothing is close enough.
+    // The client cannot read its own taxi mask on 3.3.5, so this is what lets it
+    // tell a discovered flight point from an undiscovered one (see
+    // HandleRequestKnownTaxi).
+    static uint32 FindTaxiNodeAt(uint32 mapId, float x, float y, float z)
+    {
+        uint32 bestNode = 0;
+        float bestDistanceSq = TAXI_NODE_MATCH_RANGE * TAXI_NODE_MATCH_RANGE;
+
+        for (uint32 i = 1; i < sTaxiNodesStore.GetNumRows(); ++i)
+        {
+            TaxiNodesEntry const* node = sTaxiNodesStore.LookupEntry(i);
+            if (!node || node->map_id != mapId)
+                continue;
+
+            float const dx = node->x - x;
+            float const dy = node->y - y;
+            float const dz = node->z - z;
+            float const distanceSq = (dx * dx) + (dy * dy) + (dz * dz);
+            if (distanceSq < bestDistanceSq)
+            {
+                bestDistanceSq = distanceSq;
+                bestNode = node->ID;
+            }
+        }
+
+        return bestNode;
+    }
+
     static bool IsDuplicateOf(std::vector<MapPOI> const& pois, MapPOI const& candidate)
     {
         for (MapPOI const& existing : pois)
@@ -211,6 +253,9 @@ namespace MapPOIs
             if (FactionTemplateEntry const* faction = sFactionTemplateStore.LookupEntry(proto->faction))
                 poi.hostileMask = faction->hostileMask;
 
+            if (std::strcmp(type, PoiType::FLIGHT) == 0)
+                poi.taxiNode = FindTaxiNodeAt(data.mapid, data.posX, data.posY, data.posZ);
+
             AddPOI(pois, std::move(poi));
         }
 
@@ -236,13 +281,18 @@ namespace MapPOIs
         }
 
         uint32 flightCount = 0;
+        uint32 flightWithoutNode = 0;
         uint32 innCount = 0;
         uint32 mailCount = 0;
         uint32 teleporterCount = 0;
         for (MapPOI const& poi : pois)
         {
             if (std::strcmp(poi.type, PoiType::FLIGHT) == 0)
+            {
                 ++flightCount;
+                if (!poi.taxiNode)
+                    ++flightWithoutNode;
+            }
             else if (std::strcmp(poi.type, PoiType::INN) == 0)
                 ++innCount;
             else if (std::strcmp(poi.type, PoiType::MAIL) == 0)
@@ -254,6 +304,15 @@ namespace MapPOIs
         LOG_INFO("dc.addon",
             "MapPOI (MPOI): cached {} map markers ({} flight, {} inn, {} mail, {} teleporter)",
             pois.size(), flightCount, innCount, mailCount, teleporterCount);
+
+        // A flight master with no taxi node cannot be discovery-gated, so the
+        // client falls back to always drawing it. Worth surfacing: it usually
+        // means the node is missing from TaxiNodes.dbc or sits too far away.
+        if (flightWithoutNode)
+            LOG_WARN("dc.addon",
+                "MapPOI (MPOI): {} of {} flight markers matched no TaxiNodes.dbc entry within {} yards",
+                flightWithoutNode, flightCount, TAXI_NODE_MATCH_RANGE);
+
         return pois;
     }
 
@@ -291,6 +350,7 @@ namespace MapPOIs
             mix(static_cast<uint32>(static_cast<int32>(poi.x)));
             mix(static_cast<uint32>(static_cast<int32>(poi.y)));
             mix(static_cast<uint32>(static_cast<int32>(poi.z)));
+            mix(poi.taxiNode);
         }
 
         return hash;
@@ -384,6 +444,8 @@ namespace MapPOIs
             obj.Set("x", JsonValue(static_cast<double>(poi->x)));
             obj.Set("y", JsonValue(static_cast<double>(poi->y)));
             obj.Set("z", JsonValue(static_cast<double>(poi->z)));
+            if (poi->taxiNode)
+                obj.Set("k", JsonValue(poi->taxiNode));
             arr.Push(obj);
         }
 
@@ -391,6 +453,36 @@ namespace MapPOIs
         response.Set("total", total);
         response.Set("pois", arr);
         response.Set("done", (total == 0) ? true : ((offset + returned) >= total));
+        response.Send(player);
+    }
+
+    // Which of the flight POIs this player has already discovered.
+    //
+    // The 3.3.5 client has no Lua access to its own taxi mask outside an open
+    // taxi map, but it draws its own marker over an UNDISCOVERED flight point.
+    // The addon uses this list to stay out of the way of that marker and only
+    // draw its own flight pin once the point is known. Per player and cheap
+    // (a few hundred bits), so it is answered live rather than cached.
+    static void HandleRequestKnownTaxi(Player* player, ParsedMessage const& /*msg*/)
+    {
+        if (!player)
+            return;
+
+        uint32 const teamMask = (player->GetTeamId(true) == TEAM_ALLIANCE)
+            ? FACTION_MASK_ALLIANCE : FACTION_MASK_HORDE;
+
+        JsonValue nodes;
+        nodes.SetArray();
+        for (MapPOI const& poi : GetPOIs())
+        {
+            if (!poi.taxiNode || (poi.hostileMask & teamMask))
+                continue;
+            if (player->m_taxi.IsTaximaskNodeKnown(poi.taxiNode))
+                nodes.Push(JsonValue(poi.taxiNode));
+        }
+
+        JsonMessage response(Module::MAP_POI, Opcode::MapPOI::SMSG_KNOWN_TAXI);
+        response.Set("nodes", nodes);
         response.Send(player);
     }
 
@@ -403,6 +495,7 @@ namespace MapPOIs
             return;
 
         DC_REGISTER_HANDLER(Module::MAP_POI, Opcode::MapPOI::CMSG_REQUEST_LIST, HandleRequestList);
+        DC_REGISTER_HANDLER(Module::MAP_POI, Opcode::MapPOI::CMSG_REQUEST_KNOWN_TAXI, HandleRequestKnownTaxi);
         LOG_INFO("dc.addon", "MapPOI (MPOI) module handlers registered");
     }
 

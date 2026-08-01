@@ -514,7 +514,9 @@ namespace DCAddon
         namespace MapPOI
         {
             constexpr uint8 CMSG_REQUEST_LIST      = 0x01; // Client requests POI list (JSON: offset/limit/reset[/type])
+            constexpr uint8 CMSG_REQUEST_KNOWN_TAXI = 0x02; // {} Client asks which flight POIs it has discovered
             constexpr uint8 SMSG_SEND_LIST         = 0x10; // Server sends paged POI list (JSON)
+            constexpr uint8 SMSG_KNOWN_TAXI        = 0x11; // {nodes:[taxiNodeId,...]} discovered flight POIs (per player)
         }
 
         // Auto-quest popup opcodes (retail-style zone quest offers + remote turn-in;

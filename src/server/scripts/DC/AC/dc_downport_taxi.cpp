@@ -37,9 +37,11 @@ namespace
         char const* name;
     };
 
-    // Keep in sync with Custom/CSV DBC/TaxiNodes.csv (ids 338-345, 421-437,
+    // Keep in sync with Custom/CSV DBC/TaxiNodes.csv (ids 338-351, 421-437,
     // 446-447). Names and coordinates are the matched retail Cata taxi nodes
-    // (gen_taxi.py).
+    // (gen_taxi.py -- its NODEMAP is the source of truth; add a node there
+    // first, re-run it, then mirror the entry here or the flight master will
+    // fail the 100-yard guard below and silently offer nothing).
     //
     // Map 750 is a coordinate-preserving copy of the Hyjal corner of Kalimdor,
     // so it also contains the surrounding Winterspring / Felwood / Azshara /
@@ -63,6 +65,31 @@ namespace
         { 345, 750, 6813.06f, -4611.12f,  710.67f, "Everlook, Winterspring (Horde)" },
         { 446, 750, 7458.45f, -2487.21f,  462.33f, "Moonglade (Alliance)" },
         { 447, 750, 7470.39f, -2123.38f,  492.34f, "Moonglade (Horde)" },
+
+        // Cataclysm-only Felwood points, added with the Cata creature layer
+        // (HyjalCata/181_). Unlike the border zones above these come from the
+        // CATA tables -- Cata replaced Bloodvenom Post with Whisperwind Grove
+        // and added Irontree Clearing, so they have no stock counterpart.
+        // 438-445 are stock nodes, and node ids cannot exceed 448
+        // (TaxiMaskSize = 14 uint32 = 448 bits), hence the low 346/347.
+        { 346, 750, 6078.51f,  -845.00f,  412.27f, "Whisperwind Grove, Felwood" },
+        { 347, 750, 6892.69f, -1620.41f,  503.11f, "Irontree Clearing, Felwood" },
+        { 349, 750, 4734.16f,  -883.81f,  342.93f, "Wildheart Point, Felwood" },
+        // With 343 and 339 that is the complete Cata Felwood network of FIVE
+        // flight points. Cata node 48 "Bloodvenom Post" is deliberately absent:
+        // TaxiNodes.dbc flags it "[DISABLED in 4.x]", so having no flight master
+        // there is correct Cataclysm behaviour, not a gap. Wildheart Point
+        // (~700 yds away) is its replacement.
+
+        // Darkshore, added with the Cata Darkshore layer (HyjalCata/184_).
+        // Both come from the CATA tables because Blizzard REUSED node id 26 in
+        // the revamp -- stock 26 is Auberdine, cata 26 is Lor'danel, and they
+        // are 1,428 yards apart since Auberdine was destroyed. Grove of the
+        // Ancients has no stock counterpart at all; it only became a flight
+        // point in Cataclysm.
+        { 350, 750, 7459.90f,  -326.56f,    8.09f, "Lor'danel, Darkshore" },
+        { 351, 750, 4970.50f,   147.65f,   51.64f, "Grove of the Ancients, Darkshore" },
+
         // Plaguelands (map 751)
         { 426, 751,  931.32f, -1430.11f,   64.67f, "Chillwind Camp, Western Plaguelands" },
         { 427, 751, 2270.20f, -5343.11f,   86.97f, "Light's Hope Chapel, Eastern Plaguelands" },

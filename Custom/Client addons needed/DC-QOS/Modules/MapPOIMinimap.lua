@@ -9,13 +9,18 @@
 --
 -- Icons and labels come from MapPOIData.TYPES, so a new POI kind shows up here
 -- automatically once it is registered there. A type that sets `minimap = false`
--- stays on the world map only -- flight masters do, because the engine already
--- draws its own green taxi boot for them here.
+-- stays on the world map only; a type that sets `requiresDiscovery` (flight
+-- masters) waits until the player has discovered the flight point, so the pin
+-- never stacks on the client's own undiscovered-flight-point marker.
 --
 -- Positioning uses the shared mapUtils.ProjectToMinimap helper, which honours
 -- minimap rotation and zoom. Like the client's own minimap POI blips, a pin is
 -- drawn only while it falls inside the visible minimap ring; beyond that it is
 -- hidden rather than piled onto the edge.
+--
+-- The scan/draw split matters: the POI scan is throttled but drawing runs every
+-- frame, because doing both at the scan rate is what made pins visibly step and
+-- lurch as the player moved or the minimap rotated.
 -- ============================================================
 
 local addon = DCQOS
@@ -44,17 +49,41 @@ local MapPOIMinimap = {
     },
 }
 
-local UPDATE_INTERVAL_SECONDS = 0.2
+-- How often the POI set is re-scanned. Scanning walks every POI the server sent
+-- (hundreds), so it stays throttled -- but the pins themselves are re-placed
+-- EVERY frame from that cached set, which is what keeps them still. Placing at
+-- the scan rate instead made pins step ~5 times a second while the player moved,
+-- and with a rotating minimap they lurched around the ring, because the heading
+-- was only recomputed at the same 5 Hz.
+local RESCAN_INTERVAL_SECONDS = 0.2
 local EDGE_PADDING_PIXELS = 10
 local MIN_PIN_SIZE = 10
 local MAX_PIN_SIZE = 28
 
+-- A pin exactly on the ring boundary would otherwise flip between shown and
+-- hidden on consecutive frames as the player moves. Once visible it stays
+-- visible slightly past the edge.
+local CLAMP_HYSTERESIS = 0.08
+
+-- GetPlayerMapPosition reports nothing while the world map is open on another
+-- zone. Without a grace window every minimap pin blinked out for those frames.
+local POSITION_GRACE_SECONDS = 1.0
+
 local state = {
     container = nil,
     pins = {},
-    elapsed = 0,
+    -- Cached scan output: reused tables, so a rescan allocates nothing.
+    candidates = {},
+    candidateCount = 0,
+    candidateMapId = nil,
+    candidatesStale = true,
+    rescanElapsed = 0,
     driver = nil,
     eventFrame = nil,
+    lastPlayerX = nil,
+    lastPlayerY = nil,
+    lastPlayerMapId = nil,
+    lastPlayerTime = 0,
 }
 
 local function GetSettings()
@@ -113,6 +142,26 @@ local function EnsureContainer()
     return container
 end
 
+local function Now()
+    return (type(GetTime) == "function" and GetTime()) or 0
+end
+
+-- Player position with a short grace window (see POSITION_GRACE_SECONDS).
+local function GetPlayerPositionCached(mapUtils)
+    local x, y, mapId = mapUtils.GetPlayerMapPositionSafe()
+    if x and y and mapId then
+        state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId = x, y, mapId
+        state.lastPlayerTime = Now()
+        return x, y, mapId
+    end
+
+    if state.lastPlayerX and (Now() - state.lastPlayerTime) <= POSITION_GRACE_SECONDS then
+        return state.lastPlayerX, state.lastPlayerY, state.lastPlayerMapId
+    end
+
+    return nil
+end
+
 local function OnPinEnter(self)
     local poi = self.poiData
     if not poi or not GameTooltip then
@@ -156,6 +205,10 @@ local function AcquirePin(index)
     pin.Icon = pin:CreateTexture(nil, "ARTWORK")
     pin.Icon:SetAllPoints(pin)
 
+    -- Written in place every frame; a fresh table per pin per frame was pure
+    -- garbage for the collector.
+    pin.poiData = {}
+
     pin:SetScript("OnEnter", OnPinEnter)
     pin:SetScript("OnLeave", OnPinLeave)
 
@@ -194,7 +247,66 @@ local function ApplyPinIcon(pin, typeInfo)
     pin.appliedIcon = desired
 end
 
-function MapPOIMinimap:Refresh()
+-- Whether a POI may show on the minimap right now. Static type opt-outs are
+-- handled by IsTypeOnMinimap; this is the per-POI, changes-over-time part
+-- (flight masters wait for their flight point to be discovered).
+local function IsPOIVisibleNow(poiData, poi)
+    if type(poiData.IsMinimapVisibleNow) ~= "function" then
+        return true
+    end
+    return poiData:IsMinimapVisibleNow(poi)
+end
+
+-- Re-scan every POI for the ones that belong on the map the player is standing
+-- on, caching their normalized positions. Throttled; see RESCAN_INTERVAL_SECONDS.
+--
+-- The cached order is what pins are keyed by, so a pin keeps showing the same
+-- POI for the life of the scan. Assigning pins by "how many are visible right
+-- now" instead made every pin after a POI that left the ring shift down a slot
+-- and swap icon with its neighbour.
+local function RebuildCandidates(poiData, mapUtils, uiMapId)
+    local candidates = state.candidates
+    local count = 0
+
+    local typeKeys = poiData:GetTypeKeys()
+    for keyIndex = 1, #typeKeys do
+        local poiType = typeKeys[keyIndex]
+        local typeInfo = poiData:GetTypeInfo(poiType)
+        local pois = poiData:GetPOIsByType(poiType)
+
+        if typeInfo and type(pois) == "table"
+            and IsTypeOnMinimap(poiData, poiType) and poiData:IsTypeEnabled(poiType) then
+            for i = 1, #pois do
+                local poi = pois[i]
+                if IsPOIVisibleNow(poiData, poi) then
+                    -- WorldToMapPosition rejects points that are not on the map area
+                    -- currently under the player, so this doubles as the map filter.
+                    local normX, normY = mapUtils.WorldToMapPosition(uiMapId, poi.map, poi.x, poi.y, true)
+                    if normX and normY then
+                        count = count + 1
+                        local entry = candidates[count]
+                        if not entry then
+                            entry = {}
+                            candidates[count] = entry
+                        end
+                        entry.poi = poi
+                        entry.typeInfo = typeInfo
+                        entry.normX = normX
+                        entry.normY = normY
+                    end
+                end
+            end
+        end
+    end
+
+    state.candidateCount = count
+    state.candidateMapId = uiMapId
+    state.candidatesStale = false
+end
+
+-- Place the cached candidates. Cheap enough to run every frame, which is what
+-- keeps pins gliding with the player and the minimap's rotation.
+local function Reposition()
     local settings = GetSettings()
     if not settings.enabled then
         HidePinsFrom(1)
@@ -217,7 +329,7 @@ function MapPOIMinimap:Refresh()
         return
     end
 
-    local playerX, playerY, uiMapId = mapUtils.GetPlayerMapPositionSafe()
+    local playerX, playerY, uiMapId = GetPlayerPositionCached(mapUtils)
     if not playerX or not playerY or not uiMapId then
         HidePinsFrom(1)
         return
@@ -235,50 +347,58 @@ function MapPOIMinimap:Refresh()
         return
     end
 
+    if state.candidatesStale or state.candidateMapId ~= uiMapId then
+        RebuildCandidates(poiData, mapUtils, uiMapId)
+    end
+
+    local halfDiameterYards = (mapUtils.GetMinimapDiameterYards() or 0) * 0.5
+    if halfDiameterYards <= 0 then
+        HidePinsFrom(1)
+        return
+    end
+
     local pinSize = GetPinSize()
     local mouseEnabled = settings.showTooltips ~= false
-    local shown = 0
 
-    local typeKeys = poiData:GetTypeKeys()
-    for keyIndex = 1, #typeKeys do
-        local poiType = typeKeys[keyIndex]
-        local typeInfo = poiData:GetTypeInfo(poiType)
-        local pois = poiData:GetPOIsByType(poiType)
+    for index = 1, state.candidateCount do
+        local entry = state.candidates[index]
+        local pin = AcquirePin(index)
+        if pin then
+            local pixelX, pixelY, distanceYards = mapUtils.ProjectToMinimap(
+                uiMapId, playerX, playerY, entry.normX, entry.normY, radiusPx)
 
-        if typeInfo and type(pois) == "table"
-            and IsTypeOnMinimap(poiData, poiType) and poiData:IsTypeEnabled(poiType) then
-            for i = 1, #pois do
-                local poi = pois[i]
-                -- WorldToMapPosition rejects points that are not on the map area
-                -- currently under the player, so this doubles as the map filter.
-                local normX, normY = mapUtils.WorldToMapPosition(uiMapId, poi.map, poi.x, poi.y, true)
-                if normX and normY then
-                    local pixelX, pixelY, distanceYards, isClamped =
-                        mapUtils.ProjectToMinimap(uiMapId, playerX, playerY, normX, normY, radiusPx)
+            -- A pin already on screen is allowed a little past the ring before
+            -- it drops out, so a POI sitting on the boundary cannot strobe.
+            local limit = pin:IsShown() and (1 + CLAMP_HYSTERESIS) or 1
+            local withinRing = pixelX and distanceYards
+                and (distanceYards / halfDiameterYards) <= limit
 
-                    if pixelX and pixelY and not isClamped then
-                        shown = shown + 1
-                        local pin = AcquirePin(shown)
-                        if pin then
-                            pin.poiData = {
-                                name = poi.name,
-                                label = typeInfo.label,
-                                distanceYards = distanceYards,
-                            }
-                            ApplyPinIcon(pin, typeInfo)
-                            pin:SetSize(pinSize, pinSize)
-                            pin:EnableMouse(mouseEnabled)
-                            pin:ClearAllPoints()
-                            pin:SetPoint("CENTER", container, "CENTER", pixelX, pixelY)
-                            pin:Show()
-                        end
-                    end
-                end
+            if withinRing then
+                local poiInfo = pin.poiData
+                poiInfo.name = entry.poi.name
+                poiInfo.label = entry.typeInfo.label
+                poiInfo.distanceYards = distanceYards
+
+                ApplyPinIcon(pin, entry.typeInfo)
+                pin:SetSize(pinSize, pinSize)
+                pin:EnableMouse(mouseEnabled)
+                pin:ClearAllPoints()
+                pin:SetPoint("CENTER", container, "CENTER", pixelX, pixelY)
+                pin:Show()
+            else
+                pin:Hide()
             end
         end
     end
 
-    HidePinsFrom(shown + 1)
+    HidePinsFrom(state.candidateCount + 1)
+end
+
+-- Forces a re-scan on the next frame. Called when the POI list, its settings or
+-- the discovered flight points change.
+function MapPOIMinimap:Refresh()
+    state.candidatesStale = true
+    Reposition()
 end
 
 local function EnsureDriver()
@@ -288,12 +408,12 @@ local function EnsureDriver()
 
     local driver = CreateFrame("Frame")
     driver:SetScript("OnUpdate", function(_, elapsed)
-        state.elapsed = state.elapsed + (elapsed or 0)
-        if state.elapsed < UPDATE_INTERVAL_SECONDS then
-            return
+        state.rescanElapsed = state.rescanElapsed + (elapsed or 0)
+        if state.rescanElapsed >= RESCAN_INTERVAL_SECONDS then
+            state.rescanElapsed = 0
+            state.candidatesStale = true
         end
-        state.elapsed = 0
-        MapPOIMinimap:Refresh()
+        Reposition()
     end)
 
     state.driver = driver
@@ -320,10 +440,21 @@ function MapPOIMinimap.OnEnable()
 
     if not state.eventFrame then
         state.eventFrame = CreateFrame("Frame")
-        state.eventFrame:SetScript("OnEvent", function()
-            if addon.MapPOIData and type(addon.MapPOIData.EnsureRequested) == "function" then
-                addon.MapPOIData:EnsureRequested()
+        state.eventFrame:SetScript("OnEvent", function(_, event)
+            local poiData = addon.MapPOIData
+            if poiData and type(poiData.EnsureRequested) == "function" then
+                poiData:EnsureRequested()
             end
+
+            -- A flight point is discovered by talking to its master, so the
+            -- discovered set is re-pulled after any such conversation as well as
+            -- on the usual login/zone boundaries. The core exposes no taxi
+            -- discovery hook to push from.
+            if event ~= "PLAYER_ENTERING_WORLD"
+                and poiData and type(poiData.RefreshKnownTaxi) == "function" then
+                poiData:RefreshKnownTaxi()
+            end
+
             MapPOIMinimap:Refresh()
         end)
     end
@@ -331,6 +462,8 @@ function MapPOIMinimap.OnEnable()
     state.eventFrame:UnregisterAllEvents()
     state.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     state.eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    state.eventFrame:RegisterEvent("TAXIMAP_CLOSED")
+    state.eventFrame:RegisterEvent("GOSSIP_CLOSED")
 
     EnsureDriver():Show()
     MapPOIMinimap:Refresh()
@@ -357,7 +490,7 @@ function MapPOIMinimap.CreateSettings(parent)
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetWidth(460)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Shows server-provided map markers (innkeepers, mailboxes, teleporters) on the minimap, following minimap rotation and zoom. Flight masters are world-map only -- the client already blips those on the minimap itself.")
+    desc:SetText("Shows server-provided map markers (flight masters, innkeepers, mailboxes, teleporters) on the minimap, following minimap rotation and zoom. A flight master appears once you have discovered its flight point, so it does not stack on top of the client's own undiscovered-flight-point marker.")
 
     local yOffset = -76
 

@@ -1,0 +1,108 @@
+-- ---------------------------------------------------------------------------
+-- 180  Felwood (map 750, zone 4927) -- NPC position audit
+-- ---------------------------------------------------------------------------
+-- Reported in game: Mishellena the Hippogryph Master and her flight path look
+-- misplaced; other NPCs look off too; a town is empty; only one flightmaster in
+-- the whole zone.
+--
+-- METHOD: every map-750 spawn was compared against its own source row by
+-- nearest-neighbour distance (ours vs cata_world / nelt_world at the matching
+-- raw entry). Trash mobs are noisy that way -- re-placing them is normal for a
+-- custom zone -- so the signal was taken from unique SERVICE NPCs, where a
+-- position is either right or wrong.
+--
+-- RESULT: the flightmaster placement is almost entirely CORRECT. Of the six
+-- hand-added flightmasters (guids 15810001-15810006, the only +3,600,000
+-- entries in an otherwise +3,700,000 block), four sit at EXACTLY their source
+-- coordinates -- distance 0.0 -- Maethrya, Yugrek, Sindrayl and Faustron.
+-- Exactly one is wrong, and it is the one that was reported.
+--
+-- Kroum (15810001) initially measured 1,908 yards out, but that was a false
+-- positive: cata_world keeps only the post-Cataclysm Azshara spawn of 8610,
+-- while nelt_world has TWO, and its second (3664.0, -4390.5, 113.2) matches
+-- ours exactly. Our map-750 terrain is the pre-Cataclysm Kalimdor, so Kroum is
+-- correctly placed at the old Valormok and is deliberately NOT touched here.
+-- (Lesson: check every source before calling a position wrong -- cata_world
+-- alone would have had us move a correct NPC 1.9km.)
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- A) Mishellena (3612578, guid 15810002) -- the one real misplacement
+-- ---------------------------------------------------------------------------
+-- Ours:   6204.08, -1951.43, 571.581  orientation 0.663225
+-- Source: 6215.30, -1871.17, 566.083  orientation 4.24115
+--   -> 81.2 yards out, and facing roughly the opposite way.
+-- cata_world and nelt_world agree on the source position to 3 decimal places,
+-- and it matches the spot reported in game (6215.67, -1871.35, 566.01, o 4.23)
+-- whose client-side FloorZ read 566.0097 -- i.e. the source Z is real, solid
+-- floor at that spot, not a guess.
+-- ---------------------------------------------------------------------------
+UPDATE `creature`
+SET `position_x` = 6215.3,
+    `position_y` = -1871.17,
+    `position_z` = 566.083,
+    `orientation` = 4.24115
+WHERE `guid` = 15810002 AND `id` = 3612578;
+
+-- ---------------------------------------------------------------------------
+-- B) ALREADY DONE OUTSIDE THIS FILE -- the flight path moved with her
+-- ---------------------------------------------------------------------------
+-- Taxi data is DBC, not SQL, so it is not repeated here -- recorded so the two
+-- halves of this fix are not separated:
+--   * TaxiNodes 343 "Talonbranch Glade, Felwood" was at 6205.88/-1949.63/571.29,
+--     i.e. pinned to the WRONG Mishellena position rather than to the town.
+--     Moved to the source position.
+--   * 22 TaxiPathNode endpoint waypoints -- one for each of the 22 paths that
+--     start or end at node 343 -- were anchored on that same wrong spot and
+--     were moved with it (kept at node Z + 10, the altitude offset the existing
+--     rows already used).
+--   * Scoped by reading TaxiPath's From/To columns rather than by coordinate
+--     alone: 3 further rows sit on the old coordinate and were deliberately
+--     LEFT ALONE -- paths 479/480 are real Kalimdor (ContinentID 1, Talonbranch
+--     is at the same place there), and 9616 is a map-750 Moonglade->Emerald
+--     Sanctuary route that merely flies over.
+--   * TaxiNodes.dbc + TaxiPathNode.dbc recompiled and deployed to patch-4 AND
+--     patch-enGB-3 (both confirmed present in the locale chain) and synced to
+--     the WarcraftXLHost dirs. NEEDS A CLIENT REDISTRIBUTION.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- C) THE EMPTY TOWN -- root cause, NOT fixed here (needs a content import)
+-- ---------------------------------------------------------------------------
+-- The empty town at ~6081/-853/414 is WHISPERWIND GROVE, and it is empty
+-- because it was never imported at all -- not misplaced.
+--
+-- Felwood on map 750 was populated from the PRE-CATACLYSM Kalimdor creature
+-- set. Measured over the Felwood footprint (x 5500-7200, y -2600..-600):
+--     cata_world:  41 vanilla-era entries + 59 CATACLYSM-era entries
+--     ours:        65 vanilla-band entries +  0 Cataclysm-era entries
+-- Every Cataclysm addition to the zone is therefore absent. Whisperwind Grove
+-- alone should hold ~20 NPCs, none of which exist here in ANY form (checked
+-- both +3,600,000 and +3,700,000 -- no template, no spawn):
+--     43073 Hanah Southsong (Hippogryph Master)  <-- the missing 2nd flightmaster
+--     47842 Arch Druid Navarax, 47843 Huntress Selura, 47844 Whisperwind Protector
+--     48126 Isural Forestsworn, 48339 Elessa Starbreeze, 48349 Hurak Wildhorn,
+--     48459 Tender Puregrove (Emerald Circle questgivers)
+--     48215 Innkeeper Wylaria, 48216 Hurah (Stable Master)
+--     48573 Chaewel, 48574 Felaana, 48577 Ciana, 48580 Desaan, 48581 Niluut,
+--     48587 Moahi (vendors), 48469 Fez Hobnob, 48491 James Hallow
+--
+-- So "only one flightmaster in this zone" is correct and expected: Hanah
+-- Southsong is the second one and she was never brought across. Adding her also
+-- needs a TaxiNodes entry + paths, i.e. another client DBC round.
+--
+-- NOT attempted here because it is a content import decision, not a position
+-- fix: importing the 59 Cataclysm-era entries would pull the Cata revamp of
+-- Felwood (Emerald Circle storyline, Whisperwind Grove, the Jadefire/Deadwood
+-- rework) into a zone whose terrain is the pre-Cataclysm version -- some of it
+-- would sit on terrain that no longer matches. Whisperwind Grove itself is flat
+-- ground at z~412 in both, so that town specifically would import cleanly.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- Verification after applying + client restart:
+--   SELECT guid, ROUND(position_x,2), ROUND(position_y,2), ROUND(position_z,2), ROUND(orientation,3)
+--   FROM creature WHERE guid = 15810002;   -- 6215.30, -1871.17, 566.08, 4.241
+--   -- then in game: the flightmaster, the taxi node and the landing point
+--   -- should all coincide at Talonbranch Glade.
+-- ---------------------------------------------------------------------------

@@ -2775,7 +2775,9 @@ DC.Opcode = {
     },
     MapPOI = {
         CMSG_REQUEST_LIST = 0x01,
+        CMSG_REQUEST_KNOWN_TAXI = 0x02,
         SMSG_SEND_LIST = 0x10,
+        SMSG_KNOWN_TAXI = 0x11,
     },
     QuestPopups = {
         CMSG_ACCEPT_QUEST = 0x01,

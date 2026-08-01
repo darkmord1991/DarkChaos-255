@@ -1,0 +1,57 @@
+-- ---------------------------------------------------------------------------
+-- 182  Felwood -- wire up the two flight masters imported by 181_
+-- ---------------------------------------------------------------------------
+-- 181_ imported Hanah Southsong (3743073, Whisperwind Grove) and Dirzak
+-- Pryocrank (3743085, Irontree Clearing). Both carry the FLIGHTMASTER npcflag
+-- and stand on real taxi nodes, but map 750 does NOT use the stock taxi map --
+-- it uses this project's gossip-based flight master
+-- (src/server/scripts/DC/AC/dc_downport_taxi.cpp, ScriptName
+-- npc_dc_downport_flightmaster). Without the ScriptName they fall back to the
+-- stock taxi UI, which knows nothing about the map-750 network.
+--
+-- Unlike the six shared border-zone flight masters in 175_, no template cloning
+-- is needed here: 3743073 / 3743085 are DC-only entries created by 181_ with no
+-- spawn outside map 750, so binding the ScriptName directly cannot affect the
+-- real Kalimdor flight masters.
+--
+-- ALREADY DONE OUTSIDE THIS FILE (recorded so the halves stay together):
+--   * gen_taxi.py NODEMAP extended with
+--         (346, 750, CATA, 594, HIPPO, HIPPO)  Whisperwind Grove
+--         (347, 750, CATA, 597, HIPPO, HIPPO)  Irontree Clearing
+--     and re-run. It lifts Blizzard's own Cata waypoints verbatim and chains
+--     multi-hop routes with Dijkstra over Cata fares, so the new routes follow
+--     real terrain rather than a synthesised straight line. Network went
+--     24 -> 26 nodes, 264 -> 314 paths, 0 synthesised arcs; 50 of the new paths
+--     touch 346/347.
+--   * Node ids: 438-445 are stock nodes and ids cannot exceed 448
+--     (TaxiMaskSize = 14 uint32 = 448 bits, DBCStructure.h), so the free low
+--     ids 346/347 were used.
+--   * The matched Cata nodes are 594 (1.0 yd from Hanah) and 597 (4.9 yd from
+--     Dirzak) -- comfortably inside the script's 100-yard node guard.
+--   * TaxiNodes.dbc + TaxiPath.dbc + TaxiPathNode.dbc recompiled and deployed
+--     to patch-4 AND patch-enGB-3 (all three confirmed present in the locale
+--     chain) and synced to the WarcraftXLHost dirs. NEEDS A CLIENT
+--     REDISTRIBUTION.
+--   * dc_downport_taxi.cpp kNodes[] gained the two entries. REQUIRES A
+--     WORLDSERVER REBUILD -- without it CurrentNode() finds no node within 100
+--     yards of either NPC and the gossip list comes back empty.
+--
+-- NOTE this re-run also reset taxi node 343 to the authoritative stock node-65
+-- position (6214.32, -1874.28, 565.96), superseding the hand-edit made in 180_.
+-- That is the better value and it is ~3.3 yards from where 180_ puts Mishellena
+-- herself, so she stays well inside the 100-yard guard.
+--
+-- Apply against acore_world; needs a worldserver restart for the ScriptName.
+-- Idempotent.
+-- ---------------------------------------------------------------------------
+
+UPDATE `creature_template` SET `ScriptName` = 'npc_dc_downport_flightmaster'
+WHERE `entry` IN (3743073,3743085);
+
+-- ---------------------------------------------------------------------------
+-- Verification after applying + rebuild + client restart:
+--   SELECT entry, name, subname, npcflag, ScriptName FROM creature_template
+--    WHERE entry IN (3743073,3743085);
+--   -- then in game, talk to either: the gossip list should offer every other
+--   -- map-750 destination, and flying should follow real terrain.
+-- ---------------------------------------------------------------------------

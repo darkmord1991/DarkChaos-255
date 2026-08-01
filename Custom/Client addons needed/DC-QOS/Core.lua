@@ -884,9 +884,23 @@ function addon:GetMapUtils()
         return type(GetCVar) == "function" and GetCVar("rotateMinimap") == "1"
     end
 
-    -- The client mirrors minimapZoom onto minimapInsideZoom while indoors, which
-    -- is the conventional way to detect the indoor zoom table on 3.3.5.
+    -- Which zoom table applies. `IsIndoors()` is the engine's own answer and is
+    -- what the minimap itself uses, so prefer it.
+    --
+    -- The old test compared minimapZoom against minimapInsideZoom. Those are two
+    -- INDEPENDENT user settings, so they collide whenever the player happens to
+    -- pick the same zoom step in both, and the reading then flips outdoors to
+    -- "indoors" -- at zoom 3 that swaps a 266y diameter for a 120y one and every
+    -- pin jumps outward by 2.2x in a single frame (most of them past the ring, so
+    -- they blink out). Kept only as a fallback where IsIndoors is missing.
     function mapUtils.IsMinimapIndoors()
+        if type(IsIndoors) == "function" then
+            local ok, indoors = pcall(IsIndoors)
+            if ok then
+                return indoors and true or false
+            end
+        end
+
         if type(GetCVar) ~= "function" then
             return false
         end

@@ -90,6 +90,7 @@ void AddSC_boss_sire_denathrius();              // CastleNathria/boss_sire_denat
 // --- Mount Hyjal downport (map 750) ---
 void AddSC_dc_mount_hyjal_ported();           // MountHyjal/zone_mount_hyjal.cpp
 void AddSC_dc_molten_front();                 // MountHyjal/zone_molten_front.cpp
+void AddSC_dc_felwood_cata();                 // MountHyjal/zone_felwood_cata.cpp
 
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
@@ -348,6 +349,7 @@ void AddDCScripts()
     LogSection("Mount Hyjal Downport (map 750)");
     DC_LOAD(AddSC_dc_mount_hyjal_ported);
     DC_LOAD(AddSC_dc_molten_front);
+    DC_LOAD(AddSC_dc_felwood_cata);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);
