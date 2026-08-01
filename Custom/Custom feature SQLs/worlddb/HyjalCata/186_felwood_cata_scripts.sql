@@ -108,13 +108,23 @@ UPDATE `creature_template`
 -- ---------------------------------------------------------------------------
 -- D) Tainted Squirrel (3748457) -- remove the cursor instead
 -- ---------------------------------------------------------------------------
--- The opposite verdict, for the opposite reason. Cata's spellclick spell here
--- is 90102, which likewise does not exist in 3.3.5 -- but unlike the lasher
--- there is NO script for 48457 in any of the four cata sources, because in
--- Cata the spell itself does all the work (quest credit). With neither the
--- spell nor the quest downported there is nothing for a click to do, so the
--- honest fix is to stop advertising one: 22 squirrels currently show an
+-- The opposite verdict, but NOT for the reason first written here. Correction,
+-- kept visible because the wrong version would mislead a later pass: cata's
+-- spellclick spell 90102 "Squirrel Scrubber Vehicle Aura" DOES exist on our
+-- side -- it is already present as a spell_dbc overlay row (it is absent only
+-- from the binary Spell.dbc / Spell.csv, which is why a Spell.csv-only check
+-- missed it). The verdict is unchanged, for three other reasons:
+--   * it is a VEHICLE aura, and 3748457 has VehicleId = 0 with no vehicle_dbc
+--     row, so there is nothing to board;
+--   * its EffectAura_1 is 296, a Cataclysm aura index that does not mean
+--     control-vehicle (or anything) in 3.3.5;
+--   * there is NO script for 48457 in any of the four cata sources, because in
+--     Cata the spell itself does the work, and the quest is not downported.
+-- So a click still cannot do anything, and 22 squirrels currently show an
 -- interact cursor that is guaranteed to do nothing.
+--
+-- If the Cata Darkshore/Felwood QUEST layer is ever downported, revisit this:
+-- restoring the flag would then need a vehicle_dbc row + VehicleId as well.
 --
 -- 16777216 = UNIT_NPC_FLAG_SPELLCLICK. Only that bit is cleared; any other
 -- npcflag bits on the template survive.

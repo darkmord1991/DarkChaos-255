@@ -1063,7 +1063,7 @@ namespace DCCollection
             SendAddonItemSetsPayload(player, payload);
         }
 
-        void BuildTransmogStatePayload(Player* player, QueryResult const& result,
+        void BuildTransmogStatePayload(QueryResult const& result,
             DCAddon::JsonValue& state, DCAddon::JsonValue& itemIds)
         {
             state.SetObject();
@@ -1116,7 +1116,7 @@ namespace DCCollection
 
             DCAddon::JsonValue state;
             DCAddon::JsonValue itemIds;
-            BuildTransmogStatePayload(player, result, state, itemIds);
+            BuildTransmogStatePayload(result, state, itemIds);
 
             if (ResolveTransmogStateTransport(player).UsesNative())
             {
