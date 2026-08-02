@@ -663,6 +663,48 @@ private:
     bool _inCorrectArea = true;
 };
 
+// ---------------------------------------------------------------------------
+// Darkshore Wisp -- drifting motion at the Bashal'Aran ritual sites
+// ---------------------------------------------------------------------------
+// The Cata source has npc_darkshore_wisp_spellclick for this, but it is not
+// portable as written: it picks a circle centre with a switch over the SOURCE
+// server's spawn guids (168572-168581). Those guids mean nothing here, so a
+// verbatim port would fall through every case and do nothing at all.
+//
+// It also calls MoveAroundPoint, which this core does not have -- there is no
+// single-call circular path in MotionMaster. MoveRandom around the spawn point
+// gives the same read at a glance (wisps drifting in place around the ritual
+// site) without hardcoding anything, and it keeps working if the wisps are
+// moved. The radius is varied per spawn so a cluster does not drift in lockstep.
+//
+// Purely cosmetic, and additive: the wisps' actual behaviour -- the sparkle
+// visual -- is already driven by SmartAI (event 11 -> cast 'Darkshore Wisp
+// Sparkle') and is left untouched.
+// ---------------------------------------------------------------------------
+struct npc_darkshore_wisp_circling : public ScriptedAI
+{
+    npc_darkshore_wisp_circling(Creature* creature) : ScriptedAI(creature) { }
+
+    void InitializeAI() override
+    {
+        me->SetReactState(REACT_PASSIVE);
+        StartDrifting();
+    }
+
+    void JustRespawned() override
+    {
+        StartDrifting();
+    }
+
+    void StartDrifting()
+    {
+        float const radius = 5.0f + float(me->GetSpawnId() % 7) * 0.5f;
+        me->GetMotionMaster()->MoveRandom(radius);
+    }
+
+    void UpdateAI(uint32 /*diff*/) override { }
+};
+
 void AddSC_dc_darkshore_cata()
 {
     new npc_hollee_escort_questgiver();
@@ -670,4 +712,5 @@ void AddSC_dc_darkshore_cata()
     RegisterCreatureAI(npc_coaxing_the_spirits_companion);
     RegisterCreatureAI(npc_offering_to_azshara_controller);
     RegisterCreatureAI(npc_vengeful_protector_ancient_vehicle);
+    RegisterCreatureAI(npc_darkshore_wisp_circling);
 }

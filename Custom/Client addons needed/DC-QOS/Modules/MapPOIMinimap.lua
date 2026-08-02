@@ -118,7 +118,16 @@ local function HidePinsFrom(startIndex)
     for index = startIndex, #state.pins do
         local pin = state.pins[index]
         if pin then
-            pin.poiData = nil
+            -- poiData is a scratch table the pin OWNS for its lifetime (see
+            -- AcquirePin), so clear its fields rather than the table itself --
+            -- dropping the table would leave the next Reposition that reuses
+            -- this pin writing into a nil.
+            local poiInfo = pin.poiData
+            if poiInfo then
+                poiInfo.name = nil
+                poiInfo.label = nil
+                poiInfo.distanceYards = nil
+            end
             pin:Hide()
         end
     end
@@ -375,6 +384,10 @@ local function Reposition()
 
             if withinRing then
                 local poiInfo = pin.poiData
+                if not poiInfo then
+                    poiInfo = {}
+                    pin.poiData = poiInfo
+                end
                 poiInfo.name = entry.poi.name
                 poiInfo.label = entry.typeInfo.label
                 poiInfo.distanceYards = distanceYards

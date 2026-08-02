@@ -1,0 +1,44 @@
+-- ---------------------------------------------------------------------------
+-- 198  HOTFIX -- worldserver asserts on startup after 192_
+-- ---------------------------------------------------------------------------
+-- SYMPTOM (server will not boot at all):
+--   Loading SpellInfo Store...
+--   ASSERTION FAILED  SpellMgr.cpp:3040  LoadSpellInfoStore
+--   Condition: spellEffectInfo.Effect < TOTAL_SPELL_EFFECTS
+--   Message:   TOTAL_SPELL_EFFECTS must be at least 166
+--   Segmentation fault (core dumped)
+--
+-- CAUSE, and it is mine: 192_ copied Cataclysm spell effects across verbatim
+-- without checking them against 3.3.5's enum.  This core defines
+--   TOTAL_SPELL_EFFECTS = 165          (SharedDefines.h, valid effects 0..164)
+-- and Cataclysm added effect id 165, which does not exist here.  SpellMgr
+-- indexes a fixed std::array<StaticData, TOTAL_SPELL_EFFECTS> by effect id, so
+-- an id of 165 is an out-of-bounds read -- caught by the assert in a debug/
+-- RelWithDebInfo build, and it would be silent memory corruption otherwise.
+--
+-- SCOPE: exactly 2 of the 86 spells 192_ minted.
+--   69373 "Shoot"     Effect_1 = 165
+--   69375 "Lob Fire"  Effect_1 = 165  (Effect_2 = 27 is fine)
+-- Both are physical trash-mob attacks (SchoolMask 1, BasePoints 16).
+--
+-- FIX: drop those two rows.  That returns them to exactly the state before
+-- 192_ -- the two SmartAI cast actions log a "non-existent Spell entry"
+-- warning and do nothing, which is harmless and was the status quo for months.
+-- The other 84 spells are unaffected and stay.
+--
+-- DELIBERATELY NOT REMAPPED.  Effect 165 could plausibly be rewritten as
+-- SPELL_EFFECT_SCHOOL_DAMAGE (2) or SPELL_EFFECT_WEAPON_DAMAGE (58) given the
+-- names, but that is a GUESS at Cataclysm's semantics, and guessing gameplay
+-- behaviour to un-break a boot is the wrong trade.  Say the word and it can be
+-- mapped deliberately as its own change.
+--
+-- 192_ itself has been regenerated with an effect-range guard, so a fresh
+-- apply of the round never mints these two in the first place.  This file is
+-- only needed because 192_ was already applied.
+-- ---------------------------------------------------------------------------
+
+DELETE FROM `spell_dbc` WHERE `ID` IN (69373, 69375);
+
+-- Verify -- must return 0 before starting the worldserver:
+--   SELECT COUNT(*) FROM `spell_dbc`
+--    WHERE Effect_1 >= 165 OR Effect_2 >= 165 OR Effect_3 >= 165;
