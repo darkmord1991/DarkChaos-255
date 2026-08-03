@@ -1439,6 +1439,7 @@ void OpcodeTable::Initialize()
     /*0x51C*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT1,                 STATUS_NEVER);
     /*0x51D*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT2,                 STATUS_NEVER);
     /*0x51E*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_MULTIPLE_MOVES, STATUS_NEVER);
+    /*0x51F*/ DEFINE_HANDLER(TC9_CMSG_PREPARE_FOR_REDIRECT,                                         STATUS_AUTHED,     PROCESS_THREADUNSAFE,   &WorldSession::HandleTC9PrepareForRedirect              );
     /*0x520*/ DEFINE_HANDLER(CMSG_TELEPORT_GRAVEYARD_REQUEST,                                       STATUS_UNHANDLED,  PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
     /*0x521*/ DEFINE_HANDLER(CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT,                                 STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
     /*0x522*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_SPELL_TOOLTIP_ENRICHMENT,                           STATUS_NEVER);
@@ -1474,6 +1475,7 @@ void OpcodeTable::Initialize()
     /*0x540*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_WORLD_CONTENT,                                      STATUS_NEVER);
     /*0x541*/ DEFINE_HANDLER(CMSG_DC_NATIVE_REQUEST,                                                STATUS_LOGGEDIN,   PROCESS_INPLACE,        &WorldSession::Handle_NULL                              );
     /*0x542*/ DEFINE_SERVER_OPCODE_HANDLER(SMSG_DC_NATIVE_MESSAGE,                                  STATUS_NEVER);
+    /*0x543*/ DEFINE_SERVER_OPCODE_HANDLER(TC9_SMSG_READY_FOR_REDIRECT,                             STATUS_NEVER);
 
 #undef DEFINE_HANDLER
 #undef DEFINE_SERVER_OPCODE_HANDLER

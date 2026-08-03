@@ -1338,6 +1338,7 @@ enum Opcodes : uint16
     SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT1         = 0x51C,
     SMSG_COMMENTATOR_SKIRMISH_QUEUE_RESULT2         = 0x51D,
     SMSG_MULTIPLE_MOVES                             = 0x51E, // uncompressed version of SMSG_COMPRESSED_MOVES
+    TC9_CMSG_PREPARE_FOR_REDIRECT                   = 0x51F,
     CMSG_TELEPORT_GRAVEYARD_REQUEST                 = 0x520,
     CMSG_REQUEST_SPELL_TOOLTIP_ENRICHMENT          = 0x521,
     SMSG_SPELL_TOOLTIP_ENRICHMENT                  = 0x522,
@@ -1373,7 +1374,9 @@ enum Opcodes : uint16
     SMSG_WORLD_CONTENT                              = 0x540,
     CMSG_DC_NATIVE_REQUEST                          = 0x541,
     SMSG_DC_NATIVE_MESSAGE                          = 0x542,
-    NUM_MSG_TYPES                                   = 0x543
+    // Upstream cluster-mode opcode; relocated from 0x520 (taken by CMSG_TELEPORT_GRAVEYARD_REQUEST)
+    TC9_SMSG_READY_FOR_REDIRECT                     = 0x543,
+    NUM_MSG_TYPES                                   = 0x544
 };
 
 enum OpcodeMisc : uint16

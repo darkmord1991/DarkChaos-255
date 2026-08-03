@@ -326,6 +326,18 @@ public:
             // destory towers
             if (eventId >= EVENT_TOWER_OF_LIFE_DESTROYED && eventId <= EVENT_TOWER_OF_FLAMES_DESTROYED)
                 SetData(eventId, 0);
+            else if (eventId == EVENT_HODIR_SHATTER_CHEST)
+            {
+                if (GameObject* go = GetHodirChest(true))
+                {
+                    go->SetGoState(GO_STATE_ACTIVE);
+                    scheduler.Schedule(3s, [this](TaskContext /*context*/)
+                    {
+                        if (GetBossState(BOSS_HODIR) != DONE)
+                            SetData(TYPE_HODIR_HM_FAIL, 0);
+                    });
+                }
+            }
         }
 
         bool SetBossState(uint32 type, EncounterState state) override
@@ -996,6 +1008,24 @@ public:
                     return (mask & (1 << BOSS_YOGGSARON)) == 0;
             }
             return false;
+        }
+
+        bool CheckRequiredBosses(uint32 bossId, Player const* player) const override
+        {
+            if (_SkipCheckRequiredBosses(player))
+                return true;
+
+            switch (bossId)
+            {
+                case BOSS_YOGGSARON:
+                    if (GetBossState(BOSS_VEZAX) != DONE)
+                        return false;
+                    break;
+                default:
+                    break;
+            }
+
+            return true;
         }
     };
 };

@@ -635,6 +635,13 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_SEL_WORLD_STATE, "SELECT Id, Data FROM world_state", CONNECTION_SYNCH);
     PrepareStatement(CHAR_REP_WORLD_STATE, "REPLACE INTO world_state (Id, Data) VALUES(?, ?)", CONNECTION_ASYNC);
 
+    // CHAR_NO_OP_PROVIDE_REALM_CONTEXT is a no-op query that accepts a single parameter: the realm ID.
+    // This query is used specifically in cross-realm scenarios when the database transaction
+    // lacks sufficient context to determine which realm's database the query should target.
+    // By providing the realm ID explicitly, this ensures that mysql reverse proxy will use
+    // correct realm database for the transaction.
+    PrepareStatement(CHAR_NO_OP_PROVIDE_REALM_CONTEXT, "SELECT ? AS no_op", CONNECTION_ASYNC);
+
     // DarkChaos AoE loot persistence statements
     PrepareStatement(CHAR_SEL_DC_AOELOOT_ACCUMULATED_BY_GUID, "SELECT accumulated_gold FROM dc_aoeloot_accumulated WHERE player_guid = ?", CONNECTION_SYNCH);
     PrepareStatement(CHAR_SEL_DC_AOELOOT_TOP10, "SELECT player_guid, accumulated_gold FROM dc_aoeloot_accumulated ORDER BY accumulated_gold DESC LIMIT 10", CONNECTION_SYNCH);
