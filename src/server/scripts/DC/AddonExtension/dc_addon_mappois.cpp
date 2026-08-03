@@ -25,6 +25,13 @@
  * cached. Requests are answered from memory (no DB round-trip); responses are
  * paged like the TELE list and faction-filtered per player.
  *
+ * The faction filter is per TEAM, not per NPC reputation: a marker is hidden
+ * when its FactionTemplate is hostile to the viewer's team. Whole zones can
+ * therefore be blank for one side and that is correct -- every flight master in
+ * Azshara is Bilgewater or Orcish, so Alliance players see no flight marker
+ * there at all. A GM in GM mode is exempt and sees every marker (TeamMaskFor),
+ * which is the difference between "the zone is broken" and "the zone is Horde".
+ *
  * A POI whose name matches its type's default label is sent without a name
  * (every mailbox is called "Mailbox"); both renderers already fall back to the
  * type label, which keeps the once-per-session payload down.
@@ -362,8 +369,36 @@ namespace MapPOIs
             ComputeVisibleListVersion(FACTION_MASK_ALLIANCE);
         static uint32 const hordeVersion =
             ComputeVisibleListVersion(FACTION_MASK_HORDE);
+        // Team mask 0 hides nothing, so this hashes the WHOLE list -- the GM
+        // view (see TeamMaskFor). It must be its own version or a GM would
+        // store the unfiltered list under their faction's cache key and keep
+        // being told it is current after .gm off. With a distinct hash the
+        // version check misses on the next request and the client refills.
+        static uint32 const unfilteredVersion = ComputeVisibleListVersion(0);
+        if (teamMask == 0)
+            return unfilteredVersion;
         return (teamMask == FACTION_MASK_ALLIANCE)
             ? allianceVersion : hordeVersion;
+    }
+
+    // Which markers this player may see.
+    //
+    // Normally the opposite faction's are hidden -- Azshara's flight masters are
+    // all Bilgewater/Orcish, so an Alliance player correctly sees no flight
+    // marker there at all. That is right for players and unhelpful for whoever
+    // is building the zone, who wants to see every marker on the map.
+    //
+    // A GM with `.gm on` gets mask 0, which no hostileMask can ever match, so
+    // nothing is filtered. It follows GM mode rather than account level on
+    // purpose: `.gm off` puts you back on the player's view, so a GM can check
+    // what each faction actually sees without logging a second character.
+    static uint32 TeamMaskFor(Player const* player)
+    {
+        if (player->IsGameMaster())
+            return 0;
+
+        return (player->GetTeamId(true) == TEAM_ALLIANCE)
+            ? FACTION_MASK_ALLIANCE : FACTION_MASK_HORDE;
     }
 
     static void HandleRequestList(Player* player, ParsedMessage const& msg)
@@ -397,9 +432,9 @@ namespace MapPOIs
         if (limit > 100)
             limit = 100;
 
-        // Hide markers whose faction is hostile to the player's team.
-        uint32 const teamMask = (player->GetTeamId(true) == TEAM_ALLIANCE)
-            ? FACTION_MASK_ALLIANCE : FACTION_MASK_HORDE;
+        // Hide markers whose faction is hostile to the player's team (a GM in
+        // GM mode is exempt and sees the lot -- see TeamMaskFor).
+        uint32 const teamMask = TeamMaskFor(player);
 
         uint32 const listVersion = GetVisibleListVersion(teamMask);
 
@@ -468,16 +503,26 @@ namespace MapPOIs
         if (!player)
             return;
 
-        uint32 const teamMask = (player->GetTeamId(true) == TEAM_ALLIANCE)
-            ? FACTION_MASK_ALLIANCE : FACTION_MASK_HORDE;
+        // Same GM exemption as the marker list, so the flight pins a GM was
+        // just shown are not immediately withheld again by discovery gating.
+        uint32 const teamMask = TeamMaskFor(player);
 
         JsonValue nodes;
         nodes.SetArray();
+        // A GM, or anyone the core already treats as a taxi cheater (the
+        // AllFlightPaths config, `.cheat taxi`), is shown every flight point as
+        // discovered -- the same reasoning the native taxi frame uses, where
+        // PlayerTaxi::AppendTaximaskTo sends the whole node mask instead of the
+        // character's when isTaxiCheater() is set. This only drives pin
+        // visibility; whether the flight is actually allowed is still decided
+        // by the real taximask when ActivateTaxiPathTo runs.
+        bool const seeAllNodes = player->IsGameMaster() || player->isTaxiCheater();
+
         for (MapPOI const& poi : GetPOIs())
         {
             if (!poi.taxiNode || (poi.hostileMask & teamMask))
                 continue;
-            if (player->m_taxi.IsTaximaskNodeKnown(poi.taxiNode))
+            if (seeAllNodes || player->m_taxi.IsTaximaskNodeKnown(poi.taxiNode))
                 nodes.Push(JsonValue(poi.taxiNode));
         }
 

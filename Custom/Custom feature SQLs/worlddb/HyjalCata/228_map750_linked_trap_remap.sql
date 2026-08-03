@@ -1,0 +1,58 @@
+-- ---------------------------------------------------------------------------
+-- 228  Map 750 -- linked-trap ids inside gameobject_template were never remapped
+-- ---------------------------------------------------------------------------
+-- SYMPTOM, dozens of lines per boot:
+--   Gameobject (GUID: 674 Entry: 194465) not created: non-existing entry in
+--   `gameobject_template`. Map: 750 (X: 2953.34 Y: -2817.78 Z: 212.795)
+--
+-- THE GUID IN THAT MESSAGE IS A RED HERRING and cost a detour worth recording.
+-- Searching `gameobject` for guid 674 finds a Stormwind spawn on map 0, and no
+-- gameobject row anywhere references entry 194465 -- which made the error look
+-- stale or impossible. It is neither: map-750 GO spawn guids live in the
+-- 9,734,791 - 16,331,715 range, so a 3-digit guid cannot be a spawn at all.
+-- These are RUNTIME guids from Map::GenerateLowGuid, which starts at 1 per map.
+-- The objects are being CREATED at runtime, not loaded from the spawn table.
+--
+-- WHAT CREATES THEM: a GameObject with a linked trap spawns that trap itself
+-- (GameObjectTemplate::GetLinkedGameObjectEntry, GameObjectData.h:494). At the
+-- exact coordinates in the log there are two objects -- the visible one and its
+-- trap. The visible ones were cloned correctly; the trap id EMBEDDED IN THEIR
+-- data fields was not:
+--
+--   3794464 "Ritual Gem"   (GOOBER) data12 = 194465  -> should be 3794465
+--   3795002 "Lava Fissure" (GOOBER) data12 = 195005  -> should be 3795005
+--
+-- Both targets already exist here as proper clones (194465/195005 + 3,600,000,
+-- the same offset those two batches used -- NOT the +3,900,000 that other
+-- gameobject imports used, so the offset has to be read off the data, not
+-- assumed). 60 spawns are affected: Lava Fissure x37, Ritual Gem x23. Their
+-- traps never appear, so the Ritual Gem and the Lava Fissure are inert.
+--
+-- SCOPE IS EXACTLY THESE TWO. All four types that carry a linked trap were
+-- swept across the whole clone band -- BUTTON data3, CHEST data7,
+-- SPELL_FOCUS data2, GOOBER data12 (field indices read from the structs in
+-- GameObjectData.h, not guessed) -- and only these two point at an entry that
+-- does not exist.
+--
+-- THE GENERAL LESSON, already learned once for creatures: an import that
+-- remaps `entry` and the spawn table is NOT finished. Ids embedded in other
+-- columns -- linked traps here, EffectMiscValue for summon spells, SmartAI
+-- action params -- keep pointing at the source ids and fail silently at
+-- runtime. Written as explicit ids with a value guard so it is idempotent;
+-- MySQL 1093 forbids reading the target table in the UPDATE's own subquery,
+-- so the rule lives in the verification query below instead.
+-- ---------------------------------------------------------------------------
+
+UPDATE `gameobject_template` SET `data12` = 3794465 WHERE `entry` = 3794464 AND `data12` = 194465;
+UPDATE `gameobject_template` SET `data12` = 3795005 WHERE `entry` = 3795002 AND `data12` = 195005;
+
+-- Verify -- must return 0 rows, and the boot log must lose every
+-- "not created: non-existing entry in `gameobject_template`" line:
+--   SELECT t.entry, t.type, t.name,
+--          CASE t.type WHEN 1 THEN t.data3 WHEN 3 THEN t.data7
+--                      WHEN 8 THEN t.data2 WHEN 10 THEN t.data12 END AS linked
+--     FROM `gameobject_template` t
+--    WHERE t.entry >= 3600000 AND t.type IN (1,3,8,10)
+--      AND CASE t.type WHEN 1 THEN t.data3 WHEN 3 THEN t.data7
+--                      WHEN 8 THEN t.data2 WHEN 10 THEN t.data12 END > 0
+--   HAVING linked NOT IN (SELECT entry FROM `gameobject_template`);

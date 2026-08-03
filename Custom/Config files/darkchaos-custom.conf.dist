@@ -1269,7 +1269,7 @@ Hotspots.EnabledMaps = "37,850,1410,750,751"
 #                     Empty = all non-city zones on the enabled maps.
 #        Default:     ""
 #
-Hotspots.EnabledZones = "268,6000,6100,4923,4924"
+Hotspots.EnabledZones = "268,6000,6100,4923,4924,4926,4927,4929,4930,4931"
 
 #
 #    Hotspots.ExcludedZones

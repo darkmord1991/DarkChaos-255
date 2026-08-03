@@ -336,11 +336,11 @@ static bool TryGetZoneWorldBox(uint32 zoneId, float& minX, float& maxX, float& m
     return (maxX - minX) > 1.0f && (maxY - minY) > 1.0f;
 }
 
-// Fallback boxes for zones the server's WorldMapArea.dbc may not cover
-// (values from Custom/CSV DBC/WorldMapArea.csv; columns after the name are
-// y1,y2,x1,x2 with x = world X — convention verified against the live areas'
-// game_tele and playercreateinfo coordinates). Only consulted when
-// TryGetZoneWorldBox fails for the zone.
+// Boxes for zones the server's WorldMapArea.dbc does not cover correctly.
+// These are AUTHORITATIVE overrides, checked BEFORE TryGetZoneWorldBox: map
+// 750's single WorldMapArea row (1216, AreaID 4923) spans the whole continent
+// image, so resolving zone 4923 through it would sample every zone on the map.
+// Values are live spawn/zone extents ({ zoneId, minX, maxX, minY, maxY }).
 struct CustomZoneBox
 {
     uint32 zoneId;
@@ -355,9 +355,15 @@ static constexpr CustomZoneBox CUSTOM_ZONE_BOXES[] =
     { 5006,  5334.3f,  6932.32f,  2.91f,    2132.02f  }, // Isles of Giants (map 1405)
     { 6000,  2066.67f, 4333.33f, -5166.67f, -1766.67f }, // Stratholme Valley (map 850)
     { 6100,  4479.17f, 6145.83f, -4025.0f,  -1525.0f  }, // Hyjal Frontier (map 1410)
-    // Cata downport maps have no WorldMapArea entry, so these fallback boxes are
-    // authoritative. Derived from live creature spawn extents on each map.
-    { 4923,  3390.0f,  5780.0f, -4990.0f,  -1270.0f  }, // Mount Hyjal / DC Hyjal (map 750)
+    // DC Hyjal (map 750), one box per leveling-band zone. Extents from the
+    // zone-tagged spawn footprints after HyjalCata/231_map750_zone_backfill.sql.
+    // 4928 Moonglade is deliberately absent (sanctuary, no hotspots).
+    { 4923,  3390.0f,  5780.0f, -4990.0f,  -1270.0f  }, // Hyjal Frontier (113-130)
+    { 4926,  4100.0f,  8000.0f, -5330.0f,  -2200.0f  }, // Winterspring (104-115)
+    { 4927,  3800.0f,  7000.0f, -2600.0f,   -400.0f  }, // Felwood (96-106)
+    { 4929,  4200.0f,  8300.0f, -1700.0f,   1310.0f  }, // Darkshore (80-90)
+    { 4930,  1900.0f,  5100.0f, -8430.0f,  -3900.0f  }, // Azshara (80-90)
+    { 4931,  1279.0f,  4267.0f, -3800.0f,   2410.0f  }, // Ashenvale (88-98)
     { 4924,   630.0f,  3500.0f, -6140.0f,   -810.0f  }, // Plaguelands / DC Plaguelands (map 751)
 };
 
@@ -396,12 +402,10 @@ void HotspotMgr::BuildZoneSampleBoxes()
         box.zoneId = area->ID;
         box.mapId = area->mapid;
 
-        if (TryGetZoneWorldBox(area->ID, box.minX, box.maxX, box.minY, box.maxY))
-        {
-            _zoneSampleBoxes.push_back(box);
-            continue;
-        }
-
+        // Authoritative overrides first — see the CUSTOM_ZONE_BOXES comment
+        // (map 750's WorldMapArea row spans the whole continent, so the DBC
+        // path would give every zone there the same map-wide box).
+        bool usedCustom = false;
         for (CustomZoneBox const& custom : CUSTOM_ZONE_BOXES)
         {
             if (custom.zoneId != area->ID)
@@ -411,7 +415,12 @@ void HotspotMgr::BuildZoneSampleBoxes()
             box.minY = custom.minY;
             box.maxY = custom.maxY;
             _zoneSampleBoxes.push_back(box);
+            usedCustom = true;
+            break;
         }
+
+        if (!usedCustom && TryGetZoneWorldBox(area->ID, box.minX, box.maxX, box.minY, box.maxY))
+            _zoneSampleBoxes.push_back(box);
         // Zones with no known bounds stay reachable via the periodic map-wide
         // probes in RefillSpawnPool.
     }
