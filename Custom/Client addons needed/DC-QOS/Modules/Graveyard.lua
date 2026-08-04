@@ -26,8 +26,10 @@ local addon = DCQOS
 -- Server module/opcode -- must match dc_addon_namespace.h
 --   Module::GRAVEYARD = "GRVY"
 --   Opcode::Graveyard::CMSG_RETURN = 0x01
-local GRVY_MODULE      = "GRVY"
-local GRVY_CMSG_RETURN = 0x01
+local GRVY_MODULE              = "GRVY"
+local GRVY_CMSG_RETURN         = 0x01
+local GRVY_CMSG_REQUEST_CORPSE = 0x02
+local GRVY_SMSG_CORPSE         = 0x11
 
 -- Faithful retail geometry / art (see header).
 local TEX_BUTTON   = "Interface\\Buttons\\UI-SilverButtonLG-"
@@ -89,6 +91,77 @@ local function RequestReturnToGraveyard()
         pcall(DC.Send, DC, GRVY_MODULE, GRVY_CMSG_RETURN)
     elseif type(DC.Request) == "function" then
         pcall(DC.Request, DC, GRVY_MODULE, GRVY_CMSG_RETURN, {})
+    end
+end
+
+-- ============================================================
+-- Corpse location (SMSG_CORPSE -> Navigation corpse marker)
+-- ============================================================
+-- The server pushes the corpse's world position on spirit release and an
+-- explicit clear on resurrect (dc_addon_graveyard.cpp). The Navigation
+-- module turns it into the highest-priority 3D nav marker while a ghost.
+
+local corpseHandlerRegistered = false
+local lastCorpseRequestAt = 0
+
+local function GetNavigationModule()
+    return type(addon.GetModule) == "function" and addon:GetModule("Navigation") or nil
+end
+
+local function OnCorpseLocation(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local nav = GetNavigationModule()
+    if not nav then
+        return
+    end
+
+    if data.clear == true or not tonumber(data.m) then
+        if type(nav.ClearCorpseLocation) == "function" then
+            nav:ClearCorpseLocation()
+        end
+        return
+    end
+
+    if type(nav.SetCorpseLocation) == "function" then
+        nav:SetCorpseLocation(tonumber(data.m), tonumber(data.x), tonumber(data.y), tonumber(data.z))
+    end
+end
+
+local function EnsureCorpseHandler()
+    if corpseHandlerRegistered then
+        return
+    end
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if not DC or type(DC.RegisterHandler) ~= "function" then
+        return
+    end
+
+    DC:RegisterHandler(GRVY_MODULE, GRVY_SMSG_CORPSE, OnCorpseLocation)
+    corpseHandlerRegistered = true
+end
+
+-- Login/reload while already a ghost: the release push is long gone, so ask.
+-- Throttled: the visibility events (PLAYER_ALIVE / ENTERING_WORLD) can burst.
+local function RequestCorpseLocationIfGhost()
+    EnsureCorpseHandler()
+
+    if not (UnitIsGhost and UnitIsGhost("player")) then
+        return
+    end
+
+    local now = GetTime() or 0
+    if (now - lastCorpseRequestAt) < 2.0 then
+        return
+    end
+    lastCorpseRequestAt = now
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and type(DC.Request) == "function" then
+        pcall(DC.Request, DC, GRVY_MODULE, GRVY_CMSG_REQUEST_CORPSE, {})
     end
 end
 
@@ -294,6 +367,9 @@ function Graveyard.OnEnable()
         eventFrame = CreateFrame("Frame")
         eventFrame:SetScript("OnEvent", function()
             UpdateVisibility()
+            -- Ghost after login/reload: the release-time corpse push is gone,
+            -- re-ask the server so the Navigation corpse marker comes back.
+            RequestCorpseLocationIfGhost()
         end)
     end
     eventFrame:RegisterEvent("PLAYER_ALIVE")          -- released spirit / resurrected

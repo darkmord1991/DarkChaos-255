@@ -362,6 +362,19 @@ DC.AddonProtocol.Graveyard.Enable = 1
 #
 DC.AddonProtocol.QuestPopups.Enable = 1
 
+#
+#    DC.AddonProtocol.QuestNav.Enable
+#        Description: Enable quest navigation data (QNAV module). Serves the
+#                     kill/loot-source creature entries for a supertracked
+#                     quest (drives the WotLKExtensions native selection
+#                     circles on quest targets) and resolves live coordinates
+#                     for quests missing from the addon's generated
+#                     QuestMapData.lua. Both requests are change-gated on the
+#                     client, so traffic stays rare.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.QuestNav.Enable = 1
+
 # -----------------------------------------------------------------------------
 # Message Handling Settings
 # -----------------------------------------------------------------------------
@@ -3522,6 +3535,26 @@ DCFirstStart.MobileTeleporter.ItemId = 0
 #
 DCFirstStart.WelcomeQuest.Enable = 1
 DCFirstStart.WelcomeQuest.Id = 820056
+
+#
+#    DCFirstStart.HyjalCall.*
+#        Description: Hand-off from Azshara Crater (1-80) to the 80-130
+#                     continent (map 750). At the configured level the player
+#                     automatically receives their faction's "call" quest,
+#                     which points at the two portals in Azshara Crater and
+#                     turns in at that faction's start hub on map 750.
+#                     Granted on level-up AND on login, so characters already
+#                     past the level still receive it (guarded on quest status,
+#                     so it is never granted twice).
+#        Enable:        1 = grant, 0 = off
+#        Level:         level at which the quest is handed out (portals share it)
+#        QuestAlliance: quest_template ID for Alliance (Lor'danel, Darkshore)
+#        QuestHorde:    quest_template ID for Horde (Bilgewater Harbor, Azshara)
+#
+DCFirstStart.HyjalCall.Enable = 1
+DCFirstStart.HyjalCall.Level = 78
+DCFirstStart.HyjalCall.QuestAlliance = 81300
+DCFirstStart.HyjalCall.QuestHorde = 81301
 
 #
 #    DCFirstStart.StarterGuild.*

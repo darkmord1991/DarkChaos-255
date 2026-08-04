@@ -23,8 +23,11 @@ local Navigation = {
             autoSuperTrackWhenIdle = true,
             preferNearestQuest = true,
             showDistance = true,
+            distanceUnits = "yards", -- "yards" | "meters" | "auto" (km/mi style scaling)
             showEta = true,
             showWaypointText = true,
+            corpseMarker = true,        -- navigate to the corpse while a ghost (GRVY push)
+            questHighlightRings = true, -- native selection circles on quest kill targets (WotLKExtensions)
             colorizeArrow = true,
             pulseOnArrival = true,
             playArrivalSound = false,
@@ -1297,6 +1300,28 @@ local function UpdateTravelMetrics(distanceYards, targetKey)
     state.lastSampleDistance = nil
 
     return state.speedYardsPerSec, state.etaSeconds
+end
+
+-- Distance readout honoring settings.navigation.distanceUnits:
+--   "yards"  -> "128 yd"
+--   "meters" -> "117 m" / "1.2 km"   (1 yd = 0.9144 m)
+--   "auto"   -> yards under 1000, "1.2k yd" above
+local function FormatDistance(distanceYards)
+    local units = addon.settings.navigation.distanceUnits or "yards"
+
+    if units == "meters" then
+        local meters = distanceYards * 0.9144
+        if meters >= 1000 then
+            return string.format("%.1f km", meters / 1000)
+        end
+        return string.format("%d m", math_floor(meters + 0.5))
+    end
+
+    if units == "auto" and distanceYards >= 1000 then
+        return string.format("%.1fk yd", distanceYards / 1000)
+    end
+
+    return string.format("%d yd", math_floor(distanceYards + 0.5))
 end
 
 local function FormatEta(seconds)
@@ -3830,6 +3855,13 @@ local function SeedQuestPoiCacheFromMapData(questId, mapId, preferTurnIn)
     local mapData = addon.QuestMapData and addon.QuestMapData.quests
     local quest = mapData and mapData[questId]
     if type(quest) ~= "table" then
+        -- Not in the generated table (content added after the last generator
+        -- run): ask the server to resolve it live (QNAV, deduped per session).
+        -- The reply injects a QuestMapData-shaped entry, so the next update
+        -- tick seeds normally.
+        if type(Navigation.RequestQnavQuestResolve) == "function" then
+            Navigation.RequestQnavQuestResolve(questId)
+        end
         return false
     end
 
@@ -5569,7 +5601,367 @@ local function TryAutoSuperTrackQuestTarget(target, mapId)
     return true
 end
 
+-- ============================================================
+-- QNAV / GRVY integration (WotLKExtensions-backed)
+-- ============================================================
+-- Three server-fed features share this block:
+--   * Corpse navigation: GRVY SMSG_CORPSE (world coords, pushed on spirit
+--     release) becomes the highest-priority nav target while a ghost. The
+--     coords also feed the DLL's corpse supertrack state so
+--     C_SuperTrack.IsSuperTrackingCorpse reports truthfully.
+--   * Quest highlight rings: the supertracked quest's kill/loot-source
+--     creature entries (QNAV SMSG_KILL_ENTRIES) drive the DLL's native
+--     selection-circle sweep via SetQuestHighlightEntries.
+--   * Live QuestMapData fallback: quests missing from the generated
+--     QuestMapData.lua are resolved on demand (QNAV SMSG_QUEST_COORDS) and
+--     injected into addon.QuestMapData.quests in the same shape, so every
+--     existing consumer (seeding, cross-map, world-map pins) just works.
+--
+-- Everything lives on one local table: this file is already close to Lua
+-- 5.1's 200-locals-per-chunk limit, so a flat set of file-level locals would
+-- break the whole module ("too many local variables in main function").
+
+local qnav = {
+    -- Module/opcodes must match dc_addon_namespace.h Module::QUEST_NAV.
+    MODULE = "QNAV",
+    CMSG_KILL_ENTRIES = 0x01,
+    CMSG_RESOLVE_QUEST = 0x02,
+    SMSG_KILL_ENTRIES = 0x10,
+    SMSG_QUEST_COORDS = 0x11,
+}
+
+function qnav.GetProtocol()
+    return rawget(_G, "DCAddonProtocol")
+end
+
+-- World position -> (raw WorldMapArea id, normalized x/y) using the generated
+-- MapAreaBounds table. Prefers the smallest containing ZONE rect; continent
+-- rows (areaId 0) only when no zone rect contains the point.
+function qnav.WorldPointToMapData(gameMapId, worldX, worldY)
+    gameMapId = tonumber(gameMapId)
+    worldX = tonumber(worldX)
+    worldY = tonumber(worldY)
+    if not gameMapId or not worldX or not worldY then
+        return nil
+    end
+
+    local bestId, bestX, bestY, bestWeight
+    for id, entry in pairs(addon.MapAreaBounds or {}) do
+        local areaMapId, left, right, top, bottom, areaId =
+            entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]
+        if areaMapId == gameMapId and left and right and top and bottom
+            and left ~= right and top ~= bottom then
+            local normX = (left - worldY) / (left - right)
+            local normY = (top - worldX) / (top - bottom)
+            if normX >= 0 and normX <= 1 and normY >= 0 and normY <= 1 then
+                local rectArea = math_abs(left - right) * math_abs(top - bottom)
+                -- Zone rows always beat continent rows; smaller rect wins.
+                local weight = (areaId and areaId ~= 0) and rectArea or (rectArea * 100000)
+                if not bestWeight or weight < bestWeight then
+                    bestWeight = weight
+                    bestId = id
+                    bestX = normX
+                    bestY = normY
+                end
+            end
+        end
+    end
+
+    return bestId, bestX, bestY
+end
+
+-- World position -> current UI map normalized coords, UNCLAMPED (cross-zone
+-- targets extrapolate outside [0,1]; the projection handles that).
+function qnav.WorldToCurrentMapUnclamped(uiMapId, gameMapId, worldX, worldY)
+    uiMapId = tonumber(uiMapId)
+    if not uiMapId then
+        return nil
+    end
+
+    local boundsTable = addon.MapAreaBounds
+    -- MapAreaBounds is keyed by raw WorldMapArea.ID; uiMapId is ID + 1.
+    local entry = boundsTable and (boundsTable[uiMapId - 1] or boundsTable[uiMapId])
+    if not entry then
+        return nil
+    end
+
+    local areaMapId, left, right, top, bottom = entry[1], entry[2], entry[3], entry[4], entry[5]
+    if gameMapId ~= nil and areaMapId ~= nil and areaMapId >= 0
+        and tonumber(gameMapId) ~= tonumber(areaMapId) then
+        return nil
+    end
+    if not left or not right or not top or not bottom
+        or left == right or top == bottom then
+        return nil
+    end
+
+    return (left - worldY) / (left - right), (top - worldX) / (top - bottom)
+end
+
+-- ------------------------------------------------------------
+-- Corpse navigation
+-- ------------------------------------------------------------
+
+function qnav.PushCorpseWaypointNative(mapId, x, y, worldZ)
+    local fn = rawget(_G, "SetSuperTrackedCorpseWaypoint")
+        or rawget(_G, "C_SuperTrack_SetSuperTrackedCorpseWaypoint")
+    if type(fn) == "function" then
+        pcall(fn, tonumber(mapId), tonumber(x), tonumber(y), tonumber(worldZ))
+    end
+end
+
+function qnav.ClearCorpseWaypointNative()
+    local fn = rawget(_G, "ClearSuperTrackedCorpseWaypoint")
+        or rawget(_G, "C_SuperTrack_ClearSuperTrackedCorpseWaypoint")
+    if type(fn) == "function" then
+        pcall(fn)
+    end
+end
+
+-- Highest-priority target: the player's corpse while a ghost.
+function qnav.GetCorpseTarget(mapId)
+    if addon.settings.navigation.corpseMarker == false then
+        return nil
+    end
+    if not (UnitIsGhost and UnitIsGhost("player")) then
+        return nil
+    end
+
+    local corpse = state.corpseLocation
+    if not corpse or not corpse.m or not corpse.x or not corpse.y then
+        return nil
+    end
+
+    local nx, ny = qnav.WorldToCurrentMapUnclamped(mapId, corpse.m, corpse.x, corpse.y)
+    if not nx or not ny then
+        return nil
+    end
+
+    return {
+        source = "corpse",
+        title = "Corpse",
+        x = nx,
+        y = ny,
+        worldZ = corpse.z,
+    }
+end
+
+-- Fed by the Graveyard module from the GRVY SMSG_CORPSE push.
+function Navigation:SetCorpseLocation(gameMapId, worldX, worldY, worldZ)
+    state.corpseLocation = {
+        m = tonumber(gameMapId),
+        x = tonumber(worldX),
+        y = tonumber(worldY),
+        z = tonumber(worldZ),
+    }
+    state.dirty = true
+end
+
+function Navigation:ClearCorpseLocation()
+    state.corpseLocation = nil
+    qnav.ClearCorpseWaypointNative()
+    state.dirty = true
+end
+
+-- ------------------------------------------------------------
+-- Quest highlight rings (native selection circles)
+-- ------------------------------------------------------------
+
+function qnav.ResolveHighlightNatives()
+    local set = rawget(_G, "SetQuestHighlightEntries")
+    local clear = rawget(_G, "ClearQuestHighlightEntries")
+    if type(set) ~= "function" or type(clear) ~= "function" then
+        return nil, nil
+    end
+    return set, clear
+end
+
+function qnav.ApplyHighlightEntries(entries)
+    local set, clear = qnav.ResolveHighlightNatives()
+    if not set then
+        return
+    end
+
+    local count = math.min(#entries, 8)
+    if count == 0 then
+        pcall(clear)
+        return
+    end
+
+    pcall(set, count,
+        entries[1], entries[2], entries[3], entries[4],
+        entries[5], entries[6], entries[7], entries[8])
+end
+
+function qnav.OnKillEntries(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local questId = tonumber(data.q)
+    if not questId then
+        return
+    end
+
+    local entries = {}
+    if type(data.e) == "table" then
+        for i = 1, #data.e do
+            local entry = tonumber(data.e[i])
+            if entry and entry > 0 then
+                entries[#entries + 1] = entry
+            end
+        end
+    end
+
+    state.qnavKillEntryCache = state.qnavKillEntryCache or {}
+    state.qnavKillEntryCache[questId] = entries
+
+    -- Apply only when this quest is still the highlighted one (a slow reply
+    -- must not ring a quest the player has already switched away from).
+    if state.qnavHighlightQuestId == questId then
+        qnav.ApplyHighlightEntries(entries)
+    end
+end
+
+-- Injects a live-resolved quest into the QuestMapData shape so the existing
+-- seeding/cross-map/pin machinery picks it up unchanged.
+function qnav.OnQuestCoords(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local questId = tonumber(data.q)
+    if not questId then
+        return
+    end
+
+    local mapData = addon.QuestMapData and addon.QuestMapData.quests
+    if type(mapData) ~= "table" or mapData[questId] then
+        return -- static data exists (or table missing); nothing to inject
+    end
+
+    local entry = { s = {}, r = {}, o = {} }
+    local injectedAny = false
+
+    local function Convert(list, out, isObjective)
+        if type(list) ~= "table" then
+            return
+        end
+        for i = 1, #list do
+            local marker = list[i]
+            local wmaId, nx, ny =
+                qnav.WorldPointToMapData(marker and marker.m, marker and marker.x, marker and marker.y)
+            if wmaId then
+                out[#out + 1] = {
+                    m = wmaId,
+                    x = nx,
+                    y = ny,
+                    z = tonumber(marker.z),
+                    i = isObjective and tonumber(marker.i) or nil,
+                    k = marker.k,
+                }
+                injectedAny = true
+            end
+        end
+    end
+
+    Convert(data.o, entry.o, true)
+    Convert(data.s, entry.s, false)
+    Convert(data.r, entry.r, false)
+
+    if injectedAny then
+        mapData[questId] = entry
+        state.dirty = true
+    end
+end
+
+function qnav.EnsureHandlers()
+    if state.qnavHandlersRegistered then
+        return
+    end
+
+    local DC = qnav.GetProtocol()
+    if not DC or type(DC.RegisterHandler) ~= "function" then
+        return
+    end
+
+    DC:RegisterHandler(qnav.MODULE, qnav.SMSG_KILL_ENTRIES, qnav.OnKillEntries)
+    DC:RegisterHandler(qnav.MODULE, qnav.SMSG_QUEST_COORDS, qnav.OnQuestCoords)
+    state.qnavHandlersRegistered = true
+end
+
+-- Change-gated: keeps the DLL's ring entry set aligned with the currently
+-- navigated quest. nil questId clears the rings.
+function qnav.UpdateHighlight(questId)
+    questId = tonumber(questId)
+    if questId and questId <= 0 then
+        questId = nil
+    end
+
+    if addon.settings.navigation.questHighlightRings == false then
+        questId = nil
+    end
+
+    if state.qnavHighlightQuestId == questId then
+        return
+    end
+    state.qnavHighlightQuestId = questId
+
+    local _, clear = qnav.ResolveHighlightNatives()
+
+    if not questId then
+        if clear then
+            pcall(clear)
+        end
+        return
+    end
+
+    local cached = state.qnavKillEntryCache and state.qnavKillEntryCache[questId]
+    if cached then
+        qnav.ApplyHighlightEntries(cached)
+        return
+    end
+
+    -- No cache: clear stale rings now, ask the server, apply on reply.
+    if clear then
+        pcall(clear)
+    end
+
+    qnav.EnsureHandlers()
+    local DC = qnav.GetProtocol()
+    if DC and type(DC.Request) == "function" then
+        pcall(DC.Request, DC, qnav.MODULE, qnav.CMSG_KILL_ENTRIES, { q = questId })
+    end
+end
+
+-- Deduped live-resolve request for quests missing from QuestMapData. Exposed
+-- on the module table because SeedQuestPoiCacheFromMapData is defined
+-- lexically earlier in this file (locals are not visible upward).
+function Navigation.RequestQnavQuestResolve(questId)
+    questId = tonumber(questId)
+    if not questId or questId <= 0 then
+        return
+    end
+
+    state.qnavResolveRequested = state.qnavResolveRequested or {}
+    if state.qnavResolveRequested[questId] then
+        return
+    end
+    state.qnavResolveRequested[questId] = true
+
+    qnav.EnsureHandlers()
+    local DC = qnav.GetProtocol()
+    if DC and type(DC.Request) == "function" then
+        pcall(DC.Request, DC, qnav.MODULE, qnav.CMSG_RESOLVE_QUEST, { q = questId })
+    end
+end
+
 local function SelectTarget(playerX, playerY, mapId)
+    local corpseTarget = qnav.GetCorpseTarget(mapId)
+    if corpseTarget then
+        return corpseTarget
+    end
+
     local manualTarget = GetManualTarget(mapId)
     if manualTarget then
         return manualTarget
@@ -5957,9 +6349,14 @@ local function UpdateMarker()
 
     local target = SelectTarget(playerX, playerY, mapId)
     if not target then
+        qnav.UpdateHighlight(nil)
         ClearPrimaryMarker()
         return
     end
+
+    -- Keep the DLL's quest-highlight ring entries aligned with the navigated
+    -- quest (nil for corpse/manual/waypoint targets -> rings clear).
+    qnav.UpdateHighlight(target.questId)
 
     local frame = EnsureFrame()
     frame:SetScale(settings.markerScale or 1.0)
@@ -6011,6 +6408,7 @@ local function UpdateMarker()
         -- ground instead of tracing/approximating (the "floating in the sky /
         -- pinned on the mountain face" class of bugs).
         local waypointWorldZ = FindCachedWorldZ(tonumber(target.questId), tonumber(mapId), visualX, visualY)
+            or tonumber(target.worldZ)
 
         local nativeSyncKey = string.format(
             "%d:%.5f:%.5f:%s:%s",
@@ -6023,6 +6421,15 @@ local function UpdateMarker()
 
         if nativeSyncKey ~= state.lastNativeNavigationSyncKey then
             state.lastNativeNavigationSyncKey = nativeSyncKey
+
+            -- Corpse targets feed the DLL's dedicated corpse supertrack slot
+            -- (highest projection priority + real IsSuperTrackingCorpse);
+            -- any other target clears it.
+            if target.source == "corpse" then
+                qnav.PushCorpseWaypointNative(mapId, visualX, visualY, waypointWorldZ)
+            else
+                qnav.ClearCorpseWaypointNative()
+            end
 
             local qid = tonumber(target.questId)
             if qid and qid > 0 and type(state.nativeSetSuperTrackedQuestID) == "function" then
@@ -6418,7 +6825,7 @@ local function UpdateMarker()
             frame.DistanceText:SetText("Arrived")
             frame.DistanceText:SetTextColor(0.2, 1.0, 0.35)
         else
-            frame.DistanceText:SetText(string.format("%d yd", math_floor(distanceYards + 0.5)))
+            frame.DistanceText:SetText(FormatDistance(distanceYards))
             frame.DistanceText:SetTextColor(1.0, 0.82, 0.0)
         end
         frame.DistanceText:Show()
@@ -8494,6 +8901,46 @@ function Navigation.CreateSettings(parent)
     showEtaCb:SetChecked(settings.showEta)
     showEtaCb:SetScript("OnClick", function(self)
         addon:SetSetting("navigation.showEta", self:GetChecked())
+        state.dirty = true
+    end)
+    yOffset = yOffset - 25
+
+    -- Distance units: yards / meters / auto (cycles on click).
+    local UNIT_LABELS = {
+        yards = "Distance units: Yards",
+        meters = "Distance units: Meters",
+        auto = "Distance units: Auto (k-scaling)",
+    }
+    local UNIT_ORDER = { yards = "meters", meters = "auto", auto = "yards" }
+    local unitsBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    unitsBtn:SetSize(220, 22)
+    unitsBtn:SetPoint("TOPLEFT", 16, yOffset)
+    unitsBtn:SetText(UNIT_LABELS[settings.distanceUnits or "yards"] or UNIT_LABELS.yards)
+    unitsBtn:SetScript("OnClick", function(self)
+        local current = addon.settings.navigation.distanceUnits or "yards"
+        local nextUnits = UNIT_ORDER[current] or "yards"
+        addon:SetSetting("navigation.distanceUnits", nextUnits)
+        self:SetText(UNIT_LABELS[nextUnits])
+        state.dirty = true
+    end)
+    yOffset = yOffset - 30
+
+    local corpseCb = addon:CreateCheckbox(parent)
+    corpseCb:SetPoint("TOPLEFT", 16, yOffset)
+    corpseCb.Text:SetText("Navigate to your corpse while dead (3D marker)")
+    corpseCb:SetChecked(settings.corpseMarker ~= false)
+    corpseCb:SetScript("OnClick", function(self)
+        addon:SetSetting("navigation.corpseMarker", self:GetChecked())
+        state.dirty = true
+    end)
+    yOffset = yOffset - 25
+
+    local ringsCb = addon:CreateCheckbox(parent)
+    ringsCb:SetPoint("TOPLEFT", 16, yOffset)
+    ringsCb.Text:SetText("Highlight quest kill targets with selection circles (needs WotLKExtensions)")
+    ringsCb:SetChecked(settings.questHighlightRings ~= false)
+    ringsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("navigation.questHighlightRings", self:GetChecked())
         state.dirty = true
     end)
     yOffset = yOffset - 25

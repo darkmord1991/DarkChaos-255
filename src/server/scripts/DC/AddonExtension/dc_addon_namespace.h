@@ -99,6 +99,7 @@ namespace DCAddon
         constexpr const char* QUEST_POPUPS  = "QPOP";   // Auto-quest offer / remote turn-in popups (retail-style)
         constexpr const char* BEASTMASTER   = "BEAST";  // Hunter pet catalog (browse + preview + adopt)
         constexpr const char* MAP_POI       = "MPOI";   // World-map POI markers (flight masters, ...)
+        constexpr const char* QUEST_NAV     = "QNAV";   // Quest navigation data (kill-entry highlights, live coord resolve)
     }
 
     // ========================================================================
@@ -533,8 +534,23 @@ namespace DCAddon
         // Return-to-graveyard opcodes (death helper; see dc_addon_graveyard.cpp)
         namespace Graveyard
         {
-            constexpr uint8 CMSG_RETURN = 0x01; // Client: teleport my released ghost to nearest graveyard
-            constexpr uint8 SMSG_RESULT = 0x10; // Server: optional result/ack (JSON)
+            constexpr uint8 CMSG_RETURN         = 0x01; // Client: teleport my released ghost to nearest graveyard
+            constexpr uint8 CMSG_REQUEST_CORPSE = 0x02; // {} Client asks for its corpse location (login/reload while ghost)
+            constexpr uint8 SMSG_RESULT         = 0x10; // Server: optional result/ack (JSON)
+            constexpr uint8 SMSG_CORPSE         = 0x11; // {m,x,y,z} corpse world position; {clear:1} when gone (JSON)
+        }
+
+        // Quest navigation opcodes (retail-style nav support data; see
+        // dc_addon_questnav.cpp). Complements the baked QuestMapData.lua:
+        // kill-entry lists drive the WotLKExtensions native selection circles,
+        // the coord resolve is a live fallback for quests missing from the
+        // generated table (new content before a regeneration).
+        namespace QuestNav
+        {
+            constexpr uint8 CMSG_KILL_ENTRIES  = 0x01; // {q} request kill/loot-source creature entries for a quest
+            constexpr uint8 CMSG_RESOLVE_QUEST = 0x02; // {q} request live coordinates (POIs + spawns) for a quest
+            constexpr uint8 SMSG_KILL_ENTRIES  = 0x10; // {q, e:[entry,...]} up to 8 creature entries (JSON)
+            constexpr uint8 SMSG_QUEST_COORDS  = 0x11; // {q, o:[{m,x,y,z,i}], s:[...], r:[...]} world coords (JSON)
         }
 
         // Beastmaster opcodes (hunter pet catalog: browse, preview, adopt)

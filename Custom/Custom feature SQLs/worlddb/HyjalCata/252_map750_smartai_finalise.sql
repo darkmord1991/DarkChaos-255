@@ -1,0 +1,89 @@
+-- ---------------------------------------------------------------------------
+-- 252  Map 750 -- close out the two items 250_ deliberately left open
+-- ---------------------------------------------------------------------------
+-- Item 1: the flagged event-67 row (FIXED HERE).
+-- Item 2: the 40 "id-drift" entries (INVESTIGATED -- no import wanted, and
+--         importing would have been actively harmful; see the analysis below).
+--
+-- Run AFTER 250_. Idempotent (single value-guarded UPDATE). Worldserver
+-- restart (or `.reload smart_scripts`) to take effect.
+--
+-- ---------------------------------------------------------------------------
+-- 1) 3638951 Twilight Assassin, event 67 (IS_BEHIND_TARGET) -- param retune
+-- ---------------------------------------------------------------------------
+-- 250_ applied the blanket 222_ range-shift rule (ep1/2 -> ep5/6) to this row
+-- because event 67 shares the `minMaxRepeat` union. That rule is right for
+-- event 9 RANGE, but WRONG here: cata's event-67 params 1/2 are COOLDOWNS
+-- (8000/9000 ms), not a distance, so the shift produced an 8000-9000 YARD
+-- window that can never be satisfied -- the Backstab never fires.
+--
+-- The fork's own convention for event 67 is unambiguous -- all 15 stock rows
+-- (Defias Smuggler 95, Murloc Lurker 732, Razorfen Stalker 6035, Wildspawn
+-- Shadowstalker 11456 ...) use exactly:
+--     ep1/ep2 = initial cooldown min/max
+--     ep3/ep4 = repeat min/max      (same values as ep1/ep2)
+--     ep5/ep6 = 0 / 5               (melee range -- you backstab in contact)
+-- so cata's 8000/9000 is restored as the cooldown, mirrored into the repeat
+-- pair, and the range becomes the stock melee window.
+UPDATE `smart_scripts`
+SET `event_param1` = 8000, `event_param2` = 9000,
+    `event_param3` = 8000, `event_param4` = 9000,
+    `event_param5` = 0,    `event_param6` = 5
+WHERE `entryorguid` = 3638951 AND `source_type` = 0 AND `id` = 2
+  AND `event_type` = 67 AND `event_param5` = 8000;
+
+-- ---------------------------------------------------------------------------
+-- 2) The 40 "id-drift" entries -- FINDING: already correct, do NOT import
+-- ---------------------------------------------------------------------------
+-- 250_ excluded 40 entries because their row ids did not line up with
+-- cata_world's, and flagged them "manual review". Reviewed 2026-08-04, and
+-- the id mismatch turned out to be a SYMPTOM, not the story:
+--
+--   Every one of the 40 de-offsets to a VANILLA creature id (3296 Orgrimmar
+--   Grunt, 3713 Wrathtail Wave Rider, 7432 Frostsaber Stalker, 12037
+--   Ursol'lok, ...). AzerothCore already ships its own 3.3.5 smart_scripts
+--   for those creatures, and the clone import copied THOSE. So our rows are
+--   not a damaged partial import at all -- they are the correct stock scripts.
+--   cata_world's rows are Cataclysm's RE-AUTHORED version of the same
+--   creature, which is why the ids differ.
+--
+--   Proof (signature = the multiset of event/action/spell triples per entry):
+--     38 of 40 clones are BYTE-IDENTICAL to their stock counterpart;
+--     the 2 that differ do so only because a clone remap was correctly
+--     applied to them --
+--       3702071 Moonstalker Matriarch: summon target 2070 -> 3702070
+--       3714467 Kroshius:              actionlist 1446700 -> 371446700
+--
+-- Importing cata's rows on top would therefore have:
+--   * stacked two authoring generations on one creature (e.g. Frostsaber
+--     Stalker would cast BOTH stock Ravage 30991 AND cata's 82828/15716/36590);
+--   * duplicated actionlist invocations (Orgrimmar Grunt already calls
+--     6800-6804; cata adds the same five calls again);
+--   * pulled in Cata-only spells (8594, 66060, 78732, 82828, 84867, 75002,
+--     40505 ...) that mostly do not exist in this server's spell_dbc, trading
+--     working scripts for load rejections and runtime spam.
+--
+-- CONCLUSION: no SQL for these 40. The count disparity vs cata_world is
+-- EXPECTED and correct, and any future audit that re-derives "our rows <
+-- cata rows" for vanilla-range creatures should stop at that comparison
+-- rather than treating it as a gap. The real invariant to check for a
+-- vanilla-range clone is "clone rows == stock rows (modulo clone remaps)",
+-- which currently holds for all 40.
+--
+-- ---------------------------------------------------------------------------
+-- Trailer -- verification
+-- ---------------------------------------------------------------------------
+-- the retuned row (expect 8000/9000/8000/9000/0/5):
+-- SELECT event_param1, event_param2, event_param3, event_param4,
+--        event_param5, event_param6
+-- FROM smart_scripts WHERE entryorguid = 3638951 AND source_type = 0 AND id = 2;
+-- no event-67 row anywhere with an impossible range window (expect 0):
+-- SELECT entryorguid, id, event_param5, event_param6 FROM smart_scripts
+-- WHERE event_type = 67 AND source_type = 0 AND event_param6 > 100;
+-- the 40 stay stock-identical -- re-run the invariant if a later import
+-- touches the band (expect every row 'IDENTICAL_TO_STOCK' or a known remap):
+-- SELECT c.entryorguid, c.id, c.event_type, c.action_type, c.action_param1
+-- FROM smart_scripts c WHERE c.source_type = 0 AND c.entryorguid IN
+--   (3603296, 3607432, 3612037, 3702071, 3714467) ORDER BY 1, 2;
+-- In-game: pull a Twilight Assassin in Hyjal, get behind it -- Backstab
+-- (80576) must land within ~9s instead of never.

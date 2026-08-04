@@ -5,8 +5,17 @@
 -- new bands need signposts at each edge. Eight report-to quests from the
 -- reserved 81300 block (kill-free, so no new creatures or objectives):
 --
---   81300  Sails to Lor'danel            A    78   Thadeus (map 37) -> Kyteran
---   81301  The Bilgewater Expedition     H    78   Thadeus (map 37) -> Mixi
+--   81300  The Call of Kalimdor          A    78   AUTO-GRANTED -> Kyteran
+--   81301  The Bilgewater Expedition     H    78   AUTO-GRANTED -> Mixi
+--
+-- 81300/81301 are handed out AUTOMATICALLY at level 78 by the FirstStart
+-- module (DCFirstStart.HyjalCall.* -- see dc_firststart.cpp GrantHyjalCall),
+-- on level-up and on login, so no NPC visit is required and characters already
+-- past 78 still get them. They tell the player to take the matching portal in
+-- Azshara Crater (GO 3809082/3809083 from 44_, gated to the same level 78) and
+-- turn in at the faction's start-hub innkeeper on map 750.
+-- Archmage Thadeus is kept as a MANUAL fallback starter below, so a player who
+-- abandons the quest can pick it up again by hand.
 --   81310  Into Ashenvale                A    85   Kyteran -> Kimlya (Astranaar)
 --   81311  Orders from Splintertree     H    85   Mixi -> Kaylisk (Splintertree)
 --   81312  North to Felwood            both   93   Kimlya + Kaylisk -> Gorrim
@@ -34,14 +43,14 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
     `RewardXPDifficulty`, `RewardMoney`, `AllowableRaces`, `Flags`,
     `LogTitle`, `LogDescription`, `QuestDescription`, `QuestCompletionLog`) VALUES
 (81300, 2, -1,  78, 4929, 4, 100000, 2098253, 8,
- 'Sails to Lor''danel',
- 'Report to Innkeeper Kyteran at Lor''danel in Darkshore.',
- 'Your training in the crater is complete. The Guardians of Hyjal call every able hand to the northern front. Take the teleporter to Lor''danel on the Darkshore coast -- Innkeeper Kyteran will see you settled.',
+ 'The Call of Kalimdor',
+ 'Enter the Portal to Lor''danel in Azshara Crater, then report to Innkeeper Kyteran at Lor''danel in Darkshore.',
+ 'Your training in the crater is complete, $N. The Sentinels are stretched thin along the northern shore and every able hand is called for.$B$BArchmage Thadeus has opened a portal near his camp -- step through it and you will stand in Lor''danel. Speak with Innkeeper Kyteran when you arrive; she will see you settled.',
  'Report to Innkeeper Kyteran at Lor''danel.'),
 (81301, 2, -1,  78, 4930, 4, 100000, 946, 8,
  'The Bilgewater Expedition',
- 'Report to Innkeeper Mixi at Bilgewater Harbor in Azshara.',
- 'Your training in the crater is complete. The Bilgewater Cartel pays well for capable muscle in Azshara. Take the teleporter to Bilgewater Harbor -- Innkeeper Mixi keeps the ledger.',
+ 'Enter the Portal to Bilgewater Harbor in Azshara Crater, then report to Innkeeper Mixi at Bilgewater Harbor in Azshara.',
+ 'Your training in the crater is complete, $N. The Bilgewater Cartel is hiring, and they pay in more than promises.$B$BA portal to Bilgewater Harbor stands near Archmage Thadeus'' camp -- step through it and speak with Innkeeper Mixi. She keeps the ledger, and the ledger decides what you are worth.',
  'Report to Innkeeper Mixi at Bilgewater Harbor.'),
 (81310, 2, -1,  85, 4931, 4, 100000, 2098253, 8,
  'Into Ashenvale',

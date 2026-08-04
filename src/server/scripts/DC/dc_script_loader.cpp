@@ -92,6 +92,7 @@ void AddSC_dc_mount_hyjal_ported();           // MountHyjal/zone_mount_hyjal.cpp
 void AddSC_dc_molten_front();                 // MountHyjal/zone_molten_front.cpp
 void AddSC_dc_felwood_cata();                 // MountHyjal/zone_felwood_cata.cpp
 void AddSC_dc_darkshore_cata();               // MountHyjal/zone_darkshore_cata.cpp
+void AddSC_dc_azshara_cata();                 // MountHyjal/zone_azshara_cata.cpp
 
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
@@ -352,6 +353,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_molten_front);
     DC_LOAD(AddSC_dc_felwood_cata);
     DC_LOAD(AddSC_dc_darkshore_cata);
+    DC_LOAD(AddSC_dc_azshara_cata);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);

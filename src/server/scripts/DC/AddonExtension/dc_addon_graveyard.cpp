@@ -17,11 +17,44 @@
 
 #include "dc_addon_namespace.h"
 #include "Config.h"
+#include "Corpse.h"
 #include "Log.h"
 #include "Player.h"
+#include "ScriptMgr.h"
 
 namespace DCAddon
 {
+    // Corpse location push (SMSG_CORPSE): lets the DC-QOS navigation module
+    // supertrack the corpse with a 3D world marker while the player is a
+    // ghost (the stock client only shows the minimap blip). Sent on spirit
+    // release, cleared on resurrect, and answerable on demand for the
+    // login/reload-while-ghost case.
+    static void SendCorpseLocation(Player* player)
+    {
+        if (!player)
+            return;
+
+        JsonMessage msg(Module::GRAVEYARD, Opcode::Graveyard::SMSG_CORPSE);
+
+        Corpse* corpse = player->GetCorpse();
+        if (corpse)
+        {
+            msg.Set("m", corpse->GetMapId());
+            msg.Set("x", static_cast<double>(corpse->GetPositionX()));
+            msg.Set("y", static_cast<double>(corpse->GetPositionY()));
+            msg.Set("z", static_cast<double>(corpse->GetPositionZ()));
+        }
+        else
+            msg.Set("clear", true);
+
+        msg.Send(player);
+    }
+
+    static void HandleRequestCorpse(Player* player, ParsedMessage const& /*msg*/)
+    {
+        SendCorpseLocation(player);
+    }
+
     // Teleport a released ghost to the nearest graveyard.
     static void HandleReturnToGraveyard(Player* player, const ParsedMessage& /*msg*/)
     {
@@ -54,11 +87,38 @@ namespace DCAddon
             return;
 
         DC_REGISTER_HANDLER(Module::GRAVEYARD, Opcode::Graveyard::CMSG_RETURN, HandleReturnToGraveyard);
+        DC_REGISTER_HANDLER(Module::GRAVEYARD, Opcode::Graveyard::CMSG_REQUEST_CORPSE, HandleRequestCorpse);
     }
 }
+
+// Corpse-location push: released ghosts get the corpse position for the
+// navigation marker; resurrection clears it.
+class DCGraveyardPlayerScript : public PlayerScript
+{
+public:
+    DCGraveyardPlayerScript() : PlayerScript("DCGraveyardPlayerScript") { }
+
+    void OnPlayerReleasedGhost(Player* player) override
+    {
+        DCAddon::SendCorpseLocation(player);
+    }
+
+    void OnPlayerResurrect(Player* player, float /*restorePercent*/, bool& /*applySickness*/) override
+    {
+        // The corpse object may still exist at hook time, so send an explicit
+        // clear instead of re-querying it.
+        if (!player)
+            return;
+
+        DCAddon::JsonMessage msg(DCAddon::Module::GRAVEYARD, DCAddon::Opcode::Graveyard::SMSG_CORPSE);
+        msg.Set("clear", true);
+        msg.Send(player);
+    }
+};
 
 // Register the handler(s) during script load.
 void AddSC_dc_addon_graveyard()
 {
     DCAddon::RegisterGraveyardHandlers();
+    new DCGraveyardPlayerScript();
 }

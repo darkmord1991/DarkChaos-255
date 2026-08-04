@@ -117,6 +117,12 @@ namespace DCFirstStart
         // Onboarding: welcome quest, starter guild, newcomer chat
         constexpr const char* WELCOME_QUEST_ENABLE = "DCFirstStart.WelcomeQuest.Enable";
         constexpr const char* WELCOME_QUEST_ID = "DCFirstStart.WelcomeQuest.Id";
+
+        // Hand-off from Azshara Crater (1-80) to the 80-130 continent (map 750)
+        constexpr char const* HYJAL_CALL_ENABLE = "DCFirstStart.HyjalCall.Enable";
+        constexpr char const* HYJAL_CALL_LEVEL = "DCFirstStart.HyjalCall.Level";
+        constexpr char const* HYJAL_CALL_QUEST_ALLIANCE = "DCFirstStart.HyjalCall.QuestAlliance";
+        constexpr char const* HYJAL_CALL_QUEST_HORDE = "DCFirstStart.HyjalCall.QuestHorde";
         constexpr const char* STARTER_GUILD_ENABLE = "DCFirstStart.StarterGuild.Enable";
         constexpr const char* STARTER_GUILD_NAME_ALLIANCE = "DCFirstStart.StarterGuild.NameAlliance";
         constexpr const char* STARTER_GUILD_NAME_HORDE = "DCFirstStart.StarterGuild.NameHorde";
@@ -721,6 +727,58 @@ namespace DCFirstStart
             LOG_INFO("module.dc", "[DCFirstStart] Granted welcome quest {} to {}", questId, player->GetName());
     }
 
+    // Hand-off to the 80-130 continent: at the configured level the player is
+    // handed their faction's "call" quest, which points at the two portals in
+    // Azshara Crater (GO 3809082 Alliance / 3809083 Horde, themselves gated to
+    // the same level) and turns in at the start hub on map 750.
+    //
+    // Called from BOTH the level-up hook and every login: the level-up path is
+    // the normal one, the login path retro-grants characters that were already
+    // past the level before this shipped and retries anyone whose quest log was
+    // full at level-up. The quest-status guard below is what makes that safe to
+    // run repeatedly.
+    void GrantHyjalCall(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::HYJAL_CALL_ENABLE, true))
+            return;
+
+        if (player->GetLevel() < sConfigMgr->GetOption<uint32>(Config::HYJAL_CALL_LEVEL, 78))
+            return;
+
+        uint32 questId = (player->GetTeamId() == TEAM_ALLIANCE)
+            ? sConfigMgr->GetOption<uint32>(Config::HYJAL_CALL_QUEST_ALLIANCE, 81300)
+            : sConfigMgr->GetOption<uint32>(Config::HYJAL_CALL_QUEST_HORDE, 81301);
+
+        if (!questId)
+            return;
+
+        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+        if (!quest)
+        {
+            if (debug)
+                LOG_WARN("module.dc", "[DCFirstStart] Hyjal call quest {} not found in quest_template", questId);
+            return;
+        }
+
+        // Already in the log, handed in, or otherwise not takeable (log full,
+        // wrong race mask): leave it alone and try again on the next login.
+        if (player->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+            return;
+
+        if (!player->CanTakeQuest(quest, false) || !player->CanAddQuest(quest, false))
+        {
+            if (debug)
+                LOG_INFO("module.dc", "[DCFirstStart] {} cannot take Hyjal call quest {} (requirements or full log)",
+                         player->GetName(), questId);
+            return;
+        }
+
+        player->AddQuestAndCheckCompletion(quest, nullptr);
+
+        if (debug)
+            LOG_INFO("module.dc", "[DCFirstStart] Granted Hyjal call quest {} to {}", questId, player->GetName());
+    }
+
     // Onboarding: transfer starter-guild leadership to a dedicated "system"
     // character so no real player ever owns/controls it. The system character
     // is created once by staff on an account nobody logs into (random/unknown
@@ -927,6 +985,11 @@ public:
         // persists across sessions (custom channels are not auto-restored).
         DCFirstStart::JoinNewcomerChannel(player, debug);
 
+        // Hand-off to the 80-130 continent. Safe on every login (guards on
+        // quest status); this is what covers characters that were already past
+        // the level when the feature shipped.
+        DCFirstStart::GrantHyjalCall(player, debug);
+
         // Announce module if enabled
         bool announce = sConfigMgr->GetOption<bool>(
             DCFirstStart::Config::ANNOUNCE, false);
@@ -998,6 +1061,11 @@ public:
             DCFirstStart::Config::DUALSPEC_LEVEL, 10);
         if (oldLevel < dualSpecLevel && player->GetLevel() >= dualSpecLevel)
             DCFirstStart::GrantDualSpec(player, debug);
+
+        uint32 hyjalCallLevel = sConfigMgr->GetOption<uint32>(
+            DCFirstStart::Config::HYJAL_CALL_LEVEL, 78);
+        if (oldLevel < hyjalCallLevel && player->GetLevel() >= hyjalCallLevel)
+            DCFirstStart::GrantHyjalCall(player, debug);
     }
 };
 

@@ -36,6 +36,7 @@ void AddSC_dc_addon_graveyard();
 void AddSC_dc_addon_death_markers();
 void AddSC_dc_addon_beastmaster();
 void AddSC_dc_addon_mappois();
+void AddSC_dc_addon_questnav();
 
 namespace DCAddon { void AddTeleportScripts(); }
 namespace DCAddon { void AddQuestFlowScripts(); }
@@ -99,4 +100,8 @@ void AddDCAddonExtensionScripts()
 
     // Map POI markers (flight masters on world maps without a taxi map)
     AddSC_dc_addon_mappois();
+
+    // Quest navigation data (native selection-circle kill entries + live
+    // QuestMapData fallback resolve)
+    AddSC_dc_addon_questnav();
 }
