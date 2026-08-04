@@ -93,6 +93,49 @@ DCAddonProtocol = {
     _pendingRequests = {},      -- Requests waiting for response (keyed by requestId)
     _pendingRequestsLegacy = {},-- Legacy lookup by module_opcode
 
+    -- ------------------------------------------------------------------
+    -- Outbound throttle (see DC:_SendAddonWhisper)
+    -- ------------------------------------------------------------------
+    -- A protocol-level ceiling on addon-message rate. Addon whispers ride
+    -- CMSG_MESSAGECHAT (0x095); the core rate-limits opcodes per world-second
+    -- via `antidos_opcode_policies` (WorldSession::DosProtection::EvaluateOpcode)
+    -- and its policies KICK. Our world DB currently has no row for 0x095, so a
+    -- runaway module is "only" wasted bandwidth + server CPU today -- but adding
+    -- that row later would silently turn every latent flood into a mass kick.
+    -- This bucket makes the flood structurally impossible either way: no module
+    -- can exceed `refillPerSec` sustained, no matter how broken its own logic.
+    --
+    -- Deliberately a rate CEILING, not a deduplicator: over-budget messages are
+    -- QUEUED, never dropped (until the queue itself overflows). Nothing that
+    -- would have gone out on an idle connection is delayed or lost, so this
+    -- cannot silently swallow a genuine repeated command (two quick buys of the
+    -- same item, say).
+    --
+    -- It is NOT a substitute for module-level restraint. Every message carries a
+    -- unique RID that DC:LogRequest registers in _pendingRequests, so two "same"
+    -- requests are never byte-identical and cannot be collapsed -- dropping one
+    -- would strand its RID until _CheckRequestTimeouts reported a false timeout.
+    -- The queue-level coalesce below is therefore only a safety net for true
+    -- identical re-sends, not a dedupe of repeated requests. Semantic "should I
+    -- even ask again" limits belong in the module, next to the meaning of the
+    -- request (see qnav.AllowRequest in DC-QOS Navigation.lua).
+    _throttle = {
+        enabled = true,
+        burst = 20,             -- bucket capacity (allows login/zone sync bursts)
+        refillPerSec = 10,      -- sustained ceiling; keep <= any 0x095 antidos MaxAllowedCount
+        maxQueue = 64,          -- queued messages before we start shedding
+        tokens = 20,            -- current bucket level (starts full)
+        lastRefill = nil,       -- GetTime() of last refill
+        queue = {},             -- FIFO of pending payload strings
+        stats = {
+            sent = 0,           -- delivered to SendAddonMessage
+            queued = 0,         -- deferred at least once
+            coalesced = 0,      -- collapsed into an identical queued entry
+            dropped = 0,        -- shed on queue overflow
+            urgent = 0,         -- bypassed the bucket (handshake etc.)
+        },
+    },
+
     -- Request ID generator
     _requestIdCounter = 0,
     _requestIdEpoch = 0,        -- Epoch counter to prevent overflow collision
@@ -1741,12 +1784,9 @@ function DC:_InvokeHandlerSafe(handlerKind, module, opcode, handler, ...)
     return ok
 end
 
-function DC:_SendAddonWhisper(msg)
-    if type(msg) ~= "string" or msg == "" then
-        self:LogNetEvent("error", "send", "Attempted to send empty addon payload")
-        return false
-    end
-
+-- Actually hand a payload to the game. The only caller that should reach this
+-- directly is the throttle drain below (plus urgent bypasses).
+function DC:_SendAddonWhisperNow(msg)
     if type(SendAddonMessage) ~= "function" then
         self:LogNetEvent("error", "send", "SendAddonMessage API unavailable")
         return false
@@ -1771,7 +1811,142 @@ function DC:_SendAddonWhisper(msg)
         return false
     end
 
+    self._throttle.stats.sent = self._throttle.stats.sent + 1
     return true
+end
+
+-- Refill the token bucket from elapsed wall time.
+function DC:_ThrottleRefill()
+    local t = self._throttle
+    local now = GetTime and GetTime() or 0
+
+    if not t.lastRefill then
+        t.lastRefill = now
+        return
+    end
+
+    local elapsed = now - t.lastRefill
+    if elapsed <= 0 then
+        return
+    end
+    t.lastRefill = now
+
+    t.tokens = math.min(t.burst, (t.tokens or 0) + elapsed * (t.refillPerSec or 1))
+end
+
+-- Send as many queued payloads as the bucket currently affords. FIFO, so the
+-- chunks of a chunked message stay contiguous and in order (SendChunked
+-- enqueues them all synchronously).
+function DC:_ThrottleDrain()
+    local t = self._throttle
+    if not t.enabled or #t.queue == 0 then
+        return
+    end
+
+    self:_ThrottleRefill()
+
+    while #t.queue > 0 and (t.tokens or 0) >= 1 do
+        local msg = table.remove(t.queue, 1)
+        t.tokens = t.tokens - 1
+        self:_SendAddonWhisperNow(msg)
+    end
+end
+
+-- Queue a payload the bucket could not afford right now.
+function DC:_ThrottleEnqueue(msg)
+    local t = self._throttle
+
+    -- Coalesce byte-identical payloads still waiting: they have NOT been
+    -- delivered, so collapsing them changes nothing the server would observe.
+    -- Rare in practice (RIDs make most messages unique -- see the _throttle
+    -- comment); this only catches true identical re-sends. Never collapses
+    -- payloads that differ, so a distinct request is never lost.
+    for i = 1, #t.queue do
+        if t.queue[i] == msg then
+            t.stats.coalesced = t.stats.coalesced + 1
+            return true
+        end
+    end
+
+    if #t.queue >= (t.maxQueue or 64) then
+        -- Sustained overproduction: shed the oldest so the freshest state still
+        -- gets through, and make the loss loud rather than silent.
+        table.remove(t.queue, 1)
+        t.stats.dropped = t.stats.dropped + 1
+        self:LogNetEvent("warn", "send", "Outbound throttle queue full; dropped oldest message", {
+            queued = #t.queue,
+            dropped = t.stats.dropped,
+            refillPerSec = t.refillPerSec,
+        })
+    end
+
+    t.queue[#t.queue + 1] = msg
+    t.stats.queued = t.stats.queued + 1
+    return true
+end
+
+-- Public send entry point. `urgent` bypasses the bucket entirely -- reserved for
+-- the handshake, which must not sit behind a backlog or the session never
+-- establishes in the first place.
+function DC:_SendAddonWhisper(msg, urgent)
+    if type(msg) ~= "string" or msg == "" then
+        self:LogNetEvent("error", "send", "Attempted to send empty addon payload")
+        return false
+    end
+
+    local t = self._throttle
+
+    if urgent then
+        t.stats.urgent = t.stats.urgent + 1
+        return self:_SendAddonWhisperNow(msg)
+    end
+
+    if not t.enabled then
+        return self:_SendAddonWhisperNow(msg)
+    end
+
+    self:_ThrottleRefill()
+
+    -- Anything already queued must stay ahead of this message (ordering), so a
+    -- non-empty queue means we queue too even if a token happens to be free.
+    if #t.queue == 0 and (t.tokens or 0) >= 1 then
+        t.tokens = t.tokens - 1
+        return self:_SendAddonWhisperNow(msg)
+    end
+
+    return self:_ThrottleEnqueue(msg)
+end
+
+-- Diagnostics: current bucket/queue state plus lifetime counters.
+function DC:GetThrottleStats()
+    local t = self._throttle
+    return {
+        enabled = t.enabled,
+        burst = t.burst,
+        refillPerSec = t.refillPerSec,
+        tokens = math.floor((t.tokens or 0) * 10) / 10,
+        queued = #t.queue,
+        sent = t.stats.sent,
+        deferred = t.stats.queued,
+        coalesced = t.stats.coalesced,
+        dropped = t.stats.dropped,
+        urgent = t.stats.urgent,
+    }
+end
+
+-- Tuning hook. Keep refillPerSec at or below the `antidos_opcode_policies`
+-- MaxAllowedCount for opcode 0x095 if a row is ever added for it.
+function DC:ConfigureThrottle(opts)
+    if type(opts) ~= "table" then
+        return
+    end
+
+    local t = self._throttle
+    if opts.enabled ~= nil then t.enabled = opts.enabled and true or false end
+    if tonumber(opts.burst) then t.burst = math.max(1, tonumber(opts.burst)) end
+    if tonumber(opts.refillPerSec) then t.refillPerSec = math.max(0.1, tonumber(opts.refillPerSec)) end
+    if tonumber(opts.maxQueue) then t.maxQueue = math.max(1, tonumber(opts.maxQueue)) end
+    t.tokens = math.min(t.tokens or 0, t.burst)
 end
 
 function DC:RegisterHandler(module, opcode, handler)
@@ -2128,6 +2303,17 @@ function DC:_PollNativeResponses()
     end
 end
 
+-- Session-critical traffic that must never sit behind a throttle backlog:
+-- the handshake and version check establish the connection in the first place,
+-- and both are once-per-session, so bypassing the bucket costs nothing.
+function DC:_IsUrgentMessage(module, opcode)
+    if module ~= "CORE" then
+        return false
+    end
+    local op = tonumber(opcode)
+    return op == 0x01 or op == 0x02
+end
+
 function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     local requestId = self:NextRequestId()
     local parts = {module, tostring(opcode), "RID:" .. tostring(requestId)}
@@ -2150,7 +2336,7 @@ function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     if self._debug then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending: " .. msg)
     end
-    return self:_SendAddonWhisper(msg)
+    return self:_SendAddonWhisper(msg, self:_IsUrgentMessage(module, opcode))
 end
 
 -- WoW 3.3.5a addon message size limit is 255 bytes
@@ -3177,6 +3363,13 @@ frame:SetScript("OnUpdate", function(self, elapsed)
         DC:_PollNativeResponses()
     end
 
+    -- Release throttled outbound messages as the token bucket refills. Runs
+    -- every frame (not on the 1s bookkeeping tick) so a burst clears promptly;
+    -- it is a no-op whenever the queue is empty, which is the normal case.
+    if type(DC._ThrottleDrain) == "function" then
+        DC:_ThrottleDrain()
+    end
+
     DC._tick = (DC._tick or 0) + (elapsed or 0)
     if DC._tick < 1.0 then
         return
@@ -3533,6 +3726,34 @@ SlashCmdList["DC"] = function(msg)
     elseif cmd == "sendjson" then
         DC:SendJSON("CORE", 99, {action = "test", timestamp = time()})
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Sent JSON test")
+    elseif cmd == "throttle" then
+        local sub = string.lower(args[2] or "")
+        if sub == "on" or sub == "off" then
+            DC:ConfigureThrottle({ enabled = (sub == "on") })
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Outbound throttle: " .. sub)
+        elseif sub == "rate" and tonumber(args[3]) then
+            DC:ConfigureThrottle({ refillPerSec = tonumber(args[3]) })
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Outbound throttle rate: "
+                .. tostring(DC._throttle.refillPerSec) .. "/s")
+        else
+            local s = DC:GetThrottleStats()
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Outbound throttle: "
+                .. (s.enabled and "|cff00ff00on|r" or "|cffff4444off|r")
+                .. "  ceiling=" .. tostring(s.refillPerSec) .. "/s  burst=" .. tostring(s.burst))
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r   tokens=" .. tostring(s.tokens)
+                .. "  queued=" .. tostring(s.queued)
+                .. "  sent=" .. tostring(s.sent))
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r   deferred=" .. tostring(s.deferred)
+                .. "  coalesced=" .. tostring(s.coalesced)
+                .. "  dropped=" .. (s.dropped > 0
+                    and ("|cffff4444" .. tostring(s.dropped) .. "|r") or "0")
+                .. "  urgent=" .. tostring(s.urgent))
+            if s.dropped > 0 then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC]|r   dropped > 0 means a module is"
+                    .. " overproducing - find it before raising the rate.")
+            end
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Usage: /dc throttle [on|off|rate <n>]")
+        end
     elseif cmd == "native" or cmd == "seas" or cmd == "seasonal" then
         -- Native dedicated-opcode round-trip test for a bridged module. Reports
         -- the transport decision, then fires that module's read requests and

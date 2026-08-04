@@ -5798,6 +5798,9 @@ function qnav.OnKillEntries(data)
         return
     end
 
+    -- The server answers QNAV, so the give-up guard in qnav.AllowRequest stays open.
+    state.qnavAnyReplySeen = true
+
     local questId = tonumber(data.q)
     if not questId then
         return
@@ -5829,6 +5832,8 @@ function qnav.OnQuestCoords(data)
     if type(data) ~= "table" then
         return
     end
+
+    state.qnavAnyReplySeen = true
 
     local questId = tonumber(data.q)
     if not questId then
@@ -5892,6 +5897,51 @@ end
 
 -- Change-gated: keeps the DLL's ring entry set aligned with the currently
 -- navigated quest. nil questId clears the rings.
+-- Request rate caps. The navigated quest can legitimately OSCILLATE between
+-- two candidates (nearest-quest flapping, followed/focused/watched precedence
+-- churn), and the kill-entry request is REPLY-DEPENDENT: until a reply caches
+-- the entries, a pure change-latch re-fires on every oscillation -- once per
+-- update tick (0.15s). Against a server with QNAV disabled no reply ever
+-- arrives, so that becomes a sustained ~7 req/s stream and the core's
+-- DosProtection::EvaluateOpcode kicks the player. Upstream (WXL-UI-Tracker)
+-- hit exactly this and fixed it with a 2s cooldown; these caps are the same
+-- idea, plus a give-up so an unsupported server costs a handful of packets
+-- rather than a trickle forever.
+-- Kept on the qnav table, not as file-level locals: this chunk is at Lua's
+-- 200-locals ceiling (see the header note on the qnav table).
+qnav.REQUEST_COOLDOWN = 2      -- seconds between ANY two QNAV requests
+qnav.QUEST_RETRY_COOLDOWN = 10 -- seconds before re-asking for the SAME quest
+qnav.MAX_UNANSWERED = 3        -- give up for the session after this many silent requests
+
+-- True when a QNAV request may go out now. Records the send when it allows one.
+function qnav.AllowRequest(questId, sentAtTable)
+    -- Server has never answered a QNAV request: assume the module is disabled
+    -- (or the server predates it) and stop asking for the rest of the session.
+    if not state.qnavAnyReplySeen
+        and (state.qnavRequestCount or 0) >= qnav.MAX_UNANSWERED then
+        return false
+    end
+
+    local now = GetTime() or 0
+
+    if (now - (state.qnavLastRequestAt or -qnav.REQUEST_COOLDOWN)) < qnav.REQUEST_COOLDOWN then
+        return false
+    end
+
+    local sentAt = sentAtTable and sentAtTable[questId]
+    if sentAt and (now - sentAt) < qnav.QUEST_RETRY_COOLDOWN then
+        return false
+    end
+
+    state.qnavLastRequestAt = now
+    state.qnavRequestCount = (state.qnavRequestCount or 0) + 1
+    if sentAtTable then
+        sentAtTable[questId] = now
+    end
+
+    return true
+end
+
 function qnav.UpdateHighlight(questId)
     questId = tonumber(questId)
     if questId and questId <= 0 then
@@ -5902,15 +5952,17 @@ function qnav.UpdateHighlight(questId)
         questId = nil
     end
 
-    if state.qnavHighlightQuestId == questId then
-        return
-    end
+    -- The highlight latch gates only the (native) ring updates. The request
+    -- path below must stay reachable while a quest remains selected, so a
+    -- rate-suppressed or lost request can still be retried later -- an early
+    -- return on "unchanged" would leave that quest permanently unringed.
+    local changed = state.qnavHighlightQuestId ~= questId
     state.qnavHighlightQuestId = questId
 
     local _, clear = qnav.ResolveHighlightNatives()
 
     if not questId then
-        if clear then
+        if changed and clear then
             pcall(clear)
         end
         return
@@ -5918,13 +5970,20 @@ function qnav.UpdateHighlight(questId)
 
     local cached = state.qnavKillEntryCache and state.qnavKillEntryCache[questId]
     if cached then
-        qnav.ApplyHighlightEntries(cached)
+        if changed then
+            qnav.ApplyHighlightEntries(cached)
+        end
         return
     end
 
-    -- No cache: clear stale rings now, ask the server, apply on reply.
-    if clear then
+    -- No cache yet: drop the previous quest's rings, then ask (rate-capped).
+    if changed and clear then
         pcall(clear)
+    end
+
+    state.qnavKillRequestedAt = state.qnavKillRequestedAt or {}
+    if not qnav.AllowRequest(questId, state.qnavKillRequestedAt) then
+        return
     end
 
     qnav.EnsureHandlers()
@@ -5943,9 +6002,16 @@ function Navigation.RequestQnavQuestResolve(questId)
         return
     end
 
+    -- Permanent per-quest latch (a miss is a property of the generated table,
+    -- not of the reply), plus the shared rate cap so a burst of misses -- e.g.
+    -- a zone full of newly added quests -- cannot become a packet flood.
     state.qnavResolveRequested = state.qnavResolveRequested or {}
     if state.qnavResolveRequested[questId] then
         return
+    end
+
+    if not qnav.AllowRequest(questId, nil) then
+        return -- no latch: retry on a later tick once the cooldown clears
     end
     state.qnavResolveRequested[questId] = true
 
