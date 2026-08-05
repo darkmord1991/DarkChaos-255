@@ -467,8 +467,11 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     local entMapId = tonumber(entity.mapId)
     if not entMapId then return false end
 
-    -- Server-provided entities (bosses/deaths) use server zone/area ID in mapId.
-    if entity.kind == "boss" or entity.kind == "death" then
+    -- Server-provided entities (bosses/deaths, and rares pushed by the DC
+    -- RareSpawns announcer) use server zone/area ID in mapId. Manual rares added
+    -- with "/dcmap add rare" have no serverSourced flag and fall through to the
+    -- client-mapId comparison at the bottom.
+    if entity.serverSourced or entity.kind == "boss" or entity.kind == "death" then
         local db = Pins.state and Pins.state.db
         -- Block by server map/zone id directly if blacklisted (bosses only).
         if entity.kind == "boss" and db and db.bossBlacklistMaps and db.bossBlacklistMaps[entMapId] then
@@ -1276,7 +1279,11 @@ function Pins:UpdateWorldPinsInternal()
             if ent and ent.id and ent.mapId and ent.nx and ent.ny then
                 local kind = ent.kind
 
-                if (kind == "boss" or kind == "death") and ent.zoneLabel and activeMapId then
+                -- Server-sourced rares participate in zone learning too: the
+                -- map-750 zones have no static CUSTOM_ZONE_MAPPING entry, so
+                -- this name-match is how their client MapAreaID gets resolved.
+                if (kind == "boss" or kind == "death" or (kind == "rare" and ent.serverSourced))
+                    and ent.zoneLabel and activeMapId then
                     MaybeLearnZoneMapping(self.state, activeMapId, ent.mapId, ent.zoneLabel)
                     learnedActive = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
                     resolvedZoneId = learnedActive or CustomZoneForMap(activeMapId) or MAP_TO_ZONE[activeMapId] or activeMapId

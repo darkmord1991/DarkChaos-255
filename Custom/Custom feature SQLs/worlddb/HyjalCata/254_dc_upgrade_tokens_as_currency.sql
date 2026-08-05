@@ -1,0 +1,59 @@
+-- ---------------------------------------------------------------------------
+-- 254  Upgrade Token + Artifact Essence become REAL currencies
+-- ---------------------------------------------------------------------------
+-- Both were ordinary bag items. They stack to ~100M so they only ever cost one
+-- bag slot, but they still sat in the bags and had to be found there. 3.3.5
+-- has a proper currency system and this moves them into it -- the Currency tab
+-- on the character pane, out of bag space entirely.
+--
+-- HOW IT WORKS on this client/core (verified in source, not assumed):
+--   * `ItemTemplate::IsCurrencyToken()` is `BagFamily & 0x2000`
+--     (BAG_FAMILY_MASK_CURRENCY_TOKENS, ItemTemplate.h:240/725). That flag is
+--     what makes `Player::CanStoreItem` route the item into the dedicated
+--     CURRENCYTOKEN_SLOT_START..END region instead of a bag
+--     (PlayerStorage.cpp:1296/1463/1763).
+--   * Storing it there calls `Player::AddKnownCurrency`
+--     (PlayerStorage.cpp:2728), which sets the PLAYER_FIELD_KNOWN_CURRENCIES
+--     bit from the item's `CurrencyTypes.dbc` row (Player.cpp:14772-14776) so
+--     the client draws it in the Currency tab under its category heading.
+--
+-- THE DBC HALF IS ALREADY DONE -- no DBC work, no redeploy. `Custom/CSV DBC/
+-- CurrencyTypes.csv` already carries both tokens, and they are already indexed
+-- correctly (`CurrencyTypesEntry.ItemId` is the store's real index -- see
+-- DBCStructure.h:837 "used as real index" -- so the row's own ID column is
+-- cosmetic):
+--     row 395 -> ItemID 300311, CategoryID 43, BitIndex 32
+--     row 396 -> ItemID 300312, CategoryID 43, BitIndex 33
+--     CurrencyCategory 43 = "DarkChaos WoW"
+-- So the currency entries have been sitting there ready; the ONLY reason the
+-- tokens still behaved as bag items is the missing BagFamily flag below.
+-- (Do not add further CurrencyTypes rows for these two -- a second row with
+--  the same ItemID collides on the store's index.)
+--
+-- SPENDING IS UNAFFECTED: the upgrade system counts tokens with
+-- `player->GetItemCount()`, which includes the currency-token slots.
+--
+-- MIGRATION NOTE: stacks already sitting in players' bags stay in their bags
+-- (the core routes on acquisition, it does not sweep existing items). They
+-- still count for spending. Players can drag them across, or just let the
+-- next token they earn open the currency entry.
+--
+-- Idempotent. Needs a worldserver restart for item_template to reload.
+-- ---------------------------------------------------------------------------
+
+UPDATE `item_template`
+SET `BagFamily` = `BagFamily` | 0x2000
+WHERE `entry` IN (300311, 300312);
+
+-- ---------------------------------------------------------------------------
+-- Trailer -- verification
+-- ---------------------------------------------------------------------------
+-- flag set (expect BagFamily & 8192 non-zero on both):
+-- SELECT entry, name, BagFamily, BagFamily & 8192 AS is_currency
+-- FROM item_template WHERE entry IN (300311, 300312);
+-- the SQL override table must stay empty so the compiled DBC keeps winning
+-- (it holds the 395/396 rows); a stray row here would shadow them:
+-- SELECT COUNT(*) FROM currencytypes_dbc;   -- expect 0
+-- In-game after restart (no DBC deploy needed): earn a token from any map-750
+-- quest and open Character -> Currency -- the "DarkChaos WoW" category shows
+-- DC Item Upgrade Token counting up, and nothing new lands in the bags.

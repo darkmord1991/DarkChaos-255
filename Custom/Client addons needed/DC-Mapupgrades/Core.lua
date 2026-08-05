@@ -1054,6 +1054,107 @@ local function ApplyBossStatusToEntity(entityId, boss)
     state.db.entityStatus[entityId] = st
 end
 
+-- Server-driven rares (DC RareSpawns announcer, WRLD 0x11 "rares").
+--
+-- Mirrors the world-boss path with two deliberate differences:
+--   * matched on entry FIRST, not spawnId. The map-750/37 rares are pooled, so
+--     the same rare comes back at a different spawn point each time; a
+--     spawnId-first match would accumulate one pin per spawn point.
+--   * position always follows the server, for the same reason: a pin left at
+--     the previous spawn point points at empty ground.
+--
+-- Entities created here carry serverSourced = true so Pins.EntityMatchesMap
+-- resolves them by zone id. Manual "/dcmap add rare" entities have no such flag
+-- and keep the old client-mapId behaviour.
+local function UpsertRareEntityFromServerRecord(r)
+    if type(r) ~= "table" or not state.db then return nil end
+    EnsureEntityTables(state.db)
+
+    local spawnId = tonumber(r.spawnId) or nil
+    local entry = tonumber(r.entry or r.npcEntry or r.creatureEntry) or nil
+    local name = r.name
+    local zoneLabel = r.zone or r.zoneName
+
+    -- mapId carries the server ZONE id for server-sourced entities.
+    local mapId = tonumber(r.mapId) or tonumber(r.zoneId) or nil
+    local nx, ny = NormalizePossibleNormalizedPos(r.nx, r.ny)
+
+    local function findExisting()
+        for _, ent in ipairs(state.db.entities.list) do
+            if ent and ent.kind == "rare" then
+                if entry and ent.entry and tonumber(ent.entry) == entry then
+                    return ent
+                end
+                if spawnId and ent.spawnId and tonumber(ent.spawnId) == spawnId then
+                    return ent
+                end
+                if name and ent.name and NormalizeNameForMatch(ent.name) == NormalizeNameForMatch(name) then
+                    return ent
+                end
+            end
+        end
+        return nil
+    end
+
+    local ent = findExisting()
+    if ent then
+        if name and name ~= "" then ent.name = name end
+        if zoneLabel and zoneLabel ~= "" then ent.zoneLabel = zoneLabel end
+        if spawnId then ent.spawnId = spawnId end
+        if entry then ent.entry = entry end
+        ent.serverSourced = true
+
+        if mapId and nx and ny then
+            ent.mapId = mapId
+            ent.nx = nx
+            ent.ny = ny
+        end
+        return ent
+    end
+
+    local id = state.db.entities.nextId
+    state.db.entities.nextId = id + 1
+    ent = {
+        id = id,
+        kind = "rare",
+        name = name or (entry and tostring(entry)) or (spawnId and tostring(spawnId)) or "Rare",
+        mapId = mapId,
+        nx = nx,
+        ny = ny,
+        entry = entry,
+        spawnId = spawnId,
+        zoneLabel = zoneLabel,
+        serverSourced = true,
+        created = NowEpoch(),
+    }
+    table.insert(state.db.entities.list, ent)
+    return ent
+end
+
+local function ApplyRareStatusToEntity(entityId, rare)
+    if not state.db or not entityId then return end
+    EnsureEntityTables(state.db)
+
+    local now = NowEpoch()
+    local st = state.db.entityStatus[entityId] or {}
+    st.serverUpdatedAt = now
+    st.serverStatus = tostring(rare.status or rare.state or "")
+    st.serverActive = (rare.active == true) or (tostring(st.serverStatus):lower() == "active")
+    st.serverSpawnIn = tonumber(rare.spawnIn or rare.timeLeft) or nil
+
+    if st.serverActive then
+        st.activeUntil = now + 15
+        st.lastSeen = now
+        st.lastSeenReason = "server"
+    else
+        -- Killed. Drop the "seen alive recently" window right away, otherwise
+        -- the pin keeps claiming the rare is up for another 15s.
+        st.activeUntil = nil
+    end
+
+    state.db.entityStatus[entityId] = st
+end
+
 -- Death markers (challenge-mode deaths)
 local DEATH_ENTITY_ID_BASE = 3000000
 
@@ -1192,7 +1293,8 @@ function Core:HandleWorldContent(data)
         local bossesN = (type(data.bosses) == "table") and #data.bosses or 0
         local deathsN = (type(data.deaths) == "table") and #data.deaths or 0
         local hotspotsN = (type(data.hotspots) == "table") and #data.hotspots or 0
-        DebugPrint("WRLD content:", "bosses=" .. tostring(bossesN), "deaths=" .. tostring(deathsN), "hotspots=" .. tostring(hotspotsN))
+        local raresN = (type(data.rares) == "table") and #data.rares or 0
+        DebugPrint("WRLD content:", "bosses=" .. tostring(bossesN), "deaths=" .. tostring(deathsN), "hotspots=" .. tostring(hotspotsN), "rares=" .. tostring(raresN))
     end
 
     -- Death markers are snapshot-owned: replace on full content.
@@ -1229,6 +1331,21 @@ function Core:HandleWorldContent(data)
         end
         if state.db.debug then
             DebugPrint("WRLD bosses:", "withPos=" .. tostring(withPos), "missingPos=" .. tostring(missingPos))
+        end
+        if Pins and Pins.Refresh then
+            Pins:Refresh()
+        end
+    end
+
+    -- Rares (DC RareSpawns announcer). Always incremental: the server pushes one
+    -- record per kill/respawn and never a full snapshot, so unlike deaths this
+    -- must not clear entities it did not receive.
+    if type(data.rares) == "table" then
+        for _, r in ipairs(data.rares) do
+            local ent = UpsertRareEntityFromServerRecord(r)
+            if ent and ent.id then
+                ApplyRareStatusToEntity(ent.id, r)
+            end
         end
         if Pins and Pins.Refresh then
             Pins:Refresh()

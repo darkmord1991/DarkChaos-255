@@ -27,7 +27,11 @@
 -- MinLevel = band start - 2, matching 234_'s convention. AllowableRaces uses
 -- the live vocabulary: Alliance 2098253, Horde 946, both 0. No PrevQuestID --
 -- players entering by teleporter (not from Azshara Crater) must not be locked
--- out. Reward: flat 10g + a mid RewardXPDifficulty tier.
+-- out. Reward: flat 10g, a mid RewardXPDifficulty tier, and a band-matched
+-- Upgrade Token payout (25/30/40/55/75, same scale as HyjalCata 253_ uses for
+-- the zone quests). The token reward is VISIBLE in the turn-in box, and the
+-- ItemUpgradeTokenHooks quest hook skips any quest that grants the token
+-- itself, so it is paid exactly once.
 --
 -- The ender/starter NPCs are native innkeepers/FMs that lack the questgiver
 -- bit -- section 3 ORs it on (npcflag | 2), idempotent.
@@ -41,43 +45,44 @@
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 81300 AND 81315;
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`,
     `RewardXPDifficulty`, `RewardMoney`, `AllowableRaces`, `Flags`,
+    `RewardItem1`, `RewardAmount1`,
     `LogTitle`, `LogDescription`, `QuestDescription`, `QuestCompletionLog`) VALUES
-(81300, 2, -1,  78, 4929, 4, 100000, 2098253, 8,
+(81300, 2, -1,  78, 4929, 4, 100000, 2098253, 8, 300311, 25,
  'The Call of Kalimdor',
  'Enter the Portal to Lor''danel in Azshara Crater, then report to Innkeeper Kyteran at Lor''danel in Darkshore.',
  'Your training in the crater is complete, $N. The Sentinels are stretched thin along the northern shore and every able hand is called for.$B$BArchmage Thadeus has opened a portal near his camp -- step through it and you will stand in Lor''danel. Speak with Innkeeper Kyteran when you arrive; she will see you settled.',
  'Report to Innkeeper Kyteran at Lor''danel.'),
-(81301, 2, -1,  78, 4930, 4, 100000, 946, 8,
+(81301, 2, -1,  78, 4930, 4, 100000, 946, 8, 300311, 25,
  'The Bilgewater Expedition',
  'Enter the Portal to Bilgewater Harbor in Azshara Crater, then report to Innkeeper Mixi at Bilgewater Harbor in Azshara.',
  'Your training in the crater is complete, $N. The Bilgewater Cartel is hiring, and they pay in more than promises.$B$BA portal to Bilgewater Harbor stands near Archmage Thadeus'' camp -- step through it and speak with Innkeeper Mixi. She keeps the ledger, and the ledger decides what you are worth.',
  'Report to Innkeeper Mixi at Bilgewater Harbor.'),
-(81310, 2, -1,  85, 4931, 4, 100000, 2098253, 8,
+(81310, 2, -1,  85, 4931, 4, 100000, 2098253, 8, 300311, 30,
  'Into Ashenvale',
  'Report to Innkeeper Kimlya at Astranaar in Ashenvale.',
  'Darkshore is holding. The fight has moved south into Ashenvale, and Astranaar needs every blade. Travel south and report to Innkeeper Kimlya.',
  'Report to Innkeeper Kimlya at Astranaar.'),
-(81311, 2, -1,  85, 4931, 4, 100000, 946, 8,
+(81311, 2, -1,  85, 4931, 4, 100000, 946, 8, 300311, 30,
  'Orders from Splintertree',
  'Report to Innkeeper Kaylisk at Splintertree Post in Ashenvale.',
  'Azshara runs itself now. Splintertree Post is screaming for reinforcements against the Alliance push. Head west into Ashenvale and report to Innkeeper Kaylisk.',
  'Report to Innkeeper Kaylisk at Splintertree Post.'),
-(81312, 2, -1,  93, 4927, 4, 100000, 0, 8,
+(81312, 2, -1,  93, 4927, 4, 100000, 0, 8, 300311, 40,
  'North to Felwood',
  'Report to Gorrim at the Emerald Sanctuary in Felwood.',
  'The corruption in Felwood answers to neither banner. The Cenarion druids at the Emerald Sanctuary take all comers -- seek out Gorrim at the southern gateway.',
  'Report to Gorrim at the Emerald Sanctuary.'),
-(81313, 2, -1, 101, 4926, 4, 100000, 0, 8,
+(81313, 2, -1, 101, 4926, 4, 100000, 0, 8, 300311, 55,
  'The Frozen Reaches',
  'Report to Innkeeper Vizzie at Everlook in Winterspring.',
  'Winterspring''s passes are open. Everlook welcomes anyone whose coin is good -- and the Steamwheedle pay for strong arms besides. Report to Innkeeper Vizzie.',
  'Report to Innkeeper Vizzie at Everlook.'),
-(81314, 2, -1, 110, 4923, 4, 100000, 0, 8,
+(81314, 2, -1, 110, 4923, 4, 100000, 0, 8, 300311, 75,
  'The Sacred Mountain',
  'Report to Sebelia at Nordrassil on Hyjal.',
  'The summit of Hyjal burns. The Guardians muster at Nordrassil beneath the World Tree for the last ascent. Report to Sebelia -- and bring everything you have.',
  'Report to Sebelia at Nordrassil.'),
-(81315, 2, -1,  93, 4928, 4, 100000, 0, 8,
+(81315, 2, -1,  93, 4928, 4, 100000, 0, 8, 300311, 40,
  'Moonglade Respite',
  'Speak with Keeper Remulos at Nighthaven in Moonglade.',
  'Not every road through these lands is a battlefield. Moonglade remains a sanctuary; Keeper Remulos welcomes travelers who need rest, trade or the druids'' counsel.',

@@ -1129,6 +1129,88 @@ AoELoot.Extensions.TrackDetailedStats = 1
 
 ###############################################################################
 #
+#  SECTION 4B: RARE RESPAWN ANNOUNCER
+#
+#  Announces a rare / rare-elite coming back after it was killed, on the custom
+#  continents. Armed by the kill and fired by the respawn, so a grid reload or a
+#  server restart never produces a phantom announcement.
+#
+#  Requires the rare timers to be sane - see
+#  Custom/Custom feature SQLs/worlddb/RareSpawns/. Rares whose spawntimesecs is
+#  below MinRespawnSecs are silently ignored, which is what keeps five-minute
+#  filler spawns off the wire.
+#
+###############################################################################
+
+#
+#    RareSpawn.Announce.Enable
+#        Description: Master toggle for the rare respawn announcer
+#        Default:     1 (Enabled)
+#
+RareSpawn.Announce.Enable = 1
+
+#
+#    RareSpawn.Announce.Maps
+#        Description: Comma-separated map ids to watch. Rares on any other map
+#                     are ignored entirely.
+#                     750 = Cata Kalimdor downport, 37 = Azshara Crater
+#        Default:     "750,37"
+#
+RareSpawn.Announce.Maps = "750,37"
+
+#
+#    RareSpawn.Announce.MinRespawnSecs
+#        Description: Only announce rares whose spawn respawns no faster than
+#                     this. The single most important setting: at the default
+#                     3600 a rare has to be a genuine 1h+ target to be worth a
+#                     message. Lowering it toward 300 re-enables the spam this
+#                     gate exists to prevent.
+#        Default:     3600 (1 hour)
+#
+RareSpawn.Announce.MinRespawnSecs = 3600
+
+#
+#    RareSpawn.Announce.IncludeRareElite
+#        Description: Also announce rank 2 (CREATURE_ELITE_RAREELITE) creatures,
+#                     not just rank 4 (CREATURE_ELITE_RARE).
+#        Default:     1 (Enabled)
+#
+RareSpawn.Announce.IncludeRareElite = 1
+
+#
+#    RareSpawn.Announce.Scope
+#        Description: Who receives the announcement.
+#                     0 - players in the rare's zone (recommended)
+#                     1 - players on the rare's map
+#                     2 - the whole server
+#                     These are levelling-band rares, not world bosses; a
+#                     server-wide broadcast for one of them is noise for
+#                     everyone outside the band.
+#        Default:     0 (Zone)
+#
+RareSpawn.Announce.Scope = 0
+
+#
+#    RareSpawn.Announce.Cooldown
+#        Description: Per-creature suppression window in seconds. Guards against
+#                     a double announcement if the same rare is added to the
+#                     world twice in quick succession.
+#        Default:     600
+#
+RareSpawn.Announce.Cooldown = 600
+
+#
+#    RareSpawn.Announce.AddonPush
+#        Description: Also push a WRLD SMSG_UPDATE "rares" entry (entry, name,
+#                     map, zone, area, x/y/z) so the DC addon can pin the rare on
+#                     the map and players can mute the chat line client-side.
+#        Default:     1 (Enabled)
+#
+RareSpawn.Announce.AddonPush = 1
+
+
+###############################################################################
+#
 #  SECTION 5: HOTSPOTS SYSTEM
 #
 #  Creates random XP bonus zones across the world that move periodically.

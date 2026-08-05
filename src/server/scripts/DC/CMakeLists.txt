@@ -34,6 +34,11 @@ set(SCRIPTS_DC_Hotspot
     Hotspot/spell_hotspot_buff_800001.cpp
 )
 
+# Rare respawn announcer (maps 750 / 37)
+set(SCRIPTS_DC_RareSpawns
+    RareSpawns/dc_rare_spawn_announce.cpp
+)
+
 # Jadeforest Zone scripts
 set(SCRIPTS_DC_Jadeforest
     Jadeforest/jadeforest_flightmaster.cpp
@@ -376,6 +381,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Prestige}
     ${SCRIPTS_DC_ChallengeMode}
     ${SCRIPTS_DC_Hotspot}
+    ${SCRIPTS_DC_RareSpawns}
     ${SCRIPTS_DC_AoELoot}
     ${SCRIPTS_DC_QOL}
     ${SCRIPTS_DC_PhasedDuels}

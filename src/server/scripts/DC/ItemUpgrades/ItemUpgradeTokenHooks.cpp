@@ -175,28 +175,74 @@ namespace DarkChaos
         }
 
         // Get quest difficulty tier (0 = trivial, 1 = easy, 2 = normal, 3 = hard, 4 = legendary)
-        static uint8 GetQuestDifficultyTier(uint32 quest_level, uint8 player_level)
+        //
+        // quest_level is int32 on purpose: Quest::GetQuestLevel() returns int32
+        // and a scaling quest carries -1. Taking it as uint32 made -1 wrap to
+        // 0xFFFFFFFF, `quest_level + 5` overflow back to 4, and every such
+        // quest score "trivial" (0 tokens). It also removes the matching
+        // underflow on the `quest_level - 5` branch for level 1-4 quests.
+        static uint8 GetQuestDifficultyTier(int32 quest_level, uint8 player_level)
         {
-            if (player_level >= quest_level + 5)
+            int32 const level = int32(player_level);
+
+            if (level >= quest_level + 5)
                 return 0;  // Trivial
-            else if (player_level >= quest_level + 3)
+            else if (level >= quest_level + 3)
                 return 1;  // Easy
-            else if (player_level >= quest_level)
+            else if (level >= quest_level)
                 return 2;  // Normal
-            else if (player_level >= quest_level - 5)
+            else if (level >= quest_level - 5)
                 return 3;  // Hard
             else
                 return 4;  // Legendary
         }
 
         // Calculate quest token reward based on quest level and player level
-        static uint32 CalculateQuestReward(uint32 quest_level, uint8 player_level)
+        static uint32 CalculateQuestReward(int32 quest_level, uint8 player_level)
         {
+            // QuestLevel -1 means "scales to whoever is doing it" -- resolve it
+            // to the player's level exactly like Quest::XPValue does, so scaled
+            // quests are graded Normal instead of silently paying nothing.
+            if (quest_level <= 0)
+                quest_level = int32(player_level);
+
             uint8 difficulty = GetQuestDifficultyTier(quest_level, player_level);
             if (difficulty == 0)
                 return 0;  // Trivial quests don't reward tokens
 
-            return (uint32)(QUEST_REWARD_BASE * (1.0f + (difficulty - 1) * QUEST_SCALING_FACTOR));
+            float reward = QUEST_REWARD_BASE * (1.0f + (difficulty - 1) * QUEST_SCALING_FACTOR);
+
+            // Level scaling: upgrade costs climb steeply with tier (210 tokens
+            // to max a level-80 leveling piece vs 5,500 for a Hyjal-band one),
+            // so a flat per-quest payout is worth progressively less the higher
+            // you go. Divisor 0 disables scaling and restores the flat rate.
+            int32 const divisor = sConfigMgr->GetOption<int32>("ItemUpgrade.QuestReward.LevelDivisor", 40);
+            if (divisor > 0)
+                reward *= 1.0f + (float(player_level) / float(divisor));
+
+            return uint32(reward);
+        }
+
+        // True when the quest hands the upgrade token over itself (a visible
+        // "You will receive" reward). Those quests must NOT also be paid by
+        // this hook or the player is rewarded twice for one turn-in. Checked
+        // against the quest's own reward lists rather than an id list, so any
+        // future quest that bakes tokens in is handled automatically.
+        static bool QuestGrantsTokenDirectly(Quest const* quest)
+        {
+            uint32 const tokenId = GetUpgradeTokenItemId();
+            if (!tokenId)
+                return false;
+
+            for (uint8 i = 0; i < QUEST_REWARDS_COUNT; ++i)
+                if (quest->RewardItemId[i] == tokenId)
+                    return true;
+
+            for (uint8 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
+                if (quest->RewardChoiceItemId[i] == tokenId)
+                    return true;
+
+            return false;
         }
 
         // Determine if creature is a boss (based on rank)
@@ -322,6 +368,11 @@ namespace DarkChaos
                     return;
 
                 if (IsSeasonalConsolidationEnabled())
+                    return;
+
+                // Quests that hand the token over as a visible reward pay the
+                // player directly -- paying again here would double it.
+                if (QuestGrantsTokenDirectly(quest))
                     return;
 
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();

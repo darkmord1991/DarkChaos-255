@@ -106,6 +106,9 @@ void AddSC_dc_questgiver_status_override_qol(); // QOL/dc_questgiver_status_over
 void AddSC_dc_looter_pet_qol();               // QOL/dc_looter_pet.cpp
 void AddSC_dc_breaking_news_qol();           // QOL/dc_breaking_news_qol.cpp
 
+// --- Rare respawn announcer (maps 750 / 37) ---
+void AddSC_dc_rare_spawn_announce();          // RareSpawns/dc_rare_spawn_announce.cpp
+
 // --- Hotspots system ---
 void AddSC_ac_hotspots();                     // Hotspot/ac_hotspots.cpp
 void AddSC_spell_hotspot_buff_800001();       // Hotspot/spell_hotspot_buff_800001.cpp
@@ -366,6 +369,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_questgiver_status_override_qol);
     DC_LOAD(AddSC_dc_looter_pet_qol);
     DC_LOAD(AddSC_dc_breaking_news_qol);
+
+    LogSection("Rare Respawn Announcer");
+    DC_LOAD(AddSC_dc_rare_spawn_announce);
 
     LogSection("Hotspots System");
     // AddSC_ac_hotspots also registers hotspot command handlers.
