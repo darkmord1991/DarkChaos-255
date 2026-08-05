@@ -200,7 +200,6 @@ Modules\Interface.lua
 Modules\WorldMapWindow.lua
 Modules\GraphicsPlus.lua
 Modules\QuestRecurringLookup.lua
-Modules\MapAreaSizes.lua
 Modules\MapZoneLabels.lua
 Modules\ZoneLabels.lua
 Modules\QuestMapData.lua

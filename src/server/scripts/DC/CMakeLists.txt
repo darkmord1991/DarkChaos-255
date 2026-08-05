@@ -36,6 +36,7 @@ set(SCRIPTS_DC_Hotspot
 
 # Rare respawn announcer (maps 750 / 37)
 set(SCRIPTS_DC_RareSpawns
+    RareSpawns/dc_rare_spawns.h
     RareSpawns/dc_rare_spawn_announce.cpp
 )
 

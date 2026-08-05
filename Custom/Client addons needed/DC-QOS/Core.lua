@@ -525,8 +525,8 @@ end
 
 -- 3.3.5a id-space note: GetCurrentMapAreaID(), GetPlayerMapPosition(), QuestPOI*,
 -- and our native exports all use a "UI map id" that equals WorldMapArea.ID + 1.
--- QuestMapData and the WorldMapArea DBC (and the generated MapAreaSizes table) use
--- the raw WorldMapArea.ID. These helpers convert between the two spaces so the
+-- QuestMapData and the WorldMapArea DBC itself use the raw WorldMapArea.ID.
+-- These helpers convert between the two spaces so the
 -- minimap/HUD/world-map all line up.
 function addon:UiMapIdFromWorldMapAreaId(worldMapAreaId)
     worldMapAreaId = tonumber(worldMapAreaId)
@@ -643,7 +643,7 @@ function addon:GetMapUtils()
     --   1. Native GetWorldMapAreaYards export (live WorldMapArea.dbc; covers
     --      custom zones such as Hyjal and the Giant Isles exactly).
     --   2. LibMapData-1.0, if another addon happens to provide it.
-    --   3. Embedded MapAreaSizes table generated from the WorldMapArea CSV.
+    --   3. The live Loc rectangle via GetMapAreaBounds (same DBC, spans derived).
     --   4. 10000x10000 fallback (directions stay usable; distance is approximate).
     function mapUtils.GetMapAreaYards(mapId)
         mapId = tonumber(mapId)
@@ -682,11 +682,12 @@ function addon:GetMapUtils()
         end
 
         if not width and mapId then
-            -- MapAreaSizes is keyed by raw WorldMapArea.ID; mapId is a UI map id.
-            local sizes = addon.MapAreaSizes
-            local entry = sizes and (sizes[mapId - 1] or sizes[mapId])
-            if entry and entry[1] and entry[2] and entry[1] > 0 and entry[2] > 0 then
-                width, height = entry[1], entry[2]
+            -- Derive the spans from the live Loc rectangle. Replaces the old
+            -- embedded MapAreaSizes table, which was the same data one
+            -- regeneration out of date.
+            local _, left, right, top, bottom = mapUtils.GetMapAreaBounds(mapId)
+            if left then
+                width, height = math.abs(left - right), math.abs(top - bottom)
             end
         end
 
@@ -729,6 +730,107 @@ function addon:GetMapUtils()
     -- is the one whose zone it really is: a zone's own box hugs it, while the
     -- boxes it bleeds into are the larger neighbours. Rows with areaId 0 are
     -- continent-wide and keep every point on the map.
+    -- WorldMapArea, read LIVE from the client's own DBC through the
+    -- WotLKExtensions exports (GetWorldMapAreaBounds / GetWorldMapAreaIDsForMap).
+    --
+    -- This used to be a Lua table generated from WorldMapArea.csv. That table was
+    -- a snapshot, and re-authoring the DBC invalidated it silently -- no error,
+    -- the pins just quietly landed in the wrong place. It drifted three times in
+    -- one week; the last one re-bounded map 750's zones to their Cataclysm
+    -- rectangles and put every Azshara marker ~77 px out. Reading the client's
+    -- own data removes the failure mode rather than managing it, so the generated
+    -- table (Modules/MapAreaSizes.lua) and its generator are gone.
+    --
+    -- Both are memoized: the bounds never change while the client is running.
+    local boundsCache = {}
+    local mapIdsCache = {}
+    local warnedMissingExport = false
+
+    local function WarnMissingExport()
+        if warnedMissingExport then
+            return
+        end
+        warnedMissingExport = true
+        -- Loud on purpose. Without the export every world-map and minimap pin is
+        -- mispositioned, and the whole point of this rewrite was that the old
+        -- failure was SILENT. A visible message beats pins that are subtly wrong.
+        local msg = "|cffff4444DC-QoS:|r this client build is missing "
+            .. "GetWorldMapAreaBounds -- map pins are disabled. Update WotLKExtensions.dll."
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage(msg)
+        end
+    end
+
+    -- Returns gameMapId, left, right, top, bottom, areaId (nil when unknown).
+    local function GetMapAreaBounds(uiMapId)
+        uiMapId = tonumber(uiMapId)
+        if not uiMapId then
+            return nil
+        end
+
+        local hit = boundsCache[uiMapId]
+        if hit ~= nil then
+            if hit == false then
+                return nil
+            end
+            return hit[1], hit[2], hit[3], hit[4], hit[5], hit[6]
+        end
+
+        local nativeFn = rawget(_G, "GetWorldMapAreaBounds")
+            or rawget(_G, "C_Map_GetWorldMapAreaBounds")
+        if type(nativeFn) ~= "function" then
+            WarnMissingExport()
+            boundsCache[uiMapId] = false
+            return nil
+        end
+
+        local ok, gameMapId, left, right, top, bottom, areaId = pcall(nativeFn, uiMapId)
+        if not ok or not tonumber(left) or not tonumber(right)
+            or not tonumber(top) or not tonumber(bottom)
+            or left == right or top == bottom then
+            boundsCache[uiMapId] = false
+            return nil
+        end
+
+        local entry = { tonumber(gameMapId) or -1, left, right, top, bottom, tonumber(areaId) or 0 }
+        boundsCache[uiMapId] = entry
+        return entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]
+    end
+
+    -- Every UI map id belonging to a game map, so a point can be tested against
+    -- all of that map's zone rectangles.
+    local function GetMapAreaIDsForMap(gameMapId)
+        gameMapId = tonumber(gameMapId)
+        if not gameMapId then
+            return nil
+        end
+
+        local hit = mapIdsCache[gameMapId]
+        if hit ~= nil then
+            return (hit ~= false) and hit or nil
+        end
+
+        local nativeFn = rawget(_G, "GetWorldMapAreaIDsForMap")
+            or rawget(_G, "C_Map_GetWorldMapAreaIDsForMap")
+        if type(nativeFn) ~= "function" then
+            WarnMissingExport()
+            mapIdsCache[gameMapId] = false
+            return nil
+        end
+
+        local ok, ids = pcall(nativeFn, gameMapId)
+        if not ok or type(ids) ~= "table" then
+            mapIdsCache[gameMapId] = false
+            return nil
+        end
+
+        mapIdsCache[gameMapId] = ids
+        return ids
+    end
+
+    mapUtils.GetMapAreaBounds = GetMapAreaBounds
+    mapUtils.GetMapAreaIDsForMap = GetMapAreaIDsForMap
+
     local exclusiveOwnerCache = {}
 
     local function ResolveOwningArea(gameMapId, worldX, worldY)
@@ -746,13 +848,17 @@ function addon:GetMapUtils()
             return (cached ~= false) and cached or nil
         end
 
+        local candidates = GetMapAreaIDsForMap(gameMapId)
+        if not candidates then
+            return nil
+        end
+
         local bestId, bestArea
-        for id, entry in pairs(addon.MapAreaBounds or {}) do
-            local areaMapId, left, right, top, bottom, areaId =
-                entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]
-            if areaMapId == gameMapId and areaId and areaId ~= 0
-                and left and right and top and bottom
-                and left ~= right and top ~= bottom then
+        for i = 1, #candidates do
+            local uiMapId = candidates[i]
+            local areaMapId, left, right, top, bottom, areaId = GetMapAreaBounds(uiMapId)
+            local id = uiMapId - 1
+            if areaMapId == gameMapId and areaId and areaId ~= 0 then
                 local normX = (left - worldY) / (left - right)
                 local normY = (top - worldX) / (top - bottom)
                 if normX >= 0 and normX <= 1 and normY >= 0 and normY <= 1 then
@@ -778,26 +884,16 @@ function addon:GetMapUtils()
             return nil
         end
 
-        local boundsTable = addon.MapAreaBounds
-        -- MapAreaBounds is keyed by raw WorldMapArea.ID; uiMapId is ID + 1.
+        local areaMapId, left, right, top, bottom, areaId = GetMapAreaBounds(uiMapId)
+        if not areaMapId then
+            return nil
+        end
+
+        -- ResolveOwningArea keys on raw WorldMapArea.ID, which is uiMapId - 1.
         local entryId = uiMapId - 1
-        local entry = boundsTable and boundsTable[entryId]
-        if not entry and boundsTable then
-            entryId, entry = uiMapId, boundsTable[uiMapId]
-        end
-        if not entry then
-            return nil
-        end
 
-        local areaMapId, left, right, top, bottom, areaId =
-            entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]
-        if gameMapId ~= nil and areaMapId ~= nil and areaMapId >= 0
+        if gameMapId ~= nil and areaMapId >= 0
             and tonumber(gameMapId) ~= tonumber(areaMapId) then
-            return nil
-        end
-
-        if not left or not right or not top or not bottom
-            or left == right or top == bottom then
             return nil
         end
 

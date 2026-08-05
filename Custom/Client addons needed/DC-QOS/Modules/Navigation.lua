@@ -5634,9 +5634,9 @@ function qnav.GetProtocol()
     return rawget(_G, "DCAddonProtocol")
 end
 
--- World position -> (raw WorldMapArea id, normalized x/y) using the generated
--- MapAreaBounds table. Prefers the smallest containing ZONE rect; continent
--- rows (areaId 0) only when no zone rect contains the point.
+-- World position -> (raw WorldMapArea id, normalized x/y), read live from the
+-- client's WorldMapArea.dbc via mapUtils. Prefers the smallest containing ZONE
+-- rect; continent rows (areaId 0) only when no zone rect contains the point.
 function qnav.WorldPointToMapData(gameMapId, worldX, worldY)
     gameMapId = tonumber(gameMapId)
     worldX = tonumber(worldX)
@@ -5645,12 +5645,22 @@ function qnav.WorldPointToMapData(gameMapId, worldX, worldY)
         return nil
     end
 
+    local mapUtils = type(addon.GetMapUtils) == "function" and addon:GetMapUtils() or nil
+    if not mapUtils or type(mapUtils.GetMapAreaIDsForMap) ~= "function" then
+        return nil
+    end
+
+    local candidates = mapUtils.GetMapAreaIDsForMap(gameMapId)
+    if not candidates then
+        return nil
+    end
+
     local bestId, bestX, bestY, bestWeight
-    for id, entry in pairs(addon.MapAreaBounds or {}) do
-        local areaMapId, left, right, top, bottom, areaId =
-            entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]
-        if areaMapId == gameMapId and left and right and top and bottom
-            and left ~= right and top ~= bottom then
+    for i = 1, #candidates do
+        local uiMapId = candidates[i]
+        local id = uiMapId - 1
+        local areaMapId, left, right, top, bottom, areaId = mapUtils.GetMapAreaBounds(uiMapId)
+        if areaMapId == gameMapId then
             local normX = (left - worldY) / (left - right)
             local normY = (top - worldX) / (top - bottom)
             if normX >= 0 and normX <= 1 and normY >= 0 and normY <= 1 then
@@ -5678,20 +5688,18 @@ function qnav.WorldToCurrentMapUnclamped(uiMapId, gameMapId, worldX, worldY)
         return nil
     end
 
-    local boundsTable = addon.MapAreaBounds
-    -- MapAreaBounds is keyed by raw WorldMapArea.ID; uiMapId is ID + 1.
-    local entry = boundsTable and (boundsTable[uiMapId - 1] or boundsTable[uiMapId])
-    if not entry then
+    local mapUtils = type(addon.GetMapUtils) == "function" and addon:GetMapUtils() or nil
+    if not mapUtils or type(mapUtils.GetMapAreaBounds) ~= "function" then
         return nil
     end
 
-    local areaMapId, left, right, top, bottom = entry[1], entry[2], entry[3], entry[4], entry[5]
-    if gameMapId ~= nil and areaMapId ~= nil and areaMapId >= 0
-        and tonumber(gameMapId) ~= tonumber(areaMapId) then
+    local areaMapId, left, right, top, bottom = mapUtils.GetMapAreaBounds(uiMapId)
+    if not areaMapId then
         return nil
     end
-    if not left or not right or not top or not bottom
-        or left == right or top == bottom then
+
+    if gameMapId ~= nil and areaMapId >= 0
+        and tonumber(gameMapId) ~= tonumber(areaMapId) then
         return nil
     end
 
@@ -8339,9 +8347,9 @@ Navigation._EnsureSlashCommand = function()
                     zoneSource = "native"
                 end
             end
-            if zoneSource == "default" and mapId and addon.MapAreaSizes
-                and (addon.MapAreaSizes[mapId - 1] or addon.MapAreaSizes[mapId]) then
-                zoneSource = "embedded"
+            if zoneSource == "default" and mapId and type(mapUtils.GetMapAreaBounds) == "function"
+                and mapUtils.GetMapAreaBounds(mapId) then
+                zoneSource = "bounds"
             end
 
             local width, height = mapUtils.GetMapAreaYards(mapId)

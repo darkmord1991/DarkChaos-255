@@ -29,6 +29,7 @@
 #include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"
 #include "../Hotspot/HotspotMgr.h"
+#include "../RareSpawns/dc_rare_spawns.h"
 
 #include <ctime>
 #include <mutex>
@@ -267,6 +268,10 @@ namespace World
             upd.SetPreEncodedJson(bossUpdateJson);
             SendWorldMessage(player, upd);
         }
+
+        // Rares are per-player (filtered to the player's map), so they cannot ride
+        // the shared cached snapshot above. Sent as a separate "rares" update.
+        DCAddon::RareSpawns::SendSnapshot(player);
     }
 
     // Handler: Client requests world content
