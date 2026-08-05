@@ -274,12 +274,89 @@ local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
     end
 end
 
+-- Place a normalized zone position on the minimap, as a pixel offset from its
+-- centre. Returns nil when the point is outside the visible ring.
+--
+-- The old code did:
+--     offsetX = (target.nx - player.nx) * Minimap:GetWidth()
+-- which multiplies a NORMALIZED ZONE delta by MINIMAP PIXELS. Those are
+-- different units, so the result was meaningless: a pin's distance from the
+-- player had nothing to do with its real distance, it never changed with
+-- minimap zoom, and it ignored minimap rotation entirely. On a zone the size of
+-- Azshara (5515 x 3677 yards) a pin 0.1 away -- about 550 yards -- was drawn 14
+-- pixels from the player. That is why the rares sat in a meaningless ring.
+--
+-- The conversion needs the zone's size in yards to turn the normalized delta
+-- into a real distance, then the minimap's visible diameter to turn yards into
+-- pixels. DC-QoS already has that helper (rotation and zoom included), so use it
+-- when the suite is loaded and fall back to doing it here otherwise.
+local function ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy, radiusPx)
+    local dcqos = rawget(_G, "DCQOS")
+    if dcqos and type(dcqos.GetMapUtils) == "function" then
+        local mapUtils = dcqos:GetMapUtils()
+        if mapUtils and type(mapUtils.ProjectToMinimap) == "function" then
+            local x, y, dist, clamped =
+                mapUtils.ProjectToMinimap(uiMapId, playerNx, playerNy, targetNx, targetNy, radiusPx)
+            if not x or clamped then
+                return nil
+            end
+            return x, y, dist
+        end
+    end
+
+    -- Standalone fallback: same maths, fewer niceties.
+    local yardsFn = rawget(_G, "GetWorldMapAreaYards") or rawget(_G, "C_Map_GetWorldMapAreaYards")
+    local width, height
+    if uiMapId and type(yardsFn) == "function" then
+        local ok, w, h = pcall(yardsFn, uiMapId)
+        if ok and tonumber(w) and tonumber(h) and w > 0 and h > 0 then
+            width, height = w, h
+        end
+    end
+    if not width then
+        return nil
+    end
+
+    local dxYards = (targetNx - playerNx) * width
+    local dyYards = (targetNy - playerNy) * height
+    local distance = math.sqrt(dxYards * dxYards + dyYards * dyYards)
+
+    -- Visible minimap diameter in yards, outdoor table, by zoom step.
+    local DIAMETER = { [0] = 466.6, [1] = 400, [2] = 333.3, [3] = 266.6, [4] = 200, [5] = 133.3 }
+    local zoom = (Minimap and Minimap.GetZoom and tonumber(Minimap:GetZoom())) or 1
+    local halfDiameter = (DIAMETER[zoom] or 400) * 0.5
+    if halfDiameter <= 0 or distance > halfDiameter then
+        return nil
+    end
+
+    local scale = radiusPx / halfDiameter
+    local px, py = dxYards * scale, -dyYards * scale
+
+    if GetCVar and GetCVar("rotateMinimap") == "1" and GetPlayerFacing then
+        local facing = GetPlayerFacing() or 0
+        local s, c = math.sin(-facing), math.cos(-facing)
+        px, py = px * c - py * s, px * s + py * c
+    end
+
+    return px, py, distance
+end
+
+-- Retail's own vignette markers, downported from the 11.2.5 client into
+-- patch-5.MPQ (Interface\Minimap\). They are what modern WoW actually draws over
+-- a rare, so they read correctly to anyone who has played retail, and the ring
+-- colour separates the two kinds at a glance:
+--     minimap_skull_normal  skull in a BLUE ring   -> rare
+--     minimap_skull_elite   skull in an ORANGE ring -> rare elite / world boss
+-- Both are 32x32 BLP2/DXT5 with a full alpha channel and hasMips = 1, which the
+-- 3.3.5 client reads natively -- no conversion, and no green-texture risk from
+-- the hasMips = 2 trap. The raid-target icons they replace (yellow star, white
+-- skull) were flat, loud, and easy to confuse with each other at pin size.
 local function EntityTexture(kind)
     if kind == "boss" then
-        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8" -- Skull
+        return "Interface\\Minimap\\minimap_skull_elite"
     end
     if kind == "rare" then
-        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1" -- Star
+        return "Interface\\Minimap\\minimap_skull_normal"
     end
     if kind == "death" then
         return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_7" -- X
@@ -534,16 +611,40 @@ local function ResolveTexture(state, hotspot)
         return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_3"  -- Purple diamond
     elseif style == "circle" then
         return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_2"  -- Orange circle
+    -- Retail vignette markers, downported into patch-5.MPQ. Same family as the
+    -- rare/boss entity pins (Interface\Minimap\minimap_*), so a hotspot set to
+    -- one of these sits beside them without looking like a different addon.
+    -- Blue ring = normal, orange ring = elite.
+    elseif style == "chest" then
+        return "Interface\\Minimap\\minimap_chest_normal"
+    elseif style == "chestElite" then
+        return "Interface\\Minimap\\minimap_chest_elite"
+    elseif style == "shield" then
+        return "Interface\\Minimap\\minimap_shield_normal"
+    elseif style == "shieldElite" then
+        return "Interface\\Minimap\\minimap_shield_elite"
+    elseif style == "rare" then
+        return "Interface\\Minimap\\minimap_skull_normal"
     elseif style == "treasure" then
-        return "Interface\\Icons\\INV_Misc_Bag_10"  -- Treasure bag
+        -- Upgraded from INV_Misc_Bag_10. The option is still "Treasure", so an
+        -- existing saved setting keeps meaning what its name says -- it just
+        -- gets the retail chest instead of a bag inventory icon.
+        return "Interface\\Minimap\\minimap_chest_normal"
     elseif style == "flame" then
         return "Interface\\Icons\\Spell_Fire_Fire"  -- Fire icon
     elseif style == "arcane" then
         return "Interface\\Icons\\Spell_Arcane_Arcane01"  -- Arcane energy
     elseif style == "target" then
-        return "Interface\\Minimap\\Minimap-target"
+        -- WAS Interface\Minimap\Minimap-target, which does not exist in this
+        -- client -- not in Data\*.MPQ and not in the enGB chain. An unknown
+        -- texture draws nothing and raises no error, so picking "Target
+        -- Reticle" silently produced invisible pins. Ability_Marksmanship is a
+        -- real crosshair and is present in locale-enGB.MPQ.
+        return "Interface\\Icons\\Ability_Marksmanship"
     elseif style == "skull" then
-        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8"
+        -- Upgraded from the flat raid-target skull to retail's elite vignette,
+        -- matching the boss entity pin. Still a skull, so the option name holds.
+        return "Interface\\Minimap\\minimap_skull_elite"
     elseif style == "map" then
         return "Interface\\Icons\\INV_Misc_Map_01"
     elseif style == "quest" then
@@ -585,21 +686,17 @@ local function PlayerNormalizedPosition(state)
     end
     if GetPlayerMapPosition then
         local worldMapShown = WorldMapFrame and WorldMapFrame:IsShown()
-        local previousMapId
-        local shouldRestore = false
-        -- Never change the viewed world map while it is open.
-        -- In WoW 3.3.5, GetPlayerMapPosition() often requires the internal map state to be set
-        -- to the player's current zone; we do that ONLY when the world map is closed.
-        if SetMapToCurrentZone and not worldMapShown then
-            if worldMapShown and GetCurrentMapAreaID then
-                previousMapId = GetCurrentMapAreaID()
-                shouldRestore = true
-            end
-            SetMapToCurrentZone()
-        end
+
+        -- Ask FIRST, and only reach for SetMapToCurrentZone if the answer is
+        -- unusable. GetPlayerMapPosition needs the internal map state pointed at
+        -- the player's zone, but it usually already is -- and this runs every
+        -- frame now, so calling SetMapToCurrentZone unconditionally would mean
+        -- resetting the client's map state 60 times a second. Never while the
+        -- world map is open, or it yanks the view out from under the player.
         local x, y = GetPlayerMapPosition("player")
-        if shouldRestore and previousMapId and SetMapByID then
-            SetMapByID(previousMapId)
+        if (not x or not y or x <= 0 or y <= 0) and SetMapToCurrentZone and not worldMapShown then
+            SetMapToCurrentZone()
+            x, y = GetPlayerMapPosition("player")
         end
         if x and y and x > 0 and y > 0 then
             if GetCurrentMapAreaID then mapId = GetCurrentMapAreaID() end
@@ -773,13 +870,16 @@ function Pins:Init(state)
     -- Single update frame for both minimap and world map debouncing
     local ticker = CreateFrame("Frame")
     ticker:SetScript("OnUpdate", function(_, elapsed)
-        -- Minimap updates
-        self.minimapUpdate = self.minimapUpdate + elapsed
-        if self.minimapUpdate >= 0.3 then
-            self.minimapUpdate = 0
-            self:UpdateMinimapPins()
-        end
-        
+        -- Minimap: rebuild the pin SET on a throttle, but reposition every frame.
+        --
+        -- Rebuilding at 0.3s meant the pins only moved about three times a
+        -- second while the player moved continuously, so they visibly stepped --
+        -- and with a rotating minimap they lurched, because the heading was
+        -- only recomputed at the same rate. Placement is a handful of pins of
+        -- cheap trigonometry, so it can run per frame; the expensive part is
+        -- walking the hotspot/entity lists, and that stays throttled.
+        self:UpdateMinimapPins()
+
         -- World pin debounced updates
         if self.pendingWorldUpdate then
             self.worldPinUpdate = self.worldPinUpdate + elapsed
@@ -1471,6 +1571,13 @@ function Pins:UpdateMinimapPins()
         return
     end
 
+    -- Usable radius of the minimap, leaving a little room so a pin sitting right
+    -- on the boundary is not half-clipped by the ring art.
+    local minimapRadius = (math.min(Minimap:GetWidth() or 0, Minimap:GetHeight() or 0) * 0.5) - 10
+    if minimapRadius <= 0 then
+        return
+    end
+
     local seen = {}
     local canShowHotspots = PlayerCanGainXP()
     if canShowHotspots then
@@ -1482,10 +1589,11 @@ function Pins:UpdateMinimapPins()
                     if Astrolabe and Astrolabe.WorldToMinimapOffset then
                         offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, targetNx, targetNy)
                     else
-                        offsetX = (targetNx - px) * Minimap:GetWidth()
-                        offsetY = (py - targetNy) * Minimap:GetHeight()
+                        -- Same unit bug as the entity pins had; see ProjectToMinimap.
+                        offsetX, offsetY = ProjectToMinimap(
+                            playerMap, px, py, targetNx, targetNy, minimapRadius)
                     end
-                    local pin = self:AcquireMinimapPin(id, hotspot)
+                    local pin = offsetX and self:AcquireMinimapPin(id, hotspot)
                     if pin then
                         pin.texture:SetTexture(ResolveTexture(self.state, hotspot))
                         pin:ClearAllPoints()
@@ -1513,12 +1621,14 @@ function Pins:UpdateMinimapPins()
                     or (kind == "rare" and db.showRarePins)
                     or (kind == "death")
                 if enabled then
-                    local offsetX, offsetY
-                    -- Use normalized delta math for entities.
-                    -- Some Astrolabe builds expect world coords, which can yield (0,0) offsets with normalized inputs.
-                    offsetX = (ent.nx - px) * Minimap:GetWidth()
-                    offsetY = (py - ent.ny) * Minimap:GetHeight()
-                    local pin = self:AcquireEntityMinimapPin(ent.id, ent)
+                    -- Real yards -> pixels, honouring zoom and rotation, and nil
+                    -- when the entity is outside the visible ring. Anything past
+                    -- the edge is simply not drawn, the way the client's own
+                    -- minimap blips behave -- piling them onto the rim would say
+                    -- "it is right there" about something a zone away.
+                    local offsetX, offsetY = ProjectToMinimap(
+                        playerMap, px, py, ent.nx, ent.ny, minimapRadius)
+                    local pin = offsetX and self:AcquireEntityMinimapPin(ent.id, ent)
                     if pin then
                         pin.texture:SetTexture(EntityTexture(kind))
                         if EntityIsActive(self.state, ent.id) then

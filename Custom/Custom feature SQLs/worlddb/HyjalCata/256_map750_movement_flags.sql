@@ -1,0 +1,104 @@
+-- ---------------------------------------------------------------------------
+-- 256  Map 750 -- movement flags for spawns whose DATA was already imported
+-- ---------------------------------------------------------------------------
+-- No new rows are created here. Every path referenced below is already in
+-- `waypoint_data` and already bound through `creature_addon.path_id`; the only
+-- thing missing is `creature.MovementType`, which the import left at 0. The
+-- engine reads MovementType first, so the path is never opened and the NPC
+-- stands on its spawn point with a fully-formed patrol route sitting unused.
+-- That is why this class never showed up in the boot log: there is nothing to
+-- warn about. "doesn't have waypoint path id: 0" is the OPPOSITE failure
+-- (MovementType 2 with no path) and 202_/230_ already cleared it -- as of this
+-- file all 123 MovementType-2 spawns on 750 resolve.
+--
+-- Found by inverting the usual audit: instead of asking which patrollers lack a
+-- path, ask which paths lack a patroller. 27 spawns on 750 carry a non-zero
+-- path_id while sitting at MovementType 0 or 1.
+--
+-- ONLY 13 OF THE 27 ARE TOUCHED. The rule from 202_/230_ still holds -- set
+-- MovementType = 2 only where the SOURCE says 2. These 13 position-match a
+-- cata_world spawn with MovementType 2 on (entry - offset) AND rounded x/y, so
+-- the source is unambiguous. Stronger still, every one of the 13 sits at
+-- distance 0.0 from a point of its own path: the spawn point IS a waypoint,
+-- which is what a real patroller looks like and is independent confirmation
+-- that the addon binding is correct and not a stale id.
+--
+-- The other 14 are deliberately left alone -- their paths came from a different
+-- import wave and their sources disagree or are silent:
+--   * Twilight Firebird x4 (paths 134988930/134988970/134997060/135003960,
+--     51/49/26/19 points) -- cata says MovementType 0, nelt says 0 or 1. Long
+--     flight routes that LOOK like they want to be flown, which is exactly the
+--     reasoning that would invent behaviour the source does not have.
+--   * Howling Riftdweller x5, Twilight Scorchlord, Blazewing, Frostmaul
+--     Preserver, Captain Soren Moonfall -- no source row resolves at all
+--     (Soren is a DC-original entry, 7353073).
+-- Blazewing and Ban'thalos are a known separate problem: cata gives them
+-- MovementType 3, a cyclic spline (creature_addon.cyclicSplinePathId) that has
+-- no WotLK equivalent. nelt has Blazewing at 2. They need a hand-authored
+-- flight path, not a flag flip, so they are out of scope here.
+-- ---------------------------------------------------------------------------
+
+-- --- 13 patrol routes switched on -----------------------------------------
+-- guid       entry    name                   path_id   points
+-- 15501205   3650053  Thartuk the Exile      3842000     175
+-- 15501216   3650058  Terrorpene             3892340      73
+-- 15501214   3650056  Garr                   3868020      30
+-- 15500380   3639843  Twilight Stormcaller   3852860      12
+-- 15500375   3639843  Twilight Stormcaller   3850860      11
+-- 15500388   3639843  Twilight Stormcaller   3860970      10
+-- 15500329   3639637  Goldrinn Defender      3852480      10
+-- 15500451   3639931  Grove Tender           3861170       9
+-- 15500320   3639637  Goldrinn Defender      3847720       8
+-- 15500324   3639637  Goldrinn Defender      3848940       8
+-- 15500454   3639931  Grove Tender           3861480       7
+-- 15500453   3639931  Grove Tender           3861330       4
+-- 15500449   3639931  Grove Tender           3861110       2
+UPDATE `creature` SET `MovementType` = 2 WHERE `guid` IN (
+  15500320, 15500324, 15500329, 15500375, 15500380, 15500388,
+  15500449, 15500451, 15500453, 15500454,
+  15501205, 15501214, 15501216);
+
+-- --- 2 wander restores ------------------------------------------------------
+-- Source says MovementType 1 with a wander_distance; ours were left idle.
+-- Both are single unambiguous position matches, and the wander_distance is
+-- carried over from the source rather than defaulted:
+--   15801158  3707105  Jadefire Satyr      (cata 360087, Felwood)   dist 1
+--   15802114  3722889  Manifest Nightmare  (cata 290326, Moonglade) dist 2
+UPDATE `creature` SET `MovementType` = 1, `wander_distance` = 1 WHERE `guid` = 15801158;
+UPDATE `creature` SET `MovementType` = 1, `wander_distance` = 2 WHERE `guid` = 15802114;
+
+-- THREE FURTHER "IDLE WHERE SOURCE WANDERS" CANDIDATES WERE REJECTED, and the
+-- reason is worth recording because the naive query reports them as broken:
+--
+--   9844733   Immolated Supplicant   15500385  Twilight Stormcaller
+--   15500648  Twilight Augur
+--
+-- Each matches TWO stacked cata spawns at the same rounded x/y -- one at
+-- MovementType 1, one at 0. Picking the match with MIN(guid), the obvious way
+-- to collapse the duplicate, silently selects the wandering one every time and
+-- manufactures a defect out of a coin flip. Resolved individually:
+--   * 9844733 -- the exact 3D match (distance 0.000, identical orientation) is
+--     cata 388780 at MovementType 0. The MovementType-1 row is 0.48 yd away and
+--     is a different creature. Ours is already correct.
+--   * 15500648 -- the terrain-expansion import duplicated this spawn pair, and
+--     both halves are present: 15500633 at MovementType 1 and 15500648 at 0,
+--     at identical coordinates, mirroring the source pair exactly. Correct.
+--   * 15500385 -- two cata spawns at literally identical coordinates, one 1 and
+--     one 0, and only one copy on 750. Genuinely undecidable from position; the
+--     source itself has both behaviours at that spot. Left as-is rather than
+--     guessed.
+-- The same trap applies to any future re-run of this audit: collapse stacked
+-- source spawns by 3D distance and orientation, never by guid order.
+
+-- Verify -- expect 13 / 2 / 0 / 0:
+--   SELECT COUNT(*) FROM `creature` WHERE `guid` IN (15500320, ..., 15501216)
+--     AND `MovementType` = 2;                                              -- 13
+--   SELECT COUNT(*) FROM `creature` WHERE `guid` IN (15801158, 15802114)
+--     AND `MovementType` = 1 AND `wander_distance` > 0;                     --  2
+--   -- no patroller without a resolvable path:
+--   SELECT COUNT(*) FROM `creature` c WHERE c.map = 750 AND c.MovementType = 2
+--     AND NOT EXISTS (SELECT 1 FROM `creature_addon` a JOIN `waypoint_data` w
+--       ON w.id = a.path_id WHERE a.guid = c.guid AND a.path_id <> 0);       --  0
+--   -- no wanderer that cannot wander:
+--   SELECT COUNT(*) FROM `creature` WHERE map = 750 AND MovementType = 1
+--     AND wander_distance = 0;                                              --  0
