@@ -29,10 +29,12 @@ local ZoneLabels = {
 
 local state = {
     labelsByName = nil,    -- built lazily: [mapArtDirName] = { {n,x,y}, ... }
-    pool = {},             -- FontString pool
+    pool = {},             -- label Button pool
+    zonePool = {},         -- full-zone click/hover area pool
     overlay = nil,
     hooksInstalled = false,
     refreshQueued = {},
+    eventFrame = nil,
 }
 
 local function GetSettings()
@@ -93,13 +95,47 @@ local CUSTOM_ZONE_NAV = {
 -- Drill into the zone whose label was clicked: match its name against the current continent's zone list
 -- and SetMapZoom to that index. No-op if the name isn't a zone (subzone labels on a zone map) or if the
 -- continent isn't registered (then nothing to switch to — the WorldMapContinent.dbc must be live).
-local function NavigateToZone(name)
-    if not name or type(SetMapZoom) ~= "function" then return end
+local function NavigateToZone(name, uiMapId)
     local function norm(s) return (tostring(s or ""):gsub("%W", "")):lower() end
     local target = norm(name)
 
-    -- Custom continent fallback: bypass GetCurrentMapContinent/GetMapZones which 3.3.5a doesn't expose
-    -- for continent IDs beyond the 4 stock WotLK continents.
+    -- SetMapByID addresses the WorldMapArea row directly (UI id = WMA id + 1) and
+    -- needs neither a continent index nor a zone index, so it is the one route
+    -- that cannot be thrown off by how the client enumerates custom continents.
+    -- Tried first for exactly that reason; SetMapZoom stays as the fallback.
+    if uiMapId and type(SetMapByID) == "function" then
+        local ok = pcall(SetMapByID, uiMapId)
+        if ok and type(GetCurrentMapAreaID) == "function" and GetCurrentMapAreaID() == uiMapId then
+            return
+        end
+    end
+
+    if type(SetMapZoom) ~= "function" then return end
+
+    -- Native path, custom continents included. Measured 2026-08-07: the
+    -- client enumerates continents from the AreaID-0 WorldMapArea rows, so a
+    -- custom one gets a perfectly ordinary index (map 750 = 13) and both
+    -- GetMapZones and SetMapZoom accept it -- that is what the stock Zone
+    -- dropdown drives itself with, and it works there.
+    if type(GetCurrentMapContinent) == "function" and type(GetMapZones) == "function" then
+        local continent = GetCurrentMapContinent()
+        if continent and continent > 0 then
+            local zones = { GetMapZones(continent) }
+            for i = 1, #zones do
+                if norm(zones[i]) == target then
+                    SetMapZoom(continent, i)
+                    return
+                end
+            end
+        end
+    end
+
+    -- Fallback for anything the live zone list does not answer. Note these
+    -- hardcoded continent numbers are WorldMapContinent.ID, which is NOT the
+    -- index SetMapZoom wants -- Pandaria is WorldMapContinent 5 but continent
+    -- index 8 -- so this path is a last resort, not the primary one. It used to
+    -- run first and return early, which stopped the working native lookup above
+    -- from ever being tried on a custom continent.
     local mapKey = CurrentMapKey()
     local hints = mapKey and CUSTOM_ZONE_NAV[mapKey] or nil
     if hints then
@@ -109,20 +145,123 @@ local function NavigateToZone(name)
                 return
             end
         end
-        return  -- on a custom continent: subzone label click → harmless no-op
+    end
+end
+
+-- Zone rects on a CUSTOM CONTINENT overview, normalized to the continent canvas:
+-- the zone's WorldMapArea rect projected through the continent's, x = west->east,
+-- y = north->south. Keyed by the zone's AreaTable name, which is what
+-- GetMapZones() hands back, so the lookup does not care about DBC row order or
+-- which continent index the map ended up with. Each entry drives three things:
+-- the name label, the click-anywhere hit area, and the hover glow.
+--
+-- Why this layer exists at all: clicking a zone on a custom continent overview
+-- does nothing in-game (reported 2026-08-07 for map 750) -- only the Zone
+-- dropdown and Zoom Out respond -- even though every input the engine's own
+-- hit-testing needs is in place: WorldMapArea zone rects inside the continent
+-- rect, 3:2 like Blizzard's, and a <AreaName>Highlight.blp per zone in patch-5
+-- byte-for-byte in stock format. So the engine path (UpdateMapHighlight /
+-- ProcessMapClick, driven from WorldMapButton_OnUpdate/OnClick) is not something
+-- we can rely on here. So the whole interaction is rebuilt in Lua: a Button per
+-- zone covering its rect, the same Highlight.blp glow on hover, and SetMapByID on
+-- click -- stock behaviour, none of it going through the engine hit test.
+--
+-- Map 750 ("Mount Hyjal (80-130)") is the case that needs it most: its overview
+-- borrows the stock Kalimdor art, whose baked-in zone names belong to the REAL
+-- Kalimdor, so the seven playable zones sit on the map completely unlabelled.
+-- Names are AreaTable ids 4923/4926-4931; regenerate the coordinates if any of
+-- those WorldMapArea rects (1216, 1256-1261) or the continent row 1262 change.
+-- l/r/t/b = the zone's WorldMapArea rect projected onto the continent rect, so
+-- the hit area sits exactly where the zone is drawn -- click anywhere in the
+-- zone, the Blizzard way, not just on its name.
+-- m = UI map id of the zone's own map = WorldMapArea.ID + 1, used by SetMapByID.
+-- h = art folder for `<h>Highlight.blp`, the hover glow (map 750's seven exist in
+--     patch-5; a folder without one simply draws nothing, no error).
+local CONTINENT_ZONES = {
+    -- map 750, "Mount Hyjal (80-130)" (continent WorldMapArea 1262).
+    --
+    -- These rects and masks are the STOCK map-1 Kalimdor ones, NOT map 750's own
+    -- WorldMapArea rows, because the overview borrows the stock WotLK Kalimdor
+    -- art: map 750's rects were moved to retail values (for its retail-derived
+    -- ZONE art, where they are correct) and its custom *Cata masks trace the
+    -- post-Cataclysm coastline -- Darkshore sunken, Azshara regoblinised. Drawn
+    -- over a WotLK continent they miss the land they are meant to cover. Blizzard's
+    -- own rect + own mask fit Blizzard's own art by construction.
+    -- m still points at OUR zone maps, so the click goes where it should.
+    -- Hyjal keeps the custom mask: stock never shipped a HyjalHighlight.blp, and
+    -- its rect is byte-identical in both tables anyway.
+    ["Moonglade (Sanctuary)"]    = { l = 0.5013, r = 0.5640, t = 0.1756, b = 0.2384, x = 0.5334, y = 0.2078, m = 1259, h = "Moonglade" },
+    ["Hyjal Frontier (113-130)"] = { l = 0.4890, r = 0.6044, t = 0.2692, b = 0.3846, x = 0.5373, y = 0.3243, m = 1217, h = "Mount Hyjal" },
+    ["Azshara (80-90)"]          = { l = 0.5528, r = 0.6906, t = 0.3040, b = 0.4418, x = 0.6104, y = 0.3776, m = 1261, h = "Aszhara" },
+    ["Ashenvale (88-98)"]        = { l = 0.4176, r = 0.5743, t = 0.3313, b = 0.4879, x = 0.5004, y = 0.4129, m = 1262, h = "Ashenvale" },
+    ["Felwood (96-106)"]         = { l = 0.4192, r = 0.5754, t = 0.2310, b = 0.3872, x = 0.4908, y = 0.3015, m = 1258, h = "Felwood" },
+    ["Winterspring (104-115)"]   = { l = 0.4724, r = 0.6653, t = 0.1739, b = 0.3668, x = 0.5782, y = 0.2478, m = 1257, h = "Winterspring" },
+    ["Darkshore (80-90)"]        = { l = 0.3838, r = 0.5618, t = 0.1821, b = 0.3601, x = 0.4710, y = 0.2644, m = 1260, h = "Darkshore" },
+    -- map 870, Pandaria (continent WorldMapArea 1205) -- same dead hit test
+    ["Isle of Giants"]           = { l = 0.4350, r = 0.5502, t = 0.0000, b = 0.1134, m = 1214, h = "IsleofGiants" },
+    ["Timeless Isle"]            = { l = 0.8273, r = 0.9820, t = 0.6232, b = 0.7779, m = 1215, h = "TimelessIsle" },
+    ["Valley of the Four Winds"] = { l = 0.3915, r = 0.6444, t = 0.5398, b = 0.7928, m = 1208, h = "ValleyoftheFourWinds" },
+    ["Krasarang Wilds"]          = { l = 0.3741, r = 0.6763, t = 0.6564, b = 0.9585, m = 1211, h = "KrasarangWilds" },
+    ["Dread Wastes"]             = { l = 0.1684, r = 0.5134, t = 0.5088, b = 0.8538, m = 1212, h = "DreadWastes" },
+    ["Townlong Steppes"]         = { l = 0.1079, r = 0.4781, t = 0.2050, b = 0.5752, m = 1210, h = "TownlongSteppes" },
+    ["Kun-Lai Summit"]           = { l = 0.2522, r = 0.6556, t = 0.1025, b = 0.5060, m = 1209, h = "KunLaiSummit" },
+    ["The Jade Forest"]          = { l = 0.4706, r = 0.9206, t = 0.2927, b = 0.7426, m = 1207, h = "TheJadeForest" },
+    -- Single-zone custom continents. Their overview is nearly redundant, but you
+    -- can still land on it via Zoom Out and then be unable to get back in, which
+    -- is the same trap. Zone rect == continent rect, so the whole canvas is the
+    -- hit area -- which is exactly right when there is only one place to go.
+    ["Deepholm"]                 = { l = 0.0000, r = 1.0000, t = 0.0000, b = 1.0000, m = 1216, h = "Deepholm" },
+    ["Azshara Crater (1-80)"]    = { l = 0.0000, r = 1.0000, t = 0.0000, b = 1.0000, m = 1252, h = "AzsharaCrater" },
+}
+
+-- Returns the label list for the current continent overview, or nil when this is
+-- not an overview / none of its zones are known. GetCurrentMapZone() == 0 is the
+-- overview marker (a zone map reports its 1-based index), and zones the table
+-- has never heard of -- stock Kalimdor's, the micro-dungeon WorldMapArea rows --
+-- are simply skipped, so nothing is drawn on maps this does not own.
+local function BuildContinentZoneList()
+    if type(GetCurrentMapZone) ~= "function"
+        or type(GetCurrentMapContinent) ~= "function"
+        or type(GetMapZones) ~= "function" then
+        return nil
+    end
+    if GetCurrentMapZone() ~= 0 then
+        return nil
+    end
+    local continent = GetCurrentMapContinent()
+    if not continent or continent <= 0 then
+        return nil
     end
 
-    -- Stock continents: native API path
-    if type(GetCurrentMapContinent) ~= "function" or type(GetMapZones) ~= "function" then return end
-    local continent = GetCurrentMapContinent()
-    if not continent or continent <= 0 then return end
     local zones = { GetMapZones(continent) }
+    local list
     for i = 1, #zones do
-        if norm(zones[i]) == target then
-            SetMapZoom(continent, i)
-            return
+        local z = CONTINENT_ZONES[zones[i]]
+        if z then
+            list = list or {}
+            list[#list + 1] = {
+                n = zones[i], m = z.m, h = z.h,
+                l = z.l, r = z.r, t = z.t, b = z.b,
+                -- x/y is where the NAME goes: the centroid of the zone's highlight
+                -- mask, i.e. where the zone's land actually is. The rect centre is
+                -- only a fallback -- a bounding box around a coastal zone like
+                -- Darkshore is half ocean, and its centre lands off the zone.
+                x = z.x or (z.l + z.r) / 2,
+                y = z.y or (z.t + z.b) / 2,
+            }
         end
     end
+    if list then
+        -- Biggest rect first, so the frame level assigned per index leaves the
+        -- SMALLEST zone on top. These rects overlap heavily (stock Moonglade sits
+        -- entirely inside Winterspring's), and the tighter box is always the
+        -- better answer for a click -- the same rule mapUtils uses to decide which
+        -- zone a POI belongs to.
+        table.sort(list, function(p, q)
+            return (p.r - p.l) * (p.b - p.t) > (q.r - q.l) * (q.b - q.t)
+        end)
+    end
+    return list
 end
 
 local function AcquireLabel(index)
@@ -139,7 +278,8 @@ local function AcquireLabel(index)
     -- On a zone map the subzone names aren't in GetMapZones, so the click is a harmless no-op.
     local btn = CreateFrame("Button", "DCQOSZoneLabel" .. index, parent)
     btn:RegisterForClicks("LeftButtonUp")
-    btn:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 5)
+    -- Above the zone hit areas (base+1..base+N) so the name itself stays clickable.
+    btn:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 30)
     local txt = btn:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     txt:SetPoint("CENTER")
     txt:SetJustifyH("CENTER")
@@ -148,10 +288,63 @@ local function AcquireLabel(index)
     txt:SetShadowColor(0, 0, 0, 1)
     txt:SetShadowOffset(1, -1)
     btn.text = txt
-    btn:SetScript("OnClick", function(self) NavigateToZone(self.zoneName) end)
+    btn:SetScript("OnClick", function(self) NavigateToZone(self.zoneName, self.zoneMapId) end)
     btn:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1) end)
     btn:SetScript("OnLeave", function(self) self.text:SetTextColor(1.0, 0.92, 0.55) end)
     state.pool[index] = btn
+    return btn
+end
+
+-- The full-zone hit area: an invisible Button covering the zone's projected rect,
+-- carrying the `<AreaName>Highlight.blp` mask as an ADD-blended glow shown on
+-- hover. That is the same art and the same geometry the engine would have used
+-- (mask top-left 128x85.333 -> the zone rect, hence the 2/3 texcoord), so it
+-- reads exactly like a stock continent map even though nothing engine-side is
+-- involved. Zone maps are unaffected: this layer only exists on an overview.
+local function AcquireZoneArea(index)
+    local btn = state.zonePool[index]
+    if btn then
+        return btn
+    end
+    local parent = GetOverlayParent()
+    if not parent then
+        return nil
+    end
+    btn = CreateFrame("Button", "DCQOSZoneArea" .. index, parent)
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    local glow = btn:CreateTexture(nil, "ARTWORK")
+    glow:SetAllPoints(btn)
+    glow:SetTexCoord(0, 1, 0, 0.6667)
+    glow:SetBlendMode("ADD")
+    glow:Hide()
+    btn.glow = glow
+    btn:SetScript("OnClick", function(self, mouseButton)
+        -- Only a plain left click navigates. Right click and modified clicks go
+        -- to the stock handler so zoom-out and the TOGGLEWORLDMAP binding keep
+        -- working -- this layer covers the canvas, so swallowing them would take
+        -- away behaviour the map already had.
+        if mouseButton == "LeftButton"
+            and not (type(IsModifierKeyDown) == "function" and IsModifierKeyDown()) then
+            NavigateToZone(self.zoneName, self.zoneMapId)
+        elseif type(WorldMapButton_OnClick) == "function" and WorldMapButton then
+            WorldMapButton_OnClick(WorldMapButton, mouseButton)
+        end
+    end)
+    btn:SetScript("OnEnter", function(self)
+        if self.glow:GetTexture() then
+            self.glow:Show()
+        end
+        if self.label then
+            self.label.text:SetTextColor(1, 1, 1)
+        end
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self.glow:Hide()
+        if self.label then
+            self.label.text:SetTextColor(1.0, 0.92, 0.55)
+        end
+    end)
+    state.zonePool[index] = btn
     return btn
 end
 
@@ -159,6 +352,19 @@ local function HideFrom(index)
     for i = index, #state.pool do
         if state.pool[i] then
             state.pool[i]:Hide()
+        end
+    end
+    for i = index, #state.zonePool do
+        if state.zonePool[i] then
+            state.zonePool[i]:Hide()
+        end
+    end
+end
+
+local function HideZoneAreasFrom(index)
+    for i = index, #state.zonePool do
+        if state.zonePool[i] then
+            state.zonePool[i]:Hide()
         end
     end
 end
@@ -182,8 +388,13 @@ function ZoneLabels:Refresh()
         return
     end
 
-    local mapKey = CurrentMapKey()
-    local list = mapKey and BuildLookup()[mapKey] or nil
+    -- A continent overview of a custom continent gets its zone labels built from
+    -- the live zone list; everything else uses the baked per-map subzone data.
+    local list = BuildContinentZoneList()
+    if not list then
+        local mapKey = CurrentMapKey()
+        list = mapKey and BuildLookup()[mapKey] or nil
+    end
     if not list or #list == 0 then
         HideFrom(1)
         return
@@ -191,7 +402,8 @@ function ZoneLabels:Refresh()
 
     local fontPath = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
     local fontSize = tonumber(settings.fontSize) or 11
-    local shown = 0
+    local baseLevel = (overlay.GetFrameLevel and overlay:GetFrameLevel()) or 0
+    local shown, areas = 0, 0
     for i = 1, #list do
         local entry = list[i]
         local x = tonumber(entry.x)
@@ -202,6 +414,7 @@ function ZoneLabels:Refresh()
                 btn.text:SetFont(fontPath, fontSize, "OUTLINE")
                 btn.text:SetText(entry.n)
                 btn.zoneName = entry.n
+                btn.zoneMapId = entry.m
                 btn:SetWidth((btn.text:GetStringWidth() or 40) + 10)
                 btn:SetHeight((btn.text:GetStringHeight() or 12) + 6)
                 btn:ClearAllPoints()
@@ -209,9 +422,39 @@ function ZoneLabels:Refresh()
                 btn:Show()
                 shown = shown + 1
             end
+
+            -- Entries carrying a rect (continent overviews) also get the
+            -- click-anywhere area underneath the label. The baked art-dir label
+            -- data has no rects, so subzone labels on a zone map stay text-only.
+            if entry.l and entry.r and entry.t and entry.b then
+                local area = AcquireZoneArea(areas + 1)
+                if area then
+                    area.zoneName = entry.n
+                    area.zoneMapId = entry.m
+                    area.label = btn
+                    if entry.h then
+                        area.glow:SetTexture("Interface\\WorldMap\\" .. entry.h .. "\\" .. entry.h .. "Highlight")
+                    else
+                        area.glow:SetTexture(nil)
+                    end
+                    area.glow:Hide()
+                    area:SetWidth(math.max(1, (entry.r - entry.l) * width))
+                    area:SetHeight(math.max(1, (entry.b - entry.t) * height))
+                    area:ClearAllPoints()
+                    area:SetPoint("TOPLEFT", overlay, "TOPLEFT", entry.l * width, -(entry.t * height))
+                    -- list is sorted biggest-first, so later index = smaller zone
+                    -- = higher level = wins the click where rects overlap. Capped
+                    -- at +6 to stay under the quest-pin overlay (parent + 8, see
+                    -- QuestMapPins) -- a hit area must never cover a pin.
+                    area:SetFrameLevel(baseLevel + 1 + math.min(areas, 5))
+                    area:Show()
+                    areas = areas + 1
+                end
+            end
         end
     end
     HideFrom(shown + 1)
+    HideZoneAreasFrom(areas + 1)
 end
 
 local function QueueRefresh(delay)
@@ -246,21 +489,43 @@ local function InstallHooks()
         WorldMapFrame:HookScript("OnShow", RequestRefresh)
         WorldMapFrame:HookScript("OnHide", function() HideFrom(1) end)
     end
+
+    -- The shared refresh bridge only fires on show/resize, so switching the
+    -- displayed map with the frame open would leave the previous map's labels
+    -- sitting there -- including after a click on one of them zooms into a zone.
+    -- WORLD_MAP_UPDATE is the event the stock frame itself redraws on.
+    if type(CreateFrame) == "function" and not state.eventFrame then
+        local ev = CreateFrame("Frame")
+        ev:RegisterEvent("WORLD_MAP_UPDATE")
+        ev:SetScript("OnEvent", RequestRefresh)
+        state.eventFrame = ev
+    end
+
     state.hooksInstalled = true
 end
 
-function ZoneLabels:Initialize()
+-- Core drives modules through OnInitialize / OnEnable / OnDisable, called as
+-- PLAIN functions (`module.OnEnable()`, see addon:EnableModule) -- no self is
+-- passed, so these must not be colon-defined. This module shipped with
+-- Initialize/Enable/Disable, which Core never calls: it had never run once, on
+-- any map, which is why its Pandaria/Undermine labels were never seen either.
+function ZoneLabels.OnInitialize()
     InstallHooks()
     QueueRefresh(0)
 end
 
-function ZoneLabels:Enable()
+function ZoneLabels.OnEnable()
     InstallHooks()
     QueueRefresh(0)
 end
 
-function ZoneLabels:Disable()
+function ZoneLabels.OnDisable()
     HideFrom(1)
 end
+
+-- Kept as aliases: harmless, and anything that learned the old names still works.
+ZoneLabels.Initialize = ZoneLabels.OnInitialize
+ZoneLabels.Enable = ZoneLabels.OnEnable
+ZoneLabels.Disable = ZoneLabels.OnDisable
 
 addon:RegisterModule("ZoneLabels", ZoneLabels)

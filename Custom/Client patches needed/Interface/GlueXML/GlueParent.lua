@@ -307,15 +307,24 @@ local function DCBreakingNews_EnsureFrame()
 	frame:Hide();
 
 	if ( frame.SetBackdrop ) then
+		-- Matches the DarkChaos glue panels on character select / create (DC_GLUE_BACKDROP in
+		-- DCGlueAtlas.lua). Deliberately duplicated rather than referenced: GlueXML.toc loads
+		-- GlueParent.xml long before either character screen, so DC_GLUE_BACKDROP does not exist
+		-- yet at this point. Keep the two in step by hand if the panel style changes.
 		frame:SetBackdrop({
-			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+			bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
 			tile = true,
 			tileSize = 16,
 			edgeSize = 16,
-			insets = { left = 5, right = 5, top = 5, bottom = 5 },
+			insets = { left = 4, right = 4, top = 4, bottom = 4 },
 		});
-		frame:SetBackdropColor(0.02, 0.02, 0.02, 0.9);
+		-- Darker than the character panels' 0.55: this one carries body text that has to stay
+		-- readable over a bright glue background.
+		frame:SetBackdropColor(0, 0, 0, 0.85);
+		if ( frame.SetBackdropBorderColor ) then
+			frame:SetBackdropBorderColor(0.5, 0.45, 0.35, 0.8);
+		end
 	end
 
 	local title = frame:CreateFontString(nil, "OVERLAY");

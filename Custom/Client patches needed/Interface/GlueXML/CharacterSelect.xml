@@ -1277,4 +1277,11 @@
 			</OnHide>
 		</Scripts>
 	</Frame>
+	<!-- DarkChaos Shadowlands-style dressing. Loaded LAST so every frame it restyles exists.
+	     The atlas pair is included here as well as in CharacterCreate.xml because GlueXML.toc
+	     decides which screen parses first - relying on the other screen having loaded them would
+	     make this depend on load order. Re-running them is just a table + function assignment. -->
+	<Script file="DCCharCreate\DCCharCreateAtlas.lua"/>
+	<Script file="DCCharCreate\DCGlueAtlas.lua"/>
+	<Script file="DCCharCreate\DCCharSelect.lua"/>
 </Ui>

@@ -139,14 +139,64 @@ end
 -- When viewing the world map at continent level (zoomed out), these are the MapAreaIDs:
 -- NOTE: Do NOT include 0, 1, 530, 571 here - those are server continent IDs in hotspot.map,
 --       NOT client MapAreaIDs returned by GetCurrentMapAreaID()
+-- A continent-level WorldMapArea row is one with AreaID = 0 whose map ALSO has
+-- zone rows -- that is what makes it a zoom-out level rather than the only view
+-- of the map. Rows like Undermine (1204), Hinterlands (1203/1254), Karazhan
+-- Crypts (1222) and Naxxramas (1223) carry AreaID 0 too, but their map has no
+-- zone rows, so they ARE the playable map and pins must stay visible there.
+-- These are UI map ids -- what GetCurrentMapAreaID() returns -- which on 3.3.5a
+-- is WorldMapArea.ID + 1 (see DCQOS Core.lua UiMapIdFromWorldMapAreaId). Verified
+-- in-game: the map-750 overview reports 1263 for WorldMapArea row 1262.
+--
+-- The previous list held RAW WorldMapArea ids, so it never matched a continent
+-- and, worse, 466 selects UI 466 = WorldMapArea 465 = the Hellfire Peninsula
+-- ZONE map, where it hid pins that should have been drawn. Off-by-one both ways.
 local CONTINENT_MAP_IDS = {
-    -- WoW 3.3.5 continent view MapAreaIDs
+    -- WoW 3.3.5 continent views
     [-1] = true,   -- Cosmic/World view
-    [13] = true,   -- Kalimdor continent view (GetCurrentMapAreaID when zoomed out)
-    [14] = true,   -- Eastern Kingdoms continent view
-    [466] = true,  -- Outland continent view
-    [485] = true,  -- Northrend continent view
+    [14] = true,   -- Kalimdor        (WorldMapArea 13)
+    [15] = true,   -- Eastern Kingdoms(WorldMapArea 14)
+    [467] = true,  -- Outland         (WorldMapArea 466)
+    [486] = true,  -- Northrend       (WorldMapArea 485)
+    -- DC custom continents. Deliberately NOT Undermine (1205), Hinterlands
+    -- (1204/1255), Karazhan Crypts (1223) or Naxxramas (1224): those rows carry
+    -- AreaID 0 too, but their map has no zone rows, so the "continent" IS the
+    -- playable map and pins must stay visible there.
+    [641] = true,  -- Deepholm        (WorldMapArea 640,  map 646)
+    [1206] = true, -- Pandaria        (WorldMapArea 1205, map 870)
+    [1251] = true, -- Azshara Crater  (WorldMapArea 1250, map 1451)
+    [1263] = true, -- Mount Hyjal     (WorldMapArea 1262, map 750)
 }
+
+-- Is the world map currently showing a continent overview rather than a zone?
+--
+-- The static table above only knows the continents that existed when it was
+-- written, and every new custom continent silently reintroduced the bug it is
+-- meant to prevent: entity pins carry ZONE-normalized coords, so drawing them on
+-- a continent canvas scatters them across the whole landmass (the map-750 rares
+-- landing in the Veiled Sea). So fall back to asking the client: zone index 0 on
+-- a real continent means "overview", and GetMapZones returning nothing means the
+-- continent has no zone rows and its own map is the only view there is.
+local function IsContinentMapView(activeMapId)
+    if activeMapId and CONTINENT_MAP_IDS[activeMapId] then
+        return true
+    end
+    if type(GetCurrentMapZone) ~= "function"
+        or type(GetCurrentMapContinent) ~= "function"
+        or type(GetMapZones) ~= "function" then
+        return false
+    end
+    local zone = GetCurrentMapZone()
+    if zone == nil or zone ~= 0 then
+        return false
+    end
+    local continent = GetCurrentMapContinent()
+    if not continent or continent <= 0 then
+        return false
+    end
+    local firstZone = GetMapZones(continent)
+    return firstZone ~= nil and firstZone ~= ""
+end
 
 local function NowEpoch()
     if GetServerTime then
@@ -256,7 +306,10 @@ end
 local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
     local db = state and state.db
     if not db or not activeMapId or not zoneId or not zoneLabel then return end
-    if CONTINENT_MAP_IDS and CONTINENT_MAP_IDS[activeMapId] then return end
+    -- Never learn "continent 1262 == Hyjal Frontier" from a player standing in
+    -- the zone with the overview open: that mapping is what let every rare in
+    -- the zone match the continent map and get drawn at zone coordinates.
+    if IsContinentMapView(activeMapId) then return end
 
     db.customZoneMapping = db.customZoneMapping or {}
     if db.customZoneMapping[activeMapId] then return end
@@ -473,7 +526,7 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
     
     -- IMPORTANT: Hide pins when viewing continent map (zoomed out)
     -- This check is here as a safety backup - main check is in UpdateWorldPinsInternal
-    if CONTINENT_MAP_IDS[mapId] then
+    if IsContinentMapView(mapId) then
         return false
     end
     
@@ -532,7 +585,7 @@ end
 local function EntityMatchesMap(entity, activeMapId, showAll)
     if not entity then return false end
     if not activeMapId or activeMapId == 0 then return false end
-    if CONTINENT_MAP_IDS[activeMapId] then return false end
+    if IsContinentMapView(activeMapId) then return false end
     
     -- Check blacklist for boss entities only (death markers are never boss-blacklisted).
     if entity.kind == "boss" and IsBossBlacklistedMap(activeMapId) then
@@ -811,7 +864,20 @@ function Pins:Init(state)
     self.worldPinUpdate = 0  -- Debounce for world pins
     self.pendingWorldUpdate = false  -- Flag for pending update
     self.lastMapId = nil  -- Track last map to avoid redundant updates
-    
+
+    -- Drop continent-level entries an older build learned into SavedVariables.
+    -- They outlive the code fix: a stored customZoneMapping[1262] = <zone id>
+    -- keeps matching every rare in that zone against the continent overview.
+    local initDb = state and state.db
+    if initDb and type(initDb.customZoneMapping) == "table" then
+        for mapId in pairs(initDb.customZoneMapping) do
+            if CONTINENT_MAP_IDS[mapId] then
+                initDb.customZoneMapping[mapId] = nil
+                DebugPrint("Purged stale continent zone mapping for map", mapId)
+            end
+        end
+    end
+
     -- Check Astrolabe status
     local Astrolabe = _G.HotspotDisplay_Astrolabe
     if Astrolabe then
@@ -1247,7 +1313,7 @@ function Pins:UpdateWorldPinsInternal()
     DebugPrint("UpdateWorldPins: Processing", self:CountHotspots(), "hotspots for map", activeMapId)
     
     -- Check if we're in continent view - hide all pins
-    if CONTINENT_MAP_IDS[activeMapId] then
+    if IsContinentMapView(activeMapId) then
         DebugPrint("Continent view detected (mapId", activeMapId, ") - hiding all pins")
         for id, pin in pairs(self.worldPins) do
             pin:Hide()

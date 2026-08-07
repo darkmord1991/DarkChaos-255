@@ -1,6 +1,0 @@
-only two Patches Right now, they were merged!
-Patch-A -> AllRaces All Classes
-Patch-4 -> ALL DC stuff + dungeon Maps, worldmaps, etc.
-
-the current MPQ files can be downloaded from:
-https://1drv.ms/f/c/d9368532fb96da3d/IgApzcL1PyeoRLhaAbJlbvj8AQIH_JILZu_DqlLn61TIWbw?e=5%3Apc5TRp&sharingv2=true&fromShare=true&at=9
