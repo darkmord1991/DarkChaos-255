@@ -80,6 +80,32 @@ MapPOIData.TYPES = {
         borderColor = { 0.55, 0.35, 0.85, 0.62 },
         iconColor = { 1.0, 1.0, 1.0, 1.0 },
     },
+    -- Instance entrances. 3.3.5 has no dungeon/raid portal art of its own --
+    -- Interface\Minimap\Dungeon and \Raid simply do not exist in this client, and
+    -- the world map's own instance entrances all use POIIcons index 7, the same
+    -- generic landmark icon as 253 towns. So the familiar blue/green pair is made
+    -- by tinting the portal icon the teleporter type already uses, which keeps the
+    -- silhouette consistent with the rest of the layer and, more importantly, uses
+    -- a texture path that is verified to exist: an unknown path draws NOTHING and
+    -- raises no error, so a guessed icon is a silently invisible pin.
+    dungeon = {
+        order = 5,
+        label = "Dungeon Entrance",
+        worldIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        texCoord = { 0.08, 0.92, 0.08, 0.92 },
+        borderColor = { 0.25, 0.55, 0.95, 0.70 },
+        iconColor = { 0.55, 0.75, 1.00, 1.0 },
+    },
+    raid = {
+        order = 6,
+        label = "Raid Entrance",
+        worldIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        minimapIcon = "Interface\\Icons\\Spell_Arcane_PortalStormwind",
+        texCoord = { 0.08, 0.92, 0.08, 0.92 },
+        borderColor = { 0.20, 0.75, 0.35, 0.70 },
+        iconColor = { 0.55, 1.00, 0.65, 1.0 },
+    },
 }
 
 -- Per-type visibility is shared by both renderers, so toggling a marker type

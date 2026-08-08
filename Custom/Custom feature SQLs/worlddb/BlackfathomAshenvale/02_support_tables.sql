@@ -10,7 +10,23 @@
 
 SET @C_OFF := 3900000;
 SET @G_OFF := 4400000;
-SET @GUID_OFF := 16700000;
+-- Must match 03_spawns.sql exactly. Spawn guids are 24-bit (cap 0xFFFFFF = 16,777,215),
+-- so they are allocated DENSELY rather than by a constant offset -- see the long note in
+-- 03_spawns.sql for why the original `+16,700,000` scheme broke the server.
+SET @GO_GUID_BASE := 16340000;
+
+-- The same deterministic gameobject guid map 03_spawns.sql builds. It is derived purely
+-- from map 48's own spawn table, so this file can be applied before or after 03 and still
+-- produce identical numbers.
+DROP TEMPORARY TABLE IF EXISTS tmp_bfd_gomap;
+CREATE TEMPORARY TABLE tmp_bfd_gomap (old_guid INT UNSIGNED PRIMARY KEY, new_guid INT UNSIGNED);
+INSERT INTO tmp_bfd_gomap (old_guid, new_guid)
+SELECT t.guid, @GO_GUID_BASE + t.rn - 1 FROM (
+    SELECT g.`guid`, ROW_NUMBER() OVER (ORDER BY g.`guid`) AS rn
+    FROM `gameobject` g
+    WHERE g.`map` = 48
+      AND g.`id` NOT IN (SELECT `entry` FROM `gameobject_template` WHERE `type` = 15)
+) t;
 
 DROP TEMPORARY TABLE IF EXISTS tmp_bfd_src_cre;
 CREATE TEMPORARY TABLE tmp_bfd_src_cre (entry INT UNSIGNED PRIMARY KEY);
@@ -93,10 +109,14 @@ DROP TEMPORARY TABLE IF EXISTS tmp_bfd_ss;
 CREATE TEMPORARY TABLE tmp_bfd_ss LIKE `smart_scripts`;
 INSERT INTO tmp_bfd_ss SELECT * FROM `smart_scripts`
     WHERE `source_type` = 0 AND `entryorguid` IN (SELECT entry FROM tmp_bfd_src_cre);
+-- entry offset first, for every row
 UPDATE tmp_bfd_ss SET
     `entryorguid`   = `entryorguid` + @C_OFF,
-    `target_param1` = IF(`target_type` = 14, `target_param1` + @GUID_OFF, `target_param1`),
-    `target_param2` = IF(`target_type` = 14, `target_param2` + @G_OFF,    `target_param2`);
+    `target_param2` = IF(`target_type` = 14, `target_param2` + @G_OFF, `target_param2`);
+-- then the spawn-guid rewrite, which has to come from the map rather than an offset
+UPDATE tmp_bfd_ss s JOIN tmp_bfd_gomap m ON m.old_guid = s.`target_param1`
+    SET s.`target_param1` = m.new_guid
+    WHERE s.`target_type` = 14;
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` IN (SELECT `entryorguid` FROM tmp_bfd_ss);
 INSERT INTO `smart_scripts` SELECT * FROM tmp_bfd_ss;
 
@@ -157,3 +177,4 @@ DROP TEMPORARY TABLE IF EXISTS tmp_bfd_ssg;
 DROP TEMPORARY TABLE IF EXISTS tmp_bfd_csg;
 DROP TEMPORARY TABLE IF EXISTS tmp_bfd_src_cre;
 DROP TEMPORARY TABLE IF EXISTS tmp_bfd_src_go;
+DROP TEMPORARY TABLE IF EXISTS tmp_bfd_gomap;

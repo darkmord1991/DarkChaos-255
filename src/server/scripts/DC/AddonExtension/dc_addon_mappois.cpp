@@ -20,6 +20,9 @@
  *                 "... Teleport Bunny" / "Invisible Stalker ... teleport" /
  *                 "Portal Trainer" entries that must not become map markers.
  *  - "mail"       gameobject_template.type == GAMEOBJECT_TYPE_MAILBOX.
+ *  - "dungeon" /  creature whose ENTRY is listed in kInstanceEntrances -- the
+ *    "raid"       gatekeeper NPCs standing outside an instance. Entry-matched
+ *                 because they run on SmartAI and carry no ScriptName.
  *
  * The POI list is static world data: it is scanned once on first request and
  * cached. Requests are answered from memory (no DB round-trip); responses are
@@ -59,6 +62,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -74,6 +78,8 @@ namespace MapPOIs
         constexpr char const* INN        = "inn";
         constexpr char const* MAIL       = "mail";
         constexpr char const* TELEPORTER = "teleporter";
+        constexpr char const* DUNGEON    = "dungeon";
+        constexpr char const* RAID       = "raid";
     }
 
     // Default label per type; a POI named exactly this is sent without a name.
@@ -88,6 +94,10 @@ namespace MapPOIs
             return "Mailbox";
         if (std::strcmp(type, PoiType::TELEPORTER) == 0)
             return "Teleporter";
+        if (std::strcmp(type, PoiType::DUNGEON) == 0)
+            return "Dungeon Entrance";
+        if (std::strcmp(type, PoiType::RAID) == 0)
+            return "Raid Entrance";
         return "";
     }
 
@@ -96,6 +106,25 @@ namespace MapPOIs
     {
         "dc_teleporter_creature_script", // DC-WoW Teleporter (entry 800002)
         "npc_dungeon_portal_selector",   // Portal Keeper / Dungeon Teleporter
+    };
+
+    // Gatekeeper NPCs that stand outside an instance and teleport a player in.
+    //
+    // Matched by EXACT ENTRY rather than by script name, because these NPCs run on
+    // SmartAI and so carry no ScriptName to key off, and matching on the word
+    // "gatekeeper" or "portal" in a name is exactly the mistake the teleporter type
+    // documents above: the world is full of bunnies and trainers that would become
+    // bogus markers. One line per new entrance.
+    struct InstanceEntrance
+    {
+        uint32 entry;
+        char const* type;
+    };
+
+    static constexpr InstanceEntrance kInstanceEntrances[] =
+    {
+        { 3999001, PoiType::DUNGEON }, // Blackfathom Gatekeeper  -> map 820
+        { 3999002, PoiType::RAID    }, // Timbermaw Gatekeeper    -> map 819
     };
 
     struct MapPOI
@@ -162,6 +191,12 @@ namespace MapPOIs
         uint32 const npcflag = data.npcflag ? data.npcflag : proto->npcflag;
         std::string const& templateScript = sObjectMgr->GetScriptName(proto->ScriptID);
         std::string const& spawnScript = sObjectMgr->GetScriptName(data.ScriptId);
+
+        // Instance gatekeepers win outright: they are also gossip questgivers, and
+        // classifying them by flags would either miss them or mislabel them.
+        for (InstanceEntrance const& entrance : kInstanceEntrances)
+            if (proto->Entry == entrance.entry)
+                return entrance.type;
 
         if ((npcflag & UNIT_NPC_FLAG_FLIGHTMASTER)
             || IsFlightMasterScriptName(templateScript)
@@ -292,6 +327,8 @@ namespace MapPOIs
         uint32 innCount = 0;
         uint32 mailCount = 0;
         uint32 teleporterCount = 0;
+        uint32 dungeonCount = 0;
+        uint32 raidCount = 0;
         for (MapPOI const& poi : pois)
         {
             if (std::strcmp(poi.type, PoiType::FLIGHT) == 0)
@@ -306,11 +343,25 @@ namespace MapPOIs
                 ++mailCount;
             else if (std::strcmp(poi.type, PoiType::TELEPORTER) == 0)
                 ++teleporterCount;
+            else if (std::strcmp(poi.type, PoiType::DUNGEON) == 0)
+                ++dungeonCount;
+            else if (std::strcmp(poi.type, PoiType::RAID) == 0)
+                ++raidCount;
         }
 
         LOG_INFO("dc.addon",
-            "MapPOI (MPOI): cached {} map markers ({} flight, {} inn, {} mail, {} teleporter)",
-            pois.size(), flightCount, innCount, mailCount, teleporterCount);
+            "MapPOI (MPOI): cached {} map markers ({} flight, {} inn, {} mail, {} teleporter, "
+            "{} dungeon, {} raid)",
+            pois.size(), flightCount, innCount, mailCount, teleporterCount,
+            dungeonCount, raidCount);
+
+        // A gatekeeper that is listed but never spawned would silently produce no pin,
+        // so say so rather than leaving it to be noticed in game.
+        if (dungeonCount + raidCount < std::size(kInstanceEntrances))
+            LOG_WARN("dc.addon",
+                "MapPOI (MPOI): {} instance gatekeeper(s) configured but only {} found spawned - "
+                "check the entries in kInstanceEntrances against the creature table",
+                std::size(kInstanceEntrances), dungeonCount + raidCount);
 
         // A flight master with no taxi node cannot be discovery-gated, so the
         // client falls back to always drawing it. Worth surfacing: it usually

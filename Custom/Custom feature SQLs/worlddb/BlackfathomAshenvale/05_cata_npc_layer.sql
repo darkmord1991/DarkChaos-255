@@ -19,7 +19,7 @@
 -- =====================================================================================
 
 SET @C_OFF := 3900000;
-SET @GUID := 16760000;   -- own guid block, clear of the +16,700,000 clone block
+SET @GUID := 16621000;   -- continues the dense creature block 03_spawns.sql starts at 16,620,000
 SET @LVL := 72;
 SET @LVL_CAP := 96;
 
@@ -112,6 +112,9 @@ VALUES
 -- Deeps and the Fathom Stone summon them (see the source_type 1 SmartAI cloned in 02), so
 -- a static copy would put two of each in the dungeon.
 -- -------------------------------------------------------------------------------------
+-- Delete by ENTRY as well as by guid range: earlier revisions of this file used a
+-- different guid base (16,760,000), and only an entry-scoped delete cleans those up.
+DELETE FROM `creature` WHERE `map` = 820 AND `id` IN (3904977, 3904978, 3906047, 3912736, 3933256, 3933258, 3933260, 3933261, 3944375, 3944387, 3953488);
 DELETE FROM `creature` WHERE `guid` BETWEEN @GUID AND @GUID + 999;
 INSERT INTO `creature`
     (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `equipment_id`,
