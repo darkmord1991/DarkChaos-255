@@ -94,6 +94,9 @@ void AddSC_dc_felwood_cata();                 // MountHyjal/zone_felwood_cata.cp
 void AddSC_dc_darkshore_cata();               // MountHyjal/zone_darkshore_cata.cpp
 void AddSC_dc_azshara_cata();                 // MountHyjal/zone_azshara_cata.cpp
 
+// --- Blackfathom Deeps (Ashenvale) -- map-48 clone on map 820 ---
+void AddSC_instance_bfd_ashenvale();          // BlackfathomAshenvale/instance_bfd_ashenvale.cpp
+
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
 void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.cpp
@@ -357,6 +360,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_felwood_cata);
     DC_LOAD(AddSC_dc_darkshore_cata);
     DC_LOAD(AddSC_dc_azshara_cata);
+
+    LogSection("Blackfathom Deeps (Ashenvale) - map 820");
+    DC_LOAD(AddSC_instance_bfd_ashenvale);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);
