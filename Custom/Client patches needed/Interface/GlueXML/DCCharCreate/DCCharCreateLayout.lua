@@ -200,15 +200,23 @@ end
 
 -- ---------------------------------------------------------------------------------- race grid
 
---- Swap a race button's "selected" highlight for retail's selection ring.
---- SL applies this as the CheckedTexture anchored CENTER; the art carries glow outside the ring
---- itself, so it is drawn larger than the button rather than filling it.
+--- Swap a race button's "selected" highlight for a selection border that follows the icon.
+---
+--- Retail's own art (charactercreate-ring-select) is a CIRCLE, because retail's race buttons are
+--- round; ours are square, so the ring cut across the portrait's corners. This uses a generated
+--- rounded-SQUARE outline instead (tools/make_selection_border.py) whose glow falls outward, so the
+--- portrait underneath stays fully visible.
+---
+--- Applied as the CheckedTexture anchored CENTER, which means the stock selection code drives it -
+--- nothing here has to track which race is selected. The texture is drawn LARGER than the button
+--- because the outline sits at 76% of the art's extent (the rest is glow): 1/0.76 = 1.32, so the
+--- outline lands just outside the icon edge. Change one and the other must follow.
 local function ApplySelectionRing(button)
 	if not (button.GetCheckedTexture and DCCharCreateAtlas) then
 		return
 	end
 	local checked = button:GetCheckedTexture()
-	if not (checked and ApplyAtlas(checked, "charactercreate-ring-select")) then
+	if not (checked and ApplyAtlas(checked, "charactercreate-border-select")) then
 		return
 	end
 	local size = RACE_BUTTON_SIZE * 1.32

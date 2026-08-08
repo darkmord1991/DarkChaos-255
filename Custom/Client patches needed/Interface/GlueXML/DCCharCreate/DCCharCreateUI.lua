@@ -45,7 +45,11 @@ local SWATCH_W = 30
 local SWATCH_H = 16
 local SWATCH_GAP = 3
 local SWATCHES_PER_ROW = 11
-local MAX_SWATCHES = 33
+-- Ceiling on drawn swatches. Anything past it is still reachable with the arrows, but invisible in
+-- the palette, so it has to clear the largest axis in the data: after the HD adoption (2026-08-08)
+-- that is 36 skin colours on Orc/Tauren Male, up from 22. Four rows of 11 leaves headroom, and the
+-- panel re-measures itself for the extra lines (see UpdatePanelHeight).
+local MAX_SWATCHES = 44
 
 local AXIS_SKIN, AXIS_FACE, AXIS_HAIR_STYLE, AXIS_HAIR_COLOR, AXIS_FACIAL = 1, 2, 3, 4, 5
 

@@ -12,6 +12,7 @@ DCCharCreateAtlas = {
 	["charactercreate-customize-palette-half"] = { file = "Interface\\Glues\\DCCharCreate\\charactercreate-customize-palette-half", width = 84, height = 20, right = 0.656250, bottom = 0.625000 },
 	["charactercreate-customize-palette-selected"] = { file = "Interface\\Glues\\DCCharCreate\\charactercreate-customize-palette-selected", width = 102, height = 40, right = 0.796875, bottom = 0.625000 },
 	["charactercreate-ring-select"] = { file = "Interface\\Glues\\DCCharCreate\\charactercreate-ring-select", width = 236, height = 236, right = 0.921875, bottom = 0.921875 },
+	["charactercreate-border-select"] = { file = "Interface\\Glues\\DCCharCreate\\charactercreate-border-select", width = 128, height = 128, right = 1.000000, bottom = 1.000000 },
 	["charactercreate-ring-racialtrait"] = { file = "Interface\\Glues\\DCCharCreate\\charactercreate-ring-racialtrait", width = 38, height = 38, right = 0.593750, bottom = 0.593750 },
 	["charactercreate-icon-alliance"] = { file = "Interface\\Glues\\DCCharCreate\\charactercreate-icon-alliance", width = 184, height = 200, right = 0.718750, bottom = 0.781250 },
 	["charactercreate-icon-horde"] = { file = "Interface\\Glues\\DCCharCreate\\charactercreate-icon-horde", width = 184, height = 200, right = 0.718750, bottom = 0.781250 },
