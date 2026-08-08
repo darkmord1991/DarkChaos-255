@@ -68,6 +68,7 @@ class StaticTransport;
 class MotionTransport;
 class PathGenerator;
 class WorldSession;
+class SpawnedPoolData;
 
 enum WeatherState : uint32;
 
@@ -382,6 +383,9 @@ public:
         return nullptr;
     }
 
+    SpawnedPoolData& GetPoolData() { return *_poolData; }
+    [[nodiscard]] SpawnedPoolData const& GetPoolData() const { return *_poolData; }
+
     MapInstanced* ToMapInstanced() { if (Instanceable())  return reinterpret_cast<MapInstanced*>(this); else return nullptr;  }
     [[nodiscard]] MapInstanced const* ToMapInstanced() const { if (Instanceable())  return (MapInstanced const*)((MapInstanced*)this); else return nullptr;  }
 
@@ -666,6 +670,8 @@ private:
         }
     };
     std::set<RespawnEntry> _respawnQueue;
+
+    std::unique_ptr<SpawnedPoolData> _poolData;
 
     std::unordered_set<uint32> _toggledSpawnGroupIds;
     uint32 _respawnCheckTimer{0};
