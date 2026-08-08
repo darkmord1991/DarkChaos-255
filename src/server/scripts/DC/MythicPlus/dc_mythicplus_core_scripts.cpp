@@ -24,6 +24,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include "dc_update_profiler.h"
 
 namespace
 {
@@ -72,6 +73,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("MythicPlusCore");
         // Run-manager sweeps live here (world thread, once per second).
         // They used to run from OnPlayerUpdate, where (a) the accumulated
         // per-player diff hit the 1s gate N times faster with N dungeon

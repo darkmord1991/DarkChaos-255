@@ -1176,7 +1176,10 @@ void World::Update(uint32 diff)
     // Record update if recording set in log and diff is greater then minimum set in log
     sWorldUpdateTime.RecordUpdateTime(GameTime::GetGameTimeMS(), diff, sWorldSessionMgr->GetActiveSessionCount());
 
-    DynamicVisibilityMgr::Update(sWorldSessionMgr->GetActiveSessionCount());
+    {
+        DarkChaos::ScopedUpdateProfiler _prof("World.DynamicVisibility");
+        DynamicVisibilityMgr::Update(sWorldSessionMgr->GetActiveSessionCount());
+    }
 
     ///- Update the different timers
     for (int i = 0; i < WUPDATE_COUNT; ++i)
@@ -1201,12 +1204,14 @@ void World::Update(uint32 diff)
     if (_timers[WUPDATE_WHO_LIST].Passed())
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update who list"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.WhoList");
         _timers[WUPDATE_WHO_LIST].Reset();
         sWhoListCacheMgr->Update();
     }
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Check quest reset times"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.QuestResets");
 
         /// Handle daily quests reset time
         if (currentGameTime > _nextDailyQuestReset)
@@ -1230,18 +1235,21 @@ void World::Update(uint32 diff)
     if (currentGameTime > _nextRandomBGReset)
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Reset random BG"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.ResetRandomBG");
         ResetRandomBG();
     }
 
     if (currentGameTime > _nextCalendarOldEventsDeletionTime)
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Delete old calendar events"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.CalendarCleanup");
         CalendarDeleteOldEvents();
     }
 
     if (currentGameTime > _nextGuildReset)
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Reset guild cap"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.ResetGuildCap");
         ResetGuildCap();
     }
 
@@ -1254,6 +1262,7 @@ void World::Update(uint32 diff)
 
     if (currentGameTime > _mail_expire_check_timer)
     {
+        DarkChaos::ScopedUpdateProfiler _prof("World.MailExpire");
         sMailMgr->ReturnOrDeleteOldMails(true);
         _mail_expire_check_timer = currentGameTime + 6h;
     }
@@ -1282,6 +1291,7 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update LFG 0"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.LFG0");
         sLFGMgr->Update(diff, 0); // pussywizard: remove obsolete stuff before finding compatibility during map update
     }
 
@@ -1297,6 +1307,7 @@ void World::Update(uint32 diff)
         if (_timers[WUPDATE_AUTOBROADCAST].Passed())
         {
             METRIC_TIMER("world_update_time", METRIC_TAG("type", "Send autobroadcast"));
+            DarkChaos::ScopedUpdateProfiler _prof("World.Autobroadcast");
             _timers[WUPDATE_AUTOBROADCAST].Reset();
             sAutobroadcastMgr->SendAutobroadcasts();
         }
@@ -1316,6 +1327,7 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update worldstate"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.WorldState");
         sWorldState->Update(diff);
     }
 
@@ -1327,6 +1339,7 @@ void World::Update(uint32 diff)
 
     {
         METRIC_TIMER("world_update_time", METRIC_TAG("type", "Update LFG 2"));
+        DarkChaos::ScopedUpdateProfiler _prof("World.LFG2");
         sLFGMgr->Update(diff, 2); // pussywizard: handle created proposals
     }
 

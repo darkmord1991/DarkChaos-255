@@ -39,6 +39,7 @@
 #include <memory>
 #include <sstream>
 #include <ctime>
+#include "dc_update_profiler.h"
 
 // Forward declaration for S2C logging (defined later in file)
 static bool g_S2CLoggingEnabled = false;
@@ -3741,6 +3742,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("AddonProtocol");
         // Drain queued async DB callbacks every tick on the world thread so
         // their .WithCallback() continuations actually run (a discarded
         // QueryCallback never fires). Cheap no-op when nothing is queued.

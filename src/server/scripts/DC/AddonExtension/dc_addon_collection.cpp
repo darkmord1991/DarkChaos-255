@@ -4949,15 +4949,12 @@ namespace DCCollection
                 uint32 itemId = 0;
                 if (collType == static_cast<uint8>(CollectionType::TRANSMOG))
                 {
-                    // Try entryId as itemId
-                    QueryResult itemRes = WorldDatabase.Query(
-                        "SELECT displayid FROM item_template WHERE entry = {}",
-                        entryId);
-
-                    if (itemRes)
+                    // Try entryId as itemId. item_template is fully resident in
+                    // sObjectMgr, so resolve it in memory -- this runs once per
+                    // shop row (up to 100) on the world thread.
+                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
                     {
-                        Field* itemFields = itemRes->Fetch();
-                        appearanceId = itemFields[0].Get<uint32>();
+                        appearanceId = proto->DisplayInfoID;
                         itemId = entryId;
                     }
                     else
@@ -5194,43 +5191,98 @@ namespace DCCollection
         items.SetArray();
         uint32 count = 0;
 
+        // Buffer the page before resolving shop metadata: when the shop table
+        // lives in the world DB the LEFT JOIN above is unavailable, and
+        // resolving per row cost one query each (up to `limit`, default 50).
+        struct HistoryRow
+        {
+            uint32 purchaseId = 0;
+            uint32 shopId = 0;
+            uint32 costTokens = 0;
+            uint32 costEmblems = 0;
+            uint32 characterId = 0;
+            std::string characterName;
+            uint32 costGold = 0;
+            uint32 purchaseDate = 0;
+            uint8 collType = 0;
+            uint32 entryId = 0;
+        };
+
+        std::vector<HistoryRow> rows;
         if (result)
         {
             do
             {
                 Field* fields = result->Fetch();
 
-                uint32 purchaseId = fields[0].Get<uint32>();
-                uint32 shopId = fields[1].Get<uint32>();
-                uint32 costTokens = fields[2].Get<uint32>();
-                uint32 costEmblems = fields[3].Get<uint32>();
-                uint32 characterId = fields[4].Get<uint32>();
-                std::string characterName = fields[5].Get<std::string>();
-                uint32 costGold = fields[6].Get<uint32>();
-                uint32 purchaseDate = fields[7].Get<uint32>();
-                uint8 collType = 0;
-                uint32 entryId = 0;
+                HistoryRow row;
+                row.purchaseId = fields[0].Get<uint32>();
+                row.shopId = fields[1].Get<uint32>();
+                row.costTokens = fields[2].Get<uint32>();
+                row.costEmblems = fields[3].Get<uint32>();
+                row.characterId = fields[4].Get<uint32>();
+                row.characterName = fields[5].Get<std::string>();
+                row.costGold = fields[6].Get<uint32>();
+                row.purchaseDate = fields[7].Get<uint32>();
 
                 if (canJoinCharacterShop)
                 {
-                    collType = fields[8].Get<uint8>();
-                    entryId = fields[9].Get<uint32>();
+                    row.collType = fields[8].Get<uint8>();
+                    row.entryId = fields[9].Get<uint32>();
                 }
-                else if (canResolveWorldShopMetadata)
-                {
-                    std::string shopQuery =
-                        "SELECT collection_type, " + worldShopEntryCol +
-                        " FROM dc_collection_shop WHERE id = " +
-                        std::to_string(shopId) + " LIMIT 1";
-                    QueryResult shopResult = WorldDatabase.Query(shopQuery);
 
-                    if (shopResult)
-                    {
-                        Field* shopFields = shopResult->Fetch();
-                        collType = shopFields[0].Get<uint8>();
-                        entryId = shopFields[1].Get<uint32>();
-                    }
+                rows.push_back(std::move(row));
+            } while (result->NextRow());
+        }
+
+        if (canResolveWorldShopMetadata && !rows.empty())
+        {
+            std::string shopIdList;
+            for (auto const& row : rows)
+            {
+                if (!shopIdList.empty())
+                    shopIdList += ",";
+                shopIdList += std::to_string(row.shopId);
+            }
+
+            std::unordered_map<uint32, std::pair<uint8, uint32>> shopMeta;
+            if (QueryResult shopResult = WorldDatabase.Query(
+                "SELECT id, collection_type, " + worldShopEntryCol +
+                " FROM dc_collection_shop WHERE id IN (" + shopIdList + ")"))
+            {
+                do
+                {
+                    Field* shopFields = shopResult->Fetch();
+                    shopMeta[shopFields[0].Get<uint32>()] = {
+                        shopFields[1].Get<uint8>(), shopFields[2].Get<uint32>() };
+                } while (shopResult->NextRow());
+            }
+
+            for (auto& row : rows)
+            {
+                auto it = shopMeta.find(row.shopId);
+                if (it != shopMeta.end())
+                {
+                    row.collType = it->second.first;
+                    row.entryId = it->second.second;
                 }
+            }
+        }
+
+        if (!rows.empty())
+        {
+            for (auto const& row : rows)
+            {
+                uint32 purchaseId = row.purchaseId;
+                uint32 shopId = row.shopId;
+                uint32 costTokens = row.costTokens;
+                uint32 costEmblems = row.costEmblems;
+                uint32 characterId = row.characterId;
+                std::string const& characterName = row.characterName;
+                uint32 costGold = row.costGold;
+                uint32 purchaseDate = row.purchaseDate;
+                uint8 collType = row.collType;
+                uint32 entryId = row.entryId;
 
                 std::string itemName;
                 std::string itemIcon;
@@ -5326,7 +5378,7 @@ namespace DCCollection
 
                 items.Push(item);
                 ++count;
-            } while (result->NextRow());
+            }
         }
 
         DCAddon::JsonValue payload;
@@ -5505,15 +5557,11 @@ namespace DCCollection
         uint32 purchasedEntryId = entryId;
         if (collType == static_cast<uint8>(CollectionType::TRANSMOG))
         {
-            // Shop can be configured with itemId or appearanceId; always unlock by appearanceId
-            QueryResult itemRes = WorldDatabase.Query(
-                "SELECT displayid FROM item_template WHERE entry = {}",
-                entryId);
-
-            if (itemRes)
+            // Shop can be configured with itemId or appearanceId; always unlock by appearanceId.
+            // Resolved from the resident item_template store rather than the DB.
+            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
             {
-                Field* itemFields = itemRes->Fetch();
-                purchasedEntryId = itemFields[0].Get<uint32>();
+                purchasedEntryId = proto->DisplayInfoID;
             }
             else
             {

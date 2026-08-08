@@ -103,22 +103,6 @@ namespace
         return static_cast<uint32>(date);
     }
 
-    void EnsurePoolTableExists()
-    {
-        CharacterDatabase.DirectExecute(
-            "CREATE TABLE IF NOT EXISTS `dc_account_achievement_pools` ("
-            "`account_id` INT UNSIGNED NOT NULL,"
-            "`achievement_id` INT UNSIGNED NOT NULL,"
-            "`completed_at` INT UNSIGNED NOT NULL DEFAULT 0,"
-            "`updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP "
-            "ON UPDATE CURRENT_TIMESTAMP,"
-            "PRIMARY KEY (`account_id`, `achievement_id`),"
-            "KEY `idx_achievement_id` (`achievement_id`)"
-            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 "
-            "COLLATE=utf8mb4_unicode_ci "
-            "COMMENT='DarkChaos: Account-wide completed achievements'");
-    }
-
     void SavePoolAchievement(uint32 accountId, uint32 achievementId, uint32 date)
     {
         CharacterDatabase.Execute(
@@ -498,8 +482,6 @@ namespace
             if (!IsEnabled())
                 return;
 
-            EnsurePoolTableExists();
-
             LOG_INFO(
                 "module.dc",
                 "[DCAchievements] Account-wide achievements enabled "
@@ -508,11 +490,6 @@ namespace
                 IsShareRealmFirstEnabled() ? 1 : 0);
         }
 
-        void OnStartup() override
-        {
-            if (IsEnabled())
-                EnsurePoolTableExists();
-        }
     };
 }
 

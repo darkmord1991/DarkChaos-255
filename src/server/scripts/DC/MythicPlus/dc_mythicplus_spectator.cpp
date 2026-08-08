@@ -29,6 +29,7 @@
 #include "Random.h"
 
 #include <sstream>
+#include "dc_update_profiler.h"
 
 using namespace Acore::ChatCommands;
 
@@ -1771,6 +1772,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("MythicPlusSpectator");
         sMythicSpectator.Update(diff);
     }
 };

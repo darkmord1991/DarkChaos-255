@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <functional>
+#include "dc_update_profiler.h"
 
 namespace DCSpectator
 {
@@ -231,6 +232,7 @@ namespace
 
         void OnUpdate(uint32 diff) override
         {
+            DarkChaos::ScopedUpdateProfiler _prof("SpectatorCore");
             sSpectatorRegistry.Update(diff);
         }
     };

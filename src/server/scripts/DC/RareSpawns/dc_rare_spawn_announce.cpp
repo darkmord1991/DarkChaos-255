@@ -75,6 +75,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "dc_update_profiler.h"
 
 namespace
 {
@@ -565,6 +566,7 @@ namespace
 
         void OnUpdate(uint32 /*diff*/) override
         {
+            DarkChaos::ScopedUpdateProfiler _prof("RareSpawnAnnounce");
             std::vector<RareAnnouncement> batch;
             {
                 std::lock_guard<std::mutex> guard(sQueueMutex);

@@ -27,6 +27,7 @@
 #include <unordered_map>
 #include <vector>
 #include <optional>
+#include "dc_update_profiler.h"
 
 // ============================================================================
 // ZONE CONSTANTS
@@ -497,6 +498,7 @@ public:
     // Called every server update - handles rare spawn timer
     void OnUpdate(uint32 /*diff*/) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("GiantIslesZone");
         // Check if it's time to spawn a random rare
         Milliseconds currentTime = GameTime::GetGameTimeMS();
 

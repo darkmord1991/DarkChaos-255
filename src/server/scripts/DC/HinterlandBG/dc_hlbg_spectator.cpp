@@ -23,6 +23,7 @@
 #include "../Spectator/dc_spectator_core.h"
 
 #include <unordered_map>
+#include "dc_update_profiler.h"
 
 namespace DCHLBGSpectator
 {
@@ -262,6 +263,7 @@ namespace
 
         void OnUpdate(uint32 diff) override
         {
+            DarkChaos::ScopedUpdateProfiler _prof("HLBGSpectator");
             _timer += diff;
             if (_timer < SESSION_CHECK_INTERVAL_MS)
                 return;

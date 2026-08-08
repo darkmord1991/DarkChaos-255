@@ -28,6 +28,7 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include "dc_update_profiler.h"
 
 namespace DCAddon
 {
@@ -1315,7 +1316,6 @@ namespace MythicPlus
         std::unordered_map<uint64, time_t> m_missingKeys;  // backoff tracking
         std::unordered_map<uint64, time_t> m_cacheValidation;  // cache key -> last DB validation
         uint64 m_lastSeenUpdate = 0;
-        bool m_tableEnsured = false;
         bool m_queryInFlight = false;
         std::optional<QueryCallback> m_pendingQuery;
         std::unordered_set<uint64> m_refreshInFlight;  // keys with an async single-key refresh outstanding
@@ -1327,32 +1327,6 @@ namespace MythicPlus
         static constexpr uint32 CACHE_REVALIDATE_SECONDS = 2;
 
         HudCacheMgr() = default;
-
-        void EnsureTable()
-        {
-            if (m_tableEnsured)
-                return;
-
-            // Intentionally synchronous: guarded by m_tableEnsured, this
-            // schema ensure runs exactly once per uptime and must complete
-            // before the first async read against the table is issued.
-            CharacterDatabase.DirectExecute(
-                "CREATE TABLE IF NOT EXISTS `{}` ("
-                "  `instance_key` BIGINT UNSIGNED NOT NULL,"
-                "  `map_id` INT UNSIGNED NOT NULL,"
-                "  `instance_id` INT UNSIGNED NOT NULL,"
-                "  `owner_guid` INT UNSIGNED NOT NULL,"
-                "  `keystone_level` TINYINT UNSIGNED NOT NULL,"
-                "  `season_id` INT UNSIGNED NOT NULL,"
-                "  `payload` LONGTEXT NOT NULL,"
-                "  `updated_at` BIGINT UNSIGNED NOT NULL,"
-                "  PRIMARY KEY (`instance_key`)"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-                HUD_CACHE_TABLE);
-
-            m_tableEnsured = true;
-            LOG_INFO("dc.addon.mplus", "HudCacheMgr: Table `{}` ensured", HUD_CACHE_TABLE);
-        }
 
         uint64 MakeInstanceKey(Player* player) const
         {
@@ -1437,8 +1411,6 @@ namespace MythicPlus
         {
             if (!m_refreshInFlight.insert(instanceKey).second)
                 return;  // refresh for this key already outstanding
-
-            EnsureTable();
 
             std::string sql = Acore::StringFormat(
                 "SELECT payload, updated_at FROM `{}` WHERE instance_key = {} LIMIT 1",
@@ -1563,8 +1535,6 @@ namespace MythicPlus
 
         void PullCacheUpdates()
         {
-            EnsureTable();
-
             if (m_queryInFlight)
                 return;
 
@@ -1914,6 +1884,7 @@ public:
 
     void OnUpdate(uint32 /*diff*/) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("MythicPlusHudCache");
         // Poll every 1 second
         static uint32 lastUpdate = 0;
         uint32 now = getMSTime();

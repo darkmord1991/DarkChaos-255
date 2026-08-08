@@ -14,6 +14,7 @@
 #include "Creature.h"
 #include "QuestDef.h"
 #include "Group.h"
+#include "dc_update_profiler.h"
 
 using namespace DarkChaos::SeasonalRewards;
 
@@ -158,6 +159,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("SeasonalRewards");
         sSeasonalRewards->Update(diff);
     }
 };

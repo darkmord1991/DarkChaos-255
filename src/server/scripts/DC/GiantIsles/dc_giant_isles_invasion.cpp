@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include "dc_update_profiler.h"
 
 using namespace std::chrono_literals;
 
@@ -254,6 +255,8 @@ namespace
         {
             if (!map || map->GetId() != MAP_GIANT_ISLES)
                 return;
+
+            DarkChaos::ScopedUpdateProfiler _prof("GiantIslesInvasion");
 
             if (_phase == INVASION_INACTIVE)
             {

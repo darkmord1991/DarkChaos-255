@@ -373,161 +373,10 @@ namespace DCCollection
         return false;
     }
 
-    static void EnsureCommunityTables()
-    {
-        static std::once_flag once;
-        std::call_once(once, []()
-        {
-            CharacterDatabase.Execute(
-                "CREATE TABLE IF NOT EXISTS dc_collection_community_outfits ("
-                "id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-                "name VARCHAR(100),"
-                "author_name VARCHAR(50),"
-                "author_account_id INT UNSIGNED DEFAULT 0,"
-                "author_guid INT UNSIGNED,"
-                "items_string TEXT,"
-                "upvotes INT UNSIGNED DEFAULT 0,"
-                "downvotes INT UNSIGNED DEFAULT 0,"
-                "downloads INT UNSIGNED DEFAULT 0,"
-                "views INT UNSIGNED DEFAULT 0,"
-                "weekly_votes INT UNSIGNED DEFAULT 0,"
-                "tags VARCHAR(255) DEFAULT '',"
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                ")");
-
-            // Migration: add author_account_id for account-wide ownership.
-            // Some environments do not support "ADD COLUMN IF NOT EXISTS", so probe first.
-            if (QueryResult col = CharacterDatabase.Query("SHOW COLUMNS FROM dc_collection_community_outfits LIKE 'author_account_id'"))
-            {
-                (void)col;
-            }
-            else
-            {
-                CharacterDatabase.Execute(
-                    "ALTER TABLE dc_collection_community_outfits "
-                    "ADD COLUMN author_account_id INT UNSIGNED DEFAULT 0 AFTER author_name");
-            }
-
-            // Migration: add downvotes for negative rating support.
-            if (QueryResult col = CharacterDatabase.Query("SHOW COLUMNS FROM dc_collection_community_outfits LIKE 'downvotes'"))
-            {
-                (void)col;
-            }
-            else
-            {
-                CharacterDatabase.Execute(
-                    "ALTER TABLE dc_collection_community_outfits "
-                    "ADD COLUMN downvotes INT UNSIGNED DEFAULT 0 AFTER upvotes");
-            }
-
-            // Best-effort backfill from existing author_guid -> characters.account.
-            // If this fails on some custom DB layouts, it will just be ignored.
-            CharacterDatabase.Execute(
-                "UPDATE dc_collection_community_outfits o "
-                "JOIN characters c ON c.guid = o.author_guid "
-                "SET o.author_account_id = c.account "
-                "WHERE (o.author_account_id IS NULL OR o.author_account_id = 0)");
-
-            CharacterDatabase.Execute(
-                "CREATE TABLE IF NOT EXISTS dc_collection_community_favorites ("
-                "account_id INT UNSIGNED,"
-                "outfit_id INT UNSIGNED,"
-                "PRIMARY KEY(account_id, outfit_id)"
-                ")");
-
-            CharacterDatabase.Execute(
-                "CREATE TABLE IF NOT EXISTS dc_collection_community_votes ("
-                "account_id INT UNSIGNED,"
-                "outfit_id INT UNSIGNED,"
-                "vote TINYINT NOT NULL,"
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                "PRIMARY KEY(account_id, outfit_id),"
-                "KEY idx_outfit_id (outfit_id)"
-                ")");
-        });
-    }
-
-    static void EnsureAccountOutfitsTable()
-    {
-        static std::once_flag once;
-        std::call_once(once, []()
-        {
-            // Prefer utf8mb4, but fall back to utf8 if the server doesn't support utf8mb4.
-            std::string const createUtf8mb4 =
-                "CREATE TABLE IF NOT EXISTS dc_account_outfits ("
-                "account_id INT UNSIGNED NOT NULL COMMENT 'Account ID',"
-                "outfit_id TINYINT UNSIGNED NOT NULL COMMENT 'Outfit Slot (0-49)',"
-                "name VARCHAR(50) NOT NULL DEFAULT 'New Outfit',"
-                "icon VARCHAR(100) NOT NULL DEFAULT 'Interface/Icons/INV_Misc_QuestionMark',"
-                "items TEXT COMMENT 'JSON {SlotKey: itemId}',"
-                "source_community_id INT UNSIGNED DEFAULT NULL COMMENT 'If copied from community outfit',"
-                "source_author VARCHAR(50) DEFAULT NULL COMMENT 'Original author name if copied from community',"
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                "PRIMARY KEY (account_id, outfit_id)"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Account-wide saved outfits'";
-
-            std::string const createUtf8 =
-                "CREATE TABLE IF NOT EXISTS dc_account_outfits ("
-                "account_id INT UNSIGNED NOT NULL COMMENT 'Account ID',"
-                "outfit_id TINYINT UNSIGNED NOT NULL COMMENT 'Outfit Slot (0-49)',"
-                "name VARCHAR(50) NOT NULL DEFAULT 'New Outfit',"
-                "icon VARCHAR(100) NOT NULL DEFAULT 'Interface/Icons/INV_Misc_QuestionMark',"
-                "items TEXT COMMENT 'JSON {SlotKey: itemId}',"
-                "source_community_id INT UNSIGNED DEFAULT NULL COMMENT 'If copied from community outfit',"
-                "source_author VARCHAR(50) DEFAULT NULL COMMENT 'Original author name if copied from community',"
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
-                "PRIMARY KEY (account_id, outfit_id)"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Account-wide saved outfits'";
-
-            CharacterDatabase.Execute(createUtf8mb4);
-
-            // Verify the table exists. If not, try a more compatible CREATE.
-            if (!CharacterDatabase.Query("SHOW TABLES LIKE 'dc_account_outfits'"))
-            {
-                LOG_ERROR("module.dc", "[DCWardrobe] Failed to ensure table dc_account_outfits with utf8mb4; retrying with utf8. Check DB permissions/charset support.");
-                CharacterDatabase.Execute(createUtf8);
-
-                if (!CharacterDatabase.Query("SHOW TABLES LIKE 'dc_account_outfits'"))
-                    LOG_ERROR("module.dc", "[DCWardrobe] Failed to ensure table dc_account_outfits even with utf8. Outfits will not persist until DB is fixed.");
-            }
-        });
-    }
-
-    static void EnsureCharacterTransmogTable()
-    {
-        static std::once_flag once;
-        std::call_once(once, []()
-        {
-            std::string const createUtf8mb4 =
-                "CREATE TABLE IF NOT EXISTS dc_character_transmog ("
-                "guid INT UNSIGNED NOT NULL COMMENT 'Character GUID (low)',"
-                "slot TINYINT UNSIGNED NOT NULL COMMENT 'Equipment slot (0-18)',"
-                "fake_entry INT UNSIGNED NOT NULL COMMENT 'Item entry used for appearance',"
-                "real_entry INT UNSIGNED NOT NULL COMMENT 'Real equipped item entry',"
-                "PRIMARY KEY (guid, slot)"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Applied transmog per character'";
-
-            std::string const createUtf8 =
-                "CREATE TABLE IF NOT EXISTS dc_character_transmog ("
-                "guid INT UNSIGNED NOT NULL COMMENT 'Character GUID (low)',"
-                "slot TINYINT UNSIGNED NOT NULL COMMENT 'Equipment slot (0-18)',"
-                "fake_entry INT UNSIGNED NOT NULL COMMENT 'Item entry used for appearance',"
-                "real_entry INT UNSIGNED NOT NULL COMMENT 'Real equipped item entry',"
-                "PRIMARY KEY (guid, slot)"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Applied transmog per character'";
-
-            CharacterDatabase.Execute(createUtf8mb4);
-
-            if (!CharacterDatabase.Query("SHOW TABLES LIKE 'dc_character_transmog'"))
-            {
-                LOG_ERROR("module.dc", "[DCWardrobe] Failed to ensure table dc_character_transmog with utf8mb4; retrying with utf8. Check DB permissions/charset support.");
-                CharacterDatabase.Execute(createUtf8);
-
-                if (!CharacterDatabase.Query("SHOW TABLES LIKE 'dc_character_transmog'"))
-                    LOG_ERROR("module.dc", "[DCWardrobe] Failed to ensure table dc_character_transmog even with utf8. Transmog will not persist until DB is fixed.");
-            }
-        });
-    }
+    // dc_collection_community_outfits, dc_collection_community_favorites,
+    // dc_collection_community_votes, dc_account_outfits and dc_character_transmog
+    // are created by the characters-DB migration
+    // (data/sql/updates/pending_db_characters), not at runtime.
 
     // dc_character_enchant_visual is created by the characters-DB migration
     // (data/sql/updates/pending_db_characters), not at runtime.
@@ -1097,8 +946,6 @@ namespace DCCollection
     {
         if (!player || !player->GetSession()) return;
 
-        EnsureCharacterTransmogTable();
-
         // Async read: every callsite treats this as a fire-and-forget tail
         // call, so building the payload (and re-applying the visible item
         // fields) can safely happen once the query result arrives.
@@ -1188,8 +1035,6 @@ namespace DCCollection
     {
          if (!player || !player->GetSession()) return;
          if (!DCAddon::IsJsonMessage(msg)) return;
-
-            EnsureCharacterTransmogTable();
 
          DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
          uint8 slot = static_cast<uint8>(json["slot"].AsUInt32());
@@ -1617,7 +1462,6 @@ namespace DCCollection
         if (!DCAddon::IsJsonMessage(msg)) return;
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
-        EnsureCharacterTransmogTable();
 
         // Debug logging: show appearance index status at each apply request.
         {
@@ -2086,8 +1930,6 @@ namespace DCCollection
         if (!player)
             return;
 
-        EnsureCommunityTables();
-
         uint32 offset = 0;
         uint32 limit = 50;
         std::string filter = "all";
@@ -2228,8 +2070,6 @@ namespace DCCollection
         if (!DCAddon::IsJsonMessage(msg))
             return;
 
-        EnsureCommunityTables();
-
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         std::string name = json["name"].AsString();
         std::string items = json["items"].AsString();
@@ -2292,7 +2132,6 @@ namespace DCCollection
         value = (value >= 0) ? 1 : -1;
 
         // Allow only one vote per player/outfit to prevent vote spamming.
-        EnsureCommunityTables();
 
         std::string checkSql = Acore::StringFormat(
             "SELECT vote FROM dc_collection_community_votes WHERE account_id = {} AND outfit_id = {} LIMIT 1",
@@ -2332,7 +2171,6 @@ namespace DCCollection
     void HandleCommunityFavorite(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
-        EnsureCommunityTables();
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
         bool add = json["add"].AsBool();
@@ -2366,7 +2204,6 @@ namespace DCCollection
     void HandleCommunityView(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
-        EnsureCommunityTables();
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
 
@@ -2409,8 +2246,6 @@ namespace DCCollection
             return;
         if (!DCAddon::IsJsonMessage(msg))
             return;
-
-        EnsureCommunityTables();
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
@@ -2490,8 +2325,6 @@ namespace DCCollection
             return;
         if (!DCAddon::IsJsonMessage(msg))
             return;
-
-        EnsureCommunityTables();
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
@@ -2937,8 +2770,6 @@ namespace DCCollection
             return;
         }
 
-        EnsureAccountOutfitsTable();
-
         // Check if outfits enabled
         if (!sConfigMgr->GetOption<bool>("DCCollection.Outfits.Enable", true))
         {
@@ -3033,7 +2864,6 @@ namespace DCCollection
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
 
-        EnsureAccountOutfitsTable();
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 outfitId = json["id"].AsUInt32();
         uint32 accountId = player->GetSession()->GetAccountId();
@@ -3119,8 +2949,6 @@ namespace DCCollection
     void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player) return;
-
-        EnsureAccountOutfitsTable();
 
         uint32 accountId = player->GetSession()->GetAccountId();
 
@@ -3360,7 +3188,6 @@ namespace DCCollection
                 return;
 
             // Ensure Community tables exist once at startup (avoid runtime DDL stalls).
-            EnsureCommunityTables();
 
             // Pre-warm heavy transmog caches at startup to avoid the first-player hitch.
             // (Doing the item_template scan lazily can freeze the world thread and make gossips/menus feel laggy.)

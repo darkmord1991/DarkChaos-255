@@ -33,6 +33,7 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include "dc_update_profiler.h"
 
 namespace DCAddon
 {
@@ -1267,6 +1268,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("Matchmaking");
         // sMatchmakingQueue already expands to the fully-qualified Instance().
         sMatchmakingQueue.Update(diff);
     }

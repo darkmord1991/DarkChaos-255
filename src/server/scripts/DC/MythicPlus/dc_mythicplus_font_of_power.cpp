@@ -36,6 +36,7 @@
 
 #include <cmath>
 #include <sstream>
+#include "dc_update_profiler.h"
 
 namespace
 {
@@ -1066,6 +1067,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("MythicPlusFontOfPower");
         _timeoutSweepTimer += diff;
         if (_timeoutSweepTimer < 1000)
             return;

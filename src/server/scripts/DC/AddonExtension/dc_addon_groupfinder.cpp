@@ -29,6 +29,7 @@
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include "dc_update_profiler.h"
 
 namespace DCAddon
 {
@@ -1896,6 +1897,7 @@ public:
 
     void OnUpdate(uint32 diff) override
     {
+        DarkChaos::ScopedUpdateProfiler _prof("GroupFinder");
         DCAddon::sGroupFinderMgr.Update(diff);
     }
 };
