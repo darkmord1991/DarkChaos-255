@@ -7,7 +7,7 @@
 
 // Pre-validated spawn location. Terrain/zone eligibility is static, so once a
 // point is discovered it can be reused indefinitely without probing cold
-// terrain on the world thread. Backed by the dc_hotspot_spawn_points table.
+// terrain on the world thread. Backed by acore_chars.dc_hotspot_spawn_points.
 struct HotspotSpawnPoint
 {
     uint32 dbId = 0;

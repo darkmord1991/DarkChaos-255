@@ -1222,4 +1222,9 @@ DC.MountModelPaths = DC.MountModelPaths or {
     [503529] = "mountpreview\\encrypted22\\encrypted22_503529.m2",
     [503532] = "mountpreview\\ridinghorse\\ridinghorsespectral_503532.m2",
     [503533] = "mountpreview\\saber3mount\\saber3mount_503533.m2",
+    [503592] = "mountpreview\\mothfluffymount\\mothfluffymount_503592.m2",
+    [503593] = "mountpreview\\rabbitmountvoid\\rabbitmountvoid_503593.m2",
+    [503594] = "mountpreview\\shaowlmount\\shaowlmount_503594.m2",
+    [503595] = "mountpreview\\shawolfmount\\shawolfmount_503595.m2",
+    [503596] = "mountpreview\\springpandamount\\springpandamount_503596.m2",
 }

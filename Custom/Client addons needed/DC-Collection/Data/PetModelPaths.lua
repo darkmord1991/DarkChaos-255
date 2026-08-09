@@ -1188,4 +1188,8 @@ DC.PetModelPaths = DC.PetModelPaths or {
     [503547] = "petpreview\\manafiend2\\manafiend_void_pet_503547.m2",
     [503549] = "petpreview\\murloc\\diablobabymurloc_503549.m2",
     [503550] = "petpreview\\murloc\\murloccrusader_503550.m2",
+    [503600] = "petpreview\\babymurlocxalatath\\babymurlocxalatath_503600.m2",
+    [503601] = "petpreview\\batpetrevendreth2\\batpetrevendreth2_503601.m2",
+    [503602] = "petpreview\\mothpet2\\mothpet2_503602.m2",
+    [503603] = "petpreview\\shabeakypet\\shabeakypet_503603.m2",
 }

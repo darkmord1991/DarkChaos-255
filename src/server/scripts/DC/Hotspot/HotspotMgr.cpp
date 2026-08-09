@@ -25,6 +25,7 @@
 #include <sstream>
 #include <cmath>
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <unordered_set>
 
@@ -323,16 +324,23 @@ static bool IsCityLikeArea(uint32 areaId)
 //
 // Consequences of a map appearing here at all:
 //   * spawn discovery only samples inside these boxes on that map;
-//   * a position outside every band on a banded map is rejected outright
-//     (un-authored terrain), so Moonglade 4928 stays hotspot-free without
-//     needing an exclude entry;
+//   * a position outside all authored content on a banded map is rejected
+//     outright, so Moonglade 4928 stays hotspot-free without an exclude entry;
 //   * the IsCityLikeArea guard is skipped. That guard exists to keep blind
 //     map-wide discovery out of Stormwind; a hand-authored band is already an
 //     explicit statement of intent. Isles of Giants 5006 carries the
 //     SLAVE_CAPITAL flags and would otherwise be silently unusable.
-// Boxes on the same map may overlap; ties resolve to the nearest box centre
-// and BuildZoneSampleBoxes logs the overlapping pairs so the extents can be
-// tightened against real spawn data.
+//
+// These boxes are used for SAMPLING only. On map 750 the six bands interleave,
+// so their bounding boxes necessarily overlap no matter how tight they are
+// (measured against live spawn extents: 9 of 15 pairs still overlap) - which
+// makes a box test useless for deciding WHICH band a position is in. That job
+// belongs to MAP750_BAND_GRID below. A probe aimed at one band that lands in
+// another is not wasted: it is simply pooled under the band the grid reports.
+//
+// Extents below are the live creature-spawn footprints (map 750 / 751 / 37).
+// Maps 850 and 1410 have almost no creatures (4 and 21 respectively), so their
+// boxes stay WorldMapArea-derived - a 4-spawn footprint is not a zone extent.
 struct HotspotZoneBand
 {
     uint32 mapId;
@@ -341,25 +349,131 @@ struct HotspotZoneBand
 };
 static constexpr HotspotZoneBand ZONE_BANDS[] =
 {
-    // Azshara Crater (map 37): tightened from the full world-map image extent to
-    // the actual creature/player spawn footprint so hotspots stop landing on the
-    // crater's unreachable outer rim.
-    {   37,  268,  -700.0f,  1250.0f,  -450.0f,   1200.0f   }, // Azshara Crater
-    { 1405, 5006,  5334.3f,  6932.32f,   2.91f,   2132.02f  }, // Isles of Giants
-    {  850, 6000,  2066.67f, 4333.33f, -5166.67f, -1766.67f }, // Stratholme Valley
-    { 1410, 6100,  4479.17f, 6145.83f, -4025.0f,  -1525.0f  }, // Hyjal Frontier
-    // DC Hyjal (map 750), one box per leveling-band zone. Extents from the
-    // zone-tagged spawn footprints after HyjalCata/231_map750_zone_backfill.sql.
-    // 4928 Moonglade is deliberately absent (sanctuary, no hotspots).
-    {  750, 4923,  3390.0f,  5780.0f,  -4990.0f,  -1270.0f  }, // Hyjal Frontier (113-130)
-    {  750, 4926,  4100.0f,  8000.0f,  -5330.0f,  -2200.0f  }, // Winterspring (104-115)
-    {  750, 4927,  3800.0f,  7000.0f,  -2600.0f,   -400.0f  }, // Felwood (96-106)
-    {  750, 4929,  4200.0f,  8300.0f,  -1700.0f,   1310.0f  }, // Darkshore (80-90)
-    {  750, 4930,  1900.0f,  5100.0f,  -8430.0f,  -3900.0f  }, // Azshara (80-90)
-    {  750, 4931,  1279.0f,  4267.0f,  -3800.0f,   2410.0f  }, // Ashenvale (88-98)
+    {   37,  268,  -695.8f,  1248.0f,  -449.5f,   1194.8f   }, // Azshara Crater
+    { 1405, 5006,  5334.3f,  6932.32f,   2.91f,   2132.02f  }, // Isles of Giants (WMA)
+    {  850, 6000,  2066.67f, 4333.33f, -5166.67f, -1766.67f }, // Stratholme Valley (WMA)
+    { 1410, 6100,  4479.17f, 6145.83f, -4025.0f,  -1525.0f  }, // Hyjal Frontier (WMA)
+    // DC Hyjal (map 750). 4928 Moonglade is deliberately absent (sanctuary).
+    {  750, 4923,  3399.4f,  5770.1f,  -4979.4f,  -1279.7f  }, // Hyjal Frontier (113-130)
+    {  750, 4926,  5019.9f,  8246.5f,  -5411.5f,  -2201.5f  }, // Winterspring (104-115)
+    {  750, 4927,  3509.3f,  7262.7f,  -2285.8f,   -269.1f  }, // Felwood (96-106)
+    {  750, 4929,  4157.9f,  8289.5f,  -1692.4f,   1307.6f  }, // Darkshore (80-90)
+    {  750, 4930,  1882.0f,  5051.1f,  -8426.9f,  -3872.1f  }, // Azshara (80-90)
+    {  750, 4931,  1195.3f,  4264.7f,  -3793.7f,   2410.1f  }, // Ashenvale (88-98)
     // DC Plaguelands (map 751): single band covering the whole continent.
-    {  751, 4924,   630.0f,  3500.0f,  -6140.0f,   -810.0f  }, // Plaguelands (130-160)
+    {  751, 4924,   902.2f,  3492.4f,  -6127.5f,   -821.3f  }, // Plaguelands (130-160)
 };
+
+// ---------------------------------------------------------------------------
+// Band grid - which level band owns a given position on a multi-band map.
+//
+// GENERATED from live spawn data, do not hand-edit. Each cell is the majority
+// zoneId of the creatures spawned in it. Regenerate with:
+//
+//   SELECT cy, GROUP_CONCAT(CONCAT(cx,':',code) ORDER BY cx SEPARATOR ' ')
+//   FROM (SELECT cx, cy, CASE zoneId WHEN 4923 THEN 'A' WHEN 4926 THEN 'B'
+//                WHEN 4927 THEN 'C' WHEN 4929 THEN 'D' WHEN 4930 THEN 'E'
+//                WHEN 4931 THEN 'F' ELSE '.' END AS code
+//         FROM (SELECT cx, cy, zoneId, ROW_NUMBER() OVER
+//                      (PARTITION BY cx, cy ORDER BY cnt DESC, zoneId) rn
+//               FROM (SELECT FLOOR(position_x/512) cx, FLOOR(position_y/512) cy,
+//                            zoneId, COUNT(*) cnt
+//                     FROM creature WHERE map=750 GROUP BY 1,2,3) g) t
+//         WHERE rn=1) u GROUP BY cy ORDER BY cy;
+//
+// Measured against all 18,730 zone-tagged map-750 spawns, a 512yd cell
+// reproduces the real zone for 99.0% of them (1024yd: 95.7%, 256yd: 99.9%).
+// The alternative that was tried first - nearest band centroid - managed only
+// 89.3% overall and 66.5% for Felwood, whose shape no single point captures.
+//
+// '.' means no authored band: unspawned terrain, or Moonglade 4928 (the three
+// '.' cells at the right edge of rows -7..-5), which must stay hotspot-free.
+// ---------------------------------------------------------------------------
+static constexpr float BAND_GRID_CELL_SIZE = 512.0f;
+
+static constexpr char const* MAP750_BAND_GRID[] =
+{
+    "....EE........."   , // cellY -17   y  -8704 .. -8193
+    "...EEEEE......."   , // cellY -16   y  -8192 .. -7681
+    "..EEEEEE......."   , // cellY -15   y  -7680 .. -7169
+    ".EEEEEEE......."   , // cellY -14   y  -7168 .. -6657
+    ".EEEEEEE......."   , // cellY -13   y  -6656 .. -6145
+    "..EEEEEE......."   , // cellY -12   y  -6144 .. -5633
+    "..EEEEEE.BBBBB."   , // cellY -11   y  -5632 .. -5121
+    "..EEEEAABBBBBB."   , // cellY -10   y  -5120 .. -4609
+    "..EEEEAABBBBBB."   , // cellY  -9   y  -4608 .. -4097
+    "..FEFAAAABBBBBB"   , // cellY  -8   y  -4096 .. -3585
+    ".FFFFAAAAABB..."   , // cellY  -7   y  -3584 .. -3073
+    "FFFF.AAAAABB..."   , // cellY  -6   y  -3072 .. -2561
+    "FFFFAAAAAACB..."   , // cellY  -5   y  -2560 .. -2049
+    "FFFFFCAAACCCD.."   , // cellY  -4   y  -2048 .. -1537
+    ".FFFFCCAACCCDDD"   , // cellY  -3   y  -1536 .. -1025
+    ".FFFFCCCCCCDDD."   , // cellY  -2   y  -1024 ..  -513
+    ".FFFFFCCCDDDDD."   , // cellY  -1   y   -512 ..    -1
+    "..FFFFDDDDDDD.."   , // cellY   0   y      0 ..   511
+    "..FFFFDDDDDDD.."   , // cellY   1   y    512 ..  1023
+    "....FFFD.DD...."   , // cellY   2   y   1024 ..  1535
+    "....FFF........"   , // cellY   3   y   1536 ..  2047
+    "....F.........."   , // cellY   4   y   2048 ..  2559
+};
+
+struct HotspotBandCode
+{
+    char code;
+    uint32 zoneId;
+};
+
+struct HotspotBandGrid
+{
+    uint32 mapId;
+    int32 minCellX;
+    int32 minCellY;
+    uint32 width;
+    uint32 height;
+    char const* const* rows;
+    HotspotBandCode const* codes;
+    uint32 codeCount;
+};
+
+static constexpr HotspotBandCode MAP750_BAND_CODES[] =
+{
+    { 'A', 4923 }, { 'B', 4926 }, { 'C', 4927 },
+    { 'D', 4929 }, { 'E', 4930 }, { 'F', 4931 },
+};
+
+static constexpr HotspotBandGrid BAND_GRIDS[] =
+{
+    { 750, 2, -17, 15, 22, MAP750_BAND_GRID, MAP750_BAND_CODES,
+      static_cast<uint32>(std::size(MAP750_BAND_CODES)) },
+};
+
+static HotspotBandGrid const* FindBandGrid(uint32 mapId)
+{
+    for (HotspotBandGrid const& grid : BAND_GRIDS)
+        if (grid.mapId == mapId)
+            return &grid;
+    return nullptr;
+}
+
+// 0 = the position has no authored band (off-grid or a '.' cell).
+static uint32 ResolveFromBandGrid(HotspotBandGrid const& grid, float x, float y)
+{
+    int32 cellX = static_cast<int32>(std::floor(x / BAND_GRID_CELL_SIZE));
+    int32 cellY = static_cast<int32>(std::floor(y / BAND_GRID_CELL_SIZE));
+
+    int32 col = cellX - grid.minCellX;
+    int32 row = cellY - grid.minCellY;
+    if (col < 0 || row < 0 || static_cast<uint32>(col) >= grid.width ||
+        static_cast<uint32>(row) >= grid.height)
+        return 0;
+
+    char code = grid.rows[row][col];
+    for (uint32 i = 0; i < grid.codeCount; ++i)
+        if (grid.codes[i].code == code)
+            return grid.codes[i].zoneId;
+
+    return 0;
+}
 
 static bool MapHasBands(uint32 mapId)
 {
@@ -371,31 +485,24 @@ static bool MapHasBands(uint32 mapId)
 
 uint32 HotspotMgr::ResolveZoneAt(uint32 mapId, float x, float y, uint32 terrainZoneId) const
 {
-    bool banded = false;
-    uint32 best = 0;
-    float bestDistSq = 0.0f;
+    // Multi-band maps: the grid is authoritative.
+    if (HotspotBandGrid const* grid = FindBandGrid(mapId))
+        return ResolveFromBandGrid(*grid, x, y);
 
+    // Single-band maps: the box IS the band, so containment is unambiguous.
+    bool banded = false;
     for (HotspotZoneBand const& band : ZONE_BANDS)
     {
         if (band.mapId != mapId)
             continue;
 
         banded = true;
-        if (x < band.minX || x > band.maxX || y < band.minY || y > band.maxY)
-            continue;
-
-        float dx = x - (band.minX + band.maxX) * 0.5f;
-        float dy = y - (band.minY + band.maxY) * 0.5f;
-        float distSq = dx * dx + dy * dy;
-        if (!best || distSq < bestDistSq)
-        {
-            best = band.zoneId;
-            bestDistSq = distSq;
-        }
+        if (x >= band.minX && x <= band.maxX && y >= band.minY && y <= band.maxY)
+            return band.zoneId;
     }
 
     if (banded)
-        return best; // 0 = outside every authored band
+        return 0; // outside every authored band
 
     return terrainZoneId;
 }
@@ -436,21 +543,58 @@ void HotspotMgr::BuildZoneSampleBoxes()
         _zoneSampleBoxes.push_back({ band.zoneId, band.mapId, band.minX, band.maxX, band.minY, band.maxY });
     }
 
-    // Overlapping bands make the announce name (and MaxPerZone accounting)
-    // ambiguous in the shared region; report them so the extents get fixed.
+    // Overlapping sample boxes are expected and harmless on a gridded map (the
+    // grid, not the box, decides the band). On a NON-gridded map the box test
+    // is the resolution, so an overlap there really is ambiguous.
     for (size_t i = 0; i < _zoneSampleBoxes.size(); ++i)
     {
+        HotspotZoneSampleBox const& a = _zoneSampleBoxes[i];
+        if (FindBandGrid(a.mapId))
+            continue;
+
         for (size_t j = i + 1; j < _zoneSampleBoxes.size(); ++j)
         {
-            HotspotZoneSampleBox const& a = _zoneSampleBoxes[i];
             HotspotZoneSampleBox const& b = _zoneSampleBoxes[j];
             if (a.mapId != b.mapId)
                 continue;
             if (a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY)
                 continue;
 
-            LOG_WARN("scripts.dc", "Hotspots: band boxes for zones {} and {} on map {} overlap; positions in the shared region resolve to the nearer box centre.",
-                a.zoneId, b.zoneId, a.mapId);
+            LOG_WARN("scripts.dc", "Hotspots: zones {} and {} on map {} overlap and map {} has no band grid - positions in the shared region resolve to whichever is listed first. Add a band grid or make the boxes disjoint.",
+                a.zoneId, b.zoneId, a.mapId, a.mapId);
+        }
+    }
+
+    // Drift check: the grid is generated from spawn data, ZONE_BANDS is hand
+    // written. If a band has no cells the grid can never name it, and a code
+    // with no band entry means the grid outranks a zone nobody configured.
+    for (HotspotBandGrid const& grid : BAND_GRIDS)
+    {
+        if (!IsMapEnabled(grid.mapId))
+            continue;
+
+        for (uint32 c = 0; c < grid.codeCount; ++c)
+        {
+            uint32 zoneId = grid.codes[c].zoneId;
+
+            uint32 cells = 0;
+            for (uint32 row = 0; row < grid.height; ++row)
+                for (uint32 col = 0; col < grid.width; ++col)
+                    if (grid.rows[row][col] == grid.codes[c].code)
+                        ++cells;
+
+            bool configured = IsZoneAllowed(zoneId);
+            bool listed = false;
+            for (HotspotZoneBand const& band : ZONE_BANDS)
+                if (band.mapId == grid.mapId && band.zoneId == zoneId)
+                    listed = true;
+
+            if (!cells)
+                LOG_WARN("scripts.dc", "Hotspots: band zone {} on map {} has no cells in the band grid - it can never be selected. Regenerate the grid.", zoneId, grid.mapId);
+            else if (!listed)
+                LOG_WARN("scripts.dc", "Hotspots: band grid for map {} yields zone {}, which has no ZONE_BANDS entry - it will never be sampled, only inherited.", grid.mapId, zoneId);
+            else if (!configured)
+                LOG_INFO("server.loading", "Hotspots: band zone {} on map {} is excluded by config; its {} grid cell(s) will be skipped.", zoneId, grid.mapId, cells);
         }
     }
 

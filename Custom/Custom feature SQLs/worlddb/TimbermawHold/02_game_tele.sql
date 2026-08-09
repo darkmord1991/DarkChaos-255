@@ -1,16 +1,18 @@
 -- Timbermaw Hold (map 819) -- `.tele dctimbermaw` / `.tele dctimbermawgate` command entries.
 --
--- ids 10640/10641: live max is 10632, and 10633-10639 are reserved by the pending map-750
--- round-51 batch (dclordanel/dcbilgewater/...), so this block starts above that reservation.
---
--- dctimbermaw     = the raid's arrival point, WMO group 1 "EntranceMeetingRoom02".
+-- dctimbermaw     = a GM shortcut into the raid, placed IN GAME and read back out (id 10643).
 -- dctimbermawgate = the world-side entrance on map 750, at the Timbermaw Hold furbolg camp.
 --
--- Both Z values are DERIVED, not measured: the raid point comes from the WMO group bounding
--- box (floor 219.5, so 221.0 sits just above it) and the gate point from the average ground
--- height of the 31 map-750 spawns in that camp (586.15-602.83, mean 587.44). Verify both with
--- `.gps` once maps/vmaps exist for map 819 and adjust if GroundZ != FloorZ.
-DELETE FROM `game_tele` WHERE `id` IN (10640, 10641);
+-- The id this file originally claimed for dctimbermaw (10640) was never taken -- the live row
+-- was added in game and landed on 10643 -- so the file now writes the live id. Its position is
+-- likewise the live one and is NOT the same spot as the player-facing arrival point: the
+-- gossip teleport and areatrigger 607002 both land at -8153.15/-3456.87/222.4, which was
+-- measured with `.gps` and is confirmed working in both directions. Do not "reconcile" the two;
+-- this row is a convenience, that one is the door.
+--
+-- DELETE covers the NAMES as well as the ids, so a stale 10640 row from an earlier run of this
+-- file cannot leave `.tele dctimbermaw` ambiguous between two rows.
+DELETE FROM `game_tele` WHERE `id` IN (10640, 10641, 10643) OR `name` IN ('dctimbermaw', 'dctimbermawgate');
 INSERT INTO `game_tele` (`id`, `position_x`, `position_y`, `position_z`, `orientation`, `map`, `name`) VALUES
-    (10640, -8153.15, -3456.87, 222.4, 0.306, 819, 'dctimbermaw'),
+    (10643, -7902.56, -3434.49, 250.701, 3.21621, 819, 'dctimbermaw'),
     (10641, 7015.0, -2145.0, 587.0, 0, 750, 'dctimbermawgate');
