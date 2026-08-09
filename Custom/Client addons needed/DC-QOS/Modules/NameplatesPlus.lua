@@ -132,9 +132,12 @@ local NameplatesPlus = {
             npcIcons = true,
             npcIconSize = 24,
             
-            -- Elite/Rare Icons
+            -- Elite/Rare/Boss Icons
             eliteIcons = true,
-            
+            eliteIconStyle = "Star", -- "Star" (Plater) or "Dragon" (retail)
+            eliteIconSize = 14,
+            bossSkullLevel = true,
+
             -- Faction Icons
             factionIcons = true,
         },
@@ -161,6 +164,7 @@ local hookedPlates = {}
 local updateFrame = nil
 local playerGUID = nil
 local npcRoleCache = {} -- Name -> Role (Vendor, Innkeeper, etc)
+local classificationCache = {} -- "name|level" -> elite/rare/rareelite/worldboss
 local groupGUIDCache = {} -- GUID -> unitID for group members (threat tracking)
 local unitMatchToFrame = {}
 local guidMatchToFrame = {}
@@ -186,8 +190,6 @@ local TARGET_BORDER_PADDING = 0
 local MOUSEOVER_BORDER_PADDING = 1
 local MOUSEOVER_BORDER_COLOR = { r = 1.00, g = 1.00, b = 1.00, a = 0.32 }
 local TARGET_BORDER_ALPHA_MULTIPLIER = 0.82
-local ELITE_ICON_X_OFFSET = 4
-local ELITE_ICON_Y_OFFSET = 0
 local FACTION_ICON_X_OFFSET = -5
 local FACTION_ICON_Y_OFFSET = 3
 local NPC_ICON_X_OFFSET = -6
@@ -536,13 +538,18 @@ local function NormalizeNameplateLayout(frame)
         levelText:ClearAllPoints()
         levelText:SetPoint("BOTTOMRIGHT", healthBar, "TOPLEFT", LEVEL_TEXT_X_OFFSET, LEVEL_TEXT_Y_OFFSET)
         levelText:SetFont("Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
-        levelText:SetTextColor(0.2, 1, 0.2)
+        -- Colour is owned by UpdateLevelText (difficulty colour / boss skull).
+        levelText.dcLastColor = nil
         levelText:SetAlpha(1)
+    end
+
+    if frame.dcBossLevelIcon then
+        frame.dcBossLevelIcon:Hide()
     end
 
     if frame.dcEliteIcon then
         frame.dcEliteIcon:ClearAllPoints()
-        frame.dcEliteIcon:SetPoint("LEFT", healthBar, "RIGHT", ELITE_ICON_X_OFFSET, ELITE_ICON_Y_OFFSET)
+        frame.dcEliteIcon:SetPoint("RIGHT", healthBar, "LEFT", CLASSIFICATION_ICON_GAP, 0)
     end
 
     if frame.dcFactionIcon then
@@ -629,16 +636,74 @@ local function GetNPCRole(unit)
     return nil
 end
 
--- Elite/Rare Icon Textures
-local ELITE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Elite"
-local RARE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare"
-local RARE_ELITE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare-Elite"
-local NOTPLATER_ELITE_ICON_TCOORDS = { 0.75, 1, 0, 1 }
-
-local function GetNotPlaterEliteIconTexture()
-    local addonToken = (NotPlater and NotPlater.addonName) or "NotPlater-3.3.5"
-    return "Interface\\AddOns\\" .. addonToken .. "\\images\\glues-addon-icons.blp"
-end
+-- Classification (elite / rare / boss) art.
+--
+-- Placement follows retail's ClassificationFrame and Plater's indicator row,
+-- which agree: one small icon immediately left of the health bar.
+--
+-- The art this replaced (UI-TargetingFrame-Elite / -Rare / -Rare-Elite) are
+-- 256x128 *portrait frame* rings, not icons: squeezed into a 16x16 texture
+-- they render as an unreadable dark smear with a stray gold arc, which is what
+-- made elite/rare/boss plates look broken. The NotPlater branch was Plater's
+-- star indicator, but pointed at NotPlater's private copy of the glue atlas,
+-- so with NotPlater absent it fell through to the ring path.
+--
+-- Two icon sets, because the two references disagree and both are defensible:
+--
+--   "Star"   - Plater's indicator. Gold star for elite, silver star for rare,
+--              both side by side for rare-elite. The star is legible down to
+--              12px; the WotLK dragon art is a coiled pose that only resolves
+--              at ~20px+, which is why Plater picked the star. Default.
+--   "Dragon" - retail's ClassificationFrame set: gold dragon for elite and
+--              world bosses, silver dragon for rare-elite, star for plain
+--              rare. Needs the larger icon size to stay readable.
+--
+-- Every texture below is confirmed present in the DC 3.3.5 client except the
+-- silver dragon, which 3.3.5 never shipped - that one is retail art bundled
+-- into the addon at Textures/Nameplates/.
+local STAR_TEXTURE = "Interface\\GLUES\\CharacterSelect\\Glues-AddOn-Icons"
+local STAR_COORDS = { 0.75, 1, 0, 1 }            -- 64x16 glue atlas, star is the last quarter
+local DRAGON_COORDS = { 0, 0.578125, 0, 0.875 }  -- 64x32 sheet, art in top-left 37x28
+local GOLD_STAR = {
+    texture = STAR_TEXTURE, coords = STAR_COORDS, aspect = 1,
+    tint = { r = 1.00, g = 0.80, b = 0.00 },  -- Plater's exact elite tint
+}
+local SILVER_STAR = {
+    texture = STAR_TEXTURE, coords = STAR_COORDS, aspect = 1,
+    desaturate = true,
+    -- Cool grey stand-in for cards that refuse SetDesaturated.
+    fallbackTint = { r = 0.72, g = 0.78, b = 0.88 },
+}
+local CLASSIFICATION_ART = {
+    Star = {
+        elite     = { primary = GOLD_STAR },
+        rare      = { primary = SILVER_STAR },
+        -- Plater shows both indicators for rare-elite; the pair reads as
+        -- "rare AND elite" without needing a third piece of art.
+        rareelite = { primary = GOLD_STAR, secondary = SILVER_STAR },
+    },
+    Dragon = {
+        elite = { primary = {
+            texture = "Interface\\Tooltips\\EliteNameplateIcon",
+            coords = DRAGON_COORDS, aspect = 37 / 28, heightScale = 1.35,
+        } },
+        rareelite = { primary = {
+            texture = "Interface\\AddOns\\DC-QOS\\Textures\\Nameplates\\RareEliteNameplateIcon",
+            coords = DRAGON_COORDS, aspect = 37 / 28, heightScale = 1.35,
+        } },
+        -- Retail marks plain rares with a star, not a dragon.
+        rare = { primary = SILVER_STAR },
+    },
+}
+CLASSIFICATION_ART.Star.worldboss = CLASSIFICATION_ART.Star.elite
+CLASSIFICATION_ART.Dragon.worldboss = CLASSIFICATION_ART.Dragon.elite
+local DEFAULT_CLASSIFICATION_ICON_HEIGHT = 14
+-- Plater anchors its indicator row to the health bar's left edge at x = -2.
+local CLASSIFICATION_ICON_GAP = -2
+local BOSS_LEVEL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
+local BOSS_LEVEL_ICON_SIZE = 14
+local NEUTRAL_LEVEL_TEXT_COLOR = { r = 1.00, g = 0.82, b = 0.00 }
+local BOSS_LEVEL_TEXT_COLOR = { r = 1.00, g = 0.20, b = 0.20 }
 
 -- Faction Icon Textures
 local FACTION_ALLIANCE = "Interface\\TargetingFrame\\UI-PVP-Alliance"
@@ -811,6 +876,16 @@ local function InferClassificationFromTexturePath(texturePath)
 
     local path = string.lower(texturePath)
 
+    -- Stock 3.3.5 nameplate markers first: the plate owns exactly one boss
+    -- skull region and one elite state-icon region.
+    if string.find(path, "targetingframe-skull", 1, true) then
+        return "worldboss"
+    end
+
+    if string.find(path, "elitenameplateicon", 1, true) then
+        return "elite"
+    end
+
     if string.find(path, "nameplate-boss", 1, true) or string.find(path, "worldboss", 1, true) then
         return "worldboss"
     end
@@ -830,18 +905,27 @@ local function InferClassificationFromTexturePath(texturePath)
     return nil
 end
 
-local function InferClassificationFromSuppressedRegions(frame)
-    local regions = frame and frame.dcSuppressedRegions
+-- 3.3.5 exposes no unit token for a nameplate, so the only classification
+-- source for a plate that is neither target, focus, mouseover nor a group
+-- member's target is the native marker region the engine shows or hides.
+-- They are kept alive (alpha 0 instead of :Hide()) precisely so their shown
+-- state stays readable. nativeMarkersUsable is calibrated against
+-- UnitClassification() the first time both sources are available, so a client
+-- build that leaves the markers permanently shown disables the path instead of
+-- stamping a dragon on every mob.
+local nativeMarkersUsable = nil
+
+local function ReadNativeClassificationMarkers(frame)
+    local regions = frame and frame.dcClassificationRegions
     if not regions then
         return nil
     end
 
     local fallback = nil
     for _, region in ipairs(regions) do
-        if region and region.GetObjectType and region:GetObjectType() == "Texture" and region.GetTexture then
-            local texture = region:GetTexture()
-            local classification = InferClassificationFromTexturePath(texture)
-            if classification == "worldboss" or classification == "rareelite" then
+        if region and region.IsShown and region:IsShown() then
+            local classification = region.dcClassification
+            if classification == "worldboss" then
                 return classification
             end
             if classification and not fallback then
@@ -851,6 +935,46 @@ local function InferClassificationFromSuppressedRegions(frame)
     end
 
     return fallback
+end
+
+local function InferClassificationFromSuppressedRegions(frame)
+    if nativeMarkersUsable == false then
+        return nil
+    end
+
+    return ReadNativeClassificationMarkers(frame)
+end
+
+local function IsPlainClassification(classification)
+    return classification == nil
+        or classification == ""
+        or classification == "normal"
+        or classification == "trivial"
+        or classification == "minus"
+end
+
+local function CalibrateNativeClassificationMarkers(frame, classification)
+    if nativeMarkersUsable == false then
+        return
+    end
+
+    local regions = frame and frame.dcClassificationRegions
+    if not regions or #regions == 0 then
+        return
+    end
+
+    local marked = ReadNativeClassificationMarkers(frame)
+    if not marked then
+        return
+    end
+
+    if IsPlainClassification(classification) then
+        -- A trash mob wearing an elite marker means the markers carry no
+        -- information on this client; stop trusting them for the session.
+        nativeMarkersUsable = false
+    else
+        nativeMarkersUsable = true
+    end
 end
 
 local function GetEstimatedRange(unit)
@@ -1516,21 +1640,25 @@ end
 
 local function CollectSuppressibleRegions(regions, keepNameText, keepLevelText)
     local suppressible = {}
+    local markers = {}
     for _, region in ipairs(regions or {}) do
         if region ~= keepNameText and region ~= keepLevelText and not region.dcManagedByNameplatesPlus then
             local objectType = region.GetObjectType and region:GetObjectType() or nil
             if objectType == "Texture" then
                 local texture = region.GetTexture and region:GetTexture() or nil
                 local classification = InferClassificationFromTexturePath(texture)
-                -- Preserve native elite/rare/boss markers so classification cues
-                -- are visible even when no unit token is currently resolved.
-                if not classification then
-                    suppressible[#suppressible + 1] = region
+                if classification then
+                    -- Native elite/boss markers are still suppressed visually,
+                    -- but only via alpha so their shown state remains readable
+                    -- as a classification source (see ReadNativeClassificationMarkers).
+                    region.dcClassification = classification
+                    markers[#markers + 1] = region
                 end
+                suppressible[#suppressible + 1] = region
             end
         end
     end
-    return suppressible
+    return suppressible, markers
 end
 
 local function SuppressNativeNameplateRegions(frame)
@@ -1541,8 +1669,14 @@ local function SuppressNativeNameplateRegions(frame)
 
     for _, region in ipairs(regions) do
         if region then
-            region:Hide()
-            region:SetAlpha(0)
+            if region.dcClassification then
+                if region:GetAlpha() ~= 0 then
+                    region:SetAlpha(0)
+                end
+            else
+                region:Hide()
+                region:SetAlpha(0)
+            end
         end
     end
 end
@@ -1691,16 +1825,98 @@ local function CreateTargetNeon(frame, healthBar)
     return neon
 end
 
+-- Applies one art entry, sized from the user's height setting and the art's
+-- own aspect (a squared-off dragon is what reads as "off", and the star must
+-- stay square). heightScale lets the dragon run larger than the star at the
+-- same setting, since it needs the pixels to stay readable.
+local function ApplyClassificationStyle(icon, style, settings)
+    local height = tonumber(settings and settings.eliteIconSize) or DEFAULT_CLASSIFICATION_ICON_HEIGHT
+    if height < 8 then
+        height = 8
+    elseif height > 28 then
+        height = 28
+    end
+    height = math.floor(height * (style.heightScale or 1) + 0.5)
+
+    if icon.dcStyle ~= style or icon.dcStyleHeight ~= height then
+        icon:SetTexture(style.texture)
+        icon:SetTexCoord(style.coords[1], style.coords[2], style.coords[3], style.coords[4])
+        icon:SetSize(math.floor(height * style.aspect + 0.5), height)
+
+        local tint = style.tint
+        if style.desaturate then
+            -- SetDesaturated returns false when the card cannot do it.
+            if icon:SetDesaturated(true) == false then
+                tint = style.fallbackTint
+            end
+        else
+            icon:SetDesaturated(false)
+        end
+
+        if tint then
+            icon:SetVertexColor(tint.r, tint.g, tint.b, 1)
+        else
+            icon:SetVertexColor(1, 1, 1, 1)
+        end
+
+        icon.dcStyle = style
+        icon.dcStyleHeight = height
+    end
+end
+
+local function AnchorClassificationIcon(icon, healthBar)
+    if not icon or not healthBar then
+        return
+    end
+
+    -- Retail's ClassificationFrame and Plater's indicator row both sit just
+    -- left of the health bar. Keeping it off the right edge also stops it
+    -- colliding with the ">>" target arrow.
+    icon:ClearAllPoints()
+    icon:SetPoint("RIGHT", healthBar, "LEFT", CLASSIFICATION_ICON_GAP, 0)
+end
+
 local function CreateEliteIcon(frame, healthBar)
     if frame.dcEliteIcon then return frame.dcEliteIcon end
-    
+
     local icon = frame:CreateTexture(nil, "OVERLAY")
     icon.dcManagedByNameplatesPlus = true
-    icon:SetSize(16, 16)
-    icon:SetPoint("LEFT", healthBar, "RIGHT", ELITE_ICON_X_OFFSET, ELITE_ICON_Y_OFFSET)
+    AnchorClassificationIcon(icon, healthBar)
     icon:Hide()
-    
+
     frame.dcEliteIcon = icon
+    return icon
+end
+
+-- Second slot, used only by rare-elite in Plater's star set. Plater grows its
+-- indicator row leftwards, so this sits outside the first icon.
+local function CreateEliteIcon2(frame, anchorTo)
+    if frame.dcEliteIcon2 then return frame.dcEliteIcon2 end
+
+    local icon = frame:CreateTexture(nil, "OVERLAY")
+    icon.dcManagedByNameplatesPlus = true
+    icon:SetPoint("RIGHT", anchorTo, "LEFT", -1, 0)
+    icon:Hide()
+
+    frame.dcEliteIcon2 = icon
+    return icon
+end
+
+-- Blizzard replaces the level readout with a skull once a unit is too high to
+-- read; the stock plate does the same, and it looks far better than a green
+-- "??" once the plate is restyled.
+local function CreateBossLevelIcon(frame, levelText)
+    if frame.dcBossLevelIcon then return frame.dcBossLevelIcon end
+    if not levelText then return nil end
+
+    local icon = frame:CreateTexture(nil, "OVERLAY")
+    icon.dcManagedByNameplatesPlus = true
+    icon:SetTexture(BOSS_LEVEL_TEXTURE)
+    icon:SetSize(BOSS_LEVEL_ICON_SIZE, BOSS_LEVEL_ICON_SIZE)
+    icon:SetPoint("CENTER", levelText, "CENTER", 0, 0)
+    icon:Hide()
+
+    frame.dcBossLevelIcon = icon
     return icon
 end
 
@@ -2187,6 +2403,9 @@ local function HideUnitDependentPlateVisuals(frame)
     if frame.dcEliteIcon then
         frame.dcEliteIcon:Hide()
     end
+    if frame.dcEliteIcon2 then
+        frame.dcEliteIcon2:Hide()
+    end
     if frame.dcFactionIcon then
         frame.dcFactionIcon:Hide()
     end
@@ -2195,98 +2414,141 @@ local function HideUnitDependentPlateVisuals(frame)
     end
 end
     
+local function ResolvePlateClassification(frame, unit)
+    if unit and UnitExists(unit) then
+        if UnitIsPlayer(unit) then
+            return nil, true
+        end
+
+        local classification = UnitClassification(unit)
+        CalibrateNativeClassificationMarkers(frame, classification)
+
+        -- Remember it against the plate's name/level so every other copy of the
+        -- same mob shows the same sigil, not just the one that happens to be
+        -- targeted. 3.3.5 hands out no per-plate unit token.
+        local signature = GetPlateDisplaySignature(frame)
+        if classification and classification ~= "" then
+            classificationCache[signature] = classification
+        end
+
+        return classification, false
+    end
+
+    return InferClassificationFromPlate(frame)
+        or InferClassificationFromSuppressedRegions(frame)
+        or classificationCache[GetPlateDisplaySignature(frame)],
+        false
+end
+
 local function UpdateEliteIcon(frame, unit, settings)
-    if not settings.eliteIcons then
-        if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
+    local icon = frame.dcEliteIcon
+
+    if not settings.eliteIcons or not frame.dcHealthBar then
+        if icon then icon:Hide() end
+        if frame.dcEliteIcon2 then frame.dcEliteIcon2:Hide() end
+        frame.dcClassificationShown = nil
+        frame.dcResolvedClassification = nil
         return
     end
 
-    local icon = frame.dcEliteIcon or CreateEliteIcon(frame, frame.dcHealthBar)
-    local classification = nil
+    icon = icon or CreateEliteIcon(frame, frame.dcHealthBar)
+
+    local classification, isPlayer = ResolvePlateClassification(frame, unit)
+    if isPlayer then
+        icon:Hide()
+        frame.dcClassificationShown = nil
+        return
+    end
+
+    frame.dcResolvedClassification = classification
+
+    local artSet = CLASSIFICATION_ART[settings.eliteIconStyle] or CLASSIFICATION_ART.Star
+    local art = classification and artSet[classification]
+    if not art then
+        icon:Hide()
+        if frame.dcEliteIcon2 then frame.dcEliteIcon2:Hide() end
+        frame.dcClassificationShown = nil
+        return
+    end
+
+    ApplyClassificationStyle(icon, art.primary, settings)
+    icon:Show()
+
+    if art.secondary then
+        local icon2 = frame.dcEliteIcon2 or CreateEliteIcon2(frame, icon)
+        ApplyClassificationStyle(icon2, art.secondary, settings)
+        icon2:Show()
+        frame.dcClassificationLeftmost = icon2
+    else
+        if frame.dcEliteIcon2 then frame.dcEliteIcon2:Hide() end
+        frame.dcClassificationLeftmost = icon
+    end
+
+    frame.dcClassificationShown = true
+end
+
+-- Mirrors TargetFrame_CheckLevel: difficulty-coloured level, skull once the
+-- unit is too high to read. The plate used to paint every level flat green,
+-- which made an "??" boss read as a harmless trivial mob.
+local function UpdateLevelText(frame, unit, settings)
+    local levelText = frame.dcLevelText
+    if not levelText then
+        return
+    end
+
+    local text = levelText:GetText()
+    local level = GetNumericTextValue(text)
+    local isBoss = type(text) == "string" and text:find("%?%?") ~= nil
 
     if unit and UnitExists(unit) then
-        -- Don't show elite icon on players.
-        if UnitIsPlayer(unit) then
-            frame.dcLastClassification = nil
-            frame.dcLastClassificationSignature = nil
-            icon:Hide()
+        local unitLevel = type(UnitLevel) == "function" and UnitLevel(unit) or nil
+        if unitLevel and unitLevel > 0 then
+            level = unitLevel
+        elseif unitLevel == -1 then
+            isBoss = true
+        end
+    end
+
+    if not isBoss and frame.dcClassificationShown and not level then
+        -- Engine hides the level readout entirely for skull-level units.
+        isBoss = frame.dcResolvedClassification == "worldboss"
+    end
+
+    if settings.bossSkullLevel and isBoss then
+        local skull = frame.dcBossLevelIcon or CreateBossLevelIcon(frame, levelText)
+        if skull then
+            if not skull:IsShown() then
+                skull:Show()
+            end
+            if levelText:GetAlpha() ~= 0 then
+                levelText:SetAlpha(0)
+            end
             return
         end
-
-        classification = UnitClassification(unit)
-        if classification and classification ~= "" then
-            frame.dcLastClassification = classification
-            frame.dcLastClassificationSignature = GetPlateDisplaySignature(frame)
-        end
-    else
-        classification = InferClassificationFromPlate(frame)
-
-        if not classification then
-            classification = InferClassificationFromSuppressedRegions(frame)
-        end
-
-        if not classification then
-            local signature = GetPlateDisplaySignature(frame)
-            if frame.dcLastClassification and frame.dcLastClassificationSignature == signature then
-                classification = frame.dcLastClassification
-            end
-        end
+    elseif frame.dcBossLevelIcon then
+        frame.dcBossLevelIcon:Hide()
     end
 
-    if not classification or classification == "" then
-        icon:Hide()
-        return
+    if levelText:GetAlpha() ~= 1 then
+        levelText:SetAlpha(1)
     end
 
-    local notPlaterTexture = GetNotPlaterEliteIconTexture()
-    local canUseNotPlaterTexture = NotPlater and notPlaterTexture
-    
-    if classification == "worldboss" or classification == "elite" then
-        if canUseNotPlaterTexture then
-            icon:SetTexture(notPlaterTexture)
-            icon:SetTexCoord(
-                NOTPLATER_ELITE_ICON_TCOORDS[1],
-                NOTPLATER_ELITE_ICON_TCOORDS[2],
-                NOTPLATER_ELITE_ICON_TCOORDS[3],
-                NOTPLATER_ELITE_ICON_TCOORDS[4]
-            )
-            icon:SetVertexColor(1, 0.8, 0, 1)
-            icon:SetDesaturated(false)
-        else
-            icon:SetTexture(ELITE_TEXTURE)
-            icon:SetTexCoord(0, 1, 0, 1)
-            icon:SetVertexColor(1, 1, 1, 1)
-            icon:SetDesaturated(false)
-        end
-        icon:Show()
-    elseif classification == "rare" or classification == "rareelite" then
-        if canUseNotPlaterTexture then
-            icon:SetTexture(notPlaterTexture)
-            icon:SetTexCoord(
-                NOTPLATER_ELITE_ICON_TCOORDS[1],
-                NOTPLATER_ELITE_ICON_TCOORDS[2],
-                NOTPLATER_ELITE_ICON_TCOORDS[3],
-                NOTPLATER_ELITE_ICON_TCOORDS[4]
-            )
-            icon:SetVertexColor(1, 1, 1, 1)
-            icon:SetDesaturated(true)
-        elseif classification == "rareelite" then
-            icon:SetTexture(RARE_ELITE_TEXTURE)
-            icon:SetTexCoord(0, 1, 0, 1)
-            icon:SetVertexColor(1, 1, 1, 1)
-            icon:SetDesaturated(false)
-        else
-            icon:SetTexture(RARE_TEXTURE)
-            icon:SetTexCoord(0, 1, 0, 1)
-            icon:SetVertexColor(1, 1, 1, 1)
-            icon:SetDesaturated(false)
-        end
-        icon:Show()
-    else
-        icon:SetTexCoord(0, 1, 0, 1)
-        icon:SetVertexColor(1, 1, 1, 1)
-        icon:SetDesaturated(false)
-        icon:Hide()
+    local color
+    if isBoss then
+        color = BOSS_LEVEL_TEXT_COLOR
+    elseif level and unit and UnitExists(unit) and not UnitCanAttack("player", unit) then
+        color = NEUTRAL_LEVEL_TEXT_COLOR
+    elseif level and type(GetQuestDifficultyColor) == "function" then
+        color = GetQuestDifficultyColor(level)
+    end
+
+    if not color then
+        color = NEUTRAL_LEVEL_TEXT_COLOR
+    end
+
+    if levelText.dcLastColor ~= color then
+        levelText:SetTextColor(color.r, color.g, color.b)
+        levelText.dcLastColor = color
     end
 end
 
@@ -2687,7 +2949,13 @@ local function UpdateTargetHighlight(frame, unit, settings)
     if settings.targetArrows and frame.dcHealthBar then
         local leftArrow, rightArrow = CreateTargetArrows(frame, frame.dcHealthBar)
         leftArrow:ClearAllPoints()
-        leftArrow:SetPoint("RIGHT", frame.dcHealthBar, "LEFT", TARGET_ARROW_LEFT_OFFSET, 0)
+        if frame.dcClassificationShown and frame.dcClassificationLeftmost then
+            -- The icons now occupy the bar's left edge, so step the "<<"
+            -- arrow out past them instead of drawing on top.
+            leftArrow:SetPoint("RIGHT", frame.dcClassificationLeftmost, "LEFT", -2, 0)
+        else
+            leftArrow:SetPoint("RIGHT", frame.dcHealthBar, "LEFT", TARGET_ARROW_LEFT_OFFSET, 0)
+        end
         rightArrow:ClearAllPoints()
         rightArrow:SetPoint("LEFT", frame.dcHealthBar, "RIGHT", TARGET_ARROW_RIGHT_OFFSET, 0)
         if isTarget then
@@ -2828,7 +3096,8 @@ local function HookNameplate(frame)
     frame.dcCastBar    = castBar
     frame.dcNameText   = nameText
     frame.dcLevelText  = levelText
-    frame.dcSuppressedRegions = CollectSuppressibleRegions(regions, nameText, levelText)
+    frame.dcSuppressedRegions, frame.dcClassificationRegions =
+        CollectSuppressibleRegions(regions, nameText, levelText)
 
     NormalizeNameplateLayout(frame)
     
@@ -2883,7 +3152,8 @@ local function HookNameplate(frame)
             SuppressNativeNameplateChildren(self, refreshedBars)
         end
 
-        self.dcSuppressedRegions = CollectSuppressibleRegions({ self:GetRegions() }, self.dcNameText, self.dcLevelText)
+        self.dcSuppressedRegions, self.dcClassificationRegions =
+            CollectSuppressibleRegions({ self:GetRegions() }, self.dcNameText, self.dcLevelText)
         SuppressNativeNameplateRegions(self)
         
         -- Reset scale to 1.0 to ensure cleanliness (skip if Plater is active)
@@ -3004,11 +3274,13 @@ local function OnUpdate(self, elapsed)
                         frame.dcNextDebuffRefresh = currentTime + DEBUFF_REFRESH_INTERVAL
                     end
                     UpdateEliteIcon(frame, unit, settings)
+                    UpdateLevelText(frame, unit, settings)
                     UpdateFactionIcon(frame, unit, settings)
                     UpdateNPCIcons(frame, unit, settings)
                 else
                     HideUnitDependentPlateVisuals(frame)
                     UpdateEliteIcon(frame, nil, settings)
+                    UpdateLevelText(frame, nil, settings)
                 end
             end
         end
@@ -3238,6 +3510,7 @@ function NameplatesPlus.OnDisable()
         if frame.dcCastBarOverlay then frame.dcCastBarOverlay:Hide() end
         if frame.dcDebuffFrame then frame.dcDebuffFrame:Hide() end
         if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
+        if frame.dcEliteIcon2 then frame.dcEliteIcon2:Hide() end
         if frame.dcFactionIcon then frame.dcFactionIcon:Hide() end
         if frame.dcNPCIcons then frame.dcNPCIcons:Hide() end
         if frame.dcHealthBar and frame.dcHealthBar.dcHealthPercent then
@@ -3481,13 +3754,46 @@ function NameplatesPlus.CreateSettings(parent)
     
     local eliteCb = addon:CreateCheckbox(parent)
     eliteCb:SetPoint("TOPLEFT", 16, yOffset)
-    eliteCb.Text:SetText("Show elite/rare dragon icons")
+    eliteCb.Text:SetText("Show elite/rare/boss classification icons")
     eliteCb:SetChecked(settings.eliteIcons)
     eliteCb:SetScript("OnClick", function(self)
         addon:SetSetting("nameplatesPlus.eliteIcons", self:GetChecked())
     end)
     yOffset = yOffset - 25
-    
+
+    local eliteStyleCb = addon:CreateCheckbox(parent)
+    eliteStyleCb:SetPoint("TOPLEFT", 36, yOffset)
+    eliteStyleCb.Text:SetText("Use retail dragon icons instead of Plater stars")
+    eliteStyleCb:SetChecked(settings.eliteIconStyle == "Dragon")
+    eliteStyleCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.eliteIconStyle", self:GetChecked() and "Dragon" or "Star")
+        MarkAllFramesDirty()
+    end)
+    yOffset = yOffset - 25
+
+    local eliteSizeSlider = addon:CreateSlider(parent)
+    eliteSizeSlider:SetPoint("TOPLEFT", 36, yOffset)
+    eliteSizeSlider:SetMinMaxValues(10, 24)
+    eliteSizeSlider:SetValueStep(1)
+    eliteSizeSlider:SetValue(settings.eliteIconSize or DEFAULT_CLASSIFICATION_ICON_HEIGHT)
+    eliteSizeSlider.Text:SetText("Classification icon size: " .. (settings.eliteIconSize or DEFAULT_CLASSIFICATION_ICON_HEIGHT))
+    eliteSizeSlider:SetScript("OnValueChanged", function(self, value)
+        local size = math.floor(value + 0.5)
+        self.Text:SetText("Classification icon size: " .. size)
+        addon:SetSetting("nameplatesPlus.eliteIconSize", size)
+    end)
+    yOffset = yOffset - 50
+
+    local bossSkullCb = addon:CreateCheckbox(parent)
+    bossSkullCb:SetPoint("TOPLEFT", 16, yOffset)
+    bossSkullCb.Text:SetText("Show a skull instead of \"??\" for boss-level units")
+    bossSkullCb:SetChecked(settings.bossSkullLevel)
+    bossSkullCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.bossSkullLevel", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+
     local factionCb = addon:CreateCheckbox(parent)
     factionCb:SetPoint("TOPLEFT", 16, yOffset)
     factionCb.Text:SetText("Show faction icons (Alliance/Horde)")

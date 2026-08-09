@@ -48,7 +48,7 @@ public:
 
         handler->PSendSysMessage("Active Hotspots: {}", grid.Count());
         std::vector<Hotspot> all = grid.GetAll();
-        for (const Hotspot& hotspot : all)
+        for (Hotspot const& hotspot : all)
         {
             time_t remaining = hotspot.expireTime - GameTime::GetGameTime().count();
             std::string zoneName = sHotspotMgr->GetZoneName(hotspot.zoneId);
@@ -126,7 +126,10 @@ public:
     static bool HandleHotspotsReloadCommand(ChatHandler* handler, char const* /*args*/)
     {
         sHotspotMgr->LoadConfig();
-        handler->SendSysMessage("Reloaded.");
+        // Re-read the pool too: a config change to EnabledMaps/EnabledZones
+        // changes which cached points are usable and how they band-resolve.
+        sHotspotMgr->LoadSpawnPointsFromDB();
+        handler->SendSysMessage("Reloaded config and spawn-point pool.");
         return true;
     }
 

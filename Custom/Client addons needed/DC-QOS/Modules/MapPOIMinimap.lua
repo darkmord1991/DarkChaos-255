@@ -45,6 +45,8 @@ local MapPOIMinimap = {
             inn = true,
             mail = true,
             teleporter = true,
+            dungeon = true,
+            raid = true,
         },
     },
 }

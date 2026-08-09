@@ -3499,6 +3499,21 @@ DCReputation.Accountwide.SyncOnLogin = 1
 DCReputation.Accountwide.HighestWins = 1
 
 #
+#    DCReputation.Accountwide.ShareNeutralAcrossTeams
+#        Description: Pool rows are keyed by faction AND team, because a stored
+#                     standing includes the character's race-dependent base
+#                     value. Sharing one across the faction divide would make
+#                     enemy-city guards friendly.
+#                     With this enabled, factions that are neutral to both sides
+#                     (base standing 0 for everyone, e.g. Argent Dawn) are still
+#                     shared between an account's Alliance and Horde characters.
+#                     Disable for strict per-team pools.
+#        Default:     1 (Enabled)
+#
+DCReputation.Accountwide.ShareNeutralAcrossTeams = 1
+
+
+#
 #    DCReputation.Accountwide.AnnounceSync
 #        Description: Show login sync summary message to player
 #        Default:     0 (Disabled)
@@ -3543,6 +3558,20 @@ DCFriends.Accountwide.SaveOnLogout = 1
 #        Default:     1 (Enabled)
 #
 DCFriends.Accountwide.StrictSync = 1
+
+#
+#    DCFriends.Accountwide.SaveIntervalSeconds
+#        Description: How often a synced character writes its friend list back
+#                     to the account pool while online. The core exposes no hook
+#                     for adding or removing a friend, so without this a crash
+#                     would lose everything added since login - and with
+#                     StrictSync on, the next login would then delete those
+#                     friends from the character too.
+#                     Set to 0 to save only at logout.
+#        Default:     300 (5 minutes)
+#
+DCFriends.Accountwide.SaveIntervalSeconds = 300
+
 
 #
 #    DCFriends.Accountwide.AnnounceSync
@@ -3596,6 +3625,33 @@ DCAchievements.Accountwide.AnnounceSync = 0
 #        Default:     0 (Disabled)
 #
 DCAchievements.Accountwide.Debug = 0
+
+#
+#    DCAchievements.Accountwide.GrantRewards
+#        Description: Whether an achievement replayed onto an alt by the
+#                     account-wide sync re-sends its achievement_reward mail and
+#                     item. Leave disabled: the account already received the
+#                     reward on the character that first earned it, and enabling
+#                     this mints another copy of every reward item for every alt.
+#                     Titles are always granted regardless of this setting.
+#        Default:     0 (Disabled)
+#
+DCAchievements.Accountwide.GrantRewards = 0
+
+# -----------------------------------------------------------------------------
+# Account-Wide Pool Maintenance (shared by all three systems)
+# -----------------------------------------------------------------------------
+
+#
+#    DCAccountwide.PurgeOrphansOnStartup
+#        Description: On startup, delete pooled rows belonging to accounts that
+#                     no longer exist in acore_auth. Runs asynchronously and
+#                     aborts if the account table is unreadable.
+#                     Also available on demand via ".accountwide cleanup".
+#        Default:     1 (Enabled)
+#
+DCAccountwide.PurgeOrphansOnStartup = 1
+
 
 # Seasonal Starter Tokens
 DCFirstStart.SeasonalTokens.Enable = 1

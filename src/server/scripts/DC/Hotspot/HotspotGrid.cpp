@@ -37,14 +37,11 @@ void HotspotGrid::Add(Hotspot const& hotspot)
 {
     _hotspots[hotspot.id] = hotspot;
 
-    // Register in all overlapping cells (radius + minimal buffer)
-    std::vector<GridKey> keys;
-    GetKeysInRange(hotspot.mapId, hotspot.x, hotspot.y, sHotspotsConfig.announceRadius, keys);
-
-    for (GridKey key : keys)
-    {
-        _grid[key].hotspotIds.push_back(hotspot.id);
-    }
+    // Register in the hotspot's own cell only. Registration must not depend on
+    // any runtime-reloadable config value: Remove() would then compute a
+    // different key set than Add() did and leak ids into cells forever. The
+    // query side (GetForPlayer) expands its search instead.
+    _grid[GetKey(hotspot.mapId, hotspot.x, hotspot.y)].hotspotIds.push_back(hotspot.id);
 }
 
 void HotspotGrid::Remove(uint32 id)
@@ -53,16 +50,15 @@ void HotspotGrid::Remove(uint32 id)
     if (it == _hotspots.end()) return;
 
     Hotspot const& hotspot = it->second;
-    std::vector<GridKey> keys;
-    GetKeysInRange(hotspot.mapId, hotspot.x, hotspot.y, sHotspotsConfig.announceRadius, keys);
+    GridKey key = GetKey(hotspot.mapId, hotspot.x, hotspot.y);
 
-    for (GridKey key : keys)
+    auto cellIt = _grid.find(key);
+    if (cellIt != _grid.end())
     {
-        auto& cell = _grid[key];
-        auto& ids = cell.hotspotIds;
+        auto& ids = cellIt->second.hotspotIds;
         ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
         if (ids.empty())
-            _grid.erase(key);
+            _grid.erase(cellIt);
     }
 
     _hotspots.erase(it);
@@ -88,16 +84,22 @@ Hotspot const* HotspotGrid::GetForPlayer(Player* player) const
     float x = player->GetPositionX();
     float y = player->GetPositionY();
 
-    GridKey key = GetKey(mapId, x, y);
-    auto it = _grid.find(key);
-    if (it == _grid.end()) return nullptr;
+    // A hotspot is registered in its own cell only, so a player standing up to
+    // `radius` away can sit in a neighbouring cell. Sweep every cell the
+    // interaction radius touches.
+    std::vector<GridKey> keys;
+    GetKeysInRange(mapId, x, y, sHotspotsConfig.radius, keys);
 
-    for (uint32 id : it->second.hotspotIds)
+    for (GridKey key : keys)
     {
-        auto hit = _hotspots.find(id);
-        if (hit != _hotspots.end())
+        auto it = _grid.find(key);
+        if (it == _grid.end())
+            continue;
+
+        for (uint32 id : it->second.hotspotIds)
         {
-            if (hit->second.IsPlayerInRange(player))
+            auto hit = _hotspots.find(id);
+            if (hit != _hotspots.end() && hit->second.IsPlayerInRange(player))
                 return &hit->second;
         }
     }

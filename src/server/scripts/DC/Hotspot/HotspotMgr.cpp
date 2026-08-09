@@ -1,5 +1,6 @@
 #include "HotspotMgr.h"
 #include "HotspotDefines.h"
+#include "HotspotJson.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "SpellAuras.h"
@@ -14,7 +15,6 @@
 #include "GameObject.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
-#include "DC/CrossSystem/CrossSystemMapCoords.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
@@ -23,9 +23,9 @@
 #include "Tokenize.h"
 #include <cctype>
 #include <sstream>
-#include <iomanip>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 #include <unordered_set>
 
 // Helper to get base map safely. CreateBaseMap ASSERTs (crashes) on map ids
@@ -41,42 +41,21 @@ static Map* GetBaseMapSafe(uint32 mapId)
     return sMapMgr->CreateBaseMap(mapId);
 }
 
-static std::string GetSafeZoneName(uint32 zoneId)
+// Zone ids are globally unique across maps, so the allow/deny lists are flat.
+static bool IsZoneAllowed(uint32 zoneId)
 {
-    if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(zoneId))
-        if (area->area_name[0])
-            return area->area_name[0];
-    return "Unknown Zone";
-}
-
-static bool IsZoneAllowed(uint32 mapId, uint32 zoneId)
-{
-    // Global exclude check
-    for (uint32 ex : sHotspotsConfig.excludedZones)
-        if (ex == zoneId) return false;
-
-    // Per-map enable check (overrides global enabled list)
-    auto it = sHotspotsConfig.enabledZonesPerMap.find(mapId);
-    if (it != sHotspotsConfig.enabledZonesPerMap.end())
-    {
-        // 0 means whole map allowed in this context? No, usually specific zones.
-        for (uint32 en : it->second)
-            if (en == zoneId || en == 0) return true;
+    if (!zoneId)
         return false;
-    }
 
-    // Global enable check (if not map-specific)
-    if (!sHotspotsConfig.enabledZones.empty())
-    {
-        bool found = false;
-        for (uint32 en : sHotspotsConfig.enabledZones)
-        {
-            if (en == zoneId) { found = true; break; }
-        }
-        if (!found) return false;
-    }
+    for (uint32 ex : sHotspotsConfig.excludedZones)
+        if (ex == zoneId)
+            return false;
 
-    return true;
+    if (sHotspotsConfig.enabledZones.empty())
+        return true;
+
+    return std::find(sHotspotsConfig.enabledZones.begin(),
+        sHotspotsConfig.enabledZones.end(), zoneId) != sHotspotsConfig.enabledZones.end();
 }
 
 static bool IsMapEnabled(uint32 mapId)
@@ -106,7 +85,7 @@ static bool IsFarEnoughFromExistingHotspots(uint32 mapId, float x, float y)
         return true;
 
     float minDistSq = minDist * minDist;
-    for (Hotspot const& h : sHotspotMgr->GetGrid().GetAll())
+    for (auto const& [id, h] : sHotspotMgr->GetGrid().View())
     {
         if (h.mapId != mapId)
             continue;
@@ -198,7 +177,6 @@ void HotspotMgr::LoadConfig()
     sHotspotsConfig.announceExpire = sConfigMgr->GetOption<bool>("Hotspots.AnnounceExpire", true);
     sHotspotsConfig.spawnVisualMarker = sConfigMgr->GetOption<bool>("Hotspots.SpawnVisualMarker", false);
     sHotspotsConfig.markerGameObjectEntry = sConfigMgr->GetOption<uint32>("Hotspots.MarkerGameObjectEntry", 179976);
-    sHotspotsConfig.sendAddonPackets = sConfigMgr->GetOption<bool>("Hotspots.SendAddonPackets", false);
 
     // Objectives support
     sHotspotsConfig.objectivesEnabled = sConfigMgr->GetOption<bool>("Hotspots.Objectives.Enable", true);
@@ -210,16 +188,18 @@ void HotspotMgr::LoadConfig()
     // limits where hotspots may appear; EnabledZones (optional) narrows that
     // further, e.g. to the leveling path. Zone IDs are globally unique across
     // maps, so a flat zone list is sufficient (no per-map list needed).
+    // Defaults mirror the shipped darkchaos-custom.conf.dist: the DC custom
+    // leveling continents, not the stock ones.
+    static char const* const DEFAULT_ENABLED_MAPS = "37,850,1410,750,751";
     sHotspotsConfig.enabledMaps = ParseIdList(
-        sConfigMgr->GetOption<std::string>("Hotspots.EnabledMaps", "0,1,530,571,37"));
+        sConfigMgr->GetOption<std::string>("Hotspots.EnabledMaps", DEFAULT_ENABLED_MAPS));
     if (sHotspotsConfig.enabledMaps.empty())
-        sHotspotsConfig.enabledMaps = { 0, 1, 530, 571, 37 };
+        sHotspotsConfig.enabledMaps = ParseIdList(DEFAULT_ENABLED_MAPS);
 
     sHotspotsConfig.enabledZones = ParseIdList(
         sConfigMgr->GetOption<std::string>("Hotspots.EnabledZones", ""));
     sHotspotsConfig.excludedZones = ParseIdList(
         sConfigMgr->GetOption<std::string>("Hotspots.ExcludedZones", ""));
-    sHotspotsConfig.enabledZonesPerMap.clear();
 
     // Harmless no-op before DBC stores load (first OnAfterConfigLoad during
     // boot); rebuilt with real data from OnStartup and on config reload.
@@ -228,8 +208,13 @@ void HotspotMgr::LoadConfig()
 
 void HotspotMgr::LoadFromDB()
 {
-    // Implementation: Load existing hotspots from DB, add to _grid
-    QueryResult result = WorldDatabase.Query("SELECT id, map_id, zone_id, x, y, z, spawn_time, expire_time, gameobject_guid FROM dc_hotspots_active");
+    // Runs even when the system is disabled: _nextHotspotId must clear any id
+    // still present in the table, or enabling Hotspots via .hotspot reload
+    // would start issuing ids that collide with live rows on INSERT.
+    _loaded = true;
+
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_DC_HOTSPOTS_ACTIVE);
+    PreparedQueryResult result = CharacterDatabase.Query(stmt);
     if (!result) return;
 
     time_t now = GameTime::GetGameTime().count();
@@ -270,13 +255,27 @@ void HotspotMgr::LoadFromDB()
 
 void HotspotMgr::SaveHotspotToDB(Hotspot const& h)
 {
-    WorldDatabase.Execute("INSERT INTO dc_hotspots_active (id, map_id, zone_id, x, y, z, spawn_time, expire_time, gameobject_guid) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})",
-        h.id, h.mapId, h.zoneId, h.x, h.y, h.z, static_cast<uint64>(h.spawnTime), static_cast<uint64>(h.expireTime), h.gameObjectGuid.GetRawValue());
+    // REPLACE, not INSERT: a stale row left behind by an unclean shutdown would
+    // otherwise fail the insert on the primary key and silently drop
+    // persistence for that hotspot.
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_DC_HOTSPOT_ACTIVE);
+    stmt->SetData(0, h.id);
+    stmt->SetData(1, uint16(h.mapId));
+    stmt->SetData(2, uint16(h.zoneId));
+    stmt->SetData(3, h.x);
+    stmt->SetData(4, h.y);
+    stmt->SetData(5, h.z);
+    stmt->SetData(6, uint64(h.spawnTime));
+    stmt->SetData(7, uint64(h.expireTime));
+    stmt->SetData(8, h.gameObjectGuid.GetRawValue());
+    CharacterDatabase.Execute(stmt);
 }
 
 void HotspotMgr::DeleteHotspotFromDB(uint32 id)
 {
-    WorldDatabase.Execute("DELETE FROM dc_hotspots_active WHERE id = {}", id);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_DC_HOTSPOT_ACTIVE);
+    stmt->SetData(0, id);
+    CharacterDatabase.Execute(stmt);
 }
 
 // Spawn-time eligibility helpers (dynamic; depend on currently-active hotspots)
@@ -312,60 +311,103 @@ static bool IsCityLikeArea(uint32 areaId)
     return false;
 }
 
-// Recover a zone's world-space bounding box by probing Zone2MapCoordinates
-// with the client-space corners (0,0) and (100,100). If the zone has no
-// WorldMapArea entry the inputs come back unchanged, which we detect.
-static bool TryGetZoneWorldBox(uint32 zoneId, float& minX, float& maxX, float& minY, float& maxY)
+// Authored world-space extents of the level bands hotspots may use.
+//
+// These are AUTHORITATIVE, not a hint: the DC terrain downport bakes a single
+// area id into every ADT of a custom continent (map 750 -> 4923, map 751 ->
+// 4924, map 861 -> 4925), so Map::GetZoneId() cannot distinguish the seven
+// leveling bands that share map 750. Without this table every hotspot on 750
+// reports zone 4923 "Hyjal Frontier (113-130)" - the announce text lies to
+// level-80 players standing in the Darkshore band, and Hotspots.MaxPerZone
+// caps the entire continent instead of each band.
+//
+// Consequences of a map appearing here at all:
+//   * spawn discovery only samples inside these boxes on that map;
+//   * a position outside every band on a banded map is rejected outright
+//     (un-authored terrain), so Moonglade 4928 stays hotspot-free without
+//     needing an exclude entry;
+//   * the IsCityLikeArea guard is skipped. That guard exists to keep blind
+//     map-wide discovery out of Stormwind; a hand-authored band is already an
+//     explicit statement of intent. Isles of Giants 5006 carries the
+//     SLAVE_CAPITAL flags and would otherwise be silently unusable.
+// Boxes on the same map may overlap; ties resolve to the nearest box centre
+// and BuildZoneSampleBoxes logs the overlapping pairs so the extents can be
+// tightened against real spawn data.
+struct HotspotZoneBand
 {
-    float ax = 0.0f, ay = 0.0f;
-    float bx = 100.0f, by = 100.0f;
-    Zone2MapCoordinates(ax, ay, zoneId);
-    Zone2MapCoordinates(bx, by, zoneId);
-
-    // Unchanged inputs = no WorldMapArea entry (a real 100x100yd zone box at
-    // the exact map origin does not exist).
-    if (ax == 0.0f && ay == 0.0f && bx == 100.0f && by == 100.0f)
-        return false;
-
-    minX = std::min(ax, bx);
-    maxX = std::max(ax, bx);
-    minY = std::min(ay, by);
-    maxY = std::max(ay, by);
-
-    // Reject degenerate boxes.
-    return (maxX - minX) > 1.0f && (maxY - minY) > 1.0f;
-}
-
-// Boxes for zones the server's WorldMapArea.dbc does not cover correctly.
-// These are AUTHORITATIVE overrides, checked BEFORE TryGetZoneWorldBox: map
-// 750's single WorldMapArea row (1216, AreaID 4923) spans the whole continent
-// image, so resolving zone 4923 through it would sample every zone on the map.
-// Values are live spawn/zone extents ({ zoneId, minX, maxX, minY, maxY }).
-struct CustomZoneBox
-{
+    uint32 mapId;
     uint32 zoneId;
     float minX, maxX, minY, maxY;
 };
-static constexpr CustomZoneBox CUSTOM_ZONE_BOXES[] =
+static constexpr HotspotZoneBand ZONE_BANDS[] =
 {
     // Azshara Crater (map 37): tightened from the full world-map image extent to
     // the actual creature/player spawn footprint so hotspots stop landing on the
     // crater's unreachable outer rim.
-    { 268,   -700.0f,  1250.0f,  -450.0f,   1200.0f   }, // Azshara Crater (map 37)
-    { 5006,  5334.3f,  6932.32f,  2.91f,    2132.02f  }, // Isles of Giants (map 1405)
-    { 6000,  2066.67f, 4333.33f, -5166.67f, -1766.67f }, // Stratholme Valley (map 850)
-    { 6100,  4479.17f, 6145.83f, -4025.0f,  -1525.0f  }, // Hyjal Frontier (map 1410)
+    {   37,  268,  -700.0f,  1250.0f,  -450.0f,   1200.0f   }, // Azshara Crater
+    { 1405, 5006,  5334.3f,  6932.32f,   2.91f,   2132.02f  }, // Isles of Giants
+    {  850, 6000,  2066.67f, 4333.33f, -5166.67f, -1766.67f }, // Stratholme Valley
+    { 1410, 6100,  4479.17f, 6145.83f, -4025.0f,  -1525.0f  }, // Hyjal Frontier
     // DC Hyjal (map 750), one box per leveling-band zone. Extents from the
     // zone-tagged spawn footprints after HyjalCata/231_map750_zone_backfill.sql.
     // 4928 Moonglade is deliberately absent (sanctuary, no hotspots).
-    { 4923,  3390.0f,  5780.0f, -4990.0f,  -1270.0f  }, // Hyjal Frontier (113-130)
-    { 4926,  4100.0f,  8000.0f, -5330.0f,  -2200.0f  }, // Winterspring (104-115)
-    { 4927,  3800.0f,  7000.0f, -2600.0f,   -400.0f  }, // Felwood (96-106)
-    { 4929,  4200.0f,  8300.0f, -1700.0f,   1310.0f  }, // Darkshore (80-90)
-    { 4930,  1900.0f,  5100.0f, -8430.0f,  -3900.0f  }, // Azshara (80-90)
-    { 4931,  1279.0f,  4267.0f, -3800.0f,   2410.0f  }, // Ashenvale (88-98)
-    { 4924,   630.0f,  3500.0f, -6140.0f,   -810.0f  }, // Plaguelands / DC Plaguelands (map 751)
+    {  750, 4923,  3390.0f,  5780.0f,  -4990.0f,  -1270.0f  }, // Hyjal Frontier (113-130)
+    {  750, 4926,  4100.0f,  8000.0f,  -5330.0f,  -2200.0f  }, // Winterspring (104-115)
+    {  750, 4927,  3800.0f,  7000.0f,  -2600.0f,   -400.0f  }, // Felwood (96-106)
+    {  750, 4929,  4200.0f,  8300.0f,  -1700.0f,   1310.0f  }, // Darkshore (80-90)
+    {  750, 4930,  1900.0f,  5100.0f,  -8430.0f,  -3900.0f  }, // Azshara (80-90)
+    {  750, 4931,  1279.0f,  4267.0f,  -3800.0f,   2410.0f  }, // Ashenvale (88-98)
+    // DC Plaguelands (map 751): single band covering the whole continent.
+    {  751, 4924,   630.0f,  3500.0f,  -6140.0f,   -810.0f  }, // Plaguelands (130-160)
 };
+
+static bool MapHasBands(uint32 mapId)
+{
+    for (HotspotZoneBand const& band : ZONE_BANDS)
+        if (band.mapId == mapId)
+            return true;
+    return false;
+}
+
+uint32 HotspotMgr::ResolveZoneAt(uint32 mapId, float x, float y, uint32 terrainZoneId) const
+{
+    bool banded = false;
+    uint32 best = 0;
+    float bestDistSq = 0.0f;
+
+    for (HotspotZoneBand const& band : ZONE_BANDS)
+    {
+        if (band.mapId != mapId)
+            continue;
+
+        banded = true;
+        if (x < band.minX || x > band.maxX || y < band.minY || y > band.maxY)
+            continue;
+
+        float dx = x - (band.minX + band.maxX) * 0.5f;
+        float dy = y - (band.minY + band.maxY) * 0.5f;
+        float distSq = dx * dx + dy * dy;
+        if (!best || distSq < bestDistSq)
+        {
+            best = band.zoneId;
+            bestDistSq = distSq;
+        }
+    }
+
+    if (banded)
+        return best; // 0 = outside every authored band
+
+    return terrainZoneId;
+}
+
+uint32 HotspotMgr::ResolvePlayerZone(Player* player) const
+{
+    if (!player)
+        return 0;
+
+    return ResolveZoneAt(player->GetMapId(), player->GetPositionX(),
+        player->GetPositionY(), player->GetZoneId());
+}
 
 void HotspotMgr::BuildZoneSampleBoxes()
 {
@@ -386,44 +428,37 @@ void HotspotMgr::BuildZoneSampleBoxes()
         }
     }
 
-    for (uint32 i = 0; i < sAreaTableStore.GetNumRows(); ++i)
+    for (HotspotZoneBand const& band : ZONE_BANDS)
     {
-        AreaTableEntry const* area = sAreaTableStore.LookupEntry(i);
-        if (!area || area->zone != 0) // only top-level zones
+        if (!IsMapEnabled(band.mapId) || !IsZoneAllowed(band.zoneId))
             continue;
 
-        if (!IsMapEnabled(area->mapid))
-            continue;
-
-        if (!IsZoneAllowed(area->mapid, area->ID) || IsCityLikeArea(area->ID))
-            continue;
-
-        HotspotZoneSampleBox box;
-        box.zoneId = area->ID;
-        box.mapId = area->mapid;
-
-        // Authoritative overrides first — see the CUSTOM_ZONE_BOXES comment
-        // (map 750's WorldMapArea row spans the whole continent, so the DBC
-        // path would give every zone there the same map-wide box).
-        bool usedCustom = false;
-        for (CustomZoneBox const& custom : CUSTOM_ZONE_BOXES)
-        {
-            if (custom.zoneId != area->ID)
-                continue;
-            box.minX = custom.minX;
-            box.maxX = custom.maxX;
-            box.minY = custom.minY;
-            box.maxY = custom.maxY;
-            _zoneSampleBoxes.push_back(box);
-            usedCustom = true;
-            break;
-        }
-
-        if (!usedCustom && TryGetZoneWorldBox(area->ID, box.minX, box.maxX, box.minY, box.maxY))
-            _zoneSampleBoxes.push_back(box);
-        // Zones with no known bounds stay reachable via the periodic map-wide
-        // probes in RefillSpawnPool.
+        _zoneSampleBoxes.push_back({ band.zoneId, band.mapId, band.minX, band.maxX, band.minY, band.maxY });
     }
+
+    // Overlapping bands make the announce name (and MaxPerZone accounting)
+    // ambiguous in the shared region; report them so the extents get fixed.
+    for (size_t i = 0; i < _zoneSampleBoxes.size(); ++i)
+    {
+        for (size_t j = i + 1; j < _zoneSampleBoxes.size(); ++j)
+        {
+            HotspotZoneSampleBox const& a = _zoneSampleBoxes[i];
+            HotspotZoneSampleBox const& b = _zoneSampleBoxes[j];
+            if (a.mapId != b.mapId)
+                continue;
+            if (a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY)
+                continue;
+
+            LOG_WARN("scripts.dc", "Hotspots: band boxes for zones {} and {} on map {} overlap; positions in the shared region resolve to the nearer box centre.",
+                a.zoneId, b.zoneId, a.mapId);
+        }
+    }
+
+    // Enabled maps with no authored band stay reachable through the map-wide
+    // probes in RefillSpawnPool (lower hit rate, but correct).
+    for (uint32 mapId : sHotspotsConfig.enabledMaps)
+        if (!MapHasBands(mapId))
+            LOG_INFO("server.loading", "Hotspots: map {} has no authored band box; discovery falls back to map-wide sampling.", mapId);
 
     LOG_INFO("server.loading", "Hotspots: prepared {} zone sampling box(es) for spawn discovery.",
         _zoneSampleBoxes.size());
@@ -446,16 +481,27 @@ static bool EvaluateCandidateTerrain(Map* map, uint32 mapId, float cx, float cy,
     if (!MapMgr::IsValidMapCoord(mapId, cx, cy, gz))
         return false;
 
-    uint32 zoneId = map->GetZoneId(PHASEMASK_NORMAL, cx, cy, gz);
-    if (!zoneId)
+    // A zero terrain zone means the tile carries no area data at all - that is
+    // a broken/unextracted tile, not just an unnamed spot.
+    uint32 terrainZoneId = map->GetZoneId(PHASEMASK_NORMAL, cx, cy, gz);
+    if (!terrainZoneId)
         return false;
 
-    if (!IsZoneAllowed(mapId, zoneId) || !sHotspotMgr->CanSpawnInZone(zoneId))
+    // Recover the level band on the DC downport continents (see ZONE_BANDS).
+    uint32 zoneId = sHotspotMgr->ResolveZoneAt(mapId, cx, cy, terrainZoneId);
+    if (!IsZoneAllowed(zoneId))
         return false;
 
-    uint32 areaId = map->GetAreaId(PHASEMASK_NORMAL, cx, cy, gz);
-    if (IsCityLikeArea(areaId))
-        return false;
+    // The city/town guard protects blind map-wide discovery from dropping a
+    // hotspot in Stormwind. On a banded map the band table already said yes to
+    // this footprint, so applying it there would veto authored content (Isles
+    // of Giants 5006 carries the SLAVE_CAPITAL flags).
+    if (!MapHasBands(mapId))
+    {
+        uint32 areaId = map->GetAreaId(PHASEMASK_NORMAL, cx, cy, gz);
+        if (IsCityLikeArea(areaId))
+            return false;
+    }
 
     constexpr float collisionHeight = 2.0f;
     if (map->IsInWater(PHASEMASK_NORMAL, cx, cy, gz, collisionHeight))
@@ -474,14 +520,15 @@ void HotspotMgr::LoadSpawnPointsFromDB()
 {
     _spawnPool.clear();
 
-    QueryResult result = WorldDatabase.Query(
-        "SELECT id, map_id, zone_id, x, y, z FROM dc_hotspot_spawn_points WHERE enabled = 1");
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_DC_HOTSPOT_SPAWN_POINTS);
+    PreparedQueryResult result = CharacterDatabase.Query(stmt);
     if (!result)
     {
         LOG_INFO("server.loading", "Hotspots: No cached spawn points; will discover lazily.");
         return;
     }
 
+    uint32 rebanded = 0;
     do
     {
         Field* fields = result->Fetch();
@@ -492,27 +539,55 @@ void HotspotMgr::LoadSpawnPointsFromDB()
         p.x      = fields[3].Get<float>();
         p.y      = fields[4].Get<float>();
         p.z      = fields[5].Get<float>();
+
+        // Points cached before the band table existed carry the baked terrain
+        // zone (every map-750 row says 4923). Re-resolve from the position so
+        // MaxPerZone and the announce name track the real band; a point that
+        // now falls outside every band resolves to 0 and is filtered out at
+        // pick time rather than silently spawning in un-authored terrain.
+        uint32 resolved = ResolveZoneAt(p.mapId, p.x, p.y, p.zoneId);
+        if (resolved != p.zoneId)
+        {
+            p.zoneId = resolved;
+            ++rebanded;
+        }
+
         _spawnPool.push_back(p);
     } while (result->NextRow());
 
-    LOG_INFO("server.loading", "Hotspots: Loaded {} cached spawn point(s).", _spawnPool.size());
+    LOG_INFO("server.loading", "Hotspots: Loaded {} cached spawn point(s) ({} re-resolved to their level band).",
+        _spawnPool.size(), rebanded);
 }
 
 void HotspotMgr::SaveSpawnPointToDB(HotspotSpawnPoint const& p)
 {
-    WorldDatabase.Execute(
-        "INSERT INTO dc_hotspot_spawn_points (map_id, zone_id, x, y, z, enabled) VALUES ({}, {}, {}, {}, {}, 1)",
-        p.mapId, p.zoneId, p.x, p.y, p.z);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_DC_HOTSPOT_SPAWN_POINT);
+    stmt->SetData(0, uint16(p.mapId));
+    stmt->SetData(1, uint16(p.zoneId));
+    stmt->SetData(2, p.x);
+    stmt->SetData(3, p.y);
+    stmt->SetData(4, p.z);
+    CharacterDatabase.Execute(stmt);
 }
 
 void HotspotMgr::RefillSpawnPool()
 {
     // Target variety so spawns rarely repeat the same spot.
     constexpr size_t POOL_TARGET = 100;
-    if (_spawnPool.size() >= POOL_TARGET)
-        return;
 
     if (sHotspotsConfig.enabledMaps.empty())
+        return;
+
+    // Count only points that are usable under the CURRENT config. Counting the
+    // raw pool size meant a DB full of points for maps that were later disabled
+    // (or re-banded to 0) parked discovery forever, so hotspots never appeared
+    // on a newly enabled map.
+    size_t usable = 0;
+    for (HotspotSpawnPoint const& p : _spawnPool)
+        if (IsMapEnabled(p.mapId) && IsZoneAllowed(p.zoneId))
+            ++usable;
+
+    if (usable >= POOL_TARGET)
         return;
 
     // Bound disk I/O: every cold (unloaded) grid we probe pulls .map/.vmtile/
@@ -528,35 +603,41 @@ void HotspotMgr::RefillSpawnPool()
     std::vector<uint32> const& maps = sHotspotsConfig.enabledMaps;
     uint32 coldBudget = COLD_GRID_BUDGET;
     size_t added = 0;
+    std::vector<HotspotZoneSampleBox const*> boxesOnMap;
+    boxesOnMap.reserve(_zoneSampleBoxes.size());
 
     for (uint32 probe = 0; probe < MAX_PROBES; ++probe)
     {
         if (added >= MAX_NEW_POINTS)
             break;
 
-        // Sample inside a known zone bounding box when available: far higher
-        // hit rate than map-wide random points, and it concentrates the pool
-        // in the configured (leveling) zones. Every 4th probe still samples
-        // map-wide so zones without known bounds remain discoverable.
-        uint32 mapId;
+        // Pick the map first, then a band on it. Picking a band uniformly out
+        // of the global list instead would give map 750 (six bands) six times
+        // the probes of map 751 (one), starving the smaller continents.
+        uint32 mapId = maps[urand(0, static_cast<uint32>(maps.size()) - 1)];
+
+        boxesOnMap.clear();
+        for (HotspotZoneSampleBox const& box : _zoneSampleBoxes)
+            if (box.mapId == mapId)
+                boxesOnMap.push_back(&box);
+
         float cx, cy;
-        if (!_zoneSampleBoxes.empty() && (probe % 4) != 0)
+        if (!boxesOnMap.empty())
         {
-            HotspotZoneSampleBox const& box =
-                _zoneSampleBoxes[urand(0, static_cast<uint32>(_zoneSampleBoxes.size()) - 1)];
-            mapId = box.mapId;
+            // Sampling inside an authored band has a far higher hit rate than
+            // map-wide random points and keeps the pool inside the leveling
+            // zones. On banded maps everything outside a band is rejected by
+            // EvaluateCandidateTerrain anyway, so there is nothing to gain
+            // from map-wide probes here.
+            HotspotZoneSampleBox const& box = *boxesOnMap[urand(0, static_cast<uint32>(boxesOnMap.size()) - 1)];
             cx = frand(box.minX, box.maxX);
             cy = frand(box.minY, box.maxY);
         }
         else
         {
-            mapId = maps[urand(0, static_cast<uint32>(maps.size()) - 1)];
             cx = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
             cy = frand(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
         }
-
-        if (!IsMapEnabled(mapId))
-            continue;
 
         Map* map = GetBaseMapSafe(mapId);
         if (!map)
@@ -624,7 +705,7 @@ bool HotspotMgr::PickSpawnPoint(HotspotSpawnPoint& out)
     {
         if (!IsMapEnabled(p.mapId))
             continue;
-        if (!IsZoneAllowed(p.mapId, p.zoneId) || !CanSpawnInZone(p.zoneId))
+        if (!IsZoneAllowed(p.zoneId))
             continue;
         if (IsZoneAtCapacity(p.zoneId))
             continue;
@@ -711,31 +792,25 @@ void HotspotMgr::RegisterHotspot(Hotspot& h)
 
     LOG_INFO("scripts.dc", "Spawned Hotspot #{} on map {} zone {}", h.id, h.mapId, h.zoneId);
 
-    if (!sHotspotsConfig.announceSpawn)
-        return;
+    // AnnounceSpawn gates the chat line only. The addon push must always go out
+    // or map pins go stale on a server that merely turned the chat spam off.
+    if (sHotspotsConfig.announceSpawn)
+    {
+        std::string zoneName = DCHotspotJson::ZoneName(h.zoneId);
+        std::string mapName = "Unknown Map";
+        if (MapEntry const* me = sMapStore.LookupEntry(h.mapId)) mapName = me->name[0];
 
-    std::string zoneName = GetSafeZoneName(h.zoneId);
-    std::string mapName = "Unknown Map";
-    if (const MapEntry* me = sMapStore.LookupEntry(h.mapId)) mapName = me->name[0];
+        std::ostringstream ss;
+        ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot in " << mapName << " (" << zoneName << ")! +" << sHotspotsConfig.experienceBonus << "% XP";
 
-    std::ostringstream ss;
-    ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot in " << mapName << " (" << zoneName << ")! +" << sHotspotsConfig.experienceBonus << "% XP";
-
-    // One global announce; players on the map previously got it twice
-    // (broadcast + per-map loop).
-    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str(), nullptr);
+        // One global announce; players on the map previously got it twice
+        // (broadcast + per-map loop).
+        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str(), nullptr);
+    }
 
     // Send WRLD packet
     DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
-    DCAddon::JsonValue j; j.SetObject();
-    j.Set("id", DCAddon::JsonValue((int)h.id));
-    j.Set("mapId", DCAddon::JsonValue((int)h.mapId));
-    j.Set("zoneId", DCAddon::JsonValue((int)h.zoneId));
-    j.Set("x", DCAddon::JsonValue(h.x));
-    j.Set("y", DCAddon::JsonValue(h.y));
-    j.Set("z", DCAddon::JsonValue(h.z));
-    j.Set("action", DCAddon::JsonValue("spawn"));
-    hotspotsArr.Push(j);
+    hotspotsArr.Push(DCHotspotJson::SpawnEvent(h));
 
     DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
     wmsg.Set("hotspots", hotspotsArr);
@@ -747,7 +822,7 @@ void HotspotMgr::RegisterHotspot(Hotspot& h)
 
 bool HotspotMgr::SpawnHotspot()
 {
-    if (!sHotspotsConfig.enabled) return false;
+    if (!sHotspotsConfig.enabled || !_loaded) return false;
     if (_grid.Count() >= sHotspotsConfig.maxActive) return false;
 
     HotspotSpawnPoint point;
@@ -767,13 +842,19 @@ bool HotspotMgr::SpawnHotspot()
 
 bool HotspotMgr::SpawnHotspotAt(uint32 mapId, uint32 zoneId, float x, float y, float z)
 {
-    if (!sHotspotsConfig.enabled)
+    if (!sHotspotsConfig.enabled || !_loaded)
         return false;
 
     // GM-placed hotspots skip the pool/eligibility sampling and the maxActive
     // cap, but the map must still exist as a hostable base map.
     if (!GetBaseMapSafe(mapId))
         return false;
+
+    // Callers pass Player::GetZoneId(), which is the baked continent-wide area
+    // id on the DC downport maps; recover the band so the announce name and
+    // MaxPerZone accounting match a pool-spawned hotspot in the same spot.
+    if (uint32 band = ResolveZoneAt(mapId, x, y, zoneId))
+        zoneId = band;
 
     Hotspot h;
     h.mapId = mapId; h.zoneId = zoneId;
@@ -790,7 +871,7 @@ void HotspotMgr::CleanupExpiredHotspots()
     // Create deferred visual markers for areas players have since loaded.
     SpawnPendingMarkers();
 
-    for (const Hotspot& h : all)
+    for (Hotspot const& h : all)
     {
         if (h.expireTime <= now)
         {
@@ -808,55 +889,69 @@ void HotspotMgr::CleanupExpiredHotspots()
             DeleteHotspotFromDB(h.id);
             _grid.Remove(h.id);
 
-            // Announce expire
-            if (sHotspotsConfig.announceExpire)
-            {
-                // Send WRLD packet expire
-                DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
-                DCAddon::JsonValue j; j.SetObject();
-                j.Set("id", DCAddon::JsonValue((int)h.id));
-                j.Set("action", DCAddon::JsonValue("expire"));
-                hotspotsArr.Push(j);
-                DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
-                wmsg.Set("hotspots", hotspotsArr);
+            // The addon push is unconditional (AnnounceExpire only gates the
+            // chat line); a client that never hears "expire" keeps a dead pin.
+            DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
+            hotspotsArr.Push(DCHotspotJson::ExpireEvent(h.id));
+            DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+            wmsg.Set("hotspots", hotspotsArr);
 
-                // Notify players
-                for (auto const& sess : sWorldSessionMgr->GetAllSessions())
+            for (auto const& sess : sWorldSessionMgr->GetAllSessions())
+            {
+                Player* p = sess.second->GetPlayer();
+                if (!p)
+                    continue;
+
+                wmsg.Send(p);
+
+                if (!sHotspotsConfig.announceExpire)
+                    continue;
+
+                // Who cared about this hotspot: anyone standing near it, plus
+                // anyone in the same level band. The band comparison must be
+                // band-aware - on maps 750/751 every player reports the single
+                // baked zone id, so a raw GetZoneId() test would either message
+                // the whole continent or (with banded hotspots) nobody.
+                bool nearby = false;
+                if (p->GetMapId() == h.mapId && sHotspotsConfig.announceRadius > 0.0f)
                 {
-                    if (Player* p = sess.second->GetPlayer())
-                    {
-                        wmsg.Send(p);
-                        if (p->GetZoneId() == h.zoneId)
-                           ChatHandler(p->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r A Hotspot has expired.");
-                    }
+                    float dx = p->GetPositionX() - h.x;
+                    float dy = p->GetPositionY() - h.y;
+                    nearby = (dx * dx + dy * dy) <= (sHotspotsConfig.announceRadius * sHotspotsConfig.announceRadius);
                 }
+
+                if (nearby || ResolvePlayerZone(p) == h.zoneId)
+                    ChatHandler(p->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r A Hotspot has expired.");
             }
         }
     }
 
     std::unordered_set<uint32> activeHotspotIds;
-    for (Hotspot const& activeHotspot : _grid.GetAll())
-        activeHotspotIds.insert(activeHotspot.id);
+    for (auto const& [id, activeHotspot] : _grid.View())
+        activeHotspotIds.insert(id);
 
-    // Drop one-time grant entries for hotspots that are no longer active, so a
-    // player re-buffs on the next (distinct) hotspot they enter.
+    // Drop "already told them about this one" markers for hotspots that are no
+    // longer active, plus idle XP-report state. _playerObjectives is
+    // deliberately NOT pruned here: CheckPlayerHotspotStatus owns its lifetime
+    // and pruning it would race that 2s poll out of its end-of-session report.
     {
+        time_t const staleBefore = now - 10 * MINUTE;
         std::lock_guard<std::mutex> lock(_playerDataLock);
-        for (auto playerIt = _playerGrantedHotspots.begin(); playerIt != _playerGrantedHotspots.end(); )
-        {
-            auto& granted = playerIt->second;
-            for (auto grantIt = granted.begin(); grantIt != granted.end(); )
-            {
-                if (activeHotspotIds.find(*grantIt) != activeHotspotIds.end())
-                    ++grantIt;
-                else
-                    grantIt = granted.erase(grantIt);
-            }
 
-            if (granted.empty())
-                playerIt = _playerGrantedHotspots.erase(playerIt);
+        for (auto it = _playerNotifiedHotspot.begin(); it != _playerNotifiedHotspot.end(); )
+        {
+            if (activeHotspotIds.find(it->second) == activeHotspotIds.end())
+                it = _playerNotifiedHotspot.erase(it);
             else
-                ++playerIt;
+                ++it;
+        }
+
+        for (auto it = _playerXpReport.begin(); it != _playerXpReport.end(); )
+        {
+            if (it->second.pendingBonus == 0 && it->second.lastReport < staleBefore)
+                it = _playerXpReport.erase(it);
+            else
+                ++it;
         }
     }
 
@@ -868,90 +963,88 @@ void HotspotMgr::CleanupExpiredHotspots()
         SpawnHotspot();
 }
 
+void HotspotMgr::EndObjectiveSession(Player* player, ObjectGuid guid)
+{
+    uint32 kills = 0;
+    uint32 mins = 0;
+    bool hadSession = false;
+    {
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        auto it = _playerObjectives.find(guid);
+        if (it != _playerObjectives.end())
+        {
+            kills = it->second.killCount;
+            mins = it->second.GetSurvivalSeconds() / MINUTE;
+            _playerObjectives.erase(it);
+            hadSession = true;
+        }
+    }
+
+    if (hadSession && player && player->GetSession())
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF6347[Hotspot Results]|r Session ended. Kills: {} | Survival: {} min", kills, mins);
+}
+
 void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
 {
     if (!player) return;
 
     ObjectGuid const playerGuid = player->GetGUID();
     Hotspot const* hotspot = GetPlayerHotspot(player);
-    bool isInHotspotContext = (hotspot != nullptr);
-    bool hasHotspotAura = PlayerHasAnyHotspotAura(player);
-
-    if (!hasHotspotAura)
-    {
-        uint32 kills = 0;
-        uint32 mins = 0;
-        bool hasResults = false;
-        {
-            std::lock_guard<std::mutex> lock(_playerDataLock);
-
-            // End objective session once the aura is gone and player is outside hotspot context.
-            if (!isInHotspotContext && sHotspotsConfig.objectivesEnabled)
-            {
-                auto it = _playerObjectives.find(playerGuid);
-                if (it != _playerObjectives.end())
-                {
-                    kills = it->second.killCount;
-                    mins = it->second.GetSurvivalSeconds() / 60;
-                    _playerObjectives.erase(it);
-                    hasResults = true;
-                }
-            }
-        }
-
-        if (hasResults && player->GetSession())
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF6347[Hotspot Results]|r Session ended. Kills: {} | Survival: {} min", kills, mins);
-    }
-
-    if (!isInHotspotContext)
-        return;
 
     if (!hotspot)
+    {
+        // Leash: the bonus is a *hotspot* bonus. Without this the aura outlived
+        // the visit for its whole remaining duration, so a player could claim a
+        // hotspot and then farm +100% XP anywhere in the world.
+        if (PlayerHasAnyHotspotAura(player))
+        {
+            if (sHotspotsConfig.auraSpell)
+                player->RemoveAura(sHotspotsConfig.auraSpell);
+            if (sHotspotsConfig.buffSpell)
+                player->RemoveAura(sHotspotsConfig.buffSpell);
+        }
+
+        FlushPendingXpReport(player, playerGuid, true);
+        EndObjectiveSession(player, playerGuid);
+        // _playerNotifiedHotspot is intentionally kept: stepping back into the
+        // same hotspot must not re-fire the join notification. CleanupExpired-
+        // Hotspots drops the entry when that hotspot expires.
         return;
+    }
 
     RemoveSecondaryHotspotAuras(player);
 
-    if (hasHotspotAura)
-        return;
+    uint32 const targetId = hotspot->id;
+    time_t const now = GameTime::GetGameTime().count();
 
-    uint32 targetId = hotspot->id;
-
-    bool alreadyGranted = false;
+    if (EnsurePrimaryHotspotAura(player))
     {
-        std::lock_guard<std::mutex> lock(_playerDataLock);
-        auto grantedIt = _playerGrantedHotspots.find(playerGuid);
-        if (grantedIt != _playerGrantedHotspots.end())
-            alreadyGranted = grantedIt->second.find(targetId) != grantedIt->second.end();
-    }
-
-    // One-time grant per hotspot: re-entering the same hotspot should never re-buff.
-    if (alreadyGranted)
-        return;
-
-    if (!EnsurePrimaryHotspotAura(player))
-        return;
-
-    // Clamp the buff to the hotspot's remaining lifetime. Spell 800001's own
-    // DurationIndex would otherwise let the XP bonus outlive the hotspot the
-    // player entered (and if that index is ever set to permanent, never expire).
-    if (Aura* aura = player->GetAura(GetPrimaryHotspotAuraSpell()))
-    {
-        int32 remainingMs = static_cast<int32>((hotspot->expireTime - GameTime::GetGameTime().count()) * IN_MILLISECONDS);
-        if (remainingMs > 0 && (aura->GetDuration() <= 0 || aura->GetDuration() > remainingMs))
+        // Clamp the buff to the hotspot's remaining lifetime. Spell 800001's own
+        // DurationIndex would otherwise let the XP bonus outlive the hotspot the
+        // player entered (and if that index is ever set to permanent, never expire).
+        if (Aura* aura = player->GetAura(GetPrimaryHotspotAuraSpell()))
         {
-            aura->SetMaxDuration(remainingMs);
-            aura->SetDuration(remainingMs);
+            int32 remainingMs = static_cast<int32>((hotspot->expireTime - now) * IN_MILLISECONDS);
+            if (remainingMs > 0 && (aura->GetDuration() <= 0 || aura->GetDuration() > remainingMs))
+            {
+                aura->SetMaxDuration(remainingMs);
+                aura->SetDuration(remainingMs);
+            }
         }
     }
 
-    uint32 bonus = sHotspotsConfig.experienceBonus;
-
-    if (player->GetSession())
-        ChatHandler(player->GetSession()).SendNotification("Hotspot joined: +{}% experience", bonus);
-
+    bool notify = false;
+    bool surviveGoalHit = false;
     {
         std::lock_guard<std::mutex> lock(_playerDataLock);
-        _playerGrantedHotspots[playerGuid].insert(targetId);
+
+        // Notify once per hotspot, not once per boundary crossing.
+        auto& notified = _playerNotifiedHotspot[playerGuid];
+        if (notified != targetId)
+        {
+            notified = targetId;
+            notify = true;
+        }
 
         if (sHotspotsConfig.objectivesEnabled)
         {
@@ -960,66 +1053,135 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
             {
                 obj = HotspotObjectives();
                 obj.hotspotId = targetId;
-                obj.entryTime = GameTime::GetGameTime().count();
+                obj.entryTime = now;
+            }
+
+            // "Survive X minutes" - previously configured but never evaluated.
+            if (!obj.surviveGoalReported && sHotspotsConfig.objectiveSurviveMinutes &&
+                obj.GetSurvivalSeconds() >= sHotspotsConfig.objectiveSurviveMinutes * MINUTE)
+            {
+                obj.surviveGoalReported = true;
+                surviveGoalHit = true;
             }
         }
     }
+
+    if (!player->GetSession())
+        return;
+
+    if (notify)
+        ChatHandler(player->GetSession()).SendNotification("Hotspot joined: +{}% experience", sHotspotsConfig.experienceBonus);
+
+    if (surviveGoalHit && sHotspotsConfig.showObjectivesProgress)
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Survived {} minutes in the hotspot!|r",
+            sHotspotsConfig.objectiveSurviveMinutes);
+}
+
+void HotspotMgr::OnPlayerLogout(Player* player)
+{
+    if (!player)
+        return;
+
+    ObjectGuid const guid = player->GetGUID();
+    std::lock_guard<std::mutex> lock(_playerDataLock);
+    _playerObjectives.erase(guid);
+    _playerNotifiedHotspot.erase(guid);
+    _playerXpReport.erase(guid);
+}
+
+// One chat line per kill was both spam and per-kill packet traffic for every
+// buffed player. Accumulate instead and report at most once per interval.
+void HotspotMgr::FlushPendingXpReport(Player* player, ObjectGuid guid, bool force)
+{
+    constexpr time_t XP_REPORT_INTERVAL = 30; // seconds
+
+    uint32 bonus = 0;
+    {
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        auto it = _playerXpReport.find(guid);
+        if (it == _playerXpReport.end() || it->second.pendingBonus == 0)
+            return;
+
+        time_t now = GameTime::GetGameTime().count();
+        if (!force && (now - it->second.lastReport) < XP_REPORT_INTERVAL)
+            return;
+
+        bonus = it->second.pendingBonus;
+        it->second.pendingBonus = 0;
+        it->second.lastReport = now;
+    }
+
+    if (player && player->GetSession())
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot XP]|r +{} bonus XP ({}%)",
+            bonus, sHotspotsConfig.experienceBonus);
 }
 
 void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
 {
-    if (!sHotspotsConfig.enabled || !player) return;
-
-    bool isBuffed = PlayerHasAnyHotspotAura(player);
-
-    if (!isBuffed)
+    if (!sHotspotsConfig.enabled || !player || !amount)
         return;
 
-    uint32 bonusPct = sHotspotsConfig.experienceBonus;
+    if (!PlayerHasAnyHotspotAura(player))
+        return;
 
-    uint32 bonus = (amount * bonusPct) / 100;
+    uint32 const bonusPct = sHotspotsConfig.experienceBonus;
+    if (!bonusPct)
+        return;
+
+    // 64-bit intermediate: a misconfigured ExperienceBonus (or a very large
+    // base award) overflows uint32 in the multiply and can *reduce* the XP.
+    uint64 bonus64 = (static_cast<uint64>(amount) * bonusPct) / 100;
+    uint64 headroom = std::numeric_limits<uint32>::max() - amount;
+    uint32 bonus = static_cast<uint32>(std::min<uint64>(bonus64, headroom));
     amount += bonus;
 
-    ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot XP]|r +{} XP ({}% bonus)", bonus, bonusPct);
-
-    // Track objectives
-    if (sHotspotsConfig.objectivesEnabled && victim) // victim might be null in some calls?
+    ObjectGuid const guid = player->GetGUID();
     {
-         // Check valid context: Grid Hotspot
-         Hotspot const* cur = GetPlayerHotspot(player);
-
-         if (cur)
-         {
-             uint32 targetId = cur->id;
-
-             uint32 killCount = 0;
-             bool reportProgress = false;
-             {
-                 std::lock_guard<std::mutex> lock(_playerDataLock);
-                 auto& obj = _playerObjectives[player->GetGUID()];
-                 if (obj.hotspotId == targetId)
-                 {
-                     obj.killCount++;
-                     killCount = obj.killCount;
-                     reportProgress = sHotspotsConfig.showObjectivesProgress;
-                 }
-             }
-
-             if (reportProgress)
-             {
-                 if (killCount == sHotspotsConfig.objectiveKillGoal)
-                     ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Killed {}/{} creatures!|r", killCount, sHotspotsConfig.objectiveKillGoal);
-                 else if (killCount < sHotspotsConfig.objectiveKillGoal && (killCount % 10 == 0 || killCount == 1))
-                     ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00[Objective] Hotspot Kills: {}/{}|r", killCount, sHotspotsConfig.objectiveKillGoal);
-             }
-         }
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        _playerXpReport[guid].pendingBonus += bonus;
     }
+    FlushPendingXpReport(player, guid, false);
+
+    if (!sHotspotsConfig.objectivesEnabled || !victim)
+        return;
+
+    // Only kills inside the hotspot count toward the objective.
+    Hotspot const* cur = GetPlayerHotspot(player);
+    if (!cur)
+        return;
+
+    uint32 killCount = 0;
+    bool goalReached = false;
+    {
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        auto it = _playerObjectives.find(guid);
+        if (it == _playerObjectives.end() || it->second.hotspotId != cur->id)
+            return; // session is opened by CheckPlayerHotspotStatus, not here
+
+        killCount = ++it->second.killCount;
+        if (!it->second.killGoalReported && sHotspotsConfig.objectiveKillGoal &&
+            killCount >= sHotspotsConfig.objectiveKillGoal)
+        {
+            it->second.killGoalReported = true;
+            goalReached = true;
+        }
+    }
+
+    if (!sHotspotsConfig.showObjectivesProgress || !player->GetSession())
+        return;
+
+    if (goalReached)
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Killed {}/{} creatures!|r",
+            killCount, sHotspotsConfig.objectiveKillGoal);
+    else if (killCount < sHotspotsConfig.objectiveKillGoal && (killCount % 10 == 0 || killCount == 1))
+        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00[Objective] Hotspot Kills: {}/{}|r",
+            killCount, sHotspotsConfig.objectiveKillGoal);
 }
 
 void HotspotMgr::ClearAll()
 {
     std::vector<Hotspot> all = _grid.GetAll();
-    for (const Hotspot& h : all)
+    for (Hotspot const& h : all)
     {
         // Remove Visual
         if (!h.gameObjectGuid.IsEmpty())
@@ -1036,7 +1198,17 @@ void HotspotMgr::ClearAll()
         _grid.Remove(h.id);
     }
 
-    // Reset ID if desired? No, keep incrementing safer.
+    // Per-player state is keyed by hotspot id; with no hotspots left it is all
+    // stale. Auras are stripped by the next CheckPlayerHotspotStatus poll.
+    {
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        _playerNotifiedHotspot.clear();
+        _playerObjectives.clear();
+        _playerXpReport.clear();
+    }
+
+    // Ids keep incrementing on purpose - reusing them would confuse clients
+    // that still hold a pin for the old hotspot.
 }
 
 void HotspotMgr::RecreateHotspotVisualMarkers()
@@ -1048,7 +1220,7 @@ void HotspotMgr::RecreateHotspotVisualMarkers()
 
 std::string HotspotMgr::GetZoneName(uint32 zoneId)
 {
-    return GetSafeZoneName(zoneId);
+    return DCHotspotJson::ZoneName(zoneId);
 }
 
 // Exposed to other DC systems (stresstest, addon world/hotspot handlers).
@@ -1069,7 +1241,7 @@ uint32 HotspotMgr::GetZoneHotspotCount(uint32 zoneId)
         return 0;
 
     uint32 count = 0;
-    for (Hotspot const& hotspot : _grid.GetAll())
+    for (auto const& [id, hotspot] : _grid.View())
         if (hotspot.zoneId == zoneId)
             ++count;
 
@@ -1083,20 +1255,5 @@ bool HotspotMgr::IsZoneHotspotActive(uint32 zoneId)
 
 bool HotspotMgr::CanSpawnInZone(uint32 zoneId)
 {
-    // Check if zone is in excluded list
-    for (uint32 ex : sHotspotsConfig.excludedZones)
-    {
-        if (ex == zoneId)
-            return false;
-    }
-
-    // If enabledZones is specified and not empty, zone must be in it
-    if (!sHotspotsConfig.enabledZones.empty())
-    {
-        return std::find(sHotspotsConfig.enabledZones.begin(),
-                        sHotspotsConfig.enabledZones.end(),
-                        zoneId) != sHotspotsConfig.enabledZones.end();
-    }
-
-    return true;
+    return IsZoneAllowed(zoneId);
 }

@@ -2281,6 +2281,20 @@ void AchievementMgr::RemoveTimedAchievement(AchievementCriteriaTimedTypes type, 
     }
 }
 
+void AchievementMgr::SetCompletedAchievementDate(uint32 achievementId, time_t date)
+{
+    if (date <= 0)
+        return;
+
+    auto itr = _completedAchievements.find(achievementId);
+    if (itr == _completedAchievements.end() || itr->second.date == date)
+        return;
+
+    itr->second.date = date;
+    itr->second.changed = true;
+    _player->AdditionalSavingAddMask(ADDITIONAL_SAVING_ACHIEVEMENTS);
+}
+
 void AchievementMgr::CompletedAchievement(AchievementEntry const* achievement)
 {
     // disable for gamemasters with GM-mode enabled
@@ -2303,7 +2317,10 @@ void AchievementMgr::CompletedAchievement(AchievementEntry const* achievement)
 
     LOG_DEBUG("achievement", "AchievementMgr::CompletedAchievement({})", achievement->ID);
 
-    SendAchievementEarned(achievement);
+    // DarkChaos: a replayed completion (account-wide sync) is silent.
+    if (!(_replayFlags & REPLAY_SILENT))
+        SendAchievementEarned(achievement);
+
     CompletedAchievementData& ca = _completedAchievements[achievement->ID];
     ca.date = GameTime::GetGameTime().count();
     ca.changed = true;
@@ -2358,7 +2375,9 @@ void AchievementMgr::CompletedAchievement(AchievementEntry const* achievement)
             GetPlayer()->SetTitle(titleEntry);
 
     // mail
-    if (reward->sender)
+    // DarkChaos: a replayed completion must not mint another copy of the
+    // reward item for every alt on the account.
+    if (reward->sender && !(_replayFlags & REPLAY_NO_REWARDS))
     {
         MailDraft draft(reward->mailTemplate);
 

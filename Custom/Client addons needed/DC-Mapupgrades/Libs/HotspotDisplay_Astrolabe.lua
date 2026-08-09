@@ -42,10 +42,16 @@ Ast.MapBounds = {
     [530] = { minX = -5821.359, maxX = 5821.359, minY = -4468.039, maxY = 12996.04 }, -- Outland (Map 530, Area 0 "Expansion01")
     [571] = { minX = -1240.89, maxX = 10593.38, minY = -8534.246, maxY = 9217.152 },  -- Northrend (Map 571, Area 0 "Northrend")
     [37] = { minX = -1116, maxX = 1756, minY = -1884, maxY = 2427 },                -- Azshara Crater (Map 37, Area 268)
-    -- DC Cata downport maps: no WorldMapArea entry exists yet, so these are an
-    -- APPROXIMATION derived from the server spawn footprint. Replace with the
-    -- real LocLeft/Right/Top/Bottom once WorldMapArea rows 4923/4924 are authored.
-    [750] = { minX = 3390, maxX = 5780, minY = -4990, maxY = -1270 },               -- DC Hyjal (Map 750, Area 4923) [approx]
+    -- DC Hyjal (Map 750): from WorldMapArea row 1216 (MapID 750, AreaID 4923,
+    -- LocLeft -929.1667 / LocRight -5175 / LocTop 6195.833 / LocBottom 3364.583).
+    -- CAVEAT: row 1216's image only covers the Hyjal Frontier band. The other
+    -- six bands the server spawns hotspots in (Winterspring/Felwood/Darkshore/
+    -- Azshara/Ashenvale, x up to 8300 and y up to +1310) fall outside it and
+    -- clamp to the map edge below. Fixing that needs additional WorldMapArea
+    -- rows + map art per band; see ZONE_BANDS in HotspotMgr.cpp.
+    [750] = { minX = 3364.583, maxX = 6195.833, minY = -5175, maxY = -929.1667 },   -- DC Hyjal (Map 750, Area 4923)
+    -- DC Plaguelands (Map 751): no WorldMapArea row yet, so this is an
+    -- APPROXIMATION from the server spawn footprint (matches ZONE_BANDS 4924).
     [751] = { minX = 630,  maxX = 3500, minY = -6140, maxY = -810 },                -- DC Plaguelands (Map 751, Area 4924) [approx]
 }
 

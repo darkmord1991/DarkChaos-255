@@ -32,8 +32,54 @@ local CUSTOM_ZONE_MAPPING = {
     [1101] = 5006,
     [1102] = 5006,
     [745] = 745, -- Jade Forest (Explicit mapping to prevent incorrect learning)
+    -- Custom instance maps. UI map id is WorldMapArea.ID + 1 (see CONTINENT_MAP_IDS
+    -- below); the value is the server AreaTable id the terrain actually reports.
+    -- These are here so the runtime learner can never guess something else for them.
+    [1264] = 5640,  -- Timbermaw Hold      (WorldMapArea 1263, map 819)
+    [1265] = 16103, -- Blackfathom Deeps   (WorldMapArea 1264, map 820)
     -- Add more custom zones here as needed
 }
+
+-- World rare / world boss / death pins are OUTDOOR data: their coordinates are
+-- normalized against an outdoor zone. Drawing them on a dungeon or raid canvas
+-- scatters them across the instance floorplan -- which is exactly what happened
+-- on Timbermaw Hold (map 819), where the whole server's rare set appeared as
+-- minimap_skull_* pins over the raid map. A dungeon canvas has no outdoor rares
+-- by definition, so suppress entity pins there outright.
+--
+-- Keyed by UI map id (GetCurrentMapAreaID), same convention as CONTINENT_MAP_IDS.
+local INSTANCE_MAP_IDS = {
+    [1264] = true, -- Timbermaw Hold    (WorldMapArea 1263, map 819)
+    [1265] = true, -- Blackfathom Deeps (WorldMapArea 1264, map 820)
+}
+
+-- The static table only knows the instances that existed when it was written, and
+-- GetCurrentMapAreaID() is not reliable on freshly appended custom WorldMapArea
+-- rows -- it can report a stale id from the map the player walked in from. So also
+-- ask the client: if the player is inside an instance and the world map is showing
+-- the map they are standing on, it is an instance canvas whatever id it reports.
+local function IsInstanceMapView(activeMapId)
+    if activeMapId and INSTANCE_MAP_IDS[activeMapId] then
+        return true
+    end
+    if type(IsInInstance) ~= "function" then
+        return false
+    end
+    local inInstance, instanceType = IsInInstance()
+    if not inInstance then
+        return false
+    end
+    if instanceType ~= "party" and instanceType ~= "raid" then
+        return false -- battlegrounds/arenas draw their own pins; leave them alone
+    end
+    -- Only suppress while the player is looking at their OWN map. Opening the map
+    -- to a different zone from inside a dungeon should still show that zone's rares.
+    if type(GetCurrentMapAreaID) == "function" and type(SetMapToCurrentZone) == "function" then
+        local viewing = GetCurrentMapAreaID()
+        return viewing ~= nil and activeMapId ~= nil and viewing == activeMapId
+    end
+    return true
+end
 
 -- WoW 3.3.5 Map ID to Zone ID mapping
 -- WoW's internal map IDs (GetCurrentMapAreaID) don't match server zone IDs
@@ -586,7 +632,9 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     if not entity then return false end
     if not activeMapId or activeMapId == 0 then return false end
     if IsContinentMapView(activeMapId) then return false end
-    
+    -- Outdoor entity pins have no meaning on a dungeon/raid floorplan.
+    if IsInstanceMapView(activeMapId) then return false end
+
     -- Check blacklist for boss entities only (death markers are never boss-blacklisted).
     if entity.kind == "boss" and IsBossBlacklistedMap(activeMapId) then
         return false

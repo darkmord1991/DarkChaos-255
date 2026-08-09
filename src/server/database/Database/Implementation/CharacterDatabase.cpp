@@ -708,6 +708,27 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "SELECT slot_index, item_id, item_level FROM dc_vault_reward_pool WHERE character_guid = ? AND season_id = ? AND week_start = ? ORDER BY slot_index",
         CONNECTION_SYNCH);
 
+    // DarkChaos Hotspots. Active hotspots and the discovered spawn-point pool
+    // are per-realm runtime state written by the worldserver, so they live in
+    // the characters DB - the world DB is read-mostly and gets rebuilt from
+    // its SQL, which would wipe both tables.
+    PrepareStatement(CHAR_SEL_DC_HOTSPOTS_ACTIVE,
+        "SELECT id, map_id, zone_id, x, y, z, spawn_time, expire_time, gameobject_guid FROM dc_hotspots_active",
+        CONNECTION_SYNCH);
+    PrepareStatement(CHAR_REP_DC_HOTSPOT_ACTIVE,
+        "REPLACE INTO dc_hotspots_active (id, map_id, zone_id, x, y, z, spawn_time, expire_time, gameobject_guid) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        CONNECTION_ASYNC);
+    PrepareStatement(CHAR_DEL_DC_HOTSPOT_ACTIVE,
+        "DELETE FROM dc_hotspots_active WHERE id = ?",
+        CONNECTION_ASYNC);
+    PrepareStatement(CHAR_SEL_DC_HOTSPOT_SPAWN_POINTS,
+        "SELECT id, map_id, zone_id, x, y, z FROM dc_hotspot_spawn_points WHERE enabled = 1",
+        CONNECTION_SYNCH);
+    PrepareStatement(CHAR_INS_DC_HOTSPOT_SPAWN_POINT,
+        "INSERT INTO dc_hotspot_spawn_points (map_id, zone_id, x, y, z, enabled) VALUES (?, ?, ?, ?, ?, 1)",
+        CONNECTION_ASYNC);
+
     // Hinterland Battleground (HLBG)
     PrepareStatement(CHAR_INS_HLBG_WINNER_HISTORY,
         "INSERT INTO dc_hlbg_winner_history (zone_id, map_id, season, winner_tid, score_alliance, score_horde, win_reason, affix, affix_secondary, affix_tertiary, weather, weather_intensity, duration_seconds) "

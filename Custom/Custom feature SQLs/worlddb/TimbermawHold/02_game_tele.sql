@@ -12,5 +12,5 @@
 -- `.gps` once maps/vmaps exist for map 819 and adjust if GroundZ != FloorZ.
 DELETE FROM `game_tele` WHERE `id` IN (10640, 10641);
 INSERT INTO `game_tele` (`id`, `position_x`, `position_y`, `position_z`, `orientation`, `map`, `name`) VALUES
-    (10640, -8165.96, -3459.75, 221.0, 0, 819, 'dctimbermaw'),
+    (10640, -8153.15, -3456.87, 222.4, 0.306, 819, 'dctimbermaw'),
     (10641, 7015.0, -2145.0, 587.0, 0, 750, 'dctimbermawgate');

@@ -20,9 +20,12 @@
 #include "Random.h"
 #include "SpellMgr.h"
 #include "DBCStores.h"
+#include "GameTime.h"
 #include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "../Hotspot/HotspotMgr.h"
+#include "../Hotspot/HotspotJson.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "../AddonExtension/dc_addon_death_markers.h"
 #include "../AddonExtension/dc_addon_namespace.h"
@@ -2268,7 +2271,8 @@ namespace DCPerfTest
         availability.hasProtocolErrors = DC::DbSchema::CharacterTableExists("dc_addon_protocol_errors");
         availability.hasProtocolLog = DC::DbSchema::CharacterTableExists("dc_addon_protocol_log");
         availability.hasQosSettings = DC::DbSchema::CharacterTableExists("dc_player_qos_settings");
-        availability.hasHotspots = DC::DbSchema::WorldTableExists("dc_hotspots_active");
+        // dc_hotspots_active moved to the characters DB (per-realm runtime state).
+        availability.hasHotspots = DC::DbSchema::CharacterTableExists("dc_hotspots_active");
         availability.hasWelcomeFaq = DC::DbSchema::WorldTableExists("dc_welcome_faq");
         availability.hasWelcomeWhatsNew = DC::DbSchema::WorldTableExists("dc_welcome_whats_new");
         availability.hasMplusRating = DC::DbSchema::CharacterTableExists("dc_mplus_player_ratings");
@@ -4083,53 +4087,27 @@ namespace DCPerfTest
                 if (!availability.hasHotspots)
                     return false;
 
+                // Read the authoritative in-memory grid through the shared
+                // serializer, exactly as dc_addon_world does. This used to
+                // re-query dc_hotspots_active and hand-roll the same JSON,
+                // which meant the stress payload could differ from the real
+                // one (stale rows, duplicated key names, its own zone-name
+                // lookup) - i.e. it stress-tested a shape nobody ships.
                 auto buildWorldHotspotArrayForStress = []() -> DCAddon::JsonValue
                 {
                     DCAddon::JsonValue arr;
                     arr.SetArray();
 
-                    QueryResult result = WorldDatabase.Query(
-                        "SELECT id, map_id, zone_id, x, y, z, (expire_time - UNIX_TIMESTAMP()) as dur "
-                        "FROM dc_hotspots_active WHERE expire_time > UNIX_TIMESTAMP()");
-
                     uint32 xpBonus = GetHotspotXPBonusPercentage();
-                    if (!result)
-                        return arr;
+                    time_t now = GameTime::GetGameTime().count();
 
-                    do
+                    for (auto const& [hotspotId, hotspot] : sHotspotMgr->GetGrid().View())
                     {
-                        uint32 id = (*result)[0].Get<uint32>();
-                        uint32 mapId = (*result)[1].Get<uint32>();
-                        uint32 zoneId = (*result)[2].Get<uint32>();
-                        float x = (*result)[3].Get<float>();
-                        float y = (*result)[4].Get<float>();
-                        float z = (*result)[5].Get<float>();
-                        int64 dur = (*result)[6].Get<int64>();
-
-                        if (dur <= 0)
+                        if (hotspot.expireTime <= now)
                             continue;
 
-                        std::string zoneName = "Unknown Zone";
-                        if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
-                        {
-                            if (area->area_name[0] && area->area_name[0][0])
-                                zoneName = area->area_name[0];
-                        }
-
-                        DCAddon::JsonValue hotspot;
-                        hotspot.SetObject();
-                        hotspot.Set("id", static_cast<int32>(id));
-                        hotspot.Set("mapId", static_cast<int32>(mapId));
-                        hotspot.Set("zoneId", static_cast<int32>(zoneId));
-                        hotspot.Set("zoneName", zoneName);
-                        hotspot.Set("x", x);
-                        hotspot.Set("y", y);
-                        hotspot.Set("z", z);
-                        hotspot.Set("timeRemaining", static_cast<int32>(dur));
-                        hotspot.Set("bonusPercent", static_cast<int32>(xpBonus));
-                        hotspot.Set("name", "Hotspot");
-                        arr.Push(hotspot);
-                    } while (result->NextRow());
+                        arr.Push(DCHotspotJson::Verbose(hotspot, xpBonus, now));
+                    }
 
                     return arr;
                 };

@@ -28,6 +28,7 @@ set(SCRIPTS_DC_Hotspot
     Hotspot/ac_hotspots.cpp
     Hotspot/HotspotDefines.cpp
     Hotspot/HotspotGrid.cpp
+    Hotspot/HotspotJson.cpp
     Hotspot/HotspotMgr.cpp
     Hotspot/HotspotScripts.cpp
     Commands/cs_dc_hotspot.cpp
@@ -277,6 +278,7 @@ set(SCRIPTS_DC_FirstStart
     Progression/Accountwide/dc_accountwide_reputation.cpp
     Progression/Accountwide/dc_accountwide_friendlist.cpp
     Progression/Accountwide/dc_accountwide_achievements.cpp
+    Progression/Accountwide/dc_accountwide_maintenance.cpp
 )
 
 # GOMove System
@@ -305,6 +307,7 @@ set(SCRIPTS_DC_Achievements
 
 # DC Commands - Unified command hub
 set(SCRIPTS_DC_Commands
+    Commands/cs_dc_accountwide.cpp
     Commands/cs_dc_addons.cpp
     Commands/cs_dc_challenge_modes.cpp
     Commands/cs_dc_dungeonquests.cpp

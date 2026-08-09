@@ -25,16 +25,20 @@ public:
     void OnStartup() override
     {
         sHotspotMgr->LoadConfig();
+
+        // Load unconditionally: if Hotspots start disabled and are switched on
+        // later with .hotspot reload, the id counter and spawn pool must
+        // already reflect what is in the tables. Nothing acts on the loaded
+        // data while disabled - OnUpdate and the player hooks all bail out.
+        sHotspotMgr->LoadFromDB();
+        sHotspotMgr->LoadSpawnPointsFromDB();
+
         if (sHotspotsConfig.enabled)
-        {
-            sHotspotMgr->LoadFromDB();
-            sHotspotMgr->LoadSpawnPointsFromDB();
             sHotspotMgr->RecreateHotspotVisualMarkers();
 
-            // Population is maintained lazily by OnUpdate: CleanupExpiredHotspots
-            // refills toward minActive (one per cycle) once the spawn pool has
-            // eligible points, so startup never bursts disk loads.
-        }
+        // Population is maintained lazily by OnUpdate: CleanupExpiredHotspots
+        // refills toward minActive (one per cycle) once the spawn pool has
+        // eligible points, so startup never bursts disk loads.
     }
 
     void OnUpdate(uint32 /*diff*/) override
@@ -94,6 +98,13 @@ public:
         if (sHotspotsConfig.enabled) sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
 
+    // Per-player maps are keyed by ObjectGuid and are otherwise only pruned
+    // when the hotspot they reference expires; drop them at logout so they do
+    // not accumulate across a long uptime.
+    void OnPlayerLogout(Player* player) override
+    {
+        sHotspotMgr->OnPlayerLogout(player);
+    }
 };
 
 class HotspotsPlayerGainXP : public PlayerScript

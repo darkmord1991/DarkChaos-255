@@ -316,6 +316,66 @@ public:
     CriteriaProgress* GetCriteriaProgress(AchievementCriteriaEntry const* entry);
     CompletedAchievementMap const& GetCompletedAchievements();
 
+    /**
+     * DarkChaos: overrides the stored completion date of an already completed
+     * achievement. The account-wide sync uses it so a replayed achievement
+     * keeps the date the account first earned it instead of showing the day
+     * the alt happened to log in.
+     */
+    void SetCompletedAchievementDate(uint32 achievementId, time_t date);
+
+private:
+    // DarkChaos: see ReplayScope below. Declared ahead of the nested class so
+    // both the flags and the member are visible to it.
+    enum ReplayFlags : uint8
+    {
+        REPLAY_NONE       = 0x0,
+        REPLAY_SILENT     = 0x1, // skip SendAchievementEarned
+        REPLAY_NO_REWARDS = 0x2  // skip the reward mail/item
+    };
+
+    uint8 _replayFlags = REPLAY_NONE;
+
+public:
+    /**
+     * DarkChaos: replay mode for account-wide achievement sync.
+     *
+     * The sync replays achievements another character of the same account
+     * already earned onto an alt. Those completions must not re-broadcast to
+     * guild/area and must not re-send the reward mail + item, or every alt
+     * would mint another copy of every achievement reward. Titles are still
+     * granted, since they are per-character and idempotent.
+     *
+     * Scoped so the flag can never leak past the sync, even on an early
+     * return from a nested completion.
+     */
+    class ReplayScope
+    {
+    public:
+        explicit ReplayScope(AchievementMgr* mgr, bool suppressRewards)
+            : _mgr(mgr), _previous(mgr ? mgr->_replayFlags : uint8(REPLAY_NONE))
+        {
+            if (_mgr)
+            {
+                _mgr->_replayFlags = static_cast<uint8>(
+                    REPLAY_SILENT | (suppressRewards ? REPLAY_NO_REWARDS : 0));
+            }
+        }
+
+        ~ReplayScope()
+        {
+            if (_mgr)
+                _mgr->_replayFlags = _previous;
+        }
+
+        ReplayScope(ReplayScope const&) = delete;
+        ReplayScope& operator=(ReplayScope const&) = delete;
+
+    private:
+        AchievementMgr* _mgr;
+        uint8 _previous;
+    };
+
 private:
     enum ProgressType { PROGRESS_SET, PROGRESS_ACCUMULATE, PROGRESS_HIGHEST, PROGRESS_RESET };
     void SendAchievementEarned(AchievementEntry const* achievement) const;

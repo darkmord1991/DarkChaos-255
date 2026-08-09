@@ -4,7 +4,6 @@
 #include "HotspotGrid.h"
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 
 // Pre-validated spawn location. Terrain/zone eligibility is static, so once a
 // point is discovered it can be reused indefinitely without probing cold
@@ -19,9 +18,10 @@ struct HotspotSpawnPoint
     float z = 0.0f;
 };
 
-// World-space bounding box of an eligible zone (from WorldMapArea data).
-// Discovery samples inside these instead of blind map-wide points, which
-// raises the hit rate by orders of magnitude on continent maps.
+// World-space bounding box of an eligible zone, derived from the authored
+// ZONE_BANDS table in HotspotMgr.cpp. Discovery samples inside these instead
+// of blind map-wide points, which raises the hit rate by orders of magnitude
+// on continent maps.
 struct HotspotZoneSampleBox
 {
     uint32 zoneId = 0;
@@ -40,22 +40,24 @@ private:
 
     HotspotGrid _grid;
     uint32 _nextHotspotId;
-    std::unordered_map<uint32, std::array<float, 4>> _mapBounds;
+    bool _loaded = false;
     // Pre-validated spawn point pool (world-thread only; no lock needed)
     std::vector<HotspotSpawnPoint> _spawnPool;
     // Zone bounding boxes for targeted discovery; rebuilt on config (re)load
     std::vector<HotspotZoneSampleBox> _zoneSampleBoxes;
     // Per-player objectives tracking
     std::unordered_map<ObjectGuid, HotspotObjectives> _playerObjectives;
-    // Per-player one-time hotspot grants (hotspotId or dungeon grant id)
-    std::unordered_map<ObjectGuid, std::unordered_set<uint32>> _playerGrantedHotspots;
-    // Per-player tracking for XP calc
-    struct PlayerHotspotTracking
+    // Last hotspot each player was told they joined; suppresses repeat
+    // notifications when a player walks in and out of the same radius.
+    std::unordered_map<ObjectGuid, uint32> _playerNotifiedHotspot;
+    // Batched XP-bonus reporting so a kill streak does not emit one chat line
+    // per mob.
+    struct PlayerXpReport
     {
-        time_t entryTime;
-        time_t lastXPGain;
+        time_t lastReport = 0;
+        uint32 pendingBonus = 0;
     };
-    std::unordered_map<ObjectGuid, PlayerHotspotTracking> _playerTracking;
+    std::unordered_map<ObjectGuid, PlayerXpReport> _playerXpReport;
     std::mutex _playerDataLock;
 
     // Pick a currently-eligible point from the pool (dynamic capacity/spacing
@@ -63,6 +65,10 @@ private:
     bool PickSpawnPoint(HotspotSpawnPoint& out);
     void SaveSpawnPointToDB(HotspotSpawnPoint const& point);
     void BuildZoneSampleBoxes();
+    // Close a player's objective session and report the result to them.
+    void EndObjectiveSession(Player* player, ObjectGuid guid);
+    // Emit the batched "+N XP" line if one is due (or forced, e.g. on exit).
+    void FlushPendingXpReport(Player* player, ObjectGuid guid, bool force);
     // Create markers for hotspots whose target grid has since been loaded by
     // a player; spawning itself never forces terrain off disk.
     void SpawnPendingMarkers();
@@ -93,13 +99,22 @@ public:
     Hotspot const* GetPlayerHotspot(Player* player);
     void CheckPlayerHotspotStatus(Player* player);
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim);
+    void OnPlayerLogout(Player* player);
+
+    // Resolve the hotspot-facing zone id for a world position. On the DC
+    // downport continents the terrain reports a single baked area id for the
+    // whole map (750 -> 4923, 751 -> 4924), so the level bands are recovered
+    // from the authored band table instead. Returns 0 when the map is banded
+    // and the position falls outside every band; otherwise falls back to
+    // terrainZoneId.
+    uint32 ResolveZoneAt(uint32 mapId, float x, float y, uint32 terrainZoneId) const;
+    uint32 ResolvePlayerZone(Player* player) const;
 
     // API for Commands/Scripts
     bool CanSpawnInZone(uint32 zoneId);
     uint32 GetZoneHotspotCount(uint32 zoneId);
     bool IsZoneHotspotActive(uint32 zoneId);
     void RecreateHotspotVisualMarkers();
-    uint32 GenerateNextId() { return _nextHotspotId++; }
     void ClearAll();
 
     // DB Helpers

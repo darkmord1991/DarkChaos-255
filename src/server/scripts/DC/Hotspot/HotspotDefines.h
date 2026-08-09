@@ -5,8 +5,6 @@
 #include "ObjectGuid.h"
 #include "GameTime.h"
 #include <vector>
-#include <unordered_map>
-#include <array>
 #include <string>
 
 class Player;
@@ -28,13 +26,10 @@ struct HotspotsConfig
     std::vector<uint32> enabledMaps;
     std::vector<uint32> enabledZones;
     std::vector<uint32> excludedZones;
-    // Per-map zone allow list: mapId -> list of allowed zone IDs (if present, this overrides global enabled/excluded lists)
-    std::unordered_map<uint32, std::vector<uint32>> enabledZonesPerMap;
     bool announceSpawn = true;
     bool announceExpire = true;
     bool spawnVisualMarker = false;          // Spawn an in-world GameObject marker (off by default; addon pins are the primary cue)
     uint32 markerGameObjectEntry = 179976;   // Optional world marker GO entry (only used when spawnVisualMarker=1)
-    bool sendAddonPackets = false;           // whether to send CHAT_MSG_ADDON packets (unsafe on some clients)
 
     // Hotspot Objectives system
     bool objectivesEnabled = true;           // Track and display objectives (kills, time survived)
@@ -47,14 +42,14 @@ extern HotspotsConfig sHotspotsConfig;
 
 struct Hotspot
 {
-    uint32 id;
-    uint32 mapId;
-    uint32 zoneId;
-    float x;
-    float y;
-    float z;
-    time_t spawnTime;
-    time_t expireTime;
+    uint32 id = 0;
+    uint32 mapId = 0;
+    uint32 zoneId = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    time_t spawnTime = 0;
+    time_t expireTime = 0;
     ObjectGuid gameObjectGuid;
 
     bool IsActive() const
@@ -71,7 +66,9 @@ struct HotspotObjectives
     uint32 hotspotId = 0;
     uint32 killCount = 0;
     time_t entryTime = 0;
-    bool objectiveCompleted = false;
+    // Latches so each goal is announced once per hotspot session.
+    bool killGoalReported = false;
+    bool surviveGoalReported = false;
 
     // Survival time in whole seconds since the objective session started.
     uint32 GetSurvivalSeconds() const

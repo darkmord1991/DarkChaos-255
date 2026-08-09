@@ -30,7 +30,12 @@ public:
     Hotspot const* GetById(uint32 id) const;
     Hotspot const* GetForPlayer(Player* player) const;
     size_t Count() const { return _hotspots.size(); }
+    // Snapshot copy - use when the caller mutates the grid while iterating
+    // (CleanupExpiredHotspots) or needs to sort/filter its own vector.
     std::vector<Hotspot> GetAll() const;
+    // Read-only view for the common "just iterate" case; avoids copying every
+    // hotspot on every capacity/distance check.
+    std::unordered_map<uint32, Hotspot> const& View() const { return _hotspots; }
 };
 
 #endif

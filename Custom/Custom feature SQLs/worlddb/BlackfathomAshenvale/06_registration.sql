@@ -50,23 +50,47 @@ INSERT INTO `dungeon_access_template`
 -- The arrival point is stock trigger 257's own teleport target, so it is a known-good spot
 -- inside the Blackfathom terrain that map 820 shares.
 --
--- The exit target is deliberately ~35 yards clear of the entrance trigger's 12-yard radius.
--- Land inside it and the player is teleported straight back in, forever.
+-- The arrival orientation is stock 257's own (4.53), not the 1.15 this file used to carry.
 --
--- BOTH map-750 positions are PROVISIONAL -- verify with `.gps` and fix Z if GroundZ != FloorZ.
+-- BOTH BOXES WERE RE-MEASURED IN GAME and moved in `Custom/CSV DBC/AreaTrigger.csv`; this
+-- file only supplies their teleport targets. **The DBC must be recompiled and redeployed to
+-- the client or neither trigger fires** -- the client reads AreaTrigger.dbc itself and only
+-- sends CMSG_AREATRIGGER for boxes it knows about, which is why 607004 was silent while
+-- Timbermaw's 607002 worked: 607002 had been deployed, 607004 had not.
+--
+--   607004 entrance, map 750: 4250.2705 / 748.8062 / -23.281  (was 4252.37 / 756.97 / -23.06,
+--     which came off stock trigger 257 on map 1 -- VANILLA Zoram Strand, not map 750's Cata one)
+--   607005 exit,     map 820: -176.8639 / 51.55968 / -49.6351 (was sitting on the arrival point)
+--
+-- Both now use the radius-0, 8x8x10 box shape that 607002 already proves fires in game. The
+-- old 607004 used Radius 12, and THAT is what made the pair unsafe: the exit drops the player
+-- 11.53 yd from the entrance box, inside a 12-yd sphere, so walking out would have teleported
+-- them straight back in. Against an 8-wide box (half-extent 4) the 10.48 yd Y-separation is
+-- clear. Clearances, all verified: exit landing -> entrance box 11.53 yd; entrance box ->
+-- Blackfathom Gatekeeper 18.56 yd (a trigger closer than ~15 yd fires while you walk up to
+-- the NPC, which is the bug Timbermaw's gate had); exit box -> arrival point 61.55 yd.
+-- Re-check all three if you move any of them.
 -- -------------------------------------------------------------------------------------
 DELETE FROM `areatrigger_teleport` WHERE `ID` IN (607004, 607005);
 INSERT INTO `areatrigger_teleport`
     (`ID`, `Name`, `target_map`, `target_position_x`, `target_position_y`, `target_position_z`, `target_orientation`) VALUES
-    (607004, 'Blackfathom Deeps Ashenvale (Entrance)', 820, -151.89, 106.96, -39.87, 1.15),
-    (607005, 'Blackfathom Deeps Ashenvale (Exit)', 750, 4285.0, 775.0, -20.0, 3.90);
+    (607004, 'Blackfathom Deeps Ashenvale (Entrance)', 820, -151.89, 106.96, -39.87, 4.53),
+    (607005, 'Blackfathom Deeps Ashenvale (Exit)', 750, 4246.28, 738.322, -25.9246, 1.86366);
 
 -- -------------------------------------------------------------------------------------
--- game_tele -- `.tele dcbfd`. 10640/10641 are the Timbermaw Hold pair, so this takes 10642.
+-- game_tele -- `.tele dcbfd`.
+--
+-- Id and position are the LIVE ones, added in game and read back out: id 10644, and the
+-- map-750 cave mouth rather than the dungeon interior. The id this file used to claim
+-- (10642) was never taken, and the old target (820, -151.89/106.96/-39.87) duplicated the
+-- areatrigger arrival above; as a GM shortcut the surface entrance is the more useful end.
+--
+-- DELETE covers the NAME as well as the id: a stale 10642 `dcbfd` left over from an earlier
+-- run of this file would otherwise make `.tele dcbfd` ambiguous between two rows.
 -- -------------------------------------------------------------------------------------
-DELETE FROM `game_tele` WHERE `id` = 10642;
+DELETE FROM `game_tele` WHERE `id` IN (10642, 10644) OR `name` = 'dcbfd';
 INSERT INTO `game_tele` (`id`, `position_x`, `position_y`, `position_z`, `orientation`, `map`, `name`) VALUES
-    (10642, -151.89, 106.96, -39.87, 1.15, 820, 'dcbfd');
+    (10644, 4246.28, 738.322, -25.9246, 1.86366, 750, 'dcbfd');
 
 -- -------------------------------------------------------------------------------------
 -- Report
@@ -74,4 +98,4 @@ INSERT INTO `game_tele` (`id`, `position_x`, `position_y`, `position_z`, `orient
 SELECT 'instance_template' AS `check`, CAST(COUNT(*) AS CHAR) AS result FROM `instance_template` WHERE `map` = 820
 UNION ALL SELECT 'access rows (want 3)', CAST(COUNT(*) AS CHAR) FROM `dungeon_access_template` WHERE `map_id` = 820
 UNION ALL SELECT 'areatrigger_teleport (want 2)', CAST(COUNT(*) AS CHAR) FROM `areatrigger_teleport` WHERE `ID` IN (607004, 607005)
-UNION ALL SELECT 'game_tele (want 1)', CAST(COUNT(*) AS CHAR) FROM `game_tele` WHERE `id` = 10642;
+UNION ALL SELECT 'game_tele dcbfd (want 1)', CAST(COUNT(*) AS CHAR) FROM `game_tele` WHERE `name` = 'dcbfd';

@@ -3,6 +3,10 @@
  *
  * Keeps completed achievements at the account level and synchronizes them
  * across characters on login.
+ *
+ * Replayed achievements are applied silently and without re-granting the
+ * reward mail/item (see AchievementMgr::ReplayScope), so an account earns each
+ * achievement reward exactly once no matter how many alts it has.
  */
 
 #include "AchievementMgr.h"
@@ -12,65 +16,102 @@
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "Log.h"
-#include "ObjectAccessor.h"
 #include "Player.h"
+#include "RBAC.h"
 #include "ScriptMgr.h"
-#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "StringFormat.h"
+#include "dc_accountwide_pool.h"
 
 #include <algorithm>
 #include <limits>
 #include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 namespace
 {
-    namespace Config
+    namespace ConfigKey
     {
         constexpr char const* ENABLE = "DCAchievements.Accountwide.Enable";
-        constexpr char const* SYNC_ON_LOGIN =
-            "DCAchievements.Accountwide.SyncOnLogin";
-        constexpr char const* SHARE_REALM_FIRST =
-            "DCAchievements.Accountwide.ShareRealmFirst";
-        constexpr char const* ANNOUNCE_SYNC =
-            "DCAchievements.Accountwide.AnnounceSync";
+        constexpr char const* SYNC_ON_LOGIN = "DCAchievements.Accountwide.SyncOnLogin";
+        constexpr char const* SHARE_REALM_FIRST = "DCAchievements.Accountwide.ShareRealmFirst";
+        constexpr char const* GRANT_REWARDS = "DCAchievements.Accountwide.GrantRewards";
+        constexpr char const* ANNOUNCE_SYNC = "DCAchievements.Accountwide.AnnounceSync";
         constexpr char const* DEBUG = "DCAchievements.Accountwide.Debug";
     }
 
     constexpr char const* TABLE_NAME = "dc_account_achievement_pools";
 
+    // achievementId -> completion date (unix seconds, account-earliest)
     using AchievementPool = std::unordered_map<uint32, uint32>;
 
-    std::unordered_map<uint32, AchievementPool> gAccountAchievementCache;
-    std::unordered_set<uint32> gLoadedAccounts;
-    std::unordered_set<uint32> gSyncingPlayers;
+    DCAccountWide::PoolCache<AchievementPool> gPools;
+    DCAccountWide::SyncGuardRegistry gSyncGuard;
+    DCAccountWide::EvictionTimer gEvictionTimer;
 
     bool IsEnabled()
     {
-        return sConfigMgr->GetOption<bool>(Config::ENABLE, true);
+        return sConfigMgr->GetOption<bool>(ConfigKey::ENABLE, true);
     }
 
     bool IsSyncOnLoginEnabled()
     {
-        return sConfigMgr->GetOption<bool>(Config::SYNC_ON_LOGIN, true);
+        return sConfigMgr->GetOption<bool>(ConfigKey::SYNC_ON_LOGIN, true);
     }
 
     bool IsShareRealmFirstEnabled()
     {
-        return sConfigMgr->GetOption<bool>(Config::SHARE_REALM_FIRST, false);
+        return sConfigMgr->GetOption<bool>(ConfigKey::SHARE_REALM_FIRST, false);
+    }
+
+    bool IsGrantRewardsEnabled()
+    {
+        return sConfigMgr->GetOption<bool>(ConfigKey::GRANT_REWARDS, false);
     }
 
     bool IsAnnounceSyncEnabled()
     {
-        return sConfigMgr->GetOption<bool>(Config::ANNOUNCE_SYNC, false);
+        return sConfigMgr->GetOption<bool>(ConfigKey::ANNOUNCE_SYNC, false);
     }
 
     bool IsDebugEnabled()
     {
-        return sConfigMgr->GetOption<bool>(Config::DEBUG, false);
+        return sConfigMgr->GetOption<bool>(ConfigKey::DEBUG, false);
     }
 
-    bool ShouldTrackAchievement(AchievementEntry const* achievement)
+    /**
+     * Config snapshot taken once per sync.
+     *
+     * ShouldTrackAchievement() runs once per achievement per pass, and a
+     * completionist account carries well over a thousand of them; re-reading
+     * the config store inside that loop was pure overhead.
+     */
+    struct SyncSettings
+    {
+        bool shareRealmFirst = false;
+        bool grantRewards = false;
+        bool announce = false;
+        bool debug = false;
+
+        static SyncSettings Read()
+        {
+            SyncSettings settings;
+            settings.shareRealmFirst = IsShareRealmFirstEnabled();
+            settings.grantRewards = IsGrantRewardsEnabled();
+            settings.announce = IsAnnounceSyncEnabled();
+            settings.debug = IsDebugEnabled();
+            return settings;
+        }
+    };
+
+    /**
+     * Whether an achievement may be shared across the account.
+     *
+     * This predicate reads live config and live DBC state, so it must never
+     * drive a DELETE: flipping ShareRealmFirst off, or booting with a stale
+     * Achievement.dbc, would otherwise erase pooled rows permanently. Rows that
+     * fail the check are simply skipped and stay on disk until they qualify
+     * again.
+     */
+    bool ShouldTrackAchievement(AchievementEntry const* achievement, SyncSettings const& settings)
     {
         if (!achievement)
             return false;
@@ -78,10 +119,8 @@ namespace
         if (achievement->flags & ACHIEVEMENT_FLAG_COUNTER)
             return false;
 
-        if (!IsShareRealmFirstEnabled() &&
-            (achievement->flags &
-             (ACHIEVEMENT_FLAG_REALM_FIRST_REACH |
-              ACHIEVEMENT_FLAG_REALM_FIRST_KILL)))
+        if (!settings.shareRealmFirst &&
+            (achievement->flags & (ACHIEVEMENT_FLAG_REALM_FIRST_REACH | ACHIEVEMENT_FLAG_REALM_FIRST_KILL)))
         {
             return false;
         }
@@ -94,200 +133,130 @@ namespace
         if (date <= 0)
             return static_cast<uint32>(GameTime::GetGameTime().count());
 
-        time_t const maxDate =
-            static_cast<time_t>(std::numeric_limits<uint32>::max());
-
+        time_t const maxDate = static_cast<time_t>(std::numeric_limits<uint32>::max());
         if (date > maxDate)
             return std::numeric_limits<uint32>::max();
 
         return static_cast<uint32>(date);
     }
 
-    void SavePoolAchievement(uint32 accountId, uint32 achievementId, uint32 date)
+    DCAccountWide::BatchUpsert MakeUpsert()
     {
-        CharacterDatabase.Execute(
-            "INSERT INTO `{}` (`account_id`, `achievement_id`, `completed_at`) "
-            "VALUES ({}, {}, {}) "
-            "ON DUPLICATE KEY UPDATE "
+        return DCAccountWide::BatchUpsert(
+            TABLE_NAME,
+            "`account_id`, `achievement_id`, `completed_at`",
             "`completed_at` = IF(`completed_at` = 0, VALUES(`completed_at`), "
-            "LEAST(`completed_at`, VALUES(`completed_at`))), "
-            "`updated_at` = NOW()",
-            TABLE_NAME,
-            accountId,
-            achievementId,
-            date);
+            "LEAST(`completed_at`, VALUES(`completed_at`))), `updated_at` = NOW()");
     }
 
-    void DeletePoolAchievement(uint32 accountId, uint32 achievementId)
+    void ParsePool(AchievementPool& pool, QueryResult const& result)
     {
-        CharacterDatabase.Execute(
-            "DELETE FROM `{}` WHERE `account_id` = {} "
-            "AND `achievement_id` = {}",
-            TABLE_NAME,
-            accountId,
-            achievementId);
-    }
-
-    AchievementPool& GetAccountPool(uint32 accountId)
-    {
-        AchievementPool& pool = gAccountAchievementCache[accountId];
-
-        if (gLoadedAccounts.find(accountId) != gLoadedAccounts.end())
-            return pool;
-
-        gLoadedAccounts.insert(accountId);
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT `achievement_id`, `completed_at` FROM `{}` "
-            "WHERE `account_id` = {}",
-            TABLE_NAME,
-            accountId);
-
         if (!result)
-            return pool;
+            return;
 
         do
         {
             Field* fields = result->Fetch();
-            uint32 achievementId = fields[0].Get<uint32>();
-            uint32 date = fields[1].Get<uint32>();
+            pool[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
+        } while (result->NextRow());
+    }
 
-            AchievementEntry const* achievement =
-                sAchievementStore.LookupEntry(achievementId);
+    std::string SelectSql(uint32 accountId)
+    {
+        return Acore::StringFormat(
+            "SELECT `achievement_id`, `completed_at` FROM `{}` WHERE `account_id` = {}",
+            TABLE_NAME, accountId);
+    }
 
-            if (!ShouldTrackAchievement(achievement))
+    /// Pools everything this character has completed. Never touches the character.
+    void MergeCharacterIntoPool(Player* player, uint32 accountId, SyncSettings const& settings,
+                                uint32& mergedCount)
+    {
+        AchievementMgr* achievementMgr = player ? player->GetAchievementMgr() : nullptr;
+        if (!achievementMgr)
+            return;
+
+        AchievementPool& pool = gPools.Get(accountId);
+        DCAccountWide::BatchUpsert upsert = MakeUpsert();
+
+        for (auto const& [achievementIdRaw, completedData] : achievementMgr->GetCompletedAchievements())
+        {
+            uint32 achievementId = static_cast<uint32>(achievementIdRaw);
+
+            if (!ShouldTrackAchievement(sAchievementStore.LookupEntry(achievementId), settings))
+                continue;
+
+            uint32 date = NormalizeCompletionDate(completedData.date);
+
+            auto poolIt = pool.find(achievementId);
+            if (poolIt != pool.end() && poolIt->second != 0 && poolIt->second <= date)
                 continue;
 
             pool[achievementId] = date;
-        } while (result->NextRow());
+            upsert.AddRow(Acore::StringFormat("({}, {}, {})", accountId, achievementId, date));
+            ++mergedCount;
 
-        return pool;
-    }
-
-    void ClearAccountCache(uint32 accountId)
-    {
-        gAccountAchievementCache.erase(accountId);
-        gLoadedAccounts.erase(accountId);
-    }
-
-    class ScopedSyncGuard
-    {
-    public:
-        explicit ScopedSyncGuard(Player* player)
-        {
-            if (player)
-                _guid = player->GetGUID().GetCounter();
-
-            if (_guid != 0)
-                gSyncingPlayers.insert(_guid);
+            if (settings.debug)
+            {
+                LOG_INFO("module.dc",
+                    "[DCAchievements] Pooled achievement {} for account {} (date={})",
+                    achievementId, accountId, date);
+            }
         }
 
-        ~ScopedSyncGuard()
-        {
-            if (_guid != 0)
-                gSyncingPlayers.erase(_guid);
-        }
-
-    private:
-        uint32 _guid = 0;
-    };
-
-    bool IsSyncInProgress(Player* player)
-    {
-        if (!player)
-            return false;
-
-        return gSyncingPlayers.find(player->GetGUID().GetCounter()) !=
-            gSyncingPlayers.end();
+        upsert.Execute();
     }
 
-    void MergeCharacterIntoPool(
-        Player* player,
-        uint32 accountId,
-        bool debug,
-        uint32& mergedCount)
+    /**
+     * Replays the account pool onto this character.
+     *
+     * Skipped entirely for GMs and for accounts that cannot earn achievements:
+     * AchievementMgr::CompletedAchievement() bails out on those with both a
+     * LOG_INFO and a chat message per call, so a GM with a large pool would eat
+     * one of each per pooled achievement on every login.
+     */
+    void ApplyPoolToCharacter(Player* player, uint32 accountId, SyncSettings const& settings,
+                              uint32& appliedCount, uint32& skippedCount)
     {
-        if (!player)
+        if (!player || !player->GetSession())
+            return;
+
+        AchievementPool& pool = gPools.Get(accountId);
+        if (pool.empty())
             return;
 
         AchievementMgr* achievementMgr = player->GetAchievementMgr();
         if (!achievementMgr)
             return;
 
-        AchievementPool& pool = GetAccountPool(accountId);
-        CompletedAchievementMap const& completed =
-            achievementMgr->GetCompletedAchievements();
-
-        for (auto const& [achievementIdRaw, completedData] : completed)
+        if (player->IsGameMaster() ||
+            player->GetSession()->HasPermission(rbac::RBAC_PERM_CANNOT_EARN_ACHIEVEMENTS))
         {
-            uint32 achievementId = static_cast<uint32>(achievementIdRaw);
+            skippedCount = static_cast<uint32>(pool.size());
 
-            AchievementEntry const* achievement =
-                sAchievementStore.LookupEntry(achievementId);
-
-            if (!ShouldTrackAchievement(achievement))
-                continue;
-
-            uint32 date = NormalizeCompletionDate(completedData.date);
-
-            auto poolIt = pool.find(achievementId);
-            if (poolIt == pool.end())
+            if (settings.debug)
             {
-                pool[achievementId] = date;
-                SavePoolAchievement(accountId, achievementId, date);
-                ++mergedCount;
-                continue;
+                LOG_INFO("module.dc",
+                    "[DCAchievements] Skipped applying {} pooled achievements to {} "
+                    "(GM mode or achievements disabled for this account)",
+                    skippedCount, player->GetName());
             }
 
-            uint32 existingDate = poolIt->second;
-            if (existingDate != 0 && existingDate <= date)
-                continue;
-
-            poolIt->second = date;
-            SavePoolAchievement(accountId, achievementId, date);
-            ++mergedCount;
-
-            if (debug)
-            {
-                LOG_INFO(
-                    "module.dc",
-                    "[DCAchievements] Updated pooled achievement {} "
-                    "for account {} (date={})",
-                    achievementId,
-                    accountId,
-                    date);
-            }
+            return;
         }
-    }
 
-    void ApplyPoolToCharacter(
-        Player* player,
-        uint32 accountId,
-        bool debug,
-        uint32& appliedCount,
-        uint32& prunedCount)
-    {
-        if (!player)
-            return;
+        DCAccountWide::SyncGuardRegistry::Scope guard(gSyncGuard, player);
 
-        AchievementPool& pool = GetAccountPool(accountId);
-        if (pool.empty())
-            return;
-
-        ScopedSyncGuard guard(player);
-
-        std::vector<uint32> pruneIds;
+        // Silent + no reward mail unless the realm explicitly opts back in.
+        AchievementMgr::ReplayScope replay(achievementMgr, !settings.grantRewards);
 
         for (auto const& [achievementId, date] : pool)
         {
-            (void)date;
+            AchievementEntry const* achievement = sAchievementStore.LookupEntry(achievementId);
 
-            AchievementEntry const* achievement =
-                sAchievementStore.LookupEntry(achievementId);
-
-            if (!ShouldTrackAchievement(achievement))
+            if (!ShouldTrackAchievement(achievement, settings))
             {
-                pruneIds.push_back(achievementId);
+                ++skippedCount;
                 continue;
             }
 
@@ -295,148 +264,96 @@ namespace
                 continue;
 
             player->CompletedAchievement(achievement);
+
+            // Another script may veto the completion via
+            // OnPlayerBeforeAchievementComplete; don't count or date those.
+            if (!player->HasAchieved(achievementId))
+            {
+                ++skippedCount;
+                continue;
+            }
+
+            // Carry the account's original completion date onto the alt.
+            if (date != 0)
+                achievementMgr->SetCompletedAchievementDate(achievementId, static_cast<time_t>(date));
+
             ++appliedCount;
 
-            if (debug)
+            if (settings.debug)
             {
-                LOG_INFO(
-                    "module.dc",
+                LOG_INFO("module.dc",
                     "[DCAchievements] Applied pooled achievement {} to {}",
-                    achievementId,
-                    player->GetName());
+                    achievementId, player->GetName());
             }
         }
+    }
 
-        for (uint32 achievementId : pruneIds)
+    void RunLoginSync(Player* player)
+    {
+        uint32 accountId = DCAccountWide::AccountIdOf(player);
+        if (!accountId)
+            return;
+
+        SyncSettings settings = SyncSettings::Read();
+
+        uint32 mergedCount = 0;
+        uint32 appliedCount = 0;
+        uint32 skippedCount = 0;
+
+        MergeCharacterIntoPool(player, accountId, settings, mergedCount);
+        ApplyPoolToCharacter(player, accountId, settings, appliedCount, skippedCount);
+
+        // Applying can cascade into meta achievements the pool does not know
+        // about yet; those completions were swallowed by the re-entrancy guard.
+        if (appliedCount > 0)
+            MergeCharacterIntoPool(player, accountId, settings, mergedCount);
+
+        if (settings.announce && (mergedCount > 0 || appliedCount > 0))
         {
-            pool.erase(achievementId);
-            DeletePoolAchievement(accountId, achievementId);
-            ++prunedCount;
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cff00ccff[Achievements]|r Account-wide sync: pooled {}, applied {}.",
+                mergedCount, appliedCount);
         }
     }
 
     class DCAccountWideAchievementsPlayerScript : public PlayerScript
     {
     public:
-        DCAccountWideAchievementsPlayerScript()
-            : PlayerScript("DCAccountWideAchievementsPlayerScript")
-        {
-        }
-
-        static void RunLoginSync(Player* player)
-        {
-            uint32 accountId = player->GetSession()->GetAccountId();
-            bool debug = IsDebugEnabled();
-
-            uint32 mergedCount = 0;
-            uint32 appliedCount = 0;
-            uint32 prunedCount = 0;
-
-            MergeCharacterIntoPool(player, accountId, debug, mergedCount);
-            ApplyPoolToCharacter(
-                player,
-                accountId,
-                debug,
-                appliedCount,
-                prunedCount);
-
-            if (appliedCount > 0)
-                MergeCharacterIntoPool(player, accountId, debug, mergedCount);
-
-            if (IsAnnounceSyncEnabled() &&
-                (mergedCount > 0 || appliedCount > 0 || prunedCount > 0))
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ccff[Achievements]|r Account-wide sync: "
-                    "pooled {}, applied {}, pruned {}.",
-                    mergedCount,
-                    appliedCount,
-                    prunedCount);
-            }
-        }
+        DCAccountWideAchievementsPlayerScript() : PlayerScript("DCAccountWideAchievementsPlayerScript") { }
 
         void OnPlayerLogin(Player* player) override
         {
-            if (!IsEnabled() || !IsSyncOnLoginEnabled() || !player ||
-                !player->GetSession())
-            {
+            if (!IsEnabled() || !IsSyncOnLoginEnabled() || !DCAccountWide::AccountIdOf(player))
                 return;
-            }
 
-            // Pool table is created once at startup/config load (WorldScript
-            // below). The pool itself is loaded asynchronously so login never
-            // blocks the world thread; a cached pool is used directly.
             uint32 accountId = player->GetSession()->GetAccountId();
-            if (gLoadedAccounts.find(accountId) != gLoadedAccounts.end())
-            {
-                RunLoginSync(player);
-                return;
-            }
 
-            ObjectGuid const playerGuid = player->GetGUID();
-            DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
-                "SELECT `achievement_id`, `completed_at` FROM `{}` "
-                "WHERE `account_id` = {}",
-                TABLE_NAME,
-                accountId))
-                .WithCallback([playerGuid, accountId](QueryResult result)
-            {
-                Player* player = ObjectAccessor::FindPlayer(playerGuid);
-                if (!player || !player->GetSession())
-                    return;
-
-                // Keep a pool that appeared while the query was in flight (our
-                // snapshot may be stale); otherwise populate from the result.
-                if (gLoadedAccounts.find(accountId) == gLoadedAccounts.end())
-                {
-                    gLoadedAccounts.insert(accountId);
-                    AchievementPool& pool = gAccountAchievementCache[accountId];
-                    pool.clear();
-
-                    if (result)
-                    {
-                        do
-                        {
-                            Field* fields = result->Fetch();
-                            uint32 achievementId = fields[0].Get<uint32>();
-                            uint32 date = fields[1].Get<uint32>();
-
-                            AchievementEntry const* achievement =
-                                sAchievementStore.LookupEntry(achievementId);
-
-                            if (!ShouldTrackAchievement(achievement))
-                                continue;
-
-                            pool[achievementId] = date;
-                        } while (result->NextRow());
-                    }
-                }
-
-                RunLoginSync(player);
-            }));
+            // Loaded asynchronously so login never blocks the world thread.
+            gPools.EnsureLoaded(player, SelectSql(accountId), ParsePool, RunLoginSync);
         }
 
-        void OnPlayerAchievementComplete(
-            Player* player,
-            AchievementEntry const* achievement) override
+        void OnPlayerAchievementComplete(Player* player, AchievementEntry const* achievement) override
         {
-            if (!IsEnabled() || !player || !player->GetSession() ||
-                !achievement)
-            {
-                return;
-            }
-
-            if (IsSyncInProgress(player))
+            if (!IsEnabled() || !achievement || gSyncGuard.IsSyncing(player))
                 return;
 
-            if (!ShouldTrackAchievement(achievement))
+            uint32 accountId = DCAccountWide::AccountIdOf(player);
+            if (!accountId)
                 return;
 
-            uint32 accountId = player->GetSession()->GetAccountId();
-            AchievementPool& pool = GetAccountPool(accountId);
+            // Never issue a blocking load from a gameplay hook. If the pool is
+            // not cached (SyncOnLogin off, or the login load is still in
+            // flight) the achievement is picked up by the next merge pass.
+            if (!gPools.IsLoaded(accountId))
+                return;
 
-            uint32 nowDate =
-                static_cast<uint32>(GameTime::GetGameTime().count());
+            SyncSettings settings = SyncSettings::Read();
+            if (!ShouldTrackAchievement(achievement, settings))
+                return;
+
+            AchievementPool& pool = gPools.Get(accountId);
+
+            uint32 nowDate = static_cast<uint32>(GameTime::GetGameTime().count());
             uint32 poolDate = nowDate;
 
             auto poolIt = pool.find(achievement->ID);
@@ -447,50 +364,64 @@ namespace
                 return;
 
             pool[achievement->ID] = poolDate;
-            SavePoolAchievement(accountId, achievement->ID, poolDate);
 
-            if (IsDebugEnabled())
+            DCAccountWide::BatchUpsert upsert = MakeUpsert();
+            upsert.AddRow(Acore::StringFormat("({}, {}, {})", accountId, achievement->ID, poolDate));
+            upsert.Execute();
+
+            if (settings.debug)
             {
-                LOG_INFO(
-                    "module.dc",
-                    "[DCAchievements] Stored pooled achievement {} "
-                    "for account {}",
-                    achievement->ID,
-                    accountId);
+                LOG_INFO("module.dc", "[DCAchievements] Stored pooled achievement {} for account {}",
+                    achievement->ID, accountId);
             }
         }
 
         void OnPlayerLogout(Player* player) override
         {
-            if (!player || !player->GetSession())
-                return;
-
-            ClearAccountCache(player->GetSession()->GetAccountId());
+            if (uint32 accountId = DCAccountWide::AccountIdOf(player))
+                gPools.Clear(accountId);
         }
     };
 
     class DCAccountWideAchievementsWorldScript : public WorldScript
     {
     public:
-        DCAccountWideAchievementsWorldScript()
-            : WorldScript("DCAccountWideAchievementsWorldScript")
-        {
-        }
+        DCAccountWideAchievementsWorldScript() : WorldScript("DCAccountWideAchievementsWorldScript") { }
 
         void OnAfterConfigLoad(bool /*reload*/) override
         {
             if (!IsEnabled())
                 return;
 
-            LOG_INFO(
-                "module.dc",
+            LOG_INFO("module.dc",
                 "[DCAchievements] Account-wide achievements enabled "
-                "(SyncOnLogin={}, ShareRealmFirst={})",
+                "(SyncOnLogin={}, ShareRealmFirst={}, GrantRewards={})",
                 IsSyncOnLoginEnabled() ? 1 : 0,
-                IsShareRealmFirstEnabled() ? 1 : 0);
+                IsShareRealmFirstEnabled() ? 1 : 0,
+                IsGrantRewardsEnabled() ? 1 : 0);
         }
 
+        void OnUpdate(uint32 diff) override
+        {
+            // WorldSession::LogoutPlayer() skips OnPlayerLogout when redirecting,
+            // so logout-driven eviction alone leaks cached pools.
+            if (gEvictionTimer.Tick(diff))
+                gPools.EvictOfflineAccounts();
+        }
     };
+}
+
+namespace DCAccountWideAchievements
+{
+    void ClearCache(uint32 accountId) { gPools.Clear(accountId); }
+    std::size_t CachedAccounts() { return gPools.CachedAccounts(); }
+    bool IsAccountCached(uint32 accountId) { return gPools.IsLoaded(accountId); }
+    std::size_t PoolSize(uint32 accountId)
+    {
+        return gPools.IsLoaded(accountId) ? gPools.Get(accountId).size() : 0;
+    }
+    void ForceSync(Player* player) { RunLoginSync(player); }
+    char const* TableName() { return TABLE_NAME; }
 }
 
 void AddSC_dc_accountwide_achievements()

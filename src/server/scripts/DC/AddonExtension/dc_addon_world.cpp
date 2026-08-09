@@ -29,6 +29,7 @@
 #include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"
 #include "../Hotspot/HotspotMgr.h"
+#include "../Hotspot/HotspotJson.h"
 #include "../RareSpawns/dc_rare_spawns.h"
 
 #include <ctime>
@@ -126,32 +127,12 @@ namespace World
         uint32 xpBonus = GetHotspotXPBonusPercentage();
         time_t now = GameTime::GetGameTime().count();
 
-        for (::Hotspot const& hotspot : sHotspotMgr->GetGrid().GetAll())
+        for (auto const& [hotspotId, hotspot] : sHotspotMgr->GetGrid().View())
         {
-            int64 dur = static_cast<int64>(hotspot.expireTime - now);
-            if (dur <= 0)
+            if (hotspot.expireTime <= now)
                 continue;
 
-            // Zone name via DBC
-            std::string zoneName = "Unknown Zone";
-            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
-            {
-                if (area->area_name[0] && area->area_name[0][0])
-                    zoneName = area->area_name[0];
-            }
-
-            JsonValue h; h.SetObject();
-            h.Set("id", JsonValue(hotspot.id));
-            h.Set("mapId", JsonValue(hotspot.mapId));
-            h.Set("zoneId", JsonValue(hotspot.zoneId));
-            h.Set("zoneName", JsonValue(zoneName));
-            h.Set("x", JsonValue(hotspot.x));
-            h.Set("y", JsonValue(hotspot.y));
-            h.Set("z", JsonValue(hotspot.z));
-            h.Set("timeRemaining", JsonValue(static_cast<uint32>(dur)));
-            h.Set("bonusPercent", JsonValue(xpBonus));
-            h.Set("name", JsonValue("Hotspot"));
-            arr.Push(h);
+            arr.Push(DCHotspotJson::Verbose(hotspot, xpBonus, now));
         }
 
         return arr;

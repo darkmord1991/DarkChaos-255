@@ -20,29 +20,18 @@
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "../Hotspot/HotspotMgr.h"
+#include "../Hotspot/HotspotJson.h"
 #include <algorithm>
 
-// External functions from ac_hotspots.cpp
+// Defined in HotspotMgr.cpp.
 extern uint32 GetHotspotXPBonusPercentage();
-
-// Helper to get zone name from DBC (like .gps command does)
-static std::string GetZoneNameFromDBC(uint32 zoneId)
-{
-    if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(zoneId))
-    {
-        // area_name[0] is the default English name
-        if (area->area_name[0] && area->area_name[0][0])
-            return area->area_name[0];
-    }
-    return "Unknown Zone";
-}
 
 namespace DCAddon
 {
 namespace Hotspot
 {
     // Module identifier
-    constexpr const char* MODULE_HOTSPOT = Module::HOTSPOT;
+    constexpr char const* MODULE_HOTSPOT = Module::HOTSPOT;
 
     // =======================================================================
     // Native transport bridge (CMSG_REQUEST_HOTSPOT / SMSG_HOTSPOT). Falls back
@@ -99,7 +88,7 @@ namespace Hotspot
         msg.Send(player);
     }
 
-    static uint32 ReadHotspotId(const ParsedMessage& msg)
+    static uint32 ReadHotspotId(ParsedMessage const& msg)
     {
         if (IsJsonMessage(msg))
         {
@@ -115,24 +104,6 @@ namespace Hotspot
         }
 
         return msg.GetUInt32(0);
-    }
-
-    static JsonValue BuildHotspotObject(uint32 id, uint32 mapId, uint32 zoneId, std::string const& zoneName,
-        float x, float y, float z, uint32 timeRemaining, uint32 bonusPercent)
-    {
-        // Use short key names to reduce payload size (saves ~100-150 bytes per hotspot)
-        // Client maps: i=id, m=mapId, z=zoneId, n=zoneName, x/y/h=coords, t=timeRemaining, b=bonusPercent
-        JsonValue h; h.SetObject();
-        h.Set("i", JsonValue(id));
-        h.Set("m", JsonValue(mapId));
-        h.Set("z", JsonValue(zoneId));
-        h.Set("n", JsonValue(zoneName));
-        h.Set("x", JsonValue(x));
-        h.Set("y", JsonValue(y));
-        h.Set("h", JsonValue(z));  // 'h' for height (z was taken by zoneId)
-        h.Set("t", JsonValue(timeRemaining));
-        h.Set("b", JsonValue(bonusPercent));
-        return h;
     }
 
     // Active hotspots sorted by id, expired entries dropped. (::Hotspot is the
@@ -173,7 +144,7 @@ namespace Hotspot
 
     // Handler: Get list of active hotspots (served from the in-memory grid;
     // no world-thread DB roundtrip).
-    static void HandleGetList(Player* player, const ParsedMessage& msg)
+    static void HandleGetList(Player* player, ParsedMessage const& msg)
     {
         std::vector<::Hotspot> active = GetActiveHotspotsSorted();
         uint32 version = ComputeHotspotListVersion(active);
@@ -201,12 +172,7 @@ namespace Hotspot
 
         JsonValue hotspots; hotspots.SetArray();
         for (::Hotspot const& hotspot : active)
-        {
-            std::string zoneName = GetZoneNameFromDBC(hotspot.zoneId);
-            hotspots.Push(BuildHotspotObject(hotspot.id, hotspot.mapId,
-                hotspot.zoneId, zoneName, hotspot.x, hotspot.y, hotspot.z,
-                static_cast<uint32>(hotspot.expireTime - now), xpBonus));
-        }
+            hotspots.Push(DCHotspotJson::Compact(hotspot, xpBonus, now));
 
         SendHotspotMessage(player,
             JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_LIST)
@@ -215,7 +181,7 @@ namespace Hotspot
     }
 
     // Handler: Get specific hotspot info
-    static void HandleGetInfo(Player* player, const ParsedMessage& msg)
+    static void HandleGetInfo(Player* player, ParsedMessage const& msg)
     {
         uint32 hotspotId = ReadHotspotId(msg);
         if (!hotspotId)
@@ -238,14 +204,7 @@ namespace Hotspot
             return;
         }
 
-        // Get XP bonus from config
-        uint32 xpBonus = GetHotspotXPBonusPercentage();
-
-        std::string zoneName = GetZoneNameFromDBC(hotspot->zoneId);
-
-        JsonValue hs = BuildHotspotObject(hotspotId, hotspot->mapId,
-            hotspot->zoneId, zoneName, hotspot->x, hotspot->y, hotspot->z,
-            static_cast<uint32>(hotspot->expireTime - now), xpBonus);
+        JsonValue hs = DCHotspotJson::Compact(*hotspot, GetHotspotXPBonusPercentage(), now);
 
         JsonMessage reply(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO);
         reply.Set("found", true);
@@ -256,7 +215,7 @@ namespace Hotspot
     }
 
     // Handler: Teleport to hotspot (GM only or with item)
-    static void HandleTeleport(Player* player, const ParsedMessage& msg)
+    static void HandleTeleport(Player* player, ParsedMessage const& msg)
     {
         uint32 hotspotId = ReadHotspotId(msg);
         if (!hotspotId)
@@ -268,8 +227,10 @@ namespace Hotspot
             return;
         }
 
-        // Check if player has permission (GM level 1+ or special item)
-        bool canTeleport = player->GetSession()->GetSecurity() >= SEC_MODERATOR;
+        // Must match the ".hotspot tp" chat command, which is SEC_GAMEMASTER.
+        // This path used to sit one rank lower (SEC_MODERATOR), so a moderator
+        // could do over the addon protocol what the command denied them.
+        bool canTeleport = player->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
 
         // Could also check for teleport item here
         // uint32 teleportItemId = sConfigMgr->GetOption<uint32>("Hotspot.TeleportItemId", 0);

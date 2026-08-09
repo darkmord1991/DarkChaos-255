@@ -191,6 +191,7 @@ void AddSC_dc_firststart();                   // Progression/FirstStart/dc_first
 void AddSC_dc_accountwide_reputation();       // Progression/Accountwide/dc_accountwide_reputation.cpp
 void AddSC_dc_accountwide_friendlist();       // Progression/Accountwide/dc_accountwide_friendlist.cpp
 void AddSC_dc_accountwide_achievements();     // Progression/Accountwide/dc_accountwide_achievements.cpp
+void AddSC_dc_accountwide_maintenance();      // Progression/Accountwide/dc_accountwide_maintenance.cpp
 
 // --- Cross-system integration framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem/CrossSystemScripts.cpp
@@ -198,6 +199,7 @@ void AddSC_dc_teleporter();                   // Teleporters/dc_teleporter.cpp
 void AddSC_dc_fake_players();                 // FakePlayers/dc_fake_players.cpp
 
 // --- DC commands (unified command hub) ---
+void AddSC_dc_accountwide_commandscript();    // Commands/cs_dc_accountwide.cpp
 void AddSC_dc_addons_commandscript();         // Commands/cs_dc_addons.cpp
 void AddSC_dc_dungeonquests_commandscript();  // Commands/cs_dc_dungeonquests.cpp
 void AddSC_dc_hinterland_bg_commandscript();  // Commands/cs_dc_hinterland_bg.cpp
@@ -462,6 +464,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_accountwide_reputation);
     DC_LOAD(AddSC_dc_accountwide_friendlist);
     DC_LOAD(AddSC_dc_accountwide_achievements);
+    DC_LOAD(AddSC_dc_accountwide_maintenance);
 
     LogSection("GOMove System");
     DC_LOAD(AddSC_GOMove_commandscript);
@@ -484,6 +487,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_npc_universal_quest_master);
 
     LogSection("DC Commands (unified .dc command hub)");
+    DC_LOAD(AddSC_dc_accountwide_commandscript);
     DC_LOAD(AddSC_dc_addons_commandscript);
     DC_LOAD(AddSC_dc_dungeonquests_commandscript);
     DC_LOAD(AddSC_dc_hinterland_bg_commandscript);
