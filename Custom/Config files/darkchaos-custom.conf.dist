@@ -5,51 +5,64 @@
 # Master configuration file for DarkChaos-255 private server (WoW 3.3.5a)
 # Level 255 progression with custom systems
 #
-# Last Updated: May 2026
+# Last Updated: August 2026
+#
+# -----------------------------------------------------------------------------
+# SCOPE RULE
+# -----------------------------------------------------------------------------
+# This file declares ONLY keys that are read by DarkChaos custom code and that
+# are NOT already declared in worldserver.conf.dist. A key declared in both
+# files produces a "Config::LoadFile: Duplicate key name ..." warning at startup
+# once this file is merged into / loaded next to the main config, so core keys
+# (Trial.*, OutdoorPvPCaptureRate, DungeonFinder.AllowCompleted, the Appender.*
+# / Logger.* logging block, EnablePlayerSettings, ...) must stay in the main
+# config only. Every key below has been verified to reach a
+# sConfigMgr->GetOption() call in src/server/scripts/DC/ (directly, through a
+# named constant, or through a documented key-name family).
 #
 # =============================================================================
 # TABLE OF CONTENTS
 # =============================================================================
 #
 # PART I - CORE SYSTEMS
-#   Section 1:  Global Server Settings
-#   Section 2:  Unified Seasonal System
-#   Section 3:  Addon Communication Protocol
-#   Section 3A: Trial Account Restrictions
+#   Section 1:   Global Server Settings
+#   Section 2:   Unified Seasonal System
+#   Section 3:   Addon Communication Protocol
 #
 # PART II - GAMEPLAY SYSTEMS
-#   Section 4:  AoE Loot System
-#   Section 5:  Hotspots System
-#   Section 6:  Item Upgrade System
-#   Section 6A: Random Enchants System
-#   Section 7:  Collection System
+#   Section 4:   AoE Loot System
+#   Section 4A:  Rare Respawn Announcer
+#   Section 5:   Hotspots System
+#   Section 6:   Item Upgrade System
+#   Section 6A:  Random Enchants System
+#   Section 7:   Collection System
 #
 # PART III - PVE CONTENT
-#   Section 8:  Mythic+ Dungeon System
-#   Section 9:  Dungeon Quest NPC System
-#   Section 10: Challenge Modes System
+#   Section 8:   Mythic+ Dungeon System
+#   Section 9:   Dungeon Quest NPC System
+#   Section 10:  Challenge Modes System
 #
 # PART IV - PVP CONTENT
-#   Section 11: Hinterland Battleground
-#   Section 12: Phased Dueling System
+#   Section 11:  Hinterland Battleground
+#   Section 12:  Phased Dueling System
 #
 # PART V - PROGRESSION SYSTEMS
-#   Section 13: Prestige System
-#   Section 14: Custom Login System
-#   Section 15: DC-Welcome Addon System
+#   Section 13:  Prestige System
+#   Section 14:  Custom Login / First Start
+#   Section 14A: Account-Wide Progression Pools
+#   Section 15:  DC-Welcome Addon System
 #
 # PART VI - SOCIAL & GROUP SYSTEMS
-#   Section 16: Group Finder System
-#   Section 17: Guild House System
-#   Section 18: Leaderboard System
+#   Section 16:  Group Finder System
+#   Section 17:  Guild House System
+#   Section 18:  Leaderboard System
 #
 # PART VII - WORLD CONTENT
-#   Section 19:  Invasion System
-#   Section 19A: World Bosses (Giant Isles)
+#   Section 19:  World Bosses (Giant Isles)
 #
 # PART VIII - TESTING & DEVELOPMENT
-#   Section 20: Fake Players System
-#   Section 21: DC System Logging
+#   Section 20:  Fake Players System
+#   Section 21:  DC System Logging
 #
 # =============================================================================
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
@@ -95,13 +108,6 @@ DC.Achievements.Enable = 1
 #        Default:     0 (Disabled)
 #
 DC.Achievements.Debug = 0
-
-#
-#    OutdoorPvPCaptureRate
-#        Description: Rate multiplier for outdoor PvP capture points
-#        Default:     1.0
-#
-OutdoorPvPCaptureRate = 1
 
 #
 #    Rate.Health.Above80
@@ -265,16 +271,24 @@ SeasonalRewards.EventBossBonus = 1.25
 
 #
 #    SeasonalRewards.MaxTokensPerWeek
-#        Description: Weekly token earning cap per character (0 = unlimited)
+#    SeasonalRewards.MaxEssencePerWeek
+#        Description: Fallback weekly cap per character (0 = unlimited).
+#
+#        PRECEDENCE - these two keys are NOT independent of the
+#        DarkChaos.Seasonal.Weekly*Cap keys above. The addon/season path
+#        (dc_addon_seasons.cpp, dc_addon_welcome.cpp) reads
+#        DarkChaos.Seasonal.WeeklyTokenCap first and only falls back to
+#        SeasonalRewards.MaxTokensPerWeek when that is 0; if both are 0 it uses
+#        a hard-coded 1000. The reward accrual path
+#        (SeasonalRewardSystem.cpp) reads ONLY SeasonalRewards.MaxTokensPerWeek,
+#        where 0 genuinely means unlimited.
+#        So with the shipped values (DarkChaos.Seasonal.WeeklyTokenCap = 1000,
+#        SeasonalRewards.MaxTokensPerWeek = 0) the addon shows a 1000 cap while
+#        accrual is uncapped. Set both to the same non-zero number if you want
+#        the cap actually enforced.
 #        Default:     0
 #
 SeasonalRewards.MaxTokensPerWeek = 0
-
-#
-#    SeasonalRewards.MaxEssencePerWeek
-#        Description: Weekly essence earning cap per character (0 = unlimited)
-#        Default:     0
-#
 SeasonalRewards.MaxEssencePerWeek = 0
 
 #
@@ -317,7 +331,7 @@ DC.AddonProtocol.Core.Enable = 1
 #        Description: Enable debug logging for all addon protocol messages
 #        Default:     0 (Disabled)
 #
-DC.AddonProtocol.Debug.Enable = 1
+DC.AddonProtocol.Debug.Enable = 0
 
 #
 #    DC.Addon.CapabilityDebug.Enable
@@ -329,7 +343,7 @@ DC.AddonProtocol.Debug.Enable = 1
 #                     .dccaps errors for row-level transition/error browsing.
 #        Default:     0 (Disabled)
 #
-DC.Addon.CapabilityDebug.Enable = 1
+DC.Addon.CapabilityDebug.Enable = 0
 
 #
 #    DC.AddonProtocol.Logging.Enable
@@ -650,6 +664,16 @@ DC.AddonProtocol.Events.Enable = 1
 #
 DC.AddonProtocol.World.Enable = 1
 
+#
+#    DC.AddonProtocol.Decoration.Enable
+#        Description: Enable the DECO module (DC-Housing catalog, placement and
+#                     edit mode). The decorator NPC gossip works independently of
+#                     this toggle. The rest of the guild-house decoration
+#                     settings live in Section 17.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Decoration.Enable = 1
+
 # -----------------------------------------------------------------------------
 # GM Tool Addon Protocols
 # -----------------------------------------------------------------------------
@@ -695,87 +719,6 @@ DC.AddonProtocol.NPCMove.MinSecurity = 1
 #        Default:     2 (SEC_ADMINISTRATOR)
 #
 DC.AddonProtocol.NPCMove.MinSecurityMove = 2
-
-
-###############################################################################
-#
-#  SECTION 3A: TRIAL ACCOUNT RESTRICTIONS
-#
-#  Limits for free-trial / starter accounts.  These mirror the defaults
-#  hard-coded in mod-trial-accounts; declare them here so the server does
-#  not print "Missing property" warnings on startup.
-#
-###############################################################################
-
-#
-#    Trial.LevelCap
-#        Description: Maximum level a trial account may reach
-#        Default:     20
-#
-Trial.LevelCap = 20
-
-#
-#    Trial.MoneyCap
-#        Description: Maximum copper a trial account may hold
-#        Default:     100000 (10 gold)
-#
-Trial.MoneyCap = 100000
-
-#
-#    Trial.TradeSkillCap
-#        Description: Maximum trade-skill rank for trial accounts
-#        Default:     100
-#
-Trial.TradeSkillCap = 100
-
-#
-#    Trial.Restriction.Chat
-#        Description: Prevent trial accounts from using general chat channels
-#        Default:     1 (Restricted)
-#
-Trial.Restriction.Chat = 1
-
-#
-#    Trial.Restriction.Mail
-#        Description: Prevent trial accounts from sending mail
-#        Default:     1 (Restricted)
-#
-Trial.Restriction.Mail = 1
-
-#
-#    Trial.Restriction.Trade
-#        Description: Prevent trial accounts from initiating trades
-#        Default:     1 (Restricted)
-#
-Trial.Restriction.Trade = 1
-
-#
-#    Trial.Restriction.Auction
-#        Description: Prevent trial accounts from using the auction house
-#        Default:     1 (Restricted)
-#
-Trial.Restriction.Auction = 1
-
-#
-#    Trial.Restriction.Party
-#        Description: Prevent trial accounts from forming or joining groups
-#        Default:     1 (Restricted)
-#
-Trial.Restriction.Party = 1
-
-#
-#    Trial.Restriction.Guild
-#        Description: Prevent trial accounts from joining guilds
-#        Default:     1 (Restricted)
-#
-Trial.Restriction.Guild = 1
-
-#
-#    Trial.Restriction.Queue
-#        Description: Prevent trial accounts from queuing for BGs / LFG
-#        Default:     1 (Restricted)
-#
-Trial.Restriction.Queue = 1
 
 
 ###############################################################################
@@ -1129,7 +1072,7 @@ AoELoot.Extensions.TrackDetailedStats = 1
 
 ###############################################################################
 #
-#  SECTION 4B: RARE RESPAWN ANNOUNCER
+#  SECTION 4A: RARE RESPAWN ANNOUNCER
 #
 #  Announces a rare / rare-elite coming back after it was killed, on the custom
 #  continents. Armed by the kill and fired by the respawn, so a grid reload or a
@@ -1265,14 +1208,14 @@ Hotspots.MinDistance = 300.0
 #
 #    Hotspots.MaxActive
 #        Description: Maximum number of active hotspots at any time
-#        Default:     5
+#        Default:     6 (core fallback when unset: 5)
 #
 Hotspots.MaxActive = 6
 
 #
 #    Hotspots.MinActive
 #        Description: Minimum number of hotspots to maintain
-#        Default:     1
+#        Default:     3 (core fallback when unset: 1)
 #
 Hotspots.MinActive = 3
 
@@ -1350,7 +1293,8 @@ Hotspots.AnnounceRadius = 500.0
 #                     vanilla continents. Maps must exist in the deployed
 #                     Map.dbc and be non-instanced; invalid entries are
 #                     skipped with a startup warning.
-#        Default:     "0,1,530,571,37"
+#        Default:     "37,850,1410,750,751"
+#                     (core fallback when unset: "0,1,530,571,37")
 #
 Hotspots.EnabledMaps = "37,850,1410,750,751"
 
@@ -1358,11 +1302,22 @@ Hotspots.EnabledMaps = "37,850,1410,750,751"
 #    Hotspots.EnabledZones
 #        Description: Comma-separated zone IDs. If non-empty, hotspots spawn
 #                     only in these zones (zone IDs are globally unique).
-#                     268 = Azshara Crater, 6100 = Hyjal Frontier,
-#                     6000 = Stratholme Valley, 5006 = Isles of Giants,
-#                     4923 = DC Hyjal (Mount Hyjal), 4924 = DC Plaguelands.
 #                     Empty = all non-city zones on the enabled maps.
-#        Default:     ""
+#                     Zones currently listed:
+#                        268 = Azshara Crater      (map 37,   1-80)
+#                       6000 = Stratholme Valley   (map 850,  130-160)
+#                       6100 = Hyjal Frontier      (map 1410, 80-130)
+#                       4923 = Hyjal Frontier      (map 750,  113-130)
+#                       4924 = Plaguelands         (map 751,  130-160)
+#                       4926 = Winterspring        (map 750,  104-115)
+#                       4927 = Felwood             (map 750,  96-106)
+#                       4929 = Darkshore           (map 750,  80-90)
+#                       4930 = Azshara             (map 750,  80-90)
+#                       4931 = Ashenvale           (map 750,  88-98)
+#                     Not listed (add if you want hotspots there):
+#                       5006 = Isles of Giants     (map 1405)
+#        Default:     "268,6000,6100,4923,4924,4926,4927,4929,4930,4931"
+#                     (core fallback when unset: "" = every enabled map)
 #
 Hotspots.EnabledZones = "268,6000,6100,4923,4924,4926,4927,4929,4930,4931"
 
@@ -1395,13 +1350,9 @@ Hotspots.AnnounceExpire = 1
 # -----------------------------------------------------------------------------
 # Addon Integration
 # -----------------------------------------------------------------------------
-
-#
-#    Hotspots.SendAddonPackets
-#        Description: Send CHAT_MSG_ADDON packets with HOTSPOT prefix
-#        Default:     0 (Disabled)
-#
-Hotspots.SendAddonPackets = 0
+# Hotspot addon traffic is driven by the HOTSPOT protocol module; toggle it with
+# DC.AddonProtocol.Hotspot.Enable in Section 3. The old Hotspots.SendAddonPackets
+# key was removed - nothing in the core reads it any more.
 
 # -----------------------------------------------------------------------------
 # Hotspot Objectives
@@ -1522,6 +1473,24 @@ ItemUpgrade.Currency.TokenId = 300311
 #        Default:     300312
 #
 ItemUpgrade.Currency.EssenceId = 300312
+
+# -----------------------------------------------------------------------------
+# Quest Token Payout
+# -----------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.QuestReward.LevelDivisor
+#        Description: Level scaling for the upgrade tokens paid out on quest
+#                     turn-in. The payout is multiplied by
+#                     (1 + player_level / divisor), so a smaller divisor pays
+#                     high-level characters more. Upgrade costs climb steeply
+#                     with tier (210 tokens to max a level-80 leveling piece vs
+#                     5,500 for a Hyjal-band one), which is what this
+#                     compensates for.
+#                     Set 0 to disable scaling and restore the flat rate.
+#        Default:     40
+#
+ItemUpgrade.QuestReward.LevelDivisor = 40
 
 # -----------------------------------------------------------------------------
 # Testing/Development
@@ -1797,9 +1766,12 @@ DCCollection.Mounts.RandomFavoritesOnly = 0
 DCCollection.MountBonuses.Enable = 1
 
 #
-#    DCCollection.MountBonuses.Threshold[1-4]
-#        Description: Mount bonus thresholds "mounts_needed,bonus_percent"
-#        Defaults:    25=+2%, 50=+3%, 100=+4%, 200=+5%
+#    NOTE: the four bonus tiers (25 mounts = +2%, 50 = +3%, 100 = +4%,
+#    200 = +5%) are compile-time constants in
+#    src/server/scripts/DC/AddonExtension/dc_addon_collection.cpp
+#    (MOUNT_THRESHOLD_TIER1..4 / SPELL_MOUNT_SPEED_TIER1..4). There are no
+#    DCCollection.MountBonuses.Threshold* config keys - the Enable toggle above
+#    is the only runtime knob. Changing a tier means editing the constants.
 #
 # -----------------------------------------------------------------------------
 # Pet Definition Maintenance
@@ -1860,7 +1832,7 @@ DCCollection.Pets.BackfillDisplayIdsOnStartup = 0
 #                     this on, the client does not cache unsolicited responses and
 #                     the proper fix is the SetCreatureDisplay DLL native (see
 #                     Custom/Documentation/Pet_Form_Preview_Texture_Native.md).
-#        Default:     0 (Disabled)
+#        Default:     1 (Enabled - core fallback when unset: 0)
 #
 DCCollection.Pets.PreWarmCreatureCacheOnDefinitions = 1
 
@@ -1877,7 +1849,7 @@ DCCollection.Pets.PreWarmCreatureCacheOnDefinitions = 1
 #                     and gated; if off (or a row is missed) the preview falls back
 #                     to its white SetModel shape (no regression). No creature_template
 #                     rows and no client DLL are involved.
-#        Default:     0 (Disabled)
+#        Default:     1 (Enabled - core fallback when unset: 0)
 #
 DCCollection.Forms.PreWarmCreatureCacheOnDefinitions = 1
 
@@ -1896,7 +1868,7 @@ DCCollection.Transmog.MinQuality = 0
 #
 #    DCCollection.Transmog.SlotItemsPageSize
 #        Description: Page size for transmog slot items responses
-#        Default:     100
+#        Default:     100 (core fallback when unset: 24)
 #
 DCCollection.Transmog.SlotItemsPageSize = 100
 
@@ -2029,16 +2001,9 @@ DCCollection.Wishlist.Enable = 1
 #
 DCCollection.Wishlist.MaxItems = 50
 
-#
-#    DCCollection.SyncInterval
-#        Description: Interval (seconds) between automatic syncs
-#        Default:     30
-#
-DCCollection.SyncInterval = 30
-
-# -----------------------------------------------------------------------------
-# Leaderboard Integration
-# -----------------------------------------------------------------------------
+# NOTE: DCCollection.SyncInterval was removed. The key name still exists as a
+# [[maybe_unused]] constant in dc_addon_collection.cpp but is never passed to
+# GetOption - collection sync is change-gated and event-driven, not polled.
 
 
 ###############################################################################
@@ -2135,12 +2100,10 @@ MythicPlus.BossItems = 1
 #
 MythicPlus.FinalBossItems = 2
 
-#
-#    MythicPlus.BaseItemLevel
-#        Description: Base item level for Mythic+0 dungeons
-#        Default:     226
-#
-MythicPlus.BaseItemLevel = 226
+# NOTE: MythicPlus.BaseItemLevel was removed. Nothing in src/ reads it; M+ item
+# levels come from the loot/vendor tables in the world DB (and the Vault
+# ItemLevel keys below), not from config. Older docs under
+# Custom/feature stuff/Completed/MythicPlus/ still mention it - they are stale.
 
 #
 #    MythicPlus.SuppressTrashLoot
@@ -2442,6 +2405,14 @@ DungeonQuest.Debug.Enable = 0
 #
 #  Hardcore and specialized challenge modes for extreme gameplay.
 #
+#  Each mode reads exactly three keys - .Enable, .XPMultiplier and
+#  .DisableLevel (see dc_challenge_modes_customized.cpp). The upstream
+#  mod-challenge-modes reward keys (.ItemRewardAmount, .AchievementReward,
+#  .TalentRewards, .TitleRewards, .ItemRewards) were removed from this file:
+#  the DC port never ported that reward loader, so all 45 of them were inert.
+#  Challenge-mode rewards are granted through the DC achievement/reward tables
+#  instead.
+#
 ###############################################################################
 
 #
@@ -2464,11 +2435,6 @@ Hardcore.Enable = 1
 
 Hardcore.XPMultiplier = 1
 Hardcore.DisableLevel = 0
-Hardcore.ItemRewardAmount = 1
-Hardcore.AchievementReward = ""
-Hardcore.TalentRewards = ""
-Hardcore.TitleRewards = ""
-Hardcore.ItemRewards = ""
 
 # -----------------------------------------------------------------------------
 # Semi-Hardcore Mode
@@ -2483,11 +2449,6 @@ SemiHardcore.Enable = 1
 
 SemiHardcore.XPMultiplier = 1
 SemiHardcore.DisableLevel = 0
-SemiHardcore.ItemRewardAmount = 1
-SemiHardcore.AchievementReward = ""
-SemiHardcore.TalentRewards = ""
-SemiHardcore.TitleRewards = ""
-SemiHardcore.ItemRewards = ""
 
 # -----------------------------------------------------------------------------
 # Self-Crafted Mode
@@ -2502,11 +2463,6 @@ SelfCrafted.Enable = 1
 
 SelfCrafted.XPMultiplier = 1
 SelfCrafted.DisableLevel = 0
-SelfCrafted.ItemRewardAmount = 1
-SelfCrafted.AchievementReward = ""
-SelfCrafted.TalentRewards = ""
-SelfCrafted.TitleRewards = ""
-SelfCrafted.ItemRewards = ""
 
 # -----------------------------------------------------------------------------
 # Item Quality Level Mode
@@ -2521,11 +2477,6 @@ ItemQualityLevel.Enable = 1
 
 ItemQualityLevel.XPMultiplier = 1
 ItemQualityLevel.DisableLevel = 0
-ItemQualityLevel.ItemRewardAmount = 1
-ItemQualityLevel.AchievementReward = ""
-ItemQualityLevel.TalentRewards = ""
-ItemQualityLevel.TitleRewards = ""
-ItemQualityLevel.ItemRewards = ""
 
 # -----------------------------------------------------------------------------
 # Quest XP Only Mode
@@ -2540,11 +2491,6 @@ QuestXpOnly.Enable = 1
 
 QuestXpOnly.XPMultiplier = 1
 QuestXpOnly.DisableLevel = 0
-QuestXpOnly.ItemRewardAmount = 1
-QuestXpOnly.AchievementReward = ""
-QuestXpOnly.TalentRewards = ""
-QuestXpOnly.TitleRewards = ""
-QuestXpOnly.ItemRewards = ""
 
 # -----------------------------------------------------------------------------
 # Iron Man Mode
@@ -2559,11 +2505,6 @@ IronMan.Enable = 1
 
 IronMan.XPMultiplier = 1
 IronMan.DisableLevel = 0
-IronMan.ItemRewardAmount = 1
-IronMan.AchievementReward = ""
-IronMan.TalentRewards = ""
-IronMan.TitleRewards = ""
-IronMan.ItemRewards = ""
 
 # -----------------------------------------------------------------------------
 # Iron Man Plus Mode
@@ -2578,11 +2519,6 @@ IronManPlus.Enable = 1
 
 IronManPlus.XPMultiplier = 1
 IronManPlus.DisableLevel = 0
-IronManPlus.ItemRewardAmount = 1
-IronManPlus.AchievementReward = ""
-IronManPlus.TalentRewards = ""
-IronManPlus.TitleRewards = ""
-IronManPlus.ItemRewards = ""
 
 # -----------------------------------------------------------------------------
 # Slow XP Gain Modes
@@ -2597,11 +2533,6 @@ SlowXpGain.Enable = 1
 
 SlowXpGain.XPMultiplier = 0.5
 SlowXpGain.DisableLevel = 0
-SlowXpGain.ItemRewardAmount = 1
-SlowXpGain.AchievementReward = ""
-SlowXpGain.TalentRewards = ""
-SlowXpGain.TitleRewards = ""
-SlowXpGain.ItemRewards = ""
 
 #
 #    VerySlowXpGain.Enable
@@ -2612,11 +2543,6 @@ VerySlowXpGain.Enable = 1
 
 VerySlowXpGain.XPMultiplier = 0.25
 VerySlowXpGain.DisableLevel = 0
-VerySlowXpGain.ItemRewardAmount = 1
-VerySlowXpGain.AchievementReward = ""
-VerySlowXpGain.TalentRewards = ""
-VerySlowXpGain.TitleRewards = ""
-VerySlowXpGain.ItemRewards = ""
 
 
 ###############################################################################
@@ -2794,6 +2720,27 @@ HinterlandBG.Affix.Announce = 0
 #        Default:     0 (Disabled)
 #
 HinterlandBG.Affix.Worldstate = 0
+
+#
+#    HinterlandBG.Affix.ConcurrentCount
+#        Description: How many affixes run at the same time. Clamped to
+#                     1..3 (HLBGAffixSlotCount) at load - higher values are
+#                     silently reduced, and there is no worldstate slot for a
+#                     fourth affix.
+#        Default:     1
+#
+HinterlandBG.Affix.ConcurrentCount = 1
+
+#
+#    HinterlandBG.Affix.WeatherIntensityVariance
+#        Description: Random spread applied to the per-affix WeatherIntensity
+#                     values below, so repeated matches with the same affix do
+#                     not look identical. The intensity is rolled in
+#                     [intensity * (1 - variance), intensity * (1 + variance)].
+#                     Clamped to 0.0 - 1.0; 0 disables the jitter.
+#        Default:     0.20
+#
+HinterlandBG.Affix.WeatherIntensityVariance = 0.20
 
 # Player-Affecting Affix Spells
 HinterlandBG.Affix.PlayerSpell.Sunlight = 910010
@@ -3170,10 +3117,13 @@ Prestige.Challenges.Solo.Enable = 1
 
 ###############################################################################
 #
-#  SECTION 14: CUSTOM LOGIN SYSTEM
+#  SECTION 14: CUSTOM LOGIN / FIRST START
 #
 #  Enhanced first-login experience with BoA gear, skills, mounts, and
-#  integration with DC systems.
+#  integration with DC systems. Also carries the character-select breaking-news
+#  payload, which is sent before world entry.
+#
+#  Account-wide reputation / friends / achievement pooling moved to Section 14A.
 #
 ###############################################################################
 
@@ -3229,7 +3179,7 @@ DCFirstStart.PlayerAnnounce = 0
 #        Description: Enable custom breaking-news payloads on character select.
 #                     Requires the WotLK-Extensions breaking-news client glue
 #                     package and custom packet support on the client.
-#        Default:     0 (Disabled)
+#        Default:     1 (Enabled - core fallback when unset: 0)
 #
 DC.BreakingNews.Enable = 1
 
@@ -3252,7 +3202,13 @@ DC.BreakingNews.Title = "Breaking News"
 #                     Supported tags still follow WoW SimpleHTML rules, but the
 #                     upstream text-payload escaping note for [, ], ', and \
 #                     is not needed for this binary packet transport.
-#        Default:     "./Custom/Config files/breaking-news.simplehtml"
+#
+#                     DEPLOYMENT-SPECIFIC: the value below is the absolute path
+#                     on the production Linux host. A relative path is resolved
+#                     against the worldserver working directory, not against
+#                     this config file, so adjust it for any other install.
+#                     Repo-relative template: "./Custom/Config files/breaking-news.simplehtml"
+#        Default:     "/home/wowcore/azeroth-server/news/breaking-news.simplehtml"
 #
 DC.BreakingNews.ContentPath = "/home/wowcore/azeroth-server/news/breaking-news.simplehtml"
 
@@ -3472,6 +3428,113 @@ DCFirstStart.TriggerWelcome = 1
 DCFirstStart.PrestigeBonuses = 1
 
 # -----------------------------------------------------------------------------
+# Seasonal Starter Tokens
+# -----------------------------------------------------------------------------
+
+DCFirstStart.SeasonalTokens.Enable = 1
+DCFirstStart.SeasonalTokens.UseCanonicalCurrency = 1
+DCFirstStart.SeasonalTokens.ItemId = 0
+DCFirstStart.SeasonalTokens.Amount = 100
+
+# Mobile Teleporter
+DCFirstStart.MobileTeleporter.Enable = 1
+DCFirstStart.MobileTeleporter.ItemId = 0
+
+#
+#    DCFirstStart.WelcomeQuest.*
+#        Description: Auto-grant a quest to every fresh character on first login.
+#                     Default is the "Welcome to Azshara Crater" quest (820056),
+#                     given by Hervikus the Chaotic near the starting camp.
+#        Enable:      1 = grant on first login, 0 = off
+#        Id:          quest_template ID to add to the new character's log
+#
+DCFirstStart.WelcomeQuest.Enable = 1
+DCFirstStart.WelcomeQuest.Id = 820056
+
+#
+#    DCFirstStart.HyjalCall.*
+#        Description: Hand-off from Azshara Crater (1-80) to the 80-130
+#                     continent (map 750). At the configured level the player
+#                     automatically receives their faction's "call" quest,
+#                     which points at the two portals in Azshara Crater and
+#                     turns in at that faction's start hub on map 750.
+#                     Granted on level-up AND on login, so characters already
+#                     past the level still receive it (guarded on quest status,
+#                     so it is never granted twice).
+#        Enable:        1 = grant, 0 = off
+#        Level:         level at which the quest is handed out (portals share it)
+#        QuestAlliance: quest_template ID for Alliance (Lor'danel, Darkshore)
+#        QuestHorde:    quest_template ID for Horde (Bilgewater Harbor, Azshara)
+#
+DCFirstStart.HyjalCall.Enable = 1
+DCFirstStart.HyjalCall.Level = 78
+DCFirstStart.HyjalCall.QuestAlliance = 81300
+DCFirstStart.HyjalCall.QuestHorde = 81301
+
+#
+#    DCFirstStart.StarterGuild.*
+#        Description: Auto-join fresh characters into a "newcomer" guild on first
+#                     login. Guilds are single-faction, so Alliance and Horde use
+#                     separate guilds/names (names must be unique server-wide).
+#        Enable:      1 = auto-join on first login, 0 = off
+#        NameAlliance/NameHorde: guild names per faction
+#        AutoCreate:  1 = create the guild (with the first newcomer as leader) if
+#                     it does not exist; 0 = only join if you pre-created it
+#
+DCFirstStart.StarterGuild.Enable = 1
+DCFirstStart.StarterGuild.NameAlliance = "Alliance Newcomers"
+DCFirstStart.StarterGuild.NameHorde = "Horde Newcomers"
+DCFirstStart.StarterGuild.AutoCreate = 1
+DCFirstStart.StarterGuild.Motd = "Welcome to the newcomer guild! Ask your questions in guild chat or the Newcomer channel - and have fun out there!"
+DCFirstStart.StarterGuild.Info = "Automatic starter guild for new characters. Feel free to leave once you find a home - no hard feelings!"
+
+#
+#    DCFirstStart.StarterGuild.SystemLeaderGuid{Alliance,Horde}
+#        Description: Ownership-proofing for the starter guild. Without this,
+#                     whichever real player happens to trigger guild creation
+#                     (the very first newcomer) becomes its Guild Master and
+#                     could rename/disband/loot-lock it like any other guild.
+#                     To prevent that, create ONE character per faction on an
+#                     account nobody plays (random/unknown password, or the
+#                     account disabled for login), find its character GUID
+#                     (`.character info` or the `characters`.`guid` column),
+#                     and set it here. On the guild's first creation, the
+#                     bootstrap creator is auto-demoted to a normal member and
+#                     this system character is promoted to Guild Master -
+#                     nobody can ever log into it to touch the guild.
+#        Default:     0 (disabled - the bootstrap creator stays leader)
+#
+DCFirstStart.StarterGuild.SystemLeaderGuidAlliance = 0
+DCFirstStart.StarterGuild.SystemLeaderGuidHorde = 0
+
+#
+#    DCFirstStart.NewcomerChat.*
+#        Description: Auto-join a custom help/chat channel on every login so new
+#                     players have a place to ask questions.
+#        Enable:      1 = auto-join, 0 = off
+#        ChannelName: name of the custom channel (per-faction unless two-side
+#                     channel interaction is enabled in worldserver.conf)
+#        MaxLevel:    0 = everyone joins (veterans can help); set e.g. 20 to keep
+#                     the channel to leveling players only
+#
+DCFirstStart.NewcomerChat.Enable = 1
+DCFirstStart.NewcomerChat.ChannelName = "Newcomer"
+DCFirstStart.NewcomerChat.MaxLevel = 0
+
+
+###############################################################################
+#
+#  SECTION 14A: ACCOUNT-WIDE PROGRESSION POOLS
+#
+#  Reputation, friend list and completed achievements pooled across every
+#  character on an account. These are independent of the first-start flow in
+#  Section 14 - they run on every login, not just the first one. The
+#  account-wide COLLECTION unlocks (mounts/pets/titles/transmog) are a
+#  separate system and live in Section 7 (DCCollection.Accountwide.*).
+#
+###############################################################################
+
+# -----------------------------------------------------------------------------
 # Account-Wide Reputation Pools
 # -----------------------------------------------------------------------------
 
@@ -3651,98 +3714,6 @@ DCAchievements.Accountwide.GrantRewards = 0
 #        Default:     1 (Enabled)
 #
 DCAccountwide.PurgeOrphansOnStartup = 1
-
-
-# Seasonal Starter Tokens
-DCFirstStart.SeasonalTokens.Enable = 1
-DCFirstStart.SeasonalTokens.UseCanonicalCurrency = 1
-DCFirstStart.SeasonalTokens.ItemId = 0
-DCFirstStart.SeasonalTokens.Amount = 100
-
-# Mobile Teleporter
-DCFirstStart.MobileTeleporter.Enable = 1
-DCFirstStart.MobileTeleporter.ItemId = 0
-
-#
-#    DCFirstStart.WelcomeQuest.*
-#        Description: Auto-grant a quest to every fresh character on first login.
-#                     Default is the "Welcome to Azshara Crater" quest (820056),
-#                     given by Hervikus the Chaotic near the starting camp.
-#        Enable:      1 = grant on first login, 0 = off
-#        Id:          quest_template ID to add to the new character's log
-#
-DCFirstStart.WelcomeQuest.Enable = 1
-DCFirstStart.WelcomeQuest.Id = 820056
-
-#
-#    DCFirstStart.HyjalCall.*
-#        Description: Hand-off from Azshara Crater (1-80) to the 80-130
-#                     continent (map 750). At the configured level the player
-#                     automatically receives their faction's "call" quest,
-#                     which points at the two portals in Azshara Crater and
-#                     turns in at that faction's start hub on map 750.
-#                     Granted on level-up AND on login, so characters already
-#                     past the level still receive it (guarded on quest status,
-#                     so it is never granted twice).
-#        Enable:        1 = grant, 0 = off
-#        Level:         level at which the quest is handed out (portals share it)
-#        QuestAlliance: quest_template ID for Alliance (Lor'danel, Darkshore)
-#        QuestHorde:    quest_template ID for Horde (Bilgewater Harbor, Azshara)
-#
-DCFirstStart.HyjalCall.Enable = 1
-DCFirstStart.HyjalCall.Level = 78
-DCFirstStart.HyjalCall.QuestAlliance = 81300
-DCFirstStart.HyjalCall.QuestHorde = 81301
-
-#
-#    DCFirstStart.StarterGuild.*
-#        Description: Auto-join fresh characters into a "newcomer" guild on first
-#                     login. Guilds are single-faction, so Alliance and Horde use
-#                     separate guilds/names (names must be unique server-wide).
-#        Enable:      1 = auto-join on first login, 0 = off
-#        NameAlliance/NameHorde: guild names per faction
-#        AutoCreate:  1 = create the guild (with the first newcomer as leader) if
-#                     it does not exist; 0 = only join if you pre-created it
-#
-DCFirstStart.StarterGuild.Enable = 1
-DCFirstStart.StarterGuild.NameAlliance = "Alliance Newcomers"
-DCFirstStart.StarterGuild.NameHorde = "Horde Newcomers"
-DCFirstStart.StarterGuild.AutoCreate = 1
-DCFirstStart.StarterGuild.Motd = "Welcome to the newcomer guild! Ask your questions in guild chat or the Newcomer channel - and have fun out there!"
-DCFirstStart.StarterGuild.Info = "Automatic starter guild for new characters. Feel free to leave once you find a home - no hard feelings!"
-
-#
-#    DCFirstStart.StarterGuild.SystemLeaderGuid{Alliance,Horde}
-#        Description: Ownership-proofing for the starter guild. Without this,
-#                     whichever real player happens to trigger guild creation
-#                     (the very first newcomer) becomes its Guild Master and
-#                     could rename/disband/loot-lock it like any other guild.
-#                     To prevent that, create ONE character per faction on an
-#                     account nobody plays (random/unknown password, or the
-#                     account disabled for login), find its character GUID
-#                     (`.character info` or the `characters`.`guid` column),
-#                     and set it here. On the guild's first creation, the
-#                     bootstrap creator is auto-demoted to a normal member and
-#                     this system character is promoted to Guild Master -
-#                     nobody can ever log into it to touch the guild.
-#        Default:     0 (disabled - the bootstrap creator stays leader)
-#
-DCFirstStart.StarterGuild.SystemLeaderGuidAlliance = 0
-DCFirstStart.StarterGuild.SystemLeaderGuidHorde = 0
-
-#
-#    DCFirstStart.NewcomerChat.*
-#        Description: Auto-join a custom help/chat channel on every login so new
-#                     players have a place to ask questions.
-#        Enable:      1 = auto-join, 0 = off
-#        ChannelName: name of the custom channel (per-faction unless two-side
-#                     channel interaction is enabled in worldserver.conf)
-#        MaxLevel:    0 = everyone joins (veterans can help); set e.g. 20 to keep
-#                     the channel to leveling players only
-#
-DCFirstStart.NewcomerChat.Enable = 1
-DCFirstStart.NewcomerChat.ChannelName = "Newcomer"
-DCFirstStart.NewcomerChat.MaxLevel = 0
 
 
 ###############################################################################
@@ -3997,12 +3968,9 @@ DC.GroupFinder.Reward.DailyLimit = 1
 #
 DC.GroupFinder.CleanupIntervalMs = 60000
 
-#
-#    DungeonFinder.AllowCompleted
-#        Description: Allow completed heroic dungeons in LFG queue
-#        Default:     1 (Blizzlike)
-#
-DungeonFinder.AllowCompleted = 1
+# NOTE: DungeonFinder.AllowCompleted is a CORE key (WorldConfig.cpp) and is
+# already declared in worldserver.conf.dist. It was removed from here to avoid a
+# duplicate-key warning; set it in the main config.
 
 
 ###############################################################################
@@ -4014,7 +3982,7 @@ DungeonFinder.AllowCompleted = 1
 ###############################################################################
 
 # -----------------------------------------------------------------------------
-# Currency Configuration
+# Spawn Preset
 # -----------------------------------------------------------------------------
 
 #
@@ -4059,6 +4027,16 @@ GuildHouse.MoveCost = 0
 #
 GuildHouse.ResetCost = 0
 
+#
+#    DC.GuildHouse.Butler.RefundPercent
+#        Description: Percentage of the purchase price refunded when a butler
+#                     -spawned NPC or object is removed again (0-100, values
+#                     above 100 are clamped). This is the NPC/object counterpart
+#                     to DC.GuildHouse.Decoration.RefundPercent below.
+#        Default:     50
+#
+DC.GuildHouse.Butler.RefundPercent = 50
+
 # -----------------------------------------------------------------------------
 # Rank Requirements
 # -----------------------------------------------------------------------------
@@ -4098,14 +4076,8 @@ DC.GuildHouse.Decoration.MaxRange = 0
 #
 DC.GuildHouse.Decoration.RefundPercent = 50
 
-#
-#    DC.AddonProtocol.Decoration.Enable
-#        Description: Enable the DECO addon module (DC-Housing catalog,
-#                     placement and edit mode). The decorator NPC gossip
-#                     works independently of this.
-#        Default:     1
-#
-DC.AddonProtocol.Decoration.Enable = 1
+# NOTE: the DECO addon-module toggle (DC.AddonProtocol.Decoration.Enable) lives
+# with the other protocol toggles in Section 3.
 
 #
 #    DC.GuildHouse.Decoration.GMBypass
@@ -4159,21 +4131,15 @@ DC.Leaderboards.MaxCacheEntries = 100
 
 ###############################################################################
 #
-#  SECTION 19: INVASION SYSTEM
-#
-#  Configuration for the Giant Isles Invasion event system.
-#
-#  No active runtime config keys are currently wired for this section.
-#
-###############################################################################
-
-
-###############################################################################
-#
-#  SECTION 19A: WORLD BOSSES (Giant Isles)
+#  SECTION 19: WORLD BOSSES (Giant Isles)
 #
 #  Loot lockout and optional anti-grief phasing for the centralized world-boss
 #  manager (CrossSystemWorldBossMgr) that drives Oondasta / Thok / Nalak.
+#
+#  The Giant Isles INVASION event (formerly its own empty Section 19) has no
+#  runtime config keys at all - it is driven entirely from the world DB
+#  (spawn/event tables and the war-token economy), so there is nothing to
+#  declare here.
 #
 #  IMPORTANT: the loot lockout persists through the core player-settings system
 #  (character_settings table), which only writes to the DB when

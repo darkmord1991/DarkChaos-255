@@ -1227,4 +1227,12 @@ DC.MountModelPaths = DC.MountModelPaths or {
     [503594] = "mountpreview\\shaowlmount\\shaowlmount_503594.m2",
     [503595] = "mountpreview\\shawolfmount\\shawolfmount_503595.m2",
     [503596] = "mountpreview\\springpandamount\\springpandamount_503596.m2",
+    [503610] = "mountpreview\\giantbeastmount\\giantbeastmount_503610.m2",
+    [503611] = "mountpreview\\giantbeastmount\\giantbeastmount_503611.m2",
+    [503612] = "mountpreview\\giantbeastmount\\giantbeastmount_503612.m2",
+    [503613] = "mountpreview\\giantbeastmount\\giantbeastmount_503613.m2",
+    [503614] = "mountpreview\\giantbeastmount2\\giantbeastmount2_503614.m2",
+    [503615] = "mountpreview\\giantbeastmount2\\giantbeastmount2_503615.m2",
+    [503616] = "mountpreview\\giantbeastmount2\\giantbeastmount2_503616.m2",
+    [503617] = "mountpreview\\giantbeastmount2\\giantbeastmount2_503617.m2",
 }

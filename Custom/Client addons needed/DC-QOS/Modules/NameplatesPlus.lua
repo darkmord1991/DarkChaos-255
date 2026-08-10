@@ -136,6 +136,7 @@ local NameplatesPlus = {
             eliteIcons = true,
             eliteIconStyle = "Star", -- "Star" (Plater) or "Dragon" (retail)
             eliteIconSize = 14,
+            eliteBorders = true,
             bossSkullLevel = true,
 
             -- Faction Icons
@@ -401,6 +402,9 @@ end
 
 local UpdateDebuffFrameAnchor
 local SyncCustomHealthBarLayout
+-- Declared this early because HideTargetIndicators (below) has to re-lay the
+-- bar out when it drops target emphasis.
+local SyncCustomHealthBar
 
 local function StoreRegionLayout(region)
     if not region or region.dcOriginalLayout then
@@ -507,7 +511,7 @@ local function NormalizeNameplateLayout(frame)
     local healthLayout = healthBar.dcOriginalLayout or {}
     if frame.dcSourceHealthBar then
         SyncCustomHealthBarLayout(healthBar, frame.dcSourceHealthBar,
-            addon.settings.nameplatesPlus)
+            addon.settings.nameplatesPlus, frame.dcTargetEmphasis)
     else
         if healthLayout.width and healthBar.SetWidth then
             healthBar:SetWidth(healthLayout.width)
@@ -698,6 +702,17 @@ local CLASSIFICATION_ART = {
 CLASSIFICATION_ART.Star.worldboss = CLASSIFICATION_ART.Star.elite
 CLASSIFICATION_ART.Dragon.worldboss = CLASSIFICATION_ART.Dragon.elite
 local DEFAULT_CLASSIFICATION_ICON_HEIGHT = 14
+-- A tinted, slightly thicker bar edge is what makes an elite read as an elite
+-- from across the screen; the icon alone is too small to carry it. World
+-- bosses share the elite gold - the skull on the level readout is what sets
+-- them apart, so the bar stays coherent with the gold star.
+local CLASSIFICATION_BORDER_COLORS = {
+    elite     = { r = 0.98, g = 0.82, b = 0.25, a = 0.95 },
+    worldboss = { r = 0.98, g = 0.82, b = 0.25, a = 0.95 },
+    rare      = { r = 0.85, g = 0.89, b = 0.97, a = 0.95 },
+    rareelite = { r = 0.85, g = 0.89, b = 0.97, a = 0.95 },
+}
+local CLASSIFICATION_BORDER_THICKNESS = 2
 -- Plater anchors its indicator row to the health bar's left edge at x = -2.
 local CLASSIFICATION_ICON_GAP = -2
 local BOSS_LEVEL_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
@@ -1188,10 +1203,10 @@ local function HideTargetIndicators(frame)
     if frame.dcTargetArrowRight then
         frame.dcTargetArrowRight:Hide()
     end
-    -- Reset scale so plates don't stay zoomed after losing their unit match.
-    if not IsPlaterActive() and frame.dcLastScale and frame.dcLastScale ~= 1.0 then
-        frame:SetScale(1.0)
-        frame.dcLastScale = 1.0
+    -- Drop emphasis so plates don't stay enlarged after losing their unit match.
+    if not IsPlaterActive() and frame.dcTargetEmphasis and frame.dcTargetEmphasis ~= 1.0 then
+        frame.dcTargetEmphasis = 1.0
+        SyncCustomHealthBar(frame)
     end
     frame.dcIsTarget = nil
 end
@@ -1422,7 +1437,7 @@ local function ApplyCustomBarStyle(statusBar, settings, backdropColor, borderCol
     end
 end
 
-SyncCustomHealthBarLayout = function(displayBar, sourceHealthBar, settings)
+SyncCustomHealthBarLayout = function(displayBar, sourceHealthBar, settings, emphasis)
     if not displayBar or not sourceHealthBar then
         return
     end
@@ -1438,10 +1453,32 @@ SyncCustomHealthBarLayout = function(displayBar, sourceHealthBar, settings)
         width = 110
     end
 
+    emphasis = tonumber(emphasis) or 1
+    width = width * emphasis
+    height = height * emphasis
+
+    -- Re-anchoring every tick is pure churn; the source bar's geometry only
+    -- changes when the plate is recycled or the emphasis flips.
+    if displayBar.dcLayoutWidth == width
+        and displayBar.dcLayoutHeight == height
+        and displayBar.dcLayoutSource == sourceHealthBar
+    then
+        return
+    end
+
     displayBar:ClearAllPoints()
     displayBar:SetSize(width, height)
-    displayBar:SetPoint("TOPLEFT", sourceHealthBar, "TOPLEFT",
+    -- CENTER, not TOPLEFT. The custom bar is much taller than the native one
+    -- (14px vs ~6px), so top-left anchoring hung it below where the engine put
+    -- the plate, dragging the name text down with it. Centre anchoring also
+    -- makes target emphasis grow the bar symmetrically over the unit instead
+    -- of stretching it to the right.
+    displayBar:SetPoint("CENTER", sourceHealthBar, "CENTER",
         CUSTOM_HEALTH_INSET_X, -CUSTOM_HEALTH_INSET_Y)
+
+    displayBar.dcLayoutWidth = width
+    displayBar.dcLayoutHeight = height
+    displayBar.dcLayoutSource = sourceHealthBar
 end
 
 local function CreateHealthPercentText(healthBar)
@@ -1474,7 +1511,7 @@ local function CreateCustomHealthBar(frame, sourceHealthBar)
     displayBar:SetValue(1)
 
     SyncCustomHealthBarLayout(displayBar, sourceHealthBar,
-        addon.settings.nameplatesPlus)
+        addon.settings.nameplatesPlus, frame.dcTargetEmphasis)
     displayBar:SetStatusBarColor(DEFAULT_HEALTH_COLOR.r, DEFAULT_HEALTH_COLOR.g, DEFAULT_HEALTH_COLOR.b)
     ApplyCustomBarStyle(displayBar, addon.settings.nameplatesPlus, HEALTH_BAR_BACKDROP_COLOR, HEALTH_BAR_BORDER_COLOR)
 
@@ -1483,7 +1520,6 @@ local function CreateCustomHealthBar(frame, sourceHealthBar)
     return displayBar
 end
 
-local SyncCustomHealthBar
 local UpdateHealthPercent
 
 local function CollectNativeStatusBars(frame)
@@ -1696,7 +1732,7 @@ SyncCustomHealthBar = function(frame)
     local currentValue = sourceBar:GetValue()
 
     SyncCustomHealthBarLayout(displayBar, sourceBar,
-        addon.settings.nameplatesPlus)
+        addon.settings.nameplatesPlus, frame.dcTargetEmphasis)
 
     displayBar:SetMinMaxValues(minValue or 0, maxValue or 1)
     displayBar:SetValue(currentValue or 0)
@@ -1708,10 +1744,14 @@ SyncCustomHealthBar = function(frame)
         end
     end
 
+    -- Rescue path for a plate whose source bar had no geometry yet. These sizes
+    -- skip emphasis, so drop the layout cache and let the next tick redo it
+    -- properly once the source bar is real.
     if displayBar:GetWidth() <= 0 and sourceBar.GetWidth then
         local width = sourceBar:GetWidth() or 110
         if width > 0 then
             displayBar:SetWidth(width)
+            displayBar.dcLayoutWidth = nil
         end
     end
 
@@ -1719,6 +1759,7 @@ SyncCustomHealthBar = function(frame)
         local height = sourceBar:GetHeight() or 10
         if height > 0 then
             displayBar:SetHeight(height)
+            displayBar.dcLayoutHeight = nil
         end
     end
 end
@@ -2443,7 +2484,7 @@ end
 local function UpdateEliteIcon(frame, unit, settings)
     local icon = frame.dcEliteIcon
 
-    if not settings.eliteIcons or not frame.dcHealthBar then
+    if not frame.dcHealthBar then
         if icon then icon:Hide() end
         if frame.dcEliteIcon2 then frame.dcEliteIcon2:Hide() end
         frame.dcClassificationShown = nil
@@ -2451,16 +2492,19 @@ local function UpdateEliteIcon(frame, unit, settings)
         return
     end
 
-    icon = icon or CreateEliteIcon(frame, frame.dcHealthBar)
-
+    -- Resolved even when the icons are switched off: the bar border reads the
+    -- same value.
     local classification, isPlayer = ResolvePlateClassification(frame, unit)
-    if isPlayer then
-        icon:Hide()
+    frame.dcResolvedClassification = (not isPlayer) and classification or nil
+
+    if isPlayer or not settings.eliteIcons then
+        if icon then icon:Hide() end
+        if frame.dcEliteIcon2 then frame.dcEliteIcon2:Hide() end
         frame.dcClassificationShown = nil
         return
     end
 
-    frame.dcResolvedClassification = classification
+    icon = icon or CreateEliteIcon(frame, frame.dcHealthBar)
 
     local artSet = CLASSIFICATION_ART[settings.eliteIconStyle] or CLASSIFICATION_ART.Star
     local art = classification and artSet[classification]
@@ -2485,6 +2529,61 @@ local function UpdateEliteIcon(frame, unit, settings)
     end
 
     frame.dcClassificationShown = true
+end
+
+-- A separate ring sitting a couple of pixels OUTSIDE the bar, not a recolour of
+-- the bar's own edge. Recolouring the edge fails on neutral units: their bar
+-- fill is already amber, so a gold edge vanishes into it. Standing the ring off
+-- leaves the dark world showing between fill and ring, so it reads against any
+-- fill colour, and it stays clear of the target highlight border (which draws
+-- at the bar edge itself).
+local function EnsureClassificationRing(frame)
+    if frame.dcClassificationRing then
+        return frame.dcClassificationRing
+    end
+
+    local healthBar = frame.dcHealthBar
+    if not healthBar then
+        return nil
+    end
+
+    local ring = CreateFrame("Frame", nil, frame)
+    ring.dcManagedByNameplatesPlus = true
+    ring:SetFrameStrata(GetSafeFrameStrata(frame))
+    ring:SetFrameLevel(frame:GetFrameLevel() + 3)
+    ring:SetPoint("TOPLEFT", healthBar, "TOPLEFT", -2, 2)
+    ring:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", 2, -2)
+    ring:Hide()
+
+    frame.dcClassificationRing = ring
+    return ring
+end
+
+local function UpdateClassificationBorder(frame, settings)
+    local color = settings.eliteBorders
+        and CLASSIFICATION_BORDER_COLORS[frame.dcResolvedClassification]
+        or nil
+
+    if not color then
+        if frame.dcClassificationRing then
+            frame.dcClassificationRing:Hide()
+            frame.dcClassificationRing.dcAppliedColor = nil
+        end
+        return
+    end
+
+    local ring = EnsureClassificationRing(frame)
+    if not ring then
+        return
+    end
+
+    if ring.dcAppliedColor ~= color then
+        ConfigureFullEdgeBorder(ring, CLASSIFICATION_BORDER_THICKNESS,
+            color.r, color.g, color.b, color.a)
+        ring.dcAppliedColor = color
+    end
+
+    ring:Show()
 end
 
 -- Mirrors TargetFrame_CheckLevel: difficulty-coloured level, skull once the
@@ -2939,10 +3038,19 @@ local function UpdateTargetHighlight(frame, unit, settings)
             targetScale = 0.5
         end
 
-        local desiredScale = isTarget and targetScale or 1.0
-        if frame.dcLastScale ~= desiredScale then
-            frame:SetScale(desiredScale)
-            frame.dcLastScale = desiredScale
+        -- Emphasis is applied to OUR health bar, never to the plate frame.
+        -- The engine re-positions nameplate frames every frame in unscaled
+        -- WorldFrame coordinates, so a frame scale of 1.11 multiplies that
+        -- position too and slides the plate away from the unit it belongs to
+        -- (up and to the right, proportional to distance from the origin).
+        local desiredEmphasis = isTarget and targetScale or 1.0
+        if frame.dcTargetEmphasis ~= desiredEmphasis then
+            frame.dcTargetEmphasis = desiredEmphasis
+            SyncCustomHealthBar(frame)
+        end
+
+        if frame:GetScale() ~= 1 then
+            frame:SetScale(1)
         end
     end
 
@@ -3274,12 +3382,14 @@ local function OnUpdate(self, elapsed)
                         frame.dcNextDebuffRefresh = currentTime + DEBUFF_REFRESH_INTERVAL
                     end
                     UpdateEliteIcon(frame, unit, settings)
+                    UpdateClassificationBorder(frame, settings)
                     UpdateLevelText(frame, unit, settings)
                     UpdateFactionIcon(frame, unit, settings)
                     UpdateNPCIcons(frame, unit, settings)
                 else
                     HideUnitDependentPlateVisuals(frame)
                     UpdateEliteIcon(frame, nil, settings)
+                    UpdateClassificationBorder(frame, settings)
                     UpdateLevelText(frame, nil, settings)
                 end
             end
@@ -3511,6 +3621,7 @@ function NameplatesPlus.OnDisable()
         if frame.dcDebuffFrame then frame.dcDebuffFrame:Hide() end
         if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
         if frame.dcEliteIcon2 then frame.dcEliteIcon2:Hide() end
+        if frame.dcClassificationRing then frame.dcClassificationRing:Hide() end
         if frame.dcFactionIcon then frame.dcFactionIcon:Hide() end
         if frame.dcNPCIcons then frame.dcNPCIcons:Hide() end
         if frame.dcHealthBar and frame.dcHealthBar.dcHealthPercent then
@@ -3531,7 +3642,7 @@ function NameplatesPlus.OnDisable()
         if frame.dcCastBar and not frame.dcCastBar:IsShown() then
             frame.dcCastBar:Show()
         end
-        frame.dcLastScale = nil
+        frame.dcTargetEmphasis = nil
         RestoreNameplateLayout(frame)
         frame:SetScale(1.0)
         frame:SetAlpha(1.0)
@@ -3783,6 +3894,16 @@ function NameplatesPlus.CreateSettings(parent)
         addon:SetSetting("nameplatesPlus.eliteIconSize", size)
     end)
     yOffset = yOffset - 50
+
+    local eliteBorderCb = addon:CreateCheckbox(parent)
+    eliteBorderCb:SetPoint("TOPLEFT", 36, yOffset)
+    eliteBorderCb.Text:SetText("Tint the health bar border (gold elite/boss, silver rare)")
+    eliteBorderCb:SetChecked(settings.eliteBorders)
+    eliteBorderCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.eliteBorders", self:GetChecked())
+        MarkAllFramesDirty()
+    end)
+    yOffset = yOffset - 25
 
     local bossSkullCb = addon:CreateCheckbox(parent)
     bossSkullCb:SetPoint("TOPLEFT", 16, yOffset)
