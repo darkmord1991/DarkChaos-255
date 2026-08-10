@@ -15,6 +15,8 @@
 #include "GameObject.h"
 #include "GameTime.h"
 #include "GossipDef.h"
+#include "Guild.h"
+#include "GuildMgr.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
@@ -45,6 +47,7 @@ namespace
         uint32 guildId = 0;
         uint32 entry = 0;
         uint32 paidCopper = 0;
+        uint32 placedBy = 0;    // character low guid that paid for it
         float scale = 1.0f;
         float x = 0.f;
         float y = 0.f;
@@ -115,6 +118,43 @@ namespace
             return nullptr;
 
         return player->GetMap()->GetGameObject(it->second.guid);
+    }
+
+    // Client-supplied floats must be finite before they reach the map or the
+    // SQL layer: NaN compares false against every range check and fmt would
+    // format it as "nan" inside the raw statement.
+    bool IsFiniteTransform(float x, float y, float z, float o)
+    {
+        return std::isfinite(x) && std::isfinite(y)
+            && std::isfinite(z) && std::isfinite(o);
+    }
+
+    // Refund policy: the remover gets the money back only if they paid for the
+    // decoration in the first place; anything else goes to the guild bank so
+    // that DELETE permission can never convert guild-mates' spending into
+    // personal gold. Returns true when the refund went to the bank.
+    bool PayRefund(Player* remover, uint32 guildId, uint32 placedBy,
+        uint32 refund)
+    {
+        if (!refund)
+            return false;
+
+        if (remover && remover->GetGUID().GetCounter() == placedBy)
+        {
+            remover->ModifyMoney(static_cast<int32>(refund));
+            return false;
+        }
+
+        if (Guild* guild = sGuildMgr->GetGuildById(guildId))
+        {
+            CharacterDatabaseTransaction trans =
+                CharacterDatabase.BeginTransaction();
+            guild->ModifyBankMoney(trans, refund, true);
+            CharacterDatabase.CommitTransaction(trans);
+            return true;
+        }
+
+        return false;
     }
 
     uint32 WeightOf(uint32 entry)
@@ -324,7 +364,7 @@ void LoadCatalog()
 
     if (QueryResult result = CharacterDatabase.Query(
         "SELECT `id`, `guild_id`, `entry`, `paid_copper`, `scale`, "
-        "`posX`, `posY`, `posZ`, `orientation` "
+        "`posX`, `posY`, `posZ`, `orientation`, `placed_by` "
         "FROM `dc_guild_house_instance_spawns` WHERE `source` = 'DECORATION'"))
     {
         do
@@ -342,6 +382,7 @@ void LoadCatalog()
             info.y = fields[6].Get<float>();
             info.z = fields[7].Get<float>();
             info.o = fields[8].Get<float>();
+            info.placedBy = static_cast<uint32>(fields[9].Get<uint64>());
             // Decorations are summoned into the owning guild's instance, whose map is whichever
             // guild-house skin the guild chose (1409, 1413, ...). Resolve it from the guild's record
             // so a 1413 guild's decorations are tagged for 1413, not the default 1409.
@@ -439,6 +480,12 @@ bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
     float orientation, std::string& error, uint32* outLowguid,
     uint64* outGuidRaw)
 {
+    if (!IsFiniteTransform(x, y, z, orientation))
+    {
+        error = "Invalid position.";
+        return false;
+    }
+
     GuildHouseData const* house = nullptr;
     if (!ValidateInHouse(player, house, error))
         return false;
@@ -486,6 +533,7 @@ bool PlaceAt(Player* player, uint32 entry, float x, float y, float z,
     info.guildId = guildId;
     info.entry = entry;
     info.paidCopper = item->costCopper;
+    info.placedBy = player->GetGUID().GetCounter();
     info.scale = 1.0f;
     info.x = x;
     info.y = y;
@@ -544,6 +592,12 @@ bool Place(Player* player, uint32 entry, std::string& error,
 bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
     float orientation, std::string& error, uint64* outGuidRaw)
 {
+    if (!IsFiniteTransform(x, y, z, orientation))
+    {
+        error = "Invalid position.";
+        return false;
+    }
+
     GuildHouseData const* house = nullptr;
     if (!ValidateInHouse(player, house, error))
         return false;
@@ -568,26 +622,29 @@ bool MoveTo(Player* player, uint32 lowguid, float x, float y, float z,
         return false;
     }
 
-    // Despawn the old live object and re-summon at the new transform. Like the
+    // Re-summon at the new transform, then despawn the old object. Like the
     // old GOMove path this yields a fresh ObjectGuid (a moved-in-place object is
     // not reliably re-rendered by the 3.3.5 client), handed back for the gizmo.
-    if (GameObject* old = GetLiveObject(player, lowguid))
-        old->Delete();
-    sLive.erase(lowguid);
-
+    // Summon-before-delete: a failed summon must leave the old object and the
+    // stored/DB transform untouched.
     InstanceInfo& stored = sInstances[lowguid];
-    stored.x = x;
-    stored.y = y;
-    stored.z = z;
-    stored.o = Position::NormalizeOrientation(orientation);
+    InstanceInfo updated = stored;
+    updated.x = x;
+    updated.y = y;
+    updated.z = z;
+    updated.o = Position::NormalizeOrientation(orientation);
 
-    GameObject* moved = SummonDeco(player->GetMap(), stored);
+    GameObject* moved = SummonDeco(player->GetMap(), updated);
     if (!moved)
     {
         error = "Could not move that decoration (is it nearby?).";
         return false;
     }
 
+    if (GameObject* old = GetLiveObject(player, lowguid))
+        old->Delete();
+
+    stored = updated;
     RegisterLive(lowguid, player->GetMap(), moved);
 
     CharacterDatabase.Execute(
@@ -647,6 +704,12 @@ bool Nudge(Player* player, uint32 lowguid, float dx, float dy, float dz,
         return false;
     }
 
+    if (!IsFiniteTransform(dx, dy, dz, dOrientation))
+    {
+        error = "Invalid position.";
+        return false;
+    }
+
     auto clampDelta = [](float value)
     {
         return std::max(-10.0f, std::min(10.0f, value));
@@ -688,6 +751,11 @@ bool SetScale(Player* player, uint32 lowguid, float scale, std::string& error)
 
     // Clamp to a sane visual range: too small becomes unclickable, too large
     // can swallow the whole house.
+    if (!std::isfinite(scale))
+    {
+        error = "Invalid scale.";
+        return false;
+    }
     scale = std::max(0.2f, std::min(5.0f, scale));
 
     GameObject* object = GetLiveObject(player, lowguid);
@@ -855,7 +923,7 @@ void ListDecorations(Player* player, std::vector<PlacedDecoration>& out)
 }
 
 bool Remove(Player* player, uint32 lowguid, std::string& error,
-    uint32* outRefundCopper)
+    uint32* outRefundCopper, bool* outRefundedToBank)
 {
     GuildHouseData const* house = nullptr;
     if (!ValidateInHouse(player, house, error))
@@ -873,20 +941,21 @@ bool Remove(Player* player, uint32 lowguid, std::string& error,
         return false;
 
     uint32 const entry = info->entry;
+    uint32 const ownerGuildId = info->guildId;
+    uint32 const placedBy = info->placedBy;
     uint32 const refund = info->paidCopper * sRefundPercent / 100;
 
     if (GameObject* object = GetLiveObject(player, lowguid))
         object->Delete();
 
-    AddUsedBudget(player->GetGuildId(), -static_cast<int32>(WeightOf(entry)));
+    AddUsedBudget(ownerGuildId, -static_cast<int32>(WeightOf(entry)));
     sInstances.erase(lowguid);
     sLive.erase(lowguid);
     CharacterDatabase.Execute(
         "DELETE FROM `dc_guild_house_instance_spawns` WHERE `id` = {}",
         lowguid);
 
-    if (refund)
-        player->ModifyMoney(static_cast<int32>(refund));
+    bool const toBank = PayRefund(player, ownerGuildId, placedBy, refund);
 
     GuildHouseManager::LogAction(player, GH_ACTION_DELETE,
         GH_ENTITY_GAMEOBJECT, entry, lowguid, player->GetPositionX(),
@@ -895,11 +964,13 @@ bool Remove(Player* player, uint32 lowguid, std::string& error,
 
     if (outRefundCopper)
         *outRefundCopper = refund;
+    if (outRefundedToBank)
+        *outRefundedToBank = toBank;
     return true;
 }
 
 bool RemoveAll(Player* player, std::string& error,
-    uint32* outRemovedCount, uint32* outTotalRefund)
+    uint32* outRemovedCount, uint32* outTotalRefund, uint32* outBankRefund)
 {
     GuildHouseData const* house = nullptr;
     if (!ValidateInHouse(player, house, error))
@@ -933,6 +1004,7 @@ bool RemoveAll(Player* player, std::string& error,
     }
 
     uint32 totalRefund = 0;
+    uint32 bankRefund = 0;
     uint32 removedCount = 0;
 
     for (uint32 lowguid : toRemove)
@@ -944,6 +1016,7 @@ bool RemoveAll(Player* player, std::string& error,
         InstanceInfo const& info = it->second;
         uint32 const entry = info.entry;
         uint32 const refund = info.paidCopper * sRefundPercent / 100;
+        uint32 const placedBy = info.placedBy;
 
         if (GameObject* object = GetLiveObject(player, lowguid))
             object->Delete();
@@ -952,6 +1025,12 @@ bool RemoveAll(Player* player, std::string& error,
         sInstances.erase(it);
         sLive.erase(lowguid);
 
+        // Same policy as PayRefund, but batched: personal refunds only for
+        // items this player paid for, the rest pooled into one bank deposit.
+        if (placedBy == player->GetGUID().GetCounter())
+            player->ModifyMoney(static_cast<int32>(refund));
+        else
+            bankRefund += refund;
         totalRefund += refund;
         ++removedCount;
     }
@@ -961,8 +1040,16 @@ bool RemoveAll(Player* player, std::string& error,
         "WHERE `guild_id` = {} AND `source` = 'DECORATION'",
         guildId);
 
-    if (totalRefund)
-        player->ModifyMoney(static_cast<int32>(totalRefund));
+    if (bankRefund)
+    {
+        if (Guild* guild = sGuildMgr->GetGuildById(guildId))
+        {
+            CharacterDatabaseTransaction trans =
+                CharacterDatabase.BeginTransaction();
+            guild->ModifyBankMoney(trans, bankRefund, true);
+            CharacterDatabase.CommitTransaction(trans);
+        }
+    }
 
     GuildHouseManager::LogAction(player, GH_ACTION_DELETE,
         GH_ENTITY_GAMEOBJECT, 0, 0,
@@ -973,6 +1060,8 @@ bool RemoveAll(Player* player, std::string& error,
         *outRemovedCount = removedCount;
     if (outTotalRefund)
         *outTotalRefund = totalRefund;
+    if (outBankRefund)
+        *outBankRefund = bankRefund;
     return true;
 }
 
@@ -1142,36 +1231,11 @@ namespace
         }
     };
 
-    // Per-instance scale lives in our tracking table, not the core
-    // `gameobject` spawn (which has no scale column), so the core spawns every
-    // decoration at its template size. Re-apply the saved scale the moment the
-    // object enters the world (server restart, or a player loading the guild
-    // house grid), before nearby clients first see it.
-    class GuildHouseDecorationScaleScript : public AllGameObjectScript
-    {
-    public:
-        GuildHouseDecorationScaleScript()
-            : AllGameObjectScript("GuildHouseDecorationScaleScript") { }
-
-        void OnGameObjectAddWorld(GameObject* go) override
-        {
-            if (!go)
-                return;
-
-            uint32 const lowguid = go->GetSpawnId();
-            if (!lowguid)
-                return;
-
-            auto it = sInstances.find(lowguid);
-            if (it == sInstances.end())
-                return;
-
-            float const scale = it->second.scale;
-            if (std::fabs(scale - 1.0f) > 0.001f
-                && std::fabs(go->GetObjectScale() - scale) > 0.001f)
-                go->SetObjectScale(scale);
-        }
-    };
+    // NOTE: there is intentionally no AllGameObjectScript re-applying scale
+    // here. Decorations are summoned non-persistently (spawn id 0), so a
+    // spawn-id keyed hook can never match them - but it WOULD match unrelated
+    // static world spawns whose spawn id collides with a decoration row id.
+    // SummonDeco() applies the saved scale on every summon path instead.
 }
 
 } // namespace DCGuildHouseDecorations
@@ -1180,5 +1244,4 @@ void AddSC_dc_guildhouse_decorations()
 {
     new DCGuildHouseDecorations::npc_guildhouse_decorator();
     new DCGuildHouseDecorations::GuildHouseDecorationsWorldScript();
-    new DCGuildHouseDecorations::GuildHouseDecorationScaleScript();
 }

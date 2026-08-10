@@ -40,6 +40,13 @@ local function SnapYaw(v)
     return v
 end
 
+-- Apply both snaps to a full transform. Shared by every commit path (ghost
+-- commit, gizmo release, numeric entry) so they all land on the same grid.
+-- No-ops when the toolbar toggles are off.
+local function ApplySnap(x, y, z, o)
+    return SnapCoord(x), SnapCoord(y), SnapCoord(z), SnapYaw(o)
+end
+
 -- Resolved DLL natives (pcall-guarded, PingSystem pattern).
 local function ResolveNative(...)
     for i = 1, select("#", ...) do
@@ -198,13 +205,14 @@ local function CommitGhost()
         return
     end
 
-    local z = ghost.worldZ + ghost.zOffset
+    -- Snap the committed transform like the gizmo release / numeric entry
+    -- paths do, so cursor placement honours the toolbar's grid/angle toggles.
+    local x, y, z, o = ApplySnap(ghost.worldX, ghost.worldY,
+        ghost.worldZ + ghost.zOffset, ghost.facing)
     if ghost.mode == "place" and ghost.entry then
-        DC.Protocol:Place(ghost.entry, ghost.worldX, ghost.worldY, z,
-            ghost.facing)
+        DC.Protocol:Place(ghost.entry, x, y, z, o)
     elseif ghost.mode == "move" and ghost.lowguid then
-        DC.Protocol:MoveTo(ghost.lowguid, ghost.worldX, ghost.worldY, z,
-            ghost.facing)
+        DC.Protocol:MoveTo(ghost.lowguid, x, y, z, o)
     end
     EndGhost(false)
 end
@@ -290,6 +298,27 @@ local function CreateGhostFrames()
     ghostModel:Hide()
 end
 
+-- Frame the ghost's Model view with the same WORKING recipe as the catalog
+-- preview (Catalog:ApplyPreviewTransform): SetSequence(0) for a static pose,
+-- SetCamera(2) (camera 0 frames nothing for doodads), SetLight (a bare Model
+-- frame is unlit = renders black without it), then SetModelScale/SetPosition.
+-- Must run BEFORE SetModel (and again after, in case loading resets the
+-- transform). Scale inversely with the model's bounding radius so big and
+-- small decorations both read at a sensible ghost size, and centre it
+-- vertically via the model's bounding-centre height (cz).
+local function ApplyGhostModelTransform(item)
+    local m = ghostModel
+    pcall(m.SetSequence, m, 0)
+    pcall(m.SetCamera, m, 2)
+    pcall(m.SetLight, m, 1, 0, 0, -0.707, -0.707, 0.7,
+        1.0, 1.0, 1.0, 0.8, 1.0, 1.0, 0.8)
+    local radius = math.max((item and item.radius) or 1.0, 0.4)
+    local scale = math.max(0.05, math.min(0.8, 0.35 / radius))
+    pcall(m.SetModelScale, m, scale)
+    pcall(m.SetPosition, m, 0, 0, -((item and item.cz) or 0) * scale)
+    pcall(m.SetFacing, m, ghost.facing or 0)
+end
+
 local function StartGhost(mode, entry, lowguid, initialFacing, liveGuid)
     if not EnsureNatives() then
         DC:Print("|cffff0000Cursor world picking unavailable (DLL too old).|r")
@@ -338,7 +367,12 @@ local function StartGhost(mode, entry, lowguid, initialFacing, liveGuid)
 
     ghostModel:ClearModel()
     if item and not ghost.liveGuid then
+        -- Frame the view (camera/light/scale/position) THEN load the model
+        -- last — the same proven order as the catalog preview; re-apply after
+        -- SetModel in case loading resets the transform.
+        ApplyGhostModelTransform(item)
         pcall(ghostModel.SetModel, ghostModel, item.path)
+        ApplyGhostModelTransform(item)
     end
 
     -- Hide the catalog's redundant 3D preview now that a ghost is truly
@@ -498,8 +532,7 @@ local function CommitGizmoDrag()
         -- it client-side so the object visibly lands on the grid before the
         -- server's authoritative move arrives.
         if EditMode.snapGrid > 0 or EditMode.snapAngle > 0 then
-            x, y, z, yaw = SnapCoord(x), SnapCoord(y), SnapCoord(z),
-                SnapYaw(yaw)
+            x, y, z, yaw = ApplySnap(x, y, z, yaw)
             if selection.guidHex and setGobPosition then
                 pcall(setGobPosition, selection.guidHex, x, y, z)
                 pcall(setGobFacing, selection.guidHex, yaw or 0)
@@ -845,7 +878,7 @@ function EditMode:ApplyNumericEntry()
         return
     end
     o = o or selection.o or 0
-    x, y, z, o = SnapCoord(x), SnapCoord(y), SnapCoord(z), SnapYaw(o)
+    x, y, z, o = ApplySnap(x, y, z, o)
 
     if selection.guidHex and setGobPosition then
         pcall(setGobPosition, selection.guidHex, x, y, z)

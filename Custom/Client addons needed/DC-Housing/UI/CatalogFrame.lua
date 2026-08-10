@@ -212,8 +212,44 @@ function Catalog:OnBudgetUpdate()
     frame.budgetBar:SetMinMaxValues(0, math.max(1, b.cap))
     frame.budgetBar:SetValue(b.used)
     frame.budgetText:SetText(string.format(L.BUDGET, b.used, b.cap))
+    -- Only refresh the place buttons' enabled state; re-calling SetPreview
+    -- here reloaded the 3D preview (resetting facing/zoom) on every budget
+    -- push the server sends.
     if state.selectedEntry then
-        SetPreview(state.selectedEntry)
+        if b.canSpawn then
+            frame.placeButton:Enable()
+            frame.placeCursorButton:Enable()
+        else
+            frame.placeButton:Disable()
+            frame.placeCursorButton:Disable()
+        end
+    end
+end
+
+-- Called by Protocol on a successful remove: drop a now-dead placed-list
+-- selection and re-request the list when the manage UI is on screen.
+function Catalog:OnDecorationRemoved(lowguid)
+    if lowguid and state.placedSel
+        and tonumber(state.placedSel) == tonumber(lowguid) then
+        state.placedSel = nil
+        state.placedSelEntry = nil
+        if frame and frame.manageButtons and state.mode == "placed" then
+            for _, b in ipairs(frame.manageButtons) do
+                b:Disable()
+            end
+        end
+    end
+    if frame and frame:IsShown() and state.mode == "placed" then
+        DC.Protocol:RequestList()
+    end
+end
+
+-- Called by Protocol on a successful move: the server has now really applied
+-- it (the request may have sat in the move coalescer), so this is the safe
+-- moment to refresh the placed list's positions.
+function Catalog:OnDecorationMoved()
+    if frame and frame:IsShown() and state.mode == "placed" then
+        DC.Protocol:RequestList()
     end
 end
 
@@ -491,9 +527,9 @@ local function CreateCatalogFrame()
         b:SetText(text)
         b:SetScript("OnClick", function()
             if state.placedSel then
+                -- No list refresh here: SMSG_MOVE_RESULT triggers it once the
+                -- server has actually applied the (possibly queued) op.
                 onClick(state.placedSel)
-                -- refresh positions shortly after the server applies it
-                DC.Protocol:RequestList()
             end
         end)
         b:Hide()
@@ -689,6 +725,11 @@ function Catalog:Show()
         CreateCatalogFrame()
     end
     DC.Protocol:RequestBudget()
+    -- Reopening while in manage mode: the placed list may have changed since
+    -- the frame was hidden, so re-request it instead of showing stale rows.
+    if state.mode == "placed" then
+        DC.Protocol:RequestList()
+    end
     UpdateList()
     frame:Show()
 end

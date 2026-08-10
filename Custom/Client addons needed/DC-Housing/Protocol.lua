@@ -92,6 +92,11 @@ function Protocol:Init()
             if data.guid and DC.EditMode and DC.EditMode.OnMoved then
                 DC.EditMode:OnMoved(tonumber(data.lowguid), data.guid)
             end
+            -- Refresh the manage list only now that the server has applied
+            -- the move (a click-time refresh could race the coalescer queue).
+            if DC.Catalog and DC.Catalog.OnDecorationMoved then
+                DC.Catalog:OnDecorationMoved()
+            end
         end)
 
     DCAddonProtocol:RegisterJSONHandler(DC.MODULE_ID, O.SMSG_REMOVE_RESULT,
@@ -99,10 +104,24 @@ function Protocol:Init()
             data = data or {}
             if data.success then
                 local refund = tonumber(data.refund) or 0
-                DC:Print(string.format("Decoration removed (%dg refunded).",
-                    math.floor(refund / 10000)))
+                -- Only decorations you placed yourself are refunded to you
+                -- personally; others' go to the guild bank (refundToBank).
+                if data.refundToBank then
+                    DC:Print(string.format(
+                        "Decoration removed (%dg refunded to the guild bank).",
+                        math.floor(refund / 10000)))
+                else
+                    DC:Print(string.format(
+                        "Decoration removed (%dg refunded).",
+                        math.floor(refund / 10000)))
+                end
                 if DC.EditMode then
                     DC.EditMode:ClearSelection()
+                end
+                -- Drop a now-dead placed-list selection and refresh the list
+                -- so the manage UI doesn't keep a removed row selected.
+                if DC.Catalog and DC.Catalog.OnDecorationRemoved then
+                    DC.Catalog:OnDecorationRemoved(tonumber(data.lowguid))
                 end
             else
                 DC:Print("|cffff0000" .. (data.error or "Remove failed.") .. "|r")
@@ -120,7 +139,9 @@ function Protocol:Init()
     -- Decorator NPC pushes this instead of its gossip menu.
     DCAddonProtocol:RegisterJSONHandler(DC.MODULE_ID, O.SMSG_OPEN_UI,
         function()
-            DC.Catalog:Show()
+            if DC.Catalog then
+                DC.Catalog:Show()
+            end
         end)
 
     DCAddonProtocol:RegisterJSONHandler(DC.MODULE_ID, O.SMSG_LIST,
@@ -137,9 +158,21 @@ function Protocol:Init()
             if data.success then
                 local removed = tonumber(data.removed) or 0
                 local refund = tonumber(data.refund) or 0
-                DC:Print(string.format(
-                    "Removed %d decoration(s). %dg refunded.",
-                    removed, math.floor(refund / 10000)))
+                -- refundBank = the part of the total that went to the guild
+                -- bank (decorations placed by others); the rest is personal.
+                local refundBank = tonumber(data.refundBank) or 0
+                if refundBank > 0 then
+                    DC:Print(string.format(
+                        "Removed %d decoration(s). %dg refunded "
+                        .. "(%dg to the guild bank, %dg to you).",
+                        removed, math.floor(refund / 10000),
+                        math.floor(refundBank / 10000),
+                        math.floor((refund - refundBank) / 10000)))
+                else
+                    DC:Print(string.format(
+                        "Removed %d decoration(s). %dg refunded.",
+                        removed, math.floor(refund / 10000)))
+                end
                 if DC.EditMode then
                     DC.EditMode:ClearSelection()
                 end
@@ -171,74 +204,85 @@ function Protocol:Place(entry, x, y, z, o)
 end
 
 -- The server caps moves at 1 / 500ms per player (see dc_guildhouse_
--- decorations ConsumeMoveRateLimit). The gizmo commits one move per release,
--- so rapid drag-releases would flood the server with rejected requests
--- ("You are moving decorations too quickly."). Coalesce: send immediately if
--- the cooldown has elapsed, otherwise remember only the LATEST target and
--- flush it once the cooldown passes. The object already moved client-side via
--- the gizmo, so persisting just the final position is correct.
+-- decorations ConsumeMoveRateLimit) and EVERY CMSG_MOVE mode (to / here /
+-- rotate / nudge / scale) consumes that budget, so rapid clicks would flood
+-- the server with rejected requests ("You are moving decorations too
+-- quickly.") and lose operations. Coalesce all of them: send immediately if
+-- the cooldown has elapsed and nothing is queued, otherwise queue and flush
+-- one message per cooldown window. Merging: consecutive nudges of the same
+-- lowguid sum their deltas; a newer absolute op (to/here/rotate/scale)
+-- replaces a queued one of the same lowguid + mode.
 local MOVE_MIN_INTERVAL = 0.55
 local lastMoveSent = 0
-local pendingMove
+local moveQueue = {}
 local moveFlushFrame
 
-local function SendMoveNow(m)
-    DCAddonProtocol:Request(DC.MODULE_ID, Protocol.Opcodes.CMSG_MOVE,
-        { lowguid = m.lowguid, mode = "to", x = m.x, y = m.y, z = m.z,
-          o = m.o or 0 })
+local function SendMoveNow(msg)
+    DCAddonProtocol:Request(DC.MODULE_ID, Protocol.Opcodes.CMSG_MOVE, msg)
     lastMoveSent = GetTime()
 end
 
-function Protocol:MoveTo(lowguid, x, y, z, o)
-    local m = { lowguid = lowguid, x = x, y = y, z = z, o = o or 0 }
-    if GetTime() - lastMoveSent >= MOVE_MIN_INTERVAL then
-        pendingMove = nil
-        SendMoveNow(m)
+local function QueueMove(msg)
+    if not moveQueue[1]
+        and GetTime() - lastMoveSent >= MOVE_MIN_INTERVAL then
+        SendMoveNow(msg)
         return
     end
 
-    pendingMove = m
+    for i, queued in ipairs(moveQueue) do
+        if queued.lowguid == msg.lowguid and queued.mode == msg.mode then
+            if msg.mode == "nudge" then
+                queued.dx = (queued.dx or 0) + (msg.dx or 0)
+                queued.dy = (queued.dy or 0) + (msg.dy or 0)
+                queued.dz = (queued.dz or 0) + (msg.dz or 0)
+                queued["do"] = (queued["do"] or 0) + (msg["do"] or 0)
+            else
+                moveQueue[i] = msg
+            end
+            return
+        end
+    end
+
+    table.insert(moveQueue, msg)
     if not moveFlushFrame then
         moveFlushFrame = CreateFrame("Frame")
-        moveFlushFrame:Hide()
         moveFlushFrame:SetScript("OnUpdate", function(self)
-            if not pendingMove then
+            if not moveQueue[1] then
                 self:Hide()
                 return
             end
             if GetTime() - lastMoveSent >= MOVE_MIN_INTERVAL then
-                local m2 = pendingMove
-                pendingMove = nil
-                SendMoveNow(m2)
-                self:Hide()
+                SendMoveNow(table.remove(moveQueue, 1))
             end
         end)
     end
     moveFlushFrame:Show()
 end
 
+function Protocol:MoveTo(lowguid, x, y, z, o)
+    QueueMove({ lowguid = lowguid, mode = "to", x = x, y = y, z = z,
+        o = o or 0 })
+end
+
 function Protocol:Nudge(lowguid, dx, dy, dz, dOrientation)
-    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
-        { lowguid = lowguid, mode = "nudge",
-          dx = dx or 0, dy = dy or 0, dz = dz or 0, ["do"] = dOrientation or 0 })
+    QueueMove({ lowguid = lowguid, mode = "nudge",
+        dx = dx or 0, dy = dy or 0, dz = dz or 0,
+        ["do"] = dOrientation or 0 })
 end
 
 function Protocol:Rotate(lowguid)
-    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
-        { lowguid = lowguid, mode = "rotate" })
+    QueueMove({ lowguid = lowguid, mode = "rotate" })
 end
 
 -- Set the decoration's visual scale (server clamps to 0.2..5.0, persists it,
 -- and replicates the new size to every nearby player).
 function Protocol:Scale(lowguid, scale)
-    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
-        { lowguid = lowguid, mode = "scale", scale = scale or 1 })
+    QueueMove({ lowguid = lowguid, mode = "scale", scale = scale or 1 })
 end
 
 -- Move the decoration to the player's current position (server reads it).
 function Protocol:MoveHere(lowguid)
-    DCAddonProtocol:Request(DC.MODULE_ID, self.Opcodes.CMSG_MOVE,
-        { lowguid = lowguid, mode = "here" })
+    QueueMove({ lowguid = lowguid, mode = "here" })
 end
 
 function Protocol:RequestList()

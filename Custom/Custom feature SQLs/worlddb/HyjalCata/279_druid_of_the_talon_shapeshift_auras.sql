@@ -1,0 +1,69 @@
+-- ===========================================================================
+-- 279_druid_of_the_talon_shapeshift_auras.sql
+-- Drop the two shapeshift-derived passives the core applies for us.
+--
+--   Creature (... Entry: 3641008 ...) has duplicate aura (spell 40121) in `auras` field.
+--   Creature (... Entry: 3641008 ...) has duplicate aura (spell 40122) in `auras` field.
+--
+-- COSMETIC. Nothing is broken -- the core skips the redundant ids and the
+-- creature ends up with exactly the right aura set. This only silences the log.
+--
+-- WHY IT FIRES
+-- ------------
+-- This is the RUNTIME check in `Creature::LoadCreaturesAddon`
+-- (Creature.cpp ~2824), `if (HasAura(*itr))`, not either of the two DB-load
+-- duplicate checks in ObjectMgr (~909 / ~1322). Those two catch the same id
+-- listed twice inside one `auras` string and name their table in the message;
+-- this one names no table, which is how you tell them apart. So the aura was
+-- already on the creature before the addon tried to apply it -- the string
+-- itself has no repeats.
+--
+-- The addon reads `77042 40121 40122` and the core applies them in order:
+--
+--   1. 77042 -- a minted Cata spell in `spell_dbc`. Effect_1 = 6 (APPLY_AURA),
+--      EffectAura_1 = 36 (SPELL_AURA_MOD_SHAPESHIFT), EffectMiscValue_1 = 27.
+--   2. 27 = 0x1B = FORM_FLIGHT_EPIC (UnitDefines.h ~97).
+--   3. `HandleAuraModShapeshift` (SpellAuraEffects.cpp ~1397) then casts the
+--      form's own passives:
+--          case FORM_FLIGHT_EPIC:
+--              spellId  = 40122;
+--              spellId2 = 40121;
+--   4. The loop reaches 40121 and 40122, HasAura() is already true, logs the
+--      error and `continue`s.
+--
+-- So the source DB recorded all three because a sniff sees all three on the
+-- live creature, but on this core the shapeshift handler derives the two
+-- passives itself. Listing them is redundant, not wrong.
+--
+-- SCOPE -- 2 rows, both `Druid of the Talon` (3641008). A sweep of
+-- `creature_addon` + `creature_template_addon` for every form-derived passive
+-- this core auto-casts (40121, 40122, 33948, 34764, 24905, 69366, 7381, 54817,
+-- 54879, 21178) returns these two rows and nothing else. Of the 24 spawns of
+-- 3641008 only these 2 carry any aura at all; the template addon is empty.
+--
+-- RECURS PER IMPORT: `creature_addon` is imported from sniffed sources, so any
+-- future batch carrying a shapeshift spell will bring its passives along too.
+-- Re-run the sweep in the verification block after each one.
+--
+-- Re-runnable -- keyed on the exact current string. Needs a restart.
+-- ===========================================================================
+
+UPDATE `creature_addon` SET `auras` = '77042'
+ WHERE `guid` IN (15500780, 15500796)
+   AND `auras` = '77042 40121 40122';
+
+-- ---------------------------------------------------------------------------
+-- Verification -- after applying, the two "duplicate aura" lines must be gone
+-- and the druids must still fly (77042 remains, and it is what grants the
+-- form; 40121/40122 come back automatically from the shapeshift handler).
+--
+--   SELECT guid, auras FROM `creature_addon` WHERE guid IN (15500780, 15500796);
+--   -- expect exactly '77042' on both
+--
+--   -- the recurring sweep: must return 0 rows after any creature_addon import
+--   SELECT 'creature_addon' AS tbl, guid AS k, auras FROM `creature_addon`
+--    WHERE auras REGEXP '(^| )(40121|40122|33948|34764|24905|69366|7381|54817|54879|21178)( |$)'
+--   UNION ALL
+--   SELECT 'creature_template_addon', entry, auras FROM `creature_template_addon`
+--    WHERE auras REGEXP '(^| )(40121|40122|33948|34764|24905|69366|7381|54817|54879|21178)( |$)';
+-- ---------------------------------------------------------------------------

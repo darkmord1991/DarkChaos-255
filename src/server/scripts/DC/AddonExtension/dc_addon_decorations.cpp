@@ -316,9 +316,25 @@ namespace Decorations
 
         std::string error;
         uint32 refund = 0;
-        bool const success = GHD::Remove(player, lowguid, error, &refund);
-        SendOpResult(player, Opcode::Decoration::SMSG_REMOVE_RESULT, success,
-            error, lowguid, refund);
+        bool toBank = false;
+        bool const success = GHD::Remove(player, lowguid, error, &refund,
+            &toBank);
+
+        JsonValue response;
+        response.SetObject();
+        response.Set("success", success);
+        if (!success)
+            response.Set("error", error);
+        response.Set("lowguid", static_cast<int32>(lowguid));
+        if (refund)
+        {
+            response.Set("refund", static_cast<int32>(refund));
+            // Refunds for other members' placements land in the guild bank,
+            // not the remover's bags - let the client word its message right.
+            response.Set("refundToBank", toBank);
+        }
+        JsonMessage(Module::DECORATION,
+            Opcode::Decoration::SMSG_REMOVE_RESULT, response).Send(player);
     }
 
     static void HandleResetAll(Player* player, ParsedMessage const& /*msg*/)
@@ -329,8 +345,9 @@ namespace Decorations
         std::string error;
         uint32 removedCount = 0;
         uint32 totalRefund = 0;
+        uint32 bankRefund = 0;
         bool const success = GHD::RemoveAll(player, error,
-            &removedCount, &totalRefund);
+            &removedCount, &totalRefund, &bankRefund);
 
         JsonValue response;
         response.SetObject();
@@ -341,6 +358,7 @@ namespace Decorations
         {
             response.Set("removed", static_cast<int32>(removedCount));
             response.Set("refund", static_cast<int32>(totalRefund));
+            response.Set("refundBank", static_cast<int32>(bankRefund));
         }
         JsonMessage(Module::DECORATION,
             Opcode::Decoration::SMSG_RESET_ALL_RESULT, response).Send(player);

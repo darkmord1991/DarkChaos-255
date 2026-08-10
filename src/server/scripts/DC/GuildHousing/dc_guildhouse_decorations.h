@@ -84,8 +84,11 @@ namespace DCGuildHouseDecorations
         float orientation, std::string& error, uint64* outGuidRaw = nullptr);
     bool Nudge(Player* player, uint32 lowguid, float dx, float dy, float dz,
         float dOrientation, std::string& error, uint64* outGuidRaw = nullptr);
+    // Refund policy: the remover is refunded personally only for decorations
+    // they placed themselves; refunds for other members' decorations are
+    // deposited into the guild bank (outRefundedToBank reports which).
     bool Remove(Player* player, uint32 lowguid, std::string& error,
-        uint32* outRefundCopper = nullptr);
+        uint32* outRefundCopper = nullptr, bool* outRefundedToBank = nullptr);
 
     // Set a decoration's visual scale (1.0 = unscaled). Server-authoritative:
     // updates OBJECT_FIELD_SCALE_X (replicated to every nearby player) and
@@ -127,8 +130,11 @@ namespace DCGuildHouseDecorations
 
     // Remove every decoration belonging to the player's guild and refund each
     // at the configured refund percent. Requires GH_PERM_DELETE permission.
+    // Personal refunds go to the remover only for their own placements; the
+    // rest (outBankRefund of outTotalRefund) is deposited to the guild bank.
     bool RemoveAll(Player* player, std::string& error,
-        uint32* outRemovedCount = nullptr, uint32* outTotalRefund = nullptr);
+        uint32* outRemovedCount = nullptr, uint32* outTotalRefund = nullptr,
+        uint32* outBankRefund = nullptr);
 }
 
 #endif // DC_GUILDHOUSE_DECORATIONS_H
