@@ -18,6 +18,7 @@ local state = {
     placedSel = nil,     -- selected placed lowguid (manage mode)
     placedSelEntry = nil,
     previewFacing = 0.6,
+    previewPitch = 0,
 }
 
 local function UpdateList()
@@ -38,6 +39,7 @@ function Catalog:LoadPreviewModel(item)
     local m = frame.preview
     m:ClearModel()
     state.previewFacing = 0.6
+    state.previewPitch = 0
     -- Scale inversely with the model's bounding radius so big and small
     -- decorations both sit comfortably in the pane (a fixed scale made small
     -- items fill/overflow the frame). Mouse wheel still zooms from here.
@@ -139,6 +141,12 @@ function Catalog:ApplyPreviewTransform()
     pcall(m.SetModelScale, m, state.previewScale or 0.5)
     pcall(m.SetPosition, m, coordX, coordY, state.previewVertical or 0)
     pcall(m.SetFacing, m, state.previewFacing or 0.6)
+    -- WXL native: tumble about the view's horizontal axis (the stock widget
+    -- has no pitch, so flat items like rugs sit edge-on without this).
+    -- Pitch 0 clears the native's per-widget state; safe unconditionally.
+    if type(SetModelPitch) == "function" then
+        pcall(SetModelPitch, m, state.previewPitch or 0)
+    end
 end
 
 function Catalog:RefreshRows()
@@ -451,14 +459,19 @@ local function CreateCatalogFrame()
             local dx = x - (self.lastX or x)
             local dy = y - (self.lastY or y)
             self.lastX, self.lastY = x, y
-            -- Horizontal drag spins the model (yaw); a stock 3.3.5 Model widget
-            -- exposes no pitch, so vertical drag raises/lowers it instead so the
-            -- top and underside can be brought into view ("look around" it).
+            -- Horizontal drag spins the model (yaw). Vertical drag tumbles it
+            -- (pitch) via the WXL SetModelPitch native, giving full rotation;
+            -- without the DLL it falls back to raising/lowering the model so
+            -- the top and underside can still be peeked at.
             state.previewFacing = (state.previewFacing or 0.6) + dx * 0.02
-            local v = (state.previewVertical or 0) + dy * 0.004
-            if v < -2 then v = -2 end
-            if v > 2 then v = 2 end
-            state.previewVertical = v
+            if type(SetModelPitch) == "function" then
+                state.previewPitch = (state.previewPitch or 0) - dy * 0.02
+            else
+                local v = (state.previewVertical or 0) + dy * 0.004
+                if v < -2 then v = -2 end
+                if v > 2 then v = 2 end
+                state.previewVertical = v
+            end
             Catalog:ApplyPreviewTransform()
         end
     end)
