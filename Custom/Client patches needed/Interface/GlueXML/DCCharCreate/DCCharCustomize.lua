@@ -129,6 +129,15 @@ function DCCharCustomize.RaceSex()
 		end
 	end
 
+	-- The stock getters dereference the char-create component with NO null check --
+	-- GetSelectedSex() off the create screen is a hard client crash (ERROR #132 at 0x4E0A38,
+	-- 2026-08-11: a load-time framing call reached this fallback during GlueXML load). The
+	-- native above null-checks and returned nil for exactly that reason, so bail here too.
+	local create = _G["CharacterCreate"]
+	if not (create and create.IsShown and create:IsShown()) then
+		return nil, nil
+	end
+
 	local sex = GetSelectedSex and GetSelectedSex() or 0
 	if sex == 2 then sex = 0 elseif sex == 3 then sex = 1 end
 

@@ -8,6 +8,7 @@
 #include "RewardDistributor.h"
 #include "CrossSystemManager.h"
 #include "SessionContext.h"
+#include "DC/CollectionSystem/CollectionGrant.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
@@ -331,6 +332,16 @@ namespace CrossSystem
                     break;
                 }
 
+                case RewardType::Collectible:
+                {
+                    if (DistributeCollectible(player, reward.collectionType, reward.collectionEntry,
+                                             context.sourceSystem, context.sourceName))
+                    {
+                        result.collectiblesAwarded.push_back({reward.collectionType, reward.collectionEntry});
+                    }
+                    break;
+                }
+
                 default:
                     break;
             }
@@ -417,6 +428,34 @@ namespace CrossSystem
 
         LOG_DEBUG("dc.crosssystem.rewards", "Distributed item {} x{} to player {} from {} ({})",
                   itemId, count, player->GetName(), SystemIdToString(source), reason);
+
+        return true;
+    }
+
+    bool RewardDistributor::DistributeCollectible(Player* player, uint8 collectionType, uint32 entry,
+                                                   SystemId source, const std::string& reason)
+    {
+        if (!player || collectionType == 0 || entry == 0)
+            return false;
+
+        DCCollection::GrantOptions options;
+        options.sourceType = SystemIdToString(source);
+        options.sourceText = reason;
+
+        DCCollection::GrantResult const result = DCCollection::GrantCollectible(
+            player, static_cast<DCCollection::CollectionType>(collectionType), entry, options);
+
+        if (!DCCollection::OwnsAfterGrant(result))
+        {
+            LOG_ERROR("dc.crosssystem.rewards", "Could not grant collectible type {} entry {} to player {} from {} ({}): {}",
+                      collectionType, entry, player->GetName(), SystemIdToString(source), reason,
+                      DCCollection::GrantResultToString(result));
+            return false;
+        }
+
+        LOG_DEBUG("dc.crosssystem.rewards", "Distributed collectible type {} entry {} to player {} from {} ({}): {}",
+                  collectionType, entry, player->GetName(), SystemIdToString(source), reason,
+                  DCCollection::GrantResultToString(result));
 
         return true;
     }

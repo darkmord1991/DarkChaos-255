@@ -42,6 +42,7 @@ namespace CrossSystem
         Currency    = 4,    // Generic currency (honor, etc.)
         Experience  = 5,
         Gold        = 6,
+        Collectible = 7,    // Mount/pet/toy/heirloom/title/appearance unlock
         Max
     };
 
@@ -56,6 +57,11 @@ namespace CrossSystem
         uint32 itemId = 0;          // For Item type
         uint32 currencyId = 0;      // For Currency type
         float multiplier = 1.0f;    // Applied before distribution
+
+        // For Collectible type: DCCollection::CollectionType (1=mount, 2=pet,
+        // 3=toy, 4=heirloom, 5=title, 6=transmog) and the entry it unlocks.
+        uint8 collectionType = 0;
+        uint32 collectionEntry = 0;
 
         RewardDefinition() = default;
         RewardDefinition(RewardType t, uint32 a, float m = 1.0f)
@@ -77,6 +83,21 @@ namespace CrossSystem
             r.itemId = itemId;
             return r;
         }
+
+        /// Account-wide collectible unlock (mount, pet, toy, heirloom, title,
+        /// appearance). collectionType takes a DCCollection::CollectionType
+        /// value; entry may be the spell id, teaching item id, title id or
+        /// appearance id - it is normalised by the grant API.
+        static RewardDefinition Collectible(uint8 collectionType, uint32 entry)
+        {
+            RewardDefinition r(RewardType::Collectible, 1);
+            r.collectionType = collectionType;
+            r.collectionEntry = entry;
+            return r;
+        }
+
+        static RewardDefinition Mount(uint32 mountEntry) { return Collectible(1, mountEntry); }
+        static RewardDefinition Pet(uint32 petEntry) { return Collectible(2, petEntry); }
     };
 
     // =========================================================================
@@ -119,6 +140,7 @@ namespace CrossSystem
         uint32 tokensAwarded = 0;
         uint32 essenceAwarded = 0;
         std::vector<std::pair<uint32, uint32>> itemsAwarded;  // itemId, count
+        std::vector<std::pair<uint8, uint32>> collectiblesAwarded;  // collectionType, entry
 
         RewardCalculation tokenCalc;
         RewardCalculation essenceCalc;
@@ -229,6 +251,12 @@ namespace CrossSystem
         // Item rewards (no multipliers applied)
         bool DistributeItem(Player* player, uint32 itemId, uint32 count = 1,
                            SystemId source = SystemId::None, const std::string& reason = "");
+
+        // Account-wide collectible unlock (no multipliers applied). Returns
+        // true when the account owns it afterwards, including when it already
+        // did.
+        bool DistributeCollectible(Player* player, uint8 collectionType, uint32 entry,
+                                  SystemId source = SystemId::None, const std::string& reason = "");
 
         // =====================================================================
         // Preview (no actual distribution)

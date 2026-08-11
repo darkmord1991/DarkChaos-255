@@ -38,8 +38,9 @@
         SMSG_DELTA_SYNC          = 0x42  -- Delta update (JSON)
         SMSG_STATS               = 0x43  -- Stats response
         SMSG_BONUSES             = 0x44  -- Active bonuses response
-        SMSG_ITEM_LEARNED        = 0x45  -- New item learned notification
-        
+        SMSG_ITEM_LEARNED        = 0x45  -- New item learned notification (legacy)
+        SMSG_COLLECTIBLE_GRANTED = 0x6B  -- Collectible(s) granted, with source
+
         SMSG_SHOP_DATA           = 0x50  -- Shop items (JSON)
         SMSG_PURCHASE_RESULT     = 0x51  -- Purchase result
         SMSG_CURRENCIES          = 0x52  -- Currency balances
@@ -173,6 +174,12 @@ DC.Opcodes = {
     -- Server -> Client: Shapeshift forms
     SMSG_FORMS_DATA          = 0x69,
     SMSG_FORM_RESULT         = 0x6A,
+
+    -- Server -> Client: Grants
+    -- Richer successor to SMSG_ITEM_LEARNED: carries the granting source and
+    -- can batch many items into one push. The server still sends the legacy
+    -- 0x45 per item afterwards, which this client suppresses.
+    SMSG_COLLECTIBLE_GRANTED = 0x6B,
 
     -- Server -> Client: UI Control
     SMSG_OPEN_UI             = 0x70,
@@ -4614,6 +4621,8 @@ function DC.OnProtocolMessage(payload)
         self:HandleBonuses(data)
     elseif opcode == self.Opcodes.SMSG_ITEM_LEARNED then
         self:HandleItemLearned(data)
+    elseif opcode == self.Opcodes.SMSG_COLLECTIBLE_GRANTED then
+        self:HandleCollectibleGranted(data)
     elseif opcode == self.Opcodes.SMSG_DEFINITIONS then
         self:HandleDefinitions(data)
     elseif opcode == self.Opcodes.SMSG_COLLECTION then
@@ -5405,63 +5414,202 @@ function DC:HandleBonuses(data)
 end
 
 -- Handle new item learned notification
-function DC:HandleItemLearned(data)
-    self:Debug(string.format("New item learned: type=%d, entryId=%d", data.type or 0, data.entryId or 0))
-    
-    -- Add to local collection
-    self:AddToCollection(data.type, data.entryId)
+-- Records one acquired collectible locally: collection membership, toast and
+-- recent-additions entry. Shared by SMSG_ITEM_LEARNED (0x45) and
+-- SMSG_COLLECTIBLE_GRANTED (0x6B). Deliberately does NOT refresh stats or the
+-- UI - callers do that once per message so a batch costs one refresh, not N.
+function DC:RecordCollectibleAcquired(collTypeId, entryId, sourceText, extra)
+    if not entryId or entryId == 0 then
+        return false
+    end
 
-    -- Show notification through the toast pipeline: it coalesces bursts
-    -- (account-wide sync) instead of printing one chat line per item.
-    local typeName = self:GetTypeNameFromId(data.type)
-    local notifyDef = self:GetDefinition(typeName, data.entryId)
+    self:AddToCollection(collTypeId, entryId)
+
+    local typeName = self:GetTypeNameFromId(collTypeId)
+    local def = self:GetDefinition(typeName, entryId)
+
+    -- The toast pipeline coalesces bursts (account-wide sync) instead of
+    -- printing one chat line per item.
     self:ShowToast(typeName or "default",
-        (notifyDef and notifyDef.name) or string.format("New %s collected", typeName or "item"),
-        notifyDef and notifyDef.icon)
+        (def and def.name) or string.format("New %s collected", typeName or "item"),
+        def and def.icon,
+        sourceText)
 
-    -- Add to recent additions for My Collection overview
     self.recentAdditions = self.recentAdditions or {}
-    local def = self:GetDefinition(typeName, data.entryId)
-    local newEntry = {
+    table.insert(self.recentAdditions, 1, {
         type = typeName or "unknown",
-        id = data.entryId,
+        id = entryId,
         name = def and def.name or nil,
         icon = def and def.icon or nil,
-        itemId = data.itemId or (def and def.itemId),
-        spellId = data.spellId or (def and def.spellId),
+        itemId = (extra and extra.itemId) or (def and def.itemId),
+        spellId = (extra and extra.spellId) or (def and def.spellId),
         timestamp = time(),
         rarity = def and def.rarity or 1,
-    }
-    table.insert(self.recentAdditions, 1, newEntry) -- Insert at beginning
-    
+        source = sourceText,
+    })
+
     -- Limit to 50 recent items
     while #self.recentAdditions > 50 do
         table.remove(self.recentAdditions)
     end
 
-    if type(self.SetRecentAdditions) == "function" then
-        self:SetRecentAdditions(self.recentAdditions)
-    elseif DCCollectionDB then
-        DCCollectionDB.recentAdditions = self.recentAdditions
-        DCCollectionDB.recentAdditionsUpdatedAt = time()
+    return true
+end
+
+-- Persists recent additions and refreshes the views that depend on collection
+-- contents. Call once after a message, however many items it carried.
+function DC:FlushCollectibleAcquisitions()
+    if self.recentAdditions then
+        if type(self.SetRecentAdditions) == "function" then
+            self:SetRecentAdditions(self.recentAdditions)
+        elseif DCCollectionDB then
+            DCCollectionDB.recentAdditions = self.recentAdditions
+            DCCollectionDB.recentAdditionsUpdatedAt = time()
+        end
     end
-    
-    -- Update My Collection UI if visible
+
     if self.MyCollection then
         self.MyCollection:Update()
     end
-    
-    -- Fire callback
-    if self.callbacks.onItemLearned then
-        self.callbacks.onItemLearned(data)
-    end
-    
-    -- Refresh stats
+
     self:RequestStats()
     self:RequestBonuses()
 
     if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
         self.Wardrobe:InvalidateRandomizerCache()
+    end
+end
+
+-- 0x6B arrives first and carries the source; the server still emits the legacy
+-- 0x45 behind it for older clients. These two keep this client from handling
+-- the same acquisition twice.
+function DC:MarkRecentlyGranted(collTypeId, entryId)
+    self._recentGrants = self._recentGrants or {}
+    self._recentGrantCount = (self._recentGrantCount or 0) + 1
+
+    local now = (type(GetTime) == "function") and GetTime() or time()
+
+    if self._recentGrantCount > 200 then
+        self._recentGrantCount = 0
+        for key, at in pairs(self._recentGrants) do
+            if now - at > 10 then
+                self._recentGrants[key] = nil
+            end
+        end
+    end
+
+    self._recentGrants[tostring(collTypeId) .. ":" .. tostring(entryId)] = now
+end
+
+function DC:WasRecentlyGranted(collTypeId, entryId)
+    if type(self._recentGrants) ~= "table" then
+        return false
+    end
+
+    local key = tostring(collTypeId) .. ":" .. tostring(entryId)
+    local at = self._recentGrants[key]
+    if not at then
+        return false
+    end
+
+    local now = (type(GetTime) == "function") and GetTime() or time()
+    if now - at > 10 then
+        self._recentGrants[key] = nil
+        return false
+    end
+
+    return true
+end
+
+function DC:HandleItemLearned(data)
+    if not data then
+        return
+    end
+
+    local collTypeId = data.type or 0
+    local entryId = data.entryId or 0
+
+    if self:WasRecentlyGranted(collTypeId, entryId) then
+        self:Debug(string.format("Item learned suppressed (already handled by grant): type=%d, entryId=%d",
+            collTypeId, entryId))
+        return
+    end
+
+    self:Debug(string.format("New item learned: type=%d, entryId=%d", collTypeId, entryId))
+
+    if not self:RecordCollectibleAcquired(collTypeId, entryId, nil, data) then
+        return
+    end
+
+    self:FlushCollectibleAcquisitions()
+
+    if self.callbacks and self.callbacks.onItemLearned then
+        self.callbacks.onItemLearned(data)
+    end
+end
+
+-- SMSG_COLLECTIBLE_GRANTED (0x6B). Two shapes:
+--   { items = { {type=1, entryId=48025}, ... }, source = "Quest: ...", sourceType = "QUEST" }
+--   { syncComplete = true, spellsTaught = N, titlesApplied = M }
+function DC:HandleCollectibleGranted(data)
+    if not data then
+        return
+    end
+
+    -- Account-wide collection finished applying to this character. Nothing new
+    -- was collected - the account already owned it - so just refresh the views
+    -- instead of telling the player to relog.
+    if data.syncComplete then
+        self:Debug(string.format("Account-wide collection sync complete: %d spells, %d titles",
+            data.spellsTaught or 0, data.titlesApplied or 0))
+
+        self:FlushCollectibleAcquisitions()
+
+        if self.callbacks and self.callbacks.onCollectionSyncComplete then
+            self.callbacks.onCollectionSyncComplete(data)
+        end
+        return
+    end
+
+    local items = data.items
+    if type(items) ~= "table" then
+        if not data.entryId then
+            return
+        end
+        items = { { type = data.type, entryId = data.entryId } }
+    end
+
+    local sourceText = data.source
+    local handled = 0
+
+    for i = 1, #items do
+        local item = items[i]
+        if type(item) == "table" then
+            local collTypeId = item.type or data.type or 0
+            local entryId = item.entryId or item.entry or 0
+
+            if self:RecordCollectibleAcquired(collTypeId, entryId, sourceText, item) then
+                self:MarkRecentlyGranted(collTypeId, entryId)
+                handled = handled + 1
+
+                if self.callbacks and self.callbacks.onItemLearned then
+                    self.callbacks.onItemLearned({ type = collTypeId, entryId = entryId, source = sourceText })
+                end
+            end
+        end
+    end
+
+    if handled == 0 then
+        return
+    end
+
+    self:Debug(string.format("Collectibles granted: %d item(s)%s", handled,
+        sourceText and (" from " .. sourceText) or ""))
+
+    self:FlushCollectibleAcquisitions()
+
+    if self.callbacks and self.callbacks.onCollectibleGranted then
+        self.callbacks.onCollectibleGranted(data)
     end
 end
 

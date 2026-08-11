@@ -424,10 +424,12 @@ local function ApplyStage()
 		okay:SetText(choosing and CONTINUE or (CHAR_CREATE_ACCEPT or ACCEPT or "Create"))
 	end
 
-	-- Per-stage framing is deliberately NOT applied yet. The spike proved SetModelScale is a no-op
-	-- here and SetPosition does move the model, but not which argument is "toward the camera" -
-	-- and a guessed axis shifts the character sideways or through the floor rather than framing
-	-- the face. Determine the axis first, then lean in on the customize stage.
+	-- Framing lives in DCGlueCamera (body baseline both stages, face zoom per axis); this call
+	-- mainly eases back out of a face zoom when the player leaves customization. Guarded - the
+	-- camera module is optional and disables itself if SetPosition misbehaves.
+	if DCGlueCamera then
+		DCGlueCamera.OnStageChanged(not choosing)
+	end
 end
 
 local function SetStage(next)
@@ -527,6 +529,102 @@ if LayoutRaceButtons() > 0 then
 		panel:SetBackdropColor(0, 0, 0, 0.55)
 		panel:SetBackdropBorderColor(0.5, 0.45, 0.35, 0.8)
 	end
+
+	-- Ascension-style in-place race switching: a compact flyout of the race icons INSIDE
+	-- customization ("should just show the races and not fully go back"). The flyout buttons
+	-- borrow the stock buttons' textures/ids and drive the stock CharacterRace_OnClick, then
+	-- re-apply the stage so the race-name regions stock re-Shows get hidden again. Parented to
+	-- the customization panel, so everything vanishes with stage 2 for free. Paid-service flows
+	-- lock the race, so the toggle stays inert there.
+	local flyout = CreateFrame("Frame", "DCCharCreateRaceFlyout", panel)
+	flyout:SetFrameStrata("DIALOG")
+	flyout:SetBackdrop(PANEL_BACKDROP)
+	flyout:SetBackdropColor(0, 0, 0, 0.8)
+	flyout:SetBackdropBorderColor(0.5, 0.45, 0.35, 0.8)
+	flyout:SetPoint("TOPRIGHT", panel, "TOPLEFT", -8, 0)
+	flyout:Hide()
+
+	local FLYOUT_COLS, FLYOUT_CELL, FLYOUT_PAD = 2, 40, 12
+	local flyoutButtons = {}
+	local function RefreshFlyout()
+		local count = 0
+		for index = 1, 12 do
+			local stock = Frame("CharacterCreateRaceButton" .. index)
+			local texture = stock and _G["CharacterCreateRaceButton" .. index .. "NormalTexture"]
+			if stock and texture then
+				count = count + 1
+				local button = flyoutButtons[count]
+				if not button then
+					button = CreateFrame("CheckButton", nil, flyout)
+					button:SetWidth(34)
+					button:SetHeight(34)
+					local icon = button:CreateTexture(nil, "ARTWORK")
+					icon:SetAllPoints()
+					button.icon = icon
+					-- Gold ring around the selected race, like the stage-1 grid's selection look.
+					button:SetBackdrop({
+						edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+						edgeSize = 12,
+						insets = { left = 2, right = 2, top = 2, bottom = 2 },
+					})
+					button:SetHighlightTexture(
+						"Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Highlights", "ADD")
+					button:SetCheckedTexture(
+						"Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Highlights", "ADD")
+					button:SetScript("OnClick", function(self)
+						self:SetChecked(1)
+						local target = Frame("CharacterCreateRaceButton" .. self.stockIndex)
+						if target and target.enable then
+							-- Stock's first guard bounces unchecked buttons, so pre-check it.
+							target:SetChecked(1)
+							CharacterRace_OnClick(target, target:GetID())
+							ApplyStage()   -- stock re-Shows stage-1 regions; put stage 2 back
+						end
+						RefreshFlyout()
+					end)
+					flyoutButtons[count] = button
+				end
+				button.stockIndex = index
+				button.icon:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Races")
+				button.icon:SetTexCoord(texture:GetTexCoord())
+				-- Alpha rather than SetDesaturated: the glue widget API is a subset.
+				button.icon:SetAlpha(stock.enable and 1 or 0.35)
+				button:SetChecked(stock:GetChecked())
+				if stock:GetChecked() then
+					button:SetBackdropBorderColor(1, 0.82, 0, 1)
+				else
+					button:SetBackdropBorderColor(0.35, 0.35, 0.35, 0.7)
+				end
+				button:ClearAllPoints()
+				button:SetPoint("TOPLEFT", flyout, "TOPLEFT",
+					FLYOUT_PAD + ((count - 1) % FLYOUT_COLS) * FLYOUT_CELL,
+					-FLYOUT_PAD - math.floor((count - 1) / FLYOUT_COLS) * FLYOUT_CELL)
+				button:Show()
+			end
+		end
+		for i = count + 1, #flyoutButtons do
+			flyoutButtons[i]:Hide()
+		end
+		flyout:SetWidth(FLYOUT_PAD * 2 + FLYOUT_COLS * FLYOUT_CELL - 6)
+		flyout:SetHeight(FLYOUT_PAD * 2 + math.ceil(count / FLYOUT_COLS) * FLYOUT_CELL - 6)
+	end
+
+	local changeRace = CreateFrame("Button", "DCCharCreateChangeRace", panel, "GlueButtonSmallTemplate")
+	changeRace:SetWidth(110)
+	changeRace:SetHeight(26)
+	changeRace:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 0, 6)
+	changeRace:SetText("Race")
+	changeRace:SetScript("OnClick", function()
+		if PAID_SERVICE_TYPE then
+			return
+		end
+		if flyout:IsShown() then
+			flyout:Hide()
+		else
+			RefreshFlyout()
+			flyout:Show()
+		end
+	end)
 
 	ApplyStage()
 end

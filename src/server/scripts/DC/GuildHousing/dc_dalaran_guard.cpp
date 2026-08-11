@@ -44,7 +44,13 @@ namespace
         {"The Eventide (Vendors)", 1413, 1157.23f, 1012.90f, 525.29f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Coin_01", GOSSIP_ICON_TAXI},
         {"Violet Hold", 1413, 1100.53f, 1258.36f, 537.09f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_DualWield", GOSSIP_ICON_TAXI},
         {"Greyfang Enclave", 1413, 1237.43f, 1082.14f, 495.49f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Rogue_Sprint", GOSSIP_ICON_TAXI},
-        {"The Underbelly", 1413, 1130.60f, 978.88f, -372.91f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Creature_Cursed_03", GOSSIP_ICON_TAXI},
+        // Underbelly: the old anchor (1130.60, 978.88, -372.91) came from the Legion
+        // source's placeholder spawn of Underbelly Guard 97586, which sits at z=0.2 and
+        // transforms to z ~= -203 -- i.e. below the world, so the teleport dropped the
+        // player into nothing. This point is on the real sewer floor: the densest NPC
+        // cluster on the main Underbelly level, nudged to the local centroid so it is
+        // ~3.9 yd clear of the nearest spawn. Same landing the well teleporter uses.
+        {"The Underbelly", 1413, 1113.08f, 1030.18f, 496.10f, 3.600f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Creature_Cursed_03", GOSSIP_ICON_TAXI},
         {"Chamber of the Guardian", 1413, 1274.03f, 928.46f, 749.79f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Spell_Arcane_TeleportDalaran", GOSSIP_ICON_TAXI},
         {"Sunreaver's Sanctuary", 1413, 1232.42f, 952.55f, 955.19f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Jewelry_TrinketPVP_02", GOSSIP_ICON_TAXI}
     };

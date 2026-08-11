@@ -652,6 +652,13 @@ namespace DCAddon
             constexpr uint8 SMSG_FORMS_DATA           = 0x69;  // Forms catalog + unlocks + current selections (JSON)
             constexpr uint8 SMSG_FORM_RESULT          = 0x6A;  // Result of a single set/reset form action
 
+            // Server -> Client: Grants
+            // Richer successor to SMSG_ITEM_LEARNED: carries the granting source
+            // ("Quest: ...") and can batch many items into one push, so an
+            // account-wide back-fill costs one packet and one UI refresh.
+            // SMSG_ITEM_LEARNED (0x45) stays for older addon builds.
+            constexpr uint8 SMSG_COLLECTIBLE_GRANTED  = 0x6B;  // Collectible(s) granted (JSON)
+
             // Server -> Client: Shop
             constexpr uint8 SMSG_SHOP_DATA           = 0x50;  // Shop items (JSON)
             constexpr uint8 SMSG_PURCHASE_RESULT     = 0x51;  // Purchase result

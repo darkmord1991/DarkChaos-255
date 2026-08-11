@@ -27,6 +27,7 @@
 #include "dc_addon_utils.h"
 #include "dc_addon_collection.h"
 #include "dc_wardrobe_visuals.h"
+#include "../CollectionSystem/CollectionGrant.h"
 #include "../CrossSystem/CrossSystemUtilities.h"
 
 void AddSC_dc_addon_wardrobe(); // Forward declaration
@@ -3370,6 +3371,12 @@ namespace DCCollection
                 }
             }
 
+            // One push at the end of the whole batch run, not one per item:
+            // the client refreshes its collection view once and drops the
+            // "please relog" advice.
+            if (state->taughtTotal > 0 || state->titlesApplied > 0)
+                SendCollectionSyncComplete(player, state->taughtTotal, state->titlesApplied);
+
             if (state->taughtTotal > 0 &&
                 sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ANNOUNCE, false))
             {
@@ -3377,7 +3384,7 @@ namespace DCCollection
                 {
                     ChatHandler handler(session);
                     handler.PSendSysMessage(
-                        "DC-Collection: Accountwide sync complete ({} spells taught, {} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
+                        "DC-Collection: Accountwide sync complete ({} spells taught, {} titles applied).",
                         state->taughtTotal,
                         state->titlesApplied);
                 }
@@ -3543,15 +3550,19 @@ namespace DCCollection
                 if (spellsToTeach.empty())
                 {
                     // No spells to teach; still report titles applied if any
-                    if (titlesApplied > 0 &&
-                        sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ANNOUNCE, false))
+                    if (titlesApplied > 0)
                     {
-                        if (WorldSession* session = player->GetSession())
+                        SendCollectionSyncComplete(player, 0, titlesApplied);
+
+                        if (sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ANNOUNCE, false))
                         {
-                            ChatHandler handler(session);
-                            handler.PSendSysMessage(
-                                "DC-Collection: Accountwide sync complete ({} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
-                                titlesApplied);
+                            if (WorldSession* session = player->GetSession())
+                            {
+                                ChatHandler handler(session);
+                                handler.PSendSysMessage(
+                                    "DC-Collection: Accountwide sync complete ({} titles applied).",
+                                    titlesApplied);
+                            }
                         }
                     }
                     return;
@@ -5474,6 +5485,85 @@ namespace DCCollection
     }
 
     // =======================================================================
+    // Grant notifications (SMSG_COLLECTIBLE_GRANTED)
+    //
+    // Successor to SendItemLearned: carries where the collectible came from and
+    // can batch a burst into one push. SendItemLearned is still emitted
+    // alongside it so addon builds predating 0x6B keep working; a client that
+    // understands both suppresses the duplicate.
+    // =======================================================================
+
+    void SendCollectiblesGranted(Player* player, std::vector<GrantedCollectible> const& items,
+        std::string const& sourceType, std::string const& sourceText)
+    {
+        if (!player || !player->GetSession() || items.empty())
+            return;
+
+        DCAddon::JsonValue entries;
+        entries.SetArray(items.size());
+
+        for (GrantedCollectible const& granted : items)
+        {
+            if (!granted.entryId)
+                continue;
+
+            DCAddon::JsonValue entry;
+            entry.SetObject();
+            entry.Set("type", static_cast<uint32>(static_cast<uint8>(granted.type)));
+            entry.Set("entryId", granted.entryId);
+            entries.Push(std::move(entry));
+        }
+
+        if (entries.Size() == 0)
+            return;
+
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("count", static_cast<uint32>(entries.Size()));
+        payload.Set("items", std::move(entries));
+
+        if (!sourceType.empty())
+            payload.Set("sourceType", sourceType);
+
+        if (!sourceText.empty())
+            payload.Set("source", sourceText);
+
+        SendCollectionJsonPayload(player,
+            DCAddon::Opcode::Collection::SMSG_COLLECTIBLE_GRANTED, payload);
+
+        // Legacy push + wishlist bookkeeping, which is per item.
+        for (GrantedCollectible const& granted : items)
+        {
+            if (granted.entryId)
+                SendItemLearned(player, granted.type, granted.entryId);
+        }
+    }
+
+    void SendCollectibleGranted(Player* player, CollectionType type, uint32 entryId,
+        std::string const& sourceType, std::string const& sourceText)
+    {
+        std::vector<GrantedCollectible> const items{ GrantedCollectible{ type, entryId } };
+        SendCollectiblesGranted(player, items, sourceType, sourceText);
+    }
+
+    void SendCollectionSyncComplete(Player* player, uint32 spellsTaught, uint32 titlesApplied)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        // Same opcode, no items: "the account-wide collection finished applying
+        // to this character - refresh, no relog needed".
+        DCAddon::JsonValue payload;
+        payload.SetObject();
+        payload.Set("syncComplete", true);
+        payload.Set("spellsTaught", spellsTaught);
+        payload.Set("titlesApplied", titlesApplied);
+
+        SendCollectionJsonPayload(player,
+            DCAddon::Opcode::Collection::SMSG_COLLECTIBLE_GRANTED, payload);
+    }
+
+    // =======================================================================
     // Handler Functions - Process Requests
     // =======================================================================
 
@@ -5583,12 +5673,27 @@ namespace DCCollection
             return;
         }
 
-        // Check if already owned
-        auto owned = LoadPlayerCollection(accountId, static_cast<CollectionType>(collType));
-        if (std::find(owned.begin(), owned.end(), purchasedEntryId) != owned.end())
+        // Check if already owned. HasCollectionItem is one indexed LIMIT 1
+        // lookup; the old LoadPlayerCollection call pulled the account's entire
+        // list of that type just to search it, and it also handles the title
+        // id/bit-index duality that a plain find() on the list does not.
+        if (HasCollectionItem(accountId, static_cast<CollectionType>(collType), purchasedEntryId))
         {
             SendPurchaseResultPayload(player, false,
                 "You already own this item");
+            return;
+        }
+
+        // Validate before charging: a misconfigured shop row must not take the
+        // player's currency and hand back a collection entry that resolves to
+        // nothing.
+        if (!ValidateCollectibleEntry(static_cast<CollectionType>(collType), purchasedEntryId))
+        {
+            LOG_ERROR("module.dc", "DC-Collection: shop row {} offers {} {} which does not resolve to a usable collectible.",
+                shopId, CollectionTypeToName(static_cast<CollectionType>(collType)), purchasedEntryId);
+
+            SendPurchaseResultPayload(player, false,
+                "This item is misconfigured - please report it");
             return;
         }
 
@@ -5634,20 +5739,24 @@ namespace DCCollection
         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
             playerGuid, season, player, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, 0, true);
 
-        // Process purchase - use transaction for granting/recording
-        auto trans = CharacterDatabase.BeginTransaction();
-
         CollectionType const purchasedType =
             static_cast<CollectionType>(collType);
-        std::string const collTypeValueExpr =
-            GetItemsCollectionTypeValueExpr(purchasedType);
 
-        // Add to collection
-        trans->Append(
-            "INSERT INTO dc_collection_items (account_id, collection_type, {}, source_type, source_id, unlocked, acquired_date) "
-            "VALUES ({}, {}, {}, 'SHOP', {}, 1, NOW()) "
-            "ON DUPLICATE KEY UPDATE unlocked = 1, acquired_date = NOW()",
-            itemsEntryCol, accountId, collTypeValueExpr, purchasedEntryId, shopId);
+        // Unlock through the grant API so the purchase is immediately usable:
+        // the row alone left the mount/pet spell untaught until the next login
+        // sync, which is why bought mounts appeared in the UI but not in the
+        // spellbook.
+        GrantOptions grantOptions;
+        grantOptions.sourceType = "SHOP";
+        grantOptions.sourceId = shopId;
+        grantOptions.sourceText = "Collection Shop";
+        grantOptions.skipValidation = true;  // validated above, before charging
+        grantOptions.notify = false;         // SMSG_PURCHASE_RESULT covers it
+
+        GrantCollectible(player, purchasedType, purchasedEntryId, grantOptions);
+
+        // Process purchase - use transaction for recording
+        auto trans = CharacterDatabase.BeginTransaction();
 
         // Record purchase
         trans->Append(
@@ -5674,12 +5783,6 @@ namespace DCCollection
 
         CharacterDatabase.CommitTransaction(trans);
 
-        // Update mount speed bonus if mount was purchased
-        if (collType == static_cast<uint8>(CollectionType::MOUNT))
-        {
-            UpdateMountSpeedBonus(player);
-        }
-
         // Send success response
         auto newCurrencies = LoadCurrencies(player);
 
@@ -5687,8 +5790,10 @@ namespace DCCollection
             purchasedEntryId, newCurrencies[CURRENCY_TOKEN],
             newCurrencies[CURRENCY_EMBLEM], true, true);
 
-        // Send item learned notification
-        SendItemLearned(player, static_cast<CollectionType>(collType), purchasedEntryId);
+        // Grant push (mount speed bonus and spell teaching already happened in
+        // GrantCollectible above; this only adds the item to the client's
+        // collection view and clears any wishlist entry).
+        SendCollectibleGranted(player, purchasedType, purchasedEntryId, "SHOP", "Collection Shop");
     }
 
     void HandleAddWishlist(Player* player, uint8 type, uint32 entryId)
@@ -8341,24 +8446,19 @@ namespace DCCollection
                 }
             }
 
+            // The spell is already on the character - the grant only has to
+            // record the account-wide unlock and notify, so teaching is off.
+            // Validation is skipped: this hook already established what the
+            // spell is, and re-deriving it through the other resolver could
+            // disagree and silently drop the unlock.
+            GrantOptions options;
+            options.sourceType = "LEARNED";
+            options.teach = false;
+            options.skipValidation = true;
+
             if (isMount)
             {
-                std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-                if (itemsEntryCol.empty())
-                    return;
-
-                // Add mount to collection
-                CharacterDatabase.Execute(
-                    "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-                    "VALUES ({}, {}, {}, 'LEARNED', 1, NOW())",
-                    itemsEntryCol,
-                    accountId,
-                    GetItemsCollectionTypeValueExpr(CollectionType::MOUNT),
-                    spellId);
-
-                SendItemLearned(player, CollectionType::MOUNT, spellId);
-                UpdateMountSpeedBonus(player);
+                GrantCollectible(player, CollectionType::MOUNT, spellId, options);
             }
             else
             {
@@ -8370,20 +8470,7 @@ namespace DCCollection
                 if (!itemId)
                     return;
 
-                std::string itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-                if (itemsEntryCol.empty())
-                    return;
-
-                CharacterDatabase.Execute(
-                    "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-                    "VALUES ({}, {}, {}, 'LEARNED', 1, NOW())",
-                    itemsEntryCol,
-                    accountId,
-                    GetItemsCollectionTypeValueExpr(CollectionType::PET),
-                    itemId);
-
-                SendItemLearned(player, CollectionType::PET, itemId);
+                GrantCollectible(player, CollectionType::PET, itemId, options);
             }
         }
 

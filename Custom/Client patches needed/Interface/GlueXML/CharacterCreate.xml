@@ -822,6 +822,8 @@
 	     the CharacterCreate ModelFFX these parent to) already exist, and in dependency order:
 	       Data      generated swatch/index table
 	       Customize the C_CharacterCreation stand-in (native enumeration, probe fallback)
+	       Camera    Ascension-style framing: bigger characters, face zoom while customizing;
+	                 wraps DCCharCustomize so it must follow it and precede the UI/Layout
 	       UI        the categorised customization panel
 	       Layout    the two-stage flow; needs the panel to exist
 	     DCCharCreateSpike.lua is retired - all its questions were answered in-client 2026-08-07
@@ -831,6 +833,8 @@
 	<Script file="DCCharCreate\DCCharCreateAtlas.lua"/>
 	<Script file="DCCharCreate\DCGlueAtlas.lua"/>
 	<Script file="DCCharCreate\DCCharCustomize.lua"/>
+	<Script file="DCCharCreate\DCGlueCameraData.lua"/>
+	<Script file="DCCharCreate\DCGlueCamera.lua"/>
 	<Script file="DCCharCreate\DCCharCreateUI.lua"/>
 	<Script file="DCCharCreate\DCCharCreateLayout.lua"/>
 </Ui>

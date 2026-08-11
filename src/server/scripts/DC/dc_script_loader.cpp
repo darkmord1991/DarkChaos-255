@@ -193,6 +193,9 @@ void AddSC_dc_accountwide_friendlist();       // Progression/Accountwide/dc_acco
 void AddSC_dc_accountwide_achievements();     // Progression/Accountwide/dc_accountwide_achievements.cpp
 void AddSC_dc_accountwide_maintenance();      // Progression/Accountwide/dc_accountwide_maintenance.cpp
 
+// --- Collection system ---
+void AddSC_dc_collection_rewards();           // CollectionSystem/CollectionRewards.cpp
+
 // --- Cross-system integration framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem/CrossSystemScripts.cpp
 void AddSC_dc_teleporter();                   // Teleporters/dc_teleporter.cpp
@@ -214,6 +217,7 @@ void AddSC_dc_stresstest();                   // Commands/cs_dc_stresstest.cpp
 void AddSC_dc_challenge_modes_commandscript();
 // Commands/cs_dc_challenge_modes.cpp
 void AddSC_dc_worldboss_commandscript();       // Commands/cs_dc_worldboss.cpp
+void AddSC_dc_collection_commands();          // Commands/cs_dc_collection.cpp
 
 // --- Guild housing ---
 void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
@@ -469,6 +473,11 @@ void AddDCScripts()
     LogSection("GOMove System");
     DC_LOAD(AddSC_GOMove_commandscript);
 
+    LogSection("Collection System");
+    // The addon handler itself is loaded through AddDCAddonExtensionScripts;
+    // this is the data-driven quest/achievement collectible reward layer.
+    DC_LOAD(AddSC_dc_collection_rewards);
+
     LogSection("Cross-System Integration Framework");
     DC_LOAD(AddSC_dc_cross_system_scripts);
 
@@ -501,6 +510,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_stresstest);
     DC_LOAD(AddSC_dc_challenge_modes_commandscript);
     DC_LOAD(AddSC_dc_worldboss_commandscript);
+    DC_LOAD(AddSC_dc_collection_commands);
 
 #undef DC_LOAD
 
