@@ -12,7 +12,7 @@
 -- =====================================================================================
 
 
-DELETE FROM `creature_loot_template` WHERE `Entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106);
+DELETE FROM `creature_loot_template` WHERE `Entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106, 4020107, 4020108, 4020109, 4020110, 4020111, 4020112, 4020151, 4020152, 4020153);
 
 INSERT INTO `creature_loot_template`
     (`Entry`, `Item`, `Reference`, `Chance`, `QuestRequired`, `LootMode`, `GroupId`, `MinCount`, `MaxCount`, `Comment`) VALUES
@@ -33,7 +33,19 @@ INSERT INTO `creature_loot_template`
     (4020103, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
     (4020104, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
     (4020105, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
-    (4020106, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens');
+    (4020106, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
+    (4020107, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
+    (4020108, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
+    (4020109, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
+    (4020110, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
+    (4020111, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
+    (4020112, 300311, 0, 35, 0, 1, 0, 1, 3, 'trash - upgrade tokens'),
+    (4020151, 750088, 750088, 20, 0, 1, 0, 1, 1, 'rare elite - Ashenvale themed set'),
+    (4020151, 300311, 0, 100, 0, 1, 0, 10, 18, 'rare elite - upgrade tokens'),
+    (4020152, 750088, 750088, 20, 0, 1, 0, 1, 1, 'rare elite - Ashenvale themed set'),
+    (4020152, 300311, 0, 100, 0, 1, 0, 10, 18, 'rare elite - upgrade tokens'),
+    (4020153, 750088, 750088, 20, 0, 1, 0, 1, 1, 'rare elite - Ashenvale themed set'),
+    (4020153, 300311, 0, 100, 0, 1, 0, 10, 18, 'rare elite - upgrade tokens');
 
 -- Boss token payouts. This is a data hook: `dc_seasonal_creature_rewards` maps a
 -- creature to a token/essence payout with no code at all, and the CrossSystem reward
@@ -52,11 +64,11 @@ INSERT INTO `dc_seasonal_creature_rewards`
 -- -------------------------------------------------------------------------------------
 -- Report
 -- -------------------------------------------------------------------------------------
-SELECT 'loot rows (want 18)' AS `check`, CAST(COUNT(*) AS CHAR) AS result
-    FROM `creature_loot_template` WHERE `Entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106)
+SELECT 'loot rows (want 30)' AS `check`, CAST(COUNT(*) AS CHAR) AS result
+    FROM `creature_loot_template` WHERE `Entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106, 4020107, 4020108, 4020109, 4020110, 4020111, 4020112, 4020151, 4020152, 4020153)
 UNION ALL SELECT 'loot pointing at a missing item (want 0)', CAST(COUNT(*) AS CHAR)
     FROM `creature_loot_template` l LEFT JOIN `item_template` i ON i.`entry` = l.`Item`
-    WHERE l.`Entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106) AND l.`Reference` = 0 AND i.`entry` IS NULL
+    WHERE l.`Entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106, 4020107, 4020108, 4020109, 4020110, 4020111, 4020112, 4020151, 4020152, 4020153) AND l.`Reference` = 0 AND i.`entry` IS NULL
 UNION ALL SELECT 'bosses with no seasonal reward (want 0)', CAST(COUNT(*) AS CHAR)
     FROM (SELECT 4020001 AS e UNION ALL SELECT 4020002 UNION ALL SELECT 4020005 UNION ALL SELECT 4020006 UNION ALL SELECT 4020007) b
     LEFT JOIN `dc_seasonal_creature_rewards` r ON r.`creature_id` = b.e
@@ -64,4 +76,4 @@ UNION ALL SELECT 'bosses with no seasonal reward (want 0)', CAST(COUNT(*) AS CHA
 UNION ALL SELECT 'vault entries', CAST(COUNT(*) AS CHAR)
     FROM `dc_vault_loot_table` WHERE `source` = 'Crescent Grove'
 UNION ALL SELECT 'lootid <> entry on these creatures (want 0)', CAST(COUNT(*) AS CHAR)
-    FROM `creature_template` WHERE `entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106) AND `lootid` <> `entry`;
+    FROM `creature_template` WHERE `entry` IN (4020001, 4020002, 4020005, 4020006, 4020007, 4020003, 4020004, 4020101, 4020102, 4020103, 4020104, 4020105, 4020106, 4020107, 4020108, 4020109, 4020110, 4020111, 4020112, 4020151, 4020152, 4020153) AND `lootid` <> `entry`;

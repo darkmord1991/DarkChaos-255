@@ -8,6 +8,7 @@
 
 #include "ScriptDefines/MovementHandlerScript.h"
 #include "BattlegroundHLBG.h"
+#include "Player.h"
 
 class HLMovementHandlerScript : public MovementHandlerScript
 {

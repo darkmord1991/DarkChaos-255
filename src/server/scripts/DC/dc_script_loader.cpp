@@ -101,6 +101,9 @@ void AddSC_instance_bfd_ashenvale();          // BlackfathomAshenvale/instance_b
 void AddSC_instance_timbermaw_hold();         // TimbermawHold/instance_timbermaw_hold.cpp
 void AddSC_instance_crescent_grove();         // CrescentGrove/instance_crescent_grove.cpp
 void AddSC_instance_emerald_sanctum();        // EmeraldSanctum/instance_emerald_sanctum.cpp
+void AddSC_boss_timbermaw_hold();             // TimbermawHold/boss_timbermaw_hold.cpp
+void AddSC_boss_crescent_grove();             // CrescentGrove/boss_crescent_grove.cpp
+void AddSC_boss_emerald_sanctum();            // EmeraldSanctum/boss_emerald_sanctum.cpp
 
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
@@ -379,6 +382,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_instance_timbermaw_hold);
     DC_LOAD(AddSC_instance_crescent_grove);
     DC_LOAD(AddSC_instance_emerald_sanctum);
+    DC_LOAD(AddSC_boss_timbermaw_hold);
+    DC_LOAD(AddSC_boss_crescent_grove);
+    DC_LOAD(AddSC_boss_emerald_sanctum);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);

@@ -6,12 +6,26 @@
 
 -- ---------------------------------------------------------------------------
 -- quest_template (6 boss kills, gold rewards)
--- NOTE: QuestType corrected 2 -> 62 (QUEST_TYPE_RAID). Type=2 matches no
--- QuestTypes enum value, so Quest::IsRaidQuest() returned false and the core
--- (Player::PrepareQuestMenu / CanCompleteQuest, PlayerQuest.cpp) hid these
--- quests from anyone in an actual raid group -- i.e. everyone who could earn
--- them. QuestInfoID 62 (log-tab category, a separate field) was already
--- correct; only the gameplay-gating QuestType was wrong.
+-- RAID GATING LIVES IN `QuestInfoID`, NOT `QuestType`. Do not "fix" QuestType.
+--
+-- These are raid quests, so Quest::IsRaidQuest() must return true or the core hides them from
+-- anyone in a raid group -- i.e. from everyone who can earn them (PlayerQuest.cpp:2010
+-- KilledMonsterCredit, :2344 PrepareQuestMenu, both gated on `Quests.IgnoreRaid = 0`).
+-- IsRaidQuest() switches on `Quest::Type`, and the loader fills that from column index 5:
+--     ObjectMgr.cpp:5105  SELECT ID, QuestType, QuestLevel, MinLevel, QuestSortID, QuestInfoID, ...
+--                         index:  0     1          2          3          4            5
+--     QuestDef.cpp:34     Method = questRecord[1]   <- `QuestType`,  ONLY 0/1/2 are valid
+--     QuestDef.cpp:38     Type   = questRecord[5]   <- `QuestInfoID`, the QuestTypes enum
+-- So `QuestInfoID` = 62 (QUEST_TYPE_RAID) is what matters, and it has been correct all along.
+--
+-- HISTORY, because this file caused the bug twice. An earlier revision of this comment claimed
+-- "QuestType corrected 2 -> 62" and the rows were written with QuestType = 62 to match. That
+-- mis-diagnosed the column: 62 is not a valid Method, so every boot logged
+-- "Quest N has `Method` = 62, expected values are 0, 1 or 2", and raid visibility was never
+-- affected either way. 31_questtype_regression_fix.sql patched the live rows back to 2 -- but
+-- this file still INSERTed 62, so re-applying it silently re-introduced the regression.
+-- Corrected 2026-08-12: the rows below now carry QuestType = 2 directly, which makes this file
+-- self-contained and leaves 31_ as a harmless no-op (its WHERE clause requires QuestType = 62).
 -- ---------------------------------------------------------------------------
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 700701 AND 700706;
 INSERT INTO `quest_template`
@@ -19,22 +33,22 @@ INSERT INTO `quest_template`
      `LogTitle`, `LogDescription`, `QuestDescription`, `QuestCompletionLog`,
      `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RewardMoney`, `RewardNextQuest`)
 VALUES
-    (700701, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: Magmaw',
+    (700701, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: Magmaw',
         'Slay Magmaw in Blackwing Descent.', 'Enter Blackwing Descent and destroy the great magma worm Magmaw.',
         'Magmaw lies dead. Return to Emissary Blackscale for your reward.', 41570, 1, 500000, 0),
-    (700702, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: Omnotron Defense System',
+    (700702, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: Omnotron Defense System',
         'Disable the Omnotron Defense System in Blackwing Descent.', 'Destroy Nefarian''s automated Omnotron Defense System.',
         'The Omnotron Defense System is scrap. Return to Emissary Blackscale for your reward.', 42180, 1, 500000, 0),
-    (700703, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: Maloriak',
+    (700703, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: Maloriak',
         'Slay Maloriak in Blackwing Descent.', 'Put an end to the mad alchemist Maloriak and his twisted experiments.',
         'Maloriak is dead. Return to Emissary Blackscale for your reward.', 41378, 1, 500000, 0),
-    (700704, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: Atramedes',
+    (700704, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: Atramedes',
         'Slay Atramedes in Blackwing Descent.', 'Silence the blind dragon Atramedes.',
         'Atramedes hears nothing now. Return to Emissary Blackscale for your reward.', 41442, 1, 500000, 0),
-    (700705, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: Chimaeron',
+    (700705, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: Chimaeron',
         'Slay Chimaeron in Blackwing Descent.', 'Destroy Nefarian''s abomination, Chimaeron.',
         'Chimaeron is slain. Return to Emissary Blackscale for your reward.', 43296, 1, 500000, 700709),
-    (700706, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: Nefarian''s End',
+    (700706, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: Nefarian''s End',
         'Defeat Nefarian and Onyxia in Blackwing Descent.', 'Confront Lord Victor Nefarius and end the threat of Nefarian and his resurrected sister Onyxia.',
         'Nefarian has fallen at last. Return to Emissary Blackscale for your reward.', 41376, 1, 1000000, 700710);
 
@@ -53,25 +67,25 @@ INSERT INTO `quest_template`
      `RewardMoney`, `RewardItem1`, `RewardAmount1`)
 VALUES
     -- Entrance trial: the bound Dark Iron spirits woken by the Ancient Bell (43119/22/25/26/27/28/29/30).
-    (700707, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: The Restless Dead',
+    (700707, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: The Restless Dead',
         'Silence the spirits guarding the Ancient Bell in Blackwing Descent.',
         'The ringing of the Ancient Bell has roused the bound spirits of the old Dark Iron dwarf lords -- Moltenfist, Anvilrage, Ironstar, and Thaurissan. Nefarian has turned their eternal watch to his own purpose. Put them back to their rest before you press deeper into the mountain.',
         'The old lords sleep once more. Return to Emissary Blackscale for your reward.',
         43125, 1, 43128, 1, 43127, 1, 43126, 1, 250000, 0, 0),
     -- Renegade drakonid + repurposed dwarven constructs blocking the passage to Magmaw.
-    (700708, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: Kin of the Black Flight',
+    (700708, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: Kin of the Black Flight',
         'Clear the drakonid and constructs guarding the way to Magmaw.',
         'Not every drakonid bends the knee to Nefarian willingly, but the ones holding this passage have made their choice. Cut them down, along with the old dwarven constructs his engineers pressed back into service, and clear the way to Magmaw''s chamber.',
         'The passage is clear. Return to Emissary Blackscale for your reward.',
         42362, 2, 42649, 1, 42800, 2, 0, 0, 250000, 0, 0),
     -- Talk-to (negative id) follow-up, gated behind the Chimaeron kill via quest_template_addon below.
-    (700709, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: A Favor for Finkle',
+    (700709, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: A Favor for Finkle',
         'Check on Finkle Einhorn now that Chimaeron is dead.',
         'With Chimaeron gone, the little gnome trapped in the cage nearby is finally safe to approach. Poor Finkle has been through enough -- go see how he''s holding up.',
         'Finkle is rattled, but grateful to be rid of his monstrous neighbor. Return to Emissary Blackscale.',
         -44202, 1, 0, 0, 0, 0, 0, 0, 200000, 0, 0),
     -- Capstone: no objective, gated behind Nefarian's End via quest_template_addon below.
-    (700710, 62, -1, 85, 0, 62, 0, 'Blackwing Descent: A Fitting End',
+    (700710, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: A Fitting End',
         'Report your final victory to Emissary Blackscale.',
         'Nefarian is dead. Onyxia''s bones lie shattered a second time. Blackwing Descent belongs to the living once more. Return to Emissary Blackscale -- she has one last reward for the heroes who ended House Nefarius.',
         'Emissary Blackscale is waiting to honor your victory.',

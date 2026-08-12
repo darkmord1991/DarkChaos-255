@@ -24,13 +24,13 @@
 using namespace Acore::ChatCommands;
 
 // Escape a string for inclusion in a JSON string value.
-static std::string EscapeJson(const std::string& in)
+static std::string EscapeJson(std::string const& in)
 {
     return DarkChaos::CrossSystem::Utils::EscapeJson(in);
 }
 
 // Build a compact JSON array for rows
-static std::string BuildJsonRows(const std::vector<std::tuple<std::string, std::string, std::string, std::string, int>>& rows)
+static std::string BuildJsonRows(std::vector<std::tuple<std::string, std::string, std::string, std::string, int>> const& rows)
 {
     std::ostringstream ss;
     ss << '[';

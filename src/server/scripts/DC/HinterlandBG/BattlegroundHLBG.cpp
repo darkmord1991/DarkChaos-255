@@ -31,7 +31,6 @@ namespace
 {
     constexpr uint32 HLBGQuestCreditWin = 920102;
     constexpr uint32 HLBGQuestCreditParticipation = 920103;
-    constexpr uint32 HLBGDeserterSpell = 26013;
     constexpr uint32 HLBGHudSyncIntervalMs = 1000;
     constexpr uint32 HLBGHudHeartbeatIntervalMs = 30000;
     constexpr uint32 HLBGAfkTickIntervalMs = 2000;
@@ -204,14 +203,20 @@ namespace
         visitor.Visit(battlegroundMap->GetObjectsStore());
     }
 
+    // Applies or removes a whole set of affix auras in a single pass over the
+    // battleground map's object store - one traversal per affix spell used to
+    // cost a full map walk each.
     struct HLBGNpcAuraWorker
     {
         uint32 areaId = HLBG_AREA_ID;
-        uint32 spellId = 0u;
+        std::vector<uint32> spellIds;
         bool remove = false;
 
         void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
         {
+            if (spellIds.empty())
+                return;
+
             for (auto const& creatureEntry : creatureMap)
             {
                 Creature* creature = creatureEntry.second;
@@ -224,10 +229,13 @@ namespace
                     continue;
                 }
 
-                if (remove)
-                    creature->RemoveAurasDueToSpell(spellId);
-                else if (!creature->HasAura(spellId))
-                    creature->CastSpell(creature, spellId, true);
+                for (uint32 spellId : spellIds)
+                {
+                    if (remove)
+                        creature->RemoveAurasDueToSpell(spellId);
+                    else if (!creature->HasAura(spellId))
+                        creature->CastSpell(creature, spellId, true);
+                }
             }
         }
 
@@ -236,6 +244,19 @@ namespace
         {
         }
     };
+
+    // Runs `worker` over the battleground map once, if the map is loaded.
+    void ApplyNpcAuras(BattlegroundHLBG const* battleground, std::vector<uint32> spellIds, bool remove)
+    {
+        if (spellIds.empty())
+            return;
+
+        HLBGNpcAuraWorker worker;
+        worker.areaId = HLBG_AREA_ID;
+        worker.spellIds = std::move(spellIds);
+        worker.remove = remove;
+        VisitBattlegroundMap(battleground, worker);
+    }
 }
 
 BattlegroundHLBG::BattlegroundHLBG()
@@ -363,9 +384,9 @@ void BattlegroundHLBG::LoadConfig()
     std::string allianceRewardEntries = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntriesAlliance", "");
     std::string hordeRewardEntries = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntriesHorde", "");
     if (!allianceRewardEntries.empty())
-        _npcRewardEntriesAlliance = ParseCsvU32(allianceRewardEntries);
+        _npcRewardEntriesAlliance = ToSet(ParseCsvU32(allianceRewardEntries));
     if (!hordeRewardEntries.empty())
-        _npcRewardEntriesHorde = ParseCsvU32(hordeRewardEntries);
+        _npcRewardEntriesHorde = ToSet(ParseCsvU32(hordeRewardEntries));
 
     std::string allianceRewardCounts = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntryCountsAlliance", "");
     std::string hordeRewardCounts = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.NPCEntryCountsHorde", "");
@@ -413,7 +434,12 @@ void BattlegroundHLBG::ResetMatchState()
     _matchResultRecorded = false;
     _activeAffixes.fill(HLBG_AFFIX_NONE);
     _activeAffixWeatherIntensity = 0.0f;
+    _hudDirty = true;
+    _lastHudSnapshotKey = 0u;
     _afkFlagged.clear();
+    // Infractions are per-match: keeping them across a reset made returning
+    // players eligible for an immediate kick on their first strike.
+    _afkInfractions.clear();
     _playerLastMove.clear();
     _playerWarnedBeforeTeleport.clear();
     _playerLastPos.clear();
@@ -459,15 +485,13 @@ void BattlegroundHLBG::AddPlayer(Player* player)
     if (!player)
         return;
 
-    PlayerScores.emplace(player->GetGUID().GetCounter(), new BattlegroundHLBGScore(player->GetGUID()));
-    ResetPlayerTracking(player);
+    // Re-entry after a disconnect would otherwise leak the previous score.
+    uint32 lowGuid = player->GetGUID().GetCounter();
+    if (PlayerScores.find(lowGuid) == PlayerScores.end())
+        PlayerScores.emplace(lowGuid, new BattlegroundHLBGScore(player->GetGUID()));
 
-    if (player->IsInWorld())
-    {
-        for (uint32 slot = 0; slot < HLBGAffixSlotCount; ++slot)
-            if (uint32 playerSpellId = GetAffixPlayerSpell(GetActiveAffixCode(slot)))
-                player->CastSpell(player, playerSpellId, true);
-    }
+    ResetPlayerTracking(player);
+    ApplyAffixAurasToPlayer(player);
 
     HLBGPlayerStats::OnPlayerEnterBG(player);
     UpdateWorldStatesForPlayer(player);
@@ -480,10 +504,13 @@ void BattlegroundHLBG::RemovePlayer(Player* player)
     if (!player)
         return;
 
+    // Affix buffs are battleground-scoped; without this they follow the player
+    // back into the open world until they expire or relog.
+    RemoveAffixAurasFromPlayer(player);
+
     SendHudHidden(player);
     ClearPlayerTracking(player);
-    UpdateWorldStatesForAll();
-    SendStatusSnapshotToAll();
+    SyncResourceState();
 }
 
 void BattlegroundHLBG::ResetPlayerTracking(Player* player)
@@ -583,10 +610,11 @@ bool BattlegroundHLBG::TryEndOnDepletedResources()
 
 }
 
-void BattlegroundHLBG::SyncResourceState() const
+void BattlegroundHLBG::SyncResourceState()
 {
-    UpdateWorldStatesForAll();
-    SendStatusSnapshotToAll();
+    // The actual broadcast happens on the next HUD tick (<= 1s), so a burst of
+    // kills coalesces into a single update instead of one per kill.
+    _hudDirty = true;
 }
 
 void BattlegroundHLBG::AdminSetResources(TeamId teamId, uint32 amount)
@@ -789,6 +817,35 @@ void BattlegroundHLBG::FillInitialWorldStates(WorldPackets::WorldState::InitWorl
         _affixWorldstateEnabled ? GetActiveAffixCode() : 0u);
 }
 
+// The five states below never change while the battleground runs, so they are
+// only sent when a player (re)gains the HUD rather than on every tick.
+void BattlegroundHLBG::SendFullWorldStates(Player* player) const
+{
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
+    SendDynamicWorldStates(player);
+}
+
+void BattlegroundHLBG::SendDynamicWorldStates(Player* player) const
+{
+    uint32 endEpoch = GetHudEndEpoch();
+    uint32 hordeResources = GetResources(TEAM_HORDE);
+    uint32 allianceResources = GetResources(TEAM_ALLIANCE);
+    uint32 maxValue = std::max(hordeResources, allianceResources);
+
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, hordeResources);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, allianceResources);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxValue);
+    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxValue);
+    player->SendUpdateWorldState(WORLD_STATE_HL_AFFIX_TEXT,
+        _affixWorldstateEnabled ? GetActiveAffixCode() : 0u);
+}
+
 void BattlegroundHLBG::UpdateWorldStatesForPlayer(Player* player) const
 {
     if (!player)
@@ -800,30 +857,25 @@ void BattlegroundHLBG::UpdateWorldStatesForPlayer(Player* player) const
         return;
     }
 
-    uint32 endEpoch = GetHudEndEpoch();
-    uint32 hordeResources = GetResources(TEAM_HORDE);
-    uint32 allianceResources = GetResources(TEAM_ALLIANCE);
-    uint32 maxValue = std::max(hordeResources, allianceResources);
-
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 1);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK, endEpoch);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS, endEpoch);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H, hordeResources);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A, allianceResources);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, maxValue);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_A, maxValue);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ACTIVE, 0);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_ATTACKER, TEAM_HORDE);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_DEFENDER, TEAM_ALLIANCE);
-    player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_CONTROL, 0);
-    player->SendUpdateWorldState(WORLD_STATE_HL_AFFIX_TEXT,
-        _affixWorldstateEnabled ? GetActiveAffixCode() : 0u);
+    SendFullWorldStates(player);
 }
 
 void BattlegroundHLBG::UpdateWorldStatesForAll() const
 {
     for (auto const& playerEntry : GetPlayers())
-        UpdateWorldStatesForPlayer(playerEntry.second);
+    {
+        Player* player = playerEntry.second;
+        if (!player)
+            continue;
+
+        if (IsPlayerAfkFlagged(player))
+        {
+            player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_SHOW, 0);
+            continue;
+        }
+
+        SendDynamicWorldStates(player);
+    }
 }
 
 void BattlegroundHLBG::SendHudHidden(Player* player) const
@@ -938,7 +990,7 @@ uint64 BattlegroundHLBG::ComputeHudSnapshotKey() const
 
 bool BattlegroundHLBG::IsEligibleForRewards(Player* player) const
 {
-    return player && !player->HasAura(HLBGDeserterSpell);
+    return player && !player->HasAura(BG_DESERTER_SPELL);
 }
 
 void BattlegroundHLBG::RewardRandomKillHonor(Player* player)
@@ -1030,7 +1082,7 @@ void BattlegroundHLBG::RewardNpcKill(Player* killer, Creature* unit, uint32 scor
 
         auto const& rewardEntries = killer->GetBgTeamId() == TEAM_ALLIANCE ? _npcRewardEntriesHorde : _npcRewardEntriesAlliance;
         auto const& rewardCounts = killer->GetBgTeamId() == TEAM_ALLIANCE ? _npcRewardCountsHorde : _npcRewardCountsAlliance;
-        if (_rewardNpcTokenItemId && std::find(rewardEntries.begin(), rewardEntries.end(), unit->GetEntry()) != rewardEntries.end())
+        if (_rewardNpcTokenItemId && rewardEntries.count(unit->GetEntry()) > 0)
         {
             uint32 count = _rewardNpcTokenCount;
             auto itr = rewardCounts.find(unit->GetEntry());
@@ -1043,12 +1095,13 @@ void BattlegroundHLBG::RewardNpcKill(Player* killer, Creature* unit, uint32 scor
     }
 }
 
-bool BattlegroundHLBG::ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& scorePoints) const
+bool BattlegroundHLBG::ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& scorePoints, bool& isBoss) const
 {
     if (_npcBossEntriesAlliance.count(entry))
     {
         victimTeam = TEAM_ALLIANCE;
         scorePoints = _resourcesLossNpcBoss;
+        isBoss = true;
         return true;
     }
 
@@ -1056,6 +1109,7 @@ bool BattlegroundHLBG::ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& sco
     {
         victimTeam = TEAM_HORDE;
         scorePoints = _resourcesLossNpcBoss;
+        isBoss = true;
         return true;
     }
 
@@ -1063,6 +1117,7 @@ bool BattlegroundHLBG::ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& sco
     {
         victimTeam = TEAM_ALLIANCE;
         scorePoints = _resourcesLossNpcNormal;
+        isBoss = false;
         return true;
     }
 
@@ -1070,6 +1125,7 @@ bool BattlegroundHLBG::ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& sco
     {
         victimTeam = TEAM_HORDE;
         scorePoints = _resourcesLossNpcNormal;
+        isBoss = false;
         return true;
     }
 
@@ -1104,10 +1160,9 @@ void BattlegroundHLBG::HandleKillUnit(Creature* unit, Player* killer)
 
     TeamId victimTeam = TEAM_NEUTRAL;
     uint32 scorePoints = 0;
-    if (!ClassifyNpc(unit->GetEntry(), victimTeam, scorePoints))
+    bool isBossKill = false;
+    if (!ClassifyNpc(unit->GetEntry(), victimTeam, scorePoints, isBossKill))
         return;
-
-    bool isBossKill = _npcBossEntriesAlliance.count(unit->GetEntry()) > 0 || _npcBossEntriesHorde.count(unit->GetEntry()) > 0;
 
     ModifyTeamResources(victimTeam, -static_cast<int32>(scorePoints));
     RewardNpcKill(killer, unit, scorePoints, victimTeam, isBossKill);
@@ -1123,6 +1178,40 @@ void BattlegroundHLBG::TeleportPlayerToTeamStart(Player* player) const
         player->TeleportTo(GetMapId(), startPosition->GetPositionX(), startPosition->GetPositionY(), startPosition->GetPositionZ(), startPosition->GetOrientation());
 }
 
+// Flags the player as AFK and applies the escalating penalty: the first
+// infraction teleports them back to their base, any further one removes them
+// from the battleground.
+void BattlegroundHLBG::FlagPlayerAfk(Player* player)
+{
+    if (!player)
+        return;
+
+    uint32 lowGuid = player->GetGUID().GetCounter();
+    _afkFlagged.insert(lowGuid);
+
+    uint8& infractions = _afkInfractions[lowGuid];
+    ++infractions;
+
+    if (player->GetSession())
+    {
+        ChatHandler(player->GetSession()).SendSysMessage(
+            infractions == 1
+                ? "|cffff0000[HLBG]|r You were flagged as inactive and returned to your base."
+                : "|cffff0000[HLBG]|r You were flagged as inactive again and removed from the battleground.");
+    }
+
+    if (infractions > 1)
+    {
+        // RemovePlayer clears the tracking state and hides the HUD.
+        player->LeaveBattleground();
+        return;
+    }
+
+    TeleportPlayerToTeamStart(player);
+    UpdateWorldStatesForPlayer(player);
+    SendStatusSnapshotToPlayer(player);
+}
+
 void BattlegroundHLBG::TickAfk(uint32 diff)
 {
     if (_afkCheckTimerMs > diff)
@@ -1133,63 +1222,76 @@ void BattlegroundHLBG::TickAfk(uint32 diff)
 
     _afkCheckTimerMs = HLBGAfkTickIntervalMs;
     uint32 now = NowSec();
-    std::vector<Player*> players;
-    players.reserve(GetPlayers().size());
-    for (auto const& playerEntry : GetPlayers())
-        players.push_back(playerEntry.second);
 
-    for (Player* player : players)
+    // FlagPlayerAfk can remove the player from the battleground, which mutates
+    // GetPlayers(); snapshot the guids first.
+    std::vector<ObjectGuid> guids;
+    guids.reserve(GetPlayers().size());
+    for (auto const& playerEntry : GetPlayers())
+        guids.push_back(playerEntry.first);
+
+    for (ObjectGuid const& guid : guids)
     {
+        auto playerItr = GetPlayers().find(guid);
+        if (playerItr == GetPlayers().end())
+            continue;
+
+        Player* player = playerItr->second;
         if (!player || !player->IsInWorld() || player->IsGameMaster())
             continue;
 
-        uint32 lowGuid = player->GetGUID().GetCounter();
+        uint32 lowGuid = guid.GetCounter();
         bool wasAfk = _afkFlagged.count(lowGuid) > 0;
 
-        if (_playerLastMove.find(player->GetGUID()) == _playerLastMove.end())
-            ResetPlayerTracking(player);
-
-        uint32 idleSeconds = now - _playerLastMove[player->GetGUID()];
-        if (idleSeconds >= _afkTeleportSeconds)
+        auto lastMoveItr = _playerLastMove.find(guid);
+        if (lastMoveItr == _playerLastMove.end())
         {
-            if (!wasAfk)
+            ResetPlayerTracking(player);
+            lastMoveItr = _playerLastMove.find(guid);
+            if (lastMoveItr == _playerLastMove.end())
+                continue;
+        }
+
+        // Guard against a clock that moved backwards, which would otherwise
+        // underflow into an instant AFK flag.
+        uint32 idleSeconds = now > lastMoveItr->second ? (now - lastMoveItr->second) : 0u;
+        bool afkFromChat = player->isAFK();
+
+        if (wasAfk)
+        {
+            // Only chat-AFK can clear here; movement clears via NotePlayerMovement.
+            if (!afkFromChat && idleSeconds < _afkTeleportSeconds)
             {
-                _afkFlagged.insert(lowGuid);
-                uint8& infractions = _afkInfractions[lowGuid];
-                ++infractions;
-
-                if (infractions == 1)
-                    TeleportPlayerToTeamStart(player);
-                else
-                    player->LeaveBattleground();
-
+                _afkFlagged.erase(lowGuid);
                 UpdateWorldStatesForPlayer(player);
                 SendStatusSnapshotToPlayer(player);
             }
-        }
-        else if (idleSeconds >= _afkWarnSeconds)
-        {
-            _playerWarnedBeforeTeleport[player->GetGUID()] = true;
+
+            continue;
         }
 
-        bool afkFromChat = player->isAFK();
-        if (afkFromChat && !wasAfk)
+        // Idle and chat-AFK are the same offence: counting both in one tick
+        // used to burn two infractions and kick on the first strike.
+        if (idleSeconds >= _afkTeleportSeconds || afkFromChat)
         {
-            _afkFlagged.insert(lowGuid);
-            uint8& infractions = _afkInfractions[lowGuid];
-            ++infractions;
-
-            if (infractions >= 2)
-                player->LeaveBattleground();
-
-            UpdateWorldStatesForPlayer(player);
-            SendStatusSnapshotToPlayer(player);
+            FlagPlayerAfk(player);
+            continue;
         }
-        else if (!afkFromChat && wasAfk && idleSeconds < _afkTeleportSeconds)
+
+        // Single warning as the idle timer crosses the warn threshold.
+        if (idleSeconds >= _afkWarnSeconds)
         {
-            _afkFlagged.erase(lowGuid);
-            UpdateWorldStatesForPlayer(player);
-            SendStatusSnapshotToPlayer(player);
+            bool& warned = _playerWarnedBeforeTeleport[guid];
+            if (!warned)
+            {
+                warned = true;
+                if (player->GetSession())
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "|cffffd700[HLBG]|r You look inactive. Move within {} seconds or you will be returned to your base.",
+                        _afkTeleportSeconds > idleSeconds ? (_afkTeleportSeconds - idleSeconds) : 0u);
+                }
+            }
         }
     }
 }
@@ -1269,61 +1371,59 @@ void BattlegroundHLBG::EndBattleground(TeamId winnerTeamId)
     Battleground::EndBattleground(winnerTeamId);
 }
 
+void BattlegroundHLBG::RemoveAffixAurasFromPlayer(Player* player) const
+{
+    if (!player)
+        return;
+
+    // Every configured affix spell, not just the active ones: a player can
+    // still carry a buff from a previous rotation.
+    for (uint32 spellId : _affixPlayerSpell)
+    {
+        if (spellId)
+            player->RemoveAurasDueToSpell(spellId);
+    }
+}
+
+void BattlegroundHLBG::ApplyAffixAurasToPlayer(Player* player) const
+{
+    if (!player || !player->IsInWorld())
+        return;
+
+    for (uint32 slot = 0; slot < HLBGAffixSlotCount; ++slot)
+    {
+        if (uint32 spellId = GetAffixPlayerSpell(GetActiveAffixCode(slot)))
+            if (!player->HasAura(spellId))
+                player->CastSpell(player, spellId, true);
+    }
+}
+
 void BattlegroundHLBG::ClearAffixEffects()
 {
     for (auto const& playerEntry : GetPlayers())
-    {
-        Player* player = playerEntry.second;
-        if (!player)
-            continue;
+        RemoveAffixAurasFromPlayer(playerEntry.second);
 
-        for (uint32 spellId : _affixPlayerSpell)
-        {
-            if (spellId)
-                player->RemoveAurasDueToSpell(spellId);
-        }
-    }
-
+    std::vector<uint32> npcSpells;
+    npcSpells.reserve(_affixNpcSpell.size());
     for (uint32 spellId : _affixNpcSpell)
-    {
-        if (!spellId)
-            continue;
+        if (spellId)
+            npcSpells.push_back(spellId);
 
-        HLBGNpcAuraWorker worker;
-        worker.areaId = HLBG_AREA_ID;
-        worker.spellId = spellId;
-        worker.remove = true;
-        VisitBattlegroundMap(this, worker);
-    }
+    ApplyNpcAuras(this, std::move(npcSpells), true);
 }
 
 void BattlegroundHLBG::ApplyAffixEffects()
 {
+    for (auto const& playerEntry : GetPlayers())
+        ApplyAffixAurasToPlayer(playerEntry.second);
+
+    std::vector<uint32> npcSpells;
+    npcSpells.reserve(HLBGAffixSlotCount);
     for (uint32 slot = 0; slot < HLBGAffixSlotCount; ++slot)
-    {
-        uint8 affixCode = GetActiveAffixCode(slot);
+        if (uint32 npcSpellId = GetAffixNpcSpell(GetActiveAffixCode(slot)))
+            npcSpells.push_back(npcSpellId);
 
-        uint32 playerSpellId = GetAffixPlayerSpell(affixCode);
-        if (playerSpellId)
-        {
-            for (auto const& playerEntry : GetPlayers())
-            {
-                Player* player = playerEntry.second;
-                if (player && player->IsInWorld())
-                    player->CastSpell(player, playerSpellId, true);
-            }
-        }
-
-        uint32 npcSpellId = GetAffixNpcSpell(affixCode);
-        if (npcSpellId)
-        {
-            HLBGNpcAuraWorker worker;
-            worker.areaId = HLBG_AREA_ID;
-            worker.spellId = npcSpellId;
-            worker.remove = false;
-            VisitBattlegroundMap(this, worker);
-        }
-    }
+    ApplyNpcAuras(this, std::move(npcSpells), false);
 
     if (_affixWeatherEnabled)
         ApplyAffixWeather();
@@ -1395,10 +1495,18 @@ void BattlegroundHLBG::SelectAffixForNewBattle()
     std::size_t selectedCount = 0u;
     if (_affixRandomOnStart)
     {
-        uint8 nextPrimaryAffix = takeRandomAffix();
-        if (nextPrimaryAffix == previousPrimaryAffix && !availableAffixes.empty())
+        // Draw from the pool with the previous primary excluded, so the guard
+        // cannot hand back the very affix it is meant to avoid.
+        uint8 nextPrimaryAffix;
+        auto previousItr = std::find(availableAffixes.begin(), availableAffixes.end(), previousPrimaryAffix);
+        if (previousItr != availableAffixes.end() && availableAffixes.size() > 1u)
         {
-            availableAffixes.push_back(nextPrimaryAffix);
+            availableAffixes.erase(previousItr);
+            nextPrimaryAffix = takeRandomAffix();
+            availableAffixes.push_back(previousPrimaryAffix);
+        }
+        else
+        {
             nextPrimaryAffix = takeRandomAffix();
         }
 
@@ -1495,11 +1603,12 @@ void BattlegroundHLBG::PostUpdateImpl(uint32 diff)
         // the client ticks the countdown locally, so broadcast only when the
         // snapshot differs (plus a slow heartbeat to correct client drift).
         uint64 snapshotKey = ComputeHudSnapshotKey();
-        if (snapshotKey != _lastHudSnapshotKey
+        if (_hudDirty || snapshotKey != _lastHudSnapshotKey
             || _hudMsSinceBroadcast >= HLBGHudHeartbeatIntervalMs)
         {
             _lastHudSnapshotKey = snapshotKey;
             _hudMsSinceBroadcast = 0u;
+            _hudDirty = false;
             UpdateWorldStatesForAll();
             SendStatusSnapshotToAll();
         }

@@ -12,7 +12,7 @@
 -- =====================================================================================
 
 
-DELETE FROM `creature_loot_template` WHERE `Entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103);
+DELETE FROM `creature_loot_template` WHERE `Entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103, 4030104, 4030105, 4030106, 4030107, 4030108, 4030109, 4030110, 4030151, 4030152);
 
 INSERT INTO `creature_loot_template`
     (`Entry`, `Item`, `Reference`, `Chance`, `QuestRequired`, `LootMode`, `GroupId`, `MinCount`, `MaxCount`, `Comment`) VALUES
@@ -56,7 +56,18 @@ INSERT INTO `creature_loot_template`
     (4030005, 300311, 0, 100, 0, 1, 0, 80, 100, 'Taerar the Wakener - upgrade tokens'),
     (4030101, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
     (4030102, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
-    (4030103, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens');
+    (4030103, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030104, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030105, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030106, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030107, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030108, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030109, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030110, 300311, 0, 35, 0, 1, 0, 2, 4, 'trash - upgrade tokens'),
+    (4030151, 410133, 0, 25, 0, 1, 1, 1, 1, 'rare elite - tier gear'),
+    (4030151, 300311, 0, 100, 0, 1, 0, 20, 28, 'rare elite - upgrade tokens'),
+    (4030152, 410140, 0, 25, 0, 1, 1, 1, 1, 'rare elite - tier gear'),
+    (4030152, 300311, 0, 100, 0, 1, 0, 20, 28, 'rare elite - upgrade tokens');
 
 -- Boss token payouts. This is a data hook: `dc_seasonal_creature_rewards` maps a
 -- creature to a token/essence payout with no code at all, and the CrossSystem reward
@@ -93,11 +104,11 @@ FROM `item_template` i WHERE i.`entry` BETWEEN 410100 AND 410153;
 -- -------------------------------------------------------------------------------------
 -- Report
 -- -------------------------------------------------------------------------------------
-SELECT 'loot rows (want 41)' AS `check`, CAST(COUNT(*) AS CHAR) AS result
-    FROM `creature_loot_template` WHERE `Entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103)
+SELECT 'loot rows (want 52)' AS `check`, CAST(COUNT(*) AS CHAR) AS result
+    FROM `creature_loot_template` WHERE `Entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103, 4030104, 4030105, 4030106, 4030107, 4030108, 4030109, 4030110, 4030151, 4030152)
 UNION ALL SELECT 'loot pointing at a missing item (want 0)', CAST(COUNT(*) AS CHAR)
     FROM `creature_loot_template` l LEFT JOIN `item_template` i ON i.`entry` = l.`Item`
-    WHERE l.`Entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103) AND l.`Reference` = 0 AND i.`entry` IS NULL
+    WHERE l.`Entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103, 4030104, 4030105, 4030106, 4030107, 4030108, 4030109, 4030110, 4030151, 4030152) AND l.`Reference` = 0 AND i.`entry` IS NULL
 UNION ALL SELECT 'bosses with no seasonal reward (want 0)', CAST(COUNT(*) AS CHAR)
     FROM (SELECT 4030001 AS e UNION ALL SELECT 4030002 UNION ALL SELECT 4030003 UNION ALL SELECT 4030004 UNION ALL SELECT 4030005) b
     LEFT JOIN `dc_seasonal_creature_rewards` r ON r.`creature_id` = b.e
@@ -105,4 +116,4 @@ UNION ALL SELECT 'bosses with no seasonal reward (want 0)', CAST(COUNT(*) AS CHA
 UNION ALL SELECT 'vault entries', CAST(COUNT(*) AS CHAR)
     FROM `dc_vault_loot_table` WHERE `source` = 'Emerald Sanctum'
 UNION ALL SELECT 'lootid <> entry on these creatures (want 0)', CAST(COUNT(*) AS CHAR)
-    FROM `creature_template` WHERE `entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103) AND `lootid` <> `entry`;
+    FROM `creature_template` WHERE `entry` IN (4030001, 4030002, 4030003, 4030004, 4030005, 4030101, 4030102, 4030103, 4030104, 4030105, 4030106, 4030107, 4030108, 4030109, 4030110, 4030151, 4030152) AND `lootid` <> `entry`;

@@ -6,6 +6,7 @@
 #include "hlbg.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "Player.h"
 
 void HLBGPlayerStats::OnPlayerEnterBG(Player* player)
 {
@@ -14,7 +15,14 @@ void HLBGPlayerStats::OnPlayerEnterBG(Player* player)
 
     uint32 playerGuid = player->GetGUID().GetCounter();
     std::string playerName = player->GetName();
-    std::string faction = player->GetTeamId() == TEAM_ALLIANCE ? "Alliance" : "Horde";
+
+    // Battleground side, not the character's home faction - they differ for
+    // mercenary-style joins.
+    TeamId teamId = player->GetBgTeamId();
+    if (teamId != TEAM_ALLIANCE && teamId != TEAM_HORDE)
+        teamId = player->GetTeamId();
+
+    std::string faction = teamId == TEAM_ALLIANCE ? "Alliance" : "Horde";
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_HLBG_PLAYER_ENTER);
     stmt->SetData(0, playerGuid);
@@ -65,7 +73,10 @@ void HLBGPlayerStats::OnPlayerWin(Player* player)
         return;
 
     uint32 playerGuid = player->GetGUID().GetCounter();
-    CharacterDatabase.DirectExecute("UPDATE dc_hlbg_player_stats SET battles_won = battles_won + 1 WHERE player_guid = {}", playerGuid);
+
+    // Async: this fires once per winner at match end, and DirectExecute blocked
+    // the world thread for every one of them.
+    CharacterDatabase.Execute("UPDATE dc_hlbg_player_stats SET battles_won = battles_won + 1 WHERE player_guid = {}", playerGuid);
 
     LOG_DEBUG("hlbg.stats", "Player {} won HLBG - battles_won incremented", player->GetName());
 }

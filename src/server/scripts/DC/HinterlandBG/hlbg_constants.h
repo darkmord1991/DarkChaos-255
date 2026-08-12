@@ -8,7 +8,10 @@
 #ifndef HINTERLAND_BG_CONSTANTS_H
 #define HINTERLAND_BG_CONSTANTS_H
 
-#include "Player.h"
+// Deliberately dependency-light: this header is pulled into BattlegroundHLBG.h,
+// which compiles into the game library and cannot resolve the DC include chain.
+#include "Define.h"
+
 #include <cstdint>
 
 namespace HinterlandBGConstants
@@ -44,15 +47,15 @@ namespace HinterlandBGConstants
     // -------------------------------------------------------------------------
     // Timing
     // -------------------------------------------------------------------------
-    constexpr uint32 WARMUP_WINDOW_SECONDS = 120;
+    // How long the scoreboard NPC reuses a rendered statistics page.
     constexpr uint32 CACHE_DURATION_MS = 5000;
-    constexpr uint32 HL_OFFLINE_GRACE_SECONDS = 45;
 
     // -------------------------------------------------------------------------
     // Map/Zone IDs
     // -------------------------------------------------------------------------
+    // The map id is not listed here on purpose: the battleground runs in an
+    // instance, so call sites must use Battleground::GetMapId().
     constexpr uint32 HLBG_ZONE_ID = 47;
-    constexpr uint32 HLBG_MAP_ID = 1411;
     constexpr uint32 HLBG_AREA_ID = 6738;
 
     enum HLBGAffixCode : uint8
@@ -101,13 +104,6 @@ namespace HinterlandBGConstants
         Horde_Ritespeaker = 810019,
         Horde_BonfireTender = 810020,
     };
-
-    inline bool IsPlayerInHLBGArea(Player const* player)
-    {
-        return player
-            && player->GetMapId() == HLBG_MAP_ID
-            && player->GetAreaId() == HLBG_AREA_ID;
-    }
 
     inline uint32 GetDefaultAffixPlayerSpell(uint8 affixCode)
     {
@@ -183,7 +179,7 @@ namespace HinterlandBGConstants
     // (SystemId::HLBG). Kept local because this header is compiled into the
     // game library (BattlegroundHLBG.h), which cannot resolve the CrossSystem
     // include chain. Keep in sync with CrossSystemAffixes.cpp.
-    inline const char* GetAffixName(uint8 affixCode)
+    inline char const* GetAffixName(uint8 affixCode)
     {
         switch (affixCode)
         {
@@ -203,7 +199,7 @@ namespace HinterlandBGConstants
     // Canonical weather-name lookup (values match WEATHER_TYPE_* in SharedDefines.h).
     // outOfRangeDefault lets call sites override the fallback text without needing
     // their own copy of the table.
-    inline const char* GetWeatherName(uint32 weatherType, const char* outOfRangeDefault = "Unknown")
+    inline char const* GetWeatherName(uint32 weatherType, char const* outOfRangeDefault = "Unknown")
     {
         switch (weatherType)
         {
@@ -220,7 +216,7 @@ namespace HinterlandBGConstants
     // -------------------------------------------------------------------------
     // Team Names
     // -------------------------------------------------------------------------
-    inline const char* GetTeamName(uint8 teamId)
+    inline char const* GetTeamName(uint8 teamId)
     {
         switch (teamId)
         {
@@ -229,11 +225,6 @@ namespace HinterlandBGConstants
             case 2: return "Draw";
             default: return "Unknown";
         }
-    }
-
-    inline const char* GetFactionName(bool isAlliance)
-    {
-        return isAlliance ? "Alliance" : "Horde";
     }
 
 } // namespace HinterlandBGConstants

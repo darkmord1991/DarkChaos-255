@@ -1,25 +1,27 @@
 -- =====================================================================================
--- Emerald Sanctum (map 824) -- creature spawns
+-- Emerald Sanctum (map 824) -- boss and rare-elite spawns
 --
--- GENERATED, deterministically (seed 20260811). Re-running the generator reproduces this file
--- byte for byte; hand-edits will be lost, so change the generator instead.
+-- TRASH IS DELIBERATELY NOT IN THIS FILE. An earlier revision scattered ~77 trash spawns
+-- procedurally; those were dropped so the packs can be placed by hand, which is the only way
+-- to get pull boundaries, patrol lanes and line-of-sight right in rooms this shape.
 --
--- Guid band 16520000-16529999, inside the reserved 16,500,000-16,599,999 block. That block was
--- picked because spawn guids are 24-bit: MAX(creature.guid) was already 16,712,036 against a
--- hard ceiling of 16,777,215, and allocating off the top is what took the server down during
--- the BFD import. The 16.5M block was verified completely empty.
+-- What remains is what must be exact or scripted:
+--   * the 5 encounter bosses, at their designed positions
+--   * the 2 rare elites, because they are POOLED -- `pool_creature` keys on spawn GUIDs, so
+--     those rows cannot exist until the spawns do. Hand-placing the rares later would mean
+--     rewriting the pool too, so they are pinned here.
 --
--- PLACEMENT BASIS -- the valley's 19 doodad-density glades, with Z from the MCVT sampler (the
--- arrival reproduces Turtle's own trigger value to 0.01). All four Wakeners occupy the same
--- Dream Giant arena; the weekly pool decides which one is actually present.
+-- Guid band 16520000-16529999, inside the reserved 16,500,000-16,599,999 block (spawn guids are
+-- 24-bit and MAX(creature.guid) was already 16,712,036 against a 16,777,215 ceiling).
 --
--- Bosses are at fixed, designed positions; only trash is scattered. Nothing is placed within
--- 30 yd of an arrival point or a gatekeeper/warden NPC.
+-- Placing trash by hand: allocate guids from 16520100 upward so they stay inside the
+-- reserved block and never collide with the rows below.
 -- =====================================================================================
 
 
-DELETE FROM `creature_addon` WHERE `guid` BETWEEN 16520000 AND 16529999;
-DELETE FROM `creature` WHERE `guid` BETWEEN 16520000 AND 16529999;
+-- Sweep the map, but never the shared entrance/warden NPCs: those live on this map
+-- at guid 16622000-16622099 and a blanket delete would remove the way out.
+DELETE FROM `pool_creature` WHERE `guid` BETWEEN 16520000 AND 16529999;
 DELETE FROM `creature` WHERE `map` = 824
       AND `guid` NOT BETWEEN 16622000 AND 16622099;
 
@@ -28,91 +30,34 @@ INSERT INTO `creature`
      `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`,
      `wander_distance`, `currentwaypoint`, `curhealth`, `curmana`, `MovementType`,
      `npcflag`, `unit_flags`, `dynamicflags`, `ScriptName`, `VerifiedBuild`, `CreateObject`, `Comment`) VALUES
-    (16520000, 4030001, 824, 0, 0, 7, 1, 0, 2728.500, 2986.100, 21.331, 1.2000, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'Erennius - ruined gate'),
-    (16520001, 4030002, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'Wakener 1 of 4 - pooled, one per week'),
-    (16520002, 4030003, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'Wakener 2 of 4 - pooled, one per week'),
-    (16520003, 4030004, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'Wakener 3 of 4 - pooled, one per week'),
-    (16520004, 4030005, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'Wakener 4 of 4 - pooled, one per week'),
-    (16520005, 4030103, 824, 0, 0, 7, 1, 0, 3129.151, 2951.619, 28.271, 4.1504, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520006, 4030102, 824, 0, 0, 7, 1, 0, 3133.996, 2996.160, 25.538, 1.3069, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520007, 4030102, 824, 0, 0, 7, 1, 0, 3152.032, 2963.168, 25.765, 4.2699, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520008, 4030103, 824, 0, 0, 7, 1, 0, 3117.704, 2948.287, 27.665, 3.1742, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520009, 4030102, 824, 0, 0, 7, 1, 0, 3165.107, 2990.465, 25.192, 0.0733, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520010, 4030102, 824, 0, 0, 7, 1, 0, 3170.008, 2950.432, 25.444, 0.6749, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520011, 4030102, 824, 0, 0, 7, 1, 0, 3134.931, 2960.537, 25.955, 0.1759, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520012, 4030102, 824, 0, 0, 7, 1, 0, 3156.840, 2948.009, 25.821, 4.1433, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520013, 4030102, 824, 0, 0, 7, 1, 0, 3168.294, 2971.597, 22.791, 3.5084, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520014, 4030103, 824, 0, 0, 7, 1, 0, 3127.353, 2982.144, 24.351, 3.0872, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520015, 4030101, 824, 0, 0, 7, 1, 0, 2963.215, 3062.969, 22.821, 4.1769, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520016, 4030103, 824, 0, 0, 7, 1, 0, 2968.476, 3048.202, 22.789, 6.2566, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520017, 4030102, 824, 0, 0, 7, 1, 0, 2958.782, 3072.348, 24.645, 3.4196, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520018, 4030102, 824, 0, 0, 7, 1, 0, 2970.892, 3071.697, 25.782, 1.4519, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520019, 4030102, 824, 0, 0, 7, 1, 0, 2940.474, 3092.308, 26.547, 2.1976, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520020, 4030101, 824, 0, 0, 7, 1, 0, 2913.589, 3053.344, 21.716, 3.8121, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520021, 4030102, 824, 0, 0, 7, 1, 0, 2948.662, 3036.061, 24.340, 3.6827, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520022, 4030101, 824, 0, 0, 7, 1, 0, 2932.238, 3031.169, 24.478, 0.3945, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520023, 4030102, 824, 0, 0, 7, 1, 0, 3139.439, 3034.896, 25.005, 3.1918, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520024, 4030103, 824, 0, 0, 7, 1, 0, 3165.036, 3075.823, 25.018, 3.0870, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520025, 4030101, 824, 0, 0, 7, 1, 0, 3128.219, 3073.030, 23.683, 0.1343, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520026, 4030101, 824, 0, 0, 7, 1, 0, 3167.271, 3054.634, 24.208, 2.2064, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520027, 4030102, 824, 0, 0, 7, 1, 0, 3159.559, 3030.878, 23.388, 4.5582, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520028, 4030101, 824, 0, 0, 7, 1, 0, 3135.022, 3053.802, 22.475, 1.8605, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520029, 4030103, 824, 0, 0, 7, 1, 0, 3147.210, 3017.093, 24.504, 1.3736, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520030, 4030102, 824, 0, 0, 7, 1, 0, 3070.286, 3025.003, 24.719, 0.7147, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520031, 4030102, 824, 0, 0, 7, 1, 0, 3066.071, 3078.876, 24.455, 2.6698, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520032, 4030102, 824, 0, 0, 7, 1, 0, 3057.770, 3051.058, 21.671, 3.1202, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520033, 4030102, 824, 0, 0, 7, 1, 0, 3076.037, 3073.561, 25.515, 3.3164, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520034, 4030101, 824, 0, 0, 7, 1, 0, 3043.886, 3076.122, 26.942, 2.7242, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520035, 4030103, 824, 0, 0, 7, 1, 0, 3044.491, 3031.886, 24.873, 0.8675, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520036, 4030102, 824, 0, 0, 7, 1, 0, 3231.975, 3207.998, 39.480, 4.7957, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520037, 4030102, 824, 0, 0, 7, 1, 0, 3211.484, 3228.242, 27.370, 4.8963, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520038, 4030101, 824, 0, 0, 7, 1, 0, 3236.104, 3240.327, 27.395, 5.5915, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520039, 4030102, 824, 0, 0, 7, 1, 0, 3266.950, 3236.213, 42.063, 1.8166, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520040, 4030103, 824, 0, 0, 7, 1, 0, 3210.135, 3251.499, 34.832, 3.3040, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520041, 4030103, 824, 0, 0, 7, 1, 0, 3249.766, 3227.731, 28.877, 3.8798, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520042, 4030101, 824, 0, 0, 7, 1, 0, 3241.438, 2928.775, 53.181, 5.6743, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520043, 4030102, 824, 0, 0, 7, 1, 0, 3260.423, 2970.236, 24.325, 1.5554, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520044, 4030101, 824, 0, 0, 7, 1, 0, 3253.859, 2928.943, 57.067, 0.9694, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520045, 4030102, 824, 0, 0, 7, 1, 0, 3224.904, 2966.977, 27.152, 0.4934, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520046, 4030102, 824, 0, 0, 7, 1, 0, 3270.360, 2938.877, 27.875, 3.1117, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520047, 4030102, 824, 0, 0, 7, 1, 0, 3093.571, 2935.284, 24.336, 6.1465, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520048, 4030103, 824, 0, 0, 7, 1, 0, 3077.955, 2926.659, 35.461, 4.8726, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520049, 4030102, 824, 0, 0, 7, 1, 0, 3092.923, 2965.818, 25.930, 4.4112, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520050, 4030102, 824, 0, 0, 7, 1, 0, 3065.481, 2969.844, 31.217, 6.0646, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520051, 4030103, 824, 0, 0, 7, 1, 0, 3100.380, 2949.004, 25.478, 0.7390, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520052, 4030103, 824, 0, 0, 7, 1, 0, 3052.602, 3146.179, 27.782, 2.0977, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520053, 4030101, 824, 0, 0, 7, 1, 0, 3050.210, 3121.518, 27.355, 4.6350, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520054, 4030103, 824, 0, 0, 7, 1, 0, 3010.515, 3143.517, 27.807, 4.4388, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520055, 4030102, 824, 0, 0, 7, 1, 0, 3042.775, 3179.409, 29.695, 0.8302, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520056, 4030101, 824, 0, 0, 7, 1, 0, 3308.372, 2968.673, 30.713, 0.8809, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520057, 4030101, 824, 0, 0, 7, 1, 0, 3313.365, 2935.755, 65.903, 1.2511, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520058, 4030102, 824, 0, 0, 7, 1, 0, 3330.861, 2968.760, 57.171, 0.5767, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520059, 4030102, 824, 0, 0, 7, 1, 0, 3322.654, 2945.903, 44.463, 2.5551, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520060, 4030103, 824, 0, 0, 7, 1, 0, 3149.642, 3157.668, 27.184, 5.3910, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520061, 4030102, 824, 0, 0, 7, 1, 0, 3119.746, 3156.581, 27.958, 5.7957, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520062, 4030102, 824, 0, 0, 7, 1, 0, 3153.061, 3132.811, 26.119, 0.8769, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520063, 4030102, 824, 0, 0, 7, 1, 0, 3168.778, 3168.527, 25.744, 1.4985, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520064, 4030102, 824, 0, 0, 7, 1, 0, 2859.738, 3040.528, 21.636, 1.3749, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520065, 4030102, 824, 0, 0, 7, 1, 0, 2850.332, 3024.066, 24.556, 4.5322, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520066, 4030101, 824, 0, 0, 7, 1, 0, 2870.026, 3062.430, 25.839, 2.8117, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520067, 4030103, 824, 0, 0, 7, 1, 0, 2857.616, 3054.754, 22.214, 0.8904, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520068, 4030102, 824, 0, 0, 7, 1, 0, 3212.091, 3028.525, 21.588, 0.3223, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520069, 4030102, 824, 0, 0, 7, 1, 0, 3247.098, 3029.746, 22.204, 2.3418, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520070, 4030102, 824, 0, 0, 7, 1, 0, 3195.157, 3040.287, 21.615, 5.4808, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520071, 4030102, 824, 0, 0, 7, 1, 0, 3364.623, 3047.388, 28.280, 2.4828, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520072, 4030101, 824, 0, 0, 7, 1, 0, 3334.589, 3037.545, 26.596, 2.7817, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520073, 4030102, 824, 0, 0, 7, 1, 0, 3378.480, 3035.318, 28.432, 5.8226, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520074, 4030102, 824, 0, 0, 7, 1, 0, 3330.972, 3139.348, 24.055, 2.2548, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520075, 4030102, 824, 0, 0, 7, 1, 0, 3337.628, 3171.355, 47.946, 4.7600, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade'),
-    (16520076, 4030103, 824, 0, 0, 7, 1, 0, 3326.414, 3164.586, 56.549, 1.2372, 300, 5, 0, 1, 0, 1, 0, 0, 0, '', 0, 0, 'trash - dream glade');
+    (16520000, 4030001, 824, 0, 0, 7, 1, 0, 2728.500, 2986.100, 21.331, 1.2000, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'boss - ruined gate by the arrival'),
+    (16520001, 4030002, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'boss - Dream Giant - Wakener 1 of 4, pooled'),
+    (16520002, 4030003, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'boss - Dream Giant - Wakener 2 of 4, pooled'),
+    (16520003, 4030004, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'boss - Dream Giant - Wakener 3 of 4, pooled'),
+    (16520004, 4030005, 824, 0, 0, 7, 1, 0, 2950.600, 3103.100, 24.740, 3.1416, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'boss - Dream Giant - Wakener 4 of 4, pooled'),
+    (16520010, 4030151, 824, 0, 0, 7, 1, 0, 3146.000, 2967.000, 24.634, 2.2000, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'rare elite (pooled) - glade A'),
+    (16520011, 4030152, 824, 0, 0, 7, 1, 0, 3238.000, 3232.000, 26.522, 4.0000, 604800, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'rare elite (pooled) - glade E, far north');
 
-SELECT 'spawns (want 77)' AS `check`, CAST(COUNT(*) AS CHAR) AS result
-    FROM `creature` WHERE `guid` BETWEEN 16520000 AND 16529999
-UNION ALL SELECT 'guids outside the reserved band (want 0)', CAST(COUNT(*) AS CHAR)
-    FROM `creature` WHERE `map` = 824 AND (`guid` < 16520000 OR `guid` > 16529999)
-      AND `guid` NOT BETWEEN 16622000 AND 16622099
+-- Pooled rare elites: exactly ONE of these is present per instance, rolled when the
+-- map is created. Upstream's pooling-in-instances support (df93fae2e1) gives every
+-- instance its own SpawnedPoolData, so each group gets its own roll.
+-- max_limit 1 with equal chances (chance 0 = equal weighting).
+DELETE FROM `pool_template` WHERE `entry` = 300040;
+INSERT INTO `pool_template` (`entry`, `max_limit`, `description`) VALUES
+    (300040, 1, 'Emerald Sanctum - rare elite');
+INSERT INTO `pool_creature` (`guid`, `pool_entry`, `chance`, `description`) VALUES
+    (16520010, 300040, 0, 'Emerald Sanctum rare 1'),
+    (16520011, 300040, 0, 'Emerald Sanctum rare 2');
+
+SELECT 'boss spawns (want 5)' AS `check`, CAST(COUNT(*) AS CHAR) AS result
+    FROM `creature` WHERE `guid` BETWEEN 16520000 AND 16520009
+UNION ALL SELECT 'rare spawns (want 2)', CAST(COUNT(*) AS CHAR)
+    FROM `creature` WHERE `guid` BETWEEN 16520010 AND 16520019
+UNION ALL SELECT 'pool members (want 2)', CAST(COUNT(*) AS CHAR)
+    FROM `pool_creature` WHERE `pool_entry` = 300040
+UNION ALL SELECT 'pool members whose spawn is missing (want 0)', CAST(COUNT(*) AS CHAR)
+    FROM `pool_creature` p LEFT JOIN `creature` c ON c.`guid` = p.`guid`
+    WHERE p.`pool_entry` = 300040 AND c.`guid` IS NULL
 UNION ALL SELECT 'spawns with no template (want 0)', CAST(COUNT(*) AS CHAR)
     FROM `creature` c LEFT JOIN `creature_template` t ON t.`entry` = c.`id`
-    WHERE c.`guid` BETWEEN 16520000 AND 16529999 AND t.`entry` IS NULL
-UNION ALL SELECT 'guid collisions with other maps (want 0)', CAST(COUNT(*) AS CHAR)
-    FROM `creature` WHERE `guid` BETWEEN 16520000 AND 16529999 AND `map` <> 824;
+    WHERE c.`map` = 824 AND t.`entry` IS NULL;

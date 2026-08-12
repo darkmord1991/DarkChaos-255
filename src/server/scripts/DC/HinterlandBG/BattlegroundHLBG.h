@@ -70,8 +70,15 @@ private:
     void SetTeamResources(TeamId teamId, uint32 amount);
     void ModifyTeamResources(TeamId teamId, int32 delta);
     bool TryEndOnDepletedResources();
-    void SyncResourceState() const;
+    // Marks the HUD dirty. The broadcast itself is coalesced into the next
+    // HUD tick so a burst of kills costs one update, not one per kill.
+    void SyncResourceState();
     void TickAfk(uint32 diff);
+    void FlagPlayerAfk(Player* player);
+    // Static world states only change when a player (re)enters the HUD; the
+    // periodic broadcast sends the dynamic subset to keep packet volume down.
+    void SendFullWorldStates(Player* player) const;
+    void SendDynamicWorldStates(Player* player) const;
     void UpdateWorldStatesForPlayer(Player* player) const;
     void UpdateWorldStatesForAll() const;
     void SendStatusSnapshotToPlayer(Player* player) const;
@@ -82,6 +89,8 @@ private:
     void ClearAffixEffects();
     void ApplyAffixEffects();
     void ApplyAffixWeather() const;
+    void ApplyAffixAurasToPlayer(Player* player) const;
+    void RemoveAffixAurasFromPlayer(Player* player) const;
     void SelectAffixForNewBattle();
     void RewardMatchOutcome(TeamId winnerTeamId);
     void RewardRandomKillHonor(Player* player);
@@ -92,7 +101,7 @@ private:
     void ResetPlayerTracking(Player* player);
     void ClearPlayerTracking(Player* player);
     bool IsEligibleForRewards(Player* player) const;
-    bool ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& scorePoints) const;
+    bool ClassifyNpc(uint32 entry, TeamId& victimTeam, uint32& scorePoints, bool& isBoss) const;
     uint32 GetHudEndEpoch() const;
     uint64 ComputeHudSnapshotKey() const;
 
@@ -118,6 +127,7 @@ private:
     uint32 _hudSyncTimerMs = 0u;
     uint32 _hudMsSinceBroadcast = 0u;
     uint64 _lastHudSnapshotKey = 0u;
+    bool _hudDirty = false;
     uint32 _afkCheckTimerMs = 0u;
     uint32 _allianceNpcKills = 0u;
     uint32 _hordeNpcKills = 0u;
@@ -145,8 +155,8 @@ private:
     mutable std::map<ObjectGuid, uint32> _playerHKBaseline;
     std::map<ObjectGuid, uint32> _playerScores;
 
-    std::vector<uint32> _npcRewardEntriesAlliance;
-    std::vector<uint32> _npcRewardEntriesHorde;
+    std::unordered_set<uint32> _npcRewardEntriesAlliance;
+    std::unordered_set<uint32> _npcRewardEntriesHorde;
     std::unordered_map<uint32, uint32> _npcRewardCountsAlliance;
     std::unordered_map<uint32, uint32> _npcRewardCountsHorde;
     std::unordered_set<uint32> _npcBossEntriesAlliance;

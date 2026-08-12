@@ -100,6 +100,22 @@ static uint32 GetDisplayIdForMap(uint32 mapId)
     return displayId;
 }
 
+// Helper: is this map at a difficulty the quest master should stay out of?
+//
+// "Mythic" is a DUNGEON concept. Map::GetDifficulty() is just the raw spawn mode
+// (Map.h:294 -- `return Difficulty(GetSpawnMode())`), and the Difficulty enum is overloaded by
+// map type (DBCEnums.h): on a RAID map, mode 2 is 10-man Heroic and mode 3 is 25-man Heroic --
+// neither is Mythic, and there is no Mythic raid difficulty at all on 3.3.5.
+//
+// So a bare `GetDifficulty() == DUNGEON_DIFFICULTY_EPIC` was wrong in BOTH directions on every
+// registered raid map: it suppressed the follower on 10-man Heroic (which is not Mythic) while
+// letting 25-man Heroic through (mode 3 never equals 2). Guarding with !IsRaid() is the core's
+// own idiom for this exact overload -- see ScriptedAI::ScriptedAI, ScriptedCreature.cpp:215.
+static bool IsQuestMasterBlockedDifficulty(Map const* map)
+{
+    return map && !map->IsRaid() && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC;
+}
+
 // Helper: Spawn quest master follower for player.
 // On success, if outEntry is non-null, receives the resolved quest-master NPC
 // entry so callers don't need to re-query GetQuestMasterEntryForMap themselves.
@@ -150,13 +166,28 @@ static Creature* SpawnQuestMasterFollower(Player* player, uint32* outEntry = nul
         }
     }
 
-    // Check if one is already nearby (handling grid unload/reload edge cases)
+    // Check if one is already nearby (handling grid unload/reload edge cases).
+    //
+    // ONLY re-link a follower THIS player summoned. Followers are per-player, so on a map where
+    // several players arrive together -- any raid, but also a 5-man that zones in as a group --
+    // a bare proximity match makes players 2..N adopt player 1's follower. Every one of them
+    // then has the same creature GUID recorded, and the first OnPlayerEnterCombat despawns that
+    // single shared creature and leaves the rest pointing at a dead GUID: no follower, and
+    // GetQuestMasterFollower() returning null means they cannot even re-summon cleanly.
+    //
+    // The summon is created with `player` as the summoner (see SummonCreature below), so the
+    // summoner GUID is the ownership record. A creature that fails this test belongs to someone
+    // else and we fall through and summon our own.
     if (Creature* existing = player->FindNearestCreature(entry, 50.0f))
     {
-        // Re-link it if we lost track
-        std::lock_guard<std::mutex> lock(sQuestMasterFollowersMutex);
-        sQuestMasterFollowers[player->GetGUID()] = QuestMasterFollowerInfo{ existing->GetGUID(), mapId, instanceId };
-        return existing;
+        TempSummon const* existingSummon = existing->ToTempSummon();
+        if (existingSummon && existingSummon->GetSummonerGUID() == player->GetGUID())
+        {
+            // Re-link it if we lost track
+            std::lock_guard<std::mutex> lock(sQuestMasterFollowersMutex);
+            sQuestMasterFollowers[player->GetGUID()] = QuestMasterFollowerInfo{ existing->GetGUID(), mapId, instanceId };
+            return existing;
+        }
     }
 
     // Get spawn position near player
@@ -290,9 +321,9 @@ public:
             return;
         }
 
-        // Don't spawn quest masters in Mythic or Mythic+ difficulties
-        Map* map = player->GetMap();
-        if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
+        // Don't spawn quest masters in Mythic or Mythic+ difficulties (dungeons only -- see
+        // IsQuestMasterBlockedDifficulty for why raids must not use this comparison).
+        if (IsQuestMasterBlockedDifficulty(player->GetMap()))
         {
             LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Skipping spawn in Mythic difficulty for player {}",
                       player->GetName());
@@ -421,9 +452,8 @@ public:
             return true;
         }
 
-        // Don't allow summoning in Mythic or Mythic+ difficulties
-        Map* map = player->GetMap();
-        if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
+        // Don't allow summoning in Mythic or Mythic+ difficulties (dungeons only)
+        if (IsQuestMasterBlockedDifficulty(player->GetMap()))
         {
             handler->PSendSysMessage("Quest Masters do not assist in Mythic difficulty!");
             return true;
