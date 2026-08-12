@@ -215,6 +215,10 @@ namespace Encounters
         JsonMessage msg(Module::ENCOUNTERS, Opcode::Encounters::SMSG_LIST);
         msg.Set("m", map->GetId());
         msg.Set("d", static_cast<uint32>(map->GetDifficulty()));
+        // Raid flag: difficulty ids overlap between dungeons and raids (1 =
+        // Heroic 5-man but 25-Normal raid), so the client cannot label the
+        // difficulty without knowing which enum it is looking at.
+        msg.Set("r", map->IsRaid());
         msg.Set("n", GetInstanceName(map->GetId()));
         msg.Set("b", std::move(bosses));
         msg.Send(player);

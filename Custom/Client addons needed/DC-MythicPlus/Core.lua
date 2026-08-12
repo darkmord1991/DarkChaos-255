@@ -561,6 +561,10 @@ local deathText
 local affixText
 local playerText
 local bossText
+-- Per-boss checklist under the summary line. Deliberately ONE table rather than
+-- a set of flat locals: this chunk already carries 186 file-level locals and
+-- Lua 5.1 hard-caps a chunk at 200 (see the Navigation.lua incident).
+local bossList = { lines = {}, baseHeight = 206, lineHeight = 15 }
 local enemyText
 local reasonText
 local resultFrame
@@ -2997,6 +3001,81 @@ local function NormalizeHudState(data)
     return data
 end
 
+-- Per-boss checklist, fed by the HUD payload's `bosses` array
+-- ({entry, name, killed, at}, built in MythicPlusRunManager::BuildBossTracking
+-- and already ordered by DungeonEncounter.orderIndex server-side).
+--
+-- This is the Mythic+ equivalent of the standalone DENC boss tracker, which
+-- suppresses itself for the duration of a keystone run so the two never stack.
+local function UpdateBossChecklist(bosses)
+    local f = EnsureFrame()
+    local shown = 0
+
+    if type(bosses) == "table" then
+        for index = 1, #bosses do
+            local boss = bosses[index]
+            local name = boss and boss.name
+            if type(name) == "string" and name ~= "" then
+                shown = shown + 1
+
+                local line = bossList.lines[shown]
+                if not line then
+                    line = {}
+                    line.icon = f:CreateTexture(nil, "OVERLAY")
+                    line.icon:SetWidth(12)
+                    line.icon:SetHeight(12)
+                    line.text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                    line.text:SetJustifyH("LEFT")
+                    line.text:SetWidth(290)
+
+                    if shown == 1 then
+                        line.icon:SetPoint("TOPLEFT", affixText, "BOTTOMLEFT", 2, -6)
+                    else
+                        line.icon:SetPoint("TOPLEFT", bossList.lines[shown - 1].icon, "BOTTOMLEFT", 0, -3)
+                    end
+                    line.text:SetPoint("LEFT", line.icon, "RIGHT", 4, 0)
+
+                    bossList.lines[shown] = line
+                end
+
+                local killed = IsFlagSet(boss.killed)
+                line.icon:SetTexture(killed
+                    and "Interface\\Scenarios\\ScenarioIcon-Check"
+                    or "Interface\\Scenarios\\ScenarioIcon-Dash")
+                line.icon:Show()
+
+                -- Kill time is genuinely useful in a timed run, so unlike the
+                -- plain DENC block a cleared boss keeps its split.
+                local at = tonumber(boss.at)
+                if killed and at then
+                    line.text:SetFormattedText("%s |cff808080(%d:%02d)|r", name,
+                        math.floor(at / 60), at % 60)
+                else
+                    line.text:SetText(name)
+                end
+
+                if killed then
+                    line.text:SetTextColor(0.60, 0.60, 0.60)
+                else
+                    line.text:SetTextColor(1.00, 0.78, 0.20)
+                end
+                line.text:Show()
+            end
+        end
+    end
+
+    for index = shown + 1, #bossList.lines do
+        bossList.lines[index].icon:Hide()
+        bossList.lines[index].text:Hide()
+    end
+
+    local height = bossList.baseHeight
+    if shown > 0 then
+        height = height + 6 + shown * bossList.lineHeight
+    end
+    f:SetHeight(height)
+end
+
 local function UpdateFrameFromState(data)
     data = NormalizeHudState(data)
     activeState = data
@@ -3054,6 +3133,8 @@ local function UpdateFrameFromState(data)
     end
 
     affixText:SetText(BuildAffixLine(data.affixes))
+
+    UpdateBossChecklist(data.bosses)
 
     UpdateCountdown(data)
     UpdateReason(data.reason)

@@ -2,25 +2,35 @@
     DC Boss Tracker - retail-style dungeon/raid encounter checklist
     ---------------------------------------------------------------------------
 
-    Draws the "Dungeon / <instance> / N/1 <boss> defeated" block that retail
-    shows above the quest tracker, driven entirely by the server's DENC module
-    (src/server/scripts/DC/AddonExtension/dc_addon_encounters.cpp).
+    Draws the "Dungeon / <instance> / 0/1 <boss> defeated" block that retail
+    shows at the top of the objective tracker, driven entirely by the server's
+    DENC module (src/server/scripts/DC/AddonExtension/dc_addon_encounters.cpp).
 
-    Why it lives in DC-Journal: the journal already owns the per-instance art
-    (JOURNALINSTANCE carries the LFG icon keyed by real map id), so the banner
-    icon comes free and stays consistent with the Adventure Guide.
+    Visuals are a faithful downport of retail's ObjectiveTracker module header
+    and the scenario Stage Block, using the REAL retail textures (extracted
+    from 12.0.7 and shipped in the DC client patch) with texcoords taken from
+    the 11.2.7 AtlasInfo.lua, and layout offsets from
+    Blizzard_ObjectiveTrackerModule.xml / Blizzard_ScenarioObjectiveTracker.xml.
+
+    Position matches retail semantics: the block claims the top of the tracker
+    column (where UIParent's manager puts WatchFrame: TOPRIGHT of MinimapCluster
+    at (-CONTAINER_OFFSET_X, anchorY)) and WatchFrame's quests flow below it.
+    Implemented by hooking WatchFrame:SetPoint - the stock manager re-anchors
+    WatchFrame on every UIParent_ManageFramePositions, so the hook re-applies
+    the split each time. If WatchFrame:IsUserPlaced() (stock drag or DC-QOS
+    FrameMover, which calls SetUserPlaced(true)), the manager never fires and
+    the block quietly falls back to sitting above WatchFrame's custom spot.
 
     Protocol (module "DENC"), keyed by DungeonEncounter.dbc entry id:
         CMSG_REQUEST   0x01  ask for the current instance's list
-        SMSG_LIST      0x10  {m, d, n, b:[{e, t, k}]}  full list + state
-        SMSG_ENCOUNTER 0x11  {m, d, e, k}              one boss changed
-        SMSG_CLEAR     0x12  {}                        hide the block
+        SMSG_LIST      0x10  {m, d, r, n, b:[{e, t, k}]}  full list + state
+        SMSG_ENCOUNTER 0x11  {m, d, e, k}                 one boss changed
+        SMSG_CLEAR     0x12  {}                           hide the block
 
-    The server pushes on instance entry and on every boss kill, so the only
-    client-initiated request is a re-sync after a UI reload (where the entry
-    push is long gone). That request is cooldown-gated rather than latch-gated:
-    a reply-dependent request behind a disabled server module would otherwise
-    re-fire forever. See the QNAV anti-DoS note in the WXL tracker port.
+    The server pushes on instance entry and on every boss kill; the only
+    client-initiated request is a re-sync after a UI reload. That request is
+    cooldown-gated rather than latch-gated: a reply-dependent request behind a
+    disabled server module would otherwise re-fire forever (QNAV lesson).
 --------------------------------------------------------------------------]]--
 
 local T = {}
@@ -31,86 +41,93 @@ T.SMSG_LIST       = 0x10
 T.SMSG_ENCOUNTER  = 0x11
 T.SMSG_CLEAR      = 0x12
 
+-- ---------------------------------------------------------------------------
+-- Retail art (paths + atlas texcoords)
+-- ---------------------------------------------------------------------------
+-- Texcoords are the 1x atlas entries from 11.2.7 Helix/AtlasInfo.lua for the
+-- files shipped in the DC client patch. Format: {w, h, l, r, t, b}.
+T.TEX_TRACKER  = "Interface\\QuestFrame\\QuestTracker"        -- 512x256
+T.TEX_SCENARIO = "Interface\\Scenarios\\ScenarioParts"        -- 512x512
+T.TEX_OBJICONS = "Interface\\Minimap\\ObjectIconsAtlas"       -- 1024x1024
+
+T.ATLAS = {
+    -- UI-QuestTracker-Secondary-Objective-Header (the "Dungeon" module bar)
+    header        = { 300, 30, 0.00195312, 0.587891, 0.644531, 0.761719 },
+    -- ui-questtrackerbutton-secondary-collapse / -pressed / -expand / highlight
+    btnCollapse   = { 16, 16, 0.894531, 0.925781, 0.40625, 0.46875 },
+    btnPressed    = { 16, 16, 0.933594, 0.964844, 0.40625, 0.46875 },
+    btnExpand     = { 16, 16, 0.630859, 0.662109, 0.480469, 0.542969 },
+    btnHighlight  = { 16, 16, 0.666016, 0.697266, 0.480469, 0.542969 },
+    -- ScenarioTrackerToast (the stage-block plate behind the instance name)
+    toast         = { 243, 77, 0.00195312, 0.476562, 0.345703, 0.496094 },
+    -- "Dungeon" atlas (gold crossed swords), Interface/Minimap/ObjectIconsAtlas
+    swords        = { 32, 32, 0.198242, 0.24707, 0.44043, 0.489258 },
+}
+
 T.ICON_CHECK = "Interface\\Scenarios\\ScenarioIcon-Check"
 T.ICON_DASH  = "Interface\\Scenarios\\ScenarioIcon-Dash"
 
-T.WIDTH        = 210
-T.LINE_HEIGHT  = 18
-T.PADDING      = 10
-T.MAX_LINES    = 16
+-- Retail layout constants (Blizzard_ObjectiveTracker XML)
+T.WIDTH         = 260   -- ObjectiveTrackerModuleHeaderTemplate width
+T.HEADER_HEIGHT = 26
+T.STAGE_WIDTH   = 201   -- StageBlock size
+T.STAGE_HEIGHT  = 83
+T.LINE_HEIGHT   = 18
+T.LINE_INDENT   = 10
+T.MAX_LINES     = 16
 
--- Retail objective-tracker colours: a cleared objective dims to grey, an
--- outstanding one stays gold. The check/dash icon carries the colour cue.
+-- Retail objective colours: outstanding objectives gold, cleared ones dim.
 T.COLOR_DONE    = { 0.60, 0.60, 0.60 }
 T.COLOR_PENDING = { 1.00, 0.78, 0.20 }
+T.COLOR_STAGE   = { 1.00, 0.914, 0.682 }  -- StageBlock.Stage
+T.COLOR_NAME    = { 1.00, 0.831, 0.380 }  -- StageBlock.Name
+
+T.DIFF_DUNGEON = { [0] = "", [1] = "Heroic", [2] = "Mythic" }
+T.DIFF_RAID    = { [0] = "10 Player", [1] = "25 Player",
+                   [2] = "10 Player (Heroic)", [3] = "25 Player (Heroic)" }
 
 T.state = {
-    mapId       = nil,
-    difficulty  = nil,
-    name        = nil,
-    bosses      = {},   -- ordered array of { id = <dbc entry>, name = <string>, killed = <bool> }
-    byId        = {},   -- dbc entry -> index into bosses
-    collapsed   = false,
-    lastRequest = 0,
-    replySeen   = false,
+    mapId        = nil,
+    difficulty   = nil,
+    isRaid       = false,
+    name         = nil,
+    bosses       = {},   -- ordered array of { id, name, killed }
+    byId         = {},   -- dbc entry -> index into bosses
+    collapsed    = false,
+    lastRequest  = 0,
+    replySeen    = false,
     requestsMade = 0,
 }
 
 T.lines = {}
 
--- ---------------------------------------------------------------------------
--- Instance icon lookup
--- ---------------------------------------------------------------------------
--- JOURNALINSTANCE rows are {name, lore, btnIcon, smallIcon, bg, loreBg, mapID,
--- areaID, order, flags, id, worldMapAreaID}. Field 4 (smallIcon) is the LFG
--- dungeon icon - the same crossed-swords art retail puts on the banner. Built
--- once on first use; the table is static addon data.
-T.iconByMap = nil
-
-function T.GetInstanceIcon(mapId)
-    if not mapId then
-        return nil
-    end
-
-    if not T.iconByMap then
-        T.iconByMap = {}
-        local instances = rawget(_G, "JOURNALINSTANCE")
-        if type(instances) == "table" then
-            for _, row in pairs(instances) do
-                if type(row) == "table" and row[7] and row[4] and row[4] ~= "" then
-                    -- First writer wins: several journal entries can share a map
-                    -- (difficulty variants), and their icons are identical.
-                    if not T.iconByMap[row[7]] then
-                        T.iconByMap[row[7]] = row[4]
-                    end
-                end
-            end
-        end
-    end
-
-    return T.iconByMap[mapId]
+local function SetAtlas(texture, texPath, atlas)
+    texture:SetTexture(texPath)
+    texture:SetWidth(atlas[1])
+    texture:SetHeight(atlas[2])
+    texture:SetTexCoord(atlas[3], atlas[4], atlas[5], atlas[6])
 end
 
 -- ---------------------------------------------------------------------------
 -- Frame construction
 -- ---------------------------------------------------------------------------
 function T.CreateLine(index)
-    local line = T.frame:CreateTexture(nil, "ARTWORK")
-    line:SetWidth(16)
-    line:SetHeight(16)
+    local icon = T.frame:CreateTexture(nil, "ARTWORK")
+    icon:SetWidth(16)
+    icon:SetHeight(16)
 
     local text = T.frame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     text:SetJustifyH("LEFT")
-    text:SetWidth(T.WIDTH - T.PADDING * 2 - 20)
+    text:SetWidth(T.WIDTH - T.LINE_INDENT - 24)
 
     if index == 1 then
-        line:SetPoint("TOPLEFT", T.banner, "BOTTOMLEFT", 0, -6)
+        icon:SetPoint("TOPLEFT", T.stage, "BOTTOMLEFT", T.LINE_INDENT, -2)
     else
-        line:SetPoint("TOPLEFT", T.lines[index - 1].icon, "BOTTOMLEFT", 0, -2)
+        icon:SetPoint("TOPLEFT", T.lines[index - 1].icon, "BOTTOMLEFT", 0, -2)
     end
-    text:SetPoint("LEFT", line, "RIGHT", 4, 0)
+    text:SetPoint("LEFT", icon, "RIGHT", 4, 0)
 
-    T.lines[index] = { icon = line, text = text }
+    T.lines[index] = { icon = icon, text = text }
     return T.lines[index]
 end
 
@@ -121,83 +138,179 @@ function T.EnsureFrame()
 
     local frame = CreateFrame("Frame", "DCBossTrackerFrame", UIParent)
     frame:SetWidth(T.WIDTH)
-    frame:SetHeight(60)
+    frame:SetHeight(T.HEADER_HEIGHT + T.STAGE_HEIGHT)
     frame:SetFrameStrata("LOW")
     frame:SetClampedToScreen(true)
     frame:Hide()
 
-    frame:SetBackdrop({
-        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 14,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    frame:SetBackdropColor(0, 0, 0, 0.55)
-    frame:SetBackdropBorderColor(0.6, 0.5, 0.2, 0.8)
+    -- ============ Module header (ObjectiveTrackerModuleHeaderTemplate) ======
+    local header = CreateFrame("Frame", nil, frame)
+    header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    header:SetWidth(T.WIDTH)
+    header:SetHeight(T.HEADER_HEIGHT)
 
-    -- Header ("Dungeon") doubles as the collapse toggle and the drag handle.
-    local header = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    header:SetPoint("TOPLEFT", frame, "TOPLEFT", T.PADDING, -T.PADDING)
-    header:SetText("Dungeon")
-    header:SetTextColor(1.0, 0.82, 0.0)
-    frame.header = header
+    -- Background atlas is 300x30 and CENTER-anchored on the 260x26 header in
+    -- retail; the overhang is transparent filigree fade.
+    local headerBG = header:CreateTexture(nil, "BACKGROUND")
+    SetAtlas(headerBG, T.TEX_TRACKER, T.ATLAS.header)
+    headerBG:SetPoint("CENTER", header, "CENTER", 0, 0)
 
-    local toggle = CreateFrame("Button", nil, frame)
-    toggle:SetAllPoints(header)
+    -- ObjectiveTrackerHeaderFont: Friz 15, gold, LEFT x=7
+    local headerText = header:CreateFontString(nil, "ARTWORK")
+    headerText:SetFont("Fonts\\FRIZQT__.TTF", 15)
+    headerText:SetShadowOffset(1, -1)
+    headerText:SetShadowColor(0, 0, 0)
+    headerText:SetTextColor(1.0, 0.82, 0.0)
+    headerText:SetJustifyH("LEFT")
+    headerText:SetPoint("LEFT", header, "LEFT", 7, 0)
+    headerText:SetText("Dungeon")
+
+    -- MinimizeButton: 16x16 at RIGHT x=1, retail button atlases.
+    local toggle = CreateFrame("Button", nil, header)
+    toggle:SetWidth(16)
+    toggle:SetHeight(16)
+    toggle:SetPoint("RIGHT", header, "RIGHT", 1, 0)
+
+    local btnNormal = toggle:CreateTexture(nil, "ARTWORK")
+    SetAtlas(btnNormal, T.TEX_TRACKER, T.ATLAS.btnCollapse)
+    btnNormal:SetAllPoints(toggle)
+    toggle:SetNormalTexture(btnNormal)
+
+    local btnPushed = toggle:CreateTexture(nil, "ARTWORK")
+    SetAtlas(btnPushed, T.TEX_TRACKER, T.ATLAS.btnPressed)
+    btnPushed:SetAllPoints(toggle)
+    toggle:SetPushedTexture(btnPushed)
+
+    local btnHi = toggle:CreateTexture(nil, "HIGHLIGHT")
+    SetAtlas(btnHi, T.TEX_TRACKER, T.ATLAS.btnHighlight)
+    btnHi:SetAllPoints(toggle)
+    btnHi:SetBlendMode("ADD")
+    toggle:SetHighlightTexture(btnHi)
+
     toggle:RegisterForClicks("LeftButtonUp")
     toggle:SetScript("OnClick", function() T.ToggleCollapsed() end)
 
-    -- The button covers the header, so it would otherwise swallow the drag that
-    -- starts over the most natural grab point. Forward it to the frame.
-    toggle:RegisterForDrag("RightButton")
-    toggle:SetScript("OnDragStart", function() frame:StartMoving() end)
-    toggle:SetScript("OnDragStop", function()
+    -- The whole header doubles as the drag handle (right-drag).
+    header:EnableMouse(true)
+    frame:SetMovable(true)
+    header:RegisterForDrag("RightButton")
+    header:SetScript("OnDragStart", function() frame:StartMoving() end)
+    header:SetScript("OnDragStop", function()
         frame:StopMovingOrSizing()
         T.SavePosition()
     end)
 
-    frame:EnableMouse(true)
-    frame:SetMovable(true)
-    frame:RegisterForDrag("RightButton")
-    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        T.SavePosition()
-    end)
+    frame.header     = header
+    frame.headerText = headerText
+    frame.toggle     = toggle
+    frame.btnNormal  = btnNormal
 
-    -- Banner: instance name on the left, its LFG icon on the right.
-    local banner = CreateFrame("Frame", nil, frame)
-    banner:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -6)
-    banner:SetWidth(T.WIDTH - T.PADDING * 2)
-    banner:SetHeight(24)
-    frame.banner = banner
+    -- ============ Stage block (ScenarioObjectiveTracker StageBlock) =========
+    local stage = CreateFrame("Frame", nil, frame)
+    stage:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+    stage:SetWidth(T.STAGE_WIDTH)
+    stage:SetHeight(T.STAGE_HEIGHT)
 
-    local title = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    title:SetPoint("LEFT", banner, "LEFT", 0, 0)
-    title:SetWidth(T.WIDTH - T.PADDING * 2 - 28)
+    -- ScenarioTrackerToast plate: 243x77 at TOPLEFT (0,0); art wider than the
+    -- 201-wide block on purpose (right side fades out).
+    local toast = stage:CreateTexture(nil, "BACKGROUND")
+    SetAtlas(toast, T.TEX_SCENARIO, T.ATLAS.toast)
+    toast:SetPoint("TOPLEFT", stage, "TOPLEFT", 0, 0)
+
+    -- Stage title (retail Game18Font, TOPLEFT 15,-10): the instance name.
+    local title = stage:CreateFontString(nil, "ARTWORK")
+    title:SetFont("Fonts\\FRIZQT__.TTF", 15)
+    title:SetShadowOffset(1, -1)
+    title:SetShadowColor(0, 0, 0)
+    title:SetTextColor(T.COLOR_STAGE[1], T.COLOR_STAGE[2], T.COLOR_STAGE[3])
     title:SetJustifyH("LEFT")
-    banner.title = title
+    title:SetWidth(150)
+    title:SetHeight(36)
+    title:SetPoint("TOPLEFT", stage, "TOPLEFT", 15, -12)
+    stage.title = title
 
-    local icon = banner:CreateTexture(nil, "ARTWORK")
-    icon:SetPoint("RIGHT", banner, "RIGHT", 0, 0)
-    icon:SetWidth(22)
-    icon:SetHeight(22)
-    banner.icon = icon
+    -- Subtitle (retail StageBlock.Name position/colour): difficulty label.
+    local sub = stage:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    sub:SetTextColor(T.COLOR_NAME[1], T.COLOR_NAME[2], T.COLOR_NAME[3])
+    sub:SetJustifyH("LEFT")
+    sub:SetWidth(150)
+    sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
+    stage.sub = sub
 
-    T.frame  = frame
-    T.banner = banner
+    -- Crossed-swords instance icon (retail "Dungeon" atlas), right side of the
+    -- plate - the Cata Classic dungeon tracker look from the reference shot.
+    local swords = stage:CreateTexture(nil, "ARTWORK")
+    SetAtlas(swords, T.TEX_OBJICONS, T.ATLAS.swords)
+    swords:SetWidth(36)
+    swords:SetHeight(36)
+    swords:SetPoint("RIGHT", toast, "RIGHT", -46, 2)
 
+    T.frame = frame
+    T.stage = stage
     T.RestorePosition()
     return frame
 end
 
 -- ---------------------------------------------------------------------------
--- Position
+-- Position: retail semantics - top of the tracker column, quests below
 -- ---------------------------------------------------------------------------
--- Default: hugging the quest tracker's top-right, so the two read as one
--- column exactly like retail. Right-drag overrides it; the override is kept in
--- SavedVariables and wins from then on, which is also the escape hatch when
--- DC-QOS's FrameMover has relocated WatchFrame.
+-- UIParent_ManageFramePositions anchors WatchFrame's TOPRIGHT to MinimapCluster
+-- (offset by durability/vehicle/arena frames) unless it IsUserPlaced(). The
+-- hook below runs after every such SetPoint: the tracker takes the manager's
+-- point and WatchFrame's TOP anchor is replaced to hang below the tracker (its
+-- BOTTOMRIGHT stretch anchor stays untouched, so quest text still fills down).
+T.anchoring = false
+
+function T.HasUserPosition()
+    return type(DCBossTrackerDB) == "table"
+        and type(DCBossTrackerDB.pos) == "table"
+        and DCBossTrackerDB.pos.point ~= nil
+end
+
+function T.ClaimColumnTop(point, relTo, relPoint, x, y)
+    if not T.frame then
+        return
+    end
+
+    T.anchoring = true
+    T.frame:ClearAllPoints()
+    T.frame:SetPoint(point, relTo, relPoint, x, y)
+    -- Re-SetPoint with the same point name REPLACES only that anchor:
+    -- WatchFrame keeps its BOTTOMRIGHT stretch anchor.
+    WatchFrame:SetPoint("TOPRIGHT", T.frame, "BOTTOMRIGHT", 0, -6)
+    T.anchoring = false
+end
+
+function T.HookWatchFrame()
+    if T.watchHooked or not WatchFrame then
+        return
+    end
+
+    hooksecurefunc(WatchFrame, "SetPoint", function(self, point, relTo, relPoint, x, y)
+        if T.anchoring then
+            return
+        end
+        if not (T.frame and T.frame:IsShown()) then
+            return
+        end
+        if T.HasUserPosition() then
+            return
+        end
+        -- Only intercept the manager's column anchor, not the stretch anchor
+        -- or an arena-frames layout.
+        if point ~= "TOPRIGHT" then
+            return
+        end
+        if relTo ~= MinimapCluster and relTo ~= "MinimapCluster" then
+            return
+        end
+
+        T.ClaimColumnTop(point, relTo, relPoint or point, x or 0, y or 0)
+    end)
+
+    T.watchHooked = true
+end
+
 function T.SavePosition()
     if not T.frame then
         return
@@ -206,6 +319,18 @@ function T.SavePosition()
     local point, _, relPoint, x, y = T.frame:GetPoint()
     DCBossTrackerDB = DCBossTrackerDB or {}
     DCBossTrackerDB.pos = { point = point, relPoint = relPoint or point, x = x, y = y }
+    T.ReleaseWatchFrame()
+end
+
+-- Give WatchFrame back to the stock manager (it re-anchors on the next
+-- UIParent_ManageFramePositions; call it directly so the fix is immediate).
+function T.ReleaseWatchFrame()
+    if T.anchoring then
+        return
+    end
+    if type(UIParent_ManageFramePositions) == "function" then
+        pcall(UIParent_ManageFramePositions)
+    end
 end
 
 function T.RestorePosition()
@@ -213,18 +338,21 @@ function T.RestorePosition()
         return
     end
 
-    T.frame:ClearAllPoints()
-
-    local saved = type(DCBossTrackerDB) == "table" and DCBossTrackerDB.pos or nil
-    if saved and saved.point then
+    if T.HasUserPosition() then
+        local saved = DCBossTrackerDB.pos
+        T.frame:ClearAllPoints()
         T.frame:SetPoint(saved.point, UIParent, saved.relPoint, saved.x or 0, saved.y or 0)
         return
     end
 
-    local watch = rawget(_G, "WatchFrame")
-    if watch then
-        T.frame:SetPoint("BOTTOMRIGHT", watch, "TOPRIGHT", 0, 4)
+    -- Default: the manager's column spot. Nudge the manager to fire once so
+    -- the hook can claim it; until then sit above WatchFrame as a placeholder.
+    if WatchFrame then
+        T.frame:ClearAllPoints()
+        T.frame:SetPoint("BOTTOMRIGHT", WatchFrame, "TOPRIGHT", 0, 6)
+        T.ReleaseWatchFrame()
     else
+        T.frame:ClearAllPoints()
         T.frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -240)
     end
 end
@@ -232,27 +360,39 @@ end
 -- ---------------------------------------------------------------------------
 -- Rendering
 -- ---------------------------------------------------------------------------
+function T.DifficultyLabel()
+    local d = T.state.difficulty
+    if not d then
+        return ""
+    end
+    local map = T.state.isRaid and T.DIFF_RAID or T.DIFF_DUNGEON
+    return map[d] or ""
+end
+
 function T.Layout()
     local frame = T.EnsureFrame()
     local state = T.state
 
     if not state.mapId or #state.bosses == 0 then
-        frame:Hide()
+        if frame:IsShown() then
+            frame:Hide()
+            T.ReleaseWatchFrame()
+        end
         return
     end
 
-    frame.banner.title:SetText(state.name or "")
+    frame.headerText:SetText(state.isRaid and "Raid" or "Dungeon")
+    T.stage.title:SetText(state.name or "")
+    T.stage.sub:SetText(T.DifficultyLabel())
 
-    local iconPath = T.GetInstanceIcon(state.mapId)
-    if iconPath then
-        frame.banner.icon:SetTexture(iconPath)
-        frame.banner.icon:Show()
-    else
-        frame.banner.icon:Hide()
-    end
+    -- Collapse button art follows the state (retail swaps collapse<->expand).
+    SetAtlas(frame.btnNormal, T.TEX_TRACKER,
+        state.collapsed and T.ATLAS.btnExpand or T.ATLAS.btnCollapse)
+    frame.btnNormal:SetAllPoints(frame.toggle)
 
     local shown = 0
     if not state.collapsed then
+        T.stage:Show()
         for index = 1, math.min(#state.bosses, T.MAX_LINES) do
             local boss = state.bosses[index]
             local line = T.lines[index] or T.CreateLine(index)
@@ -260,7 +400,6 @@ function T.Layout()
             line.icon:SetTexture(boss.killed and T.ICON_CHECK or T.ICON_DASH)
             line.icon:Show()
 
-            -- Matches retail's phrasing: each encounter is a 0/1 objective.
             line.text:SetFormattedText("%d/1 %s defeated", boss.killed and 1 or 0, boss.name or "")
 
             local color = boss.killed and T.COLOR_DONE or T.COLOR_PENDING
@@ -269,6 +408,8 @@ function T.Layout()
 
             shown = index
         end
+    else
+        T.stage:Hide()
     end
 
     for index = shown + 1, #T.lines do
@@ -282,18 +423,27 @@ function T.Layout()
             killed = killed + 1
         end
     end
-    frame.header:SetText(state.collapsed
-        and string.format("Dungeon (%d/%d)", killed, #state.bosses)
-        or "Dungeon")
+    frame.headerText:SetText(string.format("%s (%d/%d)",
+        state.isRaid and "Raid" or "Dungeon", killed, #state.bosses))
 
-    -- header + banner + lines + padding, all measured off the same constants
-    -- the lines are anchored with, so collapsing does not leave dead space.
-    local height = T.PADDING * 2 + 14 + 6 + 24
-    if shown > 0 then
-        height = height + 6 + shown * T.LINE_HEIGHT
+    local height = T.HEADER_HEIGHT
+    if not state.collapsed then
+        height = height + T.STAGE_HEIGHT
+        if shown > 0 then
+            height = height + shown * T.LINE_HEIGHT
+        end
     end
+
+    local wasShown = frame:IsShown()
     frame:SetHeight(height)
     frame:Show()
+
+    -- Height/visibility changes move WatchFrame's hang point; kick the manager
+    -- so the hook re-applies the split with the new geometry.
+    if not T.HasUserPosition() and (not wasShown or height ~= T.lastHeight) then
+        T.lastHeight = height
+        T.ReleaseWatchFrame()
+    end
 end
 
 function T.ToggleCollapsed()
@@ -307,6 +457,7 @@ function T.Clear()
     local state = T.state
     state.mapId = nil
     state.difficulty = nil
+    state.isRaid = false
     state.name = nil
     state.bosses = {}
     state.byId = {}
@@ -327,6 +478,7 @@ function T.OnList(data)
     local state = T.state
     state.mapId      = tonumber(data.m)
     state.difficulty = tonumber(data.d)
+    state.isRaid     = (data.r == true or data.r == 1)
     state.name       = tostring(data.n or "")
     state.bosses     = {}
     state.byId       = {}
@@ -444,6 +596,7 @@ events:SetScript("OnEvent", function(_, event)
     -- cooldown expired. An instance with nothing to track answers SMSG_CLEAR.
     T.LoadSettings()
     T.EnsureFrame()
+    T.HookWatchFrame()
     T.Request(false)
 end)
 
@@ -455,7 +608,7 @@ SlashCmdList["DCBOSSES"] = function(msg)
         DCBossTrackerDB = DCBossTrackerDB or {}
         DCBossTrackerDB.pos = nil
         T.RestorePosition()
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker position reset.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker position reset to the tracker column.")
         return
     end
 
@@ -466,8 +619,8 @@ SlashCmdList["DCBOSSES"] = function(msg)
         return
     end
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker: right-drag to move, click the header to collapse.")
-    DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses reset   - restore the default position")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker: right-drag the header to move, click the button to collapse.")
+    DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses reset   - snap back to the objective-tracker column")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses refresh - ask the server for the list again")
 end
 
