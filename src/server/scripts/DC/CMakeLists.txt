@@ -260,6 +260,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_forms.cpp
     AddonExtension/dc_addon_graveyard.cpp
     AddonExtension/dc_addon_questflow.cpp
+    AddonExtension/dc_addon_encounters.cpp
 )
 
 # DC Collection System - Retail-like collection management (Split Structure)

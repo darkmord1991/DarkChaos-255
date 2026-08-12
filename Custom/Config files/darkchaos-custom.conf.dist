@@ -389,6 +389,18 @@ DC.AddonProtocol.QuestPopups.Enable = 1
 #
 DC.AddonProtocol.QuestNav.Enable = 1
 
+#
+#    DC.AddonProtocol.Encounters.Enable
+#        Description: Enable the dungeon/raid boss tracker (DENC module). Pushes
+#                     the instance's DungeonEncounter.dbc boss list plus its
+#                     completion state when a player enters, and one small
+#                     delta per boss as encounters are cleared. DC-Journal draws
+#                     it as a retail-style checklist above the quest tracker.
+#                     No polling; disabling this hides the block entirely.
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Encounters.Enable = 1
+
 # -----------------------------------------------------------------------------
 # Message Handling Settings
 # -----------------------------------------------------------------------------

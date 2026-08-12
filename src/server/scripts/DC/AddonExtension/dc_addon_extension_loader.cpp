@@ -37,6 +37,7 @@ void AddSC_dc_addon_death_markers();
 void AddSC_dc_addon_beastmaster();
 void AddSC_dc_addon_mappois();
 void AddSC_dc_addon_questnav();
+void AddSC_dc_addon_encounters();
 
 namespace DCAddon { void AddTeleportScripts(); }
 namespace DCAddon { void AddQuestFlowScripts(); }
@@ -104,4 +105,8 @@ void AddDCAddonExtensionScripts()
     // Quest navigation data (native selection-circle kill entries + live
     // QuestMapData fallback resolve)
     AddSC_dc_addon_questnav();
+
+    // Dungeon/raid boss tracker (DungeonEncounter.dbc driven checklist above
+    // the quest tracker; drawn by DC-Journal)
+    AddSC_dc_addon_encounters();
 }

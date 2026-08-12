@@ -5,6 +5,8 @@
 ## Version: 1.0
 ## DefaultState: enabled
 ## X-Category: Information
+## OptionalDeps: DC-AddonProtocol
+## SavedVariables: DCBossTrackerDB
 
 # ---------------------------------------------------------------------------
 # DC Journal addon manifest.
@@ -81,3 +83,6 @@ Interface\FrameXML\EncounterJournal_Fixups.xml
 Interface\FrameXML\Custom_EncounterJournal\Custom_EncounterJournal.xml
 Interface\FrameXML\EncounterJournal_UI.xml
 Interface\FrameXML\EncounterJournal_MicroButton.xml
+
+# --- DC boss tracker (retail-style encounter checklist, DENC module) -------
+Interface\FrameXML\DCBossTracker\DCBossTracker.lua

@@ -100,6 +100,7 @@ namespace DCAddon
         constexpr const char* BEASTMASTER   = "BEAST";  // Hunter pet catalog (browse + preview + adopt)
         constexpr const char* MAP_POI       = "MPOI";   // World-map POI markers (flight masters, ...)
         constexpr const char* QUEST_NAV     = "QNAV";   // Quest navigation data (kill-entry highlights, live coord resolve)
+        constexpr const char* ENCOUNTERS    = "DENC";   // Dungeon/raid boss tracker (DungeonEncounter.dbc driven)
     }
 
     // ========================================================================
@@ -551,6 +552,18 @@ namespace DCAddon
             constexpr uint8 CMSG_RESOLVE_QUEST = 0x02; // {q} request live coordinates (POIs + spawns) for a quest
             constexpr uint8 SMSG_KILL_ENTRIES  = 0x10; // {q, e:[entry,...]} up to 8 creature entries (JSON)
             constexpr uint8 SMSG_QUEST_COORDS  = 0x11; // {q, o:[{m,x,y,z,i}], s:[...], r:[...]} world coords (JSON)
+        }
+
+        // Dungeon/raid boss tracker opcodes (retail-style encounter checklist).
+        // Keyed throughout by DungeonEncounter.dbc entry id, so the client never
+        // has to know creature entries or per-instance script data ids.
+        namespace Encounters
+        {
+            constexpr uint8 CMSG_REQUEST   = 0x01; // Client: (re)send the current instance's boss list
+
+            constexpr uint8 SMSG_LIST      = 0x10; // {m,d,n,b:[{e,t,k}]} full list + completion state (JSON)
+            constexpr uint8 SMSG_ENCOUNTER = 0x11; // {m,d,e,k} one encounter changed state (JSON)
+            constexpr uint8 SMSG_CLEAR     = 0x12; // {} nothing to track here - hide the block (JSON)
         }
 
         // Beastmaster opcodes (hunter pet catalog: browse, preview, adopt)

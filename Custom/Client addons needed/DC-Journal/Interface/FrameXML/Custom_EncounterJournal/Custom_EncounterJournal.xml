@@ -5,6 +5,7 @@
 	<Script file="DarkChaos_Content.lua"/>
 	<Script file="..\EncounterJournal_Bootstrap.lua"/>
 	<Script file="DarkChaos_MythicPlus.lua"/>
+	<Script file="DarkChaos_CurrentInstance.lua"/>
 
 	<Button name="EncounterTierTabTemplate" virtual="true" parentArray="Tabs">
 		<Size x="120" y="36"/>

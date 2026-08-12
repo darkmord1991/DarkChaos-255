@@ -89,6 +89,7 @@ public:
         bool hudInitialized = false;
         std::unordered_map<uint32, uint32> hudWorldStates;
         std::vector<uint32> bossOrder;
+        std::vector<std::string> bossNames;   // parallel to bossOrder: DungeonEncounter name (creature name fallback)
         std::unordered_map<uint32, uint8> bossIndexLookup;
         std::unordered_map<uint32, uint64> bossKillStamps;
         std::vector<uint32> activeAffixes; // Runtime affix ids matching AffixType.

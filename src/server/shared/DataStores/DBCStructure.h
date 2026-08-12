@@ -867,7 +867,7 @@ struct DungeonEncounterEntry
     uint32 id;                                              // 0        unique id
     uint32 mapId;                                           // 1        map id
     uint32 difficulty;                                      // 2        instance mode
-    //uint32 orderIndex;                                    // 3
+    int32  orderIndex;                                      // 3        display order within the instance (not the mask bit); SIGNED - Blizzard uses negatives to front-load an encounter (Blackwing Descent runs -1000..4000)
     uint32 encounterIndex;                                  // 4        encounter index for creating completed mask
     char const*  encounterName[16];                         // 5-20     encounter name
     //uint32 nameFlags;                                     // 21

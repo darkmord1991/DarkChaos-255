@@ -29,6 +29,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "StringFormat.h"
+
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
@@ -39,6 +40,12 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+
+// Forward-declared rather than included: the only thing Mythic+ needs from the
+// DENC addon module is "re-evaluate the standalone boss tracker for this map",
+// and pulling in the whole addon-protocol header for one call would drag the
+// AddonExtension layer into every Mythic+ TU.
+namespace DCAddon { namespace Encounters { void RefreshForMap(Map* map); } }
 
 namespace
 {
@@ -358,6 +365,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->bossDeathTimes.clear();
     state->bossKillStamps.clear();
     state->bossOrder.clear();
+    state->bossNames.clear();
     state->bossIndexLookup.clear();
     state->activeAffixes.clear();
     state->hudWorldStates.clear();
@@ -2589,6 +2597,12 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, GetTotalBossesForDungeon(state->mapId));
     UpdateHud(state, map, true, "start");
 
+    // Withdraw the standalone DENC boss tracker: the group may have walked in
+    // and had it drawn well before the keystone was activated, and from here the
+    // Mythic+ HUD owns the boss checklist. It comes back on the next map change
+    // once this run's instance state is gone.
+    DCAddon::Encounters::RefreshForMap(map);
+
     std::string leaderName = activator->GetName();
     if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
         leaderName = owner->GetName();
@@ -2672,9 +2686,14 @@ void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
         return;
 
     state->bossOrder.clear();
+    state->bossNames.clear();
     state->bossIndexLookup.clear();
 
-    auto pushBoss = [&](uint32 entry)
+    // The display name is what the HUD checklist shows. Prefer the
+    // DungeonEncounter name, which is the ENCOUNTER's name rather than one
+    // creature's ("Omnotron Defense System", not "Electron"); fall back to the
+    // credit creature for the flags-only path below, which has no encounter row.
+    auto pushBoss = [&](uint32 entry, char const* encounterName)
     {
         if (!entry)
             return;
@@ -2682,9 +2701,16 @@ void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
             return;
         if (state->bossOrder.size() >= MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
             return;
+
+        std::string name = encounterName ? encounterName : "";
+        if (name.empty())
+            if (CreatureTemplate const* creatureInfo = sObjectMgr->GetCreatureTemplate(entry))
+                name = creatureInfo->Name;
+
         uint8 index = static_cast<uint8>(state->bossOrder.size());
         state->bossIndexLookup.emplace(entry, index);
         state->bossOrder.push_back(entry);
+        state->bossNames.push_back(std::move(name));
     };
 
     auto addEncounters = [&](Difficulty difficulty) -> bool
@@ -2694,18 +2720,37 @@ void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
         if (!encounters || encounters->empty())
             return false;
 
-        bool added = false;
+        // GetDungeonEncounterList hands back instance_encounters row order, not
+        // pull order. Sort by DungeonEncounter.orderIndex (SIGNED - Blizzard
+        // front-loads bosses with negatives) so the checklist reads top-to-bottom
+        // in the order the group will actually fight them.
+        std::vector<DungeonEncounter const*> ordered;
+        ordered.reserve(encounters->size());
         for (DungeonEncounter const* encounter : *encounters)
         {
-            if (!encounter ||
+            if (!encounter || !encounter->dbcEntry ||
                 encounter->creditType != ENCOUNTER_CREDIT_KILL_CREATURE ||
                 !encounter->creditEntry)
             {
                 continue;
             }
 
+            ordered.push_back(encounter);
+        }
+
+        std::sort(ordered.begin(), ordered.end(),
+            [](DungeonEncounter const* a, DungeonEncounter const* b)
+        {
+            if (a->dbcEntry->orderIndex != b->dbcEntry->orderIndex)
+                return a->dbcEntry->orderIndex < b->dbcEntry->orderIndex;
+            return a->dbcEntry->id < b->dbcEntry->id;
+        });
+
+        bool added = false;
+        for (DungeonEncounter const* encounter : ordered)
+        {
             size_t before = state->bossOrder.size();
-            pushBoss(encounter->creditEntry);
+            pushBoss(encounter->creditEntry, encounter->dbcEntry->encounterName[0]);
             if (state->bossOrder.size() > before)
                 added = true;
         }
@@ -2738,7 +2783,7 @@ void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
         {
             for (uint32 entry : itr->second)
             {
-                pushBoss(entry);
+                pushBoss(entry, nullptr);
                 if (state->bossOrder.size() >= MythicPlusConstants::Hud::MAX_TRACKED_BOSSES)
                     break;
             }
@@ -3018,6 +3063,10 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
         uint32 entry = state->bossOrder[i];
         payload << '{';
         payload << "\"entry\":" << entry << ',';
+        // Name is what the HUD checklist renders; bossNames is built parallel to
+        // bossOrder in BuildBossTracking, but guard the index in case a future
+        // path pushes into one without the other.
+        payload << "\"name\":\"" << EscapeJson(i < state->bossNames.size() ? state->bossNames[i] : std::string()) << "\",";
         bool killed = state->bossKillStamps.find(entry) != state->bossKillStamps.end();
         payload << "\"killed\":" << (killed ? 1 : 0);
         if (killed && state->startedAt)

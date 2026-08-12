@@ -101,15 +101,15 @@ local EYE_HEIGHT = {
 -- (2026-08-11): df = forward delta (zoom), dz = vertical delta (+up). The geometry gets every
 -- race close; these encode taste and the residual scene quirks.
 local FACE_TUNE = {
-	[1]  = { dz = -0.60, dy = -0.35 },  -- Human: face left (round 3)
+	[1]  = { dz = -0.60, dy = -0.10 },  -- Human: -0.35 overshot left, back toward the right (r4)
 	[3]  = { dz = 0.25 },               -- Dwarf: lands at goblin's approved framing ratio
 	[4]  = { dz = -0.15, dy = -0.25 },  -- Night Elf: slightly up + left (round 3)
 	[6]  = { df = -0.80, dz = 0.50 },   -- Tauren: back off, up again (round 3)
 	[7]  = { dz = 0.25 },               -- Gnome: shares the dwarf screen, same trim
 	[8]  = { dz = -0.15 },              -- Troll: slightly up (round 3)
 	[10] = { dz = -0.05 },              -- Blood Elf
-	[11] = { df = -1.20, dz = 0.90 },   -- Draenei: was a giant dark blob = far too close;
-	                                    -- back way off (round 3)
+	[11] = { df = -1.20, dz = 0.0 },    -- Draenei: distance settled in r3; +0.90 raise showed
+	                                    -- only the torso -- character back down (r4)
 	[12] = { dz = 0.25 },               -- Worgen: up a bit (round 3)
 	-- Scourge: pure analytic is the keeper.
 	-- (The undead brightening during face zoom is scene lighting near the camera, not framing.)
