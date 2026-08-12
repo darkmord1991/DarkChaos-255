@@ -149,9 +149,12 @@ namespace
         {
             CharacterDatabaseTransaction trans =
                 CharacterDatabase.BeginTransaction();
-            guild->ModifyBankMoney(trans, refund, true);
+            // A deposit never fails - only withdrawals check the balance - but
+            // the result is [[nodiscard]], and a false here means nothing was
+            // appended to the transaction, so the money did not reach the bank.
+            bool const deposited = guild->ModifyBankMoney(trans, refund, true);
             CharacterDatabase.CommitTransaction(trans);
-            return true;
+            return deposited;
         }
 
         return false;
@@ -1046,7 +1049,14 @@ bool RemoveAll(Player* player, std::string& error,
         {
             CharacterDatabaseTransaction trans =
                 CharacterDatabase.BeginTransaction();
-            guild->ModifyBankMoney(trans, bankRefund, true);
+            if (!guild->ModifyBankMoney(trans, bankRefund, true))
+            {
+                LOG_ERROR("scripts.dc",
+                    "GuildHouse: guild {} bank deposit of {} copper failed; "
+                    "decoration refund was lost.", guildId, bankRefund);
+                totalRefund -= bankRefund;
+                bankRefund = 0;
+            }
             CharacterDatabase.CommitTransaction(trans);
         }
     }

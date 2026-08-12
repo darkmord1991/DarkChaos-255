@@ -410,7 +410,10 @@ namespace DCCollection
                 return GrantResult::InvalidEntry;
             }
 
-            std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+            // Copy rather than bind a reference: the callee caches by value and
+            // the std::string temporary built from the literal argument makes
+            // -Wdangling-reference flag the reference form.
+            std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
             if (itemsEntryCol.empty())
                 return GrantResult::SchemaMissing;
 
@@ -506,7 +509,7 @@ namespace DCCollection
         if (!accountId || !entryId)
             return false;
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        std::string const itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
             return false;
 

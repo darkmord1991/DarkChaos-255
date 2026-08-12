@@ -97,6 +97,11 @@ void AddSC_dc_azshara_cata();                 // MountHyjal/zone_azshara_cata.cp
 // --- Blackfathom Deeps (Ashenvale) -- map-48 clone on map 820 ---
 void AddSC_instance_bfd_ashenvale();          // BlackfathomAshenvale/instance_bfd_ashenvale.cpp
 
+// --- Turtle-sourced instances reached from map 750 ---
+void AddSC_instance_timbermaw_hold();         // TimbermawHold/instance_timbermaw_hold.cpp
+void AddSC_instance_crescent_grove();         // CrescentGrove/instance_crescent_grove.cpp
+void AddSC_instance_emerald_sanctum();        // EmeraldSanctum/instance_emerald_sanctum.cpp
+
 // --- Heirloom system ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
 void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.cpp
@@ -369,6 +374,11 @@ void AddDCScripts()
 
     LogSection("Blackfathom Deeps (Ashenvale) - map 820");
     DC_LOAD(AddSC_instance_bfd_ashenvale);
+
+    LogSection("Turtle instances - Timbermaw 819 / Crescent Grove 823 / Emerald Sanctum 824");
+    DC_LOAD(AddSC_instance_timbermaw_hold);
+    DC_LOAD(AddSC_instance_crescent_grove);
+    DC_LOAD(AddSC_instance_emerald_sanctum);
 
     LogSection("Heirloom System");
     DC_LOAD(AddSC_heirloom_scaling_255);

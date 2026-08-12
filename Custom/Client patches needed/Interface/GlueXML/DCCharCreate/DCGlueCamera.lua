@@ -41,9 +41,9 @@ DCGlueCamera = {}
 
 DCGlueCamera.Config = {
 	enabled = true,
-	-- Show the in-screen tuning panel. Ship OFF once tuned; ON for now because the SetPosition
-	-- axis mapping and the framing constants have not been verified in-client yet.
-	tune = true,
+	-- The in-screen tuning panel. OFF for normal play (2026-08-11, after 18 calibration rounds);
+	-- flip to true and redeploy to resume framing work -- the per-race knobs live in FACE_TUNE.
+	tune = false,
 
 	duration = 0.35,          -- seconds for the ease between framings
 
@@ -101,15 +101,17 @@ local EYE_HEIGHT = {
 -- (2026-08-11): df = forward delta (zoom), dz = vertical delta (+up). The geometry gets every
 -- race close; these encode taste and the residual scene quirks.
 local FACE_TUNE = {
-	[1]  = { dz = -0.60 },              -- Human: "more down" (round 2)
+	[1]  = { dz = -0.60, dy = -0.35 },  -- Human: face left (round 3)
 	[3]  = { dz = 0.25 },               -- Dwarf: lands at goblin's approved framing ratio
-	[4]  = { dz = -0.30 },              -- Night Elf
-	[6]  = { df = -0.80, dz = 0.25 },   -- Tauren: back off + "a bit more up"
+	[4]  = { dz = -0.15, dy = -0.25 },  -- Night Elf: slightly up + left (round 3)
+	[6]  = { df = -0.80, dz = 0.50 },   -- Tauren: back off, up again (round 3)
 	[7]  = { dz = 0.25 },               -- Gnome: shares the dwarf screen, same trim
-	[8]  = { dz = -0.30 },              -- Troll
-	[10] = { dz = -0.05 },              -- Blood Elf: "a bit more up" from -0.30
-	[11] = { dz = 0.90 },               -- Draenei: face was below frame (only hair visible)
-	-- Scourge entry removed: -0.30 was "too much down" -- pure analytic is the keeper there.
+	[8]  = { dz = -0.15 },              -- Troll: slightly up (round 3)
+	[10] = { dz = -0.05 },              -- Blood Elf
+	[11] = { df = -1.20, dz = 0.90 },   -- Draenei: was a giant dark blob = far too close;
+	                                    -- back way off (round 3)
+	[12] = { dz = 0.25 },               -- Worgen: up a bit (round 3)
+	-- Scourge: pure analytic is the keeper.
 	-- (The undead brightening during face zoom is scene lighting near the camera, not framing.)
 }
 
@@ -284,6 +286,9 @@ local function FaceArgs(state)
 	local race = DCCharCustomize and DCCharCustomize.RaceSex and select(1, DCCharCustomize.RaceSex())
 	local tune = race and FACE_TUNE[race] or nil
 	local df, dz = (tune and tune.df or 0), (tune and tune.dz or 0)
+	-- Side trim: +y is screen-RIGHT for a camera looking down the -x axis (right-handed, z up),
+	-- so "move the face left" entries carry negative dy.
+	local dy = tune and tune.dy or 0
 	local cam = state and ScreenCamera(state)
 	if cam then
 		-- Eyes on the camera's view axis, at an fov-normalized distance (equal face size on every
@@ -296,9 +301,9 @@ local function FaceArgs(state)
 		local d = cfg.faceSize / math.tan(cam.fov * 0.5) - df
 		local ex = cam.dh + fx * d
 		local ez = cam.cz + fz * d
-		return { ex, 0, (cfg.chestHeight + ez - cam.tz) - eye + cfg.faceLift + dz }
+		return { ex, dy, (cfg.chestHeight + ez - cam.tz) - eye + cfg.faceLift + dz }
 	end
-	return Compose(cfg.faceForward + df, 0, -(eye - cfg.aimHeight) + dz)
+	return Compose(cfg.faceForward + df, dy, -(eye - cfg.aimHeight) + dz)
 end
 
 local function SelectArgs()
@@ -565,7 +570,7 @@ if cfg.tune then
 	title:SetPoint("TOPLEFT", 12, -10)
 	-- The version tag is the "is the new deploy actually live?" check: glue Lua loads once per
 	-- client start, so a stale tag means the client was not fully restarted.
-	title:SetText("|cff00ff00DC glue camera tuner v17|r")
+	title:SetText("|cff00ff00DC glue camera tuner v18|r")
 
 	-- Live diagnostics, refreshed by the driver: whether applies are flowing every frame, whether
 	-- the OnUpdateModel handlers fire at all, and the last SetPosition error if any.
