@@ -219,6 +219,11 @@ namespace Encounters
         // Heroic 5-man but 25-Normal raid), so the client cannot label the
         // difficulty without knowing which enum it is looking at.
         msg.Set("r", map->IsRaid());
+        // Player cap from MapDifficulty.dbc - the authoritative source. Custom
+        // raids do not follow the stock 10/25 pattern (Timbermaw Hold is 20),
+        // so the client must never derive this from the difficulty id.
+        MapDifficulty const* mapDiff = GetMapDifficultyData(map->GetId(), map->GetDifficulty());
+        msg.Set("p", mapDiff ? mapDiff->maxPlayers : 0u);
         msg.Set("n", GetInstanceName(map->GetId()));
         msg.Set("b", std::move(bosses));
         msg.Send(player);

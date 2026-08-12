@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: DC Portrait Capture
+## Notes: Dev tool. Renders creature display ids full-screen so they can be screenshotted into Encounter Journal boss art.
+## Author: Dark Chaos
+## Version: 1.0
+## SavedVariables: DCPortraitCaptureDB
+
+Capture.lua

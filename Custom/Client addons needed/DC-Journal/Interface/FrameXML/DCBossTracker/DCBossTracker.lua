@@ -68,7 +68,9 @@ T.ICON_CHECK = "Interface\\Scenarios\\ScenarioIcon-Check"
 T.ICON_DASH  = "Interface\\Scenarios\\ScenarioIcon-Dash"
 
 -- Retail layout constants (Blizzard_ObjectiveTracker XML)
-T.WIDTH         = 260   -- ObjectiveTrackerModuleHeaderTemplate width
+T.WIDTH         = 260   -- ObjectiveTrackerModuleHeaderTemplate width (fallback; live width follows WatchFrame)
+T.COLUMN_OFFSET_X = -20 -- extra shift applied to the manager's column point: keeps the
+                        -- header art's +20 right overhang out of the action-bar area
 T.HEADER_HEIGHT = 26
 T.STAGE_WIDTH   = 201   -- StageBlock size
 T.STAGE_HEIGHT  = 83
@@ -109,6 +111,41 @@ local function SetAtlas(texture, texPath, atlas)
 end
 
 -- ---------------------------------------------------------------------------
+-- Column width: follow WatchFrame so the two modules share BOTH edges
+-- ---------------------------------------------------------------------------
+-- WatchFrame is 204 or 306 wide (the "wider quest tracker" option) while the
+-- retail module header is 260; with a fixed-width block the quest lines jut
+-- out past the boss block on one side. Since both frames share the column's
+-- TOPRIGHT, matching WatchFrame's width lines their left edges up too. The
+-- header ART stays 300 wide and right-anchored (never stretched) - on any
+-- width the filigree just fades out toward the left, like retail.
+function T.SyncColumnWidth()
+    local width = T.WIDTH
+    if WatchFrame and WatchFrame.GetWidth then
+        local watchWidth = WatchFrame:GetWidth() or 0
+        -- Ignore the collapsed width so a collapsed quest tracker does not
+        -- squeeze the boss block.
+        if watchWidth > 190 then
+            width = math.floor(watchWidth + 0.5)
+        end
+    end
+
+    if width == T.columnWidth then
+        return
+    end
+    T.columnWidth = width
+
+    if not T.frame then
+        return
+    end
+    T.frame:SetWidth(width)
+    T.frame.header:SetWidth(width)
+    for index = 1, #T.lines do
+        T.lines[index].text:SetWidth(width - 34)
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Frame construction
 -- ---------------------------------------------------------------------------
 function T.CreateLine(index)
@@ -118,7 +155,7 @@ function T.CreateLine(index)
 
     local text = T.frame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     text:SetJustifyH("LEFT")
-    text:SetWidth(T.WIDTH - T.LINE_INDENT - 24)
+    text:SetWidth((T.columnWidth or T.WIDTH) - 34)
 
     if index == 1 then
         icon:SetPoint("TOPLEFT", T.stage, "BOTTOMLEFT", T.LINE_INDENT, -2)
@@ -149,11 +186,13 @@ function T.EnsureFrame()
     header:SetWidth(T.WIDTH)
     header:SetHeight(T.HEADER_HEIGHT)
 
-    -- Background atlas is 300x30 and CENTER-anchored on the 260x26 header in
-    -- retail; the overhang is transparent filigree fade.
+    -- Background atlas is 300x30, CENTER-anchored on retail's fixed 260 header
+    -- (= 20px overhang each side). Our header width follows WatchFrame, so
+    -- anchor the art RIGHT at +20 instead: identical right-edge geometry at
+    -- 260, and on other widths the unstretched filigree just fades out left.
     local headerBG = header:CreateTexture(nil, "BACKGROUND")
     SetAtlas(headerBG, T.TEX_TRACKER, T.ATLAS.header)
-    headerBG:SetPoint("CENTER", header, "CENTER", 0, 0)
+    headerBG:SetPoint("RIGHT", header, "RIGHT", 20, 0)
 
     -- ObjectiveTrackerHeaderFont: Friz 15, gold, LEFT x=7
     local headerText = header:CreateFontString(nil, "ARTWORK")
@@ -272,12 +311,21 @@ function T.ClaimColumnTop(point, relTo, relPoint, x, y)
         return
     end
 
+    T.SyncColumnWidth()
+
     T.anchoring = true
     T.frame:ClearAllPoints()
-    T.frame:SetPoint(point, relTo, relPoint, x, y)
+    -- COLUMN_OFFSET_X shifts the whole column (WatchFrame hangs below us, so
+    -- the quest block moves with it) left of the manager's stock point.
+    T.frame:SetPoint(point, relTo, relPoint, (x or 0) + T.COLUMN_OFFSET_X, y)
     -- Re-SetPoint with the same point name REPLACES only that anchor:
     -- WatchFrame keeps its BOTTOMRIGHT stretch anchor.
     WatchFrame:SetPoint("TOPRIGHT", T.frame, "BOTTOMRIGHT", 0, -6)
+    -- The manager's BOTTOMRIGHT stretch anchor still points at the UNSHIFTED
+    -- column x; two right-edge constraints at different x are undefined
+    -- behaviour, so move it by the same offset (globals from UIParent.lua).
+    WatchFrame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT",
+        -(CONTAINER_OFFSET_X or 70) + T.COLUMN_OFFSET_X, CONTAINER_OFFSET_Y or 30)
     T.anchoring = false
 end
 
@@ -358,6 +406,84 @@ function T.RestorePosition()
 end
 
 -- ---------------------------------------------------------------------------
+-- WatchFrame skin: make the quest module look like part of the same tracker
+-- ---------------------------------------------------------------------------
+-- Retail draws every module (Dungeon, Quests, ...) with the same header bar;
+-- stock 3.3.5 WatchFrame just has a bare gold FontString, which is why the two
+-- blocks read as separate UIs. This dresses WatchFrame's header in the same
+-- atlas chrome, aligned so both bars share the column's right edge, the same
+-- text indent and the same 16x16 collapse button.
+--
+-- Alignment math: the DENC header is a 260-wide frame whose 300-wide art is
+-- CENTER-anchored (20px overhang each side). Anchoring WatchFrame's bar
+-- TOPRIGHT at (+20, +2) puts both art right edges - and therefore the text at
+-- LEFT+27 and the button at RIGHT-19 - on identical column x positions,
+-- regardless of WatchFrame's own width (204 or 306). The art is NEVER
+-- stretched; the filigree just fades out to the left like retail's does.
+-- WatchFrameLines starts at y=-30, so the 30px bar fits without touching it.
+function T.ApplyWatchButtonArt()
+    local btn = WatchFrameCollapseExpandButton
+    if not btn or not T.watchBar then
+        return
+    end
+
+    local normalAtlas = WatchFrame.collapsed and T.ATLAS.btnExpand or T.ATLAS.btnCollapse
+
+    -- Stock WatchFrame_Collapse/Expand stomp these with UI-Panel-*Button art
+    -- every click; this runs as a post-hook and stomps them right back.
+    btn:SetNormalTexture(T.TEX_TRACKER)
+    btn:GetNormalTexture():SetTexCoord(normalAtlas[3], normalAtlas[4], normalAtlas[5], normalAtlas[6])
+    btn:SetPushedTexture(T.TEX_TRACKER)
+    btn:GetPushedTexture():SetTexCoord(T.ATLAS.btnPressed[3], T.ATLAS.btnPressed[4], T.ATLAS.btnPressed[5], T.ATLAS.btnPressed[6])
+    btn:SetDisabledTexture(T.TEX_TRACKER)
+    btn:GetDisabledTexture():SetTexCoord(normalAtlas[3], normalAtlas[4], normalAtlas[5], normalAtlas[6])
+    btn:SetHighlightTexture(T.TEX_TRACKER)
+    local hi = btn:GetHighlightTexture()
+    hi:SetTexCoord(T.ATLAS.btnHighlight[3], T.ATLAS.btnHighlight[4], T.ATLAS.btnHighlight[5], T.ATLAS.btnHighlight[6])
+    hi:SetBlendMode("ADD")
+end
+
+function T.SkinWatchFrame()
+    if T.watchSkinned then
+        return
+    end
+    if not (WatchFrame and WatchFrameTitle and WatchFrameCollapseExpandButton) then
+        return
+    end
+    if DCBossTrackerDB and DCBossTrackerDB.skinWatchFrame == false then
+        return
+    end
+
+    local bar = WatchFrame:CreateTexture(nil, "BACKGROUND")
+    SetAtlas(bar, T.TEX_TRACKER, T.ATLAS.header)
+    bar:SetPoint("TOPRIGHT", WatchFrame, "TOPRIGHT", 20, 2)
+    T.watchBar = bar
+
+    WatchFrameTitle:SetFont("Fonts\\FRIZQT__.TTF", 15)
+    WatchFrameTitle:SetShadowOffset(1, -1)
+    WatchFrameTitle:SetShadowColor(0, 0, 0)
+    WatchFrameTitle:SetTextColor(1.0, 0.82, 0.0)
+    WatchFrameTitle:SetJustifyH("LEFT")
+    WatchFrameTitle:ClearAllPoints()
+    -- Same indent as the boss block's header text: 7px from the FRAME's left
+    -- edge (both frames share their left edge now that widths are synced).
+    -- y=-7 vertically centers the ~15px text on the bar (bar spans +2..-28).
+    WatchFrameTitle:SetPoint("TOPLEFT", WatchFrame, "TOPLEFT", 7, -7)
+
+    local btn = WatchFrameCollapseExpandButton
+    btn:SetWidth(16)
+    btn:SetHeight(16)
+    btn:ClearAllPoints()
+    btn:SetPoint("RIGHT", bar, "RIGHT", -19, 0)
+
+    T.ApplyWatchButtonArt()
+    hooksecurefunc("WatchFrame_Collapse", T.ApplyWatchButtonArt)
+    hooksecurefunc("WatchFrame_Expand", T.ApplyWatchButtonArt)
+
+    T.watchSkinned = true
+end
+
+-- ---------------------------------------------------------------------------
 -- Rendering
 -- ---------------------------------------------------------------------------
 function T.DifficultyLabel()
@@ -365,13 +491,30 @@ function T.DifficultyLabel()
     if not d then
         return ""
     end
-    local map = T.state.isRaid and T.DIFF_RAID or T.DIFF_DUNGEON
-    return map[d] or ""
+
+    if T.state.isRaid then
+        -- Player cap comes from the server (MapDifficulty.dbc maxPlayers):
+        -- custom raids do not follow the stock 10/25 pattern (Timbermaw Hold
+        -- is 20-player). The enum table is only the no-data fallback.
+        local cap = tonumber(T.state.maxPlayers) or 0
+        if cap > 0 then
+            local label = string.format("%d Player", cap)
+            if d == 2 or d == 3 then
+                label = label .. " (Heroic)"
+            end
+            return label
+        end
+        return T.DIFF_RAID[d] or ""
+    end
+
+    return T.DIFF_DUNGEON[d] or ""
 end
 
 function T.Layout()
     local frame = T.EnsureFrame()
     local state = T.state
+
+    T.SyncColumnWidth()
 
     if not state.mapId or #state.bosses == 0 then
         if frame:IsShown() then
@@ -458,6 +601,7 @@ function T.Clear()
     state.mapId = nil
     state.difficulty = nil
     state.isRaid = false
+    state.maxPlayers = 0
     state.name = nil
     state.bosses = {}
     state.byId = {}
@@ -479,6 +623,7 @@ function T.OnList(data)
     state.mapId      = tonumber(data.m)
     state.difficulty = tonumber(data.d)
     state.isRaid     = (data.r == true or data.r == 1)
+    state.maxPlayers = tonumber(data.p) or 0
     state.name       = tostring(data.n or "")
     state.bosses     = {}
     state.byId       = {}
@@ -597,6 +742,7 @@ events:SetScript("OnEvent", function(_, event)
     T.LoadSettings()
     T.EnsureFrame()
     T.HookWatchFrame()
+    T.SkinWatchFrame()
     T.Request(false)
 end)
 
@@ -619,9 +765,19 @@ SlashCmdList["DCBOSSES"] = function(msg)
         return
     end
 
+    if msg == "skin" then
+        DCBossTrackerDB = DCBossTrackerDB or {}
+        DCBossTrackerDB.skinWatchFrame = (DCBossTrackerDB.skinWatchFrame == false)
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Quest tracker skin "
+            .. (DCBossTrackerDB.skinWatchFrame and "enabled" or "disabled")
+            .. " - takes effect after /reload.")
+        return
+    end
+
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Boss tracker: right-drag the header to move, click the button to collapse.")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses reset   - snap back to the objective-tracker column")
     DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses refresh - ask the server for the list again")
+    DEFAULT_CHAT_FRAME:AddMessage("  /dcbosses skin    - toggle the matching quest-tracker header skin")
 end
 
 DCBossTracker = T

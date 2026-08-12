@@ -688,9 +688,12 @@ local function AddDCBoss(instanceID, opts)
         type              = 0,
     })
     AddAbilityChain(opts.encID, opts.rootID, opts.rootID + 1, opts.abilities or {})
+    -- Explicit order: EJ_GetCreatureInfo sorts the models by it, and the boss
+    -- list button always draws model #1. Leaving them all at the default 0 makes
+    -- an unstable sort decide which creature represents the encounter.
     DCJournal.AddBossModel(opts.encID, {
         name = opts.name, creatureDisplayID = opts.display, creatureEntry = opts.entry,
-        icon = opts.icon,
+        icon = opts.icon, order = 1,
     })
     for _, itemID in ipairs(opts.loot or {}) do
         DCJournal.AddLoot(opts.encID, itemID)
@@ -736,9 +739,11 @@ local function AddDCGroupBoss(instanceID, opts)
         })
         AddAbilityChain(opts.encID, m.headerID, m.headerID + 1, m.abilities or {})
         if m.display then
+            -- See AddDCBoss: model #1 is what the boss list button shows, so the
+            -- order has to be explicit rather than left to an unstable sort.
             DCJournal.AddBossModel(opts.encID, {
                 name = m.name, creatureDisplayID = m.display, creatureEntry = m.entry,
-                icon = m.icon,
+                icon = m.icon, order = i,
             })
         end
     end
@@ -1130,7 +1135,12 @@ AddDCGroupBoss(EMERALD_SANCTUM, {
             },
         },
         {
+            -- First member carrying a model, so this is the art the boss list
+            -- button shows for the whole encounter -- and Legion's "Dragons of
+            -- Nightmare" banner already ships in the client patch, which is
+            -- exactly these four dragons.
             headerID = 904130, name = "Ysondre the Wakener", display = 503757, entry = 4030002,
+            icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Dragons of Nightmare",
             blurb = "The dreamer. Her signature is chained lightning and the druid spirits she calls to fight beside her.",
             abilities = {
                 { "Lightning Wave", "Chains lightning from a random player through everyone near them, every 20 seconds.", 24819 },
@@ -1207,6 +1217,7 @@ DCJournal.AddInstance({
 AddDCBoss(CASTLE_NATHRIA, {
     encID = 905001, rootID = 905100, order = 1,
     name = "Shriekwing", display = 97268, entry = 164406,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Shriekwing",
     lore = "The castle's watch-beast hangs in the entry hall and hunts by sound. It is blind, and the raid's own noise is what tells it where everyone is standing.",
     overview = "Alternating phases. Shriekwing builds energy through a normal phase, then blankets the room in Blood Shroud and hunts blind -- break line of sight behind the pillars while it does.",
     abilities = {
@@ -1230,6 +1241,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
     members = {
         {
             headerID = 905141, name = "Huntsman Altimor", display = 95643, entry = 165066,
+            icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-HuntsmanAltimor",
             blurb = "The huntsman fights throughout, whichever beast is currently up.",
             abilities = {
                 { "Spread Shot", "He turns to a random player and cones every 20 seconds.", 334404 },
@@ -1268,6 +1280,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
 AddDCBoss(CASTLE_NATHRIA, {
     encID = 905003, rootID = 905200, order = 3,
     name = "Hungering Destroyer", display = 98776, entry = 164261,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-HungeringDestroyer",
     lore = "A creature of the Maw, brought into the castle and kept fed. It has never been anything but hungry, and Denathrius has never had any shortage of anima to keep it that way.",
     overview = "An energy fight. The Destroyer fills up over roughly a minute and a half and then dumps Consume on the whole raid -- everything else is scheduled around surviving that.",
     abilities = {
@@ -1289,6 +1302,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
     members = {
         {
             headerID = 905241, name = "Kael'thas Sunstrider", display = 94482, entry = 165759,
+            icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-SunKingsSalvation",
             blurb = "Friendly, and the entire objective. High Torturer Darithos drops him to 20% health on the pull; healing him back to full ends the encounter.",
             abilities = {
                 { "Greater Castigation", "Darithos' opening strike, six seconds into the pull -- what puts Kael'thas at 20% in the first place.", 328885 },
@@ -1319,6 +1333,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
 AddDCBoss(CASTLE_NATHRIA, {
     encID = 905005, rootID = 905300, order = 5,
     name = "Artificer Xy'mox", display = 95375, entry = 166644,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-ArtificerXymox",
     lore = "Xy'mox is not one of Denathrius' court. He is a broker, he is here for the vault, and he has had more than enough time to install his own machinery in it before anyone else arrived.",
     overview = "Three stages on health. At 70% the Root and Seed of Extinction come online; at 40% the Root goes and the Edge of Annihilation replaces it.",
     abilities = {
@@ -1337,6 +1352,7 @@ AddDCBoss(CASTLE_NATHRIA, {
 AddDCBoss(CASTLE_NATHRIA, {
     encID = 905006, rootID = 905340, order = 6,
     name = "Lady Inerva Darkvein", display = 96806, entry = 165521,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-LadyInervaDarkvein",
     lore = "Inerva runs the castle's anima reserves and knows exactly what Denathrius has been doing with them. She keeps the secret because she helped build it.",
     overview = "Two repeating cycles rather than health phases: Exposed Cognition every 33 seconds and Exposed Heart every 66, each pulling its own follow-up mechanics in behind it.",
     abilities = {
@@ -1360,6 +1376,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
     members = {
         {
             headerID = 905381, name = "Baroness Frieda", display = 96836, entry = 166969,
+            icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-TheCouncilOfBlood",
             blurb = "The host. She calls the dance, and she is the one who gains the most from a co-boss dying.",
             abilities = {
                 { "Oppressive Atmosphere", "A raid-wide aura reapplied to everyone every ten seconds.", 334909 },
@@ -1395,6 +1412,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
 AddDCBoss(CASTLE_NATHRIA, {
     encID = 905008, rootID = 905440, order = 8,
     name = "Sludgefist", display = 95623, entry = 164407,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Sludgefist",
     lore = "A stone giant chained in the castle's foundations, and the only thing holding the ceiling up is the same set of pillars the raid is about to break.",
     overview = "Locked until the Council of Blood is dead. Sludgefist builds energy and then charges the tank blind -- steer him into a pillar rather than a wall, and never stand alone in front of him.",
     abilities = {
@@ -1418,6 +1436,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
     members = {
         {
             headerID = 905481, name = "General Kaal", display = 98155, entry = 168112,
+            icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-StoneLegionGenerals",
             blurb = "Starts on the ground. Goes ranged when Grashaal lands, and comes back to the front line in the final phase.",
             abilities = {
                 { "Serrated Swipe", "A tank hit every 20 seconds while she is on the front line.", 334929 },
@@ -1453,6 +1472,7 @@ AddDCGroupBoss(CASTLE_NATHRIA, {
 AddDCBoss(CASTLE_NATHRIA, {
     encID = 905010, rootID = 905540, order = 10,
     name = "Sire Denathrius", display = 96942, entry = 167406,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Denathrius",
     lore = "The master of Revendreth, and the reason every soul in it has been bled. He fights with Remornia in hand -- a living blade, and a member of his court in her own right -- and he does not believe for a moment that this ends with him losing.",
     overview = "Three stages with an intermission. At 70% the March of the Penitent moves the raid to the Sanctum floor and Remornia joins the fight in her own body; at 40% she becomes his sword again. Energy drives a different empowered command in each stage.",
     abilities = {
