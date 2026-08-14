@@ -27,6 +27,36 @@ EJ_LOOTJOURNAL_DATA      = EJ_LOOTJOURNAL_DATA      or {}
 -- in registration order. Populated by AddInstance({ openWorld = true }).
 DCJournal.openWorldInstances = DCJournal.openWorldInstances or {}
 
+-- Per-instance difficulty sets, for instances that do not fit the stock
+-- 5 / 10 / 25 + Normal/Heroic layout hardcoded in Custom_EncounterJournal.lua.
+-- Populated by AddInstance({ difficulties = ... }); consumed by
+-- DarkChaos_Difficulty.lua. [instanceID] = { entry, ... }
+DCJournal.difficulties = DCJournal.difficulties or {}
+
+-- Register a difficulty set. `players` is the raid/party size, `labels` the
+-- modes in MapDifficulty order -- so labels[i] is the mode the server calls
+-- Difficulty i-1, which the client reports as difficultyID i.
+--
+-- The mask is positional (1, 2, 4, ...). All DC encounter and loot rows carry
+-- difficultyMask -1 ("every difficulty"), so the masks only ever have to be
+-- distinct, never to match a Blizzard value.
+function DCJournal.SetDifficulties(instanceID, players, labels)
+    local isRaid = players > 5
+    local list = {}
+    for i, label in ipairs(labels) do
+        list[i] = {
+            size           = tostring(players),
+            players        = players,
+            prefix         = label,
+            -- Stock shows "(25) Heroic" for raids and bare "Heroic" for 5-player.
+            label          = isRaid and string.format("(%d) %s", players, label) or label,
+            difficultyID   = i,
+            difficultyMask = 2 ^ (i - 1),
+        }
+    end
+    DCJournal.difficulties[instanceID] = list
+end
+
 local FLAG_INSTANCE_ISRAID         = 16
 local FLAG_INSTANCE_HIDE_DIFFICULTY = 64
 
@@ -76,6 +106,11 @@ function DCJournal.AddInstance(opts)
         table.insert(DCJournal.openWorldInstances, opts.id)
     elseif opts.tier then
         JOURNALTIERXINSTANCE[opts.id] = opts.tier
+    end
+
+    -- opts.difficulties = { players = 20, modes = { "Normal", "Heroic", "Mythic" } }
+    if opts.difficulties then
+        DCJournal.SetDifficulties(opts.id, opts.difficulties.players, opts.difficulties.modes)
     end
 end
 
@@ -778,6 +813,7 @@ DCJournal.AddInstance({
     loreBackground = "Interface\\EncounterJournal\\UI-EJ-LOREBG-DarkheartThicket",
     mapID          = 819,
     order          = 2,
+    difficulties   = { players = 20, modes = { "Normal", "Heroic", "Mythic" } },
 })
 
 AddDCBoss(TIMBERMAW_HOLD, {
@@ -894,6 +930,7 @@ DCJournal.AddInstance({
     loreBackground = "Interface\\EncounterJournal\\UI-EJ-LOREBG-BlackfathomDeeps",
     mapID          = 820,
     order          = 1,
+    difficulties   = { players = 5,  modes = { "Normal", "Heroic", "Mythic" } },
 })
 
 AddDCBoss(BFD_ASHENVALE, {
@@ -997,6 +1034,7 @@ DCJournal.AddInstance({
     loreBackground = "Interface\\EncounterJournal\\UI-EJ-LOREBG-DarkheartThicket",
     mapID          = 823,
     order          = 2,
+    difficulties   = { players = 5,  modes = { "Normal", "Heroic", "Mythic" } },
 })
 
 AddDCBoss(CRESCENT_GROVE, {
@@ -1104,6 +1142,7 @@ DCJournal.AddInstance({
     loreBackground = "Interface\\EncounterJournal\\UI-EJ-LOREBG-TheEmeraldNightmare",
     mapID          = 824,
     order          = 3,
+    difficulties   = { players = 20, modes = { "Normal", "Heroic", "Mythic" } },
 })
 
 AddDCBoss(EMERALD_SANCTUM, {

@@ -179,6 +179,43 @@ end
 --  2. Loot that arrives late
 -- ---------------------------------------------------------------------
 
+-- Custom DC items exist ONLY in the server's item_template: they are absent from
+-- the 3.3.5 client's item DB and absent from this addon's ItemsCache.lua
+-- fallback. That is exactly why Blackwing Descent's loot lists (its 59xxx items
+-- are in ItemsCache) while Timbermaw Hold's 410xxx items produce an empty tab.
+--
+-- GetItemInfo on its own does not go and fetch them. Asking a tooltip to render
+-- the item link does: that is what makes the client send the server an item
+-- query, and the answer lands in the client's cache a moment later, at which
+-- point GetItemInfo starts working.
+-- Built lazily and defensively: if this client cannot give us a working hidden
+-- tooltip, priming is simply skipped rather than breaking the rest of the file.
+local primer, primerFailed
+
+local function Primer()
+    if primer or primerFailed then return primer end
+    local ok, frame = pcall(CreateFrame, "GameTooltip", "DCJournalItemPrimer", UIParent, "GameTooltipTemplate")
+    if not ok or not frame or type(frame.SetHyperlink) ~= "function" then
+        primerFailed = true
+        return nil
+    end
+    primer = frame
+    primer:Hide()
+    return primer
+end
+
+local requested = {}
+local function RequestItem(itemID)
+    if requested[itemID] then return end
+    requested[itemID] = true
+
+    local tip = Primer()
+    if not tip then return end
+    pcall(tip.SetOwner, tip, UIParent, "ANCHOR_NONE")
+    pcall(tip.SetHyperlink, tip, "item:" .. itemID)
+    tip:Hide()
+end
+
 -- Mirrors the field order EncounterJournal_OnLoad writes onto a loot row.
 -- Filling these here matters beyond making the item show up at all:
 -- EJ_BuildLootData only stores `equipLoc` when it resolves an item lazily,
@@ -189,7 +226,10 @@ local function FillLootRow(row)
 
     local name, link, quality, iLevel, reqLevel, armorType, subclass, maxStack, equipSlot, icon, vendorPrice
         = EJ_GetItemInfo(row[1])
-    if not name then return false end
+    if not name then
+        RequestItem(row[1])
+        return false
+    end
 
     row.name, row.link, row.quality, row.iLevel, row.reqLevel = name, link, quality, iLevel, reqLevel
     row.armorType, row.subclass, row.maxStack = armorType, subclass, maxStack
@@ -249,15 +289,17 @@ local function QueueRefresh(delay)
     end
 end
 
--- Prime, then re-check on a short ladder. GET_ITEM_INFO_RECEIVED covers the
--- normal case; the ladder is the belt-and-braces path for clients that do not
--- fire it, and stops as soon as everything has resolved.
+-- Prime, then re-check on a short ladder while the server round-trips the item
+-- queries. GET_ITEM_INFO_RECEIVED covers the normal case; the ladder is the
+-- belt-and-braces path for clients that do not fire it, and stops as soon as
+-- everything has resolved.
+local MAX_ATTEMPTS = 8
 local function PrimeAndWatch(encounterIDs, attempt)
     attempt = attempt or 1
     local waiting = PrimeLoot(encounterIDs)
     QueueRefresh(0.1)
 
-    if waiting and attempt < 6 and C_Timer and C_Timer.After then
+    if waiting and attempt < MAX_ATTEMPTS and C_Timer and C_Timer.After then
         C_Timer.After(attempt * 0.5, function() PrimeAndWatch(encounterIDs, attempt + 1) end)
     end
 end
@@ -297,6 +339,54 @@ if EJ_ResetLootFilter and not DCJournal_LootFilterHooked then
         if EncounterJournal_UpdateFilterString then
             EncounterJournal_UpdateFilterString()
         end
+    end
+end
+
+-- ---------------------------------------------------------------------
+--  /dcjournal -- does this file's wiring actually reach the running client?
+--
+--  Every repair here is a runtime override, so "nothing changed in game" has
+--  two very different causes: the addon was not reloaded, or a hook did not
+--  install. Guessing between them from a screenshot is not possible, so ask.
+-- ---------------------------------------------------------------------
+
+local function Report(fmt, ...)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff66bbffDC-Journal|r " .. string.format(fmt, ...))
+end
+
+local function YesNo(v)
+    return v and "|cff44ff44yes|r" or "|cffff5555NO|r"
+end
+
+SLASH_DCJOURNAL1 = "/dcjournal"
+SLASH_DCJOURNAL2 = "/dcj"
+SlashCmdList["DCJOURNAL"] = function()
+    Report("fixups loaded    : %s", YesNo(true))
+    Report("  portrait hook  : %s", YesNo(DCJournal_PortraitHooked))
+    Report("  loot prime hook: %s", YesNo(DCJournal_LootPrimeHooked))
+    Report("  loot filter    : %s", YesNo(DCJournal_LootFilterHooked))
+    Report("  current filter : %s (0 = all classes)", tostring(EJ_GetLootFilter()))
+    Report("current instance : %s", tostring(DCJournal.GetCurrentInstanceID and DCJournal.GetCurrentInstanceID()))
+
+    local encID = EncounterJournal and EncounterJournal.encounterID
+    local rows = encID and JOURNALENCOUNTERITEM[encID]
+    if not rows then
+        Report("no encounter open -- open a boss's Loot tab and run this again")
+        return
+    end
+
+    local resolved, waiting = 0, {}
+    for i = 1, #rows do
+        if rows[i].name then
+            resolved = resolved + 1
+        else
+            waiting[#waiting + 1] = rows[i][1]
+        end
+    end
+    Report("loot rows        : %d resolved / %d total", resolved, #rows)
+    if #waiting > 0 then
+        Report("  still unresolved (server has not answered the item query): %s",
+            table.concat(waiting, ", ", 1, math.min(#waiting, 8)))
     end
 end
 

@@ -2124,6 +2124,17 @@ MythicPlus.FinalBossItems = 2
 #
 MythicPlus.SuppressTrashLoot = 1
 
+#
+#    MythicPlus.RunSummary.UseAddonUI
+#        Description: Render the end-of-run summary (stats, tokens, keystone
+#                     change and the loot list) in the DC-MythicPlus result
+#                     frame instead of printing ~20 lines to the chat window.
+#                     Clients without DC-MythicPlus always get the chat
+#                     transcript regardless of this setting.
+#        Default:     1 (Enabled)
+#
+MythicPlus.RunSummary.UseAddonUI = 1
+
 # -----------------------------------------------------------------------------
 # Death & Wipe Tracking
 # -----------------------------------------------------------------------------

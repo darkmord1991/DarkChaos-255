@@ -7,6 +7,7 @@
 	<Script file="DarkChaos_MythicPlus.lua"/>
 	<Script file="DarkChaos_CurrentInstance.lua"/>
 	<Script file="DarkChaos_Fixups.lua"/>
+	<Script file="DarkChaos_Difficulty.lua"/>
 
 	<Button name="EncounterTierTabTemplate" virtual="true" parentArray="Tabs">
 		<Size x="120" y="36"/>

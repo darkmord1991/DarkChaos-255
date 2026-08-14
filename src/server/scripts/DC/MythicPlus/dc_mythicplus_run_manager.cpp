@@ -33,6 +33,7 @@
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include "DC/GreatVault/GreatVault.h"
 #ifdef HAS_AIO
 #include "AIO.h"
@@ -361,6 +362,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->scalingApplied = false;
     state->countdownStarted = 0;
     state->participants.clear();
+    state->lootAwards.clear();
     state->recentBossEvades.clear();
     state->bossDeathTimes.clear();
     state->bossKillStamps.clear();
@@ -2042,6 +2044,18 @@ void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, u
     }
 }
 
+bool MythicPlusRunManager::PlayerUsesRunSummaryAddon(Player* player)
+{
+    if (!player)
+        return false;
+
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.RunSummary.UseAddonUI", true))
+        return false;
+
+    DCAddon::SessionCapabilityState capabilities;
+    return DCAddon::TryGetSessionCapabilityState(player, capabilities);
+}
+
 void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
 {
     if (!state || !player)
@@ -2058,17 +2072,80 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     uint32 minutes = duration / 60;
     uint32 seconds = duration % 60;
 
+    std::string dungeonNameForPayload = GetMapDisplayName(state->mapId);
+
+    // Push the structured summary first. The HUD cache row this instance was
+    // broadcasting through is deleted immediately after completion, so the
+    // polled snapshot can never be relied on to carry the final state - the
+    // addon result frame is fed by this direct SMSG_RUN_END message instead.
+    {
+        int32 keyChange = state->keystoneUpgraded
+            ? static_cast<int32>(state->upgradeLevel) - static_cast<int32>(state->keystoneLevel)
+            : 0;
+
+        uint32 totalBosses = state->bossOrder.empty()
+            ? GetTotalBossesForDungeon(state->mapId)
+            : static_cast<uint32>(state->bossOrder.size());
+
+        std::ostringstream payload;
+        payload << '{';
+        payload << "\"success\":" << (state->completed && !state->failed ? 1 : 0) << ',';
+        payload << "\"map\":" << state->mapId << ',';
+        payload << "\"mapName\":\"" << EscapeJson(dungeonNameForPayload) << "\",";
+        payload << "\"keystone\":" << uint32(state->keystoneLevel) << ',';
+        payload << "\"keyLevel\":" << uint32(state->keystoneLevel) << ',';
+        payload << "\"newKeyLevel\":" << uint32(state->upgradeLevel) << ',';
+        payload << "\"keyChange\":" << keyChange << ',';
+        payload << "\"keystoneUpgraded\":" << (state->keystoneUpgraded ? 1 : 0) << ',';
+        payload << "\"elapsed\":" << duration << ',';
+        payload << "\"timeElapsed\":" << duration << ',';
+        payload << "\"bossesKilled\":" << state->bossesKilled << ',';
+        payload << "\"bossesTotal\":" << totalBosses << ',';
+        payload << "\"enemiesKilled\":" << state->npcsKilled << ',';
+        payload << "\"deaths\":" << uint32(state->deaths) << ',';
+        payload << "\"wipes\":" << uint32(state->wipes) << ',';
+        payload << "\"tokensAwarded\":" << state->tokensAwarded << ',';
+
+        // Only this player's own rewards - loot is personal, not group-wide.
+        ObjectGuid::LowType viewerGuid = player->GetGUID().GetCounter();
+        payload << "\"rewards\":[";
+        bool firstReward = true;
+        for (InstanceState::LootAward const& award : state->lootAwards)
+        {
+            if (award.playerGuid != viewerGuid)
+                continue;
+
+            if (!firstReward)
+                payload << ',';
+            firstReward = false;
+
+            payload << '{';
+            payload << "\"itemId\":" << award.itemId << ',';
+            payload << "\"itemLevel\":" << award.itemLevel << ',';
+            payload << "\"quality\":" << uint32(award.quality) << ',';
+            payload << "\"mailed\":" << (award.mailed ? 1 : 0);
+            payload << '}';
+        }
+        payload << ']';
+        payload << '}';
+
+        DCAddon::JsonMessage(DCAddon::Module::MYTHIC_PLUS,
+            DCAddon::Opcode::MPlus::SMSG_RUN_END)
+            .SetPreEncodedJson(payload.str())
+            .Send(player);
+    }
+
+    // Addon users get the result frame; the chat transcript below is the
+    // fallback for clients running without DC-MythicPlus.
+    if (PlayerUsesRunSummaryAddon(player))
+        return;
+
     // Header
     handler.SendSysMessage("|cff00ff00========================================|r");
     handler.SendSysMessage("|cffff8000        MYTHIC+ RUN COMPLETE       |r");
     handler.SendSysMessage("|cff00ff00========================================|r");
 
-    // Dungeon info
-    std::string dungeonName = "Unknown Dungeon";
-    if (MapEntry const* mapEntry = sMapStore.LookupEntry(state->mapId))
-        dungeonName = mapEntry->name[0];
-
-    handler.PSendSysMessage("|cffffd700Dungeon:|r {}", dungeonName);
+    handler.PSendSysMessage("|cffffd700Dungeon:|r {}", dungeonNameForPayload);
     handler.PSendSysMessage("|cffffd700Keystone Level:|r +{}",
         static_cast<uint32>(state->keystoneLevel));
     handler.PSendSysMessage("|cffffd700Duration:|r {} min {} sec", minutes, seconds);

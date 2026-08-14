@@ -31,23 +31,69 @@
 
 namespace
 {
-bool GivePersonalLoot(Player* player, uint32 itemId, uint32 count = 1)
+// Chat needs a real |Hitem:...|h link, not coloured plain text, or the player
+// cannot shift-click, hover or link what they just won.
+std::string BuildItemLink(ItemTemplate const* itemTemplate)
+{
+    if (!itemTemplate)
+        return "[unknown item]";
+
+    uint32 color = ItemQualityColors[std::min<uint32>(itemTemplate->Quality, MAX_ITEM_QUALITY - 1)];
+    return Acore::StringFormat("|c{:08x}|Hitem:{}:0:0:0:0:0:0:0:0|h[{}]|h|r",
+                               color, itemTemplate->Entry, itemTemplate->Name1);
+}
+
+// A MaxCount-limited item the player already owns can never be stored, and
+// mailing it is a dead end too - the attachment simply cannot be taken out.
+// Treat those as ineligible at selection time so the roll picks something else.
+bool PlayerAlreadyAtUniqueLimit(Player* player, ItemTemplate const* itemTemplate)
+{
+    if (!player || !itemTemplate || itemTemplate->MaxCount <= 0)
+        return false;
+
+    // includeBank/inBankAlso = true: the unique cap counts bank copies too.
+    return player->GetItemCount(itemTemplate->Entry, true) >=
+           static_cast<uint32>(itemTemplate->MaxCount);
+}
+
+enum class LootDelivery : uint8
+{
+    Stored,     // landed in the bags
+    Mailed,     // bags genuinely full, sent by mail
+    Rejected    // cannot be delivered at all - caller should reroll
+};
+
+LootDelivery GivePersonalLoot(Player* player, uint32 itemId, uint32 count = 1)
 {
     if (!player)
-        return false;
+        return LootDelivery::Rejected;
 
     ItemPosCountVec dest;
     InventoryResult storeResult = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count);
     if (storeResult == EQUIP_ERR_OK)
     {
         if (Item* item = player->StoreNewItem(dest, itemId, true))
+        {
             player->SendNewItem(item, count, true, false);
-        return true;
+            return LootDelivery::Stored;
+        }
+
+        return LootDelivery::Rejected;
+    }
+
+    // Only a genuinely full bag justifies the mail fallback. Every other
+    // rejection (unique already owned, wrong faction, level requirement, ...)
+    // would produce mail the player can never empty, so reroll instead of
+    // reporting a reward that does not exist.
+    if (storeResult != EQUIP_ERR_INVENTORY_FULL && storeResult != EQUIP_ERR_BAG_FULL)
+    {
+        LOG_DEBUG("mythic.loot", "Item {} rejected for player {} (InventoryResult {}); rerolling",
+                  itemId, player->GetName(), static_cast<uint32>(storeResult));
+        return LootDelivery::Rejected;
     }
 
     player->SendItemRetrievalMail(itemId, count);
-    ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Mythic+]|r Inventory full, loot mailed.");
-    return true;
+    return LootDelivery::Mailed;
 }
 
 struct LootQueryStage
@@ -132,6 +178,8 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
             if (stage.filterArmor && row.armorType != armor && row.armorType != "Misc")
                 continue;
             if (stage.filterRole && !(row.roleMask & roleMask) && row.roleMask != 7)
+                continue;
+            if (PlayerAlreadyAtUniqueLimit(player, sObjectMgr->GetItemTemplate(row.itemId)))
                 continue;
 
             candidates.push_back(row.itemId);
@@ -343,7 +391,8 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
             continue;
         }
 
-        if (!GivePersonalLoot(player, itemId))
+        LootDelivery delivery = GivePersonalLoot(player, itemId);
+        if (delivery == LootDelivery::Rejected)
         {
             LOG_WARN("mythic.loot", "Failed to deliver loot item {} to player {}", itemId, player->GetName());
             continue;
@@ -351,11 +400,24 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
 
         ++itemsGenerated;
 
-        LOG_INFO("mythic.loot", "Delivered loot item {} ({}) to player {} (ilvl {})", itemId, itemTemplate->Name1, player->GetName(), targetItemLevel);
+        bool mailed = (delivery == LootDelivery::Mailed);
 
-        ChatHandler(player->GetSession()).SendSysMessage(
-            Acore::StringFormat("|cff00ff00[Mythic+]|r Run completion reward: |cff0070dd[{}]|r (ilvl {})",
-                                 itemTemplate->Name1, targetItemLevel));
+        LOG_INFO("mythic.loot", "Delivered loot item {} ({}) to player {} (ilvl {}, {})",
+                 itemId, itemTemplate->Name1, player->GetName(), itemTemplate->ItemLevel,
+                 mailed ? "mailed" : "bags");
+
+        state->lootAwards.push_back({ player->GetGUID().GetCounter(), itemId,
+                                      itemTemplate->ItemLevel, itemTemplate->Quality, mailed });
+
+        // Addon users see the same list in the result frame, so only clients
+        // without DC-MythicPlus get the chat line.
+        if (!PlayerUsesRunSummaryAddon(player))
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                Acore::StringFormat("|cff00ff00[Mythic+]|r Reward: {} (ilvl {}){}",
+                                     BuildItemLink(itemTemplate), itemTemplate->ItemLevel,
+                                     mailed ? " |cffffaa00- bags full, sent by mail|r" : ""));
+        }
     }
 
     if (!itemsGenerated)

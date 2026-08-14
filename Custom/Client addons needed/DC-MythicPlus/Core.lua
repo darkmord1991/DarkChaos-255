@@ -575,6 +575,10 @@ local resultBossesText
 local resultDeathsText
 local resultRewardsText
 local resultKeystoneText
+-- Loot list on the result popup. Bundled into a single table because Core.lua
+-- sits close to Lua's 200-locals-per-chunk ceiling.
+-- baseHeight = frame height with no loot rows; each awarded item adds 20px.
+local resultLoot = { rows = {}, header = nil, baseHeight = 238 }
 local centerCountdownFrame
 local centerCountdownText
 local lastCenterCountdownValue
@@ -1197,16 +1201,28 @@ end
 
 -- Override the minimap instance difficulty badge text with M0 or M+key.
 local function GetActiveMythicKeyForMinimapBadge()
-    if not IsRunInProgress(activeState) then
+    local instanceName = (type(GetInstanceInfo) == "function") and select(1, GetInstanceInfo()) or nil
+
+    if IsRunInProgress(activeState) then
+        local keyLevel = tonumber(GetKeystoneFromState(activeState) or 0) or 0
+        if keyLevel > 0 then
+            namespace._badgeKeyLevel = keyLevel
+            namespace._badgeInstanceName = instanceName
+            return keyLevel
+        end
         return nil
     end
 
-    local keyLevel = tonumber(GetKeystoneFromState(activeState) or 0) or 0
-    if keyLevel <= 0 then
-        return nil
+    -- The server deletes the HUD snapshot row the instant a run completes,
+    -- which nils activeState a moment later. Without remembering the level the
+    -- badge would flip from "M+9" to the plain-Mythic "M0" while the group is
+    -- still standing in the dungeon it just timed. The cache is dropped on
+    -- PLAYER_ENTERING_WORLD, so it never leaks into a later, keyless visit.
+    if namespace._badgeKeyLevel and namespace._badgeInstanceName == instanceName then
+        return namespace._badgeKeyLevel
     end
 
-    return keyLevel
+    return nil
 end
 
 local function GetMythicMinimapBadgeDisplay()
@@ -1997,7 +2013,7 @@ end
 
 local function BuildKeystoneResultLine(data, keyLevel)
     local oldLevel = tonumber(keyLevel or 0) or 0
-    local newLevel = tonumber(data.upgradeLevel or oldLevel) or oldLevel
+    local newLevel = tonumber(data.upgradeLevel or data.newKeyLevel or oldLevel) or oldLevel
     local keyChange = tonumber(data.keyChange)
     if not keyChange then
         keyChange = newLevel - oldLevel
@@ -2018,7 +2034,7 @@ local function EnsureResultFrame()
     end
 
     resultFrame = CreateFrame("Frame", "DCMythicPlusResultFrame", UIParent)
-    resultFrame:SetSize(420, 238)
+    resultFrame:SetSize(420, resultLoot.baseHeight)
     resultFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
     resultFrame:SetFrameStrata("DIALOG")
     resultFrame:EnableMouse(true)
@@ -2089,18 +2105,189 @@ local function EnsureResultFrame()
     resultKeystoneText:SetWidth(392)
     resultKeystoneText:SetJustifyH("LEFT")
 
-    local okBtn = CreateFrame("Button", nil, resultFrame, "UIPanelButtonTemplate")
-    okBtn:SetSize(92, 22)
-    okBtn:SetPoint("BOTTOM", resultFrame, "BOTTOM", 0, 12)
-    okBtn:SetText("Close")
-    okBtn:SetScript("OnClick", function()
+    resultLoot.header = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    resultLoot.header:SetPoint("TOPLEFT", resultKeystoneText, "BOTTOMLEFT", 0, -10)
+    resultLoot.header:SetWidth(392)
+    resultLoot.header:SetJustifyH("LEFT")
+    resultLoot.header:SetText("Loot")
+    resultLoot.header:Hide()
+
+    resultFrame.okBtn = CreateFrame("Button", nil, resultFrame, "UIPanelButtonTemplate")
+    resultFrame.okBtn:SetSize(92, 22)
+    resultFrame.okBtn:SetPoint("BOTTOM", resultFrame, "BOTTOM", 0, 12)
+    resultFrame.okBtn:SetText("Close")
+    resultFrame.okBtn:SetScript("OnClick", function()
         if resultFrame then
             resultFrame:Hide()
         end
     end)
 
+    -- Off-screen scanning tooltip: SetHyperlink on it makes the server send the
+    -- item template for ids the client has never seen, which is what populates
+    -- GetItemInfo/GetItemIcon a moment later.
+    if not DCMythicPlusTooltipPrimer then
+        CreateFrame("GameTooltip", "DCMythicPlusTooltipPrimer", UIParent, "GameTooltipTemplate")
+    end
+
     resultFrame:Hide()
     return resultFrame
+end
+
+-- One clickable loot line: icon + coloured item link. The tooltip is driven by
+-- SetHyperlink rather than GetItemInfo so freshly-awarded items the client has
+-- never cached still resolve (GetItemInfo returns nil for those and never
+-- triggers a fetch on its own).
+function resultLoot:EnsureRow(index)
+    local row = self.rows[index]
+    if row then
+        return row
+    end
+
+    row = CreateFrame("Button", nil, resultFrame)
+    row:SetHeight(18)
+    row:SetWidth(392)
+    if index == 1 then
+        row:SetPoint("TOPLEFT", self.header, "BOTTOMLEFT", 4, -3)
+    else
+        row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -2)
+    end
+
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetWidth(16)
+    row.icon:SetHeight(16)
+    row.icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.text:SetPoint("LEFT", row.icon, "RIGHT", 5, 0)
+    row.text:SetWidth(366)
+    row.text:SetJustifyH("LEFT")
+
+    row:SetScript("OnEnter", function(self)
+        if not self.itemId then
+            return
+        end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetHyperlink("item:" .. self.itemId .. ":0:0:0:0:0:0:0")
+        GameTooltip:Show()
+        -- The name is only known after the server answers the tooltip query,
+        -- so refresh the label once the cache has been primed.
+        if self.pendingName then
+            C_Timer.After(0.4, function()
+                if self.pendingName and self.itemId then
+                    local link = select(2, GetItemInfo(self.itemId))
+                    if link then
+                        self.pendingName = nil
+                        self.text:SetText(link .. (self.suffix or ""))
+                    end
+                end
+            end)
+        end
+    end)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row:SetScript("OnClick", function(self)
+        if not self.itemId then
+            return
+        end
+        local link = select(2, GetItemInfo(self.itemId))
+        if link and IsShiftKeyDown() and ChatEdit_InsertLink then
+            ChatEdit_InsertLink(link)
+        end
+    end)
+
+    self.rows[index] = row
+    return row
+end
+
+function resultLoot:Update(rewards)
+    local shown = 0
+
+    if type(rewards) == "table" then
+        for index = 1, #rewards do
+            local reward = rewards[index]
+            local itemId = reward and tonumber(reward.itemId)
+            if itemId and itemId > 0 then
+                shown = shown + 1
+                local row = self:EnsureRow(shown)
+                row.itemId = itemId
+
+                local ilvl = tonumber(reward.itemLevel) or 0
+                local suffix = ilvl > 0 and string.format(" |cff909090(ilvl %d)|r", ilvl) or ""
+                if IsFlagSet(reward.mailed) then
+                    suffix = suffix .. " |cffffaa00(mailed)|r"
+                end
+                row.suffix = suffix
+
+                local link = select(2, GetItemInfo(itemId))
+                if link then
+                    row.pendingName = nil
+                    row.text:SetText(link .. suffix)
+                else
+                    -- Not cached yet: show a placeholder and prime the cache so
+                    -- the next paint (or a hover) resolves the real name.
+                    row.pendingName = true
+                    row.text:SetText("|cffffffffItem #" .. itemId .. "|r" .. suffix)
+                    if DCMythicPlusTooltipPrimer then
+                        DCMythicPlusTooltipPrimer:SetOwner(UIParent, "ANCHOR_NONE")
+                        DCMythicPlusTooltipPrimer:SetHyperlink("item:" .. itemId .. ":0:0:0:0:0:0:0")
+                        DCMythicPlusTooltipPrimer:Hide()
+                    end
+                end
+
+                local icon = (type(GetItemIcon) == "function") and GetItemIcon(itemId) or nil
+                row.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                row:Show()
+            end
+        end
+    end
+
+    for index = shown + 1, #self.rows do
+        self.rows[index]:Hide()
+        self.rows[index].itemId = nil
+    end
+
+    if shown > 0 then
+        self.header:SetText(string.format("|cffffd200Loot (%d)|r", shown))
+        self.header:Show()
+    else
+        self.header:Hide()
+    end
+
+    -- Rows that had to be primed above resolve a moment later; repaint them
+    -- without making the player hover each line to see what they won.
+    if shown > 0 and not self.repaintQueued then
+        self.repaintQueued = true
+        C_Timer.After(0.6, function()
+            resultLoot.repaintQueued = nil
+            local stillPending = false
+            for index = 1, #resultLoot.rows do
+                local row = resultLoot.rows[index]
+                if row.itemId and row.pendingName then
+                    local resolved = select(2, GetItemInfo(row.itemId))
+                    if resolved then
+                        row.pendingName = nil
+                        row.text:SetText(resolved .. (row.suffix or ""))
+                        local resolvedIcon = (type(GetItemIcon) == "function") and GetItemIcon(row.itemId) or nil
+                        if resolvedIcon then
+                            row.icon:SetTexture(resolvedIcon)
+                        end
+                    else
+                        stillPending = true
+                    end
+                end
+            end
+            -- One more pass covers a slow template reply; after that the
+            -- placeholder stands and hovering the row still works.
+            if stillPending and not resultLoot.repaintRetried then
+                resultLoot.repaintRetried = true
+                resultLoot:Update(rewards)
+            elseif not stillPending then
+                resultLoot.repaintRetried = nil
+            end
+        end)
+    end
+
+    return shown
 end
 
 local function ShowRunResultPopup(data, success)
@@ -2124,6 +2311,7 @@ local function ShowRunResultPopup(data, success)
     local deaths = tonumber(data.deaths or 0) or 0
     local wipes = tonumber(data.wipes or 0) or 0
     local tokensAwarded = tonumber(data.tokensAwarded or 0) or 0
+    local enemiesKilled = tonumber(data.enemiesKilled or data.enemyCount or 0) or 0
 
     if success then
         resultTitleText:SetText("MYTHIC+ COMPLETE")
@@ -2135,7 +2323,7 @@ local function ShowRunResultPopup(data, success)
 
     resultDungeonText:SetText(string.format("Dungeon: %s  |  Keystone: +%d", mapName or "Unknown", keyLevel))
     resultDurationText:SetText("Duration: " .. FormatSeconds(elapsed))
-    resultBossesText:SetText(string.format("Bosses: %d / %d", bossesKilled, bossesTotal))
+    resultBossesText:SetText(string.format("Bosses: %d / %d  |  Enemies: %d", bossesKilled, bossesTotal, enemiesKilled))
     resultDeathsText:SetText(string.format("Deaths: %d  |  Wipes: %d", deaths, wipes))
 
     if success then
@@ -2149,6 +2337,11 @@ local function ShowRunResultPopup(data, success)
         resultKeystoneText:SetText("Run failed before full completion")
         resultKeystoneText:SetTextColor(1.00, 0.75, 0.45, 1)
     end
+
+    -- Grow the frame to fit however many items this player actually won.
+    resultLoot.repaintRetried = nil
+    local lootCount = resultLoot:Update(success and data.rewards or nil)
+    f:SetHeight(resultLoot.baseHeight + (lootCount > 0 and (18 + lootCount * 20) or 0))
 
     f:Show()
 end
@@ -2629,6 +2822,10 @@ scanFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 scanFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         namespace._enteredWorldAt = (GetTime and GetTime()) or 0
+        -- Zoning invalidates the sticky minimap key level; the next HUD
+        -- snapshot re-establishes it if a run is still live here.
+        namespace._badgeKeyLevel = nil
+        namespace._badgeInstanceName = nil
         ScanInventoryForKeystone()
         -- Request canonical keystone mapping from server to ensure client knows IDs
         local protocol = RefreshDCProtocol()
@@ -2647,6 +2844,12 @@ namespace.ScanInventoryForKeystone = ScanInventoryForKeystone
 
 
 local function ShowIdleState()
+    -- Retire the tracker-column Challenge Mode block along with the HUD.
+    local tracker = rawget(_G, "DCBossTracker")
+    if tracker and type(tracker.ClearMythicPlus) == "function" then
+        pcall(tracker.ClearMythicPlus)
+    end
+
     local f = EnsureFrame()
     if not f then
         return
@@ -3106,6 +3309,21 @@ local function UpdateFrameFromState(data)
         StopRunTracking(false, data and data.elapsed or nil)
     end
 
+    -- Retail-style tracker-column rendering: when DC-Journal's boss tracker is
+    -- present it draws the Challenge Mode block (timer bar, affix rings,
+    -- deaths, boss splits) in the objective-tracker column, and this legacy
+    -- HUD box stays hidden. All run/tracking BOOKKEEPING above still ran;
+    -- only the drawing is delegated. /mplus trackerhud toggles.
+    do
+        local tracker = rawget(_G, "DCBossTracker")
+        if tracker and type(tracker.SetMythicPlus) == "function"
+            and DCMythicPlusHUDDB.useTrackerHud ~= false then
+            pcall(tracker.SetMythicPlus, data)
+            f:Hide()
+            return
+        end
+    end
+
     local mapName = TruncateForHudTitle(data.mapName or MapNameForId(mapId), 22)
     local keystoneDisplay = tonumber(keystone) or 0
     headerText:SetText(string.format("%s |cffffaa33+%d|r", mapName, keystoneDisplay))
@@ -3437,6 +3655,17 @@ SlashCmdList.DCM = function(msg)
     elseif cmd == "json" then
         DCMythicPlusHUDDB.useDCProtocolJSON = not (DCMythicPlusHUDDB.useDCProtocolJSON == true)
         Print("DC Protocol JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
+    elseif cmd == "trackerhud" then
+        -- Retail-style Challenge Mode block in the objective-tracker column
+        -- (drawn by DC-Journal's DCBossTracker) vs this legacy HUD box.
+        DCMythicPlusHUDDB.useTrackerHud = (DCMythicPlusHUDDB.useTrackerHud == false)
+        Print("Tracker-column Mythic+ HUD: " .. (DCMythicPlusHUDDB.useTrackerHud and "ON" or "OFF"))
+        local tracker = rawget(_G, "DCBossTracker")
+        if not DCMythicPlusHUDDB.useTrackerHud and tracker
+            and type(tracker.ClearMythicPlus) == "function" then
+            pcall(tracker.ClearMythicPlus)
+        end
+        RequestServerSnapshot("slash")
     elseif cmd == "key" then
         if namespace.RequestKeyInfo then
             namespace.RequestKeyInfo()
@@ -3775,16 +4004,13 @@ if DC then
             }
         end
         
-        if IsFlagSet(data.success) then
-            Print("Run completed! Key upgraded by " .. (data.keyChange or 0))
-            if data.score then
-                Print("Score: " .. data.score)
-            end
-            ShowRunResultPopup(data, true)
-        else
-            Print("Run failed.")
-            ShowRunResultPopup(data, false)
-        end
+        -- This is the authoritative end-of-run payload (full stats + this
+        -- player's loot). It arrives after the HUD cache row for the instance
+        -- has already been deleted server-side, so it must be allowed to
+        -- replace a thinner popup that a previous "completed" HUD snapshot may
+        -- have raised.
+        lastResultPopupKey = nil
+        ShowRunResultPopup(data, IsFlagSet(data.success))
 
         -- Event-driven Vault refresh: runs affect Vault progress
         if namespace.GreatVault and namespace.GreatVault.IsShown and namespace.GreatVault:IsShown() then

@@ -94,6 +94,19 @@ public:
         std::unordered_map<uint32, uint64> bossKillStamps;
         std::vector<uint32> activeAffixes; // Runtime affix ids matching AffixType.
         std::string lastHudPayload;
+
+        // Per-player reward ledger for the end-of-run summary. Populated by
+        // GenerateBossLoot so SendRunSummary can render the same list the
+        // player just received, without re-rolling or re-querying anything.
+        struct LootAward
+        {
+            ObjectGuid::LowType playerGuid = 0;
+            uint32 itemId = 0;
+            uint32 itemLevel = 0;
+            uint8 quality = 0;
+            bool mailed = false;
+        };
+        std::vector<LootAward> lootAwards;
     };
 
     // Public methods
@@ -198,6 +211,9 @@ private:
     void UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 durationSeconds);
     void InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers);
     void SendRunSummary(InstanceState* state, Player* player);
+    // True when the player runs DC-MythicPlus, i.e. the end-of-run stats are
+    // rendered in the result frame and the chat transcript is redundant.
+    static bool PlayerUsesRunSummaryAddon(Player* player);
     void AutoUpgradeKeystone(InstanceState* state);
     void ProcessAchievements(InstanceState* state, Player* player, bool success);
     void InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount);

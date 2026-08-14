@@ -46,9 +46,11 @@ T.SMSG_CLEAR      = 0x12
 -- ---------------------------------------------------------------------------
 -- Texcoords are the 1x atlas entries from 11.2.7 Helix/AtlasInfo.lua for the
 -- files shipped in the DC client patch. Format: {w, h, l, r, t, b}.
-T.TEX_TRACKER  = "Interface\\QuestFrame\\QuestTracker"        -- 512x256
-T.TEX_SCENARIO = "Interface\\Scenarios\\ScenarioParts"        -- 512x512
-T.TEX_OBJICONS = "Interface\\Minimap\\ObjectIconsAtlas"       -- 1024x1024
+T.TEX_TRACKER   = "Interface\\QuestFrame\\QuestTracker"       -- 512x256
+T.TEX_SCENARIO  = "Interface\\Scenarios\\ScenarioParts"       -- 512x512
+T.TEX_OBJICONS  = "Interface\\Minimap\\ObjectIconsAtlas"      -- 1024x1024
+T.TEX_CHALLENGE = "Interface\\Challenges\\ChallengeModeHud"   -- 1024x512
+T.TEX_AFFIXRING = "Interface\\Challenges\\ChallengeMode"      -- 1024x1024
 
 T.ATLAS = {
     -- UI-QuestTracker-Secondary-Objective-Header (the "Dungeon" module bar)
@@ -62,7 +64,27 @@ T.ATLAS = {
     toast         = { 243, 77, 0.00195312, 0.476562, 0.345703, 0.496094 },
     -- "Dungeon" atlas (gold crossed swords), Interface/Minimap/ObjectIconsAtlas
     swords        = { 32, 32, 0.198242, 0.24707, 0.44043, 0.489258 },
+
+    -- Challenge Mode block (Blizzard_ScenarioObjectiveTracker.xml), all from
+    -- Interface/Challenges/ChallengeModeHud unless noted
+    cmBorder      = { 261, 87, 0.606445, 0.861328, 0.220703, 0.390625 },   -- challengemode-timer
+    cmTimerBGBack = { 223, 11, 0.633789, 0.851562, 0.183594, 0.205078 },   -- ChallengeMode-TimerBG-Back
+    cmTimerBG     = { 223, 11, 0.633789, 0.851562, 0.158203, 0.179688 },   -- ChallengeMode-TimerBG
+    cmTimerFill   = { 223, 11, 0.606445, 0.824219, 0.394531, 0.416016 },   -- ChallengeMode-TimerFill
+    cmAffixRing   = { 34, 34, 0.964844, 0.998047, 0.000976562, 0.0341797 },-- ChallengeMode-AffixRing-Sm (TEX_AFFIXRING)
+    cmSkull       = { 12, 16, 0.591797, 0.603516, 0.104492, 0.120117 },    -- poi-graveyard-neutral (TEX_OBJICONS)
 }
+
+-- DC affix name -> 3.3.5 icon. Retail resolves these via C_ChallengeMode
+-- FileDataIDs which do not exist here; the ring border is the retail atlas.
+T.AFFIX_ICONS = {
+    ["tyrannical"] = "Interface\\Icons\\Achievement_Boss_Archaedas",
+    ["fortified"]  = "Interface\\Icons\\Ability_Toughness",
+    ["bolstering"] = "Interface\\Icons\\Ability_Warrior_BattleShout",
+    ["necrotic"]   = "Interface\\Icons\\Spell_Shadow_DeathAndDecay",
+    ["grievous"]   = "Interface\\Icons\\Ability_BackStab",
+}
+T.AFFIX_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 T.ICON_CHECK = "Interface\\Scenarios\\ScenarioIcon-Check"
 T.ICON_DASH  = "Interface\\Scenarios\\ScenarioIcon-Dash"
@@ -158,7 +180,10 @@ function T.CreateLine(index)
     text:SetWidth((T.columnWidth or T.WIDTH) - 34)
 
     if index == 1 then
-        icon:SetPoint("TOPLEFT", T.stage, "BOTTOMLEFT", T.LINE_INDENT, -2)
+        -- The stack above line 1 differs by mode (stage plate alone vs stage
+        -- plate + challenge block); each Layout sets T.firstLineY first.
+        icon:SetPoint("TOPLEFT", T.frame, "TOPLEFT", T.LINE_INDENT,
+            T.firstLineY or -(T.HEADER_HEIGHT + T.STAGE_HEIGHT + 2))
     else
         icon:SetPoint("TOPLEFT", T.lines[index - 1].icon, "BOTTOMLEFT", 0, -2)
     end
@@ -284,6 +309,12 @@ function T.EnsureFrame()
     swords:SetHeight(36)
     swords:SetPoint("RIGHT", toast, "RIGHT", -46, 2)
 
+    -- Live M+ countdown between server pushes; runs only while the frame is
+    -- shown, and OnUpdateTick bails instantly outside Mythic+ mode.
+    frame:SetScript("OnUpdate", function(_, elapsed)
+        T.OnUpdateTick(elapsed)
+    end)
+
     T.frame = frame
     T.stage = stage
     T.RestorePosition()
@@ -406,6 +437,223 @@ function T.RestorePosition()
 end
 
 -- ---------------------------------------------------------------------------
+-- Mythic+ mode: the retail Challenge Mode block, fed by DC-MythicPlus
+-- ---------------------------------------------------------------------------
+-- During a keystone run the server-side DENC module stands down and the DC
+-- MythicPlus addon pushes its HUD state here instead (DCBossTracker.SetMythicPlus
+-- from Core.lua). The block is retail's ChallengeModeBlock (251x87,
+-- Blizzard_ScenarioObjectiveTracker.xml): ornate border, "Level %d", live
+-- countdown, draining timer bar, affix rings, death skull - stacked with the
+-- same stage plate and boss checklist the dungeon tracker uses.
+T.mplus = { active = false }
+
+function T.FormatClock(seconds)
+    seconds = math.max(0, math.floor(seconds + 0.5))
+    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+
+function T.EnsureMythicBlock()
+    if T.cm then
+        return T.cm
+    end
+
+    local cm = CreateFrame("Frame", nil, T.frame)
+    cm:SetWidth(251)
+    cm:SetHeight(87)
+
+    -- TimerBG pair sits UNDER the border art (BACKGROUND sublevels in retail).
+    local bgBack = cm:CreateTexture(nil, "BACKGROUND")
+    SetAtlas(bgBack, T.TEX_CHALLENGE, T.ATLAS.cmTimerBGBack)
+    bgBack:SetPoint("BOTTOM", cm, "BOTTOM", 0, 13)
+
+    local bg = cm:CreateTexture(nil, "BORDER")
+    SetAtlas(bg, T.TEX_CHALLENGE, T.ATLAS.cmTimerBG)
+    bg:SetPoint("BOTTOM", cm, "BOTTOM", 0, 13)
+
+    -- Fill: retail is a 207x13 StatusBar; a manual left-anchored crop (width
+    -- AND right texcoord scaled by the same fraction) keeps the art unwarped.
+    local fill = cm:CreateTexture(nil, "ARTWORK")
+    fill:SetTexture(T.TEX_CHALLENGE)
+    fill:SetHeight(11)
+    fill:SetPoint("LEFT", cm, "BOTTOM", -103, 16)
+    cm.fill = fill
+
+    -- Ornate border art drawn over the bar (OVERLAY in retail). 261 wide on
+    -- the 251 block - retail stretches; we center it unstretched instead.
+    local border = cm:CreateTexture(nil, "OVERLAY")
+    SetAtlas(border, T.TEX_CHALLENGE, T.ATLAS.cmBorder)
+    border:SetPoint("CENTER", cm, "CENTER", 0, 0)
+
+    -- "Level %d" (GameFontNormalMed2 = Friz 14 gold), TOPLEFT 28,-18
+    local level = cm:CreateFontString(nil, "OVERLAY")
+    level:SetFont("Fonts\\FRIZQT__.TTF", 14)
+    level:SetShadowOffset(1, -1)
+    level:SetShadowColor(0, 0, 0)
+    level:SetTextColor(1.0, 0.82, 0.0)
+    level:SetPoint("TOPLEFT", cm, "TOPLEFT", 28, -18)
+    cm.level = level
+
+    -- Big time left (GameFontHighlightHuge = Friz 20 white), below Level
+    local timeLeft = cm:CreateFontString(nil, "OVERLAY")
+    timeLeft:SetFont("Fonts\\FRIZQT__.TTF", 20)
+    timeLeft:SetShadowOffset(1, -1)
+    timeLeft:SetShadowColor(0, 0, 0)
+    timeLeft:SetTextColor(1, 1, 1)
+    timeLeft:SetPoint("TOPLEFT", level, "BOTTOMLEFT", 0, -8)
+    cm.timeLeft = timeLeft
+
+    -- Death counter (skull + count) near the bottom-right, retail offsets.
+    local skull = cm:CreateTexture(nil, "OVERLAY")
+    SetAtlas(skull, T.TEX_OBJICONS, T.ATLAS.cmSkull)
+    skull:SetPoint("TOPLEFT", cm, "BOTTOMRIGHT", -47, 43)
+    cm.skull = skull
+
+    local deaths = cm:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    deaths:SetPoint("LEFT", skull, "RIGHT", 1, 0)
+    cm.deaths = deaths
+
+    cm.affixes = {}
+    T.cm = cm
+    return cm
+end
+
+-- Affix rings, retail geometry: 22x22 frames, 4px spacing, the ROW is
+-- right-aligned so it ends 28px short of the block's right edge, at y=-18
+-- (level-line height).
+function T.LayoutAffixes(list)
+    local cm = T.cm
+    local count = type(list) == "table" and #list or 0
+
+    for index = 1, math.max(count, #cm.affixes) do
+        local affix = cm.affixes[index]
+        if index <= count then
+            if not affix then
+                affix = CreateFrame("Frame", nil, cm)
+                affix:SetWidth(22)
+                affix:SetHeight(22)
+
+                local icon = affix:CreateTexture(nil, "ARTWORK")
+                icon:SetWidth(20)
+                icon:SetHeight(20)
+                icon:SetPoint("CENTER", affix, "CENTER", 0, 0)
+                -- Tight crop so the square icon reads as a disc inside the
+                -- ring (3.3.5 has no circular masking).
+                icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                affix.icon = icon
+
+                local ring = affix:CreateTexture(nil, "OVERLAY")
+                SetAtlas(ring, T.TEX_AFFIXRING, T.ATLAS.cmAffixRing)
+                ring:SetAllPoints(affix)
+
+                cm.affixes[index] = affix
+            end
+
+            if index == 1 then
+                local rowWidth = 28 + 4 * (count - 1) + 22 * count
+                affix:ClearAllPoints()
+                affix:SetPoint("TOPLEFT", cm, "TOPRIGHT", -rowWidth, -18)
+            else
+                affix:ClearAllPoints()
+                affix:SetPoint("LEFT", cm.affixes[index - 1], "RIGHT", 4, 0)
+            end
+
+            local name = string.lower(tostring(list[index].name or list[index] or ""))
+            affix.icon:SetTexture(T.AFFIX_ICONS[name] or T.AFFIX_ICON_FALLBACK)
+            affix:Show()
+        elseif affix then
+            affix:Hide()
+        end
+    end
+end
+
+-- Live countdown between HUD pushes (the server snapshots arrive ~1.5s apart;
+-- retail ticks every frame). Extrapolates from the last push's remaining time.
+function T.OnUpdateTick(elapsed)
+    local m = T.mplus
+    if not m.active or not T.cm then
+        return
+    end
+
+    m.tickAccum = (m.tickAccum or 0) + elapsed
+    if m.tickAccum < 0.1 then
+        return
+    end
+    m.tickAccum = 0
+
+    local timeLeft
+    if m.completed or m.failed then
+        timeLeft = m.remaining
+    elseif m.countdown and m.countdown > 0 then
+        -- Pre-start countdown: full bar, yellow count.
+        local cd = math.max(0, m.countdown - (GetTime() - m.basisAt))
+        T.cm.timeLeft:SetText(T.FormatClock(cd))
+        T.cm.timeLeft:SetTextColor(1.0, 0.82, 0.0)
+        T.SetTimerFill(1)
+        return
+    else
+        timeLeft = math.max(0, (m.remaining or 0) - (GetTime() - m.basisAt))
+    end
+
+    T.cm.timeLeft:SetText(T.FormatClock(timeLeft))
+    if m.failed or timeLeft <= 0 then
+        T.cm.timeLeft:SetTextColor(1.0, 0.13, 0.13)
+    elseif m.completed then
+        T.cm.timeLeft:SetTextColor(0.1, 1.0, 0.1)
+    else
+        T.cm.timeLeft:SetTextColor(1, 1, 1)
+    end
+
+    T.SetTimerFill((m.duration and m.duration > 0) and (timeLeft / m.duration) or 0)
+end
+
+function T.SetTimerFill(fraction)
+    fraction = math.max(0, math.min(1, fraction))
+    local fill = T.cm.fill
+    if fraction <= 0.001 then
+        fill:Hide()
+        return
+    end
+
+    local atlas = T.ATLAS.cmTimerFill
+    fill:SetWidth(207 * fraction)
+    fill:SetTexCoord(atlas[3], atlas[3] + (atlas[4] - atlas[3]) * fraction, atlas[5], atlas[6])
+    fill:Show()
+end
+
+-- Public API for DC-MythicPlus (Core.lua): push the normalized HUD state.
+function T.SetMythicPlus(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local m = T.mplus
+    m.active     = true
+    m.name       = tostring(data.mapName or "")
+    m.level      = tonumber(data.keystone) or 0
+    m.duration   = tonumber(data.duration) or 0
+    m.remaining  = tonumber(data.remaining) or 0
+    m.deaths     = tonumber(data.deaths) or 0
+    m.countdown  = tonumber(data.countdown) or 0
+    m.completed  = (data.completed == 1 or data.completed == true)
+    m.failed     = (data.failed == 1 or data.failed == true)
+    m.affixes    = type(data.affixes) == "table" and data.affixes or {}
+    m.bosses     = type(data.bosses) == "table" and data.bosses or {}
+    m.enemies    = tonumber(data.enemiesKilled) or 0
+    m.basisAt    = GetTime() or 0
+    m.tickAccum  = 1 -- force an immediate tick
+
+    T.Layout()
+end
+
+function T.ClearMythicPlus()
+    if not T.mplus.active then
+        return
+    end
+    T.mplus.active = false
+    T.Layout()
+end
+
+-- ---------------------------------------------------------------------------
 -- WatchFrame skin: make the quest module look like part of the same tracker
 -- ---------------------------------------------------------------------------
 -- Retail draws every module (Dungeon, Quests, ...) with the same header bar;
@@ -510,11 +758,120 @@ function T.DifficultyLabel()
     return T.DIFF_DUNGEON[d] or ""
 end
 
+-- One checklist line, shared by both modes. Re-anchors line 1 because the
+-- dungeon mode hangs lines off the stage plate while M+ hangs them off the
+-- challenge block.
+function T.SetLine(index, iconTexture, text, r, g, b)
+    local line = T.lines[index] or T.CreateLine(index)
+
+    if index == 1 then
+        line.icon:ClearAllPoints()
+        line.icon:SetPoint("TOPLEFT", T.frame, "TOPLEFT", T.LINE_INDENT, T.firstLineY)
+    end
+
+    line.icon:SetTexture(iconTexture)
+    line.icon:Show()
+    line.text:SetText(text)
+    line.text:SetTextColor(r, g, b)
+    line.text:Show()
+end
+
+function T.LayoutMythicPlus()
+    local frame = T.frame
+    local m = T.mplus
+    local cm = T.EnsureMythicBlock()
+
+    frame.headerText:SetText("Mythic+")
+    SetAtlas(frame.btnNormal, T.TEX_TRACKER,
+        T.state.collapsed and T.ATLAS.btnExpand or T.ATLAS.btnCollapse)
+    frame.btnNormal:SetAllPoints(frame.toggle)
+
+    local shown = 0
+    if not T.state.collapsed then
+        T.stage:Show()
+        T.stage.title:SetText(m.name)
+        T.stage.sub:SetText(string.format("Keystone Level %d", m.level))
+
+        cm:ClearAllPoints()
+        cm:SetPoint("TOP", frame, "TOP", 0, -(T.HEADER_HEIGHT + T.STAGE_HEIGHT))
+        cm:Show()
+        T.firstLineY = -(T.HEADER_HEIGHT + T.STAGE_HEIGHT + 87 + 4)
+        cm.level:SetText(string.format("Level %d", m.level))
+        if m.deaths > 0 then
+            cm.skull:Show()
+            cm.deaths:SetText(m.deaths)
+            cm.deaths:Show()
+        else
+            cm.skull:Hide()
+            cm.deaths:Hide()
+        end
+        T.LayoutAffixes(m.affixes)
+
+        -- Lines hang off the challenge block. The block is CENTERED while
+        -- lines are frame-left aligned, so line 1 anchors to the frame; the
+        -- SetLine anchor param is only used for its BOTTOM edge via the fixed
+        -- stack height below.
+        for index = 1, math.min(#m.bosses, T.MAX_LINES) do
+            local boss = m.bosses[index]
+            local killed = (boss.killed == 1 or boss.killed == true)
+            local text = string.format("%d/1 %s defeated", killed and 1 or 0, tostring(boss.name or ""))
+            local at = tonumber(boss.at)
+            if killed and at then
+                text = string.format("%s |cff808080(%s)|r", text, T.FormatClock(at))
+            end
+            local color = killed and T.COLOR_DONE or T.COLOR_PENDING
+            shown = shown + 1
+            T.SetLine(shown, killed and T.ICON_CHECK or T.ICON_DASH, text, color[1], color[2], color[3])
+        end
+
+        if m.enemies > 0 and shown < T.MAX_LINES then
+            shown = shown + 1
+            T.SetLine(shown, T.ICON_DASH,
+                string.format("Enemies slain: %d", m.enemies),
+                T.COLOR_PENDING[1], T.COLOR_PENDING[2], T.COLOR_PENDING[3])
+        end
+    else
+        T.stage:Hide()
+        cm:Hide()
+    end
+
+    for index = shown + 1, #T.lines do
+        T.lines[index].icon:Hide()
+        T.lines[index].text:Hide()
+    end
+
+    local height = T.HEADER_HEIGHT
+    if not T.state.collapsed then
+        height = height + T.STAGE_HEIGHT + 87 + 4
+        if shown > 0 then
+            height = height + shown * T.LINE_HEIGHT
+        end
+    end
+
+    local wasShown = frame:IsShown()
+    frame:SetHeight(height)
+    frame:Show()
+
+    if not T.HasUserPosition() and (not wasShown or height ~= T.lastHeight) then
+        T.lastHeight = height
+        T.ReleaseWatchFrame()
+    end
+end
+
 function T.Layout()
     local frame = T.EnsureFrame()
     local state = T.state
 
     T.SyncColumnWidth()
+
+    if T.mplus.active then
+        T.LayoutMythicPlus()
+        return
+    end
+
+    if T.cm then
+        T.cm:Hide()
+    end
 
     if not state.mapId or #state.bosses == 0 then
         if frame:IsShown() then
@@ -536,9 +893,15 @@ function T.Layout()
     local shown = 0
     if not state.collapsed then
         T.stage:Show()
+        T.firstLineY = -(T.HEADER_HEIGHT + T.STAGE_HEIGHT + 2)
         for index = 1, math.min(#state.bosses, T.MAX_LINES) do
             local boss = state.bosses[index]
             local line = T.lines[index] or T.CreateLine(index)
+
+            if index == 1 then
+                line.icon:ClearAllPoints()
+                line.icon:SetPoint("TOPLEFT", T.frame, "TOPLEFT", T.LINE_INDENT, T.firstLineY)
+            end
 
             line.icon:SetTexture(boss.killed and T.ICON_CHECK or T.ICON_DASH)
             line.icon:Show()
