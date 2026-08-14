@@ -34,6 +34,7 @@
 #include "WorldSessionMgr.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "../AddonExtension/dc_addon_namespace.h"
+#include "../AddonExtension/dc_addon_mythicplus.h"
 #include "DC/GreatVault/GreatVault.h"
 #ifdef HAS_AIO
 #include "AIO.h"
@@ -1314,6 +1315,11 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
         SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 2);
         SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
         UpdateHud(state, map, true, "failed");
+
+        // ClearHudSnapshot below removes the row this "failed" snapshot was
+        // written to, usually before the 1s HUD poll ever reads it. Push the
+        // result directly so the addon can raise its failure frame.
+        BroadcastRunResultPayload(state, map);
     }
 
     RecordRunResult(state, false, 0);
@@ -1324,12 +1330,47 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
     uint32 instanceId = state->instanceId;
     uint32 mapId = state->mapId;
     uint64 instanceKey = state->instanceKey;
+    uint8 keystoneLevel = state->keystoneLevel;
 
     _instanceStates.erase(instanceKey);
 
-    if (downgradeKeystone && ownerGuid)
+    if (downgradeKeystone && ownerGuid && keystoneLevel)
     {
-        // Future: award downgraded keystone back to owner
+        // Activation consumed the key, so without a refund here the owner simply
+        // loses it -- even though the cancel path already announces "keystone
+        // downgraded". Depleted by one, never past the floor.
+        uint8 const refundLevel = keystoneLevel > MythicPlusConstants::MIN_KEYSTONE_LEVEL
+            ? static_cast<uint8>(keystoneLevel - 1)
+            : MythicPlusConstants::MIN_KEYSTONE_LEVEL;
+
+        // Persist first: this is the record a keystone vendor reissues from, so
+        // it has to be right even when the owner is offline or out of bag space.
+        CharacterDatabase.Execute(
+            "UPDATE dc_player_keystones SET current_keystone_level = {} WHERE player_guid = {}",
+            refundLevel, ownerGuid.GetCounter());
+
+        if (Player* owner = ObjectAccessor::FindPlayer(ownerGuid))
+        {
+            if (GiveKeystoneToPlayer(owner, refundLevel))
+            {
+                ChatHandler(owner->GetSession()).PSendSysMessage(
+                    "|cffff8000[Mythic+]|r Your keystone was depleted to |cffffffff+{}|r.",
+                    static_cast<uint32>(refundLevel));
+            }
+            else
+            {
+                ChatHandler(owner->GetSession()).PSendSysMessage(
+                    "|cffff0000[Mythic+]|r Bags full - your |cffffffff+{}|r keystone is held at the keystone vendor.",
+                    static_cast<uint32>(refundLevel));
+            }
+        }
+
+        LOG_INFO("mythic.run",
+            "Mythic+ run failed for instance {} (map {}); keystone {} -> {} for owner {}",
+            instanceId, mapId, keystoneLevel, refundLevel, ownerGuid.ToString());
+    }
+    else
+    {
         LOG_INFO("mythic.run", "Mythic+ run failed for instance {} (map {})", instanceId, mapId);
     }
 }
@@ -1497,7 +1538,10 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         }
 
         InsertTokenLog(player->GetGUID().GetCounter(), state->mapId, state->difficulty, state->keystoneLevel, player->GetLevel(), bossEntry, tokenCount);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Awarded {} tokens.", tokenCount);
+
+        // Addon users read the token count off the result frame instead.
+        if (!PlayerUsesRunSummaryAddon(player))
+            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Awarded {} tokens.", tokenCount);
 
         // Track tokens for run summary (only for keystone owner)
         if (player->GetGUID() == state->ownerGuid)
@@ -2052,8 +2096,89 @@ bool MythicPlusRunManager::PlayerUsesRunSummaryAddon(Player* player)
     if (!sConfigMgr->GetOption<bool>("MythicPlus.RunSummary.UseAddonUI", true))
         return false;
 
-    DCAddon::SessionCapabilityState capabilities;
-    return DCAddon::TryGetSessionCapabilityState(player, capabilities);
+    return DCAddon::MythicPlus::PlayerHasMythicPlusAddon(player);
+}
+
+void MythicPlusRunManager::SendRunResultPayload(InstanceState* state, Player* player)
+{
+    if (!state || !player)
+        return;
+
+    uint32 duration = 0;
+    uint64 now = GameTime::GetGameTime().count();
+    if (state->startedAt && now >= state->startedAt)
+        duration = static_cast<uint32>(now - state->startedAt);
+
+    int32 keyChange = state->keystoneUpgraded
+        ? static_cast<int32>(state->upgradeLevel) - static_cast<int32>(state->keystoneLevel)
+        : 0;
+
+    uint32 totalBosses = state->bossOrder.empty()
+        ? GetTotalBossesForDungeon(state->mapId)
+        : static_cast<uint32>(state->bossOrder.size());
+
+    std::ostringstream payload;
+    payload << '{';
+    payload << "\"success\":" << (state->completed && !state->failed ? 1 : 0) << ',';
+    payload << "\"map\":" << state->mapId << ',';
+    payload << "\"mapName\":\"" << EscapeJson(GetMapDisplayName(state->mapId)) << "\",";
+    payload << "\"keystone\":" << uint32(state->keystoneLevel) << ',';
+    payload << "\"keyLevel\":" << uint32(state->keystoneLevel) << ',';
+    payload << "\"newKeyLevel\":" << uint32(state->upgradeLevel) << ',';
+    payload << "\"keyChange\":" << keyChange << ',';
+    payload << "\"keystoneUpgraded\":" << (state->keystoneUpgraded ? 1 : 0) << ',';
+    payload << "\"elapsed\":" << duration << ',';
+    payload << "\"timeElapsed\":" << duration << ',';
+    payload << "\"bossesKilled\":" << state->bossesKilled << ',';
+    payload << "\"bossesTotal\":" << totalBosses << ',';
+    payload << "\"enemiesKilled\":" << state->npcsKilled << ',';
+    payload << "\"deaths\":" << uint32(state->deaths) << ',';
+    payload << "\"wipes\":" << uint32(state->wipes) << ',';
+    payload << "\"tokensAwarded\":" << state->tokensAwarded << ',';
+
+    // Only this player's own rewards - loot is personal, not group-wide.
+    ObjectGuid::LowType viewerGuid = player->GetGUID().GetCounter();
+    payload << "\"rewards\":[";
+    bool firstReward = true;
+    for (InstanceState::LootAward const& award : state->lootAwards)
+    {
+        if (award.playerGuid != viewerGuid)
+            continue;
+
+        if (!firstReward)
+            payload << ',';
+        firstReward = false;
+
+        payload << '{';
+        payload << "\"itemId\":" << award.itemId << ',';
+        payload << "\"itemLevel\":" << award.itemLevel << ',';
+        payload << "\"quality\":" << uint32(award.quality) << ',';
+        payload << "\"mailed\":" << (award.mailed ? 1 : 0);
+        payload << '}';
+    }
+    payload << ']';
+    payload << '}';
+
+    DCAddon::JsonMessage(DCAddon::Module::MYTHIC_PLUS,
+        DCAddon::Opcode::MPlus::SMSG_RUN_END)
+        .SetPreEncodedJson(payload.str())
+        .Send(player);
+}
+
+void MythicPlusRunManager::BroadcastRunResultPayload(InstanceState* state, Map* map)
+{
+    if (!state || !map)
+        return;
+
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto const& ref : players)
+    {
+        if (Player* player = ref.GetSource())
+        {
+            if (state->participants.find(player->GetGUID().GetCounter()) != state->participants.end())
+                SendRunResultPayload(state, player);
+        }
+    }
 }
 
 void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
@@ -2072,73 +2197,14 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     uint32 minutes = duration / 60;
     uint32 seconds = duration % 60;
 
-    std::string dungeonNameForPayload = GetMapDisplayName(state->mapId);
-
-    // Push the structured summary first. The HUD cache row this instance was
-    // broadcasting through is deleted immediately after completion, so the
-    // polled snapshot can never be relied on to carry the final state - the
-    // addon result frame is fed by this direct SMSG_RUN_END message instead.
-    {
-        int32 keyChange = state->keystoneUpgraded
-            ? static_cast<int32>(state->upgradeLevel) - static_cast<int32>(state->keystoneLevel)
-            : 0;
-
-        uint32 totalBosses = state->bossOrder.empty()
-            ? GetTotalBossesForDungeon(state->mapId)
-            : static_cast<uint32>(state->bossOrder.size());
-
-        std::ostringstream payload;
-        payload << '{';
-        payload << "\"success\":" << (state->completed && !state->failed ? 1 : 0) << ',';
-        payload << "\"map\":" << state->mapId << ',';
-        payload << "\"mapName\":\"" << EscapeJson(dungeonNameForPayload) << "\",";
-        payload << "\"keystone\":" << uint32(state->keystoneLevel) << ',';
-        payload << "\"keyLevel\":" << uint32(state->keystoneLevel) << ',';
-        payload << "\"newKeyLevel\":" << uint32(state->upgradeLevel) << ',';
-        payload << "\"keyChange\":" << keyChange << ',';
-        payload << "\"keystoneUpgraded\":" << (state->keystoneUpgraded ? 1 : 0) << ',';
-        payload << "\"elapsed\":" << duration << ',';
-        payload << "\"timeElapsed\":" << duration << ',';
-        payload << "\"bossesKilled\":" << state->bossesKilled << ',';
-        payload << "\"bossesTotal\":" << totalBosses << ',';
-        payload << "\"enemiesKilled\":" << state->npcsKilled << ',';
-        payload << "\"deaths\":" << uint32(state->deaths) << ',';
-        payload << "\"wipes\":" << uint32(state->wipes) << ',';
-        payload << "\"tokensAwarded\":" << state->tokensAwarded << ',';
-
-        // Only this player's own rewards - loot is personal, not group-wide.
-        ObjectGuid::LowType viewerGuid = player->GetGUID().GetCounter();
-        payload << "\"rewards\":[";
-        bool firstReward = true;
-        for (InstanceState::LootAward const& award : state->lootAwards)
-        {
-            if (award.playerGuid != viewerGuid)
-                continue;
-
-            if (!firstReward)
-                payload << ',';
-            firstReward = false;
-
-            payload << '{';
-            payload << "\"itemId\":" << award.itemId << ',';
-            payload << "\"itemLevel\":" << award.itemLevel << ',';
-            payload << "\"quality\":" << uint32(award.quality) << ',';
-            payload << "\"mailed\":" << (award.mailed ? 1 : 0);
-            payload << '}';
-        }
-        payload << ']';
-        payload << '}';
-
-        DCAddon::JsonMessage(DCAddon::Module::MYTHIC_PLUS,
-            DCAddon::Opcode::MPlus::SMSG_RUN_END)
-            .SetPreEncodedJson(payload.str())
-            .Send(player);
-    }
+    SendRunResultPayload(state, player);
 
     // Addon users get the result frame; the chat transcript below is the
     // fallback for clients running without DC-MythicPlus.
     if (PlayerUsesRunSummaryAddon(player))
         return;
+
+    std::string dungeonNameForPayload = GetMapDisplayName(state->mapId);
 
     // Header
     handler.SendSysMessage("|cff00ff00========================================|r");
@@ -2486,8 +2552,33 @@ bool MythicPlusRunManager::VoteToCancelRun(Player* player, Map* map)
     // Check if enough votes
     if (currentVotes >= requiredVotes)
     {
+        // HandleFailState refunds the depleted key and erases the run state, so
+        // nothing below may touch `state` again.
         HandleFailState(state, "Run cancelled by group vote", true);
         AnnounceToInstance(map, "|cffff0000Mythic+ run cancelled by group vote. Keystone downgraded.|r");
+
+        // Collect before ejecting: TeleportTo mutates the map's player list, so
+        // teleporting inside the iteration would invalidate it mid-walk.
+        std::vector<ObjectGuid> toEject;
+        Map::PlayerList const& players = map->GetPlayers();
+        for (auto const& ref : players)
+        {
+            if (Player* member = ref.GetSource())
+                toEject.push_back(member->GetGUID());
+        }
+
+        // Respawn the dungeon before anyone leaves, so a player who walks back
+        // into the same instance id finds it clean rather than half-cleared.
+        ResetDungeonForRunStart(map);
+
+        for (ObjectGuid const& guid : toEject)
+        {
+            if (Player* member = ObjectAccessor::FindPlayer(guid))
+                member->TeleportToEntryPoint();
+        }
+
+        LOG_INFO("mythic.run", "Cancelled run on map {} instance {}: ejected {} player(s), dungeon reset",
+            map->GetId(), map->GetInstanceId(), static_cast<uint32>(toEject.size()));
         return true;
     }
 

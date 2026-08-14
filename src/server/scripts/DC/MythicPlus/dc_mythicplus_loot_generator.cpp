@@ -40,20 +40,7 @@ std::string BuildItemLink(ItemTemplate const* itemTemplate)
 
     uint32 color = ItemQualityColors[std::min<uint32>(itemTemplate->Quality, MAX_ITEM_QUALITY - 1)];
     return Acore::StringFormat("|c{:08x}|Hitem:{}:0:0:0:0:0:0:0:0|h[{}]|h|r",
-                               color, itemTemplate->Entry, itemTemplate->Name1);
-}
-
-// A MaxCount-limited item the player already owns can never be stored, and
-// mailing it is a dead end too - the attachment simply cannot be taken out.
-// Treat those as ineligible at selection time so the roll picks something else.
-bool PlayerAlreadyAtUniqueLimit(Player* player, ItemTemplate const* itemTemplate)
-{
-    if (!player || !itemTemplate || itemTemplate->MaxCount <= 0)
-        return false;
-
-    // includeBank/inBankAlso = true: the unique cap counts bank copies too.
-    return player->GetItemCount(itemTemplate->Entry, true) >=
-           static_cast<uint32>(itemTemplate->MaxCount);
+                               color, itemTemplate->ItemId, itemTemplate->Name1);
 }
 
 enum class LootDelivery : uint8
@@ -117,9 +104,24 @@ struct LootTableRow
     uint32 itemLevelMax = 0;
     uint32 classMask = 0;
     uint8 roleMask = 0;
+    // item_template.MaxCount, cached at load: > 0 means unique-limited, and a
+    // player already holding that many can never be given another copy.
+    int32 maxCount = 0;
     std::string specName;   // empty = all specs (NULL in the table)
     std::string armorType;  // "Misc" = universal
 };
+
+// A MaxCount-limited item the player already owns can never be stored, and
+// mailing it is a dead end too - the attachment simply cannot be taken out.
+// Treat those as ineligible at selection time so the roll picks something else.
+bool PlayerAlreadyAtUniqueLimit(Player* player, LootTableRow const& row)
+{
+    if (row.maxCount <= 0)
+        return false;
+
+    // inBankAlso = true: the unique cap counts bank copies too.
+    return player->GetItemCount(row.itemId, true) >= static_cast<uint32>(row.maxCount);
+}
 
 std::vector<LootTableRow> s_lootTable;
 std::atomic<bool> s_lootTableLoaded{false};
@@ -179,7 +181,7 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
                 continue;
             if (stage.filterRole && !(row.roleMask & roleMask) && row.roleMask != 7)
                 continue;
-            if (PlayerAlreadyAtUniqueLimit(player, sObjectMgr->GetItemTemplate(row.itemId)))
+            if (PlayerAlreadyAtUniqueLimit(player, row))
                 continue;
 
             candidates.push_back(row.itemId);
@@ -201,7 +203,7 @@ void MythicPlusRunManager::LoadLootTable()
     s_lootTable.clear();
 
     QueryResult result = WorldDatabase.Query(
-        "SELECT v.item_id, v.item_level_min, v.item_level_max, v.class_mask, v.role_mask, v.spec_name, v.armor_type "
+        "SELECT v.item_id, v.item_level_min, v.item_level_max, v.class_mask, v.role_mask, v.spec_name, v.armor_type, it.MaxCount "
         "FROM dc_vault_loot_table v "
         "INNER JOIN item_template it ON it.entry = v.item_id "
         "WHERE it.Quality >= 2 AND it.name NOT LIKE 'NPC Equip %'");
@@ -219,6 +221,7 @@ void MythicPlusRunManager::LoadLootTable()
             row.roleMask = fields[4].Get<uint8>();
             row.specName = fields[5].IsNull() ? std::string() : fields[5].Get<std::string>();
             row.armorType = fields[6].Get<std::string>();
+            row.maxCount = fields[7].Get<int32>();
             s_lootTable.push_back(std::move(row));
         } while (result->NextRow());
     }
@@ -407,7 +410,8 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
                  mailed ? "mailed" : "bags");
 
         state->lootAwards.push_back({ player->GetGUID().GetCounter(), itemId,
-                                      itemTemplate->ItemLevel, itemTemplate->Quality, mailed });
+                                      itemTemplate->ItemLevel,
+                                      static_cast<uint8>(itemTemplate->Quality), mailed });
 
         // Addon users see the same list in the result frame, so only clients
         // without DC-MythicPlus get the chat line.

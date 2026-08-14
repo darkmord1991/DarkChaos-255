@@ -96,6 +96,9 @@ T.COLUMN_OFFSET_X = -20 -- extra shift applied to the manager's column point: ke
 T.HEADER_HEIGHT = 26
 T.STAGE_WIDTH   = 201   -- StageBlock size
 T.STAGE_HEIGHT  = 83
+T.CM_WIDTH      = 251   -- Mythic+ timer block (ChallengeMode art); wider than the
+                        -- StageBlock, so the two need a half-difference nudge to
+                        -- share a left edge - see EnsureFrame's stage anchor.
 T.LINE_HEIGHT   = 18
 T.LINE_INDENT   = 10
 T.MAX_LINES     = 16
@@ -270,8 +273,17 @@ function T.EnsureFrame()
     frame.btnNormal  = btnNormal
 
     -- ============ Stage block (ScenarioObjectiveTracker StageBlock) =========
+    -- Centred like the Mythic+ timer block, then nudged by half the width
+    -- difference so the two share a LEFT edge (which is what the eye reads, and
+    -- what the boss lines below are aligned to).
+    --
+    -- The frame's live width follows WatchFrame rather than T.WIDTH, so both
+    -- blocks must be centre-anchored or they drift apart as the tracker resizes.
+    -- Centring alone is not enough: the blocks are 201 vs 251 wide, which leaves
+    -- their left edges 25px apart. Deriving the offset from the two constants
+    -- keeps them aligned no matter what the frame width does.
     local stage = CreateFrame("Frame", nil, frame)
-    stage:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+    stage:SetPoint("TOP", header, "BOTTOM", (T.STAGE_WIDTH - T.CM_WIDTH) / 2, 0)
     stage:SetWidth(T.STAGE_WIDTH)
     stage:SetHeight(T.STAGE_HEIGHT)
 
@@ -458,7 +470,7 @@ function T.EnsureMythicBlock()
     end
 
     local cm = CreateFrame("Frame", nil, T.frame)
-    cm:SetWidth(251)
+    cm:SetWidth(T.CM_WIDTH)
     cm:SetHeight(87)
 
     -- TimerBG pair sits UNDER the border art (BACKGROUND sublevels in retail).
@@ -781,22 +793,35 @@ function T.LayoutMythicPlus()
     local m = T.mplus
     local cm = T.EnsureMythicBlock()
 
-    frame.headerText:SetText("Mythic+")
+    -- Single-block layout. The stage plate carried nothing the challenge block
+    -- cannot: it showed the dungeon name plus "Keystone Level N", and the block
+    -- below already repeated the level. So the plate is retired here, the name
+    -- moves into the block, and the level rides in the header where there is
+    -- spare width - the block has no vertical room for a third text row without
+    -- pushing the timer into the progress bar.
+    -- NOTE: the stage plate is still used by the non-Mythic+ (DENC) layout.
+    frame.headerText:SetText(string.format("Mythic+  |cffffd200Level %d|r", m.level or 0))
     SetAtlas(frame.btnNormal, T.TEX_TRACKER,
         T.state.collapsed and T.ATLAS.btnExpand or T.ATLAS.btnCollapse)
     frame.btnNormal:SetAllPoints(frame.toggle)
 
     local shown = 0
     if not T.state.collapsed then
-        T.stage:Show()
-        T.stage.title:SetText(m.name)
-        T.stage.sub:SetText(string.format("Keystone Level %d", m.level))
+        T.stage:Hide()
 
         cm:ClearAllPoints()
-        cm:SetPoint("TOP", frame, "TOP", 0, -(T.HEADER_HEIGHT + T.STAGE_HEIGHT))
+        cm:SetPoint("TOP", frame, "TOP", 0, -T.HEADER_HEIGHT)
         cm:Show()
-        T.firstLineY = -(T.HEADER_HEIGHT + T.STAGE_HEIGHT + 87 + 4)
-        cm.level:SetText(string.format("Level %d", m.level))
+        T.firstLineY = -(T.HEADER_HEIGHT + 87 + 4)
+
+        -- Truncated rather than width-limited: a WotLK FontString wraps to a
+        -- second line when it overflows its width, and that line would land on
+        -- top of the timer. Clipping in Lua keeps it to one row.
+        local dungeonName = tostring(m.name or "")
+        if string.len(dungeonName) > 24 then
+            dungeonName = string.sub(dungeonName, 1, 23) .. "..."
+        end
+        cm.level:SetText(dungeonName)
         if m.deaths > 0 then
             cm.skull:Show()
             cm.deaths:SetText(m.deaths)
@@ -842,7 +867,8 @@ function T.LayoutMythicPlus()
 
     local height = T.HEADER_HEIGHT
     if not T.state.collapsed then
-        height = height + T.STAGE_HEIGHT + 87 + 4
+        -- No STAGE_HEIGHT term any more: the plate is hidden in this layout.
+        height = height + 87 + 4
         if shown > 0 then
             height = height + shown * T.LINE_HEIGHT
         end
@@ -976,6 +1002,7 @@ end
 -- ---------------------------------------------------------------------------
 function T.OnList(data)
     T.state.replySeen = true
+    T.state.zoneReplySeen = true
 
     if type(data) ~= "table" or type(data.b) ~= "table" then
         T.Clear()
@@ -1009,6 +1036,7 @@ end
 
 function T.OnEncounter(data)
     T.state.replySeen = true
+    T.state.zoneReplySeen = true
 
     if type(data) ~= "table" then
         return
@@ -1030,19 +1058,29 @@ end
 
 function T.OnClear()
     T.state.replySeen = true
+    T.state.zoneReplySeen = true
     T.Clear()
 end
 
 -- Cooldown-gated, not latch-gated: against a server with the DENC module
 -- disabled every reply-dependent path would otherwise retry forever.
+-- requestsMade resets on every PLAYER_ENTERING_WORLD, so the cap is per
+-- zone-in, never a session-wide give-up (which once disarmed the tracker for
+-- the whole session after three lost messages at login).
 function T.Request(force)
     local DC = rawget(_G, "DCAddonProtocol")
     if not DC or type(DC.Send) ~= "function" then
         return
     end
 
-    if not T.state.replySeen and T.state.requestsMade >= 3 then
+    if T.state.requestsMade >= 8 then
         return
+    end
+
+    -- Nudge the protocol handshake if it has not established yet (same
+    -- pattern as DC-QOS Graveyard); the request itself still goes out.
+    if type(DC.EnsureConnected) == "function" then
+        pcall(DC.EnsureConnected, DC)
     end
 
     local now = GetTime() or 0
@@ -1096,17 +1134,49 @@ events:SetScript("OnEvent", function(_, event)
     end
 
     -- PLAYER_ENTERING_WORLD: SavedVariables are guaranteed loaded by now, and
-    -- the server pushes on its own map-change hook - but a /reload inside an
-    -- instance misses that push, so re-sync here.
+    -- the server pushes on its own map-change hook - but that push is sent
+    -- while the client is still on the LOADING SCREEN, where 3.3.5 drops
+    -- incoming chat, so it is routinely lost. This request is the reliable
+    -- activation path; the OnUpdate pump below retries it until any DENC
+    -- reply arrives for this zone-in.
     --
-    -- Deliberately NOT clearing first: the server's push can land before this
-    -- event, and wiping it would leave the block hidden until the request
-    -- cooldown expired. An instance with nothing to track answers SMSG_CLEAR.
+    -- Deliberately NOT clearing first: a push can land before this event, and
+    -- wiping it would leave the block hidden until the request cooldown
+    -- expired. An instance with nothing to track answers SMSG_CLEAR.
     T.LoadSettings()
     T.EnsureFrame()
     T.HookWatchFrame()
     T.SkinWatchFrame()
-    T.Request(false)
+
+    T.state.requestsMade = 0
+    T.state.zoneReplySeen = false
+    T.state.retriesLeft = 4
+    T.state.nextRetryAt = (GetTime() or 0) + 4
+    T.Request(true)
+end)
+
+-- Retry pump. Lives on the always-shown events frame, NOT the tracker frame:
+-- the tracker is hidden exactly when nothing arrived, which would kill an
+-- OnUpdate hung off it. Stops the moment any DENC message lands (including
+-- SMSG_CLEAR - "nothing to track" is also an answer).
+events:SetScript("OnUpdate", function()
+    local s = T.state
+    if s.zoneReplySeen or (s.retriesLeft or 0) <= 0 then
+        return
+    end
+
+    local now = GetTime() or 0
+    if now < (s.nextRetryAt or 0) then
+        return
+    end
+
+    s.retriesLeft = s.retriesLeft - 1
+    s.nextRetryAt = now + 4
+
+    -- Handler registration may also have missed its window if the protocol
+    -- addon loaded late; it latches internally, so retrying here is free.
+    T.RegisterHandlers()
+    T.Request(true)
 end)
 
 SLASH_DCBOSSES1 = "/dcbosses"

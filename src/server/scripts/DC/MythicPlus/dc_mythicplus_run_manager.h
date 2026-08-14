@@ -211,6 +211,12 @@ private:
     void UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 durationSeconds);
     void InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers);
     void SendRunSummary(InstanceState* state, Player* player);
+    // Pushes the final stats + this player's loot over SMSG_RUN_END. Must not
+    // rely on the polled HUD cache: both the completion and the failure path
+    // delete the instance's cache row immediately, so a "completed"/"failed"
+    // snapshot written moments earlier is usually gone before the next poll.
+    void SendRunResultPayload(InstanceState* state, Player* player);
+    void BroadcastRunResultPayload(InstanceState* state, Map* map);
     // True when the player runs DC-MythicPlus, i.e. the end-of-run stats are
     // rendered in the result frame and the chat transcript is redundant.
     static bool PlayerUsesRunSummaryAddon(Player* player);

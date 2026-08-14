@@ -47,6 +47,18 @@ namespace MythicPlus
     {
         constexpr uint32 WEEK_SECONDS = 7u * 24u * 60u * 60u;
 
+        // Sessions that have sent at least one DC|MPLUS| request. Only
+        // DC-MythicPlus emits those, so membership here is a reliable "the
+        // result frame exists on this client" signal - unlike the CORE
+        // handshake, which any DC addon completes.
+        std::unordered_set<uint32> s_mythicPlusAddonSessions;
+
+        void MarkMythicPlusAddonSession(Player* player)
+        {
+            if (player)
+                s_mythicPlusAddonSessions.insert(player->GetGUID().GetCounter());
+        }
+
         DCAddon::TransportPolicyDecision ResolveHudTransport(Player* player)
         {
             DCAddon::TransportPolicyRequest request;
@@ -490,6 +502,7 @@ namespace MythicPlus
     // Handler: Get canonical keystone list
     static void HandleGetKeystoneList(Player* player, const ParsedMessage& /*msg*/)
     {
+        MarkMythicPlusAddonSession(player);
         SendJsonKeystoneList(player);
     }
 
@@ -1649,6 +1662,8 @@ namespace MythicPlus
     // Handler: Client requests HUD snapshot
     static void HandleRequestHud(Player* player, const ParsedMessage& msg)
     {
+        MarkMythicPlusAddonSession(player);
+
         std::string reason = msg.GetString(0);
         if (reason.empty())
             reason = "client_request";
@@ -1789,6 +1804,20 @@ namespace MythicPlus
             .Send(player);
     }
 
+    bool PlayerHasMythicPlusAddon(Player* player)
+    {
+        if (!player)
+            return false;
+
+        return s_mythicPlusAddonSessions.find(player->GetGUID().GetCounter()) !=
+            s_mythicPlusAddonSessions.end();
+    }
+
+    void ForgetMythicPlusAddonSession(ObjectGuid::LowType playerGuid)
+    {
+        s_mythicPlusAddonSessions.erase(playerGuid);
+    }
+
     // Send run update as JSON (for HUD)
     void SendJsonRunUpdate(Player* player, uint32 runId, uint32 elapsed, uint32 remaining,
                            uint32 deaths, uint32 bossesKilled, uint32 bossesTotal,
@@ -1873,6 +1902,7 @@ public:
             return;
         // Clean up player's HUD snapshot
         DCAddon::MythicPlus::HudCacheMgr::Instance().OnPlayerLogout(player);
+        DCAddon::MythicPlus::ForgetMythicPlusAddonSession(player->GetGUID().GetCounter());
     }
 };
 

@@ -24,6 +24,14 @@ namespace DCAddon
         // Bridges addon keystone-activation requests to the Font of Power state machine.
         void HandleKeystoneActivationResponse(Player* player, bool accepted);
         void HandleKeystoneActivationCancel(Player* player);
+
+        // True once this session has sent any DC|MPLUS| request, which only
+        // DC-MythicPlus does. Used to decide whether end-of-run output belongs
+        // in the addon's result frame or in the chat-window fallback - a client
+        // that merely completed the CORE handshake (e.g. DC-Collection only)
+        // must still get the chat transcript.
+        bool PlayerHasMythicPlusAddon(Player* player);
+        void ForgetMythicPlusAddonSession(ObjectGuid::LowType playerGuid);
     }
 }
 
