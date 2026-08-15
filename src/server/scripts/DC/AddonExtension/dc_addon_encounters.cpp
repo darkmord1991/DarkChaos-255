@@ -75,7 +75,20 @@ namespace Encounters
                 !map->Is25ManRaid() ? RAID_DIFFICULTY_10MAN_NORMAL : RAID_DIFFICULTY_25MAN_NORMAL);
         }
 
-        return sObjectMgr->GetDungeonEncounterList(mapId, difficulty);
+        DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(mapId, difficulty);
+
+        // Mythic (DUNGEON_DIFFICULTY_EPIC) 5-mans borrow the heroic list, exactly like
+        // Map::UpdateEncounterState does: instance_encounters only resolves to difficulty
+        // 0/1 DungeonEncounter.dbc rows for non-raid dungeons, so a Mythic run would
+        // otherwise get an empty list and the block would never appear at all.
+        if (!encounters && !map->IsRaid() && difficulty == DUNGEON_DIFFICULTY_EPIC)
+        {
+            encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_HEROIC);
+            if (!encounters)
+                encounters = sObjectMgr->GetDungeonEncounterList(mapId, DUNGEON_DIFFICULTY_NORMAL);
+        }
+
+        return encounters;
     }
 
     // A keystone run owns the objective UI: the DC-MythicPlus HUD already draws

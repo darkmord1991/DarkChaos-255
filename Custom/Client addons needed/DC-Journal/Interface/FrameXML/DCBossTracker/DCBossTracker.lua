@@ -60,10 +60,10 @@ T.ATLAS = {
     btnPressed    = { 16, 16, 0.933594, 0.964844, 0.40625, 0.46875 },
     btnExpand     = { 16, 16, 0.630859, 0.662109, 0.480469, 0.542969 },
     btnHighlight  = { 16, 16, 0.666016, 0.697266, 0.480469, 0.542969 },
-    -- ScenarioTrackerToast (the stage-block plate behind the instance name)
+    -- ScenarioTrackerToast (the stage-block plate behind the instance name). The
+    -- plate has an ornate icon panel baked into its right end (crossed swords),
+    -- at x 174..235, y 9..56 of the 243x78 art - that is the instance-icon slot.
     toast         = { 243, 77, 0.00195312, 0.476562, 0.345703, 0.496094 },
-    -- "Dungeon" atlas (gold crossed swords), Interface/Minimap/ObjectIconsAtlas
-    swords        = { 32, 32, 0.198242, 0.24707, 0.44043, 0.489258 },
 
     -- Challenge Mode block (Blizzard_ScenarioObjectiveTracker.xml), all from
     -- Interface/Challenges/ChallengeModeHud unless noted
@@ -88,6 +88,10 @@ T.AFFIX_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 T.ICON_CHECK = "Interface\\Scenarios\\ScenarioIcon-Check"
 T.ICON_DASH  = "Interface\\Scenarios\\ScenarioIcon-Dash"
+
+-- Per-instance thumbnail for the stage plate: the same Interface\LFGFrame\
+-- lfgicon-<key> art the Mythic+ statistics list and the dungeon teleporter use.
+T.LFG_ICON_PATH = "Interface\\LFGFrame\\lfgicon-"
 
 -- Retail layout constants (Blizzard_ObjectiveTracker XML)
 T.WIDTH         = 260   -- ObjectiveTrackerModuleHeaderTemplate width (fallback; live width follows WatchFrame)
@@ -127,6 +131,76 @@ T.state = {
 }
 
 T.lines = {}
+
+-- mapId -> resolved icon path, or false when nothing resolved. Probing a texture
+-- means actually loading it, and Layout re-runs on every boss kill, so the
+-- verdict is cached per instance rather than re-tested each frame.
+T.iconCache = {}
+
+-- ---------------------------------------------------------------------------
+-- Instance thumbnail
+-- ---------------------------------------------------------------------------
+-- DC-MythicPlus owns the canonical mapId -> lfgicon key table (it needs it for
+-- the group finder, the statistics list and the teleporter), so reuse its
+-- resolver whenever that addon is loaded and the two UIs stay in sync. The
+-- name-derived fallback covers a client running DC-Journal on its own: the DENC
+-- payload carries the instance name, and "Gundrak" -> lfgicon-gundrak is the
+-- same normalisation DC-MythicPlus applies.
+function T.IconCandidates(mapId, name, isRaid)
+    local mplus = rawget(_G, "DCMythicPlusHUD")
+    if type(mplus) == "table" and type(mplus.ResolveLFGIconCandidates) == "function" then
+        local ok, list = pcall(mplus.ResolveLFGIconCandidates,
+            { mapId = mapId, name = name }, isRaid, true)
+        if ok and type(list) == "table" and #list > 0 then
+            return list
+        end
+    end
+
+    local candidates = {}
+    if type(name) == "string" and name ~= "" then
+        local key = string.gsub(string.lower(name), "^the%s+", "")
+        key = string.gsub(key, "[^a-z0-9]", "")
+        if key ~= "" then
+            table.insert(candidates, T.LFG_ICON_PATH .. key)
+        end
+    end
+    table.insert(candidates, T.LFG_ICON_PATH .. (isRaid and "raid" or "dungeon"))
+    return candidates
+end
+
+-- Drop the thumbnail into the plate's baked icon panel. Nothing resolved (a
+-- custom instance with no shipped art) hides the texture, which leaves the
+-- plate's own crossed-swords panel showing - the generic instance icon.
+function T.ApplyInstanceIcon()
+    local icon = T.stage and T.stage.icon
+    if not icon then
+        return
+    end
+
+    local mapId = T.state.mapId
+    local resolved = mapId and T.iconCache[mapId]
+
+    if resolved == nil then
+        resolved = false
+        for _, path in ipairs(T.IconCandidates(mapId, T.state.name, T.state.isRaid)) do
+            icon:SetTexture(path)
+            if icon:GetTexture() then
+                resolved = path
+                break
+            end
+        end
+        if mapId then
+            T.iconCache[mapId] = resolved
+        end
+    end
+
+    if resolved then
+        icon:SetTexture(resolved)
+        icon:Show()
+    else
+        icon:Hide()
+    end
+end
 
 local function SetAtlas(texture, texPath, atlas)
     texture:SetTexture(texPath)
@@ -215,11 +289,17 @@ function T.EnsureFrame()
     header:SetHeight(T.HEADER_HEIGHT)
 
     -- Background atlas is 300x30, CENTER-anchored on retail's fixed 260 header
-    -- (= 20px overhang each side). Our header width follows WatchFrame, so
-    -- anchor the art RIGHT at +20 instead: identical right-edge geometry at
-    -- 260, and on other widths the unstretched filigree just fades out left.
+    -- (= 20px overhang each side). Our header width follows WatchFrame, so both
+    -- edges are pinned at +/-20 instead of only the right one. That keeps the
+    -- retail geometry at 260 and reproduces it at any other width: the bar's
+    -- visible gold line fades in ~20/300 into the art, so with the art starting
+    -- at -20 the line always begins right about the frame's own left edge, which
+    -- is where the header text (LEFT+7) and the boss lines (LEFT+10) sit. Pinned
+    -- to the right edge alone the art started 26px INSIDE a 306-wide frame and
+    -- the "Dungeon (0/5)" label hung out to the left of its own line.
     local headerBG = header:CreateTexture(nil, "BACKGROUND")
     SetAtlas(headerBG, T.TEX_TRACKER, T.ATLAS.header)
+    headerBG:SetPoint("LEFT", header, "LEFT", -20, 0)
     headerBG:SetPoint("RIGHT", header, "RIGHT", 20, 0)
 
     -- ObjectiveTrackerHeaderFont: Friz 15, gold, LEFT x=7
@@ -313,13 +393,19 @@ function T.EnsureFrame()
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
     stage.sub = sub
 
-    -- Crossed-swords instance icon (retail "Dungeon" atlas), right side of the
-    -- plate - the Cata Classic dungeon tracker look from the reference shot.
-    local swords = stage:CreateTexture(nil, "ARTWORK")
-    SetAtlas(swords, T.TEX_OBJICONS, T.ATLAS.swords)
-    swords:SetWidth(36)
-    swords:SetHeight(36)
-    swords:SetPoint("RIGHT", toast, "RIGHT", -46, 2)
+    -- Instance thumbnail, dropped into the ornate panel baked into the plate's
+    -- right end. Centred on that panel's measured bounds (x 174..235, y 9..56 of
+    -- the 243x78 art), inset far enough that the panel still frames it. Filled
+    -- in by ApplyInstanceIcon once the instance is known.
+    local icon = stage:CreateTexture(nil, "ARTWORK")
+    icon:SetWidth(38)
+    icon:SetHeight(38)
+    -- Tight crop: the lfgicon art runs edge to edge, so trimming the outermost
+    -- pixels keeps the panel's inner bevel clean.
+    icon:SetTexCoord(0.06, 0.94, 0.06, 0.94)
+    icon:SetPoint("CENTER", toast, "TOPLEFT", 204, -32)
+    icon:Hide()
+    stage.icon = icon
 
     -- Live M+ countdown between server pushes; runs only while the frame is
     -- shown, and OnUpdateTick bails instantly outside Mythic+ mode.
@@ -674,12 +760,12 @@ end
 -- atlas chrome, aligned so both bars share the column's right edge, the same
 -- text indent and the same 16x16 collapse button.
 --
--- Alignment math: the DENC header is a 260-wide frame whose 300-wide art is
--- CENTER-anchored (20px overhang each side). Anchoring WatchFrame's bar
--- TOPRIGHT at (+20, +2) puts both art right edges - and therefore the text at
--- LEFT+27 and the button at RIGHT-19 - on identical column x positions,
--- regardless of WatchFrame's own width (204 or 306). The art is NEVER
--- stretched; the filigree just fades out to the left like retail's does.
+-- Alignment math: the DENC header art is pinned 20px outside its frame on BOTH
+-- sides (retail's 300-wide art on a 260-wide header). Pinning WatchFrame's bar
+-- the same way puts both bars' edges - and therefore the text at LEFT+7 and the
+-- button at RIGHT-19 - on identical column x positions, regardless of
+-- WatchFrame's own width (204 or 306), and keeps the gold line's fade-in
+-- starting at the frame's left edge where the header text begins.
 -- WatchFrameLines starts at y=-30, so the 30px bar fits without touching it.
 function T.ApplyWatchButtonArt()
     local btn = WatchFrameCollapseExpandButton
@@ -716,6 +802,7 @@ function T.SkinWatchFrame()
 
     local bar = WatchFrame:CreateTexture(nil, "BACKGROUND")
     SetAtlas(bar, T.TEX_TRACKER, T.ATLAS.header)
+    bar:SetPoint("TOPLEFT", WatchFrame, "TOPLEFT", -20, 2)
     bar:SetPoint("TOPRIGHT", WatchFrame, "TOPRIGHT", 20, 2)
     T.watchBar = bar
 
@@ -919,6 +1006,7 @@ function T.Layout()
     local shown = 0
     if not state.collapsed then
         T.stage:Show()
+        T.ApplyInstanceIcon()
         T.firstLineY = -(T.HEADER_HEIGHT + T.STAGE_HEIGHT + 2)
         for index = 1, math.min(#state.bosses, T.MAX_LINES) do
             local boss = state.bosses[index]

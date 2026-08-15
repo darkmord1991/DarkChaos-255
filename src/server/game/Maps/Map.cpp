@@ -2932,6 +2932,23 @@ void Map::UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Uni
     else
     {
         encounters = sObjectMgr->GetDungeonEncounterList(GetId(), difficulty_fixed);
+
+        // Mythic (DUNGEON_DIFFICULTY_EPIC) 5-mans have no encounter list of their own:
+        // instance_encounters only ever resolves to DungeonEncounter.dbc rows at difficulty
+        // 0 and 1 for non-raid dungeons. Without a fallback nothing is credited on Mythic -
+        // no completedEncounters bit, no lockout progress, no LFG completion and no push to
+        // the DENC boss tracker. ScriptedAI already clamps EPIC to HEROIC for the same reason.
+        if (!encounters && !IsRaid() && difficulty_fixed == DUNGEON_DIFFICULTY_EPIC)
+        {
+            difficulty_fixed = DUNGEON_DIFFICULTY_HEROIC;
+            encounters = sObjectMgr->GetDungeonEncounterList(GetId(), difficulty_fixed);
+
+            if (!encounters)
+            {
+                difficulty_fixed = DUNGEON_DIFFICULTY_NORMAL;
+                encounters = sObjectMgr->GetDungeonEncounterList(GetId(), difficulty_fixed);
+            }
+        }
     }
 
     if (!encounters)

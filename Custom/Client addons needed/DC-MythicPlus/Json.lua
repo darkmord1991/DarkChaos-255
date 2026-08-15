@@ -203,17 +203,29 @@ end
 -- Contract (CustomLua.cpp): DecodeJSONNative(str) -> (value, ok). ok == false
 -- means "parse error, trailing garbage, or depth cap exceeded, fall back" --
 -- so a false here is not an error, it is the DLL declining the payload.
+--
+-- One semantic caveat, checked rather than assumed: the native decoder was
+-- written to match DC-AddonProtocol's parser, which does NOT implement \uXXXX
+-- (its escape default is "emit the next char literally", so "A" decodes to
+-- "u0041"). The parser below DOES implement it. The server's EscapeJson emits
+-- \uXXXX for any control character under 0x20 other than \n \r \t, so the two
+-- can genuinely disagree.
+--
+-- Rather than accept that, the fast path is skipped whenever the payload
+-- contains a \u escape. That check is a single plain-text scan - far cheaper
+-- than a parse - and it keeps the native path bit-identical to the Lua one for
+-- every payload it actually handles.
 local function DecodeJSON(input)
     if type(input) ~= "string" then
         return nil
     end
 
-    if type(DecodeJSONNative) == "function" then
+    if type(DecodeJSONNative) == "function" and not input:find("\\u", 1, true) then
         local pcallOk, nativeResult, nativeOk = pcall(DecodeJSONNative, input)
         if pcallOk and nativeOk then
             return nativeResult
         end
-        -- fall through to the Lua parser
+        -- native declined or errored: fall through to the Lua parser
     end
 
     return DecodeJSONLua(input)

@@ -841,8 +841,13 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     // Settle the par timer before anything reads it. A run finished past the
     // par time still completes and still pays out, but it does not upgrade the
     // keystone (see AutoUpgradeKeystone).
+    //
+    // GetGameTime().count() is signed (chrono rep is long), so bind it to a
+    // uint64 first rather than comparing it against timerEndsAt inline - that
+    // is a -Wsign-compare warning, and CI builds with -Werror.
+    uint64 completionTime = GameTime::GetGameTime().count();
     if (!state->timerExpired && state->timerEndsAt &&
-        GameTime::GetGameTime().count() > state->timerEndsAt)
+        completionTime > state->timerEndsAt)
     {
         state->timerExpired = true;
     }
