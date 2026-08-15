@@ -14,6 +14,7 @@
 #include "ObjectGuid.h"
 #include "Optional.h"
 #include "SharedDefines.h"
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -57,8 +58,11 @@ public:
         uint32 seasonId = 0;
         ObjectGuid ownerGuid;
         uint64 startedAt = 0;
-        uint8 deaths = 0;
-        uint8 wipes = 0;
+        // uint32, not uint8: with MythicPlus.DeathBudget.Enabled off a long run
+        // could pass 255 and wrap back to 0, silently resetting the run summary,
+        // the score penalty and the auto-upgrade tier.
+        uint32 deaths = 0;
+        uint32 wipes = 0;
         uint32 npcsKilled = 0;         // Total non-boss hostile creatures killed
         uint32 bossesKilled = 0;       // Boss creatures killed
         uint32 tokensAwarded = 0;      // Total tokens awarded to keystone owner
@@ -83,11 +87,22 @@ public:
         bool finalBossLootGranted = false;
         std::unordered_map<uint32, uint64> recentBossEvades; // Tracks per-boss reset timestamps
         uint64 timerEndsAt = 0;
+        // Set once the par timer runs out. Without this the countdown in the
+        // HUD was purely decorative: nothing ever compared timerEndsAt against
+        // the clock, so a run could take any length of time and still upgrade.
+        bool timerExpired = false;
         uint64 lastHudBroadcast = 0;
         uint64 lastAioBroadcast = 0;
         uint32 hudTimerDuration = 0;
         bool hudInitialized = false;
         std::unordered_map<uint32, uint32> hudWorldStates;
+        // Countdown seconds already announced to chat. Lives on the run (not in
+        // a function-local static) so it cannot outlive the instance or leak a
+        // stale marker onto a recycled instance key.
+        std::unordered_set<uint32> announcedCountdownSeconds;
+        // Resolved once in BuildBossTracking instead of re-walking the
+        // DungeonEncounter lists on every HUD snapshot.
+        uint32 totalBosses = 0;
         std::vector<uint32> bossOrder;
         std::vector<std::string> bossNames;   // parallel to bossOrder: DungeonEncounter name (creature name fallback)
         std::unordered_map<uint32, uint8> bossIndexLookup;
@@ -134,10 +149,7 @@ public:
     bool IsBossCreature(const Creature* creature) const;
     bool IsRecognizedBoss(uint32 mapId, uint32 bossEntry) const;
 
-    // Weekly vault + statistics NPC support
-    void BuildVaultMenu(Player* player, Creature* creature);
-    void HandleVaultSelection(Player* player, Creature* creature, uint32 actionId);
-    void BuildStatisticsMenu(Player* player, Creature* creature);
+    // Weekly vault support
     void ResetWeeklyVaultProgress();
     void ResetWeeklyVaultProgress(Player* player);
 
@@ -151,10 +163,9 @@ public:
     uint8 GetVaultThreshold(uint8 slot) const;
     std::vector<WeeklyAffixInfo> GetWeeklyAffixInfo(uint32 seasonId) const;
 
-    // Keystone item management (NEW)
+    // Keystone item management
     uint8 GetPlayerKeystoneLevel(ObjectGuid::LowType playerGuid) const;
     bool GiveKeystoneToPlayer(Player* player, uint8 keystoneLevel);
-    void CompleteRun(Map* map, bool successful);
     void UpgradeKeystone(ObjectGuid::LowType playerGuid);
     void DowngradeKeystone(ObjectGuid::LowType playerGuid);
     void GenerateNewKeystone(ObjectGuid::LowType playerGuid, uint8 level);
@@ -182,6 +193,16 @@ public:
     // Spectator support - read-only state access
     InstanceState const* GetRunState(Map* map) const;
 
+    // Cache warmers. Each performs the synchronous DB read that the matching
+    // getter used to do inline, and MUST be called while _stateMutex is NOT
+    // held: a blocking MySQL round-trip under the global run lock stalls every
+    // other Mythic+ instance on the realm for its duration. The matching
+    // getters are then cache-only and never block.
+    void WarmBestRunDurationCache(uint32 mapId, uint8 keystoneLevel) const;
+    void WarmActiveBestRunDurations() const;
+    void WarmEntranceLocation(uint32 mapId) const;
+    void WarmWeeklyAffixCache(uint32 seasonId) const;
+
     // Debug/Testing
     void SimulateRun(Player* player, uint8 level, bool success);
 
@@ -207,9 +228,9 @@ private:
     void CacheBossMetadata();
     void RecordRunResult(const InstanceState* state, bool success, uint32 bossEntry);
     void AwardTokens(InstanceState* state, uint32 bossEntry);
-    void UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds);
-    void UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 durationSeconds);
-    void InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers);
+    // Single writer for dc_player_keystones. Upserts, because a bare UPDATE is
+    // a silent no-op for any character that has never had a row inserted.
+    void PersistKeystoneLevel(ObjectGuid::LowType playerGuid, uint8 level) const;
     void SendRunSummary(InstanceState* state, Player* player);
     // Pushes the final stats + this player's loot over SMSG_RUN_END. Must not
     // rely on the polled HUD cache: both the completion and the failure path
@@ -225,7 +246,6 @@ private:
     void InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount);
     void SendVaultError(Player* player, std::string_view text);
     void SendGenericError(Player* player, std::string_view text);
-    bool ClaimVaultSlot(Player* player, uint8 slot);
     std::string SerializeParticipants(const InstanceState* state) const;
 
     // Teleportation helpers
@@ -253,27 +273,63 @@ private:
     void ProcessHudUpdatesInternal(InstanceState* state, Map* map);
     uint32 GetHudTimerDuration(uint32 mapId, uint8 keystoneLevel) const;
     void MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason, bool forceBroadcast);
-    void EnsureHudCacheTable();
     void PersistHudSnapshot(InstanceState* state, std::string_view payload, bool forceUpdate);
     void ClearHudSnapshot(InstanceState* state);
     int32 GetBossIndex(InstanceState const* state, uint32 bossEntry) const;
     void MarkBossKilled(InstanceState* state, Map* map, uint32 bossEntry);
     std::string GetMapDisplayName(uint32 mapId) const;
-    uint32 GetBestRunDuration(uint32 mapId, uint8 keystoneLevel);
+
+    // Cache-only lookup - never queries. Returns 0 on a miss so the HUD simply
+    // omits the personal best rather than stalling the world thread.
+    uint32 GetBestRunDuration(uint32 mapId, uint8 keystoneLevel) const;
     void UpdateBestRunDuration(uint32 mapId, uint8 keystoneLevel, uint32 durationSeconds);
     uint64 MakeBestRunCacheKey(uint32 mapId, uint8 keystoneLevel) const;
+
+
+    // Guards every container below. Instances update on MapUpdate.Threads
+    // worker threads while the 1s sweep runs on the world thread, so an
+    // unsynchronised rehash in GetOrCreateState could corrupt a concurrent
+    // GetState walk. Recursive because the call graph legitimately re-enters
+    // through public methods (TryActivateKeystone -> CanActivateKeystone,
+    // HandleBossDeath -> GenerateBossLoot -> ShouldSuppressLoot, ...).
+    mutable std::recursive_mutex _stateMutex;
 
     std::unordered_map<uint64, InstanceState> _instanceStates;
     std::unordered_map<uint32, std::unordered_set<uint32>> _mapBossEntries;
     std::unordered_map<uint32, std::unordered_set<uint32>> _mapFinalBossEntries;
-    bool _hudCacheReady = false;
-    std::unordered_map<uint64, uint32> _bestRunDurationCache;
+
+    // The three read-through caches below each have their own narrow mutex
+    // rather than living under _stateMutex. That keeps their warmers callable
+    // from outside the run lock, so the DB read never happens while _stateMutex
+    // is held. Lock order is always _stateMutex -> cache mutex; none of these
+    // ever reach back for _stateMutex, so the order cannot invert.
+    struct EntranceLocation
+    {
+        bool loaded = false;
+        bool valid = false;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float o = 0.0f;
+    };
+
+    mutable std::mutex _bestRunCacheMutex;
+    mutable std::unordered_map<uint64, uint32> _bestRunDurationCache;
+
+    mutable std::mutex _entranceCacheMutex;
+    mutable std::unordered_map<uint32, EntranceLocation> _entranceCache;
+
+    // Keyed (seasonId << 32) | weekNumber.
+    mutable std::mutex _affixScheduleMutex;
+    mutable std::unordered_map<uint64, std::vector<WeeklyAffixInfo>> _weeklyAffixCache;
 };
 
 inline bool MythicPlusRunManager::CanActivateKeystone(Player* player,
     GameObject* font, KeystoneDescriptor& outDescriptor,
     std::string& outErrorText, uint8 forcedKeystoneLevel)
 {
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     outErrorText.clear();
 
     if (!player || !font)

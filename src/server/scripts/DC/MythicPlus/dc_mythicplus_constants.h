@@ -32,15 +32,20 @@ namespace MythicPlusConstants
     constexpr uint32 NPC_PORTAL_SELECTOR = 100101;
     constexpr uint32 NPC_GREAT_VAULT = 100050;
     constexpr uint32 NPC_STATISTICS = 100060;
+    // NOTE: numerically equal to the M+6 keystone ITEM id above. Different id
+    // spaces (creature_template vs item_template), so this is legal - but do not
+    // "simplify" one into the other.
     constexpr uint32 NPC_TOKEN_VENDOR = 300317;
 
     // GameObject entries
     constexpr uint32 GO_FONT_OF_POWER = 700001;  // Keystone activation pedestal
     constexpr uint32 GO_KEYSTONE_PEDESTAL = 700001;
 
-    // Token items
-    constexpr uint32 ITEM_UPGRADE_TOKEN = 0; // resolved from config at runtime
-    constexpr uint32 ITEM_MYTHIC_TOKEN = ITEM_UPGRADE_TOKEN; // legacy alias
+    // Difficulty multiplier curve used for token payouts. Shared so the
+    // keystone tooltip, the .mplus commands and the actual award all quote the
+    // same number - they used to carry three different formulas.
+    constexpr float MYTHIC_BASE_MULTIPLIER = 2.0f;
+    constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
 
     /**
      * Get keystone level from item ID
@@ -119,42 +124,46 @@ namespace MythicPlusConstants
     }
 
     /**
-     * Calculate token reward for a given keystone level
-     * Formula: 20 + (level × 5)
-     * @param keystoneLevel Keystone level (2-20)
-     * @return Token count
+     * Token payout multiplier for a Mythic (EPIC) run at the given key level.
+     * @param keystoneLevel Keystone level, 0 for plain Mythic with no key
      */
-    inline uint32 GetTokenRewardForKeystoneLevel(uint8 keystoneLevel)
+    inline float GetTokenKeystoneMultiplier(uint8 keystoneLevel)
     {
-        if (keystoneLevel < MIN_KEYSTONE_LEVEL)
-            return 20;
-        if (keystoneLevel > MAX_KEYSTONE_LEVEL)
-            keystoneLevel = MAX_KEYSTONE_LEVEL;
+        if (keystoneLevel == 0)
+            return MYTHIC_BASE_MULTIPLIER;
 
-        return 20 + (keystoneLevel * 5);
+        return MYTHIC_BASE_MULTIPLIER + (keystoneLevel * KEYSTONE_LEVEL_STEP);
     }
 
     /**
-     * Calculate death budget for keystone level
-     * Formula: base_budget - (level × 1), minimum 5
-     * @param keystoneLevel Keystone level (2-20)
-     * @param baseBudget Base death budget from dungeon profile
-     * @return Adjusted death budget
+     * Base token pool before the difficulty multiplier is applied. Scales past
+     * level 70 so a 255 character is not paid like a fresh 70.
+     * @param playerLevel Character level
      */
-    inline uint8 CalculateDeathBudget(uint8 keystoneLevel, uint8 baseBudget)
+    inline uint32 GetBaseTokenReward(uint8 playerLevel)
     {
-        int32 adjusted = static_cast<int32>(baseBudget) - keystoneLevel;
-        return static_cast<uint8>(std::max(5, adjusted));
+        uint32 baseTokens = 10;
+        if (playerLevel > 70)
+            baseTokens += (playerLevel - 70) * 2;
+
+        return baseTokens;
     }
 
     /**
-     * Check if a GameObject entry is a Font of Power pedestal
-     * @param entry GameObject entry ID
-     * @return True if Font of Power
+     * The single source of truth for "how many tokens does this run pay".
+     * MythicPlusRunManager::AwardTokens, the keystone tooltip and the .mplus
+     * commands all route through here so they can never disagree again.
+     * @param playerLevel Character level
+     * @param keystoneLevel Keystone level (0 for plain Mythic)
+     * @return Token count, never below 1
      */
-    inline bool IsFontOfPower(uint32 entry)
+    inline uint32 CalculateTokenReward(uint8 playerLevel, uint8 keystoneLevel)
     {
-        return entry == GO_FONT_OF_POWER;
+        float multiplier = GetTokenKeystoneMultiplier(keystoneLevel);
+        uint32 tokenCount = static_cast<uint32>(
+            GetBaseTokenReward(playerLevel) * multiplier);
+
+        return std::max<uint32>(tokenCount, 1);
     }
 
     namespace Hud

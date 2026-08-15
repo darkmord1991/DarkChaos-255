@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <unordered_map>
 #include <vector>
 
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
@@ -124,7 +125,18 @@ bool PlayerAlreadyAtUniqueLimit(Player* player, LootTableRow const& row)
 }
 
 std::vector<LootTableRow> s_lootTable;
+// item level -> rows valid at that level. Built once at load so a reward roll
+// filters a few dozen candidates instead of rescanning the whole table five
+// times (once per fallback stage) for every item it hands out.
+std::unordered_map<uint32, std::vector<LootTableRow const*>> s_lootTableByLevel;
 std::atomic<bool> s_lootTableLoaded{false};
+
+std::vector<LootTableRow const*> const& GetLootRowsForLevel(uint32 itemLevel)
+{
+    static const std::vector<LootTableRow const*> empty;
+    auto itr = s_lootTableByLevel.find(itemLevel);
+    return itr != s_lootTableByLevel.end() ? itr->second : empty;
+}
 
 bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId)
 {
@@ -136,6 +148,10 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
         return false;
 
     if (!s_lootTableLoaded.load(std::memory_order_acquire) || s_lootTable.empty())
+        return false;
+
+    std::vector<LootTableRow const*> const& levelRows = GetLootRowsForLevel(targetItemLevel);
+    if (levelRows.empty())
         return false;
 
     uint32 classMask = DarkChaos::CrossSystem::VaultUtils::GetPlayerClassMask(player);
@@ -169,10 +185,9 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
     {
         candidates.clear();
 
-        for (LootTableRow const& row : s_lootTable)
+        for (LootTableRow const* rowPtr : levelRows)
         {
-            if (row.itemLevelMin > targetItemLevel || row.itemLevelMax < targetItemLevel)
-                continue;
+            LootTableRow const& row = *rowPtr;
             if (stage.filterClass && !(row.classMask & classMask) && row.classMask != 1023)
                 continue;
             if (stage.filterSpec && !row.specName.empty() && row.specName != spec)
@@ -201,6 +216,7 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
 void MythicPlusRunManager::LoadLootTable()
 {
     s_lootTable.clear();
+    s_lootTableByLevel.clear();
 
     QueryResult result = WorldDatabase.Query(
         "SELECT v.item_id, v.item_level_min, v.item_level_max, v.class_mask, v.role_mask, v.spec_name, v.armor_type, it.MaxCount "
@@ -226,8 +242,27 @@ void MythicPlusRunManager::LoadLootTable()
         } while (result->NextRow());
     }
 
+    // Index by the item levels the system can actually ask for - one per
+    // keystone level, not every integer between the table's min and max.
+    // Pointers are stable because s_lootTable is never mutated after this.
+    for (uint8 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL;
+         level <= MythicPlusConstants::MAX_KEYSTONE_LEVEL; ++level)
+    {
+        uint32 targetItemLevel = MythicPlusConstants::GetItemLevelForKeystoneLevel(level);
+        if (s_lootTableByLevel.find(targetItemLevel) != s_lootTableByLevel.end())
+            continue;
+
+        std::vector<LootTableRow const*>& bucket = s_lootTableByLevel[targetItemLevel];
+        for (LootTableRow const& row : s_lootTable)
+        {
+            if (row.itemLevelMin <= targetItemLevel && row.itemLevelMax >= targetItemLevel)
+                bucket.push_back(&row);
+        }
+    }
+
     s_lootTableLoaded.store(true, std::memory_order_release);
-    LOG_INFO("server.loading", ">> Mythic+ loot table preloaded: {} entries", s_lootTable.size());
+    LOG_INFO("server.loading", ">> Mythic+ loot table preloaded: {} entries across {} item-level buckets",
+             s_lootTable.size(), s_lootTableByLevel.size());
 }
 
 // MythicPlusRunManager is at global scope, not in a namespace

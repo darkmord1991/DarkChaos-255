@@ -2185,6 +2185,28 @@ MythicPlus.CancellationVotesRequired = 2
 #
 MythicPlus.CancellationVoteTimeout = 60
 
+#
+#    MythicPlus.ReadyCheckTimeout
+#        Description: Seconds a Font of Power ready check waits for the group to
+#                     respond before it is cancelled.
+#        Default:     60
+#
+
+MythicPlus.ReadyCheckTimeout = 60
+
+#
+#    MythicPlus.ReadyCheckCountdown
+#        Description: Seconds to wait after the whole group has accepted the
+#                     ready check, before the keystone is actually activated.
+#                     Drives the keystone-insertion animation in DC-MythicPlus.
+#                     This is separate from MythicPlus.CountdownDuration, which
+#                     is the in-dungeon countdown that runs after activation -
+#                     setting both non-zero means two countdowns in a row.
+#        Default:     0 (activate immediately once everyone is ready)
+#
+
+MythicPlus.ReadyCheckCountdown = 0
+
 # -----------------------------------------------------------------------------
 # Affix System
 # -----------------------------------------------------------------------------

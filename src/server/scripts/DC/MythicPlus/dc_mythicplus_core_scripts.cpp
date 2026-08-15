@@ -23,15 +23,39 @@
 #include "DatabaseEnv.h"
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include "dc_update_profiler.h"
 
 namespace
 {
-GuidUnorderedSet& GetMythicSelectLevelProcessedCreatures()
+// Creatures that have passed through our SelectLevel hook, so OnCreatureAddWorld
+// knows which summons still need the fallback.
+//
+// This was thread_local. A map is not pinned to one MapUpdate worker across
+// ticks, so a creature could be inserted on thread A and removed on thread B -
+// leaving a permanent stale GUID in A's set and a missed cleanup in B's, which
+// made the summon fallback intermittently skip creatures it should have
+// rescaled. One shared set under a mutex instead; GUIDs are unique across maps.
+std::mutex g_processedCreaturesMutex;
+GuidUnorderedSet g_processedCreatures;
+
+void MarkSelectLevelProcessed(ObjectGuid guid)
 {
-    static thread_local GuidUnorderedSet processedCreatures;
-    return processedCreatures;
+    std::lock_guard<std::mutex> guard(g_processedCreaturesMutex);
+    g_processedCreatures.insert(guid);
+}
+
+bool WasSelectLevelProcessed(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> guard(g_processedCreaturesMutex);
+    return g_processedCreatures.find(guid) != g_processedCreatures.end();
+}
+
+void ForgetSelectLevelProcessed(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> guard(g_processedCreaturesMutex);
+    g_processedCreatures.erase(guid);
 }
 
 bool IsCountdownBlockedSpell(SpellInfo const* spellInfo)
@@ -228,8 +252,7 @@ public:
                 return;
         }
 
-        auto& processedCreatures = GetMythicSelectLevelProcessedCreatures();
-        processedCreatures.insert(creature->GetGUID());
+        MarkSelectLevelProcessed(creature->GetGUID());
 
         // Determine multipliers based on difficulty
         float hpMult = 1.0f;
@@ -312,9 +335,13 @@ public:
         // Despawn quest givers cleanly (remove from world immediately - no corpse)
         if (difficulty == DUNGEON_DIFFICULTY_EPIC && creature->IsQuestGiver())
         {
-            LOG_INFO("mythic.scaling", "Despawning quest giver {} (entry {}) in Mythic mode",
-                     creature->GetName(), creature->GetEntry());
-            creature->RemoveFromWorld();
+            LOG_DEBUG("mythic.scaling", "Despawning quest giver {} (entry {}) in Mythic mode",
+                      creature->GetName(), creature->GetEntry());
+            // DespawnOrUnsummon, not RemoveFromWorld: this hook fires from
+            // inside Creature::AddToWorld(), so tearing the object out here
+            // unwinds grid registration the caller is still establishing.
+            // Deferring by a tick lets AddToWorld finish first.
+            creature->DespawnOrUnsummon(1ms);
             return;
         }
 
@@ -340,8 +367,7 @@ public:
         if (difficulty != DUNGEON_DIFFICULTY_HEROIC && difficulty != DUNGEON_DIFFICULTY_EPIC)
             return;
 
-        auto& processedCreatures = GetMythicSelectLevelProcessedCreatures();
-        if (processedCreatures.find(creature->GetGUID()) != processedCreatures.end())
+        if (WasSelectLevelProcessed(creature->GetGUID()))
             return;
 
         LOG_DEBUG("mythic.scaling", "Re-running SelectLevel fallback for summoned creature {} (entry {}) on map {} instance {}",
@@ -355,8 +381,7 @@ public:
         if (!creature)
             return;
 
-        auto& processedCreatures = GetMythicSelectLevelProcessedCreatures();
-        processedCreatures.erase(creature->GetGUID());
+        ForgetSelectLevelProcessed(creature->GetGUID());
     }
 };
 
@@ -364,7 +389,18 @@ public:
 class MythicPlusPlayerScript : public PlayerScript
 {
 public:
-    MythicPlusPlayerScript() : PlayerScript("MythicPlusPlayerScript") { }
+    // Explicit hook list. An empty list means "register into all ~200 player
+    // hooks", so this script was being walked by every unrelated player hook in
+    // the server for the sake of the six it actually implements.
+    MythicPlusPlayerScript() : PlayerScript("MythicPlusPlayerScript",
+        {
+            PLAYERHOOK_NOT_AVOID_SATISFY,
+            PLAYERHOOK_ON_MAP_CHANGED,
+            PLAYERHOOK_ON_LOGOUT,
+            PLAYERHOOK_ON_GIVE_REPUTATION,
+            PLAYERHOOK_CAN_REPOP_AT_GRAVEYARD,
+            PLAYERHOOK_ON_UPDATE
+        }) { }
 
     bool OnPlayerNotAvoidSatisfy(Player* player, DungeonProgressionRequirements const* ar, uint32 targetMap, bool /*report*/) override
     {
@@ -538,11 +574,13 @@ public:
         if (!map || !map->IsDungeon())
             return;
 
-        // Player leaving during an active Mythic+ run
+        // Player leaving during an active Mythic+ run. InitiateCancellation is
+        // a no-op unless this was the last participant, so do not log at INFO
+        // for every dungeon logout on the realm.
         sMythicRuns->InitiateCancellation(map);
 
-        LOG_INFO("mythic.run", "Player {} logged out during active run on map {} instance {}",
-                 player->GetName(), map->GetId(), map->GetInstanceId());
+        LOG_DEBUG("mythic.run", "Player {} logged out on map {} instance {}",
+                  player->GetName(), map->GetId(), map->GetInstanceId());
     }
 
     void OnPlayerGiveReputation(Player* player, int32 /*factionID*/, float& amount, ReputationSource repSource) override
@@ -577,15 +615,11 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r You have been resurrected at the dungeon entrance.");
         return false;
     }
-};
 
-// Additional update hook for affix periodic effects
-class MythicPlusUpdateScript : public PlayerScript
-{
-public:
-    MythicPlusUpdateScript() : PlayerScript("MythicPlusUpdateScript") { }
-
-    void OnPlayerUpdate(Player* player, uint32 diff)
+    // Folded in from the former MythicPlusUpdateScript, which was a second
+    // PlayerScript registration that existed only to carry this one hook (and
+    // was missing its override keyword).
+    void OnPlayerUpdate(Player* player, uint32 diff) override
     {
         if (!player || !player->IsInWorld())
             return;
@@ -594,7 +628,7 @@ public:
         if (!map || !map->IsDungeon())
             return;
 
-        // Run-manager sweeps moved to MythicPlusWorldScript::OnUpdate (world
+        // Run-manager sweeps live in MythicPlusWorldScript::OnUpdate (world
         // thread, real 1s cadence); only the per-player affix dispatch stays
         // on the player-update path.
         sAffixMgr->OnPlayerUpdate(player, diff);
@@ -604,7 +638,8 @@ public:
 class MythicPlusAllMapScript : public AllMapScript
 {
 public:
-    MythicPlusAllMapScript() : AllMapScript("MythicPlusAllMapScript") { }
+    MythicPlusAllMapScript() : AllMapScript("MythicPlusAllMapScript",
+        { ALLMAPHOOK_ON_DESTROY_MAP, ALLMAPHOOK_ON_PLAYER_LEAVE_ALL }) { }
 
     void OnDestroyMap(Map* map) override
     {
@@ -627,7 +662,15 @@ public:
 class MythicPlusUnitScript : public UnitScript
 {
 public:
-    MythicPlusUnitScript() : UnitScript("MythicPlusUnitScript") { }
+    // NOTE: DealDamage is dispatched over every UnitScript unconditionally
+    // rather than through the hook registry, so it stays active regardless of
+    // this list; the list still narrows the three hooks that are gated.
+    MythicPlusUnitScript() : UnitScript("MythicPlusUnitScript", true,
+        {
+            UNITHOOK_ON_UNIT_DEATH,
+            UNITHOOK_ON_UNIT_ENTER_EVADE_MODE,
+            UNITHOOK_ON_DAMAGE
+        }) { }
 
     uint32 DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType damagetype) override
     {
@@ -794,5 +837,4 @@ void AddSC_mythic_plus_core_scripts()
     new MythicPlusPlayerScript();
     new MythicPlusAllMapScript();
     new MythicPlusUnitScript();
-    new MythicPlusUpdateScript();
 }

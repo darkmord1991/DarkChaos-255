@@ -133,28 +133,30 @@ namespace DCMythicSpectator
     // ============================================================
     struct SpectateableRun
     {
-        uint32 runId;
-        uint32 instanceId;
-        uint32 mapId;
-        uint8 keystoneLevel;
-        uint32 startedAt;
-        uint32 timerRemaining;
-        uint8 bossesKilled;
-        uint8 bossesTotal;
-        uint8 deaths;
+        uint32 runId = 0;
+        uint32 instanceId = 0;
+        uint32 mapId = 0;
+        uint8 keystoneLevel = 0;
+        uint32 startedAt = 0;
+        uint32 timerRemaining = 0;
+        uint8 bossesKilled = 0;
+        uint8 bossesTotal = 0;
+        uint8 deaths = 0;
         std::string dungeonName;
         std::string leaderName;
         std::vector<std::string> participantNames;
-        bool allowsSpectators;
-        uint32 streamMode;
+        bool allowsSpectators = false;
+        uint32 streamMode = 0;
         std::unordered_set<ObjectGuid> spectators;
 
         // Invite system
         std::string inviteCode;
-        uint64 inviteCodeExpires;
+        uint64 inviteCodeExpires = 0;
 
-        // Replay recording
-        RunReplay* activeReplay;
+        // NOTE: an `RunReplay* activeReplay` member used to sit here. It was
+        // only ever assigned nullptr - the recording lives in _activeReplays,
+        // keyed by instance id - so it was a dangling pointer waiting to
+        // happen. Look the replay up by instance id instead.
     };
 
     // ============================================================

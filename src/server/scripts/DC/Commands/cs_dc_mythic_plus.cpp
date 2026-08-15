@@ -126,7 +126,8 @@ public:
 
         uint8 level = (entry - 100000) / 100;
         uint32 itemLevel = GetItemLevelForKeystoneLevel(level);
-        uint32 baseTokens = GetTokenRewardForKeystoneLevel(level);
+        uint8 viewerLevel = handler->GetPlayer() ? handler->GetPlayer()->GetLevel() : 80;
+        uint32 baseTokens = CalculateTokenReward(viewerLevel, level);
 
         handler->SendSysMessage("|cffff8000Keystone Information:|r");
         handler->SendSysMessage(Acore::StringFormat("  Level: M+{}", level));
@@ -147,10 +148,14 @@ public:
             handler->SendSysMessage("Level | Item Level | Base Tokens");
             handler->SendSysMessage("------|------------|------------");
 
+            // Token payout scales with character level, so quote it against the
+            // caller rather than an assumed 80.
+            uint8 viewerLevel = handler->GetPlayer() ? handler->GetPlayer()->GetLevel() : 80;
+
             for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
             {
                 uint32 ilvl = GetItemLevelForKeystoneLevel(level);
-                uint32 tokens = GetTokenRewardForKeystoneLevel(level);
+                uint32 tokens = CalculateTokenReward(viewerLevel, level);
                 handler->SendSysMessage(Acore::StringFormat("M+{:<2} | {:<10} | {}", level, ilvl, tokens));
             }
             return true;
@@ -164,7 +169,8 @@ public:
         }
 
         uint32 ilvl = GetItemLevelForKeystoneLevel(level);
-        uint32 tokens = GetTokenRewardForKeystoneLevel(level);
+        uint32 tokens = CalculateTokenReward(
+            handler->GetPlayer() ? handler->GetPlayer()->GetLevel() : 80, level);
 
         handler->SendSysMessage(Acore::StringFormat("|cffff8000Keystone M+{} Rewards:|r", level));
         handler->SendSysMessage(Acore::StringFormat("  Item Level: {}", ilvl));

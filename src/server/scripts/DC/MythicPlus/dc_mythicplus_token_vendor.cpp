@@ -19,6 +19,7 @@
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include "ObjectAccessor.h"
+#include <algorithm>
 #include <map>
 #include <vector>
 #include <sstream>
@@ -51,21 +52,9 @@ enum TokenGearSlot : uint8
     TOKEN_SLOT_OFFHAND = 14
 };
 
-// Cost structure: item level determines token cost
-struct TokenCost
-{
-    uint32 ilvl200 = 11;  // M+2-4
-    uint32 ilvl213 = 12;  // M+5-7
-    uint32 ilvl226 = 13;  // M+8-10
-    uint32 ilvl239 = 14;  // M+11-13
-    uint32 ilvl252 = 15;  // M+14-15
-};
-
-// Class-appropriate item pools (example structure - populate with actual item IDs)
-struct ClassGearPool
-{
-    std::map<uint8, std::vector<uint32>> gearBySlot;  // slot -> list of item IDs
-};
+// NOTE: `TokenCost` and `ClassGearPool` structs used to sit here. Neither was
+// ever instantiated - GetTokenCost() below is the real cost ladder, and the
+// gear pool is queried from item_template - so they were removed.
 
 enum class VendorRoleHint : uint8
 {
@@ -287,9 +276,29 @@ namespace
     {
         ObjectGuid creatureGuid;
         time_t expiresAt = 0;
+        // Last choice list handed to this player, so a purchase can be
+        // validated against it without re-running the item_template scan.
+        uint32 offeredItemLevel = 0;
+        uint32 offeredSlot = 0;
+        std::vector<uint32> offeredItemIds;
     };
 
     static std::unordered_map<uint32, VendorUiSession> s_vendorUiSessions;
+
+    // Drop every session that has aged out. Entries were only ever cleaned
+    // lazily when the same player came back, so a player who opened the vendor
+    // once and never returned left a permanent entry.
+    static void PruneExpiredVendorSessions()
+    {
+        time_t now = time(nullptr);
+        for (auto it = s_vendorUiSessions.begin(); it != s_vendorUiSessions.end(); )
+        {
+            if (now > it->second.expiresAt)
+                it = s_vendorUiSessions.erase(it);
+            else
+                ++it;
+        }
+    }
 
     static bool IsVendorSessionValid(Player* player, Creature** outCreature = nullptr)
     {
@@ -552,6 +561,21 @@ namespace
 
         std::vector<ItemChoice> choices = GetItemsForSlotAndClass(player, uint8(slot), itemLevel);
 
+        // Remember what we offered. HandleTokenVendorBuy validates against this
+        // instead of re-running the scan, which halves the item_template
+        // filesorts a single purchase costs.
+        if (auto sessionItr = s_vendorUiSessions.find(player->GetGUID().GetCounter());
+            sessionItr != s_vendorUiSessions.end())
+        {
+            VendorUiSession& session = sessionItr->second;
+            session.offeredItemLevel = itemLevel;
+            session.offeredSlot = slot;
+            session.offeredItemIds.clear();
+            session.offeredItemIds.reserve(choices.size());
+            for (auto const& choice : choices)
+                session.offeredItemIds.push_back(choice.itemId);
+        }
+
         DCAddon::JsonMessage resp(DCAddon::Module::MYTHIC_PLUS, DCAddon::Opcode::MPlus::SMSG_TOKEN_VENDOR_CHOICES);
         resp.Set("itemLevel", itemLevel);
         resp.Set("slot", slot);
@@ -611,16 +635,22 @@ namespace
             return;
         }
 
-        // Security: only allow purchases from the current top-3 choice list
+        // Security: only allow purchases from the choice list we actually
+        // offered this player, for the same slot and tier they asked about.
+        // Validated against the cached list rather than a second scan.
         bool allowed = false;
-        for (auto const& choice : GetItemsForSlotAndClass(player, uint8(slot), itemLevel))
+        if (auto sessionItr = s_vendorUiSessions.find(player->GetGUID().GetCounter());
+            sessionItr != s_vendorUiSessions.end())
         {
-            if (choice.itemId == itemId)
+            VendorUiSession const& session = sessionItr->second;
+            if (session.offeredItemLevel == itemLevel && session.offeredSlot == slot)
             {
-                allowed = true;
-                break;
+                allowed = std::find(session.offeredItemIds.begin(),
+                                    session.offeredItemIds.end(),
+                                    itemId) != session.offeredItemIds.end();
             }
         }
+
         if (!allowed)
         {
             SendVendorResult(player, false, "That item is not available for this selection.");
@@ -822,6 +852,8 @@ public:
         didLogMissingAutoOpenConfigOnce = true;
         if (protocolEnabled && autoOpenUi)
         {
+            PruneExpiredVendorSessions();
+
             VendorUiSession session;
             session.creatureGuid = creature->GetGUID();
             session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;
@@ -874,6 +906,8 @@ public:
         // Open Addon UI
         if (action == GOSSIP_ACTION_OPEN_VENDOR_UI)
         {
+            PruneExpiredVendorSessions();
+
             VendorUiSession session;
             session.creatureGuid = creature->GetGUID();
             session.expiresAt = time(nullptr) + VENDOR_UI_SESSION_SECONDS;

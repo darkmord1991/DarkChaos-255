@@ -276,7 +276,6 @@ void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId,
     run.streamMode = _config.defaultStreamMode;
     run.inviteCode = "";
     run.inviteCodeExpires = 0;
-    run.activeReplay = nullptr;
 
     _activeRuns[instanceId] = run;
 

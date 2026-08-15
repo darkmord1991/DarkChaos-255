@@ -9,6 +9,7 @@
 #include "ObjectGuid.h"
 #include "SharedDefines.h"
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -98,8 +99,14 @@ private:
         uint8 keystoneLevel = 0;
     };
 
+    // Same rationale as MythicPlusRunManager::_stateMutex: affixes are
+    // activated from a map thread and dispatched from every other map thread.
+    // Recursive because handlers call back into sAffixMgr (MakeInstanceKey) and
+    // into sMythicRuns while a dispatch is in flight.
+    mutable std::recursive_mutex _affixMutex;
+
     std::unordered_map<AffixType, std::unique_ptr<IAffixHandler>> _handlers;
-    std::unordered_map<uint64, InstanceAffixState> _instanceStates; // Key combines instance + map ID
+    std::unordered_map<uint64, InstanceAffixState> _instanceStates; // Key combines map ID + instance
 
     InstanceAffixState* GetInstanceState(Map* map);
 };

@@ -96,10 +96,26 @@ public:
         }
         else
         {
-            // Regular players get starter keystone (M+2)
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR,
-                "|cff00ff00Receive Mythic Keystone +2|r",
-                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_SELECT_BASE + MIN_KEYSTONE_LEVEL);
+            // Reissue at the player's earned level, not a flat +2.
+            //
+            // dc_player_keystones is the record the run manager writes on every
+            // upgrade and on depletion after a failed run - and the run manager
+            // explicitly tells players "your +N keystone is held at the keystone
+            // vendor" when their bags are full. This vendor previously ignored
+            // that record entirely and handed everyone a +2, so a player at +15
+            // was told to visit a vendor that would demote them to +2.
+            uint8 storedLevel = sMythicRuns->GetPlayerKeystoneLevel(
+                player->GetGUID().GetCounter());
+
+            if (storedLevel < MIN_KEYSTONE_LEVEL)
+                storedLevel = MIN_KEYSTONE_LEVEL;
+            if (storedLevel > MAX_KEYSTONE_LEVEL)
+                storedLevel = MAX_KEYSTONE_LEVEL;
+
+            std::ostringstream ss;
+            ss << "|cff00ff00Receive Mythic Keystone +" << static_cast<uint32>(storedLevel) << "|r";
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, ss.str(),
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_KEYSTONE_SELECT_BASE + storedLevel);
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ",
@@ -116,7 +132,7 @@ public:
         if (!player || !creature)
             return false;
 
-        LOG_INFO("mythic.keystone", "OnGossipSelect called for player {} with action {}", player->GetName(), action);
+        LOG_DEBUG("mythic.keystone", "OnGossipSelect called for player {} with action {}", player->GetName(), action);
 
         if (action == GOSSIP_ACTION_CLOSE || action == GOSSIP_ACTION_KEYSTONE_INFO)
         {
@@ -137,17 +153,30 @@ public:
                 return true;
             }
 
-            // Non-GMs can only get M+2
-            if (player->GetSession()->GetSecurity() == SEC_PLAYER && keystoneLevel != MIN_KEYSTONE_LEVEL)
+            // Non-GMs can only receive the level they have actually earned.
+            if (player->GetSession()->GetSecurity() == SEC_PLAYER)
             {
-                ChatHandler(player->GetSession()).SendSysMessage(
-                    "|cffff0000Error:|r You can only receive a Mythic Keystone +2!");
-                LOG_WARN("mythic.keystone", "Player {} (non-GM) attempted to get M+{} keystone", player->GetName(), keystoneLevel);
-                CloseGossipMenuFor(player);
-                return true;
+                uint8 storedLevel = sMythicRuns->GetPlayerKeystoneLevel(
+                    player->GetGUID().GetCounter());
+
+                if (storedLevel < MIN_KEYSTONE_LEVEL)
+                    storedLevel = MIN_KEYSTONE_LEVEL;
+                if (storedLevel > MAX_KEYSTONE_LEVEL)
+                    storedLevel = MAX_KEYSTONE_LEVEL;
+
+                if (keystoneLevel != storedLevel)
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "|cffff0000Error:|r You can only receive a Mythic Keystone +{}.",
+                        static_cast<uint32>(storedLevel));
+                    LOG_WARN("mythic.keystone", "Player {} (non-GM) attempted to get M+{} keystone but is entitled to M+{}",
+                             player->GetName(), keystoneLevel, storedLevel);
+                    CloseGossipMenuFor(player);
+                    return true;
+                }
             }
 
-            LOG_INFO("mythic.keystone", "Player {} requesting M+{} keystone", player->GetName(), keystoneLevel);
+            LOG_DEBUG("mythic.keystone", "Player {} requesting M+{} keystone", player->GetName(), keystoneLevel);
 
             // Get the item ID for this keystone level
             uint32 keystoneItemId = GetItemIdFromKeystoneLevel(keystoneLevel);
@@ -164,6 +193,7 @@ public:
                     ss << "|cff00ff00Mythic+:|r You received a |cff1eff00Mythic Keystone +"
                        << static_cast<uint32>(keystoneLevel) << "|r! Use it in any dungeon to begin your journey.";
                     ChatHandler(player->GetSession()).SendSysMessage(ss.str().c_str());
+                    player->SendNewItem(keystoneItem, 1, true, false);
                     LOG_INFO("mythic.keystone", "Player {} received M+{} keystone successfully", player->GetName(), keystoneLevel);
                 }
                 else

@@ -34,17 +34,21 @@ struct DungeonTeleporterOption
     char const* label;
 };
 
+// Fallback list for the legacy gossip path only; the addon UI builds its list
+// from dc_dungeon_setup instead. Three labels here did not match their map ids
+// (576 is The Nexus, not "Violet Citadel"; 575 is Utgarde Pinnacle, not
+// "Utgarde Tower"; 632 is The Forge of Souls, not "Frozen Halls").
 constexpr std::array<DungeonTeleporterOption, 11> kDungeonTeleporterOptions = {{
     {151, 602, "Halls of Lightning"},
-    {152, 575, "Utgarde Tower"},
+    {152, 575, "Utgarde Pinnacle"},
     {153, 599, "Halls of Stone"},
-    {155, 576, "Violet Citadel"},
-    {157, 619, "AhnKahet"},
-    {158, 601, "Azjol Nerub"},
+    {155, 576, "The Nexus"},
+    {157, 619, "Ahn'kahet: The Old Kingdom"},
+    {158, 601, "Azjol-Nerub"},
     {160, 574, "Utgarde Keep"},
-    {162, 600, "Drak Tharon"},
-    {163, 595, "Culling of Stratholme"},
-    {164, 632, "Frozen Halls"},
+    {162, 600, "Drak'Tharon Keep"},
+    {163, 595, "The Culling of Stratholme"},
+    {164, 632, "The Forge of Souls"},
     {165, 650, "Trial of the Champion"}
 }};
 
@@ -96,6 +100,21 @@ struct PortalUiSession
 };
 
 static std::unordered_map<uint32, PortalUiSession> s_portalUiSessions;
+
+// Drop every session that has aged out. Entries were only ever cleaned lazily
+// when the same player came back, so a player who opened the portal UI once and
+// never returned left a permanent entry.
+static void PruneExpiredPortalSessions()
+{
+    time_t now = time(nullptr);
+    for (auto it = s_portalUiSessions.begin(); it != s_portalUiSessions.end(); )
+    {
+        if (now > it->second.expiresAt)
+            it = s_portalUiSessions.erase(it);
+        else
+            ++it;
+    }
+}
 
 static bool IsPortalSessionValid(Player* player, Creature** outCreature = nullptr)
 {
@@ -227,19 +246,11 @@ static void TeleportToDungeonEntranceByDungeonMap(Player* player, uint32 dungeon
 
 static bool IsSeasonalDungeon(uint32 dungeonMapId, uint32 seasonId)
 {
-    QueryResult result = WorldDatabase.Query(
-        "SELECT is_unlocked, mythic_plus_enabled, IFNULL(season_lock, 0) FROM dc_dungeon_setup WHERE map_id = {}",
-        dungeonMapId);
-
-    if (!result)
-        return false;
-
-    Field* fields = result->Fetch();
-    bool isUnlocked = fields[0].Get<bool>();
-    bool mplusEnabled = fields[1].Get<bool>();
-    uint32 requiredSeason = fields[2].Get<uint32>();
-
-    return isUnlocked && mplusEnabled && (requiredSeason == 0 || requiredSeason == seasonId);
+    // Was a second, byte-for-byte copy of the query in
+    // MythicPlusRunManager::IsDungeonFeaturedThisSeason, run synchronously on
+    // every portal click. Both now read the dc_dungeon_setup snapshot cached at
+    // startup, so the two can no longer disagree either.
+    return sMythicScaling->IsDungeonFeatured(dungeonMapId, seasonId);
 }
 
 static void SendSeasonalPortalOpen(Player* player)
@@ -389,82 +400,10 @@ enum DifficultyGossipActions
 
 using namespace DungeonQuest;
 
-// Level and item level requirements
-struct DifficultyRequirements
-{
-    uint8 minLevel;
-    uint32 minItemLevel;
-};
-
-// Get requirements based on expansion
-DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficulty)
-{
-    DifficultyRequirements req;
-
-    switch (expansion)
-    {
-        case EXPANSION_VANILLA:
-            if (difficulty == DIFFICULTY_NORMAL)
-            {
-                req.minLevel = 55;
-                req.minItemLevel = 0;
-            }
-            else if (difficulty == DIFFICULTY_HEROIC)
-            {
-                req.minLevel = 60;
-                req.minItemLevel = 100;
-            }
-            else // Mythic
-            {
-                req.minLevel = 80;
-                req.minItemLevel = 180;
-            }
-            break;
-
-        case EXPANSION_TBC:
-            if (difficulty == DIFFICULTY_NORMAL)
-            {
-                req.minLevel = 68;
-                req.minItemLevel = 0;
-            }
-            else if (difficulty == DIFFICULTY_HEROIC)
-            {
-                req.minLevel = 70;
-                req.minItemLevel = 120;
-            }
-            else // Mythic
-            {
-                req.minLevel = 80;
-                req.minItemLevel = 180;
-            }
-            break;
-
-        case EXPANSION_WOTLK:
-            if (difficulty == DIFFICULTY_NORMAL)
-            {
-                req.minLevel = 78;
-                req.minItemLevel = 0;
-            }
-            else if (difficulty == DIFFICULTY_HEROIC)
-            {
-                req.minLevel = 80;
-                req.minItemLevel = 150;
-            }
-            else // Mythic
-            {
-                req.minLevel = 80;
-                req.minItemLevel = 180;
-            }
-            break;
-
-        default:
-            req.minLevel = 1;
-            req.minItemLevel = 0;
-            break;
-    }
-
-    return req;
-}
+// NOTE: a `DifficultyRequirements GetDifficultyRequirements(...)` table used to
+// sit here, defining per-expansion level and item-level gates for each
+// difficulty. It had no callers, so none of those gates were ever enforced.
+// Removed rather than left as a false suggestion that entry is gated.
 
 // Teleport player to dungeon using teleporter entry mapping and dc_dungeon_entrances
 void TeleportToDungeonEntrance(Player* player, uint32 teleporterEntryId)
@@ -521,6 +460,8 @@ public:
         didLogMissingAutoOpenConfigOnce = true;
         if (protocolEnabled && autoOpenUi)
         {
+            PruneExpiredPortalSessions();
+
             PortalUiSession session;
             session.creatureGuid = creature->GetGUID();
             session.expiresAt = time(nullptr) + PORTAL_UI_SESSION_SECONDS;
@@ -561,6 +502,8 @@ public:
 
         if (action == GOSSIP_ACTION_OPEN_SEASONAL_UI)
         {
+            PruneExpiredPortalSessions();
+
             PortalUiSession session;
             session.creatureGuid = creature->GetGUID();
             session.expiresAt = time(nullptr) + PORTAL_UI_SESSION_SECONDS;

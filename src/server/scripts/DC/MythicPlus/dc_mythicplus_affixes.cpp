@@ -21,6 +21,8 @@ MythicPlusAffixManager* MythicPlusAffixManager::instance()
 
 void MythicPlusAffixManager::RegisterAffix(std::unique_ptr<IAffixHandler> handler)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!handler)
         return;
 
@@ -31,6 +33,8 @@ void MythicPlusAffixManager::RegisterAffix(std::unique_ptr<IAffixHandler> handle
 
 bool MythicPlusAffixManager::HasHandler(AffixType affix) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     return affix != AFFIX_NONE && _handlers.find(affix) != _handlers.end();
 }
 
@@ -50,6 +54,8 @@ std::string MythicPlusAffixManager::GetAffixDescription(AffixType affix) const
 
 void MythicPlusAffixManager::ActivateAffixes(Map* map, const std::vector<AffixType>& affixes, uint8 keystoneLevel)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!map)
         return;
 
@@ -72,6 +78,8 @@ void MythicPlusAffixManager::ActivateAffixes(Map* map, const std::vector<AffixTy
 
 void MythicPlusAffixManager::DeactivateAffixes(Map* map)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!map)
         return;
 
@@ -94,6 +102,8 @@ void MythicPlusAffixManager::DeactivateAffixes(Map* map)
 
 void MythicPlusAffixManager::OnCreatureDeath(Creature* creature, Unit* killer)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!creature)
         return;
 
@@ -112,6 +122,8 @@ void MythicPlusAffixManager::OnCreatureDeath(Creature* creature, Unit* killer)
 
 void MythicPlusAffixManager::OnCreatureDamageDone(Creature* attacker, Unit* victim, uint32& damage)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!attacker || !victim)
         return;
 
@@ -130,6 +142,8 @@ void MythicPlusAffixManager::OnCreatureDamageDone(Creature* attacker, Unit* vict
 
 void MythicPlusAffixManager::OnCreatureDamageTaken(Creature* victim, Unit* attacker, uint32& damage)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!victim || !attacker)
         return;
 
@@ -148,6 +162,8 @@ void MythicPlusAffixManager::OnCreatureDamageTaken(Creature* victim, Unit* attac
 
 void MythicPlusAffixManager::OnPlayerDamageTaken(Player* player, Unit* attacker, uint32& damage)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!player || !attacker)
         return;
 
@@ -166,6 +182,8 @@ void MythicPlusAffixManager::OnPlayerDamageTaken(Player* player, Unit* attacker,
 
 void MythicPlusAffixManager::OnCreatureSelectLevel(Creature* creature)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!creature)
         return;
 
@@ -184,6 +202,8 @@ void MythicPlusAffixManager::OnCreatureSelectLevel(Creature* creature)
 
 void MythicPlusAffixManager::OnPlayerUpdate(Player* player, uint32 diff)
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!player)
         return;
 
@@ -202,6 +222,8 @@ void MythicPlusAffixManager::OnPlayerUpdate(Player* player, uint32 diff)
 
 std::vector<AffixType> MythicPlusAffixManager::GetActiveAffixes(Map* map) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!map)
         return {};
 
@@ -212,6 +234,8 @@ std::vector<AffixType> MythicPlusAffixManager::GetActiveAffixes(Map* map) const
 
 uint8 MythicPlusAffixManager::GetKeystoneLevel(Map* map) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_affixMutex);
+
     if (!map)
         return 0;
 
@@ -224,7 +248,11 @@ uint64 MythicPlusAffixManager::MakeInstanceKey(const Map* map) const
 {
     if (!map)
         return 0;
-    return (static_cast<uint64>(map->GetInstanceId()) << 32) | map->GetId();
+
+    // Same packing order as MythicPlusRunManager::MakeInstanceKey. The two used
+    // to be reversed relative to each other, which worked but made the pair
+    // trivially confusable in review.
+    return (static_cast<uint64>(map->GetId()) << 32) | uint32(map->GetInstanceId());
 }
 
 MythicPlusAffixManager::InstanceAffixState* MythicPlusAffixManager::GetInstanceState(Map* map)

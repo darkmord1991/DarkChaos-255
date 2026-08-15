@@ -31,7 +31,6 @@
 #include "StringFormat.h"
 
 #include "World.h"
-#include "WorldSessionMgr.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "../AddonExtension/dc_addon_mythicplus.h"
@@ -51,9 +50,6 @@ namespace DCAddon { namespace Encounters { void RefreshForMap(Map* map); } }
 
 namespace
 {
-constexpr float MYTHIC_BASE_MULTIPLIER = 2.0f;
-constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
-constexpr uint8 DEFAULT_VAULT_THRESHOLDS[3] = { 1, 4, 8 };
 constexpr uint32 DEFAULT_VAULT_TOKENS[3] = { 50, 100, 150 };
 constexpr uint32 DEFAULT_HUD_TIMER_SECONDS = 2400; // 40 minutes baseline
 constexpr uint32 DEFAULT_HUD_PER_BOSS = 60;        // +1 minute per boss over baseline
@@ -121,10 +117,12 @@ uint32 GetCountdownRemainingSeconds(uint64 countdownStartedMs,
 
 uint32 GetConfiguredTokenItem()
 {
+    // 0 means "unset": ResolveValidTokenItem treats that as a hard failure and
+    // logs, rather than silently handing out item 0.
     if (sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false))
-        return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", MythicPlusConstants::ITEM_UPGRADE_TOKEN);
+        return sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.TokenItemID", 0u);
 
-    return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", MythicPlusConstants::ITEM_UPGRADE_TOKEN);
+    return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.TokenId", 0u);
 }
 
 uint32 ResolveValidTokenItem(uint32 configuredToken, uint32 mapId, std::string_view source)
@@ -158,12 +156,27 @@ MythicPlusRunManager* MythicPlusRunManager::instance()
 
 void MythicPlusRunManager::Reset()
 {
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     for (auto& [_, state] : _instanceStates)
         DespawnCountdownBarrier(&state, nullptr);
 
     _instanceStates.clear();
     CacheBossMetadata();
-    // EnsureHudCacheTable(); // Moved to SQL migration
+
+    {
+        std::lock_guard<std::mutex> bestRunGuard(_bestRunCacheMutex);
+        _bestRunDurationCache.clear();
+    }
+    {
+        std::lock_guard<std::mutex> entranceGuard(_entranceCacheMutex);
+        _entranceCache.clear();
+    }
+    {
+        std::lock_guard<std::mutex> affixGuard(_affixScheduleMutex);
+        _weeklyAffixCache.clear();
+    }
+
     CharacterDatabase.DirectExecute("DELETE FROM `{}`", HUD_CACHE_TABLE);
     LOG_INFO("mythic.run", "Mythic+ Run Manager reset complete");
 }
@@ -231,7 +244,7 @@ void MythicPlusRunManager::CacheBossMetadata()
     LOG_INFO("mythic.run", "Cached {} boss entries ({} marked final) across {} maps for Mythic+ detection", bossEntries, finalEntries, _mapBossEntries.size());
 }
 
-// EnsureHudCacheTable removed - handled by SQL migration
+// The dc_mplus_hud_cache table is created by the SQL migration, not at runtime.
 
 void MythicPlusRunManager::PersistHudSnapshot(InstanceState* state, std::string_view payload, bool forceUpdate)
 {
@@ -242,8 +255,6 @@ void MythicPlusRunManager::PersistHudSnapshot(InstanceState* state, std::string_
     if (!forceUpdate && state->lastHudPayload == serialized)
         return;
 
-    // EnsureHudCacheTable(); // Moved to SQL migration
-
     state->lastHudPayload = serialized;
 
     std::string escapedPayload = serialized;
@@ -251,8 +262,13 @@ void MythicPlusRunManager::PersistHudSnapshot(InstanceState* state, std::string_
 
     // Use millisecond precision so rapid state transitions (e.g. countdown -> start)
     // are never collapsed into the same cache version.
+    //
+    // Async Execute, not DirectExecute: this runs once per active instance per
+    // snapshot interval plus a forced write on every death, boss kill, wipe and
+    // countdown tick. DirectExecute blocked the world thread on a MySQL
+    // round-trip each time. Nothing reads the row back synchronously.
     uint64 updatedAt = GameTime::GetGameTimeMS().count();
-    CharacterDatabase.DirectExecute(
+    CharacterDatabase.Execute(
         "INSERT INTO `{}` (`instance_key`, `map_id`, `instance_id`, `owner_guid`, `keystone_level`, `season_id`, `payload`, `updated_at`) "
         "VALUES ({}, {}, {}, {}, {}, {}, '{}', {}) "
         "ON DUPLICATE KEY UPDATE `map_id` = VALUES(`map_id`), `instance_id` = VALUES(`instance_id`), "
@@ -275,13 +291,21 @@ void MythicPlusRunManager::ClearHudSnapshot(InstanceState* state)
         return;
 
     state->lastHudPayload.clear();
-    // EnsureHudCacheTable(); // Moved to SQL migration
-    CharacterDatabase.DirectExecute(
+    CharacterDatabase.Execute(
         "DELETE FROM `{}` WHERE `instance_key` = {}",
         HUD_CACHE_TABLE,
         state->instanceKey);
 }
 
+// Deliberately does NOT take _stateMutex.
+//
+// _mapBossEntries and _mapFinalBossEntries are populated once by
+// CacheBossMetadata() during OnStartup and are read-only afterwards, so no lock
+// is needed - and taking one here would be actively harmful. The affix handlers
+// call this (via IsBossCreature) while MythicPlusAffixManager holds _affixMutex,
+// whereas TryActivateKeystone takes _stateMutex and then calls into
+// sAffixMgr->ActivateAffixes. Locking here would close that cycle into a
+// classic lock-order inversion between the two managers.
 bool MythicPlusRunManager::IsRecognizedBoss(uint32 mapId, uint32 bossEntry) const
 {
     auto itr = _mapBossEntries.find(mapId);
@@ -311,6 +335,25 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     GameObject* font, uint8 forcedKeystoneLevel,
     uint8 lockedInventoryLevel)
 {
+    // Warm every read-through cache this activation will touch BEFORE taking
+    // the run lock. Each of these is a blocking DB round-trip; performing one
+    // while holding _stateMutex would stall every other Mythic+ instance on the
+    // realm for its duration.
+    if (font)
+    {
+        if (Map* activationMap = font->GetMap())
+        {
+            WarmEntranceLocation(activationMap->GetId());
+
+            uint8 warmLevel = forcedKeystoneLevel ? forcedKeystoneLevel : lockedInventoryLevel;
+            if (warmLevel)
+                WarmBestRunDurationCache(activationMap->GetId(), warmLevel);
+        }
+    }
+    WarmWeeklyAffixCache(GetCurrentSeasonId());
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     if (forcedKeystoneLevel && lockedInventoryLevel)
     {
         SendGenericError(player, "Invalid activation request: forced and locked key levels cannot be combined.");
@@ -375,8 +418,23 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     state->hudInitialized = false;
     state->hudTimerDuration = GetHudTimerDuration(state->mapId, state->keystoneLevel);
     state->timerEndsAt = 0;
+    state->timerExpired = false;
+    state->announcedCountdownSeconds.clear();
     state->lastHudBroadcast = 0;
     state->lastAioBroadcast = 0;
+    state->lootGrantedBosses.clear();
+    state->finalBossLootGranted = false;
+    state->cancellationVotes.clear();
+    state->cancellationVoteStarted = 0;
+    state->cancellationPending = false;
+    state->abandonedAt = 0;
+    state->npcsKilled = 0;
+    state->bossesKilled = 0;
+    state->tokensAwarded = 0;
+    state->upgradeLevel = 0;
+    state->keystoneUpgraded = false;
+    state->deathsByPlayer.clear();
+    state->deathsByBoss.clear();
     BuildBossTracking(state);
     RegisterGroupMembers(player, state);
 
@@ -440,17 +498,6 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
             if (effectiveKeystoneLevel == 0)
                 effectiveKeystoneLevel = descriptor.level;
         }
-
-        ChatHandler(player->GetSession()).PSendSysMessage(
-            "|cff66ccff[M+ Debug]|r consumed item: {}, effective key: +{}",
-            consumedKeystoneItemId,
-            uint32(effectiveKeystoneLevel));
-    }
-    else
-    {
-        ChatHandler(player->GetSession()).PSendSysMessage(
-            "|cff66ccff[M+ Debug]|r consumed item: 0 (forced), effective key: +{}",
-            uint32(effectiveKeystoneLevel));
     }
 
     // Keep all activation displays and runtime state aligned to the effective key.
@@ -478,8 +525,17 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
 
     InitializeHud(state, map);
 
+    // Respawn the dungeon BEFORE the countdown rather than after it.
+    // ResetDungeonForRunStart only *triggers* the respawns - the creatures
+    // actually pop in over the following seconds - so running it at countdown
+    // end meant the group watched mobs vanish and trickle back while their
+    // timer was already ticking. Doing it here lets the respawns settle behind
+    // the barrier, and the run starts on a fully populated dungeon.
+    ResetDungeonForRunStart(map);
+
     // Lock in Mythic+ scaling as soon as the keystone is committed so loaded
-    // mobs are already refreshed during the visible start countdown.
+    // mobs are already refreshed during the visible start countdown. Must stay
+    // after the reset: it scales what is currently spawned.
     ApplyKeystoneScaling(map, state->keystoneLevel);
 
     // Start the run countdown only after the prep work above has completed so
@@ -511,6 +567,8 @@ uint32 MythicPlusRunManager::GetKeystoneLevel(Map* map) const
     if (!map)
         return 0;
 
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     auto itr = _instanceStates.find(MakeInstanceKey(map));
     if (itr == _instanceStates.end())
         return 0;
@@ -527,6 +585,8 @@ bool MythicPlusRunManager::RespawnPlayerAtEntrance(Player* player,
     Map* map = player->GetMap();
     if (!map || !map->IsDungeon())
         return false;
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
 
     InstanceState const* state = GetState(map);
     if (!state || state->keystoneLevel == 0 || state->completed || state->failed)
@@ -553,6 +613,8 @@ void MythicPlusRunManager::RegisterPlayerEnter(Player* player)
     if (!map || !map->IsDungeon())
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     InstanceState* state = GetState(map);
     if (!state)
         return;
@@ -570,6 +632,8 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
     Map* map = player->GetMap();
     if (!map || !map->IsDungeon())
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
 
     InstanceState* state = GetState(map);
     if (!state || state->completed)
@@ -621,6 +685,8 @@ void MythicPlusRunManager::HandleBossEvade(Creature* creature)
     Map* map = creature->GetMap();
     if (!map || !map->IsDungeon())
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
 
     if (!IsBossCreature(creature))
         return;
@@ -691,6 +757,8 @@ void MythicPlusRunManager::HandleCreatureKill(Creature* creature, Unit* /*killer
     if (!map || !map->IsDungeon())
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     InstanceState* state = GetState(map);
     if (!state || state->completed || state->failed)
         return;
@@ -712,6 +780,8 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     Map* map = creature->GetMap();
     if (!map || !map->IsDungeon())
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
 
     InstanceState* state = GetState(map);
     if (!state || state->completed || state->failed)
@@ -735,9 +805,7 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     if (!rewardsAtRunEndOnly)
         GenerateBossLoot(creature, map, state);
 
-    uint32 totalBosses = state->bossOrder.empty() ?
-        GetTotalBossesForDungeon(state->mapId) :
-        static_cast<uint32>(state->bossOrder.size());
+    uint32 totalBosses = state->totalBosses;
     uint32 killedBosses = state->bossOrder.empty() ?
         state->bossesKilled :
         std::max<uint32>(state->bossesKilled,
@@ -769,6 +837,15 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
 
     state->completed = true;
     state->failed = false;
+
+    // Settle the par timer before anything reads it. A run finished past the
+    // par time still completes and still pays out, but it does not upgrade the
+    // keystone (see AutoUpgradeKeystone).
+    if (!state->timerExpired && state->timerEndsAt &&
+        GameTime::GetGameTime().count() > state->timerEndsAt)
+    {
+        state->timerExpired = true;
+    }
 
     SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 1);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
@@ -814,6 +891,8 @@ void MythicPlusRunManager::HandleInstanceReset(Map* map)
     if (!map)
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     if (itr != _instanceStates.end())
@@ -822,18 +901,6 @@ void MythicPlusRunManager::HandleInstanceReset(Map* map)
         ClearHudSnapshot(&itr->second);
         _instanceStates.erase(itr);
     }
-}
-
-void MythicPlusRunManager::BuildVaultMenu(Player* /*player*/, Creature* /*creature*/)
-{
-    // Implemented: Build a basic gossip menu for Great Vault claims
-    // Note: Uses gossip constants defined in npc_mythic_plus_great_vault
-}
-    // This method should be invoked by the Great Vault NPC creature script
-
-void MythicPlusRunManager::HandleVaultSelection(Player* /*player*/, Creature* /*creature*/, uint32 /*actionId*/)
-{
-    // Implemented in npc script; logic handled by our NPC wrapper
 }
 
 // Forwarding wrappers to Great Vault manager
@@ -869,85 +936,6 @@ void MythicPlusRunManager::ResetWeeklyVaultProgress(Player* player)
     CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
     CharacterDatabase.DirectExecute("DELETE FROM dc_vault_reward_pool WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
     ChatHandler(player->GetSession()).SendSysMessage("Your weekly vault progress was reset.");
-}
-
-bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
-{
-    if (!player || slot < 1 || slot > 3)
-        return false;
-
-    uint32 seasonId = GetCurrentSeasonId();
-    uint32 weekStart = GetWeekStartTimestamp();
-    uint32 guidLow = player->GetGUID().GetCounter();
-
-    QueryResult result = CharacterDatabase.Query("SELECT runs_completed, highest_level, slot1_unlocked, slot2_unlocked, slot3_unlocked, reward_claimed, claimed_slot FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                                                 guidLow, seasonId, weekStart);
-
-    uint8 runsCompleted = 0;
-    bool unlocked[4] = { false, false, false, false };
-    bool claimed = false;
-    uint8 claimedSlot = 0;
-
-    if (result)
-    {
-        Field* fields = result->Fetch();
-        runsCompleted = fields[0].Get<uint8>();
-        claimedSlot = fields[6].Get<uint8>();
-        unlocked[1] = fields[2].Get<bool>();
-        unlocked[2] = fields[3].Get<bool>();
-        unlocked[3] = fields[4].Get<bool>();
-        claimed = fields[5].Get<bool>();
-        claimedSlot = fields[6].Get<uint8>();
-    }
-
-    (void)runsCompleted; // Suppress unused variable warning
-    (void)claimedSlot;   // Suppress unused variable warning
-
-    if (!unlocked[slot])
-    {
-        SendVaultError(player, "This slot is not unlocked.");
-        return false;
-    }
-    if (claimed)
-    {
-        SendVaultError(player, "You have already claimed your weekly vault reward.");
-        return false;
-    }
-
-    // Award tokens (fallback if no reward pool available)
-    uint32 tokenCount = GetVaultTokenReward(slot);
-    uint32 tokenEntry = ResolveValidTokenItem(GetConfiguredTokenItem(), 0, "weekly_vault");
-    if (!tokenEntry)
-    {
-        SendVaultError(player, "Vault token reward is unavailable right now.");
-        return false;
-    }
-
-    ItemPosCountVec dest;
-    if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, tokenEntry, tokenCount) == EQUIP_ERR_OK)
-    {
-        if (Item* item = player->StoreNewItem(dest, tokenEntry, true))
-            player->SendNewItem(item, tokenCount, true, false);
-    }
-    else
-    {
-        player->SendItemRetrievalMail(tokenEntry, tokenCount);
-        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[Mythic+]|r Tokens could not be added to your bags and were mailed instead.");
-    }
-
-    // Mark the weekly vault as claimed
-    CharacterDatabase.DirectExecute("UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {}, claimed_tokens = {}, claimed_at = UNIX_TIMESTAMP() WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                                    slot, tokenCount, guidLow, seasonId, weekStart);
-
-    InsertTokenLog(guidLow, 0, DUNGEON_DIFFICULTY_EPIC, 0, player->GetLevel(), 0, tokenCount);
-    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r You claimed slot {} and received {} tokens.",
-        static_cast<uint32>(slot), tokenCount);
-    return true;
-}
-
-void MythicPlusRunManager::BuildStatisticsMenu(Player* /*player*/, Creature* /*creature*/)
-{
-    // Placeholder - data surfaced via gossip in later iteration
 }
 
 uint64 MythicPlusRunManager::MakeInstanceKey(const Map* map) const
@@ -1343,11 +1331,10 @@ void MythicPlusRunManager::HandleFailState(InstanceState* state, std::string_vie
             ? static_cast<uint8>(keystoneLevel - 1)
             : MythicPlusConstants::MIN_KEYSTONE_LEVEL;
 
-        // Persist first: this is the record a keystone vendor reissues from, so
-        // it has to be right even when the owner is offline or out of bag space.
-        CharacterDatabase.Execute(
-            "UPDATE dc_player_keystones SET current_keystone_level = {} WHERE player_guid = {}",
-            refundLevel, ownerGuid.GetCounter());
+        // Persist first: this is the record the keystone vendor reissues from,
+        // so it has to be right even when the owner is offline or out of bag
+        // space. Upserts - a bare UPDATE was a no-op for first-time players.
+        PersistKeystoneLevel(ownerGuid.GetCounter(), refundLevel);
 
         if (Player* owner = ObjectAccessor::FindPlayer(ownerGuid))
         {
@@ -1413,24 +1400,34 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
 
     uint32 unsignedScore = static_cast<uint32>(scoreValue);
 
-    // Log the run result using the current character DB schema.
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_mplus_runs (character_guid, season_id, map_id, keystone_level, score, deaths, wipes, completion_time, success, group_members, completed_at) "
-        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', FROM_UNIXTIME({}))",
-        state->ownerGuid.GetCounter(), state->seasonId, state->mapId, state->keystoneLevel,
-        unsignedScore, state->deaths, state->wipes, duration, success ? 1 : 0, groupBlob, now);
+    // One row per participant, not just the keystone owner. Great Vault
+    // progress is derived by counting a character's dc_mplus_runs rows
+    // (GreatVault.cpp GetMPlusSummaryForWeek), so writing only the owner's row
+    // meant the other four players in every group earned no vault progress at
+    // all. group_members stays identical across the rows so a single run is
+    // still identifiable as one run.
+    std::unordered_set<ObjectGuid::LowType> recipients = state->participants;
+    if (state->ownerGuid)
+        recipients.insert(state->ownerGuid.GetCounter());
 
-    // Track Dungeon Statistics
-    // runs_started is incremented when keystone is activated (TODO: Add hook there too)
-    // Here we track completion/failure and times
-    std::string runsCompletedInc = success ? "runs_completed = runs_completed + 1" : "runs_completed = runs_completed";
+    for (ObjectGuid::LowType guidLow : recipients)
+    {
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_mplus_runs (character_guid, season_id, map_id, keystone_level, score, deaths, wipes, completion_time, success, group_members, completed_at) "
+            "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', FROM_UNIXTIME({}))",
+            guidLow, state->seasonId, state->mapId, state->keystoneLevel,
+            unsignedScore, state->deaths, state->wipes, duration, success ? 1 : 0, groupBlob, now);
+    }
+
+    // Track Dungeon Statistics. The run is counted once for the group, not once
+    // per participant, so this stays outside the loop.
     CharacterDatabase.Execute(
         "INSERT INTO dc_mythic_dungeon_stats (season_id, map_id, keystone_level, runs_completed, total_time, deaths_total) "
         "VALUES ({}, {}, {}, {}, {}, {}) "
-        "ON DUPLICATE KEY UPDATE {}, total_time = total_time + {}, deaths_total = deaths_total + {}",
+        "ON DUPLICATE KEY UPDATE runs_completed = runs_completed + {}, total_time = total_time + {}, deaths_total = deaths_total + {}",
         state->seasonId, state->mapId, state->keystoneLevel,
         success ? 1 : 0, duration, state->deaths,
-        runsCompletedInc, duration, state->deaths);
+        success ? 1 : 0, duration, state->deaths);
 
     // Track Weekly Best for all participants
     // Only if successful run
@@ -1502,27 +1499,24 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         if (state->participants.find(player->GetGUID().GetCounter()) == state->participants.end())
             continue;
 
-        uint32 baseTokens = 10;
-        if (player->GetLevel() > 70)
-            baseTokens += (player->GetLevel() - 70) * 2;
-
-        float multiplier = 1.0f;
+        uint32 tokenCount;
         switch (state->difficulty)
         {
-            case DUNGEON_DIFFICULTY_NORMAL:
-                multiplier = 1.0f;
+            case DUNGEON_DIFFICULTY_EPIC:
+                // Shared with the keystone tooltip and the .mplus commands so
+                // the advertised payout and the real one cannot drift apart.
+                tokenCount = MythicPlusConstants::CalculateTokenReward(
+                    player->GetLevel(), state->keystoneLevel);
                 break;
             case DUNGEON_DIFFICULTY_HEROIC:
-                multiplier = 1.5f;
-                break;
-            case DUNGEON_DIFFICULTY_EPIC:
-                multiplier = state->keystoneLevel > 0 ? (MYTHIC_BASE_MULTIPLIER + (state->keystoneLevel * KEYSTONE_LEVEL_STEP)) : MYTHIC_BASE_MULTIPLIER;
+                tokenCount = static_cast<uint32>(
+                    MythicPlusConstants::GetBaseTokenReward(player->GetLevel()) * 1.5f);
                 break;
             default:
+                tokenCount = MythicPlusConstants::GetBaseTokenReward(player->GetLevel());
                 break;
         }
 
-        uint32 tokenCount = static_cast<uint32>(std::floor(baseTokens * multiplier));
         tokenCount = std::max<uint32>(tokenCount, 1);
 
         ItemPosCountVec dest;
@@ -1551,53 +1545,10 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
     state->tokensGranted = true;
 }
 
-void MythicPlusRunManager::UpdateWeeklyVault(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 /*mapId*/, uint8 keystoneLevel, bool success, uint8 /*deaths*/, uint8 /*wipes*/, uint32 /*durationSeconds*/)
-{
-    if (!success)
-        return;
-
-    if (!sConfigMgr->GetOption<bool>("MythicPlus.Vault.Enabled", false))
-        return;
-
-    uint32 weekStart = GetWeekStartTimestamp();
-    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_WEEKLY_VAULT);
-    stmt->SetData(0, playerGuid);
-    stmt->SetData(1, seasonId);
-    stmt->SetData(2, weekStart);
-    stmt->SetData(3, 1); // runs completed delta
-    stmt->SetData(4, keystoneLevel);
-    CharacterDatabase.Execute(stmt);
-}
-
-void MythicPlusRunManager::UpdateScore(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint32 score, uint32 /*durationSeconds*/)
-{
-    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_SCORE);
-    stmt->SetData(0, playerGuid);
-    stmt->SetData(1, seasonId);
-    stmt->SetData(2, mapId);
-    stmt->SetData(3, success ? keystoneLevel : 0);
-    stmt->SetData(4, score);
-
-    CharacterDatabase.Execute(stmt);
-}
-
-void MythicPlusRunManager::InsertRunHistory(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 mapId, uint8 keystoneLevel, bool success, uint8 deaths, uint8 wipes, uint32 durationSeconds, uint32 score, const std::string& groupMembers)
-{
-    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_MPLUS_RUN_HISTORY);
-    stmt->SetData(0, playerGuid);
-    stmt->SetData(1, seasonId);
-    stmt->SetData(2, mapId);
-    stmt->SetData(3, keystoneLevel);
-    stmt->SetData(4, score);
-    stmt->SetData(5, deaths);
-    stmt->SetData(6, wipes);
-    stmt->SetData(7, durationSeconds);
-    stmt->SetData(8, success ? 1 : 0);
-    stmt->SetData(9, 0); // affix pair placeholder
-    stmt->SetData(10, groupMembers);
-
-    CharacterDatabase.Execute(stmt);
-}
+// NOTE: UpdateWeeklyVault, UpdateScore and InsertRunHistory used to live here.
+// All three were unreferenced: RecordRunResult writes the same data inline, and
+// Great Vault progress is derived from dc_mplus_runs rather than from
+// dc_weekly_vault.runs_completed. Removed so there is one writer per table.
 
 void MythicPlusRunManager::InsertTokenLog(ObjectGuid::LowType playerGuid, uint32 mapId, Difficulty difficulty, uint8 keystoneLevel, uint8 playerLevel, uint32 bossEntry, uint32 tokenCount)
 {
@@ -1632,9 +1583,14 @@ uint32 MythicPlusRunManager::GetVaultTokenReward(uint8 slot) const
 
 uint8 MythicPlusRunManager::GetVaultThreshold(uint8 slot) const
 {
+    // Forward to the Great Vault manager rather than keeping a second copy.
+    // This used to return a hardcoded {1, 4, 8}, so raising
+    // MythicPlus.Vault.ThresholdN moved the real unlock while the addon UI -
+    // which reads this function - kept quoting the old number.
     if (slot == 0 || slot > 3)
         return 0;
-    return DEFAULT_VAULT_THRESHOLDS[slot - 1];
+
+    return sGreatVault->GetVaultThreshold(slot);
 }
 
 void MythicPlusRunManager::SendVaultError(Player* player, std::string_view text)
@@ -1647,7 +1603,10 @@ void MythicPlusRunManager::SendGenericError(Player* player, std::string_view tex
     if (!player || !player->GetSession())
         return;
 
-    ChatHandler(player->GetSession()).SendSysMessage(text.data());
+    // Materialise before sending: string_view::data() is not guaranteed to be
+    // null-terminated, so passing it straight to a C-string API reads past the
+    // end for any caller that hands us a substr or a non-owning slice.
+    ChatHandler(player->GetSession()).SendSysMessage(std::string(text).c_str());
 }
 
 bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
@@ -1694,58 +1653,71 @@ bool MythicPlusRunManager::IsFinalBoss(uint32 mapId, uint32 bossEntry) const
 
 bool MythicPlusRunManager::IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const
 {
-    QueryResult result = WorldDatabase.Query(
-        "SELECT is_unlocked, mythic_plus_enabled, IFNULL(season_lock, 0) "
-        "FROM dc_dungeon_setup WHERE map_id = {}",
-        mapId);
+    // Reads the dc_dungeon_setup snapshot cached at startup. This used to be a
+    // synchronous world-DB query on every call, and it is reached from
+    // OnPlayerNotAvoidSatisfy (per zone entry) and twice per Font of Power
+    // gossip click.
+    return sMythicScaling->IsDungeonFeatured(mapId, seasonId);
+}
 
-    if (!result)
-        return false;
+void MythicPlusRunManager::WarmWeeklyAffixCache(uint32 seasonId) const
+{
+    uint32 weekStart = GetWeekStartTimestamp();
+    uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
+    uint64 cacheKey = (static_cast<uint64>(seasonId) << 32) | weekNumber;
 
-    Field* fields = result->Fetch();
-    bool isUnlocked = fields[0].Get<bool>();
-    bool mythicPlusEnabled = fields[1].Get<bool>();
-    uint32 requiredSeason = fields[2].Get<uint32>();
+    {
+        std::lock_guard<std::mutex> guard(_affixScheduleMutex);
+        if (_weeklyAffixCache.find(cacheKey) != _weeklyAffixCache.end())
+            return;
+    }
 
-    bool seasonMatches = requiredSeason == 0 || requiredSeason == seasonId;
-    return isUnlocked && mythicPlusEnabled && seasonMatches;
+    // Both this and the per-affix lookups inside ResolveWeeklyAffixInfo are
+    // synchronous world-DB reads, and they used to run under _stateMutex on
+    // every keystone activation. Resolved here with no lock held; the result is
+    // then good for the rest of the week.
+    std::vector<WeeklyAffixInfo> affixes;
+
+    if (QueryResult result = WorldDatabase.Query(
+            "SELECT affix1, affix2 FROM dc_mplus_affix_schedule "
+            "WHERE season_id = {} AND week_number = {}",
+            seasonId, weekNumber))
+    {
+        auto tryAddAffix = [&](uint32 scheduledAffixId)
+        {
+            WeeklyAffixInfo info;
+            if (!ResolveWeeklyAffixInfo(scheduledAffixId, info))
+                return;
+
+            auto duplicateItr = std::find_if(affixes.begin(), affixes.end(), [&](WeeklyAffixInfo const& existing)
+            {
+                return existing.affixId == info.affixId;
+            });
+
+            if (duplicateItr == affixes.end())
+                affixes.push_back(std::move(info));
+        };
+
+        Field* fields = result->Fetch();
+        tryAddAffix(fields[0].Get<uint32>());
+        tryAddAffix(fields[1].Get<uint32>());
+    }
+
+    std::lock_guard<std::mutex> guard(_affixScheduleMutex);
+    _weeklyAffixCache.emplace(cacheKey, std::move(affixes));
 }
 
 std::vector<MythicPlusRunManager::WeeklyAffixInfo> MythicPlusRunManager::GetWeeklyAffixInfo(uint32 seasonId) const
 {
-    std::vector<WeeklyAffixInfo> affixes;
-
     uint32 weekStart = GetWeekStartTimestamp();
     uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
+    uint64 cacheKey = (static_cast<uint64>(seasonId) << 32) | weekNumber;
 
-    QueryResult result = WorldDatabase.Query(
-        "SELECT affix1, affix2 FROM dc_mplus_affix_schedule "
-        "WHERE season_id = {} AND week_number = {}",
-        seasonId, weekNumber);
+    // Cache-only; WarmWeeklyAffixCache does the reads outside the run lock.
+    std::lock_guard<std::mutex> guard(_affixScheduleMutex);
 
-    if (!result)
-        return affixes;
-
-    auto tryAddAffix = [&](uint32 scheduledAffixId)
-    {
-        WeeklyAffixInfo info;
-        if (!ResolveWeeklyAffixInfo(scheduledAffixId, info))
-            return;
-
-        auto duplicateItr = std::find_if(affixes.begin(), affixes.end(), [&](WeeklyAffixInfo const& existing)
-        {
-            return existing.affixId == info.affixId;
-        });
-
-        if (duplicateItr == affixes.end())
-            affixes.push_back(std::move(info));
-    };
-
-    Field* fields = result->Fetch();
-    tryAddAffix(fields[0].Get<uint32>());
-    tryAddAffix(fields[1].Get<uint32>());
-
-    return affixes;
+    auto itr = _weeklyAffixCache.find(cacheKey);
+    return itr != _weeklyAffixCache.end() ? itr->second : std::vector<WeeklyAffixInfo>();
 }
 
 std::vector<uint32> MythicPlusRunManager::GetWeeklyAffixes(uint32 seasonId) const
@@ -1935,32 +1907,68 @@ uint64 MythicPlusRunManager::MakeBestRunCacheKey(uint32 mapId, uint8 keystoneLev
     return (static_cast<uint64>(mapId) << 8) | keystoneLevel;
 }
 
-uint32 MythicPlusRunManager::GetBestRunDuration(uint32 mapId, uint8 keystoneLevel)
+uint32 MythicPlusRunManager::GetBestRunDuration(uint32 mapId, uint8 keystoneLevel) const
+{
+    // Cache-only. This is reached from MaybeSendAioSnapshot with _stateMutex
+    // held, so it must never touch the database - WarmActiveBestRunDurations
+    // does that from outside the lock instead.
+    std::lock_guard<std::mutex> guard(_bestRunCacheMutex);
+
+    auto itr = _bestRunDurationCache.find(MakeBestRunCacheKey(mapId, keystoneLevel));
+    return itr != _bestRunDurationCache.end() ? itr->second : 0;
+}
+
+void MythicPlusRunManager::WarmBestRunDurationCache(uint32 mapId, uint8 keystoneLevel) const
 {
     uint64 key = MakeBestRunCacheKey(mapId, keystoneLevel);
-    auto itr = _bestRunDurationCache.find(key);
-    if (itr != _bestRunDurationCache.end())
-        return itr->second;
 
+    {
+        std::lock_guard<std::mutex> guard(_bestRunCacheMutex);
+        if (_bestRunDurationCache.find(key) != _bestRunDurationCache.end())
+            return;
+    }
+
+    // Query with no lock held at all.
     uint32 duration = 0;
     if (CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_MPLUS_BEST_TIME))
     {
         stmt->SetData(0, mapId);
         stmt->SetData(1, static_cast<uint32>(keystoneLevel));
         if (PreparedQueryResult result = CharacterDatabase.Query(stmt))
-        {
             duration = result->Fetch()->Get<uint32>();
+    }
+
+    std::lock_guard<std::mutex> guard(_bestRunCacheMutex);
+    _bestRunDurationCache.emplace(key, duration);
+}
+
+void MythicPlusRunManager::WarmActiveBestRunDurations() const
+{
+    // Snapshot what needs warming under the run lock, then release it before
+    // going anywhere near the database.
+    std::vector<std::pair<uint32, uint8>> pending;
+    {
+        std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+        pending.reserve(_instanceStates.size());
+        for (auto const& [key, state] : _instanceStates)
+        {
+            if (state.keystoneLevel == 0)
+                continue;
+
+            pending.emplace_back(state.mapId, state.keystoneLevel);
         }
     }
 
-    _bestRunDurationCache[key] = duration;
-    return duration;
+    for (auto const& [mapId, keystoneLevel] : pending)
+        WarmBestRunDurationCache(mapId, keystoneLevel);
 }
 
 void MythicPlusRunManager::UpdateBestRunDuration(uint32 mapId, uint8 keystoneLevel, uint32 durationSeconds)
 {
     if (durationSeconds == 0)
         return;
+
+    std::lock_guard<std::mutex> guard(_bestRunCacheMutex);
 
     uint64 key = MakeBestRunCacheKey(mapId, keystoneLevel);
     auto itr = _bestRunDurationCache.find(key);
@@ -2007,27 +2015,16 @@ bool MythicPlusRunManager::GiveKeystoneToPlayer(Player* player, uint8 keystoneLe
     return false;
 }
 
-void MythicPlusRunManager::CompleteRun(Map* map, bool successful)
+void MythicPlusRunManager::PersistKeystoneLevel(ObjectGuid::LowType playerGuid, uint8 level) const
 {
-    if (!map)
-        return;
-
-    InstanceState* state = GetState(map);
-    if (!state)
-        return;
-
-    // Update player keystone levels based on run result
-    for (ObjectGuid::LowType playerGuid : state->participants)
-    {
-        if (successful)
-        {
-            UpgradeKeystone(playerGuid);
-        }
-        else
-        {
-            DowngradeKeystone(playerGuid);
-        }
-    }
+    // Upsert, not UPDATE. A bare UPDATE affects zero rows for any character
+    // that has never had a dc_player_keystones row inserted and reports success,
+    // so the stored level never moved off the default for new players.
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_player_keystones (player_guid, current_keystone_level, last_updated) "
+        "VALUES ({}, {}, UNIX_TIMESTAMP()) "
+        "ON DUPLICATE KEY UPDATE current_keystone_level = {}, last_updated = UNIX_TIMESTAMP()",
+        playerGuid, level, level);
 }
 
 void MythicPlusRunManager::UpgradeKeystone(ObjectGuid::LowType playerGuid)
@@ -2035,12 +2032,7 @@ void MythicPlusRunManager::UpgradeKeystone(ObjectGuid::LowType playerGuid)
     uint8 currentLevel = GetPlayerKeystoneLevel(playerGuid);
     uint8 newLevel = std::min<uint8>(MythicPlusConstants::MAX_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel + 1));
 
-    // Update database
-    CharacterDatabase.Execute(
-        "UPDATE dc_player_keystones SET current_keystone_level = {} WHERE player_guid = {}",
-        newLevel, playerGuid);
-
-    // Generate new keystone item
+    PersistKeystoneLevel(playerGuid, newLevel);
     GenerateNewKeystone(playerGuid, newLevel);
 }
 
@@ -2049,12 +2041,7 @@ void MythicPlusRunManager::DowngradeKeystone(ObjectGuid::LowType playerGuid)
     uint8 currentLevel = GetPlayerKeystoneLevel(playerGuid);
     uint8 newLevel = std::max<uint8>(MythicPlusConstants::MIN_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel - 1));
 
-    // Update database
-    CharacterDatabase.Execute(
-        "UPDATE dc_player_keystones SET current_keystone_level = {} WHERE player_guid = {}",
-        newLevel, playerGuid);
-
-    // Generate new keystone item
+    PersistKeystoneLevel(playerGuid, newLevel);
     GenerateNewKeystone(playerGuid, newLevel);
 }
 
@@ -2067,25 +2054,39 @@ void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, u
     if (!keystoneItemId)
         return;
 
-    // Get player from guid
-    if (WorldSession* session = sWorldSessionMgr->FindSession(playerGuid))
+    // This used to call sWorldSessionMgr->FindSession(playerGuid). That map is
+    // keyed by ACCOUNT id, not character GUID, so the lookup normally missed
+    // and the player silently received no keystone at all - while the DB row
+    // was updated regardless, leaving their stored level climbing and their
+    // bags empty. On a collision it handed the key to a different account.
+    Player* player = ObjectAccessor::FindPlayerByLowGUID(playerGuid);
+    if (!player)
     {
-        Player* player = session->GetPlayer();
-        if (!player)
-            return;
-        // Add keystone to player inventory
-        ItemPosCountVec dest;
-        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1) == EQUIP_ERR_OK)
+        // Offline owner. dc_player_keystones already holds the correct level,
+        // and the keystone vendor reissues from that record, so nothing is lost.
+        LOG_INFO("mythic.run",
+                 "Player {} is offline; keystone +{} will be reissued by the vendor from their stored level",
+                 playerGuid, uint32(level));
+        return;
+    }
+
+    ItemPosCountVec dest;
+    if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1) == EQUIP_ERR_OK)
+    {
+        if (Item* keystoneItem = player->StoreNewItem(dest, keystoneItemId, true))
         {
-            Item* keystoneItem = player->StoreNewItem(dest, keystoneItemId, true);
-            if (keystoneItem)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Mythic+]|r New keystone generated (M+{})",
-                    static_cast<uint32>(level));
-            }
+            player->SendNewItem(keystoneItem, 1, true, false);
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cff00ff00[Mythic+]|r New keystone generated (M+{})",
+                static_cast<uint32>(level));
+            return;
         }
     }
+
+    player->SendItemRetrievalMail(keystoneItemId, 1);
+    ChatHandler(player->GetSession()).PSendSysMessage(
+        "|cffff8000[Mythic+]|r Bags full - your |cffffffff+{}|r keystone was mailed to you.",
+        static_cast<uint32>(level));
 }
 
 bool MythicPlusRunManager::PlayerUsesRunSummaryAddon(Player* player)
@@ -2113,9 +2114,7 @@ void MythicPlusRunManager::SendRunResultPayload(InstanceState* state, Player* pl
         ? static_cast<int32>(state->upgradeLevel) - static_cast<int32>(state->keystoneLevel)
         : 0;
 
-    uint32 totalBosses = state->bossOrder.empty()
-        ? GetTotalBossesForDungeon(state->mapId)
-        : static_cast<uint32>(state->bossOrder.size());
+    uint32 totalBosses = state->totalBosses;
 
     std::ostringstream payload;
     payload << '{';
@@ -2293,17 +2292,21 @@ void MythicPlusRunManager::AutoUpgradeKeystone(InstanceState* state)
     else
         newLevel = std::max<uint8>(MythicPlusConstants::MIN_KEYSTONE_LEVEL, static_cast<uint8>(currentLevel - 1)); // Downgrade
 
+    // Beating the dungeon is not enough - it has to be beaten inside the par
+    // timer. Without this the countdown was decorative: a group could take any
+    // amount of time and still bank a two-level upgrade purely on death count.
+    if (state->timerExpired && newLevel > currentLevel)
+    {
+        LOG_INFO("mythic.run",
+                 "Run for instance {} finished over the par timer; holding keystone at +{} instead of +{}",
+                 state->instanceId, uint32(currentLevel), uint32(newLevel));
+        newLevel = currentLevel;
+    }
+
     state->upgradeLevel = newLevel;
     state->keystoneUpgraded = true;
 
-    // Update database
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_player_keystones (player_guid, current_keystone_level, last_updated) "
-        "VALUES ({}, {}, UNIX_TIMESTAMP()) "
-        "ON DUPLICATE KEY UPDATE current_keystone_level = {}, last_updated = UNIX_TIMESTAMP()",
-        ownerGuidLow, newLevel, newLevel);
-
-    // Generate new keystone for owner
+    PersistKeystoneLevel(ownerGuidLow, newLevel);
     GenerateNewKeystone(ownerGuidLow, newLevel);
 
     if (Map* map = sMapMgr->FindMap(state->mapId, state->instanceId))
@@ -2366,6 +2369,8 @@ void MythicPlusRunManager::InitiateCancellation(Map* map)
     if (!map)
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     InstanceState* state = GetState(map);
     if (!state || state->completed || state->failed)
         return;
@@ -2395,6 +2400,8 @@ void MythicPlusRunManager::InitiateCancellation(Map* map)
 
 void MythicPlusRunManager::ProcessCancellationTimers()
 {
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     uint64 now = GameTime::GetGameTime().count();
     uint64 cancelTimeout = sConfigMgr->GetOption<uint32>("MythicPlus.CancellationTimeout", 180);
 
@@ -2427,12 +2434,12 @@ void MythicPlusRunManager::ProcessCancellationTimers()
 
 void MythicPlusRunManager::ProcessCountdowns()
 {
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     uint64 nowMs = GameTime::GetGameTimeMS().count();
     uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
     uint64 countdownDurationMs = static_cast<uint64>(countdownDuration) *
         MILLISECONDS_PER_SECOND;
-
-    static std::unordered_map<uint64, std::unordered_set<uint32>> announcedIntervals;
 
     for (auto& [key, state] : _instanceStates)
     {
@@ -2447,7 +2454,7 @@ void MythicPlusRunManager::ProcessCountdowns()
         {
             state.countdownBarrierGuid.Clear();
             state.countdownActive = false;
-            announcedIntervals.erase(key);
+            state.announcedCountdownSeconds.clear();
             continue;
         }
 
@@ -2468,17 +2475,17 @@ void MythicPlusRunManager::ProcessCountdowns()
 
         // Announce at specific intervals: 10, 5, 4, 3, 2, 1
         if ((remaining == 10 || (remaining > 0 && remaining <= 5)) &&
-            announcedIntervals[key].find(remaining) == announcedIntervals[key].end())
+            state.announcedCountdownSeconds.find(remaining) == state.announcedCountdownSeconds.end())
         {
             AnnounceToInstance(map, Acore::StringFormat("Starting in: |cffffff00{}...|r", remaining));
-            announcedIntervals[key].insert(remaining);
+            state.announcedCountdownSeconds.insert(remaining);
         }
 
         // Start the run when countdown completes
         if (remaining == 0 && nowMs >= state.countdownStarted + countdownDurationMs)
         {
             state.countdownActive = false;
-            announcedIntervals.erase(key);
+            state.announcedCountdownSeconds.clear();
 
             // Prefer the keystone owner, but fall back to any present participant.
             Player* owner = ObjectAccessor::GetPlayer(map, state.ownerGuid);
@@ -2512,6 +2519,17 @@ bool MythicPlusRunManager::VoteToCancelRun(Player* player, Map* map)
 {
     if (!player || !map)
         return false;
+
+    // MythicPlus.AllowManualCancellation was defined in the config but read by
+    // nothing. Honour it as the master switch its name promises rather than
+    // leaving a dead knob in the dist file.
+    if (!sConfigMgr->GetOption<bool>("MythicPlus.AllowManualCancellation", true))
+    {
+        SendGenericError(player, "Manual Mythic+ cancellation is disabled on this realm.");
+        return false;
+    }
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
 
     InstanceState* state = GetState(map);
     if (!state || state->completed || state->failed)
@@ -2590,6 +2608,8 @@ bool MythicPlusRunManager::VoteToCancelRun(Player* player, Map* map)
 
 void MythicPlusRunManager::ProcessCancellationVotes()
 {
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     uint64 now = GameTime::GetGameTime().count();
     uint64 voteTimeout = sConfigMgr->GetOption<uint32>("MythicPlus.CancellationVoteTimeout", 60);
 
@@ -2641,53 +2661,75 @@ void MythicPlusRunManager::TeleportGroupToEntrance(Player* activator, Map* map)
     }
 }
 
+void MythicPlusRunManager::WarmEntranceLocation(uint32 mapId) const
+{
+    {
+        std::lock_guard<std::mutex> guard(_entranceCacheMutex);
+        if (auto itr = _entranceCache.find(mapId); itr != _entranceCache.end() && itr->second.loaded)
+            return;
+    }
+
+    // areatrigger_teleport is the only authored source for the INSIDE drop
+    // point (dc_dungeon_entrances holds the outside portal coordinates, on a
+    // different map, so it is not usable here).
+    //
+    // For a dungeon with several entrance triggers there is no server-side way
+    // to know which one the group walked through, so the lowest id wins. That
+    // is arbitrary but at least deterministic; the warning below surfaces the
+    // ambiguous maps so an admin can check them.
+    //
+    // Queried with no lock held - see WarmBestRunDurationCache.
+    EntranceLocation loc;
+    loc.loaded = true;
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT t.target_position_x, t.target_position_y, t.target_position_z, t.target_orientation, "
+        "(SELECT COUNT(*) FROM areatrigger_teleport c WHERE c.target_map = {}) AS candidates "
+        "FROM areatrigger_teleport t "
+        "WHERE t.target_map = {} "
+        "ORDER BY t.id ASC LIMIT 1",
+        mapId, mapId);
+
+    if (result)
+    {
+        Field* fields = result->Fetch();
+        loc.x = fields[0].Get<float>();
+        loc.y = fields[1].Get<float>();
+        loc.z = fields[2].Get<float>();
+        loc.o = fields[3].Get<float>();
+        loc.valid = true;
+
+        if (uint32 candidates = fields[4].Get<uint32>(); candidates > 1)
+        {
+            LOG_WARN("mythic.run",
+                "Map {} has {} entrance areatriggers; Mythic+ will always return players to the lowest-id one",
+                mapId, candidates);
+        }
+    }
+
+    std::lock_guard<std::mutex> guard(_entranceCacheMutex);
+    _entranceCache.emplace(mapId, loc);
+}
+
 bool MythicPlusRunManager::GetEntranceLocation(Map* map, float& x, float& y,
     float& z, float& o) const
 {
     if (!map)
         return false;
 
-    struct EntranceLocation
-    {
-        bool loaded = false;
-        bool valid = false;
-        float x = 0.0f;
-        float y = 0.0f;
-        float z = 0.0f;
-        float o = 0.0f;
-    };
+    // Cache-only; WarmEntranceLocation performs the read from outside the run
+    // lock. A miss here means the warm-up has not run for this map yet, which
+    // is handled by the caller's "no entrance coordinates" path.
+    std::lock_guard<std::mutex> guard(_entranceCacheMutex);
 
-    static std::unordered_map<uint32, EntranceLocation> entranceCache;
-    EntranceLocation& loc = entranceCache[map->GetId()];
-    if (!loc.loaded)
-    {
-        loc.loaded = true;
-
-        QueryResult result = WorldDatabase.Query(
-            "SELECT target_position_x, target_position_y, target_position_z, target_orientation "
-            "FROM areatrigger_teleport "
-            "WHERE target_map = {} "
-            "ORDER BY id ASC LIMIT 1",
-            map->GetId());
-
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            loc.x = fields[0].Get<float>();
-            loc.y = fields[1].Get<float>();
-            loc.z = fields[2].Get<float>();
-            loc.o = fields[3].Get<float>();
-            loc.valid = true;
-        }
-    }
-
-    if (!loc.valid)
+    auto itr = _entranceCache.find(map->GetId());
+    if (itr == _entranceCache.end() || !itr->second.valid)
         return false;
 
-    x = loc.x;
-    y = loc.y;
-    z = loc.z;
-    o = loc.o;
+    x = itr->second.x;
+    y = itr->second.y;
+    z = itr->second.z;
+    o = itr->second.o;
     return true;
 }
 
@@ -2731,8 +2773,10 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     if (state->hudTimerDuration == 0)
         state->hudTimerDuration = GetHudTimerDuration(state->mapId, state->keystoneLevel);
 
-    ResetDungeonForRunStart(map);
-
+    // No reset here: the dungeon was respawned at keystone activation so the
+    // pops had the whole countdown to settle. Resetting again would despawn
+    // everything a second time and charge the group for it on the clock.
+    // Scaling still runs, to catch anything that spawned during the countdown.
     ApplyKeystoneScaling(map, state->keystoneLevel);
     state->scalingApplied = true;
 
@@ -2762,7 +2806,7 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
     SetHudWorldState(state, map, MythicPlusConstants::Hud::OWNER_GUID_LOW, state->ownerGuid.GetCounter());
     SetHudWorldState(state, map, MythicPlusConstants::Hud::KEYSTONE_LEVEL, state->keystoneLevel);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DUNGEON_ID, state->mapId);
-    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, GetTotalBossesForDungeon(state->mapId));
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, state->totalBosses);
     UpdateHud(state, map, true, "start");
 
     // Withdraw the standalone DENC boss tracker: the group may have walked in
@@ -2789,9 +2833,9 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
         liveRun->timerRemaining = state->timerEndsAt > now
             ? static_cast<uint32>(state->timerEndsAt - now)
             : 0;
-        liveRun->bossesKilled = state->bossesKilled;
-        liveRun->bossesTotal = GetTotalBossesForDungeon(state->mapId);
-        liveRun->deaths = state->deaths;
+        liveRun->bossesKilled = static_cast<uint8>(state->bossesKilled);
+        liveRun->bossesTotal = static_cast<uint8>(state->totalBosses);
+        liveRun->deaths = static_cast<uint8>(std::min<uint32>(state->deaths, 255));
         liveRun->leaderName = leaderName;
         liveRun->dungeonName = dungeonName;
         liveRun->participantNames.clear();
@@ -2957,6 +3001,14 @@ void MythicPlusRunManager::BuildBossTracking(InstanceState* state)
             }
         }
     }
+
+    // Resolve once here. GetTotalBossesForDungeon walks up to three
+    // DungeonEncounter lists and never changes for a given map, but it was
+    // being called from the HUD snapshot, the result payload, the completion
+    // check and the final-boss check - several times per second, per instance.
+    state->totalBosses = !state->bossOrder.empty()
+        ? static_cast<uint32>(state->bossOrder.size())
+        : GetTotalBossesForDungeon(state->mapId);
 }
 
 void MythicPlusRunManager::InitializeHud(InstanceState* state, Map* map)
@@ -2973,7 +3025,7 @@ void MythicPlusRunManager::InitializeHud(InstanceState* state, Map* map)
     SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::KEYSTONE_LEVEL, state->keystoneLevel);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DUNGEON_ID, state->mapId);
-    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, GetTotalBossesForDungeon(state->mapId));
+    SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_TOTAL, state->totalBosses);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_KILLED, state->bossesKilled);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::DEATHS, state->deaths);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::WIPES, state->wipes);
@@ -3032,10 +3084,15 @@ void MythicPlusRunManager::SyncHudToPlayer(InstanceState* state, Player* player)
 
 void MythicPlusRunManager::ProcessHudUpdates()
 {
+    // Resolve any missing personal-best times first, outside the run lock. The
+    // snapshot builder below reads them from cache and must never block.
+    WarmActiveBestRunDurations();
+
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     bool hudEnabled = sConfigMgr->GetOption<bool>("MythicPlus.Hud.WorldStates", true);
     bool aioEnabled = sConfigMgr->GetOption<bool>("MythicPlus.Hud.Aio.Enabled", true);
-    if (!hudEnabled && !aioEnabled)
-        return;
+    uint64 now = GameTime::GetGameTime().count();
 
     for (auto& [key, state] : _instanceStates)
     {
@@ -3047,6 +3104,25 @@ void MythicPlusRunManager::ProcessHudUpdates()
 
         Map* map = sMapMgr->FindMap(state.mapId, state.instanceId);
         if (!map)
+            continue;
+
+        // Par timer. This is the only place the countdown is compared against
+        // the clock during a run; previously timerEndsAt was written once and
+        // then only ever read for display, so running out of time had no
+        // effect whatsoever.
+        if (!state.timerExpired && !state.completed && !state.failed &&
+            state.startedAt && state.timerEndsAt && now >= state.timerEndsAt)
+        {
+            state.timerExpired = true;
+            AnnounceToInstance(map,
+                "|cffff0000[Mythic+]|r Time is up! The dungeon can still be completed, "
+                "but the keystone will not be upgraded.");
+            LOG_INFO("mythic.run", "Par timer expired for instance {} (map {}, +{})",
+                     state.instanceId, state.mapId, uint32(state.keystoneLevel));
+            UpdateHud(&state, map, true, "timer_expired");
+        }
+
+        if (!hudEnabled && !aioEnabled)
             continue;
 
         ProcessHudUpdatesInternal(&state, map);
@@ -3087,6 +3163,24 @@ void MythicPlusRunManager::UpdateHud(InstanceState* state, Map* map, bool forceB
             SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_ELAPSED, timerElapsed);
             SetHudWorldState(state, map, MythicPlusConstants::Hud::TIMER_REMAINING, timerRemaining);
         }
+    }
+
+    // Keep the spectator listing in step. MythicSpectatorManager::UpdateRunStatus
+    // had no callers at all, so a registered run kept broadcasting its
+    // start-of-run snapshot - every live run showed 0 bosses and 0 deaths for
+    // its entire duration.
+    {
+        uint64 now = GameTime::GetGameTime().count();
+        uint32 remaining = (state->timerEndsAt > now)
+            ? static_cast<uint32>(state->timerEndsAt - now)
+            : 0;
+
+        sMythicSpectator.UpdateRunStatus(
+            state->instanceId,
+            remaining,
+            static_cast<uint8>(std::min<uint32>(state->bossesKilled, 255)),
+            static_cast<uint8>(std::min<uint32>(state->totalBosses, 255)),
+            static_cast<uint8>(std::min<uint32>(state->deaths, 255)));
     }
 
     MaybeSendAioSnapshot(state, map, reason, forceBroadcast);
@@ -3168,7 +3262,7 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
             GameTime::GetGameTimeMS().count());
     }
 
-    uint32 totalBosses = state->bossOrder.empty() ? GetTotalBossesForDungeon(state->mapId) : static_cast<uint32>(state->bossOrder.size());
+    uint32 totalBosses = state->totalBosses;
     uint32 bestTime = GetBestRunDuration(state->mapId, state->keystoneLevel);
     std::string mapName = GetMapDisplayName(state->mapId);
     bool inProgress = !state->completed && !state->failed && (state->countdownActive || state->startedAt > 0);
@@ -3278,6 +3372,8 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
 #endif
 }
 
+// Also lock-free, for the same reason as IsRecognizedBoss: it reads only
+// sObjectMgr's encounter lists and the startup-populated _mapBossEntries.
 uint32 MythicPlusRunManager::GetTotalBossesForDungeon(uint32 mapId) const
 {
     auto getEncounterCount = [&](Difficulty difficulty) -> uint32
@@ -3390,7 +3486,7 @@ bool MythicPlusRunManager::IsFinalBossEncounter(const InstanceState* state, cons
     if (!IsBossCreature(creature))
         return false;
 
-    uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);
+    uint32 totalBosses = state->totalBosses;
     if (totalBosses == 0)
         return false;
 
@@ -3415,14 +3511,14 @@ bool MythicPlusRunManager::AreCompletionObjectivesMet(InstanceState const* state
         if (trackedKilled >= state->bossOrder.size())
             return true;
 
-        uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);
+        uint32 totalBosses = state->totalBosses;
         if (totalBosses > 0 && state->bossesKilled >= totalBosses)
             return true;
 
         return false;
     }
 
-    uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);
+    uint32 totalBosses = state->totalBosses;
     if (totalBosses == 0)
         return false;
 
@@ -3431,11 +3527,17 @@ bool MythicPlusRunManager::AreCompletionObjectivesMet(InstanceState const* state
 
 MythicPlusRunManager::InstanceState const* MythicPlusRunManager::GetRunState(Map* map) const
 {
+    // NOTE: returns a pointer into _instanceStates. Callers read it on the same
+    // map thread that owns the instance, within the current call, so it cannot
+    // be erased underneath them - but it must not be cached across ticks.
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
     return GetState(map);
 }
 
 bool MythicPlusRunManager::IsMythicPlusActive(Map* map) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     InstanceState const* state = GetState(map);
     if (!state)
         return false;
@@ -3470,6 +3572,8 @@ bool MythicPlusRunManager::ShouldSuppressLoot(Creature* creature) const
     if (!map->IsDungeon())
         return false;
 
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     InstanceState const* state = GetState(map);
     if (!state || state->keystoneLevel == 0)
         return false;
@@ -3492,6 +3596,8 @@ bool MythicPlusRunManager::ShouldSuppressReputation(Player* player) const
     if (!map || !map->IsDungeon())
         return false;
 
+    std::lock_guard<std::recursive_mutex> guard(_stateMutex);
+
     InstanceState const* state = GetState(map);
     if (!state || state->keystoneLevel == 0)
         return false;
@@ -3507,9 +3613,15 @@ void MythicPlusRunManager::SimulateRun(Player* player, uint8 level, bool success
     if (!player)
         return;
 
-    // Simulate a run completion for vault progress
-    // Using mapId 0 as it's not critical for vault progress tracking (only used for history/score which we skip here)
-    UpdateWeeklyVault(player->GetGUID().GetCounter(), GetCurrentSeasonId(), 0, level, success, 0, 0, 1800);
+    // Writes the same dc_mplus_runs row a real completion writes, so the
+    // simulated run shows up in vault progress. It used to call the (unused)
+    // UpdateWeeklyVault, which wrote a table the vault no longer reads from.
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_mplus_runs (character_guid, season_id, map_id, keystone_level, score, deaths, wipes, completion_time, success, group_members, completed_at) "
+        "VALUES ({}, {}, {}, {}, {}, 0, 0, {}, {}, '[]', FROM_UNIXTIME({}))",
+        player->GetGUID().GetCounter(), GetCurrentSeasonId(), 0, level,
+        success ? uint32(level) * 60 : 0, 1800, success ? 1 : 0,
+        GameTime::GetGameTime().count());
 
     LOG_INFO("mythic.debug", "Simulated Mythic+ run for player {} (Level {}, Success {})",
              player->GetName(), level, success);

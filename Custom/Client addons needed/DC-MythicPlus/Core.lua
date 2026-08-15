@@ -1320,6 +1320,9 @@ local runTracker = {
     lastRun = nil,
 }
 
+-- Shared with DeathPins.lua, which renders this run's death markers.
+namespace.runTracker = runTracker
+
 local groupGuidToName = {}
 
 local function UpdateGroupRosterCache()
@@ -1608,217 +1611,6 @@ end)
 -- WorldMap death pins (simple overlay like DC-Mapupgrades)
 -- =====================================================================
 
-local function ActiveWorldMapId()
-    if WorldMapFrame then
-        if WorldMapFrame.GetMapID then
-            local ok, mapId = pcall(WorldMapFrame.GetMapID, WorldMapFrame)
-            if ok and mapId and mapId ~= 0 then
-                return mapId
-            end
-        end
-        if WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.GetMapID then
-            local ok, mapId = pcall(WorldMapFrame.ScrollContainer.GetMapID, WorldMapFrame.ScrollContainer)
-            if ok and mapId and mapId ~= 0 then
-                return mapId
-            end
-        end
-    end
-    if type(GetCurrentMapAreaID) == "function" then
-        local mapId = GetCurrentMapAreaID()
-        if mapId and mapId ~= 0 then
-            return mapId
-        end
-    end
-    if WorldMapFrame and WorldMapFrame.mapID and WorldMapFrame.mapID ~= 0 then
-        return WorldMapFrame.mapID
-    end
-    return nil
-end
-
-local function WorldMapParent()
-    return WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
-end
-
-local deathPins = {
-    pins = {},
-    pending = false,
-    elapsed = 0,
-    lastMapId = nil,
-}
-
-local function DestroyDeathPin(id)
-    local pin = deathPins.pins[id]
-    if not pin then
-        return
-    end
-    pin:Hide()
-    pin:SetScript("OnEnter", nil)
-    pin:SetScript("OnLeave", nil)
-    pin:SetParent(nil)
-    deathPins.pins[id] = nil
-end
-
-local function AcquireDeathPin(id)
-    local pin = deathPins.pins[id]
-    if pin then
-        return pin
-    end
-    if not WorldMapFrame then
-        return nil
-    end
-    local parent = WorldMapParent()
-    if not parent then
-        return nil
-    end
-    pin = CreateFrame("Button", "DCMythicPlusDeathPin" .. tostring(id), parent)
-    pin:SetSize(18, 18)
-    pin.texture = pin:CreateTexture(nil, "OVERLAY")
-    pin.texture:SetAllPoints()
-    pin.texture:SetTexture("Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8")
-    pin:SetFrameStrata("HIGH")
-    pin:Hide()
-    pin.deathId = id
-
-    pin:SetScript("OnEnter", function(self)
-        local entry
-        for _, e in ipairs(runTracker.deathLocations or {}) do
-            if e and e.id == self.deathId then
-                entry = e
-                break
-            end
-        end
-        if not entry then
-            return
-        end
-
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("Death #" .. tostring(entry.id or "?"), 1, 0.2, 0.2)
-        GameTooltip:AddLine(string.format("Victim: %s", tostring(entry.name or "?")), 1, 1, 1)
-
-        if entry.killer and (entry.killer.sourceName or entry.killer.spellName) then
-            local killerName = entry.killer.sourceName or "Unknown"
-            local spell = entry.killer.spellName or ""
-            local amount = entry.killer.amount
-            local extra = ""
-            if amount and amount > 0 then
-                extra = string.format(" (%d)", amount)
-            end
-            if spell ~= "" then
-                GameTooltip:AddLine(string.format("Killing blow: %s - %s%s", tostring(killerName), tostring(spell), extra), 1, 0.82, 0)
-            else
-                GameTooltip:AddLine(string.format("Killing blow: %s%s", tostring(killerName), extra), 1, 0.82, 0)
-            end
-        else
-            GameTooltip:AddLine("Killing blow: (unknown)", 0.8, 0.8, 0.8)
-        end
-
-        if entry.elapsed then
-            GameTooltip:AddLine("Time: " .. FormatSeconds(entry.elapsed), 0.7, 0.9, 1)
-        end
-        local place = entry.subzone and entry.subzone ~= "" and entry.subzone or entry.zone
-        if place and place ~= "" then
-            GameTooltip:AddLine("Location: " .. tostring(place), 0.7, 0.7, 0.9)
-        end
-        if entry.x and entry.y and (entry.x > 0 or entry.y > 0) then
-            GameTooltip:AddLine(string.format("Coords: %.1f, %.1f", entry.x * 100, entry.y * 100), 0.7, 0.7, 0.9)
-        end
-
-        GameTooltip:Show()
-    end)
-    pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    deathPins.pins[id] = pin
-    return pin
-end
-
-local function UpdateDeathPinsInternal()
-    if not WorldMapFrame or not (WorldMapFrame.IsShown and WorldMapFrame:IsShown()) then
-        for _, pin in pairs(deathPins.pins) do
-            pin:Hide()
-        end
-        return
-    end
-
-    -- Only show pins for the currently active run.
-    if not runTracker.active or not runTracker.runKey then
-        for _, pin in pairs(deathPins.pins) do
-            pin:Hide()
-        end
-        return
-    end
-
-    local parent = WorldMapParent()
-    if not parent then
-        return
-    end
-
-    local activeMapId = ActiveWorldMapId()
-    if activeMapId == deathPins.lastMapId and not deathPins.forceUpdate then
-        return
-    end
-    deathPins.lastMapId = activeMapId
-    deathPins.forceUpdate = nil
-
-    local shown = {}
-    local shownCount = 0
-    local maxPins = 30
-    for i = 1, #runTracker.deathLocations do
-        local e = runTracker.deathLocations[i]
-        if e and e.id and e.runKey == runTracker.runKey and e.mapId and tonumber(e.mapId) == tonumber(activeMapId) and e.x and e.y and (e.x > 0 or e.y > 0) then
-            local pin = AcquireDeathPin(e.id)
-            if pin then
-                local px = e.x * (parent:GetWidth() or 0)
-                local py = e.y * (parent:GetHeight() or 0)
-                pin:ClearAllPoints()
-                pin:SetPoint("CENTER", parent, "TOPLEFT", px, -py)
-                pin:Show()
-                shown[e.id] = true
-                shownCount = shownCount + 1
-                if shownCount >= maxPins then
-                    break
-                end
-            end
-        end
-    end
-
-    for id, pin in pairs(deathPins.pins) do
-        if not shown[id] then
-            pin:Hide()
-        end
-    end
-end
-
-function namespace.ScheduleDeathPinUpdate()
-    deathPins.pending = true
-    deathPins.elapsed = 0
-    deathPins.forceUpdate = true
-end
-
-local deathPinWatcher = CreateFrame("Frame")
-deathPinWatcher:RegisterEvent("WORLD_MAP_UPDATE")
-deathPinWatcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-deathPinWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
-deathPinWatcher:SetScript("OnEvent", function()
-    namespace.ScheduleDeathPinUpdate()
-end)
-
-if WorldMapFrame and WorldMapFrame.HookScript then
-    WorldMapFrame:HookScript("OnShow", function() namespace.ScheduleDeathPinUpdate() end)
-    WorldMapFrame:HookScript("OnSizeChanged", function() namespace.ScheduleDeathPinUpdate() end)
-end
-
-local deathPinTicker = CreateFrame("Frame")
-deathPinTicker:SetScript("OnUpdate", function(_, elapsed)
-    if not deathPins.pending then
-        return
-    end
-    deathPins.elapsed = deathPins.elapsed + elapsed
-    if deathPins.elapsed >= 0.1 then
-        deathPins.elapsed = 0
-        deathPins.pending = false
-        UpdateDeathPinsInternal()
-    end
-end)
 
 local function SafelyGetSpellName(spellId)
     if not spellId then
@@ -2980,192 +2772,11 @@ local function RequestServerSnapshot(reason)
     Trace("RequestHUD skipped: DC transport not available")
 end
 
-local JsonDecoder
-JsonDecoder = {}
 
-local function skipWhitespace(str, idx)
-    local len = #str
-    while idx <= len do
-        local byte = str:byte(idx)
-        if not byte then
-            break
-        end
-        if byte ~= 32 and byte ~= 9 and byte ~= 10 and byte ~= 13 then
-            break
-        end
-        idx = idx + 1
-    end
-    return idx
-end
-
-local function parseLiteral(str, idx, literal, value)
-    if str:sub(idx, idx + #literal - 1) == literal then
-        return value, idx + #literal
-    end
-    error("invalid literal")
-end
-
-local function parseNumber(str, idx)
-    local startIdx = idx
-    local len = #str
-    while idx <= len do
-        local c = str:sub(idx, idx)
-        if not c:match("[0-9%+%-%eE%.]") then
-            break
-        end
-        idx = idx + 1
-    end
-    local num = tonumber(str:sub(startIdx, idx - 1))
-    if not num then
-        error("invalid number")
-    end
-    return num, idx
-end
-
-local function parseString(str, idx)
-    idx = idx + 1
-    local len = #str
-    local buffer = {}
-    while idx <= len do
-        local char = str:sub(idx, idx)
-        if char == '"' then
-            return table.concat(buffer), idx + 1
-        elseif char == '\\' then
-            local esc = str:sub(idx + 1, idx + 1)
-            if esc == 'u' then
-                local hex = str:sub(idx + 2, idx + 5)
-                local code = tonumber(hex, 16)
-                if not code then
-                    error("invalid unicode escape")
-                end
-                if code <= 0x7F then
-                    buffer[#buffer + 1] = string.char(code)
-                else
-                    buffer[#buffer + 1] = "?"
-                end
-                idx = idx + 6
-            else
-                local map = {
-                    ["\\"] = "\\",
-                    ['"'] = '"',
-                    ['/'] = '/',
-                    ['b'] = string.char(8),
-                    ['f'] = string.char(12),
-                    ['n'] = "\n",
-                    ['r'] = "\r",
-                    ['t'] = "\t",
-                }
-                buffer[#buffer + 1] = map[esc] or esc
-                idx = idx + 2
-            end
-        else
-            buffer[#buffer + 1] = char
-            idx = idx + 1
-        end
-    end
-    error("unterminated string")
-end
-
-local parseValue
-
-local function parseArray(str, idx)
-    idx = idx + 1
-    local result = {}
-    idx = skipWhitespace(str, idx)
-    if str:sub(idx, idx) == ']' then
-        return result, idx + 1
-    end
-    local n = 1
-    while true do
-        local value
-        value, idx = parseValue(str, idx)
-        result[n] = value
-        n = n + 1
-        idx = skipWhitespace(str, idx)
-        local char = str:sub(idx, idx)
-        if char == ']' then
-            return result, idx + 1
-        end
-        if char ~= ',' then
-            error("expected comma in array")
-        end
-        idx = skipWhitespace(str, idx + 1)
-    end
-end
-
-local function parseObject(str, idx)
-    idx = idx + 1
-    local result = {}
-    idx = skipWhitespace(str, idx)
-    if str:sub(idx, idx) == '}' then
-        return result, idx + 1
-    end
-    while true do
-        local key
-        if str:sub(idx, idx) ~= '"' then
-            error("expected string key")
-        end
-        key, idx = parseString(str, idx)
-        idx = skipWhitespace(str, idx)
-        if str:sub(idx, idx) ~= ':' then
-            error("expected colon")
-        end
-        idx = skipWhitespace(str, idx + 1)
-        local value
-        value, idx = parseValue(str, idx)
-        result[key] = value
-        idx = skipWhitespace(str, idx)
-        local char = str:sub(idx, idx)
-        if char == '}' then
-            return result, idx + 1
-        end
-        if char ~= ',' then
-            error("expected comma in object")
-        end
-        idx = skipWhitespace(str, idx + 1)
-    end
-end
-
-function parseValue(str, idx)
-    idx = skipWhitespace(str, idx)
-    local char = str:sub(idx, idx)
-    if char == '{' then
-        return parseObject(str, idx)
-    elseif char == '[' then
-        return parseArray(str, idx)
-    elseif char == '"' then
-        return parseString(str, idx)
-    elseif char == '-' or char:match("%d") then
-        return parseNumber(str, idx)
-    elseif char == 't' then
-        return parseLiteral(str, idx, "true", true)
-    elseif char == 'f' then
-        return parseLiteral(str, idx, "false", false)
-    elseif char == 'n' then
-        return parseLiteral(str, idx, "null", nil)
-    end
-    error("unexpected character in JSON")
-end
-
-local function DecodeJSON(input)
-    if type(input) ~= "string" then
-        return nil
-    end
-    local success, result = pcall(function()
-        local value, position = parseValue(input, 1)
-        position = skipWhitespace(input, position)
-        if position <= #input then
-            -- ignore trailing commas/spaces gracefully
-        end
-        return value
-    end)
-    if success then
-        return result
-    end
-    return nil
-end
-
-namespace.DecodeJSON = DecodeJSON
+-- Provided by Json.lua, which the TOC loads before Core.lua. The fallback keeps
+-- a missing/failed Json.lua from turning every payload into a Lua error - the
+-- HUD just stops decoding instead of breaking the whole addon.
+local DecodeJSON = namespace.DecodeJSON or function() return nil end
 
 local function NormalizeHudState(data)
     if type(data) ~= "table" then
@@ -3430,9 +3041,17 @@ local function EnsureNativeHudPollFrame()
 
     nativeHudPollFrame = CreateFrame("Frame")
     nativeHudPollFrame.elapsed = 0
+    nativeHudPollFrame.idleElapsed = 0
     nativeHudPollFrame:SetScript("OnUpdate", function(self, elapsed)
         self.elapsed = (self.elapsed or 0) + elapsed
-        if self.elapsed < NATIVE_MPLUS_HUD_POLL_INTERVAL then
+
+        -- Outside an instance there can be no run to report, so fall back to a
+        -- 1s heartbeat instead of polling the native bridge ten times a second
+        -- for the whole session.
+        local inInstance = IsInInstance and IsInInstance() or false
+        local interval = inInstance and NATIVE_MPLUS_HUD_POLL_INTERVAL or 1.0
+
+        if self.elapsed < interval then
             return
         end
 
@@ -3912,10 +3531,19 @@ local localTicker = CreateFrame("Frame")
 localTicker.elapsed = 0
 localTicker:SetScript("OnUpdate", function(self, elapsed)
     self.elapsed = (self.elapsed or 0) + elapsed
-    if self.elapsed < 0.25 then
+
+    -- This used to run the full tracking refresh four times a second for the
+    -- entire session - in cities, in raids, with the HUD hidden. Outside an
+    -- instance nothing it computes can change, so drop to a 1s idle beat.
+    local inInstance = IsInInstance and IsInInstance() or false
+    if self.elapsed < (inInstance and 0.25 or 1.0) then
         return
     end
     self.elapsed = 0
+
+    if not inInstance and not activeState then
+        return
+    end
 
     if activeState and IsRunInProgress(activeState) and timerText then
         timerText:SetText(BuildFullTimerLine(activeState))
@@ -4028,33 +3656,11 @@ if DC then
     end)
     namespace._dcRuntimeHudHandlerBound = true
     
-    -- SMSG_OBJECTIVE_UPDATE (0x16) - Boss/enemy count update
-    DC:RegisterHandler("MPLUS", 0x16, function(...)
-        local args = {...}
-        local bossesKilled, bossesTotal, enemyCount, enemyRequired
-        
-        if type(args[1]) == "table" then
-            local json = args[1]
-            bossesKilled = json.bossesKilled
-            bossesTotal = json.bossesTotal
-            enemyCount = json.enemyCount
-            enemyRequired = json.enemyRequired
-        else
-            bossesKilled = tonumber(args[1])
-            bossesTotal = tonumber(args[2])
-            enemyCount = tonumber(args[3])
-            enemyRequired = tonumber(args[4])
-        end
-        
-        if activeState then
-            activeState.bossesKilled = bossesKilled
-            activeState.bossesTotal = bossesTotal
-            activeState.enemyCount = enemyCount
-            activeState.enemyRequired = enemyRequired
-            UpdateFrameFromState(activeState)
-        end
-    end)
-    
+    -- SMSG_OBJECTIVE_UPDATE (0x16) is declared server-side but never sent: the
+    -- HUD payload on 0x15 already carries bossesKilled/bossesTotal and is what
+    -- actually drives the objective column. The handler that used to sit here
+    -- could never fire, so it was removed rather than left as a false lead.
+
     -- SMSG_KEY_INFO (0x10) - Key info response
     DC:RegisterHandler("MPLUS", 0x10, function(...)
         local args = {...}
@@ -4348,34 +3954,15 @@ if DC then
     end)
     
     -- =========================================================================
-    -- Group Finder Protocol Handlers
-    -- =========================================================================
-    
-    -- SMSG_LIVE_RUNS (0x20) - List of spectatable runs
-    DC:RegisterHandler("MPLUS", 0x20, function(...)
-        local args = {...}
-        if type(args[1]) == "table" then
-            local data = args[1]
-            if namespace.GroupFinder then
-                namespace.GroupFinder:PopulateLiveRuns(data.runs or {})
-            end
-        end
-    end)
-    
-    -- SMSG_SPECTATOR_UPDATE (0x24) - Update spectator HUD
-    DC:RegisterHandler("MPLUS", 0x24, function(...)
-        local args = {...}
-        if type(args[1]) == "table" then
-            local data = args[1]
-            if namespace.GroupFinder then
-                namespace.GroupFinder:UpdateSpectatorHUD(data)
-            end
-        end
-    end)
-    
-    -- =========================================================================
     -- GRPF (Group Finder) Protocol Handlers
     -- =========================================================================
+    --
+    -- Handlers for MPLUS 0x20 (SMSG_LIVE_RUNS) and MPLUS 0x24
+    -- (SMSG_SPECTATOR_UPDATE) used to sit above this block. Neither opcode
+    -- exists in the server's MPlus table, so neither could ever fire - and both
+    -- called exactly the same functions as the GRPF handlers below
+    -- (SMSG_SPECTATE_LIST 0x47 -> PopulateLiveRuns, SMSG_SPECTATE_DATA 0x45 ->
+    -- UpdateSpectatorHUD), which are the live path. Removed as dead duplicates.
     
     local GFOpcodes = DC.GroupFinderOpcodes or {}
 

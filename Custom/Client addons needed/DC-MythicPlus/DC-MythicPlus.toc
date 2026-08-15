@@ -10,8 +10,14 @@
 # Settings (loads first for defaults)
 Settings.lua
 
+# Shared JSON decoder (must precede Core.lua, which binds namespace.DecodeJSON)
+Json.lua
+
 # Core HUD
 Core.lua
+
+# World-map death markers (reads namespace.runTracker, so loads after Core.lua)
+DeathPins.lua
 
 # Group Finder UI
 UI\GroupFinderFrame.lua

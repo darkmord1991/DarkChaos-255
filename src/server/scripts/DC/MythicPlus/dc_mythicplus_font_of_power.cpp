@@ -22,6 +22,7 @@
 #include "Group.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
+#include "dc_mythicplus_affixes.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
@@ -34,6 +35,7 @@
 #include "AIO.h"
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <sstream>
 #include "dc_update_profiler.h"
@@ -117,19 +119,22 @@ ObjectGuid GetPendingActivationKey(Player* player)
     return player->GetGUID();
 }
 
+// Icons keyed to AffixType in dc_mythicplus_affixes.h. The previous mapping was
+// written against a different affix order - Bolstering showed a fire icon and
+// Tyrannical showed Battle Shout, which reads as Bolstering.
 std::string GetAffixIconTexture(uint32 affixId)
 {
     switch (affixId)
     {
-        case 1: return "Interface\\Icons\\Spell_Fire_Immolation";
-        case 2: return "Interface\\Icons\\Spell_Frost_ChillingBlast";
-        case 3: return "Interface\\Icons\\Spell_Nature_NatureGuardian";
-        case 4: return "Interface\\Icons\\Ability_Warrior_BattleShout";
-        case 5: return "Interface\\Icons\\Spell_Nature_Earthquake";
-        case 6: return "Interface\\Icons\\Spell_Shadow_SoulGem";
-        case 7: return "Interface\\Icons\\Spell_Nature_Thorns";
-        case 8: return "Interface\\Icons\\Inv_Misc_Volatilefire";
-        default: return "Interface\\Icons\\INV_Misc_QuestionMark";
+        case AFFIX_BOLSTERING: return "Interface\\Icons\\Ability_Warrior_BattleShout";
+        case AFFIX_NECROTIC:   return "Interface\\Icons\\Ability_Creature_Disease_02";
+        case AFFIX_GRIEVOUS:   return "Interface\\Icons\\Ability_Backstab";
+        case AFFIX_TYRANNICAL: return "Interface\\Icons\\Achievement_Boss_Archaedas";
+        case AFFIX_FORTIFIED:  return "Interface\\Icons\\Ability_Toughness";
+        case AFFIX_RAGING:     return "Interface\\Icons\\Ability_Warrior_Rampage";
+        case AFFIX_SANGUINE:   return "Interface\\Icons\\Spell_Shadow_LifeDrain";
+        case AFFIX_VOLCANIC:   return "Interface\\Icons\\Spell_Shaman_LavaSurge";
+        default:               return "Interface\\Icons\\INV_Misc_QuestionMark";
     }
 }
 
@@ -754,7 +759,7 @@ private:
         pending.instanceId = go->GetInstanceId();
         pending.keystone = descriptor;
         pending.startTime = GameTime::GetGameTime().count();
-        pending.timeout = 60;
+        pending.timeout = sConfigMgr->GetOption<uint32>("MythicPlus.ReadyCheckTimeout", 60);
         pending.allReady = false;
         pending.countdown = 0;
         pending.countdownStartedMs = 0;
@@ -818,7 +823,13 @@ private:
         uint32 seasonId = descriptor.seasonId ? descriptor.seasonId : sMythicRuns->GetCurrentSeasonId();
         std::vector<MythicPlusRunManager::WeeklyAffixInfo> affixes;
         if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", false))
+        {
+            // GetWeeklyAffixInfo is a cache-only read; warm it first or the
+            // ready-check frame renders with an empty affix row on the first
+            // activation of the week.
+            sMythicRuns->WarmWeeklyAffixCache(seasonId);
             affixes = sMythicRuns->GetWeeklyAffixInfo(seasonId);
+        }
 
         DungeonUiInfo uiInfo = LoadDungeonUiInfo(descriptor.mapId);
         uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
@@ -942,7 +953,22 @@ public:
         {
             pending.allReady = true;
             SendReadyStatusUpdate(pending, player, true);
-            FinalizePendingActivation(activationKey);
+
+            // Hand off to the countdown rather than activating immediately.
+            // StartCountdown had no callers, so pending.countdown and
+            // countdownStartedMs stayed 0 forever - which meant ProcessCountdowns
+            // never fired and SMSG_KEYSTONE_COUNTDOWN (0x52) was never sent,
+            // leaving the addon's OnCountdownStart handler permanently dead.
+            //
+            // A zero configured duration keeps the old instant behaviour.
+            StartCountdown(activationKey);
+
+            auto startedItr = s_pendingActivations.find(activationKey);
+            if (startedItr == s_pendingActivations.end() ||
+                startedItr->second.countdown == 0)
+            {
+                FinalizePendingActivation(activationKey);
+            }
         }
     }
 
@@ -954,9 +980,19 @@ public:
 
         PendingKeystoneActivation& pending = it->second;
 
-        // Start 10-second countdown
-        pending.countdown = static_cast<uint8>(sConfigMgr->GetOption<uint32>(
-            "MythicPlus.CountdownDuration", 10));
+        // Deliberately NOT MythicPlus.CountdownDuration. That one is the
+        // in-dungeon countdown the run manager runs after activation; reusing it
+        // here would make the group sit through two countdowns back to back.
+        //
+        // This is a separate, optional pre-activation beat that drives the
+        // retail keystone-insertion animation in DC-MythicPlus. Default 0 keeps
+        // the existing behaviour (activate the moment everyone is ready).
+        pending.countdown = static_cast<uint8>(std::min<uint32>(
+            sConfigMgr->GetOption<uint32>("MythicPlus.ReadyCheckCountdown", 0), 255));
+
+        if (pending.countdown == 0)
+            return;
+
         pending.countdownStartedMs = GameTime::GetGameTimeMS().count();
         pending.startTime = 0;
 
@@ -973,14 +1009,6 @@ public:
         NotifyPendingCancellation(it->second, reason);
 
         s_pendingActivations.erase(it);
-    }
-
-    static void FinalizePendingActivation(Group* group)
-    {
-        if (!group)
-            return;
-
-        FinalizePendingActivation(group->GetGUID());
     }
 
     static void FinalizePendingActivation(ObjectGuid const& groupGuid)

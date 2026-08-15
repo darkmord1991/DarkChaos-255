@@ -15,14 +15,14 @@ namespace
 
     struct DalaranGuardPOI
     {
-        const char* name;
+        char const* name;
         uint32 map;
         float x;
         float y;
         float z;
         float o;
         uint32 poiIcon;
-        const char* gossipIcon;
+        char const* gossipIcon;
         uint32 menuIcon;
     };
 
@@ -52,7 +52,13 @@ namespace
         // ~3.9 yd clear of the nearest spawn. Same landing the well teleporter uses.
         {"The Underbelly", 1413, 1113.08f, 1030.18f, 496.10f, 3.600f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Creature_Cursed_03", GOSSIP_ICON_TAXI},
         {"Chamber of the Guardian", 1413, 1274.03f, 928.46f, 749.79f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Spell_Arcane_TeleportDalaran", GOSSIP_ICON_TAXI},
-        {"Sunreaver's Sanctuary", 1413, 1232.42f, 952.55f, 955.19f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Jewelry_TrinketPVP_02", GOSSIP_ICON_TAXI}
+        {"Sunreaver's Sanctuary", 1413, 1232.42f, 952.55f, 955.19f, 3.822f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Jewelry_TrinketPVP_02", GOSSIP_ICON_TAXI},
+        // Surveyed in-game 2026-08-15. Sits on one of the outlying flying islands, hence the
+        // large gap between GroundZ (293.98) and FloorZ (444.72) -- the island deck, not terrain.
+        // Icon matches the 1409 Training Grounds entry above. Appended last on purpose: the
+        // gossip action id IS the array index, so inserting anywhere else would renumber the
+        // existing destinations.
+        {"Training Grounds", 1413, 938.9486f, 1487.6951f, 444.7235f, 2.1670f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Warrior_WeaponMastery", GOSSIP_ICON_TAXI}
     };
 
     // Resolve which POI set + count applies to the guild-house map the player will hop on.

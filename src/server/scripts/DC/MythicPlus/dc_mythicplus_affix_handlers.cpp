@@ -5,7 +5,9 @@
 
 #include "dc_mythicplus_affixes.h"
 #include "dc_mythicplus_run_manager.h"
+#include "Chat.h"
 #include "Creature.h"
+#include "GameTime.h"
 #include "Map.h"
 #include "Player.h"
 #include "SpellMgr.h"
@@ -15,8 +17,10 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
+#include <algorithm>
 #include <cmath>
 #include <unordered_set>
+#include <vector>
 
 // ============================================================================
 // BOLSTERING AFFIX
@@ -227,10 +231,6 @@ public:
 // ============================================================================
 class TyrannicalAffixHandler : public IAffixHandler
 {
-private:
-    uint8 _keystoneLevel = 0;
-    std::unordered_map<uint64 /* instanceKey */, std::unordered_set<ObjectGuid>> _scaledCreatures;
-
 public:
     AffixType GetType() const override { return AFFIX_TYRANNICAL; }
     std::string GetName() const override { return "Tyrannical"; }
@@ -239,17 +239,8 @@ public:
         return "Boss enemies have 40% more health and inflict 15% more damage.";
     }
 
-    void OnAffixActivate(Map* map, uint8 keystoneLevel) override
-    {
-        _keystoneLevel = keystoneLevel;
-        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
-    }
-
-    void OnAffixDeactivate(Map* map) override
-    {
-        _keystoneLevel = 0;
-        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
-    }
+    void OnAffixActivate(Map* /*map*/, uint8 /*keystoneLevel*/) override { }
+    void OnAffixDeactivate(Map* /*map*/) override { }
 
     void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
 
@@ -270,14 +261,13 @@ public:
         if (!creature || !sMythicRuns->IsBossCreature(creature))
             return;
 
-        Map* map = creature->GetMap();
-        if (!map)
-            return;
-
-        if (!_scaledCreatures[sAffixMgr->MakeInstanceKey(map)].insert(creature->GetGUID()).second)
-            return;
-
-        // +40% HP for bosses
+        // No dedupe set here on purpose. SelectLevel resets health to base
+        // before this hook runs, so applying the multiplier every time is both
+        // correct and idempotent. The old per-instance GUID set made this a
+        // one-shot, and ApplyKeystoneScaling re-runs SelectLevel twice during
+        // activation - so the affix bonus was applied, then wiped by the reset,
+        // then skipped on the way back. Tyrannical bosses ended up with exactly
+        // the health they would have had without the affix.
         uint32 baseHealth = creature->GetMaxHealth();
         uint32 newHealth = uint32(baseHealth * 1.40f);
         creature->SetCreateHealth(newHealth);
@@ -294,9 +284,6 @@ public:
 // ============================================================================
 class FortifiedAffixHandler : public IAffixHandler
 {
-private:
-    std::unordered_map<uint64 /* instanceKey */, std::unordered_set<ObjectGuid>> _scaledCreatures;
-
 public:
     AffixType GetType() const override { return AFFIX_FORTIFIED; }
     std::string GetName() const override { return "Fortified"; }
@@ -305,15 +292,8 @@ public:
         return "Non-boss enemies have 20% more health and inflict 30% more damage.";
     }
 
-    void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
-    {
-        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
-    }
-
-    void OnAffixDeactivate(Map* map) override
-    {
-        _scaledCreatures.erase(sAffixMgr->MakeInstanceKey(map));
-    }
+    void OnAffixActivate(Map* /*map*/, uint8 /*keystoneLevel*/) override { }
+    void OnAffixDeactivate(Map* /*map*/) override { }
     void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
 
     void OnCreatureDamageDone(Creature* attacker, Unit* /*victim*/, uint32& damage) override
@@ -333,14 +313,8 @@ public:
         if (!creature || sMythicRuns->IsBossCreature(creature))
             return;
 
-        Map* map = creature->GetMap();
-        if (!map)
-            return;
-
-        if (!_scaledCreatures[sAffixMgr->MakeInstanceKey(map)].insert(creature->GetGUID()).second)
-            return;
-
-        // +20% HP for non-bosses
+        // Idempotent per SelectLevel call - see the note in TyrannicalAffixHandler
+        // for why the per-instance dedupe set had to go.
         uint32 baseHealth = creature->GetMaxHealth();
         uint32 newHealth = uint32(baseHealth * 1.20f);
         creature->SetCreateHealth(newHealth);
@@ -351,6 +325,316 @@ public:
     void OnPlayerUpdate(Player* /*player*/, uint32 /*diff*/) override { }
 };
 
+// ============================================================================
+// RAGING AFFIX
+// Enemies enrage below 30% health, dealing 100% extra damage and shrugging off
+// crowd control until they die.
+// ============================================================================
+class RagingAffixHandler : public IAffixHandler
+{
+private:
+    static constexpr float ENRAGE_HEALTH_PCT = 30.0f;
+    static constexpr float ENRAGE_DAMAGE_MULT = 2.0f;
+
+public:
+    AffixType GetType() const override { return AFFIX_RAGING; }
+    std::string GetName() const override { return "Raging"; }
+    std::string GetDescription() const override
+    {
+        return "Non-boss enemies enrage below 30% health, dealing 100% additional "
+               "damage and becoming immune to crowd control until defeated.";
+    }
+
+    void OnAffixActivate(Map* /*map*/, uint8 /*keystoneLevel*/) override { }
+    void OnAffixDeactivate(Map* /*map*/) override { }
+    void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
+
+    void OnCreatureDamageDone(Creature* attacker, Unit* /*victim*/, uint32& damage) override
+    {
+        if (!attacker || !attacker->IsAlive())
+            return;
+
+        // Bosses are Tyrannical's business; Raging is a trash affix.
+        if (sMythicRuns->IsBossCreature(attacker))
+            return;
+
+        if (attacker->GetHealthPct() >= ENRAGE_HEALTH_PCT)
+            return;
+
+        damage = uint32(damage * ENRAGE_DAMAGE_MULT);
+    }
+
+    void OnCreatureDamageTaken(Creature* victim, Unit* /*attacker*/, uint32& /*damage*/) override
+    {
+        if (!victim || !victim->IsAlive())
+            return;
+
+        if (sMythicRuns->IsBossCreature(victim))
+            return;
+
+        if (victim->GetHealthPct() >= ENRAGE_HEALTH_PCT)
+            return;
+
+        // Break and refuse crowd control for the rest of the fight. Applied on
+        // damage taken so it engages the moment the enemy is pushed below the
+        // threshold, without needing a per-creature tick.
+        if (victim->HasUnitState(UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED | UNIT_STATE_FLEEING))
+        {
+            victim->RemoveAurasByType(SPELL_AURA_MOD_STUN);
+            victim->RemoveAurasByType(SPELL_AURA_MOD_CONFUSE);
+            victim->RemoveAurasByType(SPELL_AURA_MOD_FEAR);
+        }
+
+        victim->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_STUN, true);
+        victim->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+        victim->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_FEAR, true);
+    }
+
+    void OnPlayerDamageTaken(Player* /*player*/, Unit* /*attacker*/, uint32& /*damage*/) override { }
+    void OnCreatureSelectLevel(Creature* /*creature*/) override { }
+    void OnPlayerUpdate(Player* /*player*/, uint32 /*diff*/) override { }
+};
+
+// ============================================================================
+// SANGUINE AFFIX
+// Slain non-boss enemies leave a pool of blood that damages players standing
+// in it and heals enemies who walk through.
+// ============================================================================
+class SanguineAffixHandler : public IAffixHandler
+{
+private:
+    struct SanguinePool
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        uint64 expiresAt = 0;
+    };
+
+    // Keyed per instance so concurrent runs of the same dungeon cannot see each
+    // other's pools.
+    std::unordered_map<uint64 /* instanceKey */, std::vector<SanguinePool>> _pools;
+    std::unordered_map<uint64 /* instanceKey */, uint32> _tickAccumulator;
+
+    static constexpr float POOL_RADIUS = 5.0f;
+    static constexpr uint32 POOL_DURATION_SECONDS = 12;
+    static constexpr uint32 TICK_INTERVAL_MS = 1000;
+    static constexpr float PLAYER_DAMAGE_PCT = 3.0f;   // of max health, per tick
+    static constexpr float CREATURE_HEAL_PCT = 5.0f;   // of max health, per tick
+
+    void PruneExpired(std::vector<SanguinePool>& pools, uint64 now) const
+    {
+        pools.erase(std::remove_if(pools.begin(), pools.end(),
+            [now](SanguinePool const& pool) { return pool.expiresAt <= now; }),
+            pools.end());
+    }
+
+public:
+    AffixType GetType() const override { return AFFIX_SANGUINE; }
+    std::string GetName() const override { return "Sanguine"; }
+    std::string GetDescription() const override
+    {
+        return "Slain enemies leave behind a pool of blood that damages players "
+               "who stand in it and heals their allies.";
+    }
+
+    void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
+    {
+        uint64 key = sAffixMgr->MakeInstanceKey(map);
+        _pools.erase(key);
+        _tickAccumulator.erase(key);
+    }
+
+    void OnAffixDeactivate(Map* map) override
+    {
+        uint64 key = sAffixMgr->MakeInstanceKey(map);
+        _pools.erase(key);
+        _tickAccumulator.erase(key);
+    }
+
+    void OnCreatureDeath(Creature* creature, Unit* /*killer*/) override
+    {
+        if (!creature || sMythicRuns->IsBossCreature(creature))
+            return;
+
+        Map* map = creature->GetMap();
+        if (!map)
+            return;
+
+        SanguinePool pool;
+        pool.x = creature->GetPositionX();
+        pool.y = creature->GetPositionY();
+        pool.z = creature->GetPositionZ();
+        pool.expiresAt = GameTime::GetGameTime().count() + POOL_DURATION_SECONDS;
+
+        _pools[sAffixMgr->MakeInstanceKey(map)].push_back(pool);
+    }
+
+    void OnCreatureDamageDone(Creature* /*attacker*/, Unit* /*victim*/, uint32& /*damage*/) override { }
+    void OnCreatureDamageTaken(Creature* /*victim*/, Unit* /*attacker*/, uint32& /*damage*/) override { }
+    void OnPlayerDamageTaken(Player* /*player*/, Unit* /*attacker*/, uint32& /*damage*/) override { }
+    void OnCreatureSelectLevel(Creature* /*creature*/) override { }
+
+    void OnPlayerUpdate(Player* player, uint32 diff) override
+    {
+        if (!player || !player->IsAlive())
+            return;
+
+        Map* map = player->GetMap();
+        if (!map)
+            return;
+
+        uint64 key = sAffixMgr->MakeInstanceKey(map);
+        auto poolItr = _pools.find(key);
+        if (poolItr == _pools.end() || poolItr->second.empty())
+            return;
+
+        // One shared accumulator per instance rather than per player, so the
+        // pool ticks at a fixed rate no matter how many players are inside it.
+        uint32& accumulator = _tickAccumulator[key];
+        accumulator += diff;
+        if (accumulator < TICK_INTERVAL_MS)
+            return;
+        accumulator = 0;
+
+        uint64 now = GameTime::GetGameTime().count();
+        PruneExpired(poolItr->second, now);
+        if (poolItr->second.empty())
+            return;
+
+        for (SanguinePool const& pool : poolItr->second)
+        {
+            if (!player->IsWithinDist3d(pool.x, pool.y, pool.z, POOL_RADIUS))
+                continue;
+
+            uint32 damage = uint32(player->GetMaxHealth() * (PLAYER_DAMAGE_PCT / 100.0f));
+            if (damage)
+            {
+                Unit::DealDamage(player, player, damage, nullptr, NODAMAGE,
+                    SPELL_SCHOOL_MASK_SHADOW, nullptr, false);
+            }
+
+            // Heal enemies sharing the pool.
+            std::list<Creature*> nearby;
+            Acore::AllWorldObjectsInRange checker(player, POOL_RADIUS);
+            Acore::CreatureListSearcher<Acore::AllWorldObjectsInRange> searcher(player, nearby, checker);
+            Cell::VisitObjects(player, searcher, POOL_RADIUS);
+
+            for (Creature* ally : nearby)
+            {
+                if (!ally || !ally->IsAlive() || ally->IsControlledByPlayer())
+                    continue;
+
+                if (!ally->IsHostileToPlayers())
+                    continue;
+
+                uint32 heal = uint32(ally->GetMaxHealth() * (CREATURE_HEAL_PCT / 100.0f));
+                if (heal)
+                    ally->SetHealth(std::min<uint32>(ally->GetHealth() + heal, ally->GetMaxHealth()));
+            }
+
+            break; // One pool's worth of damage per tick is enough.
+        }
+    }
+};
+
+// ============================================================================
+// VOLCANIC AFFIX
+// Volcanic plumes erupt beneath players who stay at range, knocking them up and
+// dealing damage. Punishes standing still at distance.
+// ============================================================================
+class VolcanicAffixHandler : public IAffixHandler
+{
+private:
+    std::unordered_map<uint64 /* instanceKey */, std::unordered_map<ObjectGuid, uint32>> _playerTimers;
+
+    static constexpr uint32 CHECK_INTERVAL_MS = 8000;
+    static constexpr float MIN_RANGE_FROM_ENEMY = 10.0f;
+    static constexpr float SEARCH_RANGE = 40.0f;
+    static constexpr float DAMAGE_PCT = 12.0f; // of max health
+
+public:
+    AffixType GetType() const override { return AFFIX_VOLCANIC; }
+    std::string GetName() const override { return "Volcanic"; }
+    std::string GetDescription() const override
+    {
+        return "While in combat, volcanic plumes erupt beneath distant players, "
+               "dealing heavy fire damage.";
+    }
+
+    void OnAffixActivate(Map* map, uint8 /*keystoneLevel*/) override
+    {
+        _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
+    }
+
+    void OnAffixDeactivate(Map* map) override
+    {
+        _playerTimers.erase(sAffixMgr->MakeInstanceKey(map));
+    }
+
+    void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
+    void OnCreatureDamageDone(Creature* /*attacker*/, Unit* /*victim*/, uint32& /*damage*/) override { }
+    void OnCreatureDamageTaken(Creature* /*victim*/, Unit* /*attacker*/, uint32& /*damage*/) override { }
+    void OnPlayerDamageTaken(Player* /*player*/, Unit* /*attacker*/, uint32& /*damage*/) override { }
+    void OnCreatureSelectLevel(Creature* /*creature*/) override { }
+
+    void OnPlayerUpdate(Player* player, uint32 diff) override
+    {
+        if (!player || !player->IsAlive() || !player->IsInCombat())
+            return;
+
+        Map* map = player->GetMap();
+        if (!map)
+            return;
+
+        uint32& timer = _playerTimers[sAffixMgr->MakeInstanceKey(map)][player->GetGUID()];
+        if (timer > diff)
+        {
+            timer -= diff;
+            return;
+        }
+        timer = CHECK_INTERVAL_MS;
+
+        // Only players holding range are targeted - melee standing on the enemy
+        // are exempt, which is what makes this a positioning affix.
+        std::list<Creature*> nearby;
+        Acore::AllWorldObjectsInRange checker(player, SEARCH_RANGE);
+        Acore::CreatureListSearcher<Acore::AllWorldObjectsInRange> searcher(player, nearby, checker);
+        Cell::VisitObjects(player, searcher, SEARCH_RANGE);
+
+        bool hasDistantEnemy = false;
+        for (Creature* enemy : nearby)
+        {
+            if (!enemy || !enemy->IsAlive() || !enemy->IsInCombat())
+                continue;
+
+            if (enemy->IsControlledByPlayer() || !enemy->IsHostileToPlayers())
+                continue;
+
+            if (player->IsWithinDist(enemy, MIN_RANGE_FROM_ENEMY))
+                return; // In melee of something - safe.
+
+            hasDistantEnemy = true;
+        }
+
+        if (!hasDistantEnemy)
+            return;
+
+        uint32 damage = uint32(player->GetMaxHealth() * (DAMAGE_PCT / 100.0f));
+        if (!damage)
+            return;
+
+        Unit::DealDamage(player, player, damage, nullptr, NODAMAGE,
+            SPELL_SCHOOL_MASK_FIRE, nullptr, false);
+
+        if (player->GetSession())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "|cffff4400[Volcanic]|r A plume erupts beneath you!");
+        }
+    }
+};
+
 // Register all affixes
 void RegisterMythicPlusAffixHandlers()
 {
@@ -359,4 +643,7 @@ void RegisterMythicPlusAffixHandlers()
     sAffixMgr->RegisterAffix(std::make_unique<GrievousAffixHandler>());
     sAffixMgr->RegisterAffix(std::make_unique<TyrannicalAffixHandler>());
     sAffixMgr->RegisterAffix(std::make_unique<FortifiedAffixHandler>());
+    sAffixMgr->RegisterAffix(std::make_unique<RagingAffixHandler>());
+    sAffixMgr->RegisterAffix(std::make_unique<SanguineAffixHandler>());
+    sAffixMgr->RegisterAffix(std::make_unique<VolcanicAffixHandler>());
 }
