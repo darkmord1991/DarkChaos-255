@@ -37,6 +37,7 @@ local TalentManager = {
             enabled = true,
             showGlyphs = true,
             confirmLearning = true,
+            stageChanges = true,
             frameScale = 1.0,
             lockFrame = false,
             autoBackup = true,
@@ -62,6 +63,8 @@ local glyphFrame = nil      -- Glyph management frame
 local isInitialized = false
 local currentMode = "view"  -- view | edit | apply
 local targetTemplate = nil  -- Template to compare against
+local stagedPoints = nil    -- pending (unapplied) points: [tab][index] = added ranks
+local searchText = ""       -- lowercased talent-search filter
 
 -- Class-specific talent tree names and icons
 local TALENT_TREE_DATA = {
@@ -428,6 +431,156 @@ local function GetTalentState(talents, tab, index, pet)
     else
         return "available"
     end
+end
+
+-- ============================================================
+-- Pending (staged) points — retail-style "Apply Changes" flow
+-- ============================================================
+
+local function GetStagedRank(tab, index)
+    return stagedPoints and stagedPoints[tab] and stagedPoints[tab][index] or 0
+end
+
+local function GetStagedTotal(tab)
+    if not stagedPoints then return 0 end
+    local total = 0
+    for t = 1, 3 do
+        if not tab or t == tab then
+            for _, add in pairs(stagedPoints[t] or {}) do
+                total = total + add
+            end
+        end
+    end
+    return total
+end
+
+-- Current build plus staged points
+local function GetEffectiveTalents(pet)
+    local talents = GetCurrentTalents(pet)
+    if stagedPoints then
+        for t = 1, 3 do
+            for i, add in pairs(stagedPoints[t] or {}) do
+                talents[t] = talents[t] or {}
+                talents[t][i] = (talents[t][i] or 0) + add
+                talents.totalPoints = (talents.totalPoints or 0) + add
+            end
+        end
+    end
+    return talents
+end
+
+-- Wave-simulate the target ranks from the real build; false when a
+-- staged point can no longer be reached (used to veto un-staging a
+-- prerequisite out from under a dependent staged point).
+local function CanReachTargets(targets, pet)
+    local sim = GetCurrentTalents(pet)
+    local class = sim.class or GetPlayerClass()
+    local prereqs = BuildPrereqCache(class, pet)
+    for _ = 1, 200 do
+        local granted = 0
+        for tab = 1, 3 do
+            sim[tab] = sim[tab] or {}
+            for i in pairs(prereqs[tab] or {}) do
+                local target = targets[tab] and targets[tab][i] or 0
+                local rank = sim[tab][i] or 0
+                if rank < target and IsTalentAvailable(sim, tab, i, pet) then
+                    sim[tab][i] = rank + 1
+                    granted = granted + 1
+                end
+            end
+        end
+        local missing = 0
+        for tab = 1, 3 do
+            for i in pairs(prereqs[tab] or {}) do
+                local target = targets[tab] and targets[tab][i] or 0
+                if (sim[tab][i] or 0) < target then
+                    missing = missing + (target - (sim[tab][i] or 0))
+                end
+            end
+        end
+        if missing == 0 then return true end
+        if granted == 0 then return false end
+    end
+    return false
+end
+
+function TalentManager:GetStagedCount()
+    return GetStagedTotal()
+end
+
+function TalentManager:ClearStagedPoints()
+    if not stagedPoints then return end
+    stagedPoints = nil
+    self:UpdateTalentDisplay()
+end
+
+function TalentManager:StageTalent(tab, index, delta, pet)
+    local prereqs = BuildPrereqCache(GetPlayerClass(), pet)
+    local info = prereqs[tab] and prereqs[tab][index]
+    if not info then return end
+
+    if delta > 0 then
+        local unspent = SafeGetUnspentTalentPoints(nil, pet)
+        if GetStagedTotal() >= unspent then
+            NotifyTalent("No unspent talent points left to stage", "warning", { title = "Talents" })
+            return
+        end
+        local effective = GetEffectiveTalents(pet)
+        local effRank = effective[tab] and effective[tab][index] or 0
+        if effRank >= (info.maxRank or 0) then return end
+        if not IsTalentAvailable(effective, tab, index, pet) then
+            NotifyTalent("Requirements not met for that talent", "warning", { title = "Talents" })
+            return
+        end
+        stagedPoints = stagedPoints or {}
+        stagedPoints[tab] = stagedPoints[tab] or {}
+        stagedPoints[tab][index] = (stagedPoints[tab][index] or 0) + 1
+    else
+        local staged = GetStagedRank(tab, index)
+        if staged <= 0 then return end
+        stagedPoints[tab][index] = (staged - 1 > 0) and (staged - 1) or nil
+        if not CanReachTargets(GetEffectiveTalents(pet), pet) then
+            stagedPoints[tab][index] = staged
+            NotifyTalent("Remove dependent staged points first", "warning", { title = "Talents" })
+            return
+        end
+        if GetStagedTotal() == 0 then stagedPoints = nil end
+    end
+
+    self:UpdateTalentDisplay()
+end
+
+function TalentManager:ApplyStagedChanges(pet)
+    local count = GetStagedTotal()
+    if count == 0 then return end
+
+    local template = { talents = GetEffectiveTalents(pet), class = GetPlayerClass() }
+    local function Go()
+        stagedPoints = nil
+        TalentManager:DoApplyTemplate(template, pet)
+    end
+
+    if addon.settings.talentManager.confirmLearning then
+        StaticPopupDialogs["DCQOS_APPLY_STAGED"] = StaticPopupDialogs["DCQOS_APPLY_STAGED"] or {
+            button1 = ACCEPT,
+            button2 = CANCEL,
+            OnAccept = function(self, data) data.go() end,
+            timeout = 0, whileDead = 1, hideOnEscape = 1, preferredIndex = 3,
+        }
+        StaticPopupDialogs["DCQOS_APPLY_STAGED"].text =
+            "Spend " .. count .. " pending talent point(s)?\nPoints cannot be unlearned without a respec."
+        local dialog = StaticPopup_Show("DCQOS_APPLY_STAGED")
+        if dialog then dialog.data = { go = Go } end
+    else
+        Go()
+    end
+end
+
+function TalentManager:SetSearchText(text)
+    text = (text or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if text == searchText then return end
+    searchText = text
+    self:UpdateTalentDisplay()
 end
 
 -- ============================================================
@@ -983,6 +1136,7 @@ end
 local pendingApply = nil
 
 function TalentManager:DoApplyTemplate(template, pet)
+    stagedPoints = nil
     if not pet then
         self:BackupCurrentSpec()
     end
@@ -1033,8 +1187,10 @@ function TalentManager:ContinueApply()
         if not pet and name then
             self:SetActiveLoadout(name)
         end
-        NotifyTalent("Loadout applied: " .. (name or "?"), "success", { title = "Talents" })
-        self:NotifyGlyphDiff(template)
+        NotifyTalent(name and ("Loadout applied: " .. name) or "Talent changes applied", "success", { title = "Talents" })
+        if name then
+            self:NotifyGlyphDiff(template)
+        end
         self:RefreshLoadoutUI()
         self:UpdateTalentDisplay()
         return
@@ -1536,6 +1692,19 @@ local TALENT_SPACING_Y = 44
 local TREE_WIDTH = 210
 local TREE_HEIGHT = 480
 local TREE_TOP_OFFSET = 35
+local HEADER_HEIGHT = 64
+local FOOTER_HEIGHT = 40
+
+local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+
+-- Retail (Dragonflight-style) dark palette
+local C_GOLD     = { 1.00, 0.78, 0.15 }   -- invested nodes, filled edges
+local C_GREEN    = { 0.30, 0.90, 0.35 }   -- staged (pending) points
+local C_AVAIL    = { 0.52, 0.54, 0.60 }   -- pickable, no points yet
+local C_LOCKED   = { 0.20, 0.21, 0.25 }   -- requirements not met
+local C_FRAME_BG = { 0.051, 0.058, 0.072 }
+local C_PANEL_BG = { 0.028, 0.033, 0.044 }
+local C_BORDER   = { 0.21, 0.23, 0.28 }
 
 -- ============================================================
 -- UI: Drawing Lines (Prerequisites)
@@ -1614,104 +1783,65 @@ end
 -- UI: Talent Button Visual Update
 -- ============================================================
 
-local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, targetRank)
+local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, targetRank, stagedRank)
     if not button then return end
-    
-    -- Blizzard's exact logic from TalentFrameBase.lua
-    local prereqsSet = (state ~= "locked")
-    local displayRank = currentRank or 0
-    
-    -- Update rank display (Blizzard shows rank in the corner border)
-    if displayRank > 0 then
-        if button.rankText then
-            button.rankText:SetText(displayRank)
-            button.rankText:Show()
-        end
-        if button.rankBorder then
-            button.rankBorder:Show()
-        end
-    else
-        if button.rankText then
-            button.rankText:Hide()
-        end
-        if button.rankBorder then
-            button.rankBorder:Hide()
-        end
-    end
-    
-    -- Always show the slot border (Blizzard style)
-    if button.slot then
-        button.slot:Show()
-    end
-    
-    -- Spent talents get a coloured ring (green partial, gold maxed);
-    -- available talents keep their full-colour icon so the trees don't
-    -- read as one grey wall; locked talents go dark + desaturated.
-    if prereqsSet and displayRank > 0 then
-        SetTalentButtonDesaturated(button, false)
 
-        if displayRank >= maxRank then
-            -- Maxed out: GOLD border
-            if button.slot then
-                button.slot:SetVertexColor(1, 0.82, 0)
-            end
-            if button.glow then
-                button.glow:SetVertexColor(1, 0.82, 0)
-                button.glow:SetAlpha(0.6)
-            end
-            if button.rankText then
-                button.rankText:SetTextColor(1, 0.82, 0)
-            end
-            if button.rankBorder then
-                button.rankBorder:SetVertexColor(1, 0.82, 0)
-            end
-        else
-            -- Partially filled: GREEN border
-            if button.slot then
-                button.slot:SetVertexColor(0.4, 1, 0.4)
-            end
-            if button.glow then
-                button.glow:SetVertexColor(0.1, 1, 0.1)
-                button.glow:SetAlpha(0.55)
-            end
-            if button.rankText then
-                button.rankText:SetTextColor(0.1, 1, 0.1)
-            end
-            if button.rankBorder then
-                button.rankBorder:SetVertexColor(0.1, 1, 0.1)
-            end
-        end
-    elseif prereqsSet then
-        -- Available but unspent: full colour, slightly dimmed
+    stagedRank = stagedRank or 0
+    currentRank = currentRank or 0
+    local effRank = currentRank + stagedRank
+    local prereqsSet = (state ~= "locked")
+
+    -- Node colour follows retail Dragonflight semantics: green =
+    -- pending points, gold = invested, grey = pickable, dark = locked.
+    local color
+    if stagedRank > 0 then
+        color = C_GREEN
+    elseif not prereqsSet then
+        color = C_LOCKED
+    elseif effRank > 0 then
+        color = C_GOLD
+    else
+        color = C_AVAIL
+    end
+
+    button:SetBackdropBorderColor(color[1], color[2], color[3], 1)
+    if button.ring then
+        -- Single-rank "active ability" nodes carry a circular ring
+        button.ring:SetVertexColor(color[1], color[2], color[3])
+        button.ring:SetAlpha(effRank > 0 and 1 or (prereqsSet and 0.75 or 0.45))
+    end
+
+    -- Icon treatment
+    if prereqsSet or effRank > 0 then
         SetTalentButtonDesaturated(button, false)
         if button.icon then
-            button.icon:SetVertexColor(0.85, 0.85, 0.85)
-        end
-        if button.slot then
-            button.slot:SetVertexColor(0.75, 0.75, 0.75)
-        end
-        if button.glow then
-            button.glow:SetVertexColor(0.1, 1, 0.1)
-            button.glow:SetAlpha(0.12)
+            if effRank > 0 then
+                button.icon:SetVertexColor(1, 1, 1)
+            else
+                button.icon:SetVertexColor(0.80, 0.80, 0.80)
+            end
         end
     else
-        -- Prerequisites NOT met: dark desaturated, no glow
-        SetTalentButtonDesaturated(button, true, 0.45, 0.45, 0.45)
+        SetTalentButtonDesaturated(button, true, 0.40, 0.40, 0.45)
+    end
 
-        if button.slot then
-            button.slot:SetVertexColor(0.4, 0.4, 0.4)
-        end
-        if button.glow then
-            button.glow:SetAlpha(0)
-        end
-
-        if displayRank > 0 then
-            if button.rankText then
-                button.rankText:SetTextColor(0.5, 0.5, 0.5)
+    -- Rank pill under the node ("n/max", retail style)
+    if button.pill then
+        if effRank > 0 then
+            button.pill:Show()
+            button.pill:SetBackdropBorderColor(color[1], color[2], color[3], 1)
+            if button.pillText then
+                button.pillText:SetText(effRank .. "/" .. maxRank)
+                if stagedRank > 0 then
+                    button.pillText:SetTextColor(C_GREEN[1], C_GREEN[2], C_GREEN[3])
+                elseif effRank >= maxRank then
+                    button.pillText:SetTextColor(C_GOLD[1], C_GOLD[2], C_GOLD[3])
+                else
+                    button.pillText:SetTextColor(0.95, 0.95, 0.95)
+                end
             end
-            if button.rankBorder then
-                button.rankBorder:SetVertexColor(0.5, 0.5, 0.5)
-            end
+        else
+            button.pill:Hide()
         end
     end
     
@@ -1752,10 +1882,15 @@ local function CreateTalentButton(parent, tab, index, pet)
     
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(TALENT_BUTTON_SIZE, TALENT_BUTTON_SIZE)
-    
+
+    -- Flat retail-style node: dark plate with a 1px state-coloured border
+    button:SetBackdrop({ bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE, edgeSize = 1 })
+    button:SetBackdropColor(0, 0, 0, 0.88)
+    button:SetBackdropBorderColor(C_AVAIL[1], C_AVAIL[2], C_AVAIL[3], 1)
+
     -- Icon texture (main artwork)
     local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(TALENT_BUTTON_SIZE, TALENT_BUTTON_SIZE)
+    icon:SetSize(TALENT_BUTTON_SIZE - 4, TALENT_BUTTON_SIZE - 4)
     icon:SetPoint("CENTER")
     local normalizedPath = NormalizeTalentIconPath(iconPath)
     if normalizedPath then
@@ -1766,39 +1901,32 @@ local function CreateTalentButton(parent, tab, index, pet)
     icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     icon:SetVertexColor(1, 1, 1)
     button.icon = icon
-    
-    -- Slot border: classic quickslot ring drawn behind the icon.
-    -- (TalentFrame-Parts is a retail HelpPlate atlas on this client and
-    -- rendered as a stray grey bar under every talent.)
-    local slot = button:CreateTexture(nil, "BORDER")
-    slot:SetSize(TALENT_BUTTON_SIZE + 28, TALENT_BUTTON_SIZE + 28)
-    slot:SetPoint("CENTER")
-    slot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-    slot:SetVertexColor(0.7, 0.7, 0.7)
-    button.slot = slot
 
-    -- Glow border for available/maxed talents (colored overlay)
-    local glow = button:CreateTexture(nil, "OVERLAY", nil, 1)
-    glow:SetSize(TALENT_BUTTON_SIZE + 24, TALENT_BUTTON_SIZE + 24)
-    glow:SetPoint("CENTER")
-    glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-    glow:SetBlendMode("ADD")
-    glow:SetAlpha(0)
-    button.glow = glow
-    
-    -- Rank border (circle behind rank text, oversized for readability)
-    local rankBorder = button:CreateTexture(nil, "OVERLAY", nil, 2)
-    rankBorder:SetSize(24, 24)
-    rankBorder:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 6, -6)
-    rankBorder:SetTexture("Interface\\TalentFrame\\TalentFrame-RankBorder")
-    rankBorder:Hide()
-    button.rankBorder = rankBorder
+    -- Single-rank talents are (almost always) active abilities; give
+    -- them a circular ring so they read like retail's round nodes
+    if maxRank == 1 then
+        local ring = button:CreateTexture(nil, "OVERLAY", nil, 1)
+        ring:SetSize(TALENT_BUTTON_SIZE + 26, TALENT_BUTTON_SIZE + 26)
+        ring:SetPoint("CENTER")
+        ring:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        ring:SetVertexColor(C_AVAIL[1], C_AVAIL[2], C_AVAIL[3])
+        button.ring = ring
+    end
 
-    -- Rank text
-    local rankText = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    rankText:SetPoint("CENTER", rankBorder, "CENTER", 0, 0)
-    button.rankText = rankText
-    
+    -- Rank pill ("n/max") straddling the bottom edge, retail style
+    local pill = CreateFrame("Frame", nil, button)
+    pill:SetSize(30, 14)
+    pill:SetPoint("CENTER", button, "BOTTOM", 0, -1)
+    pill:SetFrameLevel(button:GetFrameLevel() + 2)
+    pill:SetBackdrop({ bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE, edgeSize = 1 })
+    pill:SetBackdropColor(0.02, 0.02, 0.03, 0.95)
+    pill:Hide()
+    button.pill = pill
+
+    local pillText = pill:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    pillText:SetPoint("CENTER", 0, 0)
+    button.pillText = pillText
+
     -- Highlight texture (on mouseover)
     local highlight = button:CreateTexture(nil, "HIGHLIGHT")
     highlight:SetSize(TALENT_BUTTON_SIZE, TALENT_BUTTON_SIZE)
@@ -1844,9 +1972,13 @@ local function CreateTalentButton(parent, tab, index, pet)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetTalent(self.tab, self.index, nil, self.pet)
+        local staged = GetStagedRank(self.tab, self.index)
+        if staged > 0 then
+            GameTooltip:AddLine("Pending: +" .. staged .. " point(s) — right-click to remove", 0.3, 0.9, 0.35)
+        end
         GameTooltip:Show()
     end)
-    
+
     button:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
@@ -1870,7 +2002,8 @@ local function CreateTalentButton(parent, tab, index, pet)
         end
     end)
     
-    -- Click handling
+    -- Click handling: left stages a point, right removes a staged one
+    -- (retail flow); instant learning when stageChanges is disabled.
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetScript("OnClick", function(self, mouseButton)
         if IsShiftKeyDown() then
@@ -1879,6 +2012,8 @@ local function CreateTalentButton(parent, tab, index, pet)
             if link then
                 ChatEdit_InsertLink(link)
             end
+        elseif addon.settings.talentManager.stageChanges then
+            TalentManager:StageTalent(self.tab, self.index, mouseButton == "RightButton" and -1 or 1, self.pet)
         elseif currentMode == "apply" or mouseButton == "LeftButton" then
             -- Learn talent
             LearnTalent(self.tab, self.index, self.pet)
@@ -1922,14 +2057,14 @@ local function CreateTalentTreeFrame(parent, tab, pet)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetSize(TREE_WIDTH, TREE_HEIGHT + TREE_TOP_OFFSET)
 
-    -- Dark inset panel so the frame's FelLeather shows through (DC style)
+    -- Dark slate inset panel (retail Dragonflight look)
     frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        bgFile = FLAT_TEXTURE,
+        edgeFile = FLAT_TEXTURE,
         edgeSize = 1,
     })
-    frame:SetBackdropColor(0, 0, 0, 0.40)
-    frame:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.9)
+    frame:SetBackdropColor(C_PANEL_BG[1], C_PANEL_BG[2], C_PANEL_BG[3], 0.92)
+    frame:SetBackdropBorderColor(C_BORDER[1], C_BORDER[2], C_BORDER[3], 1)
 
     -- Header strip behind icon/title
     local headerBg = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -1953,7 +2088,7 @@ local function CreateTalentTreeFrame(parent, tab, pet)
         for _, p in ipairs(pieces) do
             local tex = frame:CreateTexture(nil, "BACKGROUND", nil, 2)
             tex:SetTexture(prefix .. p.suffix)
-            tex:SetAlpha(0.45)
+            tex:SetAlpha(0.28)
             tex.piece = p
             table.insert(frame.bgPieces, tex)
         end
@@ -2006,8 +2141,6 @@ end
 -- ============================================================
 -- UI: Flat (retail-style) widgets
 -- ============================================================
-
-local FLAT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
 local function CreateFlatButton(parent, text, width, height)
     if addon.CreateActionButton then
@@ -2407,56 +2540,78 @@ function TalentManager:CreateMainFrame()
     end)
     frame:Hide()
 
-    -- Standard DC addon background: FelLeather dark parchment + black tint
-    -- behind the gold dialog border (matches DC-Leaderboards et al.)
+    -- Retail-dark chrome: flat slate panel with a 1px border
     frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        bgFile = FLAT_TEXTURE,
+        edgeFile = FLAT_TEXTURE,
+        edgeSize = 1,
     })
-    frame:SetBackdropColor(0, 0, 0, 0)
+    frame:SetBackdropColor(C_FRAME_BG[1], C_FRAME_BG[2], C_FRAME_BG[3], 0.97)
+    frame:SetBackdropBorderColor(C_BORDER[1], C_BORDER[2], C_BORDER[3], 1)
 
-    local bgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
-    bgTex:SetAllPoints()
+    -- Faint FelLeather grain keeps the DC house texture without
+    -- fighting the dark retail palette
+    local bgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    bgTex:SetPoint("TOPLEFT", 1, -1)
+    bgTex:SetPoint("BOTTOMRIGHT", -1, 1)
     bgTex:SetTexture(BG_FELLEATHER)
+    bgTex:SetAlpha(0.05)
     if bgTex.SetHorizTile then bgTex:SetHorizTile(false) end
     if bgTex.SetVertTile then bgTex:SetVertTile(false) end
     frame.bgTex = bgTex
 
-    local bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    bgTint:SetAllPoints()
-    bgTint:SetTexture(0, 0, 0, 0.60)
-    frame.bgTint = bgTint
-
     -- Separator between header and trees
     local headerLine = frame:CreateTexture(nil, "BORDER")
-    headerLine:SetPoint("TOPLEFT", 12, -65)
-    headerLine:SetPoint("TOPRIGHT", -12, -65)
+    headerLine:SetPoint("TOPLEFT", 12, -HEADER_HEIGHT)
+    headerLine:SetPoint("TOPRIGHT", -12, -HEADER_HEIGHT)
     headerLine:SetHeight(1)
     headerLine:SetTexture(FLAT_TEXTURE)
-    headerLine:SetVertexColor(0.28, 0.28, 0.28, 0.8)
+    headerLine:SetVertexColor(C_BORDER[1], C_BORDER[2], C_BORDER[3], 0.9)
 
-    -- Title
-    local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 18, -14)
-    title:SetText("Talents")
-    frame.title = title
+    -- Spec banner: primary-tree icon + class-coloured name (retail style)
+    local iconFrame = CreateFrame("Frame", nil, frame)
+    iconFrame:SetSize(42, 42)
+    iconFrame:SetPoint("TOPLEFT", 14, -11)
+    iconFrame:SetBackdrop({ bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE, edgeSize = 1 })
+    iconFrame:SetBackdropColor(0, 0, 0, 0.9)
+    iconFrame:SetBackdropBorderColor(C_GOLD[1], C_GOLD[2], C_GOLD[3], 0.7)
+
+    local specIcon = iconFrame:CreateTexture(nil, "ARTWORK")
+    specIcon:SetPoint("TOPLEFT", 2, -2)
+    specIcon:SetPoint("BOTTOMRIGHT", -2, 2)
+    specIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    specIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    frame.specIcon = specIcon
+
+    local specName = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    specName:SetPoint("TOPLEFT", iconFrame, "TOPRIGHT", 10, -3)
+    specName:SetText("Talents")
+    frame.specName = specName
+
+    local specSub = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    specSub:SetPoint("TOPLEFT", specName, "BOTTOMLEFT", 0, -5)
+    specSub:SetText("")
+    frame.specSub = specSub
 
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -5, -5)
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
 
-    -- Point summary (right side of title row)
-    local pointSummary = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
-    pointSummary:SetPoint("TOPRIGHT", -34, -14)
-    pointSummary:SetText("0/0/0")
-    frame.pointSummary = pointSummary
+    -- Header row 1 (right): loadout picker
+    local newLoadoutBtn = CreateFlatButton(frame, "+ New", 52, 22)
+    newLoadoutBtn:SetPoint("TOPRIGHT", -34, -12)
+    newLoadoutBtn:SetScript("OnClick", function() TalentManager:ShowSaveDialog() end)
+    newLoadoutBtn:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Save current build as a new loadout")
+        GameTooltip:Show()
+    end)
+    newLoadoutBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    frame.newLoadoutButton = newLoadoutBtn
 
-    -- Toolbar row: loadout picker + spec buttons + glyphs
     local loadoutBtn = CreateFrame("Button", "DCQoSLoadoutButton", frame)
-    loadoutBtn:SetSize(220, 24)
-    loadoutBtn:SetPoint("TOPLEFT", 16, -34)
+    loadoutBtn:SetSize(190, 22)
+    loadoutBtn:SetPoint("RIGHT", newLoadoutBtn, "LEFT", -4, 0)
     if addon.StyleActionButton then
         addon:StyleActionButton(loadoutBtn)
     end
@@ -2477,23 +2632,18 @@ function TalentManager:CreateMainFrame()
     end)
     frame.loadoutButton = loadoutBtn
 
-    local newLoadoutBtn = CreateFlatButton(frame, "+ New", 56, 24)
-    newLoadoutBtn:SetPoint("LEFT", loadoutBtn, "RIGHT", 4, 0)
-    newLoadoutBtn:SetScript("OnClick", function() TalentManager:ShowSaveDialog() end)
-    newLoadoutBtn:HookScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Save current build as a new loadout")
-        GameTooltip:Show()
-    end)
-    newLoadoutBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
-    frame.newLoadoutButton = newLoadoutBtn
+    -- Header row 2 (right): search + spec switch + glyphs
+    local glyphBtn = CreateFlatButton(frame, "Glyphs", 58, 22)
+    glyphBtn:SetPoint("TOPRIGHT", -34, -38)
+    glyphBtn:SetScript("OnClick", function() TalentManager:ToggleGlyphFrame() end)
+    frame.glyphButton = glyphBtn
 
-    for i = 1, 2 do
-        local specBtn = CreateFlatButton(frame, "Spec " .. i, 56, 24)
-        if i == 1 then
-            specBtn:SetPoint("LEFT", newLoadoutBtn, "RIGHT", 8, 0)
+    for i = 2, 1, -1 do
+        local specBtn = CreateFlatButton(frame, "Spec " .. i, 52, 22)
+        if i == 2 then
+            specBtn:SetPoint("RIGHT", glyphBtn, "LEFT", -4, 0)
         else
-            specBtn:SetPoint("LEFT", frame.specBtn1, "RIGHT", 4, 0)
+            specBtn:SetPoint("RIGHT", frame.specBtn2, "LEFT", -4, 0)
         end
         specBtn:SetScript("OnClick", function()
             TalentManager:SwitchSpec(i)
@@ -2501,19 +2651,67 @@ function TalentManager:CreateMainFrame()
         frame["specBtn" .. i] = specBtn
     end
 
-    local glyphBtn = CreateFlatButton(frame, "Glyphs", 64, 24)
-    glyphBtn:SetPoint("LEFT", frame.specBtn2, "RIGHT", 8, 0)
-    glyphBtn:SetScript("OnClick", function() TalentManager:ToggleGlyphFrame() end)
-    frame.glyphButton = glyphBtn
+    local searchBox = CreateFrame("EditBox", nil, frame)
+    searchBox:SetSize(150, 22)
+    searchBox:SetPoint("RIGHT", frame.specBtn1, "LEFT", -10, 0)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetMaxLetters(40)
+    searchBox:SetFontObject(GameFontHighlightSmall)
+    searchBox:SetTextInsets(6, 6, 0, 0)
+    searchBox:SetBackdrop({ bgFile = FLAT_TEXTURE, edgeFile = FLAT_TEXTURE, edgeSize = 1 })
+    searchBox:SetBackdropColor(0, 0, 0, 0.55)
+    searchBox:SetBackdropBorderColor(C_BORDER[1], C_BORDER[2], C_BORDER[3], 1)
+    local searchHint = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    searchHint:SetPoint("LEFT", 7, 0)
+    searchHint:SetText("Search talents...")
+    searchBox:SetScript("OnTextChanged", function(self)
+        local text = self:GetText() or ""
+        if text == "" then searchHint:Show() else searchHint:Hide() end
+        TalentManager:SetSearchText(text)
+    end)
+    searchBox:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+    end)
+    searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    frame.searchBox = searchBox
 
-    local unspentText = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    unspentText:SetPoint("TOPRIGHT", -16, -40)
-    unspentText:SetText("0 unspent")
-    frame.unspentText = unspentText
+    -- Footer: pending-changes bar (retail "Apply Changes")
+    local footer = CreateFrame("Frame", nil, frame)
+    footer:SetPoint("BOTTOMLEFT", 1, 1)
+    footer:SetPoint("BOTTOMRIGHT", -1, 1)
+    footer:SetHeight(FOOTER_HEIGHT)
+    frame.footer = footer
+
+    local footerBg = footer:CreateTexture(nil, "BACKGROUND")
+    footerBg:SetAllPoints()
+    footerBg:SetTexture(FLAT_TEXTURE)
+    footerBg:SetVertexColor(0, 0, 0, 0.35)
+
+    local footerLine = footer:CreateTexture(nil, "BORDER")
+    footerLine:SetPoint("TOPLEFT", 11, 0)
+    footerLine:SetPoint("TOPRIGHT", -11, 0)
+    footerLine:SetHeight(1)
+    footerLine:SetTexture(FLAT_TEXTURE)
+    footerLine:SetVertexColor(C_BORDER[1], C_BORDER[2], C_BORDER[3], 0.9)
+
+    local pendingText = footer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    pendingText:SetPoint("LEFT", 16, 0)
+    frame.pendingText = pendingText
+
+    local applyBtn = CreateFlatButton(footer, "Apply Changes", 108, 24)
+    applyBtn:SetPoint("RIGHT", -12, 0)
+    applyBtn:SetScript("OnClick", function() TalentManager:ApplyStagedChanges() end)
+    frame.applyButton = applyBtn
+
+    local undoBtn = CreateFlatButton(footer, "Undo", 56, 24)
+    undoBtn:SetPoint("RIGHT", applyBtn, "LEFT", -6, 0)
+    undoBtn:SetScript("OnClick", function() TalentManager:ClearStagedPoints() end)
+    frame.undoButton = undoBtn
 
     -- Talent trees container
     local treesFrame = CreateFrame("Frame", nil, frame)
-    treesFrame:SetPoint("TOPLEFT", 20, -72)
+    treesFrame:SetPoint("TOPLEFT", 20, -(HEADER_HEIGHT + 8))
     treesFrame:SetPoint("RIGHT", -8, 0)
     treesFrame:SetHeight(TREE_HEIGHT + TREE_TOP_OFFSET)
     frame.treesFrame = treesFrame
@@ -2686,16 +2884,26 @@ end
 
 function TalentManager:UpdateTalentDisplay()
     if not mainFrame or not mainFrame:IsShown() then return end
-    
+
+    local settings = addon.settings.talentManager
     local current = GetCurrentTalents()
+    local effective = GetEffectiveTalents()
     local talentGroup = SafeGetActiveTalentGroup(nil, nil)
-    
+    local filter = searchText ~= "" and searchText or nil
+
     for tab = 1, 3 do
         local tree = mainFrame.trees[tab]
         if tree then
             local points = GetTreePoints(current, tab)
-            tree.pointsText:SetText(points .. " pts")
-            
+            local stagedTree = GetStagedTotal(tab)
+            if stagedTree > 0 then
+                tree.pointsText:SetText("|cffffc726" .. points .. "|r |cff55e055+" .. stagedTree .. "|r pts")
+            elseif points > 0 then
+                tree.pointsText:SetText("|cffffc726" .. points .. "|r pts")
+            else
+                tree.pointsText:SetText("|cff888888" .. points .. " pts|r")
+            end
+
             -- Clear old lines
             for _, lines in pairs(tree.prereqLines or {}) do
                 for _, line in ipairs(lines) do
@@ -2703,14 +2911,15 @@ function TalentManager:UpdateTalentDisplay()
                 end
             end
             tree.prereqLines = {}
-            
+
             -- Update buttons and draw lines
             for i, button in pairs(tree.talentButtons) do
                 if button then
                     local currentRank = current[tab] and current[tab][i] or 0
-                    local targetRank = targetTemplate and targetTemplate.talents and 
+                    local stagedRank = GetStagedRank(tab, i)
+                    local targetRank = targetTemplate and targetTemplate.talents and
                                        targetTemplate.talents[tab] and targetTemplate.talents[tab][i]
-                    local state = GetTalentState(current, tab, i)
+                    local state = GetTalentState(effective, tab, i)
 
                     -- Refresh icon display
                     if button.icon then
@@ -2723,18 +2932,32 @@ function TalentManager:UpdateTalentDisplay()
                         end
                         button.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
                     end
-                    
+
                     button.currentRank = currentRank
-                    UpdateTalentButtonVisual(button, state, currentRank, button.maxRank, targetRank)
-                    
+                    UpdateTalentButtonVisual(button, state, currentRank, button.maxRank, targetRank, stagedRank)
+
+                    -- Search filter: dim non-matching nodes
+                    if filter and not (button.name and button.name:lower():find(filter, 1, true)) then
+                        button:SetAlpha(0.18)
+                    else
+                        button:SetAlpha(1)
+                    end
+
+                    -- Edges: gold once the path is unlocked, dark otherwise
+                    local lineColor
+                    if state ~= "locked" then
+                        lineColor = { r = C_GOLD[1], g = C_GOLD[2], b = C_GOLD[3], a = 0.9 }
+                    else
+                        lineColor = { r = 0.30, g = 0.31, b = 0.36, a = 0.9 }
+                    end
+
                     -- Draw prereq lines using GetTalentPrereqs API
                     local prereqTier, prereqColumn = SafeGetTalentPrereqs(tab, i, nil, button.pet, talentGroup)
                     if prereqTier and prereqColumn then
                         -- Find the prereq button by tier/column
                         for prereqIdx, prereqBtn in pairs(tree.talentButtons) do
                             if prereqBtn.tier == prereqTier and prereqBtn.column == prereqColumn then
-                                local color = state ~= "locked" and { r = 1, g = 0.82, b = 0 } or { r = 0.4, g = 0.4, b = 0.4 }
-                                local lines = DrawPrereqLine(tree.container, prereqBtn, button, color)
+                                local lines = DrawPrereqLine(tree.container, prereqBtn, button, lineColor)
                                 if lines then
                                     tree.prereqLines[i] = lines
                                 end
@@ -2745,8 +2968,7 @@ function TalentManager:UpdateTalentDisplay()
                         -- Fallback to stored prereq index
                         local prereqBtn = tree.talentButtons[button.prereqTalent]
                         if prereqBtn then
-                            local color = state ~= "locked" and { r = 1, g = 0.82, b = 0 } or { r = 0.4, g = 0.4, b = 0.4 }
-                            local lines = DrawPrereqLine(tree.container, prereqBtn, button, color)
+                            local lines = DrawPrereqLine(tree.container, prereqBtn, button, lineColor)
                             if lines then
                                 tree.prereqLines[i] = lines
                             end
@@ -2756,17 +2978,56 @@ function TalentManager:UpdateTalentDisplay()
             end
         end
     end
-    
-    -- Update summary
-    mainFrame.pointSummary:SetText(GetPointSummary(current))
+
+    -- Retail-style spec banner: primary tree names the "spec"
+    local classLocal, classToken = UnitClass("player")
+    local classColor = RAID_CLASS_COLORS and classToken and RAID_CLASS_COLORS[classToken]
+    local treeNames = GetTreeNames()
+    local treeIcons = GetTreeIcons()
+    local primary = GetPrimaryTree(effective)
+    if mainFrame.specName then
+        local label
+        if GetTotalPoints(effective) > 0 then
+            label = (treeNames[primary] or "") .. " " .. (classLocal or "")
+        else
+            label = classLocal or "Talents"
+        end
+        if classColor then
+            mainFrame.specName:SetTextColor(classColor.r, classColor.g, classColor.b)
+        end
+        mainFrame.specName:SetText(label)
+    end
+    if mainFrame.specIcon and treeIcons[primary] then
+        mainFrame.specIcon:SetTexture("Interface\\Icons\\" .. treeIcons[primary])
+    end
+
     local total = GetTotalPoints(current)
     local unspent = SafeGetUnspentTalentPoints()
-    mainFrame.unspentText:SetText(unspent .. " unspent (Lvl " .. GetRequiredLevel(total) .. "+)")
-
+    local stagedCount = GetStagedTotal()
+    local sub = GetPointSummary(current) .. "  |cff555555•|r  " .. (unspent - stagedCount)
+        .. " unspent (Lvl " .. GetRequiredLevel(total) .. "+)"
     if targetTemplate then
-        mainFrame.title:SetText("Talents |cff888888vs|r |cffffd200" .. (targetTemplate.name or "?") .. "|r")
-    else
-        mainFrame.title:SetText("Talents")
+        sub = sub .. "  |cff555555•|r  vs |cffffd200" .. (targetTemplate.name or "?") .. "|r"
+    end
+    if mainFrame.specSub then
+        mainFrame.specSub:SetText(sub)
+    end
+
+    -- Footer: pending-changes state
+    if mainFrame.pendingText then
+        if not settings.stageChanges then
+            mainFrame.pendingText:SetText("|cff777777Instant mode — clicks learn talents immediately|r")
+        elseif stagedCount > 0 then
+            mainFrame.pendingText:SetText("|cff55e055" .. stagedCount .. " pending point(s)|r  |cff888888— right-click a talent to remove|r")
+        else
+            mainFrame.pendingText:SetText("|cff777777No pending changes — click talents to stage points|r")
+        end
+    end
+    if mainFrame.applyButton then
+        if stagedCount > 0 then mainFrame.applyButton:Enable() else mainFrame.applyButton:Disable() end
+    end
+    if mainFrame.undoButton then
+        if stagedCount > 0 then mainFrame.undoButton:Enable() else mainFrame.undoButton:Disable() end
     end
 
     self:RefreshLoadoutUI()
@@ -2848,7 +3109,7 @@ function TalentManager:PopulateTalentTrees(pet)
         end
     end
     mainFrame.treesFrame:SetHeight(treeHeight)
-    mainFrame:SetHeight(72 + treeHeight + 14)
+    mainFrame:SetHeight(HEADER_HEIGHT + 8 + treeHeight + FOOTER_HEIGHT + 6)
 end
 
 -- ============================================================
@@ -3281,6 +3542,7 @@ function TalentManager:Initialize()
             TalentManager:QueueContinueApply()
             TalentManager:UpdateTalentDisplay()
         elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
+            stagedPoints = nil  -- staged points belong to the old spec
             TalentManager:UpdateTalentDisplay()
             TalentManager:PopulateTalentTrees()
         elseif event:find("GLYPH") then
@@ -3345,6 +3607,7 @@ function TalentManager.CreateSettings(parent)
     AddCheckbox("Enabled", "enabled")
     AddCheckbox("Replace Blizzard talent frame (Shift+N opens the original)", "replaceBlizzardFrame")
     AddCheckbox("Confirm before learning talents", "confirmLearning")
+    AddCheckbox("Stage talent clicks (retail-style Apply Changes bar)", "stageChanges")
     AddCheckbox("Auto-backup build before applying a loadout", "autoBackup")
     AddCheckbox("Save inspected players' builds", "hookInspect")
     AddCheckbox("Lock frame position", "lockFrame")

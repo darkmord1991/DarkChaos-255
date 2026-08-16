@@ -3997,6 +3997,53 @@ if DC then
         end
     end)
     
+    -- SMSG_EVENT_CREATED (0x70) - Scheduled event creation result
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_EVENT_CREATED or 0x70, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if data.success then
+                PrintGroupFinder(data.message or "Event created successfully", false)
+                if namespace.GroupFinder and namespace.GroupFinder.RefreshScheduledEvents then
+                    namespace.GroupFinder:RefreshScheduledEvents()
+                end
+            else
+                PrintGroupFinder("|cffff4444" .. (data.message or "Failed to create event") .. "|r", true)
+            end
+        end
+    end)
+
+    -- SMSG_EVENT_SIGNUP_RESULT (0x71) - Scheduled event signup result
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_EVENT_SIGNUP_RESULT or 0x71, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            if data.success then
+                PrintGroupFinder(data.message or "Signed up for event", false)
+                if namespace.GroupFinder and namespace.GroupFinder.RefreshScheduledEvents then
+                    namespace.GroupFinder:RefreshScheduledEvents()
+                end
+            else
+                PrintGroupFinder("|cffff4444" .. (data.message or "Signup failed") .. "|r", true)
+            end
+        end
+    end)
+
+    -- SMSG_MY_SIGNUPS (0x73) - My scheduled-event signups
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_MY_SIGNUPS or 0x73, function(...)
+        local args = {...}
+        if type(args[1]) == "table" then
+            local data = args[1]
+            local signups = data.signups or {}
+            if type(signups) == "string" and type(DC.DecodeJSON) == "function" then
+                signups = DC:DecodeJSON(signups) or {}
+            end
+            if namespace.GroupFinder and namespace.GroupFinder.OnMySignups then
+                namespace.GroupFinder:OnMySignups(signups)
+            end
+        end
+    end)
+
     -- SMSG_LISTING_CREATED (0x30) - Confirm listing created
     DC:RegisterHandler("GRPF", GFOpcodes.SMSG_LISTING_CREATED or 0x30, function(...)
         local args = {...}
@@ -4286,8 +4333,8 @@ if DC then
         end
     end)
     
-    -- SMSG_DIFFICULTY_CHANGED (0x51) - Confirm difficulty changed
-    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_DIFFICULTY_CHANGED or 0x51, function(...)
+    -- SMSG_DIFFICULTY_CHANGED (0x41) - Confirm difficulty changed
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_DIFFICULTY_CHANGED or 0x41, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
@@ -4326,7 +4373,13 @@ if DC then
 
     namespace.ClaimVaultReward = function(slotIndex, itemId)
         if DC then
-            DC:Send("MPLUS", 0x07, { slot = slotIndex, item = itemId })  -- CMSG_CLAIM_VAULT_REWARD
+            -- Must go through DC:Request (JSON): DC:Send stringifies the table
+            -- into "table: 0x..." and the server drops the claim silently.
+            if type(DC.Request) == "function" then
+                DC:Request("MPLUS", 0x07, { slot = slotIndex, itemId = itemId })  -- CMSG_CLAIM_VAULT_REWARD
+            else
+                DC:Send("MPLUS", 0x07, slotIndex, itemId)  -- positional fallback
+            end
         end
     end
     

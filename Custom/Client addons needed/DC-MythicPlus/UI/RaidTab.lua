@@ -89,6 +89,11 @@ local selectedEra = nil  -- nil = all eras
 local function InitializeRaidList()
     if raidListLoaded then return end
     for _, r in ipairs(DEFAULT_RAIDS) do
+        -- The server identifies raids by mapId (SMSG_RAID_LIST sends id ==
+        -- mapId). Normalize the fallback catalog to the same scheme so a
+        -- listing created before the server list arrives doesn't store a
+        -- bogus synthetic id.
+        r.id = r.mapId
         table.insert(RAID_LIST, r)
     end
     raidListLoaded = true
@@ -183,12 +188,8 @@ end
 -- Initialize
 InitializeRaidList()
 
--- Sample data
-local mockRaidGroups = {
-    { id = 1, raid = "Icecrown Citadel", difficulty = "25 Heroic", progress = "11/12", leader = "RaidLeader", spots = 3, note = "LFM, guild run need 3 DPS" },
-    { id = 2, raid = "Ulduar", difficulty = "10 Normal", progress = "Fresh", leader = "Explorer", spots = 6, note = "Achievement run, know fights" },
-    { id = 3, raid = "Trial of the Crusader", difficulty = "25 Normal", progress = "Fresh", leader = "QuickRun", spots = 8, note = "Fast clear, 5.5k GS min" },
-}
+-- Mock raid-group data was removed: it seeded the results counter and
+-- overwrote live server results after delist/create. Lists start empty now.
 
 -- =====================================================================
 -- Create Raid Tab
@@ -382,7 +383,7 @@ function GF:CreateRaidBrowsePanel(parent)
     -- Results count
     local resultsText = actionBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     resultsText:SetPoint("LEFT", 12, 0)
-    resultsText:SetText("|cff888888Results: " .. #mockRaidGroups .. "|r")
+    resultsText:SetText("|cff888888Results: 0|r")
     panel.resultsText = resultsText
     
     -- View Applicants button (only visible when you have a listing)
@@ -417,7 +418,7 @@ function GF:CreateRaidBrowsePanel(parent)
     panel.applicantBtn = applicantBtn
     
     self.RaidBrowsePanel = panel
-    self:PopulateRaidGroups(mockRaidGroups)
+    self:PopulateRaidGroups({})
 end
 
 function GF:PopulateRaidGroups(groups)
@@ -573,7 +574,8 @@ function GF:RefreshRaidGroups()
     if GF.SearchCustomCategory and GF:SearchCustomCategory("raid") then
         return
     else
-        GF:PopulateRaidGroups(mockRaidGroups)
+        GF:PopulateRaidGroups({})
+        GF.Print("Protocol not connected. Raid list unavailable.")
     end
 end
 
@@ -592,16 +594,7 @@ function GF:CancelRaidGroup(raidId)
             GF:RefreshRaidGroups()
         end)
     else
-        for i, group in ipairs(mockRaidGroups) do
-            if group.id == raidId then
-                table.remove(mockRaidGroups, i)
-                break
-            end
-        end
-
-        C_Timer.After(0.3, function()
-            GF:PopulateRaidGroups(mockRaidGroups)
-        end)
+        GF.Print("Protocol not connected. Cannot delist.")
     end
 end
 
@@ -847,26 +840,7 @@ function GF:CreateRaidGroup(raidId, raid, difficultyId, difficulty, progress, no
             GF:RefreshRaidGroups()
         end)
     else
-        local newGroup = {
-            id = #mockRaidGroups + 100,
-            raid = raid,
-            difficulty = difficulty,
-            progress = combinedNote,
-            leader = playerName,
-            spots = 20,
-            note = note,
-            isOwn = true
-        }
-        table.insert(mockRaidGroups, 1, newGroup)
-
-        if self.RaidBrowsePanel and self.RaidBrowsePanel.applicantBtn then
-            self.RaidBrowsePanel.applicantBtn:Show()
-        end
-
-        C_Timer.After(0.5, function()
-            GF:SelectRaidSubTab(1)
-            GF:PopulateRaidGroups(mockRaidGroups)
-        end)
+        GF.Print("Protocol not connected. Cannot create raid group.")
     end
 end
 
@@ -1033,7 +1007,7 @@ function GF:ShowRaidDropdown(anchorBtn, panel)
         btn:SetScript("OnClick", function(self)
             local r = self.raidData
             panel.selectedRaid = r.name
-            panel.selectedRaidId = r.id
+            panel.selectedRaidId = r.mapId or r.id
             panel.selectedRaidData = r
             panel.raidBtn.text:SetText(r.name)
             

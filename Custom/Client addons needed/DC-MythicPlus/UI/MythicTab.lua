@@ -212,13 +212,10 @@ local ROLE_ICONS = {
     dps = "|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:16:16:0:0:64:64:20:39:22:41|t",
 }
 
--- Sample data (will be replaced by server data)
-local mockGroups = {
-    { id = 1, dungeon = "Utgarde Keep", level = 15, leader = "TankMaster", tank = true, healer = true, dps = 1, note = "Weekly key, fast run" },
-    { id = 2, dungeon = "The Nexus", level = 12, leader = "HealBot", tank = false, healer = true, dps = 2, note = "LF tank and 1 DPS" },
-    { id = 3, dungeon = "Halls of Lightning", level = 18, leader = "ProDPS", tank = true, healer = false, dps = 2, note = "Need healer, know fights" },
-    { id = 4, dungeon = "Azjol-Nerub", level = 8, leader = "Newbie", tank = false, healer = false, dps = 1, note = "Chill run, learning" },
-}
+-- Mock/demo group data was removed: it leaked into live paths (initial
+-- populate, delist refresh, create fallback) and overwrote real server
+-- results with fake rows. Lists now start empty and only server data fills
+-- them; without the protocol the UI shows an honest empty state instead.
 
 -- =====================================================================
 -- Create Mythic Tab
@@ -469,7 +466,7 @@ function GF:CreateMythicBrowsePanel(parent)
     panel.applicantBadge = applicantBadge
     
     self.MythicBrowsePanel = panel
-    self:PopulateMythicGroups(mockGroups)
+    self:PopulateMythicGroups({})
 end
 
 function GF:PopulateMythicGroups(groups)
@@ -745,22 +742,13 @@ function GF:RefreshMythicGroups()
             end
         end)
     else
-        -- No protocol available - use demo data with optional filter
+        -- No protocol available - show an empty list honestly
         if panel and panel.loadingText then
             panel.loadingText:Hide()
         end
-        
-        -- Apply filter to mock data
-        local filteredGroups = {}
-        local filterDungeon = panel and panel.selectedFilter
-        for _, group in ipairs(mockGroups) do
-            if not filterDungeon or group.dungeon == filterDungeon then
-                table.insert(filteredGroups, group)
-            end
-        end
-        
-        self:PopulateMythicGroups(filteredGroups)
-        GF.Print("Protocol not connected. Using demo data.")
+
+        self:PopulateMythicGroups({})
+        GF.Print("Protocol not connected. Group list unavailable.")
     end
 end
 
@@ -777,21 +765,13 @@ function GF:CancelGroup(groupId)
     if DC and DC.GroupFinder and DC.GroupFinder.Delist then
         DC.GroupFinder.Delist(groupId)
     elseif DC and DC.Request then
-        -- Fallback: send cancel request via protocol  
+        -- Fallback: send cancel request via protocol
         DC:Request("GRPF", 0x16, { listingId = groupId })  -- CMSG_DELIST_GROUP
     end
-    
-    -- Remove from local mock list
-    for i, group in ipairs(mockGroups) do
-        if group.id == groupId then
-            table.remove(mockGroups, i)
-            break
-        end
-    end
-    
-    -- Refresh the list
+
+    -- Re-search from the server so the list reflects the delist.
     C_Timer.After(0.3, function()
-        GF:PopulateMythicGroups(mockGroups)
+        GF:RefreshMythicGroups()
     end)
 end
 
@@ -1297,9 +1277,7 @@ end
 
 function GF:CreateMythicGroup(dungeonId, dungeonName, level, note)
     GF.Print(string.format("Creating group: +%d %s", level, dungeonName))
-    
-    local playerName = UnitName("player") or "You"
-    
+
     if GF.CreateCustomListing and GF:CreateCustomListing("mythic", {
             dungeonId = dungeonId,
             dungeonName = dungeonName,
@@ -1322,34 +1300,11 @@ function GF:CreateMythicGroup(dungeonId, dungeonName, level, note)
             GF:RefreshMythicGroups()
         end)
     else
-        -- Demo mode - add to mock list
-        local newGroup = {
-            id = #mockGroups + 1,
-            dungeon = dungeonName,
-            level = level,
-            leader = playerName,
-            tank = true,
-            healer = false,
-            dps = 1,
-            note = note,
-            isOwn = true
-        }
-        table.insert(mockGroups, 1, newGroup)
-        
+        -- Protocol unavailable - creating a listing is impossible; say so.
         if self.MythicCreatePanel and self.MythicCreatePanel.statusText then
-            self.MythicCreatePanel.statusText:SetText("|cff44ff44Group created!|r")
+            self.MythicCreatePanel.statusText:SetText(
+                "|cffff4444Cannot create group: server protocol not connected.|r")
         end
-        
-        -- Show the View Applicants button
-        if self.MythicBrowsePanel and self.MythicBrowsePanel.applicantBtn then
-            self.MythicBrowsePanel.applicantBtn:Show()
-        end
-        
-        -- Switch to browse tab to show the new group
-        C_Timer.After(0.5, function()
-            GF:SelectMythicSubTab(1)
-            GF:PopulateMythicGroups(mockGroups)
-        end)
     end
 end
 
@@ -1572,18 +1527,21 @@ end
 function GF:RequestDifficultyInfo()
     GF.Print("Checking difficulty...")
     
-    -- First try to get from WoW API directly
-    local diffId = GetDungeonDifficulty()
+    -- GetDungeonDifficulty() is 1-based (1=Normal, 2=Heroic, 3=Mythic on
+    -- this fork); DIFFICULTY_OPTIONS ids and every server payload use the
+    -- 0-based enum (0/1/2). Normalize here so UpdateDifficultyDisplay only
+    -- ever sees one scale.
+    local diffId = (tonumber(GetDungeonDifficulty()) or 1) - 1
     local diffName = "Unknown"
-    
-    if diffId == 1 then
+
+    if diffId == 0 then
         diffName = "Normal"
-    elseif diffId == 2 then
+    elseif diffId == 1 then
         diffName = "Heroic"
-    elseif diffId == 3 then
+    elseif diffId == 2 then
         diffName = "Mythic"
     end
-    
+
     -- Update display immediately with local info
     self:UpdateDifficultyDisplay(diffId, diffName)
     

@@ -34,6 +34,18 @@ namespace DCAddon
 {
 namespace MythicPlus
 {
+    // Helper to safely get int from JSON with default value
+    inline int32 JsonGetInt(JsonValue const& json, std::string const& key, int32 defaultVal = 0)
+    {
+        return json[key].IsNumber() ? json[key].AsInt32() : defaultVal;
+    }
+
+    // Helper to safely get string from JSON with default value
+    inline std::string JsonGetString(JsonValue const& json, std::string const& key, std::string const& defaultVal = "")
+    {
+        return json[key].IsString() ? json[key].AsString() : defaultVal;
+    }
+
     namespace BridgeOpcode
     {
         enum : uint16
@@ -1241,11 +1253,31 @@ namespace MythicPlus
     // Handler: Claim vault reward
     static void HandleClaimVaultReward(Player* player, const ParsedMessage& msg)
     {
-        if (msg.GetDataCount() < 2)
-            return;
+        uint8 slot = 0;
+        uint32 itemId = 0;
 
-        uint8 slot = static_cast<uint8>(msg.GetUInt32(0));
-        uint32 itemId = msg.GetUInt32(1);
+        if (IsJsonMessage(msg))
+        {
+            auto json = GetJsonData(msg);
+            slot = static_cast<uint8>(JsonGetInt(json, "slot", 0));
+            itemId = static_cast<uint32>(JsonGetInt(json, "itemId", 0));
+            if (!itemId)
+                itemId = static_cast<uint32>(JsonGetInt(json, "item", 0));
+        }
+        else
+        {
+            if (msg.GetDataCount() < 2)
+            {
+                JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_CLAIM_VAULT_RESULT)
+                    .Set("success", false)
+                    .Set("error", "Invalid request format")
+                    .Send(player);
+                return;
+            }
+
+            slot = static_cast<uint8>(msg.GetUInt32(0));
+            itemId = msg.GetUInt32(1);
+        }
 
         bool success = sMythicRuns->ClaimVaultItemReward(player, slot, itemId);
 
@@ -1664,7 +1696,11 @@ namespace MythicPlus
     {
         MarkMythicPlusAddonSession(player);
 
-        std::string reason = msg.GetString(0);
+        // JSON requests carry the reason as {"reason":...} — GetString(0) would
+        // return the "J" marker there, which broke the vault login notification.
+        std::string reason = IsJsonMessage(msg)
+            ? JsonGetString(GetJsonData(msg), "reason", "")
+            : msg.GetString(0);
         if (reason.empty())
             reason = "client_request";
 

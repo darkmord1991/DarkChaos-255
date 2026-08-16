@@ -377,10 +377,8 @@ function DCInfoBar:SetupServerCommunication()
             DCInfoBar:Debug("Received legacy EVNT remove payload")
             DCInfoBar:HandleEventRemove(data)
         end)
-        DC:RegisterHandler("GRPF", 0x70, function(data)
-            DCInfoBar:Debug("Received legacy GRPF event payload")
-            DCInfoBar:HandleEventData(data)
-        end)
+        -- NOTE: GRPF 0x70 is SMSG_EVENT_CREATED (Group Finder scheduled
+        -- events) and belongs to DC-MythicPlus — do not claim it here.
         self:Debug("Registered legacy handlers for events (JSON not available)")
     else
         self:Debug("Warning: No handler registration method available in DCAddonProtocol")

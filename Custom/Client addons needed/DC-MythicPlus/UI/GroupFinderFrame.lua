@@ -14,10 +14,6 @@ local GF = namespace.GroupFinder
 
 GF.FRAME_WIDTH = 563
 GF.FRAME_HEIGHT = 512
-GF.TAB_NAMES = { "Mythic+", "Raids", "World", "Live Runs", "Scheduled", "My Queues" }
-GF.TABS = {}
-GF.currentTab = 1
-
 GF.CATEGORY_CONFIG = {
     mythic = { category = "dungeon", listingType = 1, title = "Mythic+" },
     raid = { category = "raid", listingType = 2, title = "Raid" },
@@ -64,16 +60,8 @@ GF.TYPE_MENU_BY_CONTEXT = {
 GF.DUNGEON_DIFFICULTY_LABELS = { [0] = "Normal", [1] = "Heroic", [2] = "Mythic" }
 GF.queueDungeonDifficulty = 0
 
-local LFG_FRAME_TEXTURE = "Interface\\LFGFrame\\UI-LFG-FRAME"
-local LFG_FRAME_FALLBACK = "Interface\\LFGFrame\\LFGParentFrame"
-local LFG_THREE_BUTTON_BLANK = "Interface\\LFGFrame\\UI-Frame-ThreeButton-Blank"
 local LFG_ROLE_TEXTURE = "Interface\\LFGFrame\\LFGRole"
-local LFR_MAIN_TEXTURE = "Interface\\LFGFrame\\UI-LFR-FRAME-MAIN"
-local LFR_BROWSE_TEXTURE = "Interface\\LFGFrame\\UI-LFR-FRAME-BROWSE"
 local LFG_PORTRAIT_TEXTURE = "Interface\\LFGFrame\\UI-LFG-PORTRAIT"
-local LFG_SEPARATOR_TEXTURE = "Interface\\LFGFrame\\UI-LFG-SEPARATOR"
-local LFG_DUNGEON_BACKGROUND = "Interface\\LFGFrame\\UI-LFG-BACKGROUND-DUNGEONWALL"
-local LFG_REWARD_RING = "Interface\\LFGFrame\\UI-LFG-ICON-REWARDRING"
 
 -- ---------------------------------------------------------------------------
 -- LFG list icons (Interface\LFGFrame\lfgicon-<key>.blp), shipped in patch MPQ.
@@ -159,25 +147,107 @@ function namespace.ResolveLFGIconCandidates(descriptor, isRaid, includeGeneric)
 end
 local RETAIL_TEXTURE_ROOT = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Retail\\"
 local RETAIL_BLUE_MENU_RING = RETAIL_TEXTURE_ROOT .. "bluemenuring_335.tga"
+-- bluemenuring_335 = retail Interface/Common/BlueMenuRing (128x128); the ring
+-- art occupies the {1..103, 1..104} region (atlas member "bluemenu-Ring").
+local BLUEMENU_RING_COORDS = { 0.0078125, 0.804688, 0.0078125, 0.8125 }
 -- The retail bluemenu-main atlas (256x1024). Texcoords below are the exact
--- regions from retail PVEFrame.xml (the _335 rip shares the same atlas layout).
+-- regions from retail PVEFrame.xml/PVEFrame.lua (the _335 rip is a straight
+-- copy of the retail file, so the coords apply verbatim).
 local RETAIL_BLUEMENU_MAIN = RETAIL_TEXTURE_ROOT .. "bluemenu-main_335.tga"
 local BLUEMENU_BG_COORDS = { 0.00390625, 0.82421875, 0.18554688, 0.58984375 }
-local RETAIL_BLUE_MENU_TEXTURES = {
-    normal = RETAIL_TEXTURE_ROOT .. "BlueMenu-Normal.tga",
-    selected = RETAIL_TEXTURE_ROOT .. "BlueMenu-Selected.tga",
-    disabled = RETAIL_TEXTURE_ROOT .. "BlueMenu-Disabled.tga",
+local BLUEMENU_BUTTON_COORDS = {
+    normal   = { 0.00390625, 0.87890625, 0.75195313, 0.83007813 },
+    selected = { 0.00390625, 0.87890625, 0.59179688, 0.66992188 },
+    disabled = { 0.00390625, 0.87890625, 0.67187500, 0.75000000 },
 }
-local RETAIL_GROUPFINDER_BACKGROUND_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Background.tga"
-local RETAIL_GROUPFINDER_BACKGROUND_DUNGEONS_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Background-Dungeons.tga"
-local RETAIL_GROUPFINDER_BUTTON_COVER_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Button-Cover.tga"
-local RETAIL_GROUPFINDER_BUTTON_HIGHLIGHT_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Button-Highlight.tga"
-local RETAIL_GROUPFINDER_BUTTON_SELECT_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Button-Select.tga"
-local RETAIL_GROUPFINDER_EYE_BACKGLOW_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Eye-Backglow.tga"
-local RETAIL_GROUPFINDER_EYE_FRAME_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Eye-Frame.tga"
-local RETAIL_GROUPFINDER_EYE_SINGLE_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Eye-Single.tga"
-local RETAIL_LFG_ROLE_GENERIC_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Role-Generic.tga"
-local RETAIL_LFG_ROLE_GENERIC_DISABLED_TEXTURE = RETAIL_TEXTURE_ROOT .. "GroupFinder-Role-Generic-Disabled.tga"
+local BLUEMENU_CORNER_COORDS = {
+    tl = { 0.00390625, 0.25390625, 0.00097656, 0.06347656 },
+    tr = { 0.51953125, 0.76953125, 0.00097656, 0.06347656 },
+    br = { 0.00390625, 0.25390625, 0.06542969, 0.12792969 },
+    bl = { 0.26171875, 0.51171875, 0.00097656, 0.06347656 },
+}
+
+-- ---------------------------------------------------------------------------
+-- Retail atlas rips (straight copies of the retail atlas files, power-of-two,
+-- so they load on 3.3.5a). Member rects are PIXEL coords lifted from retail
+-- AtlasInfo.lua: { left, right, top, bottom }.
+-- ---------------------------------------------------------------------------
+local GF_ATLAS = RETAIL_TEXTURE_ROOT .. "groupfinder_335.tga"     -- 2048x1024
+local GF_ATLAS_W, GF_ATLAS_H = 2048, 1024
+local GF_ATLAS_RECTS = {
+    -- Interface/LFGFrame/GroupFinder members
+    ["background"]            = { 1, 329, 1, 337 },     -- 328x336 grey panel bg
+    ["button-cover"]          = { 1, 301, 339, 385 },   -- 300x46 stone button
+    ["button-cover-down"]     = { 1, 301, 387, 433 },
+    ["button-highlight"]      = { 1, 293, 435, 472 },   -- 292x37
+    ["button-select"]         = { 1, 293, 474, 511 },
+    ["highlightbar-blue"]     = { 1499, 1803, 393, 425 }, -- 304x32
+    ["highlightbar-yellow"]   = { 943, 1247, 431, 463 },
+    ["eye-highlight"]         = { 331, 417, 465, 551 },  -- 86x86 golden glow
+    -- Category banner buttons (290x36) for the Premade Groups home list
+    ["button-dungeons"]       = { 1, 291, 741, 777 },
+    ["button-questing"]       = { 1, 291, 817, 853 },
+    ["button-battlegrounds"]  = { 1, 291, 589, 625 },
+    ["button-scenarios"]      = { 623, 913, 393, 429 },
+    ["button-custom-pve"]     = { 1, 291, 627, 663 },
+    ["button-custom-pvp"]     = { 1, 291, 665, 701 },
+    ["button-raids"]          = { 1, 291, 931, 967 },   -- raids-legion banner
+    ["button-arenas"]         = { 1, 291, 513, 549 },
+}
+
+local PROMPTS_ATLAS = RETAIL_TEXTURE_ROOT .. "UILFGPrompts_335.tga" -- 2048x2048
+local PROMPTS_ATLAS_W, PROMPTS_ATLAS_H = 2048, 2048
+local PROMPTS_ATLAS_RECTS = {
+    -- Interface/LFGFrame/UILFGPrompts members
+    ["role-tank"]             = { 1291, 1547, 515, 771 },  -- 70x70
+    ["role-tank-disabled"]    = { 1549, 1805, 515, 771 },
+    ["role-healer"]           = { 1, 257, 1547, 1803 },
+    ["role-healer-disabled"]  = { 259, 515, 515, 771 },
+    ["role-dps"]              = { 1, 257, 515, 771 },
+    ["role-dps-disabled"]     = { 1, 257, 773, 1029 },
+    ["role-leader"]           = { 259, 515, 1031, 1287 },
+    ["role-leader-disabled"]  = { 259, 515, 1289, 1545 },
+    ["readymark"]             = { 1745, 1945, 259, 459 },  -- 40x40 green check
+    ["declinemark"]           = { 1801, 2001, 1, 201 },    -- 40x40 red x
+    ["pendingmark"]           = { 1543, 1743, 259, 459 },  -- 40x40 hourglass
+    ["divider"]               = { 517, 885, 773, 777 },    -- 368x4 thin line
+    ["tank-micro"]            = { 190, 251, 1805, 1866 },  -- 61x61 silhouettes
+    ["healer-micro"]          = { 1, 62, 1931, 1992 },
+    ["dps-micro"]             = { 1, 62, 1805, 1866 },
+}
+
+-- Apply an atlas member to a texture (path + texcoords).
+local function SetGFAtlas(texture, key)
+    if not texture then return false end
+    local r = GF_ATLAS_RECTS[key]
+    local path, w, h = GF_ATLAS, GF_ATLAS_W, GF_ATLAS_H
+    if not r then
+        r = PROMPTS_ATLAS_RECTS[key]
+        path, w, h = PROMPTS_ATLAS, PROMPTS_ATLAS_W, PROMPTS_ATLAS_H
+    end
+    if not r then return false end
+    texture:SetTexture(path)
+    texture:SetTexCoord(r[1] / w, r[2] / w, r[3] / h, r[4] / h)
+    return texture:GetTexture() ~= nil
+end
+namespace.SetGFAtlas = SetGFAtlas
+
+-- Inline |T...|t escape for an atlas member (for FontStrings, e.g. role
+-- glyphs in list rows). Pixel-coord form of the texture escape.
+local function GFAtlasEscape(key, size)
+    local r = GF_ATLAS_RECTS[key]
+    local path, w, h = GF_ATLAS, GF_ATLAS_W, GF_ATLAS_H
+    if not r then
+        r = PROMPTS_ATLAS_RECTS[key]
+        path, w, h = PROMPTS_ATLAS, PROMPTS_ATLAS_W, PROMPTS_ATLAS_H
+    end
+    if not r then return "" end
+    size = size or 14
+    return string.format("|T%s:%d:%d:0:0:%d:%d:%d:%d:%d:%d|t",
+        path, size, size, w, h, r[1], r[2], r[3], r[4])
+end
+namespace.GFAtlasEscape = GFAtlasEscape
+
 local RETAIL_LFG_ROLE_TEXTURES = {
     tank = {
         enabled = RETAIL_TEXTURE_ROOT .. "GroupFinder-Role-Tank.tga",
@@ -195,18 +265,6 @@ local RETAIL_LFG_ROLE_TEXTURES = {
         enabled = RETAIL_TEXTURE_ROOT .. "GroupFinder-Role-Leader.tga",
         disabled = RETAIL_TEXTURE_ROOT .. "GroupFinder-Role-Leader-Disabled.tga",
     },
-}
-local RETAIL_GROUPFINDER_NAV_TEXTURES = {
-    dungeon = RETAIL_TEXTURE_ROOT .. "GroupFinder-Nav-Dungeons.tga",
-    raid = RETAIL_TEXTURE_ROOT .. "GroupFinder-Nav-Raids.tga",
-    premade = RETAIL_TEXTURE_ROOT .. "GroupFinder-Nav-Premade.tga",
-}
-
-local WOTLK_ROLE_BUTTON_COORDS = {
-    tank = { 0.5, 0.75, 0, 1 },
-    healer = { 0.75, 1, 0, 1 },
-    dps = { 0.25, 0.5, 0, 1 },
-    leader = { 0, 0.25, 0, 1 },
 }
 
 local function SetTextureOrFallback(texture, primary, fallback)
@@ -303,40 +361,98 @@ local function SetTextureSlice(texture, primary, coords, fallback)
     end
 end
 
--- Row background state colours (warm dark / gold to match the DC FelLeather
--- theme). Named for legacy call sites; no longer the blue bluemenu art.
+-- Row background states, retail LFGList style: hover = blue highlight bar,
+-- selected = gold select bar (distinct art per state, like retail).
 local function SetRetailBlueMenuBackground(texture, state)
     if not texture then return end
 
     if state == "selected" then
-        SetSolidTexture(texture, 0.32, 0.25, 0.10, 0.85)
+        if not SetGFAtlas(texture, "button-select") then
+            SetSolidTexture(texture, 0.32, 0.25, 0.10, 0.85)
+        end
+        texture:SetVertexColor(1, 1, 1, 1)
+    elseif state == "hover" then
+        if not SetGFAtlas(texture, "highlightbar-blue") then
+            SetSolidTexture(texture, 0.20, 0.40, 0.60, 0.45)
+        end
+        texture:SetVertexColor(1, 1, 1, 0.9)
     elseif state == "disabled" then
+        texture:SetTexCoord(0, 1, 0, 1)
         SetSolidTexture(texture, 0, 0, 0, 0.2)
+        texture:SetVertexColor(1, 1, 1, 1)
     else
+        texture:SetTexCoord(0, 1, 0, 1)
         SetSolidTexture(texture, 0, 0, 0, 0.35)
+        texture:SetVertexColor(1, 1, 1, 1)
     end
 end
 
+-- Shared click-feedback helper (3.3.5 PlaySound takes a sound name string).
+local function PlayUISound(name)
+    if PlaySound then
+        pcall(PlaySound, name)
+    end
+end
+namespace.PlayGFSound = PlayUISound
+
+-- ---------------------------------------------------------------------------
+-- Retail-styled action button factory: the stone "cover" button art from the
+-- retail Group Finder atlas (normal / pushed / additive hover), replacing the
+-- WotLK red UIPanelButtonTemplate. Uses the Button's native text support so
+-- SetText/GetFontString keep working at every call site.
+-- ---------------------------------------------------------------------------
+local function CreateRetailActionButton(parent, width, height, label)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(width or 110, height or 24)
+
+    local normal = button:CreateTexture(nil, "BACKGROUND")
+    normal:SetAllPoints()
+    if not SetGFAtlas(normal, "button-cover") then
+        SetSolidTexture(normal, 0.15, 0.13, 0.10, 0.9)
+    end
+    button:SetNormalTexture(normal)
+
+    local pushed = button:CreateTexture(nil, "BACKGROUND")
+    pushed:SetAllPoints()
+    if not SetGFAtlas(pushed, "button-cover-down") then
+        SetSolidTexture(pushed, 0.10, 0.09, 0.07, 0.9)
+    end
+    button:SetPushedTexture(pushed)
+
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    SetGFAtlas(highlight, "button-highlight")
+    highlight:SetBlendMode("ADD")
+    highlight:SetAlpha(0.7)
+    button:SetHighlightTexture(highlight)
+
+    button:SetNormalFontObject(GameFontNormal)
+    button:SetHighlightFontObject(GameFontHighlight)
+    button:SetDisabledFontObject(GameFontDisable)
+    if label then
+        button:SetText(label)
+    end
+
+    button:SetScript("OnMouseDown", function()
+        PlayUISound("igMainMenuOptionCheckBoxOn")
+    end)
+
+    return button
+end
+namespace.CreateRetailButton = CreateRetailActionButton
+
+-- Retail PVEFrame nav button states: the bluemenu-main art region swaps
+-- between the normal (dark) and selected (blue glow) rows of the atlas;
+-- hover is the same art additively blended (native HighlightTexture).
 local function UpdateRetailNavButtonArt(button, state)
     if not button then return end
 
     local isSelected = state == "selected"
-    local isHovered = state == "hover"
 
-    if button.hoverOverlay then
-        if isHovered and not isSelected then
-            button.hoverOverlay:Show()
-        else
-            button.hoverOverlay:Hide()
-        end
-    end
-
-    if button.selectOverlay then
-        if isSelected then
-            button.selectOverlay:Show()
-        else
-            button.selectOverlay:Hide()
-        end
+    if button.bg and button.bg.SetTexCoord then
+        local coords = isSelected and BLUEMENU_BUTTON_COORDS.selected
+            or BLUEMENU_BUTTON_COORDS.normal
+        button.bg:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
     end
 
     if button.text then
@@ -404,52 +520,6 @@ local function ApplyLeaderboardsStyle(frame)
 
     frame.__dcBg = bg
     frame.__dcTint = tint
-end
-
-local function ApplyBlizzardFinderStyle(frame)
-    if not frame or frame.__dcBlizzardFinderStyle then return end
-    frame.__dcBlizzardFinderStyle = true
-
-    if frame.SetBackdrop then
-        frame:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true, tileSize = 32, edgeSize = 32,
-            insets = { left = 11, right = 12, top = 12, bottom = 11 }
-        })
-        if frame.SetBackdropColor then
-            frame:SetBackdropColor(0.02, 0.02, 0.02, 0.94)
-        end
-    end
-
-    local parchment = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
-    parchment:SetPoint("TOPLEFT", 10, -24)
-    parchment:SetPoint("BOTTOMRIGHT", -10, 8)
-    SetTextureOrFallback(parchment, LFG_FRAME_TEXTURE, LFG_FRAME_FALLBACK)
-    parchment:SetVertexColor(0.82, 0.78, 0.68, 0.98)
-
-    local wash = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    wash:SetPoint("TOPLEFT", 18, -74)
-    wash:SetPoint("BOTTOMRIGHT", -18, 38)
-    SetSolidTexture(wash, 0.03, 0.025, 0.018, 0.46)
-
-    local portrait = frame:CreateTexture(nil, "ARTWORK")
-    portrait:SetSize(60, 60)
-    portrait:SetPoint("TOPLEFT", 18, -9)
-    SetTextureOrFallback(portrait, LFG_PORTRAIT_TEXTURE,
-        "Interface\\LFGFrame\\LFG-Eye")
-
-    local separator = frame:CreateTexture(nil, "ARTWORK")
-    separator:SetSize(520, 32)
-    separator:SetPoint("TOP", 12, -78)
-    SetTextureOrFallback(separator, LFG_SEPARATOR_TEXTURE,
-        "Interface\\Common\\UI-TooltipDivider-Transparent")
-    separator:SetVertexColor(1, 0.86, 0.45, 0.58)
-
-    frame.__dcParchment = parchment
-    frame.__dcWash = wash
-    frame.__dcPortrait = portrait
-    frame.__dcSeparator = separator
 end
 
 local function HasCapabilityBit(mask, capability)
@@ -530,35 +600,6 @@ function GF:SetStatusMessage(msg)
             end
         end)
     end
-end
-
-local function FormatRoleMask(role)
-    local roleValue = tonumber(role) or 0
-    local labels = {}
-
-    if bit and bit.band then
-        if bit.band(roleValue, 1) ~= 0 then table.insert(labels, "Tank") end
-        if bit.band(roleValue, 2) ~= 0 then table.insert(labels, "Healer") end
-        if bit.band(roleValue, 4) ~= 0 then table.insert(labels, "DPS") end
-    else
-        if roleValue >= 4 then
-            table.insert(labels, "DPS")
-            roleValue = roleValue - 4
-        end
-        if roleValue >= 2 then
-            table.insert(labels, 1, "Healer")
-            roleValue = roleValue - 2
-        end
-        if roleValue >= 1 then
-            table.insert(labels, 1, "Tank")
-        end
-    end
-
-    if #labels == 0 then
-        return "Unknown"
-    end
-
-    return table.concat(labels, "/")
 end
 
 local function GetClassRoleCaps()
@@ -949,7 +990,7 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
 
             row:SetScript("OnEnter", function(self)
                 if self ~= GF.compactSelectedRow and self.bg then
-                    SetRetailBlueMenuBackground(self.bg, "selected")
+                    SetRetailBlueMenuBackground(self.bg, "hover")
                 end
             end)
             row:SetScript("OnLeave", function(self)
@@ -958,6 +999,7 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
                 end
             end)
             row:SetScript("OnClick", function(self)
+                PlayUISound("igMainMenuOptionCheckBoxOn")
                 GF:CompactSelectRow(self, self.entry)
             end)
 
@@ -1003,9 +1045,13 @@ function GF:CompactRenderRows(entries, emptyTitle, emptySubtext)
 
         row.meta:SetText(CompactEntryMeta(entry, kind))
 
-        row.roles:SetText(string.format("T:%s H:%s D:%s",
+        -- Retail-style role glyphs (tank/healer/dps silhouettes) + open counts.
+        row.roles:SetText(string.format("%s%s  %s%s  %s%s",
+            GFAtlasEscape("tank-micro", 13),
             tostring(entry.needTank or entry.tanks or entry.tank or 0),
+            GFAtlasEscape("healer-micro", 13),
             tostring(entry.needHealer or entry.healers or entry.healer or 0),
+            GFAtlasEscape("dps-micro", 13),
             tostring(entry.needDps or entry.dps or 0)))
 
         row:Show()
@@ -1124,6 +1170,9 @@ function GF:SelectCompactType(kind)
     end
     if self.hlbgPanel then
         self.hlbgPanel:Hide()
+    end
+    if self.pvpPanel then
+        self.pvpPanel:Hide()
     end
     if self.compactBrowserFrame then
         self.compactBrowserFrame:Show()
@@ -1503,10 +1552,8 @@ function GF:ShowCompactCreateDialog(kind)
         noteBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         frame.noteBox = noteBox
 
-        local createBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        createBtn:SetSize(100, 24)
+        local createBtn = CreateRetailActionButton(frame, 100, 24, "Create")
         createBtn:SetPoint("BOTTOMLEFT", 42, 20)
-        createBtn:SetText("Create")
         createBtn:SetScript("OnClick", function()
             local dialogKind = frame.kind or "mythic"
             local isRaid = dialogKind == "raid"
@@ -1547,10 +1594,8 @@ function GF:ShowCompactCreateDialog(kind)
             end
         end)
 
-        local cancelBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        cancelBtn:SetSize(100, 24)
+        local cancelBtn = CreateRetailActionButton(frame, 100, 24, "Cancel")
         cancelBtn:SetPoint("BOTTOMRIGHT", -42, 20)
-        cancelBtn:SetText("Cancel")
         cancelBtn:SetScript("OnClick", function() frame:Hide() end)
 
         self.compactCreateDialog = frame
@@ -1683,6 +1728,8 @@ function GF:CreateCompactRoleButton(parent, role, xOffset, checked, tooltip, all
         if not self.allowed then return end
         GF.compactRoles = GF.compactRoles or { dps = true }
         GF.compactRoles[self.role] = not GF.compactRoles[self.role]
+        PlayUISound(GF.compactRoles[self.role]
+            and "igMainMenuOptionCheckBoxOn" or "igMainMenuOptionCheckBoxOff")
         GF:UpdateCompactRoleButtons()
     end)
 
@@ -1703,18 +1750,18 @@ function GF:RefreshRetailPremadeSelection()
 
     for kind, button in pairs(self.premadeCategoryButtons or {}) do
         local sel = (kind == selectedKind)
-        if button.bg then
+        if button.selectOverlay then
             if sel then
-                SetSolidTexture(button.bg, 0.28, 0.22, 0.10, 0.85)
+                button.selectOverlay:Show()
             else
-                SetSolidTexture(button.bg, 0, 0, 0, 0.45)
+                button.selectOverlay:Hide()
             end
         end
-        if button.border then
+        if button.label then
             if sel then
-                button.border:SetBackdropBorderColor(1, 0.82, 0, 0.95)
+                button.label:SetTextColor(1, 0.90, 0.24)
             else
-                button.border:SetBackdropBorderColor(0.35, 0.40, 0.55, 0.8)
+                button.label:SetTextColor(1, 0.82, 0)
             end
         end
     end
@@ -1747,6 +1794,9 @@ function GF:ShowRetailPremadeHome(kind)
     end
     if self.hlbgPanel then
         self.hlbgPanel:Hide()
+    end
+    if self.pvpPanel then
+        self.pvpPanel:Hide()
     end
     if self.retailHomeFrame then
         self.retailHomeFrame:Show()
@@ -1921,6 +1971,9 @@ function GF:ShowHinterlandPanel()
     if self.retailHomeFrame then
         self.retailHomeFrame:Hide()
     end
+    if self.pvpPanel then
+        self.pvpPanel:Hide()
+    end
 
     -- Repaint the panel whenever the HLBG addon refreshes its own queue UI.
     local HLBG = rawget(_G, "HLBG")
@@ -1951,53 +2004,52 @@ function GF:ShowHinterlandPanel()
     self:UpdateCompactButtons()
 end
 
+-- Retail PVEFrame nav button (GroupFinderGroupButtonTemplate): bluemenu-main
+-- button art + gold ring with the category icon + large label. Selected state
+-- swaps to the blue-glow art row; hover is the same art additively blended.
 function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onClick)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(160, 60)
     button:SetPoint("TOPLEFT", 10, yOffset)
     button.key = key
 
-    -- Subtle dark background stripe (retail uses a faint bluemenu strip, not art).
+    -- Button background: the 224x80 bluemenu button art (normal row).
     local bg = button:CreateTexture(nil, "BACKGROUND")
-    bg:SetPoint("TOPLEFT", 36, 0)
-    bg:SetPoint("BOTTOMRIGHT", 0, 0)
-    SetSolidTexture(bg, 0.05, 0.05, 0.07, 0.55)
-    button.card = bg
+    bg:SetAllPoints()
+    bg:SetTexture(RETAIL_BLUEMENU_MAIN)
+    local c = BLUEMENU_BUTTON_COORDS.normal
+    bg:SetTexCoord(c[1], c[2], c[3], c[4])
     button.bg = bg
 
-    -- Hover highlight on the stripe.
-    local hoverOverlay = button:CreateTexture(nil, "BACKGROUND", nil, 1)
-    hoverOverlay:SetPoint("TOPLEFT", 36, 0)
-    hoverOverlay:SetPoint("BOTTOMRIGHT", 0, 0)
-    SetSolidTexture(hoverOverlay, 0.35, 0.28, 0.12, 0.55)
-    hoverOverlay:Hide()
-    button.hoverOverlay = hoverOverlay
+    -- Native hover: same art, additive (exactly retail's HighlightTexture).
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture(RETAIL_BLUEMENU_MAIN)
+    highlight:SetTexCoord(c[1], c[2], c[3], c[4])
+    highlight:SetBlendMode("ADD")
+    highlight:SetAlpha(0.8)
+    button:SetHighlightTexture(highlight)
 
-    -- Selection indicator: teal vertical bar on right edge (like retail active tab).
-    local selectLine = button:CreateTexture(nil, "OVERLAY", nil, 2)
-    selectLine:SetSize(4, 52)
-    selectLine:SetPoint("RIGHT", -2, 0)
-    SetSolidTexture(selectLine, 0.22, 0.78, 1.0, 1)
-    selectLine:Hide()
-    button.selectOverlay = selectLine
+    -- Gold ring on the left with the category icon inside (retail layout).
+    local ring = button:CreateTexture(nil, "ARTWORK", nil, 2)
+    ring:SetSize(56, 56)
+    ring:SetPoint("LEFT", -4, 0)
+    ring:SetTexture(RETAIL_BLUE_MENU_RING)
+    ring:SetTexCoord(BLUEMENU_RING_COORDS[1], BLUEMENU_RING_COORDS[2],
+        BLUEMENU_RING_COORDS[3], BLUEMENU_RING_COORDS[4])
+    button.ring = ring
 
-    -- Square icon — no border frame, icon fills the full square.
-    local iconFrame = CreateFrame("Frame", nil, button)
-    iconFrame:SetSize(48, 48)
-    iconFrame:SetPoint("LEFT", 4, 0)
-    button.iconFrame = iconFrame
-
-    local icon = iconFrame:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
+    local icon = button:CreateTexture(nil, "ARTWORK", nil, 1)
+    icon:SetSize(40, 40)
+    icon:SetPoint("CENTER", ring, "CENTER", 0, 0)
     SetTextureOrFallback(icon, iconTexture, "Interface\\Icons\\INV_Misc_QuestionMark")
+    -- Trim the square icon edges so the corners stay behind the round ring.
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     button.icon = icon
-    button.ring = nil
 
-    -- Label (starts just right of the icon frame; wide enough that
-    -- "Hinterland" doesn't truncate).
     local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    text:SetPoint("LEFT", iconFrame, "RIGHT", 8, 0)
-    text:SetWidth(98)
+    text:SetPoint("LEFT", ring, "RIGHT", 4, 0)
+    text:SetWidth(104)
     text:SetJustifyH("LEFT")
     text:SetText(label)
     text:SetTextColor(1, 0.82, 0)
@@ -2005,14 +2057,9 @@ function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onCl
 
     UpdateRetailNavButtonArt(button, "normal")
 
-    button:SetScript("OnClick", onClick)
-    button:SetScript("OnEnter", function(self)
-        if GF.retailNavSelection ~= self.key then
-            UpdateRetailNavButtonArt(self, "hover")
-        end
-    end)
-    button:SetScript("OnLeave", function(self)
-        UpdateRetailNavButtonArt(self, GF.retailNavSelection == self.key and "selected" or "normal")
+    button:SetScript("OnClick", function(...)
+        PlayUISound("igMainMenuOptionCheckBoxOn")
+        onClick(...)
     end)
 
     self.retailNavButtons = self.retailNavButtons or {}
@@ -2020,36 +2067,62 @@ function GF:CreateRetailNavButton(parent, key, label, iconTexture, yOffset, onCl
     return button
 end
 
+-- Category banner art for the Premade Groups home list (retail LFGList
+-- category buttons: illustrated banner + stone cover + highlight/select art).
+local PREMADE_CATEGORY_BANNERS = {
+    quest = "button-questing",
+    mythic = "button-dungeons",
+    raid = "button-raids",
+    hlbg = "button-battlegrounds",
+    live = "button-scenarios",
+    queues = "button-custom-pve",
+    other = "button-custom-pvp",
+}
+
 function GF:CreateRetailPremadeCategoryButton(parent, kind, label, yOffset)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(math.max((parent:GetWidth() or 0) - 8, 282), 46)
     button:SetPoint("TOPLEFT", 0, yOffset)
     button.kind = kind
 
-    -- Clean bordered row (no oval cover / landscape art — those produced the
-    -- "circles" over each entry).
-    local bg = button:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    button.bg = bg
-    SetSolidTexture(bg, 0, 0, 0, 0.45)
+    -- Illustrated category banner (falls back to a plain dark row).
+    local banner = button:CreateTexture(nil, "BACKGROUND")
+    banner:SetAllPoints()
+    if not SetGFAtlas(banner, PREMADE_CATEGORY_BANNERS[kind] or "button-custom-pve") then
+        SetSolidTexture(banner, 0, 0, 0, 0.45)
+    end
+    button.banner = banner
 
-    button.border = CreateFrame("Frame", nil, button)
-    button.border:SetAllPoints()
-    button.border:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 }
-    })
-    button.border:SetBackdropBorderColor(0.35, 0.40, 0.55, 0.8)
+    -- Stone frame cover over the banner (retail draws this on every row).
+    local cover = button:CreateTexture(nil, "BORDER")
+    cover:SetAllPoints()
+    SetGFAtlas(cover, "button-cover")
+    button.bg = cover
 
-    local labelText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    -- Gold select bar overlay for the active category.
+    local select = button:CreateTexture(nil, "ARTWORK")
+    select:SetAllPoints()
+    SetGFAtlas(select, "button-select")
+    select:Hide()
+    button.selectOverlay = select
+
+    local labelText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     labelText:SetPoint("LEFT", 18, 0)
     labelText:SetWidth(button:GetWidth() - 40)
     labelText:SetJustifyH("LEFT")
     labelText:SetText(label)
+    button.label = labelText
 
-    button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    -- Blue highlight bar on hover (retail LFGList row hover).
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    SetGFAtlas(highlight, "highlightbar-blue")
+    highlight:SetBlendMode("ADD")
+    highlight:SetAlpha(0.65)
+    button:SetHighlightTexture(highlight)
+
     button:SetScript("OnClick", function(self)
+        PlayUISound("igMainMenuOptionCheckBoxOn")
         GF.premadeSelectedKind = self.kind
         GF:RefreshRetailPremadeSelection()
         GF:SelectCompactType(self.kind)
@@ -2072,9 +2145,6 @@ function GF:CreateCompactMainFrame()
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:SetClampedToScreen(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:SetFrameStrata("HIGH")
     frame:SetToplevel(true)
     frame:Hide()
@@ -2089,22 +2159,45 @@ function GF:CreateCompactMainFrame()
     -- dialog border (matches DC-Leaderboards et al.).
     ApplyLeaderboardsStyle(frame)
 
-    -- Small decorative eye kept in the 34px header band (no nav overlap).
+    -- Retail open/close feedback.
+    frame:SetScript("OnShow", function() PlayUISound("igCharacterInfoOpen") end)
+    frame:SetScript("OnHide", function() PlayUISound("igCharacterInfoClose") end)
+
+    -- Title header band: retail drags by the header only, not the whole frame.
+    local header = CreateFrame("Frame", nil, frame)
+    header:SetPoint("TOPLEFT", 6, -6)
+    header:SetPoint("TOPRIGHT", -6, -6)
+    header:SetHeight(28)
+    header:EnableMouse(true)
+    header:RegisterForDrag("LeftButton")
+    header:SetScript("OnDragStart", function() frame:StartMoving() end)
+    header:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+
+    -- Thin retail divider line under the header band.
+    local headerDivider = frame:CreateTexture(nil, "ARTWORK")
+    headerDivider:SetPoint("TOPLEFT", 14, -32)
+    headerDivider:SetPoint("TOPRIGHT", -14, -32)
+    headerDivider:SetHeight(3)
+    if not SetGFAtlas(headerDivider, "divider") then
+        SetSolidTexture(headerDivider, 0.35, 0.30, 0.20, 0.8)
+    end
+
+    -- Group Finder eye: golden atlas glow behind the stock WotLK LFR eye.
+    -- (The old standalone eye .tga rips were non-power-of-two and never
+    -- actually loaded on 3.3.5a — the atlas region does.)
     local portraitBackglow = frame:CreateTexture(nil, "ARTWORK", nil, 1)
-    portraitBackglow:SetSize(32, 32)
-    portraitBackglow:SetPoint("TOPLEFT", 10, -5)
-    SetTextureOrFallback(portraitBackglow, RETAIL_GROUPFINDER_EYE_BACKGLOW_TEXTURE, LFG_PORTRAIT_TEXTURE)
-    portraitBackglow:SetVertexColor(1, 1, 1, 0.85)
+    portraitBackglow:SetSize(34, 34)
+    portraitBackglow:SetPoint("TOPLEFT", 8, -3)
+    if not SetGFAtlas(portraitBackglow, "eye-highlight") then
+        SetTextureOrFallback(portraitBackglow, LFG_PORTRAIT_TEXTURE, nil)
+    end
+    portraitBackglow:SetVertexColor(1, 1, 1, 0.9)
 
-    local portraitRing = frame:CreateTexture(nil, "ARTWORK", nil, 2)
-    portraitRing:SetSize(24, 24)
-    portraitRing:SetPoint("CENTER", portraitBackglow, "CENTER", 0, 0)
-    SetTextureOrFallback(portraitRing, RETAIL_GROUPFINDER_EYE_FRAME_TEXTURE, LFG_PORTRAIT_TEXTURE)
-
-    local portrait = frame:CreateTexture(nil, "ARTWORK")
-    portrait:SetSize(18, 18)
-    portrait:SetPoint("CENTER", portraitRing, "CENTER", 0, 0)
-    SetTextureOrFallback(portrait, RETAIL_GROUPFINDER_EYE_SINGLE_TEXTURE, "Interface\\LFGFrame\\LFG-Eye")
+    local portrait = frame:CreateTexture(nil, "ARTWORK", nil, 2)
+    portrait:SetSize(24, 24)
+    portrait:SetPoint("CENTER", portraitBackglow, "CENTER", 0, 0)
+    SetTextureOrFallback(portrait, LFG_PORTRAIT_TEXTURE,
+        "Interface\\LFGFrame\\LFG-Eye")
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
@@ -2121,20 +2214,27 @@ function GF:CreateCompactMainFrame()
     navPanel:SetPoint("TOPLEFT", 4, -34)
     navPanel:SetPoint("BOTTOMLEFT", 4, 14)
     navPanel:SetWidth(175)
-    navPanel:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 }
-    })
-    if navPanel.SetBackdropColor then
-        navPanel:SetBackdropColor(0, 0, 0, 0.35)
-    end
 
-    -- Subtle dark inset so the frame's FelLeather shows through (DC style).
-    local navInset = navPanel:CreateTexture(nil, "BACKGROUND")
-    navInset:SetAllPoints()
-    SetSolidTexture(navInset, 0, 0, 0, 0.35)
+    -- Retail PVEFrame left-nav: the big blue-black bluemenu panel with the
+    -- filigree corner accents (no tooltip-border box).
+    local navBg = navPanel:CreateTexture(nil, "BACKGROUND")
+    navBg:SetAllPoints()
+    navBg:SetTexture(RETAIL_BLUEMENU_MAIN)
+    navBg:SetTexCoord(BLUEMENU_BG_COORDS[1], BLUEMENU_BG_COORDS[2],
+        BLUEMENU_BG_COORDS[3], BLUEMENU_BG_COORDS[4])
+
+    local function AddNavCorner(point, coordKey, ox, oy)
+        local corner = navPanel:CreateTexture(nil, "BORDER")
+        corner:SetSize(48, 48)
+        corner:SetPoint(point, ox, oy)
+        corner:SetTexture(RETAIL_BLUEMENU_MAIN)
+        local cc = BLUEMENU_CORNER_COORDS[coordKey]
+        corner:SetTexCoord(cc[1], cc[2], cc[3], cc[4])
+    end
+    AddNavCorner("TOPLEFT", "tl", 0, 0)
+    AddNavCorner("TOPRIGHT", "tr", 0, 0)
+    AddNavCorner("BOTTOMLEFT", "bl", 0, 0)
+    AddNavCorner("BOTTOMRIGHT", "br", 0, 0)
 
     -- y-offsets within navPanel (starts at frame y=-24).
     -- Button 1 at -46 → absolute frame y=-70, matching retail TOPLEFT(10,-70).
@@ -2161,20 +2261,14 @@ function GF:CreateCompactMainFrame()
     local contentPanel = CreateFrame("Frame", nil, frame)
     contentPanel:SetPoint("TOPLEFT", navPanel, "TOPRIGHT", 4, 0)
     contentPanel:SetPoint("BOTTOMRIGHT", -4, 14)
-    contentPanel:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 }
-    })
-    if contentPanel.SetBackdropColor then
-        contentPanel:SetBackdropColor(0, 0, 0, 0.35)
-    end
 
-    -- Subtle dark inset so the frame's FelLeather shows through (DC style).
-    local contentInset = contentPanel:CreateTexture(nil, "BACKGROUND")
-    contentInset:SetAllPoints()
-    SetSolidTexture(contentInset, 0, 0, 0, 0.35)
+    -- Retail Group Finder content background (grey stone panel from the
+    -- retail atlas), replacing the tooltip-border box + flat fill.
+    local contentBg = contentPanel:CreateTexture(nil, "BACKGROUND")
+    contentBg:SetAllPoints()
+    if not SetGFAtlas(contentBg, "background") then
+        SetSolidTexture(contentBg, 0, 0, 0, 0.35)
+    end
 
     -- The active category is already shown by the left nav button + selection
     -- bar, so retail doesn't repeat it as a content header. Keep the field (so
@@ -2236,8 +2330,7 @@ function GF:CreateCompactMainFrame()
     typeLabel:SetTextColor(1, 0.82, 0)
     self.compactTypeLabel = typeLabel
 
-    local typeButton = CreateFrame("Button", nil, browserFrame, "UIPanelButtonTemplate")
-    typeButton:SetSize(250, 28)
+    local typeButton = CreateRetailActionButton(browserFrame, 250, 28)
     typeButton:SetPoint("LEFT", typeLabel, "RIGHT", 10, 0)
     typeButton:SetScript("OnClick", function() GF:ToggleCompactTypeMenu() end)
     self.compactTypeButton = typeButton
@@ -2247,9 +2340,12 @@ function GF:CreateCompactMainFrame()
     typeText:SetText("Specific Dungeons")
     self.compactTypeButtonText = typeText
 
-    local arrow = typeButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    arrow:SetPoint("RIGHT", -10, 0)
-    arrow:SetText("v")
+    -- Real dropdown arrow texture (the stock scroll-down chevron), replacing
+    -- the old ASCII "v" glyph.
+    local arrow = typeButton:CreateTexture(nil, "OVERLAY")
+    arrow:SetSize(18, 18)
+    arrow:SetPoint("RIGHT", -8, 0)
+    arrow:SetTexture("Interface\\ChatFrame\\UI-ChatIcon-ScrollDown-Up")
 
     -- Dungeon difficulty selector ("Specific Dungeons" only): the matchmaking
     -- queue supports Normal and Heroic here; Mythic runs through the Mythic+
@@ -2261,8 +2357,7 @@ function GF:CreateCompactMainFrame()
     diffLabel:SetTextColor(1, 0.82, 0)
     self.compactDiffLabel = diffLabel
 
-    local diffButton = CreateFrame("Button", nil, browserFrame, "UIPanelButtonTemplate")
-    diffButton:SetSize(140, 24)
+    local diffButton = CreateRetailActionButton(browserFrame, 140, 24)
     diffButton:SetPoint("LEFT", diffLabel, "RIGHT", 10, 0)
     diffButton:SetScript("OnClick", function() GF:CycleQueueDifficulty() end)
     diffButton:SetScript("OnEnter", function(self)
@@ -2292,12 +2387,19 @@ function GF:CreateCompactMainFrame()
     menu:SetFrameLevel(frame:GetFrameLevel() + 30)
     menu:SetSize(220, 22 * #self.COMPACT_OPTION_ORDER + 8)
     menu:SetPoint("TOPRIGHT", typeButton, "BOTTOMRIGHT", 0, -2)
+    -- Retail dropdown look: near-black panel with a thin dark edge.
     menu:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+        tile = false, edgeSize = 10,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 }
     })
+    if menu.SetBackdropColor then
+        menu:SetBackdropColor(0.05, 0.05, 0.07, 0.97)
+    end
+    if menu.SetBackdropBorderColor then
+        menu:SetBackdropBorderColor(0.4, 0.4, 0.45, 0.9)
+    end
     menu:Hide()
     self.compactTypeMenu = menu
 
@@ -2309,9 +2411,15 @@ function GF:CreateCompactMainFrame()
         local item = CreateFrame("Button", nil, menu)
         item:SetSize(206, 20)
         item:SetNormalFontObject("GameFontHighlightSmall")
-        item:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        local itemHighlight = item:CreateTexture(nil, "HIGHLIGHT")
+        itemHighlight:SetAllPoints()
+        SetGFAtlas(itemHighlight, "highlightbar-blue")
+        itemHighlight:SetBlendMode("ADD")
+        itemHighlight:SetAlpha(0.7)
+        item:SetHighlightTexture(itemHighlight)
         item:SetText(option.label)
         item:SetScript("OnClick", function()
+            PlayUISound("UChatScrollButton")
             GF.compactTypeMenu:Hide()
             if GF.compactTypeMenuCatcher then GF.compactTypeMenuCatcher:Hide() end
             GF:SelectCompactType(kind)
@@ -2323,31 +2431,50 @@ function GF:CreateCompactMainFrame()
     local listFrame = CreateFrame("Frame", nil, browserFrame)
     listFrame:SetPoint("TOPLEFT", 6, -116)
     listFrame:SetPoint("BOTTOMRIGHT", -6, 0)
-    listFrame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 }
-    })
-    if listFrame.SetBackdropColor then
-        listFrame:SetBackdropColor(0, 0, 0, 0.08)
-    end
     self.compactListFrame = listFrame
 
-    -- Recessed dark inset for the results area (lets the FelLeather read through
-    -- a touch while keeping rows legible).
+    -- Recessed dark results inset (retail-style: dark area, no chunky border,
+    -- separated from the filters above by a thin divider).
     local listBg = listFrame:CreateTexture(nil, "BACKGROUND")
     listBg:SetAllPoints()
-    SetSolidTexture(listBg, 0, 0, 0, 0.5)
+    SetSolidTexture(listBg, 0, 0, 0, 0.55)
+
+    local listDivider = listFrame:CreateTexture(nil, "ARTWORK")
+    listDivider:SetPoint("TOPLEFT", 2, 2)
+    listDivider:SetPoint("TOPRIGHT", -2, 2)
+    listDivider:SetHeight(3)
+    if not SetGFAtlas(listDivider, "divider") then
+        SetSolidTexture(listDivider, 0.35, 0.30, 0.20, 0.8)
+    end
 
     local scroll = CreateFrame("ScrollFrame", "DCCompactGroupFinderScroll", listFrame, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 8, -8)
-    scroll:SetPoint("BOTTOMRIGHT", -28, 28)
-    local child = CreateFrame("Frame")
+    scroll:SetPoint("BOTTOMRIGHT", -18, 28)
+    local child = CreateFrame("Frame", nil, scroll)
     child:SetSize(312, 220)
     scroll:SetScrollChild(child)
     self.compactScrollChild = child
     self.compactRowWidth = 308
+
+    -- Thin retail-style scrollbar: hide the arrow buttons, slim the track to
+    -- a 6px gutter with a minimal thumb.
+    local scrollBar = _G["DCCompactGroupFinderScrollScrollBar"]
+    if scrollBar then
+        local up = _G["DCCompactGroupFinderScrollScrollBarScrollUpButton"]
+        local down = _G["DCCompactGroupFinderScrollScrollBarScrollDownButton"]
+        if up then up:SetAlpha(0); up:SetSize(1, 1); up:EnableMouse(false) end
+        if down then down:SetAlpha(0); down:SetSize(1, 1); down:EnableMouse(false) end
+        scrollBar:ClearAllPoints()
+        scrollBar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -4, -10)
+        scrollBar:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -4, 30)
+        scrollBar:SetWidth(6)
+        local thumb = scrollBar:GetThumbTexture()
+        if thumb then
+            thumb:SetTexture("Interface\\Buttons\\WHITE8x8")
+            thumb:SetVertexColor(0.55, 0.55, 0.60, 0.85)
+            thumb:SetSize(6, 48)
+        end
+    end
 
     local results = listFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     results:SetPoint("BOTTOMLEFT", 10, 8)
@@ -2413,26 +2540,20 @@ function GF:CreateCompactMainFrame()
         GF:RequestHinterlandStatus()
     end)
 
-    local primary = CreateFrame("Button", nil, contentPanel, "UIPanelButtonTemplate")
-    primary:SetSize(104, 22)
-    primary:SetPoint("BOTTOMLEFT", 10, 14)
-    primary:SetText("Find Group")
+    local primary = CreateRetailActionButton(contentPanel, 110, 26, "Find Group")
+    primary:SetPoint("BOTTOMLEFT", 10, 12)
     primary:SetScript("OnClick", function() GF:CompactPrimaryAction() end)
     self.compactPrimaryButton = primary
 
-    local create = CreateFrame("Button", nil, contentPanel, "UIPanelButtonTemplate")
-    create:SetSize(112, 22)
-    create:SetPoint("BOTTOM", 0, 14)
-    create:SetText("Start Group")
+    local create = CreateRetailActionButton(contentPanel, 116, 26, "Start Group")
+    create:SetPoint("BOTTOM", 0, 12)
     create:SetScript("OnClick", function()
         GF:ShowCompactCreateDialog(GF.retailHomeShown and GF.premadeSelectedKind or GF.compactSelectedKind or "mythic")
     end)
     self.compactCreateButton = create
 
-    local close = CreateFrame("Button", nil, contentPanel, "UIPanelButtonTemplate")
-    close:SetSize(84, 22)
-    close:SetPoint("BOTTOMRIGHT", -10, 14)
-    close:SetText("Close")
+    local close = CreateRetailActionButton(contentPanel, 88, 26, "Close")
+    close:SetPoint("BOTTOMRIGHT", -10, 12)
     close:SetScript("OnClick", function() frame:Hide() end)
 
     local statusText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2565,9 +2686,7 @@ function GF:CreateBottomTabs(frame)
             GF:SelectCompactType("dungeons")
         end },
         { key = "pvp",     label = "Player vs Player",  onClick = function()
-            if not GF:ToggleBlizzardPVP() then
-                GF:SetStatusMessage("PvP frame is not available.")
-            end
+            GF:ShowPvPPanel()
         end },
         { key = "mythic",  label = "Mythic+",        onClick = function()
             GF:OpenMythicPlusPanel()
@@ -2575,48 +2694,38 @@ function GF:CreateBottomTabs(frame)
         end },
     }
 
-    -- Self-drawn folder tabs that hang off the frame bottom and connect to it
-    -- (PanelTabButtonTemplate isn't present in this client's FrameXML).
-    local tabWidth = 150
-    local tabHeight = 28
-    local gap = 4
+    -- Real Blizzard folder tabs: CharacterFrameTabButtonTemplate is the stock
+    -- 3.3.5 bottom-tab art (the retail-era name PanelTabButtonTemplate doesn't
+    -- exist in this client, but this is the same visual).
     self.bottomTabs = {}
+    self.bottomTabOrder = {}
 
+    local previous
     for i, def in ipairs(TAB_DEFS) do
-        local tab = CreateFrame("Button", nil, frame)
-        tab:SetSize(tabWidth, tabHeight)
-        -- Hang just below the frame, overlapping the bottom border so the tab
-        -- visually connects to the window.
-        tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT",
-            16 + (i - 1) * (tabWidth + gap), 10)
-        tab:SetFrameLevel(frame:GetFrameLevel() + 1)
+        local tab = CreateFrame("Button", "DCGroupFinderBottomTab" .. i, frame,
+            "CharacterFrameTabButtonTemplate")
         tab.key = def.key
+        tab:SetText(def.label)
+        tab:SetID(i)
 
-        tab:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = false, edgeSize = 12,
-            insets = { left = 3, right = 3, top = 3, bottom = 3 }
-        })
-        tab.SetTabColor = function(self, r, g, b, a)
-            if self.SetBackdropColor then self:SetBackdropColor(r, g, b, a) end
+        if previous then
+            tab:SetPoint("TOPLEFT", previous, "TOPRIGHT", -14, 0)
+        else
+            tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 12, 4)
         end
-        tab:SetBackdropBorderColor(0.55, 0.45, 0.20, 0.9)
+        previous = tab
 
-        local label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("CENTER", 0, 2)
-        label:SetText(def.label)
-        tab.label = label
+        if PanelTemplates_TabResize then
+            PanelTemplates_TabResize(tab, 0)
+        end
 
-        tab:SetScript("OnClick", function() def.onClick() end)
-        tab:SetScript("OnEnter", function(self)
-            if not self.isActive then self.label:SetTextColor(1, 1, 1) end
-        end)
-        tab:SetScript("OnLeave", function(self)
-            if not self.isActive then self.label:SetTextColor(0.8, 0.78, 0.62) end
+        tab:SetScript("OnClick", function()
+            PlayUISound("igCharacterInfoTab")
+            def.onClick()
         end)
 
         self.bottomTabs[def.key] = tab
+        table.insert(self.bottomTabOrder, tab)
     end
 
     self:SetActiveBottomTab("finder")
@@ -2627,15 +2736,105 @@ function GF:SetActiveBottomTab(activeKey)
         local isActive = key == activeKey
         tab.isActive = isActive
         if isActive then
-            tab.label:SetTextColor(1, 0.82, 0)
-            tab:SetTabColor(0.20, 0.16, 0.08, 1)
-            tab:SetBackdropBorderColor(1, 0.82, 0, 0.95)
+            if PanelTemplates_SelectTab then
+                PanelTemplates_SelectTab(tab)
+            end
         else
-            tab.label:SetTextColor(0.8, 0.78, 0.62)
-            tab:SetTabColor(0.07, 0.06, 0.04, 0.95)
-            tab:SetBackdropBorderColor(0.45, 0.38, 0.18, 0.85)
+            if PanelTemplates_DeselectTab then
+                PanelTemplates_DeselectTab(tab)
+            end
         end
     end
+end
+
+-- =====================================================================
+-- In-frame PvP panel (bottom tab) — keeps the player inside the Group
+-- Finder instead of bouncing them out to the stock PVPParentFrame.
+-- =====================================================================
+
+function GF:ShowPvPPanel()
+    if not self.mainFrame then return end
+
+    -- Hide the other content views.
+    self.retailHomeShown = false
+    self.hlbgPanelShown = false
+    if self.compactTypeMenu then self.compactTypeMenu:Hide() end
+    if self.compactTypeMenuCatcher then self.compactTypeMenuCatcher:Hide() end
+    if self.compactBrowserFrame then self.compactBrowserFrame:Hide() end
+    if self.compactListFrame then self.compactListFrame:Hide() end
+    if self.retailHomeFrame then self.retailHomeFrame:Hide() end
+    if self.hlbgPanel then self.hlbgPanel:Hide() end
+
+    if not self.pvpPanel then
+        local panel = CreateFrame("Frame", nil, self.pvpPanelParent or self.mainFrame)
+        panel:SetPoint("TOPLEFT", self.compactBrowserFrame, "TOPLEFT", 0, 0)
+        panel:SetPoint("BOTTOMRIGHT", self.compactBrowserFrame, "BOTTOMRIGHT", 0, 0)
+
+        local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", 0, -10)
+        title:SetText("Player vs Player")
+        title:SetTextColor(1, 0.82, 0)
+
+        local ROWS = {
+            { label = "Hinterland BG", banner = "button-battlegrounds",
+              onClick = function() GF:ShowHinterlandPanel() end },
+            { label = "Battlegrounds", banner = "button-battlegrounds",
+              onClick = function()
+                  if not GF:ToggleBlizzardPVP() then
+                      GF:SetStatusMessage("PvP frame is not available.")
+                  end
+              end },
+            { label = "Arenas", banner = "button-arenas",
+              onClick = function()
+                  if not GF:ToggleBlizzardPVP() then
+                      GF:SetStatusMessage("PvP frame is not available.")
+                  end
+              end },
+        }
+
+        local y = -44
+        for _, def in ipairs(ROWS) do
+            local row = CreateFrame("Button", nil, panel)
+            row:SetSize(math.max((panel:GetWidth() or 0) - 12, 282), 46)
+            row:SetPoint("TOPLEFT", 4, y)
+
+            local banner = row:CreateTexture(nil, "BACKGROUND")
+            banner:SetAllPoints()
+            if not SetGFAtlas(banner, def.banner) then
+                SetSolidTexture(banner, 0, 0, 0, 0.45)
+            end
+
+            local cover = row:CreateTexture(nil, "BORDER")
+            cover:SetAllPoints()
+            SetGFAtlas(cover, "button-cover")
+
+            local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            label:SetPoint("LEFT", 18, 0)
+            label:SetText(def.label)
+
+            local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+            highlight:SetAllPoints()
+            SetGFAtlas(highlight, "highlightbar-blue")
+            highlight:SetBlendMode("ADD")
+            highlight:SetAlpha(0.65)
+            row:SetHighlightTexture(highlight)
+
+            row:SetScript("OnClick", function()
+                PlayUISound("igMainMenuOptionCheckBoxOn")
+                def.onClick()
+            end)
+
+            y = y - 50
+        end
+
+        self.pvpPanel = panel
+    end
+
+    self.pvpPanel:Show()
+    if self.retailContentTitle then
+        self.retailContentTitle:SetText("Player vs Player")
+    end
+    self:SetActiveBottomTab("pvp")
 end
 
 -- =====================================================================
@@ -2646,105 +2845,11 @@ function GF:CreateMainFrame()
     return self:CreateCompactMainFrame()
 end
 
--- =====================================================================
--- Tab System
--- =====================================================================
-
-function GF:CreateTabButtons()
-    local tabWidth = (self.FRAME_WIDTH - 40) / #self.TAB_NAMES
-    
-    for i, tabName in ipairs(self.TAB_NAMES) do
-        local btn = CreateFrame("Button", "DCGroupFinderTab" .. i, self.mainFrame.tabContainer)
-        btn:SetSize(tabWidth - 4, 28)
-        btn:SetPoint("LEFT", (i - 1) * tabWidth + 10, 0)
-        
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
-        SetTextureOrFallback(btn.bg, LFR_MAIN_TEXTURE,
-            "Interface\\Buttons\\UI-Listbox-Highlight")
-        btn.bg:SetVertexColor(0.22, 0.18, 0.12, 0.86)
-        
-        btn.accent = btn:CreateTexture(nil, "ARTWORK")
-        btn.accent:SetPoint("BOTTOMLEFT", 0, 0)
-        btn.accent:SetPoint("BOTTOMRIGHT", 0, 0)
-        btn.accent:SetHeight(3)
-        SetSolidTexture(btn.accent, 1, 0.82, 0, 1) -- Gold
-        btn.accent:Hide()
-        
-        -- Text
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.text:SetPoint("CENTER", 0, 1)
-        btn.text:SetText(tabName)
-        btn.text:SetTextColor(0.75, 0.68, 0.52)
-        
-        btn:SetScript("OnEnter", function(self)
-            if GF.currentTab ~= self.tabIndex then
-                self.bg:SetVertexColor(0.42, 0.32, 0.18, 0.92)
-                self.text:SetTextColor(1, 1, 1)
-            end
-        end)
-        btn:SetScript("OnLeave", function(self)
-            if GF.currentTab ~= self.tabIndex then
-                self.bg:SetVertexColor(0.22, 0.18, 0.12, 0.86)
-                self.text:SetTextColor(0.75, 0.68, 0.52)
-            end
-        end)
-        
-        btn.tabIndex = i
-        btn:SetScript("OnClick", function(self)
-            GF:SelectTab(self.tabIndex)
-        end)
-        
-        self.TABS[i] = btn
-    end
-end
-
-function GF:SelectTab(index)
-    if self.compactMode then
-        local compactMap = { "dungeons", "raid", "quest", "live", "queues" }
-        self.currentTab = index or 1
-        self:SelectCompactType(compactMap[index or 1] or "dungeons")
-        return
-    end
-
-    self.currentTab = index
-    
-    -- Update tab visuals
-    for i, btn in ipairs(self.TABS) do
-        if i == index then
-            btn.bg:SetVertexColor(0.55, 0.39, 0.16, 0.96)
-            btn.text:SetTextColor(1, 1, 1)
-            btn.accent:Show()
-        else
-            btn.bg:SetVertexColor(0.22, 0.18, 0.12, 0.86)
-            btn.text:SetTextColor(0.75, 0.68, 0.52)
-            btn.accent:Hide()
-        end
-    end
-    
-    -- Hide all content frames
-    if self.MythicTabContent then self.MythicTabContent:Hide() end
-    if self.RaidTabContent then self.RaidTabContent:Hide() end
-    if self.WorldTabContent then self.WorldTabContent:Hide() end
-    if self.LiveRunsTabContent then self.LiveRunsTabContent:Hide() end
-    if self.ScheduledTabContent then self.ScheduledTabContent:Hide() end
-    if self.MyQueuesTabContent then self.MyQueuesTabContent:Hide() end
-    
-    -- Show selected tab content
-    if index == 1 then
-        self:ShowMythicTab()
-    elseif index == 2 then
-        self:ShowRaidTab()
-    elseif index == 3 then
-        self:ShowWorldTab()
-    elseif index == 4 then
-        self:ShowLiveRunsTab()
-    elseif index == 5 then
-        self:ShowScheduledTab()
-    elseif index == 6 then
-        self:ShowMyQueuesTab()
-    end
-end
+-- The old multi-tab system (CreateTabButtons/SelectTab + the Mythic/Raid/
+-- World/LiveRuns/Scheduled tab panels) was unreachable: the compact retail
+-- shell is always active and those panels parented to a contentFrame that was
+-- never created. Removed; the tab files remain loaded only for their live
+-- data providers (dungeon/raid catalogs, applicant panel, spectator HUD).
 
 -- =====================================================================
 -- Toggle & Visibility
@@ -2754,13 +2859,13 @@ function GF:Toggle()
     if not self.mainFrame then
         self:CreateMainFrame()
     end
-    
+
     if self.mainFrame:IsShown() then
         self.mainFrame:Hide()
     else
         self.mainFrame:Show()
-        self:SelectTab(1) -- Default to Mythic+ tab
-        
+        self:SelectCompactType("dungeons")
+
         local DC = rawget(_G, "DCAddonProtocol")
         if DC and DC.GroupFinder and DC.GroupFinder.GetSystemInfo then
             DC.GroupFinder.GetSystemInfo()
@@ -2773,8 +2878,8 @@ function GF:Show()
         self:CreateMainFrame()
     end
     self.mainFrame:Show()
-    self:SelectTab(1)
-    
+    self:SelectCompactType("dungeons")
+
     local DC = rawget(_G, "DCAddonProtocol")
     if DC and DC.GroupFinder and DC.GroupFinder.GetSystemInfo then
         DC.GroupFinder.GetSystemInfo()
@@ -2837,119 +2942,7 @@ if type(ToggleLFGParentFrame) == "function" then
     GF:InstallBlizzardLFGReplacement()
 end
 
--- =====================================================================
--- Placeholder Tab Content (populated by tab-specific files)
--- =====================================================================
-
-function GF:ShowMythicTab()
-    if not self.MythicTabContent and self.CreateMythicTab then
-        self:CreateMythicTab()
-    end
-    if self.MythicTabContent then
-        self.MythicTabContent:Show()
-        -- Select browse sub-tab and refresh groups if this is first show
-        if self.MythicBrowsePanel and not self.MythicBrowsePanel.hasInitialized then
-            self.MythicBrowsePanel.hasInitialized = true
-            self:SelectMythicSubTab(1)
-            self:RefreshMythicGroups()
-        end
-    end
-end
-
-function GF:ShowRaidTab()
-    if not self.RaidTabContent and self.CreateRaidTab then
-        self:CreateRaidTab()
-    end
-    if self.RaidTabContent then
-        self.RaidTabContent:Show()
-        if self.RefreshRaidGroups then
-            self:RefreshRaidGroups()
-        end
-    end
-end
-
-function GF:ShowWorldTab()
-    if not self.WorldTabContent and self.CreateWorldTab then
-        self:CreateWorldTab()
-    end
-    if self.WorldTabContent then
-        self.WorldTabContent:Show()
-        -- Refresh world content when tab is shown
-        if self.RefreshWorldContent then
-            self:RefreshWorldContent()
-        end
-    end
-end
-
-function GF:ShowLiveRunsTab()
-    if not self.LiveRunsTabContent and self.CreateLiveRunsTab then
-        self:CreateLiveRunsTab()
-    end
-    if self.LiveRunsTabContent then
-        self.LiveRunsTabContent:Show()
-    end
-end
-
-function GF:ShowScheduledTab()
-    if not self.ScheduledTabContent and self.CreateScheduledTab then
-        self:CreateScheduledTab()
-    end
-    if self.ScheduledTabContent then
-        self.ScheduledTabContent:Show()
-        -- Refresh events when tab is shown
-        if self.RefreshScheduledEvents then
-            self:RefreshScheduledEvents()
-        end
-    end
-end
-
-function GF:ShowMyQueuesTab()
-    if not self.MyQueuesTabContent then
-        self:CreateMyQueuesTab()
-    end
-    if self.MyQueuesTabContent then
-        self.MyQueuesTabContent:Show()
-        self:RefreshMyQueues()
-    end
-end
-
-function GF:CreateMyQueuesTab()
-    local frame = CreateFrame("Frame", nil, self.mainFrame.contentFrame)
-    frame:SetAllPoints()
-    frame:Hide()
-    
-    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 10, -10)
-    title:SetText("My Active Applications")
-
-    local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    refreshBtn:SetSize(90, 22)
-    refreshBtn:SetPoint("TOPRIGHT", -10, -6)
-    refreshBtn:SetText("Refresh")
-    refreshBtn:SetScript("OnClick", function()
-        GF:RefreshMyQueues()
-    end)
-    frame.refreshBtn = refreshBtn
-
-    local emptyText = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    emptyText:SetPoint("CENTER", 0, 0)
-    emptyText:SetText("No active applications.")
-    frame.emptyText = emptyText
-    
-    -- Scroll frame for applications
-    local scrollFrame = CreateFrame("ScrollFrame", "DCGroupFinderMyQueuesScroll", frame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 10, -40)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
-    
-    local scrollChild = CreateFrame("Frame")
-    scrollChild:SetSize(scrollFrame:GetWidth(), 1)
-    scrollFrame:SetScrollChild(scrollChild)
-    frame.scrollChild = scrollChild
-
-    self.myApplications = self.myApplications or {}
-    
-    self.MyQueuesTabContent = frame
-end
+-- (Legacy per-tab Show* functions removed with the dead tab system.)
 
 function GF:RefreshMyQueues()
     local DC = rawget(_G, "DCAddonProtocol")
@@ -2973,7 +2966,6 @@ function GF:UpdateMyApplications(applications)
 
     self.myApplications = applications
     self:CompactPopulateApplications(applications)
-    self:RenderMyQueues()
 end
 
 function GF:CancelMyApplication(listingId)
@@ -2981,97 +2973,6 @@ function GF:CancelMyApplication(listingId)
     if DC and DC.GroupFinder and DC.GroupFinder.CancelApplication then
         DC.GroupFinder.CancelApplication(listingId)
     end
-end
-
-function GF:RenderMyQueues()
-    if not self.MyQueuesTabContent or not self.MyQueuesTabContent.scrollChild then
-        return
-    end
-
-    local frame = self.MyQueuesTabContent
-    local scrollChild = frame.scrollChild
-    local applications = self.myApplications or {}
-
-    self.myQueuesRowPool = self.myQueuesRowPool or {}
-    for _, row in ipairs(self.myQueuesRowPool) do
-        row:Hide()
-    end
-
-    if #applications == 0 then
-        frame.emptyText:Show()
-        scrollChild:SetHeight(1)
-        return
-    end
-
-    frame.emptyText:Hide()
-
-    local yOffset = 0
-    local rowHeight = 58
-
-    for index, app in ipairs(applications) do
-        local row = self.myQueuesRowPool[index]
-        if not row then
-            row = CreateFrame("Frame", nil, scrollChild)
-
-            row.bg = row:CreateTexture(nil, "BACKGROUND")
-            row.bg:SetAllPoints()
-
-            row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            row.title:SetPoint("TOPLEFT", 10, -8)
-
-            row.info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            row.info:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -4)
-
-            row.status = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            row.status:SetPoint("TOPRIGHT", -100, -8)
-            row.status:SetText("|cff00ff00Pending|r")
-
-            row.footer = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-            row.footer:SetPoint("BOTTOMLEFT", 10, 8)
-
-            row.cancelBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            row.cancelBtn:SetSize(80, 22)
-            row.cancelBtn:SetPoint("RIGHT", -10, 0)
-            row.cancelBtn:SetText("Withdraw")
-            row.cancelBtn:SetScript("OnClick", function(self)
-                GF:CancelMyApplication(self.listingId)
-            end)
-
-            self.myQueuesRowPool[index] = row
-        end
-
-        row:SetParent(scrollChild)
-        row:ClearAllPoints()
-        row:SetSize(scrollChild:GetWidth() - 8, rowHeight - 4)
-        row:SetPoint("TOPLEFT", 4, -yOffset)
-
-        if index % 2 == 0 then
-            SetSolidTexture(row.bg, 0.08, 0.08, 0.10, 1)
-        else
-            SetSolidTexture(row.bg, 0.06, 0.06, 0.08, 1)
-        end
-
-        row.title:SetText((app.dungeonName or app.dungeon or "Unknown Listing") .. "  |cff888888(" .. (app.difficultyName or "Unknown") .. ")|r")
-        row.info:SetText(string.format("Leader: %s  |  Role: %s", app.leader or "Unknown", FormatRoleMask(app.role)))
-
-        if app.note and app.note ~= "" then
-            row.footer:SetText(app.note)
-            row.footer:Show()
-        elseif tonumber(app.keystoneLevel or 0) > 0 then
-            row.footer:SetText("Key Level: +" .. tonumber(app.keystoneLevel or 0))
-            row.footer:Show()
-        else
-            row.footer:Hide()
-        end
-
-        row.cancelBtn.listingId = app.listingId
-
-        row:Show()
-
-        yOffset = yOffset + rowHeight
-    end
-
-    scrollChild:SetHeight(math.max(yOffset, 1))
 end
 
 -- Application Dialog
@@ -3128,10 +3029,8 @@ function GF:ShowApplicationDialog(listingId, dungeonName)
         frame.noteBox = noteBox
         
         -- Buttons
-        local applyBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        applyBtn:SetSize(100, 25)
+        local applyBtn = CreateRetailActionButton(frame, 100, 25, "Apply")
         applyBtn:SetPoint("BOTTOMLEFT", 40, 20)
-        applyBtn:SetText("Apply")
         applyBtn:SetScript("OnClick", function()
             local roleMask = 0
             if frame.tankCb:GetChecked() then roleMask = roleMask + 1 end
@@ -3151,12 +3050,10 @@ function GF:ShowApplicationDialog(listingId, dungeonName)
             frame:Hide()
         end)
         
-        local cancelBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        cancelBtn:SetSize(100, 25)
+        local cancelBtn = CreateRetailActionButton(frame, 100, 25, "Cancel")
         cancelBtn:SetPoint("BOTTOMRIGHT", -40, 20)
-        cancelBtn:SetText("Cancel")
         cancelBtn:SetScript("OnClick", function() frame:Hide() end)
-        
+
         self.appDialog = frame
     end
     
