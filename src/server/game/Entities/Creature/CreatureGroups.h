@@ -23,6 +23,8 @@
 #include "Unit.h"
 #include <map>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 class Creature;
 class CreatureGroup;
@@ -120,6 +122,15 @@ public:
     [[nodiscard]] bool IsAnyMemberAlive(bool ignoreLeader = false);
 
 private:
+    // Copy of the current members, for loops that call back into member code able
+    // to leave the group. Respawn()/DespawnOrUnsummon() reach
+    // Map::AddObjectToRemoveList -> CleanupsBeforeDelete -> Creature::RemoveFromWorld
+    // -> FormationMgr::RemoveCreatureFromGroup SYNCHRONOUSLY, which erases that
+    // member from m_members - and `delete`s this whole group once the last one
+    // goes. Iterating m_members directly across such a call walks a freed
+    // red-black node on the next ++ (SIGSEGV in std::_Rb_tree_increment).
+    [[nodiscard]] std::vector<std::pair<Creature*, FormationInfo>> GetMemberSnapshot() const;
+
     Creature* m_leader; //Important do not forget sometimes to work with pointers instead synonims :D:D
     CreatureGroupMemberType m_members;
 

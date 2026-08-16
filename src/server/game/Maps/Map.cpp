@@ -2924,6 +2924,7 @@ void Map::UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Uni
 {
     Difficulty difficulty_fixed = (IsSharedDifficultyMap(GetId()) ? Difficulty(GetDifficulty() % 2) : GetDifficulty());
     DungeonEncounterList const* encounters;
+    bool borrowedList = false;
     // 631 : ICC - 724 : Ruby Sanctum --- For heroic difficulties, for some reason, we don't have an encounter list, so we get the encounter list from normal diff. We shouldn't change difficulty_fixed variable.
     if ((GetId() == 631 || GetId() == 724) && IsHeroic())
     {
@@ -2948,6 +2949,8 @@ void Map::UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Uni
                 difficulty_fixed = DUNGEON_DIFFICULTY_NORMAL;
                 encounters = sObjectMgr->GetDungeonEncounterList(GetId(), difficulty_fixed);
             }
+
+            borrowedList = encounters != nullptr;
         }
     }
 
@@ -2975,7 +2978,13 @@ void Map::UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Uni
 
             if (encounter->lastEncounterDungeon)
             {
-                dungeonId = encounter->lastEncounterDungeon;
+                // A borrowed list carries the LFG dungeon id of the difficulty it was
+                // borrowed FROM. Mythic has no LFG queue of its own, so completing it
+                // here would run the heroic random-dungeon completion - reward included -
+                // off the back of a Mythic clear. Credit the encounter, skip the queue.
+                if (!borrowedList)
+                    dungeonId = encounter->lastEncounterDungeon;
+
                 break;
             }
         }

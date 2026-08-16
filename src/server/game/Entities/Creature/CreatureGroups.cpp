@@ -289,7 +289,10 @@ void CreatureGroup::MemberEvaded(Creature* member)
         return;
     }
 
-    for (auto const& itr : m_members)
+    // Snapshot: both branches below can drop the member out of the group - the
+    // evade one through a script despawn, the other through Respawn() - which
+    // would erase the very node `itr` sits on, along with its FormationInfo.
+    for (auto const& itr : GetMemberSnapshot())
     {
         Creature* pMember = itr.first;
         // This should never happen
@@ -393,24 +396,42 @@ void CreatureGroup::RemoveFormationMovement()
     }
 }
 
+// Both loops below iterate a SNAPSHOT, never m_members itself: despawning and
+// respawning a member both drop it out of the group mid-loop, and the group is
+// deleted outright once the last member leaves. See GetMemberSnapshot.
 void CreatureGroup::DespawnFormation(Milliseconds timeToDespawn /*=0ms*/, Seconds forcedRespawnTimer /*=0s*/)
 {
-    for (auto const& itr : m_members)
+    for (auto const& itr : GetMemberSnapshot())
     {
-        if (itr.first)
-            itr.first->DespawnOrUnsummon(timeToDespawn, forcedRespawnTimer);
+        itr.first->DespawnOrUnsummon(timeToDespawn, forcedRespawnTimer);
     }
 }
 
 void CreatureGroup::RespawnFormation(bool force)
 {
-    for (auto const& itr : m_members)
+    for (auto const& itr : GetMemberSnapshot())
     {
-        if (itr.first && !itr.first->IsAlive())
+        if (!itr.first->IsAlive())
         {
             itr.first->Respawn(force);
         }
     }
+}
+
+std::vector<std::pair<Creature*, FormationInfo>> CreatureGroup::GetMemberSnapshot() const
+{
+    std::vector<std::pair<Creature*, FormationInfo>> members;
+    members.reserve(m_members.size());
+
+    for (auto const& itr : m_members)
+    {
+        if (itr.first)
+        {
+            members.emplace_back(itr.first, itr.second);
+        }
+    }
+
+    return members;
 }
 
 bool CreatureGroup::IsFormationInCombat()

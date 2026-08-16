@@ -393,16 +393,16 @@ function T.EnsureFrame()
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
     stage.sub = sub
 
-    -- Instance thumbnail, dropped into the ornate panel baked into the plate's
-    -- right end. Centred on that panel's measured bounds (x 174..235, y 9..56 of
-    -- the 243x78 art), inset far enough that the panel still frames it. Filled
-    -- in by ApplyInstanceIcon once the instance is known.
+    -- Instance thumbnail. It covers the crossed-swords panel baked into the
+    -- plate's right end completely, filling that panel's measured bounds
+    -- (x 174..235, y 9..56 of the 243x78 art) edge to edge.
     local icon = stage:CreateTexture(nil, "ARTWORK")
-    icon:SetWidth(38)
-    icon:SetHeight(38)
-    -- Tight crop: the lfgicon art runs edge to edge, so trimming the outermost
-    -- pixels keeps the panel's inner bevel clean.
-    icon:SetTexCoord(0.06, 0.94, 0.06, 0.94)
+    icon:SetWidth(62)
+    icon:SetHeight(48)
+    -- The lfgicon art is square, the panel is 62x48. Cropping the top and bottom
+    -- to the panel's aspect ratio (48/62 = 0.774 of the height, centred) fills it
+    -- without squashing the picture.
+    icon:SetTexCoord(0, 1, 0.113, 0.887)
     icon:SetPoint("CENTER", toast, "TOPLEFT", 204, -32)
     icon:Hide()
     stage.icon = icon

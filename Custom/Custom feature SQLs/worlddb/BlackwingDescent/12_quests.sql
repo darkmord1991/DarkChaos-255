@@ -78,12 +78,17 @@ VALUES
         'Not every drakonid bends the knee to Nefarian willingly, but the ones holding this passage have made their choice. Cut them down, along with the old dwarven constructs his engineers pressed back into service, and clear the way to Magmaw''s chamber.',
         'The passage is clear. Return to Emissary Blackscale for your reward.',
         42362, 2, 42649, 1, 42800, 2, 0, 0, 250000, 0, 0),
-    -- Talk-to (negative id) follow-up, gated behind the Chimaeron kill via quest_template_addon below.
+    -- Talk-to follow-up, gated behind the Chimaeron kill via quest_template_addon below.
+    -- 44202 is POSITIVE on purpose: a negative RequiredNpcOrGo means GameObject
+    -- (ObjectMgr::LoadQuests, `id < 0 && !GetGameObjectTemplate(-id)`), and Finkle
+    -- Einhorn is a creature. The old -44202 made the quest undoable. Talk-to works
+    -- fine with a positive id -- SetSpecialFlag sets KILL|CAST|SPEAKTO together
+    -- regardless of sign. Do not "restore" the minus sign; see 32_ and HyjalCata/287_.
     (700709, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: A Favor for Finkle',
         'Check on Finkle Einhorn now that Chimaeron is dead.',
         'With Chimaeron gone, the little gnome trapped in the cage nearby is finally safe to approach. Poor Finkle has been through enough -- go see how he''s holding up.',
         'Finkle is rattled, but grateful to be rid of his monstrous neighbor. Return to Emissary Blackscale.',
-        -44202, 1, 0, 0, 0, 0, 0, 0, 200000, 0, 0),
+        44202, 1, 0, 0, 0, 0, 0, 0, 200000, 0, 0),
     -- Capstone: no objective, gated behind Nefarian's End via quest_template_addon below.
     (700710, 2, -1, 85, 0, 62, 0, 'Blackwing Descent: A Fitting End',
         'Report your final victory to Emissary Blackscale.',
