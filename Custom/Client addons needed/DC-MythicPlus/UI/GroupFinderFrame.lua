@@ -168,66 +168,52 @@ local BLUEMENU_CORNER_COORDS = {
 }
 
 -- ---------------------------------------------------------------------------
--- Retail atlas rips (straight copies of the retail atlas files, power-of-two,
--- so they load on 3.3.5a). Member rects are PIXEL coords lifted from retail
--- AtlasInfo.lua: { left, right, top, bottom }.
+-- Retail Group Finder art, repacked into ONE 1024x1024 sheet. The straight
+-- 2048px rips of the retail atlas files CRASH the 3.3.5a client (its UI
+-- texture decoder is only safe up to 1024px — every other addon texture on
+-- this server respects that), so the members the addon uses were cropped out
+-- of Interface/LFGFrame/GroupFinder + UILFGPrompts and shelf-packed. Rects
+-- are PIXEL coords in the packed sheet: { left, right, top, bottom }.
+-- (Repack script: scratchpad repack_gf_atlas.py; sources: retail 11.2.7
+-- AtlasInfo.lua member coords.)
 -- ---------------------------------------------------------------------------
-local GF_ATLAS = RETAIL_TEXTURE_ROOT .. "groupfinder_335.tga"     -- 2048x1024
-local GF_ATLAS_W, GF_ATLAS_H = 2048, 1024
+local GF_ATLAS = RETAIL_TEXTURE_ROOT .. "dc_groupfinder_atlas_335.tga"
+local GF_ATLAS_W, GF_ATLAS_H = 1024, 1024
 local GF_ATLAS_RECTS = {
-    -- Interface/LFGFrame/GroupFinder members
-    ["background"]            = { 1, 329, 1, 337 },     -- 328x336 grey panel bg
-    ["button-cover"]          = { 1, 301, 339, 385 },   -- 300x46 stone button
-    ["button-cover-down"]     = { 1, 301, 387, 433 },
-    ["button-highlight"]      = { 1, 293, 435, 472 },   -- 292x37
-    ["button-select"]         = { 1, 293, 474, 511 },
-    ["highlightbar-blue"]     = { 1499, 1803, 393, 425 }, -- 304x32
-    ["highlightbar-yellow"]   = { 943, 1247, 431, 463 },
-    ["eye-highlight"]         = { 331, 417, 465, 551 },  -- 86x86 golden glow
-    -- Category banner buttons (290x36) for the Premade Groups home list
-    ["button-dungeons"]       = { 1, 291, 741, 777 },
-    ["button-questing"]       = { 1, 291, 817, 853 },
-    ["button-battlegrounds"]  = { 1, 291, 589, 625 },
-    ["button-scenarios"]      = { 623, 913, 393, 429 },
-    ["button-custom-pve"]     = { 1, 291, 627, 663 },
-    ["button-custom-pvp"]     = { 1, 291, 665, 701 },
-    ["button-raids"]          = { 1, 291, 931, 967 },   -- raids-legion banner
-    ["button-arenas"]         = { 1, 291, 513, 549 },
-}
-
-local PROMPTS_ATLAS = RETAIL_TEXTURE_ROOT .. "UILFGPrompts_335.tga" -- 2048x2048
-local PROMPTS_ATLAS_W, PROMPTS_ATLAS_H = 2048, 2048
-local PROMPTS_ATLAS_RECTS = {
-    -- Interface/LFGFrame/UILFGPrompts members
-    ["role-tank"]             = { 1291, 1547, 515, 771 },  -- 70x70
-    ["role-tank-disabled"]    = { 1549, 1805, 515, 771 },
-    ["role-healer"]           = { 1, 257, 1547, 1803 },
-    ["role-healer-disabled"]  = { 259, 515, 515, 771 },
-    ["role-dps"]              = { 1, 257, 515, 771 },
-    ["role-dps-disabled"]     = { 1, 257, 773, 1029 },
-    ["role-leader"]           = { 259, 515, 1031, 1287 },
-    ["role-leader-disabled"]  = { 259, 515, 1289, 1545 },
-    ["readymark"]             = { 1745, 1945, 259, 459 },  -- 40x40 green check
-    ["declinemark"]           = { 1801, 2001, 1, 201 },    -- 40x40 red x
-    ["pendingmark"]           = { 1543, 1743, 259, 459 },  -- 40x40 hourglass
-    ["divider"]               = { 517, 885, 773, 777 },    -- 368x4 thin line
-    ["tank-micro"]            = { 190, 251, 1805, 1866 },  -- 61x61 silhouettes
-    ["healer-micro"]          = { 1, 62, 1931, 1992 },
-    ["dps-micro"]             = { 1, 62, 1805, 1866 },
+    ["background"] = { 2, 330, 2, 338 },
+    ["button-arenas"] = { 296, 586, 646, 682 },
+    ["button-battlegrounds"] = { 588, 878, 646, 682 },
+    ["button-cover"] = { 2, 302, 598, 644 },
+    ["button-cover-down"] = { 304, 604, 598, 644 },
+    ["button-custom-pve"] = { 2, 292, 685, 721 },
+    ["button-custom-pvp"] = { 294, 584, 685, 721 },
+    ["button-dungeons"] = { 586, 876, 685, 721 },
+    ["button-highlight"] = { 606, 898, 598, 635 },
+    ["button-questing"] = { 2, 292, 723, 759 },
+    ["button-raids"] = { 294, 584, 723, 759 },
+    ["button-scenarios"] = { 586, 876, 723, 759 },
+    ["button-select"] = { 2, 294, 646, 683 },
+    ["divider"] = { 308, 676, 761, 765 },
+    ["dps-micro"] = { 752, 813, 340, 401 },
+    ["eye-highlight"] = { 664, 750, 340, 426 },
+    ["healer-micro"] = { 815, 876, 340, 401 },
+    ["highlightbar-blue"] = { 2, 306, 761, 793 },
+    ["pendingmark"] = { 260, 460, 340, 540 },
+    ["readymark"] = { 462, 662, 340, 540 },
+    ["role-dps"] = { 332, 588, 2, 258 },
+    ["role-healer"] = { 590, 846, 2, 258 },
+    ["role-tank"] = { 2, 258, 340, 596 },
+    ["tank-micro"] = { 878, 939, 340, 401 },
 }
 
 -- Apply an atlas member to a texture (path + texcoords).
 local function SetGFAtlas(texture, key)
     if not texture then return false end
     local r = GF_ATLAS_RECTS[key]
-    local path, w, h = GF_ATLAS, GF_ATLAS_W, GF_ATLAS_H
-    if not r then
-        r = PROMPTS_ATLAS_RECTS[key]
-        path, w, h = PROMPTS_ATLAS, PROMPTS_ATLAS_W, PROMPTS_ATLAS_H
-    end
     if not r then return false end
-    texture:SetTexture(path)
-    texture:SetTexCoord(r[1] / w, r[2] / w, r[3] / h, r[4] / h)
+    texture:SetTexture(GF_ATLAS)
+    texture:SetTexCoord(r[1] / GF_ATLAS_W, r[2] / GF_ATLAS_W,
+        r[3] / GF_ATLAS_H, r[4] / GF_ATLAS_H)
     return texture:GetTexture() ~= nil
 end
 namespace.SetGFAtlas = SetGFAtlas
@@ -236,15 +222,10 @@ namespace.SetGFAtlas = SetGFAtlas
 -- glyphs in list rows). Pixel-coord form of the texture escape.
 local function GFAtlasEscape(key, size)
     local r = GF_ATLAS_RECTS[key]
-    local path, w, h = GF_ATLAS, GF_ATLAS_W, GF_ATLAS_H
-    if not r then
-        r = PROMPTS_ATLAS_RECTS[key]
-        path, w, h = PROMPTS_ATLAS, PROMPTS_ATLAS_W, PROMPTS_ATLAS_H
-    end
     if not r then return "" end
     size = size or 14
     return string.format("|T%s:%d:%d:0:0:%d:%d:%d:%d:%d:%d|t",
-        path, size, size, w, h, r[1], r[2], r[3], r[4])
+        GF_ATLAS, size, size, GF_ATLAS_W, GF_ATLAS_H, r[1], r[2], r[3], r[4])
 end
 namespace.GFAtlasEscape = GFAtlasEscape
 
@@ -700,6 +681,13 @@ end
 function GF:ToggleBlizzardLFG()
     self._allowStockLFG = true
 
+    -- Prefer the saved originals: the live globals are our own redirects.
+    if self._originalToggleLFDParentFrame then
+        self._originalToggleLFDParentFrame()
+        self._allowStockLFG = false
+        return true
+    end
+
     if self._originalToggleLFGParentFrame then
         self._originalToggleLFGParentFrame()
         self._allowStockLFG = false
@@ -712,12 +700,6 @@ function GF:ToggleBlizzardLFG()
         else
             ShowUIPanel(LFDParentFrame)
         end
-        self._allowStockLFG = false
-        return true
-    end
-
-    if LFGParentFrame and ToggleLFGParentFrame then
-        ToggleLFGParentFrame()
         self._allowStockLFG = false
         return true
     end
@@ -1173,6 +1155,9 @@ function GF:SelectCompactType(kind)
     end
     if self.pvpPanel then
         self.pvpPanel:Hide()
+    end
+    if self.mythicPanel then
+        self.mythicPanel:Hide()
     end
     if self.compactBrowserFrame then
         self.compactBrowserFrame:Show()
@@ -1798,6 +1783,9 @@ function GF:ShowRetailPremadeHome(kind)
     if self.pvpPanel then
         self.pvpPanel:Hide()
     end
+    if self.mythicPanel then
+        self.mythicPanel:Hide()
+    end
     if self.retailHomeFrame then
         self.retailHomeFrame:Show()
     end
@@ -1973,6 +1961,9 @@ function GF:ShowHinterlandPanel()
     end
     if self.pvpPanel then
         self.pvpPanel:Hide()
+    end
+    if self.mythicPanel then
+        self.mythicPanel:Hide()
     end
 
     -- Repaint the panel whenever the HLBG addon refreshes its own queue UI.
@@ -2159,14 +2150,23 @@ function GF:CreateCompactMainFrame()
     -- dialog border (matches DC-Leaderboards et al.).
     ApplyLeaderboardsStyle(frame)
 
-    -- Retail open/close feedback.
-    frame:SetScript("OnShow", function() PlayUISound("igCharacterInfoOpen") end)
-    frame:SetScript("OnHide", function() PlayUISound("igCharacterInfoClose") end)
+    -- Retail open/close feedback + keep the micro-menu eye state in sync
+    -- (this window replaces the stock Dungeon Finder).
+    frame:SetScript("OnShow", function()
+        PlayUISound("igCharacterInfoOpen")
+        if UpdateMicroButtons then UpdateMicroButtons() end
+    end)
+    frame:SetScript("OnHide", function()
+        PlayUISound("igCharacterInfoClose")
+        if UpdateMicroButtons then UpdateMicroButtons() end
+    end)
 
     -- Title header band: retail drags by the header only, not the whole frame.
+    -- Stops short of the top-right corner so it can't swallow the close
+    -- button's clicks.
     local header = CreateFrame("Frame", nil, frame)
     header:SetPoint("TOPLEFT", 6, -6)
-    header:SetPoint("TOPRIGHT", -6, -6)
+    header:SetPoint("TOPRIGHT", -44, -6)
     header:SetHeight(28)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
@@ -2207,6 +2207,8 @@ function GF:CreateCompactMainFrame()
 
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -5, -5)
+    -- Keep the X above the drag header so it always receives its clicks.
+    closeBtn:SetFrameLevel(frame:GetFrameLevel() + 5)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
     local navPanel = CreateFrame("Frame", nil, frame)
@@ -2223,18 +2225,10 @@ function GF:CreateCompactMainFrame()
     navBg:SetTexCoord(BLUEMENU_BG_COORDS[1], BLUEMENU_BG_COORDS[2],
         BLUEMENU_BG_COORDS[3], BLUEMENU_BG_COORDS[4])
 
-    local function AddNavCorner(point, coordKey, ox, oy)
-        local corner = navPanel:CreateTexture(nil, "BORDER")
-        corner:SetSize(48, 48)
-        corner:SetPoint(point, ox, oy)
-        corner:SetTexture(RETAIL_BLUEMENU_MAIN)
-        local cc = BLUEMENU_CORNER_COORDS[coordKey]
-        corner:SetTexCoord(cc[1], cc[2], cc[3], cc[4])
-    end
-    AddNavCorner("TOPLEFT", "tl", 0, 0)
-    AddNavCorner("TOPRIGHT", "tr", 0, 0)
-    AddNavCorner("BOTTOMLEFT", "bl", 0, 0)
-    AddNavCorner("BOTTOMRIGHT", "br", 0, 0)
+    -- NOTE: no corner accent pieces — the corner regions in this bluemenu
+    -- rip don't match the retail 11.2.7 XML coords (they sample the white
+    -- glow blocks instead of the filigree art) and rendered as grey blobs.
+    -- The plain blue panel matches the retail read fine without them.
 
     -- y-offsets within navPanel (starts at frame y=-24).
     -- Button 1 at -46 → absolute frame y=-70, matching retail TOPLEFT(10,-70).
@@ -2290,18 +2284,14 @@ function GF:CreateCompactMainFrame()
     rolePanel:SetPoint("TOPRIGHT", 0, -4)
     rolePanel:SetHeight(64)
 
-    -- Dark rounded bar sized to fully contain the 48px role rings (centred in
-    -- the 60px-tall buttons that start at y=-2), with a few px of padding.
+    -- Subtle dark strip behind the role buttons (retail sets them straight on
+    -- the panel background; the old warm-brown cover tint clashed with the
+    -- grey retail art).
     local roleBg = rolePanel:CreateTexture(nil, "BACKGROUND")
     roleBg:SetPoint("TOPLEFT", 8, -2)
     roleBg:SetPoint("TOPRIGHT", -8, -2)
     roleBg:SetHeight(60)
-    SetSolidTexture(roleBg, 0, 0, 0, 0.45)
-
-    local roleCover = rolePanel:CreateTexture(nil, "BORDER")
-    roleCover:SetPoint("TOPLEFT", roleBg, "TOPLEFT", 0, 0)
-    roleCover:SetPoint("BOTTOMRIGHT", roleBg, "BOTTOMRIGHT", 0, 0)
-    SetSolidTexture(roleCover, 0.30, 0.24, 0.12, 0.20)
+    SetSolidTexture(roleBg, 0, 0, 0, 0.25)
 
     self.compactRoles = self.compactRoles or { dps = true }
     local canTank, canHeal = GetClassRoleCaps()
@@ -2689,8 +2679,7 @@ function GF:CreateBottomTabs(frame)
             GF:ShowPvPPanel()
         end },
         { key = "mythic",  label = "Mythic+",        onClick = function()
-            GF:OpenMythicPlusPanel()
-            GF:SetActiveBottomTab("mythic")
+            GF:ShowMythicPanel()
         end },
     }
 
@@ -2764,6 +2753,7 @@ function GF:ShowPvPPanel()
     if self.compactListFrame then self.compactListFrame:Hide() end
     if self.retailHomeFrame then self.retailHomeFrame:Hide() end
     if self.hlbgPanel then self.hlbgPanel:Hide() end
+    if self.mythicPanel then self.mythicPanel:Hide() end
 
     if not self.pvpPanel then
         local panel = CreateFrame("Frame", nil, self.pvpPanelParent or self.mainFrame)
@@ -2838,6 +2828,192 @@ function GF:ShowPvPPanel()
 end
 
 -- =====================================================================
+-- In-frame Mythic+ panel (bottom tab) — keystone, weekly affixes, best
+-- runs, and shortcuts to the M+ group browser and the Great Vault.
+-- The Seasonal Portal (teleporter) frame stays a separate window: it is
+-- opened by the Mythic+ teleporter NPC (SMSG_SEASONAL_PORTAL_OPEN) and is
+-- intentionally NOT embedded here.
+-- =====================================================================
+
+function GF:ShowMythicPanel()
+    if not self.mainFrame then return end
+
+    -- Hide the other content views.
+    self.retailHomeShown = false
+    self.hlbgPanelShown = false
+    if self.compactTypeMenu then self.compactTypeMenu:Hide() end
+    if self.compactTypeMenuCatcher then self.compactTypeMenuCatcher:Hide() end
+    if self.compactBrowserFrame then self.compactBrowserFrame:Hide() end
+    if self.compactListFrame then self.compactListFrame:Hide() end
+    if self.retailHomeFrame then self.retailHomeFrame:Hide() end
+    if self.hlbgPanel then self.hlbgPanel:Hide() end
+    if self.pvpPanel then self.pvpPanel:Hide() end
+
+    if not self.mythicPanel then
+        local panel = CreateFrame("Frame", nil, self.mainFrame)
+        panel:SetPoint("TOPLEFT", self.compactBrowserFrame, "TOPLEFT", 0, 0)
+        panel:SetPoint("BOTTOMRIGHT", self.compactBrowserFrame, "BOTTOMRIGHT", 0, 0)
+
+        local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", 0, -8)
+        title:SetText("Mythic+")
+        title:SetTextColor(1, 0.82, 0)
+
+        -- Keystone
+        local keyLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        keyLabel:SetPoint("TOPLEFT", 14, -36)
+        keyLabel:SetText("Your Keystone:")
+        keyLabel:SetTextColor(1, 0.82, 0)
+
+        local keyValue = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        keyValue:SetPoint("LEFT", keyLabel, "RIGHT", 8, 0)
+        keyValue:SetText("|cff888888Unknown|r")
+        panel.keyValue = keyValue
+
+        -- Weekly affixes
+        local affixLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        affixLabel:SetPoint("TOPLEFT", keyLabel, "BOTTOMLEFT", 0, -10)
+        affixLabel:SetText("This Week:")
+        affixLabel:SetTextColor(1, 0.82, 0)
+
+        local affixValue = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        affixValue:SetPoint("TOPLEFT", affixLabel, "RIGHT", 8, 5)
+        affixValue:SetWidth(240)
+        affixValue:SetJustifyH("LEFT")
+        affixValue:SetText("|cff888888Requesting...|r")
+        panel.affixValue = affixValue
+
+        -- Best runs
+        local divider = panel:CreateTexture(nil, "ARTWORK")
+        divider:SetPoint("TOPLEFT", 10, -96)
+        divider:SetPoint("TOPRIGHT", -10, -96)
+        divider:SetHeight(3)
+        if not SetGFAtlas(divider, "divider") then
+            SetSolidTexture(divider, 0.35, 0.30, 0.20, 0.8)
+        end
+
+        local runsLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        runsLabel:SetPoint("TOPLEFT", 14, -106)
+        runsLabel:SetText("Best Runs This Season")
+        runsLabel:SetTextColor(1, 0.82, 0)
+
+        panel.runLines = {}
+        for i = 1, 8 do
+            local line = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            line:SetPoint("TOPLEFT", 20, -106 - i * 18)
+            line:SetWidth(320)
+            line:SetJustifyH("LEFT")
+            line:SetText("")
+            panel.runLines[i] = line
+        end
+
+        -- Teleporter note (teleports stay on the Seasonal Portal NPC).
+        local note = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        note:SetPoint("BOTTOM", 0, 42)
+        note:SetWidth(330)
+        note:SetJustifyH("CENTER")
+        note:SetText("Dungeon teleports are available at the Mythic+ teleporter.")
+
+        local browseBtn = CreateRetailActionButton(panel, 150, 26, "Browse M+ Groups")
+        browseBtn:SetPoint("BOTTOMLEFT", 14, 8)
+        browseBtn:SetScript("OnClick", function()
+            GF.retailNavContext = "premade"
+            GF.premadeSelectedKind = "mythic"
+            GF:SelectCompactType("mythic")
+            GF:SearchCustomCategory("mythic")
+        end)
+
+        local vaultBtn = CreateRetailActionButton(panel, 130, 26, "Great Vault")
+        vaultBtn:SetPoint("BOTTOMRIGHT", -14, 8)
+        vaultBtn:SetScript("OnClick", function()
+            if namespace.RequestVaultInfo then
+                namespace.RequestVaultInfo()
+            end
+            if namespace.GreatVault and namespace.GreatVault.Show then
+                namespace.GreatVault:Show()
+            end
+        end)
+
+        self.mythicPanel = panel
+    end
+
+    self.mythicPanel:Show()
+    self:RefreshMythicPanel()
+    if self.retailContentTitle then
+        self.retailContentTitle:SetText("Mythic+")
+    end
+    self:SetActiveBottomTab("mythic")
+
+    -- Pull fresh data (cheap requests; server change-gates the heavy parts).
+    if namespace.RequestKeyInfo then namespace.RequestKeyInfo() end
+    if namespace.RequestAffixes then namespace.RequestAffixes() end
+    if namespace.RequestBestRuns then namespace.RequestBestRuns() end
+end
+
+-- Repaint the Mythic+ panel from the session caches (called by the Core.lua
+-- MPLUS handlers whenever key info / affixes / best runs arrive).
+function GF:RefreshMythicPanel()
+    local panel = self.mythicPanel
+    if not panel or not panel:IsShown() then return end
+
+    -- Keystone (server truth first, inventory scan as fallback).
+    local key = namespace.serverKeystone
+    local invKey = namespace.inventoryKeystone
+    local text = "|cff888888No keystone|r"
+    if type(key) == "table" and key.hasKeystone then
+        text = string.format("|cffff8000+%d %s|r%s",
+            tonumber(key.keystoneLevel) or 0,
+            tostring(key.keystoneDungeonName or "Unknown"),
+            key.depleted and "  |cff888888(depleted)|r" or "")
+    elseif type(invKey) == "table" and invKey.hasKey then
+        text = string.format("|cffff8000+%d %s|r",
+            tonumber(invKey.level) or 0,
+            tostring(invKey.dungeonName or "Unknown"))
+    end
+    panel.keyValue:SetText(text)
+
+    -- Affixes (session cache, falling back to the SavedVariables cache).
+    local affixes = namespace.currentAffixes
+    if (not affixes or #affixes == 0) and DCMythicPlusHUDDB
+        and DCMythicPlusHUDDB.cache then
+        affixes = DCMythicPlusHUDDB.cache.affixes
+    end
+    if type(affixes) == "table" and #affixes > 0 then
+        local names = {}
+        for _, affix in ipairs(affixes) do
+            if type(affix) == "table" and affix.name then
+                table.insert(names, affix.name)
+            elseif type(affix) == "string" then
+                table.insert(names, affix)
+            end
+        end
+        panel.affixValue:SetText(table.concat(names, ", "))
+    else
+        panel.affixValue:SetText("|cff888888No affix data yet.|r")
+    end
+
+    -- Best runs.
+    local runs = namespace.bestRuns
+    for i, line in ipairs(panel.runLines) do
+        local run = type(runs) == "table" and runs[i] or nil
+        if type(run) == "table" then
+            local name = run.dungeonName or ("Dungeon " .. tostring(run.dungeonId or "?"))
+            local level = tonumber(run.level) or 0
+            local secs = tonumber(run.time)
+            local timeStr = secs
+                and string.format("%d:%02d", math.floor(secs / 60), secs % 60)
+                or "?"
+            line:SetText(string.format("|cffff8000+%d|r  %s  |cff888888(%s)|r",
+                level, name, timeStr))
+        elseif i == 1 and (type(runs) ~= "table" or #runs == 0) then
+            line:SetText("|cff888888No timed runs recorded yet this season.|r")
+        else
+            line:SetText("")
+        end
+    end
+end
+
+-- =====================================================================
 -- Main Frame Creation
 -- =====================================================================
 
@@ -2892,9 +3068,66 @@ function GF:Hide()
     end
 end
 
+-- Make the DC Group Finder THE standard finder: every stock entry point —
+-- the micro-menu eye button, the Dungeon Finder keybind (both run
+-- ToggleLFDParentFrame on 3.3.5), the Raid Browser, the legacy LFG frame,
+-- and any code that ShowUIPanel()s the stock frames directly — opens this
+-- window instead. GF:ToggleBlizzardLFG() (the "Blizzard LFG" type option)
+-- sets _allowStockLFG to bypass the redirect when the player explicitly
+-- asks for the stock tool.
 function GF:InstallBlizzardLFGReplacement()
     if self._blizzardLFGReplacementInstalled then return end
 
+    local function OpenReplacement(kind)
+        GF:Show()
+        GF.retailNavContext = nil
+        GF:SelectCompactType(kind or "dungeons")
+        if UpdateMicroButtons then
+            UpdateMicroButtons()
+        end
+    end
+
+    -- 3.3.5 Dungeon Finder: micro button + TOGGLELFGPARENT keybind.
+    if type(ToggleLFDParentFrame) == "function" then
+        self._originalToggleLFDParentFrame = ToggleLFDParentFrame
+        ToggleLFDParentFrame = function(...)
+            if GF._allowStockLFG then
+                return GF._originalToggleLFDParentFrame(...)
+            end
+
+            if GF.mainFrame and GF.mainFrame:IsShown() then
+                GF:Hide()
+                if UpdateMicroButtons then UpdateMicroButtons() end
+            else
+                if LFDParentFrame and LFDParentFrame:IsShown() then
+                    HideUIPanel(LFDParentFrame)
+                end
+                OpenReplacement("dungeons")
+            end
+        end
+    end
+
+    -- 3.3.5 Raid Browser: route to our Raid Finder nav.
+    if type(ToggleLFRParentFrame) == "function" then
+        self._originalToggleLFRParentFrame = ToggleLFRParentFrame
+        ToggleLFRParentFrame = function(...)
+            if GF._allowStockLFG then
+                return GF._originalToggleLFRParentFrame(...)
+            end
+
+            if GF.mainFrame and GF.mainFrame:IsShown() then
+                GF:Hide()
+                if UpdateMicroButtons then UpdateMicroButtons() end
+            else
+                if LFRParentFrame and LFRParentFrame:IsShown() then
+                    HideUIPanel(LFRParentFrame)
+                end
+                OpenReplacement("raid")
+            end
+        end
+    end
+
+    -- Pre-3.3 legacy LFG window (kept for custom clients that still have it).
     if type(ToggleLFGParentFrame) == "function" then
         self._originalToggleLFGParentFrame = ToggleLFGParentFrame
         ToggleLFGParentFrame = function(tab)
@@ -2904,29 +3137,36 @@ function GF:InstallBlizzardLFGReplacement()
 
             if GF.mainFrame and GF.mainFrame:IsShown() then
                 GF:Hide()
+                if UpdateMicroButtons then UpdateMicroButtons() end
             else
                 if LFGParentFrame and LFGParentFrame:IsShown() then
                     HideUIPanel(LFGParentFrame)
                 end
-                GF:Show()
-                if tab == 2 then
-                    GF:SelectCompactType("other")
-                else
-                    GF:SelectCompactType("dungeons")
-                end
-            end
-
-            if UpdateMicroButtons then
-                UpdateMicroButtons()
+                OpenReplacement(tab == 2 and "other" or "dungeons")
             end
         end
     end
 
-    if LFGParentFrame and LFGParentFrame.HookScript then
-        LFGParentFrame:HookScript("OnShow", function(frame)
-            if GF._allowStockLFG then return end
-            frame:Hide()
-            GF:Show()
+    -- Catch direct ShowUIPanel() paths on the stock frames.
+    local function RedirectOnShow(frame)
+        if frame and frame.HookScript then
+            frame:HookScript("OnShow", function(f)
+                if GF._allowStockLFG then return end
+                f:Hide()
+                OpenReplacement("dungeons")
+            end)
+        end
+    end
+    RedirectOnShow(LFDParentFrame)
+    RedirectOnShow(LFGParentFrame)
+
+    -- Keep the micro-menu eye lit while our window is open (the stock
+    -- UpdateMicroButtons only checks LFDParentFrame).
+    if type(hooksecurefunc) == "function" and LFDMicroButton then
+        hooksecurefunc("UpdateMicroButtons", function()
+            if GF.mainFrame and GF.mainFrame:IsShown() then
+                LFDMicroButton:SetButtonState("PUSHED", 1)
+            end
         end)
     end
 
@@ -2938,7 +3178,8 @@ replacementInstaller:RegisterEvent("PLAYER_LOGIN")
 replacementInstaller:SetScript("OnEvent", function()
     GF:InstallBlizzardLFGReplacement()
 end)
-if type(ToggleLFGParentFrame) == "function" then
+if type(ToggleLFDParentFrame) == "function"
+    or type(ToggleLFGParentFrame) == "function" then
     GF:InstallBlizzardLFGReplacement()
 end
 

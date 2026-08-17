@@ -3699,6 +3699,9 @@ if DC then
         if namespace.GroupFinder and type(namespace.GroupFinder.UpdateKeystoneDisplay) == "function" then
             namespace.GroupFinder:UpdateKeystoneDisplay(data)
         end
+        if namespace.GroupFinder and type(namespace.GroupFinder.RefreshMythicPanel) == "function" then
+            namespace.GroupFinder:RefreshMythicPanel()
+        end
     end)
     
     -- SMSG_AFFIXES (0x11) - Current week's affixes
@@ -3731,11 +3734,16 @@ if DC then
                 end
             end
             
-            -- Persist to SavedVariables
+            -- Persist to SavedVariables + session cache for the M+ panel
+            namespace.currentAffixes = affixesToCache
+            namespace.currentAffixWeek = weekNum
             if DCMythicPlusHUDDB and DCMythicPlusHUDDB.cache then
                 DCMythicPlusHUDDB.cache.affixes = affixesToCache
                 DCMythicPlusHUDDB.cache.affixesTime = time()
                 DCMythicPlusHUDDB.cache.affixesWeek = weekNum
+            end
+            if namespace.GroupFinder and type(namespace.GroupFinder.RefreshMythicPanel) == "function" then
+                namespace.GroupFinder:RefreshMythicPanel()
             end
         else
             -- Pipe-delimited format: id:name:desc;id:name:desc;...
@@ -3772,6 +3780,11 @@ if DC then
                         local timeStr = run.time and FormatSeconds(run.time) or "?"
                         Print("  " .. idx .. ". " .. name .. " +" .. level .. " (" .. timeStr .. ")")
                     end
+                end
+                -- Session cache for the Group Finder Mythic+ panel.
+                namespace.bestRuns = json.runs
+                if namespace.GroupFinder and type(namespace.GroupFinder.RefreshMythicPanel) == "function" then
+                    namespace.GroupFinder:RefreshMythicPanel()
                 end
             end
         else

@@ -1706,6 +1706,25 @@ local C_FRAME_BG = { 0.051, 0.058, 0.072 }
 local C_PANEL_BG = { 0.028, 0.033, 0.044 }
 local C_BORDER   = { 0.21, 0.23, 0.28 }
 
+-- Real Dragonflight node-frame art sliced from retail's
+-- Interface/TalentFrame/Talents atlas (see Textures/Talents/).
+-- node-circle-cornermask fakes circular icon cropping: opaque
+-- C_PANEL_BG-coloured corners with a transparent hole matched to the
+-- ring's inner radius (3.3.5 has no texture masking).
+local TEX_TALENTS = "Interface\\AddOns\\DC-QOS\\Textures\\Talents\\"
+local NODE_FRAME_SIZE = TALENT_BUTTON_SIZE + 8
+
+local hasNodeArt = nil
+local function HasNodeArt(anyFrame)
+    if hasNodeArt == nil then
+        local probe = anyFrame:CreateTexture(nil, "BACKGROUND")
+        hasNodeArt = probe:SetTexture(TEX_TALENTS .. "node-square-gray.tga") and true or false
+        probe:SetTexture(nil)
+        probe:Hide()
+    end
+    return hasNodeArt
+end
+
 -- ============================================================
 -- UI: Drawing Lines (Prerequisites)
 -- ============================================================
@@ -1804,9 +1823,25 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
         color = C_AVAIL
     end
 
-    button:SetBackdropBorderColor(color[1], color[2], color[3], 1)
+    if button.nodeFrame then
+        -- Real DF art: swap the frame variant, keep the 1px border off
+        local variant
+        if stagedRank > 0 then
+            variant = "green"
+        elseif not prereqsSet then
+            variant = "locked"
+        elseif effRank > 0 then
+            variant = "yellow"
+        else
+            variant = "gray"
+        end
+        button.nodeFrame:SetTexture(TEX_TALENTS .. "node-" .. button.shape .. "-" .. variant .. ".tga")
+        button:SetBackdropBorderColor(0, 0, 0, 0)
+    else
+        button:SetBackdropBorderColor(color[1], color[2], color[3], 1)
+    end
     if button.ring then
-        -- Single-rank "active ability" nodes carry a circular ring
+        -- Fallback ring on single-rank "active ability" nodes
         button.ring:SetVertexColor(color[1], color[2], color[3])
         button.ring:SetAlpha(effRank > 0 and 1 or (prereqsSet and 0.75 or 0.45))
     end
@@ -1902,9 +1937,28 @@ local function CreateTalentButton(parent, tab, index, pet)
     icon:SetVertexColor(1, 1, 1)
     button.icon = icon
 
-    -- Single-rank talents are (almost always) active abilities; give
-    -- them a circular ring so they read like retail's round nodes
-    if maxRank == 1 then
+    -- Single-rank talents are (almost always) active abilities and get
+    -- the round retail node; multi-rank passives get the square one.
+    button.shape = (maxRank == 1) and "circle" or "square"
+    if HasNodeArt(button) then
+        -- Real DF frame art replaces the flat 1px border
+        button:SetBackdropBorderColor(0, 0, 0, 0)
+        if button.shape == "circle" then
+            -- Round nodes: no square plate, corner mask crops the icon
+            button:SetBackdropColor(0, 0, 0, 0)
+            local mask = button:CreateTexture(nil, "OVERLAY", nil, 0)
+            mask:SetSize(NODE_FRAME_SIZE, NODE_FRAME_SIZE)
+            mask:SetPoint("CENTER")
+            mask:SetTexture(TEX_TALENTS .. "node-circle-cornermask.tga")
+            button.cornerMask = mask
+        end
+        local nodeFrame = button:CreateTexture(nil, "OVERLAY", nil, 1)
+        nodeFrame:SetSize(NODE_FRAME_SIZE, NODE_FRAME_SIZE)
+        nodeFrame:SetPoint("CENTER")
+        nodeFrame:SetTexture(TEX_TALENTS .. "node-" .. button.shape .. "-gray.tga")
+        button.nodeFrame = nodeFrame
+    elseif maxRank == 1 then
+        -- Fallback without the texture pack: recoloured quickslot ring
         local ring = button:CreateTexture(nil, "OVERLAY", nil, 1)
         ring:SetSize(TALENT_BUTTON_SIZE + 26, TALENT_BUTTON_SIZE + 26)
         ring:SetPoint("CENTER")
@@ -3138,29 +3192,34 @@ function TalentManager:CreateGlyphFrame()
     end)
     frame:Hide()
     
-    -- Standard DC addon background (matching talent frame)
+    -- Retail-dark chrome matching the talent frame
     frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        bgFile = FLAT_TEXTURE,
+        edgeFile = FLAT_TEXTURE,
+        edgeSize = 1,
     })
-    frame:SetBackdropColor(0, 0, 0, 0)
+    frame:SetBackdropColor(C_FRAME_BG[1], C_FRAME_BG[2], C_FRAME_BG[3], 0.97)
+    frame:SetBackdropBorderColor(C_BORDER[1], C_BORDER[2], C_BORDER[3], 1)
 
-    local glyphBgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
-    glyphBgTex:SetAllPoints()
+    local glyphBgTex = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    glyphBgTex:SetPoint("TOPLEFT", 1, -1)
+    glyphBgTex:SetPoint("BOTTOMRIGHT", -1, 1)
     glyphBgTex:SetTexture(BG_FELLEATHER)
+    glyphBgTex:SetAlpha(0.05)
     if glyphBgTex.SetHorizTile then glyphBgTex:SetHorizTile(false) end
     if glyphBgTex.SetVertTile then glyphBgTex:SetVertTile(false) end
-
-    local glyphBgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    glyphBgTint:SetAllPoints()
-    glyphBgTint:SetTexture(0, 0, 0, 0.60)
 
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
     title:SetText("Glyphs")
+
+    local titleLine = frame:CreateTexture(nil, "BORDER")
+    titleLine:SetPoint("TOPLEFT", 12, -34)
+    titleLine:SetPoint("TOPRIGHT", -12, -34)
+    titleLine:SetHeight(1)
+    titleLine:SetTexture(FLAT_TEXTURE)
+    titleLine:SetVertexColor(C_BORDER[1], C_BORDER[2], C_BORDER[3], 0.9)
 
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -5, -5)
@@ -3739,10 +3798,33 @@ function TalentManager:OpenBlizzardTalentUI(tab)
     end
 end
 
+-- The bottom micro menu's Talents button: skinned/custom UIs can
+-- capture the original ToggleTalentFrame as an upvalue at FrameXML
+-- load, which bypasses the wrapped global above. Re-assert our OnClick
+-- on the button itself (idempotent; re-applied on a delay in case the
+-- skin re-hooks it after login).
+local function HookTalentMicroButton()
+    local btn = _G.TalentMicroButton
+    if not btn or not btn.SetScript then return end
+    btn:SetScript("OnClick", function()
+        pcall(PlaySound, "igCharacterInfoTab")
+        ToggleTalentFrame()  -- wrapped global: DC manager, Shift = original
+    end)
+end
+
 -- Hook Blizzard talent frame
 local hookFrame = CreateFrame("Frame")
 hookFrame:RegisterEvent("ADDON_LOADED")
+hookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 hookFrame:SetScript("OnEvent", function(self, event, addonName)
+    if event == "PLAYER_ENTERING_WORLD" then
+        HookTalentMicroButton()
+        if addon.DelayedCall then
+            addon:DelayedCall(3, HookTalentMicroButton)
+            addon:DelayedCall(10, HookTalentMicroButton)
+        end
+        return
+    end
     if addonName == "Blizzard_TalentUI" and PlayerTalentFrame then
         if _G.DCQoS_TalentFrameButton then return end
 
