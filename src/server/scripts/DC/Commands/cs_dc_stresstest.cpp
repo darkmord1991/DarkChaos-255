@@ -4,9 +4,18 @@
  * Provides stress testing tools for SQL, Cache, and Subsystems.
  * COMMAND: .stresstest <subcommand>
  * PERMISSION: GM only (SEC_GAMEMASTER)
+ *
+ * BUILD GATE: this is ~8.8k lines of GM-only load-testing tooling - the
+ * second-largest file under DC/ - and it ships in the production worldserver
+ * binary by default. Configure with -DDC_WITH_STRESSTEST=0 to compile it out;
+ * AddSC_dc_stresstest() then becomes an empty stub so the script loader still
+ * links. Default is ON, so the stock build is unchanged.
  */
 
 #include "ScriptMgr.h"
+
+#ifdef DC_WITH_STRESSTEST
+
 #include "Chat.h"
 #include "CommandScript.h"
 #include "ChatCommand.h"
@@ -24,12 +33,12 @@
 #include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
-#include "../Hotspot/HotspotMgr.h"
-#include "../Hotspot/HotspotJson.h"
-#include "../AddonExtension/dc_addon_groupfinder_mgr.h"
-#include "../AddonExtension/dc_addon_death_markers.h"
-#include "../AddonExtension/dc_addon_namespace.h"
-#include "../AddonExtension/dc_addon_utils.h"
+#include "DC/Hotspot/HotspotMgr.h"
+#include "DC/Hotspot/HotspotJson.h"
+#include "DC/AddonExtension/dc_addon_groupfinder_mgr.h"
+#include "DC/AddonExtension/dc_addon_death_markers.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_utils.h"
 #include <chrono>
 #include <array>
 #include <charconv>
@@ -8878,3 +8887,12 @@ void AddSC_dc_stresstest()
 {
     new dc_stresstest_commandscript();
 }
+
+#else // DC_WITH_STRESSTEST
+
+// Stub so dc_script_loader.cpp keeps linking when the suite is compiled out.
+void AddSC_dc_stresstest()
+{
+}
+
+#endif // DC_WITH_STRESSTEST

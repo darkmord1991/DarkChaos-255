@@ -8,8 +8,8 @@
 
 #include "dc_challenge_modes.h"
 #include "dc_challenge_mode_database.h"
-#include "../../AddonExtension/dc_addon_death_markers.h"
-#include "../../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_death_markers.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "ObjectAccessor.h"
 #include "World.h"
 #include "WorldSessionMgr.h"

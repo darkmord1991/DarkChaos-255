@@ -19,9 +19,9 @@
 #include "Config.h"
 #include "Log.h"
 #include "DBCStores.h"
-#include "../MythicPlus/dc_mythicplus_run_manager.h"
-#include "../MythicPlus/dc_mythicplus_constants.h"
-#include "../Seasons/DCWeeklyResetHub.h"
+#include "DC/MythicPlus/dc_mythicplus_run_manager.h"
+#include "DC/MythicPlus/dc_mythicplus_constants.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
 #include "dc_addon_mythicplus.h"
 
 #include <algorithm>

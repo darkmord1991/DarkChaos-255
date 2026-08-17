@@ -43,6 +43,10 @@
 
 // Forward declaration for S2C logging (defined later in file)
 static bool g_S2CLoggingEnabled = false;
+// Mirrors s_AddonConfig.ValidateOutboundJson, which is declared further down
+// than Message::Send needs it. Same pattern as g_S2CLoggingEnabled above; both
+// are refreshed by LoadAddonConfig().
+static bool g_ValidateOutboundJson = false;
 static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs = 0);
 static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message);
 static void UpdateProtocolStats(Player* player, const std::string& moduleCode, const std::string& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
@@ -1402,10 +1406,42 @@ namespace DCAddon
             payloadPreview, processingTimeMs);
     }
 
+    // Structural check on any field that was meant to be JSON.
+    //
+    // The DOM-built payloads (JsonValue/JsonMessage) are well-formed by
+    // construction; the ~380 hand-assembled ones are not, and a trailing comma
+    // or unterminated string there makes the client drop the frame with no
+    // server-side symptom whatsoever. Off by default; turn on
+    // DC.AddonProtocol.ValidateOutboundJson to convert that silence into a log
+    // line naming the module and opcode. Never alters or blocks the payload -
+    // a validator that starts editing traffic is worse than the bug.
+    static void ValidateOutboundJsonFields(Player* player, std::string const& module,
+        uint8 opcode, std::vector<std::string> const& fields)
+    {
+        for (std::string const& field : fields)
+        {
+            if (!DCAddon::Utils::LooksLikeJson(field))
+                continue;
+
+            if (DCAddon::Utils::IsWellFormedJson(field))
+                continue;
+
+            std::string preview = field.length() > 200 ? field.substr(0, 200) + "..." : field;
+            LOG_ERROR("dc.addon",
+                "[JSON] Malformed outbound payload {}|0x{:02X} to player='{}' "
+                "({} bytes). The client will silently drop this frame. Payload: {}",
+                module, opcode, player ? player->GetName() : "NULL",
+                field.length(), preview);
+        }
+    }
+
     void Message::Send(Player* player) const
     {
         if (!player || !player->GetSession())
             return;
+
+        if (g_ValidateOutboundJson)
+            ValidateOutboundJsonFields(player, _module, _opcode, _data);
 
         // Generic native bridge: route over the dedicated native opcode when this
         // module has a negotiated native capability. Body = pipe-joined fields,
@@ -1531,6 +1567,7 @@ struct DCAddonProtocolConfig
     // Security settings
     bool EnableDebugLog;
     bool EnableProtocolLogging;  // Log to dc_addon_protocol_log table
+    bool ValidateOutboundJson;   // Log malformed JSON fields before they ship
     uint32 MaxMessagesPerSecond;
     uint32 RateLimitAction;
     uint32 ChunkTimeoutMs;
@@ -1838,6 +1875,7 @@ static void LoadAddonConfig()
 
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
     s_AddonConfig.EnableProtocolLogging = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Logging.Enable", false);
+    s_AddonConfig.ValidateOutboundJson  = sConfigMgr->GetOption<bool>("DC.AddonProtocol.ValidateOutboundJson", false);
     s_AddonConfig.MaxMessagesPerSecond  = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Messages", 30);
     s_AddonConfig.RateLimitAction       = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Action", 0);
     s_AddonConfig.ChunkTimeoutMs        = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.ChunkTimeout", 5000);
@@ -1852,6 +1890,7 @@ static void LoadAddonConfig()
 
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
     g_S2CLoggingEnabled = s_AddonConfig.EnableProtocolLogging;
+    g_ValidateOutboundJson = s_AddonConfig.ValidateOutboundJson;
 
     if (s_AddonConfig.EnableProtocolLogging)
         HasProtocolErrorTable();

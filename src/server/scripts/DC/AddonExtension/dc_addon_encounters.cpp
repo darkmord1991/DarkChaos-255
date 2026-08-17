@@ -29,7 +29,7 @@
 
 #include "dc_addon_namespace.h"
 #include "dc_addon_utils.h"
-#include "../MythicPlus/dc_mythicplus_run_manager.h"
+#include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 #include "Config.h"
 #include "DBCStores.h"
 #include "InstanceScript.h"

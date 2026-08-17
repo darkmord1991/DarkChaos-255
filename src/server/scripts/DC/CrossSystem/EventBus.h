@@ -23,7 +23,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <unordered_map>
 #include <vector>
 
@@ -108,18 +107,19 @@ namespace CrossSystem
         // Event Publishing
         // =====================================================================
 
-        // Publish an event synchronously (blocks until all handlers complete)
+        // Publish an event synchronously (blocks until all handlers complete).
+        //
+        // Handlers are invoked with mutex_ RELEASED, so a handler may publish
+        // or subscribe without deadlocking. The consequence is that subscribers
+        // must outlive the bus or unsubscribe before they are destroyed - a
+        // handler destroyed concurrently with a Publish in flight would be
+        // called through a dangling pointer. Today every Subscribe/Unsubscribe
+        // happens at startup/shutdown, which satisfies this; keep it that way.
         void Publish(const EventData& event, SystemId sourceSystem = SystemId::None);
 
         // Publish with specific event type (convenience for simple events)
         void PublishSimple(EventType type, ObjectGuid playerGuid, uint32 mapId = 0,
                           uint32 instanceId = 0, SystemId sourceSystem = SystemId::None);
-
-        // Queue event for async processing (processed on next update tick)
-        void PublishAsync(std::unique_ptr<EventData> event, SystemId sourceSystem = SystemId::None);
-
-        // Process queued async events (call from update loop)
-        void ProcessAsyncEvents(uint32 maxEvents = 100);
 
         // =====================================================================
         // Typed Event Publishers
@@ -166,9 +166,6 @@ namespace CrossSystem
             uint64 totalEventsPublished = 0;
             uint64 totalEventsProcessed = 0;
             uint64 totalHandlersInvoked = 0;
-            uint64 asyncEventsQueued = 0;
-            uint64 asyncEventsProcessed = 0;
-            uint64 asyncEventsDropped = 0;  // Events dropped due to queue overflow
             uint64 errors = 0;
             std::unordered_map<EventType, uint64> eventCounts;
             std::unordered_map<SystemId, uint64> systemHandlerCounts;
@@ -200,9 +197,6 @@ namespace CrossSystem
         // Subscription storage (eventType -> subscriptions)
         std::unordered_map<EventType, std::vector<EventSubscription>> subscriptions_;
         uint64 nextSubscriptionId_ = 1;
-
-        // Async event queue
-        std::queue<std::pair<std::unique_ptr<EventData>, SystemId>> asyncQueue_;
 
         // History
         std::vector<EventHistoryEntry> eventHistory_;

@@ -31,9 +31,9 @@
 #include "StringFormat.h"
 
 #include "World.h"
-#include "../AddonExtension/dc_addon_groupfinder_mgr.h"
-#include "../AddonExtension/dc_addon_namespace.h"
-#include "../AddonExtension/dc_addon_mythicplus.h"
+#include "DC/AddonExtension/dc_addon_groupfinder_mgr.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_mythicplus.h"
 #include "DC/GreatVault/GreatVault.h"
 #ifdef HAS_AIO
 #include "AIO.h"
@@ -1571,7 +1571,11 @@ void MythicPlusRunManager::InsertTokenLog(ObjectGuid::LowType playerGuid, uint32
 
 uint32 MythicPlusRunManager::GetCurrentSeasonId() const
 {
-    return sMythicScaling->GetActiveSeasonId();
+    // Resolve live rather than reading sMythicScaling's copy: that one is a
+    // snapshot taken once during LoadScalingMultipliers() at startup, so a
+    // season change while the server was up left Mythic+ writing runs and
+    // vault progress under the previous season for the rest of uptime.
+    return DarkChaos::CrossSystem::GetActiveSeasonId();
 }
 
 uint32 MythicPlusRunManager::GetWeekStartTimestamp() const

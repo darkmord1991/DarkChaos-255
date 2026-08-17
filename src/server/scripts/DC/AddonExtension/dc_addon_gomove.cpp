@@ -19,7 +19,7 @@
 #include "Config.h"
 #include "Language.h"
 #include "../GOMove/GOMove.h" // Include original GOMove header
-#include "../GOMove/GOMoveCommandIds.h"
+#include "DC/GOMove/GOMoveCommandIds.h"
 
 namespace DCAddon
 {

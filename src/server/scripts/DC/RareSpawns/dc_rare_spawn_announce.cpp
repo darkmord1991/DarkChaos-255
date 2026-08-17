@@ -65,7 +65,7 @@
 #include "WorldSessionMgr.h"
 #include "MapMgr.h"
 #include "DC/CrossSystem/CrossSystemMapCoords.h"
-#include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "dc_rare_spawns.h"
 
 #include <algorithm>

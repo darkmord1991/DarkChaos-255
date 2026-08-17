@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
-#include "../Seasons/SeasonalRewardSystem.h"
+#include "DC/Seasons/SeasonalRewardSystem.h"
 #include <algorithm>
 #include <limits>
 

@@ -15,7 +15,7 @@
 #include "GameObject.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
-#include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 #include "DBCEnums.h"

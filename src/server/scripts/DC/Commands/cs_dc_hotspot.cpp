@@ -4,9 +4,9 @@
 #include "Player.h"
 #include "GameTime.h"
 #include "StringConvert.h"
-#include "../Hotspot/HotspotMgr.h"
-#include "../Hotspot/HotspotDefines.h"
-#include "../Hotspot/HotspotGrid.h"
+#include "DC/Hotspot/HotspotMgr.h"
+#include "DC/Hotspot/HotspotDefines.h"
+#include "DC/Hotspot/HotspotGrid.h"
 
 class HotspotsCommandScript : public CommandScript
 {

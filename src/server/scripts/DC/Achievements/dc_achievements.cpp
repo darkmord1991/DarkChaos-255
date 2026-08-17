@@ -19,8 +19,8 @@
 #include "Player.h"
 #include "Config.h"
 #include "Chat.h"
-#include "../Progression/Prestige/dc_prestige_api.h"
-#include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/Progression/Prestige/dc_prestige_api.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "AchievementMgr.h"
 #include "Map.h"
 #include "Battleground.h"
@@ -277,10 +277,15 @@ private:
         if (!player)
             return;
 
+        std::string safeCategory = category;
+        std::string safePlayerName = player->GetName();
+        CharacterDatabase.EscapeString(safeCategory);
+        CharacterDatabase.EscapeString(safePlayerName);
+
         // Table has UNIQUE(category). This makes the claim authoritative.
         CharacterDatabase.Execute(
             "INSERT IGNORE INTO dc_server_firsts (category, player_guid, player_name, achievement_time) VALUES ('{}', {}, '{}', UNIX_TIMESTAMP())",
-            category, player->GetGUID().GetCounter(), player->GetName()
+            safeCategory, player->GetGUID().GetCounter(), safePlayerName
         );
 
         // Resolve the claim asynchronously so the caller never blocks the
@@ -288,7 +293,7 @@ private:
         // re-resolves the player by guid.
         ObjectGuid const playerGuid = player->GetGUID();
         DCAddon::EnqueueQueryCallback(CharacterDatabase.AsyncQuery(Acore::StringFormat(
-            "SELECT player_guid FROM dc_server_firsts WHERE category = '{}' LIMIT 1", category))
+            "SELECT player_guid FROM dc_server_firsts WHERE category = '{}' LIMIT 1", safeCategory))
             .WithCallback([this, playerGuid, category, achievementId, description](QueryResult result)
         {
             if (!result || result->Fetch()[0].Get<uint32>() != playerGuid.GetCounter())
@@ -388,10 +393,13 @@ public:
                 (cachedWinner != guidLow || player->HasAchieved(ACHIEVEMENT_FIRST_PRESTIGE)))
                 return;
 
+            std::string safePlayerName = player->GetName();
+            CharacterDatabase.EscapeString(safePlayerName);
+
             // Atomic claim using UNIQUE(category)
             CharacterDatabase.Execute(
                 "INSERT IGNORE INTO dc_server_firsts (category, player_guid, player_name, achievement_time) VALUES ('first_prestige', {}, '{}', UNIX_TIMESTAMP())",
-                guidLow, player->GetName()
+                guidLow, safePlayerName
             );
 
             // Resolve the claim asynchronously so the login handler never

@@ -8,9 +8,10 @@
  */
 
 #include "CrossSystemManager.h"
-#include "CrossSystemAdapters.h"
 #include "CrossSystemWorldBossMgr.h"
+#include "SeasonResolver.h"
 #include "Chat.h"
+#include "Config.h"
 #include "Creature.h"
 #include "Log.h"
 #include "Map.h"
@@ -24,6 +25,35 @@ using namespace DarkChaos::CrossSystem;
 
 // Forward declaration for world boss registration
 static void RegisterGiantIslesWorldBosses();
+
+// =========================================================================
+// Season Source Consistency Check
+// =========================================================================
+
+// The config overrides dc_seasons (see SeasonResolver.h). A silent override is
+// how the two used to drift apart unnoticed, so say so loudly at startup.
+static void VerifySeasonSourcesAgree()
+{
+    uint32 const configured =
+        sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 0);
+
+    if (!configured)
+        return; // No override set: dc_seasons is authoritative, nothing to compare.
+
+    uint32 contentSeason = 0;
+    if (DarkChaos::Seasonal::SeasonalManager* manager = DarkChaos::Seasonal::GetSeasonalManager())
+        contentSeason = manager->GetCurrentSeasonId();
+
+    if (contentSeason && contentSeason != configured)
+    {
+        LOG_ERROR("dc.season",
+            "Season source mismatch: worldserver.conf DarkChaos.ActiveSeasonID = {} "
+            "but dc_seasons has season {} active. The config wins, so season {} is in "
+            "use by every DC system. Align them, or clear DarkChaos.ActiveSeasonID to "
+            "let the table decide.",
+            configured, contentSeason, configured);
+    }
+}
 
 // =========================================================================
 // World Script - Global Hooks
@@ -45,8 +75,8 @@ public:
         LOG_INFO("dc.crosssystem", "CrossSystemWorldScript: OnStartup");
         GetManager()->Initialize();
 
-        // Register all system adapters
-        Adapters::RegisterAllAdapters();
+        // Warn if the config override and dc_seasons disagree.
+        VerifySeasonSourcesAgree();
 
         // Register world bosses with WorldBossMgr
         RegisterGiantIslesWorldBosses();

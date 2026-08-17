@@ -32,6 +32,7 @@
 
 // Core headers expected to be provided by PCH or including file
 #include <string>
+#include <string_view>
 #include <vector>
 #include <chrono>
 #include <functional>
@@ -1478,9 +1479,20 @@ namespace DCAddon
 
     using MessageHandler = std::function<void(Player*, const ParsedMessage&)>;
 
+    // Routing table: module name -> { handlers by opcode, enabled, min security }.
+    //
+    // This used to be three parallel std::string-keyed maps probed separately,
+    // with a "MODULE_OPCODE" key string built by concatenation on every single
+    // inbound packet. One entry lookup now answers all three questions, and
+    // heterogeneous lookup (StringHash + std::equal_to<>) lets Route() search
+    // with a std::string_view so no temporary key is allocated per message.
     class MessageRouter
     {
     public:
+        // Handlers running longer than this stall the world tick for everyone;
+        // log loudly enough that the spike is attributable without forensics.
+        static constexpr int64 SLOW_HANDLER_WARN_MS = 100;
+
         static MessageRouter& Instance()
         {
             static MessageRouter instance;
@@ -1490,14 +1502,13 @@ namespace DCAddon
         // Register a handler for a module + opcode combination
         void RegisterHandler(const std::string& module, uint8 opcode, MessageHandler handler)
         {
-            std::string key = module + "_" + std::to_string(opcode);
-            _handlers[key] = handler;
+            _modules[module].handlers[opcode] = std::move(handler);
         }
 
-        bool HasHandler(const std::string& module, uint8 opcode) const
+        bool HasHandler(std::string_view module, uint8 opcode) const
         {
-            std::string key = module + "_" + std::to_string(opcode);
-            return _handlers.find(key) != _handlers.end();
+            ModuleEntry const* entry = FindModule(module);
+            return entry && entry->handlers.find(opcode) != entry->handlers.end();
         }
 
         // Route an incoming message to the appropriate handler
@@ -1507,119 +1518,134 @@ namespace DCAddon
             if (!msg.IsValid())
                 return false;
 
-            std::string key = msg.GetModule() + "_" + std::to_string(msg.GetOpcode());
-
             // Debug: log all routed messages
-            LOG_DEBUG("module.dc", "[MessageRouter] Route: player={}, module={}, opcode=0x{:02X}, key={}",
-                player ? player->GetName() : "NULL", msg.GetModule(), msg.GetOpcode(), key);
+            LOG_DEBUG("module.dc", "[MessageRouter] Route: player={}, module={}, opcode=0x{:02X}",
+                player ? player->GetName() : "NULL", msg.GetModule(), msg.GetOpcode());
 
-            // If the module is disabled globally, send a structured addon error
-            if (!IsModuleEnabled(msg.GetModule()))
+            ModuleEntry const* entry = FindModule(msg.GetModule());
+
+            // Unknown or disabled module: send a structured addon error.
+            // An unregistered module counts as disabled, as it always has.
+            if (!entry || !entry->enabled)
             {
                 LOG_DEBUG("module.dc", "[MessageRouter] Module '{}' is DISABLED, rejecting opcode {}", msg.GetModule(), msg.GetOpcode());
                 if (player && player->GetSession())
                     SendError(player, msg.GetModule(), "Module is disabled on server", ErrorCode::MODULE_DISABLED, Opcode::Core::SMSG_ERROR);
                 return false;
             }
-            auto it = _handlers.find(key);
 
-            LOG_DEBUG("module.dc", "[MessageRouter] Looking for handler key='{}', found={}", key, (it != _handlers.end()));
+            auto const handlerItr = entry->handlers.find(msg.GetOpcode());
 
-            if (it != _handlers.end())
+            LOG_DEBUG("module.dc", "[MessageRouter] Looking for handler {}|0x{:02X}, found={}",
+                msg.GetModule(), msg.GetOpcode(), (handlerItr != entry->handlers.end()));
+
+            if (handlerItr == entry->handlers.end())
+                return false;  // No handler registered
+
+            // Set current request context so SendError can echo request ID
+            struct RequestContextScope
             {
-                // Set current request context so SendError can echo request ID
-                struct RequestContextScope
-                {
-                    RequestContextScope(const std::string& reqId) { DCAddon::SetCurrentRequestContext(reqId); }
-                    ~RequestContextScope() { DCAddon::ClearCurrentRequestContext(); }
-                } scope(msg.GetRequestId());
+                RequestContextScope(const std::string& reqId) { DCAddon::SetCurrentRequestContext(reqId); }
+                ~RequestContextScope() { DCAddon::ClearCurrentRequestContext(); }
+            } scope(msg.GetRequestId());
 
-                // Check module-wise min security if configured
-                uint32_t minSec = 0;
-                auto minIt = _moduleMinSecurity.find(msg.GetModule());
-                if (minIt != _moduleMinSecurity.end())
-                    minSec = minIt->second;
-
-                if (player && player->GetSession() && player->GetSession()->GetSecurity() < minSec)
-                {
-                    // Inform the player they lack sufficient permission via structured addon error
-                    DCAddon::SendPermissionDenied(player, msg.GetModule(), "Insufficient GM level to execute addon commands for this module");
-                    return false;
-                }
-
-                try
-                {
-                    // Slow-handler watchdog: handlers run synchronously on the
-                    // world thread, so any long one stalls the whole world
-                    // tick. Name the offender so the next
-                    // "World.UpdateSessions took Nms" spike is attributable
-                    // without forensics.
-                    auto const handlerStart = std::chrono::steady_clock::now();
-
-                    it->second(player, msg);
-
-                    auto const handlerMs =
-                        std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - handlerStart).count();
-                    if (handlerMs >= 100)
-                    {
-                        LOG_WARN("module.dc",
-                            "[MessageRouter] SLOW handler {}|0x{:02X} took {} ms (player={})",
-                            msg.GetModule(), msg.GetOpcode(), handlerMs,
-                            player ? player->GetName() : "NULL");
-                    }
-                }
-                catch (...)
-                {
-                    LOG_ERROR(
-                        "module.dc",
-                        "[MessageRouter] Handler exception: player={}, module={}, opcode=0x{:02X}",
-                        player ? player->GetName() : "NULL",
-                        msg.GetModule(),
-                        msg.GetOpcode());
-
-                    if (player && player->GetSession())
-                    {
-                        SendError(
-                            player,
-                            msg.GetModule(),
-                            "Internal handler error",
-                            ErrorCode::UNKNOWN,
-                            Opcode::Core::SMSG_ERROR);
-                    }
-
-                    return false;
-                }
-
-                return true;
+            if (player && player->GetSession() && player->GetSession()->GetSecurity() < entry->minSecurity)
+            {
+                // Inform the player they lack sufficient permission via structured addon error
+                DCAddon::SendPermissionDenied(player, msg.GetModule(), "Insufficient GM level to execute addon commands for this module");
+                return false;
             }
 
-            LOG_DEBUG("module.dc", "[MessageRouter] No handler found for key='{}', returning false", key);
-            return false;  // No handler registered
+            try
+            {
+                // Slow-handler watchdog: handlers run synchronously on the
+                // world thread, so any long one stalls the whole world tick.
+                auto const handlerStart = std::chrono::steady_clock::now();
+
+                handlerItr->second(player, msg);
+
+                auto const handlerMs =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - handlerStart).count();
+                if (handlerMs >= SLOW_HANDLER_WARN_MS)
+                {
+                    LOG_WARN("module.dc",
+                        "[MessageRouter] SLOW handler {}|0x{:02X} took {} ms (player={})",
+                        msg.GetModule(), msg.GetOpcode(), handlerMs,
+                        player ? player->GetName() : "NULL");
+                }
+            }
+            catch (...)
+            {
+                LOG_ERROR(
+                    "module.dc",
+                    "[MessageRouter] Handler exception: player={}, module={}, opcode=0x{:02X}",
+                    player ? player->GetName() : "NULL",
+                    msg.GetModule(),
+                    msg.GetOpcode());
+
+                if (player && player->GetSession())
+                {
+                    SendError(
+                        player,
+                        msg.GetModule(),
+                        "Internal handler error",
+                        ErrorCode::UNKNOWN,
+                        Opcode::Core::SMSG_ERROR);
+                }
+
+                return false;
+            }
+
+            return true;
         }
 
         // Check if a module is enabled
-        bool IsModuleEnabled(const std::string& module) const
+        bool IsModuleEnabled(std::string_view module) const
         {
-            auto it = _enabledModules.find(module);
-            return (it != _enabledModules.end()) ? it->second : false;
+            ModuleEntry const* entry = FindModule(module);
+            return entry && entry->enabled;
         }
 
         void SetModuleEnabled(const std::string& module, bool enabled)
         {
-            _enabledModules[module] = enabled;
+            _modules[module].enabled = enabled;
         }
 
         void SetModuleMinSecurity(const std::string& module, uint32 minSecurity)
         {
-            _moduleMinSecurity[module] = minSecurity;
+            _modules[module].minSecurity = minSecurity;
         }
 
     private:
         MessageRouter() = default;
-        std::unordered_map<std::string, MessageHandler> _handlers;
-        std::unordered_map<std::string, bool> _enabledModules;
-        std::unordered_map<std::string, uint32_t> _moduleMinSecurity;
+
+        struct ModuleEntry
+        {
+            std::unordered_map<uint8, MessageHandler> handlers;
+            uint32 minSecurity = 0;
+            bool enabled = false;   // registering a handler does not enable a module
+        };
+
+        // Transparent hashing so find() accepts a string_view without
+        // materialising a std::string key.
+        struct StringHash
+        {
+            using is_transparent = void;
+
+            std::size_t operator()(std::string_view sv) const noexcept
+            {
+                return std::hash<std::string_view>{}(sv);
+            }
+        };
+
+        ModuleEntry const* FindModule(std::string_view module) const
+        {
+            auto const itr = _modules.find(module);
+            return itr != _modules.end() ? &itr->second : nullptr;
+        }
+
+        std::unordered_map<std::string, ModuleEntry, StringHash, std::equal_to<>> _modules;
     };
 
     // Quick permission helper: ensure module enabled and player has minimum security

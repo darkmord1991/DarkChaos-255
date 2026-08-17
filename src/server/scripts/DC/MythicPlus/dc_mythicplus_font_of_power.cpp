@@ -26,8 +26,8 @@
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
-#include "../AddonExtension/dc_addon_namespace.h"
-#include "../AddonExtension/dc_addon_mythicplus.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_mythicplus.h"
 #include "Player.h"
 #include "StringFormat.h"
 

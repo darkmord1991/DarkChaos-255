@@ -14,7 +14,7 @@
 #define DC_SPECTATOR_CORE_H
 
 #include "ObjectGuid.h"
-#include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 
 #include <unordered_map>
 #include <vector>

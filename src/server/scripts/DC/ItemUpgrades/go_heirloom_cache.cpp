@@ -19,7 +19,7 @@
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
-#include "../AddonExtension/dc_addon_collection.h"
+#include "DC/AddonExtension/dc_addon_collection.h"
 
 #include <ctime>
 #include <unordered_map>

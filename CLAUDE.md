@@ -58,7 +58,23 @@ Run the linters before claiming a change is done:
 ```bash
 python apps/codestyle/codestyle-cpp.py     # C++
 python apps/codestyle/codestyle-sql.py     # SQL (compares to origin/master)
+python apps/codestyle/codestyle-dc-sql.py  # DC SQL safety (src/server/scripts/DC only)
 ```
+
+`codestyle-dc-sql.py` is a **ratchet**, not a sweep: the DC tree builds most SQL from
+format strings rather than `PreparedStatement`, and converting all ~600 call sites at
+once is not worth doing as a project. It enforces the two rules that keep the situation
+from getting worse:
+
+- **DC-SQL-1** — no hand-rolled SQL escaper. Escaping goes through the driver
+  (`CharacterDatabase.EscapeString`, or `DCAddon::Utils::EscapeSql`, which delegates to
+  it). A byte-level escaper written by hand is wrong under `NO_BACKSLASH_ESCAPES` and for
+  multi-byte charsets no matter how careful its character list is.
+- **DC-SQL-2** — no unescaped string interpolated into a `'{}'` SQL placeholder.
+
+It must stay at zero. For a value that is provably safe (enum-to-literal mappers,
+compile-time table names, whitelist-validated input), append `// sql-ok: <reason>` to the
+call so the exemption is reviewable in the diff rather than invisible.
 
 Hard rules (also enforced by CI with `-Werror`, plus `cppcheck`):
 

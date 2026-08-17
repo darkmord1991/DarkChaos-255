@@ -1,0 +1,39 @@
+name: DC SQL Safety
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - src/server/scripts/DC/**
+      - apps/codestyle/codestyle-dc-sql.py
+  push:
+    branches:
+      - master
+    paths:
+      - src/server/scripts/DC/**
+      - apps/codestyle/codestyle-dc-sql.py
+
+concurrency:
+  # New commits on a PR cancel the still-running check on the old commit.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dc-sql:
+    runs-on: ubuntu-latest
+    name: DC SQL safety
+    # Deliberately NOT gated on github.repository: the upstream codestyle
+    # workflows are pinned to azerothcore/azerothcore-wotlk and therefore never
+    # run here, which is how DC-specific rules would go unenforced.
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+      - name: DC SQL safety check
+        run: python ./apps/codestyle/codestyle-dc-sql.py

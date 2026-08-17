@@ -18,7 +18,7 @@
 #include "Chat.h"
 #include "StringFormat.h"
 #include "dc_challenge_mode_database.h"
-#include "../Prestige/dc_prestige_api.h"
+#include "DC/Progression/Prestige/dc_prestige_api.h"
 
 #include <array>
 

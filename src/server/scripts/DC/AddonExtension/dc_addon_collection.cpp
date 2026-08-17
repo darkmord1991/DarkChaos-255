@@ -27,8 +27,8 @@
 #include "dc_addon_utils.h"
 #include "dc_addon_collection.h"
 #include "dc_wardrobe_visuals.h"
-#include "../CollectionSystem/CollectionGrant.h"
-#include "../CrossSystem/CrossSystemUtilities.h"
+#include "DC/CollectionSystem/CollectionGrant.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include "Config.h"
@@ -4132,7 +4132,7 @@ namespace DCCollection
             std::string typeStr = WishlistTypeToString(static_cast<uint8>(type));
             if (typeStr.empty())
                 return false;
-            result = CharacterDatabase.Query(
+            result = CharacterDatabase.Query(  // sql-ok: typeStr comes from WishlistTypeToString(), a fixed enum->literal map, and empty is rejected above
                 "SELECT 1 FROM dc_collection_wishlist "
                 "WHERE account_id = {} AND collection_type = '{}' AND {} = {}",
                 accountId, typeStr, wishIdCol, entryId);
@@ -5471,7 +5471,7 @@ namespace DCCollection
                 std::string typeStr = WishlistTypeToString(static_cast<uint8>(type));
                 if (typeStr.empty())
                     return;
-                CharacterDatabase.Execute(
+                CharacterDatabase.Execute(  // sql-ok: typeStr comes from WishlistTypeToString(), a fixed enum->literal map, and empty is rejected above
                     "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = '{}' AND {} = {}",
                     accountId, typeStr, wishIdCol, entryId);
             }
@@ -5848,7 +5848,7 @@ namespace DCCollection
                 return;
             }
 
-            CharacterDatabase.Execute(
+            CharacterDatabase.Execute(  // sql-ok: typeStr comes from WishlistTypeToString(), a fixed enum->literal map, and empty is rejected above
                 "INSERT INTO dc_collection_wishlist (account_id, collection_type, {}, added_date) "
                 "VALUES ({}, '{}', {}, NOW())",
                 wishIdCol, accountId, typeStr, entryId);
@@ -5885,7 +5885,7 @@ namespace DCCollection
             if (typeStr.empty())
                 return;
 
-            CharacterDatabase.Execute(
+            CharacterDatabase.Execute(  // sql-ok: typeStr comes from WishlistTypeToString(), a fixed enum->literal map, and empty is rejected above
                 "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = '{}' AND {} = {}",
                 accountId, typeStr, wishIdCol, entryId);
         }

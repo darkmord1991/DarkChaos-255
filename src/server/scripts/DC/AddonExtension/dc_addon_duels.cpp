@@ -31,7 +31,7 @@
 #include "Config.h"
 #include "ObjectMgr.h"
 #include "ObjectAccessor.h"
-#include "../PhasedDuels/dc_phased_duels.h"
+#include "DC/PhasedDuels/dc_phased_duels.h"
 
 namespace DCDuelAddon
 {

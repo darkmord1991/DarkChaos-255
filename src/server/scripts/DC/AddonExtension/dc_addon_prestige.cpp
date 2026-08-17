@@ -34,7 +34,7 @@
 #include "Log.h"
 #include "Config.h"
 #include "World.h"
-#include "../Progression/Prestige/dc_prestige_api.h"
+#include "DC/Progression/Prestige/dc_prestige_api.h"
 
 namespace DCPrestigeAddon
 {

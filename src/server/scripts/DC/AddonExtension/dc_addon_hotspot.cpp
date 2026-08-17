@@ -19,8 +19,8 @@
 #include "DBCStores.h"
 #include "World.h"
 #include "WorldSessionMgr.h"
-#include "../Hotspot/HotspotMgr.h"
-#include "../Hotspot/HotspotJson.h"
+#include "DC/Hotspot/HotspotMgr.h"
+#include "DC/Hotspot/HotspotJson.h"
 #include <algorithm>
 
 // Defined in HotspotMgr.cpp.

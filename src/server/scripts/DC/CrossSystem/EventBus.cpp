@@ -188,11 +188,21 @@ namespace CrossSystem
 
     void EventBus::Publish(const EventData& event, SystemId sourceSystem)
     {
-        auto startTime = std::chrono::high_resolution_clock::now();
+        // steady_clock, not high_resolution_clock: the latter is permitted to
+        // be non-monotonic, which can yield negative processing times.
+        auto const startTime = std::chrono::steady_clock::now();
 
-        std::vector<EventSubscription> handlers = GetHandlersForEvent(event.type);
+        std::vector<EventSubscription> const handlers = GetHandlersForEvent(event.type);
 
+        // Tally locally and apply once. This loop used to re-acquire mutex_ on
+        // every single handler invocation just to bump two counters, so a
+        // publish cost 2N+1 lock acquisitions. Publish is reached from
+        // creature-kill and quest hooks running on map update threads, so that
+        // contention was real rather than theoretical.
         uint32 handlerCount = 0;
+        uint64 errorCount = 0;
+        std::vector<SystemId> invokedSystems;
+        invokedSystems.reserve(handlers.size());
 
         for (auto const& sub : handlers)
         {
@@ -202,33 +212,39 @@ namespace CrossSystem
             try
             {
                 sub.handler->OnEvent(event);
-                handlerCount++;
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    stats_.totalHandlersInvoked++;
-                    stats_.systemHandlerCounts[sub.subscriberSystem]++;
-                }
+                ++handlerCount;
+                invokedSystems.push_back(sub.subscriberSystem);
             }
             catch (const std::exception& e)
             {
                 LOG_ERROR("dc.crosssystem.events", "Exception in event handler {}: {}",
                           sub.handler->GetSystemName(), e.what());
-                std::lock_guard<std::mutex> lock(mutex_);
-                stats_.errors++;
+                ++errorCount;
             }
         }
 
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+        auto const duration = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - startTime);
+
+        bool recordHistory = false;
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
+
+            stats_.totalHandlersInvoked += handlerCount;
+            for (SystemId system : invokedSystems)
+                stats_.systemHandlerCounts[system]++;
+
+            stats_.errors += errorCount;
             stats_.totalEventsPublished++;
             stats_.totalEventsProcessed++;
             stats_.eventCounts[event.type]++;
+
+            // Read under the lock; EnableHistory() writes it concurrently.
+            recordHistory = historyEnabled_;
         }
 
-        if (historyEnabled_)
+        if (recordHistory)
         {
             RecordHistory(event, sourceSystem, handlerCount, duration.count());
         }
@@ -253,53 +269,12 @@ namespace CrossSystem
         Publish(event, sourceSystem);
     }
 
-    void EventBus::PublishAsync(std::unique_ptr<EventData> event, SystemId sourceSystem)
-    {
-        constexpr size_t MAX_ASYNC_QUEUE_SIZE = 10000;  // Prevent unbounded queue growth
-
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        // Apply backpressure: drop events if queue is at capacity
-        if (asyncQueue_.size() >= MAX_ASYNC_QUEUE_SIZE)
-        {
-            LOG_WARN("dc.crosssystem.events", "Async event queue full ({} events), dropping event type {}",
-                     MAX_ASYNC_QUEUE_SIZE, static_cast<uint16>(event->type));
-            stats_.asyncEventsDropped++;
-            return;
-        }
-
-        asyncQueue_.push({std::move(event), sourceSystem});
-        stats_.asyncEventsQueued++;
-    }
-
-    void EventBus::ProcessAsyncEvents(uint32 maxEvents)
-    {
-        uint32 processed = 0;
-
-        while (processed < maxEvents)
-        {
-            std::unique_ptr<EventData> event;
-            SystemId source;
-
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                if (asyncQueue_.empty())
-                    break;
-
-                event = std::move(asyncQueue_.front().first);
-                source = asyncQueue_.front().second;
-                asyncQueue_.pop();
-            }
-
-            if (event)
-            {
-                Publish(*event, source);
-                stats_.asyncEventsProcessed++;
-            }
-
-            processed++;
-        }
-    }
+    // PublishAsync()/ProcessAsyncEvents() lived here. Nothing ever called
+    // PublishAsync, so the queue was permanently empty while
+    // CrossSystemManager::Update() drained it every 100 ms - a lock acquisition
+    // per tick to find nothing. Removed Aug 2026; every publisher is
+    // synchronous. If async dispatch is genuinely needed later, add it with a
+    // caller in the same change.
 
     // =========================================================================
     // Typed Event Publishers
@@ -512,7 +487,6 @@ namespace CrossSystem
         std::string info = "=== Event Bus Debug Info ===\n";
         info += "Total Events Published: " + std::to_string(stats_.totalEventsPublished) + "\n";
         info += "Total Handlers Invoked: " + std::to_string(stats_.totalHandlersInvoked) + "\n";
-        info += "Async Queue Size: " + std::to_string(asyncQueue_.size()) + "\n";
         info += "History Size: " + std::to_string(eventHistory_.size()) + "\n";
         info += "Errors: " + std::to_string(stats_.errors) + "\n";
 

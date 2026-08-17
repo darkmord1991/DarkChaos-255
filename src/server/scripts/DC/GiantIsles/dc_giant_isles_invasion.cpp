@@ -29,7 +29,7 @@
 #include "WorldSessionMgr.h"
 
 #include "dc_giant_isles_invasion_internal.h"
-#include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/CrossSystem/RewardDistributor.h"
 
 #include <array>

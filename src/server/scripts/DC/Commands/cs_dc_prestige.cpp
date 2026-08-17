@@ -15,7 +15,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "StringFormat.h"
-#include "../Progression/Prestige/dc_prestige_api.h"
+#include "DC/Progression/Prestige/dc_prestige_api.h"
 #include <sstream>
 
 using namespace Acore::ChatCommands;

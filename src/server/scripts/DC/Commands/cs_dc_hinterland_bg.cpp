@@ -5,11 +5,11 @@
 #include <string>
 #include "ObjectAccessor.h"
 #include "Player.h"
-#include "../HinterlandBG/BattlegroundHLBG.h"
-#include "../HinterlandBG/HLBGService.h"
-#include "../HinterlandBG/dc_hlbg_spectator.h"
-#include "../HinterlandBG/hlbg_constants.h"
-#include "../CrossSystem/CrossSystemUtilities.h"
+#include "DC/HinterlandBG/BattlegroundHLBG.h"
+#include "DC/HinterlandBG/HLBGService.h"
+#include "DC/HinterlandBG/dc_hlbg_spectator.h"
+#include "DC/HinterlandBG/hlbg_constants.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include <sstream>
 #include <algorithm>
 #include "DatabaseEnv.h"

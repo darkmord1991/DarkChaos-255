@@ -31,7 +31,7 @@
 #include "ChatCommand.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
-#include "../QOL/dc_questgiver_status_override.h"
+#include "DC/QOL/dc_questgiver_status_override.h"
 #include <mutex>
 #include <algorithm>
 

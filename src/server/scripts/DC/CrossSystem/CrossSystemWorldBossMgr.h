@@ -20,7 +20,7 @@
 #include "Map.h"
 #include "Player.h"
 
-#include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include "CrossSystemMapCoords.h"
 
 #include <string>

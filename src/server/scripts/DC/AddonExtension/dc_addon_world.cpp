@@ -28,9 +28,9 @@
 
 #include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"
-#include "../Hotspot/HotspotMgr.h"
-#include "../Hotspot/HotspotJson.h"
-#include "../RareSpawns/dc_rare_spawns.h"
+#include "DC/Hotspot/HotspotMgr.h"
+#include "DC/Hotspot/HotspotJson.h"
+#include "DC/RareSpawns/dc_rare_spawns.h"
 
 #include <ctime>
 #include <mutex>

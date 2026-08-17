@@ -22,7 +22,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
-#include "../CollectionSystem/CollectionGrant.h"
+#include "DC/CollectionSystem/CollectionGrant.h"
 
 #include <string>
 

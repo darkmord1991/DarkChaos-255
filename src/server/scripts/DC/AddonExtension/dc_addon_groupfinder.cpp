@@ -24,7 +24,7 @@
 #include "CharacterCache.h"
 #include "dc_addon_groupfinder.h"
 #include "dc_addon_matchmaking.h"
-#include "../MythicPlus/dc_mythicplus_spectator.h"
+#include "DC/MythicPlus/dc_mythicplus_spectator.h"
 
 #include <mutex>
 #include <sstream>
@@ -1392,11 +1392,14 @@ namespace GroupFinder
                 return;
             }
 
+            std::string safePlayerName = player->GetName();
+            CharacterDatabase.EscapeString(safePlayerName);
+
             // Insert signup
             CharacterDatabase.Execute(
                 "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
                 "VALUES ({}, {}, '{}', {}, '{}', 0)",
-                eventId, guidLow, player->GetName(), role, safeNote);
+                eventId, guidLow, safePlayerName, role, safeNote);
 
             // Update current signups count
             CharacterDatabase.Execute(

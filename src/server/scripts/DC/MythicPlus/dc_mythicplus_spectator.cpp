@@ -24,8 +24,8 @@
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
 #include "Guild.h"
-#include "../AddonExtension/dc_addon_namespace.h"
-#include "../Spectator/dc_spectator_core.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/Spectator/dc_spectator_core.h"
 #include "Random.h"
 
 #include <sstream>

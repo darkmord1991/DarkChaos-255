@@ -240,6 +240,14 @@ target_include_directories(scripts
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${PUBLIC_INCLUDES})
 
+# DC .stresstest GM command suite (~8.8k lines, second-largest file in DC/).
+# Defaults ON so the stock build is unchanged; configure with
+# -DDC_WITH_STRESSTEST=0 to keep the GM-only load-testing harness out of a
+# production worldserver binary.
+if(DC_WITH_STRESSTEST)
+  target_compile_definitions(scripts PRIVATE DC_WITH_STRESSTEST=1)
+endif()
+
 set_target_properties(scripts
   PROPERTIES
     FOLDER

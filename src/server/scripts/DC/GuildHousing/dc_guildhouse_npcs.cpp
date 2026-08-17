@@ -69,10 +69,13 @@ public:
             return false;
         }
 
-        QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `dc_guild_house` WHERE guild = {}", player->GetGuildId());
+        // Ownership comes from the guild-house cache, not a fresh SELECT. This
+        // handler used to issue up to four blocking queries per gossip click,
+        // each one stalling the world tick for every player on the server.
+        bool const hasGuildHouse = GuildHouseManager::GetGuildHouseData(player->GetGuildId()) != nullptr;
 
         // Only show Teleport option if guild owns a guild house
-        if (has_gh)
+        if (hasGuildHouse)
         {
             AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Teleport to Guild House", GOSSIP_SENDER_MAIN, ACTION_TELEPORT);
 
@@ -131,11 +134,7 @@ public:
     {
         ClearGossipMenuFor(player);
 
-        QueryResult has_gh = CharacterDatabase.Query(
-            "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
-            player->GetGuildId());
-
-        if (has_gh)
+        if (GuildHouseManager::GetGuildHouseData(player->GetGuildId()))
         {
             AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Teleport to Guild House", GOSSIP_SENDER_MAIN, ACTION_TELEPORT);
             AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Move Guild House (free)", GOSSIP_SENDER_MAIN, ACTION_ADMIN_MOVE_MENU);
@@ -163,11 +162,7 @@ public:
             return false;
         }
 
-        QueryResult has_gh = CharacterDatabase.Query(
-            "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
-            player->GetGuildId());
-
-        if (!has_gh)
+        if (!GuildHouseManager::GetGuildHouseData(player->GetGuildId()))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House!");
             return false;
@@ -216,11 +211,7 @@ public:
                 return false;
             }
 
-            QueryResult alreadyHas = CharacterDatabase.Query(
-                "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
-                player->GetGuildId());
-
-            if (alreadyHas)
+            if (GuildHouseManager::GetGuildHouseData(player->GetGuildId()))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("Your guild already has a Guild House.");
                 CloseGossipMenuFor(player);
@@ -228,34 +219,22 @@ public:
             }
 
             uint32 locationId = action - ACTION_BUY_LOCATION_BASE;
-            QueryResult locationResult;
-            if (GuildHouseManager::HasLocationEnabledColumn() && !player->IsGameMaster())
-            {
-                locationResult = WorldDatabase.Query(
-                    "SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id` = {} AND `enabled` = 1",
-                    locationId);
-            }
-            else
-            {
-                locationResult = WorldDatabase.Query(
-                    "SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id` = {}",
-                    locationId);
-            }
+            GuildHouseLocation const* location = GuildHouseManager::GetGuildHouseLocation(locationId);
 
-            if (!locationResult)
+            // GMs may buy at a disabled location; everyone else may not.
+            if (!location || (!location->enabled && !player->IsGameMaster()))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("Error finding Guild House location.");
                 CloseGossipMenuFor(player);
                 return false;
             }
 
-            Field* fields = locationResult->Fetch();
-            uint32 map = fields[0].Get<uint32>();
-            float posX = fields[1].Get<float>();
-            float posY = fields[2].Get<float>();
-            float posZ = fields[3].Get<float>();
-            float ori = fields[4].Get<float>();
-            uint32 cost = fields[5].Get<uint32>();
+            uint32 const map = location->map;
+            float const posX = location->posX;
+            float const posY = location->posY;
+            float const posZ = location->posZ;
+            float const ori = location->ori;
+            uint32 const cost = location->cost;
 
             if (player->GetMoney() < cost)
             {
@@ -265,7 +244,7 @@ public:
             }
 
             // phase column is a legacy artifact; isolation is per-instance now.
-            CharacterDatabase.Query(
+            CharacterDatabase.Execute(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
                 player->GetGuildId(), PHASEMASK_NORMAL, map, posX, posY, posZ, ori);
@@ -324,37 +303,30 @@ public:
                 return false;
             }
 
-            QueryResult alreadyHas = CharacterDatabase.Query(
-                "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
-                player->GetGuildId());
-
-            if (alreadyHas)
+            if (GuildHouseManager::GetGuildHouseData(player->GetGuildId()))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("Your guild already has a Guild House.");
                 CloseGossipMenuFor(player);
                 return false;
             }
 
-            QueryResult locationResult = WorldDatabase.Query(
-                "SELECT `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `id` = {}",
-                locationId);
-
-            if (!locationResult)
+            // Admin path: disabled locations are allowed.
+            GuildHouseLocation const* location = GuildHouseManager::GetGuildHouseLocation(locationId);
+            if (!location)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("Error finding Guild House location.");
                 CloseGossipMenuFor(player);
                 return false;
             }
 
-            Field* fields = locationResult->Fetch();
-            uint32 map = fields[0].Get<uint32>();
-            float posX = fields[1].Get<float>();
-            float posY = fields[2].Get<float>();
-            float posZ = fields[3].Get<float>();
-            float ori = fields[4].Get<float>();
+            uint32 const map = location->map;
+            float const posX = location->posX;
+            float const posY = location->posY;
+            float const posZ = location->posZ;
+            float const ori = location->ori;
 
             // phase column is a legacy artifact; isolation is per-instance now.
-            CharacterDatabase.Query(
+            CharacterDatabase.Execute(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
                 player->GetGuildId(), PHASEMASK_NORMAL, map, posX, posY, posZ, ori);
@@ -394,30 +366,28 @@ public:
             case ACTION_MOVE_MENU:
                 {
                     ClearGossipMenuFor(player);
-                    QueryResult locations;
-                    if (GuildHouseManager::HasLocationEnabledColumn() && !player->IsGameMaster())
-                        locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations` WHERE `enabled` = 1");
-                    else
-                        locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations`");
-                    if (!locations)
+
+                    bool const showDisabled = player->IsGameMaster();
+                    uint32 moveCost = sConfigMgr->GetOption<uint32>("GuildHouse.MoveCost", 0);
+                    uint32 shown = 0;
+
+                    for (GuildHouseLocation const& location : GuildHouseManager::GetGuildHouseLocations())
+                    {
+                        if (!location.enabled && !showDisabled)
+                            continue;
+
+                        std::string text = location.name + " - " + location.comment;
+                        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, text, GOSSIP_SENDER_MAIN, ACTION_MOVE_LOCATION_BASE + location.id,
+                                         "Are you sure you want to move your Guild House to " + location.name + "?", moveCost, false);
+                        ++shown;
+                    }
+
+                    if (!shown)
                     {
                         ChatHandler(player->GetSession()).PSendSysMessage("No Guild House locations are currently available.");
                         CloseGossipMenuFor(player);
                         return false;
                     }
-
-                    uint32 moveCost = sConfigMgr->GetOption<uint32>("GuildHouse.MoveCost", 0);
-                    do
-                    {
-                        Field* fields = locations->Fetch();
-                        uint32 id = fields[0].Get<uint32>();
-                        std::string name = fields[1].Get<std::string>();
-                        std::string comment = fields[3].Get<std::string>();
-
-                        std::string text = name + " - " + comment;
-                        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, text, GOSSIP_SENDER_MAIN, ACTION_MOVE_LOCATION_BASE + id,
-                                         "Are you sure you want to move your Guild House to " + name + "?", moveCost, false);
-                    } while (locations->NextRow());
 
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, ACTION_BACK_MAIN);
                     SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -436,11 +406,7 @@ public:
                     return false;
                 }
 
-                QueryResult has_gh = CharacterDatabase.Query(
-                    "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
-                    player->GetGuildId());
-
-                if (!has_gh)
+                if (!GuildHouseManager::GetGuildHouseData(player->GetGuildId()))
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House!");
                     CloseGossipMenuFor(player);
@@ -479,24 +445,21 @@ public:
                 // Show location list with admin-buy action ids
                 {
                     ClearGossipMenuFor(player);
-                    QueryResult locations = WorldDatabase.Query("SELECT `id`, `name`, `comment` FROM `dc_guild_house_locations`");
-                    if (!locations)
+
+                    auto const& locations = GuildHouseManager::GetGuildHouseLocations();
+                    if (locations.empty())
                     {
                         ChatHandler(player->GetSession()).PSendSysMessage("No Guild House locations are currently available.");
                         CloseGossipMenuFor(player);
                         return false;
                     }
 
-                    do
+                    for (GuildHouseLocation const& location : locations)
                     {
-                        Field* fields = locations->Fetch();
-                        uint32 id = fields[0].Get<uint32>();
-                        std::string name = fields[1].Get<std::string>();
-                        std::string comment = fields[2].Get<std::string>();
-                        std::string text = name + " - " + comment;
-                        AddGossipItemFor(player, GOSSIP_ICON_TABARD, text, GOSSIP_SENDER_MAIN, ACTION_ADMIN_BUY_LOCATION_BASE + id,
-                                         "GM: Buy guild house for free at " + name + "?", 0, false);
-                    } while (locations->NextRow());
+                        std::string text = location.name + " - " + location.comment;
+                        AddGossipItemFor(player, GOSSIP_ICON_TABARD, text, GOSSIP_SENDER_MAIN, ACTION_ADMIN_BUY_LOCATION_BASE + location.id,
+                                         "GM: Buy guild house for free at " + location.name + "?", 0, false);
+                    }
 
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, ACTION_ADMIN_MENU);
                     SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -511,24 +474,21 @@ public:
                 // Show location list with admin-move action ids
                 {
                     ClearGossipMenuFor(player);
-                    QueryResult locations = WorldDatabase.Query("SELECT `id`, `name`, `comment` FROM `dc_guild_house_locations`");
-                    if (!locations)
+
+                    auto const& locations = GuildHouseManager::GetGuildHouseLocations();
+                    if (locations.empty())
                     {
                         ChatHandler(player->GetSession()).PSendSysMessage("No Guild House locations are currently available.");
                         CloseGossipMenuFor(player);
                         return false;
                     }
 
-                    do
+                    for (GuildHouseLocation const& location : locations)
                     {
-                        Field* fields = locations->Fetch();
-                        uint32 id = fields[0].Get<uint32>();
-                        std::string name = fields[1].Get<std::string>();
-                        std::string comment = fields[2].Get<std::string>();
-                        std::string text = name + " - " + comment;
-                        AddGossipItemFor(player, GOSSIP_ICON_TABARD, text, GOSSIP_SENDER_MAIN, ACTION_ADMIN_MOVE_LOCATION_BASE + id,
-                                         "GM: Move guild house for free to " + name + "?", 0, false);
-                    } while (locations->NextRow());
+                        std::string text = location.name + " - " + location.comment;
+                        AddGossipItemFor(player, GOSSIP_ICON_TABARD, text, GOSSIP_SENDER_MAIN, ACTION_ADMIN_MOVE_LOCATION_BASE + location.id,
+                                         "GM: Move guild house for free to " + location.name + "?", 0, false);
+                    }
 
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, ACTION_ADMIN_MENU);
                     SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -576,9 +536,7 @@ public:
 
     bool BuyGuildHouse(Guild* guild, Player* player, Creature* creature)
     {
-        QueryResult result = CharacterDatabase.Query("SELECT `id`, `guild` FROM `dc_guild_house` WHERE `guild`={}", guild->GetId());
-
-        if (result)
+        if (GuildHouseManager::GetGuildHouseData(guild->GetId()))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("Your guild already has a Guild House.");
             CloseGossipMenuFor(player);
@@ -587,33 +545,28 @@ public:
 
         ClearGossipMenuFor(player);
 
-        QueryResult locations;
-        if (GuildHouseManager::HasLocationEnabledColumn() && !player->IsGameMaster())
-            locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations` WHERE `enabled` = 1");
-        else
-            locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations`");
+        bool const showDisabled = player->IsGameMaster();
+        uint32 shown = 0;
 
-        if (!locations)
+        for (GuildHouseLocation const& location : GuildHouseManager::GetGuildHouseLocations())
+        {
+            if (!location.enabled && !showDisabled)
+                continue;
+
+            std::string text = location.name + " (" + std::to_string(location.cost / 10000) + "g) - " + location.comment;
+
+            // Action ID = ACTION_BUY_LOCATION_BASE + Location ID to allow adequate room for other menu options
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, text, GOSSIP_SENDER_MAIN, ACTION_BUY_LOCATION_BASE + location.id,
+                             "Are you sure you want to buy " + location.name + "?", location.cost, false);
+            ++shown;
+        }
+
+        if (!shown)
         {
             ChatHandler(player->GetSession()).PSendSysMessage("No Guild House locations are currently available.");
             CloseGossipMenuFor(player);
             return false;
         }
-
-        do
-        {
-            Field* fields = locations->Fetch();
-            uint32 id = fields[0].Get<uint32>();
-            std::string name = fields[1].Get<std::string>();
-            uint32 cost = fields[2].Get<uint32>();
-            std::string comment = fields[3].Get<std::string>();
-
-            std::string text = name + " (" + std::to_string(cost / 10000) + "g) - " + comment;
-
-            // Action ID = 1000 + Location ID to allow adequate room for other menu options
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, text, GOSSIP_SENDER_MAIN, 1000 + id, "Are you sure you want to buy " + name + "?", cost, false);
-
-        } while (locations->NextRow());
 
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;

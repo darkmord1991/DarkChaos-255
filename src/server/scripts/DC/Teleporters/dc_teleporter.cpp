@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../GuildHousing/dc_guildhouse.h"
+#include "DC/GuildHousing/dc_guildhouse.h"
 
 using namespace Acore::ChatCommands;
 

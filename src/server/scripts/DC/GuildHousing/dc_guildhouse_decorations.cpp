@@ -25,9 +25,9 @@
 #include "ScriptMgr.h"
 #include "WorldSession.h"
 #include "dc_guildhouse.h"
-#include "../AddonExtension/dc_addon_namespace.h"
-#include "../CrossSystem/CrossSystemDbSchema.h"
-#include "../GOMove/GOMove.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
+#include "DC/GOMove/GOMove.h"
 
 #include <algorithm>
 #include <cmath>

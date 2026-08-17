@@ -255,8 +255,8 @@ struct PreferenceSchemaInfo
 
 static PreferenceSchemaInfo sPreferenceSchema;
 
-// Centralized in DCAddon::Utils::EscapeSql (full backslash escaping — strictly
-// safer than the previous bare single-quote doubling).
+// Centralized in DCAddon::Utils::EscapeSql, which delegates to the driver's
+// charset- and SQL-mode-aware mysql_real_escape_string.
 static std::string EscapeSqlString(std::string const& input)
 {
     return DCAddon::Utils::EscapeSql(input);

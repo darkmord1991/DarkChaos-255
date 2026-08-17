@@ -20,8 +20,8 @@
 #include "GameObject.h"
 #include "Log.h"
 #include "CommandScript.h"
-#include "../Spectator/dc_spectator_core.h"
-#include "../CrossSystem/CrossSystemUtilities.h"
+#include "DC/Spectator/dc_spectator_core.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 #include <unordered_map>
 #include <unordered_set>

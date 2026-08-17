@@ -27,8 +27,8 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Config.h"
-#include "../CrossSystem/LeaderboardUtils.h"
-#include "../CrossSystem/CrossSystemSeasonHelper.h"
+#include "DC/CrossSystem/LeaderboardUtils.h"
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include <cstdio>   // for snprintf
 #include <cstdlib>  // for strtoul
 #include <map>

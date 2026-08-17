@@ -21,7 +21,7 @@
 #include "CellImpl.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
-#include "../GOMove/GOMoveCommandIds.h"
+#include "DC/GOMove/GOMoveCommandIds.h"
 #include <algorithm>
 #include <cstring>
 

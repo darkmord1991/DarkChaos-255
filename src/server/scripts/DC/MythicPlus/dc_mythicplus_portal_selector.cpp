@@ -17,8 +17,8 @@
 #include "Config.h"
 #include "StringFormat.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
-#include "../AddonExtension/dc_addon_namespace.h"
-#include "../AddonExtension/dc_addon_utils.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_utils.h"
 #include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "ObjectAccessor.h"
 #include <algorithm>

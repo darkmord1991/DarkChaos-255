@@ -31,8 +31,8 @@
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
 #include "dc_prestige_api.h"
-#include "../../AddonExtension/dc_addon_namespace.h"
-#include "../../AddonExtension/dc_addon_prestige_notify.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_prestige_notify.h"
 #include <functional>
 #include <sstream>
 #include <mutex>

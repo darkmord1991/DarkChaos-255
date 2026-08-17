@@ -20,7 +20,7 @@
 #include "GossipDef.h"
 #include "Chat.h"
 #include "DatabaseEnv.h"
-#include "../AddonExtension/dc_addon_transmutation.h"
+#include "DC/AddonExtension/dc_addon_transmutation.h"
 
 namespace DarkChaos
 {

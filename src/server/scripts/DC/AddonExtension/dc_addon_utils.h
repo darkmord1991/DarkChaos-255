@@ -30,6 +30,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace DCAddon
@@ -39,36 +40,281 @@ namespace Utils
     // -------------------------------------------------------------------------
     // SQL string escaping
     // -------------------------------------------------------------------------
-    // Canonical backslash escaping (matches mysql_real_escape_string in the
-    // default, NO_BACKSLASH_ESCAPES-off mode): escapes the full dangerous set
-    // (NUL, \n, \r, \t, backslash, single/double quote, Ctrl-Z), which is
-    // strictly safer than bare single-quote doubling.
+    // Delegates to the driver (mysql_real_escape_string via the connection),
+    // which is the only escaper that is actually correct:
     //
-    // Prefer the driver's CharacterDatabase.EscapeString() / WorldDatabase.EscapeString()
-    // when a DB handle is convenient; use this only where an escaped raw SQL
-    // fragment is being built by hand.
+    //   * it consults the connection's SQL mode, so it stays correct under
+    //     NO_BACKSLASH_ESCAPES (where backslash is NOT an escape character and
+    //     a hand-rolled backslash escaper produces injectable output);
+    //   * it consults the connection's charset, so it cannot be walked past by
+    //     a multi-byte sequence whose trailing byte is a quote.
+    //
+    // This used to be a hand-rolled byte-level switch that got both of those
+    // wrong by construction. It was correct for utf8/latin1 with the default
+    // SQL mode - i.e. correct for this server today - which is exactly the kind
+    // of latent-until-it-isn't defect worth removing rather than documenting.
+    //
+    // Still prefer PreparedStatement over building escaped SQL by hand. Reach
+    // for this only where a raw SQL fragment is genuinely being assembled.
     inline std::string EscapeSql(std::string const& input)
     {
-        std::string escaped;
-        escaped.reserve(input.size() + 8);
+        std::string escaped = input;
+        CharacterDatabase.EscapeString(escaped);
+        return escaped;
+    }
 
-        for (unsigned char c : input)
+    // -------------------------------------------------------------------------
+    // Outbound JSON well-formedness check
+    // -------------------------------------------------------------------------
+    // Two JSON strategies coexist in this tree: the JsonValue DOM (well-formed
+    // by construction) and hand-assembled string concatenation. The hand-built
+    // paths are the ones that can emit a trailing comma or an unterminated
+    // string, and when they do the client silently drops the frame - there is
+    // no server-side symptom at all, which makes it expensive to diagnose.
+    //
+    // This is a strict *structural* validator used to turn that silent failure
+    // into a log line. It is deliberately not a parser: it allocates nothing and
+    // builds no DOM, so it is cheap enough to run over outbound payloads when
+    // the operator turns it on.
+    namespace detail
+    {
+        inline void SkipJsonWhitespace(std::string_view text, std::size_t& pos)
         {
-            switch (c)
-            {
-                case '\0':   escaped += "\\0";  break;
-                case '\n':   escaped += "\\n";  break;
-                case '\r':   escaped += "\\r";  break;
-                case '\t':   escaped += "\\t";  break;
-                case '\\':   escaped += "\\\\"; break;
-                case '\'':   escaped += "\\'";  break;
-                case '"':    escaped += "\\\""; break;
-                case '\x1A': escaped += "\\Z";  break;
-                default:     escaped.push_back(static_cast<char>(c)); break;
-            }
+            while (pos < text.size()
+                && (text[pos] == ' ' || text[pos] == '\t'
+                    || text[pos] == '\n' || text[pos] == '\r'))
+                ++pos;
         }
 
-        return escaped;
+        bool ScanJsonValue(std::string_view text, std::size_t& pos, uint32 depth);
+
+        inline bool ScanJsonString(std::string_view text, std::size_t& pos)
+        {
+            if (pos >= text.size() || text[pos] != '"')
+                return false;
+
+            ++pos;
+            while (pos < text.size())
+            {
+                char const c = text[pos];
+
+                if (c == '"')
+                {
+                    ++pos;
+                    return true;
+                }
+
+                if (c == '\\')
+                {
+                    ++pos;
+                    if (pos >= text.size())
+                        return false;   // trailing escape
+
+                    char const esc = text[pos];
+                    if (esc == 'u')
+                    {
+                        if (pos + 4 >= text.size())
+                            return false;
+                        for (std::size_t i = 1; i <= 4; ++i)
+                        {
+                            char const h = text[pos + i];
+                            bool const isHex = (h >= '0' && h <= '9')
+                                || (h >= 'a' && h <= 'f') || (h >= 'A' && h <= 'F');
+                            if (!isHex)
+                                return false;
+                        }
+                        pos += 5;
+                        continue;
+                    }
+
+                    if (esc != '"' && esc != '\\' && esc != '/' && esc != 'b'
+                        && esc != 'f' && esc != 'n' && esc != 'r' && esc != 't')
+                        return false;   // invalid escape
+
+                    ++pos;
+                    continue;
+                }
+
+                // Raw control characters are not legal inside a JSON string.
+                if (static_cast<unsigned char>(c) < 0x20)
+                    return false;
+
+                ++pos;
+            }
+
+            return false;   // unterminated string
+        }
+
+        inline bool ScanJsonNumber(std::string_view text, std::size_t& pos)
+        {
+            std::size_t const start = pos;
+
+            if (pos < text.size() && text[pos] == '-')
+                ++pos;
+
+            while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9')
+                ++pos;
+
+            if (pos < text.size() && text[pos] == '.')
+            {
+                ++pos;
+                while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9')
+                    ++pos;
+            }
+
+            if (pos < text.size() && (text[pos] == 'e' || text[pos] == 'E'))
+            {
+                ++pos;
+                if (pos < text.size() && (text[pos] == '+' || text[pos] == '-'))
+                    ++pos;
+                while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9')
+                    ++pos;
+            }
+
+            return pos > start;
+        }
+
+        inline bool ScanJsonLiteral(std::string_view text, std::size_t& pos,
+            std::string_view literal)
+        {
+            if (text.substr(pos, literal.size()) != literal)
+                return false;
+
+            pos += literal.size();
+            return true;
+        }
+
+        inline bool ScanJsonValue(std::string_view text, std::size_t& pos, uint32 depth)
+        {
+            // Bound recursion: a deeply nested payload must not blow the stack.
+            constexpr uint32 MAX_DEPTH = 64;
+            if (depth > MAX_DEPTH)
+                return false;
+
+            SkipJsonWhitespace(text, pos);
+            if (pos >= text.size())
+                return false;
+
+            char const c = text[pos];
+
+            if (c == '{')
+            {
+                ++pos;
+                SkipJsonWhitespace(text, pos);
+
+                if (pos < text.size() && text[pos] == '}')
+                {
+                    ++pos;
+                    return true;
+                }
+
+                for (;;)
+                {
+                    SkipJsonWhitespace(text, pos);
+                    if (!ScanJsonString(text, pos))
+                        return false;   // key must be a string
+
+                    SkipJsonWhitespace(text, pos);
+                    if (pos >= text.size() || text[pos] != ':')
+                        return false;
+                    ++pos;
+
+                    if (!ScanJsonValue(text, pos, depth + 1))
+                        return false;
+
+                    SkipJsonWhitespace(text, pos);
+                    if (pos >= text.size())
+                        return false;
+
+                    if (text[pos] == ',')
+                    {
+                        ++pos;
+                        continue;       // a trailing comma then fails on '}'
+                    }
+
+                    if (text[pos] == '}')
+                    {
+                        ++pos;
+                        return true;
+                    }
+
+                    return false;
+                }
+            }
+
+            if (c == '[')
+            {
+                ++pos;
+                SkipJsonWhitespace(text, pos);
+
+                if (pos < text.size() && text[pos] == ']')
+                {
+                    ++pos;
+                    return true;
+                }
+
+                for (;;)
+                {
+                    if (!ScanJsonValue(text, pos, depth + 1))
+                        return false;
+
+                    SkipJsonWhitespace(text, pos);
+                    if (pos >= text.size())
+                        return false;
+
+                    if (text[pos] == ',')
+                    {
+                        ++pos;
+                        continue;
+                    }
+
+                    if (text[pos] == ']')
+                    {
+                        ++pos;
+                        return true;
+                    }
+
+                    return false;
+                }
+            }
+
+            if (c == '"')
+                return ScanJsonString(text, pos);
+
+            if (c == 't')
+                return ScanJsonLiteral(text, pos, "true");
+
+            if (c == 'f')
+                return ScanJsonLiteral(text, pos, "false");
+
+            if (c == 'n')
+                return ScanJsonLiteral(text, pos, "null");
+
+            return ScanJsonNumber(text, pos);
+        }
+    }
+
+    // True if `text` is exactly one well-formed JSON value, with nothing but
+    // whitespace after it.
+    inline bool IsWellFormedJson(std::string_view text)
+    {
+        std::size_t pos = 0;
+
+        if (!detail::ScanJsonValue(text, pos, 0))
+            return false;
+
+        detail::SkipJsonWhitespace(text, pos);
+        return pos == text.size();
+    }
+
+    // True if `text` looks like it was meant to be JSON (starts with an object
+    // or array). Used to decide whether validating it is meaningful, since most
+    // protocol fields are plain scalars.
+    inline bool LooksLikeJson(std::string_view text)
+    {
+        std::size_t pos = 0;
+        detail::SkipJsonWhitespace(text, pos);
+        return pos < text.size() && (text[pos] == '{' || text[pos] == '[');
     }
 
     // -------------------------------------------------------------------------

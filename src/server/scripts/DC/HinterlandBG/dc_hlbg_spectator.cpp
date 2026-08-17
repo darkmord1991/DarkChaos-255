@@ -19,8 +19,8 @@
 #include "Player.h"
 #include "Position.h"
 #include "ScriptMgr.h"
-#include "../AddonExtension/dc_addon_hlbg.h"
-#include "../Spectator/dc_spectator_core.h"
+#include "DC/AddonExtension/dc_addon_hlbg.h"
+#include "DC/Spectator/dc_spectator_core.h"
 
 #include <unordered_map>
 #include "dc_update_profiler.h"

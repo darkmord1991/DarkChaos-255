@@ -6,10 +6,10 @@
 #include "ObjectMgr.h"
 #include "ScriptMgr.h"
 
-#include "../AddonExtension/dc_addon_breaking_news.h"
-#include "../AddonExtension/dc_addon_namespace.h"
-#include "../CrossSystem/CrossSystemDbSchema.h"
-#include "../CrossSystem/CrossSystemUtilities.h"
+#include "DC/AddonExtension/dc_addon_breaking_news.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 
 #include <ctime>
 #include <sstream>

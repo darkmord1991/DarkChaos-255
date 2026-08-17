@@ -17,7 +17,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "WorldSession.h"
-#include "../Progression/Accountwide/dc_accountwide_api.h"
+#include "DC/Progression/Accountwide/dc_accountwide_api.h"
 
 #include <string>
 

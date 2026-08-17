@@ -12,7 +12,7 @@
 #include "WorldPacket.h"
 #include "WorldStateDefines.h"
 
-#include "../AddonExtension/dc_addon_hlbg.h"
+#include "DC/AddonExtension/dc_addon_hlbg.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "HLBGService.h"
 #include "hlbg.h"

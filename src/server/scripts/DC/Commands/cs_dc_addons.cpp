@@ -40,7 +40,7 @@
 #include "Group.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "DC/MythicPlus/dc_mythicplus_difficulty_scaling.h"
-#include "../Progression/FirstStart/dc_firststart_learnspells.h"
+#include "DC/Progression/FirstStart/dc_firststart_learnspells.h"
 
 // forward declaration of helpers implemented in DC_AddonHelpers.cpp
 void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");

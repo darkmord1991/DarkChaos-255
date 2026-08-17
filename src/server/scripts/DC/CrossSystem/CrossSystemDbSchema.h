@@ -16,11 +16,14 @@
 //   mutually-exclusive column-name alternatives, where a miss is guaranteed by
 //   construction).
 //
-//   The TTL is transitional. Schema must come only from the AzerothCore SQL
-//   update flow at startup -- creating tables from C++ at runtime is not
-//   allowed. A handful of DC systems still do so; once those are migrated to
-//   pending_db_* revisions the schema is fully static after startup and
-//   NEGATIVE results can be cached permanently, like positive ones.
+//   The TTL is now belt-and-braces rather than transitional. It existed because
+//   "a handful of DC systems" created schema from C++ at runtime, so a missing
+//   table could appear mid-session. Those are gone -- there is no CREATE TABLE
+//   or ALTER TABLE anywhere under DC/ (verified Aug 2026), and schema comes only
+//   from the AzerothCore SQL update flow at startup. Negative results could
+//   therefore be cached permanently like positive ones; the TTL is kept only so
+//   that applying a migration to a running server is picked up without a
+//   restart. Do not reintroduce runtime DDL to make use of it.
 
 #include "DatabaseEnv.h"
 
@@ -98,7 +101,7 @@ namespace detail
         if (cache.MissedRecently(tableName))
             return false;
 
-        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))
+        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))  // sql-ok: table/column names are compile-time literals from callers, never user input
         {
             cache.MarkMissing(tableName);
             return false;
@@ -126,7 +129,7 @@ namespace detail
             return false;
         }
 
-        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))
+        if (!WorldDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))  // sql-ok: table/column names are compile-time literals from callers, never user input
         {
             cache.MarkMissing(key);
             return false;
@@ -146,7 +149,7 @@ namespace detail
         if (cache.MissedRecently(tableName))
             return false;
 
-        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))
+        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}'", tableName))  // sql-ok: table/column names are compile-time literals from callers, never user input
         {
             cache.MarkMissing(tableName);
             return false;
@@ -174,7 +177,7 @@ namespace detail
             return false;
         }
 
-        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))
+        if (!CharacterDatabase.Query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{}' AND COLUMN_NAME = '{}'", tableName, columnName))  // sql-ok: table/column names are compile-time literals from callers, never user input
         {
             cache.MarkMissing(key);
             return false;

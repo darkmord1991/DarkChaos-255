@@ -8,6 +8,7 @@
 #include "DC/CrossSystem/CrossSystemDbSchema.h"
 #include "GameObject.h"
 #include "InstanceSaveMgr.h"
+#include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
@@ -92,6 +93,81 @@ bool GuildHouseManager::HasLocationEnabledColumn()
 
     cached = DC::DbSchema::WorldColumnExists("dc_guild_house_locations", "enabled");
     return cached.value();
+}
+
+// -----------------------------------------------------------------------------
+// Location table cache
+//
+// dc_guild_house_locations is static world data. It used to be queried on every
+// gossip interaction - once to build a menu, again to resolve the picked entry,
+// and again inside MoveGuildHouse - each one a blocking round-trip on the world
+// thread. The table is tiny, so it is read once and served from memory.
+// -----------------------------------------------------------------------------
+
+static std::vector<GuildHouseLocation> s_guildHouseLocations;
+static bool s_guildHouseLocationsLoaded = false;
+
+std::vector<GuildHouseLocation> const& GuildHouseManager::GetGuildHouseLocations()
+{
+    if (s_guildHouseLocationsLoaded)
+        return s_guildHouseLocations;
+
+    s_guildHouseLocationsLoaded = true;
+    s_guildHouseLocations.clear();
+
+    bool const hasEnabled = HasLocationEnabledColumn();
+
+    QueryResult result = hasEnabled
+        ? WorldDatabase.Query(
+            "SELECT `id`, `map`, `posX`, `posY`, `posZ`, `orientation`, `cost`, `name`, `comment`, `enabled` "
+            "FROM `dc_guild_house_locations` ORDER BY `id`")
+        : WorldDatabase.Query(
+            "SELECT `id`, `map`, `posX`, `posY`, `posZ`, `orientation`, `cost`, `name`, `comment` "
+            "FROM `dc_guild_house_locations` ORDER BY `id`");
+
+    if (!result)
+    {
+        LOG_WARN("modules.dc", "GUILDHOUSE: dc_guild_house_locations is empty; no guild house locations are available.");
+        return s_guildHouseLocations;
+    }
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        GuildHouseLocation location;
+        location.id      = fields[0].Get<uint32>();
+        location.map     = fields[1].Get<uint32>();
+        location.posX    = fields[2].Get<float>();
+        location.posY    = fields[3].Get<float>();
+        location.posZ    = fields[4].Get<float>();
+        location.ori     = fields[5].Get<float>();
+        location.cost    = fields[6].Get<uint32>();
+        location.name    = fields[7].Get<std::string>();
+        location.comment = fields[8].Get<std::string>();
+        location.enabled = hasEnabled ? fields[9].Get<bool>() : true;
+
+        s_guildHouseLocations.push_back(std::move(location));
+    } while (result->NextRow());
+
+    LOG_INFO("modules.dc", "GUILDHOUSE: Cached {} guild house locations.", s_guildHouseLocations.size());
+    return s_guildHouseLocations;
+}
+
+GuildHouseLocation const* GuildHouseManager::GetGuildHouseLocation(uint32 locationId)
+{
+    for (GuildHouseLocation const& location : GetGuildHouseLocations())
+        if (location.id == locationId)
+            return &location;
+
+    return nullptr;
+}
+
+void GuildHouseManager::ReloadGuildHouseLocations()
+{
+    s_guildHouseLocationsLoaded = false;
+    s_guildHouseLocations.clear();
+    GetGuildHouseLocations();
 }
 
 GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
@@ -670,30 +746,19 @@ bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId, bool i
     if (!currentData)
         return false; // Cannot move what doesn't exist
 
-    // Fetch New Location Data
-    QueryResult locationResult;
-    if (HasLocationEnabledColumn() && !ignoreDisabled)
-    {
-        locationResult = WorldDatabase.Query(
-            "SELECT `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `id` = {} AND `enabled` = 1",
-            locationId);
-    }
-    else
-    {
-        locationResult = WorldDatabase.Query(
-            "SELECT `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `id` = {}",
-            locationId);
-    }
-
-    if (!locationResult)
+    // Fetch New Location Data (from the cached location table)
+    GuildHouseLocation const* location = GetGuildHouseLocation(locationId);
+    if (!location)
         return false; // Invalid location
 
-    Field* fields = locationResult->Fetch();
-    uint32 newMap = fields[0].Get<uint32>();
-    float posX = fields[1].Get<float>();
-    float posY = fields[2].Get<float>();
-    float posZ = fields[3].Get<float>();
-    float ori = fields[4].Get<float>();
+    if (!location->enabled && !ignoreDisabled)
+        return false; // Disabled location, and the caller is not a GM
+
+    uint32 const newMap = location->map;
+    float const posX = location->posX;
+    float const posY = location->posY;
+    float const posZ = location->posZ;
+    float const ori = location->ori;
 
     // 0. Capture everyone currently standing in the guild's OLD instance BEFORE we repoint the house,
     // so the switch pulls them across to the new map automatically (otherwise they'd be stranded in the

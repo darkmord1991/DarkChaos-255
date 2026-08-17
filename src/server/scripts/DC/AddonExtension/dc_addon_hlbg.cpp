@@ -30,9 +30,9 @@
 #include "dc_addon_namespace.h"
 #include "Server/WorldSession.h"
 #include "Server/WorldPacket.h"
-#include "../HinterlandBG/hlbg_constants.h"
-#include "../HinterlandBG/BattlegroundHLBG.h"
-#include "../HinterlandBG/HLBGService.h"
+#include "DC/HinterlandBG/hlbg_constants.h"
+#include "DC/HinterlandBG/BattlegroundHLBG.h"
+#include "DC/HinterlandBG/HLBGService.h"
 #include "Time/GameTime.h"
 #include <algorithm>
 #include <cctype>
@@ -45,10 +45,10 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-#include "../CrossSystem/LeaderboardUtils.h"
-#include "../CrossSystem/CrossSystemDbSchema.h"
-#include "../HinterlandBG/dc_hlbg_spectator.h"
-#include "../Spectator/dc_spectator_core.h"
+#include "DC/CrossSystem/LeaderboardUtils.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
+#include "DC/HinterlandBG/dc_hlbg_spectator.h"
+#include "DC/Spectator/dc_spectator_core.h"
 #include "dc_addon_hlbg.h"
 
 // Use shared utilities from LeaderboardUtils.h

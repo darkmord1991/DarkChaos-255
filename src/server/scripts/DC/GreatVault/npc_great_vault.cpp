@@ -7,7 +7,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
-#include "../AddonExtension/dc_addon_mythicplus.h"
+#include "DC/AddonExtension/dc_addon_mythicplus.h"
 
 class npc_great_vault : public CreatureScript
 {

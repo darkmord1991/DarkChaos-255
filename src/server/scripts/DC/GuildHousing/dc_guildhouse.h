@@ -72,6 +72,26 @@ struct GuildHouseData
         : phase(_phase), map(_map), posX(_x), posY(_y), posZ(_z), ori(_o), level(_level) {}
 };
 
+// One dc_guild_house_locations row.
+//
+// dc_guild_house_locations is static world data (read-mostly, rebuilt from
+// SQL), but every gossip click used to re-query it - listing the menu ran one
+// query, and picking an entry ran another. The whole table is small and is
+// cached in memory instead; see GuildHouseManager::GetGuildHouseLocations.
+struct GuildHouseLocation
+{
+    uint32 id = 0;
+    uint32 map = 0;
+    float posX = 0.0f;
+    float posY = 0.0f;
+    float posZ = 0.0f;
+    float ori = 0.0f;
+    uint32 cost = 0;
+    bool enabled = true;    // always true when the table has no `enabled` column
+    std::string name;
+    std::string comment;
+};
+
 // A butler-purchased spawn the guild owns (one dc_guild_house_instance_spawns
 // row, source=BUTLER), for the "Manage / Remove" gossip list.
 struct ButlerContentItem
@@ -132,6 +152,15 @@ public:
     static uint8 GetGuildHouseLevel(uint32 guildId);
     static bool SetGuildHouseLevel(uint32 guildId, uint8 level);
     static bool HasLocationEnabledColumn();
+
+    // --- Location table (cached; see GuildHouseLocation) ---
+    // All locations, ordered by id. Loaded from dc_guild_house_locations on
+    // first use and kept for the rest of uptime. World-thread only.
+    static std::vector<GuildHouseLocation> const& GetGuildHouseLocations();
+    // Single location by id, or nullptr if unknown.
+    static GuildHouseLocation const* GetGuildHouseLocation(uint32 locationId);
+    // Drop the cache so the next access re-reads the table.
+    static void ReloadGuildHouseLocations();
 
     // Permissions
     static bool HasPermission(Player* player, uint32 permission);

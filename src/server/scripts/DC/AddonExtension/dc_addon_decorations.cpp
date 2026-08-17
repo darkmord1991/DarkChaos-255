@@ -19,9 +19,9 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "StringFormat.h"
-#include "../GOMove/GOMove.h"
-#include "../GuildHousing/dc_guildhouse.h"
-#include "../GuildHousing/dc_guildhouse_decorations.h"
+#include "DC/GOMove/GOMove.h"
+#include "DC/GuildHousing/dc_guildhouse.h"
+#include "DC/GuildHousing/dc_guildhouse_decorations.h"
 
 #include <cstdlib>
 

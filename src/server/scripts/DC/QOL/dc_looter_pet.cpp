@@ -17,7 +17,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
-#include "../MythicPlus/dc_mythicplus_run_manager.h"
+#include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 
 #include <unordered_map>
 

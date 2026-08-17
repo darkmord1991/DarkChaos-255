@@ -28,7 +28,7 @@
 #include "Random.h"
 
 #include "dc_giant_isles_invasion_internal.h"
-#include "../QOL/dc_questgiver_status_override.h"
+#include "DC/QOL/dc_questgiver_status_override.h"
 
 #include <algorithm>
 #include <map>

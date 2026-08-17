@@ -19,7 +19,7 @@
 #include "Chat.h"
 #include "WorldSession.h"
 #include "Log.h"
-#include "../QOL/dc_questgiver_status_override.h"
+#include "DC/QOL/dc_questgiver_status_override.h"
 
 using namespace std::chrono_literals;
 

@@ -33,7 +33,7 @@
 #ifndef DC_COLLECTION_GRANT_H
 #define DC_COLLECTION_GRANT_H
 
-#include "../AddonExtension/dc_addon_collection.h"
+#include "DC/AddonExtension/dc_addon_collection.h"
 
 #include <string>
 #include <vector>

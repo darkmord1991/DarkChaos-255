@@ -17,8 +17,8 @@
 #include "MapMgr.h"
 #include "World.h"
 #include "Group.h"
-#include "../ItemUpgrades/ItemUpgradeManager.h"
-#include "../CrossSystem/CrossSystemUtilities.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "GroupMgr.h"
 #include <algorithm>
 

@@ -35,9 +35,9 @@
 #include "Config.h"
 #include "World.h"
 #include "AchievementMgr.h"
-#include "../CrossSystem/CrossSystemSeasonHelper.h"
-#include "../CrossSystem/CrossSystemDbSchema.h"
-#include "../Seasons/DCWeeklyResetHub.h"
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
+#include "DC/CrossSystem/CrossSystemDbSchema.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
 #include <algorithm>
 #include <cctype>
 #include <ctime>

@@ -8,8 +8,8 @@
  */
 
 #include "dc_mythicplus_difficulty_scaling.h"
-#include "../Seasons/SeasonalSystem.h"
-#include "../CrossSystem/CrossSystemSeasonHelper.h"
+#include "DC/Seasons/SeasonalSystem.h"
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"

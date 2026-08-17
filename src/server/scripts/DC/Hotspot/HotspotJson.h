@@ -2,7 +2,7 @@
 #define DC_HOTSPOT_JSON_H
 
 #include "HotspotDefines.h"
-#include "../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include <string>
 
 // Single owner of every hotspot wire shape. Four call sites used to hand-roll

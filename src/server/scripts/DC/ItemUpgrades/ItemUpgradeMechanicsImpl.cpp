@@ -21,7 +21,7 @@
 #include "WorldSession.h"
 #include "StringFormat.h"
 #include "Config.h"
-#include "../Seasons/SeasonalSystem.h"
+#include "DC/Seasons/SeasonalSystem.h"
 #include <cmath>
 
 namespace

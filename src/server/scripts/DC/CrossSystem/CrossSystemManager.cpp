@@ -54,13 +54,9 @@ namespace CrossSystem
         // Initialize reward distributor
         rewardDistributor_->LoadConfiguration();
 
-        // Register default event handlers
-        RegisterDefaultHandlers();
-
         initialized_ = true;
 
-        LOG_INFO("dc.crosssystem", "Cross-System Integration initialized with {} systems registered",
-                 systems_.size());
+        LOG_INFO("dc.crosssystem", "Cross-System Integration initialized");
     }
 
     void CrossSystemManager::Shutdown()
@@ -74,125 +70,7 @@ namespace CrossSystem
         if (sessionManager_)
             sessionManager_->SaveDirtySessions();
 
-        // Cleanup
-        systems_.clear();
-
         initialized_ = false;
-    }
-
-    void CrossSystemManager::InitializeEventBus()
-    {
-        // Event bus is a singleton, already initialized
-    }
-
-    void CrossSystemManager::InitializeRewardDistributor()
-    {
-        rewardDistributor_->LoadConfiguration();
-    }
-
-    void CrossSystemManager::RegisterDefaultHandlers()
-    {
-        // Register built-in systems
-        // Other systems will register themselves via their script loaders
-
-        // The CrossSystem module itself doesn't handle events directly,
-        // it just coordinates between other systems
-    }
-
-    // =========================================================================
-    // System Registration
-    // =========================================================================
-
-    void CrossSystemManager::RegisterSystem(const SystemInfo& info)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        systems_[info.id] = info;
-        systems_[info.id].initialized = true;
-
-        // Subscribe the handler to events if provided
-        if (info.handler)
-        {
-            eventBus_->SubscribeHandler(info.handler);
-        }
-
-        LOG_INFO("dc.crosssystem", "Registered system: {} (ID: {}, Version: {})",
-                 info.name, static_cast<uint8>(info.id), info.version);
-    }
-
-    void CrossSystemManager::UnregisterSystem(SystemId id)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto it = systems_.find(id);
-        if (it != systems_.end())
-        {
-            if (it->second.handler)
-            {
-                eventBus_->UnsubscribeHandler(it->second.handler);
-            }
-
-            LOG_INFO("dc.crosssystem", "Unregistered system: {}", it->second.name);
-            systems_.erase(it);
-        }
-    }
-
-    bool CrossSystemManager::IsSystemEnabled(SystemId id) const
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto it = systems_.find(id);
-        if (it != systems_.end())
-            return it->second.enabled;
-        return false;
-    }
-
-    void CrossSystemManager::SetSystemEnabled(SystemId id, bool enabled)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto it = systems_.find(id);
-        if (it != systems_.end())
-        {
-            it->second.enabled = enabled;
-            eventBus_->SetSystemEnabled(id, enabled);
-
-            LOG_INFO("dc.crosssystem", "System {} {}",
-                     it->second.name, enabled ? "enabled" : "disabled");
-        }
-    }
-
-    const SystemInfo* CrossSystemManager::GetSystemInfo(SystemId id) const
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto it = systems_.find(id);
-        if (it != systems_.end())
-            return &it->second;
-        return nullptr;
-    }
-
-    std::vector<SystemInfo> CrossSystemManager::GetAllSystems() const
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        std::vector<SystemInfo> result;
-        for (auto const& [id, info] : systems_)
-            result.push_back(info);
-        return result;
-    }
-
-    std::vector<SystemId> CrossSystemManager::GetEnabledSystems() const
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        std::vector<SystemId> result;
-        for (auto const& [id, info] : systems_)
-        {
-            if (info.enabled)
-                result.push_back(id);
-        }
-        return result;
     }
 
     // =========================================================================
@@ -464,15 +342,7 @@ namespace CrossSystem
         if (!globalEnabled_ || !initialized_)
             return;
 
-        updateTimer_ += diff;
         saveTimer_ += diff;
-
-        // Process async events every 100ms
-        if (updateTimer_ >= 100)
-        {
-            eventBus_->ProcessAsyncEvents(10);
-            updateTimer_ = 0;
-        }
 
         // Save dirty sessions every 5 minutes
         if (saveTimer_ >= 5 * 60 * 1000)
@@ -547,85 +417,6 @@ namespace CrossSystem
         LOG_DEBUG("dc.crosssystem", "Loading cross-system configuration...");
 
         globalEnabled_ = true;  // Default enabled
-    }
-
-    void CrossSystemManager::ReloadConfiguration()
-    {
-        LoadConfiguration();
-        rewardDistributor_->ReloadConfiguration();
-    }
-
-    void CrossSystemManager::SaveConfiguration()
-    {
-        // Persist any runtime changes
-    }
-
-    // =========================================================================
-    // Debug/Admin
-    // =========================================================================
-
-    std::string CrossSystemManager::GetStatusReport() const
-    {
-        std::ostringstream ss;
-        ss << "=== DarkChaos Cross-System Status ===\n";
-        ss << "Initialized: " << (initialized_ ? "Yes" : "No") << "\n";
-        ss << "Enabled: " << (globalEnabled_ ? "Yes" : "No") << "\n";
-        ss << "Active Sessions: " << sessionManager_->GetActiveSessionCount() << "\n";
-        ss << "\nRegistered Systems:\n";
-
-        for (auto const& [id, info] : systems_)
-        {
-            ss << "  - " << info.name << " (v" << info.version << "): "
-               << (info.enabled ? "Enabled" : "Disabled") << "\n";
-        }
-
-        ss << "\nEvent Bus:\n";
-        ss << eventBus_->GetDebugInfo();
-
-        return ss.str();
-    }
-
-    std::string CrossSystemManager::GetPlayerReport(Player* player) const
-    {
-        if (!player)
-            return "Invalid player";
-
-        auto* session = sessionManager_->GetSession(player);
-        if (!session)
-            return "No active session";
-
-        std::ostringstream ss;
-        ss << "=== Player Cross-System Report: " << player->GetName() << " ===\n";
-        ss << "Session Duration: " << session->GetSessionDuration() << "s\n";
-
-        auto const& content = session->GetActiveContent();
-        ss << "Active Content: " << static_cast<uint8>(content.type)
-           << " (Map: " << content.mapId << ")\n";
-
-        if (content.keystoneLevel > 0)
-            ss << "Keystone Level: " << static_cast<int>(content.keystoneLevel) << "\n";
-
-        auto const& prog = session->GetProgression();
-        ss << "\nProgression:\n";
-        ss << "  Prestige: " << static_cast<int>(prog.prestigeLevel) << "\n";
-        ss << "  M+ Rating: " << prog.mythicPlusRating << "\n";
-        ss << "  Season: " << prog.currentSeasonId << "\n";
-
-        auto const& stats = session->GetSessionStats();
-        ss << "\nSession Stats:\n";
-        ss << "  Tokens: " << stats.tokensEarned << "\n";
-        ss << "  Essence: " << stats.essenceEarned << "\n";
-        ss << "  Kills: " << stats.creaturesKilled << "\n";
-        ss << "  Bosses: " << stats.bossesKilled << "\n";
-
-        ss << "\nPending Rewards: " << session->GetPendingRewardCount() << "\n";
-
-        return ss.str();
-    }
-
-    void CrossSystemManager::DumpDebugInfo() const
-    {
-        LOG_INFO("dc.crosssystem", "{}", GetStatusReport());
     }
 
 } // namespace CrossSystem

@@ -1,11 +1,17 @@
 /*
  * DarkChaos Cross-System Manager
  *
- * Central coordinator for all DC custom systems. Provides:
- * - System registration and lifecycle management
- * - Cross-system integration hooks
- * - Unified API access to all DC subsystems
- * - World script hooks for player events
+ * Fan-out point between AzerothCore's gameplay hooks and the DC systems that
+ * care about them. CrossSystemScripts.cpp feeds it engine events; it updates
+ * the player's session context and republishes onto the EventBus, whose only
+ * subscriber is the addon protocol bridge that forwards events to clients.
+ *
+ * NOT a plugin registry. It used to advertise one - RegisterSystem() and the
+ * accessors built on it - but nothing ever registered, so systems_ was
+ * permanently empty and every one of those accessors was inert. The registry,
+ * the SystemInfo struct and the four never-instantiated adapters in
+ * CrossSystemAdapters.h were removed (Aug 2026). If a real registry is needed
+ * later, build it against actual subscribers rather than restoring this one.
  *
  * Author: DarkChaos Development Team
  * Date: January 2026
@@ -18,7 +24,6 @@
 #include "RewardDistributor.h"
 #include "SessionContext.h"
 #include <memory>
-#include <unordered_map>
 
 class Player;
 class Creature;
@@ -29,26 +34,6 @@ namespace DarkChaos
 {
 namespace CrossSystem
 {
-    // =========================================================================
-    // System Registration Info
-    // =========================================================================
-
-    struct SystemInfo
-    {
-        SystemId id = SystemId::None;
-        std::string name;
-        std::string version;
-        bool enabled = true;
-        bool initialized = false;
-        IEventHandler* handler = nullptr;
-
-        // System capabilities
-        bool providesRewards = false;
-        bool tracksProgression = false;
-        bool hasWeeklyContent = false;
-        bool hasSeasonalContent = false;
-    };
-
     // =========================================================================
     // Cross-System Manager
     // =========================================================================
@@ -65,28 +50,6 @@ namespace CrossSystem
         void Initialize();
         void Shutdown();
         bool IsInitialized() const { return initialized_; }
-
-        // =====================================================================
-        // System Registration
-        // =====================================================================
-
-        void RegisterSystem(const SystemInfo& info);
-        void UnregisterSystem(SystemId id);
-
-        bool IsSystemEnabled(SystemId id) const;
-        void SetSystemEnabled(SystemId id, bool enabled);
-
-        const SystemInfo* GetSystemInfo(SystemId id) const;
-        std::vector<SystemInfo> GetAllSystems() const;
-        std::vector<SystemId> GetEnabledSystems() const;
-
-        // =====================================================================
-        // Subsystem Access
-        // =====================================================================
-
-        SessionManager* GetSessionManager() { return sessionManager_; }
-        EventBus* GetEventBus() { return eventBus_; }
-        RewardDistributor* GetRewardDistributor() { return rewardDistributor_; }
 
         // =====================================================================
         // Player Session Hooks (called from WorldScript)
@@ -147,16 +110,6 @@ namespace CrossSystem
         // =====================================================================
 
         void LoadConfiguration();
-        void ReloadConfiguration();
-        void SaveConfiguration();
-
-        // =====================================================================
-        // Debug/Admin
-        // =====================================================================
-
-        std::string GetStatusReport() const;
-        std::string GetPlayerReport(Player* player) const;
-        void DumpDebugInfo() const;
 
         // Global enable/disable
         void SetEnabled(bool enabled) { globalEnabled_ = enabled; }
@@ -164,14 +117,6 @@ namespace CrossSystem
 
     private:
         CrossSystemManager() : eventBus_(nullptr), rewardDistributor_(nullptr), sessionManager_(nullptr) {}
-
-        // Initialize subsystems
-        void InitializeEventBus();
-        void InitializeRewardDistributor();
-        void RegisterDefaultHandlers();
-
-        // Systems
-        std::unordered_map<SystemId, SystemInfo> systems_;
 
         // Subsystems (use singletons via pointers)
         EventBus* eventBus_;
@@ -183,10 +128,7 @@ namespace CrossSystem
         bool globalEnabled_ = true;
 
         // Update tracking
-        uint32 updateTimer_ = 0;
         uint32 saveTimer_ = 0;
-
-        mutable std::mutex mutex_;
     };
 
     // =========================================================================

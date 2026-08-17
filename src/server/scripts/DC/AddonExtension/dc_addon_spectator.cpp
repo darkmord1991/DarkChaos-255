@@ -16,7 +16,7 @@
 #include "Config.h"
 #include "Log.h"
 
-#include "../MythicPlus/dc_mythicplus_spectator.h"
+#include "DC/MythicPlus/dc_mythicplus_spectator.h"
 
 namespace DCAddon
 {

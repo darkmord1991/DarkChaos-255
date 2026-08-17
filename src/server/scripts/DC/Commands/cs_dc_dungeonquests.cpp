@@ -40,8 +40,8 @@
 #include "CharacterDatabase.h"
 #include "Creature.h"
 #include "StringConvert.h"
-#include "../DungeonQuests/DungeonQuestConstants.h"
-#include "../DungeonQuests/DungeonQuestHelpers.h"
+#include "DC/DungeonQuests/DungeonQuestConstants.h"
+#include "DC/DungeonQuests/DungeonQuestHelpers.h"
 #include <string>
 #include <sstream>
 

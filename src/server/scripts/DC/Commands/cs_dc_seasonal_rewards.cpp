@@ -7,8 +7,8 @@
  * Date: November 22, 2025
  */
 
-#include "../Seasons/SeasonalRewardSystem.h"
-#include "../Seasons/SeasonalSystem.h"
+#include "DC/Seasons/SeasonalRewardSystem.h"
+#include "DC/Seasons/SeasonalSystem.h"
 #include "ScriptMgr.h"
 #include "Chat.h"
 #include "Player.h"

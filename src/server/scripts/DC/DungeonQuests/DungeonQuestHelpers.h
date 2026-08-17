@@ -212,7 +212,7 @@ inline uint32 GetStatisticValue(Player* player, const std::string& statName)
     }
 
     // Safe: statName validated against whitelist, GUID is numeric
-    QueryResult result = CharacterDatabase.Query(
+    QueryResult result = CharacterDatabase.Query(  // sql-ok: statName validated against a whitelist above
         "SELECT stat_value FROM dc_character_dungeon_statistics WHERE guid = {} AND stat_name = '{}'",
         player->GetGUID().GetCounter(), statName
     );

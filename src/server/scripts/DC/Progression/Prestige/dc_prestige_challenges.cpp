@@ -23,8 +23,8 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "dc_prestige_api.h"
-#include "../../AddonExtension/dc_addon_death_markers.h"
-#include "../../AddonExtension/dc_addon_namespace.h"
+#include "DC/AddonExtension/dc_addon_death_markers.h"
+#include "DC/AddonExtension/dc_addon_namespace.h"
 #include <sstream>
 
 namespace
