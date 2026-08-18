@@ -2070,6 +2070,11 @@ local function SetupQuestLevelText()
         local titleFont, objectiveFonts = ResolveWatchLineFonts(root, info)
         local questId = info and info.questId or nil
         local isTracked = questId and superTrackedQuestId and questId == superTrackedQuestId or false
+        local isAutoTracked = isTracked
+            and questTrackingUtils
+            and type(questTrackingUtils.IsIdleAutoFollowedQuest) == "function"
+            and questTrackingUtils.IsIdleAutoFollowedQuest(questId) == true
+            or false
         local isComplete = info and (info.isComplete == true or info.isComplete == 1) or false
 
         if titleFont and info and type(info.title) == "string"
@@ -2090,6 +2095,7 @@ local function SetupQuestLevelText()
             objectiveFonts = objectiveFonts,
             questId = questId,
             isTracked = isTracked,
+            isAutoTracked = isAutoTracked,
             isWatched = true,
             isComplete = isComplete,
             isHover = type(root.IsMouseOver) == "function" and root:IsMouseOver() or false,

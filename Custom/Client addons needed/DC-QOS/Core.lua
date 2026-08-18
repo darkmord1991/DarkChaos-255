@@ -1208,6 +1208,19 @@ function addon:GetQuestTrackingUtils()
         return nil
     end
 
+    -- True when questId (or, with nil, the current followed quest) was picked
+    -- by Navigation's idle auto-supertrack instead of an explicit player
+    -- action. Lets styling keep the gold "followed" accents for real choices.
+    function questTrackingUtils.IsIdleAutoFollowedQuest(questId)
+        local nav = addon and addon.Navigation or nil
+        if nav and type(nav.IsIdleAutoFollow) == "function" then
+            local ok, result = pcall(nav.IsIdleAutoFollow, nav, questId)
+            return ok and result == true
+        end
+
+        return false
+    end
+
     function questTrackingUtils.GetCurrentMapId()
         if type(GetPlayerMapPositionSafe) == "function" then
             local _, _, mapId = GetPlayerMapPositionSafe()

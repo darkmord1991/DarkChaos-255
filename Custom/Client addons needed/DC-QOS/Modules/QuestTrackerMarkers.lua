@@ -425,6 +425,13 @@ function Markers.UpdateWorldMapQuestPoi(button, options)
     local isHover = opts.isHover == true
     local isDaily = opts.isDaily == true
 
+    -- Idle auto-follow renders as a plain watched POI: gold means the player
+    -- explicitly followed the quest.
+    if isTracked and opts.isAutoTracked == true then
+        isTracked = false
+        isWatched = true
+    end
+
     local size = math.max((poiIcon.GetWidth and poiIcon:GetWidth() or 14), (poiIcon.GetHeight and poiIcon:GetHeight() or 14)) + 10
     chrome:ClearAllPoints()
     chrome:SetPoint("CENTER", poiIcon, "CENTER", 0, 0)
@@ -727,6 +734,14 @@ function Markers.UpdateWatchFrameQuestChrome(root, options)
     local isComplete = opts.isComplete == true
     local isHover = opts.isHover == true
     local routeText = type(opts.routeText) == "string" and opts.routeText or nil
+
+    -- Idle auto-follow renders as a plain watched entry (no gold border, no
+    -- "Following" label, no pulse): gold means the player followed it. The
+    -- route line still shows -- it is navigation data, not follow styling.
+    if isTracked and opts.isAutoTracked == true then
+        isTracked = false
+        isWatched = true
+    end
 
     local borderR, borderG, borderB, borderA = 0.28, 0.20, 0.10, 0.20
     local fillAlpha = 0.06

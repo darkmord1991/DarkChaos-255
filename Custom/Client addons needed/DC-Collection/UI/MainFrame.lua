@@ -1663,9 +1663,23 @@ function DC:UpdateMountPreview(item)
     -- because SetModel HARD-CRASHES the client (ERROR #132, uncatchable by pcall) on a
     -- malformed/unconverted .m2. Enable with "/dcc mountmodels on" only after every custom
     -- mount model is converted + packed into the client. Default off keeps the client safe.
-    if (not modelPath) and DC.MountModelPaths and displayId
-        and DCCollectionDB and DCCollectionDB.mountModelPreview == true then
-        modelPath = DC.MountModelPaths[displayId]
+    if (not modelPath) and DCCollectionDB and DCCollectionDB.mountModelPreview == true then
+        if DC.MountModelPaths and displayId then
+            modelPath = DC.MountModelPaths[displayId]
+        end
+        -- STOCK (blizzlike) mounts: dc_mount_definitions.display_id holds a RETAIL-era
+        -- CreatureDisplayInfo id for every one of them (Flying Broom = 56954, Brewfest Kodo =
+        -- 29447), which is not a 3.3.5 display at all, and several mounts share one such id
+        -- (all five horse bridles = 13108) -- so a display-keyed lookup can neither resolve nor
+        -- tell the colours apart. Data/MountModelPathsStock.lua is keyed by the mount SPELL
+        -- instead, which is unique per mount and is exactly what the server sends as item.id.
+        if (not modelPath) and DC.MountModelPathsBySpell then
+            local spellId = ToPositiveNumber(item.id) or ToPositiveNumber(item.spellId)
+                or ToPositiveNumber(item.spell_id)
+            if spellId then
+                modelPath = DC.MountModelPathsBySpell[spellId]
+            end
+        end
     end
 
     local modelShown = ApplyMountModel(displayId, creatureId, modelPath)

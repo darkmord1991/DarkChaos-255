@@ -263,6 +263,10 @@ function Collector:addItem(skill,what)
 	local zone = GetRealZoneText()
 	local node_type = spells[skill]
 	if not node_type or not what then return end
+	-- unknown zones share placeholder data {0,0,0}; recording there would put
+	-- the node into the shared zone-0 bucket that displays in every such zone
+	local zw, zh = GatherMate:GetZoneSize(zone)
+	if zw == 0 or zh == 0 then return end
 	-- db lock check
 	if GatherMate.db.profile.dbLocks[node_type] then
 		return

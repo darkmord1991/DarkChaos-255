@@ -94,6 +94,13 @@ function GatherMate:OnInitialize()
 	self:RegisterDBType("Fishing", GatherMateFishDB)
 	self:RegisterDBType("Extract Gas", GatherMateGasDB)
 	self:RegisterDBType("Treasure", GatherMateTreasureDB)
+	-- Zone ID 0 is the shared placeholder bucket for zones missing from
+	-- Constants.lua zone_data (0x0 yard size). Nodes recorded there render at
+	-- zero offset on the minimap (a circle stuck to the player) and leak into
+	-- every unknown zone, so purge any that older versions saved.
+	for _, nodeDB in pairs(gmdbs) do
+		nodeDB[0] = nil
+	end
 	db = self.db.profile
 	filter = db.filter
 	if wow40 then

@@ -4949,6 +4949,8 @@ local function SyncFollowStateFromShim()
 
     state.followedQuestId = shimQuestId
     state.followedQuestLogIndex = FindQuestLogIndexByQuestId(shimQuestId)
+    -- Supertrack changed outside our own auto path: treat as an explicit choice.
+    state.followSource = "user"
 
     if state.followedQuestLogIndex then
         local title, isHeader = GetQuestTitleFromLogIndex(state.followedQuestLogIndex)
@@ -5573,6 +5575,7 @@ local function TryAutoSuperTrackQuestTarget(target, mapId)
     if questLogIndex and questLogIndex > 0 then
         local ok = Navigation:SetFollowQuestByLogIndex(questLogIndex, true)
         if ok then
+            state.followSource = "auto"
             state.lastAutoSuperTrackQuestId = target.questId
             state.lastAutoSuperTrackAt = now
             return true
@@ -5595,6 +5598,7 @@ local function TryAutoSuperTrackQuestTarget(target, mapId)
 
     state.followedQuestId = target.questId
     state.followedQuestTitle = target.title
+    state.followSource = "auto"
     state.lastAutoSuperTrackQuestId = target.questId
     state.lastAutoSuperTrackAt = now
 
@@ -7305,6 +7309,9 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
     state.followedQuestLogIndex = questLogIndex
     state.followedQuestId = questId
     state.followedQuestTitle = title or ("Quest " .. tostring(questId or questLogIndex))
+    -- Explicit follow: TryAutoSuperTrackQuestTarget re-stamps "auto" after
+    -- calling this, so gold "followed" styling can mean "the player chose this".
+    state.followSource = "user"
 
     EnsureQuestSelectionFocused(questLogIndex, false)
 
@@ -7381,6 +7388,7 @@ function Navigation:ClearFollowQuest(silent)
     state.followedQuestLogIndex = nil
     state.followedQuestId = nil
     state.followedQuestTitle = nil
+    state.followSource = nil
     state.dirty = true
 
     if not silent then
@@ -7404,6 +7412,28 @@ function Navigation:GetSuperTrackedQuestID()
     end
 
     return nil
+end
+
+-- True when the current follow came from autoSuperTrackWhenIdle rather than an
+-- explicit player action. Styling consumers use this to keep the gold
+-- "followed" treatment for player choices only; with no questId given it
+-- answers for whatever quest is currently followed.
+function Navigation:IsIdleAutoFollow(questId)
+    if state.followSource ~= "auto" then
+        return false
+    end
+
+    local followedQuestId = tonumber(state.followedQuestId)
+    if not followedQuestId or followedQuestId <= 0 then
+        return false
+    end
+
+    questId = tonumber(questId)
+    if not questId or questId <= 0 then
+        return true
+    end
+
+    return followedQuestId == questId
 end
 
 -- Returns true when the currently super-tracked objective is within arrival
@@ -8782,6 +8812,7 @@ function Navigation.OnEnable()
                         state.followedQuestId = nil
                         state.followedQuestLogIndex = nil
                         state.followedQuestTitle = nil
+                        state.followSource = nil
                     end
                 end
             end
@@ -8799,6 +8830,7 @@ function Navigation.OnEnable()
                     state.followedQuestId = nil
                     state.followedQuestLogIndex = nil
                     state.followedQuestTitle = nil
+                    state.followSource = nil
                 else
                     ClearQuestPoiCacheForQuest(state.followedQuestId)
                 end

@@ -2845,6 +2845,13 @@ local function StyleWorldMapQuestRows()
     end
 
     local trackedQuestId = GetSuperTrackedQuestId()
+    -- Idle auto-follow demotes to the subdued watched styling below: the gold
+    -- row treatment stays reserved for quests the player explicitly followed.
+    local trackedIsAuto = trackedQuestId
+        and questTrackingUtils
+        and type(questTrackingUtils.IsIdleAutoFollowedQuest) == "function"
+        and questTrackingUtils.IsIdleAutoFollowedQuest(trackedQuestId) == true
+        or false
     local hoveredQuestId = state.worldMapHoverQuestId
     local selectedQuest = GetSelectedWorldMapQuestFrame()
     local selectedQuestId = tonumber(selectedQuest and (selectedQuest.questId or selectedQuest.questID) or nil)
@@ -2880,6 +2887,10 @@ local function StyleWorldMapQuestRows()
         local isComplete = info and info.isComplete or false
         local isWatched = info and IsQuestTracked(info) or false
         local isTracked = trackedQuestId and trackedQuestId == questId or false
+        if isTracked and trackedIsAuto then
+            isTracked = false
+            isWatched = true
+        end
         local isSelected = child == selectedQuest
         local isHover = hoveredQuestId == questId
             or (type(child.IsMouseOver) == "function" and child:IsMouseOver() or false)

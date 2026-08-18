@@ -310,6 +310,13 @@ local function GetVisibleMarkers(currentMapId)
     local markers = {}
     local activeQuestLookup = GetActiveQuestLookup()
     local trackedQuestId = tonumber(GetTrackedQuestId())
+    -- Idle auto-follow keeps its function (click priority, waypoint) but not
+    -- the gold "followed" pin styling -- that stays for explicit follows.
+    local trackedIsAuto = trackedQuestId ~= nil
+        and questTrackingUtils
+        and type(questTrackingUtils.IsIdleAutoFollowedQuest) == "function"
+        and questTrackingUtils.IsIdleAutoFollowedQuest(trackedQuestId) == true
+        or false
     local data = addon and addon.QuestMapData and addon.QuestMapData.quests or nil
 
     if settings.showAvailable then
@@ -322,6 +329,7 @@ local function GetVisibleMarkers(currentMapId)
                 if questId and not activeQuestLookup[questId] and not IsQuestCompleted(questId) then
                     if not settings.hideTrivialStarts or not IsTrivialQuest(marker.level) then
                         marker.isTracked = trackedQuestId and trackedQuestId == questId or false
+                        marker.isAutoTracked = marker.isTracked and trackedIsAuto or false
                         marker.recurrenceType = GetRecurringQuestType(questId)
                         markers[#markers + 1] = marker
                     end
@@ -359,6 +367,7 @@ local function GetVisibleMarkers(currentMapId)
                                 level = questState.level,
                                 title = questState.title or quest.t,
                                 isTracked = trackedQuestId and trackedQuestId == questId or false,
+                                isAutoTracked = trackedIsAuto and trackedQuestId == questId or false,
                                 recurrenceType = GetRecurringQuestType(questId),
                                 sourceKind = cluster.sourceKind,
                                 areaCount = cluster.count,
@@ -388,6 +397,7 @@ local function GetVisibleMarkers(currentMapId)
                             level = questState.level,
                             title = questState.title or quest.t,
                             isTracked = trackedQuestId and trackedQuestId == questId or false,
+                            isAutoTracked = trackedIsAuto and trackedQuestId == questId or false,
                             recurrenceType = GetRecurringQuestType(questId),
                             objectiveIndex = cluster.objectiveIndex or 0,
                             areaCount = cluster.count,
@@ -574,7 +584,11 @@ local function OnMarkerEnter(self)
     end
 
     if marker.isTracked then
-        GameTooltip:AddLine("Currently followed by Navigation", 1.0, 0.90, 0.42)
+        if marker.isAutoTracked then
+            GameTooltip:AddLine("Auto-followed by Navigation (nearest quest)", 0.85, 0.80, 0.62)
+        else
+            GameTooltip:AddLine("Currently followed by Navigation", 1.0, 0.90, 0.42)
+        end
     end
 
     if marker.questLogIndex then
@@ -724,7 +738,9 @@ local function ApplyMarkerStyle(button, marker, drawIndex)
     end
 
     local recurrenceType = marker.recurrenceType
-    local isTracked = marker.isTracked == true
+    -- Idle auto-follow keeps the plain category styling: the gold border,
+    -- glow and size bump mean "the player followed this quest".
+    local isTracked = marker.isTracked == true and marker.isAutoTracked ~= true
     local baseSize = marker.category == "objective" and 15 or 20
     if marker.category == "teleport" or marker.category == "poi" then
         baseSize = 16

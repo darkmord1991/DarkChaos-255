@@ -685,9 +685,11 @@ function Display:UpdateMiniMap(force)
 	
 	-- update our zone info
 	zone = GetRealZoneText()
-	if not zone or zone == "" or not rawget(zoneData, zone) then 
+	-- zero-size zones are placeholder entries for maps GatherMate has no data
+	-- for; drawing there stacks every zone-0 node on top of the player
+	if not zone or zone == "" or not rawget(zoneData, zone) or zoneData[zone][1] == 0 then
 		zone = nil
-		return 
+		return
 	end
 	
 	-- get current player position
@@ -782,6 +784,7 @@ function Display:UpdateWorldMap(force)
 
 	local zname = continentData[GetCurrentMapContinent()][GetCurrentMapZone()]
 	if not zname then clearpins(worldmapPins) return end -- player is not viewing a zone map of a continent
+	if zoneData[zname][1] == 0 then clearpins(worldmapPins) return end -- placeholder zone (no size data), zone-0 bucket would leak here
 
 	if not rememberForce and lastDrawnWorldMap == zname then return end -- already drawn last time, and not forced
 
