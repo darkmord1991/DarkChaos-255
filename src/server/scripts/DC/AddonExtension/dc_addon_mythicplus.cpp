@@ -19,6 +19,8 @@
 #include "Config.h"
 #include "Log.h"
 #include "DBCStores.h"
+#include "ItemTemplate.h"
+#include "ObjectMgr.h"
 #include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 #include "DC/MythicPlus/dc_mythicplus_constants.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
@@ -665,8 +667,10 @@ namespace MythicPlus
             if (keyLevel == 0)
                 return 0;
 
-            // Keep in sync with GreatVault reward generation logic.
-            return 200u + (static_cast<uint32>(keyLevel) * 3u);
+            // Keep in sync with GreatVault reward generation logic: both sides
+            // must use the canonical keystone->item-level table, otherwise the
+            // forecast advertises an item level the reward pool never rolls.
+            return MythicPlusConstants::GetItemLevelForKeystoneLevel(keyLevel);
         };
 
         // unlockedCountClaim, lazy reward generation and the claim-week
@@ -699,6 +703,17 @@ namespace MythicPlus
                     rewardObj.SetObject();
                     rewardObj.Set("itemId", itr->second.first);
                     rewardObj.Set("ilvl", static_cast<int32>(itr->second.second));
+
+                    // Custom entries are not in the client's item cache, so
+                    // GetItemInfo() returns nil there forever. Ship the name
+                    // and quality so the panel can name the reward instead of
+                    // showing a bare item level.
+                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itr->second.first))
+                    {
+                        rewardObj.Set("itemName", proto->Name1);
+                        rewardObj.Set("quality", static_cast<int32>(proto->Quality));
+                    }
+
                     rewardsArr.Push(rewardObj);
                 }
 
@@ -1281,10 +1296,18 @@ namespace MythicPlus
 
         bool success = sMythicRuns->ClaimVaultItemReward(player, slot, itemId);
 
+        // Name the item in the result so the addon can say what was granted.
+        // A stackable reward merges into an existing stack and is otherwise
+        // invisible to the player, who then reads the claim as a no-op.
+        std::string itemName;
+        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+            itemName = proto->Name1;
+
         JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_CLAIM_VAULT_RESULT)
             .Set("success", success)
             .Set("slot", slot)
             .Set("itemId", itemId)
+            .Set("itemName", itemName)
             .Send(player);
 
         if (success)

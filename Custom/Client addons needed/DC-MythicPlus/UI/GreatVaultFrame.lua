@@ -44,6 +44,27 @@ local function EnsureTooltip()
     itemPrefetchTooltip:SetOwner(UIParent, "ANCHOR_NONE")
 end
 
+local QUALITY_HEX = {
+    [0] = "9d9d9d", [1] = "ffffff", [2] = "1eff00", [3] = "0070dd",
+    [4] = "a335ee", [5] = "ff8000", [6] = "e6cc80", [7] = "00ccff",
+}
+
+-- Name a reward without depending on the client item cache. Custom entries are
+-- never in it, so GetItemInfo() stays nil forever and the slot would otherwise
+-- read as a bare item level. The server ships itemName/quality for that case.
+local function DescribeReward(reward, itemId)
+    local name = select(1, GetItemInfo(itemId)) or reward.itemName
+    if not name or name == "" then
+        return nil
+    end
+
+    local hex = QUALITY_HEX[tonumber(reward.quality or -1) or -1]
+    if hex then
+        return "|cff" .. hex .. name .. "|r"
+    end
+    return name
+end
+
 local function PrefetchItem(itemId)
     if not itemId then return end
     EnsureTooltip()
@@ -67,7 +88,7 @@ local function EnsurePopupDefined()
         return
     end
     StaticPopupDialogs[POPUP_KEY] = {
-        text = "Are you sure you want to claim this reward?",
+        text = "Claim %s? You only get one Great Vault reward per week.",
         button1 = "Yes",
         button2 = "No",
         OnAccept = function()
@@ -672,7 +693,13 @@ function GV:Update(data)
                         slotFrame.icon:SetDesaturated(false)
                         slotFrame.itemLink = link or ("item:" .. itemId)
 
-                        slotFrame.status:SetText("iLvl " .. tostring(ilvl))
+                        local rewardName = DescribeReward(reward, itemId)
+                        slotFrame.rewardName = rewardName
+                        if rewardName then
+                            slotFrame.status:SetText(rewardName .. "\n|cff00ff00iLvl " .. tostring(ilvl) .. "|r")
+                        else
+                            slotFrame.status:SetText("iLvl " .. tostring(ilvl))
+                        end
                         slotFrame.status:SetTextColor(0, 1, 0)
                         slotFrame.button:SetText("Select")
                         slotFrame.button:Enable()
@@ -713,5 +740,5 @@ function GV:SelectReward(slotIndex)
     GV._pendingSlot = slotIndex
     GV._pendingItemId = slotFrame.itemId
     EnsurePopupDefined()
-    StaticPopup_Show(POPUP_KEY)
+    StaticPopup_Show(POPUP_KEY, slotFrame.rewardName or "this reward")
 end

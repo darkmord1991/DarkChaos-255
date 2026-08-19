@@ -14,6 +14,7 @@
 #include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "Timer.h"
 #include "DC/Seasons/SeasonalRewardSystem.h"
@@ -405,6 +406,16 @@ namespace CrossSystem
     {
         if (!player || itemId == 0 || count == 0)
             return false;
+
+        // Reject unknown entries up front. Without this an itemId that has no
+        // template falls through CanStoreNewItem into the mail path below,
+        // which reports success while SendItemRetrievalMail silently drops it.
+        if (!sObjectMgr->GetItemTemplate(itemId))
+        {
+            LOG_ERROR("dc.crosssystem.rewards", "Refusing to distribute unknown item {} x{} to player {} from {} ({})",
+                      itemId, count, player->GetName(), SystemIdToString(source), reason);
+            return false;
+        }
 
         ItemPosCountVec dest;
         InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count);

@@ -3826,7 +3826,18 @@ if DC then
         if type(args[1]) == "table" then
             local data = args[1]
             if data.success then
-                Print("Reward claimed successfully!")
+                -- Name the reward: a stackable one merges into an existing
+                -- stack, so a bare "claimed" reads as if nothing happened.
+                local itemId = tonumber(data.itemId or 0) or 0
+                local label = data.itemName
+                if itemId > 0 then
+                    label = select(2, GetItemInfo(itemId)) or label
+                end
+                if label and label ~= "" then
+                    Print("Reward claimed: " .. label .. " (check your bags or mail).")
+                else
+                    Print("Reward claimed successfully!")
+                end
                 -- Refresh Vault state after claim
                 if namespace.RequestVaultInfo then
                     namespace.RequestVaultInfo()

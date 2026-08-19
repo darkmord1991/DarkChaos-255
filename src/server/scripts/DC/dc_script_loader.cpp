@@ -94,6 +94,9 @@ void AddSC_dc_felwood_cata();                 // MountHyjal/zone_felwood_cata.cp
 void AddSC_dc_darkshore_cata();               // MountHyjal/zone_darkshore_cata.cpp
 void AddSC_dc_azshara_cata();                 // MountHyjal/zone_azshara_cata.cpp
 
+// --- Plaguelands downport (map 751) ---
+void AddSC_dc_western_plaguelands();          // Plaguelands/zone_western_plaguelands_dc.cpp
+
 // --- Blackfathom Deeps (Ashenvale) -- map-48 clone on map 820 ---
 void AddSC_instance_bfd_ashenvale();          // BlackfathomAshenvale/instance_bfd_ashenvale.cpp
 
@@ -374,6 +377,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_dc_felwood_cata);
     DC_LOAD(AddSC_dc_darkshore_cata);
     DC_LOAD(AddSC_dc_azshara_cata);
+
+    LogSection("Plaguelands Downport (map 751)");
+    DC_LOAD(AddSC_dc_western_plaguelands);
 
     LogSection("Blackfathom Deeps (Ashenvale) - map 820");
     DC_LOAD(AddSC_instance_bfd_ashenvale);

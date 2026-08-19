@@ -1,10 +1,13 @@
 #include "GreatVault.h"
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
+#include "DC/MythicPlus/dc_mythicplus_constants.h"
 #include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "Chat.h"
 #include "DBCStores.h"
+#include "GameTime.h"
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
@@ -12,6 +15,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "Random.h"
+#include "SharedDefines.h"
 #include "StringFormat.h"
 #include "ScriptMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
@@ -34,6 +38,18 @@ namespace
     };
 
     using DarkChaos::Seasons::SECONDS_PER_WEEK;
+
+    // Chat needs a real |Hitem:...|h link, not coloured plain text, or the
+    // player cannot shift-click or hover what the vault just handed them.
+    std::string BuildVaultItemLink(ItemTemplate const* itemTemplate)
+    {
+        if (!itemTemplate)
+            return "[unknown item]";
+
+        uint32 color = ItemQualityColors[std::min<uint32>(itemTemplate->Quality, MAX_ITEM_QUALITY - 1)];
+        return Acore::StringFormat("|c{:08x}|Hitem:{}:0:0:0:0:0:0:0:0|h[{}]|h|r",
+                                   color, itemTemplate->ItemId, itemTemplate->Name1);
+    }
 
     void DecodeGlobalSlotIndex(uint8 globalSlot, uint8& outTrackId, uint8& outSlotInTrack)
     {
@@ -247,7 +263,18 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
         {
             do
             {
-                candidates.push_back({ (*result)[0].Get<uint32>(), 100 });
+                uint32 candidateId = (*result)[0].Get<uint32>();
+
+                // dc_vault_loot_table is hand-maintained and holds entries that
+                // no longer exist in item_template. Dropping them here keeps a
+                // reward the player can never receive out of the pool.
+                if (!sObjectMgr->GetItemTemplate(candidateId))
+                {
+                    LOG_ERROR("mythic.vault", "dc_vault_loot_table references unknown item {}; skipped", candidateId);
+                    continue;
+                }
+
+                candidates.push_back({ candidateId, 100 });
             } while (result->NextRow());
         }
         return candidates;
@@ -282,8 +309,21 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
         } while (existing->NextRow());
     }
 
-    auto insertReward = [&](uint8 slotIndex, uint32 itemId, uint32 ilvl)
+    auto insertReward = [&](uint8 slotIndex, uint32 itemId, uint32 tierIlvl)
     {
+        // Store the item's own level, not the tier target. dc_vault_loot_table's
+        // item_level_min is a tier label rather than a real item level (the
+        // "239" tier holds ilvl 213 gear), and the panel shows whatever is
+        // stored here - so using the target makes the vault advertise a level
+        // the reward does not have. Rewards with no meaningful level of their
+        // own (upgrade tokens) keep the tier figure.
+        uint32 ilvl = tierIlvl;
+        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+        {
+            if ((proto->Class == ITEM_CLASS_ARMOR || proto->Class == ITEM_CLASS_WEAPON) && proto->ItemLevel > 0)
+                ilvl = proto->ItemLevel;
+        }
+
         CharacterDatabase.DirectExecute(
             "INSERT INTO dc_vault_reward_pool (character_guid, season_id, week_start, slot_index, item_id, item_level) "
             "VALUES ({}, {}, {}, {}, {}, {})",
@@ -328,9 +368,11 @@ mythic_track:
                 goto pvp_track;
 
             uint8 keyLevel = mplus.slotKeyLevel[slotInTrack];
-            // Calculate ilvl based on key level (simplified logic here, should match MythicPlusRewards)
-            // For now, just a placeholder formula or fetch from config
-            uint32 mplusIlvl = 200 + (keyLevel * 3);
+            // Canonical keystone -> item level mapping (239/252/264/277+), the
+            // same one dungeon loot uses. The old placeholder (200 + key * 3)
+            // landed below dc_vault_loot_table's lowest band for every key
+            // under +13, so every M+ slot silently fell back to a token.
+            uint32 mplusIlvl = MythicPlusConstants::GetItemLevelForKeystoneLevel(keyLevel);
 
             uint32 itemId = 0;
             if (rewardMode == VAULT_MODE_TOKENS)
@@ -340,7 +382,11 @@ mythic_track:
                 auto candidates = fetchCandidates(mplusIlvl);
                 itemId = pickWeighted(candidates, usedItems);
                 if (!itemId)
+                {
+                    LOG_WARN("mythic.vault", "GreatVault: no M+ loot candidate for player {} at ilvl {} (key {}, spec '{}', armor '{}'); falling back to a token",
+                        playerGuid, mplusIlvl, keyLevel, playerSpec, armorType);
                     itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+                }
             }
 
             if (itemId)
@@ -454,16 +500,42 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
         return false;
     }
 
+    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+    if (!itemTemplate)
+    {
+        // The pool holds an entry that no longer exists in item_template.
+        // Refuse rather than burning the player's one claim on nothing.
+        LOG_ERROR("mythic.vault", "Vault slot {} for player {} holds unknown item {}; claim refused",
+            slot, guidLow, itemId);
+        ChatHandler(player->GetSession()).SendSysMessage("That reward is no longer available. Please contact a game master.");
+        return false;
+    }
+
     // Give item; DistributeItem mails it if bags are full (no silent data loss).
     if (!DarkChaos::CrossSystem::GetRewardDistributor()->DistributeItem(
             player, itemId, 1, DarkChaos::CrossSystem::SystemId::None, "vault_claim"))
+    {
+        ChatHandler(player->GetSession()).SendSysMessage("Could not deliver your Great Vault reward. Please try again.");
         return false;
+    }
+
+    // Name what was handed over. A stackable reward (upgrade tokens) merges
+    // into an existing stack, so without this the player sees no visible
+    // change and assumes the claim failed.
+    ChatHandler(player->GetSession()).PSendSysMessage("Great Vault reward: {} received.",
+        BuildVaultItemLink(itemTemplate));
 
     // Mark as claimed regardless of whether the item was stored or mailed.
+    uint64 now = static_cast<uint64>(GameTime::GetGameTime().count());
     CharacterDatabase.DirectExecute(
-        "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {} "
+        "UPDATE dc_weekly_vault SET reward_claimed = 1, claimed_slot = {}, claimed_item_id = {}, claimed_at = NOW() "
         "WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-        slot, guidLow, seasonId, weekStart);
+        slot, itemId, guidLow, seasonId, weekStart);
+
+    CharacterDatabase.DirectExecute(
+        "UPDATE dc_vault_reward_pool SET claimed = 1, claimed_at = {} "
+        "WHERE character_guid = {} AND season_id = {} AND week_start = {} AND slot_index = {}",
+        now, guidLow, seasonId, weekStart, slot);
 
     LOG_INFO("mythic.vault", "Player {} claimed vault reward item {} from slot {}", player->GetName(), itemId, slot);
     return true;
