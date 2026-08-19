@@ -134,6 +134,33 @@ namespace
         { 435, 751, 1374.23f, -1281.94f,   59.17f, "Andorhal (Alliance), Western Plaguelands" },
         { 436, 751, 1864.32f, -1755.82f,   59.66f, "The Menders' Stead, Western Plaguelands" },
         { 437, 751, 2839.78f, -1500.51f,  146.09f, "Hearthglen, Western Plaguelands" },
+
+        // Lordaeron extension (map 751), added with the 8-zone build.
+        // These 19 nodes went into TaxiNodes.dbc with the extension but NOT into
+        // this table, and CurrentNode() only matches within MAX_NODE_DISTANCE.
+        // Every one of their flight masters therefore resolved to nullptr and
+        // offered an EMPTY gossip list -- Karos Razok sat 2,965 yds from the
+        // nearest listed node. 13 of 32 map-751 flight masters worked before this
+        // block; all 32 do with it.
+        { 368, 751, 2272.68f,   372.06f,   35.76f, "Brill, Tirisfal Glades" },
+        { 369, 751, 1568.62f,   267.97f,  -43.10f, "Undercity, Tirisfal" },
+        { 370, 751, 1726.62f,  -740.98f,   59.93f, "The Bulwark, Tirisfal" },
+        { 371, 751, 1056.06f,  1518.90f,   30.14f, "Forsaken Rear Guard, Silverpine Forest" },
+        { 372, 751,  478.86f,  1536.59f,  131.32f, "The Sepulcher, Silverpine Forest" },
+        { 373, 751, -114.14f,  1312.32f,   56.74f, "The Forsaken Front, Silverpine Forest" },
+        { 374, 751, -661.84f,  -536.49f,   28.21f, "Ruins of Southshore, Hillsbrad" },
+        { 378, 751, -566.89f, -1051.20f,   59.41f, "Eastpoint Tower, Hillsbrad" },
+        { 385, 751, -605.18f,   435.46f,   79.44f, "Southpoint Gate, Hillsbrad" },
+        { 386, 751,  622.85f,  -979.58f,  169.62f, "Strahnbrad, Alterac Mountains" },
+        { 387, 751,  -17.71f,  -874.20f,   59.01f, "Tarren Mill, Hillsbrad" },
+        { 388, 751,  312.33f, -4105.36f,  118.29f, "Stormfeather Outpost, The Hinterlands" },
+        { 389, 751, -635.26f, -4720.50f,    5.38f, "Revantusk Village, The Hinterlands" },
+        { 390, 751,  283.74f, -2002.76f,  194.74f, "Aerie Peak, The Hinterlands" },
+        { 391, 751,  -25.78f, -2821.78f,  125.17f, "Hiri'watha Research Station, The Hinterlands" },
+        { 396, 751, -1240.53f, -2515.11f,  22.16f, "Refuge Pointe, Arathi" },
+        { 397, 751, -952.38f, -1585.74f,   51.30f, "Galen's Fall, Arathi" },
+        { 398, 751, -916.29f, -3496.89f,   70.45f, "Hammerfall, Arathi" },
+        { 399, 751, -910.22f,  1638.60f,   68.37f, "Forsaken Forward Command, Gilneas" },
     };
 
     constexpr char const* TAXI_ICON = "Interface\\Icons\\Ability_Mount_Wyvern_01";
