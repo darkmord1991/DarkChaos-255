@@ -56,6 +56,13 @@
 -- resolves, so the yellow socket is kept. MaxDurability 75 is the stock value
 -- for one-hand daggers and fists (fist weapon 50184 carries exactly 75).
 --
+-- REQUIRED LEVEL follows the realm's own item level ladder, the same one
+-- 09_cata_highend_required_level.sql applies:
+--     RequiredLevel = round(80 + (ItemLevel - 300) * 50 / 112), clamped to [80, 130]
+-- giving 123 at ilvl 397, 127 at 406 and 130 at 416. It is written here rather than
+-- left to 09 because these six have no Item-sparse row, so they are not in 09's id
+-- set at all -- 09 would have left them on Blizzard's level 85 forever.
+--
 -- Idempotent. Apply after 03.
 -- -------------------------------------------------------------------------
 
@@ -73,7 +80,7 @@ UPDATE `item_template` SET `dmg_min1` = 841, `dmg_max1` = 1563 WHERE `entry` = 6
 
 -- 77945 Fear -- Jaws of Retribution (1089), main hand, ilvl 397
 UPDATE `item_template` SET
-  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 397, `RequiredLevel` = 85,
+  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 397, `RequiredLevel` = 123,
   `AllowableClass` = -1, `AllowableRace` = -1, `bonding` = 1, `Material` = 1, `sheath` = 3,
   `delay` = 1800, `dmg_min1` = 889, `dmg_max1` = 1482, `dmg_type1` = 0, `MaxDurability` = 75,
   `stat_type1` = 3, `stat_value1` = 188, `stat_type2` = 32, `stat_value2` = 108,
@@ -85,7 +92,7 @@ WHERE `entry` = 77945;
 
 -- 77946 Vengeance -- Jaws of Retribution (1089), off hand, ilvl 397 (mastery 102 dropped)
 UPDATE `item_template` SET
-  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 397, `RequiredLevel` = 85,
+  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 397, `RequiredLevel` = 123,
   `AllowableClass` = -1, `AllowableRace` = -1, `bonding` = 1, `Material` = 1, `sheath` = 3,
   `delay` = 1400, `dmg_min1` = 692, `dmg_max1` = 1153, `dmg_type1` = 0, `MaxDurability` = 75,
   `stat_type1` = 3, `stat_value1` = 188, `stat_type2` = 36, `stat_value2` = 106,
@@ -97,7 +104,7 @@ WHERE `entry` = 77946;
 
 -- 77947 The Sleeper -- Maw of Oblivion (1088), main hand, ilvl 406
 UPDATE `item_template` SET
-  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 406, `RequiredLevel` = 85,
+  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 406, `RequiredLevel` = 127,
   `AllowableClass` = -1, `AllowableRace` = -1, `bonding` = 1, `Material` = 1, `sheath` = 3,
   `delay` = 1800, `dmg_min1` = 967, `dmg_max1` = 1612, `dmg_type1` = 0, `MaxDurability` = 75,
   `stat_type1` = 3, `stat_value1` = 207, `stat_type2` = 32, `stat_value2` = 117,
@@ -109,7 +116,7 @@ WHERE `entry` = 77947;
 
 -- 77948 The Dreamer -- Maw of Oblivion (1088), off hand, ilvl 406 (mastery 112 dropped)
 UPDATE `item_template` SET
-  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 406, `RequiredLevel` = 85,
+  `Quality` = 4, `Flags` = 0, `FlagsExtra` = 0, `ItemLevel` = 406, `RequiredLevel` = 127,
   `AllowableClass` = -1, `AllowableRace` = -1, `bonding` = 1, `Material` = 1, `sheath` = 3,
   `delay` = 1400, `dmg_min1` = 752, `dmg_max1` = 1254, `dmg_type1` = 0, `MaxDurability` = 75,
   `stat_type1` = 3, `stat_value1` = 207, `stat_type2` = 36, `stat_value2` = 115,
@@ -121,7 +128,7 @@ WHERE `entry` = 77948;
 
 -- 77949 Golad, Twilight of Aspects -- Fangs of the Father (1087), main hand, ilvl 416
 UPDATE `item_template` SET
-  `Quality` = 5, `Flags` = 128, `FlagsExtra` = 0, `ItemLevel` = 416, `RequiredLevel` = 85,
+  `Quality` = 5, `Flags` = 128, `FlagsExtra` = 0, `ItemLevel` = 416, `RequiredLevel` = 130,
   `AllowableClass` = -1, `AllowableRace` = -1, `bonding` = 1, `Material` = 1, `sheath` = 3,
   `delay` = 1800, `dmg_min1` = 1061, `dmg_max1` = 1769, `dmg_type1` = 0, `MaxDurability` = 75,
   `stat_type1` = 3, `stat_value1` = 229, `stat_type2` = 32, `stat_value2` = 156,
@@ -133,7 +140,7 @@ WHERE `entry` = 77949;
 
 -- 77950 Tiriosh, Nightmare of Ages -- Fangs of the Father (1087), off hand, ilvl 416 (mastery 150 dropped)
 UPDATE `item_template` SET
-  `Quality` = 5, `Flags` = 128, `FlagsExtra` = 0, `ItemLevel` = 416, `RequiredLevel` = 85,
+  `Quality` = 5, `Flags` = 128, `FlagsExtra` = 0, `ItemLevel` = 416, `RequiredLevel` = 130,
   `AllowableClass` = -1, `AllowableRace` = -1, `bonding` = 1, `Material` = 1, `sheath` = 3,
   `delay` = 1400, `dmg_min1` = 826, `dmg_max1` = 1376, `dmg_type1` = 0, `MaxDurability` = 75,
   `stat_type1` = 3, `stat_value1` = 229, `stat_type2` = 36, `stat_value2` = 154,

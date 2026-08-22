@@ -1108,10 +1108,15 @@ RareSpawn.Announce.Enable = 1
 #    RareSpawn.Announce.Maps
 #        Description: Comma-separated map ids to watch. Rares on any other map
 #                     are ignored entirely.
-#                     750 = Cata Kalimdor downport, 37 = Azshara Crater
-#        Default:     "750,37"
+#                     750 = Cata Kalimdor downport, 751 = DC Plaguelands
+#                     (Lordaeron), 37 = Azshara Crater
+#        Default:     "750,751,37"
 #
-RareSpawn.Announce.Maps = "750,37"
+#        Map 751 carries 65 rares. It was missing from this list until 2026-08-20,
+#        which made the whole continent invisible to the announcer -- the boot log
+#        said "tracking 82 rare(s) across 2 map(s)" and nobody noticed the third.
+#
+RareSpawn.Announce.Maps = "750,751,37"
 
 #
 #    RareSpawn.Announce.MinRespawnSecs
@@ -4391,3 +4396,21 @@ DC.UpdateProfiler.ThresholdMs = 25
 ###############################################################################
 # END OF CONFIGURATION FILE
 ###############################################################################
+
+###############################################################################
+# NAXXRAMAS 40 ("special edition", map 2921)
+#
+#    DC.Naxx40.RequireAttunement
+#        Require the vanilla Naxxramas attunement before the Eastern Plaguelands
+#        teleporter will let a player in.
+#        Default: 1
+#
+#    DC.Naxx40.RequireStratholmeEntrance
+#        Require the Stratholme-side entrance quest to have been completed
+#        before the teleporter skip becomes usable.
+#        Default: 0
+#
+###############################################################################
+
+DC.Naxx40.RequireAttunement = 1
+DC.Naxx40.RequireStratholmeEntrance = 0

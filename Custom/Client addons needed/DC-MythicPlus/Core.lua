@@ -643,6 +643,17 @@ local function NowSeconds()
     return 0
 end
 
+-- The vanilla 40-man Naxxramas (map 2921) occupies RAID_DIFFICULTY_10MAN_HEROIC,
+-- the same server slot DC uses for its Mythic tier, so the client reports it as
+-- difficultyID 3 and the badge would read "M0". Player cap tells them apart:
+-- DC Mythic is 5 (dungeons) or 20 (Timbermaw 819 / Emerald Sanctum 824); only the
+-- vanilla raid is 40. If a real 40-player Mythic tier is ever added, drop this.
+local MYTHIC_BADGE_EXCLUDED_RAID_SIZE = 40
+
+local function IsFortyManRaid(maxPlayers)
+    return (tonumber(maxPlayers) or 0) == MYTHIC_BADGE_EXCLUDED_RAID_SIZE
+end
+
 local function IsMythicDifficulty(id, label)
     id = tonumber(id) or 0
     if id == 3 or id == 16 or id == 23 then
@@ -1235,7 +1246,7 @@ local function GetMythicMinimapBadgeDisplay()
         return nil
     end
 
-    local _, instanceType, difficultyID, difficultyName = GetInstanceInfo()
+    local _, instanceType, difficultyID, difficultyName, maxPlayers = GetInstanceInfo()
     if instanceType ~= "party" and instanceType ~= "raid" then
         return nil
     end
@@ -1245,7 +1256,7 @@ local function GetMythicMinimapBadgeDisplay()
         return "M+" .. tostring(keyLevel)
     end
 
-    if IsMythicDifficulty(difficultyID, difficultyName) then
+    if IsMythicDifficulty(difficultyID, difficultyName) and not IsFortyManRaid(maxPlayers) then
         return "M0"
     end
 

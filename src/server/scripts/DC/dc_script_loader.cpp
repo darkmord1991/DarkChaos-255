@@ -102,6 +102,11 @@ void AddSC_instance_bfd_ashenvale();          // BlackfathomAshenvale/instance_b
 
 // --- Turtle-sourced instances reached from map 750 ---
 void AddSC_instance_timbermaw_hold();         // TimbermawHold/instance_timbermaw_hold.cpp
+// --- Naxxramas 40 (map 2921, "special edition") ---
+// Wrapper loader only - do NOT also declare its internal AddSC_* entries here.
+void AddDCNaxx40Scripts();                    // Naxx40/dc_naxx40_loader.cpp
+void AddDCShadowfangKeepCataScripts();        // ShadowfangKeepCata/dc_sfk_cata_loader.cpp
+
 void AddSC_instance_crescent_grove();         // CrescentGrove/instance_crescent_grove.cpp
 void AddSC_instance_emerald_sanctum();        // EmeraldSanctum/instance_emerald_sanctum.cpp
 void AddSC_boss_timbermaw_hold();             // TimbermawHold/boss_timbermaw_hold.cpp
@@ -170,6 +175,7 @@ void AddSC_ItemUpgradeExchange();             // ItemUpgrades/ItemUpgradeExchang
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades/ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades/ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades/ItemUpgradeStatApplication.cpp
+void AddSC_dc_cata_itemset_bonuses();         // ItemSets/dc_cata_itemset_bonuses.cpp
 
 // --- Random enchants system ---
 void AddSC_dc_random_enchants();              // RandomEnchants/dc_random_enchants.cpp
@@ -386,6 +392,8 @@ void AddDCScripts()
 
     LogSection("Turtle instances - Timbermaw 819 / Crescent Grove 823 / Emerald Sanctum 824");
     DC_LOAD(AddSC_instance_timbermaw_hold);
+    DC_LOAD(AddDCNaxx40Scripts);
+    DC_LOAD(AddDCShadowfangKeepCataScripts);
     DC_LOAD(AddSC_instance_crescent_grove);
     DC_LOAD(AddSC_instance_emerald_sanctum);
     DC_LOAD(AddSC_boss_timbermaw_hold);
@@ -447,6 +455,12 @@ void AddDCScripts()
 
     LogSection("Custom Achievements System");
     DC_LOAD(AddSC_dc_achievements);
+
+    LogSection("Cataclysm Item Set Bonuses");
+    // Gives the SPELL_AURA_DUMMY set bonuses their behaviour; the rest of the
+    // Cata set import is pure data in itemset_dbc / spell_dbc. Bound to spells
+    // via `spell_script_names` (14_cata_itemset_script_bindings.sql).
+    DC_LOAD(AddSC_dc_cata_itemset_bonuses);
 
     LogSection("Item Upgrade System");
     DC_LOAD(AddSC_ItemUpgradeManager);

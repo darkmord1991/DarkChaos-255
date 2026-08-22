@@ -34,6 +34,7 @@ local state = {
     hooksInstalled = false,
     refreshQueued = {},
     eventFrame = nil,
+    glow = nil,           -- shared zone-shape hover glow
 }
 
 local function GetSettings()
@@ -205,6 +206,30 @@ local CONTINENT_ZONES = {
     -- is the same trap. One zone, so the name sits dead centre.
     ["Deepholm"]                 = { x = 0.5000, y = 0.5000, w = 1215 },
     ["Azshara Crater (1-80)"]    = { x = 0.5000, y = 0.5000, w = 1251 },
+
+    -- map 751, "Plaguelands" (continent WorldMapArea 1267).
+    --
+    -- TEXT-FREE targets -- note the cw/ch. Unlike map 750, which borrows stock
+    -- Kalimdor art labelled with the WRONG names, 751's continent tiles were baked
+    -- for this map (2026-08-20, bake_worldmap751_continent.py) and already carry the
+    -- eight zone names. Drawing them again would double every one, so these entries
+    -- only put a click box over the painted name, sized to it, with the hover wash
+    -- as the affordance. Players without DC-QOS still see the labels; they just do
+    -- not get the navigation.
+    --
+    -- x/y are the zone WMA rect centroid projected through continent rect 1267
+    -- (L 3500, R -6400, T 3866.667, B -2733.333) -- the exact same arithmetic the
+    -- bake used to place the painted text, so box and paint cannot drift.
+    -- cw/ch are the painted name's measured extent + padding, as canvas fractions.
+    -- REGENERATE ALL OF THESE if rect 1267 changes or the art is rebaked.
+    ["Eastern Plaguelands (152-158)"] = { x = 0.7882, y = 0.2282, w = 1217, cw = 0.3438, ch = 0.0427, rx = 0.5846, ry = 0.0246, rw = 0.4072, rh = 0.4071, hl = "EasternPlaguelands", },
+    ["Western Plaguelands (148-153)"] = { x = 0.5286, y = 0.2929, w = 1268, cw = 0.3533, ch = 0.0427, rx = 0.3114, ry = 0.0757, rw = 0.4343, rh = 0.4344, hl = "WesternPlaguelands", },
+    ["Tirisfal Glades (130-136)"]     = { x = 0.2754, y = 0.2326, w = 1269, cw = 0.2510, ch = 0.0427, rx = 0.0472, ry = 0.0043, rw = 0.4564, rh = 0.4565, hl = "Tirisfal", },
+    ["Silverpine Forest (134-140)"]   = { x = 0.2172, y = 0.5454, w = 1270, cw = 0.2879, ch = 0.0427, rx = 0.0051, ry = 0.3333, rw = 0.4242, rh = 0.4242, hl = "Silverpine", },
+    ["Hillsbrad Foothills (138-144)"] = { x = 0.4074, y = 0.6868, w = 1271, cw = 0.3298, ch = 0.0427, rx = 0.2458, ry = 0.5253, rw = 0.3232, rh = 0.3232, hl = "Hilsbrad", },
+    ["The Hinterlands (145-150)"]     = { x = 0.7071, y = 0.5581, w = 1272, cw = 0.2730, ch = 0.0427, rx = 0.5126, ry = 0.3636, rw = 0.3889, rh = 0.3889, hl = "Hinterlands", },
+    ["Arathi Highlands (142-147)"]    = { x = 0.6229, y = 0.7878, w = 1273, cw = 0.2904, ch = 0.0427, rx = 0.4411, ry = 0.6060, rw = 0.3636, rh = 0.3636, hl = "Arathi", },
+    ["Ruins of Gilneas (130-136)"]    = { x = 0.1649, y = 0.8256, w = 1274, cw = 0.2655, ch = 0.0427, rx = 0.0061, ry = 0.6666, rw = 0.3178, rh = 0.3179, },
 }
 
 -- Returns the label list for the current continent overview, or nil when this is
@@ -232,11 +257,78 @@ local function BuildContinentZoneList()
         local z = CONTINENT_ZONES[zones[i]]
         if z then
             list = list or {}
-            list[#list + 1] = { n = zones[i], x = z.x, y = z.y, w = z.w }
+            -- cw/ch MUST be carried through: they are what marks a text-free target.
+            -- Dropping them here silently re-enabled the drawn text on map 751 and
+            -- doubled every zone name against the baked art.
+            list[#list + 1] = { n = zones[i], x = z.x, y = z.y, w = z.w, cw = z.cw, ch = z.ch,
+                                hl = z.hl, rx = z.rx, ry = z.ry, rw = z.rw, rh = z.rh }
         end
     end
     return list
 end
+
+-- One shared zone-shape glow, repositioned to whichever label is hovered (only ever
+-- one at a time). Stock ships `Interface\WorldMap\<Zone>\<Zone>Highlight.blp` per zone:
+-- a 128x128 whose TOP-LEFT 128x85.333 is the lit zone silhouette, hence the 0.6667
+-- vertical texcoord. Drawn ADD-blended over the zone's rect on the continent canvas.
+--
+-- Why hover-only, and why not a full-zone hit rect: covering each zone with its own
+-- rect + permanent glow was tried on map 750 and removed -- the glow drowned the POI
+-- icons and the rects sat between the cursor and them. Hanging the glow off the LABEL
+-- keeps both problems away: nothing new is ever between the cursor and a pin, and the
+-- glow appears only while you deliberately point at a zone name. The frame also sits
+-- at parent+1, far below QuestMapPins (parent+8), so pins stay on top of it.
+local function GetGlow()
+    if state.glow then
+        return state.glow
+    end
+    local parent = GetOverlayParent()
+    if not parent then
+        return nil
+    end
+    local f = CreateFrame("Frame", "DCQOSZoneGlow", parent)
+    f:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 1)
+    local t = f:CreateTexture(nil, "ARTWORK")
+    t:SetAllPoints(f)
+    t:SetBlendMode("ADD")
+    t:SetTexCoord(0, 1, 0, 0.6667)
+    t:SetVertexColor(1.0, 0.90, 0.55)
+    t:SetAlpha(0.55)
+    f.tex = t
+    f:Hide()
+    state.glow = f
+    return f
+end
+
+
+local function ShowGlowFor(btn)
+    if not btn.hlArt or not btn.rx then
+        return
+    end
+    local g = GetGlow()
+    local overlay = GetOverlayParent()
+    if not g or not overlay then
+        return
+    end
+    local w, h = overlay:GetWidth(), overlay:GetHeight()
+    if not w or w <= 0 then
+        return
+    end
+    g.tex:SetTexture("Interface\\WorldMap\\" .. btn.hlArt .. "\\" .. btn.hlArt .. "Highlight")
+    g:ClearAllPoints()
+    g:SetPoint("TOPLEFT", overlay, "TOPLEFT", btn.rx * w, -(btn.ry * h))
+    g:SetWidth(btn.rw * w)
+    g:SetHeight(btn.rh * h)
+    g:Show()
+end
+
+
+local function HideGlow()
+    if state.glow then
+        state.glow:Hide()
+    end
+end
+
 
 local function AcquireLabel(index)
     local fs = state.pool[index]
@@ -254,6 +346,16 @@ local function AcquireLabel(index)
     btn:RegisterForClicks("LeftButtonUp")
     -- Well above the map canvas so POI pins never end up on top of the name.
     btn:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 0) + 30)
+    -- Hover wash. Only ever shown for TEXT-FREE targets (map 751, whose art already
+    -- carries its zone names) -- a name that lights up is its own affordance, but an
+    -- invisible hotspot over baked art needs something to say "this is clickable".
+    local hl = btn:CreateTexture(nil, "BACKGROUND")
+    hl:SetAllPoints(btn)
+    hl:SetTexture("Interface\\Buttons\\WHITE8X8")
+    hl:SetBlendMode("ADD")
+    hl:SetVertexColor(1.0, 0.86, 0.40, 0.16)
+    hl:Hide()
+    btn.hl = hl
     local txt = btn:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     txt:SetPoint("CENTER")
     txt:SetJustifyH("CENTER")
@@ -263,13 +365,24 @@ local function AcquireLabel(index)
     txt:SetShadowOffset(1, -1)
     btn.text = txt
     btn:SetScript("OnClick", function(self) NavigateToZone(self.zoneName, self.zoneAreaId) end)
-    btn:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1) end)
-    btn:SetScript("OnLeave", function(self) self.text:SetTextColor(1.0, 0.92, 0.55) end)
+    btn:SetScript("OnEnter", function(self)
+        self.text:SetTextColor(1, 1, 1)
+        if self.silent then self.hl:Show() end
+        ShowGlowFor(self)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self.text:SetTextColor(1.0, 0.92, 0.55)
+        self.hl:Hide()
+        HideGlow()
+    end)
     state.pool[index] = btn
     return btn
 end
 
 local function HideFrom(index)
+    if index <= 1 and state.glow then
+        state.glow:Hide()
+    end
     for i = index, #state.pool do
         if state.pool[i] then
             state.pool[i]:Hide()
@@ -319,13 +432,28 @@ function ZoneLabels:Refresh()
             local btn = AcquireLabel(shown + 1)
             if btn then
                 btn.text:SetFont(fontPath, fontSize, "OUTLINE")
-                btn.text:SetText(entry.n)
                 btn.zoneName = entry.n
                 -- Only continent-overview entries carry w; the baked art-dir data
                 -- has none, so its subzone labels navigate by name or not at all.
                 btn.zoneAreaId = entry.w
-                btn:SetWidth((btn.text:GetStringWidth() or 40) + 10)
-                btn:SetHeight((btn.text:GetStringHeight() or 12) + 6)
+                -- cw/ch mark a TEXT-FREE target: the continent art already has the
+                -- zone name baked in (map 751), so drawing it again would double it.
+                -- The click box is sized to the painted name instead, in canvas
+                -- fractions, and only the hover wash marks it.
+                -- zone-shape hover glow (continent overviews only; nil elsewhere)
+                btn.hlArt = entry.hl
+                btn.rx, btn.ry, btn.rw, btn.rh = entry.rx, entry.ry, entry.rw, entry.rh
+                btn.silent = (entry.cw and entry.ch) and true or false
+                if btn.silent then
+                    btn.text:SetText("")
+                    btn:SetWidth(entry.cw * width)
+                    btn:SetHeight(entry.ch * height)
+                else
+                    btn.text:SetText(entry.n)
+                    btn:SetWidth((btn.text:GetStringWidth() or 40) + 10)
+                    btn:SetHeight((btn.text:GetStringHeight() or 12) + 6)
+                end
+                btn.hl:Hide()
                 btn:ClearAllPoints()
                 btn:SetPoint("CENTER", overlay, "TOPLEFT", x * width, -(y * height))
                 btn:Show()

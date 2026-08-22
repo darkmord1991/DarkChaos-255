@@ -50,9 +50,14 @@ Ast.MapBounds = {
     -- clamp to the map edge below. Fixing that needs additional WorldMapArea
     -- rows + map art per band; see ZONE_BANDS in HotspotMgr.cpp.
     [750] = { minX = 3364.583, maxX = 6195.833, minY = -5175, maxY = -929.1667 },   -- DC Hyjal (Map 750, Area 4923)
-    -- DC Plaguelands (Map 751): no WorldMapArea row yet, so this is an
-    -- APPROXIMATION from the server spawn footprint (matches ZONE_BANDS 4924).
-    [751] = { minX = 630,  maxX = 3500, minY = -6140, maxY = -810 },                -- DC Plaguelands (Map 751, Area 4924) [approx]
+    -- DC Plaguelands (Map 751): the approximation this used to carry is gone.
+    -- WorldMapArea row 1267 now exists (MapID 751, AreaID 0 "Plaguelands",
+    -- LocLeft 3500 / LocRight -6400 / LocTop 3866.667 / LocBottom -2733.333) and
+    -- covers the whole continent, exactly like the [0]/[1]/[530]/[571] rows above.
+    -- The old box (minX 630 / maxX 3500 / minY -6140 / maxY -810) was derived from
+    -- the Eastern Plaguelands spawn band alone, so it EXCLUDED most of the map --
+    -- Undercity at (1614, 258) fell outside its minY..maxY entirely.
+    [751] = { minX = -2733.333, maxX = 3866.667, minY = -6400, maxY = 3500 },      -- DC Plaguelands (Map 751, Area 0)
 }
 
 -- Convert absolute world-space coordinates into normalized 0..1 range when bounds available

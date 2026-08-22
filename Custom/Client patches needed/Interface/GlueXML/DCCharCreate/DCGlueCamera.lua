@@ -3,10 +3,27 @@ DCGlueCamera.lua -- Ascension-style camera framing for the glue screens (create 
 
 What it does:
   * CREATE: the character is shown larger than stock (a constant "body" dolly toward the camera),
-    and customizing face/hair/facial features eases the camera in to a head-and-shoulders framing;
+    and customizing face/hair/facial features eases in to a head-and-shoulders framing;
     touching the skin axis (or changing race/gender) eases back out to the full body.
+  * Either screen: the scroll wheel is a free zoom across that same range.
   * SELECT: every character is shown larger via a constant dolly, re-applied after each selection
     (SetBackgroundModel may rebuild the scene).
+
+v19 -- optical zoom. Magnification is now DCSetGlueZoom, which scales the glue scene camera's FOV
+(cam+0x114, written at the projection-setup choke point 0x4BECF0). Mechanism and both addresses
+are from bozo-1/wxl-glue-zoom (GPL-3.0); the placement side stays ours, since hooking
+CModel::SetTransform costs a handful of calls per frame where that module rewrites the placement
+matrix on every DrawIndexedPrimitive.
+
+Two consequences worth knowing before touching the framing:
+  * The offset is no longer a magnifier. It does exactly one job -- put the EYES on the camera's
+    view axis -- and FaceDelta derives that from DCGlueCameraData alone. The v18 knobs that
+    existed only to fake magnification by distance (faceForward, the per-race df trims) are gone;
+    faceSize is the single size control. chestHeight stays: it anchors scenes that do not stand
+    the character at scene origin.
+  * Framing is parameterised by t (0 = body, 1 = face) rather than by an offset triple, because
+    the wheel has to retarget mid-glide. t eases with frame-rate-independent exponential
+    smoothing; every framing is derived from it by FramingAt.
 
 How it works -- everything rides on facts the 2026-08-07 spike proved in-client:
   * CharacterCreate / CharacterSelect are ModelFFX frames; :SetPosition(a1, a2, a3) MOVES the
@@ -25,16 +42,19 @@ How it works -- everything rides on facts the 2026-08-07 spike proved in-client:
   * Nothing here runs on its own at load beyond creating hidden frames (the ERROR #132 lesson from
     the spike: no probing, no cycling, no model moves until the player actually does something).
 
-Face framing is per race/sex: the dolly magnifies around the camera's aim point (roughly chest
-height), so the model is also lowered by (eye height - aim height) to keep the face centred.
-Eye heights are estimates; refine with the tuning panel and edit EYE_HEIGHT.
+Face framing is per race/sex: the camera zooms about its own axis, so the model is lowered by
+(eye height - the axis height above the character) to keep the face centred. Eye heights are
+estimates; refine with the tuning panel and edit EYE_HEIGHT.
 
 Load order: after DCCharCustomize.lua (its functions are wrapped at install time), before
 DCCharCreateUI/Layout (the layout calls DCGlueCamera.OnStageChanged). Select-screen hooks are
 installed on the driver's first tick, by which point every GlueXML file has loaded regardless of
 GlueXML.toc order.
 
-Degradation: if SetPosition ever errors the module disables itself and the screens behave stock.
+Degradation: a DLL without DCSetGlueZoom (or whose FOV hook failed to take) falls back to the v18
+dolly framing -- FaceArgsDolly, kept verbatim, with its own calibrated knobs -- so the worst case
+is the behaviour that already shipped. If the offset apply errors 20 times running the module
+disables itself and the screens behave stock.
 ------------------------------------------------------------------------------------------------]]
 
 DCGlueCamera = {}
@@ -45,7 +65,14 @@ DCGlueCamera.Config = {
 	-- flip to true and redeploy to resume framing work -- the per-race knobs live in FACE_TUNE.
 	tune = false,
 
-	duration = 0.35,          -- seconds for the ease between framings
+	-- Framing progress `t` eases toward its goal with frame-rate-independent exponential
+	-- smoothing (replaces the old fixed-duration tween: the mouse wheel needs to retarget
+	-- mid-flight, which a from/to/start tween cannot do without restarting the ease).
+	-- Higher = snappier; 9 lands a wheel notch as a ~0.2s glide.
+	zoomSmooth = 9.0,
+	wheelStep = 0.12,         -- t added per wheel notch
+	wheelEnabled = true,      -- scroll-wheel free zoom on the glue screens
+	wheelOnSelect = true,     -- ... including the character-select screen
 
 	-- SetPosition argument mapping (see header). forward = toward the camera, up = screen-up.
 	forwardArg = 1,
@@ -64,12 +91,33 @@ DCGlueCamera.Config = {
 	--   steep cameras (worgen/goblin/bloodelf family, high + pitched down) get the empirically
 	--   approved constant formula -- the analytic vertical is provably wrong for them;
 	--   no data (ui_human's camera track ends mid-flythrough) falls back likewise.
-	faceSize = 0.9,           -- face zoom: angular size knob; distance = faceSize/tan(fov/2), so
-	                          -- narrow-fov screens (worgen 0.75) dolly further than wide ones
-	chestHeight = 1.1,        -- what the camera's aim target height means on the character
+	-- Magnification is OPTICAL since v19 (DCSetGlueZoom scales the scene camera's FOV) rather
+	-- than a dolly. faceSize keeps its meaning -- the half-height of the visible frame at the
+	-- face framing, in model units -- but it is now the ONLY size knob: no per-race distance,
+	-- and no faceForward/df distance trims to keep in sync -- those existed only to fake
+	-- magnification by walking the character toward the camera. (chestHeight stays: it is the
+	-- scene-origin anchor, not a size knob.)
+	faceSize = 0.9,           -- face zoom: half-height of the framed area, in model units
 	faceLift = 0,             -- world-up bias; per-race trims live in FACE_TUNE instead
-	faceForward = 3.0,        -- no-data fallback (human): forward offset
-	aimHeight = 1.2,          -- no-data fallback: face height constant
+	maxFaceZoom = 6.0,        -- clamp on the derived optical zoom
+	fallbackZoom = 2.4,       -- optical mode, no camera data (ui_human): flat magnification
+	-- Used by BOTH paths: the scene-origin anchor. Every glue camera aims at the character's
+	-- chest, so the aim target's height means this height on the character -- which is how the
+	-- framing survives scenes that do not stand the character at scene origin (dwarf/gnome low,
+	-- night elf high).
+	chestHeight = 1.1,        -- dolly path: what the aim target height means on the character
+	-- Optical path uses the same anchor but scaled to the race, because chest height is a
+	-- FRACTION of body height, not a constant: a fixed 1.1 sits above a gnome's eyes (0.95) and
+	-- well below a tauren's chest (~1.55). With the constant, derived lifts ranged from -0.13
+	-- (goblin) to -1.38 (tauren) -- a spread that is modelling error, not per-race character.
+	-- Scaling collapses them to -0.6 .. -1.1. Default is 1.1/1.7, so the human reference case
+	-- reproduces the v18 constant exactly.
+	chestFraction = 0.647,    -- chest height as a fraction of eye height
+	-- Dolly-mode knobs. Live only on the DCSetGlueZoom-less path (FaceArgsDolly) -- kept verbatim
+	-- from v18 so a DLL whose FOV hook did not take still gets the framing that was calibrated
+	-- over 18 in-client rounds, instead of a crude constant.
+	faceForward = 3.0,        -- no camera data: forward offset
+	aimHeight = 1.2,          -- no camera data: face height constant
 	bodyFraction = 0.09,      -- body zoom fraction of camera distance, height-scaled per race so
 	                          -- tauren does not crop while gnome still visibly zooms
 	bodyForward = 0.45,       -- body fallback without camera data
@@ -98,8 +146,13 @@ local EYE_HEIGHT = {
 }
 
 -- Per-race face-framing trims on top of the analytic camera math, from in-client review
--- (2026-08-11): df = forward delta (zoom), dz = vertical delta (+up). The geometry gets every
--- race close; these encode taste and the residual scene quirks.
+-- (2026-08-11): dz = vertical delta (+up), dy = side delta. The geometry gets every race close;
+-- these encode taste and the residual scene quirks.
+--
+-- df (forward delta) is DEAD as of v19 and is ignored: it trimmed the dolly distance, which was
+-- the old magnification mechanism. Optical zoom needs no distance, so tauren's -0.80 and
+-- draenei's -1.20 have nothing left to act on. The rows are kept because their dz/dy still
+-- apply; the df values are retained only as a record of the dolly-era calibration.
 local FACE_TUNE = {
 	[1]  = { dz = -0.60, dy = -0.10 },  -- Human: -0.35 overshot left, back toward the right (r4)
 	[3]  = { dz = 0.25 },               -- Dwarf: lands at goblin's approved framing ratio
@@ -121,7 +174,11 @@ local cfg = DCGlueCamera.Config
 
 -- ---------------------------------------------------------------------------------- screen state
 
--- name -> { frame, cur = {a1,a2,a3}, goal = {a1,a2,a3}, tween = {from,to,start,duration} }
+-- name -> { frame, cur = {a1,a2,a3,zoom}, t, tGoal, settled }
+--   t is the framing progress: 0 = body, 1 = face. Everything the player does moves tGoal; the
+--   driver eases t toward it and derives the whole framing from t. (v18 tweened the offset
+--   triple directly; the wheel needs to retarget mid-flight, which a from/to/start tween cannot
+--   do without restarting the ease.)
 local screens = {}
 
 local function GetScreen(name)
@@ -133,7 +190,7 @@ local function GetScreen(name)
 	if not (frame and frame.SetPosition) then
 		return nil
 	end
-	state = { frame = frame, cur = { 0, 0, 0 }, goal = { 0, 0, 0 }, tween = nil }
+	state = { frame = frame, cur = { 0, 0, 0, 1 }, t = 0, tGoal = 0, settled = false }
 	screens[name] = state
 	return state
 end
@@ -154,6 +211,41 @@ local nativeOffset = type(SetModelPositionOffset) == "function" and SetModelPosi
 -- object from the ModelFFX widget model every earlier mechanism was (wrongly) moving. Background
 -- stays fixed, character zooms -- the Ascension look.
 local nativeCharOffset = type(DCSetGlueCharOffset) == "function" and DCSetGlueCharOffset or nil
+-- v19: optical zoom. Scales the scene camera's FOV, so magnification costs no character movement
+-- and no per-race distance calibration -- the offset above is left doing only what it is actually
+-- good at, moving the eyes onto the view axis. Absent (older DLL) the framing falls back to the
+-- v18 dolly, which is why FaceDelta below still carries the aimHeight fallback.
+local nativeZoom = type(DCSetGlueZoom) == "function" and DCSetGlueZoom or nil
+DCGlueCamera.HasOpticalZoom = nativeZoom ~= nil
+
+-- Last zoom pushed to the native, so an unchanged frame costs no call. The zoom is global (only
+-- one glue screen is ever up), unlike the per-screen offsets.
+local appliedZoom = 1.0
+
+local function ApplyZoom(zoom)
+	if not nativeZoom then
+		return true
+	end
+	if math.abs(zoom - appliedZoom) < 0.0005 then
+		return true
+	end
+	local ok, ret = pcall(nativeZoom, zoom)
+	if ok and ret == 1 then
+		appliedZoom = zoom
+		return true
+	end
+	stats.zoomFailures = (stats.zoomFailures or 0) + 1
+	stats.lastError = ok and "zoom rejected" or tostring(ret)
+	-- The native returns 0 when MinHook could not take 0x4BECF0. Registered-but-not-hooked is the
+	-- one state that would look BROKEN rather than merely unimproved: the vertical recentring
+	-- would apply with no magnification behind it, i.e. a character shoved off-frame for nothing.
+	-- Demote to the dolly path on the first rejection -- FramingAt reads this same upvalue, so the
+	-- next tick is already framing the v18 way.
+	nativeZoom = nil
+	DCGlueCamera.HasOpticalZoom = false
+	appliedZoom = 1.0
+	return false
+end
 
 local function ScreenArg(state)
 	return (state.frame == _G["CharacterSelect"]) and "select" or "create"
@@ -163,56 +255,44 @@ end
 -- rebuilds on its own cadence from the ANIMATED base position, and forcing extra rebuilds
 -- between its frames made rapid tween steps visibly fight it ("applies then resets" flicker).
 -- Final values (tween end, nudges, presets) do refresh so they show even if the scene is idle.
-local function Apply(state, a1, a2, a3, midTween)
+-- Applies one framing: the character offset (whichever native path is live) plus the optical
+-- zoom. Returns true only when BOTH landed, so the driver keeps retrying a framing that could not
+-- bind yet -- the screen-entry apply fires before the character model exists.
+local function Apply(state, a1, a2, a3, zoom, midTween)
+	zoom = zoom or 1.0
+	local zoomOk = ApplyZoom(zoom)
+
+	local ok, ret
 	if nativeCharOffset then
-		local ok, ret = pcall(nativeCharOffset, ScreenArg(state), a1, a2, a3)
-		if ok and ret == 1 then
-			stats.applies = stats.applies + 1
-			state.failStreak = 0
-			stats.lastError = nil
-			state.cur[1], state.cur[2], state.cur[3] = a1, a2, a3
-			return
+		ok, ret = pcall(nativeCharOffset, ScreenArg(state), a1, a2, a3)
+		if ok and ret ~= 1 then
+			ok, ret = false, "char model not resolvable"
 		end
-		stats.failures = stats.failures + 1
-		stats.lastError = ok and "char model not resolvable" or tostring(ret)
-		state.failStreak = (state.failStreak or 0) + 1
-		if state.failStreak >= 20 then
-			cfg.enabled = false
+	elseif nativeOffset then
+		ok, ret = pcall(nativeOffset, state.frame, a1, a2, a3, midTween and 0 or 1)
+		if ok and ret ~= 1 then
+			ok, ret = false, "native offset rejected the frame"
 		end
-		return
+	else
+		ok, ret = pcall(state.frame.SetPosition, state.frame, a1, a2, a3)
 	end
-	if nativeOffset then
-		local ok, ret = pcall(nativeOffset, state.frame, a1, a2, a3, midTween and 0 or 1)
-		if ok and ret == 1 then
-			stats.applies = stats.applies + 1
-			state.failStreak = 0
-			stats.lastError = nil
-			state.cur[1], state.cur[2], state.cur[3] = a1, a2, a3
-			return
-		end
-		stats.failures = stats.failures + 1
-		stats.lastError = ok and "native offset rejected the frame" or tostring(ret)
-		state.failStreak = (state.failStreak or 0) + 1
-		if state.failStreak >= 20 then
-			cfg.enabled = false
-		end
-		return
-	end
-	local ok, err = pcall(state.frame.SetPosition, state.frame, a1, a2, a3)
+
 	if not ok then
 		stats.failures = stats.failures + 1
-		stats.lastError = tostring(err)
+		stats.lastError = tostring(ret)
 		-- Streaks are per screen: the other screen applying fine must not mask a broken one.
 		state.failStreak = (state.failStreak or 0) + 1
 		if state.failStreak >= 20 then
 			cfg.enabled = false
 		end
-		return
+		return false
 	end
+
 	stats.applies = stats.applies + 1
 	state.failStreak = 0
 	stats.lastError = nil
-	state.cur[1], state.cur[2], state.cur[3] = a1, a2, a3
+	state.cur[1], state.cur[2], state.cur[3], state.cur[4] = a1, a2, a3, zoom
+	return zoomOk
 end
 
 -- ---------------------------------------------------------------------------------- framings
@@ -281,13 +361,75 @@ local function BodyArgs(state)
 	return Compose(cfg.bodyForward * scale, 0, 0)
 end
 
-local function FaceArgs(state)
+--- The face framing, as a delta ON TOP of the body baseline: how much to lift/shift the character
+--- and how far to zoom the camera optically. `forward` is the baseline's forward offset, i.e.
+--- where along the view axis the character is already standing.
+---
+--- Geometry (all in the yaw-aligned scene frame DCGlueCameraData uses: camera at (dh, cz), its
+--- aim target at (th, tz), +x pointing from the character toward the camera):
+---   the character stands at x = forward, so the view axis passes over it at
+---       zRay = cz + (forward - dh)/(th - dh) * (tz - cz)
+---   putting the EYES on that axis centres the face in frame, whatever the camera's pitch. The
+---   camera is then d away, and framing a half-height of faceSize at that distance needs a
+---   vertical fov of 2*atan(faceSize/d) -- a magnification of cam.fov / that.
+---
+--- Heights are measured RELATIVE TO THE AIM TARGET, not to scene z. Several scenes do not stand
+--- the character at scene origin (dwarf/gnome sits ~1.1 low, night elf ~2.9 high), and the one
+--- thing every screen agrees on is that its camera aims at the character's chest -- so target
+--- height tz corresponds to the chest ON THE CHARACTER, and everything is offset by
+--- (tz - chest). Anchoring to absolute scene z instead drops the gnome 1.75 units clean out of
+--- frame. This is the same anchor v18 used, with the chest scaled per race (see chestFraction).
+---
+--- What the FOV knob DOES retire is the distance solve: v18 had to pick a framing distance
+--- (faceSize/tan(fov/2)) and walk the character to it, which is what faceForward and the per-race
+--- df trims existed to correct. Magnification now costs no movement, so those are gone.
+local function FaceDelta(state, forward)
+	local eye = EyeHeight()
+	local race = DCCharCustomize and DCCharCustomize.RaceSex and select(1, DCCharCustomize.RaceSex())
+	local tune = race and FACE_TUNE[race] or nil
+	local dz = tune and tune.dz or 0
+	-- Side trim: +y is screen-RIGHT for a camera looking down the -x axis (right-handed, z up),
+	-- so "move the face left" entries carry negative dy.
+	local dy = tune and tune.dy or 0
+
+	local cam = state and ScreenCamera(state) or nil
+	-- A camera aimed straight down its own x (th == dh) gives no ray to solve against, and one
+	-- sitting on top of the character gives a distance that would divide out to an absurd zoom.
+	-- Both fall back.
+	if cam and math.abs(cam.th - cam.dh) > 0.1 then
+		local s = (forward - cam.dh) / (cam.th - cam.dh)
+		local zRay = cam.cz + s * (cam.tz - cam.cz)
+		local dx = cam.dh - forward
+		local d = math.sqrt(dx * dx + (cam.cz - zRay) * (cam.cz - zRay))
+		if d > 0.5 then
+			local zoom = cam.fov / (2 * math.atan(cfg.faceSize / d))
+			if zoom < 1.0 then
+				zoom = 1.0
+			elseif zoom > cfg.maxFaceZoom then
+				zoom = cfg.maxFaceZoom
+			end
+			-- Character-space height of the view axis, via the chest anchor described above.
+			local chest = cfg.chestFraction * eye
+			return zoom, (zRay - cam.tz + chest - eye) + cfg.faceLift + dz, dy
+		end
+	end
+
+	-- No camera data (ui_human's track ends mid-flythrough): flat magnification against the
+	-- assumed aim height. Only the vertical is guesswork here -- the zoom itself is exact,
+	-- which is the whole reason the optical path degrades better than the dolly one did.
+	return cfg.fallbackZoom, -(eye - cfg.aimHeight) + cfg.faceLift + dz, dy
+end
+
+--- v18 face framing, verbatim: the DOLLY path, used when the DLL has no DCSetGlueZoom (or its
+--- FOV hook failed). Magnifies by walking the character up the view axis to an fov-normalized
+--- distance, which is why it needs faceSize AND chestHeight AND the per-race df trims -- exactly
+--- the machinery FaceDelta above retires when optical zoom is available. Returns a full offset
+--- triple, not a delta.
+local function FaceArgsDolly(state)
 	local eye = EyeHeight()
 	local race = DCCharCustomize and DCCharCustomize.RaceSex and select(1, DCCharCustomize.RaceSex())
 	local tune = race and FACE_TUNE[race] or nil
 	local df, dz = (tune and tune.df or 0), (tune and tune.dz or 0)
-	-- Side trim: +y is screen-RIGHT for a camera looking down the -x axis (right-handed, z up),
-	-- so "move the face left" entries carry negative dy.
 	local dy = tune and tune.dy or 0
 	local cam = state and ScreenCamera(state)
 	if cam then
@@ -310,52 +452,77 @@ local function SelectArgs()
 	return Compose(cfg.selectForward, 0, cfg.selectUp)
 end
 
--- ---------------------------------------------------------------------------------- tweening
-
-local function Ease(t) -- easeInOutQuad
-	if t < 0.5 then
-		return 2 * t * t
+--- The complete framing at progress t: offset triple + optical zoom.
+--- t = 0 is the screen's baseline (body dolly on create, stock on select); t = 1 is the face.
+local function FramingAt(state, t)
+	local base = (state.frame == _G["CharacterSelect"]) and SelectArgs() or BodyArgs(state)
+	if t <= 0 then
+		return base[1], base[2], base[3], 1.0
 	end
-	return 1 - 2 * (1 - t) * (1 - t)
+	if not nativeZoom then
+		-- Dolly mode: interpolate the offset triple itself, exactly as v18 did, and never touch
+		-- the camera.
+		local face = FaceArgsDolly(state)
+		return base[1] + (face[1] - base[1]) * t,
+			base[2] + (face[2] - base[2]) * t,
+			base[3] + (face[3] - base[3]) * t,
+			1.0
+	end
+	local zoom, dz, dy = FaceDelta(state, base[cfg.forwardArg])
+	return base[1],
+		base[2] + dy * t,
+		base[3] + dz * t,
+		1.0 + (zoom - 1.0) * t
 end
 
-local function StartTween(state, target, instant)
-	state.goal = target
-	if instant or cfg.duration <= 0 then
-		state.tween = nil
-		Apply(state, target[1], target[2], target[3])
-		return
+-- ---------------------------------------------------------------------------------- easing
+
+--- Retargets the framing. Everything player-facing goes through here: it only moves the goal, so
+--- a wheel notch arriving mid-glide redirects the same motion instead of restarting it.
+local function SetFraming(state, goal, instant)
+	if goal < 0 then
+		goal = 0
+	elseif goal > 1 then
+		goal = 1
 	end
-	state.tween = {
-		from = { state.cur[1], state.cur[2], state.cur[3] },
-		to = target,
-		start = GetTime(),
-		duration = cfg.duration,
-	}
+	state.tGoal = goal
+	if instant or cfg.zoomSmooth <= 0 then
+		state.t = goal
+	end
+	state.settled = false
 end
 
-local function ProcessTween(state, now)
-	local tween = state.tween
-	if not tween then
-		return
+--- One driver tick. Frame-rate independent exponential smoothing, so the glide is the same on a
+--- 30fps laptop and a 200fps desktop.
+--- Mid-glide applies pass midTween: they skip the native's forced transform refresh, because the
+--- glue scene rebuilds on its own cadence and extra rebuilds between its frames made rapid steps
+--- visibly fight it (the 2026-08-11 "applies then resets" flicker). The settling apply refreshes.
+local function StepFraming(state, dt)
+	if state.t ~= state.tGoal then
+		local f = 1 - math.exp(-cfg.zoomSmooth * dt)
+		state.t = state.t + (state.tGoal - state.t) * f
+		if math.abs(state.tGoal - state.t) < 0.002 then
+			state.t = state.tGoal
+		end
+		local a1, a2, a3, zoom = FramingAt(state, state.t)
+		Apply(state, a1, a2, a3, zoom, true)
+		state.settled = false
+	elseif not state.settled then
+		-- Settled, or retrying: native offsets persist on their own, so once an apply has landed
+		-- there is nothing to re-assert. An apply that FAILED (screen entry can fire before the
+		-- character model exists) leaves settled false and is retried next tick.
+		local a1, a2, a3, zoom = FramingAt(state, state.t)
+		state.settled = Apply(state, a1, a2, a3, zoom, false)
+	elseif not (nativeCharOffset or nativeOffset) then
+		-- SetPosition fallback: the scene re-derivation stomps the position every frame, so it
+		-- must be re-asserted every tick.
+		Apply(state, state.cur[1], state.cur[2], state.cur[3], state.cur[4], false)
 	end
-	local t = (now - tween.start) / tween.duration
-	if t >= 1 then
-		state.tween = nil
-		Apply(state, tween.to[1], tween.to[2], tween.to[3])
-		return
-	end
-	local k = Ease(t)
-	Apply(state,
-		tween.from[1] + (tween.to[1] - tween.from[1]) * k,
-		tween.from[2] + (tween.to[2] - tween.from[2]) * k,
-		tween.from[3] + (tween.to[3] - tween.from[3]) * k,
-		true)
 end
 
 -- Re-applies deferred one frame, so they land AFTER a SetBackgroundModel/scene rebuild in the same
 -- call chain has finished with the frame.
-local pending = {} -- screenName -> { args = {...}, instant = bool }
+local pending = {} -- screenName -> { t = number, instant = bool }
 
 -- ---------------------------------------------------------------------------------- public API
 
@@ -367,7 +534,19 @@ function DCGlueCamera.OnAxisTouched(axis)
 	if not state then
 		return
 	end
-	StartTween(state, axis == AXIS_SKIN and BodyArgs(state) or FaceArgs(state))
+	SetFraming(state, axis == AXIS_SKIN and 0 or 1)
+end
+
+--- Free zoom. `delta` is in wheel notches (+1 = toward the face). Nudges the goal rather than
+--- setting it, so repeated notches accumulate and the ease keeps up with the wheel.
+function DCGlueCamera.Nudge(screenName, delta)
+	if not cfg.enabled then
+		return
+	end
+	local state = GetScreen(screenName)
+	if state and state.frame:IsShown() then
+		SetFraming(state, state.tGoal + delta * cfg.wheelStep)
+	end
 end
 
 --- Called by DCCharCreateLayout.ApplyStage. Both stages share the body baseline; what this really
@@ -378,7 +557,7 @@ function DCGlueCamera.OnStageChanged(customize)
 	end
 	local state = GetScreen("CharacterCreate")
 	if state then
-		StartTween(state, BodyArgs(state))
+		SetFraming(state, 0)
 	end
 end
 
@@ -419,7 +598,7 @@ local function Install()
 	local function reframeCreate(stock, ...)
 		local a, b, c, d = stock(...)
 		if cfg.enabled and GetScreen("CharacterCreate") then
-			pending["CharacterCreate"] = { args = BodyArgs(GetScreen("CharacterCreate")), instant = true }
+			pending["CharacterCreate"] = { t = 0, instant = true }
 		end
 		return a, b, c, d
 	end
@@ -430,7 +609,7 @@ local function Install()
 	WrapGlobal("CharacterCreate_OnShow", function(stock, ...)
 		local a, b, c, d = stock(...)
 		if cfg.enabled and GetScreen("CharacterCreate") then
-			pending["CharacterCreate"] = { args = BodyArgs(GetScreen("CharacterCreate")), instant = true }
+			pending["CharacterCreate"] = { t = 0, instant = true }
 		end
 		return a, b, c, d
 	end)
@@ -438,7 +617,7 @@ local function Install()
 	local function reframeSelect(stock, ...)
 		local a, b, c, d = stock(...)
 		if cfg.enabled and GetScreen("CharacterSelect") then
-			pending["CharacterSelect"] = { args = SelectArgs(), instant = true }
+			pending["CharacterSelect"] = { t = 0, instant = true }
 		end
 		return a, b, c, d
 	end
@@ -453,11 +632,13 @@ local function Install()
 		return function(stock, ...)
 			local state = screens[screenName]
 			if state then
-				state.tween = nil
 				pending[screenName] = nil
-				Apply(state, 0, 0, 0)
-				state.cur[1], state.cur[2], state.cur[3] = 0, 0, 0
-				state.goal[1], state.goal[2], state.goal[3] = 0, 0, 0
+				state.t, state.tGoal, state.settled = 0, 0, true
+				-- Zoom 1.0 is not just "no magnification": it is what makes the native restore
+				-- the camera's own FOV and drop its base cache, so a scene that comes back with
+				-- a different camera is measured fresh.
+				Apply(state, 0, 0, 0, 1.0)
+				state.cur[1], state.cur[2], state.cur[3], state.cur[4] = 0, 0, 0, 1.0
 			end
 			return stock(...)
 		end
@@ -473,6 +654,37 @@ local function Install()
 		end
 		return stock(frame, path, ...)
 	end)
+
+	-- Scroll-wheel free zoom. A full-screen catcher rather than EnableMouseWheel on the glue
+	-- screens themselves: those are ModelFFX frames whose scripts the stock UI owns, and a
+	-- separate frame keeps the whole feature removable by flipping cfg.wheelEnabled.
+	-- BACKGROUND strata on purpose -- the wheel goes to the TOPMOST frame under the cursor that
+	-- has it enabled, so the character-select scroll list still wins over its own area. Only the
+	-- wheel is enabled, never mouse clicks, so nothing here can swallow a button press.
+	if cfg.wheelEnabled and not DCGlueCamera._wheel then
+		local wheel = CreateFrame("Frame", "DCGlueCameraWheel", GlueParent)
+		wheel:SetAllPoints(GlueParent)
+		wheel:SetFrameStrata("BACKGROUND")
+		wheel:EnableMouseWheel(true)
+		wheel:SetScript("OnMouseWheel", function(self, delta)
+			-- 3.3.5 passes (self, delta); the arg1 fallback covers a glue state that still
+			-- dispatches the pre-3.0 way.
+			local d = delta or arg1
+			if not d or d == 0 then
+				return
+			end
+			local create = _G["CharacterCreate"]
+			if create and create:IsShown() then
+				DCGlueCamera.Nudge("CharacterCreate", d)
+			elseif cfg.wheelOnSelect then
+				local select = _G["CharacterSelect"]
+				if select and select:IsShown() then
+					DCGlueCamera.Nudge("CharacterSelect", d)
+				end
+			end
+		end)
+		DCGlueCamera._wheel = wheel
+	end
 
 	-- NO OnUpdateModel wrappers. The v3/v4 rounds proved they are pure harm here: their applies
 	-- never survived to the render, and firing at model-frame rate from inside the client's
@@ -494,32 +706,26 @@ driver:SetScript("OnUpdate", function()
 		Install()
 	end
 	local now = GetTime()
+	-- Real elapsed time, clamped: the first tick has no previous stamp, and an alt-tab or a
+	-- loading screen must not deliver one giant step that snaps the ease.
+	local dt = DCGlueCamera._lastTick and (now - DCGlueCamera._lastTick) or 0.016
+	DCGlueCamera._lastTick = now
+	if dt < 0.001 then
+		dt = 0.001
+	elseif dt > 0.1 then
+		dt = 0.1
+	end
 	if cfg.enabled then
 		for name, entry in pairs(pending) do
 			local state = GetScreen(name)
 			if state then
-				StartTween(state, entry.args, entry.instant)
+				SetFraming(state, entry.t, entry.instant)
 			end
 			pending[name] = nil
 		end
 		for _, state in pairs(screens) do
 			if state.frame:IsShown() then
-				ProcessTween(state, now)
-				if not state.tween then
-					if nativeCharOffset or nativeOffset then
-						-- Native offsets persist on their own; but an apply that FAILED (the
-						-- screen-entry apply can fire before the character model exists) leaves
-						-- cur behind goal -- retry until it binds.
-						if state.cur[1] ~= state.goal[1] or state.cur[2] ~= state.goal[2]
-							or state.cur[3] ~= state.goal[3] then
-							Apply(state, state.goal[1], state.goal[2], state.goal[3])
-						end
-					else
-						-- SetPosition fallback: the scene re-derivation stomps the position every
-						-- frame, so it must be re-asserted every tick.
-						Apply(state, state.cur[1], state.cur[2], state.cur[3])
-					end
-				end
+				StepFraming(state, dt)
 			end
 		end
 	end
@@ -532,12 +738,15 @@ driver:SetScript("OnUpdate", function()
 		local hit = model and DCGlueCameraData
 			and (DCGlueCameraData[model] or DCGlueCameraData["ui_" .. model]) and "+" or "-"
 		statsText:SetText(string.format(
-			"%s  applies %d  fail %d  cam %s%s\ncur %.2f / %.2f / %.2f  %s%s",
+			"%s %s  applies %d  fail %d/%d  cam %s%s\ncur %.2f / %.2f / %.2f  zoom %.2fx"
+				.. "  t %.2f>%.2f  %s%s",
 			(nativeCharOffset and "|cff00ff00char|r")
 				or (nativeOffset and "|cffffcc00widget|r") or "|cffff4040setpos|r",
-			stats.applies, stats.failures, model or "?", hit,
+			nativeZoom and "|cff00ff00fov|r" or "|cffff4040dolly|r",
+			stats.applies, stats.failures, stats.zoomFailures or 0, model or "?", hit,
 			create and create.cur[1] or 0, create and create.cur[2] or 0,
-			create and create.cur[3] or 0,
+			create and create.cur[3] or 0, create and create.cur[4] or 1,
+			create and create.t or 0, create and create.tGoal or 0,
 			cfg.enabled and "|cff00ff00on|r" or "|cffff4040DISABLED|r",
 			stats.lastError and ("\n|cffff4040" .. string.sub(stats.lastError, -60) .. "|r") or ""))
 	end
@@ -570,7 +779,7 @@ if cfg.tune then
 	title:SetPoint("TOPLEFT", 12, -10)
 	-- The version tag is the "is the new deploy actually live?" check: glue Lua loads once per
 	-- client start, so a stale tag means the client was not fully restarted.
-	title:SetText("|cff00ff00DC glue camera tuner v18|r")
+	title:SetText("|cff00ff00DC glue camera tuner v19|r")
 
 	-- Live diagnostics, refreshed by the driver: whether applies are flowing every frame, whether
 	-- the OnUpdateModel handlers fire at all, and the last SetPosition error if any.
@@ -579,12 +788,12 @@ if cfg.tune then
 	statsText:SetJustifyH("LEFT")
 	statsText:SetWidth(216)
 	DCGlueCamera._statsText = statsText
-	panel:SetHeight(230)
+	panel:SetHeight(254)
 
 	local readout = panel:CreateFontString(nil, "OVERLAY", "GlueFontHighlightSmall")
 	readout:SetPoint("TOPLEFT", 12, -28)
 	readout:SetJustifyH("LEFT")
-	readout:SetText("arg1 0.00  arg2 0.00  arg3 0.00")
+	readout:SetText("arg1 0.00  arg2 0.00  arg3 0.00  zoom 1.00x")
 
 	local function ActiveScreen()
 		local create = _G["CharacterCreate"]
@@ -599,8 +808,16 @@ if cfg.tune then
 	end
 
 	local function Refresh(state)
-		readout:SetText(string.format("arg1 %.2f  arg2 %.2f  arg3 %.2f",
-			state.cur[1], state.cur[2], state.cur[3]))
+		readout:SetText(string.format("arg1 %.2f  arg2 %.2f  arg3 %.2f  zoom %.2fx",
+			state.cur[1], state.cur[2], state.cur[3], state.cur[4]))
+	end
+
+	-- A manual nudge has to FREEZE the driver, or the next tick re-derives the framing from t and
+	-- throws the measurement away. Parking tGoal on t and declaring the state settled is exactly
+	-- what leaves StepFraming with nothing to do in native mode.
+	local function Freeze(state)
+		state.tGoal = state.t
+		state.settled = true
 	end
 
 	local function MakeButton(label, x, y, width, onClick)
@@ -628,39 +845,43 @@ if cfg.tune then
 		return button
 	end
 
-	for arg = 1, 3 do
+	-- Row 4 is the optical zoom, which needs a far finer step than the offsets: 0.5x per click
+	-- would jump straight past every framing worth recording.
+	for arg = 1, 4 do
 		local y = -46 - (arg - 1) * 24
+		local step = (arg == 4) and 0.1 or STEP
 		local label = panel:CreateFontString(nil, "OVERLAY", "GlueFontHighlightSmall")
 		label:SetPoint("TOPLEFT", 12, y - 4)
-		label:SetText("arg" .. arg)
-		MakeButton("-", 60, y, 30, function(state)
-			state.tween = nil
-			state.cur[arg] = state.cur[arg] - STEP
-			Apply(state, state.cur[1], state.cur[2], state.cur[3])
-		end)
-		MakeButton("+", 94, y, 30, function(state)
-			state.tween = nil
-			state.cur[arg] = state.cur[arg] + STEP
-			Apply(state, state.cur[1], state.cur[2], state.cur[3])
-		end)
+		label:SetText((arg == 4) and "zoom" or ("arg" .. arg))
+		local function nudge(state, by)
+			Freeze(state)
+			state.cur[arg] = state.cur[arg] + by
+			if arg == 4 and state.cur[4] < 1 then
+				state.cur[4] = 1
+			end
+			Apply(state, state.cur[1], state.cur[2], state.cur[3], state.cur[4])
+		end
+		MakeButton("-", 60, y, 30, function(state) nudge(state, -step) end)
+		MakeButton("+", 94, y, 30, function(state) nudge(state, step) end)
 	end
 
 	-- Instant on purpose: while MEASURING, a mid-flight tween is exactly what makes results
 	-- unreadable (each step re-drives the scene). The production hooks keep the ease; the tuner
 	-- shows steady states only.
-	MakeButton("Zero", 12, -124, 60, function(state)
-		StartTween(state, { 0, 0, 0 }, true)
+	MakeButton("Body", 12, -148, 60, function(state)
+		SetFraming(state, 0, true)
 	end)
-	MakeButton("Body", 76, -124, 60, function(state)
-		StartTween(state, BodyArgs(state), true)
+	MakeButton("Half", 76, -148, 60, function(state)
+		SetFraming(state, 0.5, true)
 	end)
-	MakeButton("Face", 140, -124, 60, function(state)
-		StartTween(state, FaceArgs(state), true)
+	MakeButton("Face", 140, -148, 60, function(state)
+		SetFraming(state, 1, true)
 	end)
 
 	local hint = panel:CreateFontString(nil, "OVERLAY", "GlueFontHighlightSmall")
-	hint:SetPoint("TOPLEFT", 12, -152)
+	hint:SetPoint("TOPLEFT", 12, -176)
 	hint:SetJustifyH("LEFT")
 	hint:SetWidth(216)
-	hint:SetText("|cffffcc00Nudge args to find the toward-camera axis; record values into DCGlueCamera.Config.|r")
+	hint:SetText("|cffffcc00Body/Half/Face set t; args trim the offset, zoom the FOV. Record dz/dy into "
+		.. "FACE_TUNE and the zoom ratio into Config.faceSize.|r")
 end
