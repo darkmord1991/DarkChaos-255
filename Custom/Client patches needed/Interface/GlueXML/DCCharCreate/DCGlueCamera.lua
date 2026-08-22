@@ -15,15 +15,23 @@ are from bozo-1/wxl-glue-zoom (GPL-3.0); the placement side stays ours, since ho
 CModel::SetTransform costs a handful of calls per frame where that module rewrites the placement
 matrix on every DrawIndexedPrimitive.
 
-Two consequences worth knowing before touching the framing:
-  * The offset is no longer a magnifier. It does exactly one job -- put the EYES on the camera's
-    view axis -- and FaceDelta derives that from DCGlueCameraData alone. The v18 knobs that
-    existed only to fake magnification by distance (faceForward, the per-race df trims) are gone;
-    faceSize is the single size control. chestHeight stays: it anchors scenes that do not stand
-    the character at scene origin.
-  * Framing is parameterised by t (0 = body, 1 = face) rather than by an offset triple, because
-    the wheel has to retarget mid-glide. t eases with frame-rate-independent exponential
-    smoothing; every framing is derived from it by FramingAt.
+Optical zoom EXTENDS the dolly, it does not replace it. v19.0 tried replacing it -- deriving a
+vertical-only offset that put the eyes on the view axis, deleting faceForward and the per-race df
+trims -- and it failed in-client on 2026-08-22 in two ways that share one cause. Moving the
+character vertically without also moving it forward sinks it into the scene FLOOR (gnome and dwarf
+were lowered ~2.6x further than v18 and went visibly underground), and the derived lift was about
+half what the tall races need (tauren -0.43 vs v18's -1.13, draenei -0.59 vs -1.21), so the frame
+centred on the chest. v18's placement had been calibrated over 18 in-client rounds and was not the
+thing to replace.
+
+So the split is:
+  * t = 0 .. 1  -- v18, verbatim. The dolly walks the character from the body baseline to the face
+    framing, and every knob it needs (faceSize, chestHeight, faceForward, the FACE_TUNE df/dz/dy
+    trims) is still live. Zoom stays 1.0 across this whole range, so t = 1 IS v18.
+  * t = 1 .. 2  -- placement PINNED at the face framing; magnification is FOV alone. Nothing moves,
+    so no amount of extra zoom can sink the model. This is the range the wheel adds.
+  * Framing is parameterised by t rather than by an offset triple because the wheel has to
+    retarget mid-glide; t eases with frame-rate-independent exponential smoothing.
 
 How it works -- everything rides on facts the 2026-08-07 spike proved in-client:
   * CharacterCreate / CharacterSelect are ModelFFX frames; :SetPosition(a1, a2, a3) MOVES the
@@ -51,10 +59,9 @@ DCCharCreateUI/Layout (the layout calls DCGlueCamera.OnStageChanged). Select-scr
 installed on the driver's first tick, by which point every GlueXML file has loaded regardless of
 GlueXML.toc order.
 
-Degradation: a DLL without DCSetGlueZoom (or whose FOV hook failed to take) falls back to the v18
-dolly framing -- FaceArgsDolly, kept verbatim, with its own calibrated knobs -- so the worst case
-is the behaviour that already shipped. If the offset apply errors 20 times running the module
-disables itself and the screens behave stock.
+Degradation: a DLL without DCSetGlueZoom (or whose FOV hook failed to take) simply caps t at 1,
+which is v18 exactly -- the worst case is the behaviour that already shipped. If the offset apply
+errors 20 times running the module disables itself and the screens behave stock.
 ------------------------------------------------------------------------------------------------]]
 
 DCGlueCamera = {}
@@ -91,33 +98,25 @@ DCGlueCamera.Config = {
 	--   steep cameras (worgen/goblin/bloodelf family, high + pitched down) get the empirically
 	--   approved constant formula -- the analytic vertical is provably wrong for them;
 	--   no data (ui_human's camera track ends mid-flythrough) falls back likewise.
-	-- Magnification is OPTICAL since v19 (DCSetGlueZoom scales the scene camera's FOV) rather
-	-- than a dolly. faceSize keeps its meaning -- the half-height of the visible frame at the
-	-- face framing, in model units -- but it is now the ONLY size knob: no per-race distance,
-	-- and no faceForward/df distance trims to keep in sync -- those existed only to fake
-	-- magnification by walking the character toward the camera. (chestHeight stays: it is the
-	-- scene-origin anchor, not a size knob.)
-	faceSize = 0.9,           -- face zoom: half-height of the framed area, in model units
+	-- Magnification is OPTICAL since v19 (DCSetGlueZoom scales the scene camera's FOV), but it is
+	-- an EXTENSION of the v18 dolly, not a replacement for it. v19.0 tried replacing it -- deriving
+	-- a vertical-only offset that put the eyes on the view axis -- and that failed in-client two
+	-- ways at once (2026-08-22):
+	--   * Vertical-only movement sinks the model into the scene FLOOR. The dolly moved the
+	--     character forward as well, which is what kept its feet on the ground; without that, gnome
+	--     and dwarf were lowered ~2.6x further than v18 and went visibly underground.
+	--   * It under-lifted the tall races (tauren -0.43 vs v18's -1.13, draenei -0.59 vs -1.21), so
+	--     the frame centred on the chest instead of the face.
+	-- So placement is v18's, unchanged and still calibrated; FOV only adds magnification BEYOND the
+	-- face framing, where the character no longer moves and so cannot sink.
+	faceSize = 0.9,           -- face framing distance = faceSize / tan(fov/2)
 	faceLift = 0,             -- world-up bias; per-race trims live in FACE_TUNE instead
-	maxFaceZoom = 6.0,        -- clamp on the derived optical zoom
-	fallbackZoom = 2.4,       -- optical mode, no camera data (ui_human): flat magnification
-	-- Used by BOTH paths: the scene-origin anchor. Every glue camera aims at the character's
-	-- chest, so the aim target's height means this height on the character -- which is how the
-	-- framing survives scenes that do not stand the character at scene origin (dwarf/gnome low,
-	-- night elf high).
-	chestHeight = 1.1,        -- dolly path: what the aim target height means on the character
-	-- Optical path uses the same anchor but scaled to the race, because chest height is a
-	-- FRACTION of body height, not a constant: a fixed 1.1 sits above a gnome's eyes (0.95) and
-	-- well below a tauren's chest (~1.55). With the constant, derived lifts ranged from -0.13
-	-- (goblin) to -1.38 (tauren) -- a spread that is modelling error, not per-race character.
-	-- Scaling collapses them to -0.6 .. -1.1. Default is 1.1/1.7, so the human reference case
-	-- reproduces the v18 constant exactly.
-	chestFraction = 0.647,    -- chest height as a fraction of eye height
-	-- Dolly-mode knobs. Live only on the DCSetGlueZoom-less path (FaceArgsDolly) -- kept verbatim
-	-- from v18 so a DLL whose FOV hook did not take still gets the framing that was calibrated
-	-- over 18 in-client rounds, instead of a crude constant.
+	chestHeight = 1.1,        -- what the camera's aim target height means on the character
 	faceForward = 3.0,        -- no camera data: forward offset
 	aimHeight = 1.2,          -- no camera data: face height constant
+	-- Optical zoom applied across t = 1 -> tMax, on top of the face framing. 2.0 doubles the
+	-- apparent size again past the point where v18 stopped.
+	extraZoom = 2.0,
 	bodyFraction = 0.09,      -- body zoom fraction of camera distance, height-scaled per race so
 	                          -- tauren does not crop while gnome still visibly zooms
 	bodyForward = 0.45,       -- body fallback without camera data
@@ -211,10 +210,10 @@ local nativeOffset = type(SetModelPositionOffset) == "function" and SetModelPosi
 -- object from the ModelFFX widget model every earlier mechanism was (wrongly) moving. Background
 -- stays fixed, character zooms -- the Ascension look.
 local nativeCharOffset = type(DCSetGlueCharOffset) == "function" and DCSetGlueCharOffset or nil
--- v19: optical zoom. Scales the scene camera's FOV, so magnification costs no character movement
--- and no per-race distance calibration -- the offset above is left doing only what it is actually
--- good at, moving the eyes onto the view axis. Absent (older DLL) the framing falls back to the
--- v18 dolly, which is why FaceDelta below still carries the aimHeight fallback.
+-- v19: optical zoom. Scales the scene camera's FOV, magnifying WITHOUT moving the character --
+-- which is exactly what the dolly cannot do, since past the face framing any further movement
+-- buries the model in the scene floor. It extends the range rather than replacing the dolly;
+-- absent (older DLL) TMax caps t at 1 and the framing is v18 exactly.
 local nativeZoom = type(DCSetGlueZoom) == "function" and DCSetGlueZoom or nil
 DCGlueCamera.HasOpticalZoom = nativeZoom ~= nil
 
@@ -361,71 +360,15 @@ local function BodyArgs(state)
 	return Compose(cfg.bodyForward * scale, 0, 0)
 end
 
---- The face framing, as a delta ON TOP of the body baseline: how much to lift/shift the character
---- and how far to zoom the camera optically. `forward` is the baseline's forward offset, i.e.
---- where along the view axis the character is already standing.
+--- The face framing: v18, verbatim and still the only thing that decides WHERE the character
+--- goes. Walks it up the camera's view axis to an fov-normalized distance so the eyes land on
+--- the axis at a consistent apparent size, anchoring the vertical to the camera's aim target
+--- (which is why scenes that do not stand the character at scene origin -- dwarf/gnome low,
+--- night elf high -- still frame correctly).
 ---
---- Geometry (all in the yaw-aligned scene frame DCGlueCameraData uses: camera at (dh, cz), its
---- aim target at (th, tz), +x pointing from the character toward the camera):
----   the character stands at x = forward, so the view axis passes over it at
----       zRay = cz + (forward - dh)/(th - dh) * (tz - cz)
----   putting the EYES on that axis centres the face in frame, whatever the camera's pitch. The
----   camera is then d away, and framing a half-height of faceSize at that distance needs a
----   vertical fov of 2*atan(faceSize/d) -- a magnification of cam.fov / that.
----
---- Heights are measured RELATIVE TO THE AIM TARGET, not to scene z. Several scenes do not stand
---- the character at scene origin (dwarf/gnome sits ~1.1 low, night elf ~2.9 high), and the one
---- thing every screen agrees on is that its camera aims at the character's chest -- so target
---- height tz corresponds to the chest ON THE CHARACTER, and everything is offset by
---- (tz - chest). Anchoring to absolute scene z instead drops the gnome 1.75 units clean out of
---- frame. This is the same anchor v18 used, with the chest scaled per race (see chestFraction).
----
---- What the FOV knob DOES retire is the distance solve: v18 had to pick a framing distance
---- (faceSize/tan(fov/2)) and walk the character to it, which is what faceForward and the per-race
---- df trims existed to correct. Magnification now costs no movement, so those are gone.
-local function FaceDelta(state, forward)
-	local eye = EyeHeight()
-	local race = DCCharCustomize and DCCharCustomize.RaceSex and select(1, DCCharCustomize.RaceSex())
-	local tune = race and FACE_TUNE[race] or nil
-	local dz = tune and tune.dz or 0
-	-- Side trim: +y is screen-RIGHT for a camera looking down the -x axis (right-handed, z up),
-	-- so "move the face left" entries carry negative dy.
-	local dy = tune and tune.dy or 0
-
-	local cam = state and ScreenCamera(state) or nil
-	-- A camera aimed straight down its own x (th == dh) gives no ray to solve against, and one
-	-- sitting on top of the character gives a distance that would divide out to an absurd zoom.
-	-- Both fall back.
-	if cam and math.abs(cam.th - cam.dh) > 0.1 then
-		local s = (forward - cam.dh) / (cam.th - cam.dh)
-		local zRay = cam.cz + s * (cam.tz - cam.cz)
-		local dx = cam.dh - forward
-		local d = math.sqrt(dx * dx + (cam.cz - zRay) * (cam.cz - zRay))
-		if d > 0.5 then
-			local zoom = cam.fov / (2 * math.atan(cfg.faceSize / d))
-			if zoom < 1.0 then
-				zoom = 1.0
-			elseif zoom > cfg.maxFaceZoom then
-				zoom = cfg.maxFaceZoom
-			end
-			-- Character-space height of the view axis, via the chest anchor described above.
-			local chest = cfg.chestFraction * eye
-			return zoom, (zRay - cam.tz + chest - eye) + cfg.faceLift + dz, dy
-		end
-	end
-
-	-- No camera data (ui_human's track ends mid-flythrough): flat magnification against the
-	-- assumed aim height. Only the vertical is guesswork here -- the zoom itself is exact,
-	-- which is the whole reason the optical path degrades better than the dolly one did.
-	return cfg.fallbackZoom, -(eye - cfg.aimHeight) + cfg.faceLift + dz, dy
-end
-
---- v18 face framing, verbatim: the DOLLY path, used when the DLL has no DCSetGlueZoom (or its
---- FOV hook failed). Magnifies by walking the character up the view axis to an fov-normalized
---- distance, which is why it needs faceSize AND chestHeight AND the per-race df trims -- exactly
---- the machinery FaceDelta above retires when optical zoom is available. Returns a full offset
---- triple, not a delta.
-local function FaceArgsDolly(state)
+--- Optical zoom does NOT change this. It magnifies further once the character is already here,
+--- which is the one thing the dolly could not do without sinking the model into the floor.
+local function FaceArgs(state)
 	local eye = EyeHeight()
 	local race = DCCharCustomize and DCCharCustomize.RaceSex and select(1, DCCharCustomize.RaceSex())
 	local tune = race and FACE_TUNE[race] or nil
@@ -454,25 +397,36 @@ end
 
 --- The complete framing at progress t: offset triple + optical zoom.
 --- t = 0 is the screen's baseline (body dolly on create, stock on select); t = 1 is the face.
+--- Maximum t. Without optical zoom the range stops at the v18 face framing; with it the wheel
+--- can carry on past that point on FOV alone.
+local function TMax()
+	return nativeZoom and 2.0 or 1.0
+end
+
+--- The complete framing at progress t: offset triple + optical zoom.
+---   t = 0        the screen's baseline (body dolly on create, stock on select)
+---   t = 0 .. 1   v18: dolly from baseline to the face framing. Zoom stays 1.0.
+---   t = 1 .. 2   placement PINNED at the face framing; magnification is FOV only.
+--- Splitting it there is the whole design: everything that moves the character is v18's approved
+--- calibration, and everything past it moves nothing, so no amount of extra zoom can sink the
+--- model into the scene floor.
 local function FramingAt(state, t)
 	local base = (state.frame == _G["CharacterSelect"]) and SelectArgs() or BodyArgs(state)
 	if t <= 0 then
 		return base[1], base[2], base[3], 1.0
 	end
-	if not nativeZoom then
-		-- Dolly mode: interpolate the offset triple itself, exactly as v18 did, and never touch
-		-- the camera.
-		local face = FaceArgsDolly(state)
-		return base[1] + (face[1] - base[1]) * t,
-			base[2] + (face[2] - base[2]) * t,
-			base[3] + (face[3] - base[3]) * t,
-			1.0
+
+	local face = FaceArgs(state)
+	local k = (t < 1) and t or 1
+	local a1 = base[1] + (face[1] - base[1]) * k
+	local a2 = base[2] + (face[2] - base[2]) * k
+	local a3 = base[3] + (face[3] - base[3]) * k
+
+	local zoom = 1.0
+	if t > 1 and nativeZoom then
+		zoom = 1.0 + (cfg.extraZoom - 1.0) * (t - 1)
 	end
-	local zoom, dz, dy = FaceDelta(state, base[cfg.forwardArg])
-	return base[1],
-		base[2] + dy * t,
-		base[3] + dz * t,
-		1.0 + (zoom - 1.0) * t
+	return a1, a2, a3, zoom
 end
 
 -- ---------------------------------------------------------------------------------- easing
@@ -480,10 +434,11 @@ end
 --- Retargets the framing. Everything player-facing goes through here: it only moves the goal, so
 --- a wheel notch arriving mid-glide redirects the same motion instead of restarting it.
 local function SetFraming(state, goal, instant)
+	local top = TMax()
 	if goal < 0 then
 		goal = 0
-	elseif goal > 1 then
-		goal = 1
+	elseif goal > top then
+		goal = top
 	end
 	state.tGoal = goal
 	if instant or cfg.zoomSmooth <= 0 then
@@ -871,11 +826,13 @@ if cfg.tune then
 	MakeButton("Body", 12, -148, 60, function(state)
 		SetFraming(state, 0, true)
 	end)
-	MakeButton("Half", 76, -148, 60, function(state)
-		SetFraming(state, 0.5, true)
-	end)
-	MakeButton("Face", 140, -148, 60, function(state)
+	-- Face is t = 1, i.e. v18's framing exactly -- the reference to calibrate FACE_TUNE against.
+	-- Max is the far end of the optical range, which moves nothing further.
+	MakeButton("Face", 76, -148, 60, function(state)
 		SetFraming(state, 1, true)
+	end)
+	MakeButton("Max", 140, -148, 60, function(state)
+		SetFraming(state, TMax(), true)
 	end)
 
 	local hint = panel:CreateFontString(nil, "OVERLAY", "GlueFontHighlightSmall")

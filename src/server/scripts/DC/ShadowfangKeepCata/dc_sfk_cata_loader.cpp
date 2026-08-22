@@ -25,6 +25,7 @@ void AddSC_boss_commander_springvale();
 void AddSC_boss_lord_walden();
 void AddSC_boss_lord_godfrey();
 void AddSC_instance_sfk_cata();
+void AddSC_gobject_sfk_cata_portal();
 
 void AddDCShadowfangKeepCataScripts()
 {
@@ -34,4 +35,5 @@ void AddDCShadowfangKeepCataScripts()
     AddSC_boss_commander_springvale();
     AddSC_boss_lord_walden();
     AddSC_boss_lord_godfrey();
+    AddSC_gobject_sfk_cata_portal();
 }
