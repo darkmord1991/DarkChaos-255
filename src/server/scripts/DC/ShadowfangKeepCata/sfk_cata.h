@@ -41,6 +41,26 @@ uint32 const EncounterCount = 7;
 // DC clone map. Stock Shadowfang Keep stays on 33.
 uint32 const MapShadowfangKeepCata = 825;
 
+
+// ---------------------------------------------------------------------------------
+// Portal constants -- shared by the clickable GO and the walk-through trigger NPC
+// ---------------------------------------------------------------------------------
+// NOTE: there is deliberately no min-level constant here. Entry to map 825 is gated by
+// dungeon_access_template (rows 158/159/160) via MapMgr::PlayerCannotEnter, which
+// Player::TeleportTo already calls -- one source of truth for the level, and it produces
+// the correct client-side message.
+
+// Arrival point inside: the spot stock Shadowfang Keep teleports to, which 825 shares
+// because the two maps have the same coordinate space.
+constexpr float SFK_INSIDE_X = -229.135f, SFK_INSIDE_Y = 2109.18f,
+                SFK_INSIDE_Z = 76.8898f, SFK_INSIDE_O = 1.267f;
+
+// And back out: just outside the door in Silverpine on map 751.
+constexpr float SFK_OUTSIDE_X = -232.796f, SFK_OUTSIDE_Y = 1568.28f,
+                SFK_OUTSIDE_Z = 76.8909f, SFK_OUTSIDE_O = 4.398f;
+
+uint32 const MAP_SILVERPINE_751 = 751;
+
 enum SKDataTypes
 {
     // Bosses
