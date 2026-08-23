@@ -296,3 +296,6 @@
 "9352","825","0","","","","","","","","","","","","","","","","","16712188","0","5",""
 "9353","825","1","Heroic mode unlocked for Shadowfang Keep (Cataclysm).","","","","","","","","","","","","","","","","16712190","86400","5","DUNGEON_DIFFICULTY_5PLAYER_HEROIC"
 "9354","825","2","Mythic mode unlocked for Shadowfang Keep (Cataclysm).","","","","","","","","","","","","","","","","16712190","0","5","DUNGEON_DIFFICULTY_5PLAYER_MYTHIC"
+"9355","821","0","","","","","","","","","","","","","","","","","16712188","0","5",""
+"9356","821","1","Heroic mode unlocked for Stratholme (DarkChaos).","","","","","","","","","","","","","","","","16712190","86400","5","DUNGEON_DIFFICULTY_5PLAYER_HEROIC"
+"9357","821","2","Mythic mode unlocked for Stratholme (DarkChaos).","","","","","","","","","","","","","","","","16712190","0","5","DUNGEON_DIFFICULTY_5PLAYER_MYTHIC"

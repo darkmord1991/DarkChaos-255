@@ -106,6 +106,7 @@ void AddSC_instance_timbermaw_hold();         // TimbermawHold/instance_timberma
 // Wrapper loader only - do NOT also declare its internal AddSC_* entries here.
 void AddDCNaxx40Scripts();                    // Naxx40/dc_naxx40_loader.cpp
 void AddDCShadowfangKeepCataScripts();        // ShadowfangKeepCata/dc_sfk_cata_loader.cpp
+void AddDCStratholmeScripts();                // StratholmeDC/dc_stratholme_loader.cpp
 
 void AddSC_instance_crescent_grove();         // CrescentGrove/instance_crescent_grove.cpp
 void AddSC_instance_emerald_sanctum();        // EmeraldSanctum/instance_emerald_sanctum.cpp
@@ -394,6 +395,7 @@ void AddDCScripts()
     DC_LOAD(AddSC_instance_timbermaw_hold);
     DC_LOAD(AddDCNaxx40Scripts);
     DC_LOAD(AddDCShadowfangKeepCataScripts);
+    DC_LOAD(AddDCStratholmeScripts);
     DC_LOAD(AddSC_instance_crescent_grove);
     DC_LOAD(AddSC_instance_emerald_sanctum);
     DC_LOAD(AddSC_boss_timbermaw_hold);
