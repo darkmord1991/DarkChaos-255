@@ -82,7 +82,16 @@ enum Actions
 
 const Position heirloomsPosition = { 3423.389893f, -3055.571045f, 136.49837f, 5.707379f };
 
-void HandleBothDead(Creature* creature, bool jarien, Unit* killer)
+// static, unlike upstream. A namespace-scope function has EXTERNAL linkage by default, so
+// the copy here and the original in EasternKingdoms/Stratholme/boss_jarien_and_sothos.cpp
+// both export HandleBothDead(Creature*, bool, Unit*) and the link fails with
+//     mold: error: duplicate symbol: ... HandleBothDead(Creature*, bool, Unit*)
+// Renaming the classes was not enough because this one is a free helper, not a class member.
+//
+// The two const namespace-scope objects next to it (heirloomsPosition here, BlackGuardPos in
+// instance_stratholme_dc.cpp) do NOT need this: const at namespace scope already implies
+// internal linkage in C++. This is the only symbol across all three cloned files that did.
+static void HandleBothDead(Creature* creature, bool jarien, Unit* killer)
 {
     // Spirit talk
     if (jarien)
