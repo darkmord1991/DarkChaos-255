@@ -20,9 +20,12 @@
  *                 "... Teleport Bunny" / "Invisible Stalker ... teleport" /
  *                 "Portal Trainer" entries that must not become map markers.
  *  - "mail"       gameobject_template.type == GAMEOBJECT_TYPE_MAILBOX.
- *  - "dungeon" /  creature whose ENTRY is listed in kInstanceEntrances -- the
- *    "raid"       gatekeeper NPCs standing outside an instance. Entry-matched
- *                 because they run on SmartAI and carry no ScriptName.
+ *  - "dungeon" /  creature whose ENTRY is listed in kInstanceEntrances, or
+ *    "raid"       gameobject whose entry is listed in kInstanceEntranceObjects --
+ *                 the gatekeeper NPC, walk-through trigger or runestone standing
+ *                 at an instance door. Entry-matched because these carry either no
+ *                 ScriptName (SmartAI gatekeepers) or a ScriptName shared with the
+ *                 instance's exit trigger.
  *
  * The POI list is static world data: it is scanned once on first request and
  * cached. Requests are answered from memory (no DB round-trip); responses are
@@ -121,10 +124,46 @@ namespace MapPOIs
         char const* type;
     };
 
+    // Dungeon vs raid is Map.dbc InstanceType for the map behind the door, not taste.
+    //
+    // Only the OUTSIDE marker belongs here. Each instance also has a "Warden" NPC
+    // standing inside it (3999003/4/6/8) whose job is the exit; listing one would
+    // paint an entrance pin on the dungeon's own interior map.
+    //
+    // The map-751 rows are the invisible walk-through trigger creatures, not
+    // gatekeeper gossip NPCs -- on the Lordaeron clones the door IS the trigger, so
+    // the trigger's spawn is the entrance. They carry a ScriptName rather than
+    // SmartAI, but entry-matching is still the right key: their script names are
+    // shared across the entrance AND the exit trigger of the same instance.
     static constexpr InstanceEntrance kInstanceEntrances[] =
     {
-        { 3999001, PoiType::DUNGEON }, // Blackfathom Gatekeeper  -> map 820
-        { 3999002, PoiType::RAID    }, // Timbermaw Gatekeeper    -> map 819
+        { 3999001, PoiType::DUNGEON }, // Blackfathom Gatekeeper        map 750 -> 820
+        { 3999002, PoiType::RAID    }, // Timbermaw Gatekeeper          map 750 -> 819
+        { 3999005, PoiType::DUNGEON }, // Crescent Grove Gatekeeper     map 750 -> 823
+        { 3999007, PoiType::RAID    }, // Emerald Sanctum Gatekeeper    map 750 -> 824
+        { 5420000, PoiType::DUNGEON }, // Shadowfang Keep Entrance      map 751 -> 825
+        { 5520000, PoiType::DUNGEON }, // Stratholme Entrance, front    map 751 -> 821
+        { 5520002, PoiType::DUNGEON }, // Stratholme Entrance, back     map 751 -> 821
+        { 5720000, PoiType::DUNGEON }, // Scholomance Entrance          map 751 -> 822
+    };
+
+    // 5520001 "Stratholme Entrance (Front Left)" is deliberately NOT listed. It is
+    // the second half of the main gate, 20.2 yards from 5520000, and the duplicate
+    // collapser only merges spawns that share a template entry -- so listing it
+    // would put two pins on one doorway rather than one.
+
+    // Instance entrances that are GAMEOBJECTS rather than creatures. Same rule and
+    // same reason for exact-entry matching; a separate table because the two spawn
+    // sets are walked in separate loops.
+    struct InstanceEntranceObject
+    {
+        uint32 entry;
+        char const* type;
+    };
+
+    static constexpr InstanceEntranceObject kInstanceEntranceObjects[] =
+    {
+        { 361001, PoiType::RAID }, // Teleport To Naxxramas (Plaguewood runestone) map 751 -> 2921
     };
 
     struct MapPOI
@@ -304,12 +343,26 @@ namespace MapPOIs
         for (auto const& [spawnId, data] : sObjectMgr->GetAllGOData())
         {
             GameObjectTemplate const* proto = sObjectMgr->GetGameObjectTemplate(data.id);
-            if (!proto || proto->type != GAMEOBJECT_TYPE_MAILBOX)
+            if (!proto)
+                continue;
+
+            // An instance-entrance object wins outright, the same way a gatekeeper
+            // does among creatures: it is matched by entry, so no type check can
+            // contradict it.
+            char const* goType = nullptr;
+            for (InstanceEntranceObject const& entrance : kInstanceEntranceObjects)
+                if (data.id == entrance.entry)
+                    goType = entrance.type;
+
+            if (!goType && proto->type == GAMEOBJECT_TYPE_MAILBOX)
+                goType = PoiType::MAIL;
+
+            if (!goType)
                 continue;
 
             MapPOI poi;
             poi.name = proto->name;
-            poi.type = PoiType::MAIL;
+            poi.type = goType;
             poi.entry = data.id;
             poi.map = data.mapid;
             poi.x = data.posX;
@@ -355,13 +408,15 @@ namespace MapPOIs
             pois.size(), flightCount, innCount, mailCount, teleporterCount,
             dungeonCount, raidCount);
 
-        // A gatekeeper that is listed but never spawned would silently produce no pin,
+        // An entrance that is listed but never spawned would silently produce no pin,
         // so say so rather than leaving it to be noticed in game.
-        if (dungeonCount + raidCount < std::size(kInstanceEntrances))
+        std::size_t const configuredEntrances = std::size(kInstanceEntrances) + std::size(kInstanceEntranceObjects);
+        if (dungeonCount + raidCount < configuredEntrances)
             LOG_WARN("dc.addon",
-                "MapPOI (MPOI): {} instance gatekeeper(s) configured but only {} found spawned - "
-                "check the entries in kInstanceEntrances against the creature table",
-                std::size(kInstanceEntrances), dungeonCount + raidCount);
+                "MapPOI (MPOI): {} instance entrance(s) configured but only {} found spawned - "
+                "check kInstanceEntrances / kInstanceEntranceObjects against the creature and "
+                "gameobject tables",
+                configuredEntrances, dungeonCount + raidCount);
 
         // A flight master with no taxi node cannot be discovery-gated, so the
         // client falls back to always drawing it. Worth surfacing: it usually

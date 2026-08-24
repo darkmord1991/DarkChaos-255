@@ -103,7 +103,15 @@ struct npc_sfk_cata_portal_triggerAI : public ScriptedAI
 
         // A player mid-teleport is briefly still in range; without this they are grabbed
         // again before the first teleport resolves and the destination never settles.
-        if (player->IsBeingTeleported() || !player->IsAlive())
+        //
+        // NO IsAlive() check. It used to be here and it stranded ghosts in BOTH
+        // directions: a player who releases after a wipe inside cannot walk out, and --
+        // worse, because the graveyard is outside -- cannot walk back IN to reach their
+        // corpse either. Since the areatriggers do not fire on this fork's custom maps
+        // (see the header), these two NPCs are the only door the instance has, so
+        // refusing a corpse run here means the run is over. A dead player teleports
+        // fine; this is how every stock instance portal behaves.
+        if (player->IsBeingTeleported())
             return;
 
         if (isEntrance)

@@ -123,6 +123,27 @@ function DCJournal.GetCurrentInstanceID()
     local mapID = CurrentInstanceMapID()
     if mapID and byMapID[mapID] then return byMapID[mapID] end
 
+    -- Before the name path, because the name path CANNOT tell a DC clone from
+    -- the instance it was cloned from: map 821 and map 329 are both called
+    -- "Stratholme", 2921 and 533 are both "Naxxramas", 825 and 33 are both
+    -- "Shadowfang Keep". Each clone has its own WorldMapArea row, registered by
+    -- DCJournal.RegisterInstanceWorldMapArea, and that is the one thing left on
+    -- 3.3.5 that still distinguishes them.
+    --
+    -- GetCurrentMapAreaID reports the map the WORLD MAP is showing, which is the
+    -- player's own zone unless they have panned it somewhere else. No
+    -- SetMapToCurrentZone call is made to force that: yanking the player's map
+    -- view as a side effect of opening the journal is worse than the miss, and a
+    -- miss just falls through to the name path -- i.e. to the behaviour that
+    -- existed before any clone was registered.
+    local uiMapArea = DCJournal.instanceByUiMapArea
+    if uiMapArea and type(GetCurrentMapAreaID) == "function" then
+        local ok, uiMapID = pcall(GetCurrentMapAreaID)
+        if ok and uiMapID and uiMapArea[uiMapID] and JOURNALINSTANCE[uiMapArea[uiMapID]] then
+            return uiMapArea[uiMapID]
+        end
+    end
+
     local id = LookupName(GetInstanceInfo())
     if id then return id end
 

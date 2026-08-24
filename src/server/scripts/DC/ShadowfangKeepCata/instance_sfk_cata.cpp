@@ -47,8 +47,16 @@ ObjectData const gameobjectData[] =
     { 0,                                0                           } // END
 };
 
+// DOOR_TYPE_PASSAGE opens when the boss is DONE, DOOR_TYPE_ROOM whenever the boss
+// is not IN_PROGRESS (InstanceScript.cpp:275-280). Both are handled by AddDoor /
+// UpdateDoorState for the whole lifecycle -- on GO create AND on the boss dying --
+// which is why the courtyard and sorcerer's gates belong here rather than in an
+// OnGameObjectCreate switch: that only ran at spawn time, so a gate whose boss died
+// during the run stayed shut until the instance was reset.
 DoorData const doorData[] =
 {
+    { GO_COURTYARD_DOOR,                 DATA_BARON_ASHBURY,             DOOR_TYPE_PASSAGE },
+    { GO_SORCERERS_DOOR,                 DATA_LORD_WALDEN,               DOOR_TYPE_PASSAGE },
     { GO_ARUGALS_LAIR,                   DATA_LORD_GODFREY,              DOOR_TYPE_ROOM    },
     { 0,                                 0,                              DOOR_TYPE_ROOM    } // END
 };
@@ -98,13 +106,29 @@ struct SpawnGroupInfo
     uint32 DiseaseCloudsSpawnGroup = 0;
 };
 
-std::unordered_map<uint32 /*bossStateId*/, SpawnGroupInfo> SpawnGroupsByBossStateId =
+// const, and looked up through FindSpawnGroups below rather than with operator[].
+//
+// Two reasons, both real. This is a file-scope object shared by every concurrent
+// instance of map 825, and each of those runs on a map-update worker thread --
+// operator[] MUTATES the map (it default-inserts a missing key), so a lookup from
+// two instances at once was an unsynchronised write. And the value it inserts is a
+// silent {0, 0, 0}, which is exactly how the Godfrey data-id bug ended up calling
+// SpawnGroupSpawn(0) instead of failing visibly.
+std::unordered_map<uint32 /*bossStateId*/, SpawnGroupInfo> const SpawnGroupsByBossStateId =
 {
     { DATA_BARON_ASHBURY,           { SPAWN_GROUP_BARON_ASHBURY_TROUPS_ALLIANCE,        SPAWN_GROUP_BARON_ASHBURY_TROUPS_HORDE,         SPAWN_GROUP_DISEASE_CLOUDS_BARON_ASHBURY        }},
     { DATA_BARON_SILVERLAINE,       { SPAWN_GROUP_BARON_SILVERLAINE_TROUPS_ALLIANCE,    SPAWN_GROUP_BARON_SILVERLAINE_TROUPS_HORDE,     SPAWN_GROUP_DISEASE_CLOUDS_BARON_SILVERLAINE    }},
     { DATA_COMMANDER_SPRINGVALE,    { SPAWN_GROUP_COMMANDER_SPRINGVALE_TROUPS_ALLIANCE, SPAWN_GROUP_COMMANDER_SPRINGVALE_BELMONT,       SPAWN_GROUP_DISEASE_CLOUDS_COMMANDER_SPRINGVALE }},
     { DATA_LORD_WALDEN,             { SPAWN_GROUP_LORD_WALDEN_TROUPS_ALLIANCE,          SPAWN_GROUP_LORD_WALDEN_BELMONT,                SPAWN_GROUP_DISEASE_CLOUDS_LORD_WALDEN          }},
 };
+
+// Returns nullptr for a boss that has no follow-up spawn groups (Lord Godfrey),
+// instead of inserting an empty row for him.
+inline SpawnGroupInfo const* FindSpawnGroups(uint32 bossStateId)
+{
+    auto const itr = SpawnGroupsByBossStateId.find(bossStateId);
+    return itr != SpawnGroupsByBossStateId.end() ? &itr->second : nullptr;
+}
 
 class instance_shadowfang_keep : public InstanceMapScript
 {
@@ -130,24 +154,22 @@ public:
 
                 // Setting up entrance spawns when Baron Ashbury has not been defeated yet
                 if (GetBossState(DATA_BARON_ASHBURY) != DONE)
-                    instance->SpawnGroupSpawn(*_teamInInstance == ALLIANCE ? SPAWN_GROUP_ENTRANCE_ALLIANCE : SPAWN_GROUP_ENTRANCE_HORDE);
+                    instance->SpawnGroupSpawn(*_teamInInstance == TEAM_ALLIANCE ? SPAWN_GROUP_ENTRANCE_ALLIANCE : SPAWN_GROUP_ENTRANCE_HORDE);
 
                 // Setting up disease clouds based on instance progress
-                if (*_teamInInstance == HORDE)
+                if (*_teamInInstance == TEAM_HORDE)
                 {
                     for (uint32 bossId : { DATA_BARON_ASHBURY, DATA_BARON_SILVERLAINE, DATA_COMMANDER_SPRINGVALE, DATA_LORD_WALDEN })
                     {
                         if (GetBossState(bossId) == DONE)
-                        {
-                            SpawnGroupInfo spawnGroupInfo = SpawnGroupsByBossStateId[bossId];
-                            instance->SpawnGroupSpawn(spawnGroupInfo.DiseaseCloudsSpawnGroup);
-                        }
+                            if (SpawnGroupInfo const* spawnGroupInfo = FindSpawnGroups(bossId))
+                                instance->SpawnGroupSpawn(spawnGroupInfo->DiseaseCloudsSpawnGroup);
                     }
                 }
 
                 // Setting up dead troup spawns when Lord Walden has been defeated already
                 if (GetBossState(DATA_LORD_WALDEN) == DONE)
-                    instance->SpawnGroupSpawn(*_teamInInstance == ALLIANCE ? SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_ALLIANCE : SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_HORDE);
+                    instance->SpawnGroupSpawn(*_teamInInstance == TEAM_ALLIANCE ? SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_ALLIANCE : SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_HORDE);
             }
         }
 
@@ -174,55 +196,50 @@ public:
             }
         }
 
-        void OnGameObjectCreate(GameObject* go) override
-        {
-            InstanceScript::OnGameObjectCreate(go);
-
-            switch (go->GetEntry())
-            {
-                case GO_COURTYARD_DOOR:
-                    if (GetBossState(DATA_BARON_ASHBURY) == DONE)
-                        go->SetGoState(GO_STATE_ACTIVE);
-                    break;
-                case GO_SORCERERS_DOOR:
-                    if (GetBossState(DATA_LORD_WALDEN) == DONE)
-                        go->SetGoState(GO_STATE_ACTIVE);
-                    break;
-                case GO_ARUGALS_LAIR:
-                    if (GetBossState(DATA_LORD_GODFREY) != DONE)
-                        go->SetGoState(GO_STATE_READY);
-                    break;
-                default:
-                    break;
-            }
-        }
+        // No OnGameObjectCreate override on purpose. All three doors are in doorData
+        // above, so InstanceScript::OnGameObjectCreate -> AddDoor -> UpdateDoorState
+        // already puts each one in the right state for the saved progress.
+        //
+        // The override this replaces ran AFTER that base call and undid it: it forced
+        // GO_ARUGALS_LAIR to GO_STATE_READY whenever Godfrey was not DONE, which is
+        // every state before the fight -- so the final boss's room was sealed and the
+        // instance could not be completed. DOOR_TYPE_ROOM already closes that door for
+        // the only case it should be closed for: while the encounter is in progress.
 
         bool SetBossState(uint32 type, EncounterState state) override
         {
             if (!InstanceScript::SetBossState(type, state))
                 return false;
 
-            if (state != DONE || type == BOSS_LORD_GODFREY)
+            // DATA_LORD_GODFREY (the boss data id), not BOSS_LORD_GODFREY (the creature
+            // entry, 5046964) -- `type` is a data id and never equals an entry. With the
+            // entry here the guard never fired, so killing the final boss fell through to
+            // the block below, where SpawnGroupsByBossStateId has no row for him:
+            // operator[] default-constructed {0,0,0}, every friendly troop was despawned
+            // and SpawnGroupSpawn(0) was called with a group id that does not exist.
+            if (state != DONE || type == DATA_LORD_GODFREY)
                 return true;
 
-            SpawnGroupInfo spawnGroupInfo = SpawnGroupsByBossStateId[type];
+            SpawnGroupInfo const* spawnGroupInfo = FindSpawnGroups(type);
+            if (!spawnGroupInfo)
+                return true;
 
             // Clean up previous spawned groups
             DespawnPreviousTroups();
 
             // Spawn group linked to boss encounter
-            instance->SpawnGroupSpawn(*_teamInInstance == ALLIANCE ? spawnGroupInfo.AllianceSpawnGroup : spawnGroupInfo.HordeSpawnGroup);
+            instance->SpawnGroupSpawn(*_teamInInstance == TEAM_ALLIANCE ? spawnGroupInfo->AllianceSpawnGroup : spawnGroupInfo->HordeSpawnGroup);
 
             // Spawn disease clouds linked to boss encounter
-            if (*_teamInInstance == HORDE)
-                instance->SpawnGroupSpawn(spawnGroupInfo.DiseaseCloudsSpawnGroup);
+            if (*_teamInInstance == TEAM_HORDE)
+                instance->SpawnGroupSpawn(spawnGroupInfo->DiseaseCloudsSpawnGroup);
 
             // Spawn dead troups after defeating Lord Walden
             if (type == DATA_LORD_WALDEN)
-                instance->SpawnGroupSpawn(*_teamInInstance == ALLIANCE ? SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_ALLIANCE : SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_HORDE);
+                instance->SpawnGroupSpawn(*_teamInInstance == TEAM_ALLIANCE ? SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_ALLIANCE : SPAWN_GROUP_LORD_GODFREY_DEAD_TROUPS_HORDE);
 
             // Special case for Commander Springvale Horde troups
-            if (*_teamInInstance == HORDE)
+            if (*_teamInInstance == TEAM_HORDE)
             {
                 if ((type == DATA_LORD_WALDEN && GetBossState(DATA_COMMANDER_SPRINGVALE) != DONE)
                     || (type == DATA_COMMANDER_SPRINGVALE && GetBossState(DATA_LORD_WALDEN) != DONE))
@@ -237,11 +254,11 @@ public:
             switch (type)
             {
                 case DATA_OUTSIDE_TROUPS_SPAWN:
-                    if (*_teamInInstance == ALLIANCE)
+                    if (*_teamInInstance == TEAM_ALLIANCE)
                         instance->SpawnGroupSpawn(SPAWN_GROUP_OUTSIDE_TROUPS_ALLIANCE);
                     break;
                 case DATA_GODFREY_INTRO_SPAWN:
-                    if (*_teamInInstance == ALLIANCE)
+                    if (*_teamInInstance == TEAM_ALLIANCE)
                         instance->SpawnGroupDespawn(SPAWN_GROUP_LORD_WALDEN_TROUPS_ALLIANCE);
                     else
                     {
@@ -249,7 +266,7 @@ public:
                         instance->SpawnGroupDespawn(SPAWN_GROUP_LORD_WALDEN_BELMONT);
                     }
 
-                    instance->SpawnGroupSpawn(*_teamInInstance == ALLIANCE ? SPAWN_GROUP_LORD_GODFREY_IVAR_BLOODFANG : SPAWN_GROUP_LORD_GODFREY_BELMONT);
+                    instance->SpawnGroupSpawn(*_teamInInstance == TEAM_ALLIANCE ? SPAWN_GROUP_LORD_GODFREY_IVAR_BLOODFANG : SPAWN_GROUP_LORD_GODFREY_BELMONT);
                     break;
                 default:
                     break;
@@ -270,7 +287,7 @@ public:
 
         void DespawnPreviousTroups()
         {
-            if (*_teamInInstance == ALLIANCE)
+            if (*_teamInInstance == TEAM_ALLIANCE)
             {
                 instance->SpawnGroupDespawn(SPAWN_GROUP_ENTRANCE_ALLIANCE);
                 instance->SpawnGroupDespawn(SPAWN_GROUP_BARON_ASHBURY_TROUPS_ALLIANCE);
@@ -293,7 +310,7 @@ public:
 
         protected:
             EventMap events;
-            Optional<uint32>_teamInInstance;
+            Optional<TeamId> _teamInInstance;
             ObjectGuid _cromushGUID;
     };
 

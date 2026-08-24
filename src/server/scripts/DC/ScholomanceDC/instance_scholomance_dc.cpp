@@ -43,7 +43,17 @@
 #include "SpellScriptLoader.h"
 #include "scholomance_dc.h"
 
-Position KirtonosSpawn = Position(315.028, 70.5385, 102.15, 0.385971);
+// static, unlike upstream. A namespace-scope variable that is neither const nor static has
+// EXTERNAL linkage, so this copy and the original in
+// EasternKingdoms/Scholomance/instance_scholomance.cpp both export KirtonosSpawn and the
+// link fails with
+//     mold: error: duplicate symbol: ... KirtonosSpawn
+// Renaming the classes was not enough because this is a plain variable, not a class member.
+//
+// The const arrays in the sibling files (SummonPos, PosMove) do NOT need this: const at
+// namespace scope already implies internal linkage in C++. This was the only definition
+// across the four cloned files that was neither const nor static.
+static Position KirtonosSpawn = Position(315.028, 70.5385, 102.15, 0.385971);
 
 class instance_scholomance_dc : public InstanceMapScript
 {

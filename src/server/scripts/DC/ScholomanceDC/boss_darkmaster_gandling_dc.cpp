@@ -74,7 +74,6 @@ constexpr Milliseconds TIMER_PORTAL = 25s;
  const uint32 GandlingGateIds[] = {GO_GATE_GANDLING_DOWN_NORTH, GO_GATE_GANDLING_DOWN_EAST, GO_GATE_GANDLING_DOWN_SOUTH,
                                 GO_GATE_GANDLING_UP_NORTH, GO_GATE_GANDLING_UP_EAST, GO_GATE_GANDLING_UP_SOUTH, GO_GATE_GANDLING_ENTRANCE};
 
-
  Position const SummonPos[3 * 6] =
 {
     // The Shadow Vault // down north

@@ -90,7 +90,11 @@ WHERE t.`entry` IN (SELECT DISTINCT `id` FROM acore_world.`gameobject` WHERE `ma
 --   -- 62 new rows:
 --   SELECT COUNT(*) FROM gameobject_template_addon
 --    WHERE entry IN (SELECT DISTINCT id FROM gameobject WHERE map=750);
---       -> 594   (was 532)
+--       -> 934   (was 872)
+--   NOTE the 872/934 figures are for ALL 1,048 map-750 templates. The 532 quoted
+--   in the header is a different, narrower number -- it counts only the 706 that
+--   resolve to a cata_world source. The other 342 are DC-authored/Legion and 340
+--   of those already had addon rows, which is what makes the total 872.
 --
 --   -- the material gap is closed, and the 112 no-ops are still absent on
 --   -- purpose, so this must report 112 and NOT 0:

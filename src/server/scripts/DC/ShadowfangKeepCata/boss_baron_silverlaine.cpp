@@ -99,9 +99,15 @@ struct boss_baron_silverlaine : public BossAI
 {
     boss_baron_silverlaine(Creature* creature) : BossAI(creature, DATA_BARON_SILVERLAINE), _summonedSpiritCounter(0) { }
 
-    void InitializeAI() override
+    // Pick the spirits for this attempt, and clear the count of how many have gone
+    // out. Both are per-ATTEMPT state, not per-spawn: EVENT_SUMMON_WORGEN_SPIRIT pops
+    // the front of _worgenSummonSpells and DamageTaken gates on the counter, so a
+    // wipe used to leave the vector empty and the counter at its last value -- and
+    // Silverlaine then summoned nothing for the rest of the lockout, because every
+    // health threshold had already been "used" by the previous attempt.
+    void ResetWorgenSpiritPlan()
     {
-        // Initialize the summon spells that we are going to use in this encounter
+        _summonedSpiritCounter = 0;
         _worgenSummonSpells =
         {
             SPELL_SUMMON_SPIRIT_OF_WOLF_MASTER_NANDOS_DUMMY,
@@ -111,6 +117,16 @@ struct boss_baron_silverlaine : public BossAI
         };
 
         Acore::Containers::RandomResize(_worgenSummonSpells, IsHeroic() ? 3 : 2);
+    }
+
+    // Reset(), not InitializeAI(). The old InitializeAI override built the plan exactly
+    // once per spawn and did not chain to the base (UnitAI::InitializeAI, which calls
+    // Reset()), so nothing re-armed it after a wipe. Reset() is reached on spawn, on
+    // evade and on respawn alike.
+    void Reset() override
+    {
+        _Reset();
+        ResetWorgenSpiritPlan();
     }
 
     void JustEngagedWith(Unit* who) override
@@ -141,12 +157,19 @@ struct boss_baron_silverlaine : public BossAI
 
     void EnterEvadeMode(EvadeReason /*why*/) override
     {
+        // BEFORE _EnterEvadeMode(). That routes through CreatureAI::EnterEvadeMode into
+        // Reset() -> BossAI::_Reset(), which calls summons.DespawnAll() and empties the
+        // list (ScriptedCreature.cpp:659). Run after it, as this used to, both the
+        // explicit DespawnAll and DespawnWorgenSpirits() find an empty list -- the
+        // ghosts are still removed, but by the blunt path, so their
+        // ENCOUNTER_FRAME_DISENGAGE is never sent and the raid frames linger.
+        DespawnWorgenSpirits();
+
         _EnterEvadeMode();
-        summons.DespawnAll();
         instance->SetBossState(DATA_BARON_SILVERLAINE, FAIL);
         instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-        DespawnWorgenSpirits();
         // NOTE(port): source used _DespawnAtEvade(); AC 3.3.5 BossAI resets in place instead.
+        // The summon plan is re-armed by Reset(), which _EnterEvadeMode() above reaches.
     }
 
     void DespawnWorgenSpirits()
@@ -272,7 +295,12 @@ struct npc_sfk_worgen_spirit : public ScriptedAI
         _instance = me->GetInstanceScript();
     }
 
-    void JustRespawned() override
+    // IsSummonedBy, not JustRespawned. Creature::Update skips JustRespawned entirely
+    // for anything that IsSummon() (Creature.cpp:713, "Skip for temp summons"), and
+    // these four only ever exist as summons -- none of them has a spawn row on map 825.
+    // Under the old hook this whole body, and with it the entire add mechanic, was
+    // unreachable. TempSummon::InitSummon calls this on every summon (TemporarySummon.cpp:278).
+    void IsSummonedBy(WorldObject* /*summoner*/) override
     {
         if (!_instance)
             return;
@@ -284,6 +312,16 @@ struct npc_sfk_worgen_spirit : public ScriptedAI
 
         DoZoneInCombat();
 
+        // These are the NAMED GHOST entries, and that is correct -- do not "fix" them
+        // to the NPC_WORGEN_SPIRIT_* ids to match 06_scriptnames.sql. The chain is:
+        // Silverlaine summons a Worgen Spirit -> his JustSummoned (above) makes THAT
+        // cast SPELL_SUMMON_SPIRIT_OF_*_SUMMON -> the spirit summons the named ghost,
+        // and the ghost is what fights. DespawnWorgenSpirits() also addresses these
+        // four entries with ACTION_DESPAWN, which only this AI handles.
+        //
+        // The SQL is what is wrong: it attaches this AI to 51047/50934/51080/51085
+        // (the spirits) instead of 50851/50857/50869/50834 (the ghosts). Until that is
+        // corrected no creature carrying this AI can reach any case below.
         switch (me->GetEntry())
         {
             case NPC_WOLF_MASTER_NANDOS:

@@ -203,7 +203,6 @@ struct boss_kormok_dc : public ScriptedAI
         bool _mages;
 };
 
-
 void AddSC_boss_kormok_dc()
 {
     RegisterScholomanceDCCreatureAI(boss_kormok_dc);

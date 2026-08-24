@@ -225,6 +225,224 @@ function DCJournal.RemoveInstance(instanceID)
 end
 
 -- =====================================================================
+--  CloneInstance -- for a DC map that is a CLONE of a Blizzard instance
+--
+--  Stratholme 821, Scholomance 822 and Naxxramas-40 2921 are copies of real
+--  dungeons on private map ids. Their bosses, ability text, spell icons,
+--  models and (where the loot tables were inherited too) drops are already in
+--  the translated base data -- re-typing 41 bosses by hand would be strictly
+--  worse data, not better.
+--
+--  So: deep-copy the source instance's encounters, sections, creatures and
+--  items under fresh ids in the DC band, then repoint every cross-reference.
+--  The base instance is untouched; only new keys are written.
+--
+--  WHAT MUST BE OVERRIDDEN, not copied:
+--    * mapID          -- the whole point is that this is a different map
+--    * worldMapAreaID -- the source's points at the STOCK map's world map, so
+--                        the boss pins would land on the wrong zone. Forced 0
+--                        (no pin) unless the caller supplies the clone's own.
+--    * name           -- two entries called "Stratholme" in one tier is not a
+--                        journal, it is a coin flip.
+--  Icons/backgrounds ARE copied: the clone loads the same WMO, so it is the
+--  same building and the same art is correct.
+--
+--  opts = every AddInstance option, plus:
+--    copyLoot = false  -- skip the source's item lists (use when the clone's
+--                         loot tables are its own -- Naxx-40 is not Naxx-25)
+--  Returns a { ["Boss Name"] = newEncounterID } map, so a caller can attach
+--  its own loot afterwards, or nil if the base data is missing.
+-- =====================================================================
+
+-- Sections keyed by the encounter they belong to. JOURNALENCOUNTERSECTION is
+-- one flat id-keyed table of several thousand rows, so this is built once and
+-- shared rather than walked per clone. It only ever indexes BASE data: lookups
+-- are always by a SOURCE encounter id, never by one this file just created.
+local sectionsByEncounter
+
+local function SectionsForEncounter(encounterID)
+    if not sectionsByEncounter then
+        sectionsByEncounter = {}
+        for id, row in pairs(JOURNALENCOUNTERSECTION) do
+            local enc = row[7]
+            if enc and enc ~= 0 then
+                local list = sectionsByEncounter[enc]
+                if not list then
+                    list = {}
+                    sectionsByEncounter[enc] = list
+                end
+                list[#list + 1] = id
+            end
+        end
+        -- pairs() order is undefined; sorting keeps the allocated clone ids
+        -- reproducible from one session to the next, which matters when
+        -- something has to be debugged by id.
+        for _, list in pairs(sectionsByEncounter) do
+            table.sort(list)
+        end
+    end
+    return sectionsByEncounter[encounterID] or {}
+end
+
+local function CloneWarn(message)
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff2020DC-Journal:|r " .. message)
+    end
+end
+
+function DCJournal.CloneInstance(sourceID, opts)
+    local src     = JOURNALINSTANCE[sourceID]
+    local srcEncs = JOURNALENCOUNTER[sourceID]
+    if not src or not srcEncs then
+        -- Loud on purpose: silently returning leaves an instance in the tier
+        -- list with no bosses at all, which reads as "the journal is broken".
+        CloneWarn("cannot clone base instance " .. tostring(sourceID) .. " -- not in the base data.")
+        return nil
+    end
+
+    -- One counter for encounters and sections both. They live in different
+    -- tables so they could overlap safely, but a single run of ids makes a
+    -- clone trivial to recognise in a /dump.
+    local nextID = opts.id + 100
+    local function alloc()
+        local id = nextID
+        nextID = nextID + 1
+        return id
+    end
+
+    local encMap, secMap = {}, {}
+    for _, row in ipairs(srcEncs) do
+        encMap[row[1]] = alloc()
+    end
+    for _, row in ipairs(srcEncs) do
+        for _, secID in ipairs(SectionsForEncounter(row[1])) do
+            secMap[secID] = alloc()
+        end
+    end
+
+    DCJournal.AddInstance({
+        id             = opts.id,
+        tier           = opts.tier,
+        openWorld      = opts.openWorld,
+        name           = opts.name or src[1],
+        lore           = opts.lore or src[2],
+        buttonIcon     = opts.buttonIcon     or src[3],
+        smallIcon      = opts.smallIcon      or src[4],
+        background     = opts.background     or src[5],
+        loreBackground = opts.loreBackground or src[6],
+        mapID          = opts.mapID,
+        areaID         = opts.areaID,
+        order          = opts.order,
+        isRaid         = opts.isRaid,
+        hideDifficulty = opts.hideDifficulty,
+        worldMapAreaID = opts.worldMapAreaID,
+        difficulties   = opts.difficulties,
+    })
+
+    local byName = {}
+    for _, enc in ipairs(srcEncs) do
+        local newEnc = encMap[enc[1]]
+        byName[enc[2]] = newEnc
+
+        DCJournal.AddBoss(opts.id, {
+            id             = newEnc,
+            name           = enc[2],
+            lore           = enc[3],
+            mapX           = enc[4],
+            mapY           = enc[5],
+            floorIndex     = enc[6],
+            worldMapAreaID = opts.worldMapAreaID or 0,
+            firstSectionID = secMap[enc[8]] or 0,
+            order          = enc[12],
+        })
+
+        for _, secID in ipairs(SectionsForEncounter(enc[1])) do
+            local s = JOURNALENCOUNTERSECTION[secID]
+            DCJournal.AddAbility({
+                id                 = secMap[secID],
+                name               = s[2],
+                description        = s[3],
+                creatureDisplayID  = s[4],
+                descriptionSpellID = s[5],
+                iconSpellID        = s[6],
+                encounterID        = newEnc,
+                -- A link that does not resolve becomes 0, not a dangling id:
+                -- the ability-tree walker follows these blindly.
+                nextSectionID      = secMap[s[8]]  or 0,
+                subSectionID       = secMap[s[9]]  or 0,
+                parentSectionID    = secMap[s[10]] or 0,
+                flags              = s[11],
+                iconFlags          = s[12],
+                order              = s[13],
+                type               = s[14],
+                creatureEntry      = s[16],
+            })
+        end
+
+        for _, c in ipairs(JOURNALENCOUNTERCREATURE[enc[1]] or {}) do
+            DCJournal.AddBossModel(newEnc, {
+                name              = c[1],
+                subname           = c[2],
+                creatureDisplayID = c[3],
+                icon              = c[4],
+                order             = c[6],
+                id                = c[7],
+                creatureEntry     = c[8],
+            })
+        end
+
+        if opts.copyLoot ~= false then
+            for _, item in ipairs(JOURNALENCOUNTERITEM[enc[1]] or {}) do
+                DCJournal.AddLoot(newEnc, item[1], {
+                    factionMask = item[4],
+                    flags       = item[5],
+                    classMask   = item[7],
+                })
+            end
+        end
+    end
+
+    return byName
+end
+
+-- =====================================================================
+--  WorldMapArea -> journal instance, for instances whose NAME is ambiguous.
+--
+--  DarkChaos_CurrentInstance.lua finds "the dungeon I am standing in" from
+--  GetInstanceInfo()'s name, because 3.3.5 returns only 7 values and none of
+--  them is the map id. That was unambiguous until the clones arrived: map 821
+--  and map 329 are both called "Stratholme", so the name path would open the
+--  stock entry every time. For Naxxramas-40 and Cataclysm Shadowfang that is
+--  not a cosmetic difference -- it is the wrong loot and the wrong bosses.
+--
+--  Each clone map does have its OWN WorldMapArea row, which is the one thing
+--  the client can still tell apart, so register it here.
+--
+--  Register the RAW WorldMapArea.ID. GetCurrentMapAreaID() returns that id
+--  PLUS ONE (two id spaces; SetMapByID takes the raw one), and the +1 is
+--  applied here so callers never have to remember which space they are in.
+-- =====================================================================
+DCJournal.instanceByUiMapArea = DCJournal.instanceByUiMapArea or {}
+
+function DCJournal.RegisterInstanceWorldMapArea(worldMapAreaID, instanceID)
+    DCJournal.instanceByUiMapArea[worldMapAreaID + 1] = instanceID
+end
+
+-- Attach a loot list to one boss of a cloned instance by NAME. Warns instead of
+-- erroring if the base data ever renames that boss, so a bad name costs one
+-- missing loot tab rather than aborting the whole file at load.
+function DCJournal.AddClonedLoot(byName, bossName, items)
+    local encID = byName and byName[bossName]
+    if not encID then
+        CloneWarn("no cloned encounter named '" .. tostring(bossName) .. "' -- loot not attached.")
+        return
+    end
+    for _, itemID in ipairs(items) do
+        DCJournal.AddLoot(encID, itemID)
+    end
+end
+
+-- =====================================================================
 --  Dark Chaos content goes BELOW this line.
 --  Uncomment & adapt the example. Use IDs well above Blizzard's range
 --  (e.g. 900000+) so they never collide with base content.
@@ -1535,6 +1753,255 @@ AddDCBoss(CASTLE_NATHRIA, {
 
 DCJournal.AddBossModel(905010, {
     name = "Remornia", creatureDisplayID = 96665, creatureEntry = 168156,
+})
+
+-- =====================================================================
+--  The Lordaeron-extension clones -- maps 821, 822 and 2921.
+--
+--  These three are copies of instances the base journal already documents in
+--  full, running on private map ids so their exits can land on map 751 and
+--  their tuning can move without touching the shared stock dungeon. Their
+--  bosses, ability text, spell icons and models are therefore CLONED from the
+--  base data rather than retyped -- see DCJournal.CloneInstance above.
+--
+--  Loot handling differs per instance and the difference is not cosmetic:
+--    821 / 822  inherited stock's loot tables verbatim (every cloned
+--               creature_template kept the source entry in `lootid`), so the
+--               base journal's own item lists are correct here. Spot-checked
+--               against the live DB: all 16 of Baron Rivendare's journal items
+--               are in creature_loot_template 10440.
+--    2921       did NOT. Naxxramas-40 carries its own loot templates
+--               (351000-351036, the classic 60 Naxx set -- Desecrated tokens,
+--               Splinter of Atiesh), which have nothing to do with the WotLK
+--               10/25 lists the base Naxxramas entry documents. Its loot is
+--               therefore copied OFF and rebuilt below from the live DB.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+--  Stratholme (DC) -- map 821, 5-player dungeon.
+--  One difficulty only (dungeon_access_template has a single row, min level
+--  45), so the difficulty selector is hidden rather than showing a Heroic
+--  that does not exist.
+-- ---------------------------------------------------------------------
+local STRATHOLME_DC = 906000
+
+DCJournal.CloneInstance(236, {
+    id             = STRATHOLME_DC,
+    tier           = 80,
+    name           = "Stratholme (DC)",
+    lore           = "The Dark Chaos cut of the plagued city, standing in the Eastern Plaguelands of the Lordaeron extension rather than on the shared realm map. The Scarlet Crusade still holds the western districts and Baron Rivendare still holds the Slaughterhouse; what changed is that both gates, the service entrance and the way out belong to this realm, so the city can be re-tuned without touching anyone else's Stratholme.",
+    mapID          = 821,
+    order          = 4,
+    hideDifficulty = true,
+})
+
+-- WorldMapArea 1277 is map 821's own row (stock Stratholme's is 765), so this is
+-- what tells the two "Stratholme"s apart when the journal opens on the instance
+-- the player is standing in.
+DCJournal.RegisterInstanceWorldMapArea(1277, STRATHOLME_DC)
+
+-- ---------------------------------------------------------------------
+--  Scholomance (DC) -- map 822, 5-player dungeon. Same shape as 821.
+-- ---------------------------------------------------------------------
+local SCHOLOMANCE_DC = 907000
+
+DCJournal.CloneInstance(767, {
+    id             = SCHOLOMANCE_DC,
+    tier           = 80,
+    name           = "Scholomance (DC)",
+    lore           = "The necromantic academy beneath Caer Darrow, cloned onto Dark Chaos' own map so that its four exits open onto the Western Plaguelands of the Lordaeron extension. The Barov estate, the crypts and Darkmaster Gandling's lesson plan are unchanged -- this is the classic school, not the later remodel.",
+    mapID          = 822,
+    order          = 5,
+    hideDifficulty = true,
+})
+
+DCJournal.RegisterInstanceWorldMapArea(1278, SCHOLOMANCE_DC)  -- stock Scholomance is 763
+
+-- ---------------------------------------------------------------------
+--  Naxxramas 40 (SoD) -- map 2921, 40-player raid.
+--
+--  Entered from the Plaguewood runestone on map 751. `dungeon_access_template`
+--  has one row (difficulty 2, min level 60), so no difficulty selector.
+--
+--  The base entry documents the WotLK necropolis; the encounters are the same
+--  fifteen, which is why the clone is worth having, but the LOOT is the
+--  classic 40-man set and is rebuilt below. The Four Horsemen are deliberately
+--  left with no loot list: all four creature templates carry lootid 0 on this
+--  server and there is no chest object standing in for them, so an item list
+--  here would be invented.
+-- ---------------------------------------------------------------------
+local NAXXRAMAS_40 = 908000
+
+local NAXX40 = DCJournal.CloneInstance(754, {
+    id             = NAXXRAMAS_40,
+    tier           = 80,
+    isRaid         = true,
+    name           = "Naxxramas 40 (SoD)",
+    lore           = "The Season of Discovery necropolis, downported whole and hung over the Eastern Plaguelands of the Lordaeron extension instead of Dragonblight. Kel'Thuzad's citadel as it was fought at level 60: four wings, forty players, and the Frozen Runes still gating the way up to the Frostwyrm Lair.",
+    mapID          = 2921,
+    order          = 5,
+    hideDifficulty = true,
+    copyLoot       = false,
+})
+
+DCJournal.RegisterInstanceWorldMapArea(1223, NAXXRAMAS_40)  -- stock Naxxramas is 535
+
+-- Loot: `creature_loot_template` for entries 351000-351036 on the live DB,
+-- everything of Rare quality or better, resolved through reference_loot_template
+-- where the boss uses one. Regenerate from the DB rather than editing by hand.
+DCJournal.AddClonedLoot(NAXX40, "Anub'Rekhan", {
+    22726, 22355, 22362, 22369, 22935, 22936, 22937, 22938, 22939 })
+DCJournal.AddClonedLoot(NAXX40, "Grand Widow Faerlina", {
+    22726, 22355, 22362, 22369, 22806, 22940, 22941, 22942, 22943 })
+DCJournal.AddClonedLoot(NAXX40, "Maexxna", {
+    22726, 22357, 22364, 22371, 22804, 22807, 22947, 22954, 23220, 30459 })
+DCJournal.AddClonedLoot(NAXX40, "Noth the Plaguebringer", {
+    22726, 22356, 22363, 22370, 22816, 23005, 23006, 23028, 23029, 23030, 23031 })
+DCJournal.AddClonedLoot(NAXX40, "Heigan the Unclean", {
+    22726, 22356, 22363, 22370, 23019, 23033, 23035, 23036, 23068 })
+DCJournal.AddClonedLoot(NAXX40, "Loatheb", {
+    22726, 22352, 22359, 22366, 22800, 23037, 23038, 23039, 23042 })
+DCJournal.AddClonedLoot(NAXX40, "Instructor Razuvious", {
+    22726, 22358, 22365, 22372, 23004, 23009, 23014, 23017, 23018, 23219 })
+DCJournal.AddClonedLoot(NAXX40, "Gothik the Harvester", {
+    22726, 22358, 22365, 22372, 23020, 23021, 23023, 23032, 23073 })
+-- "The Four Horsemen" -- no loot on this server, see the note above.
+DCJournal.AddClonedLoot(NAXX40, "Patchwerk", {
+    22726, 22354, 22361, 22368, 22815, 22818, 22820, 22960, 22961 })
+DCJournal.AddClonedLoot(NAXX40, "Grobbulus", {
+    22726, 22354, 22361, 22368, 22803, 22810, 22967, 22968, 22988 })
+DCJournal.AddClonedLoot(NAXX40, "Gluth", {
+    22726, 22354, 22355, 22356, 22358, 22361, 22362, 22363, 22365, 22368, 22369,
+    22370, 22372, 22813, 22981, 22983, 22994, 23075 })
+DCJournal.AddClonedLoot(NAXX40, "Thaddius", {
+    22726, 22353, 22360, 22367, 22801, 22808, 23000, 23001, 23070, 30450 })
+DCJournal.AddClonedLoot(NAXX40, "Sapphiron", {
+    23040, 23041, 23043, 23045, 23046, 23047, 23048, 23049, 23050, 23242,
+    23545, 23547, 23548, 23549 })
+DCJournal.AddClonedLoot(NAXX40, "Kel'Thuzad", {
+    22520, 22798, 22799, 22802, 22812, 22819, 22821, 23053, 23054, 23056, 23057,
+    23059, 23060, 23061, 23062, 23063, 23064, 23065, 23066, 23067, 23577 })
+
+-- ---------------------------------------------------------------------
+--  Shadowfang Keep (Cataclysm) -- map 825, 5-player dungeon.
+--
+--  NOT a clone. The base journal's "Shadowfang Keep" (instance 64, map 33) is
+--  the CLASSIC keep -- Rethilgore, Fenrus, Archmage Arugal. Map 825 is the
+--  Cataclysm remake fought by the Forsaken and the Gilnean survivors, and only
+--  two bosses (Silverlaine, Springvale) even appear in both. Cloning it would
+--  have listed three bosses that are not in the instance and omitted three
+--  that are, so this one is written out.
+--
+--  Every spell id below is read from the live boss scripts in
+--  src/server/scripts/DC/ShadowfangKeepCata/, not from retail trivia, and the
+--  timings are the ones those scripts schedule. Where a mechanic is
+--  heroic-only the text says so, because a single normal-mode row would be
+--  wrong for two of the three difficulties this instance ships with.
+--
+--  LOOT: deliberately absent. All five boss templates (5046962, 5003887,
+--  5004278, 5046963, 5046964) carry `lootid` 0 on the live DB -- these bosses
+--  currently drop nothing but the shared token, so any item list here would be
+--  fiction. Add one when 825 gets its loot tables.
+--
+--  Art: all five UI-EJ-BOSS-*.blp files ship in
+--  Custom/Client patches needed/Interface/EncounterJournal/ (verified), so the
+--  icons are set explicitly -- without one the boss list falls back to
+--  SetPortrait on a display id with no baked portrait and draws a red "?".
+-- ---------------------------------------------------------------------
+local SFK_CATA = 909000
+
+DCJournal.AddInstance({
+    id             = SFK_CATA,
+    tier           = 80,
+    name           = "Shadowfang Keep (Cataclysm)",
+    lore           = "Arugal is long dead and his keep has changed hands. Lord Godfrey and the Gilnean nobles who murdered Sylvanas fled here, and the Forsaken came after them -- so the halls above Pyrewood are now held by traitors, their hired dead, and the worgen spirits that never left. The walk in is the same doorway in Silverpine Forest; almost nothing behind it is.",
+    buttonIcon     = "Interface\\EncounterJournal\\UI-EJ-DUNGEONBUTTON-ShadowfangKeep",
+    smallIcon      = "Interface\\LFGFrame\\LFGIcon-ShadowfangKeep",
+    background     = "Interface\\EncounterJournal\\UI-EJ-BACKGROUND-ShadowfangKeep",
+    loreBackground = "Interface\\EncounterJournal\\UI-EJ-LOREBG-ShadowfangKeep",
+    mapID          = 825,
+    order          = 3,
+    difficulties   = { players = 5, modes = { "Normal", "Heroic", "Mythic" } },
+})
+
+DCJournal.RegisterInstanceWorldMapArea(1276, SFK_CATA)  -- stock Shadowfang Keep is 764
+
+AddDCBoss(SFK_CATA, {
+    encID = 909001, rootID = 909100, order = 1,
+    name = "Baron Ashbury", display = 34610, entry = 5046962,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Baron Ashbury",
+    lore = "One of Godfrey's fellow conspirators, and the one who took to undeath best. Ashbury does not fight for the keep so much as demonstrate, on whoever walks in, what he has learned about how long a body can be kept from dying.",
+    overview = "A healing check built on a single repeating trick: the party is dropped to almost nothing, then handed the health back. On heroic he changes form at 25% and stops giving it back.",
+    abilities = {
+        { "Asphyxiate", "Every 15 seconds (20 on heroic) the whole party is choked down towards 1 health. It does not kill by itself -- what follows it does.", 93423 },
+        { "Stay of Execution", "Cast seven seconds after every Asphyxiate, healing the party back up. Interrupting it is the mistake: the party is at 1 health when it goes out.", 93468 },
+        { "Pain and Suffering", "A channel on a random player every 6 seconds, and his steady damage between the Asphyxiate cycles.", 93605 },
+        { "Wracking Pain", "Heroic only: an extra party-wide hit slotted in eight seconds after Pain and Suffering, but only when the next Asphyxiate is still far enough away.", 93720 },
+        { "Dark Archangel", "Heroic only, at 25% health. He takes the archangel form and the Stay of Execution safety net ends with it.", 93757 },
+    },
+})
+
+AddDCBoss(SFK_CATA, {
+    encID = 909002, rootID = 909120, order = 2,
+    name = "Baron Silverlaine", display = 37288, entry = 5003887,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Baron Silverlaine",
+    lore = "The keep's rightful lord, murdered in his own hall and never allowed to leave it. The worgen that Arugal loosed on his household are still here too, and Silverlaine can call them back one at a time.",
+    overview = "A summoning fight. He is not dangerous on his own -- the danger is which of the old worgen he pulls out of the walls, and the set is chosen at random each pull.",
+    abilities = {
+        { "Veil of Shadow", "A healing-reduction curse on the tank every few seconds. Heroic replaces it with Cursed Veil, which hits the whole party instead.", 23224 },
+        { "Summon Worgen Spirit", "At 75% and 35% (90/60/30 on heroic, so three spirits instead of two) he raises one of Arugal's old lieutenants. Which ones is randomised on pull.", 93857 },
+        { "Spirit of Wolf Master Nandos", "Howling Rage every 5 seconds -- a party-wide howl that has to be healed through.", 93899 },
+        { "Spirit of Odo the Blindwatcher", "Blinding Shadows on the tank every 5 seconds.", 93864 },
+        { "Spirit of Razorclaw the Butcher", "Spectral Rush, a charge at a random player every 4 seconds.", 93924 },
+        { "Spirit of Rethilgore", "Soul Drain on the tank every 8 seconds.", 93927 },
+        { "Lupine Spectre", "Heroic only: the summoned spirit brings a spectral wolf of its own, which claws whatever the spirit is on.", 94199 },
+    },
+})
+
+AddDCBoss(SFK_CATA, {
+    encID = 909003, rootID = 909140, order = 3,
+    name = "Commander Springvale", display = 37287, entry = 5004278,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Commander Springvale",
+    lore = "Springvale broke his own paladin oaths to hold this place and was rewarded with something that keeps him standing. He fights like a Light-sworn commander still, only nothing he casts is the Light any more.",
+    overview = "A shield fight. He empowers himself on a timer and the party has to deal with what the empowerment turns into -- on heroic, with his own guard alive and feeding him.",
+    abilities = {
+        { "Malefic Strike", "His opening melee ability, from 5 seconds and repeating.", 93685 },
+        { "Desecration", "Dropped on a random player from 9.5 seconds. Ground that must not be stood in.", 93687 },
+        { "Shield of the Perfidious", "The absorb he wraps himself in once Unholy Power builds. Heroic also puts it on his summoned guard.", 93693 },
+        { "Word of Shame", "Heroic only: a debuff on a random player, immediately followed by another Shield of the Perfidious.", 93852 },
+        { "Unholy Empowerment", "Heroic only: his Wailing Guardsman and Tormented Officer feed him this every 28-30 seconds. Killing the adds is what stops the shields.", 93844 },
+        { "Screams of the Past", "Heroic only, from the Wailing Guardsman: a party-wide scream every 14 seconds.", 7074 },
+        { "Shield Wall", "Heroic only: the Tormented Officer drops to a shield wall at 20% health rather than dying quietly.", 91463 },
+    },
+})
+
+AddDCBoss(SFK_CATA, {
+    encID = 909004, rootID = 909160, order = 4,
+    name = "Lord Walden", display = 34612, entry = 5046963,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Lord Walden",
+    lore = "The least martial of Godfrey's circle and by far the most inventive. Walden has spent his exile in the keep's laboratory brewing things, and the fight is essentially a demonstration of what he has bottled.",
+    overview = "A mixture fight: he conjures one potion after another and the party's job is to not be standing where each one lands.",
+    abilities = {
+        { "Conjure Frost Mixture", "From 8 seconds and repeating -- his most frequent cast and the one the floor fills with.", 93505 },
+        { "Ice Shards", "A self-centred burst of shards, on a 22-second cycle in normal. On heroic it is slaved to the Mystery Toxin instead of running on its own timer.", 93527 },
+        { "Conjure Poisonous Mixture", "Thrown at a random player from 31 seconds.", 93697 },
+        { "Conjure Mystery Toxin", "Heroic only, from 10 seconds: an unknown brew that also pulls the next Ice Shards forward to 12 seconds.", 93695 },
+        { "Toxic Coagulant", "The lingering result of his mixtures -- stacking it to Fully Coagulated is what freezes a player in place.", 93572 },
+    },
+})
+
+AddDCBoss(SFK_CATA, {
+    encID = 909005, rootID = 909180, order = 5,
+    name = "Lord Godfrey", display = 34611, entry = 5046964,
+    icon = "Interface\\EncounterJournal\\UI-EJ-BOSS-Lord Godfrey",
+    lore = "The man who shot Sylvanas Windrunner in the back and then ran here to be out of reach of what she became. He is out of allies, out of the keep's upper halls, and entirely unrepentant.",
+    overview = "A ranged fight with adds. He shoots, he raises ghouls out of the floor, and at intervals he stops shooting single targets and empties both pistols into the room.",
+    abilities = {
+        { "Mortal Wound", "A stacking tank debuff from 3-4 seconds. It is what makes the fight a healing problem rather than a damage one.", 93675 },
+        { "Cursed Bullets", "Aimed at a random player. Heroic uses a stronger version.", 93629 },
+        { "Summon Bloodthirsty Ghouls", "From 6 seconds: he raises ghouls to hold the party while he keeps his distance.", 93707 },
+        { "Pistol Barrage", "He turns on the spot and sprays the room. Announced before it starts -- the whole party has to be out of the arc, not just the tank.", 93520 },
+    },
 })
 
 --[[  Template for adding more (copy & adapt) ---------------------------

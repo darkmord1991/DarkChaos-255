@@ -151,8 +151,12 @@ public:
 
         void EnterEvadeMode(EvadeReason /*why*/) override
         {
+            // No summons.DespawnAll() here. _EnterEvadeMode() routes into Reset(), and
+            // BossAI::_Reset() already despawns the summons (ScriptedCreature.cpp:659)
+            // BEFORE this AI's Reset() body re-summons the two heroic guards. Despawning
+            // again afterwards therefore destroyed the guards that had just been created,
+            // and heroic Springvale fought without his flanking pair after the first wipe.
             _EnterEvadeMode();
-            summons.DespawnAll();
             instance->SetBossState(DATA_COMMANDER_SPRINGVALE, FAIL);
             instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_WORD_OF_SHAME);
@@ -272,6 +276,15 @@ public:
     {
         npc_wailing_guardsmanAI(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()) { }
 
+        // Without this the EventMap survives a reset, so the events scheduled by the
+        // previous pull are still queued when JustEngagedWith schedules them again --
+        // Mortal Strike and the rest then fire twice per cycle, drifting further apart
+        // with every re-pull.
+        void Reset() override
+        {
+            _events.Reset();
+        }
+
         void JustEngagedWith(Unit* who) override
         {
             if (Creature* tormentedOfficer = me->FindNearestCreature(NPC_TORMENTED_OFFICER, 20.0f))
@@ -283,6 +296,12 @@ public:
 
         void UpdateAI(uint32 diff) override
         {
+            // The EventMap was being pumped with no combat gate at all, so Screams of
+            // the Past and Unholy Empowerment went off while the guardsman stood idle
+            // out of combat, and DoCastVictim ran with no victim.
+            if (!UpdateVictim())
+                return;
+
             _events.Update(diff);
 
             while (uint32 eventId = _events.ExecuteEvent())
@@ -324,7 +343,15 @@ public:
 
     struct npc_tormented_officerAI : public ScriptedAI
     {
-        npc_tormented_officerAI(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()) { }
+        npc_tormented_officerAI(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()), _shielded(false) { }
+
+        // See the guardsman above: the EventMap has to be cleared between pulls or the
+        // previous attempt's entries stack on top of the new ones.
+        void Reset() override
+        {
+            _events.Reset();
+            _shielded = false;
+        }
 
         void JustEngagedWith(Unit* who) override
         {
@@ -346,6 +373,9 @@ public:
 
         void UpdateAI(uint32 diff) override
         {
+            if (!UpdateVictim())
+                return;
+
             _events.Update(diff);
 
             while (uint32 eventId = _events.ExecuteEvent())

@@ -79,7 +79,7 @@ enum Misc
 
 struct boss_lord_godfrey : public BossAI
 {
-    boss_lord_godfrey(Creature* creature) : BossAI(creature, DATA_LORD_GODFREY) { }
+    boss_lord_godfrey(Creature* creature) : BossAI(creature, DATA_LORD_GODFREY), _killedGhoulCounter(0) { }
 
     void JustRespawned() override
     {
@@ -95,7 +95,10 @@ struct boss_lord_godfrey : public BossAI
     void JustEngagedWith(Unit* who) override
     {
         BossAI::JustEngagedWith(who);
-        Talk(instance->GetData(DATA_TEAM_IN_INSTANCE) == ALLIANCE ? SAY_AGGRO_ALLIANCE : SAY_AGGRO_HORDE);
+        // TEAM_ALLIANCE (TeamId, 0), not ALLIANCE (Team, 469) -- the instance stores
+        // player->GetTeamId(), so the old comparison was never true and Godfrey greeted
+        // every group, Alliance included, with the Horde line.
+        Talk(instance->GetData(DATA_TEAM_IN_INSTANCE) == TEAM_ALLIANCE ? SAY_AGGRO_ALLIANCE : SAY_AGGRO_HORDE);
         DoCastAOE(SPELL_BULLET_TIME_RESET_CREDIT);
         instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
         events.ScheduleEvent(EVENT_MORTAL_WOUND, 3s, 4s);
@@ -142,7 +145,10 @@ struct boss_lord_godfrey : public BossAI
         switch (summon->GetEntry())
         {
             case NPC_BLOODTHIRSTY_GHOUL:
-                if (killer->GetEntry() == BOSS_LORD_GODFREY && IsHeroic())
+                // killer is nullable -- Unit::Kill passes it through and null-checks it
+                // itself (Unit.cpp:14231). A ghoul that dies to a damage-over-time whose
+                // caster has already left the map arrives here with killer == nullptr.
+                if (killer && killer->GetEntry() == BOSS_LORD_GODFREY && IsHeroic())
                 {
                     DoCastAOE(SPELL_BULLET_TIME_CREDIT, true);
                     _killedGhoulCounter++;
@@ -293,8 +299,12 @@ class spell_godfrey_pistol_barrage : public AuraScript
     void OnPeriodic(AuraEffect const* /*aurEff*/)
     {
         Unit* target = GetTarget();
-        float maxOffset = float(M_PI / 6);
-        float offset = _useLeftGun ? frand(0.f, maxOffset) : frand(--maxOffset, 0.f);
+        float const maxOffset = float(M_PI / 6);
+        // -maxOffset, not --maxOffset. The pre-decrement subtracted 1.0 from the
+        // angle (0.5236 -> -0.4764) AND wrote that back into maxOffset, so the right
+        // gun swept a narrower, off-centre arc than the left one -- a lopsided cone
+        // that only shows up as "the barrage does not cover the room evenly".
+        float const offset = _useLeftGun ? frand(0.f, maxOffset) : frand(-maxOffset, 0.f);
         uint32 spellId = _useLeftGun ? SPELL_PISTOL_BARRAGE_MISSILE_1 : SPELL_PISTOL_BARRAGE_MISSILE_2;
 
         float ori = target->GetOrientation() + offset;

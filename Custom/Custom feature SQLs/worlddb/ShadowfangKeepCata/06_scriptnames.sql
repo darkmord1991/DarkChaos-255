@@ -38,9 +38,15 @@ UPDATE `creature_template` SET `ScriptName` = 'boss_lord_walden',          `AINa
 UPDATE `creature_template` SET `ScriptName` = 'boss_lord_godfrey',         `AIName` = '' WHERE `entry` = 46964 + 5000000 AND `entry` BETWEEN 5000000 AND 5099999;
 
 -- Encounter adds with their own AI.
--- The four "worgen spirit" entries all share one AI class (npc_sfk_worgen_spirit); it
--- resolves which ghost to summon from the creature entry at runtime.
-UPDATE `creature_template` SET `ScriptName` = 'npc_sfk_worgen_spirit',  `AIName` = '' WHERE `entry` IN (51047 + 5000000, 50934 + 5000000, 51080 + 5000000, 51085 + 5000000) AND `entry` BETWEEN 5000000 AND 5099999;
+--
+-- npc_sfk_worgen_spirit belongs on the four NAMED GHOSTS, not on the "Worgen Spirit"
+-- entries the name suggests (51047 / 50934 / 51080 / 51085). Silverlaine summons a
+-- spirit, HIS JustSummoned makes it cast SPELL_SUMMON_SPIRIT_OF_<name>_SUMMON, and the
+-- ghost that spell creates is what fights -- so the ghost is what needs the AI. The
+-- AI's own entry switch, its ACTION_DESPAWN handler and DespawnWorgenSpirits() all key
+-- on these four entries. See 21_fix_worgen_spirit_scriptname.sql for the full trace and
+-- for the spell-data gap that still blocks the mechanic downstream of this binding.
+UPDATE `creature_template` SET `ScriptName` = 'npc_sfk_worgen_spirit',  `AIName` = '' WHERE `entry` IN (50851 + 5000000, 50857 + 5000000, 50869 + 5000000, 50834 + 5000000) AND `entry` BETWEEN 5000000 AND 5099999;
 UPDATE `creature_template` SET `ScriptName` = 'npc_wailing_guardsman',  `AIName` = '' WHERE `entry` = 50613 + 5000000 AND `entry` BETWEEN 5000000 AND 5099999;
 UPDATE `creature_template` SET `ScriptName` = 'npc_tormented_officer',  `AIName` = '' WHERE `entry` = 50615 + 5000000 AND `entry` BETWEEN 5000000 AND 5099999;
 

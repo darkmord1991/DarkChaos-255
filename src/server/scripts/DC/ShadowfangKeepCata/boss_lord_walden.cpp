@@ -159,17 +159,20 @@ struct boss_lord_walden : public BossAI
             case POINT_TALK_INTRO_1:
                 Talk(SAY_INTRO);
                 me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_USE_STANDING);
+                // ScheduleEvent(id, time, group, phase) -- the 0 is the GROUP. The two calls
+                // below used to pass PHASE_INTRO in that slot, so it became a group index
+                // and the events were scheduled with no phase at all.
                 events.ScheduleEvent(EVENT_CLEAR_EMOTE_STATE, 54s, 0, PHASE_INTRO);
                 break;
             case POINT_TALK_INTRO_2:
                 Talk(SAY_INTRO);
                 me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_USE_STANDING);
-                events.ScheduleEvent(EVENT_CLEAR_EMOTE_STATE, 47s, PHASE_INTRO);
+                events.ScheduleEvent(EVENT_CLEAR_EMOTE_STATE, 47s, 0, PHASE_INTRO);
                 break;
             case POINT_TALK_INTRO_3:
                 Talk(SAY_INTRO);
                 me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_USE_STANDING);
-                events.ScheduleEvent(EVENT_CLEAR_EMOTE_STATE, 46s, PHASE_INTRO);
+                events.ScheduleEvent(EVENT_CLEAR_EMOTE_STATE, 46s, 0, PHASE_INTRO);
                 break;
             default:
                 break;
