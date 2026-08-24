@@ -59,6 +59,7 @@ INSERT IGNORE INTO `dc_sfk825_ct_set` (`entry`)
 SELECT e FROM (
     SELECT 51047 e UNION SELECT 50851 UNION SELECT 50934 UNION SELECT 50857   -- Silverlaine: spirits + ghosts
     UNION SELECT 51080 UNION SELECT 50869 UNION SELECT 51085 UNION SELECT 50834
+    UNION SELECT 50923                                                        -- Silverlaine: Nandos' Lupine Spectres
     UNION SELECT 50615 UNION SELECT 50613 UNION SELECT 50547 UNION SELECT 50503 -- Springvale
     UNION SELECT 50522                                                          -- Walden: Mystery Toxin
     UNION SELECT 50561 UNION SELECT 52065                                       -- Godfrey: ghouls + barrage dummy

@@ -119,6 +119,11 @@ enum SKCreatures
     NPC_RAZORCLAW_THE_BUTCHER       = 50869 + SFK_CATA_ENTRY_OFFSET,
     NPC_WORGEN_SPIRIT_RETHILGORE    = 51085 + SFK_CATA_ENTRY_OFFSET,
     NPC_RETHILGORE                  = 50834 + SFK_CATA_ENTRY_OFFSET,
+    // Summoned three at a time by Wolf Master Nandos (SPELL_SUMMON_LUPINE_SPECTRE).
+    // Nothing in C++ names it -- it is listed because 03_templates.sql derives its
+    // import set for SUMMONED adds from this enum, and being absent from here is why
+    // the creature was never imported and the spell summoned nothing. Keep it.
+    NPC_LUPINE_SPECTRE              = 50923 + SFK_CATA_ENTRY_OFFSET,
 
     /*Commander Springvale*/
     NPC_TORMENTED_OFFICER           = 50615 + SFK_CATA_ENTRY_OFFSET,
