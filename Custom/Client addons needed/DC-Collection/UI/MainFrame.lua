@@ -177,51 +177,169 @@ local function CursorHasPayload()
     return nil
 end
 
-local function PickupMountForActionBar(item)
+-- Pets are identified the way PetModule:SummonPet identifies them: by spell id
+-- OR creature id, because a pet definition may carry either and the collection
+-- key (item.id) is sometimes one and sometimes the other. Offer the key to both
+-- matchers rather than guessing which kind it is.
+local function ResolvePetIds(item)
+    if type(item) ~= "table" then
+        return nil, nil
+    end
+
+    local def = item.definition or {}
+
+    local spellId =
+        ToPositiveNumber(item.spellId) or
+        ToPositiveNumber(item.spell_id) or
+        ToPositiveNumber(def.spellId) or
+        ToPositiveNumber(def.spell_id) or
+        ToPositiveNumber(def.spellID)
+
+    local creatureId =
+        ToPositiveNumber(item.creatureId) or
+        ToPositiveNumber(item.creature_id) or
+        ToPositiveNumber(def.creatureId) or
+        ToPositiveNumber(def.creature_id) or
+        ToPositiveNumber(def.creatureID)
+
+    local key = ToPositiveNumber(item.id)
+    return spellId or key, creatureId or key
+end
+
+-- Returns the CRITTER companion slot for a pet, plus the summon spell id the
+-- client has on file for it. Mirrors the lookup in PetModule:SummonPet.
+local function GetCritterCompanionIndex(spellId, creatureId)
+    if not spellId and not creatureId then
+        return nil
+    end
+
+    if type(GetNumCompanions) ~= "function" or
+        type(GetCompanionInfo) ~= "function" then
+        return nil
+    end
+
+    local numCritters = tonumber(GetNumCompanions("CRITTER")) or 0
+    for i = 1, numCritters do
+        local companionCreatureId, _, companionSpellId = GetCompanionInfo("CRITTER", i)
+        if (spellId and ToPositiveNumber(companionSpellId) == spellId) or
+            (creatureId and ToPositiveNumber(companionCreatureId) == creatureId) then
+            return i, ToPositiveNumber(companionSpellId)
+        end
+    end
+
+    return nil
+end
+
+-- Puts a collected mount or pet on the cursor so it can be dropped onto an
+-- action bar. Returns true when something actually ended up on the cursor.
+--
+-- Mounts and pets need opposite orderings. A mount's summon spell is in the
+-- player's spellbook, so PickupSpell works and is tried first. A companion
+-- pet's summon spell is not, so PickupSpell usually fails for pets and
+-- PickupCompanion("CRITTER", index) is the reliable path -- the same call
+-- Blizzard's own companion tab uses.
+-- forcedType lets a caller that already knows what it is holding say so. The
+-- Pet Journal's rows carry a bare pet record with no .type field, and guessing
+-- from the record's shape would be fragile.
+local function PickupCollectionItemForActionBar(item, forcedType)
     if type(item) ~= "table" then
         return false
     end
 
-    local collType = item.type
+    local collType = forcedType or item.type
     if collType == "shop" then
         collType = item.collectionTypeName
     end
-    if collType ~= "mounts" or item.collected == false then
+
+    if item.collected == false then
         return false
     end
 
-    local spellId = ResolveMountSpellId(item)
-    if not spellId then
+    -- Never clobber something the player is already dragging.
+    if CursorHasPayload() == true then
         return false
     end
 
-    local cursorBefore = CursorHasPayload()
-    if cursorBefore == true then
-        return false
-    end
+    if collType == "mounts" then
+        local spellId = ResolveMountSpellId(item)
+        if not spellId then
+            return false
+        end
 
-    if type(PickupSpell) == "function" then
-        local okSpell = pcall(PickupSpell, spellId)
-        if okSpell then
-            local cursorAfterSpell = CursorHasPayload()
-            if cursorAfterSpell ~= false then
-                return true
+        if type(PickupSpell) == "function" then
+            local okSpell = pcall(PickupSpell, spellId)
+            if okSpell then
+                local cursorAfterSpell = CursorHasPayload()
+                if cursorAfterSpell ~= false then
+                    return true
+                end
             end
         end
-    end
 
-    local companionIndex = GetMountCompanionIndexBySpell(spellId)
-    if companionIndex and type(PickupCompanion) == "function" then
-        local okCompanion = pcall(PickupCompanion, "MOUNT", companionIndex)
-        if okCompanion then
-            local cursorAfterCompanion = CursorHasPayload()
-            if cursorAfterCompanion ~= false then
-                return true
+        local companionIndex = GetMountCompanionIndexBySpell(spellId)
+        if companionIndex and type(PickupCompanion) == "function" then
+            local okCompanion = pcall(PickupCompanion, "MOUNT", companionIndex)
+            if okCompanion then
+                local cursorAfterCompanion = CursorHasPayload()
+                if cursorAfterCompanion ~= false then
+                    return true
+                end
             end
         end
+
+        return false
+    end
+
+    if collType == "pets" then
+        local spellId, creatureId = ResolvePetIds(item)
+        local companionIndex, companionSpellId = GetCritterCompanionIndex(spellId, creatureId)
+
+        local companionApiAvailable =
+            type(GetNumCompanions) == "function" and
+            type(GetCompanionInfo) == "function"
+
+        -- No matching CRITTER slot while the API is working means the player
+        -- simply does not have this companion. Refuse, rather than trying to
+        -- pick up a summon spell they do not know -- the collection can list
+        -- pets the character has not learned.
+        if not companionIndex and companionApiAvailable then
+            return false
+        end
+
+        if companionIndex and type(PickupCompanion) == "function" then
+            local okCompanion = pcall(PickupCompanion, "CRITTER", companionIndex)
+            if okCompanion then
+                local cursorAfterCompanion = CursorHasPayload()
+                if cursorAfterCompanion ~= false then
+                    return true
+                end
+            end
+        end
+
+        -- Either PickupCompanion is missing, or it declined. The spell id the
+        -- client reported for the companion is more trustworthy than the one in
+        -- our definition, so prefer it.
+        local summonSpellId = companionSpellId or spellId
+        if summonSpellId and type(PickupSpell) == "function" then
+            local okSpell = pcall(PickupSpell, summonSpellId)
+            if okSpell then
+                local cursorAfterSpell = CursorHasPayload()
+                if cursorAfterSpell ~= false then
+                    return true
+                end
+            end
+        end
+
+        return false
     end
 
     return false
+end
+
+-- Shared with UI/PetJournalFrame.lua, which has its own pet rows and needs the
+-- same cursor behaviour. Kept as one implementation rather than two.
+function DC:PickupCollectionItemForActionBar(item, forcedType)
+    return PickupCollectionItemForActionBar(item, forcedType)
 end
 
 local function GetMountCompanionDisplayIdBySpell(spellId)
@@ -1293,7 +1411,7 @@ function DC:CreateContentArea(parent)
     infoFrame.iconDragBtn:SetPoint("CENTER", infoFrame.icon, "CENTER", 0, 0)
     infoFrame.iconDragBtn:RegisterForDrag("LeftButton")
     infoFrame.iconDragBtn:SetScript("OnDragStart", function()
-        PickupMountForActionBar(DC.selectedItem)
+        PickupCollectionItemForActionBar(DC.selectedItem)
     end)
     
     infoFrame.name = infoFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -2918,7 +3036,7 @@ function DC:PopulateMountList()
             end)
             btn:SetScript("OnDragStart", function(selfBtn)
                 if selfBtn.itemData then
-                    PickupMountForActionBar(selfBtn.itemData)
+                    PickupCollectionItemForActionBar(selfBtn.itemData)
                 end
             end)
             btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")

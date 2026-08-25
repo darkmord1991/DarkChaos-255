@@ -408,6 +408,25 @@ function PetJournal:CreateModelPreview(parent)
     infoFrame.icon:SetPoint("LEFT", infoFrame, "LEFT", 5, 0)
     infoFrame.icon:SetTexture("Interface\\Icons\\INV_Box_PetCarrier_01")
 
+    -- The 3D model is mouse-enabled and will otherwise swallow input aimed at
+    -- anything sharing its frame level, so lift the whole header above it. Same
+    -- reason the mount preview does this in UI/MainFrame.lua.
+    infoFrame:SetFrameLevel(((modelFrame.model and modelFrame.model:GetFrameLevel())
+        or (modelFrame:GetFrameLevel() + 1)) + 5)
+
+    -- A texture cannot receive drag events, so the selected pet's icon gets an
+    -- invisible button on top of it. Mirrors the mount detail panel.
+    infoFrame.iconDragBtn = CreateFrame("Button", nil, infoFrame)
+    infoFrame.iconDragBtn:SetSize(40, 40)
+    infoFrame.iconDragBtn:SetPoint("CENTER", infoFrame.icon, "CENTER", 0, 0)
+    infoFrame.iconDragBtn:RegisterForDrag("LeftButton")
+    infoFrame.iconDragBtn:SetScript("OnDragStart", function()
+        local pet = PetJournal.selectedPet
+        if pet and pet.collected and type(DC.PickupCollectionItemForActionBar) == "function" then
+            DC:PickupCollectionItemForActionBar(pet, "pets")
+        end
+    end)
+
     infoFrame.name = infoFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     infoFrame.name:SetPoint("TOPLEFT", infoFrame.icon, "TOPRIGHT", 10, -5)
     infoFrame.name:SetText(L["SELECT_PET"] or "Select a pet")
@@ -650,6 +669,17 @@ function PetJournal:CreatePetButton(parent, index)
     btn:SetScript("OnDoubleClick", function()
         if btn.petData and btn.petData.collected then
             DC.PetModule:SummonPet(btn.petData.id)
+        end
+    end)
+
+    -- Drag a collected pet onto an action bar, the same way mounts work.
+    -- RegisterForDrag does not interfere with OnClick: the click only fires if
+    -- the button is released without a drag starting.
+    btn:RegisterForDrag("LeftButton")
+    btn:SetScript("OnDragStart", function(selfBtn)
+        local pet = selfBtn.petData
+        if pet and pet.collected and type(DC.PickupCollectionItemForActionBar) == "function" then
+            DC:PickupCollectionItemForActionBar(pet, "pets")
         end
     end)
 
