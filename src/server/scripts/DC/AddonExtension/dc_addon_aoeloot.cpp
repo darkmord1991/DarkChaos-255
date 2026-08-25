@@ -18,6 +18,7 @@
 #include "Chat.h"
 #include "StringFormat.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/dc_aoeloot_schema.h"
 #include <algorithm>
 #include <cctype>
 #include <mutex>
@@ -90,57 +91,18 @@ namespace AOELoot
     static std::unordered_map<uint32, PlayerAOESettings> s_PlayerSettings;
     static std::mutex s_SettingsMutex;  // Thread safety for settings access
 
-    struct PreferenceSchemaInfo
-    {
-        bool initialized = false;
-        bool hasShowMessages = false;
-        bool hasAutoVendorPoor = false;
-        bool hasGoldOnly = false;
-        bool hasLootRange = false;
-    };
-
-    static PreferenceSchemaInfo s_PreferenceSchema;
+    // Shared with the gameplay path via DC/dc_aoeloot_schema.h. That descriptor
+    // also carries hasIgnoredItems / hasActivePreset, which this path does not
+    // select: the ignore list and the active preset reach the client through the
+    // DCAoELootExt in-memory accessors, not through this SELECT.
+    using DCAoELoot::PreferenceSchemaInfo;
 
     static PreferenceSchemaInfo const& GetPreferenceSchemaInfo()
     {
-        if (s_PreferenceSchema.initialized)
-            return s_PreferenceSchema;
-
-        s_PreferenceSchema.initialized = true;
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_aoeloot_preferences'");
-
-        if (!result)
-        {
-            LOG_WARN("dc.addon.aoe", "Could not inspect dc_aoeloot_preferences schema. Using base-column fallback.");
-            return s_PreferenceSchema;
-        }
-
-        do
-        {
-            std::string const column = (*result)[0].Get<std::string>();
-            if (column == "show_messages")
-                s_PreferenceSchema.hasShowMessages = true;
-            else if (column == "auto_vendor_poor")
-                s_PreferenceSchema.hasAutoVendorPoor = true;
-            else if (column == "gold_only")
-                s_PreferenceSchema.hasGoldOnly = true;
-            else if (column == "loot_range")
-                s_PreferenceSchema.hasLootRange = true;
-        } while (result->NextRow());
-
-        LOG_INFO("dc.addon.aoe", "AOE addon schema: show_messages={}, auto_vendor_poor={}, gold_only={}, loot_range={}",
-            s_PreferenceSchema.hasShowMessages ? "yes" : "no",
-            s_PreferenceSchema.hasAutoVendorPoor ? "yes" : "no",
-            s_PreferenceSchema.hasGoldOnly ? "yes" : "no",
-            s_PreferenceSchema.hasLootRange ? "yes" : "no");
-
-        return s_PreferenceSchema;
+        return DCAoELoot::GetPreferenceSchema();
     }
 
-    static bool JsonGetBool(const JsonValue& json, const std::string& key, bool defaultValue = false)
+    static bool JsonGetBool(JsonValue const& json, std::string const& key, bool defaultValue = false)
     {
         JsonValue const& value = json[key];
         if (value.IsBool())
@@ -157,7 +119,7 @@ namespace AOELoot
         return defaultValue;
     }
 
-    static uint32 JsonGetUInt(const JsonValue& json, const std::string& key, uint32 defaultValue = 0)
+    static uint32 JsonGetUInt(JsonValue const& json, std::string const& key, uint32 defaultValue = 0)
     {
         JsonValue const& value = json[key];
         if (value.IsNumber())
@@ -176,7 +138,7 @@ namespace AOELoot
         return defaultValue;
     }
 
-    static float JsonGetFloat(const JsonValue& json, const std::string& key, float defaultValue = 0.0f)
+    static float JsonGetFloat(JsonValue const& json, std::string const& key, float defaultValue = 0.0f)
     {
         JsonValue const& value = json[key];
         if (value.IsNumber())
@@ -424,21 +386,21 @@ namespace AOELoot
             .Send(player);
     }
 
-    static bool GetRequestBool(const ParsedMessage& msg, const std::string& key, bool defaultValue = false)
+    static bool GetRequestBool(ParsedMessage const& msg, std::string const& key, bool defaultValue = false)
     {
         if (IsJsonMessage(msg))
             return JsonGetBool(GetJsonData(msg), key, defaultValue);
         return msg.GetDataCount() > 0 ? msg.GetBool(0) : defaultValue;
     }
 
-    static uint32 GetRequestUInt(const ParsedMessage& msg, const std::string& key, uint32 defaultValue = 0)
+    static uint32 GetRequestUInt(ParsedMessage const& msg, std::string const& key, uint32 defaultValue = 0)
     {
         if (IsJsonMessage(msg))
             return JsonGetUInt(GetJsonData(msg), key, defaultValue);
         return msg.GetDataCount() > 0 ? msg.GetUInt32(0) : defaultValue;
     }
 
-    static float GetRequestFloat(const ParsedMessage& msg, const std::string& key, float defaultValue = 0.0f)
+    static float GetRequestFloat(ParsedMessage const& msg, std::string const& key, float defaultValue = 0.0f)
     {
         if (IsJsonMessage(msg))
             return JsonGetFloat(GetJsonData(msg), key, defaultValue);
@@ -446,7 +408,7 @@ namespace AOELoot
     }
 
     // Handler: Toggle AOE loot enabled
-    static void HandleToggleEnabled(Player* player, const ParsedMessage& msg)
+    static void HandleToggleEnabled(Player* player, ParsedMessage const& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
         bool enabled = GetRequestBool(msg, "enabled", true);
@@ -466,7 +428,7 @@ namespace AOELoot
     }
 
     // Handler: Set quality filter
-    static void HandleSetQuality(Player* player, const ParsedMessage& msg)
+    static void HandleSetQuality(Player* player, ParsedMessage const& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
         uint32 qualityValue = GetRequestUInt(msg, "quality", 0);
@@ -496,7 +458,7 @@ namespace AOELoot
 
     // Handler: Get loot stats - uses live in-memory stats from dc_aoeloot_extensions
     // first, falls back to DB (async) for persisted data from previous sessions
-    static void HandleGetStats(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetStats(Player* player, ParsedMessage const& /*msg*/)
     {
         // Live in-memory stats (updated in real-time by ac_aoeloot.cpp) answer
         // without touching the database
@@ -542,7 +504,7 @@ namespace AOELoot
     }
 
     // Handler: Set auto-skin
-    static void HandleSetAutoSkin(Player* player, const ParsedMessage& msg)
+    static void HandleSetAutoSkin(Player* player, ParsedMessage const& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
         bool enabled = GetRequestBool(msg, "enabled", false);
@@ -560,7 +522,7 @@ namespace AOELoot
     }
 
     // Handler: Set loot range
-    static void HandleSetRange(Player* player, const ParsedMessage& msg)
+    static void HandleSetRange(Player* player, ParsedMessage const& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
         float range = GetRequestFloat(msg, "range", 30.0f);
@@ -580,7 +542,7 @@ namespace AOELoot
     }
 
     // Handler: Toggle ignored item filter
-    static void HandleIgnoreItem(Player* player, const ParsedMessage& msg)
+    static void HandleIgnoreItem(Player* player, ParsedMessage const& msg)
     {
         uint32 itemId = GetRequestUInt(msg, "itemId", 0);
         if (itemId == 0)
@@ -596,7 +558,7 @@ namespace AOELoot
     }
 
     // Handler: Get settings
-    static void HandleGetSettings(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetSettings(Player* player, ParsedMessage const& /*msg*/)
     {
         SendSettingsSync(player);
     }
@@ -604,7 +566,7 @@ namespace AOELoot
     // Handler: Generic {key, value} setting. Covers the toggles that
     // previously only existed as .lp/.lpet chat commands, including the
     // looter-pet settings.
-    static void HandleSetSetting(Player* player, const ParsedMessage& msg)
+    static void HandleSetSetting(Player* player, ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg))
             return;
@@ -685,7 +647,7 @@ namespace AOELoot
     }
 
     // Handler: Get quality breakdown stats
-    static void HandleGetQualityStats(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetQualityStats(Player* player, ParsedMessage const& /*msg*/)
     {
         uint32 poor, common, uncommon, rare, epic, legendary;
         uint32 filtPoor, filtCommon, filtUncommon, filtRare, filtEpic, filtLegendary;
@@ -779,7 +741,7 @@ namespace AOELoot
 class DCAddonAOELootScript : public PlayerScript
 {
 public:
-    DCAddonAOELootScript() : PlayerScript("DCAddonAOELootScript") {}
+    DCAddonAOELootScript() : PlayerScript("DCAddonAOELootScript", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) {}
 
     void OnPlayerLogin(Player* player) override
     {

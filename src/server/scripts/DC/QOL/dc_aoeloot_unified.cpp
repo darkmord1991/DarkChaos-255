@@ -32,6 +32,7 @@
 #include "Spell.h"
 #include "PathGenerator.h"
 #include "DC/CrossSystem/CrossSystemUtilities.h"
+#include "DC/dc_aoeloot_schema.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_utils.h"
 
@@ -242,18 +243,9 @@ static std::unordered_map<ObjectGuid, DetailedLootStats> sDetailedStats;
 static std::unordered_map<ObjectGuid, PlayerAoELootData> sPlayerLootData;
 static std::unordered_map<ObjectGuid, uint64> sPlayerAutoStoreTimestamp;
 
-struct PreferenceSchemaInfo
-{
-    bool initialized = false;
-    bool hasShowMessages = false;
-    bool hasAutoVendorPoor = false;
-    bool hasIgnoredItems = false;
-    bool hasGoldOnly = false;
-    bool hasLootRange = false;
-    bool hasActivePreset = false;
-};
-
-static PreferenceSchemaInfo sPreferenceSchema;
+// Preference-column schema now lives in DC/dc_aoeloot_schema.h, shared with
+// the addon protocol path so the two can no longer drift apart.
+using DCAoELoot::PreferenceSchemaInfo;
 
 // Centralized in DCAddon::Utils::EscapeSql, which delegates to the driver's
 // charset- and SQL-mode-aware mysql_real_escape_string.
@@ -295,48 +287,7 @@ static void ParseIgnoredItems(std::string const& csv, std::unordered_set<uint32>
 
 static PreferenceSchemaInfo const& GetPreferenceSchemaInfo()
 {
-    if (sPreferenceSchema.initialized)
-        return sPreferenceSchema;
-
-    sPreferenceSchema.initialized = true;
-
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
-        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_aoeloot_preferences'");
-
-    if (!result)
-    {
-        LOG_WARN("scripts.dc", "AoELoot: Could not inspect dc_aoeloot_preferences schema. Using base-column fallback.");
-        return sPreferenceSchema;
-    }
-
-    do
-    {
-        std::string const column = (*result)[0].Get<std::string>();
-        if (column == "show_messages")
-            sPreferenceSchema.hasShowMessages = true;
-        else if (column == "auto_vendor_poor")
-            sPreferenceSchema.hasAutoVendorPoor = true;
-        else if (column == "ignored_items")
-            sPreferenceSchema.hasIgnoredItems = true;
-        else if (column == "gold_only")
-            sPreferenceSchema.hasGoldOnly = true;
-        else if (column == "loot_range")
-            sPreferenceSchema.hasLootRange = true;
-        else if (column == "active_preset")
-            sPreferenceSchema.hasActivePreset = true;
-    } while (result->NextRow());
-
-    LOG_INFO("scripts.dc",
-        "AoELoot preferences schema: show_messages={}, auto_vendor_poor={}, ignored_items={}, gold_only={}, loot_range={}, active_preset={}",
-        sPreferenceSchema.hasShowMessages ? "yes" : "no",
-        sPreferenceSchema.hasAutoVendorPoor ? "yes" : "no",
-        sPreferenceSchema.hasIgnoredItems ? "yes" : "no",
-        sPreferenceSchema.hasGoldOnly ? "yes" : "no",
-        sPreferenceSchema.hasLootRange ? "yes" : "no",
-        sPreferenceSchema.hasActivePreset ? "yes" : "no");
-
-    return sPreferenceSchema;
+    return DCAoELoot::GetPreferenceSchema();
 }
 
 // =============================================================================
@@ -369,7 +320,7 @@ inline uint8 GetPresetMinQuality(LootPreset preset)
 }
 
 // Get preset name for display
-inline const char* GetPresetName(LootPreset preset)
+inline char const* GetPresetName(LootPreset preset)
 {
     switch (preset)
     {
@@ -1491,7 +1442,7 @@ public:
 class AoELootPlayerScript : public PlayerScript
 {
 public:
-    AoELootPlayerScript() : PlayerScript("AoELootPlayerScript") { }
+    AoELootPlayerScript() : PlayerScript("AoELootPlayerScript", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) { }
 
     void OnPlayerLogin(Player* player) override
     {
