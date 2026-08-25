@@ -395,7 +395,7 @@ uint32 GetActiveBossEntry()
 class zone_giant_isles : public PlayerScript
 {
 public:
-    zone_giant_isles() : PlayerScript("zone_giant_isles") { }
+    zone_giant_isles() : PlayerScript("zone_giant_isles", { PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_UPDATE_ZONE }) { }
 
     void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 /*newArea*/) override
     {

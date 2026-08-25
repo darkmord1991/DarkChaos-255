@@ -504,7 +504,7 @@ namespace Forms
     class FormsPlayerScript : public PlayerScript
     {
     public:
-        FormsPlayerScript() : PlayerScript("dc_forms_player") {}
+        FormsPlayerScript() : PlayerScript("dc_forms_player", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) {}
 
         void OnPlayerLogin(Player* player) override
         {

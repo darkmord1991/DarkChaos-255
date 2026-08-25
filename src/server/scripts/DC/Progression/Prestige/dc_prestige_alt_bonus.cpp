@@ -250,7 +250,10 @@ namespace
     class PrestigeAltBonusPlayerScript : public PlayerScript
     {
     public:
-        PrestigeAltBonusPlayerScript() : PlayerScript("PrestigeAltBonusPlayerScript") { }
+        PrestigeAltBonusPlayerScript() : PlayerScript("PrestigeAltBonusPlayerScript",
+        {
+            PLAYERHOOK_ON_GIVE_EXP, PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGIN
+        }) { }
 
         void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
         {

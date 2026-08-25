@@ -25,7 +25,11 @@ using namespace DarkChaos::SeasonalRewards;
 class SeasonalRewardPlayerScript : public PlayerScript
 {
 public:
-    SeasonalRewardPlayerScript() : PlayerScript("SeasonalRewardPlayerScript") {}
+    SeasonalRewardPlayerScript() : PlayerScript("SeasonalRewardPlayerScript",
+    {
+        PLAYERHOOK_ON_CREATURE_KILL, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT,
+        PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST
+    }) {}
 
     // Check weekly reset on login
     void OnPlayerLogin(Player* player) override

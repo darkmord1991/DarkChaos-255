@@ -8,7 +8,7 @@
 class NaxxPlayerScript : public PlayerScript
 {
 public:
-    NaxxPlayerScript() : PlayerScript("NaxxPlayerScript") { }
+    NaxxPlayerScript() : PlayerScript("NaxxPlayerScript", { PLAYERHOOK_ON_BEFORE_CHOOSE_GRAVEYARD }) { }
 
     void OnPlayerBeforeChooseGraveyard(Player* player, TeamId /*teamId*/, bool /*nearCorpse*/, uint32& graveyardOverride) override
     {

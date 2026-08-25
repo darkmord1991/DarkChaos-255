@@ -28,7 +28,7 @@ enum WorgoblinSpells
 class dc_worgoblin_player : public PlayerScript
 {
 public:
-    dc_worgoblin_player() : PlayerScript("dc_worgoblin_player") { }
+    dc_worgoblin_player() : PlayerScript("dc_worgoblin_player", { PLAYERHOOK_ON_GET_REPUTATION_PRICE_DISCOUNT }) { }
 
     void OnPlayerGetReputationPriceDiscount(Player const* player, FactionTemplateEntry const* factionTemplate, float& discount) override
     {

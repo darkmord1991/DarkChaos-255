@@ -293,7 +293,10 @@ static Creature* GetQuestMasterFollower(Player* player)
 class DungeonQuestMasterFollowerScript : public PlayerScript
 {
 public:
-    DungeonQuestMasterFollowerScript() : PlayerScript("DungeonQuestMasterFollowerScript") { }
+    DungeonQuestMasterFollowerScript() : PlayerScript("DungeonQuestMasterFollowerScript",
+    {
+        PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_MAP_CHANGED, PLAYERHOOK_ON_PLAYER_ENTER_COMBAT
+    }) { }
 
     // Spawn follower when player enters dungeon (solo or group)
     void OnPlayerMapChanged(Player* player) override

@@ -1164,7 +1164,7 @@ namespace DCAddon
 {
 namespace Matchmaking
 {
-    static void HandleQueueJoin(Player* player, const ParsedMessage& msg)
+    static void HandleQueueJoin(Player* player, ParsedMessage const& msg)
     {
         JsonValue json = GetJsonData(msg);
         uint8 category   = static_cast<uint8>(json["category"].IsNumber() ? json["category"].AsInt32() : QUEUE_CAT_DUNGEON);
@@ -1176,17 +1176,17 @@ namespace Matchmaking
         sMatchmakingQueue.JoinQueue(player, category, roles, dungeonId, difficulty, raidSize);
     }
 
-    static void HandleQueueLeave(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleQueueLeave(Player* player, ParsedMessage const& /*msg*/)
     {
         sMatchmakingQueue.LeaveQueue(player, true);
     }
 
-    static void HandleQueueStatusRequest(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleQueueStatusRequest(Player* player, ParsedMessage const& /*msg*/)
     {
         sMatchmakingQueue.SendStatus(player);
     }
 
-    static void HandleQueueProposalResponse(Player* player, const ParsedMessage& msg)
+    static void HandleQueueProposalResponse(Player* player, ParsedMessage const& msg)
     {
         JsonValue json = GetJsonData(msg);
         uint32 proposalId = static_cast<uint32>(json["proposalId"].IsNumber() ? json["proposalId"].AsInt32() : 0);
@@ -1199,7 +1199,7 @@ namespace Matchmaking
 
     // Send the dynamic mythic dungeon + raid catalog (from MapDifficulty/Map.dbc)
     // so the client pickers can list every available instance, grouped by era.
-    static void HandleGetQueueCatalog(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetQueueCatalog(Player* player, ParsedMessage const& /*msg*/)
     {
         JsonValue dungeons;
         dungeons.SetArray();
@@ -1277,7 +1277,7 @@ public:
 class MatchmakingPlayerScript : public PlayerScript
 {
 public:
-    MatchmakingPlayerScript() : PlayerScript("MatchmakingPlayerScript") {}
+    MatchmakingPlayerScript() : PlayerScript("MatchmakingPlayerScript", { PLAYERHOOK_ON_LOGOUT }) {}
 
     void OnPlayerLogout(Player* player) override
     {

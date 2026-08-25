@@ -464,7 +464,7 @@ namespace DCWelcome
     }
 
     // Module identifier - must match client-side
-    constexpr const char* MODULE = "WELC";
+    constexpr char const* MODULE = "WELC";
 
     // Opcodes - must match client-side
     namespace Opcode
@@ -491,14 +491,14 @@ namespace DCWelcome
     namespace Config
     {
         // Welcome system
-        constexpr const char* ENABLED = "DCWelcome.Enable";
-        constexpr const char* SERVER_NAME = "DCWelcome.ServerName";
-        constexpr const char* DISCORD_URL = "DCWelcome.DiscordUrl";
-        constexpr const char* WEBSITE_URL = "DCWelcome.WebsiteUrl";
-        constexpr const char* WIKI_URL = "DCWelcome.WikiUrl";
+        constexpr char const* ENABLED = "DCWelcome.Enable";
+        constexpr char const* SERVER_NAME = "DCWelcome.ServerName";
+        constexpr char const* DISCORD_URL = "DCWelcome.DiscordUrl";
+        constexpr char const* WEBSITE_URL = "DCWelcome.WebsiteUrl";
+        constexpr char const* WIKI_URL = "DCWelcome.WikiUrl";
 
         // Progressive introduction
-        constexpr const char* PROGRESSIVE_ENABLED = "DCWelcome.Progressive.Enabled";
+        constexpr char const* PROGRESSIVE_ENABLED = "DCWelcome.Progressive.Enabled";
         // Future: Load custom messages from config
         // constexpr const char* LEVEL_10_MESSAGE = "DCWelcome.Progressive.Level10.Message";
         // constexpr const char* LEVEL_20_MESSAGE = "DCWelcome.Progressive.Level20.Message";
@@ -599,7 +599,7 @@ namespace DCWelcome
         }
     }
 
-    void SendFeatureUnlock(Player* player, const std::string& feature, const std::string& message)
+    void SendFeatureUnlock(Player* player, std::string const& feature, std::string const& message)
     {
         if (!player || !player->GetSession())
             return;
@@ -615,12 +615,12 @@ namespace DCWelcome
     // Message Handlers
     // =======================================================================
 
-    void HandleGetServerInfo(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetServerInfo(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendServerInfo(player);
     }
 
-    void HandleGetFAQ(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetFAQ(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -642,7 +642,7 @@ namespace DCWelcome
         response.Send(player);
     }
 
-    void HandleDismissWelcome(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleDismissWelcome(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -657,7 +657,7 @@ namespace DCWelcome
         );
     }
 
-    void HandleMarkFeatureSeen(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleMarkFeatureSeen(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -683,7 +683,7 @@ namespace DCWelcome
         );
     }
 
-    void HandleGetWhatsNew(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetWhatsNew(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
@@ -705,7 +705,7 @@ namespace DCWelcome
     // Progress Data Handler - NEW
     // =======================================================================
 
-    void HandleGetProgress(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetProgress(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
@@ -728,7 +728,7 @@ namespace DCWelcome
     // Deprecated Handler - NPC Info (moved to QOS module)
     // =======================================================================
 
-    void HandleGetNPCInfoDeprecated(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetNPCInfoDeprecated(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
@@ -769,7 +769,7 @@ namespace DCWelcome
 class DCWelcome_PlayerScript : public PlayerScript
 {
 public:
-    DCWelcome_PlayerScript() : PlayerScript("DCWelcome_PlayerScript") { }
+    DCWelcome_PlayerScript() : PlayerScript("DCWelcome_PlayerScript", { PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGIN }) { }
 
     // Called when player logs in
     void OnPlayerLogin(Player* player) override

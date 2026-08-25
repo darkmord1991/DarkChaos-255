@@ -246,7 +246,7 @@ namespace
             return true;
         }
 
-        void FailChallenge(Player* player, PrestigeChallenge challengeType, const std::string& reason)
+        void FailChallenge(Player* player, PrestigeChallenge challengeType, std::string const& reason)
         {
             if (!player)
                 return;
@@ -267,7 +267,7 @@ namespace
                 auto& challenges = it->second;
                 challenges.erase(
                     std::remove_if(challenges.begin(), challenges.end(),
-                        [challengeType](const ChallengeProgress& c) { return c.challengeType == challengeType; }),
+                        [challengeType](ChallengeProgress const& c) { return c.challengeType == challengeType; }),
                     challenges.end()
                 );
             }
@@ -304,7 +304,7 @@ namespace
                 auto& challenges = it->second;
                 challenges.erase(
                     std::remove_if(challenges.begin(), challenges.end(),
-                        [challengeType](const ChallengeProgress& c) { return c.challengeType == challengeType; }),
+                        [challengeType](ChallengeProgress const& c) { return c.challengeType == challengeType; }),
                     challenges.end()
                 );
             }
@@ -508,7 +508,11 @@ namespace
     class PrestigeChallengePlayerScript : public PlayerScript
     {
     public:
-        PrestigeChallengePlayerScript() : PlayerScript("PrestigeChallengePlayerScript") { }
+        PrestigeChallengePlayerScript() : PlayerScript("PrestigeChallengePlayerScript",
+        {
+            PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_PLAYER_JUST_DIED,
+            PLAYERHOOK_ON_PLAYER_KILLED_BY_CREATURE, PLAYERHOOK_ON_PVP_KILL
+        }) { }
 
         void OnPlayerLogin(Player* player) override
         {

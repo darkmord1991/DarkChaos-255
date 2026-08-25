@@ -229,7 +229,10 @@ public:
 class dc_collection_rewards_player : public PlayerScript
 {
 public:
-    dc_collection_rewards_player() : PlayerScript("dc_collection_rewards_player") { }
+    dc_collection_rewards_player() : PlayerScript("dc_collection_rewards_player",
+    {
+        PLAYERHOOK_ON_ACHI_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST
+    }) { }
 
     void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
     {

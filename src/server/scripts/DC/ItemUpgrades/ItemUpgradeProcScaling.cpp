@@ -192,7 +192,7 @@ namespace ItemUpgrade
             LOG_INFO("scripts.dc", "ItemUpgrade: Indexed {} upgrade-eligible base items and mapped {} proc associations.", indexedItems, count);
         }
 
-        static const std::vector<uint32>* GetItemsForSpell(uint32 spellId)
+        static std::vector<uint32> const* GetItemsForSpell(uint32 spellId)
         {
             if (!_initialized)
                 Initialize();
@@ -214,7 +214,7 @@ namespace ItemUpgrade
 
     static Item* FindSourceItem(Player* player, uint32 spellId)
     {
-        const std::vector<uint32>* potentialItems = ProcSpellRegistry::GetItemsForSpell(spellId);
+        std::vector<uint32> const* potentialItems = ProcSpellRegistry::GetItemsForSpell(spellId);
         if (!potentialItems)
             return nullptr;
 
@@ -327,7 +327,7 @@ namespace ItemUpgrade
             if (state && state->upgrade_level > 0 && state->stat_multiplier > 1.0f)
             {
                 // Check if this item has any procs
-                const ItemTemplate* temp = item->GetTemplate();
+                ItemTemplate const* temp = item->GetTemplate();
                 bool hasProc = false;
                 for (auto const& spell : temp->Spells)
                 {
@@ -447,7 +447,7 @@ namespace ItemUpgrade
     class ItemUpgradeProcPlayerScript : public PlayerScript
     {
     public:
-        ItemUpgradeProcPlayerScript() : PlayerScript("ItemUpgradeProcPlayerScript") {}
+        ItemUpgradeProcPlayerScript() : PlayerScript("ItemUpgradeProcPlayerScript", { PLAYERHOOK_ON_LOGIN }) {}
 
         void OnPlayerLogin(Player* player) override
         {

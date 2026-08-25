@@ -42,7 +42,7 @@ namespace
 class DC_LoginAnnounce : public PlayerScript
 {
 public:
-    DC_LoginAnnounce() : PlayerScript("DC_LoginAnnounce") { }
+    DC_LoginAnnounce() : PlayerScript("DC_LoginAnnounce", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) { }
 
     void OnPlayerLogin(Player* player) override
     {

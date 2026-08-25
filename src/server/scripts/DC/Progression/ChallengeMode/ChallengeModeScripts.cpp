@@ -73,7 +73,10 @@ void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& 
 class ChallengeMode_Hardcore : public PlayerScript
 {
 public:
-    ChallengeMode_Hardcore() : PlayerScript("ChallengeMode_Hardcore") { }
+    ChallengeMode_Hardcore() : PlayerScript("ChallengeMode_Hardcore",
+    {
+        PLAYERHOOK_ON_PLAYER_JUST_DIED, PLAYERHOOK_ON_PLAYER_KILLED_BY_CREATURE, PLAYERHOOK_ON_PVP_KILL
+    }) { }
 
     void OnPlayerJustDied(Player* player) override
     {
@@ -135,7 +138,7 @@ public:
 class ChallengeModes_LoginPrevention : public PlayerScript
 {
 public:
-    ChallengeModes_LoginPrevention() : PlayerScript("ChallengeModes_LoginPrevention") { }
+    ChallengeModes_LoginPrevention() : PlayerScript("ChallengeModes_LoginPrevention", { PLAYERHOOK_ON_LOGIN }) { }
 
     static void NotifyAndKickDeceased(Player* player)
     {
@@ -190,7 +193,7 @@ public:
 class ChallengeModeAuraManager : public PlayerScript
 {
 public:
-    ChallengeModeAuraManager() : PlayerScript("ChallengeModeAuraManager") { }
+    ChallengeModeAuraManager() : PlayerScript("ChallengeModeAuraManager", { PLAYERHOOK_ON_LOGIN }) { }
 
     void OnPlayerLogin(Player* player) override
     {

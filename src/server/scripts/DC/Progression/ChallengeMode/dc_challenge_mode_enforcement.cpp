@@ -155,7 +155,7 @@ namespace
 class ChallengeMode_ItemQuality_PlayerScript : public PlayerScript
 {
 public:
-    ChallengeMode_ItemQuality_PlayerScript() : PlayerScript("ChallengeMode_ItemQuality_PlayerScript") { }
+    ChallengeMode_ItemQuality_PlayerScript() : PlayerScript("ChallengeMode_ItemQuality_PlayerScript", { PLAYERHOOK_CAN_EQUIP_ITEM }) { }
 
     [[nodiscard]] bool OnPlayerCanEquipItem(Player* player, uint8 /*slot*/, uint16& /*dest*/, Item* item, bool /*swap*/, bool not_loading) override
     {
@@ -175,7 +175,7 @@ public:
 class ChallengeMode_SemiHardcore_PlayerScript : public PlayerScript
 {
 public:
-    ChallengeMode_SemiHardcore_PlayerScript() : PlayerScript("ChallengeMode_SemiHardcore_PlayerScript") { }
+    ChallengeMode_SemiHardcore_PlayerScript() : PlayerScript("ChallengeMode_SemiHardcore_PlayerScript", { PLAYERHOOK_ON_PLAYER_JUST_DIED }) { }
 
     void OnPlayerJustDied(Player* player) override
     {
@@ -198,7 +198,7 @@ public:
 class ChallengeMode_XP_PlayerScript : public PlayerScript
 {
 public:
-    ChallengeMode_XP_PlayerScript() : PlayerScript("ChallengeMode_XP_PlayerScript") { }
+    ChallengeMode_XP_PlayerScript() : PlayerScript("ChallengeMode_XP_PlayerScript", { PLAYERHOOK_ON_GIVE_EXP }) { }
 
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 xpSource) override
     {
@@ -229,7 +229,13 @@ public:
 class ChallengeMode_IronManPlus_PlayerScript : public PlayerScript
 {
 public:
-    ChallengeMode_IronManPlus_PlayerScript() : PlayerScript("ChallengeMode_IronManPlus_PlayerScript") { }
+    ChallengeMode_IronManPlus_PlayerScript() : PlayerScript("ChallengeMode_IronManPlus_PlayerScript",
+    {
+        PLAYERHOOK_CAN_CAST_ITEM_USE_SPELL, PLAYERHOOK_CAN_ENTER_MAP, PLAYERHOOK_CAN_GROUP_ACCEPT,
+        PLAYERHOOK_CAN_GROUP_INVITE, PLAYERHOOK_CAN_JOIN_LFG, PLAYERHOOK_ON_CALCULATE_TALENTS_POINTS,
+        PLAYERHOOK_ON_CAN_UPDATE_SKILL, PLAYERHOOK_ON_FREE_TALENT_POINTS_CHANGED, PLAYERHOOK_ON_LEARN_SPELL,
+        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_PLAYER_LEARN_TALENTS
+    }) { }
 
     void OnPlayerLogin(Player* player) override
     {
@@ -387,7 +393,7 @@ public:
         return false;
     }
 
-    bool OnPlayerCanJoinLfg(Player* player, uint8 /*roles*/, lfg::LfgDungeonSet& /*dungeons*/, const std::string& /*comment*/) override
+    bool OnPlayerCanJoinLfg(Player* player, uint8 /*roles*/, lfg::LfgDungeonSet& /*dungeons*/, std::string const& /*comment*/) override
     {
         if (!player || !sChallengeModes->enabled())
             return true;

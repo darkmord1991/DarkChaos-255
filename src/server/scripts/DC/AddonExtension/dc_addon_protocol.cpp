@@ -47,10 +47,10 @@ static bool g_S2CLoggingEnabled = false;
 // than Message::Send needs it. Same pattern as g_S2CLoggingEnabled above; both
 // are refreshed by LoadAddonConfig().
 static bool g_ValidateOutboundJson = false;
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs = 0);
-static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message);
-static void UpdateProtocolStats(Player* player, const std::string& moduleCode, const std::string& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
-static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& requestId);
+static void LogS2CMessageGlobal(Player* player, std::string const& module, uint8 opcode, size_t dataSize, bool updateStats, std::string const& payloadPreview, uint32 processingTimeMs = 0);
+static void LogProtocolErrorEvent(Player* player, std::string const& payload, std::string const& eventType, std::string const& message);
+static void UpdateProtocolStats(Player* player, std::string const& moduleCode, std::string const& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
+static uint32 PeekPendingRequestElapsedMs(Player* player, std::string const& requestId);
 static std::string EscapeSQLString(std::string s);
 
 namespace
@@ -376,7 +376,7 @@ namespace
         return exists;
     }
 
-    bool TrySendQoSTooltipFallback(Player* player, const DCAddon::ParsedMessage& parsed)
+    bool TrySendQoSTooltipFallback(Player* player, DCAddon::ParsedMessage const& parsed)
     {
         if (!player || !player->GetSession())
             return false;
@@ -418,7 +418,7 @@ namespace
     }
 }
 
-static std::string NormalizeHandshakeVersionString(const DCAddon::ParsedMessage& msg)
+static std::string NormalizeHandshakeVersionString(DCAddon::ParsedMessage const& msg)
 {
     std::string version = msg.GetString(0);
     if (version.find('|') == std::string::npos && msg.GetDataCount() >= 2)
@@ -726,7 +726,7 @@ static DCAddon::ClientHandshakeMetadata ParseHandshakeMetadata(
     return DCAddon::ClientHandshakeMetadata();
 }
 
-static void StoreClientCaps(Player* player, const std::string& clientVersionStr,
+static void StoreClientCaps(Player* player, std::string const& clientVersionStr,
     uint32 clientCaps, uint32 negotiatedCaps,
     DCAddon::ClientHandshakeMetadata const& metadata)
 {
@@ -996,7 +996,7 @@ namespace
 namespace DCAddon
 {
     void SetSessionCapabilityState(Player* player,
-        const std::string& clientVersionStr, uint32 clientCaps,
+        std::string const& clientVersionStr, uint32 clientCaps,
         uint32 negotiatedCaps, bool versionCompatible,
         ClientHandshakeMetadata const& metadata)
     {
@@ -1377,7 +1377,7 @@ struct ProtocolMetrics
 static ProtocolMetrics g_ProtocolMetrics;
 
 // Accessor for external monitoring
-const ProtocolMetrics& GetProtocolMetrics() { return g_ProtocolMetrics; }
+ProtocolMetrics const& GetProtocolMetrics() { return g_ProtocolMetrics; }
 
 namespace DCAddon
 {
@@ -1386,20 +1386,20 @@ namespace DCAddon
     // ========================================================================
 
     // Forward declaration
-    static void SendRaw(Player* player, const std::string& msg);
+    static void SendRaw(Player* player, std::string const& msg);
 
     bool IsS2CProtocolLoggingEnabled()
     {
         return g_S2CLoggingEnabled;
     }
 
-    uint32 GetPendingRequestElapsedMs(Player* player, const std::string& requestId)
+    uint32 GetPendingRequestElapsedMs(Player* player, std::string const& requestId)
     {
         return requestId.empty() ? 0 : PeekPendingRequestElapsedMs(player, requestId);
     }
 
-    void LogS2CMessage(Player* player, const std::string& module, uint8 opcode,
-        size_t dataSize, bool updateStats, const std::string& payloadPreview,
+    void LogS2CMessage(Player* player, std::string const& module, uint8 opcode,
+        size_t dataSize, bool updateStats, std::string const& payloadPreview,
         uint32 processingTimeMs)
     {
         LogS2CMessageGlobal(player, module, opcode, dataSize, updateStats,
@@ -1463,7 +1463,7 @@ namespace DCAddon
         std::string effectiveRequestId = _requestId;
         if (effectiveRequestId.empty())
         {
-            const std::string& ctxReqId = GetCurrentRequestId();
+            std::string const& ctxReqId = GetCurrentRequestId();
             if (IsSafeRequestId(ctxReqId))
                 effectiveRequestId = ctxReqId;
         }
@@ -1514,7 +1514,7 @@ namespace DCAddon
         }
     }
 
-    static void SendRaw(Player* player, const std::string& msg)
+    static void SendRaw(Player* player, std::string const& msg)
     {
         // Build addon message using proper CHAT_MSG_WHISPER format
         // Format: "DC\t<payload>" - client parses prefix "DC" and message is the payload
@@ -1594,7 +1594,7 @@ namespace DCAddon
 {
     static thread_local std::string s_CurrentRequestId;
 
-    void SetCurrentRequestContext(const std::string& requestId)
+    void SetCurrentRequestContext(std::string const& requestId)
     {
         s_CurrentRequestId = requestId;
     }
@@ -1604,7 +1604,7 @@ namespace DCAddon
         s_CurrentRequestId.clear();
     }
 
-    const std::string& GetCurrentRequestId()
+    std::string const& GetCurrentRequestId()
     {
         return s_CurrentRequestId;
     }
@@ -1655,7 +1655,7 @@ static void CleanupCompletedRequestTimingsLocked(uint32 accountId,
 }
 
 static uint32 TakeCompletedRequestElapsedMs(Player* player,
-    const std::string& requestId)
+    std::string const& requestId)
 {
     if (!player || !player->GetSession() || requestId.empty())
         return 0;
@@ -1684,7 +1684,7 @@ static uint32 TakeCompletedRequestElapsedMs(Player* player,
     return responseTimeMs;
 }
 
-static bool ShouldTrackPendingRequest(const DCAddon::ParsedMessage& msg)
+static bool ShouldTrackPendingRequest(DCAddon::ParsedMessage const& msg)
 {
     if (!msg.HasRequestId())
         return false;
@@ -1708,7 +1708,7 @@ static bool ShouldTrackPendingRequest(const DCAddon::ParsedMessage& msg)
     return true;
 }
 
-static void RegisterPendingRequest(Player* player, const DCAddon::ParsedMessage& msg)
+static void RegisterPendingRequest(Player* player, DCAddon::ParsedMessage const& msg)
 {
     if (!player || !player->GetSession() || !ShouldTrackPendingRequest(msg))
         return;
@@ -1761,7 +1761,7 @@ static void CleanupExpiredRequests(Player* player)
         s_PendingRequests.erase(it);
 }
 
-static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& requestId)
+static uint32 PeekPendingRequestElapsedMs(Player* player, std::string const& requestId)
 {
     if (!player || !player->GetSession() || requestId.empty())
         return 0;
@@ -1789,7 +1789,7 @@ static uint32 PeekPendingRequestElapsedMs(Player* player, const std::string& req
 }
 
 static uint32 ResolveC2SLogProcessingTimeMs(Player* player,
-    const std::string& payload)
+    std::string const& payload)
 {
     if (!player || !player->GetSession())
         return 0;
@@ -1808,7 +1808,7 @@ static uint32 ResolveC2SLogProcessingTimeMs(Player* player,
 
 namespace DCAddon
 {
-    void NotifyResponseSent(Player* player, const std::string& requestId)
+    void NotifyResponseSent(Player* player, std::string const& requestId)
     {
         if (!player || !player->GetSession() || requestId.empty())
             return;
@@ -1933,7 +1933,7 @@ static void LoadAddonConfig()
 
 // Extract module code from payload (everything before first delimiter, max 8 chars)
 // Supports both ':' (AIO/Legacy) and '|' (DC Native) delimiters
-static std::string ExtractModuleCode(const std::string& payload)
+static std::string ExtractModuleCode(std::string const& payload)
 {
     if (payload.empty())
         return "UNKN";
@@ -1948,7 +1948,7 @@ static std::string ExtractModuleCode(const std::string& payload)
 }
 
 // Extract opcode calling generic number parser
-static uint8 ExtractOpcode(const std::string& payload)
+static uint8 ExtractOpcode(std::string const& payload)
 {
     size_t delimPos = payload.find_first_of(":|");
     if (delimPos == std::string::npos || delimPos + 1 >= payload.length())
@@ -1969,7 +1969,7 @@ static uint8 ExtractOpcode(const std::string& payload)
 
 // Some small, UI-critical requests should bypass rate limiting.
 // This prevents prior high-volume transfers (e.g., transmog paging) from starving Outfits/Community.
-static bool ShouldBypassRateLimit(const std::string& payload)
+static bool ShouldBypassRateLimit(std::string const& payload)
 {
     std::string moduleCode = ExtractModuleCode(payload);
     if (moduleCode != DCAddon::Module::COLLECTION)
@@ -1984,7 +1984,7 @@ static bool ShouldBypassRateLimit(const std::string& payload)
         || opcode == DCAddon::Opcode::Collection::CMSG_GET_TRANSMOG_STATE;
 }
 
-static std::string DetectRequestType(const std::string& payload)
+static std::string DetectRequestType(std::string const& payload)
 {
     if (payload.empty())
         return "STANDARD";
@@ -2265,7 +2265,7 @@ static void FlushStats(uint32 guid = 0)
 }
 
 // Update player statistics in buffer
-static void UpdateProtocolStats(Player* player, const std::string& moduleCode, const std::string& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs)
+static void UpdateProtocolStats(Player* player, std::string const& moduleCode, std::string const& transport, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs)
 {
     if (!s_AddonConfig.EnableProtocolLogging || !player) return;
 
@@ -2304,7 +2304,7 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, c
     stats.dirty = true;
 }
 
-static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message)
+static void LogProtocolErrorEvent(Player* player, std::string const& payload, std::string const& eventType, std::string const& message)
 {
     if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
         return;
@@ -2318,7 +2318,7 @@ static void LogProtocolErrorEvent(Player* player, const std::string& payload, co
         requestType, moduleCode, opcode, eventType, message, preview);
 }
 
-static void LogC2SMessage(Player* player, const std::string& payload, bool handled, const std::string& errorMsg = "")
+static void LogC2SMessage(Player* player, std::string const& payload, bool handled, std::string const& errorMsg = "")
 {
     if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession()) return;
 
@@ -2334,7 +2334,7 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
         errorMsg, processingTimeMs);
 }
 
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview, uint32 processingTimeMs)
+static void LogS2CMessageGlobal(Player* player, std::string const& module, uint8 opcode, size_t dataSize, bool updateStats, std::string const& payloadPreview, uint32 processingTimeMs)
 {
     if (!player || !player->GetSession()) return;
 
@@ -2357,10 +2357,10 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
 
 namespace DCAddon
 {
-    void LogNativeC2SMessage(Player* player, const std::string& module,
+    void LogNativeC2SMessage(Player* player, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, bool handled,
-        const std::string& errorMsg)
+        std::string const& payloadPreview, bool handled,
+        std::string const& errorMsg)
     {
         std::string status = handled
             ? "completed"
@@ -2371,10 +2371,10 @@ namespace DCAddon
     }
 
     void LogNativeC2SMessageWithStatus(Player* player,
-        const std::string& module, uint8 logicalOpcode,
+        std::string const& module, uint8 logicalOpcode,
         uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, const std::string& status,
-        const std::string& errorMsg, bool countAsError)
+        std::string const& payloadPreview, std::string const& status,
+        std::string const& errorMsg, bool countAsError)
     {
         if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
             return;
@@ -2389,9 +2389,9 @@ namespace DCAddon
             true, false, countAsError);
     }
 
-    void LogNativeS2CMessage(Player* player, const std::string& module,
+    void LogNativeS2CMessage(Player* player, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, bool updateStats,
+        std::string const& payloadPreview, bool updateStats,
         uint32 processingTimeMs)
     {
         if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
@@ -2414,8 +2414,8 @@ namespace DCAddon
     }
 
     void LogNativeS2CMessage(WorldSession* session,
-        const std::string& module, uint8 logicalOpcode, uint16 nativeOpcode,
-        size_t dataSize, const std::string& payloadPreview,
+        std::string const& module, uint8 logicalOpcode, uint16 nativeOpcode,
+        size_t dataSize, std::string const& payloadPreview,
         uint32 processingTimeMs)
     {
         if (!s_AddonConfig.EnableProtocolLogging || !session)
@@ -2437,10 +2437,10 @@ namespace DCAddon
     }
 
     void LogNativeProtocolError(Player* player,
-        ProtocolLogDirection direction, const std::string& module,
+        ProtocolLogDirection direction, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode,
-        const std::string& eventType, const std::string& message,
-        const std::string& payloadPreview)
+        std::string const& eventType, std::string const& message,
+        std::string const& payloadPreview)
     {
         if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
             return;
@@ -2453,10 +2453,10 @@ namespace DCAddon
     }
 
     void LogNativeProtocolError(WorldSession* session,
-        ProtocolLogDirection direction, const std::string& module,
+        ProtocolLogDirection direction, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode,
-        const std::string& eventType, const std::string& message,
-        const std::string& payloadPreview)
+        std::string const& eventType, std::string const& message,
+        std::string const& payloadPreview)
     {
         if (!s_AddonConfig.EnableProtocolLogging || !HasProtocolErrorTable())
             return;
@@ -2468,11 +2468,11 @@ namespace DCAddon
             FormatNativePayloadPreview(nativeOpcode, payloadPreview));
     }
 
-    void AuditNativeC2SRequest(Player* player, const std::string& module,
+    void AuditNativeC2SRequest(Player* player, std::string const& module,
         uint8 logicalOpcode, uint16 nativeOpcode, size_t dataSize,
-        const std::string& payloadPreview, bool handled,
-        const std::string& errorMsg, const std::string& eventType,
-        const std::string& eventMessage)
+        std::string const& payloadPreview, bool handled,
+        std::string const& errorMsg, std::string const& eventType,
+        std::string const& eventMessage)
     {
         std::string issueMessage = !eventMessage.empty()
             ? eventMessage
@@ -2490,7 +2490,7 @@ namespace DCAddon
     }
 
     bool HandleNativeModuleRequest(WorldSession* session,
-        WorldPacket const& packet, uint16 nativeOpcode, const char* module)
+        WorldPacket const& packet, uint16 nativeOpcode, char const* module)
     {
         if (!session)
             return false;
@@ -2570,7 +2570,7 @@ namespace DCAddon
         return false;
     }
 
-    uint32 GetModuleNativeCapability(const std::string& module)
+    uint32 GetModuleNativeCapability(std::string const& module)
     {
         // Modules routed over the generic native message bridge. All share the
         // single GENERIC_MESSAGE_NATIVE capability (one client mechanism). Keep
@@ -2595,8 +2595,8 @@ namespace DCAddon
             ? ProtocolVersion::Capability::GENERIC_MESSAGE_NATIVE : 0;
     }
 
-    bool TrySendModuleNativeMessage(Player* player, const std::string& module,
-        uint8 opcode, const std::string& body)
+    bool TrySendModuleNativeMessage(Player* player, std::string const& module,
+        uint8 opcode, std::string const& body)
     {
         if (!player || !player->GetSession())
             return false;
@@ -2726,10 +2726,10 @@ namespace DCAddon
         return false;
     }
 
-    bool SendNativeEnvelope(Player* player, const std::string& module,
-        uint8 logicalOpcode, const std::string& feature,
-        const std::string& action, uint32 revision,
-        const std::string& payload, const std::string& context)
+    bool SendNativeEnvelope(Player* player, std::string const& module,
+        uint8 logicalOpcode, std::string const& feature,
+        std::string const& action, uint32 revision,
+        std::string const& payload, std::string const& context)
     {
         if (!player || !player->GetSession())
             return false;
@@ -2867,7 +2867,7 @@ static bool CheckRateLimit(Player* player)
 // CORE HANDLERS (Handshake, Version, Feature Query)
 // ============================================================================
 
-static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& msg)
+static void HandleCoreHandshake(Player* player, DCAddon::ParsedMessage const& msg)
 {
     // Client says hello with version string: "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|capabilities"
     std::string clientVersionStr = NormalizeHandshakeVersionString(msg);
@@ -2958,7 +2958,7 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
     }
 }
 
-static void HandleCoreVersionCheck(Player* player, const DCAddon::ParsedMessage& msg)
+static void HandleCoreVersionCheck(Player* player, DCAddon::ParsedMessage const& msg)
 {
     std::string clientVersion = msg.GetString(0);
 
@@ -2974,7 +2974,7 @@ static void HandleCoreVersionCheck(Player* player, const DCAddon::ParsedMessage&
         .Send(player);
 }
 
-static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage& msg)
+static void HandleCoreFeatureQuery(Player* player, DCAddon::ParsedMessage const& msg)
 {
     DCAddon::Message featureMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_FEATURE_LIST);
     if (msg.HasRequestId())
@@ -2996,7 +2996,7 @@ static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage&
 // BATCH MESSAGE HANDLER
 // ============================================================================
 
-static void HandleBatch(Player* player, const DCAddon::ParsedMessage& msg)
+static void HandleBatch(Player* player, DCAddon::ParsedMessage const& msg)
 {
     // Parse batch message into individual sub-messages
     auto entries = DCAddon::Batch::ParseBatch(msg);
@@ -3048,7 +3048,7 @@ static void HandleBatch(Player* player, const DCAddon::ParsedMessage& msg)
 // CROSS-SYSTEM EVENT -> ADDON BROADCAST
 // ============================================================================
 
-static const char* EventTypeToString(DarkChaos::CrossSystem::EventType type)
+static char const* EventTypeToString(DarkChaos::CrossSystem::EventType type)
 {
     using namespace DarkChaos::CrossSystem;
     switch (type)
@@ -3092,11 +3092,11 @@ static const char* EventTypeToString(DarkChaos::CrossSystem::EventType type)
     }
 }
 
-static void AppendEventDetails(DCAddon::JsonMessage& msg, const DarkChaos::CrossSystem::EventData& event)
+static void AppendEventDetails(DCAddon::JsonMessage& msg, DarkChaos::CrossSystem::EventData const& event)
 {
     using namespace DarkChaos::CrossSystem;
 
-    if (auto const* kill = dynamic_cast<const CreatureKillEvent*>(&event))
+    if (auto const* kill = dynamic_cast<CreatureKillEvent const*>(&event))
     {
         msg.Set("creatureEntry", kill->creatureEntry);
         msg.Set("isBoss", kill->isBoss);
@@ -3107,7 +3107,7 @@ static void AppendEventDetails(DCAddon::JsonMessage& msg, const DarkChaos::Cross
         msg.Set("tokensAwarded", kill->tokensAwarded);
         msg.Set("essenceAwarded", kill->essenceAwarded);
     }
-    else if (auto const* dungeon = dynamic_cast<const DungeonCompleteEvent*>(&event))
+    else if (auto const* dungeon = dynamic_cast<DungeonCompleteEvent const*>(&event))
     {
         msg.Set("contentType", static_cast<uint32>(dungeon->contentType));
         msg.Set("difficulty", static_cast<uint32>(dungeon->difficulty));
@@ -3120,7 +3120,7 @@ static void AppendEventDetails(DCAddon::JsonMessage& msg, const DarkChaos::Cross
         msg.Set("tokensAwarded", dungeon->tokensAwarded);
         msg.Set("essenceAwarded", dungeon->essenceAwarded);
     }
-    else if (auto const* quest = dynamic_cast<const QuestCompleteEvent*>(&event))
+    else if (auto const* quest = dynamic_cast<QuestCompleteEvent const*>(&event))
     {
         msg.Set("questId", quest->questId);
         msg.Set("isDaily", quest->isDaily);
@@ -3128,7 +3128,7 @@ static void AppendEventDetails(DCAddon::JsonMessage& msg, const DarkChaos::Cross
         msg.Set("tokensAwarded", quest->tokensAwarded);
         msg.Set("essenceAwarded", quest->essenceAwarded);
     }
-    else if (auto const* upgrade = dynamic_cast<const ItemUpgradeEvent*>(&event))
+    else if (auto const* upgrade = dynamic_cast<ItemUpgradeEvent const*>(&event))
     {
         msg.Set("itemGuid", upgrade->itemGuid);
         msg.Set("itemEntry", upgrade->itemEntry);
@@ -3138,14 +3138,14 @@ static void AppendEventDetails(DCAddon::JsonMessage& msg, const DarkChaos::Cross
         msg.Set("tokensCost", upgrade->tokensCost);
         msg.Set("essenceCost", upgrade->essenceCost);
     }
-    else if (auto const* prestige = dynamic_cast<const PrestigeEvent*>(&event))
+    else if (auto const* prestige = dynamic_cast<PrestigeEvent const*>(&event))
     {
         msg.Set("fromPrestige", prestige->fromPrestige);
         msg.Set("toPrestige", prestige->toPrestige);
         msg.Set("fromLevel", prestige->fromLevel);
         msg.Set("keptGear", prestige->keptGear);
     }
-    else if (auto const* vault = dynamic_cast<const VaultClaimEvent*>(&event))
+    else if (auto const* vault = dynamic_cast<VaultClaimEvent const*>(&event))
     {
         msg.Set("seasonId", vault->seasonId);
         msg.Set("slotClaimed", vault->slotClaimed);
@@ -3155,7 +3155,7 @@ static void AppendEventDetails(DCAddon::JsonMessage& msg, const DarkChaos::Cross
     }
 }
 
-static void SendCrossEventToPlayer(Player* player, const DarkChaos::CrossSystem::EventData& event)
+static void SendCrossEventToPlayer(Player* player, DarkChaos::CrossSystem::EventData const& event)
 {
     if (!player || !player->GetSession())
         return;
@@ -3181,7 +3181,7 @@ public:
         return DarkChaos::CrossSystem::SystemId::None;
     }
 
-    const char* GetSystemName() const override
+    char const* GetSystemName() const override
     {
         return "AddonProtocol";
     }
@@ -3228,12 +3228,12 @@ public:
         };
     }
 
-    void OnEvent(const DarkChaos::CrossSystem::EventData& event) override
+    void OnEvent(DarkChaos::CrossSystem::EventData const& event) override
     {
         using namespace DarkChaos::CrossSystem;
 
         // If this event includes explicit participants, send to each
-        if (auto const* dungeon = dynamic_cast<const DungeonCompleteEvent*>(&event))
+        if (auto const* dungeon = dynamic_cast<DungeonCompleteEvent const*>(&event))
         {
             if (!dungeon->participants.empty())
             {
@@ -3303,7 +3303,7 @@ static void CleanupExpiredChunks()
 class DCAddonProtocolScript : public PlayerScript
 {
 public:
-    DCAddonProtocolScript() : PlayerScript("DCAddonProtocolScript") {}
+    DCAddonProtocolScript() : PlayerScript("DCAddonProtocolScript", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) {}
 
     void OnPlayerLogin(Player* player) override
     {
@@ -3369,11 +3369,11 @@ public:
 class DCAddonMessageRouterScript : public PlayerScript
 {
 public:
-    DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript") {}
+    DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript", { PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE }) {}
 
     // Try to parse a message as a chunked message. Returns true if it's a chunk.
     // If complete, sets outPayload to the reassembled message. Otherwise clears it.
-    bool TryReassembleChunk(Player* player, const std::string& payload, std::string& outPayload)
+    bool TryReassembleChunk(Player* player, std::string const& payload, std::string& outPayload)
     {
         // Chunk format: INDEX|TOTAL|DATA
         // Check if starts with digit and has proper format

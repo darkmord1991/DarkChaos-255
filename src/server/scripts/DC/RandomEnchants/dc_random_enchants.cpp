@@ -722,7 +722,11 @@ void ApplyRandomEnchants(Player* player, Item* item, char const* source)
 class DCRandomEnchantsPlayerScript : public PlayerScript
 {
 public:
-    DCRandomEnchantsPlayerScript() : PlayerScript("DCRandomEnchantsPlayerScript") {}
+    DCRandomEnchantsPlayerScript() : PlayerScript("DCRandomEnchantsPlayerScript",
+    {
+        PLAYERHOOK_ON_CREATE_ITEM, PLAYERHOOK_ON_GROUP_ROLL_REWARD_ITEM, PLAYERHOOK_ON_LOOT_ITEM,
+        PLAYERHOOK_ON_QUEST_REWARD_ITEM
+    }) {}
 
     void OnPlayerLootItem(Player* player, Item* item, uint32 count, ObjectGuid /*lootguid*/) override
     {

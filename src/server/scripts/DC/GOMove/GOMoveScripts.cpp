@@ -45,7 +45,7 @@ public:
         return GOMoveCommandTable;
     }
 
-    static bool GOMove_Command(ChatHandler* handler, const char* args)
+    static bool GOMove_Command(ChatHandler* handler, char const* args)
     {
         if (!args)
             return false;
@@ -224,7 +224,7 @@ public:
             Player* player = GetCaster()->ToPlayer();
             if (!player)
                 return;
-            const WorldLocation* summonPos = GetExplTargetDest();
+            WorldLocation const* summonPos = GetExplTargetDest();
             if (!summonPos)
                 return;
             if (uint32 entry = GOMove::Store.SpawnQueGet(player->GetGUID()))
@@ -246,7 +246,7 @@ public:
 class GOMove_player_track : public PlayerScript
 {
 public:
-    GOMove_player_track() : PlayerScript("GOMove_player_track") { }
+    GOMove_player_track() : PlayerScript("GOMove_player_track", { PLAYERHOOK_ON_LOGOUT }) { }
 
     void OnPlayerLogout(Player* player) override
     {

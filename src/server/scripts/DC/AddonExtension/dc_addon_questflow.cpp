@@ -199,7 +199,7 @@ namespace
 
 namespace DCAddon
 {
-    static void HandleAcceptQuest(Player* player, const ParsedMessage& msg)
+    static void HandleAcceptQuest(Player* player, ParsedMessage const& msg)
     {
         if (!player || !IsEnabled() || !IsJsonMessage(msg))
             return;
@@ -233,7 +233,7 @@ namespace DCAddon
         player->AddQuestAndCheckCompletion(quest, nullptr);
     }
 
-    static void HandleCompleteQuest(Player* player, const ParsedMessage& msg)
+    static void HandleCompleteQuest(Player* player, ParsedMessage const& msg)
     {
         if (!player || !IsEnabled() || !IsJsonMessage(msg))
             return;
@@ -273,7 +273,7 @@ namespace DCAddon
     // registered and listening (PLAYER_ENTERING_WORLD), closing the login race
     // where the OnPlayerLogin push arrives before the addon loaded - the reason
     // "welcome" quests never appeared on a fresh character's first world join.
-    static void HandleRequestOffers(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleRequestOffers(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player || !IsEnabled() || !s_tablesLoaded)
             return;
@@ -312,7 +312,10 @@ public:
 class DCQuestFlowPlayerScript : public PlayerScript
 {
 public:
-    DCQuestFlowPlayerScript() : PlayerScript("DCQuestFlowPlayerScript") { }
+    DCQuestFlowPlayerScript() : PlayerScript("DCQuestFlowPlayerScript",
+    {
+        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_UPDATE_ZONE
+    }) { }
 
     void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 newArea) override
     {

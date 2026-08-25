@@ -49,7 +49,7 @@ namespace Upgrade
             UPGRADE_ERR_IN_COMBAT = 6
         };
 
-        inline bool TryGetJsonUInt(const ParsedMessage& msg, const char* key, uint32& out)
+        inline bool TryGetJsonUInt(ParsedMessage const& msg, char const* key, uint32& out)
         {
             if (!IsJsonMessage(msg))
                 return false;
@@ -58,7 +58,7 @@ namespace Upgrade
             if (!data.IsObject() || !data.HasKey(key))
                 return false;
 
-            const JsonValue& val = data[key];
+            JsonValue const& val = data[key];
             if (!val.IsNumber())
                 return false;
 
@@ -88,9 +88,9 @@ namespace Upgrade
             ResolveTransportPolicy(player, request);
         }
 
-        inline void SendUpgradeResult(Player* player, const std::string& requestId, bool success,
+        inline void SendUpgradeResult(Player* player, std::string const& requestId, bool success,
             uint32 itemGuid, uint32 newLevel, uint32 /*legacyEntry*/, uint32 errorCode,
-            const std::string& errorMsg, uint32 tier = 0, uint32 maxUpgrade = 0,
+            std::string const& errorMsg, uint32 tier = 0, uint32 maxUpgrade = 0,
             uint32 tokenCost = 0, uint32 essenceCost = 0, uint32 serverBag = 0,
             uint32 serverSlot = 0)
         {
@@ -306,7 +306,7 @@ namespace Upgrade
             .Send(player);
     }
 
-    static void HandleGetTierConfig(Player* player, const ParsedMessage& msg)
+    static void HandleGetTierConfig(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -314,7 +314,7 @@ namespace Upgrade
     }
 
     // Handler: Get item upgrade info
-    static void HandleGetItemInfo(Player* player, const ParsedMessage& msg)
+    static void HandleGetItemInfo(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -523,7 +523,7 @@ namespace Upgrade
     }
 
     // Handler: Get upgrade costs
-    static void HandleGetCosts(Player* player, const ParsedMessage& msg)
+    static void HandleGetCosts(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -576,7 +576,7 @@ namespace Upgrade
     }
 
     // Handler: List upgradeable items in inventory
-    static void HandleListUpgradeable(Player* player, const ParsedMessage& msg)
+    static void HandleListUpgradeable(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -636,7 +636,7 @@ namespace Upgrade
     }
 
     // Handler: Perform upgrade (Unified Native Logic)
-    static void HandleDoUpgrade(Player* player, const ParsedMessage& msg)
+    static void HandleDoUpgrade(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -849,7 +849,7 @@ namespace Upgrade
     }
 
     // Handler: Package selection (migrated from itemupgrade_communication.lua)
-    static void HandlePackageSelect(Player* player, const ParsedMessage& msg)
+    static void HandlePackageSelect(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -886,7 +886,7 @@ namespace Upgrade
 
     // HEIRLOOM HANDLERS
 
-    static void HandleHeirloomQuery(Player* player, const ParsedMessage& msg)
+    static void HandleHeirloomQuery(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -968,7 +968,7 @@ namespace Upgrade
         }));
     }
 
-    static void HandleGetPackages(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetPackages(Player* player, ParsedMessage const& /*msg*/)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -995,7 +995,7 @@ namespace Upgrade
          m.Send(player);
     }
 
-    static void HandleHeirloomUpgrade(Player* player, const ParsedMessage& msg)
+    static void HandleHeirloomUpgrade(Player* player, ParsedMessage const& msg)
     {
         AuditUpgradeUiTransport(player);
         CacheContext(player);
@@ -1245,7 +1245,7 @@ namespace Upgrade
 class DCAddonUpgradeScript : public PlayerScript
 {
 public:
-    DCAddonUpgradeScript() : PlayerScript("DCAddonUpgradeScript") {}
+    DCAddonUpgradeScript() : PlayerScript("DCAddonUpgradeScript", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) {}
 
     void OnPlayerLogin(Player* player) override
     {

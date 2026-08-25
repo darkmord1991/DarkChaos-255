@@ -442,7 +442,11 @@ namespace
     class DCAccountWideFriendlistPlayerScript : public PlayerScript
     {
     public:
-        DCAccountWideFriendlistPlayerScript() : PlayerScript("DCAccountWideFriendlistPlayerScript") { }
+        DCAccountWideFriendlistPlayerScript() : PlayerScript("DCAccountWideFriendlistPlayerScript",
+        {
+            PLAYERHOOK_ON_BEFORE_LOGOUT, PLAYERHOOK_ON_DELETE, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT,
+            PLAYERHOOK_ON_UPDATE
+        }) { }
 
         void OnPlayerLogin(Player* player) override
         {

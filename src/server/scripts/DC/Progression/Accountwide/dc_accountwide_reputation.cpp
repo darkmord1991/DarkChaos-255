@@ -367,7 +367,10 @@ namespace
     class DCAccountWideReputationPlayerScript : public PlayerScript
     {
     public:
-        DCAccountWideReputationPlayerScript() : PlayerScript("DCAccountWideReputationPlayerScript") { }
+        DCAccountWideReputationPlayerScript() : PlayerScript("DCAccountWideReputationPlayerScript",
+        {
+            PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_REPUTATION_CHANGE
+        }) { }
 
         void OnPlayerLogin(Player* player) override
         {

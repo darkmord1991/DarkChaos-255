@@ -154,7 +154,7 @@ class GuildHelper : public GuildScript
 public:
     GuildHelper() : GuildScript("GuildHelper") {}
 
-    void OnCreate(Guild* /*guild*/, Player* leader, const std::string& /*name*/)
+    void OnCreate(Guild* /*guild*/, Player* leader, std::string const& /*name*/)
     {
         ChatHandler(leader->GetSession()).PSendSysMessage("You now own a guild. You can purchase a Guild House!");
     }
@@ -183,7 +183,10 @@ void AddGuildHouseNpcScripts();
 class GuildHousePlayerScript : public PlayerScript
 {
 public:
-    GuildHousePlayerScript() : PlayerScript("GuildHousePlayerScript") {}
+    GuildHousePlayerScript() : PlayerScript("GuildHousePlayerScript",
+    {
+        PLAYERHOOK_CAN_REPOP_AT_GRAVEYARD, PLAYERHOOK_ON_BEFORE_CHOOSE_GRAVEYARD, PLAYERHOOK_ON_PLAYER_JUST_DIED
+    }) {}
 
     void OnPlayerBeforeChooseGraveyard(Player* player, TeamId /*teamId*/,
                                        bool nearCorpse,

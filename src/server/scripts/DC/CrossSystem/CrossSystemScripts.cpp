@@ -102,7 +102,12 @@ public:
 class CrossSystemPlayerScript : public PlayerScript
 {
 public:
-    CrossSystemPlayerScript() : PlayerScript("dc_cross_system_player") {}
+    CrossSystemPlayerScript() : PlayerScript("dc_cross_system_player",
+    {
+        PLAYERHOOK_ON_CREATURE_KILL, PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT,
+        PLAYERHOOK_ON_MAP_CHANGED, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_PLAYER_KILLED_BY_CREATURE,
+        PLAYERHOOK_ON_PVP_KILL
+    }) {}
 
     void OnPlayerLogin(Player* player) override
     {

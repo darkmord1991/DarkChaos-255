@@ -231,7 +231,11 @@ namespace {
 class heirloom_scaling_255 : public PlayerScript
 {
 public:
-    heirloom_scaling_255() : PlayerScript("heirloom_scaling_255") { }
+    heirloom_scaling_255() : PlayerScript("heirloom_scaling_255",
+    {
+        PLAYERHOOK_CAN_USE_ITEM, PLAYERHOOK_ON_APPLY_WEAPON_DAMAGE, PLAYERHOOK_ON_CUSTOM_SCALING_STAT_VALUE,
+        PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_QUEST_REWARD_ITEM
+    }) { }
 
     // Hook during stat calculation to extend heirloom scaling past the last
     // available ScalingStatValues.dbc row.

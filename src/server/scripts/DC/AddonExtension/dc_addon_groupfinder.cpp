@@ -53,25 +53,25 @@ namespace GroupFinder
     // ========================================================================
 
     // Helper to safely get int from JSON with default value
-    inline int32 JsonGetInt(const JsonValue& json, const std::string& key, int32 defaultVal = 0)
+    inline int32 JsonGetInt(JsonValue const& json, std::string const& key, int32 defaultVal = 0)
     {
         return json[key].IsNumber() ? json[key].AsInt32() : defaultVal;
     }
 
     // Helper to safely get uint32 from JSON with default value
-    inline uint32 JsonGetUInt(const JsonValue& json, const std::string& key, uint32 defaultVal = 0)
+    inline uint32 JsonGetUInt(JsonValue const& json, std::string const& key, uint32 defaultVal = 0)
     {
         return json[key].IsNumber() ? json[key].AsUInt32() : defaultVal;
     }
 
     // Helper to safely get string from JSON with default value
-    inline std::string JsonGetString(const JsonValue& json, const std::string& key, const std::string& defaultVal = "")
+    inline std::string JsonGetString(JsonValue const& json, std::string const& key, std::string const& defaultVal = "")
     {
         return json[key].IsString() ? json[key].AsString() : defaultVal;
     }
 
     // Helper to safely get bool from JSON with default value
-    inline bool JsonGetBool(const JsonValue& json, const std::string& key, bool defaultVal = false)
+    inline bool JsonGetBool(JsonValue const& json, std::string const& key, bool defaultVal = false)
     {
         return json[key].IsBool() ? json[key].AsBool() : defaultVal;
     }
@@ -495,7 +495,7 @@ namespace GroupFinder
     // ========================================================================
 
     // Create a new group listing
-    static void HandleCreateListing(Player* player, const ParsedMessage& msg)
+    static void HandleCreateListing(Player* player, ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg))
         {
@@ -613,7 +613,7 @@ namespace GroupFinder
     }
 
     // Search for available listings
-    static void HandleSearchListings(Player* player, const ParsedMessage& msg)
+    static void HandleSearchListings(Player* player, ParsedMessage const& msg)
     {
         auto json = GetJsonData(msg);
 
@@ -650,7 +650,7 @@ namespace GroupFinder
     }
 
     // Apply to join a group
-    static void HandleApplyToGroup(Player* player, const ParsedMessage& msg)
+    static void HandleApplyToGroup(Player* player, ParsedMessage const& msg)
     {
         auto json = GetJsonData(msg);
 
@@ -745,7 +745,7 @@ namespace GroupFinder
         }
     }
 
-    static void HandleGetMyApplications(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetMyApplications(Player* player, ParsedMessage const& /*msg*/)
     {
         auto apps = sGroupFinderMgr.GetPlayerApplications(player->GetGUID().GetCounter());
 
@@ -792,7 +792,7 @@ namespace GroupFinder
     }
 
     // Accept an application (leader only)
-    static void HandleAcceptApplication(Player* player, const ParsedMessage& msg)
+    static void HandleAcceptApplication(Player* player, ParsedMessage const& msg)
     {
         auto json = GetJsonData(msg);
 
@@ -822,7 +822,7 @@ namespace GroupFinder
     }
 
     // Decline an application (leader only)
-    static void HandleDeclineApplication(Player* player, const ParsedMessage& msg)
+    static void HandleDeclineApplication(Player* player, ParsedMessage const& msg)
     {
         auto json = GetJsonData(msg);
 
@@ -849,7 +849,7 @@ namespace GroupFinder
         }
     }
 
-    static void HandleCancelApplication(Player* player, const ParsedMessage& msg)
+    static void HandleCancelApplication(Player* player, ParsedMessage const& msg)
     {
         auto json = GetJsonData(msg);
         uint32 listingId = JsonGetUInt(json, "listingId", 0);
@@ -881,7 +881,7 @@ namespace GroupFinder
     }
 
     // Remove a listing
-    static void HandleDelistGroup(Player* player, const ParsedMessage& msg)
+    static void HandleDelistGroup(Player* player, ParsedMessage const& msg)
     {
         auto json = GetJsonData(msg);
 
@@ -910,7 +910,7 @@ namespace GroupFinder
     // ========================================================================
 
     // Get player's keystone and difficulty info
-    static void HandleGetMyKeystone(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetMyKeystone(Player* player, ParsedMessage const& /*msg*/)
     {
         // ASYNC keystone fetch: this ran a synchronous cross-DB JOIN against
         // acore_world.dc_mplus_dungeons on the world thread per request. The
@@ -969,7 +969,7 @@ namespace GroupFinder
     }
 
     // Set dungeon/raid difficulty
-    static void HandleSetDifficulty(Player* player, const ParsedMessage& msg)
+    static void HandleSetDifficulty(Player* player, ParsedMessage const& msg)
     {
         auto json = GetJsonData(msg);
 
@@ -1116,7 +1116,7 @@ namespace GroupFinder
     // ========================================================================
 
     // Get list of spectatable runs
-    static void HandleGetSpectateList(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetSpectateList(Player* player, ParsedMessage const& /*msg*/)
     {
         auto& spectatorMgr = DCMythicSpectator::MythicSpectatorManager::Get();
         if (!spectatorMgr.GetConfig().enabled)
@@ -1184,7 +1184,7 @@ namespace GroupFinder
     // ========================================================================
 
     // Create a new scheduled event
-    static void HandleCreateEvent(Player* player, const ParsedMessage& msg)
+    static void HandleCreateEvent(Player* player, ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg))
         {
@@ -1304,7 +1304,7 @@ namespace GroupFinder
     }
 
     // Sign up for a scheduled event
-    static void HandleSignupEvent(Player* player, const ParsedMessage& msg)
+    static void HandleSignupEvent(Player* player, ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg))
         {
@@ -1434,7 +1434,7 @@ namespace GroupFinder
     }
 
     // Cancel signup for a scheduled event
-    static void HandleCancelSignup(Player* player, const ParsedMessage& msg)
+    static void HandleCancelSignup(Player* player, ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg))
         {
@@ -1498,7 +1498,7 @@ namespace GroupFinder
     }
 
     // Get upcoming scheduled events
-    static void HandleGetScheduledEvents(Player* player, const ParsedMessage& msg)
+    static void HandleGetScheduledEvents(Player* player, ParsedMessage const& msg)
     {
         uint8 eventType = 0;
         if (IsJsonMessage(msg))
@@ -1547,7 +1547,7 @@ namespace GroupFinder
     }
 
     // Get my signups
-    static void HandleGetMySignups(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetMySignups(Player* player, ParsedMessage const& /*msg*/)
     {
         uint32 guid = player->GetGUID().GetCounter();
         auto signups = sGroupFinderMgr.GetPlayerEventSignups(guid);
@@ -1582,7 +1582,7 @@ namespace GroupFinder
     }
 
     // Cancel an event (leader only)
-    static void HandleCancelEvent(Player* player, const ParsedMessage& msg)
+    static void HandleCancelEvent(Player* player, ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg))
         {
@@ -1652,7 +1652,7 @@ namespace GroupFinder
     // ========================================================================
 
     // Start spectating a run
-    static void HandleStartSpectate(Player* player, const ParsedMessage& msg)
+    static void HandleStartSpectate(Player* player, ParsedMessage const& msg)
     {
         if (!IsJsonMessage(msg))
         {
@@ -1712,7 +1712,7 @@ namespace GroupFinder
     }
 
     // Stop spectating a run
-    static void HandleStopSpectate(Player* player, const ParsedMessage& msg)
+    static void HandleStopSpectate(Player* player, ParsedMessage const& msg)
     {
         uint32 runId = 0;
         uint32 instanceId = 0;
@@ -1761,7 +1761,7 @@ namespace GroupFinder
     // ========================================================================
 
     // Get M+ dungeon list for the current season
-    static void HandleGetDungeonList(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetDungeonList(Player* player, ParsedMessage const& /*msg*/)
     {
         // Served entirely from the lazily-loaded in-memory dungeon cache --
         // no DB access on the request path (see DUNGEON CACHE above).
@@ -1777,7 +1777,7 @@ namespace GroupFinder
     }
 
     // Get raid list from database (all eras)
-    static void HandleGetRaidList(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetRaidList(Player* player, ParsedMessage const& /*msg*/)
     {
         // Dynamic raid list sourced from MapDifficulty.dbc + Map.dbc (no hardcoded
         // table). Each raid exposes the difficulties it actually has, and the map's
@@ -1824,7 +1824,7 @@ namespace GroupFinder
     }
 
     // Get system configuration (rewards, etc)
-    static void HandleGetSystemInfo(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetSystemInfo(Player* player, ParsedMessage const& /*msg*/)
     {
         JsonMessage json(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_SYSTEM_INFO);
 
@@ -1912,7 +1912,7 @@ public:
 class GroupFinderPlayerScript : public PlayerScript
 {
 public:
-    GroupFinderPlayerScript() : PlayerScript("GroupFinderPlayerScript") {}
+    GroupFinderPlayerScript() : PlayerScript("GroupFinderPlayerScript", { PLAYERHOOK_ON_LOGOUT }) {}
 
     void OnPlayerLogout(Player* player) override
     {

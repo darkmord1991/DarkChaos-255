@@ -270,14 +270,14 @@ namespace DarkChaos
         }
 
         // Log token transaction to database
-        static void LogTokenTransaction(uint32 player_guid, const char* transaction_type,
-                                       const char* reason, int32 token_change, int32 essence_change)
+        static void LogTokenTransaction(uint32 player_guid, char const* transaction_type,
+                                       char const* reason, int32 token_change, int32 essence_change)
         {
             if (token_change == 0 && essence_change == 0)
                 return;
 
             // Determine currency type based on what changed
-            const char* currency_type = (essence_change != 0) ? "artifact_essence" : "upgrade_token";
+            char const* currency_type = (essence_change != 0) ? "artifact_essence" : "upgrade_token";
             uint32 amount = (essence_change != 0) ? std::abs(essence_change) : std::abs(token_change);
 
             // Copy and sanitize free-form strings before embedding into SQL
@@ -314,7 +314,10 @@ namespace DarkChaos
         class PlayerTokenHooks : public PlayerScript
         {
         public:
-            PlayerTokenHooks() : PlayerScript("PlayerTokenHooks") {}
+            PlayerTokenHooks() : PlayerScript("PlayerTokenHooks",
+            {
+                PLAYERHOOK_ON_ACHI_COMPLETE, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_PVP_KILL
+            }) {}
 
             void OnPlayerPVPKill(Player* killer, Player* victim) override
             {
@@ -596,7 +599,7 @@ void AddSC_ItemUpgradeTokenHooks()
         new DarkChaos::ItemUpgrade::CreatureTokenHooks();
         LOG_INFO("scripts.dc", "ItemUpgrade: Token system hooks registered successfully");
     }
-    catch (const std::exception& e)
+    catch (std::exception const& e)
     {
         LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to register token hooks: {}", e.what());
     }

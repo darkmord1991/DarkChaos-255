@@ -304,7 +304,7 @@ public:
     }
 
     // Update statistics
-    static void UpdateStatistics(Player* player, const std::string& stat_name, uint32 value)
+    static void UpdateStatistics(Player* player, std::string const& stat_name, uint32 value)
     {
         if (!player)
             return;
@@ -318,7 +318,7 @@ public:
     }
 
     // Get statistic value
-    static uint32 GetStatisticValue(Player* player, const std::string& stat_name)
+    static uint32 GetStatisticValue(Player* player, std::string const& stat_name)
     {
         if (!player)
             return 0;
@@ -389,7 +389,10 @@ bool DungeonQuestDB::_cacheLoaded = false;
 class DungeonQuestPlayerScript : public PlayerScript
 {
 public:
-    DungeonQuestPlayerScript() : PlayerScript("DungeonQuestPlayerScript")
+    DungeonQuestPlayerScript() : PlayerScript("DungeonQuestPlayerScript",
+    {
+        PLAYERHOOK_ON_BEFORE_QUEST_COMPLETE, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST
+    })
     {
     }
 
@@ -647,7 +650,7 @@ private:
     }
 
     // Award achievement helper
-    void AwardAchievement(Player* player, uint32 achievementId, const std::string& name) const
+    void AwardAchievement(Player* player, uint32 achievementId, std::string const& name) const
     {
         if (!player)
             return;

@@ -74,7 +74,10 @@ public:
 class HotspotsPlayerScript : public PlayerScript
 {
 public:
-    HotspotsPlayerScript() : PlayerScript("HotspotsPlayerScript") { }
+    HotspotsPlayerScript() : PlayerScript("HotspotsPlayerScript",
+    {
+        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_PLAYER_RESURRECT, PLAYERHOOK_ON_UPDATE
+    }) { }
 
     void OnPlayerLogin(Player* player) override
     {
@@ -110,7 +113,7 @@ public:
 class HotspotsPlayerGainXP : public PlayerScript
 {
 public:
-    HotspotsPlayerGainXP() : PlayerScript("HotspotsPlayerGainXP") { }
+    HotspotsPlayerGainXP() : PlayerScript("HotspotsPlayerGainXP", { PLAYERHOOK_ON_GIVE_EXP }) { }
 
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim, uint8 source) override
     {

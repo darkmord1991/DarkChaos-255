@@ -1563,7 +1563,10 @@ public:
 class jadeforest_training_ground_player_cleanup : public PlayerScript
 {
 public:
-    jadeforest_training_ground_player_cleanup() : PlayerScript("jadeforest_training_ground_player_cleanup") { }
+    jadeforest_training_ground_player_cleanup() : PlayerScript("jadeforest_training_ground_player_cleanup",
+    {
+        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_MAP_CHANGED
+    }) { }
 
     void OnPlayerLogin(Player* player) override
     {

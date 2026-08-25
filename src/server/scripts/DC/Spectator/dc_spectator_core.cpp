@@ -216,7 +216,7 @@ namespace
     {
     public:
         DCSpectatorCorePlayerScript()
-            : PlayerScript("DCSpectatorCorePlayerScript") { }
+            : PlayerScript("DCSpectatorCorePlayerScript", { PLAYERHOOK_ON_LOGOUT }) { }
 
         void OnPlayerLogout(Player* player) override
         {

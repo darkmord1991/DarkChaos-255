@@ -137,7 +137,13 @@ namespace DarkChaos
         class ItemUpgradeStatScalingScript : public PlayerScript
         {
         public:
-            ItemUpgradeStatScalingScript() : PlayerScript("ItemUpgradeStatScalingScript") {}
+            ItemUpgradeStatScalingScript() : PlayerScript("ItemUpgradeStatScalingScript",
+            {
+                PLAYERHOOK_ON_APPLY_ITEM_ARMOR_BEFORE, PLAYERHOOK_ON_APPLY_ITEM_BLOCK_VALUE_BEFORE,
+                PLAYERHOOK_ON_APPLY_ITEM_MODS_BEFORE, PLAYERHOOK_ON_APPLY_ITEM_RESISTANCE_BEFORE,
+                PLAYERHOOK_ON_APPLY_WEAPON_DAMAGE, PLAYERHOOK_ON_CUSTOM_SCALING_STAT_VALUE,
+                PLAYERHOOK_ON_GET_FERAL_AP_BONUS
+            }) {}
 
             void OnPlayerCustomScalingStatValue(Player* player,
                 ItemTemplate const* proto, uint32& /*statType*/, int32& val,

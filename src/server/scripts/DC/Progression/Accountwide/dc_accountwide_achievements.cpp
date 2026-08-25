@@ -319,7 +319,10 @@ namespace
     class DCAccountWideAchievementsPlayerScript : public PlayerScript
     {
     public:
-        DCAccountWideAchievementsPlayerScript() : PlayerScript("DCAccountWideAchievementsPlayerScript") { }
+        DCAccountWideAchievementsPlayerScript() : PlayerScript("DCAccountWideAchievementsPlayerScript",
+        {
+            PLAYERHOOK_ON_ACHI_COMPLETE, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT
+        }) { }
 
         void OnPlayerLogin(Player* player) override
         {

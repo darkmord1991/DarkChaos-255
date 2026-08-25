@@ -760,7 +760,10 @@ using namespace DCPhasedDuels;
 class DCPhasedDuelsPlayerScript : public PlayerScript
 {
 public:
-    DCPhasedDuelsPlayerScript() : PlayerScript("DCPhasedDuelsPlayerScript") { }
+    DCPhasedDuelsPlayerScript() : PlayerScript("DCPhasedDuelsPlayerScript",
+    {
+        PLAYERHOOK_ON_DUEL_END, PLAYERHOOK_ON_DUEL_START, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT
+    }) { }
 
     void OnPlayerLogin(Player* player) override
     {

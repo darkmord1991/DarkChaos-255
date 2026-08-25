@@ -60,29 +60,29 @@ namespace DCCollection
     // =======================================================================
 
     // Transmog constants
-    constexpr const char* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
-    constexpr const char* TRANSMOG_SLOT_ITEMS_PAGE_SIZE = "DCCollection.Transmog.SlotItemsPageSize";
-    constexpr const char* TRANSMOG_SESSION_NOTIFICATION_DEDUP = "DCCollection.Transmog.SessionNotificationDedup";
+    constexpr char const* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
+    constexpr char const* TRANSMOG_SLOT_ITEMS_PAGE_SIZE = "DCCollection.Transmog.SlotItemsPageSize";
+    constexpr char const* TRANSMOG_SESSION_NOTIFICATION_DEDUP = "DCCollection.Transmog.SessionNotificationDedup";
     // When true, skip the "is this appearance unlocked for this account?" check.
     // Useful for servers that want open/free transmog for all appearances.
-    constexpr const char* TRANSMOG_SKIP_UNLOCK_CHECK = "DCCollection.Transmog.SkipUnlockCheck";
+    constexpr char const* TRANSMOG_SKIP_UNLOCK_CHECK = "DCCollection.Transmog.SkipUnlockCheck";
     // When true, skip the armor type/weapon type compatibility check.
     // Allows transmogs across armor types (e.g., cloth appearance on plate armor).
-    constexpr const char* TRANSMOG_SKIP_COMPAT_CHECK = "DCCollection.Transmog.SkipCompatCheck";
+    constexpr char const* TRANSMOG_SKIP_COMPAT_CHECK = "DCCollection.Transmog.SkipCompatCheck";
 
     // When true, emit verbose per-request logging for batch preview apply.
-    constexpr const char* TRANSMOG_DEBUG_APPLY_PREVIEW = "DCCollection.Transmog.Debug.ApplyPreview";
+    constexpr char const* TRANSMOG_DEBUG_APPLY_PREVIEW = "DCCollection.Transmog.Debug.ApplyPreview";
 
     // When true, group appearances by base name to generate "Virtual Sets" on the fly.
-    constexpr const char* TRANSMOG_VIRTUAL_SETS_ENABLED = "DCCollection.Transmog.VirtualSets.Enabled";
+    constexpr char const* TRANSMOG_VIRTUAL_SETS_ENABLED = "DCCollection.Transmog.VirtualSets.Enabled";
 
     // Cosmetic weapon enchant glows. These only rewrite the permanent half of the visible-item
     // enchantment field for observers; the item's real enchantment is never touched, so no
     // stats, procs or charges are granted.
-    constexpr const char* ENCHANT_VISUAL_ENABLE = "DCCollection.EnchantVisual.Enable";
+    constexpr char const* ENCHANT_VISUAL_ENABLE = "DCCollection.EnchantVisual.Enable";
     // CSV of allowed SpellItemEnchantment IDs. Empty means "every enchant with a visual",
     // derived from the DBC.
-    constexpr const char* ENCHANT_VISUAL_ALLOWED_IDS = "DCCollection.EnchantVisual.AllowedEnchantIds";
+    constexpr char const* ENCHANT_VISUAL_ALLOWED_IDS = "DCCollection.EnchantVisual.AllowedEnchantIds";
 
     // =======================================================================
     // Transmog Helper Implementations
@@ -1031,7 +1031,7 @@ namespace DCCollection
         return parsed.Encode();
     }
 
-    void HandleSetTransmogMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleSetTransmogMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
          if (!player || !player->GetSession()) return;
          if (!DCAddon::IsJsonMessage(msg)) return;
@@ -1161,7 +1161,7 @@ namespace DCCollection
          SendTransmogState(player);
     }
 
-    void HandleGetTransmogState(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetTransmogState(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendTransmogState(player);
     }
@@ -1324,12 +1324,12 @@ namespace DCCollection
         }));
     }
 
-    void HandleGetEnchantVisuals(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetEnchantVisuals(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendEnchantVisuals(player);
     }
 
-    void HandleSetEnchantVisual(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleSetEnchantVisual(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -1450,7 +1450,7 @@ namespace DCCollection
         }));
     }
 
-    void HandleApplyTransmogPreview(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleApplyTransmogPreview(Player* player, DCAddon::ParsedMessage const& msg)
     {
         bool verbose = sConfigMgr->GetOption<bool>(TRANSMOG_DEBUG_APPLY_PREVIEW, false);
         if (verbose)
@@ -1853,7 +1853,7 @@ namespace DCCollection
         response.Send(player);
     }
 
-    void HandleGetTransmogSlotItems(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetTransmogSlotItems(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -1863,7 +1863,7 @@ namespace DCCollection
         SendTransmogSlotItemsResponse(player, visualSlot, page, matching, "");
     }
 
-    void HandleSearchTransmogItems(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleSearchTransmogItems(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -1874,7 +1874,7 @@ namespace DCCollection
         SendTransmogSlotItemsResponse(player, visualSlot, page, matching, search);
     }
 
-    void HandleGetCollectedAppearances(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetCollectedAppearances(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player) return;
 
@@ -1925,7 +1925,7 @@ namespace DCCollection
             std::string const& payload);
     }
 
-    void HandleCommunityGetList(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityGetList(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -2063,7 +2063,7 @@ namespace DCCollection
         }));
     }
 
-    void HandleCommunityPublish(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityPublish(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -2098,7 +2098,7 @@ namespace DCCollection
             ExtractJsonPayload(res));
     }
 
-    void HandleCommunityRate(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityRate(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
 
@@ -2168,7 +2168,7 @@ namespace DCCollection
         }));
     }
 
-    void HandleCommunityFavorite(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityFavorite(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -2201,7 +2201,7 @@ namespace DCCollection
         }));
     }
 
-    void HandleCommunityView(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityView(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -2240,7 +2240,7 @@ namespace DCCollection
             id));
     }
 
-    void HandleCommunityUpdate(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityUpdate(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -2319,7 +2319,7 @@ namespace DCCollection
         }));
     }
 
-    void HandleCommunityDelete(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityDelete(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -2395,7 +2395,7 @@ namespace DCCollection
     }
 
     // Inspection Handler
-    void HandleInspectTransmog(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleInspectTransmog(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -2710,7 +2710,7 @@ namespace DCCollection
         SendItemSetsPayload(player, ss.str(), useNativeResponse);
     }
 
-    void HandleGetItemSets(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetItemSets(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -2760,9 +2760,9 @@ namespace DCCollection
     // Outfit Saving Handlers
     // =======================================================================
 
-    void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg); // Forward declaration
+    void HandleGetSavedOutfits(Player* player, DCAddon::ParsedMessage const& msg); // Forward declaration
 
-    void HandleSaveOutfit(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleSaveOutfit(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg))
         {
@@ -2860,7 +2860,7 @@ namespace DCCollection
         }
     }
 
-    void HandleDeleteOutfit(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleDeleteOutfit(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
 
@@ -2946,7 +2946,7 @@ namespace DCCollection
         }
     }
 
-    void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetSavedOutfits(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player) return;
 
@@ -3058,7 +3058,7 @@ namespace DCCollection
             SendSavedOutfitsPayload(player, ss.str());
         }));
     }
-    void HandleCopyCommunityOutfit(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCopyCommunityOutfit(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
 
@@ -3156,7 +3156,7 @@ namespace DCCollection
     class WardrobePlayerScript : public PlayerScript
     {
     public:
-        WardrobePlayerScript() : PlayerScript("WardrobePlayerScript") {}
+        WardrobePlayerScript() : PlayerScript("WardrobePlayerScript", { PLAYERHOOK_ON_DELETE, PLAYERHOOK_ON_LOGIN }) {}
 
         void OnPlayerLogin(Player* player) override
         {

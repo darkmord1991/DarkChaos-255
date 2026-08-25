@@ -55,85 +55,85 @@ namespace DCFirstStart
     namespace Config
     {
         // Master toggles
-        constexpr const char* ENABLE = "DCFirstStart.Enable";
-        constexpr const char* DEBUG = "DCFirstStart.Debug";
-        constexpr const char* ANNOUNCE = "DCFirstStart.Announce";
-        constexpr const char* ANNOUNCE_MESSAGE = "DCFirstStart.AnnounceMessage";
-        constexpr const char* PLAYER_ANNOUNCE = "DCFirstStart.PlayerAnnounce";
+        constexpr char const* ENABLE = "DCFirstStart.Enable";
+        constexpr char const* DEBUG = "DCFirstStart.Debug";
+        constexpr char const* ANNOUNCE = "DCFirstStart.Announce";
+        constexpr char const* ANNOUNCE_MESSAGE = "DCFirstStart.AnnounceMessage";
+        constexpr char const* PLAYER_ANNOUNCE = "DCFirstStart.PlayerAnnounce";
 
         // BoA Items
-        constexpr const char* BOA_ENABLE = "DCFirstStart.BoA";
+        constexpr char const* BOA_ENABLE = "DCFirstStart.BoA";
 
         // Skills
-        constexpr const char* SKILLS_ENABLE = "DCFirstStart.Skills.Enable";
-        constexpr const char* SKILLS_LIST = "DCFirstStart.Skills.List";
+        constexpr char const* SKILLS_ENABLE = "DCFirstStart.Skills.Enable";
+        constexpr char const* SKILLS_LIST = "DCFirstStart.Skills.List";
 
         // Starting Gold
-        constexpr const char* GOLD_ENABLE = "DCFirstStart.StartingGold.Enable";
-        constexpr const char* GOLD_GOLD = "DCFirstStart.StartingGold.Gold";
-        constexpr const char* GOLD_SILVER = "DCFirstStart.StartingGold.Silver";
-        constexpr const char* GOLD_COPPER = "DCFirstStart.StartingGold.Copper";
+        constexpr char const* GOLD_ENABLE = "DCFirstStart.StartingGold.Enable";
+        constexpr char const* GOLD_GOLD = "DCFirstStart.StartingGold.Gold";
+        constexpr char const* GOLD_SILVER = "DCFirstStart.StartingGold.Silver";
+        constexpr char const* GOLD_COPPER = "DCFirstStart.StartingGold.Copper";
 
         // Starting Mount
-        constexpr const char* MOUNT_ENABLE = "DCFirstStart.StartingMount.Enable";
-        constexpr const char* MOUNT_SPELL = "DCFirstStart.StartingMount.Spell";
-        constexpr const char* MOUNT_SKILL = "DCFirstStart.StartingMount.Skill";
-        constexpr const char* MOUNT_MIN_LEVEL = "DCFirstStart.StartingMount.MinLevel";
+        constexpr char const* MOUNT_ENABLE = "DCFirstStart.StartingMount.Enable";
+        constexpr char const* MOUNT_SPELL = "DCFirstStart.StartingMount.Spell";
+        constexpr char const* MOUNT_SKILL = "DCFirstStart.StartingMount.Skill";
+        constexpr char const* MOUNT_MIN_LEVEL = "DCFirstStart.StartingMount.MinLevel";
 
         // Starting Professions
-        constexpr const char* PROF_ENABLE = "DCFirstStart.StartingProfessions.Enable";
-        constexpr const char* PROF_LIST = "DCFirstStart.StartingProfessions.List";
+        constexpr char const* PROF_ENABLE = "DCFirstStart.StartingProfessions.Enable";
+        constexpr char const* PROF_LIST = "DCFirstStart.StartingProfessions.List";
 
         // Bags
-        constexpr const char* BAGS_DEFAULT = "DCFirstStart.Bags.Default";
-        constexpr const char* BAGS_HUNTER = "DCFirstStart.Bags.Hunter";
-        constexpr const char* BAGS_WARLOCK = "DCFirstStart.Bags.Warlock";
-        constexpr const char* BAGS_ROGUE = "DCFirstStart.Bags.Rogue";
+        constexpr char const* BAGS_DEFAULT = "DCFirstStart.Bags.Default";
+        constexpr char const* BAGS_HUNTER = "DCFirstStart.Bags.Hunter";
+        constexpr char const* BAGS_WARLOCK = "DCFirstStart.Bags.Warlock";
+        constexpr char const* BAGS_ROGUE = "DCFirstStart.Bags.Rogue";
 
         // Special Abilities
-        constexpr const char* SPECIAL_ENABLE = "DCFirstStart.SpecialAbility.Enable";
-        constexpr const char* SPECIAL_SPELL1 = "DCFirstStart.SpecialAbility.Spell1";
-        constexpr const char* SPECIAL_SPELL2 = "DCFirstStart.SpecialAbility.Spell2";
-        constexpr const char* SPECIAL_TITLE = "DCFirstStart.SpecialAbility.Title";
-        constexpr const char* SPECIAL_MOUNT = "DCFirstStart.SpecialAbility.Mount";
+        constexpr char const* SPECIAL_ENABLE = "DCFirstStart.SpecialAbility.Enable";
+        constexpr char const* SPECIAL_SPELL1 = "DCFirstStart.SpecialAbility.Spell1";
+        constexpr char const* SPECIAL_SPELL2 = "DCFirstStart.SpecialAbility.Spell2";
+        constexpr char const* SPECIAL_TITLE = "DCFirstStart.SpecialAbility.Title";
+        constexpr char const* SPECIAL_MOUNT = "DCFirstStart.SpecialAbility.Mount";
 
         // Reputation
-        constexpr const char* REP_ENABLE = "DCFirstStart.Reputation.Enable";
+        constexpr char const* REP_ENABLE = "DCFirstStart.Reputation.Enable";
 
         // DC Integrations
-        constexpr const char* DC_WELCOME_TRIGGER = "DCFirstStart.TriggerWelcome";
-        constexpr const char* DC_SEASONAL_TOKENS = "DCFirstStart.SeasonalTokens.Enable";
-        constexpr const char* DC_SEASONAL_TOKENS_USE_CANONICAL = "DCFirstStart.SeasonalTokens.UseCanonicalCurrency";
-        constexpr const char* DC_SEASONAL_TOKENS_ITEM = "DCFirstStart.SeasonalTokens.ItemId";
-        constexpr const char* DC_SEASONAL_TOKENS_AMOUNT = "DCFirstStart.SeasonalTokens.Amount";
-        constexpr const char* DC_PRESTIGE_BONUSES = "DCFirstStart.PrestigeBonuses";
-        constexpr const char* DC_MOBILE_TELEPORTER = "DCFirstStart.MobileTeleporter.Enable";
-        constexpr const char* DC_MOBILE_TELEPORTER_ITEM = "DCFirstStart.MobileTeleporter.ItemId";
+        constexpr char const* DC_WELCOME_TRIGGER = "DCFirstStart.TriggerWelcome";
+        constexpr char const* DC_SEASONAL_TOKENS = "DCFirstStart.SeasonalTokens.Enable";
+        constexpr char const* DC_SEASONAL_TOKENS_USE_CANONICAL = "DCFirstStart.SeasonalTokens.UseCanonicalCurrency";
+        constexpr char const* DC_SEASONAL_TOKENS_ITEM = "DCFirstStart.SeasonalTokens.ItemId";
+        constexpr char const* DC_SEASONAL_TOKENS_AMOUNT = "DCFirstStart.SeasonalTokens.Amount";
+        constexpr char const* DC_PRESTIGE_BONUSES = "DCFirstStart.PrestigeBonuses";
+        constexpr char const* DC_MOBILE_TELEPORTER = "DCFirstStart.MobileTeleporter.Enable";
+        constexpr char const* DC_MOBILE_TELEPORTER_ITEM = "DCFirstStart.MobileTeleporter.ItemId";
 
         // Dual Spec
-        constexpr const char* DUALSPEC_ENABLE = "DCFirstStart.DualSpec.Enable";
-        constexpr const char* DUALSPEC_LEVEL = "DCFirstStart.DualSpec.Level";
+        constexpr char const* DUALSPEC_ENABLE = "DCFirstStart.DualSpec.Enable";
+        constexpr char const* DUALSPEC_LEVEL = "DCFirstStart.DualSpec.Level";
 
         // Onboarding: welcome quest, starter guild, newcomer chat
-        constexpr const char* WELCOME_QUEST_ENABLE = "DCFirstStart.WelcomeQuest.Enable";
-        constexpr const char* WELCOME_QUEST_ID = "DCFirstStart.WelcomeQuest.Id";
+        constexpr char const* WELCOME_QUEST_ENABLE = "DCFirstStart.WelcomeQuest.Enable";
+        constexpr char const* WELCOME_QUEST_ID = "DCFirstStart.WelcomeQuest.Id";
 
         // Hand-off from Azshara Crater (1-80) to the 80-130 continent (map 750)
         constexpr char const* HYJAL_CALL_ENABLE = "DCFirstStart.HyjalCall.Enable";
         constexpr char const* HYJAL_CALL_LEVEL = "DCFirstStart.HyjalCall.Level";
         constexpr char const* HYJAL_CALL_QUEST_ALLIANCE = "DCFirstStart.HyjalCall.QuestAlliance";
         constexpr char const* HYJAL_CALL_QUEST_HORDE = "DCFirstStart.HyjalCall.QuestHorde";
-        constexpr const char* STARTER_GUILD_ENABLE = "DCFirstStart.StarterGuild.Enable";
-        constexpr const char* STARTER_GUILD_NAME_ALLIANCE = "DCFirstStart.StarterGuild.NameAlliance";
-        constexpr const char* STARTER_GUILD_NAME_HORDE = "DCFirstStart.StarterGuild.NameHorde";
-        constexpr const char* STARTER_GUILD_AUTOCREATE = "DCFirstStart.StarterGuild.AutoCreate";
-        constexpr const char* STARTER_GUILD_MOTD = "DCFirstStart.StarterGuild.Motd";
-        constexpr const char* STARTER_GUILD_INFO = "DCFirstStart.StarterGuild.Info";
-        constexpr const char* STARTER_GUILD_SYSTEM_LEADER_ALLIANCE = "DCFirstStart.StarterGuild.SystemLeaderGuidAlliance";
-        constexpr const char* STARTER_GUILD_SYSTEM_LEADER_HORDE = "DCFirstStart.StarterGuild.SystemLeaderGuidHorde";
-        constexpr const char* NEWCOMER_CHAT_ENABLE = "DCFirstStart.NewcomerChat.Enable";
-        constexpr const char* NEWCOMER_CHAT_CHANNEL = "DCFirstStart.NewcomerChat.ChannelName";
-        constexpr const char* NEWCOMER_CHAT_MAXLEVEL = "DCFirstStart.NewcomerChat.MaxLevel";
+        constexpr char const* STARTER_GUILD_ENABLE = "DCFirstStart.StarterGuild.Enable";
+        constexpr char const* STARTER_GUILD_NAME_ALLIANCE = "DCFirstStart.StarterGuild.NameAlliance";
+        constexpr char const* STARTER_GUILD_NAME_HORDE = "DCFirstStart.StarterGuild.NameHorde";
+        constexpr char const* STARTER_GUILD_AUTOCREATE = "DCFirstStart.StarterGuild.AutoCreate";
+        constexpr char const* STARTER_GUILD_MOTD = "DCFirstStart.StarterGuild.Motd";
+        constexpr char const* STARTER_GUILD_INFO = "DCFirstStart.StarterGuild.Info";
+        constexpr char const* STARTER_GUILD_SYSTEM_LEADER_ALLIANCE = "DCFirstStart.StarterGuild.SystemLeaderGuidAlliance";
+        constexpr char const* STARTER_GUILD_SYSTEM_LEADER_HORDE = "DCFirstStart.StarterGuild.SystemLeaderGuidHorde";
+        constexpr char const* NEWCOMER_CHAT_ENABLE = "DCFirstStart.NewcomerChat.Enable";
+        constexpr char const* NEWCOMER_CHAT_CHANNEL = "DCFirstStart.NewcomerChat.ChannelName";
+        constexpr char const* NEWCOMER_CHAT_MAXLEVEL = "DCFirstStart.NewcomerChat.MaxLevel";
     }
 
     // Class names for config lookups
@@ -200,7 +200,7 @@ namespace DCFirstStart
     };
 
     // Helper: Parse comma-separated list of IDs
-    std::vector<uint32> ParseIdList(const std::string& list)
+    std::vector<uint32> ParseIdList(std::string const& list)
     {
         // DCUtils::ParseUInt32List keeps id 0; this callsite has always dropped it, so filter it out here.
         std::vector<uint32> result;
@@ -957,7 +957,10 @@ namespace DCFirstStart
 class DCFirstStart_PlayerScript : public PlayerScript
 {
 public:
-    DCFirstStart_PlayerScript() : PlayerScript("DCFirstStart_PlayerScript") { }
+    DCFirstStart_PlayerScript() : PlayerScript("DCFirstStart_PlayerScript",
+    {
+        PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT
+    }) { }
 
     void OnPlayerLogin(Player* player) override
     {

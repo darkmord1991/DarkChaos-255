@@ -107,7 +107,10 @@ enum DCAchievementCriteriaTypes
 class DCAchievementSystem : public PlayerScript
 {
 public:
-    DCAchievementSystem() : PlayerScript("DCAchievementSystem") { }
+    DCAchievementSystem() : PlayerScript("DCAchievementSystem",
+    {
+        PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_UPDATE_ZONE
+    }) { }
 
     static bool IsEnabled()
     {
@@ -325,7 +328,7 @@ private:
 class DCAchievementPrestige : public PlayerScript
 {
 public:
-    DCAchievementPrestige() : PlayerScript("DCAchievementPrestige") { }
+    DCAchievementPrestige() : PlayerScript("DCAchievementPrestige", { PLAYERHOOK_ON_LOGIN }) { }
 
     void OnPlayerLogin(Player* player) override
     {
@@ -445,7 +448,7 @@ public:
 class DCAchievementCollections : public PlayerScript
 {
 public:
-    DCAchievementCollections() : PlayerScript("DCAchievementCollections") { }
+    DCAchievementCollections() : PlayerScript("DCAchievementCollections", { PLAYERHOOK_ON_LOGIN }) { }
 
     void OnPlayerLogin(Player* player) override
     {

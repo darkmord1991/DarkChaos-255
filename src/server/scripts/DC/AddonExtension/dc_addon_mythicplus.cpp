@@ -496,32 +496,32 @@ namespace MythicPlus
     }
 
     // Handler: Get keystone info
-    static void HandleGetKeyInfo(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetKeyInfo(Player* player, ParsedMessage const& /*msg*/)
     {
         SendKeyInfo(player);
     }
 
     // Handler: Get affixes
-    static void HandleGetAffixes(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetAffixes(Player* player, ParsedMessage const& /*msg*/)
     {
         SendAffixes(player);
     }
 
     // Handler: Get best runs
-    static void HandleGetBestRuns(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetBestRuns(Player* player, ParsedMessage const& /*msg*/)
     {
         SendBestRuns(player);
     }
 
     // Handler: Get canonical keystone list
-    static void HandleGetKeystoneList(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetKeystoneList(Player* player, ParsedMessage const& /*msg*/)
     {
         MarkMythicPlusAddonSession(player);
         SendJsonKeystoneList(player);
     }
 
     // Handler: Pending keystone activation ready / decline response
-    static void HandleKeystoneResponse(Player* player, const ParsedMessage& msg)
+    static void HandleKeystoneResponse(Player* player, ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -542,7 +542,7 @@ namespace MythicPlus
     }
 
     // Handler: Pending keystone activation cancel request
-    static void HandleKeystoneCancel(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleKeystoneCancel(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -1260,13 +1260,13 @@ namespace MythicPlus
     }
 
     // Handler: Get vault info
-    static void HandleGetVaultInfo(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleGetVaultInfo(Player* player, ParsedMessage const& /*msg*/)
     {
         SendVaultInfo(player, false);
     }
 
     // Handler: Claim vault reward
-    static void HandleClaimVaultReward(Player* player, const ParsedMessage& msg)
+    static void HandleClaimVaultReward(Player* player, ParsedMessage const& msg)
     {
         uint8 slot = 0;
         uint32 itemId = 0;
@@ -1317,7 +1317,7 @@ namespace MythicPlus
     }
 
     // Forward declaration for HUD handler (defined later)
-    static void HandleRequestHud(Player* player, const ParsedMessage& msg);
+    static void HandleRequestHud(Player* player, ParsedMessage const& msg);
 
     // Register all handlers
     void RegisterHandlers()
@@ -1353,7 +1353,7 @@ namespace MythicPlus
     }
 
     // Send HUD update to player (pipe-delimited)
-    void SendHUDUpdate(Player* player, const std::string& jsonData)
+    void SendHUDUpdate(Player* player, std::string const& jsonData)
     {
         SendHudSnapshot(player, jsonData);
     }
@@ -1414,7 +1414,7 @@ namespace MythicPlus
             return static_cast<uint64>(mapId) * INSTANCE_KEY_FACTOR + instanceId;
         }
 
-        void SendIdle(Player* player, const std::string& reason)
+        void SendIdle(Player* player, std::string const& reason)
         {
             if (!player)
                 return;
@@ -1444,7 +1444,7 @@ namespace MythicPlus
             snap.idleReason.clear();
         }
 
-        bool SendPayload(Player* player, const CacheEntry& record)
+        bool SendPayload(Player* player, CacheEntry const& record)
         {
             if (!player || record.payload.empty())
                 return false;
@@ -1624,7 +1624,7 @@ namespace MythicPlus
                 m_pendingQuery.reset();
         }
 
-        bool DeliverSnapshot(Player* player, bool force = false, const std::string& reason = "")
+        bool DeliverSnapshot(Player* player, bool force = false, std::string const& reason = "")
         {
             uint64 instanceKey = MakeInstanceKey(player);
 
@@ -1689,7 +1689,7 @@ namespace MythicPlus
         }
 
         // Client-requested snapshot (force refresh)
-        void RequestHud(Player* player, const std::string& reason = "client")
+        void RequestHud(Player* player, std::string const& reason = "client")
         {
             DeliverSnapshot(player, true, reason);
         }
@@ -1715,7 +1715,7 @@ namespace MythicPlus
     };
 
     // Handler: Client requests HUD snapshot
-    static void HandleRequestHud(Player* player, const ParsedMessage& msg)
+    static void HandleRequestHud(Player* player, ParsedMessage const& msg)
     {
         MarkMythicPlusAddonSession(player);
 
@@ -1898,8 +1898,8 @@ namespace MythicPlus
 
     // Send run start notification as JSON
     void SendJsonRunStart(Player* player, uint32 keyLevel, uint32 dungeonId,
-                          const std::string& dungeonName, uint32 timeLimit,
-                          const std::vector<uint32>& affixIds)
+                          std::string const& dungeonName, uint32 timeLimit,
+                          std::vector<uint32> const& affixIds)
     {
         std::string affixListStr;
         for (size_t i = 0; i < affixIds.size(); ++i)
@@ -1945,7 +1945,7 @@ namespace MythicPlus
 class MythicPlusKeystoneLoginPlayerScript : public PlayerScript
 {
 public:
-    MythicPlusKeystoneLoginPlayerScript() : PlayerScript("MythicPlusKeystoneLoginPlayerScript") {}
+    MythicPlusKeystoneLoginPlayerScript() : PlayerScript("MythicPlusKeystoneLoginPlayerScript", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) {}
 
     void OnPlayerLogin(Player* player) override
     {

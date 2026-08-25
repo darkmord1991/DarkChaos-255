@@ -28,7 +28,7 @@ namespace
 class ChallengeMode_EquipmentRestrictions_PlayerScript : public PlayerScript
 {
 public:
-    ChallengeMode_EquipmentRestrictions_PlayerScript() : PlayerScript("ChallengeMode_EquipmentRestrictions_PlayerScript") { }
+    ChallengeMode_EquipmentRestrictions_PlayerScript() : PlayerScript("ChallengeMode_EquipmentRestrictions_PlayerScript", { PLAYERHOOK_CAN_EQUIP_ITEM }) { }
 
     [[nodiscard]] bool OnPlayerCanEquipItem(Player* player, uint8 /*slot*/, uint16& /*dest*/, Item* item, bool /*swap*/, bool not_loading) override
     {

@@ -27,7 +27,7 @@ namespace Spectator
     // here resolve identically to the old dc_mplus_dungeons lookup.
 
     // Handler: Request to spectate a run
-    static void HandleRequestSpectate(Player* player, const ParsedMessage& msg)
+    static void HandleRequestSpectate(Player* player, ParsedMessage const& msg)
     {
         uint32 instanceId = msg.GetUInt32(0);
 
@@ -78,7 +78,7 @@ namespace Spectator
     }
 
     // Handler: Stop spectating
-    static void HandleStopSpectate(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleStopSpectate(Player* player, ParsedMessage const& /*msg*/)
     {
         auto& mgr = DCMythicSpectator::MythicSpectatorManager::Get();
 
@@ -106,7 +106,7 @@ namespace Spectator
     }
 
     // Handler: List active runs available to spectate
-    static void HandleListRuns(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleListRuns(Player* player, ParsedMessage const& /*msg*/)
     {
         auto& mgr = DCMythicSpectator::MythicSpectatorManager::Get();
         std::vector<DCMythicSpectator::SpectateableRun> runs = mgr.GetSpectateableRuns();
@@ -144,7 +144,7 @@ namespace Spectator
     }
 
     // Handler: Set HUD display option
-    static void HandleSetHUDOption(Player* player, const ParsedMessage& msg)
+    static void HandleSetHUDOption(Player* player, ParsedMessage const& msg)
     {
         std::string option = msg.GetString(0);
         bool enabled = msg.GetBool(1);
@@ -198,7 +198,7 @@ namespace Spectator
 
     // Send HUD update to all spectators of a run
     void BroadcastHUDUpdate(uint32 runId, uint32 /*elapsed*/, uint32 /*remaining*/,
-                           uint32 /*deaths*/, float /*progress*/, const std::string& /*bossInfo*/)
+                           uint32 /*deaths*/, float /*progress*/, std::string const& /*bossInfo*/)
     {
         // TODO: If/when addon HUD updates are needed, use MythicSpectatorManager::GetSpectatorsForInstance(runId)
         // and broadcast appropriate messages.
@@ -218,7 +218,7 @@ namespace Spectator
 class DCAddonSpectatorScript : public PlayerScript
 {
 public:
-    DCAddonSpectatorScript() : PlayerScript("DCAddonSpectatorScript") {}
+    DCAddonSpectatorScript() : PlayerScript("DCAddonSpectatorScript", { PLAYERHOOK_ON_LOGOUT }) {}
 
     void OnPlayerLogout(Player* player) override
     {

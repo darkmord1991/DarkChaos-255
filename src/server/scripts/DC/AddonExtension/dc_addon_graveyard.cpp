@@ -56,7 +56,7 @@ namespace DCAddon
     }
 
     // Teleport a released ghost to the nearest graveyard.
-    static void HandleReturnToGraveyard(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleReturnToGraveyard(Player* player, ParsedMessage const& /*msg*/)
     {
         if (!player)
             return;
@@ -96,7 +96,7 @@ namespace DCAddon
 class DCGraveyardPlayerScript : public PlayerScript
 {
 public:
-    DCGraveyardPlayerScript() : PlayerScript("DCGraveyardPlayerScript") { }
+    DCGraveyardPlayerScript() : PlayerScript("DCGraveyardPlayerScript", { PLAYERHOOK_ON_PLAYER_RELEASED_GHOST, PLAYERHOOK_ON_PLAYER_RESURRECT }) { }
 
     void OnPlayerReleasedGhost(Player* player) override
     {

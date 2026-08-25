@@ -790,7 +790,7 @@ private:
         if (it == prestigeRewards.end())
             return;
 
-        for (const PrestigeReward& reward : it->second)
+        for (PrestigeReward const& reward : it->second)
         {
             player->AddItem(reward.itemEntry, reward.count);
         }
@@ -968,7 +968,7 @@ private:
     std::unordered_map<uint32, uint32> lastAuraCheckTime;
 
 public:
-    PrestigePlayerScript() : PlayerScript("PrestigePlayerScript") { }
+    PrestigePlayerScript() : PlayerScript("PrestigePlayerScript", { PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_UPDATE }) { }
 
     void OnPlayerLogin(Player* player) override
     {

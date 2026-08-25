@@ -51,7 +51,7 @@ namespace Hyjal
 class hyjal_frontier_zone : public PlayerScript
 {
 public:
-    hyjal_frontier_zone() : PlayerScript("hyjal_frontier_zone") { }
+    hyjal_frontier_zone() : PlayerScript("hyjal_frontier_zone", { PLAYERHOOK_ON_MAP_CHANGED, PLAYERHOOK_ON_UPDATE_ZONE }) { }
 
     void OnPlayerMapChanged(Player* player) override
     {

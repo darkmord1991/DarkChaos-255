@@ -891,7 +891,7 @@ void MythicSpectatorManager::Update(uint32 diff)
                 if (event.timestamp > elapsed)
                     break;
 
-                const char* typeLabel = "Event";
+                char const* typeLabel = "Event";
                 switch (event.type)
                 {
                     case ReplayEventType::RUN_START: typeLabel = "Run Start"; break;
@@ -1598,7 +1598,7 @@ public:
         uint32 newMode = mode.value_or((state->streamMode + 1) % 3);
         state->streamMode = newMode;
 
-        const char* modeNames[] = { "Normal", "Names Hidden", "Full Anonymous" };
+        char const* modeNames[] = { "Normal", "Names Hidden", "Full Anonymous" };
         handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Stream mode: {}", modeNames[newMode]);
         return true;
     }
@@ -1740,7 +1740,7 @@ public:
 class DCMythicSpectatorPlayerScript : public PlayerScript
 {
 public:
-    DCMythicSpectatorPlayerScript() : PlayerScript("DCMythicSpectatorPlayerScript") { }
+    DCMythicSpectatorPlayerScript() : PlayerScript("DCMythicSpectatorPlayerScript", { PLAYERHOOK_ON_LOGOUT }) { }
 
     void OnPlayerLogout(Player* player) override
     {
