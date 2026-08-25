@@ -173,6 +173,49 @@ static Unit* GetActiveLooterCompanion(Player* player)
     return nullptr;
 }
 
+// Hand the companion back to following its owner once a loot walk is done.
+//
+// The loot pulse pushes MovePoint(9001) onto the companion
+// (dc_aoeloot_unified.cpp, MoveCompanionTowardTarget). MovePoint takes
+// MOTION_SLOT_ACTIVE, which evicts the pet's follow generator - and PetAI does
+// not repair it, because its COMMAND_FOLLOW branch only re-issues MoveFollow
+// when the CONTROLLED slot is free and CharmInfo still reports the pet as
+// following. So the pet walked to the first corpse and stayed there forever.
+//
+// Restoring here rather than in the pulse keeps the visual: the pet walks over,
+// loots, and only then returns. Guarded so it reclaims nothing but the movement
+// this system issued.
+static void RestoreCompanionFollow(Player* player, Unit* companion)
+{
+    if (!player || !companion || !companion->IsAlive())
+        return;
+
+    Creature* creature = companion->ToCreature();
+    if (!creature)
+        return;
+
+    // Only our own MovePoint - never an idle, chase, or scripted generator.
+    if (creature->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+        return;
+
+    // Let it finish walking to the corpse before calling it back.
+    if (!creature->IsStopped())
+        return;
+
+    // Fighting pets keep their own movement.
+    if (creature->IsInCombat())
+        return;
+
+    // A pet told to stay put stays put.
+    if (CharmInfo* charmInfo = creature->GetCharmInfo())
+        if (charmInfo->HasCommandState(COMMAND_STAY))
+            return;
+
+    creature->GetMotionMaster()->Clear();
+    creature->GetMotionMaster()->MoveFollow(player, PET_FOLLOW_DIST,
+        creature->GetFollowAngle());
+}
+
 static void SetLooterPetEnabled(Player* player, bool enabled)
 {
     if (!player)
@@ -282,6 +325,10 @@ public:
             state.boundCompanionGuid.Clear();
             return;
         }
+
+        // Before the leash check: a pet that walked out of leash range on the
+        // previous pulse would otherwise never be reclaimed.
+        RestoreCompanionFollow(player, companion);
 
         ObjectGuid const companionGuid = companion->GetGUID();
         if (state.boundCompanionGuid != companionGuid)
