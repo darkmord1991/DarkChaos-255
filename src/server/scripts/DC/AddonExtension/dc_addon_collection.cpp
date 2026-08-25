@@ -147,8 +147,7 @@ namespace DCCollection
 
         inline uint32 MixCollectionHash(uint32 hash, uint32 item)
         {
-            hash ^= (item * 2654435761u);
-            return (hash << 13) | (hash >> 19);
+            return DCAddon::Utils::MixCollectionHash(hash, item);
         }
 
         // JSON number/key emitters are centralized in DCAddon::Utils; these thin
@@ -1230,79 +1229,102 @@ namespace DCCollection
     // =======================================================================
     // Configuration
     // =======================================================================
+    // Cached mirror of Config::ENABLED, refreshed in CollectionWorldScript::
+    // OnAfterConfigLoad (startup and .reload config).
+    //
+    // Every script hook below gates on this flag, and OnPlayerUpdate fires for
+    // every player on every world tick. sConfigMgr->GetOption is not a field
+    // read: it does a map lookup, builds an "AC_"-prefixed env var name, and
+    // calls getenv() - and negative env lookups are never cached, so that work
+    // repeats on every single call. Reading a cached bool instead keeps the
+    // per-tick path allocation-free.
+    //
+    // atomic because creature/map updates may run off the world thread when
+    // MapUpdate.Threads > 1; the write happens once, during config load.
+    inline std::atomic<bool>& ModuleEnabledFlag()
+    {
+        static std::atomic<bool> flag{ true };
+        return flag;
+    }
+
+    inline bool IsModuleEnabled()
+    {
+        return ModuleEnabledFlag().load(std::memory_order_relaxed);
+    }
+
     namespace Config
     {
-        constexpr const char* ENABLED = "DCCollection.Enable";
-        constexpr const char* MOUNT_BONUSES_ENABLED = "DCCollection.MountBonuses.Enable";
-        constexpr const char* SHOP_ENABLED = "DCCollection.Shop.Enable";
-        constexpr const char* WISHLIST_ENABLED = "DCCollection.Wishlist.Enable";
-        constexpr const char* WISHLIST_MAX_ITEMS = "DCCollection.Wishlist.MaxItems";
-        [[maybe_unused]] constexpr const char* SYNC_INTERVAL = "DCCollection.SyncInterval";
+        constexpr char const* ENABLED = "DCCollection.Enable";
+        constexpr char const* MOUNT_BONUSES_ENABLED = "DCCollection.MountBonuses.Enable";
+        constexpr char const* SHOP_ENABLED = "DCCollection.Shop.Enable";
+        constexpr char const* WISHLIST_ENABLED = "DCCollection.Wishlist.Enable";
+        constexpr char const* WISHLIST_MAX_ITEMS = "DCCollection.Wishlist.MaxItems";
+        [[maybe_unused]] constexpr char const* SYNC_INTERVAL = "DCCollection.SyncInterval";
 
         // Transmog unlock rules
-        constexpr const char* TRANSMOG_UNLOCK_ON_CREATE = "DCCollection.Transmog.UnlockOnCreate";
-        constexpr const char* TRANSMOG_UNLOCK_ON_EQUIP = "DCCollection.Transmog.UnlockOnEquip";
-        constexpr const char* TRANSMOG_UNLOCK_ON_SOULBIND = "DCCollection.Transmog.UnlockOnSoulbind";
-        constexpr const char* TRANSMOG_UNLOCK_ON_LOOT = "DCCollection.Transmog.UnlockOnLoot";
-        constexpr const char* TRANSMOG_UNLOCK_ON_QUEST_REWARD = "DCCollection.Transmog.UnlockOnQuestReward";
+        constexpr char const* TRANSMOG_UNLOCK_ON_CREATE = "DCCollection.Transmog.UnlockOnCreate";
+        constexpr char const* TRANSMOG_UNLOCK_ON_EQUIP = "DCCollection.Transmog.UnlockOnEquip";
+        constexpr char const* TRANSMOG_UNLOCK_ON_SOULBIND = "DCCollection.Transmog.UnlockOnSoulbind";
+        constexpr char const* TRANSMOG_UNLOCK_ON_LOOT = "DCCollection.Transmog.UnlockOnLoot";
+        constexpr char const* TRANSMOG_UNLOCK_ON_QUEST_REWARD = "DCCollection.Transmog.UnlockOnQuestReward";
 
         // Login scanning (automatic unlock from inventory/bank on login)
-        constexpr const char* TRANSMOG_LOGIN_SCAN_ENABLED = "DCCollection.Transmog.LoginScan.Enable";
-        constexpr const char* TRANSMOG_LOGIN_SCAN_INCLUDE_BANK = "DCCollection.Transmog.LoginScan.IncludeBank";
+        constexpr char const* TRANSMOG_LOGIN_SCAN_ENABLED = "DCCollection.Transmog.LoginScan.Enable";
+        constexpr char const* TRANSMOG_LOGIN_SCAN_INCLUDE_BANK = "DCCollection.Transmog.LoginScan.IncludeBank";
 
         // Session notification deduplication (prevent spam from multiple events)
-        [[maybe_unused]] constexpr const char* TRANSMOG_SESSION_NOTIFICATION_DEDUP = "DCCollection.Transmog.SessionNotificationDedup";
+        [[maybe_unused]] constexpr char const* TRANSMOG_SESSION_NOTIFICATION_DEDUP = "DCCollection.Transmog.SessionNotificationDedup";
 
         // Quality filtering
-        [[maybe_unused]] constexpr const char* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
+        [[maybe_unused]] constexpr char const* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
 
         // Paging: number of transmog items returned per slot page.
         // Higher values reduce message spam; keep reasonable to avoid overly large addon payloads.
-        [[maybe_unused]] constexpr const char* TRANSMOG_SLOT_ITEMS_PAGE_SIZE = "DCCollection.Transmog.SlotItemsPageSize";
+        [[maybe_unused]] constexpr char const* TRANSMOG_SLOT_ITEMS_PAGE_SIZE = "DCCollection.Transmog.SlotItemsPageSize";
 
         // Legacy import (scan items owned by old characters)
-        constexpr const char* TRANSMOG_LEGACY_IMPORT_ENABLED = "DCCollection.Transmog.LegacyImport.Enable";
-        constexpr const char* TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK = "DCCollection.Transmog.LegacyImport.IncludeBank";
-        constexpr const char* TRANSMOG_LEGACY_IMPORT_REQUIRE_SOULBOUND = "DCCollection.Transmog.LegacyImport.RequireSoulbound";
+        constexpr char const* TRANSMOG_LEGACY_IMPORT_ENABLED = "DCCollection.Transmog.LegacyImport.Enable";
+        constexpr char const* TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK = "DCCollection.Transmog.LegacyImport.IncludeBank";
+        constexpr char const* TRANSMOG_LEGACY_IMPORT_REQUIRE_SOULBOUND = "DCCollection.Transmog.LegacyImport.RequireSoulbound";
 
         // When enabled, characters will be granted the account-wide collection entries
         // (so mounts/companions/titles are usable in the default Blizzard UI).
-        constexpr const char* SYNC_TO_CHARACTER_ON_LOGIN = "DCCollection.Accountwide.SyncToCharacterOnLogin";
+        constexpr char const* SYNC_TO_CHARACTER_ON_LOGIN = "DCCollection.Accountwide.SyncToCharacterOnLogin";
 
         // Performance: defer + batch the login sync to avoid long synchronous work during the login handshake.
-        constexpr const char* SYNC_TO_CHARACTER_DELAY_MS = "DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs";
-        constexpr const char* SYNC_TO_CHARACTER_BATCH_SIZE = "DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize";
-        constexpr const char* SYNC_TO_CHARACTER_BATCH_DELAY_MS = "DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs";
+        constexpr char const* SYNC_TO_CHARACTER_DELAY_MS = "DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs";
+        constexpr char const* SYNC_TO_CHARACTER_BATCH_SIZE = "DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize";
+        constexpr char const* SYNC_TO_CHARACTER_BATCH_DELAY_MS = "DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs";
 
         // Performance: learning many mount/pet spells can update a large amount of achievement criteria.
         // By default these are saved on logout, which can cause a noticeable delay.
         // When enabled, we flush achievement progress once the accountwide sync completes.
-        constexpr const char* SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE = "DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete";
+        constexpr char const* SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE = "DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete";
 
         // When enabled, a chat line is sent after the accountwide login sync taught
         // spells or applied titles. Off by default: the sync only changes anything on
         // the first login of a character, and the addon surfaces new items itself.
-        constexpr const char* SYNC_TO_CHARACTER_ANNOUNCE = "DCCollection.Accountwide.SyncToCharacterOnLogin.Announce";
+        constexpr char const* SYNC_TO_CHARACTER_ANNOUNCE = "DCCollection.Accountwide.SyncToCharacterOnLogin.Announce";
 
         // Optional maintenance: rebuild dc_pet_definitions from local data (item_template + Spell/SummonProperties DBC).
         // This avoids relying on external sources and fixes incorrect placeholder pet_spell_id values.
-        constexpr const char* PET_DEFINITIONS_REBUILD_ON_STARTUP = "DCCollection.Pets.RebuildDefinitionsOnStartup";
-        constexpr const char* PET_DEFINITIONS_REBUILD_TRUNCATE = "DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate";
+        constexpr char const* PET_DEFINITIONS_REBUILD_ON_STARTUP = "DCCollection.Pets.RebuildDefinitionsOnStartup";
+        constexpr char const* PET_DEFINITIONS_REBUILD_TRUNCATE = "DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate";
 
         // When rebuilding, prefer pulling the item list from the DB with a WHERE filter (fast) instead
         // of iterating the full in-memory item_template store (~270k rows).
-        constexpr const char* PET_DEFINITIONS_REBUILD_USE_DB_ITEM_FILTER = "DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter";
+        constexpr char const* PET_DEFINITIONS_REBUILD_USE_DB_ITEM_FILTER = "DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter";
 
         // Optional: also include spell-only minipet summon spells (pet_entry = spellId) if no teaching item exists.
         // Disabled by default; iterates Spell.dbc which can add startup time.
-        constexpr const char* PET_DEFINITIONS_REBUILD_INCLUDE_SPELL_ONLY = "DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly";
+        constexpr char const* PET_DEFINITIONS_REBUILD_INCLUDE_SPELL_ONLY = "DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly";
 
         // Non-destructive maintenance: fill any missing dc_pet_definitions.display_id (and pet_spell_id)
         // by resolving the companion summon spell -> creature -> CreatureDisplayInfo. Unlike the rebuild
         // above this never inserts/truncates/renames; it only persists model ids so not-yet-collected
         // pets still render in the client 3D preview (GetCompanionInfo only knows owned companions).
         // Idempotent: skips rows that already have a display id. Rows it cannot resolve are logged.
-        constexpr const char* PET_DEFINITIONS_BACKFILL_DISPLAY_IDS_ON_STARTUP = "DCCollection.Pets.BackfillDisplayIdsOnStartup";
+        constexpr char const* PET_DEFINITIONS_BACKFILL_DISPLAY_IDS_ON_STARTUP = "DCCollection.Pets.BackfillDisplayIdsOnStartup";
 
         // On a pet-definitions request, push SMSG_CREATURE_QUERY_RESPONSE for each
         // resolved pet creature (unsolicited) so the client caches entry->display
@@ -1312,7 +1334,7 @@ namespace DCCollection
         // Best-effort, off by default. If this does not texture them live, the
         // client does not cache unsolicited responses and the DLL native is needed
         // (see Custom/Documentation/Pet_Form_Preview_Texture_Native.md).
-        constexpr const char* PET_PREWARM_CREATURE_CACHE = "DCCollection.Pets.PreWarmCreatureCacheOnDefinitions";
+        constexpr char const* PET_PREWARM_CREATURE_CACHE = "DCCollection.Pets.PreWarmCreatureCacheOnDefinitions";
     }
 
     // Currency IDs
@@ -3575,7 +3597,7 @@ namespace DCCollection
     }
 
     // Generate simple hash for delta sync comparison
-    inline uint32 GenerateCollectionHash(const std::vector<uint32>& items)
+    inline uint32 GenerateCollectionHash(std::vector<uint32> const& items)
     {
         if (items.empty())
             return 0;
@@ -4663,7 +4685,7 @@ namespace DCCollection
         auto counts = LoadCollectionCounts(accountId);
         auto totals = LoadTotalDefinitions();
 
-        const char* typeNames[] = { "", "mounts", "pets", "toys", "heirlooms", "titles", "transmog" };
+        char const* typeNames[] = { "", "mounts", "pets", "toys", "heirlooms", "titles", "transmog" };
 
         DCAddon::JsonValue stats;
         stats.SetObject();
@@ -4847,7 +4869,7 @@ namespace DCCollection
             DCAddon::Opcode::Collection::SMSG_CURRENCIES, payload);
     }
 
-    void SendShopData(Player* player, const std::string& category,
+    void SendShopData(Player* player, std::string const& category,
         bool omitStatic = false)
     {
         if (!player || !player->GetSession())
@@ -5925,7 +5947,7 @@ namespace DCCollection
     // Use Item Handlers (Summon Mount, Set Title, Summon Heirloom)
     // =======================================================================
 
-    void HandleUseItemMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleUseItemMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -6378,7 +6400,7 @@ namespace DCCollection
     // Message Handlers
     // =======================================================================
 
-    void HandleHandshake(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleHandshake(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
         {
@@ -6392,12 +6414,12 @@ namespace DCCollection
         SendHandshakeAck(player, clientHash);
     }
 
-    void HandleGetFullCollection(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetFullCollection(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendFullCollection(player);
     }
 
-    void HandleSyncCollection(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleSyncCollection(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player || !player->GetSession())
             return;
@@ -6431,7 +6453,7 @@ namespace DCCollection
         SendFullCollection(player);
     }
 
-    void HandleGetStats(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetStats(Player* player, DCAddon::ParsedMessage const& msg)
     {
         // Include recent by default to keep the UI consistent across client versions
         // (older clients may send an empty/non-JSON stats request).
@@ -6446,12 +6468,12 @@ namespace DCCollection
         SendStats(player, includeRecent);
     }
 
-    void HandleGetBonuses(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetBonuses(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendBonuses(player);
     }
 
-    void HandleGetShop(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetShop(Player* player, DCAddon::ParsedMessage const& msg)
     {
         std::string category = "all";
         bool omitStatic = false;
@@ -6474,7 +6496,7 @@ namespace DCCollection
         SendShopData(player, category, omitStatic);
     }
 
-    void HandleBuyItemMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleBuyItemMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
         {
@@ -6489,12 +6511,12 @@ namespace DCCollection
         HandleBuyItem(player, shopId);
     }
 
-    void HandleGetCurrencies(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetCurrencies(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendCurrencies(player);
     }
 
-    void HandleGetShopHistory(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetShopHistory(Player* player, DCAddon::ParsedMessage const& msg)
     {
         uint32 limit = 50;
         uint32 offset = 0;
@@ -6511,7 +6533,7 @@ namespace DCCollection
         SendShopHistory(player, limit, offset);
     }
 
-    void HandleGetWishlist(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetWishlist(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendWishlistData(player);
     }
@@ -6530,112 +6552,229 @@ namespace DCCollection
     // Definitions / Per-Type Sync
     // =======================================================================
 
+    // Source-attribution helpers for collection definitions.
+    //
+    // These were five [&]-capturing lambdas rebuilt on every SendDefinitions
+    // call. They capture nothing from that function - only each other and the
+    // file-scope GetItemSourceIndex() - so they lift out unchanged, and the
+    // caller loses ~100 lines of setup before its first real statement.
+    //
+    // buildSourceForItemCached keeps its function-local static cache. That is
+    // safe because SendDefinitions is only reached from addon opcode handlers,
+    // which run on the world thread, never on a map-update thread.
+
+    static bool looksLikeJson(std::string const& s)
+    {
+        size_t i = s.find_first_not_of(" \t\r\n");
+        if (i == std::string::npos)
+            return false;
+        return s[i] == '{' || s[i] == '[';
+    }
+
+    static DCAddon::JsonValue parseSourceValue(std::string const& sourceStr)
+    {
+        if (!looksLikeJson(sourceStr))
+            return DCAddon::JsonValue(sourceStr);
+
+        DCAddon::JsonValue parsed = DCAddon::JsonParser::Parse(sourceStr);
+        if (parsed.IsObject() || parsed.IsArray())
+            return parsed;
+
+        return DCAddon::JsonValue(sourceStr);
+    }
+
+    static bool isUnknownSource(DCAddon::JsonValue const& v)
+    {
+        if (!v.IsObject())
+            return false;
+        if (!v.HasKey("type"))
+            return false;
+
+        DCAddon::JsonValue const& t = v["type"];
+        return t.IsString() && (t.AsString() == "unknown" || t.AsString() == "");
+    }
+
+    static DCAddon::JsonValue buildSourceForItem(uint32 itemId)
+    {
+        DCAddon::JsonValue src;
+        src.SetObject();
+        src.Set("type", DCAddon::JsonValue("unknown"));
+        if (itemId)
+            src.Set("itemId", DCAddon::JsonValue(itemId));
+
+        if (!itemId)
+            return src;
+
+        // Preloaded in-memory index (replaces the old 4-query-per-item N+1);
+        // same priority order: boss drop -> vendor -> quest -> any drop.
+        ItemSourceIndex const& index = GetItemSourceIndex();
+
+        // Prefer boss drops.
+        if (auto it = index.bossDrop.find(itemId); it != index.bossDrop.end())
+        {
+            src.Set("type", DCAddon::JsonValue("drop"));
+            src.Set("boss", DCAddon::JsonValue(it->second.name));
+            src.Set("creatureEntry", DCAddon::JsonValue(it->second.entry));
+            src.Set("dropRate", DCAddon::JsonValue(it->second.chance));
+            return src;
+        }
+
+        // Vendors.
+        if (auto it = index.vendor.find(itemId); it != index.vendor.end())
+        {
+            src.Set("type", DCAddon::JsonValue("vendor"));
+            src.Set("npc", DCAddon::JsonValue(it->second.name));
+            src.Set("npcEntry", DCAddon::JsonValue(it->second.entry));
+            return src;
+        }
+
+        // Quest rewards.
+        if (auto it = index.quest.find(itemId); it != index.quest.end())
+        {
+            src.Set("type", DCAddon::JsonValue("quest"));
+            src.Set("questId", DCAddon::JsonValue(it->second));
+            return src;
+        }
+
+        // Any creature drop.
+        if (auto it = index.anyDrop.find(itemId); it != index.anyDrop.end())
+        {
+            src.Set("type", DCAddon::JsonValue("drop"));
+            src.Set("boss", DCAddon::JsonValue(it->second.name));
+            src.Set("creatureEntry", DCAddon::JsonValue(it->second.entry));
+            src.Set("dropRate", DCAddon::JsonValue(it->second.chance));
+            return src;
+        }
+
+        return src;
+    }
+
+    // Cache expensive worlddb lookups by itemId across requests.
+    static DCAddon::JsonValue buildSourceForItemCached(uint32 itemId)
+    {
+        if (!itemId)
+            return buildSourceForItem(itemId);
+
+        static std::unordered_map<uint32, DCAddon::JsonValue> cache;
+        auto it = cache.find(itemId);
+        if (it != cache.end())
+            return it->second;
+
+        DCAddon::JsonValue v = buildSourceForItem(itemId);
+        cache.emplace(itemId, v);
+        return v;
+    }
+
+    // Transmog definitions are paged and shaped differently from the
+    // curated collection types: keys are displayId:invType:class:subclass
+    // variants rather than spell ids, and the page is clamped hard because
+    // the full set is very large. It was an early-return branch at the top
+    // of SendDefinitions with no interaction with anything below it.
+    static void SendTransmogDefinitions(Player* player, uint32 offset, uint32 limit,
+        std::string const& typeName)
+    {
+        // Was shared with the caller's non-transmog path; each now owns its own.
+        DCAddon::JsonValue defs;
+        defs.SetObject();
+
+        auto const& appearanceIndex = GetTransmogAppearanceIndexCached();
+        auto const& keys = GetTransmogAppearanceVariantKeysCached();
+
+        // IMPORTANT: Keep these pages small. Transmog definitions can be extremely large,
+        // and (depending on configuration) can trigger expensive metadata work.
+        // Large pages are a common cause of world-thread hitching.
+        if (limit == 0)
+            limit = 250;
+
+        // Hard clamp to keep worst-case per-request time bounded.
+        if (limit > 500)
+            limit = 500;
+
+        // Optional: include per-item "source" info.
+        // This can be expensive (World DB lookups) and is not required for core wardrobe UX.
+        bool includeSources = sConfigMgr->GetOption<bool>("DCCollection.Transmog.Definitions.IncludeSources", false);
+
+        uint32 total = static_cast<uint32>(keys.size());
+        if (offset > total)
+            offset = total;
+
+        uint32 end = std::min<uint32>(total, offset + limit);
+        for (uint32 i = offset; i < end; ++i)
+        {
+            std::string const& k = keys[i];
+
+            // Parse: displayId:invType:class:subclass
+            size_t p1 = k.find(':');
+            size_t p2 = (p1 == std::string::npos) ? std::string::npos : k.find(':', p1 + 1);
+            size_t p3 = (p2 == std::string::npos) ? std::string::npos : k.find(':', p2 + 1);
+            if (p1 == std::string::npos || p2 == std::string::npos || p3 == std::string::npos)
+                continue;
+
+            uint32 displayId = static_cast<uint32>(std::stoul(k.substr(0, p1)));
+            uint32 invType = static_cast<uint32>(std::stoul(k.substr(p1 + 1, p2 - (p1 + 1))));
+            uint32 itemClass = static_cast<uint32>(std::stoul(k.substr(p2 + 1, p3 - (p2 + 1))));
+            uint32 itemSubClass = static_cast<uint32>(std::stoul(k.substr(p3 + 1)));
+
+            auto it = appearanceIndex.find(displayId);
+            if (it == appearanceIndex.end())
+                continue;
+
+            TransmogAppearanceVariant const* def = nullptr;
+            for (auto const& v : it->second)
+            {
+                if (v.inventoryType == invType && v.itemClass == itemClass && v.itemSubClass == itemSubClass)
+                {
+                    def = &v;
+                    break;
+                }
+            }
+            if (!def)
+                continue;
+
+            DCAddon::JsonValue d;
+            d.SetObject();
+            d.Set("itemId", def->canonicalItemId);
+            d.Set("name", def->name);
+            d.Set("rarity", def->quality);
+            d.Set("inventoryType", def->inventoryType);
+            d.Set("weaponType", def->itemClass == ITEM_CLASS_WEAPON ? def->itemSubClass : 0);
+            d.Set("armorType", def->itemClass == ITEM_CLASS_ARMOR ? def->itemSubClass : 0);
+            d.Set("displayId", def->displayId);
+            d.Set("key", k);
+
+            DCAddon::JsonValue itemsArr;
+            itemsArr.SetArray();
+            uint32 pushed = 0;
+            for (uint32 itemId : def->itemIds)
+            {
+                if (pushed >= 25)
+                    break;
+                itemsArr.Push(DCAddon::JsonValue(itemId));
+                ++pushed;
+            }
+            d.Set("itemIds", itemsArr);
+            d.Set("itemIdsTotal", static_cast<uint32>(def->itemIds.size()));
+
+            if (includeSources)
+                d.Set("source", buildSourceForItemCached(def->canonicalItemId));
+            defs.Set(k, d);
+        }
+
+        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
+        msg.Set("type", typeName);
+        msg.Set("definitions", defs);
+        msg.Set("syncVersion", GetTransmogDefinitionsSyncVersionCached());
+        msg.Set("offset", offset);
+        msg.Set("limit", limit);
+        msg.Set("total", total);
+        msg.Set("more", end < total);
+        msg.Send(player);
+    }
+
     void SendDefinitions(Player* player, uint8 type, uint32 offset = 0, uint32 limit = 0)
     {
         if (!player || !player->GetSession())
             return;
-
-        auto const looksLikeJson = [](std::string const& s) -> bool
-        {
-            size_t i = s.find_first_not_of(" \t\r\n");
-            if (i == std::string::npos)
-                return false;
-            return s[i] == '{' || s[i] == '[';
-        };
-
-        auto const parseSourceValue = [&](std::string const& sourceStr) -> DCAddon::JsonValue
-        {
-            if (!looksLikeJson(sourceStr))
-                return DCAddon::JsonValue(sourceStr);
-
-            DCAddon::JsonValue parsed = DCAddon::JsonParser::Parse(sourceStr);
-            if (parsed.IsObject() || parsed.IsArray())
-                return parsed;
-
-            return DCAddon::JsonValue(sourceStr);
-        };
-
-        auto const isUnknownSource = [](DCAddon::JsonValue const& v) -> bool
-        {
-            if (!v.IsObject())
-                return false;
-            if (!v.HasKey("type"))
-                return false;
-
-            DCAddon::JsonValue const& t = v["type"];
-            return t.IsString() && (t.AsString() == "unknown" || t.AsString() == "");
-        };
-
-        auto const buildSourceForItem = [&](uint32 itemId) -> DCAddon::JsonValue
-        {
-            DCAddon::JsonValue src;
-            src.SetObject();
-            src.Set("type", DCAddon::JsonValue("unknown"));
-            if (itemId)
-                src.Set("itemId", DCAddon::JsonValue(itemId));
-
-            if (!itemId)
-                return src;
-
-            // Preloaded in-memory index (replaces the old 4-query-per-item N+1);
-            // same priority order: boss drop -> vendor -> quest -> any drop.
-            ItemSourceIndex const& index = GetItemSourceIndex();
-
-            // Prefer boss drops.
-            if (auto it = index.bossDrop.find(itemId); it != index.bossDrop.end())
-            {
-                src.Set("type", DCAddon::JsonValue("drop"));
-                src.Set("boss", DCAddon::JsonValue(it->second.name));
-                src.Set("creatureEntry", DCAddon::JsonValue(it->second.entry));
-                src.Set("dropRate", DCAddon::JsonValue(it->second.chance));
-                return src;
-            }
-
-            // Vendors.
-            if (auto it = index.vendor.find(itemId); it != index.vendor.end())
-            {
-                src.Set("type", DCAddon::JsonValue("vendor"));
-                src.Set("npc", DCAddon::JsonValue(it->second.name));
-                src.Set("npcEntry", DCAddon::JsonValue(it->second.entry));
-                return src;
-            }
-
-            // Quest rewards.
-            if (auto it = index.quest.find(itemId); it != index.quest.end())
-            {
-                src.Set("type", DCAddon::JsonValue("quest"));
-                src.Set("questId", DCAddon::JsonValue(it->second));
-                return src;
-            }
-
-            // Any creature drop.
-            if (auto it = index.anyDrop.find(itemId); it != index.anyDrop.end())
-            {
-                src.Set("type", DCAddon::JsonValue("drop"));
-                src.Set("boss", DCAddon::JsonValue(it->second.name));
-                src.Set("creatureEntry", DCAddon::JsonValue(it->second.entry));
-                src.Set("dropRate", DCAddon::JsonValue(it->second.chance));
-                return src;
-            }
-
-            return src;
-        };
-
-        // Cache expensive worlddb lookups by itemId across requests.
-        auto const buildSourceForItemCached = [&](uint32 itemId) -> DCAddon::JsonValue
-        {
-            if (!itemId)
-                return buildSourceForItem(itemId);
-
-            static std::unordered_map<uint32, DCAddon::JsonValue> cache;
-            auto it = cache.find(itemId);
-            if (it != cache.end())
-                return it->second;
-
-            DCAddon::JsonValue v = buildSourceForItem(itemId);
-            cache.emplace(itemId, v);
-            return v;
-        };
 
         std::string typeName;
         switch (static_cast<CollectionType>(type))
@@ -6654,98 +6793,7 @@ namespace DCCollection
 
         if (static_cast<CollectionType>(type) == CollectionType::TRANSMOG)
         {
-            auto const& appearanceIndex = GetTransmogAppearanceIndexCached();
-            auto const& keys = GetTransmogAppearanceVariantKeysCached();
-
-            // IMPORTANT: Keep these pages small. Transmog definitions can be extremely large,
-            // and (depending on configuration) can trigger expensive metadata work.
-            // Large pages are a common cause of world-thread hitching.
-            if (limit == 0)
-                limit = 250;
-
-            // Hard clamp to keep worst-case per-request time bounded.
-            if (limit > 500)
-                limit = 500;
-
-            // Optional: include per-item "source" info.
-            // This can be expensive (World DB lookups) and is not required for core wardrobe UX.
-            bool includeSources = sConfigMgr->GetOption<bool>("DCCollection.Transmog.Definitions.IncludeSources", false);
-
-            uint32 total = static_cast<uint32>(keys.size());
-            if (offset > total)
-                offset = total;
-
-            uint32 end = std::min<uint32>(total, offset + limit);
-            for (uint32 i = offset; i < end; ++i)
-            {
-                std::string const& k = keys[i];
-
-                // Parse: displayId:invType:class:subclass
-                size_t p1 = k.find(':');
-                size_t p2 = (p1 == std::string::npos) ? std::string::npos : k.find(':', p1 + 1);
-                size_t p3 = (p2 == std::string::npos) ? std::string::npos : k.find(':', p2 + 1);
-                if (p1 == std::string::npos || p2 == std::string::npos || p3 == std::string::npos)
-                    continue;
-
-                uint32 displayId = static_cast<uint32>(std::stoul(k.substr(0, p1)));
-                uint32 invType = static_cast<uint32>(std::stoul(k.substr(p1 + 1, p2 - (p1 + 1))));
-                uint32 itemClass = static_cast<uint32>(std::stoul(k.substr(p2 + 1, p3 - (p2 + 1))));
-                uint32 itemSubClass = static_cast<uint32>(std::stoul(k.substr(p3 + 1)));
-
-                auto it = appearanceIndex.find(displayId);
-                if (it == appearanceIndex.end())
-                    continue;
-
-                TransmogAppearanceVariant const* def = nullptr;
-                for (auto const& v : it->second)
-                {
-                    if (v.inventoryType == invType && v.itemClass == itemClass && v.itemSubClass == itemSubClass)
-                    {
-                        def = &v;
-                        break;
-                    }
-                }
-                if (!def)
-                    continue;
-
-                DCAddon::JsonValue d;
-                d.SetObject();
-                d.Set("itemId", def->canonicalItemId);
-                d.Set("name", def->name);
-                d.Set("rarity", def->quality);
-                d.Set("inventoryType", def->inventoryType);
-                d.Set("weaponType", def->itemClass == ITEM_CLASS_WEAPON ? def->itemSubClass : 0);
-                d.Set("armorType", def->itemClass == ITEM_CLASS_ARMOR ? def->itemSubClass : 0);
-                d.Set("displayId", def->displayId);
-                d.Set("key", k);
-
-                DCAddon::JsonValue itemsArr;
-                itemsArr.SetArray();
-                uint32 pushed = 0;
-                for (uint32 itemId : def->itemIds)
-                {
-                    if (pushed >= 25)
-                        break;
-                    itemsArr.Push(DCAddon::JsonValue(itemId));
-                    ++pushed;
-                }
-                d.Set("itemIds", itemsArr);
-                d.Set("itemIdsTotal", static_cast<uint32>(def->itemIds.size()));
-
-                if (includeSources)
-                    d.Set("source", buildSourceForItemCached(def->canonicalItemId));
-                defs.Set(k, d);
-            }
-
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
-            msg.Set("type", typeName);
-            msg.Set("definitions", defs);
-            msg.Set("syncVersion", GetTransmogDefinitionsSyncVersionCached());
-            msg.Set("offset", offset);
-            msg.Set("limit", limit);
-            msg.Set("total", total);
-            msg.Set("more", end < total);
-            msg.Send(player);
+            SendTransmogDefinitions(player, offset, limit, typeName);
             return;
         }
 
@@ -7902,7 +7950,7 @@ namespace DCCollection
             PreWarmPetCreatureCache(player);
     }
 
-    void HandleGetDefinitionsMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetDefinitionsMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
         {
@@ -8003,7 +8051,7 @@ namespace DCCollection
             uint32 serverSyncVersion = GetCuratedDefinitionsSyncVersion(static_cast<CollectionType>(type));
             if (serverSyncVersion != 0 && serverSyncVersion == clientSyncVersion)
             {
-                const char* typeName = "";
+                char const* typeName = "";
                 switch (static_cast<CollectionType>(type))
                 {
                     case CollectionType::MOUNT:    typeName = "mounts"; break;
@@ -8065,7 +8113,7 @@ namespace DCCollection
             SendDefinitions(player, type, offset, limit);
     }
 
-    void HandleGetCollectionMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetCollectionMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
         {
@@ -8118,7 +8166,7 @@ namespace DCCollection
             SendCollection(player, type);
     }
 
-    void HandleAddWishlistMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleAddWishlistMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
         {
@@ -8134,7 +8182,7 @@ namespace DCCollection
         HandleAddWishlist(player, type, entryId);
     }
 
-    void HandleRemoveWishlistMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleRemoveWishlistMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
         {
@@ -8150,7 +8198,7 @@ namespace DCCollection
         HandleRemoveWishlist(player, type, entryId);
     }
 
-    void HandleSetFavoriteMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleSetFavoriteMessage(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
             return;
@@ -8172,7 +8220,12 @@ namespace DCCollection
     class CollectionPlayerScript : public PlayerScript
     {
     public:
-        CollectionPlayerScript() : PlayerScript("dc_collection_player") {}
+        CollectionPlayerScript() : PlayerScript("dc_collection_player",
+        {
+            PLAYERHOOK_ON_AFTER_SET_VISIBLE_ITEM_SLOT, PLAYERHOOK_ON_EQUIP, PLAYERHOOK_ON_LEARN_SPELL,
+            PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_LOOT_ITEM, PLAYERHOOK_ON_QUEST_REWARD_ITEM,
+            PLAYERHOOK_ON_UPDATE
+        }) {}
 
         struct CachedTransmogRow
         {
@@ -8322,7 +8375,7 @@ namespace DCCollection
 
         void OnPlayerLogin(Player* player) override
         {
-            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+            if (!IsModuleEnabled())
                 return;
 
             CacheMountedState(player);
@@ -8410,7 +8463,7 @@ namespace DCCollection
             if (!player)
                 return;
 
-            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+            if (!IsModuleEnabled())
                 return;
 
             if (HasMountedStateChanged(player))
@@ -8419,12 +8472,12 @@ namespace DCCollection
 
         void OnPlayerLearnSpell(Player* player, uint32 spellId) override
         {
-            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+            if (!IsModuleEnabled())
                 return;
 
             // Check if this is a mount or pet spell
             // Auto-add to collection if it's a mount/pet
-            const SpellInfo* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
             if (!spellInfo)
                 return;
 
@@ -8596,7 +8649,7 @@ namespace DCCollection
             if (!player || !it)
                 return;
 
-            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+            if (!IsModuleEnabled())
                 return;
 
             ItemTemplate const* proto = it->GetTemplate();
@@ -8618,7 +8671,7 @@ namespace DCCollection
             if (!player || !item)
                 return;
 
-            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+            if (!IsModuleEnabled())
                 return;
 
             if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_LOOT, false))
@@ -8634,7 +8687,7 @@ namespace DCCollection
             if (!player || !item)
                 return;
 
-            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+            if (!IsModuleEnabled())
                 return;
 
             if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_QUEST_REWARD, false))
@@ -8695,7 +8748,7 @@ namespace DCCollection
 
             Player* player = const_cast<Player*>(owner);
 
-            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+            if (!IsModuleEnabled())
                 return;
 
             if (sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_CREATE, true))
@@ -8719,6 +8772,7 @@ namespace DCCollection
         {
             // Register module as enabled/disabled based on config
             bool enabled = sConfigMgr->GetOption<bool>(Config::ENABLED, true);
+            ModuleEnabledFlag().store(enabled, std::memory_order_relaxed);
             DCAddon::MessageRouter::Instance().SetModuleEnabled(MODULE, enabled);
 
             if (enabled)

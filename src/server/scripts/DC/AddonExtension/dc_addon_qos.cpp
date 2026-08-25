@@ -46,6 +46,7 @@
 #include "ItemTemplate.h"
 #include "Group.h"
 #include "Map.h"
+#include "DC/AddonExtension/dc_addon_spell_template.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 #include <atomic>
@@ -66,7 +67,7 @@
 namespace DCQoS
 {
     // Module identifier - must match client-side Protocol.lua
-    constexpr const char* MODULE = "QOS";
+    constexpr char const* MODULE = "QOS";
 
     // Opcodes - must match client-side Protocol.lua
     namespace Opcode
@@ -439,8 +440,8 @@ namespace DCQoS
     // Configuration keys
     namespace Config
     {
-        constexpr const char* ENABLED = "DC.AddonProtocol.QoS.Enable";
-        constexpr const char* TOOLTIP_TRANSPORT_DEBUG =
+        constexpr char const* ENABLED = "DC.AddonProtocol.QoS.Enable";
+        constexpr char const* TOOLTIP_TRANSPORT_DEBUG =
             "DC.QoS.TooltipTransport.Debug";
     }
 
@@ -2043,7 +2044,7 @@ namespace DCQoS
     }
 
     static bool CollectRelayRecipients(Player* sender,
-                                       const std::string& requestedDistribution,
+                                       std::string const& requestedDistribution,
                                        std::string& resolvedDistribution,
                                        std::vector<Player*>& recipients,
                                        std::string& error)
@@ -2624,7 +2625,7 @@ namespace DCQoS
         }));
     }
 
-    void SavePlayerSetting(Player* player, const std::string& key, const std::string& value)
+    void SavePlayerSetting(Player* player, std::string const& key, std::string const& value)
     {
         if (!player)
             return;
@@ -2773,7 +2774,7 @@ namespace DCQoS
         if (!player || !player->GetSession())
             return;
 
-        const ItemTemplate* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+        ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
         if (!itemTemplate)
         {
             // Item not found - send error
@@ -2901,7 +2902,7 @@ namespace DCQoS
         return nullptr;
     }
 
-    void SendNpcInfo(Player* player, const std::string& guidStr)
+    void SendNpcInfo(Player* player, std::string const& guidStr)
     {
         if (!player || !player->GetSession())
             return;
@@ -2928,7 +2929,7 @@ namespace DCQoS
 
         uint32 entry = guid.GetEntry();
 
-        const CreatureTemplate* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry);
+        CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry);
         if (!creatureTemplate)
         {
             DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_NPC_INFO);
@@ -2976,7 +2977,7 @@ namespace DCQoS
         if (!player || !player->GetSession())
             return;
 
-        const SpellInfo* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
         if (!spellInfo)
         {
             DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SPELL_INFO);
@@ -3008,31 +3009,18 @@ namespace DCQoS
         msg.Send(player);
     }
 
-    static std::string FormatSpellSeconds(uint32 milliseconds)
-    {
-        std::ostringstream out;
-        out << std::fixed << std::setprecision((milliseconds % 1000) != 0 ? 1 : 0)
-            << (static_cast<double>(milliseconds) / 1000.0)
-            << " sec";
-        return out.str();
-    }
-
-    static std::string GetPowerTypeLabel(uint32 powerType)
-    {
-        switch (powerType)
-        {
-            case POWER_MANA: return "Mana";
-            case POWER_RAGE: return "Rage";
-            case POWER_FOCUS: return "Focus";
-            case POWER_ENERGY: return "Energy";
-            case POWER_HAPPINESS: return "Happiness";
-            case POWER_RUNE: return "Rune";
-            case POWER_RUNIC_POWER: return "Runic Power";
-            case POWER_HEALTH: return "Health";
-            default: return "Power";
-        }
-    }
-
+    // Formatting primitives moved to dc_addon_spell_template.h so the
+    // .stresstest harness can exercise these instead of private copies.
+    // Pulled into DCQoS unqualified: every existing call site is unchanged.
+    using DCAddon::SpellTemplate::ExtractLastTemplateQuantity;
+    using DCAddon::SpellTemplate::FormatDurationTemplate;
+    using DCAddon::SpellTemplate::FormatSpellSeconds;
+    using DCAddon::SpellTemplate::FormatTemplateNumericValue;
+    using DCAddon::SpellTemplate::GetPowerTypeLabel;
+    using DCAddon::SpellTemplate::HasUnresolvedTemplateTokens;
+    using DCAddon::SpellTemplate::TrimTemplateText;
+    using DCAddon::SpellTemplate::TryParseLeadingDouble;
+    using DCAddon::SpellTemplate::TryParseStrictDouble;
     // Inline color for dynamic values in description bodies. The Lua tooltip
     // renderer honors |c escapes; the DLL/engine path flattens them to the
     // line color, so this is safe on both transports. The hex must avoid
@@ -3469,26 +3457,6 @@ namespace DCQoS
         return out.str();
     }
 
-    static std::string FormatDurationTemplate(uint32 milliseconds)
-    {
-        if (milliseconds == 0)
-            return "0 sec";
-
-        if (milliseconds % 60000 == 0)
-        {
-            uint32 minutes = milliseconds / 60000;
-            return std::to_string(minutes) + " min";
-        }
-
-        if (milliseconds % 1000 == 0)
-        {
-            uint32 seconds = milliseconds / 1000;
-            return std::to_string(seconds) + " sec";
-        }
-
-        return FormatSpellSeconds(milliseconds);
-    }
-
     static TooltipAmountRange GetTemplateScaledAmountRange(Player* player,
                                                            SpellInfo const* spellInfo,
                                                            SpellEffectInfo const& effect)
@@ -3662,72 +3630,6 @@ namespace DCQoS
         return "";
     }
 
-    static std::string TrimTemplateText(std::string value)
-    {
-        auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
-
-        while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
-            value.erase(value.begin());
-        while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
-            value.pop_back();
-
-        return value;
-    }
-
-    static bool TryParseStrictDouble(std::string const& text, double& out)
-    {
-        std::string trimmed = TrimTemplateText(text);
-        if (trimmed.empty())
-            return false;
-
-        try
-        {
-            std::size_t index = 0;
-            out = std::stod(trimmed, &index);
-            return index == trimmed.size();
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-    static bool TryParseLeadingDouble(std::string const& text, double& out)
-    {
-        std::string trimmed = TrimTemplateText(text);
-        if (trimmed.empty())
-            return false;
-
-        try
-        {
-            std::size_t index = 0;
-            out = std::stod(trimmed, &index);
-            return index > 0;
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-    static std::string FormatTemplateNumericValue(double value)
-    {
-        double rounded = std::round(value);
-        if (std::fabs(value - rounded) < 0.0001)
-            return std::to_string(static_cast<int64>(rounded));
-
-        std::ostringstream out;
-        out << std::fixed << std::setprecision(2) << value;
-
-        std::string text = out.str();
-        while (!text.empty() && text.back() == '0')
-            text.pop_back();
-        if (!text.empty() && text.back() == '.')
-            text.pop_back();
-
-        return text.empty() ? "0" : text;
-    }
-
     static bool TryEvaluateTemplateOperand(Player* player,
                                            SpellInfo const* spellInfo,
                                            std::string const& operand,
@@ -3884,40 +3786,6 @@ namespace DCQoS
 
         out = FormatTemplateNumericValue(result);
         return true;
-    }
-
-    static double ExtractLastTemplateQuantity(std::string const& renderedText)
-    {
-        for (std::size_t pos = renderedText.size(); pos > 0; --pos)
-        {
-            if (!std::isdigit(static_cast<unsigned char>(renderedText[pos - 1])))
-                continue;
-
-            std::size_t end = pos;
-            std::size_t start = pos - 1;
-            while (start > 0)
-            {
-                char c = renderedText[start - 1];
-                if (std::isdigit(static_cast<unsigned char>(c))
-                    || c == '.' || c == '-' || c == '+')
-                {
-                    --start;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            double value = 0.0;
-            if (TryParseStrictDouble(renderedText.substr(start, end - start),
-                                     value))
-            {
-                return value;
-            }
-        }
-
-        return 2.0;
     }
 
     static std::string RenderSpellDescriptionTemplate(Player* player,
@@ -4088,43 +3956,6 @@ namespace DCQoS
         }
 
         return rendered;
-    }
-
-    static bool HasUnresolvedTemplateTokens(std::string const& text)
-    {
-        for (std::size_t i = 0; i + 1 < text.size(); ++i)
-        {
-            if (text[i] != '$')
-                continue;
-
-            char token = text[i + 1];
-            if (token == '$')
-            {
-                ++i;
-                continue;
-            }
-
-            if (token == '{' || token == 'l'
-                || std::isdigit(static_cast<unsigned char>(token)))
-            {
-                return true;
-            }
-
-            if (std::isalpha(static_cast<unsigned char>(token)))
-            {
-                if (i + 2 < text.size())
-                {
-                    char next = text[i + 2];
-                    if (std::isalpha(static_cast<unsigned char>(next))
-                        || std::isdigit(static_cast<unsigned char>(next)))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
     }
 
     static uint32 GetTooltipTickCount(SpellInfo const* spellInfo, SpellEffectInfo const& effect)
@@ -4742,7 +4573,7 @@ namespace DCQoS
         return "";
     }
 
-    void SendNotification(Player* player, const std::string& type, const std::string& message)
+    void SendNotification(Player* player, std::string const& type, std::string const& message)
     {
         if (!player || !player->GetSession())
             return;
@@ -4757,12 +4588,12 @@ namespace DCQoS
     // Message Handlers
     // =======================================================================
 
-    void HandleSyncSettings(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleSyncSettings(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         SendSettingsSync(player);
     }
 
-    void HandleUpdateSetting(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleUpdateSetting(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -4799,7 +4630,7 @@ namespace DCQoS
         }
     }
 
-    void HandleGetItemInfo(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetItemInfo(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -4867,7 +4698,7 @@ namespace DCQoS
         }
     }
 
-    void HandleGetNpcInfo(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetNpcInfo(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -4994,7 +4825,7 @@ namespace DCQoS
         RelayPingPayload(player, requestedDistribution, payload);
     }
 
-    void HandleGetSpellInfo(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleGetSpellInfo(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -5017,7 +4848,7 @@ namespace DCQoS
         }
     }
 
-    void HandleRequestSpellTooltipEnrichment(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleRequestSpellTooltipEnrichment(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -5060,7 +4891,7 @@ namespace DCQoS
             contextHash, protocolRequestId);
     }
 
-    void HandleRequestFeature(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleRequestFeature(Player* player, DCAddon::ParsedMessage const& msg)
     {
         if (!player)
             return;
@@ -5151,7 +4982,7 @@ namespace DCQoS
         response.Send(player);
     }
 
-    void HandleCollectAllMail(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleCollectAllMail(Player* player, DCAddon::ParsedMessage const& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
@@ -5348,7 +5179,10 @@ private:
 class DCQoSPlayerScript : public PlayerScript
 {
 public:
-    DCQoSPlayerScript() : PlayerScript("DCQoSPlayerScript") {}
+    DCQoSPlayerScript() : PlayerScript("DCQoSPlayerScript",
+    {
+        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_MAP_CHANGED, PLAYERHOOK_ON_UPDATE_ZONE
+    }) {}
 
     void OnPlayerLogin(Player* player) override
     {

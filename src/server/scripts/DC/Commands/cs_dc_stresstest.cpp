@@ -39,6 +39,8 @@
 #include "DC/AddonExtension/dc_addon_death_markers.h"
 #include "DC/AddonExtension/dc_addon_namespace.h"
 #include "DC/AddonExtension/dc_addon_utils.h"
+#include "DC/AddonExtension/dc_addon_spell_template.h"
+#include "DC/CrossSystem/LeaderboardUtils.h"
 #include <chrono>
 #include <array>
 #include <charconv>
@@ -221,7 +223,7 @@ namespace DCPerfTest
     TimingResult TestGreatVaultSimulation(uint32 playerCount);
 
     // Calculate percentile from sorted vector
-    uint64 GetPercentile(const std::vector<uint64>& sortedTimes, float percentile)
+    uint64 GetPercentile(std::vector<uint64> const& sortedTimes, float percentile)
     {
         if (sortedTimes.empty())
             return 0;
@@ -802,7 +804,7 @@ namespace DCPerfTest
                 result.testName += " [actual: " + std::to_string(fetchedRows) + "]";
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -843,7 +845,7 @@ namespace DCPerfTest
             result.p95Us = GetPercentile(times, 95.0f);
             result.p99Us = GetPercentile(times, 99.0f);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -907,7 +909,7 @@ namespace DCPerfTest
             result.p99Display = avgDisplay;
             result.avgSortNs = (static_cast<uint64>(result.totalUs) * 1000ULL) / batchSize;
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -925,7 +927,7 @@ namespace DCPerfTest
         std::vector<uint64> times;
 
         // List of common DC tables to test (skip missing tables to avoid DB abort).
-        const char* dcTables[] = {
+        char const* dcTables[] = {
             "dc_character_prestige",
             "dc_item_upgrades",
             "dc_mount_collection",
@@ -980,7 +982,7 @@ namespace DCPerfTest
                 result.error = "No DC tables found (skipped " + std::to_string(skipped) + ")";
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -999,7 +1001,7 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(iterations);
 
-        const char* tables[] = {
+        char const* tables[] = {
             "characters",
             "character_inventory",
             "character_queststatus",
@@ -1065,7 +1067,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -1084,7 +1086,7 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(iterations);
 
-        const char* tables[] = {
+        char const* tables[] = {
             "creature_template",
             "item_template",
             "quest_template",
@@ -1150,7 +1152,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -1195,7 +1197,7 @@ namespace DCPerfTest
 
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -1236,7 +1238,7 @@ namespace DCPerfTest
 
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -1483,7 +1485,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -1496,7 +1498,7 @@ namespace DCPerfTest
     // Report Printing
     // =========================================================================
 
-    void PrintResult(ChatHandler* handler, const TimingResult& result)
+    void PrintResult(ChatHandler* handler, TimingResult const& result)
     {
         if (!result.success)
         {
@@ -1688,7 +1690,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -1708,7 +1710,7 @@ namespace DCPerfTest
         times.reserve(iterations);
 
         // Cycle through different collection tables (support both current and legacy names).
-        const char* tables[] = {
+        char const* tables[] = {
             "dc_mount_collection",
             "dc_pet_collection",
             "dc_heirloom_collection",
@@ -1761,7 +1763,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -2356,17 +2358,6 @@ namespace DCPerfTest
         return availability;
     }
 
-    std::string ToLowerForStress(std::string value)
-    {
-        std::transform(value.begin(), value.end(), value.begin(),
-            [](unsigned char ch)
-            {
-                return static_cast<char>(std::tolower(ch));
-            });
-
-        return value;
-    }
-
     uint32 ClampStressValue(uint32 value, uint32 fallback, uint32 minValue,
         uint32 maxValue)
     {
@@ -2404,35 +2395,6 @@ namespace DCPerfTest
             text.resize(targetLength);
 
         return text;
-    }
-
-    std::string GetLeaderboardClassNameForStress(uint8 classId)
-    {
-        switch (classId)
-        {
-            case 1:
-                return "WARRIOR";
-            case 2:
-                return "PALADIN";
-            case 3:
-                return "HUNTER";
-            case 4:
-                return "ROGUE";
-            case 5:
-                return "PRIEST";
-            case 6:
-                return "DEATHKNIGHT";
-            case 7:
-                return "SHAMAN";
-            case 8:
-                return "MAGE";
-            case 9:
-                return "WARLOCK";
-            case 11:
-                return "DRUID";
-            default:
-                return "UNKNOWN";
-        }
     }
 
     std::string BuildAoeItemsExtraForStress(uint32 qPoor, uint32 qCommon,
@@ -2503,7 +2465,7 @@ namespace DCPerfTest
     bool ApplyCollectionSampleValue(CollectionStressSample& sample,
         std::string const& rawKey, uint32 value, bool totals)
     {
-        std::string const key = ToLowerForStress(rawKey);
+        std::string const key = DCUtils::ToLower(rawKey);
 
         auto setValue = [&](uint32& countField, uint32& totalField)
         {
@@ -2563,9 +2525,6 @@ namespace DCPerfTest
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }
 
-    inline void AppendUnsignedJsonNumberForStress(std::string& out,
-        uint32 value);
-
     uint32 LoadTopAccountIdFromTable(char const* tableName)
     {
         if (!DC::DbSchema::CharacterTableExists(tableName)
@@ -2622,7 +2581,7 @@ namespace DCPerfTest
         auto payload = std::make_shared<std::string>();
         payload->reserve(32 + (appearances.size() * 8));
         payload->append("{\"count\":");
-        AppendUnsignedJsonNumberForStress(*payload,
+        DCAddon::Utils::AppendUnsignedJsonNumber(*payload,
             static_cast<uint32>(appearances.size()));
         payload->append(",\"appearances\":[");
         for (std::size_t index = 0; index < appearances.size(); ++index)
@@ -2630,7 +2589,7 @@ namespace DCPerfTest
             if (index > 0)
                 payload->push_back(',');
 
-            AppendUnsignedJsonNumberForStress(*payload, appearances[index]);
+            DCAddon::Utils::AppendUnsignedJsonNumber(*payload, appearances[index]);
         }
         payload->append("]}");
         sample.payload = payload;
@@ -2917,7 +2876,7 @@ namespace DCPerfTest
                         Field* fields = result->Fetch();
                         LeaderboardStressRowSample rowSample;
                         rowSample.name = fields[0].Get<std::string>();
-                        rowSample.className = GetLeaderboardClassNameForStress(
+                        rowSample.className = DarkChaos::Leaderboard::GetClassNameFromId(
                             fields[1].Get<uint8>());
                         rowSample.score = std::max<uint32>(1,
                             fields[2].Get<uint32>());
@@ -2966,7 +2925,7 @@ namespace DCPerfTest
                         uint32 wins = fields[3].Get<uint32>();
                         uint32 losses = fields[4].Get<uint32>();
                         rowSample.name = fields[0].Get<std::string>();
-                        rowSample.className = GetLeaderboardClassNameForStress(
+                        rowSample.className = DarkChaos::Leaderboard::GetClassNameFromId(
                             fields[1].Get<uint8>());
                         rowSample.score = std::max<uint32>(1,
                             fields[2].Get<uint32>());
@@ -3025,7 +2984,7 @@ namespace DCPerfTest
                             kdRatio);
 
                         rowSample.name = fields[0].Get<std::string>();
-                        rowSample.className = GetLeaderboardClassNameForStress(
+                        rowSample.className = DarkChaos::Leaderboard::GetClassNameFromId(
                             fields[1].Get<uint8>());
                         rowSample.score = std::max<uint32>(1, kills);
                         rowSample.hasKD = true;
@@ -3071,7 +3030,7 @@ namespace DCPerfTest
                         Field* fields = result->Fetch();
                         LeaderboardStressRowSample rowSample;
                         rowSample.name = fields[0].Get<std::string>();
-                        rowSample.className = GetLeaderboardClassNameForStress(
+                        rowSample.className = DarkChaos::Leaderboard::GetClassNameFromId(
                             fields[1].Get<uint8>());
                         rowSample.score = std::max<uint32>(1,
                             fields[2].Get<uint32>());
@@ -3124,7 +3083,7 @@ namespace DCPerfTest
                         Field* fields = result->Fetch();
                         LeaderboardStressRowSample rowSample;
                         rowSample.name = fields[0].Get<std::string>();
-                        rowSample.className = GetLeaderboardClassNameForStress(
+                        rowSample.className = DarkChaos::Leaderboard::GetClassNameFromId(
                             fields[1].Get<uint8>());
                         rowSample.score = std::max<uint32>(1,
                             fields[2].Get<uint32>());
@@ -4824,34 +4783,8 @@ namespace DCPerfTest
         return roundTrip;
     }
 
-    inline uint32 MixCollectionHashForStress(uint32 hash, uint32 item)
-    {
-        hash ^= (item * 2654435761u);
-        return (hash << 13) | (hash >> 19);
-    }
-
     // JSON emitters centralized in DCAddon::Utils; thin forwarders keep the
     // stress-harness call sites (and the forward decl above) intact.
-    inline void AppendUnsignedJsonNumberForStress(std::string& out, uint32 value)
-    {
-        DCAddon::Utils::AppendUnsignedJsonNumber(out, value);
-    }
-
-    inline void AppendSignedJsonNumberForStress(std::string& out, int32 value)
-    {
-        DCAddon::Utils::AppendSignedJsonNumber(out, value);
-    }
-
-    inline void AppendFloatingJsonNumberForStress(std::string& out, double value)
-    {
-        DCAddon::Utils::AppendFloatingJsonNumber(out, value);
-    }
-
-    inline void AppendJsonKeyForStress(std::string& out, char const* key)
-    {
-        DCAddon::Utils::AppendJsonKey(out, key);
-    }
-
     static void AppendSequentialJsonArrayForStress(std::string& out,
         uint32 start, uint32 count, uint32 step)
     {
@@ -4861,7 +4794,7 @@ namespace DCPerfTest
             if (index > 0)
                 out.push_back(',');
 
-            AppendUnsignedJsonNumberForStress(out, start + (index * step));
+            DCAddon::Utils::AppendUnsignedJsonNumber(out, start + (index * step));
         }
         out.push_back(']');
     }
@@ -4870,12 +4803,12 @@ namespace DCPerfTest
         uint32 owned, uint32 total)
     {
         out += "{\"owned\":";
-        AppendUnsignedJsonNumberForStress(out, owned);
+        DCAddon::Utils::AppendUnsignedJsonNumber(out, owned);
         out += ",\"percent\":";
-        AppendFloatingJsonNumberForStress(out,
+        DCAddon::Utils::AppendFloatingJsonNumber(out,
             total > 0 ? (static_cast<double>(owned) * 100.0) / total : 0.0);
         out += ",\"total\":";
-        AppendUnsignedJsonNumberForStress(out, total);
+        DCAddon::Utils::AppendUnsignedJsonNumber(out, total);
         out.push_back('}');
     }
 
@@ -4897,50 +4830,50 @@ namespace DCPerfTest
 
         json += "{\"bonuses\":{";
         json += "\"mountSpeedBonus\":";
-        AppendSignedJsonNumberForStress(json,
+        DCAddon::Utils::AppendSignedJsonNumber(json,
             static_cast<int32>(std::min<uint32>(20, mountCount / 8)));
         json += ",\"mountsToNext\":";
-        AppendSignedJsonNumberForStress(json, mountsToNext);
+        DCAddon::Utils::AppendSignedJsonNumber(json, mountsToNext);
         json += ",\"nextThreshold\":";
-        AppendUnsignedJsonNumberForStress(json, nextThreshold);
+        DCAddon::Utils::AppendUnsignedJsonNumber(json, nextThreshold);
         json += "},\"collections\":{";
 
-        AppendJsonKeyForStress(json, "heirlooms");
+        DCAddon::Utils::AppendJsonKey(json, "heirlooms");
         AppendSequentialJsonArrayForStress(json, heirloomStart, heirloomCount, 1);
         json += ",";
-        AppendJsonKeyForStress(json, "mounts");
+        DCAddon::Utils::AppendJsonKey(json, "mounts");
         AppendSequentialJsonArrayForStress(json, mountStart, mountCount, 3);
         json += ",";
-        AppendJsonKeyForStress(json, "pets");
+        DCAddon::Utils::AppendJsonKey(json, "pets");
         AppendSequentialJsonArrayForStress(json, petStart, petCount, 2);
         json += ",";
-        AppendJsonKeyForStress(json, "titles");
+        DCAddon::Utils::AppendJsonKey(json, "titles");
         AppendSequentialJsonArrayForStress(json, titleStart, titleCount, 1);
         json += ",";
-        AppendJsonKeyForStress(json, "transmog");
+        DCAddon::Utils::AppendJsonKey(json, "transmog");
         AppendSequentialJsonArrayForStress(json, transmogStart, transmogCount, 1);
 
         json += "},\"hash\":";
-        AppendUnsignedJsonNumberForStress(json, serverHash);
+        DCAddon::Utils::AppendUnsignedJsonNumber(json, serverHash);
         json += ",\"stats\":{";
 
-        AppendJsonKeyForStress(json, "heirlooms");
+        DCAddon::Utils::AppendJsonKey(json, "heirlooms");
         AppendCollectionStatsJsonForStress(json, heirloomCount, heirloomTotal);
         json += ",";
-        AppendJsonKeyForStress(json, "mounts");
+        DCAddon::Utils::AppendJsonKey(json, "mounts");
         AppendCollectionStatsJsonForStress(json, mountCount, mountTotal);
         json += ",";
-        AppendJsonKeyForStress(json, "pets");
+        DCAddon::Utils::AppendJsonKey(json, "pets");
         AppendCollectionStatsJsonForStress(json, petCount, petTotal);
         json += ",";
-        AppendJsonKeyForStress(json, "titles");
+        DCAddon::Utils::AppendJsonKey(json, "titles");
         AppendCollectionStatsJsonForStress(json, titleCount, titleTotal);
         json += ",";
-        AppendJsonKeyForStress(json, "transmog");
+        DCAddon::Utils::AppendJsonKey(json, "transmog");
         AppendCollectionStatsJsonForStress(json, transmogCount, transmogTotal);
 
         json += "},\"timestamp\":";
-        AppendUnsignedJsonNumberForStress(json, timestamp);
+        DCAddon::Utils::AppendUnsignedJsonNumber(json, timestamp);
         json.push_back('}');
         return json;
     }
@@ -4991,7 +4924,7 @@ namespace DCPerfTest
             if (!found)
                 return hasAnyItems ? hash : 0;
 
-            hash = MixCollectionHashForStress(hash, nextItem);
+            hash = DCAddon::Utils::MixCollectionHash(hash, nextItem);
             hasAnyItems = true;
 
             auto& chosen = streams[nextStream];
@@ -5216,7 +5149,7 @@ namespace DCPerfTest
             result.throughputCount = result.iterations * 5;
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -5264,7 +5197,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(timesNs.size());
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -5316,7 +5249,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(timesNs.size());
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -5367,7 +5300,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(timesNs.size());
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -5579,7 +5512,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(timesNs.size());
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -5637,7 +5570,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(timesNs.size());
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -5742,7 +5675,7 @@ namespace DCPerfTest
             result.throughputCount = result.iterations * 5;
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -5806,38 +5739,13 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(timesNs.size());
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
         }
 
         return result;
-    }
-
-    static std::string FormatSpellSecondsForStress(uint32 milliseconds)
-    {
-        std::ostringstream out;
-        out << std::fixed << std::setprecision((milliseconds % 1000) != 0 ? 1 : 0)
-            << (static_cast<double>(milliseconds) / 1000.0)
-            << " sec";
-        return out.str();
-    }
-
-    static char const* GetPowerTypeLabelForStress(uint32 powerType)
-    {
-        switch (powerType)
-        {
-            case POWER_MANA: return "Mana";
-            case POWER_RAGE: return "Rage";
-            case POWER_FOCUS: return "Focus";
-            case POWER_ENERGY: return "Energy";
-            case POWER_HAPPINESS: return "Happiness";
-            case POWER_RUNE: return "Rune";
-            case POWER_RUNIC_POWER: return "Runic Power";
-            case POWER_HEALTH: return "Health";
-            default: return "Power";
-        }
     }
 
     static std::vector<std::string> WrapTooltipTextForStress(std::string const& text,
@@ -5884,84 +5792,6 @@ namespace DCPerfTest
             return spellEntry->ToolTip[0];
 
         return "";
-    }
-
-    static std::string FormatDurationTemplateForStress(uint32 milliseconds)
-    {
-        if (milliseconds == 0)
-            return "0 sec";
-
-        if (milliseconds % 60000 == 0)
-            return std::to_string(milliseconds / 60000) + " min";
-
-        if (milliseconds % 1000 == 0)
-            return std::to_string(milliseconds / 1000) + " sec";
-
-        return FormatSpellSecondsForStress(milliseconds);
-    }
-
-    static std::string TrimTemplateTextForStress(std::string value)
-    {
-        auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
-
-        while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
-            value.erase(value.begin());
-        while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
-            value.pop_back();
-
-        return value;
-    }
-
-    static bool TryParseStrictDoubleForStress(std::string const& text, double& out)
-    {
-        std::string trimmed = TrimTemplateTextForStress(text);
-        if (trimmed.empty())
-            return false;
-
-        try
-        {
-            std::size_t index = 0;
-            out = std::stod(trimmed, &index);
-            return index == trimmed.size();
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-    static bool TryParseLeadingDoubleForStress(std::string const& text, double& out)
-    {
-        std::string trimmed = TrimTemplateTextForStress(text);
-        if (trimmed.empty())
-            return false;
-
-        try
-        {
-            std::size_t index = 0;
-            out = std::stod(trimmed, &index);
-            return index > 0;
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-    static std::string FormatTemplateNumericValueForStress(double value)
-    {
-        double rounded = std::round(value);
-        if (std::fabs(value - rounded) < 0.0001)
-            return std::to_string(static_cast<int64>(rounded));
-
-        std::ostringstream out;
-        out << std::fixed << std::setprecision(2) << value;
-        std::string text = out.str();
-        while (!text.empty() && text.back() == '0')
-            text.pop_back();
-        if (!text.empty() && text.back() == '.')
-            text.pop_back();
-        return text.empty() ? "0" : text;
     }
 
     static std::string FormatSignedAmountForStress(int32 value)
@@ -6023,7 +5853,7 @@ namespace DCPerfTest
             int32 durationMs = spellInfo->GetMaxDuration();
             if (durationMs <= 0)
                 return "0 sec";
-            return FormatDurationTemplateForStress(static_cast<uint32>(durationMs));
+            return DCAddon::SpellTemplate::FormatDurationTemplate(static_cast<uint32>(durationMs));
         }
 
         if (effectNumber == 0)
@@ -6051,7 +5881,7 @@ namespace DCPerfTest
             }
             case 't':
                 return effect->Amplitude > 0
-                    ? FormatDurationTemplateForStress(effect->Amplitude)
+                    ? DCAddon::SpellTemplate::FormatDurationTemplate(effect->Amplitude)
                     : std::string("0 sec");
             case 'a':
             {
@@ -6081,12 +5911,12 @@ namespace DCPerfTest
     static bool TryEvaluateTemplateOperandForStress(Player* player,
         SpellInfo const* spellInfo, std::string const& operand, double& out)
     {
-        std::string trimmed = TrimTemplateTextForStress(operand);
+        std::string trimmed = DCAddon::SpellTemplate::TrimTemplateText(operand);
         if (trimmed.empty())
             return false;
 
         if (trimmed.front() != '$')
-            return TryParseStrictDoubleForStress(trimmed, out);
+            return DCAddon::SpellTemplate::TryParseStrictDouble(trimmed, out);
 
         if (trimmed.size() >= 3
             && std::isalpha(static_cast<unsigned char>(trimmed[1]))
@@ -6095,7 +5925,7 @@ namespace DCPerfTest
             std::string namedToken;
             namedToken.push_back(trimmed[1]);
             namedToken.push_back(trimmed[2]);
-            return TryParseLeadingDoubleForStress(
+            return DCAddon::SpellTemplate::TryParseLeadingDouble(
                 ReplaceNamedSpellTemplateTokenForStress(player, spellInfo, namedToken), out);
         }
 
@@ -6126,14 +5956,14 @@ namespace DCPerfTest
                 effectNumber = static_cast<uint32>(std::stoul(trimmed.substr(2, indexEnd - 2)));
         }
 
-        return TryParseLeadingDoubleForStress(
+        return DCAddon::SpellTemplate::TryParseLeadingDouble(
             ReplaceSpellTemplateTokenForStress(player, spellInfo, token, effectNumber), out);
     }
 
     static bool TryEvaluateSimpleTemplateExpressionForStress(Player* player,
         SpellInfo const* spellInfo, std::string const& expression, std::string& out)
     {
-        std::string expr = TrimTemplateTextForStress(expression);
+        std::string expr = DCAddon::SpellTemplate::TrimTemplateText(expression);
         if (expr.empty())
             return false;
 
@@ -6206,34 +6036,8 @@ namespace DCPerfTest
                 return false;
         }
 
-        out = FormatTemplateNumericValueForStress(result);
+        out = DCAddon::SpellTemplate::FormatTemplateNumericValue(result);
         return true;
-    }
-
-    static double ExtractLastTemplateQuantityForStress(std::string const& renderedText)
-    {
-        for (std::size_t pos = renderedText.size(); pos > 0; --pos)
-        {
-            if (!std::isdigit(static_cast<unsigned char>(renderedText[pos - 1])))
-                continue;
-
-            std::size_t end = pos;
-            std::size_t start = pos - 1;
-            while (start > 0)
-            {
-                char c = renderedText[start - 1];
-                if (std::isdigit(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '+')
-                    --start;
-                else
-                    break;
-            }
-
-            double value = 0.0;
-            if (TryParseStrictDoubleForStress(renderedText.substr(start, end - start), value))
-                return value;
-        }
-
-        return 2.0;
     }
 
     static std::string RenderSpellDescriptionTemplateForStress(Player* player,
@@ -6301,7 +6105,7 @@ namespace DCPerfTest
                 {
                     std::string singular = sourceTemplate.substr(variantStart, colonPos - variantStart);
                     std::string plural = sourceTemplate.substr(colonPos + 1, semiPos - (colonPos + 1));
-                    double quantity = ExtractLastTemplateQuantityForStress(rendered);
+                    double quantity = DCAddon::SpellTemplate::ExtractLastTemplateQuantity(rendered);
                     rendered += (std::fabs(quantity - 1.0) < 0.0001) ? singular : plural;
                     i = semiPos + 1;
                     continue;
@@ -6375,34 +6179,6 @@ namespace DCPerfTest
         return rendered;
     }
 
-    static bool HasUnresolvedTemplateTokensForStress(std::string const& text)
-    {
-        for (std::size_t i = 0; i + 1 < text.size(); ++i)
-        {
-            if (text[i] != '$')
-                continue;
-
-            char token = text[i + 1];
-            if (token == '$')
-            {
-                ++i;
-                continue;
-            }
-
-            if (token == '{' || token == 'l' || std::isdigit(static_cast<unsigned char>(token)))
-                return true;
-
-            if (std::isalpha(static_cast<unsigned char>(token)) && i + 2 < text.size())
-            {
-                char next = text[i + 2];
-                if (std::isalpha(static_cast<unsigned char>(next)) || std::isdigit(static_cast<unsigned char>(next)))
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
     static std::string BuildSpellEffectTooltipLineForStress(Player* player,
         SpellInfo const* spellInfo, SpellEffectInfo const& effect)
     {
@@ -6438,7 +6214,7 @@ namespace DCPerfTest
             case SPELL_EFFECT_ENERGIZE:
                 if (amount != 0)
                     return std::string("Restores ") + FormatSignedAmountForStress(amount) + " "
-                        + GetPowerTypeLabelForStress(spellInfo ? spellInfo->PowerType : POWER_MANA) + ".";
+                        + DCAddon::SpellTemplate::GetPowerTypeLabel(spellInfo ? spellInfo->PowerType : POWER_MANA) + ".";
                 break;
             default:
                 break;
@@ -6458,7 +6234,7 @@ namespace DCPerfTest
                     ? std::max<uint32>(1u, static_cast<uint32>(durationMs / int32(effect.Amplitude)))
                     : 1u;
                 return "Causes " + FormatSignedAmountForStress(amount * int32(tickCount))
-                    + " damage over " + FormatSpellSecondsForStress(std::max<int32>(1, durationMs)) + ".";
+                    + " damage over " + DCAddon::SpellTemplate::FormatSpellSeconds(std::max<int32>(1, durationMs)) + ".";
             }
             case SPELL_AURA_PERIODIC_HEAL:
             case SPELL_AURA_PERIODIC_HEALTH_FUNNEL:
@@ -6468,7 +6244,7 @@ namespace DCPerfTest
                     ? std::max<uint32>(1u, static_cast<uint32>(durationMs / int32(effect.Amplitude)))
                     : 1u;
                 return "Heals " + FormatSignedAmountForStress(amount * int32(tickCount))
-                    + " health over " + FormatSpellSecondsForStress(std::max<int32>(1, durationMs)) + ".";
+                    + " health over " + DCAddon::SpellTemplate::FormatSpellSeconds(std::max<int32>(1, durationMs)) + ".";
             }
             case SPELL_AURA_MOD_STUN:
                 return "Stuns the target.";
@@ -6603,7 +6379,7 @@ namespace DCPerfTest
             result.throughputCount = result.iterations;
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -6701,7 +6477,7 @@ namespace DCPerfTest
             result.throughputCount = result.iterations;
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -6791,7 +6567,7 @@ namespace DCPerfTest
             result.throughputCount = result.iterations;
             FinalizeTimingSamplesNs(result, timesNs);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -6862,7 +6638,7 @@ namespace DCPerfTest
 
                 std::ostringstream topLine;
                 if (powerCost > 0)
-                    topLine << powerCost << ' ' << GetPowerTypeLabelForStress(spellInfo->PowerType);
+                    topLine << powerCost << ' ' << DCAddon::SpellTemplate::GetPowerTypeLabel(spellInfo->PowerType);
                 if (maxRange > 0.0f)
                 {
                     if (topLine.tellp() > 0)
@@ -6879,15 +6655,15 @@ namespace DCPerfTest
                 std::ostringstream timingLine;
                 timingLine << ((castTimeMs == 0)
                     ? std::string("Instant cast")
-                    : (FormatSpellSecondsForStress(castTimeMs) + " cast"));
+                    : (DCAddon::SpellTemplate::FormatSpellSeconds(castTimeMs) + " cast"));
                 if (spellInfo->GetRecoveryTime() > 0)
                     timingLine << " | "
-                        << FormatSpellSecondsForStress(spellInfo->GetRecoveryTime())
+                        << DCAddon::SpellTemplate::FormatSpellSeconds(spellInfo->GetRecoveryTime())
                         << " cooldown";
                 lines.push_back(timingLine.str());
 
                 if (durationMs > 0)
-                    lines.push_back("Duration | " + FormatSpellSecondsForStress(static_cast<uint32>(durationMs)));
+                    lines.push_back("Duration | " + DCAddon::SpellTemplate::FormatSpellSeconds(static_cast<uint32>(durationMs)));
 
                 tooltip << "cost=" << powerCost
                     << "|cast=" << castTimeMs
@@ -6904,7 +6680,7 @@ namespace DCPerfTest
                     std::string renderedDescription =
                         RenderSpellDescriptionTemplateForStress(player, spellInfo, descriptionTemplate);
                     std::string const& bodySource = (!renderedDescription.empty()
-                        && !HasUnresolvedTemplateTokensForStress(renderedDescription))
+                        && !DCAddon::SpellTemplate::HasUnresolvedTemplateTokens(renderedDescription))
                         ? renderedDescription
                         : descriptionTemplate;
                     if (legacyLine.empty() && !renderedDescription.empty())
@@ -6961,7 +6737,7 @@ namespace DCPerfTest
                     else if (castTimeMs == 0)
                         legacyLine = "Instant cast.";
                     else
-                        legacyLine = "Cast time: " + FormatSpellSecondsForStress(castTimeMs) + ".";
+                        legacyLine = "Cast time: " + DCAddon::SpellTemplate::FormatSpellSeconds(castTimeMs) + ".";
                 }
 
                 uint32 requestId = i + 1;
@@ -7010,7 +6786,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(times.size());
             FinalizeTimingSamples(result, times);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7068,7 +6844,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(times.size());
             FinalizeTimingSamples(result, times);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7180,7 +6956,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(times.size());
             FinalizeTimingSamples(result, times);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7250,7 +7026,7 @@ namespace DCPerfTest
             result.p99Display = avgDisplay;
             result.avgSortNs = (static_cast<uint64>(result.totalUs) * 1000ULL) / batchSize;
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7370,7 +7146,7 @@ namespace DCPerfTest
             result.iterations = static_cast<uint32>(times.size());
             FinalizeTimingSamples(result, times);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7465,7 +7241,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7561,7 +7337,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7628,7 +7404,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7721,7 +7497,7 @@ namespace DCPerfTest
                 {
                     if (vaultLootHasExpectedColumns)
                     {
-                        const char* sql = "SELECT item_id FROM dc_vault_loot_table "
+                        char const* sql = "SELECT item_id FROM dc_vault_loot_table "
                             "WHERE item_level_min <= 264 AND item_level_max >= 264 "
                             "AND ((class_mask & 2) OR class_mask = 0 OR class_mask = 1023) "
                             "AND (armor_type = 'Plate' OR armor_type = 'Misc') "
@@ -7794,7 +7570,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7852,7 +7628,7 @@ namespace DCPerfTest
                 result.p99Us = GetPercentile(times, 99.0f);
             }
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -7906,7 +7682,7 @@ namespace DCPerfTest
             result.p95Us = GetPercentile(times, 95.0f);
             result.p99Us = GetPercentile(times, 99.0f);
         }
-        catch (const std::exception& e)
+        catch (std::exception const& e)
         {
             result.success = false;
             result.error = e.what();
@@ -8380,7 +8156,7 @@ public:
 
     dc_stresstest_commandscript() : CommandScript("dc_stresstest_commandscript") { }
 
-    static bool HandlePerfTestCPU(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestCPU(ChatHandler* handler, char const* args)
     {
         std::vector<DCPerfTest::TimingResult> results;
         results.reserve(1);
@@ -8390,7 +8166,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestAddon(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestAddon(ChatHandler* handler, char const* args)
     {
         std::vector<DCPerfTest::TimingResult> results;
         results.reserve(4);
@@ -8400,7 +8176,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestLoop(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestLoop(ChatHandler* handler, char const* args)
     {
         // Usage:
         // .stresstest loop <suite> [loops=10] [sleepMs=1000] [suiteArgs...]
@@ -8519,7 +8295,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestDBAsync(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestDBAsync(ChatHandler* handler, char const* args)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: Async DB Burst ===|r");
 
@@ -8550,7 +8326,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestLoopReport(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestLoopReport(ChatHandler* handler, char const* args)
     {
         // Usage:
         // .stresstest loopreport <suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]
@@ -8696,7 +8472,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestPath(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestPath(ChatHandler* handler, char const* args)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: Pathfinding ===|r");
 
@@ -8758,7 +8534,7 @@ public:
         return commandTable;
     }
 
-    static bool HandlePerfTestSQL(ChatHandler* handler, const char* /*args*/)
+    static bool HandlePerfTestSQL(ChatHandler* handler, char const* /*args*/)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: SQL Stress ===|r");
 
@@ -8775,7 +8551,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestCache(ChatHandler* handler, const char* /*args*/)
+    static bool HandlePerfTestCache(ChatHandler* handler, char const* /*args*/)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: Cache ===|r");
 
@@ -8789,7 +8565,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestSystems(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestSystems(ChatHandler* handler, char const* args)
     {
         std::vector<DCPerfTest::TimingResult> results;
         results.reserve(4);
@@ -8799,7 +8575,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestCoreDB(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestCoreDB(ChatHandler* handler, char const* args)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: Core DB ===|r");
 
@@ -8823,7 +8599,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestPlayerSim(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestPlayerSim(ChatHandler* handler, char const* args)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: Player Count Simulation ===|r");
 
@@ -8851,7 +8627,7 @@ public:
         return true;
     }
 
-    static bool HandlePerfTestStress(ChatHandler* handler, const char* args)
+    static bool HandlePerfTestStress(ChatHandler* handler, char const* args)
     {
         std::vector<DCPerfTest::TimingResult> results;
         results.reserve(16);
@@ -8861,13 +8637,13 @@ public:
         return true;
     }
 
-    static bool PrintMySQLStatus(ChatHandler* handler, const char* /*args*/)
+    static bool PrintMySQLStatus(ChatHandler* handler, char const* /*args*/)
     {
         DCPerfTest::PrintMySQLStatus(handler);
         return true;
     }
 
-    static bool HandlePerfTestFull(ChatHandler* handler, const char* /*args*/)
+    static bool HandlePerfTestFull(ChatHandler* handler, char const* /*args*/)
     {
         handler->SendSysMessage("|cff00ff00=== DC Full Performance Test Suite ===|r");
         auto overallStart = Clock::now();

@@ -322,6 +322,15 @@ namespace Utils
     // -------------------------------------------------------------------------
     // Free-function siblings of JsonValue's internal encoder, for handlers that
     // build JSON by string-append instead of constructing a JsonValue DOM.
+    // Collection-sync rolling hash. Shared because the .stresstest harness
+    // validates sync payloads and must mix identically to the server, or it
+    // silently compares hashes that were never meant to match.
+    inline uint32 MixCollectionHash(uint32 hash, uint32 item)
+    {
+        hash ^= (item * 2654435761u);
+        return (hash << 13) | (hash >> 19);
+    }
+
     inline void AppendUnsignedJsonNumber(std::string& out, uint32 value)
     {
         char buffer[16];
