@@ -19,6 +19,7 @@
 #include "ObjectAccessor.h"
 #include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 
+#include <mutex>
 #include <unordered_map>
 
 using namespace Acore::ChatCommands;
@@ -94,8 +95,43 @@ struct LooterPetState
 static LooterPetConfig sLooterPetConfig;
 static std::unordered_map<ObjectGuid, LooterPetState> sLooterPetStates;
 
+// The live realm runs MapUpdate.Threads = 8, so Map::Update() - and therefore
+// OnPlayerUpdate and OnPlayerMapChanged - runs on several threads at once,
+// while enable/disable and logout mutate this map from the world thread. An
+// unsynchronised find() racing an operator[] insert is undefined behaviour, so
+// every access below is guarded.
+//
+// The lock is never held across engine calls (companion lookup, loot release,
+// chat). OnPlayerUpdate instead snapshots the entry, does its work on the copy,
+// and writes the two mutable fields back - see LooterPetStateWriteBack. If the
+// entry disappears mid-tick (logout, disable) the write-back simply finds
+// nothing and does not resurrect it.
+static std::mutex sLooterPetStatesMutex;
+
+// Writes a snapshotted entry's mutable fields back on scope exit, so the
+// per-tick hook can keep its many early returns without repeating the lock
+// dance at each one. `enabled` is deliberately not written back: only the
+// enable/disable and logout paths own that field.
+struct LooterPetStateWriteBack
+{
+    ObjectGuid guid;
+    LooterPetState const& state;
+
+    ~LooterPetStateWriteBack()
+    {
+        std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
+        auto it = sLooterPetStates.find(guid);
+        if (it == sLooterPetStates.end())
+            return;   // disabled or logged out mid-tick - do not resurrect
+
+        it->second.elapsedMs = state.elapsedMs;
+        it->second.boundCompanionGuid = state.boundCompanionGuid;
+    }
+};
+
 static bool IsLooterPetEnabled(ObjectGuid guid)
 {
+    std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
     auto it = sLooterPetStates.find(guid);
     return it != sLooterPetStates.end() && it->second.enabled;
 }
@@ -142,6 +178,8 @@ static void SetLooterPetEnabled(Player* player, bool enabled)
     if (!player)
         return;
 
+    std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
+
     if (!enabled)
     {
         sLooterPetStates.erase(player->GetGUID());
@@ -159,13 +197,17 @@ static void SetLooterPetEnabled(Player* player, bool enabled)
 class DCLooterPetPlayerScript : public PlayerScript
 {
 public:
-    DCLooterPetPlayerScript() : PlayerScript("DCLooterPetPlayerScript") { }
+    DCLooterPetPlayerScript() : PlayerScript("DCLooterPetPlayerScript",
+    {
+        PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_MAP_CHANGED, PLAYERHOOK_ON_UPDATE
+    }) { }
 
     void OnPlayerLogout(Player* player) override
     {
         if (!player)
             return;
 
+        std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
         sLooterPetStates.erase(player->GetGUID());
     }
 
@@ -174,6 +216,7 @@ public:
         if (!player)
             return;
 
+        std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
         auto it = sLooterPetStates.find(player->GetGUID());
         if (it == sLooterPetStates.end() || !it->second.enabled)
             return;
@@ -186,9 +229,18 @@ public:
         if (!sLooterPetConfig.enabled || !player)
             return;
 
-        auto it = sLooterPetStates.find(player->GetGUID());
-        if (it == sLooterPetStates.end() || !it->second.enabled)
-            return;
+        // Snapshot under the lock, then release it: everything below calls into
+        // the engine (companion lookup, loot release, chat) and must not hold a
+        // global lock while doing so.
+        LooterPetState state;
+        {
+            std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
+            auto it = sLooterPetStates.find(player->GetGUID());
+            if (it == sLooterPetStates.end() || !it->second.enabled)
+                return;
+
+            state = it->second;
+        }
 
         if (!DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID()))
             return;
@@ -221,7 +273,9 @@ public:
             player->SendLootRelease(lootGuid);
         }
 
-        LooterPetState& state = it->second;
+        // Publishes the two mutable fields back on every exit path below.
+        LooterPetStateWriteBack writeBack{ player->GetGUID(), state };
+
         Unit* companion = GetActiveLooterCompanion(player);
         if (!companion)
         {
@@ -312,9 +366,12 @@ public:
 
         if (Unit* companion = GetActiveLooterCompanion(player))
         {
-            auto stateIt = sLooterPetStates.find(player->GetGUID());
-            if (stateIt != sLooterPetStates.end())
-                stateIt->second.boundCompanionGuid = companion->GetGUID();
+            {
+                std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
+                auto stateIt = sLooterPetStates.find(player->GetGUID());
+                if (stateIt != sLooterPetStates.end())
+                    stateIt->second.boundCompanionGuid = companion->GetGUID();
+            }
 
             handler->PSendSysMessage(
                 "|cff00ff00[Looter Pet]|r Bound to companion: {}",
@@ -408,8 +465,12 @@ public:
         if (!player)
             return true;
 
-        auto it = sLooterPetStates.find(player->GetGUID());
-        bool const enabled = it != sLooterPetStates.end() && it->second.enabled;
+        bool enabled = false;
+        {
+            std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
+            auto it = sLooterPetStates.find(player->GetGUID());
+            enabled = it != sLooterPetStates.end() && it->second.enabled;
+        }
         bool const aoeEnabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
         bool const goldOnly = DCAoELootExt::GetPlayerGoldOnly(player->GetGUID());
         uint8 const minQuality = DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
@@ -528,6 +589,7 @@ namespace DCLooterPet
 
         if (Unit* companion = GetActiveLooterCompanion(player))
         {
+            std::lock_guard<std::mutex> lock(sLooterPetStatesMutex);
             auto stateIt = sLooterPetStates.find(player->GetGUID());
             if (stateIt != sLooterPetStates.end())
                 stateIt->second.boundCompanionGuid = companion->GetGUID();
