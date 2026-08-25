@@ -221,11 +221,21 @@ local function InstallDCCentral(DC)
         DC._dccentralTooltipFrame = tooltipFrame
         tooltipFrame:RegisterEvent("PLAYER_LOGIN")
         tooltipFrame:SetScript("OnEvent", function()
-            if not DC.scanTooltip then
-                DC.scanTooltip = CreateFrame("GameTooltip", "DCScanTooltip", nil, "GameTooltipTemplate")
-                DC.scanTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+            -- Adopt whatever already exists rather than creating a second one.
+            -- DC:GetScanTooltip() stores its lazy fallback on DC.ScanTooltip
+            -- (capital S) and names the frame "DCScanTooltip" too; if anything
+            -- asked for a scan tooltip before PLAYER_LOGIN, checking only the
+            -- lower-case field here built a duplicate GameTooltip that took
+            -- over the same global name, orphaning the first one and leaving
+            -- DC.ScanTooltip and _G.DCScanTooltip pointing at different frames.
+            local existing = DC.scanTooltip or DC.ScanTooltip or rawget(_G, "DCScanTooltip")
+            if not existing then
+                existing = CreateFrame("GameTooltip", "DCScanTooltip", nil, "GameTooltipTemplate")
+                existing:SetOwner(WorldFrame, "ANCHOR_NONE")
             end
-            rawset(_G, "DCScanTooltip", DC.scanTooltip)
+            DC.scanTooltip = existing
+            DC.ScanTooltip = existing
+            rawset(_G, "DCScanTooltip", existing)
         end)
     end
 

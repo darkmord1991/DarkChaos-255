@@ -2,9 +2,8 @@
 ## Title: AzerothAdmin Models
 ## Author: SuperStyro Dev team + Manground Dev Team
 ## Version: 1
-## Notes: GameObject model data for AzerothAdmin (loads on-demand)
-## Dependencies: AzerothAdmin
+## Notes: GameObject model data for the DC-GM GO tab model viewer (loads on demand)
+## Dependencies: DC-GM
 ## LoadOnDemand: 1
-## LoadWith: AzerothAdmin
 
 Models.lua

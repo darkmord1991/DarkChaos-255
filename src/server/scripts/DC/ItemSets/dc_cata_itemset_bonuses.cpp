@@ -309,7 +309,11 @@ namespace
         void Register() override
         {
             DoCheckProc += AuraCheckProcFn(spell_dc_dk_t13_blood_2p::CheckProc);
-            OnEffectProc += AuraEffectProcFn(spell_dc_dk_t13_blood_2p::HandleProc, EFFECT_0, SPELL_AURA_DUMMY);
+            // 105552's EFFECT_0 is APPLY_AURA / PROC_TRIGGER_SPELL, not DUMMY -- Cata
+            // SpellEffect.dbc idx0 = Effect 6, Aura 42, triggering 105582. Our spell_dbc
+            // row copies that faithfully, so the DUMMY binding never resolved and the
+            // Kiss of Death proc silently never fired.
+            OnEffectProc += AuraEffectProcFn(spell_dc_dk_t13_blood_2p::HandleProc, EFFECT_0, SPELL_AURA_PROC_TRIGGER_SPELL);
         }
     };
 

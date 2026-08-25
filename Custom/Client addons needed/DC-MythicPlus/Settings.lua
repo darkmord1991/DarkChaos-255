@@ -6,25 +6,10 @@ local addonName = "DC-MythicPlus"
 local namespace = _G.DCMythicPlusHUD or {}
 _G.DCMythicPlusHUD = namespace
 
--- WoTLK (3.3.5) compatibility: Texture:SetColorTexture doesn't exist.
--- Provide a polyfill so UI code can call :SetColorTexture(r,g,b,a) safely.
-do
-    local ok, tex = pcall(function()
-        return UIParent and UIParent:CreateTexture(nil, "BACKGROUND")
-    end)
-
-    if ok and tex and not tex.SetColorTexture then
-        local mt = getmetatable(tex)
-        local idx = mt and mt.__index
-        if type(idx) == "table" and not idx.SetColorTexture then
-            idx.SetColorTexture = function(self, r, g, b, a)
-                if self and self.SetTexture then
-                    self:SetTexture(r, g, b, a or 1)
-                end
-            end
-        end
-    end
-end
+-- Texture:SetColorTexture is polyfilled once in DC-AddonProtocol/DCCompat.lua.
+-- The copy that used to live here set the colour via SetTexture(r,g,b,a); the
+-- shared one uses WHITE8x8 + SetVertexColor, matching Core.lua and DC-InfoBar.
+-- Both render an identical solid fill on 3.3.5.
 
 -- Default settings (comprehensive)
 namespace.DefaultSettings = {

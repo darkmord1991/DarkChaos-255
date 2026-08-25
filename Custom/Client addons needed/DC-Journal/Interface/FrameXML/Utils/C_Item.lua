@@ -22,8 +22,35 @@ function C_ItemMixin:GetLocaleIndex()
     return GetLocale() == "ruRU" and E_ITEM_INFO.NAME_RURU or E_ITEM_INFO.NAME_ENGB
 end
 
+-- ItemsCache is 13.2 MB of source / ~28 MB of resident Lua tables, and it is
+-- only ever consulted as a fallback for items the 3.3.5 client itself does not
+-- know. It therefore ships as the LoadOnDemand addon DC-JournalData and is
+-- pulled in the first time it is actually needed, rather than at every login.
+--
+-- Same pattern as DC-GM's AzerothAdmin_Models. See DC-JournalData/README.md.
+local itemsCacheLoadAttempted = false
+
+local function EnsureItemsCache()
+    if ItemsCache then
+        return true
+    end
+    if itemsCacheLoadAttempted then
+        return false
+    end
+
+    itemsCacheLoadAttempted = true
+
+    if type(LoadAddOn) == "function" then
+        -- Failure is not an error here: callers already handle a missing entry,
+        -- and the Adventure Guide falls back to the client's own item data.
+        pcall(LoadAddOn, "DC-JournalData")
+    end
+
+    return ItemsCache ~= nil
+end
+
 function C_ItemMixin:GetItemInfoFromCache(itemIdentifier)
-    if not itemIdentifier or not ItemsCache then
+    if not itemIdentifier or not EnsureItemsCache() then
         return
     end
 

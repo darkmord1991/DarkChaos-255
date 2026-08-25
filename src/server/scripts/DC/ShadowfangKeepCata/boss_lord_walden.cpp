@@ -245,7 +245,12 @@ class spell_walden_toxic_coagulent : public AuraScript
 
     void Register() override
     {
-        AfterEffectApply += AuraEffectApplyFn(spell_walden_toxic_coagulent::AfterApply, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+        // 93572 carries the aura on EFFECT_0, not EFFECT_1: Cata SpellEffect.dbc gives
+        // idx0 = APPLY_AURA / PERIODIC_TRIGGER_SPELL (period 3000, triggers 93617) and
+        // idx1 = effect 64 with no aura at all, so a PERIODIC_DAMAGE binding on EFFECT_1
+        // could never resolve. The handler only reads the stack count, so the effect it
+        // hangs off is just an attach point.
+        AfterEffectApply += AuraEffectApplyFn(spell_walden_toxic_coagulent::AfterApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
     }
 };
 

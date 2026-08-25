@@ -3,8 +3,7 @@
 ## Notes: DarkChaos GM addon based on AzerothAdmin v23 + GOMove
 ## Author: SuperStyro Dev team + Manground Dev Team + Rochet2
 ## Version: 23
-## Name: AzerothAdmin
-## License: GPLv3
+## X-License: GPLv3
 ## OptionalDeps: Ace3,DC-AddonProtocol,AzerothAdmin_Models
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
@@ -25,6 +24,14 @@ Libraries\FrameLib-1.0\FrameLib-1.0.lua
 Libraries\Graph-1.0\Graph-1.0.lua
 Locales\enUS\enUS.lua
 Locales\enUS\strings_enUS.lua
+# Translations for locales the toc does not currently load. Kept so the work
+# is not lost; wire them up or delete them deliberately, not by drift.
+# addon-check: allow-orphan Locales/*/*.lua
+# addon-check: allow-orphan Locales/strings.lua
+# The GO model viewer pulls in AzerothAdmin_Models with LoadAddOn. It is a
+# top-level addon folder (sibling of this one), not nested here: WoW only scans
+# Interface/AddOns/<folder>, so a nested addon is never seen. It used to live in
+# _build/, which is why that viewer could not load on this fork's deployment.
 Commands\Main.lua
 Commands\Tele.lua
 Commands\Char.lua

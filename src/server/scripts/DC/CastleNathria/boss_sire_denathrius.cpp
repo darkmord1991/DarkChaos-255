@@ -1125,7 +1125,11 @@ class aura_painful_memories : public AuraScript
 
     void Register() override
     {
-        AfterEffectApply += AuraEffectApplyFn(aura_painful_memories::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+        // Retail 326824's only effect is APPLY_AURA / DUMMY on EFFECT_0 (it carries
+        // EffectTriggerSpell 326833 rather than a periodic aura), and our spell_dbc row
+        // copies that faithfully -- so the PERIODIC_TRIGGER_SPELL binding never resolved.
+        // DUMMY also matches what this handler does: a single cast on apply, not a tick.
+        AfterEffectApply += AuraEffectApplyFn(aura_painful_memories::OnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 } // namespace CastleNathria::SireDenathrius

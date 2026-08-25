@@ -682,10 +682,10 @@ function GetFactionColor(factionGroupTag)
 	return PLAYER_FACTION_COLORS[PLAYER_FACTION_GROUP[factionGroupTag]]
 end
 
-function SendServerMessage( Header, ... )
-	 --printec("Send ->", Header, ...)
-	SendAddonMessage(Header, strjoin(" ", tostringall(...)), "WHISPER", UnitName("player"))
-end
+-- SendServerMessage() was removed: it had zero callers anywhere in the addon
+-- (it is a leftover from the Sirus original this was backported from) and it
+-- published a very generic name into the global namespace. Client-to-server
+-- traffic goes through DC-AddonProtocol.
 
 function AnimateTexCoordsBFA(texture, textureWidth, textureHeight, frameWidth, frameHeight, numFrames, elapsed, throttle)
 	if ( not texture.frame ) then

@@ -1,0 +1,133 @@
+-- ---------------------------------------------------------------------------
+-- 302  Round 44 -- the last 4 difficulty-variant ScriptNames, and why the
+--      deprecated flags_extra warnings are being left alone
+-- ---------------------------------------------------------------------------
+--     Creature (Entry: 5050834) lists difficulty 1 mode entry 5050835 with
+--     `ScriptName` filled in. `ScriptName` of difficulty 0 mode creature is
+--     always used instead.                    (+ 5050851, 5050857, 5050869)
+--
+-- 298_ cleared seven of these and its guarded UPDATE was correct. These four
+-- came back, and the reason is an ordering conflict inside our own tree rather
+-- than anything the guard missed:
+--   * apply_all sources 298_ (HyjalCata)
+--   * ShadowfangKeepCata/06_scriptnames.sql and 21_fix_worgen_spirit_scriptname
+--     .sql then run and RE-SET them
+-- Both files carried a block that deliberately propagated a boss's ScriptName
+-- onto its heroic difficulty variant, with the comment "otherwise the boss is a
+-- plain melee dummy on heroic and mythic". **Both have been corrected at source
+-- in this change** -- they now clear the variants instead of filling them -- so
+-- a fresh apply lands in the right state and this file only has to repair the
+-- live DB.
+--
+-- ---------------------------------------------------------------------------
+-- The premise behind that propagation was wrong
+-- ---------------------------------------------------------------------------
+-- Traced through the core rather than trusting either comment, because "the
+-- boss loses its AI on heroic" would have been a serious regression if true:
+--
+--   * Creature::UpdateEntry selects the heroic template into `cinfo`, then calls
+--     `SetEntry(Entry);  // normal entry always`  (Creature.cpp:509) and keeps
+--     the heroic template only in m_creatureInfo. Stats, model, flags and class
+--     come from the variant -- GetEntry() stays the DIFFICULTY-0 entry.
+--   * Creature::GetScriptId (Creature.cpp:3187) then resolves
+--     `GetCreatureTemplate(GetEntry())->ScriptID`.
+--
+-- So a heroic creature reads the PARENT's ScriptName, always. The variant's is
+-- unreadable on every difficulty, exactly as the boot message states. All four
+-- ghosts' parents keep `npc_sfk_worgen_spirit` (21_ section 2 sets it), so
+-- clearing the variants costs nothing -- and in all four cases parent and
+-- variant held the identical name anyway.
+--
+-- Worth noting for the next person: the difficulty SWAP itself is not affected.
+-- ObjectMgr::CheckCreatureTemplate does `continue` past its
+-- _hasDifficultyEntries/_difficultyEntries bookkeeping when the variant has a
+-- ScriptID, but the runtime swap reads cInfo->DifficultyEntry[] directly
+-- (Creature.cpp:492) and never consults those sets -- they only drive validation
+-- and the "listed as difficulty N template" spawn rejection. The heroic template
+-- was being applied correctly the whole time; only the log line was real.
+--
+-- ---------------------------------------------------------------------------
+-- 1) Clear the four live rows
+-- ---------------------------------------------------------------------------
+-- Same guarded statement as 298_ section 2, re-run now that the two source files
+-- no longer re-fill them. Still guarded on the parent holding the SAME name, so
+-- it cannot strip a variant that was deliberately given different behaviour --
+-- and a DB-wide check confirms there is no such row: of the 4 variants carrying
+-- a ScriptName, 0 differ from their parent.
+UPDATE acore_world.`creature_template` v
+JOIN acore_world.`creature_template` p
+  ON (p.`difficulty_entry_1` = v.`entry` OR p.`difficulty_entry_2` = v.`entry`
+      OR p.`difficulty_entry_3` = v.`entry`)
+SET v.`ScriptName` = ''
+WHERE v.`ScriptName` <> ''
+  AND p.`ScriptName` = v.`ScriptName`;
+
+-- ---------------------------------------------------------------------------
+-- 2) The deprecated flags_extra warnings -- DELIBERATELY NOT MIGRATED
+-- ---------------------------------------------------------------------------
+--     Creature (Entry: N) has deprecated flags_extra bit NO_TAUNT (0x100) set.
+--     This will be migrated to the `creature_immunities` table in a future
+--     update.                                  (+ IMMUNITY_KNOCKBACK 0x40000000)
+--
+-- No SQL. Recorded here so the decision is reviewable rather than looking like
+-- an oversight, because this is the largest block in the log (58 templates).
+--
+-- THE FLAGS STILL WORK. This is upstream announcing a future migration, not
+-- reporting broken data:
+--     NO_TAUNT            Creature.cpp:681 -> ApplySpellImmune(IMMUNITY_STATE,
+--                         SPELL_AURA_MOD_TAUNT) + (IMMUNITY_EFFECT,
+--                         SPELL_EFFECT_ATTACK_ME)
+--     IMMUNITY_KNOCKBACK  Creature.cpp:3310 Creature::IsImmuneToKnockback(),
+--                         read at SpellEffects.cpp:5000
+-- Both are honoured today, and `LoadTemplateImmunities(CreatureImmunitiesId)`
+-- runs alongside them, so the two systems compose rather than conflict.
+--
+-- 🔴 AND HALF OF IT CANNOT BE MIGRATED YET ANYWAY. `creature_immunities` holds
+-- SchoolMask, DispelTypeMask, MechanicsMask, Effects, Auras, ImmuneAoE and
+-- ImmuneChain (SpellMgr.cpp:68) -- there is no knockback column, and
+-- IsImmuneToKnockback() reads flags_extra and nothing else. The nearest
+-- equivalent, an `Effects` entry for SPELL_EFFECT_KNOCK_BACK, is NOT the same
+-- thing: SpellEffects.cpp:4991 deliberately skips the knockback-immunity check
+-- for entry-specific spells ("allow entry specific spells to skip those
+-- checks"), an escape hatch a blanket effect immunity does not have. Migrating
+-- that way would silently make scripted boss knockbacks stop working on these
+-- creatures.
+--
+-- IT IS ALSO ALMOST ENTIRELY UPSTREAM'S DATA, NOT OURS:
+--     58 templates carry a deprecated bit  (17 NO_TAUNT, 54 KNOCKBACK, 0 AVOID_AOE)
+--     52 of them are stock-range entries (< 400000)
+--      6 are ours: 4 training dummies, plus Xariona and "XP Rates", both unspawned
+-- Meanwhile `creature_immunities` already has 518 rows and 5,703 templates
+-- already point at it, so the new system is live and upstream is simply working
+-- through the tail. Migrating 52 stock rows by hand would fork our data away
+-- from the upstream migration that the warning promises.
+--
+-- Revisit when upstream ships the migration, or if `creature_immunities` gains a
+-- knockback column. Until then these 58 lines are the correct state of the DB.
+--
+-- ---------------------------------------------------------------------------
+-- Verify after apply
+-- ---------------------------------------------------------------------------
+--  1  SELECT COUNT(*) FROM creature_template v
+--       JOIN creature_template p ON (p.difficulty_entry_1=v.entry
+--         OR p.difficulty_entry_2=v.entry OR p.difficulty_entry_3=v.entry)
+--      WHERE v.ScriptName <> '';                                            -> 0
+--  2  The four PARENTS must keep theirs:
+--     SELECT COUNT(*) FROM creature_template
+--      WHERE entry IN (5050834,5050851,5050857,5050869)
+--        AND ScriptName = 'npc_sfk_worgen_spirit';                          -> 4
+--  3  Re-applying ShadowfangKeepCata/06_ and 21_ must now leave (1) at 0 rather
+--     than putting the four rows back. Both were corrected in this change.
+--  4  The 58 flags_extra warnings SHOULD STILL APPEAR after this -- they are
+--     upstream's notice, not a defect. Nothing here targets them.
+--
+-- ---------------------------------------------------------------------------
+-- Still open, unchanged
+-- ---------------------------------------------------------------------------
+-- * The four C++ spell-script fixes from 300_ need the worldserver rebuilt.
+-- * Creature 16256 "Jessica Chambers" has no waypoint path in any source.
+-- * 95303's derived Chapel coordinate is worth an in-game check.
+-- * Menu 400130 (Angler Tideborn) still has no `gossip_menu` greeting row.
+-- * The SFK worgen-spirit summon chain is still blocked on 8 missing spell_dbc
+--   rows plus a MiscValue remap -- see ShadowfangKeepCata/21_ and 22_. Unrelated
+--   to the ScriptName binding, which is now correct on both files.

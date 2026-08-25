@@ -147,11 +147,91 @@ end
 -- WISHLIST DISPLAY
 -- ============================================================================
 
+-- ============================================================================
+-- WIDGET POOLS
+-- ============================================================================
+-- WoW never garbage-collects a Frame: once created it stays in the client's
+-- frame registry for the session whether or not Lua still references it. The
+-- previous clear-down here did
+--
+--     child:Hide(); child:SetParent(nil)
+--
+-- which orphans a widget without freeing it, then rebuilt every header and row
+-- from scratch. Frame count therefore climbed on every add, every remove, and
+-- every server-pushed wishlist update, for as long as the player used the
+-- feature.
+--
+-- Pools reuse the widgets instead. Structure is built once in the factory;
+-- per-refresh work is pure population.
+
+function DC:_EnsureWishlistPools()
+    local ui = self.WishlistUI
+    if not ui or ui._headerPool then
+        return ui and ui._headerPool ~= nil
+    end
+
+    local compat = _G.DCCompat
+    if not compat or type(compat.CreatePool) ~= "function" then
+        -- DC-AddonProtocol is a hard dependency, so this should be unreachable.
+        -- Say so rather than silently reverting to the leaking path.
+        self:Print("|cffff4444Wishlist:|r DCCompat unavailable - widget pooling disabled.")
+        return false
+    end
+
+    local scrollChild = ui.scrollChild
+
+    ui._headerPool = compat.CreatePool(function()
+        local f = CreateFrame("Frame", nil, scrollChild)
+        f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        f.text:SetPoint("LEFT", f, "LEFT", 2, 0)
+        f.text:SetTextColor(0.8, 0.8, 0.8)
+        return f
+    end)
+
+    ui._rowPool = compat.CreatePool(function()
+        local f = CreateFrame("Frame", nil, scrollChild)
+
+        f.bg = f:CreateTexture(nil, "BACKGROUND")
+        f.bg:SetAllPoints()
+        -- 3.3.5: solid-color fills go through SetTexture (SetColorTexture is
+        -- WoD+ and only exists here because DCCompat polyfills it).
+        f.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
+
+        f.icon = f:CreateTexture(nil, "ARTWORK")
+        f.icon:SetSize(40, 40)
+        f.icon:SetPoint("LEFT", f, "LEFT", 5, 0)
+
+        f.name = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f.name:SetPoint("TOPLEFT", f.icon, "TOPRIGHT", 10, -5)
+
+        f.info = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        f.info:SetPoint("TOPLEFT", f.name, "BOTTOMLEFT", 0, -3)
+        f.info:SetTextColor(0.5, 0.5, 0.5)
+
+        f.removeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        f.removeBtn:SetSize(24, 24)
+        f.removeBtn:SetPoint("RIGHT", f, "RIGHT", -5, 0)
+        -- Read the row's CURRENT entry at click time. A pooled row outlives the
+        -- entry it was first populated with, so capturing `wish` in this closure
+        -- would remove whatever happened to be here on the first refresh.
+        f.removeBtn:SetScript("OnClick", function()
+            local entry = f.wish
+            if entry then
+                DC:RequestRemoveWishlist(entry.type, entry.itemId)
+            end
+        end)
+
+        return f
+    end)
+
+    return true
+end
+
 function DC:ShowWishlist()
     if not self.WishlistUI then
         self:CreateWishlistUI()
     end
-    
+
     self.WishlistUI:Show()
     self.WishlistUI:Raise()
     self:RefreshWishlistUI()
@@ -161,27 +241,29 @@ function DC:RefreshWishlistUI()
     if not self.WishlistUI or not self.WishlistUI:IsShown() then
         return
     end
-    
+
     local scrollChild = self.WishlistUI.scrollChild
-    
-    -- Clear existing items
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+    local pooled = self:_EnsureWishlistPools()
+
+    -- Return every widget to its pool. Replaces the old Hide()/SetParent(nil)
+    -- loop; the widgets stay parented and hidden, ready to be handed back out.
+    if pooled then
+        self.WishlistUI._headerPool:ReleaseAll()
+        self.WishlistUI._rowPool:ReleaseAll()
     end
-    
+
     local wishlist = self.wishlist or {}
-    
+
     if #wishlist == 0 then
         self.WishlistUI.emptyText:Show()
         self.WishlistUI.scrollFrame:Hide()
         return
     end
-    
+
     self.WishlistUI.emptyText:Hide()
     self.WishlistUI.scrollFrame:Show()
-    
-    -- Create wishlist items grouped by type (category)
+
+    -- Lay out wishlist items grouped by type (category)
     local yOffset = 0
     local headerHeight = 18
     local itemHeight = 50
@@ -219,14 +301,10 @@ function DC:RefreshWishlistUI()
             end)
 
             -- Header
-            local header = CreateFrame("Frame", nil, scrollChild)
-            header:SetSize(scrollChild:GetWidth() - 10, headerHeight)
-            header:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 5, -yOffset)
-
-            local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            headerText:SetPoint("LEFT", header, "LEFT", 2, 0)
-            headerText:SetText((L and (L["TAB_" .. string.upper(t)] or L[string.upper(t)])) or t)
-            headerText:SetTextColor(0.8, 0.8, 0.8)
+            local header = self:AcquireWishlistHeader(scrollChild, yOffset)
+            if header then
+                header.text:SetText((L and (L["TAB_" .. string.upper(t)] or L[string.upper(t)])) or t)
+            end
 
             yOffset = yOffset + headerHeight + 4
 
@@ -242,26 +320,35 @@ function DC:RefreshWishlistUI()
     scrollChild:SetHeight(yOffset)
 end
 
+function DC:AcquireWishlistHeader(parent, yOffset)
+    local ui = self.WishlistUI
+    if not ui or not ui._headerPool then
+        return nil
+    end
+
+    local header = ui._headerPool:Acquire()
+    header:SetSize(parent:GetWidth() - 10, 18)
+    header:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, -yOffset)
+    return header
+end
+
+-- Populates a pooled row. Kept under the original name and signature: it is
+-- called from RefreshWishlistUI above and returns the frame, exactly as before.
 function DC:CreateWishlistItemFrame(parent, wish, yOffset)
-    local frame = CreateFrame("Frame", nil, parent)
+    local ui = self.WishlistUI
+    if not ui or not ui._rowPool then
+        return nil
+    end
+
+    local frame = ui._rowPool:Acquire()
+    frame.wish = wish
     frame:SetSize(parent:GetWidth() - 10, 50)
     frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, -yOffset)
-    
-    -- Background
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    -- 3.3.5: solid-color fills go through SetTexture (SetColorTexture is WoD+
-    -- and only exists here if another addon polyfills it).
-    frame.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
-    
+
     -- Get definition
     local def = self:GetDefinition(wish.type, wish.itemId)
-    
-    -- Icon
-    frame.icon = frame:CreateTexture(nil, "ARTWORK")
-    frame.icon:SetSize(40, 40)
-    frame.icon:SetPoint("LEFT", frame, "LEFT", 5, 0)
 
+    -- Icon
     local resolvedIcon = nil
     if type(self.ResolveDefinitionIcon) == "function" then
         resolvedIcon = self:ResolveDefinitionIcon(wish.type, wish.itemId, def)
@@ -270,7 +357,7 @@ function DC:CreateWishlistItemFrame(parent, wish, yOffset)
     end
 
     frame.icon:SetTexture(resolvedIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
-    
+
     -- Name
     local rarity = def and def.rarity or 1
     local rarityColor = nil
@@ -287,29 +374,15 @@ function DC:CreateWishlistItemFrame(parent, wish, yOffset)
     local r = (rarityColor and rarityColor.r) or 1
     local g = (rarityColor and rarityColor.g) or 1
     local b = (rarityColor and rarityColor.b) or 1
-    
-    frame.name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.name:SetPoint("TOPLEFT", frame.icon, "TOPRIGHT", 10, -5)
+
     frame.name:SetText(def and def.name or "Unknown")
     frame.name:SetTextColor(r, g, b)
-    
+
     -- Type and source
-    frame.info = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.info:SetPoint("TOPLEFT", frame.name, "BOTTOMLEFT", 0, -3)
-    
     local typeStr = L["TAB_" .. string.upper(wish.type)] or wish.type
     local sourceStr = def and self:FormatSource(def.source) or "Unknown"
     frame.info:SetText(typeStr .. " - " .. sourceStr)
-    frame.info:SetTextColor(0.5, 0.5, 0.5)
-    
-    -- Remove button
-    local removeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    removeBtn:SetSize(24, 24)
-    removeBtn:SetPoint("RIGHT", frame, "RIGHT", -5, 0)
-    removeBtn:SetScript("OnClick", function()
-        DC:RequestRemoveWishlist(wish.type, wish.itemId)
-    end)
-    
+
     return frame
 end
 

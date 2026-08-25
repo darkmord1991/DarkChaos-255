@@ -702,6 +702,20 @@ function PetJournal:UpdatePetList()
         pets = filtered
     end
 
+    -- Expansion filter (stock WotLK companions vs retail downports). Driven by
+    -- the shared filter bar's dropdown; DC:EntryPassesExpansionFilter is a
+    -- no-op while "All Expansions" is selected.
+    if (DC.selectedExpansionFilter or "all") ~= "all" and
+        type(DC.EntryPassesExpansionFilter) == "function" then
+        local filtered = {}
+        for _, p in ipairs(pets) do
+            if DC:EntryPassesExpansionFilter("pets", p.id, p.definition) then
+                table.insert(filtered, p)
+            end
+        end
+        pets = filtered
+    end
+
     table.sort(pets, function(a, b)
         if a.is_favorite and not b.is_favorite then return true end
         if b.is_favorite and not a.is_favorite then return false end
@@ -1058,6 +1072,34 @@ function PetJournal:SelectPet(petData)
         fallbackCreatureId = resolvedDefinitionCreatureId
     end
 
+    -- SetCreatureDisplay is the WotLKExtensions DLL native (CustomLua.cpp,
+    -- DC_NATIVE_SETCREATUREDISPLAY). It drives the client's real creature-display
+    -- loader: CreatureDisplayInfo -> CreatureModelData -> load M2 -> bind
+    -- TextureVariation_1/2/3 into the model's empty MONSTER texture slots.
+    -- That makes it a strict superset of SetModel(path): a baked (type-0 only)
+    -- M2 still renders from its embedded textures, and a MONSTER-slot M2 gets
+    -- the skin SetModel can never supply. It is a global, and gated so the tab
+    -- degrades to the old ladder on a DLL build that lacks it.
+    local function TrySetCreatureDisplay(displayInfoId)
+        if not displayInfoId or displayInfoId <= 0 or type(SetCreatureDisplay) ~= "function" then
+            return false
+        end
+
+        local ok, res = pcall(SetCreatureDisplay, model, displayInfoId)
+        if ok and (res == true or res == 1) then
+            if type(model.Show) == "function" then
+                model:Show()
+            end
+            if type(model.SetAlpha) == "function" then
+                model:SetAlpha(1)
+            end
+            ResetModelPose()
+            return true
+        end
+
+        return false
+    end
+
     local function TrySetCreature(modelId)
         if not modelId or modelId <= 0 or type(model.SetCreature) ~= "function" then
             return false
@@ -1133,6 +1175,8 @@ function PetJournal:SelectPet(petData)
     local function TryApplyModelPath(kind, value)
         if kind == "model" then
             return TrySetModelPath(value)
+        elseif kind == "creaturedisplay" then
+            return TrySetCreatureDisplay(value)
         elseif kind == "display" then
             return TrySetDisplay(value)
         else
@@ -1164,18 +1208,32 @@ function PetJournal:SelectPet(petData)
         attempts[#attempts + 1] = { kind = kind, value = value }
     end
 
+    -- The SetCreatureDisplay native leads for EVERY pet, stock or downported: it
+    -- is the only renderer that binds CreatureDisplayInfo.TextureVariation, and
+    -- it handles baked (type-0) models just as well, so there is no id range for
+    -- which it is the wrong first choice. When the DLL lacks it the call fails
+    -- instantly and the legacy ladder below runs exactly as before.
+    --
+    -- The legacy ladder's split is kept for that no-native case. Note its
+    -- premise is only true for a minority of the catalog: an audit of all 1,033
+    -- custom pet displays (M2 texture tables read straight out of the client
+    -- MPQs, 2026-08-24) found just 142 genuinely baked, while 878 have an empty
+    -- MONSTER slot and depend on TextureVariation -- those are the ones that
+    -- render white when SetModel(path) goes first. So SetModel-first is the
+    -- wrong default; it is retained only as a fallback for old DLL builds.
+    --
     -- SetCreature(displayId) binds the creature's skin (textured). For a STOCK
     -- creature, SetModel(path) loads only geometry and renders WHITE, so it
-    -- must come AFTER the textured renderers. For a DOWNPORTED pet the path
-    -- points at a baked .m2 (texture embedded), so there SetModel IS the
-    -- reliable textured renderer and SetCreature on the custom display isn't.
+    -- must come AFTER the textured renderers.
     --
-    -- The previous order tried SetModel(path) before displayId and never tried
+    -- An earlier order tried SetModel(path) before displayId and never tried
     -- SetCreature(displayId) at all, so stock uncollected pets stopped on the
     -- white SetModel geometry (the blank-white Blue Murloc Egg, display 15369).
     -- Custom/downported displays live at 500000+; stock ones are far lower.
     local isCustomDisplay = resolvedDisplayKey ~= nil and resolvedDisplayKey >= 100000
         and not (resolvedDisplayKey and FORCE_TEXTURED_ATTEMPTS_FIRST[resolvedDisplayKey])
+
+    PushAttempt("creaturedisplay", resolvedDisplayId)
 
     if petData.collected then
         -- Companion id from GetCompanionInfo is a textured CreatureDisplayInfo id.

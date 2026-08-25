@@ -22,57 +22,17 @@ DC.VERSION = "1.0.0"
 DC.MODULE_ID = "COLL"  -- DCAddonProtocol module identifier
 
 -- ============================================================================
--- C_TIMER SAFETY NET
+-- C_TIMER
 -- ============================================================================
--- Several DC-Collection files (ToastFrame, WardrobeCore) call
--- C_Timer.After/NewTimer directly. On 3.3.5 C_Timer only exists if another
--- addon polyfilled it first, so install a minimal shared-frame implementation
--- when it's missing rather than relying on unrelated addons' load order.
-if type(C_Timer) ~= "table" then
-    C_Timer = {}
-end
-if type(C_Timer.After) ~= "function" or type(C_Timer.NewTimer) ~= "function" then
-    local timerFrame = CreateFrame("Frame")
-    local timers = {}
-    timerFrame:Hide()
-    timerFrame:SetScript("OnUpdate", function(self, elapsed)
-        for i = #timers, 1, -1 do
-            local t = timers[i]
-            t.remaining = t.remaining - elapsed
-            if t.remaining <= 0 then
-                table.remove(timers, i)
-                if not t.cancelled and type(t.callback) == "function" then
-                    local ok, err = pcall(t.callback)
-                    if not ok and DEFAULT_CHAT_FRAME then
-                        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[DC-Collection timer error]|r " .. tostring(err))
-                    end
-                end
-            end
-        end
-        if #timers == 0 then
-            self:Hide()
-        end
-    end)
-
-    local function StartTimer(duration, callback)
-        local t = { remaining = tonumber(duration) or 0, callback = callback }
-        t.Cancel = function(selfTimer)
-            selfTimer.cancelled = true
-        end
-        table.insert(timers, t)
-        timerFrame:Show()
-        return t
-    end
-
-    if type(C_Timer.After) ~= "function" then
-        C_Timer.After = function(duration, callback)
-            StartTimer(duration, callback)
-        end
-    end
-    if type(C_Timer.NewTimer) ~= "function" then
-        C_Timer.NewTimer = StartTimer
-    end
-end
+-- Provided by DC-AddonProtocol/DCCompat.lua, which this addon hard-depends on
+-- (## Dependencies: DC-AddonProtocol) and which therefore always loads first.
+--
+-- The private polyfill that used to live here installed After and NewTimer but
+-- no NewTicker. Because addons load alphabetically, it reached DC-HinterlandBG
+-- first, whose shim guarded with `if not C_Timer then` and so skipped itself
+-- entirely -- leaving C_Timer.NewTicker nil and silently killing that addon's
+-- battleground queue auto-refresh. DCCompat installs each function
+-- independently, so a partial table from any source still ends up complete.
 
 -- Collection types
 DC.CollectionType = {

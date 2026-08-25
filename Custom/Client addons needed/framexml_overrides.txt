@@ -1,0 +1,63 @@
+# Reviewed overrides of stock 3.3.5 FrameXML globals.
+#
+# An addon that assigns one of these names REPLACES Blizzard's implementation
+# for the entire UI, for every addon, for the whole session -- silently. Every
+# entry below was diffed against the stock 3.3.5 implementation and confirmed
+# to be either identical or a backward-compatible superset.
+#
+# check_addons.py fails on any collision NOT listed here. Do not add a line
+# without diffing against stock first and recording the verdict.
+#
+# Format:  <AddOn>/<global>   # verdict
+#
+# Reviewed 2026-08-25 against an Interface extract of the 3.3.5a client.
+# DC-Journal is a backport of retail's shared FrameXML, so it ships newer
+# versions of these files; the overrides are deliberate, not accidental.
+
+# --- identical to stock: replacing them changes nothing -----------------------
+DC-Journal/CopyTable                        # byte-identical
+DC-Journal/tDeleteItem                      # byte-identical
+DC-Journal/SecondsToTimeAbbrev              # byte-identical
+DC-Journal/FauxScrollFrame_OnVerticalScroll # byte-identical
+DC-Journal/FauxScrollFrame_GetOffset        # byte-identical
+DC-Journal/FauxScrollFrame_SetOffset        # byte-identical
+DC-Journal/ScrollFrameTemplate_OnMouseWheel # byte-identical
+DC-Journal/ScrollingEdit_OnCursorChanged    # byte-identical
+DC-Journal/ScrollingEdit_OnTextChanged      # byte-identical
+DC-Journal/ScrollingEdit_OnUpdate           # byte-identical
+DC-Journal/ROTATIONS_PER_SECOND             # identical constant (.5)
+
+# --- backward-compatible supersets -------------------------------------------
+# Each adds optional parameters or branches that stock callers never trigger.
+DC-Journal/FauxScrollFrame_Update           # adds trailing optional heightOnDisplay; nil for stock callers
+DC-Journal/ScrollFrame_OnLoad               # adds a self.scrollBarHideable branch; stock frames do not set it
+DC-Journal/ScrollFrame_OnScrollRangeChanged # same scrollBarHideable extension
+DC-Journal/TriStateCheckbox_SetState        # retail version, same tri-state contract
+DC-Journal/MAX_PLAYER_LEVEL_TABLE           # superset: LE_EXPANSION_* are 0,1,2,... so [0]=60 [1]=70 [2]=80 as stock, plus later expansions
+DC-Journal/tostringall                      # retail version; same contract for all arities
+
+# --- supersets with a divergence that is verified unreachable -----------------
+DC-Journal/tContains                        # returns true/false where stock returns 1/nil. Truthiness-equivalent;
+                                            # no caller in stock FrameXML or any installed addon compares the
+                                            # result by identity (checked: only ever used in boolean position).
+DC-Journal/SecondsToTime                    # retail version; fixes a stock bug where maxCount was ignored for the
+                                            # first two units. Differential test over 460 argument combinations:
+                                            # diverges ONLY at maxCount == 1, and nothing passes maxCount == 1
+                                            # (stock's only 4-arg caller passes 3).
+
+# --- hook-and-chain: original captured and still called -----------------------
+# The correct way to extend a Blizzard global. Each of these stores the previous
+# implementation and falls through to it for every case it does not own, so
+# stock behaviour is preserved rather than replaced.
+DC-Collection/SetItemRef                    # captures orig_SetItemRef; handles only its own "dc:outfit" /
+                                            # "dc:wishlist" link schemes, chains everything else (Core.lua:2601)
+DC-QOS/ToggleTalentFrame                    # captures blizzardToggleTalentFrame; redirects only when the talent
+                                            # manager is enabled and Shift is not held (TalentManager.lua:3767)
+
+# --- guarded, so they never actually replace anything -------------------------
+# Declared behind an existence check; stock wins when stock is present.
+DC-Journal/ABILITIES                        # guarded
+DC-Journal/ALL_INVENTORY_SLOTS              # guarded
+DC-Journal/CLASS                            # guarded
+DC-Journal/FILTER                           # guarded
+DC-Journal/INSTANCE                         # guarded

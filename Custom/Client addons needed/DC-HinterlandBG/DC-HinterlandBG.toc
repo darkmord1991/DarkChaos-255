@@ -4,8 +4,8 @@
 ## Author: DC-255
 ## Version: 1.4.0
 ## SavedVariables: DCHLBGDB
-## OptionalDeps: DC-AddonProtocol, DC_DebugUtils
-## LoadAfter: DC-AddonProtocol
+## Dependencies: DC-AddonProtocol
+## OptionalDeps: DC_DebugUtils
 ## DefaultState: enabled
 
 # Core compatibility and utilities

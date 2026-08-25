@@ -50,14 +50,39 @@ UPDATE `creature_template` SET `ScriptName` = 'npc_sfk_worgen_spirit',  `AIName`
 UPDATE `creature_template` SET `ScriptName` = 'npc_wailing_guardsman',  `AIName` = '' WHERE `entry` = 50613 + 5000000 AND `entry` BETWEEN 5000000 AND 5099999;
 UPDATE `creature_template` SET `ScriptName` = 'npc_tormented_officer',  `AIName` = '' WHERE `entry` = 50615 + 5000000 AND `entry` BETWEEN 5000000 AND 5099999;
 
--- The heroic difficulty variants need the same AI as the entry they shadow, otherwise
--- the boss is a plain melee dummy on heroic and mythic.
+-- CORRECTED 2026-08-23 -- this block used to PROPAGATE the ScriptName onto the heroic
+-- difficulty variants, on the reasoning that "the heroic difficulty variants need the
+-- same AI as the entry they shadow, otherwise the boss is a plain melee dummy on heroic
+-- and mythic." That reasoning is wrong, and the propagation was the source of all eleven
+--     Creature (Entry: X) lists difficulty 1 mode entry Y with `ScriptName` filled in.
+--     `ScriptName` of difficulty 0 mode creature is always used instead.
+-- lines in the boot log.
+--
+-- Read end to end, a heroic creature never carries the variant's entry:
+--   * Creature::UpdateEntry picks the heroic template into `cinfo`, then does
+--     `SetEntry(Entry);  // normal entry always` (Creature.cpp:509) and stores the heroic
+--     template only in m_creatureInfo -- so stats, model and flags come from the variant,
+--     but GetEntry() stays the difficulty-0 entry.
+--   * Creature::GetScriptId (Creature.cpp:3187) resolves
+--     `GetCreatureTemplate(GetEntry())->ScriptID`, i.e. the difficulty-0 template's.
+-- So the variant's ScriptName can never be read, on any difficulty. The boss gets its AI
+-- from the parent entry on heroic exactly as it does on normal, and setting it on the
+-- variant only tripped ObjectMgr's warning.
+--
+-- The AI is NOT lost by clearing this -- verified against the four worgen ghosts, whose
+-- parents keep `npc_sfk_worgen_spirit`. Clearing rather than leaving it also matters
+-- because ObjectMgr::CheckCreatureTemplate `continue`s past its difficulty bookkeeping
+-- when the variant has a ScriptID, which suppresses the rest of its validation for that
+-- creature (the runtime difficulty swap itself is unaffected -- it reads DifficultyEntry
+-- directly).
+--
+-- So the statement is inverted: variants are CLEARED, never filled.
 UPDATE `creature_template` d
 JOIN `creature_template` n ON n.difficulty_entry_1 = d.entry
-SET d.ScriptName = n.ScriptName, d.AIName = ''
+SET d.ScriptName = ''
 WHERE d.entry BETWEEN 5000000 AND 5099999
   AND n.entry BETWEEN 5000000 AND 5099999
-  AND n.ScriptName <> '';
+  AND d.ScriptName <> '';
 
 -- -------------------------------------------------------------------------------------
 -- 2. Spell scripts -- spell_script_names

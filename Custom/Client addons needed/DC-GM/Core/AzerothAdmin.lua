@@ -1295,20 +1295,19 @@ end
   end
 end ]]
 
+-- NOTE: this used to carry an `if msgt == "addon"` branch that sent on the
+-- EMPTY addon prefix, SendAddonMessage("", msg, ...). It was unreachable: all
+-- 290 ChatMsg call sites in this addon pass a single argument, so msgt is
+-- always nil and always becomes "say". Removed rather than left in place --
+-- "" is not a valid addon channel, so any future caller passing "addon" would
+-- have been writing to a channel nothing listens on, silently. Server traffic
+-- belongs on DC-AddonProtocol (DC:Send), not on a bare SendAddonMessage.
 function AzerothAdmin:ChatMsg(msg, msgt, recipient)
   if not msgt then msgt = "say" end
-  if msgt == "addon" then
-    if recipient then
-      SendAddonMessage("", msg, "WHISPER", recipient)
-    else
-      SendAddonMessage("", msg, "GUILD")
-    end
+  if recipient then
+    SendChatMessage(msg, "WHISPER", nil, recipient)
   else
-    if recipient then
-      SendChatMessage(msg, "WHISPER", nil, recipient)
-    else
-      SendChatMessage(msg, msgt, nil, nil)
-    end
+    SendChatMessage(msg, msgt, nil, nil)
   end
 end
 

@@ -49,7 +49,6 @@ Interface\SharedXML\CircularBuffer.lua
 Interface\SharedXML\TypeUtil.lua
 
 Interface\SharedXML\C_TimerAugment.lua
-Interface\SharedXML\ItemsCache.lua
 Interface\SharedXML\L_Easing.lua
 Interface\SharedXML\SharedFontStyles.xml
 Interface\SharedXML\SoundKitConstants.lua

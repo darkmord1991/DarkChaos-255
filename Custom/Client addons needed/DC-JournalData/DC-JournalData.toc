@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: DC Journal |cff808080(Item Data)|r
+## Notes: Item name/icon fallback table for DC-Journal. Loads on demand the first time the Adventure Guide needs an item the client itself does not know.
+## Author: Dark Chaos
+## Version: 1.0
+## Dependencies: DC-Journal
+## LoadOnDemand: 1
+
+ItemsCache.lua

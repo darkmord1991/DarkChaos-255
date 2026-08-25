@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: |cffFFCC00DC|r Addon Protocol |cff808080(Panels)|r
+## Notes: Settings, testing, diagnostics and request-log panels for DC-AddonProtocol. Loads on demand via /dcpanel, /dcdiag or /dc log.
+## Author: DarkChaos Development Team
+## Version: 2.0.0
+## Dependencies: DC-AddonProtocol
+## LoadOnDemand: 1
+
+Panels.lua
+LogPanel.lua

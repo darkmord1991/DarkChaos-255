@@ -319,9 +319,17 @@ class spell_blood_shroud : public SpellScript
 
     void Register() override
     {
-        // NOTE: effect/target must match the authored spell_dbc downport (source hooked EFFECT_0).
-        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_blood_shroud::FilterTargets,
-            EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        // Deliberately binds nothing. 343995 is a SELF-cast (see CastSpell(me, ...) above)
+        // and retail agrees: both its effects are APPLY_AURA on ImplicitTarget 1 (caster) --
+        // idx0 DUMMY, idx1 PERIODIC_DUMMY -- with radius index 0. There is no area target
+        // list for OnObjectAreaTargetSelect to filter, so that binding could never fire and
+        // only produced a boot-log error.
+        //
+        // The LOS/pillar mechanic this filter belongs to is driven by an AreaTrigger in the
+        // source (see the at_sanguine_ichor / at_echoing_sonar TODO in AddSC below), which
+        // 3.3.5 has no equivalent for. FilterTargets is kept as the ready-made predicate for
+        // whoever ports that; turning the boss's self-buff into a 60y area nuke to give it
+        // something to filter would invent a mechanic, not downport one.
     }
 };
 }

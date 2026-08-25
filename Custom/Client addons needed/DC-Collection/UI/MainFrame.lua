@@ -542,6 +542,88 @@ local GRID_ITEMS_PER_PAGE = 48  -- 8 columns x 6 rows (increased from 24)
 local MOUNT_ITEMS_PER_PAGE = 20 -- Increased from 12
 
 -- ============================================================================
+-- EXPANSION FILTER (Mounts / Pets)
+-- ============================================================================
+-- Mirrors UI/Wardrobe/WardrobeCore.lua's EXPANSION_FILTERS so every collection
+-- tab offers the same "stock 3.3.5a vs retail downport" split.
+--
+-- Boundaries verified against the live world DB:
+--   dc_mount_definitions.spell_id -- stock 458..75973, downports 300700..303033
+--   dc_pet_definitions.pet_entry  -- stock 4401..56806, downports 300410..302741
+-- Both tables carry an `expansion` column, but it is not populated reliably
+-- (every mount row reports 2), so classification keys on the id ranges - the
+-- same convention the Wardrobe and Beastmaster tabs already use.
+
+-- Last stock 3.3.5a item entry. Companion pets are keyed by their teaching
+-- item's entry, so this is the pet boundary too (same value the Wardrobe uses).
+DC.WOTLK_MAX_ITEM_ID = 56806
+-- Stock 3.3.5a Spell.dbc tops out well below this; DC custom mount spells start
+-- at 300700. Used for mounts (keyed by spell id).
+DC.WOTLK_MAX_SPELL_ID = 100000
+-- Custom CreatureDisplayInfo floor (matches UI/BeastmasterFrame.lua). Only ever
+-- used as a positive signal: downports may REUSE retail display ids below it.
+DC.CUSTOM_DISPLAY_FLOOR = 100000
+
+DC.EXPANSION_FILTERS = {
+    { id = "all",       text = "All Expansions" },
+    { id = "classic",   text = "Classic - WotLK" },
+    { id = "wotlkplus", text = "WotLK+ (Downports)" },
+}
+
+-- True when a mount (keyed by spell id) is a downport / custom addition.
+function DC:IsMountDownported(spellId, def)
+    if (ToPositiveNumber(spellId) or 0) >= (self.WOTLK_MAX_SPELL_ID or 100000) then
+        return true
+    end
+    local displayId = def and ToPositiveNumber(def.displayId or def.display_id) or 0
+    return displayId >= (self.CUSTOM_DISPLAY_FLOOR or 100000)
+end
+
+-- True when a companion pet (keyed by its teaching item's entry) is a downport
+-- / custom addition.
+function DC:IsPetDownported(petId, def)
+    if (ToPositiveNumber(petId) or 0) > (self.WOTLK_MAX_ITEM_ID or 56806) then
+        return true
+    end
+    local spellId = def and ToPositiveNumber(def.spellId or def.spell_id) or 0
+    if spellId >= (self.WOTLK_MAX_SPELL_ID or 100000) then
+        return true
+    end
+    local displayId = def and ToPositiveNumber(def.displayId or def.display_id) or 0
+    return displayId >= (self.CUSTOM_DISPLAY_FLOOR or 100000)
+end
+
+-- True when `id` passes the active expansion filter for `collType`
+-- ("mounts"/"pets"). Every other collection type is unfiltered, and an
+-- unresolvable id only passes "All Expansions".
+function DC:EntryPassesExpansionFilter(collType, id, def)
+    local mode = self.selectedExpansionFilter
+    if not mode or mode == "all" then
+        return true
+    end
+    if collType ~= "mounts" and collType ~= "pets" then
+        return true
+    end
+
+    local numericId = ToPositiveNumber(id)
+    if not numericId then
+        return false
+    end
+
+    local isDownport
+    if collType == "mounts" then
+        isDownport = self:IsMountDownported(numericId, def)
+    else
+        isDownport = self:IsPetDownported(numericId, def)
+    end
+
+    if mode == "wotlkplus" then
+        return isDownport
+    end
+    return not isDownport
+end
+
+-- ============================================================================
 -- MAIN FRAME CREATION
 -- ============================================================================
 
@@ -995,10 +1077,38 @@ function DC:CreateFilterBar(parent)
     
     filterBar.sortDropdown = sortDropdown
 
+    -- Expansion dropdown (stock WotLK entries vs retail downports).
+    -- Shown only on the Mounts and Pets tabs; the Wardrobe and Beastmaster tabs
+    -- carry their own copies of the same filter.
+    local expansionDropdown = CreateFrame("Frame", "DCCollectionExpansionDropdown", filterBar, "UIDropDownMenuTemplate")
+    expansionDropdown:SetPoint("RIGHT", sortDropdown, "LEFT", 0, 0)
+    UIDropDownMenu_SetWidth(expansionDropdown, 130)
+    UIDropDownMenu_SetText(expansionDropdown, DC.EXPANSION_FILTERS[1].text)
+
+    UIDropDownMenu_Initialize(expansionDropdown, function(self, level)
+        for _, expInfo in ipairs(DC.EXPANSION_FILTERS or {}) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = expInfo.text
+            info.value = expInfo.id
+            info.func = function(btn)
+                DC.selectedExpansionFilter = btn.value
+                UIDropDownMenu_SetText(expansionDropdown, btn:GetText())
+                CloseDropDownMenus()
+                DC:OnFilterChanged()
+            end
+            info.checked = ((DC.selectedExpansionFilter or "all") == expInfo.id)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+
+    filterBar.expansionDropdown = expansionDropdown
+    DC.selectedExpansionFilter = DC.selectedExpansionFilter or "all"
+
     -- Start hidden until Transmog tab is opened.
     transmogSlotDropdown:Hide()
     transmogClearBtn:Hide()
     transmogOutfitsBtn:Hide()
+    expansionDropdown:Hide()
     
     parent.FilterBar = filterBar
 end
@@ -1030,6 +1140,16 @@ function DC:UpdateFilterBarForTab(tabKey)
     end
     if fb.transmogOutfitsBtn then
         if isTransmog then fb.transmogOutfitsBtn:Show() else fb.transmogOutfitsBtn:Hide() end
+    end
+
+    -- Expansion filter only applies to mounts and pets (see
+    -- DC:EntryPassesExpansionFilter); other tabs have no stock/downport split.
+    if fb.expansionDropdown then
+        if tabKey == "mounts" or tabKey == "pets" then
+            fb.expansionDropdown:Show()
+        else
+            fb.expansionDropdown:Hide()
+        end
     end
 end
 
@@ -3110,6 +3230,7 @@ function DC:GetFilteredItems()
     local showNotCollected = self.MainFrame.FilterBar.notCollectedCheck:GetChecked()
     local sortKey = self.currentSort or "name"
     local slotName = (collType == "transmog") and (DC.transmogSelectedSlotName or "") or ""
+    local expansionMode = self.selectedExpansionFilter or "all"
 
     local cacheKey = table.concat({
         tostring(defsRev),
@@ -3118,6 +3239,7 @@ function DC:GetFilteredItems()
         tostring(showCollected and 1 or 0),
         tostring(showNotCollected and 1 or 0),
         tostring(slotName),
+        tostring(expansionMode),
         searchText,
     }, "|")
 
@@ -3189,6 +3311,9 @@ function DC:GetFilteredItems()
 
         -- Transmog: filter by selected slot (retail-like slot browsing)
         if collType == "transmog" and not InvTypeMatchesSelectedTransmogSlot(def.inventoryType or 0) then
+            -- skip
+        -- Mounts/pets: filter by expansion (stock WotLK vs retail downports)
+        elseif not self:EntryPassesExpansionFilter(collType, id, def) then
             -- skip
         else
         

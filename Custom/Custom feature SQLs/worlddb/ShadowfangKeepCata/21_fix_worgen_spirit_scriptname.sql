@@ -62,18 +62,32 @@ WHERE `entry` IN (50851 + 5000000,   -- Wolf Master Nandos
   AND `entry` BETWEEN 5000000 AND 5099999;
 
 -- -------------------------------------------------------------------------------------
--- 3. Re-run 06's heroic-variant propagation
+-- 3. Clear the heroic variants  -- CORRECTED 2026-08-23, this block did the opposite
 --
--- All four ghosts have a difficulty_entry_1 (5050852 / 5051086 / 5051034 / 5050835), and
--- without this they stay plain melee dummies on heroic and mythic. Same statement as the
--- one at the end of 06_scriptnames.sql, narrowed to the four rows this file touched.
+-- It used to re-run 06's propagation onto 5050852 / 5051086 / 5051034 / 5050835, saying
+-- "without this they stay plain melee dummies on heroic and mythic". That is not how the
+-- core works, and the four rows it wrote were the last four of the eleven
+--     ... lists difficulty 1 mode entry Y with `ScriptName` filled in.
+--     `ScriptName` of difficulty 0 mode creature is always used instead.
+-- lines in the boot log. (298_ cleared the other seven; these four came back because this
+-- file runs after it.)
+--
+-- Creature::UpdateEntry loads the heroic template into m_creatureInfo but then calls
+-- `SetEntry(Entry);  // normal entry always` (Creature.cpp:509), and Creature::GetScriptId
+-- (Creature.cpp:3187) resolves `GetCreatureTemplate(GetEntry())->ScriptID` -- the
+-- difficulty-0 entry's. The variant's ScriptName is therefore unreadable on every
+-- difficulty; the ghosts get `npc_sfk_worgen_spirit` from their parent on heroic just as
+-- they do on normal, which is what section 2 above sets. Nothing is lost by clearing.
+--
+-- `AIName` is deliberately NOT touched here: 06 already clears it on these rows, and the
+-- AIName warning is a separate check with the same difficulty-0 rule.
 -- -------------------------------------------------------------------------------------
 UPDATE `creature_template` d
 JOIN `creature_template` n ON n.`difficulty_entry_1` = d.`entry`
-SET d.`ScriptName` = n.`ScriptName`, d.`AIName` = ''
+SET d.`ScriptName` = ''
 WHERE d.`entry` BETWEEN 5000000 AND 5099999
   AND n.`entry` IN (50851 + 5000000, 50857 + 5000000, 50869 + 5000000, 50834 + 5000000)
-  AND n.`ScriptName` <> '';
+  AND d.`ScriptName` <> '';
 
 -- -------------------------------------------------------------------------------------
 -- Report
@@ -82,7 +96,7 @@ SELECT 'ghosts bound to npc_sfk_worgen_spirit (want 4)' AS `check`, CAST(COUNT(*
     FROM `creature_template`
     WHERE `entry` IN (50851 + 5000000, 50857 + 5000000, 50869 + 5000000, 50834 + 5000000)
       AND `ScriptName` = 'npc_sfk_worgen_spirit'
-UNION ALL SELECT 'heroic variants bound (want 4)', CAST(COUNT(*) AS CHAR)
+UNION ALL SELECT 'heroic variants bound (want 0 -- see section 3)', CAST(COUNT(*) AS CHAR)
     FROM `creature_template`
     WHERE `entry` IN (50852 + 5000000, 51086 + 5000000, 51034 + 5000000, 50835 + 5000000)
       AND `ScriptName` = 'npc_sfk_worgen_spirit'
